@@ -62,6 +62,12 @@ export class AIRouter {
         this.activeBackend = 'pollinations';
         this.activeModel = 'openai';
 
+        /** AbortController for cancelling in-flight requests */
+        this._abortController = null;
+        /** Track what was being said when interrupted */
+        this._lastInterruptedResponse = '';
+        this._lastInterruptedInput = '';
+
         // Image backend — always Pollinations unless overridden
         this.imageBackend = 'pollinations';
         this.imageModel = 'flux';
@@ -176,7 +182,24 @@ export class AIRouter {
      * Send a chat completion to the ACTIVE backend.
      * Falls through the hierarchy on failure.
      */
+    /**
+     * Abort any in-flight AI request. Called when user interrupts.
+     */
+    abort() {
+        if (this._abortController) {
+            this._abortController.abort();
+            this._abortController = null;
+            console.log('[AIRouter] Aborted in-flight request');
+        }
+        this.voice.stopSpeaking();
+    }
+
     async _chat(messages, options = {}) {
+        // Cancel any previous in-flight request
+        if (this._abortController) this._abortController.abort();
+        this._abortController = new AbortController();
+        const signal = this._abortController.signal;
+
         const temp = options.temperature ?? 0.9;
 
         // Try active backend first
@@ -216,7 +239,7 @@ export class AIRouter {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ model, messages, stream: false, options: { temperature } }),
-                signal: AbortSignal.timeout(30000),
+                signal: this._abortController?.signal || AbortSignal.timeout(30000),
             });
             if (res.ok) {
                 const data = await res.json();
@@ -249,7 +272,7 @@ export class AIRouter {
                     method: 'POST',
                     headers,
                     body,
-                    signal: AbortSignal.timeout(30000),
+                    signal: this._abortController?.signal || AbortSignal.timeout(30000),
                 });
 
                 if (res.ok) {
@@ -342,11 +365,24 @@ export class AIRouter {
             messages.push({ role: 'user', content: userInput });
         }
 
-        const response = await this._chat(messages, { temperature: 0.95 });
+        let response;
+        try {
+            response = await this._chat(messages, { temperature: 0.95 });
+        } catch (err) {
+            if (err.name === 'AbortError') {
+                console.log('[AIRouter] Request aborted (user interrupted)');
+                return { text: null, error: 'aborted', aborted: true };
+            }
+            throw err;
+        }
 
         if (!response) {
             return { text: null, error: 'chat failed' };
         }
+
+        // Clear interrupted tracking — this response completed successfully
+        this._lastInterruptedInput = '';
+        this._lastInterruptedResponse = response;
 
         // Store the exchange
         if (userInput) this.storage.saveMessage('user', userInput);
@@ -642,7 +678,39 @@ export class AIRouter {
      * @returns {Promise<{ response: Object, action: string, brainState: Object }>}
      */
     async handleUserMessage(text) {
-        // 1. Feed input to brain (injects neural currents, stores memory)
+        // 0. INTERRUPT HANDLING — routed through brain's amygdala (surprise/interrupt response)
+        //    When new input arrives mid-response, the amygdala fires a surprise signal,
+        //    basal ganglia switches action, and the old response is aborted.
+        if (this._abortController) {
+            this.abort();
+
+            // Amygdala surprise response — inject a burst into the amygdala cluster
+            // This is how real brains handle interruption: amygdala detects salience change
+            if (this.brain.clusters?.amygdala) {
+                const surpriseCurrent = new Float64Array(this.brain.clusters.amygdala.size);
+                for (let i = 0; i < surpriseCurrent.length; i++) surpriseCurrent[i] = 6.0; // strong surprise
+                this.brain.clusters.amygdala.injectCurrent(surpriseCurrent);
+            }
+
+            // Save interrupted context so the model can reference it
+            if (this._lastInterruptedInput) {
+                this.storage.saveMessage('user', `[interrupted: "${this._lastInterruptedInput}"]`);
+                if (this._lastInterruptedResponse) {
+                    this.storage.saveMessage('assistant', `[was saying: "${this._lastInterruptedResponse.slice(0, 80)}..." — cut off]`);
+                }
+            }
+            this._lastInterruptedInput = '';
+            this._lastInterruptedResponse = '';
+        }
+
+        // Track current input for interruption context
+        this._lastInterruptedInput = text;
+
+        // 1. Stop any ongoing speech — only ONE voice stream at a time
+        //    In the brain: basal ganglia inhibits the "speak" action, switches to "listen"
+        this.voice.stopSpeaking();
+
+        // 2. Feed input to brain (injects neural currents across cortex + hippocampus)
         this.brain.processInput(text);
 
         // 2. Check if user wants Unity to LOOK at something — trigger directed vision

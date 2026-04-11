@@ -907,7 +907,10 @@ async function bootUnity(apiKey, perms) {
   chatPanel = new ChatPanel({
     storage,
     onSend: async (text) => {
+      // Abort any in-flight request — typed input takes priority
+      router.abort();
       voice.stopSpeaking();
+      _currentResponseId++; // invalidate any pending voice response
       setAvatarState('thinking');
       const result = await router.handleUserMessage(text);
       if (result?.action === 'generate_image') {
@@ -946,28 +949,42 @@ async function bootUnity(apiKey, perms) {
   if (brain3dBtn) brain3dBtn.addEventListener('click', () => brain3d.toggle());
 
   // ── Wire voice events ──
-  let _processingVoice = false; // prevent overlapping speech chains
+  let _currentResponseId = 0; // increments on each new input — stale responses get ignored
+
   voice.onResult(async ({ text, isFinal }) => {
     // On ANY speech detection (even interim), immediately stop Unity's current speech
-    // so she shuts up and listens when the user talks
     if (voice.isSpeaking) {
       voice.stopSpeaking();
+    }
+    // Abort any in-flight AI request — user is talking, she needs to shut up and listen
+    if (router._abortController) {
+      router.abort();
     }
 
     // Show what Unity hears in the brain viz
     if (brainViz) brainViz.setHeardText(text);
 
-    if (!isFinal) return; // wait for final transcript before processing
-    if (_processingVoice) return; // prevent overlapping chains
-    _processingVoice = true;
+    if (!isFinal) return; // wait for final transcript
 
-    voice.stopSpeaking(); // ensure stopped
+    // New input — increment ID so stale responses get discarded
+    const myId = ++_currentResponseId;
+
+    voice.stopSpeaking();
     showSpeechBubble(`🎤 ${text}`, 2000);
-    chatPanel.addMessage('user', text, true); // skipSave — router saves it
+    chatPanel.addMessage('user', text, true);
     setAvatarState('thinking');
 
     try {
       const result = await router.handleUserMessage(text);
+
+      // If another input came in while we were processing, discard this result
+      if (myId !== _currentResponseId) {
+        console.log('[Unity] Discarding stale response (user sent new input)');
+        return;
+      }
+
+      if (result?.response?.aborted) return; // was aborted, ignore
+
       if (result?.action === 'generate_image') {
         const msg = result?.response?.prompt ? 'Image generated.' : 'Generating...';
         showSpeechBubble(msg, 4000);
@@ -976,15 +993,16 @@ async function bootUnity(apiKey, perms) {
         const responseText = result?.response?.text || result?.response?.thought || '';
         if (responseText) {
           showSpeechBubble(responseText, 8000);
-          chatPanel.addMessage('assistant', responseText, true); // router already saved
+          chatPanel.addMessage('assistant', responseText, true);
         }
       }
     } catch (err) {
-      console.error('[Unity] Voice response failed:', err.message);
+      if (err.name !== 'AbortError') {
+        console.error('[Unity] Voice response failed:', err.message);
+      }
     }
 
-    setAvatarState('idle');
-    _processingVoice = false;
+    if (myId === _currentResponseId) setAvatarState('idle');
   });
 
   voice.on('speech_start', () => setAvatarState('speaking'));
