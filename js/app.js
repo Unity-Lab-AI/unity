@@ -698,8 +698,11 @@ async function bootUnity(apiKey, perms) {
   let _currentResponseId = 0;
 
   voice.onResult(async ({ text, isFinal }) => {
+    // IGNORE input while Unity is speaking — prevents feedback loop
+    // (mic picks up her TTS output and feeds it back as user input)
+    if (voice.isSpeaking) return;
+
     // ANY sound from user = Unity shuts up IMMEDIATELY
-    // This is auditory cortex → motor cortex inhibition
     voice.stopSpeaking();
     brocasArea.abort();
     if (brainViz) brainViz.setHeardText(text);
@@ -711,21 +714,30 @@ async function bootUnity(apiKey, perms) {
     chatPanel.addMessage('user', text, true);
     setAvatarState('thinking');
 
+    // Stop listening while generating + speaking response
+    voice.stopListening();
+
     try {
       const result = await handleInput(text);
-      // Discard if stale OR if brain was interrupted by newer input
-      if (myId !== _currentResponseId || brain.motor.wasInterrupted()) return;
+      if (myId !== _currentResponseId || brain.motor.wasInterrupted()) {
+        if (!uiState.micMuted) voice.startListening();
+        return;
+      }
       if (result.text) {
-        // Final check — stop any speech that leaked through, then speak
         voice.stopSpeaking();
         showSpeechBubble(result.text, 8000);
         chatPanel.addMessage('assistant', result.text, true);
-        voice.speak(result.text).catch(() => {});
+        // Speak, then resume listening AFTER speech ends
+        try {
+          await voice.speak(result.text);
+        } catch {}
       }
     } catch (err) {
       if (err.name !== 'AbortError') console.error('[Unity] Response failed:', err.message);
     }
 
+    // Resume listening after response is done
+    if (!uiState.micMuted) voice.startListening();
     if (myId === _currentResponseId) setAvatarState('idle');
   });
 
