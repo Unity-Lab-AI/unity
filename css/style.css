@@ -50,9 +50,11 @@ html, body {
   border: 1px solid var(--border);
   border-radius: 16px;
   padding: 40px;
-  max-width: 420px;
-  width: 90%;
+  max-width: 720px;
+  width: 95%;
   text-align: center;
+  max-height: 90vh;
+  overflow-y: auto;
 }
 
 .setup-card h1 {
