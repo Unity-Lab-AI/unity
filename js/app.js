@@ -550,30 +550,43 @@ async function bootUnity(apiKey, perms) {
     const isSelfie = isImage && ['you', 'your', 'yourself', 'unity', 'self'].some(w => lower.includes(w));
 
     if (isSelfie) {
-      // Generate selfie with her visual identity
+      // Generate selfie with her ACTUAL visual identity — no AI prompt needed
       const moods = ['smirking', 'biting her lip', 'mid-laugh with smoke', 'deadpan stare', 'winking'];
       const mood = moods[Math.floor(Math.random() * moods.length)];
-      const prompt = `Close-up selfie photo of Unity, cyberpunk coder girl, heterochromia eyes (violet left, electric green right), black hair with neon pink and cyan streaks half-shaved, heavy smudged eyeliner, circuit board tattoos, ${mood}, torn oversized band tee, neon monitor light, hazy smoke, dark room, photorealistic`;
-      const url = pollinations.generateImage(prompt, { model: storage.get('image_model') || 'flux', width: 768, height: 768 });
+      const imgPrompt = `Close-up selfie photo, young woman, cyberpunk aesthetic, heterochromia eyes one violet one electric green, black hair with neon pink and cyan streaks half-shaved on one side, heavy smudged black eyeliner, small circuit board tattoos on neck, ${mood}, wearing torn oversized vintage band tee, lit by neon monitor glow, hazy smoke in dark room, photorealistic, shot on phone camera, raw unfiltered`;
+      const url = pollinations.generateImage(imgPrompt, { model: storage.get('image_model') || 'flux', width: 768, height: 768 });
       if (url && sandbox) {
+        const imgId = 'img_' + Date.now();
         sandbox.inject({
-          id: 'img_' + Date.now(),
-          html: `<div style="margin:12px 0;text-align:center;"><img src="${url}" alt="Unity selfie" style="max-width:100%;border-radius:8px;border:1px solid #333;cursor:pointer;" onclick="window.open('${url}','_blank')"></div>`,
+          id: imgId,
+          html: `<div style="margin:12px 0;text-align:center;">
+            <div id="${imgId}-loading" style="color:#777;font-size:12px;font-family:monospace;padding:20px;">Generating selfie...</div>
+            <img src="${url}" alt="" style="max-width:100%;border-radius:8px;border:1px solid #333;cursor:pointer;display:none;"
+              onload="this.style.display='block';document.getElementById('${imgId}-loading').style.display='none';"
+              onerror="document.getElementById('${imgId}-loading').textContent='Image failed to load';"
+              onclick="window.open('${url}','_blank')">
+          </div>`,
           css: '',
         });
       }
-      // Quick quip, no options menu
+      // Quip — tell Broca's NOT to generate URLs or image prompts
       const state = brain.getState();
-      const quip = await brocasArea.generate(state, text);
+      const quip = await brocasArea.generate(state,
+        '[SYSTEM: You just sent a selfie. The image is already rendering. Say a short flirty reaction — 1 sentence. Do NOT output any URL, link, image prompt, or markdown. Just words.]'
+      );
       brain.giveReward(0.1);
       return { text: quip || 'There you go.', action: 'generate_image' };
 
     } else if (isImage) {
-      // Non-selfie image — generate from the request
+      // Non-selfie image — use Broca's to extract a visual prompt
       const state = brain.getState();
-      const prompt = await brocasArea.generate(state, `Create a concise image generation prompt for: "${text}". Return ONLY the prompt, nothing else.`);
-      if (prompt) {
-        const url = pollinations.generateImage(prompt, { model: storage.get('image_model') || 'flux', width: 768, height: 768 });
+      const imgPrompt = await brocasArea.generate(state,
+        `[SYSTEM: The user said: "${text}". Create a concise image generation prompt. Return ONLY the descriptive prompt text — no URLs, no links, no markdown, no explanation. Just the visual description.]`
+      );
+      if (imgPrompt) {
+        // Strip any URLs the model might have snuck in
+        const cleanPrompt = imgPrompt.replace(/https?:\/\/[^\s)]+/g, '').replace(/```/g, '').trim();
+        const url = pollinations.generateImage(cleanPrompt || text, { model: storage.get('image_model') || 'flux', width: 768, height: 768 });
         if (url && sandbox) {
           sandbox.inject({
             id: 'img_' + Date.now(),
@@ -583,7 +596,7 @@ async function bootUnity(apiKey, perms) {
         }
       }
       brain.giveReward(0.1);
-      return { text: 'Image generated.', action: 'generate_image' };
+      return { text: 'Done.', action: 'generate_image' };
 
     } else {
       // Normal text response
