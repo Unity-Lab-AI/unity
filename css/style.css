@@ -195,6 +195,38 @@ html, body {
   fill: white;
 }
 
+.bubble-controls {
+  position: absolute;
+  bottom: 0; left: -44px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.bubble-ctrl-btn {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 16px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.2s;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+.bubble-ctrl-btn:hover { border-color: var(--pink); }
+.bubble-ctrl-btn.muted {
+  background: rgba(239,68,68,0.15);
+  border-color: var(--red);
+  color: var(--red);
+  text-decoration: line-through;
+}
+.bubble-ctrl-btn.active {
+  background: var(--pink-dim);
+  border-color: var(--pink);
+  color: var(--pink);
+}
+
 .bubble-status {
   position: absolute;
   bottom: -2px; right: -2px;
@@ -202,7 +234,9 @@ html, body {
   border-radius: 50%;
   background: var(--green);
   border: 2px solid var(--bg);
+  transition: background 0.3s;
 }
+.bubble-status.muted { background: var(--red); }
 
 /* Speech balloon */
 .bubble-speech {
@@ -409,10 +443,10 @@ html, body {
 
 /* ── Brain Viz Button ────────────────────────────── */
 
-#brain-viz-btn.hidden { display: none; }
-#brain-viz-btn {
+#brain-viz-btn.hidden, #brain-3d-btn.hidden { display: none; }
+#brain-viz-btn, #brain-3d-btn {
   position: fixed;
-  bottom: 12px; right: 100px;
+  bottom: 12px;
   background: rgba(10,10,10,0.85);
   border: 1px solid rgba(255,77,154,0.2);
   border-radius: 6px;
@@ -426,11 +460,28 @@ html, body {
   z-index: 8002;
   transition: all 0.2s;
 }
-#brain-viz-btn:hover {
+#brain-viz-btn { right: 100px; }
+#brain-3d-btn { right: 200px; }
+#brain-viz-btn:hover, #brain-3d-btn:hover {
   border-color: var(--pink);
   color: var(--pink);
   box-shadow: 0 0 12px var(--pink-glow);
 }
+
+/* ── 3D Brain Overlay ───────────────────────────── */
+.brain-3d { position: fixed; inset: 0; z-index: 9600; background: rgba(5,5,5,0.98); }
+.brain-3d.hidden { display: none; }
+.brain-3d canvas { width: 100%; height: 100%; display: block; }
+.b3d-header { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; z-index: 2; }
+.b3d-title { font-family: var(--mono); font-size: 14px; color: var(--pink); font-weight: 700; letter-spacing: 2px; }
+.b3d-stats { font-family: var(--mono); font-size: 10px; color: var(--text-dim); }
+.b3d-close { background: none; border: 1px solid var(--border); border-radius: 6px; color: var(--text-dim); font-size: 20px; width: 36px; height: 36px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.b3d-close:hover { border-color: var(--pink); color: var(--pink); }
+.b3d-toggles { position: absolute; top: 50px; left: 16px; display: flex; flex-wrap: wrap; gap: 4px; z-index: 2; }
+.b3d-toggle { padding: 3px 8px; border-radius: 4px; border: 1px solid var(--border); background: rgba(10,10,10,0.8); color: var(--text-dim); font-family: var(--mono); font-size: 9px; cursor: pointer; transition: all 0.2s; }
+.b3d-toggle.active { color: var(--text); }
+.b3d-toggle:hover { border-color: var(--pink); }
+.b3d-hint { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); font-family: var(--mono); font-size: 10px; color: rgba(255,255,255,0.2); z-index: 2; }
 
 /* ── Chat Panel ─────────────────────────────────── */
 
@@ -678,6 +729,13 @@ html, body {
   min-width: 140px;
 }
 
+.bv-stats {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  letter-spacing: 0.5px;
+}
+
 /* Psi display */
 .bv-psi {
   font-family: var(--mono);
@@ -685,7 +743,7 @@ html, body {
   font-weight: 700;
   text-align: center;
   margin: 8px 0 4px;
-  transition: color 0.3s;
+  transition: color 0.3s, text-shadow 0.3s;
 }
 .bv-psi-components {
   font-family: var(--mono);
@@ -693,6 +751,143 @@ html, body {
   color: var(--text-dim);
   text-align: center;
 }
+
+/* ── Unity's Eyes ────────────────────────────────── */
+
+.bv-eyes-wrap {
+  position: relative;
+  width: 100%;
+  max-width: 320px;
+  aspect-ratio: 4/3;
+  background: #000;
+  border-radius: 6px;
+  overflow: hidden;
+  margin: 8px auto 0;
+}
+.bv-eyes-wrap video {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+  filter: saturate(0.6) contrast(1.1);
+}
+.bv-eyes-wrap canvas {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+}
+.bv-eye-scan {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: var(--pink);
+  opacity: 0.4;
+  animation: eye-scan 3s linear infinite;
+  pointer-events: none;
+}
+@keyframes eye-scan {
+  0% { top: 0; }
+  100% { top: 100%; }
+}
+.bv-eye-desc {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  background: rgba(0,0,0,0.75);
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 6px 10px;
+  line-height: 1.4;
+  backdrop-filter: blur(4px);
+}
+
+/* ── Audio Waveform ─────────────────────────────── */
+
+.bv-audio-wrap {
+  position: relative;
+  width: 100%;
+  height: 60px;
+  background: #0a0a0a;
+  border-radius: 6px;
+  overflow: hidden;
+  margin: 8px 0 0;
+}
+
+/* ── Unity's Eye — persistent camera widget ──────── */
+
+#unity-eye {
+  position: fixed;
+  top: 10px; left: 12px;
+  z-index: 8003;
+  pointer-events: auto;
+}
+#unity-eye.hidden { display: none; }
+
+.eye-container {
+  position: relative;
+  width: 160px;
+  height: 120px;
+  border-radius: 50% / 40%;
+  overflow: hidden;
+  border: 2px solid rgba(255,77,154,0.3);
+  box-shadow: 0 0 20px rgba(255,77,154,0.15), inset 0 0 30px rgba(0,0,0,0.5);
+  background: #000;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+.eye-container:hover {
+  border-color: var(--pink);
+  box-shadow: 0 0 30px rgba(255,77,154,0.3), inset 0 0 30px rgba(0,0,0,0.3);
+  transform: scale(1.05);
+}
+
+.eye-container video {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  filter: saturate(0.5) contrast(1.2) brightness(0.9);
+}
+
+.eye-container canvas {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+}
+
+.eye-label {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 7px;
+  letter-spacing: 1px;
+  color: rgba(255,77,154,0.7);
+  background: rgba(0,0,0,0.6);
+  padding: 2px 0;
+}
+
+.eye-desc {
+  position: absolute;
+  top: 100%;
+  left: -20px; right: -20px;
+  margin-top: 6px;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--text-dim);
+  line-height: 1.4;
+  background: rgba(10,10,10,0.9);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  max-height: 60px;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
+}
+.eye-container:hover + .eye-desc,
+.eye-container:hover ~ .eye-desc,
+#unity-eye:hover .eye-desc { opacity: 1; }
 
 /* ── Loading State ───────────────────────────────── */
 

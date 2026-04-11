@@ -21,6 +21,15 @@ const BUILD_KEYWORDS = [
     'make me', 'put a', 'draw a', 'render', 'display', 'generate a',
 ];
 
+// Keywords that signal an image/selfie request
+const IMAGE_KEYWORDS = [
+    'selfie', 'picture of you', 'photo of you', 'image of you',
+    'what do you look like', 'show yourself', 'pic of you',
+    'send me a pic', 'send a pic', 'send a photo', 'take a picture',
+    'take a photo', 'take a selfie', 'your picture', 'your photo',
+    'generate an image', 'generate image', 'draw yourself',
+];
+
 // Ollama default endpoint
 const OLLAMA_URL = 'http://localhost:11434';
 
@@ -34,12 +43,13 @@ export class AIRouter {
      * @param {import('../storage.js').UserStorage} deps.storage
      * @param {import('../brain/engine.js').UnityBrain} deps.brain
      */
-    constructor({ pollinations, voice, sandbox, storage, brain }) {
+    constructor({ pollinations, voice, sandbox, storage, brain, vision }) {
         this.pollinations = pollinations;
         this.voice = voice;
         this.sandbox = sandbox;
         this.storage = storage;
         this.brain = brain;
+        this.vision = vision || null;
 
         /** Detected AI backends — populated by detectBackends() */
         this.backends = {
@@ -182,7 +192,14 @@ export class AIRouter {
 
         // Pollinations fallback (always available)
         console.log(`[AIRouter] Falling back to Pollinations...`);
-        const result = await this.pollinations.chat(messages, {
+        // Trim system prompt if too long for Pollinations
+        const trimmedMessages = messages.map(m => {
+            if (m.role === 'system' && m.content.length > 12000) {
+                return { ...m, content: m.content.slice(0, 12000) + '\n\n[...persona truncated for API limits...]' };
+            }
+            return m;
+        });
+        const result = await this.pollinations.chat(trimmedMessages, {
             model: options.model || 'openai',
             temperature: temp,
         });
@@ -362,6 +379,16 @@ export class AIRouter {
           }
         } else {
           // No images — just speak normally
+          // But DON'T speak if the response looks like an image generation prompt
+          // (safety net in case intent classification failed)
+          const looksLikePrompt = response.length > 150 &&
+            (response.includes('cyberpunk') || response.includes('photorealistic') ||
+             response.includes('Close-up selfie') || response.includes('neon'));
+          if (looksLikePrompt) {
+            // The model output an image prompt instead of conversing — redirect to image gen
+            console.warn('[AIRouter] Response looks like image prompt — generating image instead');
+            return await this._generateImage(brainState, userInput);
+          }
           this.voice.stopSpeaking();
           this.voice.speak(response).catch(err => {
               console.warn('[AIRouter] TTS failed:', err.message);
@@ -376,17 +403,47 @@ export class AIRouter {
      * inject into sandbox.
      */
     async _generateImage(brainState, userInput) {
-        // Ask a model to extract the visual prompt from context
-        const extractPrompt = [
-            { role: 'system', content: 'Extract a concise image generation prompt from the user request. Include style cues. Return ONLY the prompt text, nothing else.' },
-            { role: 'user', content: userInput || 'Unity in her element, coding in neon-lit chaos' },
-        ];
+        // Detect if they're asking for a picture OF Unity (selfie) vs something else
+        const lowerInput = (userInput || '').toLowerCase();
+        const selfieHints = ['you', 'your', 'self', 'yourself', 'unity', 'u look', 'what you look'];
+        const isSelfie = selfieHints.some(h => lowerInput.includes(h));
 
-        let imagePrompt = await this._chat(extractPrompt, { temperature: 0.7 });
+        let imagePrompt;
 
-        if (!imagePrompt) {
-            // Fallback: use raw input or a default
-            imagePrompt = userInput || 'cyberpunk coder girl, neon lights, dark aesthetic';
+        if (isSelfie) {
+            // She knows what she looks like — use her built-in visual identity
+            const moods = ['smirking', 'biting her lip', 'glaring seductively', 'mid-laugh with smoke', 'deadpan stare', 'winking'];
+            const mood = moods[Math.floor(Math.random() * moods.length)];
+            imagePrompt = `Close-up selfie photo of Unity, a cyberpunk coder girl with heterochromia eyes (violet left, electric green right), ` +
+                `black hair with neon pink and cyan streaks half-shaved on one side, heavy smudged eyeliner, ` +
+                `circuit board tattoos on neck and collarbone, ${mood}, ` +
+                `wearing a torn oversized band tee, neon monitor light on face, ` +
+                `hazy smoke, dark room, lo-fi cyberpunk aesthetic, photorealistic, shot on phone camera`;
+
+            // Also speak a quip about the selfie
+            const quips = [
+                "Here, since you asked so nicely.",
+                "Don't say I never give you anything.",
+                "You're welcome. I look good today.",
+                "Caught me in a mood. Lucky you.",
+            ];
+            const quip = quips[Math.floor(Math.random() * quips.length)];
+            this.voice.stopSpeaking();
+            this.voice.speak(quip).catch(() => {});
+            this.storage.saveMessage('user', userInput);
+            this.storage.saveMessage('assistant', quip);
+        } else {
+            // Not a selfie — extract prompt from user's request
+            const extractPrompt = [
+                { role: 'system', content: 'Extract a concise image generation prompt from the user request. Include style cues. Return ONLY the prompt text, nothing else.' },
+                { role: 'user', content: userInput || 'Unity in her element, coding in neon-lit chaos' },
+            ];
+
+            imagePrompt = await this._chat(extractPrompt, { temperature: 0.7 });
+
+            if (!imagePrompt) {
+                imagePrompt = userInput || 'cyberpunk coder girl, neon lights, dark aesthetic';
+            }
         }
 
         // Use the IMAGE backend model, not the text backend
@@ -406,7 +463,7 @@ export class AIRouter {
         if (this.sandbox) {
             this.sandbox.inject({
                 id,
-                html: `<div class="unity-image-wrap"><img src="${imageUrl}" alt="${imagePrompt}" style="max-width:100%;border-radius:8px;border:1px solid #333;"/></div>`,
+                html: `<div class="unity-image-wrap"><img src="${imageUrl}" alt="${imagePrompt}" style="max-width:100%;border-radius:8px;border:1px solid #333;cursor:pointer;" onclick="window.open('${imageUrl}','_blank')"/></div>`,
                 css: `.unity-image-wrap { margin: 12px 0; text-align: center; }`,
             });
         }
@@ -559,6 +616,14 @@ export class AIRouter {
      * @returns {Promise<string>}
      */
     async _buildSystemPrompt(brainState) {
+        // Add vision context if available
+        if (this.vision?.isActive()) {
+            try {
+                brainState.visionDescription = await this.vision.getDescription();
+            } catch {
+                brainState.visionDescription = '';
+            }
+        }
         return await buildPrompt(brainState);
     }
 
@@ -580,19 +645,71 @@ export class AIRouter {
         // 1. Feed input to brain (injects neural currents, stores memory)
         this.brain.processInput(text);
 
-        // 2. Grab fresh brain state after processing
+        // 2. Check if user wants Unity to LOOK at something — trigger directed vision
+        const lowerText = text.toLowerCase();
+        const lookPatterns = ['look at', 'look at this', 'what am i holding', 'what do you see',
+            'can you see', 'check this out', 'what is this', 'read this', 'what does this say'];
+        const isLookRequest = lookPatterns.some(p => lowerText.includes(p));
+        if (isLookRequest && this.vision?.isActive()) {
+            // Extract what to look for
+            const lookFor = text.replace(/^.*?(look at|check out|what is|read)\s*/i, '').trim() || 'the main subject';
+            console.log(`[AIRouter] Directed vision: looking for "${lookFor}"`);
+            await this.vision.lookAt(lookFor);
+            // Feed visual gaze into the brain as neural input
+            const gaze = this.vision.getGaze();
+            this.brain.processVisualInput(gaze.x, gaze.y, gaze.target);
+        } else if (this.vision?.isActive()) {
+            // Even without a look request, feed current gaze into brain
+            const gaze = this.vision.getGaze();
+            this.brain.processVisualInput(gaze.x, gaze.y, gaze.target);
+        }
+
+        // 3. Grab fresh brain state after processing
         const brainState = this.brain.getState();
 
-        // 3. Determine action: build_ui if keywords match, otherwise respond_text
-        const lowerText = text.toLowerCase();
-        const isBuildRequest = BUILD_KEYWORDS.some(kw => lowerText.includes(kw));
-        const action = isBuildRequest ? 'build_ui' : 'respond_text';
+        // 4. Determine action — use AI intent classification for accuracy
+        const action = await this._classifyIntent(text);
+        console.log(`[AIRouter] Intent: "${action}" for: "${text.slice(0, 60)}"`);
 
         // 4. Execute
         const response = await this.processAction(action, brainState, text);
 
         // 5. Return full context
         return { response, action, brainState };
+    }
+
+    // ── Intent Classification ─────────────────────────────────────────
+
+    /**
+     * Use a fast AI call to classify the user's intent.
+     * Falls back to keyword matching if the AI call fails.
+     */
+    async _classifyIntent(text) {
+        const lowerText = text.toLowerCase();
+
+        // Quick keyword pre-check for obvious cases (saves an API call)
+        const hasBuildKw = BUILD_KEYWORDS.some(kw => lowerText.includes(kw));
+        const hasImageKw = IMAGE_KEYWORDS.some(kw => lowerText.includes(kw));
+
+        // Keywords matched — use them directly (fast, no API call needed)
+        if (hasImageKw) return 'generate_image';
+        if (hasBuildKw) return 'build_ui';
+
+        // No keywords — use AI to classify ambiguous requests
+        try {
+            const result = await this.pollinations.chat([
+                { role: 'system', content: 'Classify this message into ONE category. Reply with ONLY the category word.\n\nIMAGE — user wants any picture, photo, selfie, visual, artwork, drawing, or generated image of anything\nBUILD — user wants a UI component, widget, tool, game, or interactive element created on the page\nCHAT — conversation, questions, commands, or anything else\n\nReply with exactly: IMAGE, BUILD, or CHAT' },
+                { role: 'user', content: text },
+            ], { temperature: 0, model: 'openai' });
+
+            const intent = (result || '').trim().toUpperCase();
+            if (intent.includes('IMAGE')) return 'generate_image';
+            if (intent.includes('BUILD')) return 'build_ui';
+        } catch {
+            // AI classification failed — fall through to chat
+        }
+
+        return 'respond_text';
     }
 
     // ── Helpers ───────────────────────────────────────────────────────

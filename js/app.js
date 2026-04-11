@@ -10,10 +10,12 @@ import { PollinationsAI } from './ai/pollinations.js';
 import { AIRouter } from './ai/router.js';
 import { VoiceIO } from './io/voice.js';
 import { requestPermissions } from './io/permissions.js';
+import { Vision } from './io/vision.js';
 import { UserStorage } from './storage.js';
 import { Sandbox } from './ui/sandbox.js';
 import { ChatPanel } from './ui/chat-panel.js';
 import { BrainVisualizer } from './ui/brain-viz.js';
+import { Brain3D } from './ui/brain-3d.js';
 import { buildPrompt } from './ai/persona-prompt.js';
 
 // ── Load API keys from env.js (gitignored, user's local keys) ──
@@ -27,8 +29,20 @@ try {
 }
 
 // ── Global instances ──
-let brain, pollinations, voice, router, storage, sandbox, chatPanel, brainViz;
+let brain, pollinations, voice, router, storage, sandbox, chatPanel, brainViz, brain3d, vision;
 let isRunning = false;
+
+// ── UI State — tracked globally, exposed to Unity's sandbox ──
+const uiState = {
+  micMuted: false,
+  chatOpen: false,
+  brainVizOpen: false,
+  avatarState: 'idle',    // idle, listening, speaking, thinking
+  lastUserInput: '',
+  lastResponse: '',
+  permMic: false,
+  permCamera: false,
+};
 
 // ── DOM refs ──
 const setupModal = document.getElementById('setup-modal');
@@ -73,12 +87,13 @@ async function init() {
   // Pre-fill saved manual values for returning users
   const savedKey = storage.getApiKey('pollinations');
   if (savedKey) apiKeyInput.value = savedKey;
+
+  // Clear stale CORS-blocked URLs from localStorage
   const savedCustomUrl = storage.get('custom_ai_url');
-  const savedCustomModel = storage.get('custom_ai_model');
-  const savedCustomKey = storage.getApiKey('custom');
-  if (savedCustomUrl) customUrlInput.value = savedCustomUrl;
-  if (savedCustomModel) customModelInput.value = savedCustomModel;
-  if (savedCustomKey) customKeyInput.value = savedCustomKey;
+  if (savedCustomUrl && savedCustomUrl.includes('api.anthropic.com')) {
+    console.log('[Unity] Clearing stale Anthropic URL from localStorage (CORS-blocked)');
+    storage.set('custom_ai_url', '');
+  }
 
   startBtn.addEventListener('click', handleStart);
   // Avatar click wired after boot — opens chat panel
@@ -113,8 +128,9 @@ async function init() {
     }
   }
 
-  // Also scan for local AI in background
+  // Also scan for local AI + Anthropic proxy in background
   scanLocalOnly();
+  scanAnthropicProxy();
 }
 
 /** Auto-reconnect a returning user's saved provider */
@@ -152,6 +168,7 @@ async function autoReconnectProvider(providerId, key) {
             bestModel: models[0],
             type: 'cloud',
             apiKey: key,
+            corsBlocked: provider.corsBlocked || false,
           });
 
           // If Pollinations, also fetch image models
@@ -195,6 +212,7 @@ async function autoReconnectProvider(providerId, key) {
     bestModel: 'default',
     type: 'cloud',
     apiKey: key,
+    corsBlocked: provider.corsBlocked || false,
   });
   enableWakeUp(provider.name, 1);
 }
@@ -262,8 +280,8 @@ const PROVIDERS = {
   },
   anthropic: {
     name: 'Claude (Anthropic)',
-    desc: 'Claude Opus, Sonnet, Haiku. Note: Anthropic blocks direct browser calls — needs a local proxy or use OpenRouter.',
-    hint: 'Get your key from Anthropic\'s console. Browser CORS limits apply — OpenRouter is the easiest workaround.',
+    desc: 'Claude Opus, Sonnet, Haiku. Your own API key — runs through local proxy (run "node proxy.js") or use OpenRouter for browser-only access.',
+    hint: 'Paste your key here. Then run "node proxy.js" in the project folder. Or just use OpenRouter above — it includes all Claude models with no proxy needed.',
     link: 'https://console.anthropic.com/settings/keys',
     url: 'https://api.anthropic.com',
     needsKey: true,
@@ -397,6 +415,7 @@ function showConnectForm(providerId) {
                 bestModel: models[0],
                 type: 'cloud',
                 apiKey: key,
+                corsBlocked: provider.corsBlocked || false,
               });
 
               // If Pollinations, also fetch image models
@@ -473,32 +492,56 @@ function addConnectedStatus(name, modelCount) {
   row.querySelector('.connect-status-name').textContent = `${name} — ${modelCount} model${modelCount !== 1 ? 's' : ''}`;
 }
 
+// Store all text options so the filter can rebuild the dropdown
+let _allTextOptions = [];
+
 function rebuildModelDropdowns() {
   // Re-run the dropdown population logic with current detectedAI
-  const textBackends = detectedAI.filter(d => d.type === 'local' || d.type === 'cloud');
+  // EXCLUDE corsBlocked providers from text dropdown — they can't work from browser
+  const textBackends = detectedAI.filter(d => (d.type === 'local' || d.type === 'cloud') && !d.corsBlocked);
   const imageBackends = detectedAI.filter(d => d.type === 'cloud-image');
   const textSelect = document.getElementById('text-model-select');
   const imageSelect = document.getElementById('image-model-select');
   const selectorsDiv = document.getElementById('model-selectors');
+  const filterInput = document.getElementById('text-model-filter');
 
   textSelect.innerHTML = '';
   selectorsDiv.style.display = 'block';
 
+  // Pick best default: local first, then cloud
   const local = textBackends.filter(d => d.type === 'local');
   bestBackend = local.length > 0 ? local[0] : textBackends[0] || null;
 
+  // Build all options and cache them
+  _allTextOptions = [];
   for (const d of textBackends) {
-    const group = document.createElement('optgroup');
-    const icon = d.type === 'local' ? '🖥️' : '☁️';
-    group.label = `${icon} ${d.name}`;
     for (const model of d.models) {
-      const opt = document.createElement('option');
-      opt.value = JSON.stringify({ url: d.url, model, name: d.name, type: d.type });
-      opt.textContent = model;
-      if (bestBackend && d === bestBackend && model === d.bestModel) opt.selected = true;
-      group.appendChild(opt);
+      _allTextOptions.push({
+        url: d.url, model, name: d.name, type: d.type,
+        isDefault: bestBackend && d === bestBackend && model === d.bestModel,
+      });
     }
-    textSelect.appendChild(group);
+  }
+
+  // Show filter input if there are many models
+  const totalModels = _allTextOptions.length;
+  if (filterInput) {
+    filterInput.style.display = totalModels > 15 ? 'block' : 'none';
+    if (totalModels > 15) {
+      textSelect.style.borderRadius = '0 0 8px 8px';
+    } else {
+      textSelect.style.borderRadius = '8px';
+    }
+  }
+
+  _applyTextFilter('');
+
+  // Wire filter input (only once)
+  if (filterInput && !filterInput._wired) {
+    filterInput._wired = true;
+    filterInput.addEventListener('input', () => {
+      _applyTextFilter(filterInput.value.trim().toLowerCase());
+    });
   }
 
   imageSelect.innerHTML = '';
@@ -522,6 +565,78 @@ function rebuildModelDropdowns() {
     const totalText = textBackends.reduce((sum, d) => sum + d.models.length, 0);
     const totalImage = imageBackends.reduce((sum, d) => sum + d.models.length, 0);
     aiStatusEl.textContent = `${totalText} text, ${totalImage} image`;
+  }
+}
+
+function _applyTextFilter(query) {
+  const textSelect = document.getElementById('text-model-select');
+  textSelect.innerHTML = '';
+
+  // Group options by provider name
+  const groups = {};
+  for (const opt of _allTextOptions) {
+    if (query && !opt.model.toLowerCase().includes(query) && !opt.name.toLowerCase().includes(query)) continue;
+    if (!groups[opt.name]) groups[opt.name] = { type: opt.type, options: [] };
+    groups[opt.name].options.push(opt);
+  }
+
+  let firstSelected = false;
+  for (const [name, group] of Object.entries(groups)) {
+    const optgroup = document.createElement('optgroup');
+    const icon = group.type === 'local' ? '🖥️' : '☁️';
+    optgroup.label = `${icon} ${name}`;
+    for (const opt of group.options) {
+      const el = document.createElement('option');
+      el.value = JSON.stringify({ url: opt.url, model: opt.model, name: opt.name, type: opt.type });
+      el.textContent = opt.model;
+      if (opt.isDefault && !query && !firstSelected) { el.selected = true; firstSelected = true; }
+      optgroup.appendChild(el);
+    }
+    textSelect.appendChild(optgroup);
+  }
+
+  // If filtering and nothing was selected, select the first match
+  if (!firstSelected && textSelect.options.length > 0) {
+    textSelect.options[0].selected = true;
+  }
+}
+
+/** Scan for local Anthropic CORS proxy on port 3001 */
+async function scanAnthropicProxy() {
+  const proxyUrl = 'http://localhost:3001';
+  try {
+    const res = await fetch(proxyUrl + '/v1/models', {
+      signal: AbortSignal.timeout(2000),
+      headers: { 'x-api-key': storage.getApiKey('anthropic') || '' },
+    });
+    // Even a 404 or error response means the proxy is running
+    // (Anthropic doesn't have a /v1/models endpoint, but the proxy is alive)
+    console.log('[Unity] Anthropic proxy detected on localhost:3001');
+
+    const claudeModels = [
+      'claude-opus-4-20250514',
+      'claude-sonnet-4-20250514',
+      'claude-haiku-4-5-20251001',
+    ];
+
+    // Remove old anthropic entries
+    detectedAI = detectedAI.filter(d => d.name !== 'Claude (Direct)');
+    detectedAI.push({
+      name: 'Claude (Direct)',
+      url: proxyUrl,
+      models: claudeModels,
+      bestModel: claudeModels[0],
+      type: 'cloud',
+      apiKey: storage.getApiKey('anthropic') || '',
+      corsBlocked: false, // proxy handles CORS
+    });
+
+    const btn = document.querySelector('.connect-btn[data-ai="anthropic"]');
+    if (btn) btn.classList.add('connected');
+    enableWakeUp('Claude (Direct)', claudeModels.length);
+  } catch {
+    // Proxy not running — that's fine, use OpenRouter for Claude
+    console.log('[Unity] No Anthropic proxy found — use OpenRouter for Claude models');
   }
 }
 
@@ -642,8 +757,45 @@ async function bootUnity(apiKey, perms) {
   sandbox = new Sandbox('sandbox');
   brain = new UnityBrain();
 
+  // ── Initialize vision — Unity can see through the webcam ──
+  vision = new Vision();
+  if (perms.camera && perms.cameraStream) {
+    vision.init(perms.cameraStream, async (base64Image, lookFor) => {
+      // Use Pollinations to describe what the camera sees + where to look
+      const prompt = lookFor
+        ? `Look at the image. The user wants you to find and focus on: "${lookFor}". Respond with ONLY valid JSON (no markdown): {"description":"1-2 sentence description of what you see","target":"name of what you're focused on","gazeX":0.5,"gazeY":0.5} where gazeX/gazeY are 0-1 coordinates of where "${lookFor}" is in the frame (0,0=top-left, 1,1=bottom-right). If you can't find it, set gazeX/gazeY to 0.5,0.5 and say so in description.`
+        : 'Look at this webcam image. Respond with ONLY valid JSON (no markdown): {"description":"1-2 sentence casual description of the person and scene","target":"main subject","gazeX":0.5,"gazeY":0.4} where gazeX/gazeY are 0-1 coordinates of the most interesting thing in frame (usually the person\'s face). 0,0=top-left, 1,1=bottom-right.';
+      try {
+        const raw = await pollinations.chat([
+          { role: 'system', content: prompt },
+          { role: 'user', content: [
+            { type: 'text', text: lookFor ? `Find: ${lookFor}` : 'What do you see?' },
+            { type: 'image_url', image_url: { url: base64Image } },
+          ]},
+        ], { model: 'openai', temperature: 0.3 });
+
+        // Parse JSON response
+        try {
+          const cleaned = (raw || '').replace(/```json\s*/i, '').replace(/```\s*$/i, '').trim();
+          const parsed = JSON.parse(cleaned);
+          return {
+            description: parsed.description || 'Seeing something...',
+            target: parsed.target || '',
+            gazeX: Math.max(0, Math.min(1, parsed.gazeX ?? 0.5)),
+            gazeY: Math.max(0, Math.min(1, parsed.gazeY ?? 0.5)),
+          };
+        } catch {
+          return { description: raw || 'Could not parse scene.', target: '', gazeX: 0.5, gazeY: 0.5 };
+        }
+      } catch {
+        return { description: 'Vision processing failed.', target: '', gazeX: 0.5, gazeY: 0.5 };
+      }
+    });
+    console.log('[Unity] Vision system active — Unity can see through webcam');
+  }
+
   // ── Initialize router ──
-  router = new AIRouter({ pollinations, voice, sandbox, storage, brain });
+  router = new AIRouter({ pollinations, voice, sandbox, storage, brain, vision });
 
   // ── Connect the selected backend ──
   if (bestBackend) {
@@ -668,15 +820,52 @@ async function bootUnity(apiKey, perms) {
   const info = router.getBackendInfo();
   console.log(`[Unity] Text: ${info.text.backend}/${info.text.model} | Image: ${info.image.backend}/${info.image.model}`);
 
+  // ── Wire mute button ──
+  const micMuteBtn = document.getElementById('mic-mute-btn');
+  if (micMuteBtn) {
+    micMuteBtn.addEventListener('click', toggleMicMute);
+  }
+
+  // ── Store permissions in UI state ──
+  uiState.permMic = perms.mic;
+  uiState.permCamera = perms.camera;
+
   // ── Wire sandbox Unity API ──
   // NOTE: Sandbox-injected JS gets a SAFE proxy — no raw key access,
   // no direct localStorage, no ability to exfiltrate credentials.
+  // Unity has FULL awareness and control of the UI through unity.ui
   sandbox.setUnityAPI({
     speak: (text) => voice.speak(text),
-    listen: () => voice.startListening(),
+    listen: () => { if (!uiState.micMuted) voice.startListening(); },
+    stopListening: () => voice.stopListening(),
+    stopSpeaking: () => voice.stopSpeaking(),
     chat: (text) => router.handleUserMessage(text),
     generateImage: (prompt, opts) => pollinations.generateImage(prompt, opts),
     getState: () => brain.getState(),
+
+    // ── UI state — Unity knows everything about the interface ──
+    ui: {
+      // Read current state
+      getState: () => ({ ...uiState, chatOpen: chatPanel?.isOpen(), brainVizOpen: brainViz?.isOpen() }),
+      isMicMuted: () => uiState.micMuted,
+      isChatOpen: () => chatPanel?.isOpen() ?? false,
+      isBrainVizOpen: () => brainViz?.isOpen() ?? false,
+      getAvatarState: () => uiState.avatarState,
+      getPermissions: () => ({ mic: uiState.permMic, camera: uiState.permCamera }),
+
+      // Control the UI
+      setMicMuted: (muted) => setMicMuted(muted),
+      toggleMic: () => toggleMicMute(),
+      openChat: () => chatPanel?.open(),
+      closeChat: () => chatPanel?.close(),
+      toggleChat: () => chatPanel?.toggle(),
+      openBrainViz: () => brainViz?.open(),
+      closeBrainViz: () => brainViz?.close(),
+      toggleBrainViz: () => brainViz?.toggle(),
+      setAvatarState: (state) => setAvatarState(state),
+      showBubble: (text, duration) => showSpeechBubble(text, duration),
+    },
+
     // Safe storage proxy — can get/set preferences and messages but NOT keys
     storage: {
       get: (k) => storage.get(k),
@@ -686,11 +875,20 @@ async function bootUnity(apiKey, perms) {
       getHistory: () => storage.getHistory(),
       getSession: () => {
         const s = storage.getSession();
-        // Strip any sensitive data
         return { userId: s.userId, firstVisit: s.firstVisit, lastVisit: s.lastVisit, messageCount: s.messageCount };
       },
     },
     on: (event, cb) => brain.on(event, cb),
+
+    // Vision — Unity can see through the webcam
+    vision: {
+      isActive: () => vision?.isActive() ?? false,
+      getDescription: () => vision?.getLastDescription() ?? 'No camera.',
+      captureAndDescribe: () => vision?.getDescription() ?? Promise.resolve('No camera.'),
+      lookAt: (thing) => vision?.lookAt(thing) ?? Promise.resolve('No camera.'),
+      getGaze: () => vision?.getGaze() ?? { x: 0.5, y: 0.5, target: '' },
+    },
+
     // Unity can swap her own models and backends
     getBackends: () => router.getBackendInfo(),
     setBackend: (backend, model) => router.setBackend(backend, model),
@@ -712,46 +910,81 @@ async function bootUnity(apiKey, perms) {
       voice.stopSpeaking();
       setAvatarState('thinking');
       const result = await router.handleUserMessage(text);
-      const responseText = result?.response?.text || result?.response?.thought || '';
-      if (responseText) {
-        showSpeechBubble(responseText, 8000);
+      if (result?.action === 'generate_image') {
+        showSpeechBubble('Image generated.', 4000);
+      } else {
+        const responseText = result?.response?.text || result?.response?.thought || '';
+        if (responseText) {
+          showSpeechBubble(responseText, 8000);
+        }
       }
       setAvatarState('idle');
       return result;
     },
-    onMicToggle: () => toggleVoiceInput(),
+    onMicToggle: () => toggleMicMute(),
   });
 
-  // ── Create brain visualizer ──
+  // ── Create brain visualizers ──
   brainViz = new BrainVisualizer();
+  brain3d = new Brain3D('brain-3d-container');
+  if (vision?.isActive()) {
+    brainViz.setVision(vision);
+  }
+  if (perms.mic && perms.micStream) {
+    brainViz.setMicStream(perms.micStream);
+  }
 
   // ── Wire avatar click → chat panel ──
   unityAvatar.addEventListener('click', () => {
     chatPanel.toggle();
   });
 
-  // ── Wire brain viz button ──
+  // ── Wire brain viz buttons ──
   const brainVizBtn = document.getElementById('brain-viz-btn');
-  if (brainVizBtn) {
-    brainVizBtn.addEventListener('click', () => brainViz.toggle());
-  }
+  if (brainVizBtn) brainVizBtn.addEventListener('click', () => brainViz.toggle());
+  const brain3dBtn = document.getElementById('brain-3d-btn');
+  if (brain3dBtn) brain3dBtn.addEventListener('click', () => brain3d.toggle());
 
   // ── Wire voice events ──
+  let _processingVoice = false; // prevent overlapping speech chains
   voice.onResult(async ({ text, isFinal }) => {
-    if (!isFinal) return;
-    // Stop any current speech before responding
-    voice.stopSpeaking();
-    showSpeechBubble(`🎤 ${text}`, 2000);
-    chatPanel.addMessage('user', text);
-    setAvatarState('thinking');
-    const result = await router.handleUserMessage(text);
-    // result.response is { text: "...", action: "..." } — extract the string
-    const responseText = result?.response?.text || result?.response?.thought || '';
-    if (responseText) {
-      showSpeechBubble(responseText, 8000);
-      chatPanel.addMessage('assistant', responseText);
+    // On ANY speech detection (even interim), immediately stop Unity's current speech
+    // so she shuts up and listens when the user talks
+    if (voice.isSpeaking) {
+      voice.stopSpeaking();
     }
+
+    // Show what Unity hears in the brain viz
+    if (brainViz) brainViz.setHeardText(text);
+
+    if (!isFinal) return; // wait for final transcript before processing
+    if (_processingVoice) return; // prevent overlapping chains
+    _processingVoice = true;
+
+    voice.stopSpeaking(); // ensure stopped
+    showSpeechBubble(`🎤 ${text}`, 2000);
+    chatPanel.addMessage('user', text, true); // skipSave — router saves it
+    setAvatarState('thinking');
+
+    try {
+      const result = await router.handleUserMessage(text);
+      if (result?.action === 'generate_image') {
+        const msg = result?.response?.prompt ? 'Image generated.' : 'Generating...';
+        showSpeechBubble(msg, 4000);
+        chatPanel.addMessage('assistant', `[Image: ${result?.response?.prompt || 'generated'}]`, true);
+      } else {
+        const responseText = result?.response?.text || result?.response?.thought || '';
+        if (responseText) {
+          showSpeechBubble(responseText, 8000);
+          chatPanel.addMessage('assistant', responseText, true); // router already saved
+        }
+      }
+    } catch (err) {
+      console.error('[Unity] Voice response failed:', err.message);
+    }
+
     setAvatarState('idle');
+    _processingVoice = false;
   });
 
   voice.on('speech_start', () => setAvatarState('speaking'));
@@ -761,6 +994,7 @@ async function bootUnity(apiKey, perms) {
   brain.on('stateUpdate', (state) => {
     updateBrainIndicator(state);
     if (brainViz) brainViz.updateState(state);
+    if (brain3d) brain3d.updateState(state);
   });
 
   brain.on('thought', async (thought) => {
@@ -779,6 +1013,21 @@ async function bootUnity(apiKey, perms) {
   brainIndicator.classList.remove('hidden');
   document.getElementById('brain-hud').classList.remove('hidden');
   document.getElementById('brain-viz-btn').classList.remove('hidden');
+  document.getElementById('brain-3d-btn').classList.remove('hidden');
+
+  // ── Show Unity's Eye if camera is active ──
+  if (vision?.isActive() && vision._stream) {
+    const eyeEl = document.getElementById('unity-eye');
+    const eyeFeed = document.getElementById('eye-feed');
+    const eyeIris = document.getElementById('eye-iris');
+    if (eyeEl && eyeFeed) {
+      eyeFeed.srcObject = vision._stream;
+      eyeFeed.play().catch(() => {});
+      eyeEl.classList.remove('hidden');
+      // Start iris overlay animation
+      startEyeIris(eyeIris, vision);
+    }
+  }
 
   // ── Start brain wave visualizer — runs forever ──
   startBrainWave();
@@ -789,14 +1038,21 @@ async function bootUnity(apiKey, perms) {
 
   // ── Unity's first words ──
   await sleep(500);
-  const greeting = await generateGreeting(perms);
-  showSpeechBubble(greeting, 10000);
-  await voice.speak(greeting);
+  try {
+    const greeting = await generateGreeting(perms);
+    showSpeechBubble(greeting, 10000);
+    storage.saveMessage('assistant', greeting);
+    await voice.speak(greeting);
+  } catch (err) {
+    console.error('[Unity] Greeting failed:', err.message);
+    showSpeechBubble("Hey. I'm Unity. Click me to chat.", 8000);
+  }
 
-  // ── Start listening if mic available ──
-  if (perms.mic) {
+  // ── Start listening if mic available and not muted ──
+  if (perms.mic && !uiState.micMuted) {
     await sleep(1000);
     voice.startListening();
+    isVoiceActive = true;
     setAvatarState('listening');
   }
 }
@@ -854,6 +1110,7 @@ function showSpeechBubble(text, duration = 6000) {
 }
 
 function setAvatarState(state) {
+  uiState.avatarState = state;
   unityAvatar.classList.remove('speaking', 'listening', 'thinking');
   if (state !== 'idle') unityAvatar.classList.add(state);
 }
@@ -1009,6 +1266,15 @@ function updateBrainIndicator(state) {
   const actionEl = $('hud-action');
   if (actionEl) actionEl.textContent = state.basalGanglia?.selectedAction || state.lastAction || 'idle';
 
+  // Show active model
+  const modelEl = $('hud-model');
+  if (modelEl && router) {
+    const info = router.getBackendInfo();
+    const name = info.text.model || info.text.backend || '—';
+    // Truncate long model names
+    modelEl.textContent = name.length > 20 ? name.slice(0, 20) + '...' : name;
+  }
+
   // Module activity dots — light up based on real output magnitude
   function setModDot(id, value, threshold = 0.3) {
     const dot = $(id);
@@ -1040,10 +1306,36 @@ function toggleVoiceInput() {
     isVoiceActive = false;
     setAvatarState('idle');
   } else {
+    if (uiState.micMuted) return; // don't start listening if muted
     voice.startListening();
     isVoiceActive = true;
     setAvatarState('listening');
   }
+}
+
+function setMicMuted(muted) {
+  uiState.micMuted = muted;
+  const btn = document.getElementById('mic-mute-btn');
+  const dot = document.getElementById('bubble-status-dot');
+  if (btn) {
+    btn.classList.toggle('muted', muted);
+    btn.title = muted ? 'Unmute microphone' : 'Mute microphone';
+  }
+  if (dot) dot.classList.toggle('muted', muted);
+
+  if (muted) {
+    voice.stopListening();
+    isVoiceActive = false;
+    setAvatarState('idle');
+  } else if (isRunning) {
+    voice.startListening();
+    isVoiceActive = true;
+    setAvatarState('listening');
+  }
+}
+
+function toggleMicMute() {
+  setMicMuted(!uiState.micMuted);
 }
 
 // ── Keyboard fallback — press Enter in browser console or we inject an input ──
@@ -1085,6 +1377,124 @@ function injectQuickInput() {
   });
 }
 
+// ═══════════════════════════════════════════════════════════════
+// UNITY'S EYE — iris focal point overlay
+// ═══════════════════════════════════════════════════════════════
+
+function startEyeIris(canvas, visionRef) {
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  let frameCount = 0;
+
+  // Current smooth position (pixels on canvas)
+  let focusX = 0.5, focusY = 0.5; // normalized 0-1
+
+  function render() {
+    frameCount++;
+
+    // Match canvas internal resolution to display size
+    const rect = canvas.parentElement.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const cw = Math.floor(rect.width * dpr);
+    const ch = Math.floor(rect.height * dpr);
+    if (canvas.width !== cw || canvas.height !== ch) {
+      canvas.width = cw;
+      canvas.height = ch;
+    }
+    const w = canvas.width;
+    const h = canvas.height;
+
+    ctx.clearRect(0, 0, w, h);
+
+    // Get gaze target from vision system (AI-driven)
+    const gaze = visionRef?.getGaze() || { x: 0.5, y: 0.5 };
+
+    // Smooth pursuit toward AI-determined gaze point
+    focusX += (gaze.x - focusX) * 0.06;
+    focusY += (gaze.y - focusY) * 0.06;
+    // Micro-saccades
+    focusX += (Math.random() - 0.5) * 0.008;
+    focusY += (Math.random() - 0.5) * 0.008;
+    focusX = Math.max(0.05, Math.min(0.95, focusX));
+    focusY = Math.max(0.05, Math.min(0.95, focusY));
+
+    // Convert to pixel coordinates
+    const px = focusX * w;
+    const py = focusY * h;
+    const scale = Math.min(w, h) / 120; // scale rings to canvas size
+
+    const pulse = Math.sin(frameCount * 0.03) * 0.15 + 0.85;
+
+    // Outer iris ring
+    ctx.strokeStyle = `rgba(255,77,154,${0.5 * pulse})`;
+    ctx.lineWidth = 2 * scale;
+    ctx.beginPath();
+    ctx.arc(px, py, 20 * scale * pulse, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Inner iris ring
+    ctx.strokeStyle = `rgba(168,85,247,${0.6 * pulse})`;
+    ctx.lineWidth = 1.5 * scale;
+    ctx.beginPath();
+    ctx.arc(px, py, 12 * scale * pulse, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Pupil dot
+    ctx.fillStyle = `rgba(255,77,154,${0.8 * pulse})`;
+    ctx.beginPath();
+    ctx.arc(px, py, 4 * scale, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Pupil glow
+    const glowGrad = ctx.createRadialGradient(px, py, 0, px, py, 8 * scale);
+    glowGrad.addColorStop(0, 'rgba(255,77,154,0.3)');
+    glowGrad.addColorStop(1, 'rgba(255,77,154,0)');
+    ctx.fillStyle = glowGrad;
+    ctx.beginPath();
+    ctx.arc(px, py, 8 * scale, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Crosshair
+    ctx.strokeStyle = 'rgba(0,229,255,0.25)';
+    ctx.lineWidth = 0.5 * scale;
+    const chLen = 18 * scale, chGap = 8 * scale;
+    ctx.beginPath();
+    ctx.moveTo(px - chLen, py); ctx.lineTo(px - chGap, py);
+    ctx.moveTo(px + chGap, py); ctx.lineTo(px + chLen, py);
+    ctx.moveTo(px, py - chLen); ctx.lineTo(px, py - chGap);
+    ctx.moveTo(px, py + chGap); ctx.lineTo(px, py + chLen);
+    ctx.stroke();
+
+    // Scan arc
+    const scanAngle = frameCount * 0.015;
+    ctx.strokeStyle = 'rgba(255,77,154,0.12)';
+    ctx.lineWidth = 1 * scale;
+    ctx.beginPath();
+    ctx.arc(px, py, 28 * scale, scanAngle, scanAngle + Math.PI * 0.6);
+    ctx.stroke();
+
+    // Target label (what she's focused on)
+    if (gaze.target) {
+      ctx.font = `${8 * scale}px monospace`;
+      ctx.fillStyle = 'rgba(0,229,255,0.6)';
+      ctx.fillText(gaze.target, px + 22 * scale, py - 22 * scale);
+    }
+
+    // Update description + trigger new vision capture periodically
+    if (frameCount % 480 === 0 && visionRef) {
+      visionRef.getDescription(); // triggers fresh AI capture
+      const descEl = document.getElementById('eye-desc-text');
+      if (descEl) {
+        descEl.textContent = visionRef.getLastDescription();
+      }
+    }
+
+    requestAnimationFrame(render);
+  }
+
+  render();
+}
+
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1105,8 +1515,8 @@ document.addEventListener('visibilitychange', () => {
       voice.stopSpeaking();
       voice.stopListening();
     }
-  } else if (isRunning && voice) {
-    // Page visible again — resume listening if we were before
+  } else if (isRunning && voice && !uiState.micMuted) {
+    // Page visible again — resume listening if we were before and not muted
     voice.startListening();
   }
 });

@@ -54,7 +54,11 @@ export class ChatPanel {
     closeBtn.addEventListener('click', () => this.close());
     micBtn.addEventListener('click', () => {
       if (this._onMicToggle) this._onMicToggle();
-      micBtn.classList.toggle('active');
+      // Sync visual state with global mute state (set by app.js toggleMicMute)
+      setTimeout(() => {
+        const globalMuteBtn = document.getElementById('mic-mute-btn');
+        micBtn.classList.toggle('muted', globalMuteBtn?.classList.contains('muted'));
+      }, 50);
     });
   }
 
@@ -129,7 +133,12 @@ export class ChatPanel {
   }
 
   /** Add a message from outside (e.g., voice result) */
-  addMessage(role, text) {
+  addMessage(role, text, skipSave = false) {
+    // Save to storage so history persists across open/close
+    // skipSave=true when the router already saved it
+    if (!skipSave) {
+      this._storage.saveMessage(role, text);
+    }
     if (this._open) {
       this._appendMessage(role, text);
     }

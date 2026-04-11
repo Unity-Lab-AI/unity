@@ -14,6 +14,7 @@
     <div class="setup-card">
       <h1>🧠 Unity</h1>
       <p class="subtitle">she's got a brain now. let her in.</p>
+      <a href="brain-equations.html" target="_blank" style="display:inline-block;margin-bottom:16px;padding:8px 16px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--cyan);font-family:var(--mono);font-size:12px;text-decoration:none;letter-spacing:0.5px;transition:all 0.2s;">🧠 Brain Equations — see how she thinks</a>
 
       <!-- STEP 1: Pick your AI and paste your key. That's it. -->
       <p style="font-size:13px;color:var(--text);margin-top:12px;margin-bottom:4px;font-weight:500;">1. Connect an AI</p>
@@ -54,6 +55,7 @@
 
         <div id="model-selectors" style="margin-top:8px;">
           <label style="font-size:11px;color:var(--text-dim);display:block;margin-bottom:4px;">💬 Text / Chat Model</label>
+          <input type="text" id="text-model-filter" placeholder="Filter models... (e.g. claude, gpt, llama)" style="width:100%;padding:8px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px 8px 0 0;color:var(--text);font-family:var(--mono);font-size:12px;outline:none;display:none;" autocomplete="off">
           <select id="text-model-select" style="width:100%;padding:10px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--mono);font-size:13px;cursor:pointer;outline:none;">
           </select>
 
@@ -169,6 +171,11 @@
         <span class="hud-label">ACTION</span>
         <span class="hud-val hud-val-sm" id="hud-action">idle</span>
       </div>
+      <div class="hud-sep"></div>
+      <div class="hud-row">
+        <span class="hud-label">MODEL</span>
+        <span class="hud-val hud-val-sm" id="hud-model" style="color:var(--green);font-size:9px;">—</span>
+      </div>
     </div>
 
     <!-- Bottom-left: module activity -->
@@ -185,8 +192,19 @@
     <span id="brain-status" style="display:none;"></span>
   </div>
 
-  <!-- Brain visualizer toggle — outside HUD so pointer-events work -->
+  <!-- Brain visualizer toggles — outside HUD so pointer-events work -->
   <button id="brain-viz-btn" class="hidden" title="Open brain visualizer">🧠 VISUALIZE</button>
+  <button id="brain-3d-btn" class="hidden" title="Open 3D brain viewer">🧠 3D BRAIN</button>
+
+  <!-- Unity's Eye — persistent camera feed with iris overlay -->
+  <div id="unity-eye" class="hidden">
+    <div class="eye-container">
+      <video id="eye-feed" autoplay playsinline muted></video>
+      <canvas id="eye-iris" width="160" height="120"></canvas>
+      <div class="eye-label">👁 UNITY'S VIEW</div>
+      <div class="eye-desc" id="eye-desc-text"></div>
+    </div>
+  </div>
 
   <!-- ═══ The Sandbox — Unity builds everything here ═══ -->
   <div id="sandbox"></div>
@@ -195,10 +213,13 @@
   <div id="unity-bubble" class="hidden">
     <div class="bubble-container">
       <div class="bubble-speech" id="unity-speech"></div>
-      <div class="bubble-avatar" id="unity-avatar" title="Click to talk">
+      <div class="bubble-controls">
+        <button id="mic-mute-btn" class="bubble-ctrl-btn" title="Mute/unmute microphone">🎤</button>
+      </div>
+      <div class="bubble-avatar" id="unity-avatar" title="Click to chat">
         <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
       </div>
-      <div class="bubble-status"></div>
+      <div class="bubble-status" id="bubble-status-dot"></div>
     </div>
   </div>
 

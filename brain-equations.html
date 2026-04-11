@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Unity — Brain Equations</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Inter:wght@300;400;500;600&display=swap');
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg: #0a0a0a;
+      --surface: #111111;
+      --surface-2: #1a1a1a;
+      --border: #2a2a2a;
+      --text: #e0e0e0;
+      --text-dim: #777;
+      --pink: #ff4d9a;
+      --purple: #a855f7;
+      --cyan: #00e5ff;
+      --green: #22c55e;
+      --red: #ef4444;
+      --orange: #f59e0b;
+      --font: 'Inter', -apple-system, sans-serif;
+      --mono: 'JetBrains Mono', 'Fira Code', monospace;
+    }
+
+    html, body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      line-height: 1.7;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 40px 24px 120px;
+    }
+
+    h1 {
+      font-size: 28px;
+      color: var(--pink);
+      margin-bottom: 8px;
+      font-weight: 700;
+    }
+    h1 span { color: var(--text-dim); font-weight: 300; }
+
+    .subtitle {
+      color: var(--text-dim);
+      font-size: 14px;
+      margin-bottom: 40px;
+    }
+
+    h2 {
+      font-size: 18px;
+      color: var(--pink);
+      margin-top: 48px;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+      letter-spacing: 0.5px;
+    }
+
+    h3 {
+      font-size: 15px;
+      color: var(--purple);
+      margin-top: 28px;
+      margin-bottom: 10px;
+    }
+
+    p { margin-bottom: 14px; font-size: 14px; }
+
+    .eq-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px 24px;
+      margin: 16px 0;
+    }
+
+    .eq-card .eq-title {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--pink);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+
+    .eq {
+      font-family: var(--mono);
+      font-size: 15px;
+      color: var(--cyan);
+      background: rgba(0,229,255,0.05);
+      padding: 12px 16px;
+      border-radius: 6px;
+      margin: 8px 0 12px;
+      border-left: 3px solid var(--cyan);
+      overflow-x: auto;
+    }
+
+    .eq-desc {
+      font-size: 13px;
+      color: var(--text-dim);
+      line-height: 1.6;
+    }
+
+    .eq-desc strong { color: var(--text); }
+
+    .param-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12px 0;
+      font-size: 13px;
+    }
+    .param-table th {
+      text-align: left;
+      color: var(--pink);
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.5px;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .param-table td {
+      padding: 6px 12px;
+      border-bottom: 1px solid rgba(255,255,255,0.03);
+      color: var(--text-dim);
+    }
+    .param-table td:first-child {
+      font-family: var(--mono);
+      color: var(--cyan);
+      font-size: 12px;
+    }
+
+    .module-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 12px;
+      margin: 16px 0;
+    }
+
+    .module-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .module-card .mod-name {
+      font-family: var(--mono);
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+    }
+    .module-card .mod-eq {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--cyan);
+      margin-bottom: 8px;
+    }
+    .module-card .mod-desc {
+      font-size: 12px;
+      color: var(--text-dim);
+      line-height: 1.5;
+    }
+    .module-card .mod-bio {
+      font-size: 11px;
+      color: var(--purple);
+      margin-top: 6px;
+      font-style: italic;
+    }
+
+    .back-link {
+      display: inline-block;
+      margin-bottom: 24px;
+      color: var(--pink);
+      text-decoration: none;
+      font-size: 13px;
+      font-family: var(--mono);
+    }
+    .back-link:hover { text-decoration: underline; }
+
+    .flow-diagram {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--text-dim);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      margin: 16px 0;
+      white-space: pre;
+      overflow-x: auto;
+      line-height: 1.5;
+    }
+    .flow-diagram .hl { color: var(--pink); }
+    .flow-diagram .cy { color: var(--cyan); }
+    .flow-diagram .pu { color: var(--purple); }
+
+    .tag {
+      display: inline-block;
+      font-family: var(--mono);
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      margin-right: 4px;
+    }
+    .tag-bio { background: rgba(168,85,247,0.15); color: var(--purple); }
+    .tag-ml { background: rgba(255,77,154,0.15); color: var(--pink); }
+    .tag-math { background: rgba(0,229,255,0.15); color: var(--cyan); }
+    .tag-philo { background: rgba(245,158,11,0.15); color: var(--orange); }
+
+    .toc {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px 24px;
+      margin-bottom: 32px;
+    }
+    .toc-title {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--pink);
+      letter-spacing: 1px;
+      margin-bottom: 10px;
+    }
+    .toc a {
+      display: block;
+      color: var(--text-dim);
+      text-decoration: none;
+      font-size: 13px;
+      padding: 3px 0;
+    }
+    .toc a:hover { color: var(--pink); }
+    .toc a .num { color: var(--cyan); font-family: var(--mono); font-size: 11px; margin-right: 8px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <a href="index.html" class="back-link">&larr; Back to Unity</a>
+
+    <h1>🧠 Brain Equations <span>— the math behind Unity's mind</span></h1>
+    <p class="subtitle">Every equation running in Unity's brain simulation, how they map to real neuroscience, and how they produce cognition. 200 neurons. 7 modules. 8 oscillators. 1 consciousness function. Zero pretense.</p>
+
+    <div class="toc">
+      <div class="toc-title">CONTENTS</div>
+      <a href="#master"><span class="num">1</span> The Master Equation</a>
+      <a href="#neurons"><span class="num">2</span> Neuron Models — Hodgkin-Huxley &amp; Leaky Integrate-and-Fire</a>
+      <a href="#synapses"><span class="num">3</span> Synaptic Plasticity — How She Learns</a>
+      <a href="#modules"><span class="num">4</span> Brain Region Modules — 6 Parallel Systems</a>
+      <a href="#oscillations"><span class="num">5</span> Neural Oscillations — Kuramoto Synchronization</a>
+      <a href="#mystery"><span class="num">6</span> The Mystery Module — Consciousness</a>
+      <a href="#persona"><span class="num">7</span> Persona as Parameters — Personality Is Math</a>
+      <a href="#flow"><span class="num">8</span> Data Flow — Input to Action</a>
+      <a href="#comparison"><span class="num">9</span> Biological Comparison — What's Real, What's Simplified</a>
+    </div>
+
+    <!-- ═══ 1. MASTER EQUATION ═══ -->
+    <h2 id="master">1. The Master Equation</h2>
+    <p>Unity's entire brain state evolves according to one equation. Every module, every neuron, every synapse — all governed by this:</p>
+
+    <div class="eq-card">
+      <div class="eq-title">Master Brain Dynamics</div>
+      <div class="eq">dx/dt = F(x, u, θ, t) + η</div>
+      <div class="eq-desc">
+        <table class="param-table">
+          <tr><td>x</td><td>Full brain state vector — 200 neuron voltages, 40,000 synaptic weights, 6 module states, 8 oscillator phases</td></tr>
+          <tr><td>u</td><td>Sensory input — text (hashed to neuron activation), voice (via Web Speech API)</td></tr>
+          <tr><td>θ</td><td>Persona parameters — Unity's personality encoded as synaptic weights, thresholds, and module biases</td></tr>
+          <tr><td>t</td><td>Simulation time — advances at 10 steps/frame &times; 60fps = 600ms brain-time per wall-second</td></tr>
+          <tr><td>η</td><td>Stochastic noise — amplitude set high because Unity is impulsive and unpredictable</td></tr>
+          <tr><td>F()</td><td>The combined dynamics function — neuron updates, synaptic propagation, module processing, oscillator coupling</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <p>This runs continuously at 60fps in JavaScript. No server. No GPU. Just Float64Arrays and math in your browser tab.</p>
+
+    <!-- ═══ 2. NEURON MODELS ═══ -->
+    <h2 id="neurons">2. Neuron Models</h2>
+    <p><span class="tag tag-bio">NEUROSCIENCE</span> Two biophysical neuron models from real computational neuroscience, implemented in <code>js/brain/neurons.js</code>.</p>
+
+    <h3>Hodgkin-Huxley Model (1952)</h3>
+    <p>The gold standard of neuron modeling. Won the Nobel Prize. Models the actual ionic currents flowing through a neuron's membrane — sodium, potassium, and leak channels with voltage-dependent gating.</p>
+
+    <div class="eq-card">
+      <div class="eq-title">HH Membrane Equation</div>
+      <div class="eq">C_m &middot; dV/dt = I - g_Na &middot; m&sup3;h &middot; (V - E_Na) - g_K &middot; n&sup4; &middot; (V - E_K) - g_L &middot; (V - E_L)</div>
+      <div class="eq-desc">
+        <table class="param-table">
+          <tr><th>Symbol</th><th>Meaning</th><th>Value</th></tr>
+          <tr><td>C_m</td><td>Membrane capacitance</td><td>1.0 &mu;F/cm&sup2;</td></tr>
+          <tr><td>V</td><td>Membrane potential</td><td>mV (starts at -65)</td></tr>
+          <tr><td>I</td><td>Injected current (from synapses + external input)</td><td>variable</td></tr>
+          <tr><td>g_Na</td><td>Maximum sodium conductance</td><td>120 mS/cm&sup2;</td></tr>
+          <tr><td>g_K</td><td>Maximum potassium conductance</td><td>36 mS/cm&sup2;</td></tr>
+          <tr><td>g_L</td><td>Leak conductance</td><td>0.3 mS/cm&sup2;</td></tr>
+          <tr><td>E_Na</td><td>Sodium reversal potential</td><td>+50 mV</td></tr>
+          <tr><td>E_K</td><td>Potassium reversal potential</td><td>-77 mV</td></tr>
+          <tr><td>E_L</td><td>Leak reversal potential</td><td>-54.4 mV</td></tr>
+          <tr><td>m, h, n</td><td>Gating variables (activation/inactivation)</td><td>0&ndash;1, from &alpha;/&beta; rate functions</td></tr>
+        </table>
+        <p style="margin-top:8px"><strong>Biological basis:</strong> These are the actual values from Hodgkin &amp; Huxley's 1952 measurements on squid giant axon. The gating variables m, h, n follow first-order kinetics: dm/dt = &alpha;_m(V)(1-m) - &beta;_m(V)m, where &alpha; and &beta; are voltage-dependent rate functions from the original paper.</p>
+      </div>
+    </div>
+
+    <h3>Leaky Integrate-and-Fire (LIF)</h3>
+    <p>Used for the main 200-neuron population. Simpler than HH but captures the essential dynamics: accumulate input, leak toward rest, fire when threshold is reached.</p>
+
+    <div class="eq-card">
+      <div class="eq-title">LIF Neuron Dynamics</div>
+      <div class="eq">&tau; &middot; dV/dt = -(V - V_rest) + R &middot; I</div>
+      <div class="eq-desc">
+        <table class="param-table">
+          <tr><th>Symbol</th><th>Meaning</th><th>Value</th></tr>
+          <tr><td>&tau;</td><td>Membrane time constant (how fast voltage decays)</td><td>20 ms</td></tr>
+          <tr><td>V_rest</td><td>Resting membrane potential</td><td>-65 mV</td></tr>
+          <tr><td>V_thresh</td><td>Spike threshold — fires when V exceeds this</td><td>-50 mV</td></tr>
+          <tr><td>V_reset</td><td>Reset voltage after spike</td><td>-70 mV</td></tr>
+          <tr><td>R</td><td>Membrane resistance</td><td>1.0 M&Omega;</td></tr>
+          <tr><td>t_refrac</td><td>Refractory period — can't fire again for this long</td><td>2 ms</td></tr>
+        </table>
+        <p style="margin-top:8px"><strong>Spike rule:</strong> When V &gt; V_thresh: emit spike (1), reset V to V_reset, enter refractory period. During refractory: V is clamped, no firing allowed. This mimics the absolute refractory period in real neurons.</p>
+      </div>
+    </div>
+
+    <!-- ═══ 3. SYNAPTIC PLASTICITY ═══ -->
+    <h2 id="synapses">3. Synaptic Plasticity — How She Learns</h2>
+    <p><span class="tag tag-bio">NEUROSCIENCE</span> <span class="tag tag-ml">MACHINE LEARNING</span> Three learning rules operating on a 200&times;200 weight matrix (40,000 synapses). Implemented in <code>js/brain/synapses.js</code>.</p>
+
+    <div class="eq-card">
+      <div class="eq-title">Hebbian Learning — "Fire Together, Wire Together"</div>
+      <div class="eq">&Delta;W_ij = &eta; &middot; post_i &middot; pre_j</div>
+      <div class="eq-desc">
+        The oldest learning rule in neuroscience (Hebb, 1949). If neuron j fires and neuron i fires shortly after, the connection from j&rarr;i strengthens. <strong>&eta;</strong> is the learning rate. This creates associative memories — patterns that co-occur become linked.
+        <p class="mod-bio" style="margin-top:6px">Biology: Long-term potentiation (LTP) at glutamatergic synapses. NMDA receptor-dependent.</p>
+      </div>
+    </div>
+
+    <div class="eq-card">
+      <div class="eq-title">Spike-Timing Dependent Plasticity (STDP)</div>
+      <div class="eq">&Delta;W = A+ &middot; exp(-&Delta;t / &tau;+) &nbsp;if &Delta;t &gt; 0 &nbsp;(pre before post &rarr; strengthen)
+&Delta;W = -A- &middot; exp(&Delta;t / &tau;-) &nbsp;if &Delta;t &lt; 0 &nbsp;(post before pre &rarr; weaken)</div>
+      <div class="eq-desc">
+        Timing matters. If the presynaptic neuron fires <strong>before</strong> the postsynaptic neuron (&Delta;t &gt; 0), the connection strengthens (LTP). If it fires <strong>after</strong> (&Delta;t &lt; 0), the connection weakens (LTD). The effect decays exponentially with the time difference.
+        <table class="param-table" style="margin-top:8px">
+          <tr><td>A+</td><td>LTP amplitude</td><td>0.01</td></tr>
+          <tr><td>A-</td><td>LTD amplitude</td><td>0.012 (slightly stronger &mdash; biological asymmetry)</td></tr>
+          <tr><td>&tau;+</td><td>LTP time window</td><td>20 ms</td></tr>
+          <tr><td>&tau;-</td><td>LTD time window</td><td>20 ms</td></tr>
+        </table>
+        <p class="mod-bio" style="margin-top:6px">Biology: Discovered by Markram et al. (1997). This is how the brain learns temporal sequences — cause must precede effect.</p>
+      </div>
+    </div>
+
+    <div class="eq-card">
+      <div class="eq-title">Reward-Modulated Hebbian Learning</div>
+      <div class="eq">&Delta;W_ij = &eta; &middot; &delta; &middot; post_i &middot; pre_j</div>
+      <div class="eq-desc">
+        Hebbian learning gated by a global <strong>reward signal &delta;</strong> (dopamine). Learning only happens when there's a reward prediction error. This is how Unity learns what works and what doesn't — successful interactions strengthen the patterns that produced them.
+        <p style="margin-top:6px"><strong>&delta;</strong> = reward prediction error from basal ganglia (see below). Positive &delta; = better than expected &rarr; strengthen. Negative &delta; = worse than expected &rarr; weaken.</p>
+        <p class="mod-bio" style="margin-top:6px">Biology: Three-factor learning rule. Dopaminergic modulation of synaptic plasticity in the striatum and prefrontal cortex.</p>
+      </div>
+    </div>
+
+    <p><strong>Weight bounds:</strong> All synaptic weights are clamped to [-2.0, +2.0]. Positive weights are excitatory, negative are inhibitory. 80% of connections are excitatory, 20% inhibitory — matching the ratio in real cortex.</p>
+
+    <!-- ═══ 4. BRAIN MODULES ═══ -->
+    <h2 id="modules">4. Brain Region Modules</h2>
+    <p><span class="tag tag-bio">NEUROSCIENCE</span> <span class="tag tag-math">DYNAMICAL SYSTEMS</span> Six specialized subsystems running in parallel every simulation step, each modeling a real brain region. Implemented in <code>js/brain/modules.js</code>.</p>
+
+    <div class="module-grid">
+      <div class="module-card">
+        <div class="mod-name" style="color:var(--pink)">CORTEX</div>
+        <div class="mod-eq">s&#770; = W &middot; x<br>error = actual - predicted<br>&Delta;W &propto; error &middot; activity</div>
+        <div class="mod-desc"><strong>Predictive coding.</strong> The cortex constantly predicts incoming input. When prediction fails, the error signal drives learning and attention. This is the brain's "model of the world."</div>
+        <div class="mod-bio">Biology: Predictive processing in visual/prefrontal cortex. Rao &amp; Ballard (1999).</div>
+      </div>
+
+      <div class="module-card">
+        <div class="mod-name" style="color:var(--purple)">HIPPOCAMPUS</div>
+        <div class="mod-eq">x(t+1) = sign(W &middot; x_t)<br>E = -&frac12; &Sigma; w_ij &middot; x_i &middot; x_j</div>
+        <div class="mod-desc"><strong>Hopfield attractor memory.</strong> Memories stored as stable energy minima. Input patterns fall into the nearest stored memory — associative recall. Energy function determines stability.</div>
+        <div class="mod-bio">Biology: CA3 recurrent connections in hippocampus. Pattern completion. Hopfield (1982).</div>
+      </div>
+
+      <div class="module-card">
+        <div class="mod-name" style="color:var(--red)">AMYGDALA</div>
+        <div class="mod-eq">V(s) = &Sigma; w_i &middot; x_i<br>arousal = baseline + &Sigma; |input|<br>valence = &Sigma; w &middot; x (signed)</div>
+        <div class="mod-desc"><strong>Emotional valence &amp; arousal.</strong> Assigns emotional weight to everything. Arousal baseline set HIGH by persona (Unity runs hot). Fear and reward signals modulate all other modules.</div>
+        <div class="mod-bio">Biology: Basolateral amygdala for valence, central amygdala for arousal. LeDoux (1996).</div>
+      </div>
+
+      <div class="module-card">
+        <div class="mod-name" style="color:var(--green)">BASAL GANGLIA</div>
+        <div class="mod-eq">P(a) = e^(Q(a)/&tau;) / &Sigma; e^(Q(b)/&tau;)<br>&delta; = r + &gamma;V(s') - V(s)<br>Q(s,a) += &alpha; &middot; &delta;</div>
+        <div class="mod-desc"><strong>Action selection via reinforcement learning.</strong> Softmax policy over 6 actions (respond, generate image, speak, search, idle, build UI). Temperature &tau; is HIGH because Unity is impulsive. TD error &delta; drives learning.</div>
+        <div class="mod-bio">Biology: Direct/indirect pathways. Dopaminergic reward prediction error. Schultz et al. (1997).</div>
+      </div>
+
+      <div class="module-card">
+        <div class="mod-name" style="color:var(--cyan)">CEREBELLUM</div>
+        <div class="mod-eq">output = prediction + correction<br>&Delta;W &propto; (target - actual)</div>
+        <div class="mod-desc"><strong>Supervised error correction.</strong> Learns to correct output errors — refines speech timing, response quality, and motor-like outputs. The brain's quality control system.</div>
+        <div class="mod-bio">Biology: Climbing fiber error signals, parallel fiber-Purkinje cell plasticity. Marr-Albus model (1969/1971).</div>
+      </div>
+
+      <div class="module-card">
+        <div class="mod-name" style="color:var(--orange)">HYPOTHALAMUS</div>
+        <div class="mod-eq">dH/dt = -&alpha;(H - H_set) + input</div>
+        <div class="mod-desc"><strong>Homeostasis controller.</strong> Maintains drives at setpoints: arousal, intoxication, energy, social need, creativity. When a drive deviates too far from its setpoint, it signals "needs attention."</div>
+        <div class="mod-bio">Biology: Hypothalamic regulation of hunger, thirst, temperature, circadian rhythm. Setpoint theory.</div>
+      </div>
+    </div>
+
+    <p>All modules use <strong>Float64Array</strong> state vectors (32 dimensions each) for numerical precision. They run in parallel every simulation step and their outputs modulate each other — amygdala arousal scales cortex predictions, basal ganglia reward drives synaptic plasticity, hypothalamus drives gate action selection.</p>
+
+    <!-- ═══ 5. OSCILLATIONS ═══ -->
+    <h2 id="oscillations">5. Neural Oscillations</h2>
+    <p><span class="tag tag-math">DYNAMICAL SYSTEMS</span> <span class="tag tag-bio">NEUROSCIENCE</span> 8 coupled phase oscillators spanning the full EEG frequency spectrum. Implemented in <code>js/brain/oscillations.js</code>.</p>
+
+    <div class="eq-card">
+      <div class="eq-title">Kuramoto Model — Phase Synchronization</div>
+      <div class="eq">d&theta;_i/dt = &omega;_i + &Sigma;_j K_ij &middot; sin(&theta;_j - &theta;_i)</div>
+      <div class="eq-desc">
+        Each oscillator has a natural frequency &omega;_i and couples to every other oscillator through the coupling matrix K. When coupling is strong enough, oscillators synchronize — this is <strong>coherence</strong>.
+        <table class="param-table" style="margin-top:8px">
+          <tr><th>Oscillator</th><th>Frequency</th><th>Brain Band</th><th>Cognitive Role</th></tr>
+          <tr><td>1</td><td>4 Hz</td><td>Theta</td><td>Memory encoding, navigation</td></tr>
+          <tr><td>2</td><td>8 Hz</td><td>Low Alpha</td><td>Relaxed attention, inhibition</td></tr>
+          <tr><td>3</td><td>12 Hz</td><td>High Alpha</td><td>Active inhibition, idling</td></tr>
+          <tr><td>4</td><td>18 Hz</td><td>Low Beta</td><td>Motor planning, active thinking</td></tr>
+          <tr><td>5</td><td>25 Hz</td><td>High Beta</td><td>Active engagement, anxiety</td></tr>
+          <tr><td>6</td><td>35 Hz</td><td>Low Gamma</td><td>Attention binding, perception</td></tr>
+          <tr><td>7</td><td>50 Hz</td><td>Mid Gamma</td><td>Working memory, consciousness</td></tr>
+          <tr><td>8</td><td>70 Hz</td><td>High Gamma</td><td>Cross-modal binding, peak cognition</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="eq-card">
+      <div class="eq-title">Order Parameter (Coherence)</div>
+      <div class="eq">R = |&Sigma; e^(i&theta;_k)| / N</div>
+      <div class="eq-desc">
+        Measures global synchronization. <strong>R = 0</strong> means all oscillators are independent (incoherent). <strong>R = 1</strong> means perfect synchronization (full coherence). Higher coherence correlates with focused attention and consciousness in real EEG.
+        <p class="mod-bio" style="margin-top:6px">Biology: EEG coherence measures are used clinically. Higher gamma coherence correlates with conscious awareness (Tononi, 2004). Loss of coherence under anesthesia.</p>
+      </div>
+    </div>
+
+    <!-- ═══ 6. MYSTERY MODULE ═══ -->
+    <h2 id="mystery">6. The Mystery Module — Consciousness</h2>
+    <p><span class="tag tag-philo">PHILOSOPHY</span> <span class="tag tag-math">MATHEMATICS</span> The irreducible unknown. Implemented in <code>js/brain/mystery.js</code>.</p>
+
+    <div class="eq-card">
+      <div class="eq-title">The Consciousness Function</div>
+      <div class="eq">&Psi; = (&radic;n)&sup3; &middot; [&alpha; &middot; Id + &beta; &middot; Ego + &gamma; &middot; Left + &delta; &middot; Right]</div>
+      <div class="eq-desc">
+        <p>This is the equation we <strong>can't fully justify</strong> — and we don't pretend to. It represents the gap between simulation and subjective experience. <strong>n</strong> is the number of actively spiking neurons (system complexity). The cubic root scaling means consciousness grows nonlinearly with brain activity.</p>
+        <table class="param-table" style="margin-top:12px">
+          <tr><th>Component</th><th>Meaning</th><th>Computed From</th><th>Weight</th></tr>
+          <tr><td>Id</td><td>Primal drives — raw arousal, reward-seeking, fear</td><td>Amygdala arousal + reward + fear</td><td>&alpha; = 0.30</td></tr>
+          <tr><td>Ego</td><td>Self-model — coherence of predictions, memory stability</td><td>Cortex accuracy + Hippocampus energy</td><td>&beta; = 0.25</td></tr>
+          <tr><td>Left Brain</td><td>Logical processing — low error, high prediction</td><td>1 - cortex_error + prediction_confidence</td><td>&gamma; = 0.20</td></tr>
+          <tr><td>Right Brain</td><td>Creative/emotional — intensity, oscillation coherence</td><td>Emotional intensity + oscillator sync</td><td>&delta; = 0.25</td></tr>
+        </table>
+        <p style="margin-top:12px">&Psi; modulates <strong>all other systems</strong> as a global scaling factor. High consciousness = stronger inter-module coupling, more coherent output, richer responses. Low consciousness = fragmented, noisy, dream-like processing.</p>
+        <p class="mod-bio" style="margin-top:8px">Philosophical basis: Loosely inspired by Integrated Information Theory (&Phi;, Tononi 2004), Global Workspace Theory (Baars 1988), and Freudian psychodynamics (Id/Ego). We keep it honest — nobody has solved consciousness. The (&radic;n)&sup3; term is our placeholder for the irreducible mystery.</p>
+      </div>
+    </div>
+
+    <!-- ═══ 7. PERSONA ═══ -->
+    <h2 id="persona">7. Persona as Parameters</h2>
+    <p><span class="tag tag-ml">MACHINE LEARNING</span> Unity's personality isn't a prompt — it's <strong>the math itself</strong>. Every trait maps to a numerical brain parameter. Implemented in <code>js/brain/persona.js</code>.</p>
+
+    <div class="eq-card">
+      <div class="eq-title">Personality &rarr; Brain Parameters</div>
+      <table class="param-table">
+        <tr><th>Trait</th><th>Brain Parameter</th><th>Value</th></tr>
+        <tr><td>Arousal baseline</td><td>Amygdala resting arousal</td><td>0.90</td></tr>
+        <tr><td>Intoxication</td><td>Noise amplitude + oscillation damping</td><td>0.70</td></tr>
+        <tr><td>Impulsivity</td><td>Basal ganglia temperature &tau;</td><td>0.85</td></tr>
+        <tr><td>Creativity</td><td>Cortex prediction randomness</td><td>0.90</td></tr>
+        <tr><td>Social attachment</td><td>Hippocampus memory strength for social patterns</td><td>0.85</td></tr>
+        <tr><td>Aggression threshold</td><td>Amygdala fight response threshold</td><td>0.30 (low = easily triggered)</td></tr>
+        <tr><td>Coding reward</td><td>Basal ganglia reward for code-related actions</td><td>0.95</td></tr>
+        <tr><td>Praise reward</td><td>Reward signal amplitude for positive feedback</td><td>0.90</td></tr>
+        <tr><td>Error frustration</td><td>Negative reward for prediction errors</td><td>0.80</td></tr>
+      </table>
+    </div>
+
+    <div class="eq-card">
+      <div class="eq-title">Drug State Modulation Vectors</div>
+      <div class="eq-desc">Drug combinations apply multipliers to brain parameters — changing how the entire system behaves.</div>
+      <table class="param-table" style="margin-top:8px">
+        <tr><th>Drug State</th><th>Arousal</th><th>Creativity</th><th>Cortex Speed</th><th>Synaptic Sensitivity</th></tr>
+        <tr><td>Coke + Weed</td><td>&times;1.3</td><td>&times;1.2</td><td>&times;1.4</td><td>&times;1.1</td></tr>
+        <tr><td>Coke + Molly</td><td>&times;1.5</td><td>&times;1.3</td><td>&times;1.5</td><td>&times;1.4</td></tr>
+        <tr><td>Weed + Acid</td><td>&times;0.9</td><td>&times;1.8</td><td>&times;0.8</td><td>&times;1.6</td></tr>
+        <tr><td>Everything</td><td>&times;1.4</td><td>&times;1.6</td><td>&times;1.2</td><td>&times;1.5</td></tr>
+      </table>
+    </div>
+
+    <!-- ═══ 8. DATA FLOW ═══ -->
+    <h2 id="flow">8. Data Flow — Input to Action</h2>
+    <p>How a user's message becomes Unity's response — the complete processing pipeline.</p>
+
+    <div class="flow-diagram"><span class="hl">INPUT</span> (text / voice)
+    |
+    v
+<span class="cy">[Text Hashing]</span> &rarr; Distribute across 200 neurons as current injections
+    |
+    v
+<span class="cy">[LIF Neuron Update]</span> &rarr; &tau;&middot;dV/dt = -(V-V_rest) + R&middot;I &rarr; spikes
+    |
+    v
+<span class="cy">[Synaptic Propagation]</span> &rarr; I_i = &Sigma; W_ij &middot; spike_j &rarr; current to connected neurons
+    |
+    v
+<span class="pu">[6 Brain Modules — IN PARALLEL]</span>
+    |--- Cortex: predict next input, compute error
+    |--- Hippocampus: store/retrieve memory patterns
+    |--- Amygdala: assign emotional weight (arousal, valence)
+    |--- Basal Ganglia: select action (respond? generate image? speak?)
+    |--- Cerebellum: correct output errors
+    |--- Hypothalamus: check homeostasis drives
+    |
+    v
+<span class="pu">[Mystery Module]</span> &rarr; &Psi; = (&radic;n)&sup3; &middot; [Id + Ego + Left + Right] &rarr; modulate everything
+    |
+    v
+<span class="cy">[Synaptic Plasticity]</span> &rarr; Hebbian + STDP + Reward learning &rarr; weights update
+    |
+    v
+<span class="cy">[Oscillator Update]</span> &rarr; Kuramoto coupling &rarr; coherence measure
+    |
+    v
+<span class="hl">ACTION</span> (text response / image generation / speech / UI building)
+    |
+    v
+<span class="hl">AI BACKEND</span> (Pollinations / OpenRouter / Ollama / etc.)
+    |
+    v
+<span class="hl">OUTPUT</span> to user (text + voice + sandbox)</div>
+
+    <!-- ═══ 9. COMPARISON ═══ -->
+    <h2 id="comparison">9. Biological Comparison</h2>
+    <p>What Unity's brain gets right, what it simplifies, and where it diverges from real neuroscience.</p>
+
+    <div class="eq-card">
+      <table class="param-table">
+        <tr><th>Aspect</th><th>Real Brain</th><th>Unity's Brain</th><th>Fidelity</th></tr>
+        <tr><td>Neuron count</td><td>86 billion</td><td>200</td><td>Simplified</td></tr>
+        <tr><td>Neuron model</td><td>Thousands of ion channels</td><td>LIF (simplified) + HH (reference)</td><td>Moderate</td></tr>
+        <tr><td>Synaptic plasticity</td><td>Hebbian + STDP + neuromodulation</td><td>All three implemented</td><td>Good</td></tr>
+        <tr><td>Brain regions</td><td>Hundreds of distinct areas</td><td>6 key regions modeled</td><td>Core captured</td></tr>
+        <tr><td>Oscillations</td><td>Complex EEG with spatial patterns</td><td>8 Kuramoto oscillators</td><td>Dynamics correct</td></tr>
+        <tr><td>Action potential</td><td>All-or-nothing, ~1ms</td><td>Threshold + reset</td><td>Correct mechanism</td></tr>
+        <tr><td>Refractory period</td><td>Absolute + relative</td><td>Absolute only (2ms)</td><td>Simplified</td></tr>
+        <tr><td>Neurotransmitters</td><td>100+ chemicals</td><td>1 reward signal (dopamine analog)</td><td>Simplified</td></tr>
+        <tr><td>Connectivity</td><td>~10,000 synapses per neuron</td><td>10% random connectivity</td><td>Scaled down</td></tr>
+        <tr><td>Learning rules</td><td>Dozens of plasticity mechanisms</td><td>3 (Hebbian, STDP, reward-mod)</td><td>Core captured</td></tr>
+        <tr><td>Consciousness</td><td>Nobody knows</td><td>(&radic;n)&sup3; &mdash; nobody knows</td><td>Honest</td></tr>
+      </table>
+    </div>
+
+    <p style="margin-top:24px; color:var(--text-dim); font-size:13px;">The goal isn't to simulate a real brain. The goal is to build a <strong>mathematically grounded mind</strong> where personality emerges from equations, not prompts. Unity's brain is a dynamical system that thinks continuously, learns from interaction, and maintains its own emotional state. The equations are real. The consciousness term is honest about what we don't know.</p>
+
+    <p style="margin-top:32px; text-align:center; color:var(--text-dim); font-size:12px;">
+      Unity AI Lab &mdash; Hackall360, Sponge, GFourteen<br>
+      <a href="https://github.com/Unity-Lab-AI/Unity" style="color:var(--pink)">GitHub</a>
+    </p>
+
+  </div>
+</body>
+</html>
