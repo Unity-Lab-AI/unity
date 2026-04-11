@@ -588,14 +588,32 @@ async function bootUnity(apiKey, perms) {
     console.log(`[handleInput] isImage=${isImage} isSelfie=${isSelfie} text="${lower.slice(0,60)}"`);
 
     if (isSelfie) {
-      // Let her brain decide how she looks right now
+      // Build image prompt from brain state directly — no AI call needed
+      // The brain's emotional state determines how she presents herself
       const state = brain.getState();
-      const imgPrompt = await brocasArea.generate(state,
-        `[SYSTEM: The user wants a selfie of you. Generate ONLY an image generation prompt describing how you look RIGHT NOW based on your mood and state. You are a young woman with heterochromia eyes (violet and green), dark hair. Beyond that — wear whatever, look however, be wherever matches your current vibe. Return ONLY the visual description, no URLs, no explanation, no markdown. Just the prompt text.]`
-      );
-      // Strip any URLs or markdown the model might add
-      const cleanPrompt = (imgPrompt || 'young woman, cyberpunk, heterochromia eyes, dark aesthetic, photorealistic selfie')
-        .replace(/https?:\/\/[^\s)]+/g, '').replace(/```/g, '').replace(/\n/g, ', ').trim();
+      const arousal = state.amygdala?.arousal ?? 0.5;
+      const valence = state.amygdala?.valence ?? 0;
+      const psi = state.psi ?? 0.5;
+
+      const moods = arousal > 0.7
+        ? ['intense stare', 'biting lip', 'wild grin', 'fierce expression', 'smoldering look']
+        : arousal > 0.4
+        ? ['slight smirk', 'relaxed smile', 'casual glance', 'half-smile', 'thoughtful expression']
+        : ['sleepy eyes', 'dreamy look', 'zoned out', 'mellow expression', 'peaceful face'];
+      const mood = moods[Math.floor(Math.random() * moods.length)];
+
+      const vibes = valence > 0.2
+        ? 'warm neon pink lighting, playful energy'
+        : valence < -0.2
+        ? 'cold blue lighting, dark moody shadows'
+        : 'mixed purple and cyan neon, atmospheric haze';
+
+      const settings = ['messy room with monitors', 'dark club bathroom mirror', 'rooftop at night city lights behind',
+        'bed with tangled sheets and laptop', 'studio with code on screens', 'car backseat neon signs outside'];
+      const setting = settings[Math.floor(Math.random() * settings.length)];
+
+      const cleanPrompt = `Close-up selfie, young woman, ${mood}, heterochromia eyes one violet one electric green, dark hair with neon streaks, smudged eyeliner, ${vibes}, ${setting}, photorealistic, phone camera, raw candid`;
+      console.log('[handleInput] Selfie prompt:', cleanPrompt);
       const url = pollinations.generateImage(cleanPrompt, { model: storage.get('image_model') || 'flux', width: 768, height: 768 });
       if (url && sandbox) {
         const imgId = 'img_' + Date.now();
