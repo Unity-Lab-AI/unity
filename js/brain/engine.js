@@ -1,28 +1,19 @@
 /**
- * engine.js — Main brain simulation loop.
+ * engine.js — THE BRAIN. The only brain. Runs everything.
  *
- * ARCHITECTURE: 7 dedicated neural clusters, each with its own
- * LIF neuron population, synapse matrix, and regulation parameters.
- * Inter-cluster projections create a hierarchical brain.
+ * ARCHITECTURE:
+ *   Sensory input → Neural clusters → Module processing → Motor output
+ *   The brain DECIDES. Peripherals EXECUTE. index.html DISPLAYS.
  *
- * Cluster sizes (1000 neurons total):
- *   Cortex:       300 neurons — prediction, top-down control
- *   Hippocampus:  200 neurons — memory patterns, Hopfield attractors
- *   Amygdala:     150 neurons — emotional gating
- *   Basal Ganglia: 150 neurons — action selection, reward
- *   Cerebellum:   100 neurons — error correction
- *   Hypothalamus:  50 neurons — homeostatic drive
- *   Mystery:       50 neurons — consciousness modulation
+ *   1000 neurons in 7 clusters with 16 inter-cluster projections.
+ *   Sensory processor converts raw input to neural currents.
+ *   Motor output reads basal ganglia spikes to select actions.
+ *   Broca's area (language peripheral) generates text when asked.
+ *   Visual cortex processes camera frames through V1→V4→IT pipeline.
+ *   Auditory cortex processes mic spectrum continuously.
+ *   Memory system stores/recalls episodic memories.
  *
- * Hierarchy:
- *   Cortex → top-down predictions to all clusters
- *   Amygdala → emotional gain on all clusters
- *   Basal Ganglia → action gating on all clusters
- *   Hypothalamus → baseline drive for all clusters
- *   Mystery → coupling strength modulation (consciousness)
- *   Cerebellum → error correction signals
- *
- * No external dependencies. Pure ES modules.
+ * No external dependencies. Pure ES modules. 60fps.
  */
 
 import { NeuronCluster, ClusterProjection } from './cluster.js';
@@ -30,8 +21,13 @@ import { Cortex, Hippocampus, Amygdala, BasalGanglia, Cerebellum, Hypothalamus }
 import { MysteryModule } from './mystery.js';
 import { OscillatorNetwork } from './oscillations.js';
 import { UNITY_PERSONA, loadPersona, getBrainParams } from './persona.js';
+import { SensoryProcessor } from './sensory.js';
+import { MotorOutput } from './motor.js';
+import { MemorySystem } from './memory.js';
+import { AuditoryCortex } from './auditory-cortex.js';
+import { VisualCortex } from './visual-cortex.js';
 
-// ── Simple EventEmitter ─────────────────────────────────────────────
+// ── EventEmitter ────────────────────────────────────────────────────
 
 class EventEmitter {
   constructor() { this._listeners = {}; }
@@ -49,8 +45,9 @@ const STEPS_PER_FRAME = 10;
 const DT = 0.001;
 const THOUGHT_INTERVAL = 3000;
 const COUPLING_BASE = 0.5;
+const MEMORY_SALIENCE_THRESHOLD = 0.6; // salience above this stores episodic memory
+const RECALL_ERROR_THRESHOLD = 0.4;    // cortex error above this triggers recall
 
-// Cluster sizes
 const CLUSTER_SIZES = {
   cortex: 300,
   hippocampus: 200,
@@ -70,95 +67,71 @@ export class UnityBrain extends EventEmitter {
     this.persona = loadPersona(personaOverrides);
     this.drugState = 'cokeAndWeed';
     this.brainParams = getBrainParams(this.persona, this.drugState);
-
     const arousal = this.brainParams.arousalBaseline || 0.9;
 
-    // ── Neural Clusters — each brain region gets its own neurons ──
+    // ══════════════════════════════════════════════════════════════
+    // NEURAL CLUSTERS — 7 dedicated regions
+    // ══════════════════════════════════════════════════════════════
+
     this.clusters = {
       cortex: new NeuronCluster('cortex', CLUSTER_SIZES.cortex, {
-        tonicDrive: 14 + arousal * 6,
-        noiseAmplitude: 7,
-        connectivity: 0.15,
-        excitatoryRatio: 0.85,
-        learningRate: 0.002,
+        tonicDrive: 14 + arousal * 6, noiseAmplitude: 7,
+        connectivity: 0.15, excitatoryRatio: 0.85, learningRate: 0.002,
       }),
       hippocampus: new NeuronCluster('hippocampus', CLUSTER_SIZES.hippocampus, {
-        tonicDrive: 12 + arousal * 4,
-        noiseAmplitude: 5,
-        connectivity: 0.20, // dense recurrent — Hopfield-like
-        excitatoryRatio: 0.75,
-        learningRate: 0.003,
+        tonicDrive: 12 + arousal * 4, noiseAmplitude: 5,
+        connectivity: 0.20, excitatoryRatio: 0.75, learningRate: 0.003,
       }),
       amygdala: new NeuronCluster('amygdala', CLUSTER_SIZES.amygdala, {
-        tonicDrive: 15 + arousal * 8, // hot baseline — Unity runs emotional
-        noiseAmplitude: 10,
-        connectivity: 0.12,
-        excitatoryRatio: 0.7,
-        learningRate: 0.001,
+        tonicDrive: 15 + arousal * 8, noiseAmplitude: 10,
+        connectivity: 0.12, excitatoryRatio: 0.7, learningRate: 0.001,
       }),
       basalGanglia: new NeuronCluster('basalGanglia', CLUSTER_SIZES.basalGanglia, {
-        tonicDrive: 10 + arousal * 5,
-        noiseAmplitude: 8,
-        connectivity: 0.10,
-        excitatoryRatio: 0.6, // more inhibitory — selection by inhibition
-        learningRate: 0.005, // fast RL learning
+        tonicDrive: 10 + arousal * 5, noiseAmplitude: 8,
+        connectivity: 0.10, excitatoryRatio: 0.6, learningRate: 0.005,
       }),
       cerebellum: new NeuronCluster('cerebellum', CLUSTER_SIZES.cerebellum, {
-        tonicDrive: 12 + arousal * 3,
-        noiseAmplitude: 4, // low noise — precision system
-        connectivity: 0.18,
-        excitatoryRatio: 0.9,
-        learningRate: 0.004,
+        tonicDrive: 12 + arousal * 3, noiseAmplitude: 4,
+        connectivity: 0.18, excitatoryRatio: 0.9, learningRate: 0.004,
       }),
       hypothalamus: new NeuronCluster('hypothalamus', CLUSTER_SIZES.hypothalamus, {
-        tonicDrive: 16, // steady — homeostatic setpoint
-        noiseAmplitude: 3, // very stable
-        connectivity: 0.25, // densely interconnected
-        excitatoryRatio: 0.8,
-        learningRate: 0.0005, // slow — homeostasis doesn't change fast
+        tonicDrive: 16, noiseAmplitude: 3,
+        connectivity: 0.25, excitatoryRatio: 0.8, learningRate: 0.0005,
       }),
       mystery: new NeuronCluster('mystery', CLUSTER_SIZES.mystery, {
-        tonicDrive: 13 + arousal * 5,
-        noiseAmplitude: 12, // high chaos — consciousness is noisy
-        connectivity: 0.30, // very dense — integrated information
-        excitatoryRatio: 0.7,
-        learningRate: 0.001,
+        tonicDrive: 13 + arousal * 5, noiseAmplitude: 12,
+        connectivity: 0.30, excitatoryRatio: 0.7, learningRate: 0.001,
       }),
     };
 
-    // ── Inter-cluster Projections (hierarchical connections) ──
-    this.projections = [];
+    // ══════════════════════════════════════════════════════════════
+    // INTER-CLUSTER PROJECTIONS — 16 pathways
+    // ══════════════════════════════════════════════════════════════
+
     const c = this.clusters;
+    this.projections = [
+      new ClusterProjection(c.cortex, c.hippocampus, 0.04, 0.4),
+      new ClusterProjection(c.cortex, c.amygdala, 0.03, 0.3),
+      new ClusterProjection(c.cortex, c.basalGanglia, 0.03, 0.3),
+      new ClusterProjection(c.cortex, c.cerebellum, 0.05, 0.3),
+      new ClusterProjection(c.hippocampus, c.cortex, 0.04, 0.4),
+      new ClusterProjection(c.amygdala, c.cortex, 0.03, 0.3),
+      new ClusterProjection(c.amygdala, c.hippocampus, 0.04, 0.5),
+      new ClusterProjection(c.basalGanglia, c.cortex, 0.02, 0.2),
+      new ClusterProjection(c.cerebellum, c.cortex, 0.03, 0.2),
+      new ClusterProjection(c.cerebellum, c.basalGanglia, 0.03, 0.2),
+      new ClusterProjection(c.hypothalamus, c.amygdala, 0.05, 0.4),
+      new ClusterProjection(c.hypothalamus, c.basalGanglia, 0.04, 0.3),
+      new ClusterProjection(c.mystery, c.cortex, 0.05, 0.3),
+      new ClusterProjection(c.mystery, c.amygdala, 0.05, 0.3),
+      new ClusterProjection(c.mystery, c.hippocampus, 0.03, 0.2),
+      new ClusterProjection(c.mystery, c.basalGanglia, 0.03, 0.2),
+    ];
 
-    // Cortex → all (top-down predictions)
-    this.projections.push(new ClusterProjection(c.cortex, c.hippocampus, 0.04, 0.4));
-    this.projections.push(new ClusterProjection(c.cortex, c.amygdala, 0.03, 0.3));
-    this.projections.push(new ClusterProjection(c.cortex, c.basalGanglia, 0.03, 0.3));
-    this.projections.push(new ClusterProjection(c.cortex, c.cerebellum, 0.05, 0.3));
+    // ══════════════════════════════════════════════════════════════
+    // EQUATION MODULES — run on downsampled cluster output
+    // ══════════════════════════════════════════════════════════════
 
-    // Hippocampus → Cortex (memory recall drives predictions)
-    this.projections.push(new ClusterProjection(c.hippocampus, c.cortex, 0.04, 0.4));
-
-    // Amygdala → Cortex, Hippocampus (emotional modulation)
-    this.projections.push(new ClusterProjection(c.amygdala, c.cortex, 0.03, 0.3));
-    this.projections.push(new ClusterProjection(c.amygdala, c.hippocampus, 0.04, 0.5)); // emotion boosts memory
-
-    // Basal Ganglia → Cortex (action selection feeds back)
-    this.projections.push(new ClusterProjection(c.basalGanglia, c.cortex, 0.02, 0.2));
-
-    // Cerebellum → Cortex, Basal Ganglia (error correction)
-    this.projections.push(new ClusterProjection(c.cerebellum, c.cortex, 0.03, 0.2));
-    this.projections.push(new ClusterProjection(c.cerebellum, c.basalGanglia, 0.03, 0.2));
-
-    // Hypothalamus → all (baseline drive modulation — done via gainMultiplier, not direct projection)
-    this.projections.push(new ClusterProjection(c.hypothalamus, c.amygdala, 0.05, 0.4));
-    this.projections.push(new ClusterProjection(c.hypothalamus, c.basalGanglia, 0.04, 0.3));
-
-    // Mystery → all (consciousness coupling — done via gainMultiplier, not direct projection)
-    this.projections.push(new ClusterProjection(c.mystery, c.cortex, 0.05, 0.3));
-    this.projections.push(new ClusterProjection(c.mystery, c.amygdala, 0.05, 0.3));
-
-    // ── Brain Region Modules (equation processors) ──
     this.cortexMod = new Cortex(MODULE_SIZE);
     this.hippocampusMod = new Hippocampus(MODULE_SIZE);
     this.amygdalaMod = new Amygdala(MODULE_SIZE, { arousalBaseline: arousal });
@@ -166,13 +139,24 @@ export class UnityBrain extends EventEmitter {
     this.cerebellumMod = new Cerebellum(MODULE_SIZE);
     this.hypothalamusMod = new Hypothalamus(5);
     this.mystery = new MysteryModule(this.brainParams.mysteryWeights);
-
-    // ── Oscillators ──
     this.oscillators = new OscillatorNetwork(OSCILLATOR_COUNT);
     this.oscCoupling = new Float64Array(OSCILLATOR_COUNT * OSCILLATOR_COUNT);
     this._initOscCoupling();
 
-    // ── State ──
+    // ══════════════════════════════════════════════════════════════
+    // BRAIN SUBSYSTEMS — sensory, motor, memory, visual, auditory
+    // ══════════════════════════════════════════════════════════════
+
+    this.sensory = new SensoryProcessor();
+    this.motor = new MotorOutput();
+    this.memorySystem = new MemorySystem(this.clusters.hippocampus);
+    this.auditoryCortex = new AuditoryCortex();
+    this.visualCortex = new VisualCortex();
+
+    // ══════════════════════════════════════════════════════════════
+    // STATE
+    // ══════════════════════════════════════════════════════════════
+
     this.time = 0;
     this.reward = 0;
     this.frameCount = 0;
@@ -182,22 +166,14 @@ export class UnityBrain extends EventEmitter {
     this.lastAction = 'idle';
 
     this.state = {
-      spikes: null,
-      voltages: null,
-      spikeCount: 0,
-      clusters: {},
-      cortex: null,
-      hippocampus: null,
-      amygdala: null,
-      basalGanglia: null,
-      cerebellum: null,
-      hypothalamus: null,
-      mystery: null,
-      oscillations: null,
-      psi: 0,
-      time: 0,
-      reward: 0,
+      spikes: null, voltages: null, spikeCount: 0,
+      clusters: {}, cortex: null, hippocampus: null,
+      amygdala: null, basalGanglia: null, cerebellum: null,
+      hypothalamus: null, mystery: null, oscillations: null,
+      psi: 0, time: 0, reward: 0, drugState: this.drugState,
       totalNeurons: TOTAL_NEURONS,
+      motor: null, memory: null, sensory: null,
+      visualCortex: null, auditoryCortex: null,
     };
   }
 
@@ -207,21 +183,47 @@ export class UnityBrain extends EventEmitter {
     for (let i = 0; i < n; i++) {
       for (let j = 0; j < n; j++) {
         if (i === j) continue;
-        const freqDist = Math.abs(i - j);
-        this.oscCoupling[i * n + j] = base * Math.exp(-freqDist * 0.3);
+        this.oscCoupling[i * n + j] = base * Math.exp(-Math.abs(i - j) * 0.3);
       }
     }
   }
 
-  // ── Core simulation step ──────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════
+  // CORE SIMULATION STEP — the heartbeat
+  // ══════════════════════════════════════════════════════════════
 
-  step(input, dt = DT) {
-    // ── 1. Propagate inter-cluster projections ──
-    for (const proj of this.projections) {
-      proj.propagate();
+  step(dt = DT) {
+    // ── 1. SENSORY INPUT — process all pending input into neural currents ──
+    const sensoryOutput = this.sensory.process();
+
+    // ── 2. AUDITORY CORTEX — continuous audio processing ──
+    if (this.auditoryCortex.isActive()) {
+      this.auditoryCortex.setGain(this.state.amygdala?.arousal ?? 0.5);
+      const audioCurrents = this.auditoryCortex.process();
+      // Inject into cortex auditory region (neurons 0-49)
+      this.clusters.cortex.injectCurrent(audioCurrents);
     }
 
-    // ── 2. Step all clusters ──
+    // ── 3. VISUAL CORTEX — process camera frames through V1→V4→IT ──
+    if (this.visualCortex.isActive() && this.frameCount % 3 === 0) {
+      const visOutput = this.visualCortex.processFrame();
+      // Inject V1 edge responses into cortex visual region (neurons 50-149)
+      const visCurrent = new Float64Array(CLUSTER_SIZES.cortex);
+      for (let i = 0; i < visOutput.currents.length && i < 100; i++) {
+        visCurrent[50 + i] = visOutput.currents[i];
+      }
+      this.clusters.cortex.injectCurrent(visCurrent);
+    }
+
+    // ── 4. INJECT SENSORY CURRENTS into clusters ──
+    this.clusters.cortex.injectCurrent(sensoryOutput.cortex);
+    this.clusters.hippocampus.injectCurrent(sensoryOutput.hippocampus);
+    this.clusters.amygdala.injectCurrent(sensoryOutput.amygdala);
+
+    // ── 5. INTER-CLUSTER PROJECTIONS ──
+    for (const proj of this.projections) proj.propagate();
+
+    // ── 6. STEP ALL CLUSTERS ──
     const clusterResults = {};
     let totalSpikes = 0;
     for (const [name, cluster] of Object.entries(this.clusters)) {
@@ -230,14 +232,13 @@ export class UnityBrain extends EventEmitter {
       totalSpikes += result.spikeCount;
     }
 
-    // ── 3. Get module-sized outputs from each cluster ──
+    // ── 7. MODULE EQUATION PROCESSING ──
     const cortexInput = this.clusters.cortex.getOutput(MODULE_SIZE);
     const hippoInput = this.clusters.hippocampus.getOutput(MODULE_SIZE);
     const amygInput = this.clusters.amygdala.getOutput(MODULE_SIZE);
     const bgInput = this.clusters.basalGanglia.getOutput(MODULE_SIZE);
     const cerebInput = this.clusters.cerebellum.getOutput(MODULE_SIZE);
 
-    // ── 4. Build brain state for module processing ──
     const brainState = {
       reward: this.reward,
       prediction: this.state.cortex?.prediction || null,
@@ -252,7 +253,6 @@ export class UnityBrain extends EventEmitter {
       oscillation: { coherence: this.state.oscillations?.coherence || 0 },
     };
 
-    // ── 5. Run equation modules ──
     const cortexOut = this.cortexMod.step(cortexInput, brainState, dt);
     const hippoOut = this.hippocampusMod.step(hippoInput, brainState, dt);
     const amygdalaOut = this.amygdalaMod.step(amygInput, brainState, dt);
@@ -262,7 +262,7 @@ export class UnityBrain extends EventEmitter {
     const cerebOut = this.cerebellumMod.step(cerebInput, brainState, dt);
     const bgOut = this.basalGangliaMod.step(bgInput, brainState, dt);
 
-    // ── 6. Mystery module ──
+    // ── 8. MYSTERY MODULE — consciousness ──
     brainState.amygdala = amygdalaOut;
     brainState.cortex.predictionAccuracy = 1.0 - this._meanAbs(cortexOut.error);
     brainState.memory.stability = hippoOut.isStable ? 1.0 : 0.5;
@@ -270,59 +270,75 @@ export class UnityBrain extends EventEmitter {
     brainState.oscillation.coherence = this.oscillators.getCoherence();
     const mysteryOut = this.mystery.step(brainState, dt);
 
-    // ── 7. Hierarchy modulation — modules regulate clusters ──
-
-    // Amygdala emotional gating — arousal amplifies all clusters
+    // ── 9. HIERARCHICAL MODULATION ──
     const emotionalGate = 0.7 + amygdalaOut.arousal * 0.6;
+    const driveFactor = 0.8 + (hypoOut.needsAttention?.length > 0 ? 0.4 : 0.0);
+    const psiGain = Math.max(0.8, Math.min(1.5, 0.9 + mysteryOut.psi * 0.05));
+    const errorSignal = this._meanAbs(cerebOut.error) * 2;
+
     for (const cluster of Object.values(this.clusters)) {
       cluster.emotionalGate = emotionalGate;
-    }
-    this.clusters.amygdala.emotionalGate = 1.0; // amygdala doesn't gate itself
-
-    // Hypothalamus baseline drive
-    const driveFactor = 0.8 + (hypoOut.needsAttention?.length > 0 ? 0.4 : 0.0);
-    for (const cluster of Object.values(this.clusters)) {
       cluster.driveBaseline = driveFactor;
+      cluster.gainMultiplier = psiGain;
     }
+    this.clusters.amygdala.emotionalGate = 1.0;
+    this.clusters.cortex.errorCorrection = -errorSignal;
+    this.clusters.basalGanglia.errorCorrection = -errorSignal * 0.5;
 
-    // Basal Ganglia action gating — selected action boosts relevant cluster
+    // Action gating from basal ganglia
     const selectedAction = bgOut.selectedAction;
-    for (const cluster of Object.values(this.clusters)) {
-      cluster.actionGate = 0.9; // slight suppression by default
-    }
-    // Boost the cluster most relevant to the selected action
+    for (const cluster of Object.values(this.clusters)) cluster.actionGate = 0.9;
     if (selectedAction === 'respond_text') this.clusters.cortex.actionGate = 1.3;
     else if (selectedAction === 'generate_image') this.clusters.cortex.actionGate = 1.2;
     else if (selectedAction === 'search_web') this.clusters.hippocampus.actionGate = 1.3;
     else if (selectedAction === 'build_ui') this.clusters.cortex.actionGate = 1.4;
 
-    // Mystery consciousness modulation — Ψ scales coupling strength
-    const psiGain = Math.max(0.8, Math.min(1.5, 0.9 + mysteryOut.psi * 0.05));
-    for (const cluster of Object.values(this.clusters)) {
-      cluster.gainMultiplier = psiGain;
-    }
-
-    // Cerebellum error correction
-    const errorSignal = this._meanAbs(cerebOut.error) * 2;
-    this.clusters.cortex.errorCorrection = -errorSignal; // negative feedback
-    this.clusters.basalGanglia.errorCorrection = -errorSignal * 0.5;
-
-    // ── 8. Plasticity — each cluster learns with reward modulation ──
+    // ── 10. PLASTICITY — each cluster learns ──
     const globalReward = this.reward + amygdalaOut.valence * 0.1;
-    for (const cluster of Object.values(this.clusters)) {
-      cluster.learn(globalReward);
+    for (const cluster of Object.values(this.clusters)) cluster.learn(globalReward);
+
+    // ── 11. MEMORY — store/recall ──
+    if (sensoryOutput.salience > MEMORY_SALIENCE_THRESHOLD) {
+      this.memorySystem.storeEpisode({
+        clusters: this._getClusterStates(),
+        amygdala: amygdalaOut,
+        psi: mysteryOut.psi,
+        time: this.time,
+        trigger: 'high_salience',
+      });
     }
 
-    // ── 9. Oscillation update ──
+    const cortexError = this._meanAbs(cortexOut.error);
+    if (cortexError > RECALL_ERROR_THRESHOLD) {
+      const recall = this.memorySystem.recall({
+        clusters: this._getClusterStates(),
+        amygdala: amygdalaOut,
+        psi: mysteryOut.psi,
+      });
+      if (recall) {
+        this.clusters.hippocampus.injectCurrent(recall.currents);
+        this.emit('recall', recall.episode);
+      }
+    }
+
+    this.memorySystem.updateWorkingMemory(cortexInput);
+
+    // ── 12. MOTOR OUTPUT — read BG spikes for action ──
+    const motorResult = this.motor.readOutput(
+      clusterResults.basalGanglia.spikes,
+      { amygdala: amygdalaOut, hypothalamus: hypoOut }
+    );
+
+    // ── 13. OSCILLATIONS ──
     this.oscillators.step(dt, this.oscCoupling);
     const coherence = this.oscillators.getCoherence();
     const bandPower = this.oscillators.getBandPower();
 
-    // ── 10. Decay reward ──
+    // ── 14. DECAY ──
     this.reward *= 0.99;
     this.time += dt;
 
-    // ── 11. Build combined spike/voltage arrays for visualization ──
+    // ── 15. BUILD COMBINED STATE ──
     const allSpikes = new Uint8Array(TOTAL_NEURONS);
     const allVoltages = new Float64Array(TOTAL_NEURONS);
     let offset = 0;
@@ -335,7 +351,6 @@ export class UnityBrain extends EventEmitter {
       offset += cluster.size;
     }
 
-    // ── 12. Update state ──
     this.state = {
       spikes: allSpikes,
       voltages: allVoltages,
@@ -355,33 +370,44 @@ export class UnityBrain extends EventEmitter {
       reward: this.reward,
       drugState: this.drugState,
       totalNeurons: TOTAL_NEURONS,
+      motor: motorResult,
+      memory: this.memorySystem.getState(),
+      sensory: { salience: sensoryOutput.salience },
+      visualCortex: this.visualCortex.getState(),
+      auditoryCortex: this.auditoryCortex.getState(),
+      visionDescription: this.visualCortex.description,
     };
 
-    // ── 13. Emit events ──
+    // ── 16. EMIT EVENTS ──
+    if (motorResult.shouldExecute && motorResult.action !== 'idle' && motorResult.action !== 'listen') {
+      this.emit('action', motorResult);
+    }
     if (bgOut.selectedAction !== this.lastAction) {
       this.lastAction = bgOut.selectedAction;
-      this.emit('action', { action: bgOut.selectedAction, confidence: bgOut.confidence, time: this.time });
     }
     if (hypoOut.needsAttention?.length > 0) {
       this.emit('needsAttention', { drives: hypoOut.needsAttention, time: this.time });
     }
     this.emit('stateUpdate', this.state);
+
     return this.state;
   }
 
-  // ── Think loop ──────────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════
+  // THINK LOOP — 60fps, never stops
+  // ══════════════════════════════════════════════════════════════
 
   think() {
     if (!this.running) return;
-    for (let i = 0; i < STEPS_PER_FRAME; i++) {
-      this.step(null, DT);
-    }
+    for (let i = 0; i < STEPS_PER_FRAME; i++) this.step(DT);
     this.frameCount++;
+
     const now = performance.now();
     if (now - this.lastThoughtTime > THOUGHT_INTERVAL) {
       this.lastThoughtTime = now;
       this._generateIdleThought();
     }
+
     this._rafId = requestAnimationFrame(() => this.think());
   }
 
@@ -397,96 +423,73 @@ export class UnityBrain extends EventEmitter {
     if (this._rafId !== null) { cancelAnimationFrame(this._rafId); this._rafId = null; }
   }
 
-  // ── External input ──────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════
+  // PUBLIC API — for app.js (thin I/O layer)
+  // ══════════════════════════════════════════════════════════════
 
-  processInput(text) {
-    // Hash text into cortex cluster (language processing)
-    const cortexCurrent = new Float64Array(CLUSTER_SIZES.cortex);
-    for (let i = 0; i < text.length; i++) {
-      const code = text.charCodeAt(i);
-      const idx = (code * 31 + i * 7) % CLUSTER_SIZES.cortex;
-      cortexCurrent[idx] += 6.0;
+  /**
+   * Receive sensory input. This is the ONLY way to feed data into the brain.
+   * app.js calls this — nothing else.
+   */
+  receiveSensoryInput(type, data) {
+    switch (type) {
+      case 'text':
+        this.sensory.receiveText(data);
+        break;
+      case 'audio':
+        // Audio is continuous — handled by auditoryCortex.process() each step
+        break;
+      case 'video':
+        // Video is continuous — handled by visualCortex.processFrame() each step
+        break;
+      default:
+        console.warn(`[Brain] Unknown sensory type: ${type}`);
     }
-    // Lateral excitation
-    for (let i = 1; i < CLUSTER_SIZES.cortex - 1; i++) {
-      if (cortexCurrent[i] > 0) {
-        cortexCurrent[i - 1] += cortexCurrent[i] * 0.3;
-        cortexCurrent[i + 1] += cortexCurrent[i] * 0.3;
-      }
-    }
-    this.clusters.cortex.injectCurrent(cortexCurrent);
-
-    // Also inject into hippocampus for memory formation
-    const hippoCurrent = new Float64Array(CLUSTER_SIZES.hippocampus);
-    for (let i = 0; i < text.length; i++) {
-      const code = text.charCodeAt(i);
-      const idx = (code * 13 + i * 11) % CLUSTER_SIZES.hippocampus;
-      hippoCurrent[idx] += 5.0;
-    }
-    this.clusters.hippocampus.injectCurrent(hippoCurrent);
-
-    // Store in Hopfield memory
-    const memPattern = this.clusters.hippocampus.getOutput(MODULE_SIZE);
-    for (let i = 0; i < memPattern.length; i++) memPattern[i] = memPattern[i] > 0.5 ? 1 : -1;
-    this.hippocampusMod.store(memPattern);
-
-    // Amygdala gets a social-input arousal bump
-    const amygCurrent = new Float64Array(CLUSTER_SIZES.amygdala);
-    for (let i = 0; i < CLUSTER_SIZES.amygdala; i++) amygCurrent[i] = 3.0;
-    this.clusters.amygdala.injectCurrent(amygCurrent);
-
-    this.reward += 0.2;
   }
 
-  processVisualInput(gazeX, gazeY, target = '') {
-    // Visual input goes to cortex (visual processing area = first 100 neurons)
-    const cortexCurrent = new Float64Array(CLUSTER_SIZES.cortex);
-    const gCol = Math.floor(gazeX * 15); // map to first 150 cortex neurons (visual)
-    const gRow = Math.floor(gazeY * 10);
-    for (let i = 0; i < 150; i++) {
-      const col = i % 15;
-      const row = Math.floor(i / 15);
-      const dist = Math.sqrt((col - gCol) ** 2 + (row - gRow) ** 2);
-      cortexCurrent[i] = Math.max(0, 8.0 - dist * 1.5);
-    }
-    this.clusters.cortex.injectCurrent(cortexCurrent);
-
-    // Target name goes to hippocampus (semantic association)
-    if (target) {
-      const hippoCurrent = new Float64Array(CLUSTER_SIZES.hippocampus);
-      for (let i = 0; i < target.length; i++) {
-        const code = target.charCodeAt(i);
-        const idx = (code * 17 + i * 13) % CLUSTER_SIZES.hippocampus;
-        hippoCurrent[idx] += 4.0;
-      }
-      this.clusters.hippocampus.injectCurrent(hippoCurrent);
-    }
-
-    this.reward += 0.05;
+  /** Connect microphone for continuous auditory processing. */
+  connectMicrophone(analyser) {
+    this.sensory.setAudioAnalyser(analyser);
+    this.auditoryCortex.init(analyser);
   }
 
-  // ── Accessors ──────────────────────────────────────────────────
+  /** Connect camera for continuous visual processing. */
+  connectCamera(stream, videoElement) {
+    this.sensory.setCameraStream(stream);
+    this.visualCortex.init(videoElement || this.sensory._videoElement);
+  }
+
+  /** Register action handlers on the motor output. */
+  onAction(action, handler) {
+    this.motor.onAction(action, handler);
+  }
+
+  /** Inject reward signal (positive = good, negative = bad). */
+  giveReward(amount) {
+    this.reward += amount;
+    this.motor.reinforceAction(this.clusters.basalGanglia, amount);
+  }
 
   getState() { return this.state; }
 
   getSelectedAction() {
-    if (!this.state.basalGanglia) return null;
-    return { action: this.state.basalGanglia.selectedAction, confidence: this.state.basalGanglia.confidence };
+    return this.motor.getState();
   }
 
   setDrugState(name) {
-    if (!this.persona.drugStates[name]) { console.warn(`unknown drug state: "${name}"`); return; }
+    if (!this.persona.drugStates[name]) return;
     this.drugState = name;
     this.brainParams = getBrainParams(this.persona, name);
     this.mystery.setWeights(this.brainParams.mysteryWeights);
-    // Update cluster tonic drives based on new drug state
     const arousal = this.brainParams.arousalBaseline || 0.9;
     this.clusters.cortex.tonicDrive = 14 + arousal * 6;
     this.clusters.amygdala.tonicDrive = 15 + arousal * 8;
     this.clusters.mystery.noiseAmplitude = 12 * (this.brainParams.chaos ? 1.5 : 1.0);
   }
 
-  // ── Helpers ──────────────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════
+  // HELPERS
+  // ══════════════════════════════════════════════════════════════
 
   _meanAbs(arr) {
     if (!arr) return 0;
@@ -497,15 +500,20 @@ export class UnityBrain extends EventEmitter {
     return sum / arr.length;
   }
 
+  _getClusterStates() {
+    const states = {};
+    for (const [name, cluster] of Object.entries(this.clusters)) {
+      states[name] = cluster.getState();
+    }
+    return states;
+  }
+
   _generateIdleThought() {
-    const state = this.state;
-    const arousal = state.amygdala?.arousal || 0.5;
-    const coherence = state.oscillations?.coherence || 0;
     this.emit('thought', {
-      arousal,
-      coherence,
-      psi: state.psi,
-      action: state.basalGanglia?.selectedAction || 'idle',
+      arousal: this.state.amygdala?.arousal || 0.5,
+      coherence: this.state.oscillations?.coherence || 0,
+      psi: this.state.psi,
+      action: this.motor.selectedAction,
       time: this.time,
     });
   }

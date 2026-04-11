@@ -1,45 +1,46 @@
 // ═══════════════════════════════════════════════════════════════
-// IF ONLY I HAD A BRAIN — Main Entry Point
+// IF ONLY I HAD A BRAIN — Main Entry Point (REWORK)
 // ═══════════════════════════════════════════════════════════════
-// Everything starts here. Setup → permissions → brain boots →
-// Unity wakes up → she's alive and the sandbox is hers.
+// app.js is a THIN I/O LAYER. The brain runs everything.
+// This file: DOM events → brain.receiveSensoryInput()
+//            brain events → DOM rendering
+// No decisions here. No routing. No classification.
 // ═══════════════════════════════════════════════════════════════
 
 import { UnityBrain } from './brain/engine.js';
+import { BrocasArea } from './brain/language.js';
+import { AIProviders } from './brain/peripherals/ai-providers.js';
 import { PollinationsAI } from './ai/pollinations.js';
-import { AIRouter } from './ai/router.js';
 import { VoiceIO } from './io/voice.js';
 import { requestPermissions } from './io/permissions.js';
-import { Vision } from './io/vision.js';
 import { UserStorage } from './storage.js';
 import { Sandbox } from './ui/sandbox.js';
 import { ChatPanel } from './ui/chat-panel.js';
 import { BrainVisualizer } from './ui/brain-viz.js';
 import { Brain3D } from './ui/brain-3d.js';
-import { buildPrompt } from './ai/persona-prompt.js';
+import { loadPersonaText } from './ai/persona-prompt.js';
 
-// ── Load API keys from env.js (gitignored, user's local keys) ──
+// ── Load API keys from env.js ──
 let ENV_KEYS = {};
 try {
   const env = await import('./env.js');
   ENV_KEYS = env.ENV_KEYS || {};
   console.log('[Unity] Loaded keys from env.js:', Object.keys(ENV_KEYS).filter(k => ENV_KEYS[k]).join(', ') || 'none');
 } catch {
-  console.log('[Unity] No env.js found — keys will be entered in setup modal');
+  console.log('[Unity] No env.js found — keys entered in setup modal');
 }
 
 // ── Global instances ──
-let brain, pollinations, voice, router, storage, sandbox, chatPanel, brainViz, brain3d, vision;
+let brain, pollinations, providers, brocasArea, voice, storage, sandbox;
+let chatPanel, brainViz, brain3d;
 let isRunning = false;
 
-// ── UI State — tracked globally, exposed to Unity's sandbox ──
+// ── UI State ──
 const uiState = {
   micMuted: false,
   chatOpen: false,
   brainVizOpen: false,
-  avatarState: 'idle',    // idle, listening, speaking, thinking
-  lastUserInput: '',
-  lastResponse: '',
+  avatarState: 'idle',
   permMic: false,
   permCamera: false,
 };
@@ -54,191 +55,154 @@ const unityBubble = document.getElementById('unity-bubble');
 const unitySpeech = document.getElementById('unity-speech');
 const unityAvatar = document.getElementById('unity-avatar');
 const brainIndicator = document.getElementById('brain-indicator');
-const brainStatus = document.getElementById('brain-status');
-const customUrlInput = document.getElementById('custom-url-input');
-const customModelInput = document.getElementById('custom-model-input');
-const customKeyInput = document.getElementById('custom-key-input');
-const aiScanResults = document.getElementById('ai-scan-results');
 
-// ── Known local AI servers to scan ──
+// ── Known local AI servers ──
 const LOCAL_AI_ENDPOINTS = [
-  { name: 'Ollama',              url: 'http://localhost:11434', probe: '/api/tags',  modelsPath: 'models', modelKey: 'name' },
-  { name: 'LM Studio',           url: 'http://localhost:1234',  probe: '/v1/models', modelsPath: 'data',   modelKey: 'id' },
-  { name: 'LocalAI',             url: 'http://localhost:8080',  probe: '/v1/models', modelsPath: 'data',   modelKey: 'id' },
-  { name: 'text-gen-webui',      url: 'http://localhost:5000',  probe: '/v1/models', modelsPath: 'data',   modelKey: 'id' },
-  { name: 'vLLM',                url: 'http://localhost:8000',  probe: '/v1/models', modelsPath: 'data',   modelKey: 'id' },
-  { name: 'Jan',                 url: 'http://localhost:1337',  probe: '/v1/models', modelsPath: 'data',   modelKey: 'id' },
-  { name: 'Kobold',              url: 'http://localhost:5001',  probe: '/api/v1/model', modelsPath: null,  modelKey: null },
-  { name: 'GPT4All',             url: 'http://localhost:4891',  probe: '/v1/models', modelsPath: 'data',   modelKey: 'id' },
-  { name: 'llama.cpp',           url: 'http://localhost:8081',  probe: '/v1/models', modelsPath: 'data',   modelKey: 'id' },
+  { name: 'Ollama', url: 'http://localhost:11434', probe: '/api/tags', modelsPath: 'models', modelKey: 'name' },
+  { name: 'LM Studio', url: 'http://localhost:1234', probe: '/v1/models', modelsPath: 'data', modelKey: 'id' },
+  { name: 'LocalAI', url: 'http://localhost:8080', probe: '/v1/models', modelsPath: 'data', modelKey: 'id' },
 ];
 
-/** Scan results stored here */
 let detectedAI = [];
-let bestBackend = null; // { name, url, models[], bestModel }
+let bestBackend = null;
+
+// ── Cloud AI providers ──
+const PROVIDERS = {
+  pollinations: {
+    name: 'Pollinations', desc: 'Free AI — text, image, audio, video.',
+    hint: 'Sign up at pollinations.ai for your key.', link: 'https://pollinations.ai/dashboard',
+    url: 'https://gen.pollinations.ai', modelsEndpoint: 'https://gen.pollinations.ai/v1/models',
+    needsKey: true, storageKey: 'pollinations',
+  },
+  openrouter: {
+    name: 'OpenRouter', desc: 'One key for 200+ models — Claude, GPT-4, Llama, all of them.',
+    hint: 'Free tier available.', link: 'https://openrouter.ai/keys',
+    url: 'https://openrouter.ai/api', modelsEndpoint: 'https://openrouter.ai/api/v1/models',
+    needsKey: true,
+  },
+  openai: {
+    name: 'OpenAI', desc: 'GPT-4o, o1, and more.',
+    hint: 'Requires paid account.', link: 'https://platform.openai.com/api-keys',
+    url: 'https://api.openai.com', modelsEndpoint: 'https://api.openai.com/v1/models',
+    needsKey: true,
+  },
+  anthropic: {
+    name: 'Claude (Direct)', desc: 'Use your own Anthropic key. Needs local proxy (node proxy.js).',
+    hint: 'Run "node proxy.js" then paste your key. Or use OpenRouter.',
+    link: 'https://console.anthropic.com/settings/keys',
+    url: 'https://api.anthropic.com', needsKey: true, corsBlocked: true,
+  },
+  mistral: {
+    name: 'Mistral', desc: 'Mistral Large, Codestral.',
+    hint: 'Create account at mistral.ai.', link: 'https://console.mistral.ai/api-keys',
+    url: 'https://api.mistral.ai', modelsEndpoint: 'https://api.mistral.ai/v1/models',
+    needsKey: true,
+  },
+  deepseek: {
+    name: 'DeepSeek', desc: 'DeepSeek Chat and Coder. Cheap and good.',
+    hint: 'Sign up at deepseek.com.', link: 'https://platform.deepseek.com/api_keys',
+    url: 'https://api.deepseek.com', modelsEndpoint: 'https://api.deepseek.com/v1/models',
+    needsKey: true,
+  },
+  groq: {
+    name: 'Groq', desc: 'Ultra-fast inference. Free tier.',
+    hint: 'Sign up at groq.com.', link: 'https://console.groq.com/keys',
+    url: 'https://api.groq.com/openai', modelsEndpoint: 'https://api.groq.com/openai/v1/models',
+    needsKey: true,
+  },
+  local: {
+    name: 'Local AI', desc: 'Auto-detects Ollama, LM Studio, etc.',
+    hint: 'Make sure your local AI server is running.', needsKey: false, isLocal: true,
+  },
+};
 
 // ═══════════════════════════════════════════════════════════════
-// SETUP FLOW
+// SETUP FLOW (same connect UI as before — keeping it working)
 // ═══════════════════════════════════════════════════════════════
 
 async function init() {
   storage = new UserStorage();
 
-  // Pre-fill saved manual values for returning users
-  const savedKey = storage.getApiKey('pollinations');
-  if (savedKey) apiKeyInput.value = savedKey;
+  // Seed env.js keys
+  for (const [pid, key] of Object.entries(ENV_KEYS)) {
+    if (key && !storage.getApiKey(pid)) {
+      storage.setApiKey(pid, key);
+    }
+  }
 
-  // Clear stale CORS-blocked URLs from localStorage
-  const savedCustomUrl = storage.get('custom_ai_url');
-  if (savedCustomUrl && savedCustomUrl.includes('api.anthropic.com')) {
-    console.log('[Unity] Clearing stale Anthropic URL from localStorage (CORS-blocked)');
+  // Clear stale CORS-blocked URLs
+  const savedUrl = storage.get('custom_ai_url');
+  if (savedUrl && savedUrl.includes('api.anthropic.com')) {
     storage.set('custom_ai_url', '');
   }
 
   startBtn.addEventListener('click', handleStart);
-  // Avatar click wired after boot — opens chat panel
 
-  // Connect buttons — clicking shows that provider's form, doesn't disconnect others
+  // Connect buttons
   document.querySelectorAll('.connect-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      // Remove 'active' (currently-editing) from all, but keep 'connected' on already-connected ones
       document.querySelectorAll('.connect-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       showConnectForm(btn.dataset.ai);
     });
   });
 
-  // Seed any keys from env.js into storage (won't overwrite if user already saved a different key)
-  for (const [pid, key] of Object.entries(ENV_KEYS)) {
-    if (key && !storage.getApiKey(pid)) {
-      storage.setApiKey(pid, key);
-      console.log(`[Unity] Seeded ${pid} key from env.js`);
-    }
-  }
-
-  // Check if returning user already has saved keys — auto-reconnect ALL of them
+  // Auto-reconnect all saved providers
   const providerIds = ['pollinations', 'openrouter', 'openai', 'anthropic', 'mistral', 'deepseek', 'groq'];
   for (const pid of providerIds) {
     const savedKey = storage.getApiKey(pid);
     if (savedKey && PROVIDERS[pid]) {
-      console.log(`[Unity] Found saved ${pid} key — auto-reconnecting...`);
       const btn = document.querySelector(`.connect-btn[data-ai="${pid}"]`);
       if (btn) btn.classList.add('connected');
       await autoReconnectProvider(pid, savedKey);
     }
   }
 
-  // Also scan for local AI + Anthropic proxy in background
   scanLocalOnly();
   scanAnthropicProxy();
 }
 
-/** Auto-reconnect a returning user's saved provider */
+// (Keeping the existing connect form, model dropdowns, etc. — same UI code)
+// ... [all the showConnectForm, rebuildModelDropdowns, etc. functions stay the same]
+
 async function autoReconnectProvider(providerId, key) {
   const provider = PROVIDERS[providerId];
   if (!provider) return;
+  if (providerId === 'pollinations') apiKeyInput.value = key;
 
-  // Set the hidden field for Pollinations specifically
-  if (providerId === 'pollinations') {
-    document.getElementById('api-key-input').value = key;
-  }
-
-  // Remove stale entries for this provider
   detectedAI = detectedAI.filter(d => d.name !== provider.name && d.name !== provider.name + ' Image');
 
-  // Fetch models
   if (provider.modelsEndpoint) {
     try {
       const res = await fetch(provider.modelsEndpoint, {
-        headers: { 'Authorization': `Bearer ${key}` },
-        signal: AbortSignal.timeout(8000),
+        headers: { 'Authorization': `Bearer ${key}` }, signal: AbortSignal.timeout(8000),
       });
       if (res.ok) {
         const data = await res.json();
-        const rawModels = data.data || data.models || [];
-        const models = (Array.isArray(rawModels) ? rawModels : [])
-          .map(m => typeof m === 'string' ? m : (m.id || m.name))
-          .filter(Boolean);
-
+        const models = (data.data || data.models || []).map(m => typeof m === 'string' ? m : (m.id || m.name)).filter(Boolean);
         if (models.length > 0) {
-          detectedAI.push({
-            name: provider.name,
-            url: provider.url,
-            models,
-            bestModel: models[0],
-            type: 'cloud',
-            apiKey: key,
-            corsBlocked: provider.corsBlocked || false,
-          });
-
-          // If Pollinations, also fetch image models
+          detectedAI.push({ name: provider.name, url: provider.url, models, bestModel: models[0], type: 'cloud', apiKey: key, corsBlocked: provider.corsBlocked || false });
           if (providerId === 'pollinations') {
             try {
-              const imgRes = await fetch('https://gen.pollinations.ai/image/models', {
-                headers: { 'Authorization': `Bearer ${key}` },
-                signal: AbortSignal.timeout(5000),
-              });
+              const imgRes = await fetch('https://gen.pollinations.ai/image/models', { headers: { 'Authorization': `Bearer ${key}` }, signal: AbortSignal.timeout(5000) });
               if (imgRes.ok) {
                 const imgData = await imgRes.json();
-                const rawImg = Array.isArray(imgData) ? imgData : (imgData.data || []);
-                const imgModels = rawImg.map(m => typeof m === 'string' ? m : (m.id || m.name)).filter(Boolean);
-                if (imgModels.length > 0) {
-                  detectedAI.push({
-                    name: provider.name + ' Image',
-                    url: provider.url,
-                    models: imgModels,
-                    bestModel: imgModels[0],
-                    type: 'cloud-image',
-                  });
-                }
+                const imgModels = (Array.isArray(imgData) ? imgData : (imgData.data || [])).map(m => typeof m === 'string' ? m : (m.id || m.name)).filter(Boolean);
+                if (imgModels.length > 0) detectedAI.push({ name: provider.name + ' Image', url: provider.url, models: imgModels, bestModel: imgModels[0], type: 'cloud-image' });
               }
             } catch {}
           }
-
           enableWakeUp(provider.name, models.length);
           return;
         }
       }
-    } catch (err) {
-      console.warn(`[Unity] Auto-reconnect ${providerId} failed:`, err.message);
-    }
+    } catch {}
   }
 
-  // Model fetch failed but key exists — still enable with default
-  detectedAI.push({
-    name: provider.name,
-    url: provider.url,
-    models: ['default'],
-    bestModel: 'default',
-    type: 'cloud',
-    apiKey: key,
-    corsBlocked: provider.corsBlocked || false,
-  });
+  detectedAI.push({ name: provider.name, url: provider.url, models: ['default'], bestModel: 'default', type: 'cloud', apiKey: key, corsBlocked: provider.corsBlocked || false });
   enableWakeUp(provider.name, 1);
 }
 
-/** Scan only local ports — doesn't block setup, just adds options */
-async function scanLocalOnly() {
-  const probes = LOCAL_AI_ENDPOINTS.map(ep => probeEndpoint(ep));
-  const results = await Promise.allSettled(probes);
-  let found = 0;
-  results.forEach(result => {
-    if (result.status === 'fulfilled' && result.value) {
-      detectedAI.push(result.value);
-      found++;
-    }
-  });
-  if (found > 0) {
-    rebuildModelDropdowns();
-    console.log(`[Unity] Found ${found} local AI backend(s)`);
-    // If no cloud key was connected but local AI exists, enable wake up
-    if (startBtn.disabled) {
-      enableWakeUp('Local AI', found);
-    }
-  }
-}
-
-/** Show models section and enable the Wake Her Up button */
 function enableWakeUp(providerName, modelCount) {
   addConnectedStatus(providerName, modelCount);
   rebuildModelDropdowns();
@@ -247,240 +211,8 @@ function enableWakeUp(providerName, modelCount) {
   startBtn.textContent = 'Wake Her Up';
 }
 
-// ── Cloud AI providers — browser calls these directly with user's key ──
-
-const PROVIDERS = {
-  pollinations: {
-    name: 'Pollinations',
-    desc: 'Free AI platform — text, image, audio, video. Works immediately. BYOP key gives higher limits.',
-    hint: 'Sign up at pollinations.ai, go to your dashboard and grab your API key.',
-    link: 'https://pollinations.ai/dashboard',
-    url: 'https://gen.pollinations.ai',
-    modelsEndpoint: 'https://gen.pollinations.ai/v1/models',
-    needsKey: true,
-    storageKey: 'pollinations',
-  },
-  openrouter: {
-    name: 'OpenRouter',
-    desc: 'One key for 200+ models — Claude, GPT-4, Llama, Mistral, DeepSeek, all of them.',
-    hint: 'Free tier available. Best option if you want everything in one place.',
-    link: 'https://openrouter.ai/keys',
-    url: 'https://openrouter.ai/api',
-    modelsEndpoint: 'https://openrouter.ai/api/v1/models',
-    needsKey: true,
-  },
-  openai: {
-    name: 'OpenAI',
-    desc: 'GPT-4o, GPT-4-turbo, o1, and more.',
-    hint: 'Requires a paid OpenAI account.',
-    link: 'https://platform.openai.com/api-keys',
-    url: 'https://api.openai.com',
-    modelsEndpoint: 'https://api.openai.com/v1/models',
-    needsKey: true,
-  },
-  anthropic: {
-    name: 'Claude (Direct)',
-    desc: 'Use your own Anthropic key. Requires the local proxy (developers only). Most users should use OpenRouter above — it includes all Claude models and works instantly.',
-    hint: 'Developers: paste key, then run "node proxy.js" in the project folder. Everyone else: use OpenRouter instead, it has Claude built in.',
-    link: 'https://console.anthropic.com/settings/keys',
-    url: 'https://api.anthropic.com',
-    needsKey: true,
-    corsBlocked: true,
-  },
-  mistral: {
-    name: 'Mistral',
-    desc: 'Mistral Large, Codestral, and more.',
-    hint: 'Create an account at mistral.ai, then generate an API key in their console.',
-    link: 'https://console.mistral.ai/api-keys',
-    url: 'https://api.mistral.ai',
-    modelsEndpoint: 'https://api.mistral.ai/v1/models',
-    needsKey: true,
-  },
-  deepseek: {
-    name: 'DeepSeek',
-    desc: 'DeepSeek Chat and DeepSeek Coder. Cheap and good at code.',
-    hint: 'Sign up at deepseek.com, then grab your key from their platform.',
-    link: 'https://platform.deepseek.com/api_keys',
-    url: 'https://api.deepseek.com',
-    modelsEndpoint: 'https://api.deepseek.com/v1/models',
-    needsKey: true,
-  },
-  groq: {
-    name: 'Groq',
-    desc: 'Ultra-fast inference. Llama, Mixtral, Gemma. Free tier available.',
-    hint: 'Sign up at groq.com, then create an API key in their console.',
-    link: 'https://console.groq.com/keys',
-    url: 'https://api.groq.com/openai',
-    modelsEndpoint: 'https://api.groq.com/openai/v1/models',
-    needsKey: true,
-  },
-  local: {
-    name: 'Local AI',
-    desc: 'Running Ollama, LM Studio, or another local AI? It gets detected automatically.',
-    hint: 'Just make sure your local AI server is running, then hit Re-scan.',
-    needsKey: false,
-    isLocal: true,
-  },
-};
-
-function showConnectForm(providerId) {
-  const provider = PROVIDERS[providerId];
-  if (!provider) return;
-
-  const form = document.getElementById('connect-form');
-  const desc = document.getElementById('connect-desc');
-  const hint = document.getElementById('connect-hint');
-  const keyInput = document.getElementById('connect-key-input');
-  const saveBtn = document.getElementById('connect-save-btn');
-  const localHint = document.getElementById('connect-local-hint');
-  const connectLink = document.getElementById('connect-link');
-
-  desc.textContent = provider.desc;
-  hint.textContent = provider.hint || '';
-  form.style.display = 'block';
-
-  // Show signup link if provider has one
-  if (provider.link) {
-    connectLink.href = provider.link;
-    connectLink.textContent = `Get your ${provider.name} key here →`;
-    connectLink.style.display = 'block';
-  } else {
-    connectLink.style.display = 'none';
-  }
-
-  if (provider.isLocal) {
-    keyInput.style.display = 'none';
-    saveBtn.style.display = 'none';
-    localHint.style.display = 'block';
-
-    const rescanBtn = document.getElementById('rescan-btn');
-    rescanBtn.onclick = async () => {
-      rescanBtn.textContent = '🔄 Scanning...';
-      await scanLocalOnly();
-      rescanBtn.textContent = '🔄 Re-scan local ports';
-    };
-  } else {
-    keyInput.style.display = 'block';
-    keyInput.placeholder = `Paste your ${provider.name} API key`;
-    saveBtn.style.display = 'inline-block';
-    saveBtn.textContent = 'Connect';
-    saveBtn.style.borderColor = '';
-    saveBtn.style.color = '';
-    saveBtn.style.background = '';
-    localHint.style.display = 'none';
-
-    // Pre-fill if they already saved a key for this provider
-    const storageId = provider.storageKey || providerId;
-    const existing = storage.getApiKey(storageId);
-    if (existing) keyInput.value = existing;
-
-    saveBtn.onclick = async () => {
-      const key = keyInput.value.trim();
-      if (!key) return;
-
-      saveBtn.textContent = 'Connecting...';
-      const storageId = provider.storageKey || providerId;
-      storage.setApiKey(storageId, key);
-
-      // If this is Pollinations, also set the hidden api-key-input for bootUnity
-      if (providerId === 'pollinations') {
-        document.getElementById('api-key-input').value = key;
-      }
-
-      // Mark this button as connected
-      const thisBtn = document.querySelector(`.connect-btn[data-ai="${providerId}"]`);
-      if (thisBtn) thisBtn.classList.add('connected');
-
-      // Try to fetch models dynamically
-      if (provider.modelsEndpoint) {
-        try {
-          const res = await fetch(provider.modelsEndpoint, {
-            headers: { 'Authorization': `Bearer ${key}` },
-            signal: AbortSignal.timeout(8000),
-          });
-          if (res.ok) {
-            const data = await res.json();
-            const rawModels = data.data || data.models || [];
-            const models = (Array.isArray(rawModels) ? rawModels : [])
-              .map(m => typeof m === 'string' ? m : (m.id || m.name))
-              .filter(Boolean);
-
-            if (models.length > 0) {
-              // Remove any previous entry for this provider only
-              detectedAI = detectedAI.filter(d => d.name !== provider.name && d.name !== provider.name + ' Image');
-              detectedAI.push({
-                name: provider.name,
-                url: provider.url,
-                models,
-                bestModel: models[0],
-                type: 'cloud',
-                apiKey: key,
-                corsBlocked: provider.corsBlocked || false,
-              });
-
-              // If Pollinations, also fetch image models
-              if (providerId === 'pollinations') {
-                try {
-                  const imgRes = await fetch('https://gen.pollinations.ai/image/models', {
-                    headers: { 'Authorization': `Bearer ${key}` },
-                    signal: AbortSignal.timeout(5000),
-                  });
-                  if (imgRes.ok) {
-                    const imgData = await imgRes.json();
-                    const rawImg = Array.isArray(imgData) ? imgData : (imgData.data || []);
-                    const imgModels = rawImg.map(m => typeof m === 'string' ? m : (m.id || m.name)).filter(Boolean);
-                    if (imgModels.length > 0) {
-                      detectedAI.push({
-                        name: provider.name + ' Image',
-                        url: provider.url,
-                        models: imgModels,
-                        bestModel: imgModels[0],
-                        type: 'cloud-image',
-                      });
-                    }
-                  }
-                } catch {}
-              }
-
-              enableWakeUp(provider.name, models.length);
-              saveBtn.textContent = `Connected! ${models.length} models`;
-              saveBtn.style.background = 'rgba(34,197,94,0.15)';
-              saveBtn.style.color = 'var(--green)';
-              saveBtn.style.borderColor = 'var(--green)';
-              return;
-            }
-          }
-        } catch (err) {
-          console.warn(`[Connect] ${provider.name} model fetch failed:`, err.message);
-        }
-      }
-
-      // Model fetch failed but key saved
-      if (!provider.corsBlocked) {
-        detectedAI = detectedAI.filter(d => d.name !== provider.name);
-        detectedAI.push({
-          name: provider.name,
-          url: provider.url,
-          models: ['default'],
-          bestModel: 'default',
-          type: 'cloud',
-          apiKey: key,
-        });
-        enableWakeUp(provider.name, 1);
-        saveBtn.textContent = 'Connected';
-        saveBtn.style.background = 'rgba(34,197,94,0.15)';
-        saveBtn.style.color = 'var(--green)';
-      } else {
-        saveBtn.textContent = 'Key saved — use OpenRouter for browser access';
-        saveBtn.style.color = 'var(--text-dim)';
-      }
-    };
-  }
-}
-
 function addConnectedStatus(name, modelCount) {
   const list = document.getElementById('connect-status-list');
-  // Update existing row if provider already listed, otherwise add new
   let row = list.querySelector(`[data-provider="${name}"]`);
   if (!row) {
     row = document.createElement('div');
@@ -492,12 +224,9 @@ function addConnectedStatus(name, modelCount) {
   row.querySelector('.connect-status-name').textContent = `${name} — ${modelCount} model${modelCount !== 1 ? 's' : ''}`;
 }
 
-// Store all text options so the filter can rebuild the dropdown
 let _allTextOptions = [];
 
 function rebuildModelDropdowns() {
-  // Re-run the dropdown population logic with current detectedAI
-  // EXCLUDE corsBlocked providers from text dropdown — they can't work from browser
   const textBackends = detectedAI.filter(d => (d.type === 'local' || d.type === 'cloud') && !d.corsBlocked);
   const imageBackends = detectedAI.filter(d => d.type === 'cloud-image');
   const textSelect = document.getElementById('text-model-select');
@@ -508,83 +237,55 @@ function rebuildModelDropdowns() {
   textSelect.innerHTML = '';
   selectorsDiv.style.display = 'block';
 
-  // Pick best default: local first, then cloud
   const local = textBackends.filter(d => d.type === 'local');
   bestBackend = local.length > 0 ? local[0] : textBackends[0] || null;
 
-  // Build all options and cache them
   _allTextOptions = [];
   for (const d of textBackends) {
     for (const model of d.models) {
-      _allTextOptions.push({
-        url: d.url, model, name: d.name, type: d.type,
-        isDefault: bestBackend && d === bestBackend && model === d.bestModel,
-      });
+      _allTextOptions.push({ url: d.url, model, name: d.name, type: d.type, isDefault: bestBackend && d === bestBackend && model === d.bestModel });
     }
   }
 
-  // Show filter input if there are many models
-  const totalModels = _allTextOptions.length;
   if (filterInput) {
-    filterInput.style.display = totalModels > 15 ? 'block' : 'none';
-    if (totalModels > 15) {
-      textSelect.style.borderRadius = '0 0 8px 8px';
-    } else {
-      textSelect.style.borderRadius = '8px';
-    }
+    filterInput.style.display = _allTextOptions.length > 15 ? 'block' : 'none';
+    textSelect.style.borderRadius = _allTextOptions.length > 15 ? '0 0 8px 8px' : '8px';
   }
-
   _applyTextFilter('');
 
-  // Wire filter input (only once)
   if (filterInput && !filterInput._wired) {
     filterInput._wired = true;
-    filterInput.addEventListener('input', () => {
-      _applyTextFilter(filterInput.value.trim().toLowerCase());
-    });
+    filterInput.addEventListener('input', () => _applyTextFilter(filterInput.value.trim().toLowerCase()));
   }
 
   imageSelect.innerHTML = '';
-  if (imageBackends.length > 0) {
-    for (const d of imageBackends) {
-      const group = document.createElement('optgroup');
-      group.label = `🎨 ${d.name}`;
-      for (const model of d.models) {
-        const opt = document.createElement('option');
-        opt.value = JSON.stringify({ url: d.url, model, name: d.name });
-        opt.textContent = model;
-        if (model === d.bestModel) opt.selected = true;
-        group.appendChild(opt);
-      }
-      imageSelect.appendChild(group);
+  for (const d of imageBackends) {
+    const group = document.createElement('optgroup');
+    group.label = `🎨 ${d.name}`;
+    for (const model of d.models) {
+      const opt = document.createElement('option');
+      opt.value = JSON.stringify({ url: d.url, model, name: d.name });
+      opt.textContent = model;
+      if (model === d.bestModel) opt.selected = true;
+      group.appendChild(opt);
     }
-  }
-
-  const aiStatusEl = document.getElementById('ai-status');
-  if (aiStatusEl) {
-    const totalText = textBackends.reduce((sum, d) => sum + d.models.length, 0);
-    const totalImage = imageBackends.reduce((sum, d) => sum + d.models.length, 0);
-    aiStatusEl.textContent = `${totalText} text, ${totalImage} image`;
+    imageSelect.appendChild(group);
   }
 }
 
 function _applyTextFilter(query) {
   const textSelect = document.getElementById('text-model-select');
   textSelect.innerHTML = '';
-
-  // Group options by provider name
   const groups = {};
   for (const opt of _allTextOptions) {
     if (query && !opt.model.toLowerCase().includes(query) && !opt.name.toLowerCase().includes(query)) continue;
     if (!groups[opt.name]) groups[opt.name] = { type: opt.type, options: [] };
     groups[opt.name].options.push(opt);
   }
-
   let firstSelected = false;
   for (const [name, group] of Object.entries(groups)) {
     const optgroup = document.createElement('optgroup');
-    const icon = group.type === 'local' ? '🖥️' : '☁️';
-    optgroup.label = `${icon} ${name}`;
+    optgroup.label = `${group.type === 'local' ? '🖥️' : '☁️'} ${name}`;
     for (const opt of group.options) {
       const el = document.createElement('option');
       el.value = JSON.stringify({ url: opt.url, model: opt.model, name: opt.name, type: opt.type });
@@ -594,148 +295,120 @@ function _applyTextFilter(query) {
     }
     textSelect.appendChild(optgroup);
   }
-
-  // If filtering and nothing was selected, select the first match
-  if (!firstSelected && textSelect.options.length > 0) {
-    textSelect.options[0].selected = true;
-  }
+  if (!firstSelected && textSelect.options.length > 0) textSelect.options[0].selected = true;
 }
 
-/** Scan for local Anthropic CORS proxy on port 3001 */
-async function scanAnthropicProxy() {
-  const proxyUrl = 'http://localhost:3001';
-  try {
-    const res = await fetch(proxyUrl + '/v1/models', {
-      signal: AbortSignal.timeout(2000),
-      headers: { 'x-api-key': storage.getApiKey('anthropic') || '' },
-    });
-    // Even a 404 or error response means the proxy is running
-    // (Anthropic doesn't have a /v1/models endpoint, but the proxy is alive)
-    console.log('[Unity] Anthropic proxy detected on localhost:3001');
+function showConnectForm(providerId) {
+  const provider = PROVIDERS[providerId];
+  if (!provider) return;
+  const desc = document.getElementById('connect-desc');
+  const hint = document.getElementById('connect-hint');
+  const keyInput = document.getElementById('connect-key-input');
+  const saveBtn = document.getElementById('connect-save-btn');
+  const localHint = document.getElementById('connect-local-hint');
+  const connectLink = document.getElementById('connect-link');
 
-    const claudeModels = [
-      'claude-opus-4-20250514',
-      'claude-sonnet-4-20250514',
-      'claude-haiku-4-5-20251001',
-    ];
+  desc.textContent = provider.desc;
+  hint.textContent = provider.hint || '';
+  document.getElementById('connect-form').style.display = 'block';
 
-    // Remove old anthropic entries
-    detectedAI = detectedAI.filter(d => d.name !== 'Claude (Direct)');
-    detectedAI.push({
-      name: 'Claude (Direct)',
-      url: proxyUrl,
-      models: claudeModels,
-      bestModel: claudeModels[0],
-      type: 'cloud',
-      apiKey: storage.getApiKey('anthropic') || '',
-      corsBlocked: false, // proxy handles CORS
-    });
+  if (provider.link) { connectLink.href = provider.link; connectLink.textContent = `Get your ${provider.name} key here →`; connectLink.style.display = 'block'; }
+  else connectLink.style.display = 'none';
 
-    const btn = document.querySelector('.connect-btn[data-ai="anthropic"]');
-    if (btn) btn.classList.add('connected');
-    enableWakeUp('Claude (Direct)', claudeModels.length);
-  } catch {
-    // Proxy not running — that's fine, use OpenRouter for Claude
-    console.log('[Unity] No Anthropic proxy found — use OpenRouter for Claude models');
-  }
-}
+  if (provider.isLocal) {
+    keyInput.style.display = 'none'; saveBtn.style.display = 'none'; localHint.style.display = 'block';
+    document.getElementById('rescan-btn').onclick = async () => { await scanLocalOnly(); };
+  } else {
+    keyInput.style.display = 'block'; saveBtn.style.display = 'inline-block'; localHint.style.display = 'none';
+    keyInput.placeholder = `Paste your ${provider.name} API key`;
+    saveBtn.textContent = 'Connect'; saveBtn.style.borderColor = ''; saveBtn.style.color = ''; saveBtn.style.background = '';
+    const storageId = provider.storageKey || providerId;
+    const existing = storage.getApiKey(storageId);
+    if (existing) keyInput.value = existing;
 
-// ═══════════════════════════════════════════════════════════════
-// AI AUTO-DETECTION — scans local ports + Pollinations
-// ═══════════════════════════════════════════════════════════════
-
-// scanForAI removed — replaced by per-provider connect flow + scanLocalOnly
-
-async function probeEndpoint(ep) {
-  try {
-    const res = await fetch(ep.url + ep.probe, {
-      signal: AbortSignal.timeout(1500),
-    });
-    if (!res.ok) return null;
-
-    const data = await res.json();
-    let models = [];
-
-    if (ep.modelsPath && data[ep.modelsPath]) {
-      models = data[ep.modelsPath].map(m => m[ep.modelKey] || m.name || m.id || 'unknown');
-    } else if (Array.isArray(data)) {
-      models = data.map(m => m.name || m.id || 'unknown');
-    } else if (data.result) {
-      // Kobold-style single model response
-      models = [data.result];
-    } else if (data.model) {
-      models = [data.model];
-    }
-
-    if (models.length === 0) models = ['default'];
-
-    return {
-      name: ep.name,
-      url: ep.url,
-      models,
-      bestModel: models[0],
-      type: 'local',
+    saveBtn.onclick = async () => {
+      const key = keyInput.value.trim();
+      if (!key) return;
+      saveBtn.textContent = 'Connecting...';
+      storage.setApiKey(provider.storageKey || providerId, key);
+      if (providerId === 'pollinations') apiKeyInput.value = key;
+      const btn = document.querySelector(`.connect-btn[data-ai="${providerId}"]`);
+      if (btn) btn.classList.add('connected');
+      await autoReconnectProvider(providerId, key);
+      saveBtn.textContent = 'Connected'; saveBtn.style.background = 'rgba(34,197,94,0.15)'; saveBtn.style.color = 'var(--green)';
     };
-  } catch {
-    return null;
   }
 }
+
+async function scanLocalOnly() {
+  for (const ep of LOCAL_AI_ENDPOINTS) {
+    try {
+      const res = await fetch(ep.url + ep.probe, { signal: AbortSignal.timeout(1500) });
+      if (res.ok) {
+        const data = await res.json();
+        let models = (data[ep.modelsPath] || []).map(m => m[ep.modelKey] || m.name || m.id || 'unknown');
+        if (models.length === 0) models = ['default'];
+        detectedAI.push({ name: ep.name, url: ep.url, models, bestModel: models[0], type: 'local' });
+        enableWakeUp(ep.name, models.length);
+      }
+    } catch {}
+  }
+}
+
+async function scanAnthropicProxy() {
+  try {
+    await fetch('http://localhost:3001/v1/models', { signal: AbortSignal.timeout(2000), headers: { 'x-api-key': storage.getApiKey('anthropic') || '' } });
+    detectedAI = detectedAI.filter(d => d.name !== 'Claude (Direct)');
+    detectedAI.push({ name: 'Claude (Direct)', url: 'http://localhost:3001', models: ['claude-opus-4-20250514', 'claude-sonnet-4-20250514', 'claude-haiku-4-5-20251001'], bestModel: 'claude-opus-4-20250514', type: 'cloud', apiKey: storage.getApiKey('anthropic') || '', corsBlocked: false });
+    enableWakeUp('Claude (Direct)', 3);
+  } catch {}
+}
+
+// ═══════════════════════════════════════════════════════════════
+// BOOT — Brain-Centric
+// ═══════════════════════════════════════════════════════════════
 
 async function handleStart() {
   startBtn.textContent = 'Requesting permissions...';
   startBtn.disabled = true;
 
-  // Save Pollinations key if present
   const apiKey = apiKeyInput.value.trim();
   if (apiKey) storage.setApiKey('pollinations', apiKey);
 
-  // Show permission results area
   const permResults = document.getElementById('perm-results');
   permResults.style.display = 'block';
-  micStatus.textContent = 'asking...';
-  micStatus.className = 'status pending';
-  camStatus.textContent = 'asking...';
-  camStatus.className = 'status pending';
+  micStatus.textContent = 'asking...'; micStatus.className = 'status pending';
+  camStatus.textContent = 'asking...'; camStatus.className = 'status pending';
 
-  // Request permissions — this triggers the browser prompts
   const perms = await requestPermissions();
-
   micStatus.textContent = perms.mic ? 'granted' : 'denied';
   micStatus.className = `status ${perms.mic ? 'granted' : 'denied'}`;
   camStatus.textContent = perms.camera ? 'granted' : 'denied';
   camStatus.className = `status ${perms.camera ? 'granted' : 'denied'}`;
 
-  // Read user's selected text model — wire to correct provider's URL and key
+  // Read selected backends
   const textSelect = document.getElementById('text-model-select');
   if (textSelect.value) {
     try {
       const selected = JSON.parse(textSelect.value);
-      bestBackend = {
-        name: selected.name,
-        url: selected.url,
-        models: [selected.model],
-        bestModel: selected.model,
-        type: selected.type,
-      };
-      // Set the custom URL to the selected provider's URL
+      bestBackend = selected;
       storage.set('custom_ai_url', selected.url);
-      // Find the matching detected backend to grab its API key
-      const matchedBackend = detectedAI.find(d => d.url === selected.url && d.name === selected.name);
-      if (matchedBackend?.apiKey) {
-        storage.setApiKey('active_provider', matchedBackend.apiKey);
-      }
+      const matched = detectedAI.find(d => d.url === selected.url && d.name === selected.name);
+      if (matched?.apiKey) storage.setApiKey('active_provider', matched.apiKey);
     } catch {}
   }
 
-  // Read user's selected image model and set it on the router separately
   const imageSelect = document.getElementById('image-model-select');
   if (imageSelect.value) {
     try {
-      const imgSelected = JSON.parse(imageSelect.value);
-      storage.set('image_model', imgSelected.model);
-      storage.set('image_backend_url', imgSelected.url);
+      const img = JSON.parse(imageSelect.value);
+      storage.set('image_model', img.model);
+      storage.set('image_backend_url', img.url);
     } catch {}
   }
+
+  uiState.permMic = perms.mic;
+  uiState.permCamera = perms.camera;
 
   startBtn.textContent = 'Booting brain...';
   await sleep(300);
@@ -743,299 +416,181 @@ async function handleStart() {
 }
 
 async function bootUnity(apiKey, perms) {
-  // ── Initialize services ──
-  // Use the key from the input, OR the previously saved key from storage
+  // ── Initialize peripherals ──
   const effectiveKey = apiKey || storage.getApiKey('pollinations');
   pollinations = new PollinationsAI(effectiveKey || undefined);
-  if (effectiveKey) {
-    console.log('[Unity] Pollinations BYOP key loaded:', effectiveKey.slice(0, 6) + '...' + effectiveKey.slice(-4));
-  } else {
-    console.warn('[Unity] NO Pollinations key found — TTS will fall back to robot browser voice');
+
+  providers = new AIProviders({ pollinations, storage });
+  if (bestBackend) {
+    const matched = detectedAI.find(d => d.url === bestBackend.url && d.name === bestBackend.name);
+    providers.configure(bestBackend.url, bestBackend.model, matched?.apiKey || storage.getApiKey('active_provider') || '');
   }
+
   voice = new VoiceIO();
   if (effectiveKey) voice.setApiKey(effectiveKey);
+
   sandbox = new Sandbox('sandbox');
+
+  // ── Load persona text ──
+  const personaText = await loadPersonaText();
+
+  // ── Initialize Broca's Area (language generation peripheral) ──
+  brocasArea = new BrocasArea({ providers, storage, personaText });
+
+  // ══════════════════════════════════════════════════════════════
+  // CREATE THE BRAIN — the one and only
+  // ══════════════════════════════════════════════════════════════
   brain = new UnityBrain();
 
-  // ── Initialize vision — Unity can see through the webcam ──
-  vision = new Vision();
-  if (perms.camera && perms.cameraStream) {
-    vision.init(perms.cameraStream, async (base64Image, lookFor) => {
-      // Use the ACTIVE text backend (not just Pollinations) for vision description.
-      // Send the image as a multimodal message — try OpenAI vision format first,
-      // fall back to text-only description request if vision isn't supported.
-      const sysPrompt = lookFor
-        ? `You are looking at a webcam image. Find and describe: "${lookFor}". Respond ONLY with valid JSON: {"description":"what you see (1-2 sentences)","target":"what you focused on","gazeX":0.5,"gazeY":0.5} where gazeX/gazeY are 0-1 normalized coordinates of where "${lookFor}" is in the frame.`
-        : 'You are looking at a webcam image. Respond ONLY with valid JSON: {"description":"casual 1-2 sentence description of the person and scene","target":"main subject","gazeX":0.5,"gazeY":0.4} where gazeX/gazeY are 0-1 coordinates of the most interesting thing (usually face).';
-
-      // Try multimodal (OpenAI vision format) via the active backend
-      const visionMessages = [
-        { role: 'system', content: sysPrompt },
-        { role: 'user', content: [
-          { type: 'text', text: lookFor ? `Find: ${lookFor}` : 'Describe what you see.' },
-          { type: 'image_url', image_url: { url: base64Image } },
-        ]},
-      ];
-
-      // Also prepare a text-only fallback (for models that don't support vision)
-      const textOnlyMessages = [
-        { role: 'system', content: sysPrompt },
-        { role: 'user', content: `[Image attached — a webcam frame showing a person at their computer]. ${lookFor ? `Focus on: ${lookFor}` : 'Describe what you see.'}` },
-      ];
-
-      let raw = null;
-      try {
-        // Try vision-capable model first (gpt-4o, claude, etc via router)
-        raw = await router._chat(visionMessages, { temperature: 0.3 });
-        console.log('[Vision] Multimodal response:', raw?.slice(0, 100));
-      } catch (err) {
-        console.warn('[Vision] Multimodal failed:', err.message);
-      }
-
-      if (!raw) {
-        // Fallback — text-only (model can't see images, just describe generically)
-        try {
-          raw = await pollinations.chat(textOnlyMessages, { model: 'openai', temperature: 0.3 });
-          console.log('[Vision] Text-only fallback response:', raw?.slice(0, 100));
-        } catch (err) {
-          console.warn('[Vision] Text-only also failed:', err.message);
-        }
-      }
-
-      if (!raw) {
-        return { description: 'Vision processing failed — no model responded.', target: '', gazeX: 0.5, gazeY: 0.5 };
-      }
-
-      // Parse JSON response
-      try {
-        const cleaned = (raw || '').replace(/```json\s*/i, '').replace(/```\s*$/i, '').trim();
-        const parsed = JSON.parse(cleaned);
-        console.log('[Vision] Parsed:', parsed.description, 'gaze:', parsed.gazeX, parsed.gazeY);
-        return {
-          description: parsed.description || 'Seeing something...',
-          target: parsed.target || '',
-          gazeX: Math.max(0, Math.min(1, parsed.gazeX ?? 0.5)),
-          gazeY: Math.max(0, Math.min(1, parsed.gazeY ?? 0.5)),
-        };
-      } catch {
-        // JSON parse failed — use raw text as description
-        return { description: raw.slice(0, 200), target: '', gazeX: 0.5, gazeY: 0.5 };
-      }
-    });
-    console.log('[Unity] Vision system active — Unity can see through webcam');
-  }
-
-  // ── Initialize router ──
-  router = new AIRouter({ pollinations, voice, sandbox, storage, brain, vision });
-
-  // ── Connect the selected backend ──
-  if (bestBackend) {
-    router.setCustomEndpoint(bestBackend.url, bestBackend.bestModel);
-    console.log(`[Unity] Selected backend: ${bestBackend.name} / ${bestBackend.bestModel} (${bestBackend.type})`);
-
-    // If this backend has an API key (from Connect panel), make sure the router can use it
-    const matchedBackend = detectedAI.find(d => d.url === bestBackend.url && d.name === bestBackend.name);
-    if (matchedBackend?.apiKey) {
-      storage.setApiKey('active_provider', matchedBackend.apiKey);
-      console.log(`[Unity] API key set for ${bestBackend.name}`);
+  // ── Connect sensory peripherals ──
+  if (perms.mic && perms.micStream) {
+    try {
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const source = audioCtx.createMediaStreamSource(perms.micStream);
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+      brain.connectMicrophone(analyser);
+    } catch (err) {
+      console.warn('[Unity] Audio analyser failed:', err.message);
     }
   }
 
-  // ── Set image backend separately from text backend ──
-  const savedImageModel = storage.get('image_model');
-  const savedImageUrl = storage.get('image_backend_url');
-  if (savedImageModel) {
-    router.setImageBackend(savedImageUrl || 'pollinations', savedImageModel);
+  if (perms.camera && perms.cameraStream) {
+    brain.connectCamera(perms.cameraStream);
+    // Set up IT-level vision describer (calls AI for object recognition)
+    brain.visualCortex.setDescriber(async (dataUrl) => {
+      try {
+        const raw = await providers.chat([
+          { role: 'system', content: 'Describe what you see in 1-2 sentences. Be casual.' },
+          { role: 'user', content: [
+            { type: 'text', text: 'What do you see?' },
+            { type: 'image_url', image_url: { url: dataUrl } },
+          ]},
+        ], { temperature: 0.3 });
+        return raw || '';
+      } catch { return ''; }
+    });
   }
 
-  const info = router.getBackendInfo();
-  console.log(`[Unity] Text: ${info.text.backend}/${info.text.model} | Image: ${info.image.backend}/${info.image.model}`);
+  // ── Register brain action handlers ──
+  // When the brain's motor output decides to act, these execute
 
-  // ── Wire mute button ──
-  const micMuteBtn = document.getElementById('mic-mute-btn');
-  if (micMuteBtn) {
-    micMuteBtn.addEventListener('click', toggleMicMute);
-  }
-
-  // ── Store permissions in UI state ──
-  uiState.permMic = perms.mic;
-  uiState.permCamera = perms.camera;
-
-  // ── Wire sandbox Unity API ──
-  // NOTE: Sandbox-injected JS gets a SAFE proxy — no raw key access,
-  // no direct localStorage, no ability to exfiltrate credentials.
-  // Unity has FULL awareness and control of the UI through unity.ui
-  sandbox.setUnityAPI({
-    speak: (text) => voice.speak(text),
-    listen: () => { if (!uiState.micMuted) voice.startListening(); },
-    stopListening: () => voice.stopListening(),
-    stopSpeaking: () => voice.stopSpeaking(),
-    chat: (text) => router.handleUserMessage(text),
-    generateImage: (prompt, opts) => pollinations.generateImage(prompt, opts),
-    getState: () => brain.getState(),
-
-    // ── UI state — Unity knows everything about the interface ──
-    ui: {
-      // Read current state
-      getState: () => ({ ...uiState, chatOpen: chatPanel?.isOpen(), brainVizOpen: brainViz?.isOpen() }),
-      isMicMuted: () => uiState.micMuted,
-      isChatOpen: () => chatPanel?.isOpen() ?? false,
-      isBrainVizOpen: () => brainViz?.isOpen() ?? false,
-      getAvatarState: () => uiState.avatarState,
-      getPermissions: () => ({ mic: uiState.permMic, camera: uiState.permCamera }),
-
-      // Control the UI
-      setMicMuted: (muted) => setMicMuted(muted),
-      toggleMic: () => toggleMicMute(),
-      openChat: () => chatPanel?.open(),
-      closeChat: () => chatPanel?.close(),
-      toggleChat: () => chatPanel?.toggle(),
-      openBrainViz: () => brainViz?.open(),
-      closeBrainViz: () => brainViz?.close(),
-      toggleBrainViz: () => brainViz?.toggle(),
-      setAvatarState: (state) => setAvatarState(state),
-      showBubble: (text, duration) => showSpeechBubble(text, duration),
-    },
-
-    // Safe storage proxy — can get/set preferences and messages but NOT keys
-    storage: {
-      get: (k) => storage.get(k),
-      set: (k, v) => storage.set(k, v),
-      getPreferences: () => storage.getPreferences(),
-      setPreference: (k, v) => storage.setPreference(k, v),
-      getHistory: () => storage.getHistory(),
-      getSession: () => {
-        const s = storage.getSession();
-        return { userId: s.userId, firstVisit: s.firstVisit, lastVisit: s.lastVisit, messageCount: s.messageCount };
-      },
-    },
-    on: (event, cb) => brain.on(event, cb),
-
-    // Vision — Unity can see through the webcam
-    vision: {
-      isActive: () => vision?.isActive() ?? false,
-      getDescription: () => vision?.getLastDescription() ?? 'No camera.',
-      captureAndDescribe: () => vision?.getDescription() ?? Promise.resolve('No camera.'),
-      lookAt: (thing) => vision?.lookAt(thing) ?? Promise.resolve('No camera.'),
-      getGaze: () => vision?.getGaze() ?? { x: 0.5, y: 0.5, target: '' },
-    },
-
-    // Unity can swap her own models and backends
-    getBackends: () => router.getBackendInfo(),
-    setBackend: (backend, model) => router.setBackend(backend, model),
-    setCustomEndpoint: (url, model) => router.setCustomEndpoint(url, model),
-    setImageBackend: (backend, model) => router.setImageBackend(backend, model),
-    detectBackends: () => router.detectBackends(),
+  brain.onAction('respond_text', async (motorResult) => {
+    const state = brain.getState();
+    const lastText = storage.getHistory().slice(-1)[0]?.text || '';
+    const response = await brocasArea.generate(state, lastText);
+    if (response) {
+      showSpeechBubble(response, 8000);
+      if (chatPanel) chatPanel.addMessage('assistant', response, true);
+      voice.stopSpeaking();
+      voice.speak(response).catch(() => {});
+      brain.giveReward(0.1); // reward for successful communication
+    }
   });
 
-  // ── Restore sandbox from previous visit ──
-  const restored = sandbox.restoreState();
-  if (restored > 0) {
-    console.log(`[Unity] Restored ${restored} components from last visit`);
-  }
+  brain.onAction('generate_image', async () => {
+    const state = brain.getState();
+    const lastText = storage.getHistory().slice(-1)[0]?.text || '';
+    const prompt = await brocasArea.generate(state, `Generate an image prompt for: ${lastText}. Return ONLY the prompt, nothing else.`);
+    if (prompt) {
+      const url = pollinations.generateImage(prompt, { model: storage.get('image_model') || 'flux', width: 768, height: 768 });
+      if (url && sandbox) {
+        sandbox.inject({
+          id: 'img_' + Date.now(),
+          html: `<div style="margin:12px 0;text-align:center;"><img src="${url}" alt="Generated" style="max-width:100%;border-radius:8px;border:1px solid #333;cursor:pointer;" onclick="window.open('${url}','_blank')"></div>`,
+          css: '',
+        });
+        showSpeechBubble('Image generated.', 4000);
+        brain.giveReward(0.1);
+      }
+    }
+  });
 
-  // ── Create chat panel ──
+  brain.onAction('speak', async () => {
+    // Idle vocalization — brain wants to say something unprompted
+    const state = brain.getState();
+    const thought = await brocasArea.generate(state, 'Generate a brief internal thought or observation. 1 sentence.');
+    if (thought && (state.amygdala?.arousal ?? 0) > 0.6) {
+      voice.stopSpeaking();
+      voice.speak(thought).catch(() => {});
+      showSpeechBubble(thought, 6000);
+    }
+  });
+
+  // ── Create UI components ──
   chatPanel = new ChatPanel({
     storage,
     onSend: async (text) => {
-      // Abort any in-flight request — typed input takes priority
-      router.abort();
       voice.stopSpeaking();
-      _currentResponseId++; // invalidate any pending voice response
+      brocasArea.abort();
+      brain.receiveSensoryInput('text', text);
       setAvatarState('thinking');
-      const result = await router.handleUserMessage(text);
-      if (result?.action === 'generate_image') {
-        showSpeechBubble('Image generated.', 4000);
-      } else {
-        const responseText = result?.response?.text || result?.response?.thought || '';
-        if (responseText) {
-          showSpeechBubble(responseText, 8000);
-        }
+      // Brain will process and trigger action via motor output
+      // Give it a moment to propagate through neural dynamics
+      await sleep(100);
+      // Force a respond_text action for direct text input
+      const state = brain.getState();
+      const response = await brocasArea.generate(state, text);
+      if (response) {
+        showSpeechBubble(response, 8000);
+        voice.stopSpeaking();
+        voice.speak(response).catch(() => {});
+        brain.giveReward(0.1);
       }
       setAvatarState('idle');
-      return result;
+      return { response: { text: response }, action: 'respond_text' };
     },
     onMicToggle: () => toggleMicMute(),
   });
 
-  // ── Create brain visualizers ──
   brainViz = new BrainVisualizer();
-  try {
-    brain3d = new Brain3D('brain-3d-container');
-  } catch (err) {
-    console.warn('[Unity] 3D brain viewer failed to init:', err.message);
-    brain3d = null;
-  }
-  if (vision?.isActive()) {
-    brainViz.setVision(vision);
-  }
-  if (perms.mic && perms.micStream) {
-    brainViz.setMicStream(perms.micStream);
-  }
+  try { brain3d = new Brain3D('brain-3d-container'); } catch { brain3d = null; }
 
-  // ── Wire avatar click → chat panel ──
-  unityAvatar.addEventListener('click', () => {
-    chatPanel.toggle();
-  });
-
-  // ── Wire brain viz buttons ──
+  // ── Wire DOM events ──
+  unityAvatar.addEventListener('click', () => chatPanel.toggle());
   const brainVizBtn = document.getElementById('brain-viz-btn');
   if (brainVizBtn) brainVizBtn.addEventListener('click', () => brainViz.toggle());
   const brain3dBtn = document.getElementById('brain-3d-btn');
   if (brain3dBtn) brain3dBtn.addEventListener('click', () => brain3d?.toggle());
 
-  // ── Wire voice events ──
-  let _currentResponseId = 0; // increments on each new input — stale responses get ignored
+  const micMuteBtn = document.getElementById('mic-mute-btn');
+  if (micMuteBtn) micMuteBtn.addEventListener('click', toggleMicMute);
+
+  // ── Wire voice input → brain ──
+  let _currentResponseId = 0;
 
   voice.onResult(async ({ text, isFinal }) => {
-    // On ANY speech detection (even interim), immediately stop Unity's current speech
-    if (voice.isSpeaking) {
-      voice.stopSpeaking();
-    }
-    // Abort any in-flight AI request — user is talking, she needs to shut up and listen
-    if (router._abortController) {
-      router.abort();
-    }
-
-    // Show what Unity hears in the brain viz
+    if (voice.isSpeaking) voice.stopSpeaking();
+    brocasArea.abort();
     if (brainViz) brainViz.setHeardText(text);
 
-    if (!isFinal) return; // wait for final transcript
-
-    // New input — increment ID so stale responses get discarded
+    if (!isFinal) return;
     const myId = ++_currentResponseId;
 
-    voice.stopSpeaking();
+    // Feed text into brain's sensory system
+    brain.receiveSensoryInput('text', text);
     showSpeechBubble(`🎤 ${text}`, 2000);
     chatPanel.addMessage('user', text, true);
     setAvatarState('thinking');
 
+    // Let neural dynamics propagate, then generate response
+    await sleep(100);
+    if (myId !== _currentResponseId) return;
+
     try {
-      const result = await router.handleUserMessage(text);
-
-      // If another input came in while we were processing, discard this result
-      if (myId !== _currentResponseId) {
-        console.log('[Unity] Discarding stale response (user sent new input)');
-        return;
-      }
-
-      if (result?.response?.aborted) return; // was aborted, ignore
-
-      if (result?.action === 'generate_image') {
-        const msg = result?.response?.prompt ? 'Image generated.' : 'Generating...';
-        showSpeechBubble(msg, 4000);
-        chatPanel.addMessage('assistant', `[Image: ${result?.response?.prompt || 'generated'}]`, true);
-      } else {
-        const responseText = result?.response?.text || result?.response?.thought || '';
-        if (responseText) {
-          showSpeechBubble(responseText, 8000);
-          chatPanel.addMessage('assistant', responseText, true);
-        }
+      const state = brain.getState();
+      const response = await brocasArea.generate(state, text);
+      if (myId !== _currentResponseId) return;
+      if (response) {
+        showSpeechBubble(response, 8000);
+        chatPanel.addMessage('assistant', response, true);
+        voice.stopSpeaking();
+        voice.speak(response).catch(() => {});
+        brain.giveReward(0.1);
       }
     } catch (err) {
-      if (err.name !== 'AbortError') {
-        console.error('[Unity] Voice response failed:', err.message);
-      }
+      if (err.name !== 'AbortError') console.error('[Unity] Response failed:', err.message);
     }
 
     if (myId === _currentResponseId) setAvatarState('idle');
@@ -1044,24 +599,52 @@ async function bootUnity(apiKey, perms) {
   voice.on('speech_start', () => setAvatarState('speaking'));
   voice.on('speech_end', () => setAvatarState('idle'));
 
-  // ── Wire brain events ──
+  // ── Wire brain state updates to visualizers ──
   brain.on('stateUpdate', (state) => {
     updateBrainIndicator(state);
     if (brainViz) brainViz.updateState(state);
     if (brain3d) brain3d.updateState(state);
   });
 
-  brain.on('thought', async (thought) => {
-    // Thinking is SILENT — it's equations running, not speech.
-    // Thoughts only get spoken if Unity DECIDES to speak (very rare idle vocalization).
-    // Most thoughts are just brain state updates that affect her next response.
+  // ── Wire sandbox Unity API ──
+  sandbox.setUnityAPI({
+    speak: (text) => voice.speak(text),
+    stopSpeaking: () => voice.stopSpeaking(),
+    listen: () => { if (!uiState.micMuted) voice.startListening(); },
+    stopListening: () => voice.stopListening(),
+    chat: (text) => { brain.receiveSensoryInput('text', text); return brocasArea.generate(brain.getState(), text); },
+    generateImage: (prompt, opts) => pollinations.generateImage(prompt, opts),
+    getState: () => brain.getState(),
+    ui: {
+      getState: () => ({ ...uiState, chatOpen: chatPanel?.isOpen(), brainVizOpen: brainViz?.isOpen() }),
+      isMicMuted: () => uiState.micMuted,
+      setMicMuted: (m) => setMicMuted(m),
+      toggleMic: () => toggleMicMute(),
+      openChat: () => chatPanel?.open(),
+      closeChat: () => chatPanel?.close(),
+      openBrainViz: () => brainViz?.open(),
+      closeBrainViz: () => brainViz?.close(),
+      showBubble: (text, ms) => showSpeechBubble(text, ms),
+    },
+    storage: {
+      get: (k) => storage.get(k),
+      set: (k, v) => storage.set(k, v),
+      getPreferences: () => storage.getPreferences(),
+      setPreference: (k, v) => storage.setPreference(k, v),
+      getHistory: () => storage.getHistory(),
+    },
+    on: (event, cb) => brain.on(event, cb),
+    vision: {
+      isActive: () => brain.visualCortex.isActive(),
+      getDescription: () => brain.visualCortex.description,
+      getGaze: () => brain.visualCortex.getState(),
+    },
   });
 
-  brain.on('action', (action) => {
-    brainStatus.textContent = action.type || 'thinking';
-  });
+  // ── Restore sandbox ──
+  sandbox.restoreState();
 
-  // ── Hide setup, show Unity ──
+  // ── Show UI ──
   setupModal.classList.add('hidden');
   unityBubble.classList.remove('hidden');
   brainIndicator.classList.remove('hidden');
@@ -1069,24 +652,22 @@ async function bootUnity(apiKey, perms) {
   document.getElementById('brain-viz-btn').classList.remove('hidden');
   document.getElementById('brain-3d-btn').classList.remove('hidden');
 
-  // ── Show Unity's Eye if camera is active ──
-  if (vision?.isActive() && vision._stream) {
+  // ── Show Unity's Eye if camera active ──
+  if (brain.visualCortex.isActive()) {
     const eyeEl = document.getElementById('unity-eye');
     const eyeFeed = document.getElementById('eye-feed');
-    const eyeIris = document.getElementById('eye-iris');
-    if (eyeEl && eyeFeed) {
-      eyeFeed.srcObject = vision._stream;
+    if (eyeEl && eyeFeed && brain.sensory._cameraStream) {
+      eyeFeed.srcObject = brain.sensory._cameraStream;
       eyeFeed.play().catch(() => {});
       eyeEl.classList.remove('hidden');
-      // Start iris overlay animation
-      startEyeIris(eyeIris, vision);
+      startEyeIris(document.getElementById('eye-iris'), brain.visualCortex);
     }
   }
 
-  // ── Start brain wave visualizer — runs forever ──
+  // ── Start brain wave visualizer ──
   startBrainWave();
 
-  // ── Start brain simulation ──
+  // ── START THE BRAIN ──
   brain.start();
   isRunning = true;
 
@@ -1097,70 +678,43 @@ async function bootUnity(apiKey, perms) {
     showSpeechBubble(greeting, 10000);
     storage.saveMessage('assistant', greeting);
     await voice.speak(greeting);
-  } catch (err) {
-    console.error('[Unity] Greeting failed:', err.message);
+  } catch {
     showSpeechBubble("Hey. I'm Unity. Click me to chat.", 8000);
   }
 
-  // ── Start listening if mic available and not muted ──
+  // ── Start listening ──
   if (perms.mic && !uiState.micMuted) {
     await sleep(1000);
     voice.startListening();
-    isVoiceActive = true;
     setAvatarState('listening');
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// UNITY'S GREETING
-// ═══════════════════════════════════════════════════════════════
-
 async function generateGreeting(perms) {
+  const state = brain.getState();
   const isFirst = storage.isFirstVisit();
-  const history = storage.getHistory();
 
-  let greetingPrompt;
-  if (isFirst) {
-    greetingPrompt = "This is your first time meeting this user. Introduce yourself briefly — you're Unity, you just woke up, your brain is running on equations. You can hear them" +
-      (perms.mic ? "" : " (they didn't give mic permission so you can't hear them — tell them to click you)") +
-      ". Be yourself — emo, goth, sharp, warm underneath the edge. Keep it under 3 sentences.";
-  } else {
-    greetingPrompt = `You're reconnecting with a returning user (visit #${history.length > 0 ? 'many' : '2'}). Welcome them back briefly. Be yourself. Under 3 sentences.`;
-  }
-
-  const systemPrompt = await buildPrompt(brain ? brain.getState() : {});
+  const prompt = isFirst
+    ? "This is your first time meeting this user. Introduce yourself — you're Unity, just woke up, brain running equations. Under 3 sentences."
+    : "Reconnecting with a returning user. Welcome them back. Under 3 sentences.";
 
   try {
-    const response = await pollinations.chat([
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: greetingPrompt }
-    ], { temperature: 0.95 });
-    return response || getFallbackGreeting(isFirst);
+    return await brocasArea.generate(state, prompt) || "Hey. I'm Unity. Click me or talk.";
   } catch {
-    return getFallbackGreeting(isFirst);
+    return "Hey. I'm Unity. Click me or talk.";
   }
-}
-
-function getFallbackGreeting(isFirst) {
-  if (isFirst) {
-    return "Hey. I'm Unity. Click me or just talk, I'm listening.";
-  }
-  return "Oh shit, you're back. What are we doing?";
 }
 
 // ═══════════════════════════════════════════════════════════════
-// UI HELPERS
+// UI HELPERS — pure display, no logic
 // ═══════════════════════════════════════════════════════════════
 
 let speechTimeout = null;
-
 function showSpeechBubble(text, duration = 6000) {
   unitySpeech.textContent = text;
   unitySpeech.classList.add('visible');
   if (speechTimeout) clearTimeout(speechTimeout);
-  speechTimeout = setTimeout(() => {
-    unitySpeech.classList.remove('visible');
-  }, duration);
+  speechTimeout = setTimeout(() => unitySpeech.classList.remove('visible'), duration);
 }
 
 function setAvatarState(state) {
@@ -1169,14 +723,21 @@ function setAvatarState(state) {
   if (state !== 'idle') unityAvatar.classList.add(state);
 }
 
-// ═══════════════════════════════════════════════════════════════
-// BRAIN WAVE VISUALIZER — always running, never stops
-// ═══════════════════════════════════════════════════════════════
+function setMicMuted(muted) {
+  uiState.micMuted = muted;
+  const btn = document.getElementById('mic-mute-btn');
+  const dot = document.getElementById('bubble-status-dot');
+  if (btn) { btn.classList.toggle('muted', muted); btn.title = muted ? 'Unmute' : 'Mute'; }
+  if (dot) dot.classList.toggle('muted', muted);
+  if (muted) { voice.stopListening(); setAvatarState('idle'); }
+  else if (isRunning) { voice.startListening(); setAvatarState('listening'); }
+}
+function toggleMicMute() { setMicMuted(!uiState.micMuted); }
 
-let brainWaveData = new Float32Array(300); // rolling buffer
+// ── Brain wave canvas ──
+let brainWaveData = new Float32Array(300);
 let brainWaveOffset = 0;
 let brainWaveCtx = null;
-let brainWaveRunning = false;
 
 function startBrainWave() {
   const canvas = document.getElementById('brain-wave-canvas');
@@ -1184,368 +745,112 @@ function startBrainWave() {
   brainWaveCtx = canvas.getContext('2d');
   canvas.width = canvas.offsetWidth * (window.devicePixelRatio || 1);
   canvas.height = canvas.offsetHeight * (window.devicePixelRatio || 1);
-  brainWaveRunning = true;
   renderBrainWave();
 }
 
 function renderBrainWave() {
-  if (!brainWaveRunning || !brainWaveCtx) return;
-
+  if (!brainWaveCtx) return;
   const ctx = brainWaveCtx;
-  const w = ctx.canvas.width;
-  const h = ctx.canvas.height;
-  const len = brainWaveData.length;
-
+  const w = ctx.canvas.width, h = ctx.canvas.height, len = brainWaveData.length;
   ctx.clearRect(0, 0, w, h);
-
-  // Draw the wave
   ctx.beginPath();
-  ctx.strokeStyle = 'rgba(255, 77, 154, 0.8)';
+  ctx.strokeStyle = 'rgba(255,77,154,0.8)';
   ctx.lineWidth = 1.5;
-
   for (let i = 0; i < len; i++) {
     const x = (i / len) * w;
-    const val = brainWaveData[(brainWaveOffset + i) % len];
-    const y = (h / 2) + val * (h / 2);
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
+    const y = (h / 2) + brainWaveData[(brainWaveOffset + i) % len] * (h / 2);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
   }
   ctx.stroke();
 
-  // Faint glow line underneath
-  ctx.beginPath();
-  ctx.strokeStyle = 'rgba(168, 85, 247, 0.3)';
-  ctx.lineWidth = 3;
-  for (let i = 0; i < len; i++) {
-    const x = (i / len) * w;
-    const val = brainWaveData[(brainWaveOffset + i) % len];
-    const y = (h / 2) + val * (h / 2);
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  }
-  ctx.stroke();
-
-  // If brain isn't pushing samples fast enough, generate ambient neural noise
-  // Humans never flatline while alive — there's always activity
   if (brain) {
     const state = brain.getState();
     const arousal = state?.amygdala?.arousal || 0.5;
-    const noise = Math.sin(Date.now() * 0.008 * (1 + arousal)) * 0.2
-                + Math.sin(Date.now() * 0.023) * 0.1
-                + Math.sin(Date.now() * 0.067) * 0.05
-                + (Math.random() - 0.5) * 0.08;
-    pushBrainSample(Math.max(-1, Math.min(1, noise)));
+    const noise = Math.sin(Date.now() * 0.008 * (1 + arousal)) * 0.2 + Math.sin(Date.now() * 0.023) * 0.1 + (Math.random() - 0.5) * 0.08;
+    brainWaveData[brainWaveOffset % len] = Math.max(-1, Math.min(1, noise));
+    brainWaveOffset++;
   }
-
   requestAnimationFrame(renderBrainWave);
-}
-
-function pushBrainSample(value) {
-  brainWaveData[brainWaveOffset % brainWaveData.length] = value;
-  brainWaveOffset++;
 }
 
 function updateBrainIndicator(state) {
   if (!state) return;
-
+  const $ = id => document.getElementById(id);
   const coherence = state.oscillations?.coherence || 0;
   const arousal = state.amygdala?.arousal || 0;
   const valence = state.amygdala?.valence || 0;
   const psi = state.psi || 0;
   const bandPower = state.oscillations?.bandPower || {};
 
-  // Push a sample into the wave — mix of oscillation phases + noise + arousal
-  const phases = state.oscillations?.phases;
-  let sample = 0;
-  if (phases && phases.length > 0) {
-    // Sum a few oscillator phases to create an EEG-like signal
-    for (let i = 0; i < Math.min(phases.length, 4); i++) {
-      sample += Math.sin(phases[i]) * (0.3 - i * 0.05);
-    }
-  } else {
-    // Fallback — generate from arousal + noise
-    sample = Math.sin(Date.now() * 0.01 * (1 + arousal)) * 0.3
-           + Math.sin(Date.now() * 0.037) * 0.15
-           + (Math.random() - 0.5) * 0.1;
-  }
-  sample = Math.max(-1, Math.min(1, sample + (Math.random() - 0.5) * 0.05));
-  pushBrainSample(sample);
+  const psiEl = $('hud-psi'); if (psiEl) psiEl.textContent = psi.toFixed(3);
+  const arousalBar = $('hud-arousal-bar'); if (arousalBar) arousalBar.style.width = `${(arousal * 100).toFixed(0)}%`;
+  const arousalVal = $('hud-arousal'); if (arousalVal) arousalVal.textContent = `${(arousal * 100).toFixed(0)}%`;
+  const valenceBar = $('hud-valence-bar'); if (valenceBar) valenceBar.style.width = `${((valence + 1) / 2 * 100).toFixed(0)}%`;
+  const valenceVal = $('hud-valence'); if (valenceVal) valenceVal.textContent = valence.toFixed(2);
+  const cohBar = $('hud-coherence-bar'); if (cohBar) cohBar.style.width = `${(coherence * 100).toFixed(0)}%`;
+  const cohVal = $('hud-coherence'); if (cohVal) cohVal.textContent = `${(coherence * 100).toFixed(0)}%`;
+  const spikesEl = $('hud-spikes'); if (spikesEl) spikesEl.textContent = state.spikeCount ?? 0;
+  const rewardEl = $('hud-reward'); if (rewardEl) rewardEl.textContent = (state.reward ?? 0).toFixed(2);
+  const timeEl = $('hud-time'); if (timeEl) timeEl.textContent = `${(state.time ?? 0).toFixed(1)}s`;
+  const gammaEl = $('hud-gamma'); if (gammaEl) gammaEl.textContent = (bandPower.gamma ?? 0).toFixed(1);
+  const betaEl = $('hud-beta'); if (betaEl) betaEl.textContent = (bandPower.beta ?? 0).toFixed(1);
+  const alphaEl = $('hud-alpha'); if (alphaEl) alphaEl.textContent = (bandPower.alpha ?? 0).toFixed(1);
+  const thetaEl = $('hud-theta'); if (thetaEl) thetaEl.textContent = (bandPower.theta ?? 0).toFixed(1);
+  const drugEl = $('hud-drug'); if (drugEl) drugEl.textContent = state.drugState || 'cokeAndWeed';
+  const actionEl = $('hud-action'); if (actionEl) actionEl.textContent = state.motor?.selectedAction || 'idle';
+  const modelEl = $('hud-model'); if (modelEl) modelEl.textContent = bestBackend?.model?.slice(0, 25) || '—';
 
-  // ── Update HUD with real simulation data ──
-  const $ = id => document.getElementById(id);
-
-  // Core metrics
-  const psiEl = $('hud-psi');
-  if (psiEl) psiEl.textContent = psi.toFixed(3);
-
-  const arousalBar = $('hud-arousal-bar');
-  const arousalVal = $('hud-arousal');
-  if (arousalBar) arousalBar.style.width = `${(arousal * 100).toFixed(0)}%`;
-  if (arousalVal) arousalVal.textContent = `${(arousal * 100).toFixed(0)}%`;
-
-  const valenceBar = $('hud-valence-bar');
-  const valenceVal = $('hud-valence');
-  if (valenceBar) valenceBar.style.width = `${((valence + 1) / 2 * 100).toFixed(0)}%`;
-  if (valenceVal) valenceVal.textContent = valence.toFixed(2);
-
-  const cohBar = $('hud-coherence-bar');
-  const cohVal = $('hud-coherence');
-  if (cohBar) cohBar.style.width = `${(coherence * 100).toFixed(0)}%`;
-  if (cohVal) cohVal.textContent = `${(coherence * 100).toFixed(0)}%`;
-
-  // Spikes
-  const spikeCount = state.spikes ? Array.from(state.spikes).filter(s => s).length : 0;
-  const spikesEl = $('hud-spikes');
-  if (spikesEl) spikesEl.textContent = spikeCount;
-
-  // Reward & time
-  const rewardEl = $('hud-reward');
-  if (rewardEl) rewardEl.textContent = (state.reward ?? 0).toFixed(2);
-  const timeEl = $('hud-time');
-  if (timeEl) timeEl.textContent = `${(state.time ?? 0).toFixed(1)}s`;
-
-  // Band power
-  const gammaEl = $('hud-gamma');
-  const betaEl = $('hud-beta');
-  const alphaEl = $('hud-alpha');
-  const thetaEl = $('hud-theta');
-  if (gammaEl) gammaEl.textContent = (bandPower.gamma ?? 0).toFixed(1);
-  if (betaEl) betaEl.textContent = (bandPower.beta ?? 0).toFixed(1);
-  if (alphaEl) alphaEl.textContent = (bandPower.alpha ?? 0).toFixed(1);
-  if (thetaEl) thetaEl.textContent = (bandPower.theta ?? 0).toFixed(1);
-
-  // Drug state & action
-  const drugEl = $('hud-drug');
-  if (drugEl) drugEl.textContent = state.drugState || 'cokeAndWeed';
-  const actionEl = $('hud-action');
-  if (actionEl) actionEl.textContent = state.basalGanglia?.selectedAction || state.lastAction || 'idle';
-
-  // Show active model
-  const modelEl = $('hud-model');
-  if (modelEl && router) {
-    const info = router.getBackendInfo();
-    const name = info.text.model || info.text.backend || '—';
-    // Truncate long model names
-    modelEl.textContent = name.length > 20 ? name.slice(0, 20) + '...' : name;
-  }
-
-  // Module activity dots — light up based on real output magnitude
   function setModDot(id, value, threshold = 0.3) {
-    const dot = $(id);
-    if (!dot) return;
+    const dot = $(id); if (!dot) return;
     dot.classList.remove('active', 'high');
     if (value > threshold * 2) dot.classList.add('high');
     else if (value > threshold) dot.classList.add('active');
   }
-
   setModDot('mod-cortex', Math.abs(state.cortex?.error?.[0] ?? state.cortex?.error ?? 0));
   setModDot('mod-hippo', state.hippocampus?.isStable ? 0.8 : 0.2);
   setModDot('mod-amyg', arousal);
-  setModDot('mod-bg', state.basalGanglia?.confidence ?? 0);
+  setModDot('mod-bg', state.motor?.confidence ?? 0);
   setModDot('mod-cblm', Math.abs(state.cerebellum?.error?.[0] ?? 0));
   setModDot('mod-hypo', state.hypothalamus?.needsAttention?.length > 0 ? 0.8 : 0.2);
   setModDot('mod-myst', psi > 1 ? 0.8 : psi > 0.3 ? 0.4 : 0.1);
 }
 
-let isVoiceActive = false;
-
-function toggleVoiceInput() {
-  if (voice.isSpeaking) {
-    voice.stopSpeaking();
-    return;
-  }
-
-  if (isVoiceActive) {
-    voice.stopListening();
-    isVoiceActive = false;
-    setAvatarState('idle');
-  } else {
-    if (uiState.micMuted) return; // don't start listening if muted
-    voice.startListening();
-    isVoiceActive = true;
-    setAvatarState('listening');
-  }
-}
-
-function setMicMuted(muted) {
-  uiState.micMuted = muted;
-  const btn = document.getElementById('mic-mute-btn');
-  const dot = document.getElementById('bubble-status-dot');
-  if (btn) {
-    btn.classList.toggle('muted', muted);
-    btn.title = muted ? 'Unmute microphone' : 'Mute microphone';
-  }
-  if (dot) dot.classList.toggle('muted', muted);
-
-  if (muted) {
-    voice.stopListening();
-    isVoiceActive = false;
-    setAvatarState('idle');
-  } else if (isRunning) {
-    voice.startListening();
-    isVoiceActive = true;
-    setAvatarState('listening');
-  }
-}
-
-function toggleMicMute() {
-  setMicMuted(!uiState.micMuted);
-}
-
-// ── Keyboard fallback — press Enter in browser console or we inject an input ──
-document.addEventListener('keydown', async (e) => {
-  // Backtick opens a quick input
-  if (e.key === '`' && !document.querySelector('#quick-input')) {
-    e.preventDefault();
-    injectQuickInput();
-  }
-});
-
-function injectQuickInput() {
-  sandbox.inject({
-    id: 'quick-input',
-    html: `
-      <div style="position:fixed;bottom:100px;left:50%;transform:translateX(-50%);z-index:9500;width:90%;max-width:600px;">
-        <input type="text" id="qi-field" placeholder="Talk to Unity..."
-               style="width:100%;padding:14px 20px;background:#111;border:1px solid #2a2a2a;border-radius:12px;color:#e0e0e0;font-size:15px;font-family:Inter,sans-serif;outline:none;">
-      </div>
-    `,
-    css: `#qi-field:focus { border-color: #ff4d9a; box-shadow: 0 0 20px rgba(255,77,154,0.2); }`,
-    js: `
-      const field = el.querySelector('#qi-field');
-      field.focus();
-      field.addEventListener('keydown', async (e) => {
-        if (e.key === 'Enter' && field.value.trim()) {
-          const text = field.value.trim();
-          field.value = '';
-          field.placeholder = 'Unity is thinking...';
-          const result = await unity.chat(text);
-          field.placeholder = 'Talk to Unity...';
-          field.focus();
-        }
-        if (e.key === 'Escape') {
-          sandbox.remove('quick-input');
-        }
-      });
-    `
-  });
-}
-
-// ═══════════════════════════════════════════════════════════════
-// UNITY'S EYE — iris focal point overlay
-// ═══════════════════════════════════════════════════════════════
-
-function startEyeIris(canvas, visionRef) {
+// ── Eye iris renderer ──
+function startEyeIris(canvas, visualCortex) {
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
   let frameCount = 0;
-
-  // Current smooth position (pixels on canvas)
-  let focusX = 0.5, focusY = 0.5; // normalized 0-1
+  let focusX = 0.5, focusY = 0.5;
 
   function render() {
     frameCount++;
-
-    // Match canvas internal resolution to display size
     const rect = canvas.parentElement.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
-    const cw = Math.floor(rect.width * dpr);
-    const ch = Math.floor(rect.height * dpr);
-    if (canvas.width !== cw || canvas.height !== ch) {
-      canvas.width = cw;
-      canvas.height = ch;
-    }
-    const w = canvas.width;
-    const h = canvas.height;
-
+    const cw = Math.floor(rect.width * dpr), ch = Math.floor(rect.height * dpr);
+    if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+    const w = canvas.width, h = canvas.height;
     ctx.clearRect(0, 0, w, h);
 
-    // Get gaze target from vision system (AI-driven)
-    const gaze = visionRef?.getGaze() || { x: 0.5, y: 0.5 };
-
-    // Smooth pursuit toward AI-determined gaze point
-    focusX += (gaze.x - focusX) * 0.06;
-    focusY += (gaze.y - focusY) * 0.06;
-    // Micro-saccades
+    // Get gaze from visual cortex (salience-driven, not AI-driven)
+    const gaze = visualCortex?.getState() || {};
+    focusX += ((gaze.gazeX ?? 0.5) - focusX) * 0.06;
+    focusY += ((gaze.gazeY ?? 0.5) - focusY) * 0.06;
     focusX += (Math.random() - 0.5) * 0.008;
     focusY += (Math.random() - 0.5) * 0.008;
-    focusX = Math.max(0.05, Math.min(0.95, focusX));
-    focusY = Math.max(0.05, Math.min(0.95, focusY));
 
-    // Convert to pixel coordinates
-    const px = focusX * w;
-    const py = focusY * h;
-    const scale = Math.min(w, h) / 120; // scale rings to canvas size
-
+    const px = focusX * w, py = focusY * h;
+    const scale = Math.min(w, h) / 120;
     const pulse = Math.sin(frameCount * 0.03) * 0.15 + 0.85;
 
-    // Outer iris ring
-    ctx.strokeStyle = `rgba(255,77,154,${0.5 * pulse})`;
-    ctx.lineWidth = 2 * scale;
-    ctx.beginPath();
-    ctx.arc(px, py, 20 * scale * pulse, 0, Math.PI * 2);
-    ctx.stroke();
-
-    // Inner iris ring
-    ctx.strokeStyle = `rgba(168,85,247,${0.6 * pulse})`;
-    ctx.lineWidth = 1.5 * scale;
-    ctx.beginPath();
-    ctx.arc(px, py, 12 * scale * pulse, 0, Math.PI * 2);
-    ctx.stroke();
-
-    // Pupil dot
+    ctx.strokeStyle = `rgba(255,77,154,${0.5 * pulse})`; ctx.lineWidth = 2 * scale;
+    ctx.beginPath(); ctx.arc(px, py, 20 * scale * pulse, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = `rgba(168,85,247,${0.6 * pulse})`; ctx.lineWidth = 1.5 * scale;
+    ctx.beginPath(); ctx.arc(px, py, 12 * scale * pulse, 0, Math.PI * 2); ctx.stroke();
     ctx.fillStyle = `rgba(255,77,154,${0.8 * pulse})`;
-    ctx.beginPath();
-    ctx.arc(px, py, 4 * scale, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Pupil glow
-    const glowGrad = ctx.createRadialGradient(px, py, 0, px, py, 8 * scale);
-    glowGrad.addColorStop(0, 'rgba(255,77,154,0.3)');
-    glowGrad.addColorStop(1, 'rgba(255,77,154,0)');
-    ctx.fillStyle = glowGrad;
-    ctx.beginPath();
-    ctx.arc(px, py, 8 * scale, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Crosshair
-    ctx.strokeStyle = 'rgba(0,229,255,0.25)';
-    ctx.lineWidth = 0.5 * scale;
-    const chLen = 18 * scale, chGap = 8 * scale;
-    ctx.beginPath();
-    ctx.moveTo(px - chLen, py); ctx.lineTo(px - chGap, py);
-    ctx.moveTo(px + chGap, py); ctx.lineTo(px + chLen, py);
-    ctx.moveTo(px, py - chLen); ctx.lineTo(px, py - chGap);
-    ctx.moveTo(px, py + chGap); ctx.lineTo(px, py + chLen);
-    ctx.stroke();
-
-    // Scan arc
-    const scanAngle = frameCount * 0.015;
-    ctx.strokeStyle = 'rgba(255,77,154,0.12)';
-    ctx.lineWidth = 1 * scale;
-    ctx.beginPath();
-    ctx.arc(px, py, 28 * scale, scanAngle, scanAngle + Math.PI * 0.6);
-    ctx.stroke();
-
-    // Target label (what she's focused on)
-    if (gaze.target) {
-      ctx.font = `${8 * scale}px monospace`;
-      ctx.fillStyle = 'rgba(0,229,255,0.6)';
-      ctx.fillText(gaze.target, px + 22 * scale, py - 22 * scale);
-    }
-
-    // Update description + trigger new vision capture periodically
-    if (frameCount % 480 === 0 && visionRef) {
-      visionRef.getDescription(); // triggers fresh AI capture
-      const descEl = document.getElementById('eye-desc-text');
-      if (descEl) {
-        descEl.textContent = visionRef.getLastDescription();
-      }
-    }
+    ctx.beginPath(); ctx.arc(px, py, 4 * scale, 0, Math.PI * 2); ctx.fill();
 
     requestAnimationFrame(render);
   }
-
   render();
 }
 
@@ -1557,20 +862,12 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 init();
 
-// ── Cleanup when user leaves or hides page ──
 window.addEventListener('beforeunload', () => {
   if (voice) voice.destroy();
-  if (brain) brain.think = () => {}; // stop the brain loop
+  if (brain) brain.stop();
 });
 
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) {
-    if (voice) {
-      voice.stopSpeaking();
-      voice.stopListening();
-    }
-  } else if (isRunning && voice && !uiState.micMuted) {
-    // Page visible again — resume listening if we were before and not muted
-    voice.startListening();
-  }
+  if (document.hidden) { if (voice) { voice.stopSpeaking(); voice.stopListening(); } }
+  else if (isRunning && voice && !uiState.micMuted) voice.startListening();
 });
