@@ -555,6 +555,25 @@ async function bootUnity(apiKey, perms) {
   });
 
   brainViz = new BrainVisualizer();
+
+  // Wire sensory streams to the visualizer for display
+  if (perms.mic && perms.micStream) {
+    brainViz.setMicStream(perms.micStream);
+  }
+  if (perms.camera && perms.cameraStream) {
+    // Create a vision-like object the viz can read from
+    brainViz.setVision({
+      isActive: () => brain.visualCortex.isActive(),
+      _stream: perms.cameraStream,
+      getLastDescription: () => brain.visualCortex.description || 'Processing...',
+      getGaze: () => ({
+        x: brain.visualCortex.gazeX,
+        y: brain.visualCortex.gazeY,
+        target: brain.visualCortex.gazeTarget,
+      }),
+    });
+  }
+
   try { brain3d = new Brain3D('brain-3d-container'); } catch { brain3d = null; }
 
   // ── Wire DOM events ──
