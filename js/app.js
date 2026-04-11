@@ -574,8 +574,8 @@ async function bootUnity(apiKey, perms) {
         });
       }
       // Quip — tell Broca's NOT to generate URLs or image prompts
-      const state = brain.getState();
-      const quip = await brocasArea.generate(state,
+      const quipState = brain.getState();
+      const quip = await brocasArea.generate(quipState,
         '[SYSTEM: You just sent a selfie. The image is already rendering. Say a short flirty reaction — 1 sentence. Do NOT output any URL, link, image prompt, or markdown. Just words.]'
       );
       brain.giveReward(0.1);
