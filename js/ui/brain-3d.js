@@ -344,9 +344,18 @@ export class Brain3D {
 
     // Build
     this._buildDOM();
+    if (!this._canvas) {
+      console.warn('[Brain3D] Canvas not created — 3D viewer disabled');
+      this._destroyed = true;
+      return;
+    }
     this._genPositions();
-    this._initGL();
-    this._uploadStatic();
+    try {
+      this._initGL();
+      if (this._gl) this._uploadStatic();
+    } catch (err) {
+      console.warn('[Brain3D] WebGL init failed:', err.message);
+    }
   }
 
   // ── Public API ──────────────────────────────────────────────────
@@ -396,6 +405,7 @@ export class Brain3D {
   }
 
   close() {
+    if (this._destroyed || !this._overlay) return;
     this._open = false;
     this._overlay.classList.add('b3d-hidden');
     this._stopLoop();
@@ -417,8 +427,7 @@ export class Brain3D {
   // ── DOM ─────────────────────────────────────────────────────────
 
   _buildDOM() {
-    const host = document.getElementById(this._containerId);
-    if (!host) { console.error('[Brain3D] container not found:', this._containerId); return; }
+    const host = document.getElementById(this._containerId) || document.body;
 
     const ov = document.createElement('div');
     ov.className = 'b3d-overlay b3d-hidden';
@@ -557,10 +566,11 @@ export class Brain3D {
   // ── WebGL ───────────────────────────────────────────────────────
 
   _initGL() {
+    if (!this._canvas) return;
     const gl = this._canvas.getContext('webgl', {
       alpha: false, antialias: true, premultipliedAlpha: false, preserveDrawingBuffer: false,
     });
-    if (!gl) { console.error('[Brain3D] no WebGL'); return; }
+    if (!gl) { console.warn('[Brain3D] no WebGL'); return; }
     this._gl = gl;
 
     gl.enable(gl.BLEND);

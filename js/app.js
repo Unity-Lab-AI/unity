@@ -929,7 +929,12 @@ async function bootUnity(apiKey, perms) {
 
   // ── Create brain visualizers ──
   brainViz = new BrainVisualizer();
-  brain3d = new Brain3D('brain-3d-container');
+  try {
+    brain3d = new Brain3D('brain-3d-container');
+  } catch (err) {
+    console.warn('[Unity] 3D brain viewer failed to init:', err.message);
+    brain3d = null;
+  }
   if (vision?.isActive()) {
     brainViz.setVision(vision);
   }
@@ -946,7 +951,7 @@ async function bootUnity(apiKey, perms) {
   const brainVizBtn = document.getElementById('brain-viz-btn');
   if (brainVizBtn) brainVizBtn.addEventListener('click', () => brainViz.toggle());
   const brain3dBtn = document.getElementById('brain-3d-btn');
-  if (brain3dBtn) brain3dBtn.addEventListener('click', () => brain3d.toggle());
+  if (brain3dBtn) brain3dBtn.addEventListener('click', () => brain3d?.toggle());
 
   // ── Wire voice events ──
   let _currentResponseId = 0; // increments on each new input — stale responses get ignored
