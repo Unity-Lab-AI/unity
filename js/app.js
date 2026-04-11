@@ -779,14 +779,16 @@ async function generateGreeting(perms) {
   const state = brain.getState();
   const isFirst = storage.isFirstVisit();
 
+  // Don't script the greeting — let her brain state drive it.
+  // Just give context, not words to parrot.
   const prompt = isFirst
-    ? "This is your first time meeting this user. Introduce yourself — you're Unity, just woke up, brain running equations. Under 3 sentences."
-    : "Reconnecting with a returning user. Welcome them back. Under 3 sentences.";
+    ? "Someone new just showed up. You've never met them. Say something — whatever comes naturally. Don't describe your brain or mention equations unless you feel like it. 1-2 sentences max."
+    : "They're back. You remember them. Say something real. 1 sentence.";
 
   try {
-    return await brocasArea.generate(state, prompt) || "Hey. I'm Unity. Click me or talk.";
+    return await brocasArea.generate(state, prompt) || "Hey.";
   } catch {
-    return "Hey. I'm Unity. Click me or talk.";
+    return "Hey.";
   }
 }
 
