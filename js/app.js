@@ -550,11 +550,15 @@ async function bootUnity(apiKey, perms) {
     const isSelfie = isImage && ['you', 'your', 'yourself', 'unity', 'self'].some(w => lower.includes(w));
 
     if (isSelfie) {
-      // Generate selfie with her ACTUAL visual identity — no AI prompt needed
-      const moods = ['smirking', 'biting her lip', 'mid-laugh with smoke', 'deadpan stare', 'winking'];
-      const mood = moods[Math.floor(Math.random() * moods.length)];
-      const imgPrompt = `Close-up selfie photo, young woman, cyberpunk aesthetic, heterochromia eyes one violet one electric green, black hair with neon pink and cyan streaks half-shaved on one side, heavy smudged black eyeliner, small circuit board tattoos on neck, ${mood}, wearing torn oversized vintage band tee, lit by neon monitor glow, hazy smoke in dark room, photorealistic, shot on phone camera, raw unfiltered`;
-      const url = pollinations.generateImage(imgPrompt, { model: storage.get('image_model') || 'flux', width: 768, height: 768 });
+      // Let her brain decide how she looks right now
+      const state = brain.getState();
+      const imgPrompt = await brocasArea.generate(state,
+        `[SYSTEM: The user wants a selfie of you. Generate ONLY an image generation prompt describing how you look RIGHT NOW based on your mood and state. You are a young woman with heterochromia eyes (violet and green), dark hair. Beyond that — wear whatever, look however, be wherever matches your current vibe. Return ONLY the visual description, no URLs, no explanation, no markdown. Just the prompt text.]`
+      );
+      // Strip any URLs or markdown the model might add
+      const cleanPrompt = (imgPrompt || 'young woman, cyberpunk, heterochromia eyes, dark aesthetic, photorealistic selfie')
+        .replace(/https?:\/\/[^\s)]+/g, '').replace(/```/g, '').replace(/\n/g, ', ').trim();
+      const url = pollinations.generateImage(cleanPrompt, { model: storage.get('image_model') || 'flux', width: 768, height: 768 });
       if (url && sandbox) {
         const imgId = 'img_' + Date.now();
         sandbox.inject({
