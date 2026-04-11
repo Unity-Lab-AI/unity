@@ -469,15 +469,15 @@ async function bootUnity(apiKey, perms) {
   if (perms.camera && perms.cameraStream) {
     brain.connectCamera(perms.cameraStream);
     // Set up IT-level vision describer (calls AI for object recognition)
+    // Vision describer uses Pollinations DIRECTLY — not through the provider
+    // chain that tries the dead proxy every time. Vision is a fast peripheral
+    // call, not a full conversation requiring the primary backend.
     brain.visualCortex.setDescriber(async (dataUrl) => {
       try {
-        const raw = await providers.chat([
-          { role: 'system', content: 'Describe what you see in 1-2 sentences. Be casual.' },
-          { role: 'user', content: [
-            { type: 'text', text: 'What do you see?' },
-            { type: 'image_url', image_url: { url: dataUrl } },
-          ]},
-        ], { temperature: 0.3 });
+        const raw = await pollinations.chat([
+          { role: 'system', content: 'Describe what you see in 1-2 sentences. Be casual and brief.' },
+          { role: 'user', content: 'What do you see in this image?' },
+        ], { model: 'openai', temperature: 0.3 });
         return raw || '';
       } catch { return ''; }
     });
