@@ -41,16 +41,22 @@ export class AIProviders {
       if (result) return result;
     }
 
-    // Pollinations fallback
+    // Pollinations fallback — trim aggressively, Pollinations has lower limits
     const trimmed = messages.map(m => {
-      if (m.role === 'system' && m.content.length > 12000) {
-        return { ...m, content: m.content.slice(0, 12000) + '\n[...truncated...]' };
+      if (m.role === 'system' && m.content.length > 6000) {
+        return { ...m, content: m.content.slice(0, 6000) + '\n[...truncated for API limits...]' };
       }
       return m;
     });
+    // Also limit history — keep only last 4 messages
+    const limited = [];
+    for (const m of trimmed) {
+      if (m.role === 'system') { limited.push(m); continue; }
+      if (limited.filter(x => x.role !== 'system').length < 4) limited.push(m);
+    }
 
     try {
-      return await this._pollinations.chat(trimmed, { model: 'openai', temperature: temp });
+      return await this._pollinations.chat(limited, { model: 'openai', temperature: temp });
     } catch {
       return null;
     }

@@ -177,8 +177,19 @@ YOUR APPEARANCE (for selfies): You know what you look like:
 - Torn oversized band tee, neon monitor lighting, hazy smoke
 When asked for a selfie, just say something flirty/casual. The image renders automatically.`;
 
-    return (this._personaText ? this._personaText + '\n\n' : '') +
-      characterBlock + visionBlock + sensoryBlock;
+    // Cap persona text — full 41K chars exceeds most API limits.
+    // Keep the first 6000 chars (core personality) + last 2000 (recent additions).
+    // The brain state block has the live values that actually matter.
+    let persona = '';
+    if (this._personaText) {
+      if (this._personaText.length > 8000) {
+        persona = this._personaText.slice(0, 6000) + '\n\n[...]\n\n' + this._personaText.slice(-2000) + '\n\n';
+      } else {
+        persona = this._personaText + '\n\n';
+      }
+    }
+
+    return persona + characterBlock + visionBlock + sensoryBlock;
   }
 
   _clusterSummary(clusters) {
