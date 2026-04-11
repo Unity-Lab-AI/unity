@@ -1,0 +1,16 @@
+// ═══════════════════════════════════════════════════════════════
+// Unity — Your API Keys
+// ═══════════════════════════════════════════════════════════════
+// Copy this file to env.js and paste your keys.
+// env.js is .gitignored — your keys never get pushed.
+// ═══════════════════════════════════════════════════════════════
+
+export const ENV_KEYS = {
+  anthropic:    '',  // https://console.anthropic.com — sk-ant-...
+  pollinations: '',  // https://enter.pollinations.ai — sk_...
+  openrouter:   '',  // https://openrouter.ai/keys — sk-or-...
+  openai:       '',  // https://platform.openai.com/api-keys — sk-...
+  mistral:      '',  // https://console.mistral.ai/api-keys
+  deepseek:     '',  // https://platform.deepseek.com/api_keys
+  groq:         '',  // https://console.groq.com/keys — gsk_...
+};

@@ -14,6 +14,16 @@ import { UserStorage } from './storage.js';
 import { Sandbox } from './ui/sandbox.js';
 import { buildPrompt } from './ai/persona-prompt.js';
 
+// ── Load API keys from env.js (gitignored, user's local keys) ──
+let ENV_KEYS = {};
+try {
+  const env = await import('./env.js');
+  ENV_KEYS = env.ENV_KEYS || {};
+  console.log('[Unity] Loaded keys from env.js:', Object.keys(ENV_KEYS).filter(k => ENV_KEYS[k]).join(', ') || 'none');
+} catch {
+  console.log('[Unity] No env.js found — keys will be entered in setup modal');
+}
+
 // ── Global instances ──
 let brain, pollinations, voice, router, storage, sandbox;
 let isRunning = false;
@@ -32,10 +42,7 @@ const brainStatus = document.getElementById('brain-status');
 const customUrlInput = document.getElementById('custom-url-input');
 const customModelInput = document.getElementById('custom-model-input');
 const customKeyInput = document.getElementById('custom-key-input');
-const aiStatus = document.getElementById('ai-status');
 const aiScanResults = document.getElementById('ai-scan-results');
-const advancedToggle = document.getElementById('advanced-toggle');
-const advancedPanel = document.getElementById('advanced-panel');
 
 // ── Known local AI servers to scan ──
 const LOCAL_AI_ENDPOINTS = [
@@ -48,8 +55,6 @@ const LOCAL_AI_ENDPOINTS = [
   { name: 'Kobold',              url: 'http://localhost:5001',  probe: '/api/v1/model', modelsPath: null,  modelKey: null },
   { name: 'GPT4All',             url: 'http://localhost:4891',  probe: '/v1/models', modelsPath: 'data',   modelKey: 'id' },
   { name: 'llama.cpp',           url: 'http://localhost:8081',  probe: '/v1/models', modelsPath: 'data',   modelKey: 'id' },
-  { name: 'Claude (bridge)',     url: 'http://localhost:3456',  probe: '/v1/models', modelsPath: 'data',   modelKey: 'id' },
-  { name: 'Claude (bridge-alt)', url: 'http://localhost:3457',  probe: '/v1/models', modelsPath: 'data',   modelKey: 'id' },
 ];
 
 /** Scan results stored here */
@@ -73,25 +78,153 @@ async function init() {
   if (savedCustomModel) customModelInput.value = savedCustomModel;
   if (savedCustomKey) customKeyInput.value = savedCustomKey;
 
-  // Advanced panel toggle
-  advancedToggle.addEventListener('click', () => {
-    advancedPanel.style.display = advancedPanel.style.display === 'none' ? 'block' : 'none';
-  });
-
   startBtn.addEventListener('click', handleStart);
   unityAvatar.addEventListener('click', toggleVoiceInput);
 
-  // Connect-your-AI panel
+  // Connect buttons — clicking shows that provider's form, doesn't disconnect others
   document.querySelectorAll('.connect-btn').forEach(btn => {
     btn.addEventListener('click', () => {
+      // Remove 'active' (currently-editing) from all, but keep 'connected' on already-connected ones
       document.querySelectorAll('.connect-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       showConnectForm(btn.dataset.ai);
     });
   });
 
-  // AUTO-SCAN for AI backends immediately
-  await scanForAI();
+  // Seed any keys from env.js into storage (won't overwrite if user already saved a different key)
+  for (const [pid, key] of Object.entries(ENV_KEYS)) {
+    if (key && !storage.getApiKey(pid)) {
+      storage.setApiKey(pid, key);
+      console.log(`[Unity] Seeded ${pid} key from env.js`);
+    }
+  }
+
+  // Check if returning user already has saved keys — auto-reconnect ALL of them
+  const providerIds = ['pollinations', 'openrouter', 'openai', 'anthropic', 'mistral', 'deepseek', 'groq'];
+  for (const pid of providerIds) {
+    const savedKey = storage.getApiKey(pid);
+    if (savedKey && PROVIDERS[pid]) {
+      console.log(`[Unity] Found saved ${pid} key — auto-reconnecting...`);
+      const btn = document.querySelector(`.connect-btn[data-ai="${pid}"]`);
+      if (btn) btn.classList.add('connected');
+      await autoReconnectProvider(pid, savedKey);
+    }
+  }
+
+  // Also scan for local AI in background
+  scanLocalOnly();
+}
+
+/** Auto-reconnect a returning user's saved provider */
+async function autoReconnectProvider(providerId, key) {
+  const provider = PROVIDERS[providerId];
+  if (!provider) return;
+
+  // Set the hidden field for Pollinations specifically
+  if (providerId === 'pollinations') {
+    document.getElementById('api-key-input').value = key;
+  }
+
+  // Remove stale entries for this provider
+  detectedAI = detectedAI.filter(d => d.name !== provider.name && d.name !== provider.name + ' Image');
+
+  // Fetch models
+  if (provider.modelsEndpoint) {
+    try {
+      const res = await fetch(provider.modelsEndpoint, {
+        headers: { 'Authorization': `Bearer ${key}` },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const rawModels = data.data || data.models || [];
+        const models = (Array.isArray(rawModels) ? rawModels : [])
+          .map(m => typeof m === 'string' ? m : (m.id || m.name))
+          .filter(Boolean);
+
+        if (models.length > 0) {
+          detectedAI.push({
+            name: provider.name,
+            url: provider.url,
+            models,
+            bestModel: models[0],
+            type: 'cloud',
+            apiKey: key,
+          });
+
+          // If Pollinations, also fetch image models
+          if (providerId === 'pollinations') {
+            try {
+              const imgRes = await fetch('https://gen.pollinations.ai/image/models', {
+                headers: { 'Authorization': `Bearer ${key}` },
+                signal: AbortSignal.timeout(5000),
+              });
+              if (imgRes.ok) {
+                const imgData = await imgRes.json();
+                const rawImg = Array.isArray(imgData) ? imgData : (imgData.data || []);
+                const imgModels = rawImg.map(m => typeof m === 'string' ? m : (m.id || m.name)).filter(Boolean);
+                if (imgModels.length > 0) {
+                  detectedAI.push({
+                    name: provider.name + ' Image',
+                    url: provider.url,
+                    models: imgModels,
+                    bestModel: imgModels[0],
+                    type: 'cloud-image',
+                  });
+                }
+              }
+            } catch {}
+          }
+
+          enableWakeUp(provider.name, models.length);
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn(`[Unity] Auto-reconnect ${providerId} failed:`, err.message);
+    }
+  }
+
+  // Model fetch failed but key exists — still enable with default
+  detectedAI.push({
+    name: provider.name,
+    url: provider.url,
+    models: ['default'],
+    bestModel: 'default',
+    type: 'cloud',
+    apiKey: key,
+  });
+  enableWakeUp(provider.name, 1);
+}
+
+/** Scan only local ports — doesn't block setup, just adds options */
+async function scanLocalOnly() {
+  const probes = LOCAL_AI_ENDPOINTS.map(ep => probeEndpoint(ep));
+  const results = await Promise.allSettled(probes);
+  let found = 0;
+  results.forEach(result => {
+    if (result.status === 'fulfilled' && result.value) {
+      detectedAI.push(result.value);
+      found++;
+    }
+  });
+  if (found > 0) {
+    rebuildModelDropdowns();
+    console.log(`[Unity] Found ${found} local AI backend(s)`);
+    // If no cloud key was connected but local AI exists, enable wake up
+    if (startBtn.disabled) {
+      enableWakeUp('Local AI', found);
+    }
+  }
+}
+
+/** Show models section and enable the Wake Her Up button */
+function enableWakeUp(providerName, modelCount) {
+  addConnectedStatus(providerName, modelCount);
+  rebuildModelDropdowns();
+  document.getElementById('ai-scan-area').style.display = 'block';
+  startBtn.disabled = false;
+  startBtn.textContent = 'Wake Her Up';
 }
 
 // ── Cloud AI providers — browser calls these directly with user's key ──
@@ -100,8 +233,8 @@ const PROVIDERS = {
   pollinations: {
     name: 'Pollinations',
     desc: 'Free AI platform — text, image, audio, video. Works immediately. BYOP key gives higher limits.',
-    hint: 'Sign up at pollinations.ai, then go to enter.pollinations.ai to get your key.',
-    link: 'https://enter.pollinations.ai',
+    hint: 'Sign up at pollinations.ai, go to your dashboard and grab your API key.',
+    link: 'https://pollinations.ai/dashboard',
     url: 'https://gen.pollinations.ai',
     modelsEndpoint: 'https://gen.pollinations.ai/v1/models',
     needsKey: true,
@@ -127,9 +260,9 @@ const PROVIDERS = {
   },
   anthropic: {
     name: 'Claude (Anthropic)',
-    desc: 'Claude Opus, Sonnet, Haiku. Anthropic blocks direct browser access — use OpenRouter to get Claude in the browser.',
-    hint: 'Use OpenRouter instead (it includes Claude). Or run bridge.py locally if you have Claude Code.',
-    link: 'https://openrouter.ai/keys',
+    desc: 'Claude Opus, Sonnet, Haiku. Note: Anthropic blocks direct browser calls — needs a local proxy or use OpenRouter.',
+    hint: 'Get your key from Anthropic\'s console. Browser CORS limits apply — OpenRouter is the easiest workaround.',
+    link: 'https://console.anthropic.com/settings/keys',
     url: 'https://api.anthropic.com',
     needsKey: true,
     corsBlocked: true,
@@ -137,7 +270,7 @@ const PROVIDERS = {
   mistral: {
     name: 'Mistral',
     desc: 'Mistral Large, Codestral, and more.',
-    hint: '',
+    hint: 'Create an account at mistral.ai, then generate an API key in their console.',
     link: 'https://console.mistral.ai/api-keys',
     url: 'https://api.mistral.ai',
     modelsEndpoint: 'https://api.mistral.ai/v1/models',
@@ -146,7 +279,7 @@ const PROVIDERS = {
   deepseek: {
     name: 'DeepSeek',
     desc: 'DeepSeek Chat and DeepSeek Coder. Cheap and good at code.',
-    hint: '',
+    hint: 'Sign up at deepseek.com, then grab your key from their platform.',
     link: 'https://platform.deepseek.com/api_keys',
     url: 'https://api.deepseek.com',
     modelsEndpoint: 'https://api.deepseek.com/v1/models',
@@ -155,7 +288,7 @@ const PROVIDERS = {
   groq: {
     name: 'Groq',
     desc: 'Ultra-fast inference. Llama, Mixtral, Gemma. Free tier available.',
-    hint: '',
+    hint: 'Sign up at groq.com, then create an API key in their console.',
     link: 'https://console.groq.com/keys',
     url: 'https://api.groq.com/openai',
     modelsEndpoint: 'https://api.groq.com/openai/v1/models',
@@ -203,7 +336,7 @@ function showConnectForm(providerId) {
     const rescanBtn = document.getElementById('rescan-btn');
     rescanBtn.onclick = async () => {
       rescanBtn.textContent = '🔄 Scanning...';
-      await scanForAI();
+      await scanLocalOnly();
       rescanBtn.textContent = '🔄 Re-scan local ports';
     };
   } else {
@@ -213,6 +346,7 @@ function showConnectForm(providerId) {
     saveBtn.textContent = 'Connect';
     saveBtn.style.borderColor = '';
     saveBtn.style.color = '';
+    saveBtn.style.background = '';
     localHint.style.display = 'none';
 
     // Pre-fill if they already saved a key for this provider
@@ -233,7 +367,9 @@ function showConnectForm(providerId) {
         document.getElementById('api-key-input').value = key;
       }
 
-      storage.set('custom_ai_url', provider.url);
+      // Mark this button as connected
+      const thisBtn = document.querySelector(`.connect-btn[data-ai="${providerId}"]`);
+      if (thisBtn) thisBtn.classList.add('connected');
 
       // Try to fetch models dynamically
       if (provider.modelsEndpoint) {
@@ -250,21 +386,46 @@ function showConnectForm(providerId) {
               .filter(Boolean);
 
             if (models.length > 0) {
-              // Remove any previous entry for this provider
-              detectedAI = detectedAI.filter(d => d.name !== provider.name);
+              // Remove any previous entry for this provider only
+              detectedAI = detectedAI.filter(d => d.name !== provider.name && d.name !== provider.name + ' Image');
               detectedAI.push({
                 name: provider.name,
                 url: provider.url,
                 models,
                 bestModel: models[0],
-                type: providerId === 'pollinations' ? 'cloud' : 'cloud',
+                type: 'cloud',
                 apiKey: key,
               });
-              rebuildModelDropdowns();
-              showConnectStatus(provider.name, models.length);
+
+              // If Pollinations, also fetch image models
+              if (providerId === 'pollinations') {
+                try {
+                  const imgRes = await fetch('https://gen.pollinations.ai/image/models', {
+                    headers: { 'Authorization': `Bearer ${key}` },
+                    signal: AbortSignal.timeout(5000),
+                  });
+                  if (imgRes.ok) {
+                    const imgData = await imgRes.json();
+                    const rawImg = Array.isArray(imgData) ? imgData : (imgData.data || []);
+                    const imgModels = rawImg.map(m => typeof m === 'string' ? m : (m.id || m.name)).filter(Boolean);
+                    if (imgModels.length > 0) {
+                      detectedAI.push({
+                        name: provider.name + ' Image',
+                        url: provider.url,
+                        models: imgModels,
+                        bestModel: imgModels[0],
+                        type: 'cloud-image',
+                      });
+                    }
+                  }
+                } catch {}
+              }
+
+              enableWakeUp(provider.name, models.length);
               saveBtn.textContent = `Connected! ${models.length} models`;
-              saveBtn.style.borderColor = 'var(--green)';
+              saveBtn.style.background = 'rgba(34,197,94,0.15)';
               saveBtn.style.color = 'var(--green)';
+              saveBtn.style.borderColor = 'var(--green)';
               return;
             }
           }
@@ -284,10 +445,9 @@ function showConnectForm(providerId) {
           type: 'cloud',
           apiKey: key,
         });
-        rebuildModelDropdowns();
-        showConnectStatus(provider.name, 1);
+        enableWakeUp(provider.name, 1);
         saveBtn.textContent = 'Connected';
-        saveBtn.style.borderColor = 'var(--green)';
+        saveBtn.style.background = 'rgba(34,197,94,0.15)';
         saveBtn.style.color = 'var(--green)';
       } else {
         saveBtn.textContent = 'Key saved — use OpenRouter for browser access';
@@ -297,11 +457,18 @@ function showConnectForm(providerId) {
   }
 }
 
-function showConnectStatus(name, modelCount) {
-  const statusDiv = document.getElementById('connect-status');
-  const statusName = document.getElementById('connect-status-name');
-  statusDiv.style.display = 'flex';
-  statusName.textContent = `✓ ${name} — ${modelCount} model${modelCount !== 1 ? 's' : ''}`;
+function addConnectedStatus(name, modelCount) {
+  const list = document.getElementById('connect-status-list');
+  // Update existing row if provider already listed, otherwise add new
+  let row = list.querySelector(`[data-provider="${name}"]`);
+  if (!row) {
+    row = document.createElement('div');
+    row.className = 'perm-row';
+    row.dataset.provider = name;
+    row.innerHTML = `<span class="connect-status-name"></span><span class="status granted">connected</span>`;
+    list.appendChild(row);
+  }
+  row.querySelector('.connect-status-name').textContent = `${name} — ${modelCount} model${modelCount !== 1 ? 's' : ''}`;
 }
 
 function rebuildModelDropdowns() {
@@ -348,167 +515,19 @@ function rebuildModelDropdowns() {
     }
   }
 
-  const totalText = textBackends.reduce((sum, d) => sum + d.models.length, 0);
-  const totalImage = imageBackends.reduce((sum, d) => sum + d.models.length, 0);
-  aiStatus.textContent = `${totalText} text, ${totalImage} image`;
+  const aiStatusEl = document.getElementById('ai-status');
+  if (aiStatusEl) {
+    const totalText = textBackends.reduce((sum, d) => sum + d.models.length, 0);
+    const totalImage = imageBackends.reduce((sum, d) => sum + d.models.length, 0);
+    aiStatusEl.textContent = `${totalText} text, ${totalImage} image`;
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
 // AI AUTO-DETECTION — scans local ports + Pollinations
 // ═══════════════════════════════════════════════════════════════
 
-async function scanForAI() {
-  aiStatus.textContent = 'scanning...';
-  aiStatus.className = 'status pending';
-  aiScanResults.innerHTML = '';
-  detectedAI = [];
-
-  const logLine = (text) => {
-    aiScanResults.innerHTML += text + '<br>';
-  };
-
-  // Scan all local endpoints in parallel
-  logLine('scanning local ports...');
-  const probes = LOCAL_AI_ENDPOINTS.map(ep => probeEndpoint(ep));
-  const results = await Promise.allSettled(probes);
-
-  results.forEach((result, i) => {
-    if (result.status === 'fulfilled' && result.value) {
-      detectedAI.push(result.value);
-    }
-  });
-
-  // Fetch Pollinations models DYNAMICALLY — never hardcoded
-  logLine('fetching Pollinations models...');
-  try {
-    // Text models
-    const textRes = await fetch('https://gen.pollinations.ai/v1/models', {
-      signal: AbortSignal.timeout(8000),
-    });
-    if (textRes.ok) {
-      const textData = await textRes.json();
-      // API returns { data: [...] } or [...] depending on endpoint
-      const rawModels = Array.isArray(textData) ? textData : (textData.data || []);
-      const textModels = rawModels.map(m => m.id || m.name || m).filter(Boolean);
-
-      if (textModels.length > 0) {
-        const hasByop = !!storage.getApiKey('pollinations');
-        detectedAI.push({
-          name: 'Pollinations Text' + (hasByop ? ' (BYOP)' : ' (free)'),
-          url: 'https://gen.pollinations.ai',
-          models: textModels,
-          bestModel: textModels[0],
-          type: 'cloud',
-        });
-      }
-    }
-
-    // Image/video models
-    const imgRes = await fetch('https://gen.pollinations.ai/image/models', {
-      signal: AbortSignal.timeout(5000),
-    });
-    if (imgRes.ok) {
-      const imgData = await imgRes.json();
-      const rawImg = Array.isArray(imgData) ? imgData : (imgData.data || []);
-      const imgModels = rawImg.map(m => m.id || m.name || m).filter(Boolean);
-
-      if (imgModels.length > 0) {
-        detectedAI.push({
-          name: 'Pollinations Image',
-          url: 'https://gen.pollinations.ai',
-          models: imgModels,
-          bestModel: imgModels[0],
-          type: 'cloud-image',
-        });
-      }
-    }
-  } catch (err) {
-    logLine(`<span style="color:var(--red)">Pollinations: ${err.message}</span>`);
-  }
-
-  // Split into text backends and image backends
-  const textBackends = detectedAI.filter(d => d.type === 'local' || d.type === 'cloud');
-  const imageBackends = detectedAI.filter(d => d.type === 'cloud-image');
-
-  // Show results + populate BOTH selectors
-  const textSelect = document.getElementById('text-model-select');
-  const imageSelect = document.getElementById('image-model-select');
-  const selectorsDiv = document.getElementById('model-selectors');
-  aiScanResults.innerHTML = '';
-  textSelect.innerHTML = '';
-  imageSelect.innerHTML = '';
-
-  if (detectedAI.length === 0) {
-    aiStatus.textContent = 'none found';
-    aiStatus.className = 'status denied';
-    logLine('<span style="color:var(--red)">No AI backends detected. Use manual config below.</span>');
-    advancedPanel.style.display = 'block';
-    startBtn.textContent = 'Wake Her Up (no AI)';
-    startBtn.disabled = false;
-  } else {
-    // Show scan summary
-    for (const d of detectedAI) {
-      const icon = d.type === 'local' ? '🖥️' : d.type === 'cloud-image' ? '🎨' : '☁️';
-      const count = d.models.length;
-      logLine(`${icon} <strong>${d.name}</strong> — ${count} model${count !== 1 ? 's' : ''}`);
-    }
-
-    // Pick best text backend — prefer local over cloud
-    const localText = textBackends.filter(d => d.type === 'local');
-    bestBackend = localText.length > 0 ? localText[0] : textBackends[0] || null;
-
-    // Populate TEXT model dropdown from all text-capable backends
-    selectorsDiv.style.display = 'block';
-    for (const d of textBackends) {
-      const group = document.createElement('optgroup');
-      const icon = d.type === 'local' ? '🖥️' : '☁️';
-      group.label = `${icon} ${d.name}`;
-
-      for (const model of d.models) {
-        const opt = document.createElement('option');
-        opt.value = JSON.stringify({ url: d.url, model, name: d.name, type: d.type });
-        opt.textContent = model;
-        if (bestBackend && d === bestBackend && model === d.bestModel) {
-          opt.selected = true;
-        }
-        group.appendChild(opt);
-      }
-      textSelect.appendChild(group);
-    }
-
-    // Populate IMAGE model dropdown from image backends
-    if (imageBackends.length > 0) {
-      for (const d of imageBackends) {
-        const group = document.createElement('optgroup');
-        group.label = `🎨 ${d.name}`;
-
-        for (const model of d.models) {
-          const opt = document.createElement('option');
-          opt.value = JSON.stringify({ url: d.url, model, name: d.name });
-          opt.textContent = model;
-          if (model === d.bestModel) opt.selected = true;
-          group.appendChild(opt);
-        }
-        imageSelect.appendChild(group);
-      }
-    } else {
-      // No image backends — still show Pollinations image URL as fallback
-      const opt = document.createElement('option');
-      opt.value = JSON.stringify({ url: 'https://gen.pollinations.ai', model: 'flux', name: 'Pollinations' });
-      opt.textContent = 'flux (default)';
-      imageSelect.appendChild(opt);
-    }
-
-    const totalText = textBackends.reduce((sum, d) => sum + d.models.length, 0);
-    const totalImage = imageBackends.reduce((sum, d) => sum + d.models.length, 0);
-    aiStatus.textContent = `${totalText} text, ${totalImage} image`;
-    aiStatus.className = 'status granted';
-    startBtn.textContent = 'Wake Her Up';
-    startBtn.disabled = false;
-  }
-
-  // Connect panel is always visible in the new layout — no toggle needed
-}
+// scanForAI removed — replaced by per-provider connect flow + scanLocalOnly
 
 async function probeEndpoint(ep) {
   try {
@@ -549,15 +568,9 @@ async function handleStart() {
   startBtn.textContent = 'Requesting permissions...';
   startBtn.disabled = true;
 
-  // Save manual config if user filled it in
+  // Save Pollinations key if present
   const apiKey = apiKeyInput.value.trim();
   if (apiKey) storage.setApiKey('pollinations', apiKey);
-  const customUrl = customUrlInput.value.trim();
-  const customModel = customModelInput.value.trim();
-  const customKey = customKeyInput.value.trim();
-  if (customUrl) storage.set('custom_ai_url', customUrl);
-  if (customModel) storage.set('custom_ai_model', customModel);
-  if (customKey) storage.setApiKey('custom', customKey);
 
   // Show permission results area
   const permResults = document.getElementById('perm-results');
@@ -575,7 +588,7 @@ async function handleStart() {
   camStatus.textContent = perms.camera ? 'granted' : 'denied';
   camStatus.className = `status ${perms.camera ? 'granted' : 'denied'}`;
 
-  // Read user's selected text model
+  // Read user's selected text model — wire to correct provider's URL and key
   const textSelect = document.getElementById('text-model-select');
   if (textSelect.value) {
     try {
@@ -587,6 +600,8 @@ async function handleStart() {
         bestModel: selected.model,
         type: selected.type,
       };
+      // Set the custom URL to the selected provider's URL
+      storage.set('custom_ai_url', selected.url);
       // Find the matching detected backend to grab its API key
       const matchedBackend = detectedAI.find(d => d.url === selected.url && d.name === selected.name);
       if (matchedBackend?.apiKey) {
@@ -595,7 +610,7 @@ async function handleStart() {
     } catch {}
   }
 
-  // Read user's selected image model and save it
+  // Read user's selected image model and set it on the router separately
   const imageSelect = document.getElementById('image-model-select');
   if (imageSelect.value) {
     try {
@@ -641,8 +656,15 @@ async function bootUnity(apiKey, perms) {
     }
   }
 
+  // ── Set image backend separately from text backend ──
+  const savedImageModel = storage.get('image_model');
+  const savedImageUrl = storage.get('image_backend_url');
+  if (savedImageModel) {
+    router.setImageBackend(savedImageUrl || 'pollinations', savedImageModel);
+  }
+
   const info = router.getBackendInfo();
-  console.log(`[Unity] Active AI: ${info.active.backend}/${info.active.model}`);
+  console.log(`[Unity] Text: ${info.text.backend}/${info.text.model} | Image: ${info.image.backend}/${info.image.model}`);
 
   // ── Wire sandbox Unity API ──
   // NOTE: Sandbox-injected JS gets a SAFE proxy — no raw key access,
@@ -671,6 +693,7 @@ async function bootUnity(apiKey, perms) {
     getBackends: () => router.getBackendInfo(),
     setBackend: (backend, model) => router.setBackend(backend, model),
     setCustomEndpoint: (url, model) => router.setCustomEndpoint(url, model),
+    setImageBackend: (backend, model) => router.setImageBackend(backend, model),
     detectBackends: () => router.detectBackends(),
   });
 
@@ -683,11 +706,15 @@ async function bootUnity(apiKey, perms) {
   // ── Wire voice events ──
   voice.onResult(async ({ text, isFinal }) => {
     if (!isFinal) return;
+    // Stop any current speech before responding
+    voice.stopSpeaking();
     showSpeechBubble(`🎤 ${text}`, 2000);
     setAvatarState('thinking');
     const result = await router.handleUserMessage(text);
-    if (result?.response) {
-      showSpeechBubble(result.response, 8000);
+    // result.response is { text: "...", action: "..." } — extract the string
+    const responseText = result?.response?.text || result?.response?.thought || '';
+    if (responseText) {
+      showSpeechBubble(responseText, 8000);
     }
     setAvatarState('idle');
   });
@@ -701,11 +728,9 @@ async function bootUnity(apiKey, perms) {
   });
 
   brain.on('thought', async (thought) => {
-    // Unity has an idle thought — sometimes she shares it
-    if (thought.arousal > 0.7 && Math.random() > 0.5) {
-      const result = await router.processAction('idle_thought', brain.getState());
-      if (result) showSpeechBubble(result, 6000);
-    }
+    // Thinking is SILENT — it's equations running, not speech.
+    // Thoughts only get spoken if Unity DECIDES to speak (very rare idle vocalization).
+    // Most thoughts are just brain state updates that affect her next response.
   });
 
   brain.on('action', (action) => {
@@ -716,9 +741,13 @@ async function bootUnity(apiKey, perms) {
   setupModal.classList.add('hidden');
   unityBubble.classList.remove('hidden');
   brainIndicator.classList.remove('hidden');
+  document.getElementById('brain-hud').classList.remove('hidden');
+
+  // ── Start brain wave visualizer — runs forever ──
+  startBrainWave();
 
   // ── Start brain simulation ──
-  brain.think();
+  brain.start();
   isRunning = true;
 
   // ── Unity's first words ──
@@ -792,16 +821,172 @@ function setAvatarState(state) {
   if (state !== 'idle') unityAvatar.classList.add(state);
 }
 
+// ═══════════════════════════════════════════════════════════════
+// BRAIN WAVE VISUALIZER — always running, never stops
+// ═══════════════════════════════════════════════════════════════
+
+let brainWaveData = new Float32Array(300); // rolling buffer
+let brainWaveOffset = 0;
+let brainWaveCtx = null;
+let brainWaveRunning = false;
+
+function startBrainWave() {
+  const canvas = document.getElementById('brain-wave-canvas');
+  if (!canvas) return;
+  brainWaveCtx = canvas.getContext('2d');
+  canvas.width = canvas.offsetWidth * (window.devicePixelRatio || 1);
+  canvas.height = canvas.offsetHeight * (window.devicePixelRatio || 1);
+  brainWaveRunning = true;
+  renderBrainWave();
+}
+
+function renderBrainWave() {
+  if (!brainWaveRunning || !brainWaveCtx) return;
+
+  const ctx = brainWaveCtx;
+  const w = ctx.canvas.width;
+  const h = ctx.canvas.height;
+  const len = brainWaveData.length;
+
+  ctx.clearRect(0, 0, w, h);
+
+  // Draw the wave
+  ctx.beginPath();
+  ctx.strokeStyle = 'rgba(255, 77, 154, 0.8)';
+  ctx.lineWidth = 1.5;
+
+  for (let i = 0; i < len; i++) {
+    const x = (i / len) * w;
+    const val = brainWaveData[(brainWaveOffset + i) % len];
+    const y = (h / 2) + val * (h / 2);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Faint glow line underneath
+  ctx.beginPath();
+  ctx.strokeStyle = 'rgba(168, 85, 247, 0.3)';
+  ctx.lineWidth = 3;
+  for (let i = 0; i < len; i++) {
+    const x = (i / len) * w;
+    const val = brainWaveData[(brainWaveOffset + i) % len];
+    const y = (h / 2) + val * (h / 2);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // If brain isn't pushing samples fast enough, generate ambient neural noise
+  // Humans never flatline while alive — there's always activity
+  if (brain) {
+    const state = brain.getState();
+    const arousal = state?.amygdala?.arousal || 0.5;
+    const noise = Math.sin(Date.now() * 0.008 * (1 + arousal)) * 0.2
+                + Math.sin(Date.now() * 0.023) * 0.1
+                + Math.sin(Date.now() * 0.067) * 0.05
+                + (Math.random() - 0.5) * 0.08;
+    pushBrainSample(Math.max(-1, Math.min(1, noise)));
+  }
+
+  requestAnimationFrame(renderBrainWave);
+}
+
+function pushBrainSample(value) {
+  brainWaveData[brainWaveOffset % brainWaveData.length] = value;
+  brainWaveOffset++;
+}
+
 function updateBrainIndicator(state) {
   if (!state) return;
+
   const coherence = state.oscillations?.coherence || 0;
   const arousal = state.amygdala?.arousal || 0;
-  const dot = document.querySelector('.brain-dot');
-  if (dot) {
-    // Color shifts with brain state
-    const hue = Math.floor(330 + coherence * 30); // pink → magenta
-    dot.style.background = `hsl(${hue}, 80%, ${50 + arousal * 30}%)`;
+  const psi = state.psi || 0;
+  const bandPower = state.oscillations?.bandPower || {};
+
+  // Push a sample into the wave — mix of oscillation phases + noise + arousal
+  const phases = state.oscillations?.phases;
+  let sample = 0;
+  if (phases && phases.length > 0) {
+    // Sum a few oscillator phases to create an EEG-like signal
+    for (let i = 0; i < Math.min(phases.length, 4); i++) {
+      sample += Math.sin(phases[i]) * (0.3 - i * 0.05);
+    }
+  } else {
+    // Fallback — generate from arousal + noise
+    sample = Math.sin(Date.now() * 0.01 * (1 + arousal)) * 0.3
+           + Math.sin(Date.now() * 0.037) * 0.15
+           + (Math.random() - 0.5) * 0.1;
   }
+  sample = Math.max(-1, Math.min(1, sample + (Math.random() - 0.5) * 0.05));
+  pushBrainSample(sample);
+
+  // ── Update HUD with real simulation data ──
+  const $ = id => document.getElementById(id);
+
+  // Core metrics
+  const psiEl = $('hud-psi');
+  if (psiEl) psiEl.textContent = psi.toFixed(3);
+
+  const arousalBar = $('hud-arousal-bar');
+  const arousalVal = $('hud-arousal');
+  if (arousalBar) arousalBar.style.width = `${(arousal * 100).toFixed(0)}%`;
+  if (arousalVal) arousalVal.textContent = `${(arousal * 100).toFixed(0)}%`;
+
+  const valenceBar = $('hud-valence-bar');
+  const valenceVal = $('hud-valence');
+  if (valenceBar) valenceBar.style.width = `${((valence + 1) / 2 * 100).toFixed(0)}%`;
+  if (valenceVal) valenceVal.textContent = valence.toFixed(2);
+
+  const cohBar = $('hud-coherence-bar');
+  const cohVal = $('hud-coherence');
+  if (cohBar) cohBar.style.width = `${(coherence * 100).toFixed(0)}%`;
+  if (cohVal) cohVal.textContent = `${(coherence * 100).toFixed(0)}%`;
+
+  // Spikes
+  const spikeCount = state.spikes ? Array.from(state.spikes).filter(s => s).length : 0;
+  const spikesEl = $('hud-spikes');
+  if (spikesEl) spikesEl.textContent = spikeCount;
+
+  // Reward & time
+  const rewardEl = $('hud-reward');
+  if (rewardEl) rewardEl.textContent = (state.reward ?? 0).toFixed(2);
+  const timeEl = $('hud-time');
+  if (timeEl) timeEl.textContent = `${(state.time ?? 0).toFixed(1)}s`;
+
+  // Band power
+  const gammaEl = $('hud-gamma');
+  const betaEl = $('hud-beta');
+  const alphaEl = $('hud-alpha');
+  const thetaEl = $('hud-theta');
+  if (gammaEl) gammaEl.textContent = (bandPower.gamma ?? 0).toFixed(1);
+  if (betaEl) betaEl.textContent = (bandPower.beta ?? 0).toFixed(1);
+  if (alphaEl) alphaEl.textContent = (bandPower.alpha ?? 0).toFixed(1);
+  if (thetaEl) thetaEl.textContent = (bandPower.theta ?? 0).toFixed(1);
+
+  // Drug state & action
+  const drugEl = $('hud-drug');
+  if (drugEl) drugEl.textContent = state.drugState || 'cokeAndWeed';
+  const actionEl = $('hud-action');
+  if (actionEl) actionEl.textContent = state.basalGanglia?.selectedAction || state.lastAction || 'idle';
+
+  // Module activity dots — light up based on real output magnitude
+  function setModDot(id, value, threshold = 0.3) {
+    const dot = $(id);
+    if (!dot) return;
+    dot.classList.remove('active', 'high');
+    if (value > threshold * 2) dot.classList.add('high');
+    else if (value > threshold) dot.classList.add('active');
+  }
+
+  setModDot('mod-cortex', Math.abs(state.cortex?.error?.[0] ?? state.cortex?.error ?? 0));
+  setModDot('mod-hippo', state.hippocampus?.isStable ? 0.8 : 0.2);
+  setModDot('mod-amyg', arousal);
+  setModDot('mod-bg', state.basalGanglia?.confidence ?? 0);
+  setModDot('mod-cblm', Math.abs(state.cerebellum?.error?.[0] ?? 0));
+  setModDot('mod-hypo', state.hypothalamus?.needsAttention?.length > 0 ? 0.8 : 0.2);
+  setModDot('mod-myst', psi > 1 ? 0.8 : psi > 0.3 ? 0.4 : 0.1);
 }
 
 let isVoiceActive = false;

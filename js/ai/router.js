@@ -48,9 +48,13 @@ export class AIRouter {
             custom: { available: false, url: null, model: null },
         };
 
-        /** The active model being used right now */
+        /** Separate active backends for TEXT and IMAGE */
         this.activeBackend = 'pollinations';
         this.activeModel = 'openai';
+
+        // Image backend — always Pollinations unless overridden
+        this.imageBackend = 'pollinations';
+        this.imageModel = 'flux';
 
         // Auto-detect on construction
         this.detectBackends();
@@ -113,14 +117,14 @@ export class AIRouter {
      */
     getBackendInfo() {
         return {
-            active: { backend: this.activeBackend, model: this.activeModel },
+            text: { backend: this.activeBackend, model: this.activeModel },
+            image: { backend: this.imageBackend, model: this.imageModel },
             ...this.backends,
         };
     }
 
     /**
-     * Switch active backend and model.
-     * Unity can call this to swap her own model.
+     * Switch active TEXT backend and model.
      */
     setBackend(backend, model) {
         if (backend === 'ollama' && this.backends.ollama.available) {
@@ -133,12 +137,20 @@ export class AIRouter {
             this.activeBackend = 'pollinations';
             this.activeModel = model || 'openai';
         }
-        console.log(`[AIRouter] Switched to ${this.activeBackend}/${this.activeModel}`);
+        console.log(`[AIRouter] Text backend: ${this.activeBackend}/${this.activeModel}`);
     }
 
     /**
-     * Set a custom OpenAI-compatible endpoint.
-     * Unity can point herself at any API.
+     * Switch active IMAGE backend and model.
+     */
+    setImageBackend(backend, model) {
+        this.imageBackend = backend || 'pollinations';
+        this.imageModel = model || 'flux';
+        console.log(`[AIRouter] Image backend: ${this.imageBackend}/${this.imageModel}`);
+    }
+
+    /**
+     * Set a custom OpenAI-compatible endpoint for TEXT.
      */
     setCustomEndpoint(url, model) {
         this.backends.custom = { available: true, url, model: model || 'default' };
@@ -323,10 +335,38 @@ export class AIRouter {
         if (userInput) this.storage.saveMessage('user', userInput);
         this.storage.saveMessage('assistant', response);
 
-        // Speak it
-        this.voice.speak(response).catch(err => {
-            console.warn('[AIRouter] TTS failed:', err.message);
-        });
+        // Check if response contains image URLs — open them in new tabs / inject into sandbox
+        const imageUrls = response.match(/https?:\/\/[^\s)]+\.(png|jpg|jpeg|webp|gif)/gi)
+                       || response.match(/https?:\/\/image\.pollinations\.ai[^\s)"]*/gi)
+                       || response.match(/https?:\/\/gen\.pollinations\.ai\/image[^\s)"]*/gi);
+
+        if (imageUrls && imageUrls.length > 0) {
+          for (const url of imageUrls) {
+            // Inject image into sandbox
+            if (this.sandbox) {
+              const id = 'img_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+              this.sandbox.inject({
+                id,
+                html: `<div style="margin:12px 0;text-align:center;"><img src="${url}" alt="Unity generated" style="max-width:100%;border-radius:8px;border:1px solid #333;cursor:pointer;" onclick="window.open('${url}','_blank')"></div>`,
+                css: '',
+              });
+            }
+          }
+          // Strip URLs from the spoken version so she doesn't read them out
+          const spokenText = response.replace(/https?:\/\/[^\s)]+/g, '').replace(/\s{2,}/g, ' ').trim();
+          if (spokenText) {
+            this.voice.stopSpeaking();
+            this.voice.speak(spokenText).catch(err => {
+              console.warn('[AIRouter] TTS failed:', err.message);
+            });
+          }
+        } else {
+          // No images — just speak normally
+          this.voice.stopSpeaking();
+          this.voice.speak(response).catch(err => {
+              console.warn('[AIRouter] TTS failed:', err.message);
+          });
+        }
 
         return { text: response, action: 'respond_text' };
     }
@@ -349,8 +389,9 @@ export class AIRouter {
             imagePrompt = userInput || 'cyberpunk coder girl, neon lights, dark aesthetic';
         }
 
+        // Use the IMAGE backend model, not the text backend
         const imageUrl = this.pollinations.generateImage(imagePrompt, {
-            model: 'flux',
+            model: this.imageModel || 'flux',
             width: 768,
             height: 768,
             style: 'cyberpunk',
@@ -432,9 +473,9 @@ export class AIRouter {
             return { thought: null, spoken: false, action: 'idle_thought' };
         }
 
-        // Speak the thought aloud if arousal is high enough
+        // Speak the thought aloud ONLY if not already speaking and arousal is high
         const arousal = brainState?.amygdala?.arousal ?? 0.5;
-        const spoken = arousal > 0.7;
+        const spoken = arousal > 0.7 && !this.voice.isSpeaking;
         if (spoken) {
             this.voice.speak(thought).catch(err => {
                 console.warn('[AIRouter] idle TTS failed:', err.message);

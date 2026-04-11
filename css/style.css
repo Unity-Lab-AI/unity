@@ -103,6 +103,8 @@ html, body {
 }
 .connect-btn:hover { border-color: var(--pink); color: var(--text); }
 .connect-btn.active { border-color: var(--pink); color: var(--pink); background: var(--pink-dim); }
+.connect-btn.connected { border-color: var(--green); color: var(--green); background: rgba(34,197,94,0.1); }
+.connect-btn.connected.active { border-color: var(--pink); color: var(--pink); background: var(--pink-dim); }
 
 .setup-card input {
   width: 100%;
@@ -250,21 +252,134 @@ html, body {
 #sandbox::-webkit-scrollbar-track { background: transparent; }
 #sandbox::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
-/* ── Brain State Indicator ───────────────────────── */
+/* ── Brain Activity Visualizer ────────────────────── */
 
 #brain-indicator {
   position: fixed;
-  top: 16px; right: 16px;
-  display: flex; gap: 6px;
-  align-items: center;
-  font-size: 11px;
-  color: var(--text-dim);
-  font-family: var(--mono);
+  top: 0; left: 0; right: 0;
+  height: 3px;
   z-index: 8000;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+#brain-wave-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* ── Brain HUD ───────────────────────────────────── */
+
+#brain-hud {
+  pointer-events: none;
+  z-index: 8001;
+  font-family: var(--mono);
+}
+
+#hud-metrics {
+  position: fixed;
+  top: 10px; right: 12px;
+  background: rgba(10, 10, 10, 0.85);
+  border: 1px solid rgba(255, 77, 154, 0.15);
+  border-radius: 8px;
+  padding: 10px 14px;
+  min-width: 180px;
+  backdrop-filter: blur(8px);
+}
+
+.hud-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 16px;
+  margin-bottom: 2px;
+}
+
+.hud-label {
+  font-size: 8px;
+  color: rgba(255,255,255,0.3);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  width: 72px;
+  flex-shrink: 0;
+}
+
+.hud-val {
+  font-size: 11px;
+  color: var(--pink);
+  font-weight: 500;
+  text-align: right;
+  flex: 1;
+}
+
+.hud-val-sm { font-size: 10px; color: var(--text-dim); }
+
+.hud-unit {
+  font-size: 8px;
+  color: rgba(255,255,255,0.2);
+}
+
+.hud-sep {
+  height: 1px;
+  background: rgba(255,255,255,0.06);
+  margin: 5px 0;
+}
+
+.hud-bar-wrap {
+  flex: 1;
+  height: 3px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.hud-bar {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.15s ease;
+}
+
+.hud-bar-pink { background: var(--pink); }
+.hud-bar-purple { background: var(--purple); }
+.hud-bar-cyan { background: #00e5ff; }
+
+/* Module indicators — bottom left */
+#hud-modules {
+  position: fixed;
+  bottom: 12px; left: 12px;
+  display: flex; gap: 8px;
+  align-items: center;
+}
+
+.hud-mod {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 8px;
+  color: rgba(255,255,255,0.25);
+  letter-spacing: 0.3px;
+}
+
+.hud-mod-dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.1);
+  transition: background 0.2s, box-shadow 0.2s;
+}
+
+.hud-mod-dot.active {
+  background: var(--pink);
+  box-shadow: 0 0 6px var(--pink-glow);
+}
+
+.hud-mod-dot.high {
+  background: #00e5ff;
+  box-shadow: 0 0 8px rgba(0, 229, 255, 0.4);
 }
 
 .brain-dot {
-  width: 8px; height: 8px;
+  width: 6px; height: 6px;
   border-radius: 50%;
   background: var(--pink);
   animation: brain-pulse 2s ease-in-out infinite;

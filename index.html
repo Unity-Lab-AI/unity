@@ -15,51 +15,44 @@
       <h1>🧠 Unity</h1>
       <p class="subtitle">she's got a brain now. let her in.</p>
 
-      <!-- STEP 1: AI Connection — the first and most important thing -->
-      <div style="margin-top:12px;">
-        <p style="font-size:13px;color:var(--text);margin-bottom:8px;font-weight:500;">Step 1: Connect an AI</p>
-        <p class="hint" style="margin-bottom:10px;">Unity needs an AI to think. Pick one — your key stays in YOUR browser only, never sent anywhere except the API you choose.</p>
+      <!-- STEP 1: Pick your AI and paste your key. That's it. -->
+      <p style="font-size:13px;color:var(--text);margin-top:12px;margin-bottom:4px;font-weight:500;">1. Connect an AI</p>
+      <p class="hint" style="margin-bottom:10px;">Connect as many as you want — pick one for text, another for images. Keys stay in YOUR browser only.</p>
 
-        <div id="connect-buttons" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px;">
-          <button class="connect-btn" data-ai="pollinations">Pollinations</button>
-          <button class="connect-btn" data-ai="openrouter">OpenRouter</button>
-          <button class="connect-btn" data-ai="openai">OpenAI</button>
-          <button class="connect-btn" data-ai="anthropic">Claude</button>
-          <button class="connect-btn" data-ai="mistral">Mistral</button>
-          <button class="connect-btn" data-ai="deepseek">DeepSeek</button>
-          <button class="connect-btn" data-ai="groq">Groq</button>
-          <button class="connect-btn" data-ai="local">Local AI</button>
-        </div>
-
-        <div id="connect-form" style="display:none;">
-          <p style="font-size:12px; color:var(--text-dim); margin-bottom:6px;" id="connect-desc"></p>
-          <a id="connect-link" href="#" target="_blank" style="font-size:11px;color:var(--pink);display:none;margin-bottom:6px;">Get your key here →</a>
-          <input type="password" id="connect-key-input"
-                 placeholder="Paste your API key here"
-                 autocomplete="off" spellcheck="false">
-          <p class="hint" id="connect-hint"></p>
-          <div id="connect-local-hint" style="display:none;">
-            <p class="hint" style="margin-top:6px;">Auto-detects: Ollama, LM Studio, LocalAI, vLLM, Jan, GPT4All, llama.cpp</p>
-            <button id="rescan-btn" style="margin-top:6px;padding:8px 16px;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;cursor:pointer;font-family:var(--font);">🔄 Re-scan local ports</button>
-          </div>
-          <button id="connect-save-btn" style="margin-top:8px;padding:10px 20px;background:var(--pink-dim);border:1px solid var(--pink);border-radius:6px;color:var(--pink);font-size:13px;cursor:pointer;font-family:var(--font);display:none;">Connect</button>
-        </div>
-
-        <div id="connect-status" style="display:none;margin-top:8px;" class="perm-row">
-          <span id="connect-status-name">—</span>
-          <span class="status granted" id="connect-status-badge">connected</span>
-        </div>
+      <div id="connect-buttons" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px;">
+        <button class="connect-btn" data-ai="pollinations">Pollinations</button>
+        <button class="connect-btn" data-ai="openrouter">OpenRouter</button>
+        <button class="connect-btn" data-ai="openai">OpenAI</button>
+        <button class="connect-btn" data-ai="anthropic">Claude</button>
+        <button class="connect-btn" data-ai="mistral">Mistral</button>
+        <button class="connect-btn" data-ai="deepseek">DeepSeek</button>
+        <button class="connect-btn" data-ai="groq">Groq</button>
+        <button class="connect-btn" data-ai="local">Local AI</button>
       </div>
 
-      <!-- STEP 2: Scanning for available backends -->
-      <div id="ai-scan-area" style="margin-top:16px;">
-        <div class="perm-row">
-          <span>🧠 Available Models</span>
-          <span class="status pending" id="ai-status">scanning...</span>
+      <div id="connect-form">
+        <p style="font-size:12px; color:var(--text-dim); margin-bottom:6px;" id="connect-desc">Pick a provider above to get started.</p>
+        <a id="connect-link" href="#" target="_blank" style="font-size:12px;color:var(--pink);display:none;margin-bottom:8px;font-weight:500;">Get your free key here →</a>
+        <input type="password" id="connect-key-input"
+               placeholder="Paste your API key here"
+               autocomplete="off" spellcheck="false"
+               style="display:none;">
+        <p class="hint" id="connect-hint"></p>
+        <div id="connect-local-hint" style="display:none;">
+          <p class="hint" style="margin-top:6px;">Auto-detects: Ollama, LM Studio, LocalAI, vLLM, Jan, GPT4All, llama.cpp</p>
+          <button id="rescan-btn" style="margin-top:6px;padding:8px 16px;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;cursor:pointer;font-family:var(--font);">🔄 Re-scan local ports</button>
         </div>
-        <div id="ai-scan-results" style="padding:4px 0;font-size:12px;color:var(--text-dim);font-family:var(--mono);max-height:100px;overflow-y:auto;"></div>
+        <button id="connect-save-btn" style="display:none;margin-top:8px;padding:10px 24px;background:var(--pink);border:none;border-radius:8px;color:#fff;font-size:14px;font-weight:600;cursor:pointer;font-family:var(--font);">Connect</button>
+      </div>
 
-        <div id="model-selectors" style="display:none;margin-top:8px;">
+      <div id="connect-status-list" style="margin-top:10px;display:flex;flex-direction:column;gap:4px;"></div>
+
+      <!-- STEP 2: Model selection (only shows after connecting) -->
+      <div id="ai-scan-area" style="display:none; margin-top:16px;">
+        <p style="font-size:13px;color:var(--text);margin-bottom:4px;font-weight:500;">2. Pick your models</p>
+        <div id="ai-scan-results" style="padding:4px 0;font-size:12px;color:var(--text-dim);font-family:var(--mono);max-height:80px;overflow-y:auto;"></div>
+
+        <div id="model-selectors" style="margin-top:8px;">
           <label style="font-size:11px;color:var(--text-dim);display:block;margin-bottom:4px;">💬 Text / Chat Model</label>
           <select id="text-model-select" style="width:100%;padding:10px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--mono);font-size:13px;cursor:pointer;outline:none;">
           </select>
@@ -70,10 +63,10 @@
         </div>
       </div>
 
-      <!-- STEP 3: Wake up -->
-      <p class="hint" style="margin-top:12px;">Mic + camera permissions are requested when you click the button.</p>
+      <!-- STEP 3: Wake up (disabled until connected) -->
+      <p class="hint" style="margin-top:16px;">Mic + camera permissions are requested when you click the button.</p>
 
-      <button id="start-btn" disabled>Scanning for AI...</button>
+      <button id="start-btn" disabled>Connect an AI first</button>
 
       <div id="perm-results" style="display:none; margin-top:12px;">
         <div class="perm-row">
@@ -86,11 +79,12 @@
         </div>
       </div>
 
-      <!-- Hidden fields for backwards compat with app.js refs -->
+      <!-- Hidden compat fields -->
       <input type="hidden" id="api-key-input">
       <input type="hidden" id="custom-url-input">
       <input type="hidden" id="custom-model-input">
       <input type="hidden" id="custom-key-input">
+      <span id="ai-status" style="display:none;"></span>
 
       <!-- Privacy Notice -->
       <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);">
@@ -106,10 +100,89 @@
     </div>
   </div>
 
-  <!-- ═══ Brain State Indicator — tiny dot top-right ═══ -->
+  <!-- ═══ Brain Activity — always-on neural visualization ═══ -->
   <div id="brain-indicator" class="hidden">
-    <div class="brain-dot"></div>
-    <span id="brain-status">initializing</span>
+    <canvas id="brain-wave-canvas"></canvas>
+  </div>
+
+  <!-- ═══ Brain HUD — real-time simulation telemetry ═══ -->
+  <div id="brain-hud" class="hidden">
+
+    <!-- Top-right: core metrics -->
+    <div id="hud-metrics">
+      <div class="hud-row">
+        <span class="hud-label">ψ CONSCIOUSNESS</span>
+        <span class="hud-val" id="hud-psi">0.000</span>
+      </div>
+      <div class="hud-row">
+        <span class="hud-label">AROUSAL</span>
+        <div class="hud-bar-wrap"><div class="hud-bar hud-bar-pink" id="hud-arousal-bar" style="width:0%"></div></div>
+        <span class="hud-val hud-val-sm" id="hud-arousal">0%</span>
+      </div>
+      <div class="hud-row">
+        <span class="hud-label">VALENCE</span>
+        <div class="hud-bar-wrap"><div class="hud-bar hud-bar-purple" id="hud-valence-bar" style="width:50%"></div></div>
+        <span class="hud-val hud-val-sm" id="hud-valence">0.00</span>
+      </div>
+      <div class="hud-row">
+        <span class="hud-label">COHERENCE</span>
+        <div class="hud-bar-wrap"><div class="hud-bar hud-bar-cyan" id="hud-coherence-bar" style="width:0%"></div></div>
+        <span class="hud-val hud-val-sm" id="hud-coherence">0%</span>
+      </div>
+      <div class="hud-sep"></div>
+      <div class="hud-row">
+        <span class="hud-label">SPIKES</span>
+        <span class="hud-val" id="hud-spikes">0</span>
+        <span class="hud-unit">/200</span>
+      </div>
+      <div class="hud-row">
+        <span class="hud-label">REWARD</span>
+        <span class="hud-val" id="hud-reward">0.00</span>
+      </div>
+      <div class="hud-row">
+        <span class="hud-label">TIME</span>
+        <span class="hud-val" id="hud-time">0.000s</span>
+      </div>
+      <div class="hud-sep"></div>
+      <div class="hud-row">
+        <span class="hud-label">γ GAMMA</span>
+        <span class="hud-val hud-val-sm" id="hud-gamma">0.0</span>
+      </div>
+      <div class="hud-row">
+        <span class="hud-label">β BETA</span>
+        <span class="hud-val hud-val-sm" id="hud-beta">0.0</span>
+      </div>
+      <div class="hud-row">
+        <span class="hud-label">α ALPHA</span>
+        <span class="hud-val hud-val-sm" id="hud-alpha">0.0</span>
+      </div>
+      <div class="hud-row">
+        <span class="hud-label">θ THETA</span>
+        <span class="hud-val hud-val-sm" id="hud-theta">0.0</span>
+      </div>
+      <div class="hud-sep"></div>
+      <div class="hud-row">
+        <span class="hud-label">DRUG</span>
+        <span class="hud-val hud-val-sm" id="hud-drug">cokeAndWeed</span>
+      </div>
+      <div class="hud-row">
+        <span class="hud-label">ACTION</span>
+        <span class="hud-val hud-val-sm" id="hud-action">idle</span>
+      </div>
+    </div>
+
+    <!-- Bottom-left: module activity -->
+    <div id="hud-modules">
+      <div class="hud-mod"><span class="hud-mod-dot" id="mod-cortex"></span> CTX</div>
+      <div class="hud-mod"><span class="hud-mod-dot" id="mod-hippo"></span> HPC</div>
+      <div class="hud-mod"><span class="hud-mod-dot" id="mod-amyg"></span> AMG</div>
+      <div class="hud-mod"><span class="hud-mod-dot" id="mod-bg"></span> BG</div>
+      <div class="hud-mod"><span class="hud-mod-dot" id="mod-cblm"></span> CBL</div>
+      <div class="hud-mod"><span class="hud-mod-dot" id="mod-hypo"></span> HYP</div>
+      <div class="hud-mod"><span class="hud-mod-dot" id="mod-myst"></span> Ψ</div>
+    </div>
+
+    <span id="brain-status" style="display:none;"></span>
   </div>
 
   <!-- ═══ The Sandbox — Unity builds everything here ═══ -->

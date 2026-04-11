@@ -3,6 +3,7 @@
 .env.*
 .env.local
 .env.production
+js/env.js
 *.pem
 *.key
 *.cert
