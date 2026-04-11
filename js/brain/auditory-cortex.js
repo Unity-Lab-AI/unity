@@ -47,6 +47,54 @@ export class AuditoryCortex {
 
     // Gain modulation from amygdala
     this.gain = 1.0;
+
+    // Echo detection — auditory cortex compares incoming speech
+    // against motor cortex output (what we're currently saying).
+    // If they match, it's self-produced speech (efference copy).
+    // If they don't match, it's external speech — interrupt.
+    this._motorOutput = '';  // what Unity is currently saying
+    this.isEcho = false;     // true = heard speech matches our own output
+    this.isExternalSpeech = false; // true = someone else is talking
+  }
+
+  /**
+   * Set what the motor cortex is currently outputting (Unity's speech).
+   * Used for efference copy — comparing self-produced vs external sound.
+   * This is how the real auditory system works: the brain predicts what
+   * it will hear from its own voice and suppresses that signal.
+   */
+  setMotorOutput(text) {
+    this._motorOutput = text;
+  }
+
+  clearMotorOutput() {
+    this._motorOutput = '';
+    this.isEcho = false;
+  }
+
+  /**
+   * Check if heard text is echo of our own speech or external input.
+   * Returns true if the user is actually talking (not echo).
+   */
+  checkForInterruption(heardText) {
+    if (!this._motorOutput) {
+      // Not speaking — any input is real
+      this.isEcho = false;
+      this.isExternalSpeech = true;
+      return true;
+    }
+
+    const heard = heardText.toLowerCase().trim();
+    const ours = this._motorOutput.toLowerCase();
+    const words = heard.split(/\s+/).filter(w => w.length > 2);
+    if (words.length === 0) return false;
+
+    const matchCount = words.filter(w => ours.includes(w)).length;
+    const matchRatio = matchCount / words.length;
+
+    this.isEcho = matchRatio > 0.5;
+    this.isExternalSpeech = !this.isEcho;
+    return this.isExternalSpeech;
   }
 
   /**
