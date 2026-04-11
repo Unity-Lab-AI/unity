@@ -87,8 +87,8 @@ const PROVIDERS = {
     needsKey: true,
   },
   anthropic: {
-    name: 'Claude (Direct)', desc: 'Use your own Anthropic key. Needs local proxy (node proxy.js).',
-    hint: 'Run "node proxy.js" then paste your key. Or use OpenRouter.',
+    name: 'Claude (Direct)', desc: 'Use your own Anthropic key directly. Download proxy.js above, run "node proxy.js", then paste your key.',
+    hint: 'Step 1: Download proxy.js (link above). Step 2: Run "node proxy.js" in terminal. Step 3: Paste your Anthropic key here. Or just use OpenRouter — it includes Claude.',
     link: 'https://console.anthropic.com/settings/keys',
     url: 'https://api.anthropic.com', needsKey: true, corsBlocked: true,
   },
@@ -227,7 +227,7 @@ function addConnectedStatus(name, modelCount) {
 let _allTextOptions = [];
 
 function rebuildModelDropdowns() {
-  const textBackends = detectedAI.filter(d => (d.type === 'local' || d.type === 'cloud') && !d.corsBlocked);
+  const textBackendsRaw = detectedAI.filter(d => (d.type === 'local' || d.type === 'cloud') && !d.corsBlocked);
   const imageBackends = detectedAI.filter(d => d.type === 'cloud-image');
   const textSelect = document.getElementById('text-model-select');
   const imageSelect = document.getElementById('image-model-select');
@@ -237,8 +237,18 @@ function rebuildModelDropdowns() {
   textSelect.innerHTML = '';
   selectorsDiv.style.display = 'block';
 
+  // Sort: Claude (Direct) first, then local AI, then Pollinations, then everything else
+  const priority = { 'Claude (Direct)': 0, 'Ollama': 1, 'LM Studio': 1, 'LocalAI': 1, 'Pollinations': 2 };
+  const textBackends = textBackendsRaw.sort((a, b) => {
+    const pa = priority[a.name] ?? 10;
+    const pb = priority[b.name] ?? 10;
+    return pa - pb;
+  });
+
+  // Default: Claude Direct if available, then local, then first cloud
+  const claude = textBackends.find(d => d.name === 'Claude (Direct)');
   const local = textBackends.filter(d => d.type === 'local');
-  bestBackend = local.length > 0 ? local[0] : textBackends[0] || null;
+  bestBackend = claude || (local.length > 0 ? local[0] : textBackends[0] || null);
 
   _allTextOptions = [];
   for (const d of textBackends) {
