@@ -16,15 +16,18 @@
       <p class="subtitle">she's got a brain now. let her in.</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
         <a href="brain-equations.html" target="_blank" style="padding:8px 16px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--cyan);font-family:var(--mono);font-size:12px;text-decoration:none;letter-spacing:0.5px;transition:all 0.2s;">🧠 Brain Equations</a>
-        <a href="proxy.js" download="proxy.js" style="padding:8px 16px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--purple);font-family:var(--mono);font-size:12px;text-decoration:none;letter-spacing:0.5px;transition:all 0.2s;">⬇ Download proxy.js</a>
+        <a href="proxy.js" download="proxy.js" style="padding:8px 16px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--purple);font-family:var(--mono);font-size:12px;text-decoration:none;letter-spacing:0.5px;transition:all 0.2s;">⬇ proxy.js</a>
+        <a href="js/env.example.js" download="env.example.js" style="padding:8px 16px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--orange);font-family:var(--mono);font-size:12px;text-decoration:none;letter-spacing:0.5px;transition:all 0.2s;">⬇ env.example.js</a>
       </div>
       <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:11px;color:var(--text-dim);line-height:1.6;">
         <strong style="color:var(--purple);">Want to use your own Claude API key?</strong><br>
-        1. Download <strong>proxy.js</strong> above — save it anywhere on your computer<br>
+        1. Download <strong>proxy.js</strong> — save it anywhere on your computer<br>
         2. Open a terminal, go to where you saved it, run: <code style="background:var(--bg);padding:2px 6px;border-radius:4px;color:var(--cyan);">node proxy.js</code><br>
         3. It starts a local server on port 3001 — this website auto-detects it<br>
         4. Click <strong>Claude</strong> below, paste your Anthropic API key, connect<br>
-        <span style="color:var(--text-dim);font-size:10px;">No repo needed. No install. Just Node.js + that one file. The proxy runs on YOUR machine — your key never touches our servers.<br>
+        <br>
+        <strong style="color:var(--orange);">Have the repo cloned?</strong> Download <strong>env.example.js</strong>, rename to <strong>env.js</strong>, paste your keys inside. Place it in <code style="background:var(--bg);padding:2px 6px;border-radius:4px;color:var(--cyan);">js/env.js</code> — keys auto-load on boot so you never retype them.<br>
+        <span style="color:var(--text-dim);font-size:10px;">No repo needed for basic use. Just Node.js + proxy.js for Claude. Everything runs on YOUR machine — keys never touch our servers.<br>
         Don't have Node.js? <a href="https://nodejs.org" target="_blank" style="color:var(--pink);">Get it here</a> · Don't want to run a proxy? Use <strong>OpenRouter</strong> instead — it includes all Claude models with zero setup.</span>
       </div>
 
