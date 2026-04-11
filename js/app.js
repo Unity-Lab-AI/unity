@@ -633,8 +633,10 @@ async function bootUnity(apiKey, perms) {
 
     } else {
       // Normal text response
+      console.log('[handleInput] Generating text response for:', text.slice(0, 50));
       const state = brain.getState();
       const response = await brocasArea.generate(state, text);
+      console.log('[handleInput] Response:', response ? response.slice(0, 50) + '...' : 'NULL');
       brain.giveReward(0.1);
       return { text: response, action: 'respond_text' };
     }

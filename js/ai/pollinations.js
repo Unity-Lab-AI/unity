@@ -56,16 +56,21 @@ export class PollinationsAI {
 
         // Primary: gen.pollinations.ai/v1/chat/completions (OpenAI-compatible)
         try {
+            console.log('[PollinationsAI] Sending chat request...');
             const res = await fetch(`${GEN_URL}/v1/chat/completions`, {
                 method: 'POST',
                 headers,
-                body
+                body,
+                signal: AbortSignal.timeout(30000),
             });
             if (res.ok) {
                 const json = await res.json();
                 if (json.choices?.[0]?.message?.content) {
+                    console.log('[PollinationsAI] Response received:', json.choices[0].message.content.slice(0, 50) + '...');
                     return json.choices[0].message.content;
                 }
+            } else {
+                console.warn('[PollinationsAI] v1/chat/completions returned', res.status);
             }
         } catch (err) {
             console.error('[PollinationsAI] v1/chat/completions failed:', err.message);
