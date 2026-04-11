@@ -713,21 +713,30 @@ export class AIRouter {
         // 2. Feed input to brain (injects neural currents across cortex + hippocampus)
         this.brain.processInput(text);
 
-        // 2. Check if user wants Unity to LOOK at something — trigger directed vision
-        const lowerText = text.toLowerCase();
-        const lookPatterns = ['look at', 'look at this', 'what am i holding', 'what do you see',
-            'can you see', 'check this out', 'what is this', 'read this', 'what does this say'];
-        const isLookRequest = lookPatterns.some(p => lowerText.includes(p));
-        if (isLookRequest && this.vision?.isActive()) {
-            // Extract what to look for
-            const lookFor = text.replace(/^.*?(look at|check out|what is|read)\s*/i, '').trim() || 'the main subject';
-            console.log(`[AIRouter] Directed vision: looking for "${lookFor}"`);
-            await this.vision.lookAt(lookFor);
-            // Feed visual gaze into the brain as neural input
-            const gaze = this.vision.getGaze();
-            this.brain.processVisualInput(gaze.x, gaze.y, gaze.target);
-        } else if (this.vision?.isActive()) {
-            // Even without a look request, feed current gaze into brain
+        // 2. Vision — ALWAYS capture a fresh frame before responding
+        //    The brain's visual cortex should process what it sees with every interaction.
+        //    If the message references something visual, do a targeted look.
+        if (this.vision?.isActive()) {
+            const lowerText = text.toLowerCase();
+
+            // Check if message references anything visual — broad detection
+            const visualWords = ['see', 'look', 'color', 'wearing', 'holding', 'shirt',
+                'hat', 'face', 'hair', 'room', 'behind', 'show', 'what is', 'read',
+                'watch', 'eyes', 'hand', 'desk', 'wall', 'screen', 'light',
+                'dark', 'tall', 'sitting', 'standing', 'glasses', 'tattoo'];
+            const isVisualQuestion = visualWords.some(w => lowerText.includes(w));
+
+            if (isVisualQuestion) {
+                // Targeted look — tell the AI what to focus on
+                const lookFor = text.replace(/^.*?(look at|check out|what is|what color|can you see)\s*/i, '').trim() || text;
+                console.log(`[AIRouter] Visual question — looking for: "${lookFor}"`);
+                await this.vision.lookAt(lookFor);
+            } else {
+                // General capture — just refresh what she sees
+                await this.vision.getDescription();
+            }
+
+            // Feed visual gaze into the brain's cortex
             const gaze = this.vision.getGaze();
             this.brain.processVisualInput(gaze.x, gaze.y, gaze.target);
         }

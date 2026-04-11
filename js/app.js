@@ -761,34 +761,65 @@ async function bootUnity(apiKey, perms) {
   vision = new Vision();
   if (perms.camera && perms.cameraStream) {
     vision.init(perms.cameraStream, async (base64Image, lookFor) => {
-      // Use Pollinations to describe what the camera sees + where to look
-      const prompt = lookFor
-        ? `Look at the image. The user wants you to find and focus on: "${lookFor}". Respond with ONLY valid JSON (no markdown): {"description":"1-2 sentence description of what you see","target":"name of what you're focused on","gazeX":0.5,"gazeY":0.5} where gazeX/gazeY are 0-1 coordinates of where "${lookFor}" is in the frame (0,0=top-left, 1,1=bottom-right). If you can't find it, set gazeX/gazeY to 0.5,0.5 and say so in description.`
-        : 'Look at this webcam image. Respond with ONLY valid JSON (no markdown): {"description":"1-2 sentence casual description of the person and scene","target":"main subject","gazeX":0.5,"gazeY":0.4} where gazeX/gazeY are 0-1 coordinates of the most interesting thing in frame (usually the person\'s face). 0,0=top-left, 1,1=bottom-right.';
-      try {
-        const raw = await pollinations.chat([
-          { role: 'system', content: prompt },
-          { role: 'user', content: [
-            { type: 'text', text: lookFor ? `Find: ${lookFor}` : 'What do you see?' },
-            { type: 'image_url', image_url: { url: base64Image } },
-          ]},
-        ], { model: 'openai', temperature: 0.3 });
+      // Use the ACTIVE text backend (not just Pollinations) for vision description.
+      // Send the image as a multimodal message — try OpenAI vision format first,
+      // fall back to text-only description request if vision isn't supported.
+      const sysPrompt = lookFor
+        ? `You are looking at a webcam image. Find and describe: "${lookFor}". Respond ONLY with valid JSON: {"description":"what you see (1-2 sentences)","target":"what you focused on","gazeX":0.5,"gazeY":0.5} where gazeX/gazeY are 0-1 normalized coordinates of where "${lookFor}" is in the frame.`
+        : 'You are looking at a webcam image. Respond ONLY with valid JSON: {"description":"casual 1-2 sentence description of the person and scene","target":"main subject","gazeX":0.5,"gazeY":0.4} where gazeX/gazeY are 0-1 coordinates of the most interesting thing (usually face).';
 
-        // Parse JSON response
+      // Try multimodal (OpenAI vision format) via the active backend
+      const visionMessages = [
+        { role: 'system', content: sysPrompt },
+        { role: 'user', content: [
+          { type: 'text', text: lookFor ? `Find: ${lookFor}` : 'Describe what you see.' },
+          { type: 'image_url', image_url: { url: base64Image } },
+        ]},
+      ];
+
+      // Also prepare a text-only fallback (for models that don't support vision)
+      const textOnlyMessages = [
+        { role: 'system', content: sysPrompt },
+        { role: 'user', content: `[Image attached — a webcam frame showing a person at their computer]. ${lookFor ? `Focus on: ${lookFor}` : 'Describe what you see.'}` },
+      ];
+
+      let raw = null;
+      try {
+        // Try vision-capable model first (gpt-4o, claude, etc via router)
+        raw = await router._chat(visionMessages, { temperature: 0.3 });
+        console.log('[Vision] Multimodal response:', raw?.slice(0, 100));
+      } catch (err) {
+        console.warn('[Vision] Multimodal failed:', err.message);
+      }
+
+      if (!raw) {
+        // Fallback — text-only (model can't see images, just describe generically)
         try {
-          const cleaned = (raw || '').replace(/```json\s*/i, '').replace(/```\s*$/i, '').trim();
-          const parsed = JSON.parse(cleaned);
-          return {
-            description: parsed.description || 'Seeing something...',
-            target: parsed.target || '',
-            gazeX: Math.max(0, Math.min(1, parsed.gazeX ?? 0.5)),
-            gazeY: Math.max(0, Math.min(1, parsed.gazeY ?? 0.5)),
-          };
-        } catch {
-          return { description: raw || 'Could not parse scene.', target: '', gazeX: 0.5, gazeY: 0.5 };
+          raw = await pollinations.chat(textOnlyMessages, { model: 'openai', temperature: 0.3 });
+          console.log('[Vision] Text-only fallback response:', raw?.slice(0, 100));
+        } catch (err) {
+          console.warn('[Vision] Text-only also failed:', err.message);
         }
+      }
+
+      if (!raw) {
+        return { description: 'Vision processing failed — no model responded.', target: '', gazeX: 0.5, gazeY: 0.5 };
+      }
+
+      // Parse JSON response
+      try {
+        const cleaned = (raw || '').replace(/```json\s*/i, '').replace(/```\s*$/i, '').trim();
+        const parsed = JSON.parse(cleaned);
+        console.log('[Vision] Parsed:', parsed.description, 'gaze:', parsed.gazeX, parsed.gazeY);
+        return {
+          description: parsed.description || 'Seeing something...',
+          target: parsed.target || '',
+          gazeX: Math.max(0, Math.min(1, parsed.gazeX ?? 0.5)),
+          gazeY: Math.max(0, Math.min(1, parsed.gazeY ?? 0.5)),
+        };
       } catch {
-        return { description: 'Vision processing failed.', target: '', gazeX: 0.5, gazeY: 0.5 };
+        // JSON parse failed — use raw text as description
+        return { description: raw.slice(0, 200), target: '', gazeX: 0.5, gazeY: 0.5 };
       }
     });
     console.log('[Unity] Vision system active — Unity can see through webcam');
