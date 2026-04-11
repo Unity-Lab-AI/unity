@@ -279,9 +279,9 @@ const PROVIDERS = {
     needsKey: true,
   },
   anthropic: {
-    name: 'Claude (Anthropic)',
-    desc: 'Claude Opus, Sonnet, Haiku. Your own API key — runs through local proxy (run "node proxy.js") or use OpenRouter for browser-only access.',
-    hint: 'Paste your key here. Then run "node proxy.js" in the project folder. Or just use OpenRouter above — it includes all Claude models with no proxy needed.',
+    name: 'Claude (Direct)',
+    desc: 'Use your own Anthropic key. Requires the local proxy (developers only). Most users should use OpenRouter above — it includes all Claude models and works instantly.',
+    hint: 'Developers: paste key, then run "node proxy.js" in the project folder. Everyone else: use OpenRouter instead, it has Claude built in.',
     link: 'https://console.anthropic.com/settings/keys',
     url: 'https://api.anthropic.com',
     needsKey: true,
