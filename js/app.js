@@ -12,6 +12,8 @@ import { VoiceIO } from './io/voice.js';
 import { requestPermissions } from './io/permissions.js';
 import { UserStorage } from './storage.js';
 import { Sandbox } from './ui/sandbox.js';
+import { ChatPanel } from './ui/chat-panel.js';
+import { BrainVisualizer } from './ui/brain-viz.js';
 import { buildPrompt } from './ai/persona-prompt.js';
 
 // ── Load API keys from env.js (gitignored, user's local keys) ──
@@ -25,7 +27,7 @@ try {
 }
 
 // ── Global instances ──
-let brain, pollinations, voice, router, storage, sandbox;
+let brain, pollinations, voice, router, storage, sandbox, chatPanel, brainViz;
 let isRunning = false;
 
 // ── DOM refs ──
@@ -79,7 +81,7 @@ async function init() {
   if (savedCustomKey) customKeyInput.value = savedCustomKey;
 
   startBtn.addEventListener('click', handleStart);
-  unityAvatar.addEventListener('click', toggleVoiceInput);
+  // Avatar click wired after boot — opens chat panel
 
   // Connect buttons — clicking shows that provider's form, doesn't disconnect others
   document.querySelectorAll('.connect-btn').forEach(btn => {
@@ -703,18 +705,51 @@ async function bootUnity(apiKey, perms) {
     console.log(`[Unity] Restored ${restored} components from last visit`);
   }
 
+  // ── Create chat panel ──
+  chatPanel = new ChatPanel({
+    storage,
+    onSend: async (text) => {
+      voice.stopSpeaking();
+      setAvatarState('thinking');
+      const result = await router.handleUserMessage(text);
+      const responseText = result?.response?.text || result?.response?.thought || '';
+      if (responseText) {
+        showSpeechBubble(responseText, 8000);
+      }
+      setAvatarState('idle');
+      return result;
+    },
+    onMicToggle: () => toggleVoiceInput(),
+  });
+
+  // ── Create brain visualizer ──
+  brainViz = new BrainVisualizer();
+
+  // ── Wire avatar click → chat panel ──
+  unityAvatar.addEventListener('click', () => {
+    chatPanel.toggle();
+  });
+
+  // ── Wire brain viz button ──
+  const brainVizBtn = document.getElementById('brain-viz-btn');
+  if (brainVizBtn) {
+    brainVizBtn.addEventListener('click', () => brainViz.toggle());
+  }
+
   // ── Wire voice events ──
   voice.onResult(async ({ text, isFinal }) => {
     if (!isFinal) return;
     // Stop any current speech before responding
     voice.stopSpeaking();
     showSpeechBubble(`🎤 ${text}`, 2000);
+    chatPanel.addMessage('user', text);
     setAvatarState('thinking');
     const result = await router.handleUserMessage(text);
     // result.response is { text: "...", action: "..." } — extract the string
     const responseText = result?.response?.text || result?.response?.thought || '';
     if (responseText) {
       showSpeechBubble(responseText, 8000);
+      chatPanel.addMessage('assistant', responseText);
     }
     setAvatarState('idle');
   });
@@ -725,6 +760,7 @@ async function bootUnity(apiKey, perms) {
   // ── Wire brain events ──
   brain.on('stateUpdate', (state) => {
     updateBrainIndicator(state);
+    if (brainViz) brainViz.updateState(state);
   });
 
   brain.on('thought', async (thought) => {
@@ -742,6 +778,7 @@ async function bootUnity(apiKey, perms) {
   unityBubble.classList.remove('hidden');
   brainIndicator.classList.remove('hidden');
   document.getElementById('brain-hud').classList.remove('hidden');
+  document.getElementById('brain-viz-btn').classList.remove('hidden');
 
   // ── Start brain wave visualizer — runs forever ──
   startBrainWave();
@@ -902,6 +939,7 @@ function updateBrainIndicator(state) {
 
   const coherence = state.oscillations?.coherence || 0;
   const arousal = state.amygdala?.arousal || 0;
+  const valence = state.amygdala?.valence || 0;
   const psi = state.psi || 0;
   const bandPower = state.oscillations?.bandPower || {};
 
