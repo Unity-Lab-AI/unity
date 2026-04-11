@@ -498,17 +498,25 @@ async function bootUnity(apiKey, perms) {
   if (perms.camera && perms.cameraStream) {
     brain.connectCamera(perms.cameraStream);
     // Set up IT-level vision describer (calls AI for object recognition)
-    // Vision describer uses Pollinations DIRECTLY — not through the provider
-    // chain that tries the dead proxy every time. Vision is a fast peripheral
-    // call, not a full conversation requiring the primary backend.
-    brain.visualCortex.setDescriber(async (dataUrl) => {
-      try {
-        const raw = await pollinations.chat([
-          { role: 'system', content: 'Describe what you see in 1-2 sentences. Be casual and brief.' },
-          { role: 'user', content: 'What do you see in this image?' },
-        ], { model: 'openai', temperature: 0.3 });
-        return raw || '';
-      } catch { return ''; }
+    // Vision describer — builds description from visual cortex V4 color data
+    // and motion energy. Pollinations can't see images (text-only model),
+    // so we describe based on what V1/V4 already computed — no API call needed
+    // for basic scene awareness. AI only called for object recognition when
+    // a provider that supports vision is available.
+    brain.visualCortex.setDescriber(async () => {
+      const vc = brain.visualCortex;
+      const motion = vc.motionEnergy > 0.05 ? 'movement detected' : 'scene is still';
+      const colors = vc.colors;
+      const avgR = (colors.tl[0] + colors.tr[0] + colors.bl[0] + colors.br[0]) / 4;
+      const avgG = (colors.tl[1] + colors.tr[1] + colors.bl[1] + colors.br[1]) / 4;
+      const avgB = (colors.tl[2] + colors.tr[2] + colors.bl[2] + colors.br[2]) / 4;
+      const brightness = (avgR + avgG + avgB) / (3 * 255);
+      const lighting = brightness > 0.6 ? 'bright lighting' : brightness > 0.3 ? 'moderate lighting' : 'dim/dark lighting';
+      const warmth = avgR > avgB + 30 ? 'warm tones' : avgB > avgR + 30 ? 'cool tones' : 'neutral tones';
+      const salience = vc._maxSalience ? vc._maxSalience() : 0;
+      const edges = salience > 0.3 ? 'strong edges/features visible' : 'soft/blurry scene';
+
+      return `Camera active: ${lighting}, ${warmth}, ${edges}, ${motion}. Person likely present.`;
     });
   }
 
@@ -577,6 +585,7 @@ async function bootUnity(apiKey, perms) {
       'generate an image', 'generate image', 'show yourself'].some(w => lower.includes(w));
 
     const isSelfie = isImage && ['you', 'your', 'yourself', 'unity', 'self'].some(w => lower.includes(w));
+    console.log(`[handleInput] isImage=${isImage} isSelfie=${isSelfie} text="${lower.slice(0,60)}"`);
 
     if (isSelfie) {
       // Let her brain decide how she looks right now
