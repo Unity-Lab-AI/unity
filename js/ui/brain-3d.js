@@ -1,400 +1,874 @@
 /**
  * brain-3d.js — WebGL 3D brain visualizer
  *
- * 1000 neurons rendered as points in 3D brain-shaped clusters.
- * Mouse drag to rotate, scroll to zoom. Neurons flash on spike.
- * No dependencies — raw WebGL with inline shaders.
+ * 1000 neurons rendered as gl.POINTS in anatomically-inspired 3D clusters.
+ * Raw WebGL — no Three.js, no deps. Inline vertex/fragment shaders.
+ *
+ * Features:
+ *   - 7 neural clusters positioned like a real brain
+ *   - Spike glow (bright) + afterglow fade per neuron
+ *   - Pulse ripple effect radiating from spiking neurons
+ *   - Inter-cluster connection lines between active neurons
+ *   - Floating HTML cluster labels projected from 3D
+ *   - Toggle buttons to show/hide each cluster
+ *   - Mouse drag rotate, scroll zoom, touch support
+ *   - WebGL context loss/restore recovery
+ *   - Dark (#050505) gothic/cyberpunk aesthetic
  */
 
-const VERT_SHADER = `
-  attribute vec3 aPos;
-  attribute float aSize;
-  attribute vec3 aColor;
-  attribute float aGlow;
-  uniform mat4 uMVP;
-  uniform float uScale;
-  varying vec3 vColor;
-  varying float vGlow;
-  void main() {
-    gl_Position = uMVP * vec4(aPos, 1.0);
-    gl_PointSize = (aSize + aGlow * 6.0) * uScale / gl_Position.w;
-    vColor = aColor;
-    vGlow = aGlow;
-  }
-`;
+// ── Constants ───────────────────────────────────────────────────────
 
-const FRAG_SHADER = `
-  precision mediump float;
-  varying vec3 vColor;
-  varying float vGlow;
-  void main() {
-    float d = length(gl_PointCoord - 0.5) * 2.0;
-    if (d > 1.0) discard;
-    float alpha = (1.0 - d * d) * (0.3 + vGlow * 0.7);
-    vec3 col = vColor * (0.4 + vGlow * 0.6);
-    // Glow bloom
-    if (vGlow > 0.3) {
-      col += vColor * vGlow * 0.5 * (1.0 - d);
-    }
-    gl_FragColor = vec4(col, alpha);
-  }
-`;
+const TOTAL = 1000;
+const AFTERGLOW_DECAY = 0.92;
+const PULSE_LIFE = 40;
+const MAX_PULSES = 80;
+const MAX_CONN = 200;
+const AUTO_ROT_SPEED = 0.0015;
 
-// Cluster definitions with 3D brain positions
-const CLUSTERS_3D = [
-  { name: 'cortex',       size: 300, color: [1.0, 0.3, 0.6],  center: [0, 0.6, 0],    spread: [1.8, 0.5, 1.4], label: 'CORTEX' },
-  { name: 'hippocampus',  size: 200, color: [0.66, 0.33, 0.97], center: [-0.4, 0, 0.2], spread: [0.6, 0.3, 0.8], label: 'HIPPOCAMPUS' },
-  { name: 'amygdala',     size: 150, color: [0.94, 0.27, 0.27], center: [0.5, -0.1, 0.6], spread: [0.4, 0.3, 0.3], label: 'AMYGDALA' },
-  { name: 'basalGanglia', size: 150, color: [0.13, 0.77, 0.37], center: [0, 0.1, 0],    spread: [0.5, 0.4, 0.5], label: 'BASAL GANGLIA' },
-  { name: 'cerebellum',   size: 100, color: [0, 0.9, 1.0],      center: [0, -0.5, -0.8], spread: [0.8, 0.3, 0.4], label: 'CEREBELLUM' },
-  { name: 'hypothalamus', size: 50,  color: [0.96, 0.62, 0.04], center: [0, -0.3, 0.3], spread: [0.25, 0.2, 0.25], label: 'HYPOTHALAMUS' },
-  { name: 'mystery',      size: 50,  color: [0.75, 0.52, 0.99], center: [0, 0.9, 0],    spread: [0.3, 0.3, 0.3], label: 'MYSTERY Ψ' },
+// ── Cluster definitions ─────────────────────────────────────────────
+
+const CLUSTERS = [
+  { key: 'cortex',       label: 'CORTEX',        n: 300, rgb: [1.0, 0.302, 0.604],  hex: '#ff4d9a' },
+  { key: 'hippocampus',  label: 'HIPPOCAMPUS',   n: 200, rgb: [0.659, 0.333, 0.969], hex: '#a855f7' },
+  { key: 'amygdala',     label: 'AMYGDALA',       n: 150, rgb: [0.937, 0.267, 0.267], hex: '#ef4444' },
+  { key: 'basalGanglia', label: 'BASAL GANGLIA', n: 150, rgb: [0.133, 0.773, 0.369], hex: '#22c55e' },
+  { key: 'cerebellum',   label: 'CEREBELLUM',    n: 100, rgb: [0.0, 0.898, 1.0],     hex: '#00e5ff' },
+  { key: 'hypothalamus', label: 'HYPOTHALAMUS',  n: 50,  rgb: [0.961, 0.620, 0.043], hex: '#f59e0b' },
+  { key: 'mystery',      label: 'MYSTERY Ψ',     n: 50,  rgb: [0.753, 0.518, 0.988], hex: '#c084fc' },
 ];
 
+// ── Inline shaders ──────────────────────────────────────────────────
+
+const NEURON_VS = `
+attribute vec3 aPos;
+attribute vec3 aCol;
+attribute float aGlow;
+attribute float aVis;
+uniform mat4 uMVP;
+uniform float uScale;
+varying vec3 vCol;
+varying float vGlow;
+varying float vVis;
+void main() {
+  vCol = aCol;
+  vGlow = aGlow;
+  vVis = aVis;
+  vec4 p = uMVP * vec4(aPos, 1.0);
+  gl_Position = p;
+  float sz = mix(2.0, 7.0, aGlow);
+  gl_PointSize = sz * uScale / max(p.w, 0.5);
+}
+`;
+
+const NEURON_FS = `
+precision mediump float;
+varying vec3 vCol;
+varying float vGlow;
+varying float vVis;
+void main() {
+  if (vVis < 0.5) discard;
+  vec2 c = gl_PointCoord - 0.5;
+  float d = length(c);
+  if (d > 0.5) discard;
+  float edge = smoothstep(0.5, 0.15, d);
+  float bright = mix(0.12, 1.0, vGlow);
+  float alpha = edge * mix(0.3, 1.0, vGlow);
+  // bloom halo for spiking
+  float halo = vGlow * exp(-d * 5.0) * 0.5;
+  vec3 col = vCol * bright + vec3(1.0) * halo;
+  gl_FragColor = vec4(col, alpha);
+}
+`;
+
+const LINE_VS = `
+attribute vec3 aPos;
+attribute vec4 aCol;
+uniform mat4 uMVP;
+varying vec4 vCol;
+void main() {
+  vCol = aCol;
+  gl_Position = uMVP * vec4(aPos, 1.0);
+}
+`;
+
+const LINE_FS = `
+precision mediump float;
+varying vec4 vCol;
+void main() {
+  gl_FragColor = vCol;
+}
+`;
+
+const PULSE_VS = `
+attribute vec3 aPos;
+attribute float aLife;
+attribute vec3 aCol;
+uniform mat4 uMVP;
+uniform float uScale;
+varying float vLife;
+varying vec3 vCol;
+void main() {
+  vLife = aLife;
+  vCol = aCol;
+  vec4 p = uMVP * vec4(aPos, 1.0);
+  gl_Position = p;
+  gl_PointSize = (4.0 + aLife * 14.0) * uScale / max(p.w, 0.5);
+}
+`;
+
+const PULSE_FS = `
+precision mediump float;
+varying float vLife;
+varying vec3 vCol;
+void main() {
+  vec2 c = gl_PointCoord - 0.5;
+  float d = length(c);
+  if (d > 0.5) discard;
+  // ring shape that fades
+  float ring = smoothstep(0.32, 0.38, d) * smoothstep(0.5, 0.44, d);
+  float core = smoothstep(0.5, 0.0, d) * 0.1;
+  float alpha = (ring * 0.7 + core) * vLife;
+  gl_FragColor = vec4(vCol, alpha);
+}
+`;
+
+// ── Math utilities ──────────────────────────────────────────────────
+
+function m4Ident() {
+  return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);
+}
+
+function m4Persp(fov, asp, near, far) {
+  const f = 1 / Math.tan(fov / 2), nf = 1 / (near - far);
+  return new Float32Array([
+    f/asp, 0, 0, 0,
+    0, f, 0, 0,
+    0, 0, (far+near)*nf, -1,
+    0, 0, 2*far*near*nf, 0,
+  ]);
+}
+
+function m4Mul(a, b) {
+  const o = new Float32Array(16);
+  for (let i = 0; i < 4; i++)
+    for (let j = 0; j < 4; j++)
+      o[j*4+i] = a[i]*b[j*4] + a[4+i]*b[j*4+1] + a[8+i]*b[j*4+2] + a[12+i]*b[j*4+3];
+  return o;
+}
+
+function m4RotX(m, a) {
+  const c = Math.cos(a), s = Math.sin(a), r = m4Ident();
+  r[5]=c; r[6]=s; r[9]=-s; r[10]=c;
+  return m4Mul(m, r);
+}
+
+function m4RotY(m, a) {
+  const c = Math.cos(a), s = Math.sin(a), r = m4Ident();
+  r[0]=c; r[2]=-s; r[8]=s; r[10]=c;
+  return m4Mul(m, r);
+}
+
+function m4Trans(m, x, y, z) {
+  const r = m4Ident();
+  r[12]=x; r[13]=y; r[14]=z;
+  return m4Mul(m, r);
+}
+
+function m4Project(m, v) {
+  return [
+    m[0]*v[0]+m[4]*v[1]+m[8]*v[2]+m[12]*v[3],
+    m[1]*v[0]+m[5]*v[1]+m[9]*v[2]+m[13]*v[3],
+    m[2]*v[0]+m[6]*v[1]+m[10]*v[2]+m[14]*v[3],
+    m[3]*v[0]+m[7]*v[1]+m[11]*v[2]+m[15]*v[3],
+  ];
+}
+
+/** Box-Muller gaussian */
+function gauss() {
+  let u = 0, v = 0;
+  while (!u) u = Math.random();
+  while (!v) v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
+// ── Anatomical position generators ──────────────────────────────────
+// Each returns an array of [x,y,z] for every neuron in that cluster.
+
+function genCortex(n) {
+  // Large shell across the top — cerebral cortex dome
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const theta = Math.acos(1 - Math.random() * 1.2); // upper hemisphere
+    const phi = Math.random() * Math.PI * 2;
+    const r = 1.6 + (Math.random() - 0.5) * 0.25;
+    pts.push([
+      r * Math.sin(theta) * Math.cos(phi),
+      r * Math.cos(theta) * 0.65 + 0.45,
+      r * Math.sin(theta) * Math.sin(phi),
+    ]);
+  }
+  return pts;
+}
+
+function genHippocampus(n) {
+  // Curved seahorse, inner left-center
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const t = (i / n) * Math.PI * 1.5;
+    const r = 0.14 + Math.random() * 0.1;
+    pts.push([
+      -0.35 + Math.cos(t) * 0.45 + gauss() * r * 0.5,
+      -0.1 + Math.sin(t * 0.6) * 0.28 + gauss() * r * 0.3,
+      0.1 + Math.sin(t) * 0.28 + gauss() * r * 0.5,
+    ]);
+  }
+  return pts;
+}
+
+function genAmygdala(n) {
+  // Two almond clusters, inner-front bilateral
+  const pts = [];
+  const half = Math.floor(n / 2);
+  for (let i = 0; i < n; i++) {
+    const side = i < half ? -1 : 1;
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    const r = 0.16 * Math.cbrt(Math.random());
+    pts.push([
+      side * 0.45 + r * 0.7 * Math.sin(phi) * Math.cos(theta),
+      -0.3 + r * 0.45 * Math.cos(phi),
+      0.65 + r * 0.5 * Math.sin(phi) * Math.sin(theta),
+    ]);
+  }
+  return pts;
+}
+
+function genBasalGanglia(n) {
+  // Deep center — striatum/pallidum
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const r = 0.35 * Math.cbrt(Math.random());
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    pts.push([
+      r * Math.sin(phi) * Math.cos(theta),
+      -0.1 + r * Math.cos(phi) * 0.55,
+      r * Math.sin(phi) * Math.sin(theta) * 0.9,
+    ]);
+  }
+  return pts;
+}
+
+function genCerebellum(n) {
+  // Back-bottom with layered folia
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const layer = Math.floor(Math.random() * 3);
+    const r = 0.45 + layer * 0.07;
+    const theta = (Math.random() - 0.5) * Math.PI * 0.7;
+    const phi = Math.PI + (Math.random() - 0.5) * Math.PI * 0.55;
+    pts.push([
+      r * Math.sin(theta) * Math.cos(phi) * 0.75,
+      -0.85 + layer * 0.05 + gauss() * 0.04,
+      -0.75 + r * Math.sin(theta) * Math.sin(phi) * 0.25,
+    ]);
+  }
+  return pts;
+}
+
+function genHypothalamus(n) {
+  // Small dense cluster, center-bottom
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const r = 0.14 * Math.cbrt(Math.random());
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    pts.push([
+      r * Math.sin(phi) * Math.cos(theta),
+      -0.6 + r * Math.cos(phi) * 0.4,
+      0.2 + r * Math.sin(phi) * Math.sin(theta) * 0.45,
+    ]);
+  }
+  return pts;
+}
+
+function genMystery(n) {
+  // Floating above everything — ethereal cloud
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const r = 0.22 * Math.cbrt(Math.random());
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    pts.push([
+      r * Math.sin(phi) * Math.cos(theta),
+      1.35 + r * Math.cos(phi) * 0.35,
+      r * Math.sin(phi) * Math.sin(theta),
+    ]);
+  }
+  return pts;
+}
+
+const POS_GEN = [genCortex, genHippocampus, genAmygdala, genBasalGanglia, genCerebellum, genHypothalamus, genMystery];
+
+// ── Brain3D class ───────────────────────────────────────────────────
+
 export class Brain3D {
+
   constructor(containerId) {
+    this._containerId = containerId;
     this._open = false;
-    this._container = null;
-    this._canvas = null;
-    this._gl = null;
-    this._program = null;
-    this._animId = null;
-    this._rotX = -0.3;
+    this._destroyed = false;
+
+    // Camera state
+    this._rotX = -0.25;
     this._rotY = 0;
-    this._zoom = 3.5;
+    this._zoom = 4.2;
     this._dragging = false;
     this._lastMouse = [0, 0];
-    this._neurons = [];
-    this._glowData = new Float32Array(1000);
-    this._clusterVisible = {};
-    this._lastState = null;
 
-    this._buildDOM(containerId);
-    this._initNeuronPositions();
+    // Per-neuron state
+    this._glow = new Float32Array(TOTAL);
+    this._vis = new Float32Array(TOTAL).fill(1);
+    this._clusterOn = CLUSTERS.map(() => true);
+
+    // Pulses & connections
+    this._pulses = [];
+    this._connPos = new Float32Array(MAX_CONN * 6);
+    this._connCol = new Float32Array(MAX_CONN * 8);
+    this._connN = 0;
+
+    // GL resources (set in _initGL)
+    this._gl = null;
+    this._canvas = null;
+    this._animId = null;
+
+    // Build
+    this._buildDOM();
+    this._genPositions();
+    this._initGL();
+    this._uploadStatic();
   }
 
-  _buildDOM(containerId) {
-    // Overlay container
-    this._container = document.createElement('div');
-    this._container.id = 'brain-3d-overlay';
-    this._container.className = 'brain-3d hidden';
-    this._container.innerHTML = `
-      <div class="b3d-header">
-        <span class="b3d-title">3D BRAIN — 1000 neurons</span>
-        <span class="b3d-stats" id="b3d-stats"></span>
-        <button class="b3d-close">&times;</button>
-      </div>
-      <div class="b3d-toggles" id="b3d-toggles"></div>
-      <canvas id="b3d-canvas"></canvas>
-      <div class="b3d-hint">Drag to rotate · Scroll to zoom</div>
-    `;
-    document.body.appendChild(this._container);
-
-    this._canvas = this._container.querySelector('#b3d-canvas');
-    this._container.querySelector('.b3d-close').addEventListener('click', () => this.close());
-
-    // Cluster toggles
-    const toggles = this._container.querySelector('#b3d-toggles');
-    for (const c of CLUSTERS_3D) {
-      this._clusterVisible[c.name] = true;
-      const btn = document.createElement('button');
-      btn.className = 'b3d-toggle active';
-      btn.style.borderColor = `rgb(${c.color.map(v => Math.floor(v * 255)).join(',')})`;
-      btn.textContent = c.label;
-      btn.dataset.cluster = c.name;
-      btn.addEventListener('click', () => {
-        this._clusterVisible[c.name] = !this._clusterVisible[c.name];
-        btn.classList.toggle('active', this._clusterVisible[c.name]);
-      });
-      toggles.appendChild(btn);
-    }
-
-    // Mouse controls
-    this._canvas.addEventListener('mousedown', (e) => { this._dragging = true; this._lastMouse = [e.clientX, e.clientY]; });
-    window.addEventListener('mouseup', () => { this._dragging = false; });
-    window.addEventListener('mousemove', (e) => {
-      if (!this._dragging) return;
-      const dx = e.clientX - this._lastMouse[0];
-      const dy = e.clientY - this._lastMouse[1];
-      this._rotY += dx * 0.005;
-      this._rotX += dy * 0.005;
-      this._rotX = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this._rotX));
-      this._lastMouse = [e.clientX, e.clientY];
-    });
-    this._canvas.addEventListener('wheel', (e) => {
-      e.preventDefault();
-      this._zoom *= e.deltaY > 0 ? 1.1 : 0.9;
-      this._zoom = Math.max(1.5, Math.min(10, this._zoom));
-    }, { passive: false });
-
-    // Touch controls
-    this._canvas.addEventListener('touchstart', (e) => {
-      if (e.touches.length === 1) { this._dragging = true; this._lastMouse = [e.touches[0].clientX, e.touches[0].clientY]; }
-    });
-    this._canvas.addEventListener('touchend', () => { this._dragging = false; });
-    this._canvas.addEventListener('touchmove', (e) => {
-      if (!this._dragging || e.touches.length !== 1) return;
-      const dx = e.touches[0].clientX - this._lastMouse[0];
-      const dy = e.touches[0].clientY - this._lastMouse[1];
-      this._rotY += dx * 0.005;
-      this._rotX += dy * 0.005;
-      this._lastMouse = [e.touches[0].clientX, e.touches[0].clientY];
-    });
-  }
-
-  _initNeuronPositions() {
-    this._neurons = [];
-    let idx = 0;
-    for (const c of CLUSTERS_3D) {
-      for (let n = 0; n < c.size; n++) {
-        // Scatter neurons in a gaussian cloud around cluster center
-        const x = c.center[0] + (Math.random() - 0.5) * 2 * c.spread[0] * this._gaussRand();
-        const y = c.center[1] + (Math.random() - 0.5) * 2 * c.spread[1] * this._gaussRand();
-        const z = c.center[2] + (Math.random() - 0.5) * 2 * c.spread[2] * this._gaussRand();
-        this._neurons.push({
-          pos: [x, y, z],
-          color: c.color,
-          cluster: c.name,
-          idx: idx++,
-        });
-      }
-    }
-  }
-
-  _gaussRand() {
-    // Box-Muller for gaussian distribution (clustered, not uniform)
-    let u = 0, v = 0;
-    while (u === 0) u = Math.random();
-    while (v === 0) v = Math.random();
-    return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v) * 0.35;
-  }
-
-  _initGL() {
-    const canvas = this._canvas;
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = canvas.clientWidth * dpr;
-    canvas.height = canvas.clientHeight * dpr;
-
-    const gl = canvas.getContext('webgl', { alpha: true, antialias: true });
-    if (!gl) { console.error('[Brain3D] WebGL not available'); return false; }
-    this._gl = gl;
-
-    // Compile shaders
-    const vs = this._compileShader(gl, gl.VERTEX_SHADER, VERT_SHADER);
-    const fs = this._compileShader(gl, gl.FRAGMENT_SHADER, FRAG_SHADER);
-    if (!vs || !fs) return false;
-
-    const prog = gl.createProgram();
-    gl.attachShader(prog, vs);
-    gl.attachShader(prog, fs);
-    gl.linkProgram(prog);
-    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
-      console.error('[Brain3D] Program link failed:', gl.getProgramInfoLog(prog));
-      return false;
-    }
-    this._program = prog;
-
-    // Locations
-    this._loc = {
-      aPos: gl.getAttribLocation(prog, 'aPos'),
-      aSize: gl.getAttribLocation(prog, 'aSize'),
-      aColor: gl.getAttribLocation(prog, 'aColor'),
-      aGlow: gl.getAttribLocation(prog, 'aGlow'),
-      uMVP: gl.getUniformLocation(prog, 'uMVP'),
-      uScale: gl.getUniformLocation(prog, 'uScale'),
-    };
-
-    // Buffers
-    this._posBuf = gl.createBuffer();
-    this._sizeBuf = gl.createBuffer();
-    this._colorBuf = gl.createBuffer();
-    this._glowBuf = gl.createBuffer();
-
-    // Static position data
-    const posData = new Float32Array(this._neurons.length * 3);
-    const colorData = new Float32Array(this._neurons.length * 3);
-    const sizeData = new Float32Array(this._neurons.length);
-    for (let i = 0; i < this._neurons.length; i++) {
-      posData[i * 3] = this._neurons[i].pos[0];
-      posData[i * 3 + 1] = this._neurons[i].pos[1];
-      posData[i * 3 + 2] = this._neurons[i].pos[2];
-      colorData[i * 3] = this._neurons[i].color[0];
-      colorData[i * 3 + 1] = this._neurons[i].color[1];
-      colorData[i * 3 + 2] = this._neurons[i].color[2];
-      sizeData[i] = 3.0;
-    }
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, this._posBuf);
-    gl.bufferData(gl.ARRAY_BUFFER, posData, gl.STATIC_DRAW);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this._colorBuf);
-    gl.bufferData(gl.ARRAY_BUFFER, colorData, gl.STATIC_DRAW);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this._sizeBuf);
-    gl.bufferData(gl.ARRAY_BUFFER, sizeData, gl.STATIC_DRAW);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this._glowBuf);
-    gl.bufferData(gl.ARRAY_BUFFER, this._glowData, gl.DYNAMIC_DRAW);
-
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
-    gl.disable(gl.DEPTH_TEST);
-
-    return true;
-  }
-
-  _compileShader(gl, type, src) {
-    const s = gl.createShader(type);
-    gl.shaderSource(s, src);
-    gl.compileShader(s);
-    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
-      console.error('[Brain3D] Shader error:', gl.getShaderInfoLog(s));
-      return null;
-    }
-    return s;
-  }
+  // ── Public API ──────────────────────────────────────────────────
 
   updateState(state) {
-    this._lastState = state;
-    if (!state.spikes) return;
-    const len = Math.min(state.spikes.length, this._glowData.length);
-    for (let i = 0; i < len; i++) {
-      if (state.spikes[i]) this._glowData[i] = 1.0;
-      else this._glowData[i] *= 0.9;
-    }
-  }
+    if (!state || !this._open || this._destroyed) return;
+    const spk = state.spikes;
+    if (!spk) return;
 
-  _render() {
-    if (!this._open || !this._gl) return;
-    const gl = this._gl;
-    const canvas = this._canvas;
-
-    // Resize if needed
-    const dpr = window.devicePixelRatio || 1;
-    const cw = canvas.clientWidth * dpr;
-    const ch = canvas.clientHeight * dpr;
-    if (canvas.width !== cw || canvas.height !== ch) {
-      canvas.width = cw;
-      canvas.height = ch;
-    }
-    gl.viewport(0, 0, canvas.width, canvas.height);
-
-    gl.clearColor(0.02, 0.02, 0.02, 1);
-    gl.clear(gl.COLOR_BUFFER_BIT);
-
-    gl.useProgram(this._program);
-
-    // Build MVP matrix (perspective + rotation)
-    const aspect = canvas.width / canvas.height;
-    const mvp = this._buildMVP(aspect);
-    gl.uniformMatrix4fv(this._loc.uMVP, false, mvp);
-    gl.uniform1f(this._loc.uScale, Math.min(canvas.width, canvas.height) * 0.15);
-
-    // Update glow buffer (dynamic)
-    // Zero out hidden clusters
-    const glowFiltered = new Float32Array(this._glowData);
-    let offset = 0;
-    for (const c of CLUSTERS_3D) {
-      if (!this._clusterVisible[c.name]) {
-        for (let i = 0; i < c.size; i++) glowFiltered[offset + i] = -1; // hide
-      }
-      offset += c.size;
-    }
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, this._glowBuf);
-    gl.bufferData(gl.ARRAY_BUFFER, glowFiltered, gl.DYNAMIC_DRAW);
-
-    // Bind attributes
-    gl.bindBuffer(gl.ARRAY_BUFFER, this._posBuf);
-    gl.enableVertexAttribArray(this._loc.aPos);
-    gl.vertexAttribPointer(this._loc.aPos, 3, gl.FLOAT, false, 0, 0);
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, this._sizeBuf);
-    gl.enableVertexAttribArray(this._loc.aSize);
-    gl.vertexAttribPointer(this._loc.aSize, 1, gl.FLOAT, false, 0, 0);
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, this._colorBuf);
-    gl.enableVertexAttribArray(this._loc.aColor);
-    gl.vertexAttribPointer(this._loc.aColor, 3, gl.FLOAT, false, 0, 0);
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, this._glowBuf);
-    gl.enableVertexAttribArray(this._loc.aGlow);
-    gl.vertexAttribPointer(this._loc.aGlow, 1, gl.FLOAT, false, 0, 0);
-
-    gl.drawArrays(gl.POINTS, 0, this._neurons.length);
-
-    // Update stats
-    if (this._lastState) {
-      const statsEl = this._container.querySelector('#b3d-stats');
-      if (statsEl) {
-        const sc = this._lastState.spikeCount ?? 0;
-        const psi = this._lastState.psi ?? 0;
-        statsEl.textContent = `${sc}/1000 firing | Ψ=${psi.toFixed(3)} | t=${(this._lastState.time ?? 0).toFixed(1)}s`;
+    for (let i = 0; i < TOTAL; i++) {
+      if (spk[i]) {
+        this._glow[i] = 1.0;
+        // spawn pulse with probability
+        if (this._pulses.length < MAX_PULSES && Math.random() < 0.12) {
+          const ci = this._clusterOf(i);
+          this._pulses.push({
+            x: this._pos[i*3], y: this._pos[i*3+1], z: this._pos[i*3+2],
+            age: 0, col: CLUSTERS[ci].rgb,
+          });
+        }
+      } else {
+        this._glow[i] *= AFTERGLOW_DECAY;
+        if (this._glow[i] < 0.005) this._glow[i] = 0;
       }
     }
 
-    this._animId = requestAnimationFrame(() => this._render());
-  }
+    this._buildConns(spk);
 
-  _buildMVP(aspect) {
-    // Simple perspective projection + rotation
-    const fov = 0.8;
-    const near = 0.1, far = 50;
-    const f = 1 / Math.tan(fov / 2);
-
-    // Projection
-    const proj = new Float32Array(16);
-    proj[0] = f / aspect; proj[5] = f;
-    proj[10] = (far + near) / (near - far); proj[11] = -1;
-    proj[14] = (2 * far * near) / (near - far);
-
-    // View (translate back by zoom, then rotate)
-    const cx = Math.cos(this._rotX), sx = Math.sin(this._rotX);
-    const cy = Math.cos(this._rotY), sy = Math.sin(this._rotY);
-
-    const view = new Float32Array(16);
-    view[0] = cy;  view[1] = sx*sy; view[2] = -cx*sy;
-    view[4] = 0;   view[5] = cx;    view[6] = sx;
-    view[8] = sy;  view[9] = -sx*cy; view[10] = cx*cy;
-    view[14] = -this._zoom;
-    view[15] = 1;
-
-    // Multiply proj * view
-    const mvp = new Float32Array(16);
-    for (let i = 0; i < 4; i++) {
-      for (let j = 0; j < 4; j++) {
-        let sum = 0;
-        for (let k = 0; k < 4; k++) sum += proj[i + k * 4] * view[k + j * 4];
-        mvp[i + j * 4] = sum;
-      }
+    // Update HUD values
+    if (state.psi !== undefined) {
+      const el = this._overlay.querySelector('.b3d-psi');
+      if (el) el.textContent = state.psi.toFixed(3);
     }
-    return mvp;
+    if (state.oscillations?.coherence !== undefined) {
+      const el = this._overlay.querySelector('.b3d-coh');
+      if (el) el.textContent = (state.oscillations.coherence * 100).toFixed(0) + '%';
+    }
   }
 
-  toggle() { if (this._open) this.close(); else this.open(); }
+  toggle() { this._open ? this.close() : this.open(); }
 
   open() {
+    if (this._destroyed) return;
     this._open = true;
-    this._container.classList.remove('hidden');
-    if (!this._gl) {
-      if (!this._initGL()) return;
-    }
-    // Slow auto-rotate
-    this._autoRotate = true;
-    this._render();
+    this._overlay.classList.remove('b3d-hidden');
+    this._startLoop();
   }
 
   close() {
     this._open = false;
-    this._container.classList.add('hidden');
-    this._autoRotate = false;
-    if (this._animId) { cancelAnimationFrame(this._animId); this._animId = null; }
+    this._overlay.classList.add('b3d-hidden');
+    this._stopLoop();
   }
 
   isOpen() { return this._open; }
 
   destroy() {
-    this.close();
+    this._destroyed = true;
+    this._stopLoop();
     if (this._gl) {
-      this._gl.getExtension('WEBGL_lose_context')?.loseContext();
+      const ext = this._gl.getExtension('WEBGL_lose_context');
+      if (ext) ext.loseContext();
     }
-    this._container?.remove();
+    this._overlay?.remove();
+    this._gl = null;
+  }
+
+  // ── DOM ─────────────────────────────────────────────────────────
+
+  _buildDOM() {
+    const host = document.getElementById(this._containerId);
+    if (!host) { console.error('[Brain3D] container not found:', this._containerId); return; }
+
+    const ov = document.createElement('div');
+    ov.className = 'b3d-overlay b3d-hidden';
+    ov.innerHTML = `
+<style>
+.b3d-overlay{position:fixed;inset:0;background:#050505;z-index:9999;display:flex;flex-direction:column;font-family:'JetBrains Mono','Fira Code','Cascadia Code',monospace;overflow:hidden}
+.b3d-hidden{display:none!important}
+.b3d-hdr{display:flex;align-items:center;justify-content:space-between;padding:8px 14px;background:rgba(8,8,8,.95);border-bottom:1px solid #1a1a2e;flex-shrink:0}
+.b3d-title{font-size:12px;font-weight:700;letter-spacing:2px;background:linear-gradient(90deg,#ff4d9a,#a855f7,#00e5ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.b3d-met{display:flex;gap:14px;font-size:10px;color:#666}
+.b3d-met b{font-weight:600}
+.b3d-psi{color:#c084fc;font-weight:600}
+.b3d-coh{color:#00e5ff;font-weight:600}
+.b3d-close{background:none;border:1px solid #2a2a2a;color:#777;font-size:18px;cursor:pointer;width:28px;height:28px;border-radius:4px;display:flex;align-items:center;justify-content:center;transition:all .2s}
+.b3d-close:hover{border-color:#ff4d9a;color:#ff4d9a}
+.b3d-body{flex:1;position:relative;overflow:hidden}
+.b3d-cv{width:100%;height:100%;display:block;cursor:grab}
+.b3d-cv:active{cursor:grabbing}
+.b3d-tog-wrap{position:absolute;top:10px;left:10px;display:flex;flex-direction:column;gap:3px;z-index:2}
+.b3d-tog{background:rgba(8,8,8,.85);border:1px solid #222;color:#bbb;font-size:9px;font-family:inherit;padding:3px 9px;border-radius:3px;cursor:pointer;display:flex;align-items:center;gap:5px;transition:all .2s;letter-spacing:.4px}
+.b3d-tog:hover{border-color:#444}
+.b3d-tog.off{opacity:.3}
+.b3d-dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex-shrink:0}
+.b3d-lbl-wrap{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:1}
+.b3d-lbl{position:absolute;font-size:8px;letter-spacing:1px;font-weight:600;white-space:nowrap;transform:translate(-50%,-50%);opacity:.65;text-shadow:0 0 8px rgba(0,0,0,.95);transition:opacity .3s}
+.b3d-foot{position:absolute;bottom:8px;left:12px;right:12px;display:flex;justify-content:space-between;font-size:9px;color:#444;pointer-events:none;z-index:1}
+</style>
+<div class="b3d-hdr">
+  <div class="b3d-title">3D NEURAL FIELD</div>
+  <div class="b3d-met">
+    <span>ψ <b class="b3d-psi">0.000</b></span>
+    <span>COHERENCE <b class="b3d-coh">0%</b></span>
+  </div>
+  <button class="b3d-close">&times;</button>
+</div>
+<div class="b3d-body">
+  <canvas class="b3d-cv"></canvas>
+  <div class="b3d-tog-wrap"></div>
+  <div class="b3d-lbl-wrap"></div>
+  <div class="b3d-foot">
+    <span>DRAG rotate · SCROLL zoom</span>
+    <span>1000 neurons · 7 clusters</span>
+  </div>
+</div>`;
+
+    host.appendChild(ov);
+    this._overlay = ov;
+
+    // Close
+    ov.querySelector('.b3d-close').addEventListener('click', () => this.close());
+
+    // Toggles
+    const tw = ov.querySelector('.b3d-tog-wrap');
+    CLUSTERS.forEach((cl, i) => {
+      const b = document.createElement('button');
+      b.className = 'b3d-tog';
+      b.innerHTML = `<span class="b3d-dot" style="background:${cl.hex}"></span>${cl.label}`;
+      b.addEventListener('click', () => {
+        this._clusterOn[i] = !this._clusterOn[i];
+        b.classList.toggle('off', !this._clusterOn[i]);
+        this._syncVis();
+      });
+      tw.appendChild(b);
+    });
+
+    // Labels
+    this._labelEls = [];
+    const lw = ov.querySelector('.b3d-lbl-wrap');
+    CLUSTERS.forEach(cl => {
+      const el = document.createElement('div');
+      el.className = 'b3d-lbl';
+      el.textContent = cl.label;
+      el.style.color = cl.hex;
+      lw.appendChild(el);
+      this._labelEls.push(el);
+    });
+
+    // Canvas ref
+    this._canvas = ov.querySelector('.b3d-cv');
+    this._bindInput();
+  }
+
+  _bindInput() {
+    const cv = this._canvas;
+
+    // Mouse
+    cv.addEventListener('mousedown', e => {
+      this._dragging = true;
+      this._lastMouse = [e.clientX, e.clientY];
+    });
+    const up = () => { this._dragging = false; };
+    window.addEventListener('mouseup', up);
+    window.addEventListener('mousemove', e => {
+      if (!this._dragging) return;
+      this._rotY += (e.clientX - this._lastMouse[0]) * 0.005;
+      this._rotX += (e.clientY - this._lastMouse[1]) * 0.005;
+      this._rotX = Math.max(-Math.PI * 0.48, Math.min(Math.PI * 0.48, this._rotX));
+      this._lastMouse = [e.clientX, e.clientY];
+    });
+    cv.addEventListener('wheel', e => {
+      e.preventDefault();
+      this._zoom += e.deltaY * 0.004;
+      this._zoom = Math.max(1.5, Math.min(12, this._zoom));
+    }, { passive: false });
+
+    // Touch
+    cv.addEventListener('touchstart', e => {
+      if (e.touches.length === 1) {
+        this._dragging = true;
+        this._lastMouse = [e.touches[0].clientX, e.touches[0].clientY];
+      }
+    }, { passive: true });
+    window.addEventListener('touchend', up);
+    window.addEventListener('touchmove', e => {
+      if (!this._dragging || e.touches.length !== 1) return;
+      this._rotY += (e.touches[0].clientX - this._lastMouse[0]) * 0.005;
+      this._rotX += (e.touches[0].clientY - this._lastMouse[1]) * 0.005;
+      this._rotX = Math.max(-Math.PI * 0.48, Math.min(Math.PI * 0.48, this._rotX));
+      this._lastMouse = [e.touches[0].clientX, e.touches[0].clientY];
+    }, { passive: true });
+
+    // Context loss
+    cv.addEventListener('webglcontextlost', e => {
+      e.preventDefault();
+      this._stopLoop();
+      console.warn('[Brain3D] context lost');
+    });
+    cv.addEventListener('webglcontextrestored', () => {
+      console.log('[Brain3D] context restored');
+      this._initGL();
+      this._uploadStatic();
+      if (this._open) this._startLoop();
+    });
+  }
+
+  // ── WebGL ───────────────────────────────────────────────────────
+
+  _initGL() {
+    const gl = this._canvas.getContext('webgl', {
+      alpha: false, antialias: true, premultipliedAlpha: false, preserveDrawingBuffer: false,
+    });
+    if (!gl) { console.error('[Brain3D] no WebGL'); return; }
+    this._gl = gl;
+
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthFunc(gl.LEQUAL);
+    gl.clearColor(0.02, 0.02, 0.02, 1);
+
+    this._neuronProg = this._mkProg(NEURON_VS, NEURON_FS);
+    this._lineProg   = this._mkProg(LINE_VS, LINE_FS);
+    this._pulseProg  = this._mkProg(PULSE_VS, PULSE_FS);
+
+    // Neuron buffers
+    this._bPos  = gl.createBuffer();
+    this._bCol  = gl.createBuffer();
+    this._bGlow = gl.createBuffer();
+    this._bVis  = gl.createBuffer();
+
+    // Line buffers
+    this._bLnPos = gl.createBuffer();
+    this._bLnCol = gl.createBuffer();
+
+    // Pulse buffers
+    this._bPPos  = gl.createBuffer();
+    this._bPLife = gl.createBuffer();
+    this._bPCol  = gl.createBuffer();
+  }
+
+  _mkProg(vSrc, fSrc) {
+    const gl = this._gl;
+    const compile = (type, src) => {
+      const s = gl.createShader(type);
+      gl.shaderSource(s, src);
+      gl.compileShader(s);
+      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS))
+        console.error('[Brain3D] shader:', gl.getShaderInfoLog(s));
+      return s;
+    };
+    const p = gl.createProgram();
+    gl.attachShader(p, compile(gl.VERTEX_SHADER, vSrc));
+    gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fSrc));
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS))
+      console.error('[Brain3D] link:', gl.getProgramInfoLog(p));
+    return p;
+  }
+
+  // ── Positions ───────────────────────────────────────────────────
+
+  _genPositions() {
+    this._pos = new Float32Array(TOTAL * 3);
+    this._col = new Float32Array(TOTAL * 3);
+    this._centers = [];
+
+    let off = 0;
+    CLUSTERS.forEach((cl, ci) => {
+      const pts = POS_GEN[ci](cl.n);
+      let cx = 0, cy = 0, cz = 0;
+      for (let i = 0; i < cl.n; i++) {
+        const j = (off + i) * 3;
+        this._pos[j]   = pts[i][0];
+        this._pos[j+1] = pts[i][1];
+        this._pos[j+2] = pts[i][2];
+        this._col[j]   = cl.rgb[0];
+        this._col[j+1] = cl.rgb[1];
+        this._col[j+2] = cl.rgb[2];
+        cx += pts[i][0]; cy += pts[i][1]; cz += pts[i][2];
+      }
+      this._centers.push([cx/cl.n, cy/cl.n, cz/cl.n]);
+      off += cl.n;
+    });
+  }
+
+  _uploadStatic() {
+    const gl = this._gl;
+    if (!gl) return;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this._bPos);
+    gl.bufferData(gl.ARRAY_BUFFER, this._pos, gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this._bCol);
+    gl.bufferData(gl.ARRAY_BUFFER, this._col, gl.STATIC_DRAW);
+  }
+
+  _syncVis() {
+    let off = 0;
+    CLUSTERS.forEach((cl, i) => {
+      const v = this._clusterOn[i] ? 1 : 0;
+      for (let j = 0; j < cl.n; j++) this._vis[off + j] = v;
+      if (this._labelEls[i]) this._labelEls[i].style.opacity = v ? '0.65' : '0';
+      off += cl.n;
+    });
+  }
+
+  _clusterOf(idx) {
+    let off = 0;
+    for (let i = 0; i < CLUSTERS.length; i++) {
+      if (idx < off + CLUSTERS[i].n) return i;
+      off += CLUSTERS[i].n;
+    }
+    return 0;
+  }
+
+  // ── Connections ─────────────────────────────────────────────────
+
+  _buildConns(spk) {
+    const active = [];
+    let off = 0;
+    for (let c = 0; c < CLUSTERS.length; c++) {
+      if (!this._clusterOn[c]) { off += CLUSTERS[c].n; continue; }
+      for (let i = 0; i < CLUSTERS[c].n; i++) {
+        const ni = off + i;
+        if (spk[ni]) active.push({ i: ni, c });
+      }
+      off += CLUSTERS[c].n;
+    }
+
+    this._connN = 0;
+    if (active.length < 2) return;
+
+    const tries = Math.min(MAX_CONN, active.length * 3);
+    for (let p = 0; p < tries && this._connN < MAX_CONN; p++) {
+      const a = active[Math.floor(Math.random() * active.length)];
+      const b = active[Math.floor(Math.random() * active.length)];
+      if (a.c === b.c) continue;
+
+      const vi = this._connN * 6;
+      const ci = this._connN * 8;
+      this._connPos[vi]   = this._pos[a.i*3];
+      this._connPos[vi+1] = this._pos[a.i*3+1];
+      this._connPos[vi+2] = this._pos[a.i*3+2];
+      this._connPos[vi+3] = this._pos[b.i*3];
+      this._connPos[vi+4] = this._pos[b.i*3+1];
+      this._connPos[vi+5] = this._pos[b.i*3+2];
+
+      const ca = CLUSTERS[a.c].rgb, cb = CLUSTERS[b.c].rgb;
+      this._connCol[ci]   = ca[0]; this._connCol[ci+1] = ca[1]; this._connCol[ci+2] = ca[2]; this._connCol[ci+3] = 0.1;
+      this._connCol[ci+4] = cb[0]; this._connCol[ci+5] = cb[1]; this._connCol[ci+6] = cb[2]; this._connCol[ci+7] = 0.1;
+      this._connN++;
+    }
+  }
+
+  // ── Render loop ─────────────────────────────────────────────────
+
+  _startLoop() {
+    if (this._animId) return;
+    const tick = () => {
+      if (!this._open || this._destroyed) { this._animId = null; return; }
+      this._frame();
+      this._animId = requestAnimationFrame(tick);
+    };
+    this._animId = requestAnimationFrame(tick);
+  }
+
+  _stopLoop() {
+    if (this._animId) { cancelAnimationFrame(this._animId); this._animId = null; }
+  }
+
+  _frame() {
+    const gl = this._gl;
+    if (!gl || gl.isContextLost()) return;
+
+    // Resize
+    const cv = this._canvas;
+    const dpr = window.devicePixelRatio || 1;
+    const w = cv.clientWidth * dpr | 0;
+    const h = cv.clientHeight * dpr | 0;
+    if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+    gl.viewport(0, 0, w, h);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+    // MVP
+    const proj = m4Persp(Math.PI / 4, w / h, 0.1, 100);
+    let view = m4Ident();
+    view = m4Trans(view, 0, 0, -this._zoom);
+    view = m4RotX(view, this._rotX);
+    view = m4RotY(view, this._rotY);
+    const mvp = m4Mul(proj, view);
+
+    if (!this._dragging) this._rotY += AUTO_ROT_SPEED;
+
+    const sc = Math.min(w, h) / 480;
+
+    // 1) Lines
+    this._drawLines(gl, mvp);
+    // 2) Neurons
+    this._drawNeurons(gl, mvp, sc);
+    // 3) Pulses
+    this._drawPulses(gl, mvp, sc);
+    // 4) Labels
+    this._projectLabels(mvp, cv);
+  }
+
+  _drawNeurons(gl, mvp, sc) {
+    const p = this._neuronProg;
+    gl.useProgram(p);
+    gl.uniformMatrix4fv(gl.getUniformLocation(p, 'uMVP'), false, mvp);
+    gl.uniform1f(gl.getUniformLocation(p, 'uScale'), sc);
+
+    this._bindAttr(gl, p, 'aPos',  this._bPos,  3, false);
+    this._bindAttr(gl, p, 'aCol',  this._bCol,  3, false);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this._bGlow);
+    gl.bufferData(gl.ARRAY_BUFFER, this._glow, gl.DYNAMIC_DRAW);
+    const gL = gl.getAttribLocation(p, 'aGlow');
+    gl.enableVertexAttribArray(gL);
+    gl.vertexAttribPointer(gL, 1, gl.FLOAT, false, 0, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this._bVis);
+    gl.bufferData(gl.ARRAY_BUFFER, this._vis, gl.DYNAMIC_DRAW);
+    const vL = gl.getAttribLocation(p, 'aVis');
+    gl.enableVertexAttribArray(vL);
+    gl.vertexAttribPointer(vL, 1, gl.FLOAT, false, 0, 0);
+
+    gl.drawArrays(gl.POINTS, 0, TOTAL);
+  }
+
+  _drawLines(gl, mvp) {
+    if (!this._connN) return;
+    const p = this._lineProg;
+    gl.useProgram(p);
+    gl.uniformMatrix4fv(gl.getUniformLocation(p, 'uMVP'), false, mvp);
+    gl.depthMask(false);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this._bLnPos);
+    gl.bufferData(gl.ARRAY_BUFFER, this._connPos.subarray(0, this._connN * 6), gl.DYNAMIC_DRAW);
+    const posL = gl.getAttribLocation(p, 'aPos');
+    gl.enableVertexAttribArray(posL);
+    gl.vertexAttribPointer(posL, 3, gl.FLOAT, false, 0, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this._bLnCol);
+    gl.bufferData(gl.ARRAY_BUFFER, this._connCol.subarray(0, this._connN * 8), gl.DYNAMIC_DRAW);
+    const colL = gl.getAttribLocation(p, 'aCol');
+    gl.enableVertexAttribArray(colL);
+    gl.vertexAttribPointer(colL, 4, gl.FLOAT, false, 0, 0);
+
+    gl.drawArrays(gl.LINES, 0, this._connN * 2);
+    gl.depthMask(true);
+  }
+
+  _drawPulses(gl, mvp, sc) {
+    // Age + cull
+    for (let i = this._pulses.length - 1; i >= 0; i--) {
+      if (++this._pulses[i].age > PULSE_LIFE) this._pulses.splice(i, 1);
+    }
+    const n = this._pulses.length;
+    if (!n) return;
+
+    const posA = new Float32Array(n * 3);
+    const lifeA = new Float32Array(n);
+    const colA = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      const p = this._pulses[i];
+      posA[i*3] = p.x; posA[i*3+1] = p.y; posA[i*3+2] = p.z;
+      lifeA[i] = 1 - p.age / PULSE_LIFE;
+      colA[i*3] = p.col[0]; colA[i*3+1] = p.col[1]; colA[i*3+2] = p.col[2];
+    }
+
+    const pr = this._pulseProg;
+    gl.useProgram(pr);
+    gl.uniformMatrix4fv(gl.getUniformLocation(pr, 'uMVP'), false, mvp);
+    gl.uniform1f(gl.getUniformLocation(pr, 'uScale'), sc * 2.5);
+    gl.depthMask(false);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this._bPPos);
+    gl.bufferData(gl.ARRAY_BUFFER, posA, gl.DYNAMIC_DRAW);
+    const posL = gl.getAttribLocation(pr, 'aPos');
+    gl.enableVertexAttribArray(posL);
+    gl.vertexAttribPointer(posL, 3, gl.FLOAT, false, 0, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this._bPLife);
+    gl.bufferData(gl.ARRAY_BUFFER, lifeA, gl.DYNAMIC_DRAW);
+    const lL = gl.getAttribLocation(pr, 'aLife');
+    gl.enableVertexAttribArray(lL);
+    gl.vertexAttribPointer(lL, 1, gl.FLOAT, false, 0, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this._bPCol);
+    gl.bufferData(gl.ARRAY_BUFFER, colA, gl.DYNAMIC_DRAW);
+    const cL = gl.getAttribLocation(pr, 'aCol');
+    gl.enableVertexAttribArray(cL);
+    gl.vertexAttribPointer(cL, 3, gl.FLOAT, false, 0, 0);
+
+    gl.drawArrays(gl.POINTS, 0, n);
+    gl.depthMask(true);
+  }
+
+  _bindAttr(gl, prog, name, buf, size, dynamic) {
+    const loc = gl.getAttribLocation(prog, name);
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 0, 0);
+  }
+
+  _projectLabels(mvp, cv) {
+    const rect = cv.getBoundingClientRect();
+    for (let i = 0; i < CLUSTERS.length; i++) {
+      const el = this._labelEls[i];
+      if (!this._clusterOn[i]) { el.style.opacity = '0'; continue; }
+      const c = this._centers[i];
+      const clip = m4Project(mvp, [c[0], c[1], c[2], 1]);
+      if (clip[3] <= 0) { el.style.opacity = '0'; continue; }
+      const sx = (clip[0] / clip[3] * 0.5 + 0.5) * rect.width;
+      const sy = (1 - (clip[1] / clip[3] * 0.5 + 0.5)) * rect.height;
+      if (sx < 30 || sx > rect.width - 30 || sy < 20 || sy > rect.height - 20) {
+        el.style.opacity = '0';
+      } else {
+        el.style.left = sx + 'px';
+        el.style.top = sy + 'px';
+        el.style.opacity = '0.65';
+      }
+    }
   }
 }
