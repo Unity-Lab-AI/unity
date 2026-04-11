@@ -456,7 +456,16 @@ export class UnityBrain extends EventEmitter {
   /** Connect camera for continuous visual processing. */
   connectCamera(stream, videoElement) {
     this.sensory.setCameraStream(stream);
-    this.visualCortex.init(videoElement || this.sensory._videoElement);
+    // Wait a tick for sensory to create its video element, then init visual cortex
+    setTimeout(() => {
+      const vid = videoElement || this.sensory._videoElement;
+      if (vid) {
+        this.visualCortex.init(vid);
+        console.log('[Brain] Visual cortex connected to camera');
+      } else {
+        console.warn('[Brain] No video element available for visual cortex');
+      }
+    }, 500);
   }
 
   /** Register action handlers on the motor output. */

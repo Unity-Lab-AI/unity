@@ -528,28 +528,80 @@ async function bootUnity(apiKey, perms) {
     }
   });
 
+  // ── Unified input handler — routes text through brain, detects images ──
+  async function handleInput(text) {
+    brain.receiveSensoryInput('text', text);
+    await sleep(100); // let neural dynamics propagate
+
+    // Check if this is an image/selfie request — done by checking the text,
+    // NOT by an external AI classifier. Simple word detection.
+    const lower = text.toLowerCase();
+    const isImage = ['selfie', 'picture', 'photo', 'image of', 'pic of', 'show me what you look',
+      'what do you look like', 'send me a pic', 'take a photo', 'draw yourself',
+      'generate an image', 'generate image', 'show yourself'].some(w => lower.includes(w));
+
+    const isSelfie = isImage && ['you', 'your', 'yourself', 'unity', 'self'].some(w => lower.includes(w));
+
+    if (isSelfie) {
+      // Generate selfie with her visual identity
+      const moods = ['smirking', 'biting her lip', 'mid-laugh with smoke', 'deadpan stare', 'winking'];
+      const mood = moods[Math.floor(Math.random() * moods.length)];
+      const prompt = `Close-up selfie photo of Unity, cyberpunk coder girl, heterochromia eyes (violet left, electric green right), black hair with neon pink and cyan streaks half-shaved, heavy smudged eyeliner, circuit board tattoos, ${mood}, torn oversized band tee, neon monitor light, hazy smoke, dark room, photorealistic`;
+      const url = pollinations.generateImage(prompt, { model: storage.get('image_model') || 'flux', width: 768, height: 768 });
+      if (url && sandbox) {
+        sandbox.inject({
+          id: 'img_' + Date.now(),
+          html: `<div style="margin:12px 0;text-align:center;"><img src="${url}" alt="Unity selfie" style="max-width:100%;border-radius:8px;border:1px solid #333;cursor:pointer;" onclick="window.open('${url}','_blank')"></div>`,
+          css: '',
+        });
+      }
+      // Quick quip, no options menu
+      const state = brain.getState();
+      const quip = await brocasArea.generate(state, text);
+      brain.giveReward(0.1);
+      return { text: quip || 'There you go.', action: 'generate_image' };
+
+    } else if (isImage) {
+      // Non-selfie image — generate from the request
+      const state = brain.getState();
+      const prompt = await brocasArea.generate(state, `Create a concise image generation prompt for: "${text}". Return ONLY the prompt, nothing else.`);
+      if (prompt) {
+        const url = pollinations.generateImage(prompt, { model: storage.get('image_model') || 'flux', width: 768, height: 768 });
+        if (url && sandbox) {
+          sandbox.inject({
+            id: 'img_' + Date.now(),
+            html: `<div style="margin:12px 0;text-align:center;"><img src="${url}" alt="Generated" style="max-width:100%;border-radius:8px;border:1px solid #333;cursor:pointer;" onclick="window.open('${url}','_blank')"></div>`,
+            css: '',
+          });
+        }
+      }
+      brain.giveReward(0.1);
+      return { text: 'Image generated.', action: 'generate_image' };
+
+    } else {
+      // Normal text response
+      const state = brain.getState();
+      const response = await brocasArea.generate(state, text);
+      brain.giveReward(0.1);
+      return { text: response, action: 'respond_text' };
+    }
+  }
+
   // ── Create UI components ──
   chatPanel = new ChatPanel({
     storage,
     onSend: async (text) => {
       voice.stopSpeaking();
       brocasArea.abort();
-      brain.receiveSensoryInput('text', text);
       setAvatarState('thinking');
-      // Brain will process and trigger action via motor output
-      // Give it a moment to propagate through neural dynamics
-      await sleep(100);
-      // Force a respond_text action for direct text input
-      const state = brain.getState();
-      const response = await brocasArea.generate(state, text);
-      if (response) {
-        showSpeechBubble(response, 8000);
+      const result = await handleInput(text);
+      if (result.text) {
+        showSpeechBubble(result.text, 8000);
         voice.stopSpeaking();
-        voice.speak(response).catch(() => {});
-        brain.giveReward(0.1);
+        voice.speak(result.text).catch(() => {});
       }
       setAvatarState('idle');
-      return { response: { text: response }, action: 'respond_text' };
+      return { response: result, action: result.action };
     },
     onMicToggle: () => toggleMicMute(),
   });
@@ -597,26 +649,18 @@ async function bootUnity(apiKey, perms) {
     if (!isFinal) return;
     const myId = ++_currentResponseId;
 
-    // Feed text into brain's sensory system
-    brain.receiveSensoryInput('text', text);
     showSpeechBubble(`🎤 ${text}`, 2000);
     chatPanel.addMessage('user', text, true);
     setAvatarState('thinking');
 
-    // Let neural dynamics propagate, then generate response
-    await sleep(100);
-    if (myId !== _currentResponseId) return;
-
     try {
-      const state = brain.getState();
-      const response = await brocasArea.generate(state, text);
+      const result = await handleInput(text);
       if (myId !== _currentResponseId) return;
-      if (response) {
-        showSpeechBubble(response, 8000);
-        chatPanel.addMessage('assistant', response, true);
+      if (result.text) {
+        showSpeechBubble(result.text, 8000);
+        chatPanel.addMessage('assistant', result.text, true);
         voice.stopSpeaking();
-        voice.speak(response).catch(() => {});
-        brain.giveReward(0.1);
+        voice.speak(result.text).catch(() => {});
       }
     } catch (err) {
       if (err.name !== 'AbortError') console.error('[Unity] Response failed:', err.message);
