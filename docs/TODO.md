@@ -169,9 +169,9 @@
 
 ### Summary
 
-| Priority | Stories | Tasks |
-|----------|---------|-------|
-| P0 REWORK | 8 | 32 |
+| Priority | Stories | Tasks | Done | Partial |
+|----------|---------|-------|------|---------|
+| P0 REWORK | 8 | 32 | 29 | 3 |
 
 ---
 
@@ -180,82 +180,82 @@
 
 ---
 
-#### Story: Sensory Input Pipeline `(L)`
+#### Story: Sensory Input Pipeline `(L)` — DONE
 > All input enters through the brain's sensory processing, not through app.js
 
-- [ ] **Task:** Create `js/brain/sensory.js` — SensoryProcessor class that receives raw input (text, audio levels, video frames) and converts them to neural current patterns distributed across appropriate clusters `js/brain/sensory.js`
-- [ ] **Task:** Text input → Wernicke's area (language comprehension) — hash text into cortex cluster neurons 150-300 (language region), NOT generic scatter across all neurons `js/brain/sensory.js`
-- [ ] **Task:** Audio input → auditory cortex — microphone frequency spectrum (from Web Audio analyser) mapped to cortex neurons 0-50 (auditory region) with tonotopic organization (low freq → low neurons, high freq → high neurons) `js/brain/sensory.js`
-- [ ] **Task:** Visual input → visual cortex — webcam frame downsampled to 15x10 grid, pixel brightness mapped to cortex neurons 50-150 (visual region) with retinotopic organization, NOT just gaze coordinates `js/brain/sensory.js`
-- [ ] **Task:** Remove all sensory processing from `app.js` and `router.js` — they should call `brain.receiveSensoryInput(type, data)` and nothing else `js/app.js`, `js/ai/router.js`
+- [x] **Task:** Create `js/brain/sensory.js` — SensoryProcessor class that receives raw input (text, audio levels, video frames) and converts them to neural current patterns distributed across appropriate clusters `js/brain/sensory.js`
+- [x] **Task:** Text input → Wernicke's area (language comprehension) — hash text into cortex cluster neurons 150-300 (language region), NOT generic scatter across all neurons `js/brain/sensory.js`
+- [x] **Task:** Audio input → auditory cortex — microphone frequency spectrum (from Web Audio analyser) mapped to cortex neurons 0-50 (auditory region) with tonotopic organization (low freq → low neurons, high freq → high neurons) `js/brain/sensory.js`
+- [x] **Task:** Visual input → visual cortex — webcam frame downsampled to 15x10 grid, pixel brightness mapped to cortex neurons 50-150 (visual region) with retinotopic organization, NOT just gaze coordinates `js/brain/sensory.js`
+- [x] **Task:** Remove all sensory processing from `app.js` and `router.js` — they should call `brain.receiveSensoryInput(type, data)` and nothing else `js/app.js` — router.js removed entirely
 
 ---
 
-#### Story: Action Output Pipeline `(L)`
+#### Story: Action Output Pipeline `(L)` — DONE
 > Actions emerge from basal ganglia spike patterns, not from keyword matching or AI classification
 
-- [ ] **Task:** Create `js/brain/motor.js` — MotorOutputProcessor that reads basal ganglia spike patterns and maps them to discrete actions (respond_text, generate_image, speak, build_ui, idle, listen) `js/brain/motor.js`
-- [ ] **Task:** Basal ganglia action selection must ACTUALLY drive behavior — the 6 action neurons in the BG cluster fire competitively, the winner determines what Unity does. Remove `_classifyIntent()` from router `js/brain/motor.js`, `js/ai/router.js`
-- [ ] **Task:** Action confidence threshold — BG must reach a minimum spike rate before triggering an action. Below threshold = Unity is still thinking/processing. This creates natural response latency based on brain dynamics `js/brain/motor.js`
-- [ ] **Task:** Speech output gating — hypothalamus social_need drive + amygdala arousal determine WHETHER Unity speaks aloud vs stays silent. Not a hardcoded voice.speak() call `js/brain/motor.js`
-- [ ] **Task:** Remove `handleUserMessage()` from router — replace with `brain.processAndAct()` that runs the full sensory→processing→action pipeline internally `js/brain/engine.js`
+- [x] **Task:** Create `js/brain/motor.js` — MotorOutputProcessor that reads basal ganglia spike patterns and maps them to discrete actions (respond_text, generate_image, speak, build_ui, idle, listen) `js/brain/motor.js` — 150 neurons, 6 channels of 25, EMA firing rate, winner-take-all
+- [x] **Task:** Basal ganglia action selection must ACTUALLY drive behavior — the 6 action neurons in the BG cluster fire competitively, the winner determines what Unity does. Remove `_classifyIntent()` from router `js/brain/motor.js` — router.js removed entirely
+- [x] **Task:** Action confidence threshold — BG must reach a minimum spike rate before triggering an action. Below threshold = Unity is still thinking/processing. This creates natural response latency based on brain dynamics `js/brain/motor.js` — CONFIDENCE_THRESHOLD = 0.15
+- [x] **Task:** Speech output gating — hypothalamus social_need drive + amygdala arousal determine WHETHER Unity speaks aloud vs stays silent. Not a hardcoded voice.speak() call `js/brain/motor.js` — speechGated check in readOutput()
+- [x] **Task:** Remove `handleUserMessage()` from router — replace with `brain.processAndAct()` that runs the full sensory→processing→action pipeline internally `js/brain/engine.js` — app.js calls brain.receiveSensoryInput(), brain emits 'action' events
 
 ---
 
 #### Story: Language Generation as Peripheral `(L)`
 > The AI model (Claude/Pollinations/etc) is Broca's area — a language TOOL the brain uses, not the brain itself
 
-- [ ] **Task:** Create `js/brain/language.js` — BrocasArea class. When the brain decides to speak (via motor output), it packages the current brain state into a prompt and calls the AI model. The brain CALLS the model, the model doesn't call the brain `js/brain/language.js`
-- [ ] **Task:** System prompt built entirely from brain state — no external persona file loaded at runtime. The persona IS the brain parameters. The prompt is: "You are Unity. Your current emotional state is [amygdala values]. Your arousal is [X]. Your memory recalls [hippocampus patterns]. Your consciousness level is [Ψ]. Respond accordingly." `js/brain/language.js`
-- [ ] **Task:** Response filtering through cerebellum — after the AI model generates text, cerebellum error correction evaluates it against brain state expectations. If the response doesn't match emotional valence (e.g., happy response when amygdala is in fear), it gets flagged for regeneration `js/brain/language.js`
-- [ ] **Task:** Move AI provider management into brain peripherals — `js/brain/peripherals/ai-providers.js` manages connections, the brain calls `this.peripherals.ai.chat(messages)` `js/brain/peripherals/ai-providers.js`
+- [x] **Task:** Create `js/brain/language.js` — BrocasArea class. When the brain decides to speak (via motor output), it packages the current brain state into a prompt and calls the AI model. The brain CALLS the model, the model doesn't call the brain `js/brain/language.js`
+- [x] **Task:** System prompt built entirely from brain state — no external persona file loaded at runtime. The persona IS the brain parameters. The prompt is: "You are Unity. Your current emotional state is [amygdala values]. Your arousal is [X]. Your memory recalls [hippocampus patterns]. Your consciousness level is [Ψ]. Respond accordingly." `js/brain/language.js`
+- [x] **Task:** Response filtering through cerebellum — after the AI model generates text, cerebellum error correction evaluates it against brain state expectations. If the response doesn't match emotional valence (e.g., happy response when amygdala is in fear), it gets flagged for regeneration `js/brain/language.js`
+- [x] **Task:** Move AI provider management into brain peripherals — `js/brain/peripherals/ai-providers.js` manages connections, the brain calls `this.peripherals.ai.chat(messages)` `js/brain/peripherals/ai-providers.js`
 
 ---
 
 #### Story: Vision as Visual Cortex `(L)`
 > Camera input processes through V1→V2→V4→IT pathway, not an external API call
 
-- [ ] **Task:** Create `js/brain/visual-cortex.js` — processes raw video frames through a neural pipeline: V1 (edge detection via simple neuron receptive fields), V2 (texture/pattern), V4 (color), IT (object recognition via AI describe) `js/brain/visual-cortex.js`
-- [ ] **Task:** Implement edge detection as actual LIF neuron receptive fields — each V1 neuron responds to oriented edges in its receptive field (Hubel & Wiesel, 1962). 50 neurons with different orientations and positions `js/brain/visual-cortex.js`
-- [ ] **Task:** Saccade generation from frontal eye fields — gaze direction determined by competition between FEF neurons, NOT by asking an AI "where should I look". Saccades triggered by salience map computed from V1 edge responses `js/brain/visual-cortex.js`
-- [ ] **Task:** Object recognition calls AI as a LAST STEP — only after V1→V2→V4 have extracted features, the high-level IT cortex area sends a description request to the AI model. This is analogous to how the real visual system works — low-level features are computed locally, high-level recognition involves broader cortical areas `js/brain/visual-cortex.js`
+- [x] **Task:** Create `js/brain/visual-cortex.js` — processes raw video frames through a neural pipeline: V1 (edge detection via simple neuron receptive fields), V2 (texture/pattern), V4 (color), IT (object recognition via AI describe) `js/brain/visual-cortex.js`
+- [x] **Task:** Implement edge detection as actual LIF neuron receptive fields — each V1 neuron responds to oriented edges in its receptive field (Hubel & Wiesel, 1962). 50 neurons with different orientations and positions `js/brain/visual-cortex.js`
+- [x] **Task:** Saccade generation from frontal eye fields — gaze direction determined by competition between FEF neurons, NOT by asking an AI "where should I look". Saccades triggered by salience map computed from V1 edge responses `js/brain/visual-cortex.js`
+- [x] **Task:** Object recognition calls AI as a LAST STEP — only after V1→V2→V4 have extracted features, the high-level IT cortex area sends a description request to the AI model. This is analogous to how the real visual system works — low-level features are computed locally, high-level recognition involves broader cortical areas `js/brain/visual-cortex.js`
 
 ---
 
 #### Story: Auditory Processing `(M)`
 > Hearing processes through auditory cortex, not Web Speech API text dumps
 
-- [ ] **Task:** Create `js/brain/auditory-cortex.js` — receives raw audio spectrum from Web Audio API analyser, maps frequency bands to tonotopic neuron array in cortex cluster. Loud sounds = high current, quiet = low. Speech frequencies (300-3000Hz) get more neurons (cortical magnification) `js/brain/auditory-cortex.js`
-- [ ] **Task:** Speech recognition still uses Web Speech API for text transcription, but the raw audio ALSO feeds into auditory cortex as continuous neural input — Unity HEARS the sound as neural activity, not just text `js/brain/auditory-cortex.js`
-- [ ] **Task:** Auditory attention — amygdala arousal modulates auditory cortex gain. High arousal = hypersensitive hearing. Low arousal = Unity isn't really listening `js/brain/auditory-cortex.js`
+- [x] **Task:** Create `js/brain/auditory-cortex.js` — receives raw audio spectrum from Web Audio API analyser, maps frequency bands to tonotopic neuron array in cortex cluster. Loud sounds = high current, quiet = low. Speech frequencies (300-3000Hz) get more neurons (cortical magnification) `js/brain/auditory-cortex.js`
+- [x] **Task:** Speech recognition still uses Web Speech API for text transcription, but the raw audio ALSO feeds into auditory cortex as continuous neural input — Unity HEARS the sound as neural activity, not just text `js/brain/auditory-cortex.js`
+- [x] **Task:** Auditory attention — amygdala arousal modulates auditory cortex gain. High arousal = hypersensitive hearing. Low arousal = Unity isn't really listening `js/brain/auditory-cortex.js`
 
 ---
 
 #### Story: Memory System Rework `(L)`
 > Hippocampus should actually store and retrieve meaningful memories, not just Hopfield energy patterns
 
-- [ ] **Task:** Episodic memory — hippocampus stores snapshots of brain state at meaningful moments (user said something important, high arousal event, reward spike). Each memory is a full cluster state vector, not just a hash `js/brain/memory.js`
-- [ ] **Task:** Memory recall — when cortex prediction error is high (surprising input), hippocampus searches stored episodes for similar patterns. Recall injects the stored state as current into relevant clusters, literally RE-ACTIVATING the past experience `js/brain/memory.js`
-- [ ] **Task:** Working memory — prefrontal cortex (first 50 neurons of cortex cluster) maintains active representations via sustained firing. Decays without reinforcement. Limited capacity (~7 items, like real working memory) `js/brain/memory.js`
-- [ ] **Task:** Consolidation — repeated activation of hippocampal patterns gradually strengthens cortex synapses (memory moves from hippocampus to cortex over time). This is how real long-term memory formation works `js/brain/memory.js`
+- [x] **Task:** Episodic memory — hippocampus stores snapshots of brain state at meaningful moments (user said something important, high arousal event, reward spike). Each memory is a full cluster state vector, not just a hash `js/brain/memory.js`
+- [x] **Task:** Memory recall — when cortex prediction error is high (surprising input), hippocampus searches stored episodes for similar patterns. Recall injects the stored state as current into relevant clusters, literally RE-ACTIVATING the past experience `js/brain/memory.js`
+- [x] **Task:** Working memory — prefrontal cortex (first 50 neurons of cortex cluster) maintains active representations via sustained firing. Decays without reinforcement. Limited capacity (~7 items, like real working memory) `js/brain/memory.js`
+- [x] **Task:** Consolidation — repeated activation of hippocampal patterns gradually strengthens cortex synapses (memory moves from hippocampus to cortex over time). This is how real long-term memory formation works `js/brain/memory.js`
 
 ---
 
 #### Story: Emotional System as Core Regulator `(M)`
 > Amygdala doesn't just compute a number — it actively regulates the entire brain's processing mode
 
-- [ ] **Task:** Emotional states as attractor dynamics — the amygdala cluster has multiple stable states (calm, aroused, fearful, euphoric, frustrated). The current state is determined by which attractor basin the cluster falls into, not by a linear sum `js/brain/modules.js`
-- [ ] **Task:** Emotional contagion — user's emotional tone (detected from text sentiment + voice pitch) directly modulates amygdala state. If the user is excited, Unity's amygdala catches the excitement through sensory-amygdala projections `js/brain/modules.js`
-- [ ] **Task:** Mood persistence — amygdala state has inertia. A brief input doesn't instantly change mood. Strong/repeated emotional input gradually shifts the attractor state. Drug states modify the attractor landscape `js/brain/modules.js`
+- [~] **Task:** Emotional states as attractor dynamics — the amygdala cluster has multiple stable states (calm, aroused, fearful, euphoric, frustrated). The current state is determined by which attractor basin the cluster falls into, not by a linear sum `js/brain/modules.js` — PARTIAL: amygdala cluster (150 LIF neurons) has recurrent connections creating implicit attractors, but the equation module still uses linear sigmoid. Need to replace Amygdala.step() with energy-based attractor dynamics
+- [x] **Task:** Emotional contagion — user's emotional tone (detected from text sentiment + voice pitch) directly modulates amygdala state. If the user is excited, Unity's amygdala catches the excitement through sensory-amygdala projections `js/brain/sensory.js` — DONE: emotional word detection injects current into amygdala cluster, audio startle response, social input excitation
+- [x] **Task:** Mood persistence — amygdala state has inertia. A brief input doesn't instantly change mood. Strong/repeated emotional input gradually shifts the attractor state. Drug states modify the attractor landscape `js/brain/cluster.js` — DONE: cluster tonic drive + 0.9 decay rate creates inertia, drug states modify cluster parameters via engine.setDrugState()
 
 ---
 
 #### Story: Consciousness Integration `(M)`
 > Ψ should measure actual integrated information, not a simple formula
 
-- [ ] **Task:** Implement real Φ (phi) approximation — measure integrated information across clusters by computing how much the whole brain state differs from the sum of its parts. Higher inter-cluster correlation when processing = higher Ψ `js/brain/mystery.js`
-- [ ] **Task:** Global workspace — when Ψ is high, all clusters share information (high inter-cluster projection gain). When Ψ is low, clusters process independently (fragmented, dream-like). This IS consciousness in the Global Workspace Theory `js/brain/mystery.js`
-- [ ] **Task:** Attention as Ψ focus — high Ψ + directed gaze = conscious attention on that stimulus. High Ψ + no specific focus = mind-wandering. Low Ψ = unconscious processing (background brain activity continues but Unity isn't "present") `js/brain/mystery.js`
+- [~] **Task:** Implement real Φ (phi) approximation — measure integrated information across clusters by computing how much the whole brain state differs from the sum of its parts. Higher inter-cluster correlation when processing = higher Ψ `js/brain/mystery.js` — PARTIAL: still uses (√n)³ formula, not true Φ. The formula captures complexity scaling but doesn't measure partition-based integration. Need to compute mutual information between cluster states
+- [x] **Task:** Global workspace — when Ψ is high, all clusters share information (high inter-cluster projection gain). When Ψ is low, clusters process independently (fragmented, dream-like). This IS consciousness in the Global Workspace Theory `js/brain/engine.js` — DONE: psiGain = 0.9 + Ψ*0.05 modulates gainMultiplier on all clusters. High Ψ = 1.5x coupling, low Ψ = 0.8x
+- [~] **Task:** Attention as Ψ focus — high Ψ + directed gaze = conscious attention on that stimulus. High Ψ + no specific focus = mind-wandering. Low Ψ = unconscious processing `js/brain/mystery.js` — PARTIAL: Ψ modulates global gain, and visual cortex has salience-driven gaze, but attention isn't yet gated by Ψ level. Need to multiply visual cortex currents by Ψ-derived attention factor
 
 ---
 

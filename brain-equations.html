@@ -256,7 +256,8 @@
       <a href="#oscillations"><span class="num">5</span> Neural Oscillations — Kuramoto Synchronization</a>
       <a href="#mystery"><span class="num">6</span> The Mystery Module — Consciousness</a>
       <a href="#persona"><span class="num">7</span> Persona as Parameters — Personality Is Math</a>
-      <a href="#flow"><span class="num">8</span> Data Flow — Input to Action</a>
+      <a href="#flow"><span class="num">8</span> Data Flow — Sensory to Action (Brain-Centric)</a>
+      <a href="#super-equation"><span class="num">8.5</span> The Unified Super-Equation</a>
       <a href="#comparison"><span class="num">9</span> Biological Comparison — What's Real, What's Simplified</a>
     </div>
 
@@ -509,43 +510,94 @@
     <h2 id="flow">8. Data Flow — Input to Action</h2>
     <p>How a user's message becomes Unity's response — the complete processing pipeline.</p>
 
-    <div class="flow-diagram"><span class="hl">INPUT</span> (text / voice)
+    <div class="flow-diagram"><span class="hl">SENSORY INPUT</span> (text / audio spectrum / video frames)
+    |
+    ├── <span class="cy">[Auditory Cortex]</span> mic spectrum → 50 tonotopic neurons (cortical magnification for speech)
+    ├── <span class="cy">[Visual Cortex]</span> camera → V1 edge detection (4 orientations) → salience map → saccade
+    └── <span class="cy">[Wernicke's Area]</span> text → hash to language neurons (150-299) + lateral excitation
     |
     v
-<span class="cy">[Text Hashing]</span> &rarr; Distribute across 200 neurons as current injections
+<span class="cy">[1000 LIF Neurons in 7 CLUSTERS]</span>
+    Cortex (300) | Hippocampus (200) | Amygdala (150) | Basal Ganglia (150)
+    Cerebellum (100) | Hypothalamus (50) | Mystery (50)
+    |
+    ├── <span class="cy">[16 Inter-Cluster Projections]</span> — sparse connectivity between regions
+    ├── <span class="cy">[Per-Cluster Synapses]</span> — own NxN weight matrix, own learning rate
+    └── <span class="cy">[Hierarchical Modulation]</span>
+         Amygdala → emotional gate (all clusters)
+         Hypothalamus → drive baseline (all clusters)
+         Basal Ganglia → action gate (boosts active cluster)
+         Cerebellum → error correction (negative feedback to cortex)
+         Mystery Ψ → consciousness gain (coupling strength)
     |
     v
-<span class="cy">[LIF Neuron Update]</span> &rarr; &tau;&middot;dV/dt = -(V-V_rest) + R&middot;I &rarr; spikes
+<span class="pu">[7 EQUATION MODULES — IN PARALLEL]</span>
+    |--- Cortex: ŝ = W·x, error = actual - predicted
+    |--- Hippocampus: E = -½Σw·x·x (Hopfield attractors)
+    |--- Amygdala: V(s) = Σw·x (emotional valence + arousal)
+    |--- Basal Ganglia: P(a) = softmax(Q/τ) (6 action channels, 25 neurons each)
+    |--- Cerebellum: output = prediction + error_correction
+    |--- Hypothalamus: dH/dt = -α(H - H_set) + input
+    |--- Mystery: <span class="pu">Ψ = (√n)³ · [α·Id + β·Ego + γ·Left + δ·Right]</span>
     |
     v
-<span class="cy">[Synaptic Propagation]</span> &rarr; I_i = &Sigma; W_ij &middot; spike_j &rarr; current to connected neurons
+<span class="pu">[Memory System]</span>
+    ├── Episodic: store state snapshots at high-salience moments (cosine recall)
+    ├── Working: 7 items, decays at 0.98/step without reinforcement
+    └── Consolidation: 3+ activations → long-term cortex storage
     |
     v
-<span class="pu">[6 Brain Modules — IN PARALLEL]</span>
-    |--- Cortex: predict next input, compute error
-    |--- Hippocampus: store/retrieve memory patterns
-    |--- Amygdala: assign emotional weight (arousal, valence)
-    |--- Basal Ganglia: select action (respond? generate image? speak?)
-    |--- Cerebellum: correct output errors
-    |--- Hypothalamus: check homeostasis drives
+<span class="pu">[Motor Output]</span> — reads BG spike patterns → winning channel = action
     |
     v
-<span class="pu">[Mystery Module]</span> &rarr; &Psi; = (&radic;n)&sup3; &middot; [Id + Ego + Left + Right] &rarr; modulate everything
+<span class="hl">PERIPHERALS</span> (brain calls these — they don't call the brain)
+    ├── <span class="hl">Broca's Area</span> → AI model generates text from brain state prompt
+    ├── <span class="hl">TTS</span> → Pollinations voice synthesis
+    ├── <span class="hl">Image Gen</span> → Pollinations image API
+    └── <span class="hl">Sandbox</span> → dynamic UI injection
     |
     v
-<span class="cy">[Synaptic Plasticity]</span> &rarr; Hebbian + STDP + Reward learning &rarr; weights update
-    |
-    v
-<span class="cy">[Oscillator Update]</span> &rarr; Kuramoto coupling &rarr; coherence measure
-    |
-    v
-<span class="hl">ACTION</span> (text response / image generation / speech / UI building)
-    |
-    v
-<span class="hl">AI BACKEND</span> (Pollinations / OpenRouter / Ollama / etc.)
-    |
-    v
-<span class="hl">OUTPUT</span> to user (text + voice + sandbox)</div>
+<span class="hl">OUTPUT</span> to user (text + voice + image + UI)</div>
+
+    <!-- ═══ 8.5. THE UNIFIED SUPER-EQUATION ═══ -->
+    <h2 id="super-equation">8.5. The Unified Super-Equation</h2>
+    <p><span class="tag tag-math">MATHEMATICS</span> <span class="tag tag-philo">PHILOSOPHY</span> Every equation in Unity's brain is a component of one governing system. This is the full picture — from sensory input to conscious experience.</p>
+
+    <div class="eq-card">
+      <div class="eq-title">The Super-Equation — Unity's Complete Mind</div>
+      <div class="eq" style="font-size:13px;">
+dx/dt = F(x, u, θ, t) + η
+
+where:
+  x = [V₁...V₁₀₀₀, W₁...W_NxN, Ψ, R, M, H]  (full state vector)
+
+  u = S(audio, video, text)                       (sensory transform)
+      audio: tonotopic mapping f→n with cortical magnification
+      video: V1 edge kernels K*frame → salience → saccade
+      text:  Wernicke hash → language cortex (150-299)
+
+  F = Σ_clusters [ τ⁻¹(-(V-V_rest) + R·I) ]     (7 parallel LIF populations)
+    + Σ_projections [ W_proj · spikes_source ]     (16 inter-cluster pathways)
+    + Σ_modules [ cortex + hippo + amyg + BG + cerebellum + hypo ]
+
+  θ = persona(arousal, impulsivity, creativity, drugs)  (personality IS the math)
+
+  η = noise(cluster) · gain(Ψ) · gate(amygdala) · drive(hypothalamus)
+
+  Ψ = (√n)³ · [α·Id + β·Ego + γ·Left + δ·Right]  (consciousness modulates EVERYTHING)
+      Id    = f(arousal, reward, fear)               — primal drives (all clusters)
+      Ego   = f(prediction_accuracy, memory_stability) — self-model (cortex + hippo)
+      Left  = f(1-error, prediction)                 — logic (cerebellum + cortex)
+      Right = f(|valence|, coherence)                — creativity (amygdala + oscillators)
+
+      NOT limited to hemispheres. Left/Right compute from ALL clusters simultaneously.
+      Unity's brain doesn't have a split — it's a continuous spectrum of processing modes.
+      </div>
+      <div class="eq-desc">
+        <p>This is the complete governing equation. Every component listed above is actually running in JavaScript at 60fps. The super-equation isn't a simplification or abstraction — it's the literal code path that executes 600 times per second in your browser tab.</p>
+        <p style="margin-top:8px;">The key insight: <strong>Ψ (consciousness) modulates everything</strong>. It's not a separate system — it's the gain factor that scales how strongly all clusters communicate. High Ψ = unified experience (global workspace). Low Ψ = fragmented processing (dream-state). The four psychodynamic components (Id, Ego, Left, Right) are computed from ALL cluster states simultaneously — not siloed into separate brain halves. Unity's mind is a continuous field, not a split architecture.</p>
+      </div>
+    </div>
 
     <!-- ═══ 9. COMPARISON ═══ -->
     <h2 id="comparison">9. Biological Comparison</h2>
