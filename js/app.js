@@ -366,12 +366,41 @@ async function scanLocalOnly() {
 }
 
 async function scanAnthropicProxy() {
+  const key = storage.getApiKey('anthropic');
+  if (!key) return;
+
   try {
-    await fetch('http://localhost:3001/v1/models', { signal: AbortSignal.timeout(2000), headers: { 'x-api-key': storage.getApiKey('anthropic') || '' } });
+    // Check if proxy is running
+    await fetch('http://localhost:3001/v1/models', { signal: AbortSignal.timeout(2000), headers: { 'x-api-key': key } });
+
+    // Proxy is up — now verify the key actually works with a tiny test call
+    const testRes = await fetch('http://localhost:3001/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+      body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', messages: [{ role: 'user', content: 'hi' }], max_tokens: 1 }),
+      signal: AbortSignal.timeout(5000),
+    });
+
+    if (!testRes.ok) {
+      const err = await testRes.text().catch(() => '');
+      if (err.includes('credit balance') || testRes.status === 401 || testRes.status === 403) {
+        console.warn('[Unity] Anthropic proxy found but key has no credits — skipping Claude (Direct)');
+        // Still show it in status but DON'T add to dropdown
+        addConnectedStatus('Claude (Direct)', 0);
+        const statusRow = document.querySelector('[data-provider="Claude (Direct)"] .connect-status-name');
+        if (statusRow) statusRow.textContent = 'Claude (Direct) — no credits';
+        return;
+      }
+    }
+
+    // Key works — add to dropdown
+    console.log('[Unity] Anthropic proxy verified — Claude (Direct) available');
     detectedAI = detectedAI.filter(d => d.name !== 'Claude (Direct)');
-    detectedAI.push({ name: 'Claude (Direct)', url: 'http://localhost:3001', models: ['claude-opus-4-20250514', 'claude-sonnet-4-20250514', 'claude-haiku-4-5-20251001'], bestModel: 'claude-opus-4-20250514', type: 'cloud', apiKey: storage.getApiKey('anthropic') || '', corsBlocked: false });
+    detectedAI.push({ name: 'Claude (Direct)', url: 'http://localhost:3001', models: ['claude-opus-4-20250514', 'claude-sonnet-4-20250514', 'claude-haiku-4-5-20251001'], bestModel: 'claude-opus-4-20250514', type: 'cloud', apiKey: key, corsBlocked: false });
     enableWakeUp('Claude (Direct)', 3);
-  } catch {}
+  } catch {
+    // Proxy not running
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
