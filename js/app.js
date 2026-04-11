@@ -487,15 +487,17 @@ async function bootUnity(apiKey, perms) {
   // When the brain's motor output decides to act, these execute
 
   brain.onAction('respond_text', async (motorResult) => {
+    // Don't act if already speaking or was interrupted
+    if (brain.motor.isSpeaking || brain.motor.wasInterrupted()) return;
     const state = brain.getState();
     const lastText = storage.getHistory().slice(-1)[0]?.text || '';
     const response = await brocasArea.generate(state, lastText);
-    if (response) {
+    if (response && !brain.motor.wasInterrupted()) {
+      voice.stopSpeaking();
       showSpeechBubble(response, 8000);
       if (chatPanel) chatPanel.addMessage('assistant', response, true);
-      voice.stopSpeaking();
       voice.speak(response).catch(() => {});
-      brain.giveReward(0.1); // reward for successful communication
+      brain.giveReward(0.1);
     }
   });
 
@@ -518,10 +520,11 @@ async function bootUnity(apiKey, perms) {
   });
 
   brain.onAction('speak', async () => {
-    // Idle vocalization — brain wants to say something unprompted
+    // Idle vocalization — only if NOT already speaking and NOT interrupted
+    if (brain.motor.isSpeaking || brain.motor.wasInterrupted()) return;
     const state = brain.getState();
     const thought = await brocasArea.generate(state, 'Generate a brief internal thought or observation. 1 sentence.');
-    if (thought && (state.amygdala?.arousal ?? 0) > 0.6) {
+    if (thought && (state.amygdala?.arousal ?? 0) > 0.6 && !brain.motor.wasInterrupted()) {
       voice.stopSpeaking();
       voice.speak(thought).catch(() => {});
       showSpeechBubble(thought, 6000);
@@ -529,8 +532,12 @@ async function bootUnity(apiKey, perms) {
   });
 
   // ── Unified input handler — routes text through brain, detects images ──
+  // Uses brain.motor speech lock: ONE speech at a time. Period.
   async function handleInput(text) {
-    brain.receiveSensoryInput('text', text);
+    // Motor cortex interrupt — stop any ongoing speech FIRST
+    voice.stopSpeaking();
+    brocasArea.abort();
+    brain.receiveSensoryInput('text', text); // this calls motor.interrupt() internally
     await sleep(100); // let neural dynamics propagate
 
     // Check if this is an image/selfie request — done by checking the text,
@@ -595,9 +602,10 @@ async function bootUnity(apiKey, perms) {
       brocasArea.abort();
       setAvatarState('thinking');
       const result = await handleInput(text);
-      if (result.text) {
+      // Only speak if brain wasn't interrupted during generation
+      if (result.text && !brain.motor.wasInterrupted()) {
         showSpeechBubble(result.text, 8000);
-        voice.stopSpeaking();
+        voice.stopSpeaking(); // kill anything that snuck in
         voice.speak(result.text).catch(() => {});
       }
       setAvatarState('idle');
@@ -642,7 +650,9 @@ async function bootUnity(apiKey, perms) {
   let _currentResponseId = 0;
 
   voice.onResult(async ({ text, isFinal }) => {
-    if (voice.isSpeaking) voice.stopSpeaking();
+    // ANY sound from user = Unity shuts up IMMEDIATELY
+    // This is auditory cortex → motor cortex inhibition
+    voice.stopSpeaking();
     brocasArea.abort();
     if (brainViz) brainViz.setHeardText(text);
 
@@ -655,11 +665,13 @@ async function bootUnity(apiKey, perms) {
 
     try {
       const result = await handleInput(text);
-      if (myId !== _currentResponseId) return;
+      // Discard if stale OR if brain was interrupted by newer input
+      if (myId !== _currentResponseId || brain.motor.wasInterrupted()) return;
       if (result.text) {
+        // Final check — stop any speech that leaked through, then speak
+        voice.stopSpeaking();
         showSpeechBubble(result.text, 8000);
         chatPanel.addMessage('assistant', result.text, true);
-        voice.stopSpeaking();
         voice.speak(result.text).catch(() => {});
       }
     } catch (err) {

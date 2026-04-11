@@ -52,8 +52,60 @@ export class MotorOutput {
     this._handlers = {};
 
     // Speech gate state
-    this.speechGated = false; // true = suppress vocalization
+    this.speechGated = false;
     this.gateReason = '';
+
+    // Speech lock — THE brain enforces one speech at a time
+    // This is motor cortex inhibition: when speaking, suppress new speech.
+    // When new sensory input arrives, interrupt() clears the lock.
+    this.isSpeaking = false;
+    this._speechAbort = null;  // AbortController for current speech generation
+    this._interruptFlag = false;
+  }
+
+  /**
+   * INTERRUPT — new sensory input arrived while speaking.
+   * Motor cortex inhibits current speech, clears the pipeline.
+   * Like a human stopping mid-sentence when someone talks to them.
+   */
+  interrupt() {
+    this._interruptFlag = true;
+    this.isSpeaking = false;
+    if (this._speechAbort) {
+      this._speechAbort.abort();
+      this._speechAbort = null;
+    }
+    // Reset cooldown so brain can act on new input immediately
+    this._cooldown = 0;
+  }
+
+  /**
+   * Begin a speech action — sets the lock so no overlapping speech.
+   * Returns an AbortController signal the caller should check.
+   */
+  beginSpeech() {
+    // Cancel any previous speech first
+    if (this._speechAbort) this._speechAbort.abort();
+    this._speechAbort = new AbortController();
+    this.isSpeaking = true;
+    this._interruptFlag = false;
+    return this._speechAbort;
+  }
+
+  /**
+   * End a speech action — clears the lock.
+   */
+  endSpeech() {
+    this.isSpeaking = false;
+    this._speechAbort = null;
+    this._interruptFlag = false;
+  }
+
+  /**
+   * Check if speech was interrupted.
+   */
+  wasInterrupted() {
+    return this._interruptFlag;
   }
 
   /**

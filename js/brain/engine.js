@@ -434,7 +434,19 @@ export class UnityBrain extends EventEmitter {
   receiveSensoryInput(type, data) {
     switch (type) {
       case 'text':
+        // NEW INPUT — motor cortex inhibition: stop current speech
+        // This is how a human brain works: incoming speech activates
+        // auditory cortex which inhibits motor cortex speech output.
+        // You shut up and listen.
+        this.motor.interrupt();
         this.sensory.receiveText(data);
+
+        // Amygdala surprise — new input shifts attention
+        if (this.clusters.amygdala) {
+          const surprise = new Float64Array(this.clusters.amygdala.size);
+          for (let i = 0; i < 30; i++) surprise[i] = 5.0;
+          this.clusters.amygdala.injectCurrent(surprise);
+        }
         break;
       case 'audio':
         // Audio is continuous — handled by auditoryCortex.process() each step
