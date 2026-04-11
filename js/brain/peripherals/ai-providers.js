@@ -17,7 +17,7 @@ export class AIProviders {
     this._activeKey = null;
     this._abortController = null;
     this._deadBackends = new Map(); // url → timestamp when marked dead
-    this._deadCooldown = 60000; // 60 seconds before retrying dead backend
+    this._deadCooldown = 3600000; // 1 hour — if you're out of credits, you're out
   }
 
   configure(url, model, apiKey) {
@@ -104,7 +104,6 @@ export class AIProviders {
       `${this._customUrl}/chat/completions`,
     ];
 
-    let failCount = 0;
     for (const endpoint of endpoints) {
       try {
         const res = await fetch(endpoint, {
@@ -115,26 +114,15 @@ export class AIProviders {
           if (data.choices?.[0]?.message?.content) return data.choices[0].message.content;
           if (data.message?.content) return data.message.content;
         } else {
-          failCount++;
           const errText = await res.text().catch(() => '');
-          // Detect credit/auth failures — mark backend dead
-          if (res.status === 400 && errText.includes('credit balance')) {
-            this._markBackendDead(this._customUrl);
-            return null;
-          }
-          if (res.status === 401 || res.status === 403) {
-            this._markBackendDead(this._customUrl);
-            return null;
-          }
+          // Any payment/credit/auth failure — mark dead immediately, don't retry other endpoints
+          if (res.status === 400 && errText.includes('credit')) { this._markBackendDead(this._customUrl); return null; }
+          if (res.status === 401 || res.status === 402 || res.status === 403) { this._markBackendDead(this._customUrl); return null; }
+          // Other errors — try next endpoint
         }
       } catch (err) {
         if (err.name === 'AbortError') throw err;
-        failCount++;
       }
-    }
-
-    if (failCount >= endpoints.length) {
-      this._markBackendDead(this._customUrl);
     }
     return null;
   }
