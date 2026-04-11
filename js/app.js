@@ -697,13 +697,31 @@ async function bootUnity(apiKey, perms) {
   // ── Wire voice input → brain ──
   let _currentResponseId = 0;
 
-  voice.onResult(async ({ text, isFinal }) => {
-    // IGNORE input while Unity is speaking — prevents feedback loop
-    // (mic picks up her TTS output and feeds it back as user input)
-    if (voice.isSpeaking) return;
+  let _lastSpokenText = ''; // track what Unity is saying to detect echo vs real input
 
-    // ANY sound from user = Unity shuts up IMMEDIATELY
+  voice.onResult(async ({ text, isFinal }) => {
+    // Detect if this is Unity's own voice echoing back through the mic.
+    // If the heard text is a substring of what she's currently saying, it's echo.
+    // If it's different, the USER is actually talking — interrupt her.
+    if (voice.isSpeaking && _lastSpokenText) {
+      const heard = text.toLowerCase().trim();
+      const spoken = _lastSpokenText.toLowerCase();
+      // Check if what we heard overlaps significantly with what she's saying
+      const words = heard.split(/\s+/);
+      const matchCount = words.filter(w => w.length > 2 && spoken.includes(w)).length;
+      const matchRatio = words.length > 0 ? matchCount / words.length : 0;
+
+      if (matchRatio > 0.5) {
+        // More than half the words match what she's saying — it's echo, ignore
+        return;
+      }
+      // It's NOT echo — user is actually interrupting. Shut her up.
+      console.log('[Voice] User interrupting Unity — stopping speech');
+    }
+
+    // User is talking — Unity shuts up
     voice.stopSpeaking();
+    _lastSpokenText = '';
     brocasArea.abort();
     if (brainViz) brainViz.setHeardText(text);
 
@@ -714,30 +732,22 @@ async function bootUnity(apiKey, perms) {
     chatPanel.addMessage('user', text, true);
     setAvatarState('thinking');
 
-    // Stop listening while generating + speaking response
-    voice.stopListening();
-
     try {
       const result = await handleInput(text);
-      if (myId !== _currentResponseId || brain.motor.wasInterrupted()) {
-        if (!uiState.micMuted) voice.startListening();
-        return;
-      }
+      if (myId !== _currentResponseId || brain.motor.wasInterrupted()) return;
       if (result.text) {
         voice.stopSpeaking();
         showSpeechBubble(result.text, 8000);
         chatPanel.addMessage('assistant', result.text, true);
-        // Speak, then resume listening AFTER speech ends
-        try {
-          await voice.speak(result.text);
-        } catch {}
+        _lastSpokenText = result.text; // track for echo detection
+        voice.speak(result.text).then(() => {
+          _lastSpokenText = ''; // clear after done speaking
+        }).catch(() => { _lastSpokenText = ''; });
       }
     } catch (err) {
       if (err.name !== 'AbortError') console.error('[Unity] Response failed:', err.message);
     }
 
-    // Resume listening after response is done
-    if (!uiState.micMuted) voice.startListening();
     if (myId === _currentResponseId) setAvatarState('idle');
   });
 
