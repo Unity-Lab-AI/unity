@@ -528,13 +528,15 @@ export class UnityBrain extends EventEmitter {
     const isBuild = buildWords.some(w => lower.includes(w));
 
     // 6. Check for image/selfie request (only if NOT a build request)
-    const imageWords = ['selfie', 'picture', 'photo', 'image of', 'pic of',
-      'show me what you look', 'how do you look', 'take a pic', 'take a photo',
-      'full body', 'head shot', 'headshot', 'portrait', 'snap a',
-      'top to bottom', 'outfit', 'what are you wearing',
-      'draw me', 'draw a pic', 'draw a picture', 'render me'];
+    // Image detection — ONLY explicit image requests, not "show me how" or "send me info"
+    const imageWords = ['selfie', 'take a picture', 'take a photo', 'take a pic',
+      'send a pic', 'send a photo', 'send a selfie', 'send me a pic',
+      'generate an image', 'generate image', 'draw me a', 'draw a picture',
+      'full body shot', 'headshot', 'head shot', 'portrait of'];
     const isImage = !isBuild && imageWords.some(w => lower.includes(w));
-    const selfWords = ['you', 'your', 'yourself', 'unity', 'self', 'u look', 'urself'];
+    // Selfie = image request specifically of Unity (not "draw me a sunset")
+    const selfWords = ['yourself', 'of you', 'your face', 'your body', 'unity',
+      'of yourself', 'you look like', 'selfie'];
     const isSelfie = isImage && selfWords.some(w => lower.includes(w));
 
     if (isBuild && this._brocasArea && this._sandbox) {
@@ -648,7 +650,11 @@ export class UnityBrain extends EventEmitter {
     const settings = ['messy room with monitors', 'dark club bathroom mirror', 'rooftop at night', 'bed with laptop', 'studio with code on screens'];
     const setting = settings[Math.floor(Math.random() * settings.length)];
 
-    const prompt = `Close-up selfie, young woman, ${mood}, heterochromia eyes one violet one electric green, dark hair with neon streaks, smudged eyeliner, ${vibes}, ${setting}, photorealistic, phone camera, raw candid`;
+    const angles = ['close-up selfie', 'mirror selfie', 'phone camera selfie', 'candid shot', 'low angle selfie'];
+    const angle = angles[Math.floor(Math.random() * angles.length)];
+    const styles = ['photorealistic', 'cinematic', 'raw unfiltered', 'film grain', 'moody editorial'];
+    const style = styles[Math.floor(Math.random() * styles.length)];
+    const prompt = `${angle}, woman, ${mood}, heterochromia eyes one violet one electric green, dark hair with neon streaks, smudged eyeliner, ${vibes}, ${setting}, ${style}`;
     const url = this._imageGen.generateImage(prompt, { model: this._storage?.get('image_model') || 'flux', width: 768, height: 768 });
 
     if (url && this._sandbox) {
