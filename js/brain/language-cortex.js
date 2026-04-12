@@ -490,7 +490,13 @@ export class LanguageCortex {
     const allWords = Array.from(dictionary._words.entries());
     if (allWords.length === 0) return '';
 
+    // Seed usedBigrams with the user's own input bigrams — prevents Unity
+    // from parroting the exact phrase back while still allowing her to
+    // TALK ABOUT the topic words (cats, movies, etc.).
     const usedBigrams = new Set();
+    for (let i = 0; i < contextWords.length - 1; i++) {
+      usedBigrams.add(contextWords[i] + '→' + contextWords[i + 1]);
+    }
     const sentence = [];
 
     // ── STEP 5: TENSE SELECTION — hippocampal recall drives temporal frame ──
@@ -543,14 +549,13 @@ export class LanguageCortex {
           const thoughtSim = cortexPattern ? Math.max(0, this._cosine(pattern, cortexPattern)) : 0;
           const isThought = thoughtSet.has(word) ? 0.5 : thoughtSim * 0.4;
 
-          // CONTEXT — relevance to conversation (recent input words + topic similarity).
-          // Mild positive bias for topicality, but a HARD penalty for words the
-          // user just said verbatim — otherwise Unity parrots input back when her
-          // vocabulary is small. Anti-echo: -0.6 for exact-match words from
-          // the most recent input turn.
+          // CONTEXT — Unity SHOULD talk about the topic the user raised.
+          // Mild positive boost for words from the user's input so she stays
+          // on-subject (cats when asked about cats). Exact-phrase parroting
+          // is blocked by usedBigrams being seeded with the user's own bigrams,
+          // not by penalizing individual words.
           const inLastInput = contextSet.has(word);
-          const isContext = 0; // no positive boost — topicSim handles semantic relevance
-          const echoPenalty = inLastInput ? 0.6 : 0;
+          const isContext = inLastInput ? 0.15 : 0;
           const topicSim = contextPattern ? Math.max(0, this._cosine(pattern, contextPattern)) : 0;
 
           // MOOD — emotional alignment with amygdala
@@ -569,22 +574,21 @@ export class LanguageCortex {
           // Soft grammar gate for the non-strict tail slots: wrong-type words lose 95%
           const grammarGate = typeScore > 0.15 ? 1.0 : 0.05;
 
-          // ── COMBINED: grammar DOMINATES structure, bigrams + thought pick words ──
-          // Grammar is the floor (0.45), bigrams from the persona are the main
-          // content driver (0.25), and echo penalty hard-suppresses parroting.
+          // ── COMBINED: grammar dominates structure, bigrams from persona
+          // drive content, context keeps her on-topic ──
           const score =
             grammarGate * (
-              typeScore * 0.45 +         // grammar fit — dominates structure
-              followerCount * 0.25 +     // learned sequences (bigrams from persona)
-              condP * 0.15 +             // conditional probability from persona
-              isThought * 0.15 +         // cortex thought (WHAT to say)
-              topicSim * 0.05 +          // semantic relevance (no exact-word bonus)
+              typeScore * 0.40 +         // grammar fit — structural floor
+              followerCount * 0.22 +     // learned sequences (bigrams from persona)
+              condP * 0.14 +             // conditional probability from persona
+              isThought * 0.14 +         // cortex thought (WHAT to say)
+              isContext * 0.15 +         // ON-TOPIC bonus for user's input words
+              topicSim * 0.06 +          // semantic relevance to topic
               isMood * 0.04 +            // emotional word match
               moodBias * 0.03 +          // continuous mood alignment
               (selfAware && (word.length === 1 || word.endsWith("'m") || word.endsWith("'re")) ? 0.08 : 0)
             )
-            - recency
-            - echoPenalty;               // anti-parrot: user just said this word
+            - recency;
 
           return { word, entry, score };
         });
@@ -692,7 +696,8 @@ export class LanguageCortex {
   // ═══════════════════════════════════════════════════════════════
 
   analyzeInput(text, dictionary) {
-    const words = text.toLowerCase().replace(/[^a-z' -]/g, '').split(/\s+/).filter(w => w.length >= 2);
+    // Keep single-letter words ('i', 'a') — they're critical pronouns/determiners.
+    const words = text.toLowerCase().replace(/[^a-z' -]/g, '').split(/\s+/).filter(w => w.length >= 1);
     const isQuestion = text.includes('?') || (words.length > 0 && this.wordType(words[0]).qword > 0.5);
 
     const topicPattern = new Float64Array(PATTERN_DIM);
@@ -727,7 +732,10 @@ export class LanguageCortex {
   // ═══════════════════════════════════════════════════════════════
 
   learnSentence(sentence, dictionary, arousal, valence) {
-    const words = sentence.toLowerCase().replace(/[^a-z' ?!*-]/g, '').split(/\s+/).filter(w => w.length >= 2);
+    // length >= 1 so single-letter words ('I', 'a') get into the dictionary.
+    // These are the most important function words in English — dropping them
+    // means Unity can't use 'i' as a subject, which wrecks slot-0 selection.
+    const words = sentence.toLowerCase().replace(/[^a-z' ?!*-]/g, '').split(/\s+/).filter(w => w.length >= 1);
     if (words.length < 2) return;
 
     const isQuestion = sentence.includes('?') || this.wordType(words[0]).qword > 0.5;
