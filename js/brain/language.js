@@ -118,6 +118,7 @@ export class BrocasArea {
     const arousal = amyg.arousal ?? 0.5;
     const valence = amyg.valence ?? 0;
     const coherence = osc.coherence ?? 0.5;
+    const bandPower = osc.bandPower || {};
     const drugState = brainState.drugState || 'cokeAndWeed';
 
     const gate = (0.7 + arousal * 0.6);
