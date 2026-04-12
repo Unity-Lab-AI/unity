@@ -591,31 +591,56 @@ export class UnityBrain extends EventEmitter {
       '    unity.speak(text), unity.chat(prompt), unity.generateImage(prompt),',
       '    unity.getState(), unity.storage.get(k), unity.storage.set(k,v)',
       '- Use dark styling: #0a0a0a backgrounds, #e0e0e0 text, neon accents (#ff00ff, #00ffcc).',
-      '- Be creative. Make it functional. All strings properly escaped.]',
+      '- Wrap inputs in labels or use for/id pairs for accessibility.',
+      '- Be creative. Make it functional. All strings properly escaped.',
+      '- Return ONLY the JSON object. No text before or after. No markdown fences.]',
     ].join('\n');
 
-    const raw = await this._brocasArea.generate(this.getState(), buildPrompt + '\n\nUser request: ' + text);
+    let raw = await this._brocasArea.generate(this.getState(), buildPrompt + '\n\nUser request: ' + text);
     if (!raw) {
       this.emit('response', { text: "Shit — couldn't build that. Try again?", action: 'build_ui' });
       return { text: "Shit — couldn't build that. Try again?", action: 'build_ui' };
     }
 
-    // Parse JSON
+    console.log('[Brain] Build raw response length:', raw.length);
+
+    // Parse JSON — try multiple extraction strategies
     let component;
+
+    // Strategy 1: strip markdown fences and parse
     try {
-      const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+      const cleaned = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
       component = JSON.parse(cleaned);
-    } catch {
-      // If JSON parse fails, try to extract JSON from the response
-      const jsonMatch = raw.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        try { component = JSON.parse(jsonMatch[0]); } catch {}
+    } catch {}
+
+    // Strategy 2: find the outermost { } block
+    if (!component) {
+      const firstBrace = raw.indexOf('{');
+      const lastBrace = raw.lastIndexOf('}');
+      if (firstBrace !== -1 && lastBrace > firstBrace) {
+        try { component = JSON.parse(raw.slice(firstBrace, lastBrace + 1)); } catch {}
       }
     }
 
-    if (!component || !component.html) {
-      this.emit('response', { text: "Brain couldn't format that right. Let me try again.", action: 'build_ui' });
-      return { text: "Brain couldn't format that right.", action: 'build_ui' };
+    // Strategy 3: the AI returned conversational text, not JSON — ask again more forcefully
+    if (!component) {
+      console.warn('[Brain] Build: first attempt wasn\'t JSON, retrying...');
+      raw = await this._brocasArea.generate(this.getState(),
+        '[SYSTEM: You MUST return ONLY a JSON object. No text before or after. No markdown. Just: {"html":"...","css":"...","js":"...","id":"..."}\n\nBuild: ' + text
+      );
+      if (raw) {
+        const firstBrace = raw.indexOf('{');
+        const lastBrace = raw.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace > firstBrace) {
+          try { component = JSON.parse(raw.slice(firstBrace, lastBrace + 1)); } catch {}
+        }
+      }
+    }
+
+    if (!component || (!component.html && !component.js)) {
+      console.error('[Brain] Build: all parse strategies failed');
+      this.emit('response', { text: "Brain couldn't format that right. Say it differently?", action: 'build_ui' });
+      return { text: "Brain couldn't format that right. Say it differently?", action: 'build_ui' };
     }
 
     const { html, css, js, id } = component;
