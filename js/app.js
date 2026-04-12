@@ -580,12 +580,19 @@ async function bootUnity(apiKey, perms) {
     // Check if this is an image/selfie request — done by checking the text,
     // NOT by an external AI classifier. Simple word detection.
     const lower = text.toLowerCase();
-    const isImage = ['selfie', 'picture', 'photo', 'image of', 'pic of', 'show me what you look',
-      'what do you look like', 'send me a pic', 'take a photo', 'draw yourself',
-      'generate an image', 'generate image', 'show yourself'].some(w => lower.includes(w));
 
-    const isSelfie = isImage && ['you', 'your', 'yourself', 'unity', 'self'].some(w => lower.includes(w));
-    if (isImage) console.log(`[handleInput] Image request detected: isSelfie=${isSelfie} text="${lower.slice(0,60)}"`);
+    // Image detection — broad. Catches natural speech patterns, not just keywords.
+    const imageWords = ['selfie', 'picture', 'photo', 'image', 'pic ', 'pics',
+      'show me', 'show yourself', 'send me', 'let me see', 'wanna see',
+      'want to see', 'what do you look', 'how do you look', 'take a pic',
+      'full body', 'head shot', 'headshot', 'portrait', 'draw', 'render',
+      'generate', 'snap a', 'top to bottom', 'outfit', 'what are you wearing'];
+    const isImage = imageWords.some(w => lower.includes(w));
+
+    // Selfie = image request that references Unity/you (not "show me a sunset")
+    const selfWords = ['you', 'your', 'yourself', 'unity', 'self', 'u look', 'urself'];
+    const isSelfie = isImage && selfWords.some(w => lower.includes(w));
+    if (isImage) console.log(`[handleInput] Image request: isSelfie=${isSelfie} text="${lower.slice(0,60)}"`);
 
     if (isSelfie) {
       // Build image prompt from brain state directly — no AI call needed
@@ -667,8 +674,25 @@ async function bootUnity(apiKey, perms) {
       // Normal text response
       console.log('[handleInput] Generating text response for:', text.slice(0, 50));
       const state = brain.getState();
-      const response = await brocasArea.generate(state, text);
+      let response = await brocasArea.generate(state, text);
+
+      // If response is null, retry once
+      if (!response) {
+        console.warn('[handleInput] First attempt returned NULL, retrying...');
+        await sleep(1000);
+        response = await brocasArea.generate(state, text);
+      }
+
       console.log('[handleInput] Response:', response ? response.slice(0, 50) + '...' : 'NULL');
+      if (!response) {
+        return { text: "Shit — my brain glitched. Say that again?", action: 'respond_text' };
+      }
+
+      // Strip any fake image URLs the model might output
+      response = response.replace(/https?:\/\/[^\s)]+\.(jpg|png|gif|webp)/gi, '[image]')
+                         .replace(/https?:\/\/pollinations\.ai[^\s)"]*/gi, '[image]')
+                         .replace(/```[^`]*```/g, '').trim();
+
       brain.giveReward(0.1);
       return { text: response, action: 'respond_text' };
     }
