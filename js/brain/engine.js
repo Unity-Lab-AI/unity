@@ -651,28 +651,92 @@ export class UnityBrain extends EventEmitter {
     this.innerVoice.languageCortex.analyzeInput(text, this.innerVoice.dictionary);
 
     // ══════════════════════════════════════════════════════════════
-    // 7. LANGUAGE PRODUCTION — equations only, no pools, no phrases
+    // 7. LANGUAGE FROM THE BRAIN'S OWN NEURAL DYNAMICS
     //
-    // Word type computed from letters (pronoun/verb/noun/adj/etc)
-    // Sentence structure from slot equations (subject→verb→complement)
-    // Word selection: typeCompatibility×0.4 + association×0.25 + mood×0.15 + topic×0.1 + recency
+    // The cortex neurons fire in patterns. Those patterns ARE thoughts.
+    // The dictionary maps patterns to words (findByPattern).
+    // Sequential brain steps produce sequential cortex states.
+    // Each state maps to the closest word = sentence.
+    //
+    // The brain equations ARE the language equations.
     // ══════════════════════════════════════════════════════════════
 
     const brainArousal = state.amygdala?.arousal ?? 0.5;
     const brainValence = state.amygdala?.valence ?? 0;
     const brainCoherence = state.oscillations?.coherence ?? 0.5;
+    const dictionary = this.innerVoice.dictionary;
 
-    // Language cortex generates from brain state — cortex thinks, then speaks
-    const cortexPattern = this.clusters.cortex ? this.clusters.cortex.getOutput(32) : null;
-    let response = this.innerVoice.speak(brainArousal, brainValence, brainCoherence, {
-      cortex: { predictionError: state.cortex?.predictionError ?? 0 },
-      motor: { confidence: this.motor.confidence },
-      psi: state.psi ?? 0,
-      cortexPattern,
-    });
-    if (response) console.log(`[Brain] Cortex: "${response}"`);
+    let response = '';
 
-    // AI teaches (when connected) — brain learns vocabulary from AI responses
+    if (dictionary && dictionary.size > 0) {
+      const words = [];
+      const usedWords = new Set();
+
+      // How many words = f(arousal) — more aroused = more to say
+      const targetWords = Math.max(3, Math.floor(3 + brainArousal * 7));
+
+      for (let w = 0; w < targetWords; w++) {
+        // Run brain steps to evolve the cortex state
+        for (let s = 0; s < 5; s++) this.step(0.001);
+
+        // Read the cortex output pattern — THIS is what the brain is thinking
+        const pattern = this.clusters.cortex.getOutput(32);
+
+        // Find the word whose pattern is CLOSEST to the cortex state
+        // The cortex neural dynamics select the word, not a scoring equation
+        const candidates = dictionary.findByPattern(pattern, 10);
+
+        // Pick the best candidate that hasn't been used recently
+        let picked = null;
+        for (const word of candidates) {
+          if (!usedWords.has(word) && !this.innerVoice.languageCortex._recentOutputWords.slice(-20).includes(word)) {
+            picked = word;
+            break;
+          }
+        }
+        if (!picked && candidates.length > 0) picked = candidates[0];
+
+        if (picked) {
+          words.push(picked);
+          usedWords.add(picked);
+
+          // Inject the word's pattern back into cortex as input for next word
+          // This is sequential prediction: ŝ = W·x → next thought → next word
+          const wordEntry = dictionary._words.get(picked);
+          if (wordEntry?.pattern) {
+            const cortex = this.clusters.cortex;
+            for (let i = 0; i < Math.min(32, cortex.size); i++) {
+              cortex.externalCurrent[150 + i] += (wordEntry.pattern[i] || 0) * 5;
+            }
+          }
+        }
+      }
+
+      // Post-process for grammar (agreement, tense, negation)
+      if (words.length > 0) {
+        response = this.innerVoice.languageCortex._postProcess(
+          words,
+          brainCoherence > 0.6 ? 'present' : 'past',
+          'statement',
+          brainArousal,
+          brainValence
+        ).join(' ');
+      }
+    }
+
+    // Track recency
+    if (response) {
+      const rWords = response.split(/\s+/);
+      for (const rw of rWords) {
+        this.innerVoice.languageCortex._recentOutputWords.push(rw);
+      }
+      while (this.innerVoice.languageCortex._recentOutputWords.length > 50) {
+        this.innerVoice.languageCortex._recentOutputWords.shift();
+      }
+      console.log(`[Brain] Neural speech: "${response}"`);
+    }
+
+    // AI teaches (when connected) — brain learns vocabulary
     if (this._brocasArea && (!response || response.length < 5)) {
       const aiResponse = await this._brocasArea.generate(state, text);
       if (aiResponse) {
