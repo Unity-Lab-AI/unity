@@ -513,6 +513,7 @@ export class UnityBrain extends EventEmitter {
     // The AI model IS Wernicke's area for semantic understanding.
     // This determines what action the brain takes.
     let classifiedAction = 'respond_text'; // default
+    console.log('[Brain] _imageGen exists:', !!this._imageGen, 'has chat:', !!this._imageGen?.chat);
     if (this._imageGen?.chat) {
       try {
         const classResult = await this._imageGen.chat([
@@ -523,8 +524,8 @@ export class UnityBrain extends EventEmitter {
         if (digit === 1) classifiedAction = 'generate_image';
         else if (digit === 3) classifiedAction = 'build_ui';
         console.log(`[Brain] Classified "${text.slice(0, 40)}..." → ${classifiedAction}`);
-      } catch {
-        console.warn('[Brain] Classification failed, defaulting to respond_text');
+      } catch (err) {
+        console.warn('[Brain] Classification failed:', err.message, '— defaulting to respond_text');
       }
     }
 
