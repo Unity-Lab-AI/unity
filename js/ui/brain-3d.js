@@ -18,7 +18,10 @@
 
 // ── Constants ───────────────────────────────────────────────────────
 
-const TOTAL = 1000;
+// Render neuron count — scales up for bigger brains but caps for GPU sanity
+// Server may run 179K neurons but rendering >10K WebGL points gets heavy
+let TOTAL = 1000;
+const MAX_RENDER_NEURONS = 5000;
 const AFTERGLOW_DECAY = 0.92;
 const PULSE_LIFE = 40;
 const MAX_PULSES = 80;
@@ -373,6 +376,25 @@ export class Brain3D {
   updateState(state) {
     if (!state || !this._open || this._destroyed) return;
     this._lastState = state;
+
+    // Scale render count if server reports more neurons (one-time)
+    const serverNeurons = state.totalNeurons || 1000;
+    if (serverNeurons > 1000 && !this._scaled) {
+      this._scaled = true;
+      // Scale up to MAX_RENDER_NEURONS proportionally
+      const scale = Math.min(MAX_RENDER_NEURONS / 1000, serverNeurons / 1000);
+      TOTAL = Math.min(MAX_RENDER_NEURONS, Math.round(1000 * scale));
+      // Rescale cluster sizes proportionally
+      const clusterScale = TOTAL / 1000;
+      for (const c of CLUSTERS) c.n = Math.round(c.n * clusterScale);
+      // Rebuild neuron positions and GL buffers
+      this._glow = new Float32Array(TOTAL);
+      this._vis = new Float32Array(TOTAL).fill(1);
+      this._genPositions();
+      if (this._gl) this._uploadStatic();
+      console.log(`[Brain3D] Scaled to ${TOTAL} render neurons (server has ${serverNeurons.toLocaleString()})`);
+    }
+
     const spk = state.spikes;
     if (!spk) return;
 

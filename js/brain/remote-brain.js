@@ -173,6 +173,28 @@ export class RemoteBrain extends EventEmitter {
     if (serverState.sharedMood) this.state.sharedMood = serverState.sharedMood;
     if (serverState.perf) this.state.perf = serverState.perf;
     if (serverState.growth) this.state.growth = serverState.growth;
+
+    // Synthesize spike array for the 3D visualizer.
+    // The 3D brain scales its render count (up to 5000) but the server may run 179K+.
+    // Map cluster firing rates to proportional spike patterns at render scale.
+    if (serverState.clusters) {
+      const ratios = [0.3, 0.2, 0.15, 0.15, 0.1, 0.05, 0.05]; // cluster proportions
+      const names = ['cortex', 'hippocampus', 'amygdala', 'basalGanglia', 'cerebellum', 'hypothalamus', 'mystery'];
+      // Match whatever the 3D brain's current TOTAL is (default 1000, up to 5000)
+      const renderTotal = this.state.spikes?.length || 5000;
+      const spikes = new Uint8Array(renderTotal);
+      let offset = 0;
+      for (let c = 0; c < names.length; c++) {
+        const clusterRenderSize = Math.round(ratios[c] * renderTotal);
+        const cluster = serverState.clusters[names[c]];
+        const rate = cluster && cluster.size > 0 ? cluster.spikeCount / cluster.size : 0;
+        for (let i = 0; i < clusterRenderSize && offset + i < renderTotal; i++) {
+          spikes[offset + i] = Math.random() < rate ? 1 : 0;
+        }
+        offset += clusterRenderSize;
+      }
+      this.state.spikes = spikes;
+    }
   }
 
   // ── Public API (same as UnityBrain) ──────────────────────────
