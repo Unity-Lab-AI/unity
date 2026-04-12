@@ -25,7 +25,6 @@ export class ChatPanel {
       <div class="chat-header">
         <span class="chat-title">Unity</span>
         <div class="chat-header-btns">
-          <button class="chat-mic-btn" title="Toggle microphone">🎤</button>
           <button class="chat-close-btn" title="Close">&times;</button>
         </div>
       </div>
@@ -41,7 +40,6 @@ export class ChatPanel {
     this._inputEl = this._el.querySelector('#chat-input');
     const sendBtn = this._el.querySelector('.chat-send-btn');
     const closeBtn = this._el.querySelector('.chat-close-btn');
-    const micBtn = this._el.querySelector('.chat-mic-btn');
 
     // Send on Enter or button click
     this._inputEl.addEventListener('keydown', (e) => {
@@ -52,14 +50,6 @@ export class ChatPanel {
     });
     sendBtn.addEventListener('click', () => this._send());
     closeBtn.addEventListener('click', () => this.close());
-    micBtn.addEventListener('click', () => {
-      if (this._onMicToggle) this._onMicToggle();
-      // Sync visual state with global mute state (set by app.js toggleMicMute)
-      setTimeout(() => {
-        const globalMuteBtn = document.getElementById('mic-mute-btn');
-        micBtn.classList.toggle('muted', globalMuteBtn?.classList.contains('muted'));
-      }, 50);
-    });
   }
 
   _send() {
