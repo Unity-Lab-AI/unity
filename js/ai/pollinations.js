@@ -13,7 +13,6 @@
 
 const GEN_URL = 'https://gen.pollinations.ai';
 const IMAGE_URL = 'https://image.pollinations.ai';
-const IMAGE_URL_AUTH = 'https://enter.pollinations.ai';
 
 export class PollinationsAI {
 
@@ -132,12 +131,11 @@ export class PollinationsAI {
             }
 
             const encoded = encodeURIComponent(finalPrompt);
-            // Authenticated users must use enter.pollinations.ai
-            // Anonymous users use image.pollinations.ai
-            const base = this._apiKey ? IMAGE_URL_AUTH : IMAGE_URL;
-            let url = `${base}/prompt/${encoded}?model=${encodeURIComponent(model)}&width=${width}&height=${height}&nologo=true`;
+            // gen.pollinations.ai/image/{prompt} — unified endpoint for all users
+            // Auth via ?key= param (for authenticated) or anonymous (no key)
+            let url = `${GEN_URL}/image/${encoded}?model=${encodeURIComponent(model)}&width=${width}&height=${height}&nologo=true`;
             if (this._apiKey) {
-                url += `&token=${encodeURIComponent(this._apiKey)}`;
+                url += `&key=${encodeURIComponent(this._apiKey)}`;
             }
             return url;
         } catch (err) {
