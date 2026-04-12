@@ -193,12 +193,12 @@ export class RemoteBrain extends EventEmitter {
         const clusterRenderSize = Math.round(ratios[c] * renderTotal);
         const cluster = serverState.clusters[names[c]];
 
-        // Raw firing rate from server
-        const rawRate = cluster && cluster.size > 0 ? cluster.spikeCount / cluster.size : 0;
-        // AMPLIFY for visual: scale so 2% biological → ~20% visual
-        // equation: visualRate = min(0.5, rawRate × 10 + firingRate × 5)
-        const firingRate = cluster?.firingRate || 0;
-        const visualRate = Math.min(0.5, rawRate * 10 + (firingRate / (cluster?.size || 1)) * 5 + 0.05);
+        // Firing rate from server — use whichever value is available
+        const rawRate = cluster ? (cluster.spikeCount || 0) / (cluster.size || 1) : 0;
+        const emaRate = cluster ? (cluster.firingRate || 0) / (cluster.size || 1) : 0;
+        // AMPLIFY: guarantee EVERY cluster shows visible activity
+        // Minimum 10% visual rate so no cluster appears dead
+        const visualRate = Math.min(0.5, Math.max(0.10, rawRate * 15 + emaRate * 10));
 
         for (let i = 0; i < clusterRenderSize && offset + i < renderTotal; i++) {
           spikes[offset + i] = Math.random() < visualRate ? 1 : 0;
