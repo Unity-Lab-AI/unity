@@ -1,0 +1,435 @@
+/**
+ * sparse-matrix.js — Compressed Sparse Row (CSR) Matrix
+ *
+ * Biologically realistic: real neurons have ~1000-10000 connections
+ * out of millions of possible targets. Dense NxN wastes 90%+ memory
+ * on zeros and 90%+ compute iterating over them.
+ *
+ * CSR stores only non-zero entries:
+ *   values[]    — the weight of each connection
+ *   colIdx[]    — which neuron each connection comes FROM (pre-synaptic)
+ *   rowPtr[]    — where each neuron's connections start in values/colIdx
+ *
+ * Memory: O(connections) instead of O(N²)
+ * Propagate: O(connections) instead of O(N²)
+ * At 12% connectivity, 1000 neurons: 120K ops vs 1M ops
+ * At 3% connectivity, 10K neurons: 3M ops vs 100M ops
+ *
+ * Drop-in replacement for SynapseMatrix. Same API, different guts.
+ */
+
+export class SparseMatrix {
+  /**
+   * @param {number} rows — number of post-synaptic neurons
+   * @param {number} cols — number of pre-synaptic neurons (defaults to rows)
+   * @param {object} [opts]
+   * @param {number} [opts.wMin=-Infinity]
+   * @param {number} [opts.wMax=Infinity]
+   */
+  constructor(rows, cols, opts = {}) {
+    this.rows = rows;
+    this.cols = cols ?? rows;
+    this.wMin = opts.wMin ?? -Infinity;
+    this.wMax = opts.wMax ?? Infinity;
+
+    // CSR arrays — start empty, populated by init methods
+    this.values = new Float64Array(0);   // non-zero weights
+    this.colIdx = new Uint32Array(0);    // column indices (pre-synaptic neuron)
+    this.rowPtr = new Uint32Array(rows + 1); // row start pointers
+    this.nnz = 0; // number of non-zero entries
+  }
+
+  // ── Initialization ─────────────────────────────────────────────
+
+  /**
+   * Initialize with random sparse connectivity.
+   * @param {number} density — connection probability (0-1)
+   * @param {number} excitatoryRatio — fraction of positive weights
+   * @param {number} strength — initial weight magnitude
+   */
+  initRandom(density, excitatoryRatio = 0.8, strength = 0.3) {
+    const { rows, cols } = this;
+    const noSelfConnect = (rows === cols);
+
+    // Build connection lists per row, single pass
+    const rowEntries = new Array(rows);
+    let total = 0;
+
+    for (let i = 0; i < rows; i++) {
+      rowEntries[i] = [];
+      for (let j = 0; j < cols; j++) {
+        if (noSelfConnect && i === j) continue;
+        if (Math.random() < density) {
+          const sign = Math.random() < excitatoryRatio ? 1 : -1;
+          const w = sign * (0.1 + Math.random() * 0.4) * strength;
+          rowEntries[i].push({ j, w });
+          total++;
+        }
+      }
+    }
+
+    // Allocate and fill CSR arrays
+    this.values = new Float64Array(total);
+    this.colIdx = new Uint32Array(total);
+    this.rowPtr = new Uint32Array(rows + 1);
+    this.nnz = total;
+
+    let idx = 0;
+    this.rowPtr[0] = 0;
+    for (let i = 0; i < rows; i++) {
+      for (const entry of rowEntries[i]) {
+        this.values[idx] = entry.w;
+        this.colIdx[idx] = entry.j;
+        idx++;
+      }
+      this.rowPtr[i + 1] = idx;
+    }
+  }
+
+  /**
+   * Build from an existing dense matrix (for migration).
+   * @param {Float64Array} W — dense row-major matrix (rows × cols)
+   * @param {number} threshold — minimum |weight| to keep
+   */
+  static fromDense(W, rows, cols, threshold = 0.001, opts = {}) {
+    const sparse = new SparseMatrix(rows, cols, opts);
+
+    // Count non-zeros
+    let nnz = 0;
+    for (let i = 0; i < W.length; i++) {
+      if (Math.abs(W[i]) > threshold) nnz++;
+    }
+
+    sparse.values = new Float64Array(nnz);
+    sparse.colIdx = new Uint32Array(nnz);
+    sparse.rowPtr = new Uint32Array(rows + 1);
+    sparse.nnz = nnz;
+
+    let idx = 0;
+    sparse.rowPtr[0] = 0;
+    for (let i = 0; i < rows; i++) {
+      for (let j = 0; j < cols; j++) {
+        const w = W[i * cols + j];
+        if (Math.abs(w) > threshold) {
+          sparse.values[idx] = w;
+          sparse.colIdx[idx] = j;
+          idx++;
+        }
+      }
+      sparse.rowPtr[i + 1] = idx;
+    }
+
+    return sparse;
+  }
+
+  // ── Propagation ─────────────────────────────────────────────────
+
+  /**
+   * Compute post-synaptic currents: I_i = Σ_j W_ij * s_j
+   * Only iterates over actual connections — O(nnz) not O(N²).
+   *
+   * @param {Uint8Array|Float64Array} spikes — pre-synaptic activity
+   * @returns {Float64Array} currents — post-synaptic currents
+   */
+  propagate(spikes) {
+    const { rows, values, colIdx, rowPtr } = this;
+    const I = new Float64Array(rows);
+
+    for (let i = 0; i < rows; i++) {
+      let sum = 0;
+      const start = rowPtr[i];
+      const end = rowPtr[i + 1];
+      for (let k = start; k < end; k++) {
+        sum += values[k] * spikes[colIdx[k]];
+      }
+      I[i] = sum;
+    }
+    return I;
+  }
+
+  // ── Learning Rules ──────────────────────────────────────────────
+
+  /**
+   * Reward-modulated Hebbian: ΔW = η · δ · post · pre
+   * Only updates existing connections — O(nnz).
+   */
+  rewardModulatedUpdate(preSpikes, postSpikes, reward, lr) {
+    const factor = lr * reward;
+    if (factor === 0) return;
+
+    const { rows, values, colIdx, rowPtr, wMin, wMax } = this;
+
+    for (let i = 0; i < rows; i++) {
+      if (!postSpikes[i]) continue;
+      const scaled = factor * postSpikes[i];
+      const start = rowPtr[i];
+      const end = rowPtr[i + 1];
+      for (let k = start; k < end; k++) {
+        values[k] += scaled * preSpikes[colIdx[k]];
+        if (values[k] > wMax) values[k] = wMax;
+        else if (values[k] < wMin) values[k] = wMin;
+      }
+    }
+  }
+
+  /**
+   * Hebbian: ΔW = η · post · pre
+   */
+  hebbianUpdate(preSpikes, postSpikes, lr) {
+    const { rows, values, colIdx, rowPtr, wMin, wMax } = this;
+
+    for (let i = 0; i < rows; i++) {
+      if (!postSpikes[i]) continue;
+      const scaled = lr * postSpikes[i];
+      const start = rowPtr[i];
+      const end = rowPtr[i + 1];
+      for (let k = start; k < end; k++) {
+        values[k] += scaled * preSpikes[colIdx[k]];
+        if (values[k] > wMax) values[k] = wMax;
+        else if (values[k] < wMin) values[k] = wMin;
+      }
+    }
+  }
+
+  /**
+   * STDP: timing-dependent update on existing connections.
+   */
+  stdpUpdate(preSpikes, postSpikes, preTimes, postTimes, params) {
+    const { aPlus, aMinus, tauPlus, tauMinus } = params;
+    const { rows, values, colIdx, rowPtr, wMin, wMax } = this;
+
+    for (let i = 0; i < rows; i++) {
+      if (!postSpikes[i]) continue;
+      const tPost = postTimes[i];
+      const start = rowPtr[i];
+      const end = rowPtr[i + 1];
+
+      for (let k = start; k < end; k++) {
+        const j = colIdx[k];
+        if (!preSpikes[j]) continue;
+        const dt = tPost - preTimes[j];
+        if (dt > 0) {
+          values[k] += aPlus * Math.exp(-dt / tauPlus);
+        } else if (dt < 0) {
+          values[k] -= aMinus * Math.exp(dt / tauMinus);
+        }
+        if (values[k] > wMax) values[k] = wMax;
+        else if (values[k] < wMin) values[k] = wMin;
+      }
+    }
+  }
+
+  // ── Synaptogenesis & Pruning ────────────────────────────────────
+
+  /**
+   * Prune weak connections (|w| < threshold).
+   * Rebuilds CSR arrays without the pruned entries.
+   *
+   * @param {number} threshold — minimum |weight| to keep
+   * @returns {number} — number of connections removed
+   */
+  prune(threshold = 0.01) {
+    const { rows, values, colIdx, rowPtr } = this;
+    const oldNnz = this.nnz;
+
+    // Count survivors
+    let newNnz = 0;
+    for (let k = 0; k < this.nnz; k++) {
+      if (Math.abs(values[k]) >= threshold) newNnz++;
+    }
+
+    if (newNnz === oldNnz) return 0; // nothing to prune
+
+    const newValues = new Float64Array(newNnz);
+    const newColIdx = new Uint32Array(newNnz);
+    const newRowPtr = new Uint32Array(rows + 1);
+
+    let idx = 0;
+    newRowPtr[0] = 0;
+    for (let i = 0; i < rows; i++) {
+      const start = rowPtr[i];
+      const end = rowPtr[i + 1];
+      for (let k = start; k < end; k++) {
+        if (Math.abs(values[k]) >= threshold) {
+          newValues[idx] = values[k];
+          newColIdx[idx] = colIdx[k];
+          idx++;
+        }
+      }
+      newRowPtr[i + 1] = idx;
+    }
+
+    this.values = newValues;
+    this.colIdx = newColIdx;
+    this.rowPtr = newRowPtr;
+    this.nnz = newNnz;
+
+    return oldNnz - newNnz;
+  }
+
+  /**
+   * Synaptogenesis — grow new connections where pre and post fire together.
+   * New connections form probabilistically when co-active neurons lack a synapse.
+   *
+   * @param {Uint8Array} preSpikes
+   * @param {Uint8Array} postSpikes
+   * @param {number} probability — chance of forming new synapse per co-active pair
+   * @param {number} initialWeight — weight of new synapse
+   * @param {number} maxNnz — cap total connections (prevent runaway growth)
+   * @returns {number} — number of new connections formed
+   */
+  grow(preSpikes, postSpikes, probability = 0.001, initialWeight = 0.1, maxNnz = Infinity) {
+    if (this.nnz >= maxNnz) return 0;
+
+    const { rows, cols } = this;
+    const noSelfConnect = (rows === cols);
+
+    // Find co-active pairs that don't have a connection
+    const newEntries = []; // [row, col, weight]
+
+    for (let i = 0; i < rows; i++) {
+      if (!postSpikes[i]) continue;
+      // Build set of existing connections for this row
+      const existing = new Set();
+      const start = this.rowPtr[i];
+      const end = this.rowPtr[i + 1];
+      for (let k = start; k < end; k++) {
+        existing.add(this.colIdx[k]);
+      }
+
+      for (let j = 0; j < cols; j++) {
+        if (noSelfConnect && i === j) continue;
+        if (!preSpikes[j]) continue;
+        if (existing.has(j)) continue; // already connected
+        if (Math.random() < probability) {
+          newEntries.push([i, j, initialWeight]);
+          if (this.nnz + newEntries.length >= maxNnz) break;
+        }
+      }
+      if (this.nnz + newEntries.length >= maxNnz) break;
+    }
+
+    if (newEntries.length === 0) return 0;
+
+    // Rebuild CSR with new entries merged in
+    const totalNnz = this.nnz + newEntries.length;
+    const newValues = new Float64Array(totalNnz);
+    const newColIdx = new Uint32Array(totalNnz);
+    const newRowPtr = new Uint32Array(rows + 1);
+
+    // Sort new entries by row
+    newEntries.sort((a, b) => a[0] - b[0]);
+
+    let idx = 0;
+    let newIdx = 0;
+    newRowPtr[0] = 0;
+
+    for (let i = 0; i < rows; i++) {
+      // Copy existing entries for this row
+      const start = this.rowPtr[i];
+      const end = this.rowPtr[i + 1];
+      for (let k = start; k < end; k++) {
+        newValues[idx] = this.values[k];
+        newColIdx[idx] = this.colIdx[k];
+        idx++;
+      }
+      // Add new entries for this row
+      while (newIdx < newEntries.length && newEntries[newIdx][0] === i) {
+        newValues[idx] = newEntries[newIdx][2];
+        newColIdx[idx] = newEntries[newIdx][1];
+        idx++;
+        newIdx++;
+      }
+      newRowPtr[i + 1] = idx;
+    }
+
+    this.values = newValues;
+    this.colIdx = newColIdx;
+    this.rowPtr = newRowPtr;
+    this.nnz = totalNnz;
+
+    return newEntries.length;
+  }
+
+  // ── Serialization ───────────────────────────────────────────────
+
+  /**
+   * Serialize to a compact format for persistence.
+   * @returns {object} — { rows, cols, nnz, values, colIdx, rowPtr }
+   */
+  serialize() {
+    return {
+      rows: this.rows,
+      cols: this.cols,
+      nnz: this.nnz,
+      values: Array.from(this.values),
+      colIdx: Array.from(this.colIdx),
+      rowPtr: Array.from(this.rowPtr),
+    };
+  }
+
+  /**
+   * Deserialize from saved format.
+   * @param {object} data
+   * @returns {SparseMatrix}
+   */
+  static deserialize(data, opts = {}) {
+    const m = new SparseMatrix(data.rows, data.cols, opts);
+    m.values = new Float64Array(data.values);
+    m.colIdx = new Uint32Array(data.colIdx);
+    m.rowPtr = new Uint32Array(data.rowPtr);
+    m.nnz = data.nnz;
+    return m;
+  }
+
+  // ── Compatibility ───────────────────────────────────────────────
+
+  /**
+   * Get the dense weight matrix (for visualization/debugging).
+   * WARNING: O(N²) memory — only use for small matrices or debugging.
+   */
+  toDense() {
+    const { rows, cols, values, colIdx, rowPtr } = this;
+    const W = new Float64Array(rows * cols);
+    for (let i = 0; i < rows; i++) {
+      const start = rowPtr[i];
+      const end = rowPtr[i + 1];
+      for (let k = start; k < end; k++) {
+        W[i * cols + colIdx[k]] = values[k];
+      }
+    }
+    return W;
+  }
+
+  /**
+   * Compatibility property — returns dense weight array.
+   * Allows SparseMatrix to work as drop-in for SynapseMatrix.W access.
+   */
+  get W() {
+    return this.toDense();
+  }
+
+  /**
+   * Get memory usage in bytes.
+   */
+  get memoryBytes() {
+    return this.values.byteLength + this.colIdx.byteLength + this.rowPtr.byteLength;
+  }
+
+  /**
+   * Get density (fraction of non-zero entries).
+   */
+  get density() {
+    return this.nnz / (this.rows * this.cols);
+  }
+
+  /**
+   * Get stats string for logging.
+   */
+  stats() {
+    const dense = this.rows * this.cols * 8; // Float64Array bytes
+    const sparse = this.memoryBytes;
+    const ratio = dense / sparse;
+    return `${this.rows}×${this.cols} | ${this.nnz} connections (${(this.density*100).toFixed(1)}%) | ${(sparse/1024).toFixed(1)}KB sparse vs ${(dense/1024).toFixed(1)}KB dense (${ratio.toFixed(1)}× reduction)`;
+  }
+}

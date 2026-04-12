@@ -20,6 +20,7 @@
 
 import { LIFPopulation } from './neurons.js';
 import { SynapseMatrix } from './synapses.js';
+import { SparseMatrix } from './sparse-matrix.js';
 
 export class NeuronCluster {
   /**
@@ -61,17 +62,20 @@ export class NeuronCluster {
       tRefrac: 2.0,
     });
 
-    // Internal synapse matrix
-    this.synapses = new SynapseMatrix(size, { wMin: -2.0, wMax: 2.0 });
+    // Internal synapse matrix — SPARSE (CSR format)
+    // At 12% connectivity, 300 neurons: 10.8K connections vs 90K dense
+    this.synapses = new SparseMatrix(size, size, { wMin: -2.0, wMax: 2.0 });
+    this.synapses.initRandom(connectivity, excitatoryRatio, 1.0);
+
+    // Legacy dense matrix reference for persistence compatibility
+    // persistence.js reads synapses.W — SparseMatrix provides .W getter
+    this._useSparse = true;
 
     // External current buffer (from other clusters + sensory input)
     this.externalCurrent = new Float64Array(size);
 
     // Inter-cluster projection buffers
     this._incomingProjections = new Float64Array(size); // sum of all incoming
-
-    // Initialize internal connectivity
-    this._initSynapses();
 
     // State tracking
     this.lastSpikes = new Uint8Array(size);
@@ -80,17 +84,27 @@ export class NeuronCluster {
     this.firingRate = 0; // EMA of spike count
   }
 
-  _initSynapses() {
-    const { size, connectivity, excitatoryRatio } = this;
-    const W = this.synapses.W;
-    for (let i = 0; i < size; i++) {
-      for (let j = 0; j < size; j++) {
-        if (i === j) continue;
-        if (Math.random() < connectivity) {
-          const sign = Math.random() < excitatoryRatio ? 1 : -1;
-          W[i * size + j] = sign * (0.1 + Math.random() * 0.4);
-        }
-      }
+  /**
+   * Periodically prune weak connections and grow new ones.
+   * Call every ~100 steps to maintain healthy connectivity.
+   * @param {number} maxConnections — cap total connections
+   */
+  maintainConnectivity(maxConnections) {
+    if (!this._useSparse) return;
+
+    // Prune connections weaker than 0.01
+    const pruned = this.synapses.prune(0.01);
+
+    // Grow new connections where co-active neurons lack synapses
+    const grown = this.synapses.grow(
+      this.lastSpikes, this.lastSpikes,
+      0.0005, // low probability — synaptogenesis is rare
+      0.1,    // weak initial weight
+      maxConnections || this.size * this.size * this.connectivity,
+    );
+
+    if (pruned > 0 || grown > 0) {
+      // Sparse matrix stats available via synapses.stats()
     }
   }
 
@@ -242,54 +256,63 @@ export class ClusterProjection {
   constructor(source, target, density = 0.03, strength = 0.3) {
     this.source = source;
     this.target = target;
-    this.weights = new Float64Array(target.size * source.size);
 
-    // Sparse random initialization
-    for (let i = 0; i < target.size; i++) {
-      for (let j = 0; j < source.size; j++) {
-        if (Math.random() < density) {
-          this.weights[i * source.size + j] = (Math.random() - 0.3) * strength;
-        }
-      }
-    }
+    // Sparse projection matrix (CSR) — target.size rows × source.size cols
+    this._sparse = new SparseMatrix(target.size, source.size, { wMin: -0.5, wMax: 1.0 });
+    this._sparse.initRandom(density, 0.7, strength);
+
+    // Legacy dense weights accessor for persistence compatibility
+    // persistence.js reads projection.weights — getter provides dense view
   }
 
   /**
-   * Propagate spikes from source to target.
+   * Dense weights accessor for backward compatibility.
+   * Persistence.js and other code reads this.weights.
+   */
+  get weights() {
+    return this._sparse.toDense();
+  }
+
+  set weights(arr) {
+    // Convert dense array to sparse
+    this._sparse = SparseMatrix.fromDense(
+      arr, this.target.size, this.source.size, 0.001,
+      { wMin: -0.5, wMax: 1.0 }
+    );
+  }
+
+  /**
+   * Propagate spikes from source to target — O(connections) not O(N²).
    */
   propagate() {
-    this.target.receiveProjection(this.source.lastSpikes, this.weights);
+    const currents = this._sparse.propagate(this.source.lastSpikes);
+    const proj = this.target._incomingProjections;
+    for (let i = 0; i < currents.length; i++) {
+      proj[i] += currents[i];
+    }
   }
 
   /**
    * Reward-modulated Hebbian learning on projection weights.
    * ΔW_proj = η · δ · source_spikes · target_spikes
-   *
-   * When source fires AND target fires AND reward is positive,
-   * the connection strengthens. This is how the brain learns
-   * which cortex patterns (language) lead to which BG actions.
+   * Only updates existing connections — O(connections).
    *
    * @param {number} reward — positive = strengthen, negative = weaken
    * @param {number} lr — learning rate
    */
   learn(reward, lr = 0.001) {
-    if (Math.abs(reward) < 0.01) return; // no learning without reward signal
-    const srcSpikes = this.source.lastSpikes;
-    const tgtSpikes = this.target.lastSpikes;
-    const srcSize = this.source.size;
-    const tgtSize = this.target.size;
+    if (Math.abs(reward) < 0.01) return;
+    this._sparse.rewardModulatedUpdate(
+      this.source.lastSpikes,
+      this.target.lastSpikes,
+      reward, lr
+    );
+  }
 
-    for (let i = 0; i < tgtSize; i++) {
-      if (!tgtSpikes[i]) continue; // target not firing — skip
-      for (let j = 0; j < srcSize; j++) {
-        if (!srcSpikes[j]) continue; // source not firing — skip
-        // Both fired — update weight based on reward
-        const idx = i * srcSize + j;
-        this.weights[idx] += lr * reward;
-        // Clamp weights
-        if (this.weights[idx] > 1.0) this.weights[idx] = 1.0;
-        if (this.weights[idx] < -0.5) this.weights[idx] = -0.5;
-      }
-    }
+  /**
+   * Get sparse matrix stats.
+   */
+  stats() {
+    return this._sparse.stats();
   }
 }

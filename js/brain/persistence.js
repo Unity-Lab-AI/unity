@@ -10,6 +10,8 @@
  * Every interaction makes it smarter. Every session builds on the last.
  */
 
+import { SparseMatrix } from './sparse-matrix.js';
+
 const STORAGE_KEY = 'unity_brain_state';
 const VERSION = 2; // increment when brain structure changes
 
@@ -35,7 +37,7 @@ export class BrainPersistence {
         projections: brain.projections.map(proj => ({
           sourceSize: proj.source.size,
           targetSize: proj.target.size,
-          weights: Array.from(proj.weights),
+          ...(proj._sparse ? { format: 'csr', ...proj._sparse.serialize() } : { weights: Array.from(proj.weights) }),
         })),
 
         // Cluster synapse matrices — per-cluster learned connections
@@ -63,20 +65,30 @@ export class BrainPersistence {
         ) : null,
       };
 
-      // Save cluster synapses (sparse — only non-zero weights)
+      // Save cluster synapses — use native CSR format if sparse
       for (const [name, cluster] of Object.entries(brain.clusters)) {
-        const W = cluster.synapses.W;
-        const nonZero = [];
-        for (let i = 0; i < W.length; i++) {
-          if (Math.abs(W[i]) > 0.001) {
-            nonZero.push([i, W[i]]);
+        if (cluster._useSparse && cluster.synapses.serialize) {
+          // Native sparse serialization — compact CSR
+          state.clusterSynapses[name] = {
+            size: cluster.size,
+            format: 'csr',
+            ...cluster.synapses.serialize(),
+          };
+        } else {
+          // Legacy dense path — extract non-zeros
+          const W = cluster.synapses.W;
+          const nonZero = [];
+          for (let i = 0; i < W.length; i++) {
+            if (Math.abs(W[i]) > 0.001) {
+              nonZero.push([i, W[i]]);
+            }
           }
+          state.clusterSynapses[name] = {
+            size: cluster.size,
+            nonZeroCount: nonZero.length,
+            weights: nonZero,
+          };
         }
-        state.clusterSynapses[name] = {
-          size: cluster.size,
-          nonZeroCount: nonZero.length,
-          weights: nonZero,
-        };
       }
 
       const json = JSON.stringify(state);
@@ -137,7 +149,11 @@ export class BrainPersistence {
           const saved = state.projections[i];
           const proj = brain.projections[i];
           if (saved.sourceSize === proj.source.size && saved.targetSize === proj.target.size) {
-            proj.weights = new Float64Array(saved.weights);
+            if (saved.format === 'csr' && proj._sparse) {
+              proj._sparse = SparseMatrix.deserialize(saved, { wMin: -0.5, wMax: 1.0 });
+            } else if (saved.weights) {
+              proj.weights = new Float64Array(saved.weights);
+            }
           }
         }
         console.log(`[Persistence] Restored ${brain.projections.length} projection weight matrices`);
@@ -147,7 +163,13 @@ export class BrainPersistence {
       if (state.clusterSynapses) {
         for (const [name, saved] of Object.entries(state.clusterSynapses)) {
           const cluster = brain.clusters[name];
-          if (cluster && saved.size === cluster.size) {
+          if (!cluster || saved.size !== cluster.size) continue;
+
+          if (saved.format === 'csr' && cluster._useSparse) {
+            // Native CSR restore
+            cluster.synapses = SparseMatrix.deserialize(saved, { wMin: -2.0, wMax: 2.0 });
+          } else if (saved.weights) {
+            // Legacy sparse format — write into dense or current sparse
             const W = cluster.synapses.W;
             for (const [idx, val] of saved.weights) {
               if (idx < W.length) W[idx] = val;
