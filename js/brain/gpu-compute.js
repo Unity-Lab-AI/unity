@@ -182,9 +182,9 @@ export class GPUCompute {
         },
       });
 
-      // Log GPU info
-      const info = await adapter.requestAdapterInfo();
-      console.log(`[GPUCompute] GPU: ${info.device || info.description || 'unknown'}`);
+      // Log GPU info (API changed: requestAdapterInfo → info property in newer Chrome)
+      const info = adapter.info || (adapter.requestAdapterInfo ? await adapter.requestAdapterInfo() : {});
+      console.log(`[GPUCompute] GPU: ${info.device || info.description || info.vendor || 'detected'}`);
       console.log(`[GPUCompute] Max buffer: ${(adapter.limits.maxBufferSize / 1048576).toFixed(0)}MB`);
 
       // Create compute pipelines
