@@ -61,14 +61,14 @@ export class ChatPanel {
     // Add user message to UI immediately
     this._appendMessage('user', text);
 
-    // Call the handler
+    // Call the handler. The brain's 'response' event is what actually
+    // renders the assistant message into the chat (wired in app.js via
+    // brain.on('response', ...) → chatPanel.addMessage). We MUST NOT
+    // also append it here — doing so produced two identical messages
+    // in the chat for every user input (double-display bug).
     if (this._onSend) {
-      this._onSend(text).then((result) => {
+      this._onSend(text).then(() => {
         this._inputEl.placeholder = 'Talk to Unity...';
-        const responseText = result?.response?.text || result?.response?.thought || '';
-        if (responseText) {
-          this._appendMessage('assistant', responseText);
-        }
       }).catch(() => {
         this._inputEl.placeholder = 'Talk to Unity...';
       });
