@@ -508,17 +508,8 @@ export class UnityBrain extends EventEmitter {
         // Brain generated raw thought — log for learning, but voice through pool
         console.log(`[Brain] Raw idle thought: "${thought.sentence}"`);
 
-        // Route through response pool for coherent output
+        // Brain speaks raw — no pool overlay. Her words, her learning.
         let voicedThought = thought.sentence;
-        if (this._poolSelectResponse) {
-          try {
-            const state = this.getState();
-            voicedThought = this._poolSelectResponse(
-              { arousal: state.amygdala?.arousal ?? 0.5, valence: state.amygdala?.valence ?? 0, coherence: state.oscillations?.coherence ?? 0.5, predictionError: state.cortex?.predictionError ?? 0 },
-              {}, ''
-            );
-          } catch {}
-        }
 
         this._isSpeaking = true;
         this._voice.stopSpeaking();
@@ -685,8 +676,9 @@ export class UnityBrain extends EventEmitter {
       }
     }
 
-    // Pool ASSISTS only when brain has nothing — classified by input text
-    if (!response || response.length < 3) {
+    // No pool — brain speaks raw. Garbled or not, it's her voice learning.
+    // Pool disabled. Brain output only.
+    if (false) {
       try {
         const { selectResponse, blendResponse } = await import(new URL('./response-pool.js', import.meta.url).href);
         const inputAnalysis = this.innerVoice.languageCortex._lastInputWords
