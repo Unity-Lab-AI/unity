@@ -509,13 +509,26 @@ export class UnityBrain extends EventEmitter {
     // Clear our own interrupt flag
     this.motor._interruptFlag = false;
 
-    // 3. WAIT for AI semantic classification to inject BG current.
-    // The sensory processor's _classifyAndRoute is async — it calls the AI model
-    // to determine intent and injects current into the correct BG channel.
-    // We MUST wait for this before reading the motor output.
-    await this._sleep(2000); // give classification time to complete
+    // 3. CLASSIFY INTENT — direct synchronous call, not fire-and-forget.
+    // The AI model IS Wernicke's area for semantic understanding.
+    // This determines what action the brain takes.
+    let classifiedAction = 'respond_text'; // default
+    if (this._imageGen?.chat) {
+      try {
+        const classResult = await this._imageGen.chat([
+          { role: 'system', content: 'Classify this message into ONE action. Reply with ONLY the number:\n0 = conversation/chat/question\n1 = generate/show image/picture/photo/selfie\n3 = build/create/code a UI component/app/tool/game/calculator/widget in the sandbox\nReply ONLY the digit.' },
+          { role: 'user', content: text },
+        ], { temperature: 0 });
+        const digit = parseInt((classResult || '0').trim().charAt(0));
+        if (digit === 1) classifiedAction = 'generate_image';
+        else if (digit === 3) classifiedAction = 'build_ui';
+        console.log(`[Brain] Classified "${text.slice(0, 40)}..." → ${classifiedAction}`);
+      } catch {
+        console.warn('[Brain] Classification failed, defaulting to respond_text');
+      }
+    }
 
-    // 4. Wait for visual cortex if it's describing
+    // 4. Wait for visual cortex if describing
     if (this.visualCortex.isActive() && this.visualCortex._describing) {
       const start = Date.now();
       while (this.visualCortex._describing && Date.now() - start < 3000) {
@@ -523,22 +536,17 @@ export class UnityBrain extends EventEmitter {
       }
     }
 
-    // 5. Run brain steps to let BG channels settle after classification current
-    for (let i = 0; i < 50; i++) this.step();
+    // 5. ROUTE based on classification — inject into BG AND act directly
+    const includesSelf = true;
 
-    const motorDecision = this.motor.getState();
-    const bgAction = motorDecision.selectedAction;
-    const bgConf = motorDecision.confidence;
-    console.log(`[Brain] BG motor decision: ${bgAction} (${(bgConf * 100).toFixed(1)}%)`);
-
-    // Self-reference — let the AI classification handle this.
-    // Channel 1 (image) + the AI prompt already tells it about Unity's appearance.
-    // The image handler always includes self-description as available context.
-    const includesSelf = true; // always available — AI decides if she's in the scene
-
-    if (bgAction === 'build_ui' && bgConf > 0.1 && this._brocasArea && this._sandbox) {
+    if (classifiedAction === 'build_ui' && this._brocasArea && this._sandbox) {
+      // Inject build current into BG for learning
+      for (let i = 75; i < 100; i++) this.clusters.basalGanglia.injectCurrent(new Float64Array(150).fill(0).map((_, idx) => idx >= 75 && idx < 100 ? 15 : 0));
+      this.giveReward(0.1); // reinforce this classification
       return this._handleBuild(text);
-    } else if (bgAction === 'generate_image' && bgConf > 0.1 && this._imageGen) {
+    } else if (classifiedAction === 'generate_image' && this._imageGen) {
+      for (let i = 25; i < 50; i++) this.clusters.basalGanglia.injectCurrent(new Float64Array(150).fill(0).map((_, idx) => idx >= 25 && idx < 50 ? 15 : 0));
+      this.giveReward(0.1);
       return this._handleImage(text, includesSelf);
     }
 
