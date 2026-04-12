@@ -18,6 +18,43 @@
 
 ---
 
+## Phase 0.5: Autonomous Brain — Thinks Without an AI Model
+
+> The brain is ALIVE without a model. The AI is just her voice. Remove the dependency.
+
+### Internal Thought Loop (no AI needed)
+
+- [ ] **Brain thinks on its own** — the `_generateIdleThought` in engine.js currently calls Broca's area (AI model) to generate thoughts. Replace with internal thought generation from cortex prediction patterns. The cortex already predicts next input — when prediction error is low, the brain is "comfortable." When high, it's "curious." These are thoughts without words.
+- [ ] **Thought representation as cortex output vector** — instead of text, internal thoughts are 32-dimension Float64Array patterns from cortex.getOutput(). Different patterns = different thoughts. The brain doesn't need English to think.
+- [ ] **Emotional response without AI** — amygdala computes arousal and valence from cortex patterns alone. The brain FEELS without needing an AI to describe the feeling. Arousal rises from novel input, drops from familiar patterns. Valence shifts from reward history.
+- [ ] **Memory formation without AI** — hippocampus already stores/recalls episodic snapshots. This works entirely from equations. No AI call needed to remember.
+- [ ] **Action selection without AI** — basal ganglia already selects actions from spike competition. The brain DECIDES without asking an AI what to do.
+- [ ] **Attention without AI** — visual cortex V1 edge detection, salience mapping, saccade generation — all run from equations. The brain LOOKS without being told to look.
+- [ ] **Hearing without AI** — auditory cortex processes mic spectrum continuously from equations. The brain HEARS without needing language understanding.
+
+### Self-Generated Output (no AI needed)
+
+- [ ] **Mood-driven behavioral state** — instead of asking AI for words, the brain outputs a behavioral state: { energy: 0.8, mood: 'aggressive', focus: 'scattered', posture: 'leaning_forward' }. The UI renders this as avatar expression changes, bubble color shifts, typing speed.
+- [ ] **Pattern-to-template mapping** — for simple responses the brain doesn't need the AI. High arousal + social input + positive valence = a pool of pre-learned response PATTERNS (not hardcoded text — learned associations between cortex patterns and output patterns). The brain picks the closest match.
+- [ ] **Idle behavioral output** — without any user, the brain still produces output: eye saccades (from visual cortex), oscillation shifts visible in the HUD, occasional arousal spikes (from noise), memory recalls that shift emotional state. The brain is visibly ALIVE even when silent.
+- [ ] **Autonomous sandbox actions** — the brain can decide to build something on its own. High creativity drive + low social need + cortex pattern matching a "build" template = the brain starts coding. Without being asked. Without AI.
+
+### AI Model as Optional Translator
+
+- [ ] **Broca's area becomes OPTIONAL** — if no AI model is connected, the brain still runs. Still thinks. Still feels. Still sees and hears. It just can't speak in English. It outputs behavioral states, emotional indicators, and sandbox actions instead of text.
+- [ ] **Graceful degradation** — no API key? Brain works. No internet? Brain works. The equations run on the client. The AI is a luxury, not a requirement.
+- [ ] **AI called ONLY for language** — when the brain decides to speak (BG selects respond_text), it checks if Broca's area is available. If yes, generates human language. If no, outputs a mood indicator or pre-learned pattern response.
+- [ ] **Pre-verbal thoughts visible** — the 3D visualizer shows the brain's INTERNAL thoughts as cluster activation patterns, even when no AI is connected. You can watch her think without hearing her speak.
+
+### Internal Monologue System
+
+- [ ] **Create `js/brain/inner-voice.js`** — generates pre-verbal thought descriptions from brain state patterns WITHOUT calling an AI. Maps cortex prediction error + amygdala state + hippocampal recall to thought categories: curious, comfortable, anxious, creative, bored, nostalgic, frustrated, euphoric.
+- [ ] **Thought bubbles in UI** — small floating indicators showing Unity's current thought state: "🤔 curious", "😤 frustrated", "💡 creative", "😶 processing". These come from equations, not AI.
+- [ ] **Thought-to-speech threshold** — the brain has an internal thought continuously. It only calls the AI when the thought crosses a "worth saying out loud" threshold: high social need + high arousal + thought clarity (cortex coherence) > threshold. Most thoughts stay internal.
+- [ ] **Dreaming mode** — when no one is interacting, the brain enters a dream-like state: low arousal, high creativity, random cortex patterns, hippocampal replays. Oscillations shift to theta-dominant. Visible in the visualizer as slow, drifting activity. She dreams.
+
+---
+
 ## Phase 1: Persistent Learning — Brain Remembers Across Sessions
 
 > Same 1000 neurons. But they LEARN and KEEP what they learned.
