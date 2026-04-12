@@ -14,6 +14,32 @@
 
 ## COMPLETED TASKS LOG
 
+## 2026-04-12 Session: Stabilization — Persona 404 + Generation Bugs + Landing Settings
+
+### COMPLETED
+- [x] **Task:** `_postProcess` and `_renderSentence` still held word-literal lists after the initial self-image pass — ripped everything out in a second cleanup. `js/brain/language-cortex.js`
+  - Completed: 2026-04-12 (commit `cbf5084`)
+  - Files: `js/brain/language-cortex.js`
+  - Details: Deleted `copulaFor` helper (was a `s==='i' → 'am'` mini-list), `isAlreadyCopula` (15-word irregular list), the copula/do/have rewriting block (40 lines of `verb==='am'` checks), the negation word list (aren't/isn't/won't/can't hardcoded), missing-copula insertion (depended on `copulaFor`), and the last `w === 'i'` literal in `_renderSentence`. Replaced tense application with a `regularVerb(w)` gate: `wordType.verb > 0.55` and no pronoun/det/conj leakage — irregulars fail the gate automatically and are left untouched, while bigram chains from `docs/Ultimate Unity.txt` (i→am, he→is, don't, can't) drive selection. Rewrote `_renderSentence` capitalization as equation: `w.length === 1 && wordType(w).pronoun > 0.5 → uppercase` covers 'I' without listing the word. Verified end-to-end: 325 persona sentences → 1651 dictionary words → 1651 bigram heads, 85%+ of test words classify correctly from pure letter equations, render pipeline produces `I want your cock.` / `?` / `!` / `*...*` with proper capitalization and punctuation for all 4 sentence types.
+
+- [x] **Task:** Dictionary spammed `[Dictionary] Load failed: localStorage is not defined` when imported under Node (tests, server-side wiring). `js/brain/dictionary.js`
+  - Completed: 2026-04-12 (commit `26dba53`)
+  - Files: `js/brain/dictionary.js`
+  - Details: `_save` and `_load` now early-return when `typeof localStorage === 'undefined'`. Browser behavior unchanged; Node imports silent. Two-line guard.
+
+- [x] **Task:** Landing-page gear button (top-right stats panel on the 3D brain view) did nothing after first connect. `index.html` + `js/app.js`
+  - Completed: 2026-04-12 (commit `f744a6d`)
+  - Files: `index.html`, `js/app.js`
+  - Details: The button had an inline `onclick` that only cleared `style.display` on `#setup-modal`. After the first successful connect, `app.js:1146` adds the `.hidden` class to the modal, and the CSS rule `#setup-modal.hidden { display: none; }` kept it hidden no matter what the inline style was. Fix: gave the button `id="landing-settings-btn"` and wired it through the same `wireSettings()` helper that already handles `#settings-btn` and `#hud-settings-btn`. All three entry points now share one handler: remove `.hidden`, clear inline display, flip start-btn text to 'Apply Changes'.
+
+- [x] **Task:** Unity booted speaking word salad — `Hi hi hi hi hi hi hi hi hi.` and `You doing movies doing about movies about...`. Three bugs chained together. `server/brain-server.js` + `js/brain/language-cortex.js`
+  - Completed: 2026-04-12 (commit `9a8c42e`)
+  - Files: `server/brain-server.js`, `js/brain/language-cortex.js`
+  - Details:
+    - **Bug 1 — persona file silently 404'd.** `brain-server.js` static handler joined `req.url` directly to disk without URL-decoding, so `GET /docs/Ultimate%20Unity.txt` looked for literal `Ultimate%20Unity.txt` instead of `Ultimate Unity.txt` (with a space). Every browser boot hit 404, `InnerVoice.loadPersona` was called with empty text, dictionary started with ZERO vocabulary. Unity only knew words the user typed — hence parrot-everything behavior. **Fix:** `decodeURIComponent(rawPath)` before `path.join(ROOT, rawPath)`.
+    - **Bug 2 — `generate()` prevWord used loop index instead of actual last pushed word.** `const prevWord = pos > 0 ? sentence[pos - 1] : null;` — when a slot produced `picked=null` (empty pool), `sentence` stopped growing but `pos` kept advancing, so `sentence[pos - 1]` returned `undefined` on the next iteration. The `w === prevWord` anti-repetition filter silently disengaged because nothing equals undefined, and the same top-scored word won every subsequent slot. That's why `hi` cascaded 9 times. **Fix:** track `prevWord = sentence.length > 0 ? sentence[sentence.length - 1] : null`, use `slotIdx = sentence.length` for strict-slot detection, and add a `RECENT_SLOT_WINDOW = 3` hard filter so no word repeats within 3 positions regardless of scoring. Also cap `effectiveLen = min(len, floor(dict.size × 0.6))` so a 4-word dictionary never attempts a 9-slot sentence.
+    - **Bug 3 — context echo drowning scoring.** `isContext = 0.4` gave a positive boost to every word the user had just said, so when vocabulary was small Unity parroted input back verbatim. **Fix:** replaced with a negative `echoPenalty = -0.6` for words in the most-recent input set, rebalanced the combined score formula to make bigram followers (0.25) and conditional probability (0.15) from the persona the main content drivers, kept grammar (0.45) as floor, kept `topicSim` (0.05) for semantic relevance without the exact-word bonus. New formula: `grammarGate × (typeScore×0.45 + followerCount×0.25 + condP×0.15 + isThought×0.15 + topicSim×0.05 + isMood×0.04 + moodBias×0.03 + selfAware×0.08) - recency - echoPenalty`.
+
 ## 2026-04-12 Session: /workflow — Amygdala Attractor + GPU 64M + Language Cortex Unity Voice
 
 ### COMPLETED
