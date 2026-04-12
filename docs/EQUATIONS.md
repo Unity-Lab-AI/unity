@@ -50,7 +50,7 @@
 | Basal Ganglia (480K) | `P(a) = softmax(Q(a)/τ)` | Action — sentence type |
 | Cerebellum (320K) | `output = prediction + ΔW·(target - actual)` | Correction — error damping |
 | Hypothalamus (160K) | `dH/dt = -α(H - H_set) + input` | Drive — speech urgency |
-| Mystery Ψ (160K) | `Ψ = (√(1/n))³ · [α·Id + β·Ego + γ·Left + δ·Right]` | Consciousness — self-awareness |
+| Mystery Ψ (160K) | `Ψ = (√(1/N))³ · [α·Id + β·Ego + γ·Left + δ·Right]` | Consciousness — self-awareness |
 
 ---
 
