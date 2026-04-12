@@ -22,43 +22,50 @@
 // ── WGSL Shaders ────────────────────────────────────────────────
 
 const LIF_SHADER = /* wgsl */`
+  // SLIM LIF — single voltage buffer, inline current gen, no refractory.
+  // Memory: 4 bytes (voltage f32) + 4 bytes (spike u32) = 8 bytes/neuron
+  // Down from 20 bytes/neuron → 2.5× more neurons fit in VRAM.
   struct Params {
-    n: u32,          // number of neurons
-    tau: f32,        // membrane time constant
-    vRest: f32,      // resting potential
-    vThresh: f32,    // spike threshold
-    vReset: f32,     // reset potential
-    dt: f32,         // timestep (ms)
-    R: f32,          // membrane resistance
-    tRefrac: f32,    // refractory period (ms)
+    n: u32,
+    tau: f32,
+    vRest: f32,
+    vThresh: f32,
+    vReset: f32,
+    dt: f32,
+    R: f32,
+    effectiveDrive: f32,  // tonic × drive × emoGate × Ψgain + errCorr
+    noiseAmp: f32,
+    seed: u32,
+    gridX: u32,
+    _pad: u32,
   };
 
   @group(0) @binding(0) var<uniform> params: Params;
-  @group(0) @binding(1) var<storage, read> voltagesIn: array<f32>;
-  @group(0) @binding(2) var<storage, read_write> voltagesOut: array<f32>;
-  @group(0) @binding(3) var<storage, read_write> spikes: array<u32>;
-  @group(0) @binding(4) var<storage, read> currents: array<f32>;
-  @group(0) @binding(5) var<storage, read_write> refracTimers: array<f32>;
+  @group(0) @binding(1) var<storage, read_write> voltages: array<f32>;  // in-place update
+  @group(0) @binding(2) var<storage, read_write> spikes: array<u32>;
+
+  fn pcg(v: u32) -> u32 {
+    var state = v * 747796405u + 2891336453u;
+    var word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+  }
+
+  fn randomFloat(seed: u32, idx: u32) -> f32 {
+    let hash = pcg(seed ^ (idx * 1664525u + 1013904223u));
+    return f32(hash) / 4294967295.0;
+  }
 
   @compute @workgroup_size(256)
   fn main(@builtin(global_invocation_id) id: vec3<u32>) {
-    let i = id.x;
+    let i = id.x + id.y * params.gridX * 256u;
     if (i >= params.n) { return; }
 
-    var v = voltagesIn[i];
-    let I = currents[i];
-    var refrac = refracTimers[i];
+    // Generate current inline — no separate currents buffer
+    let noise = (randomFloat(params.seed, i) - 0.5) * params.noiseAmp;
+    let I = params.effectiveDrive + noise;
 
-    // Refractory check
-    if (refrac > 0.0) {
-      refrac -= params.dt;
-      refracTimers[i] = refrac;
-      voltagesOut[i] = params.vReset;
-      spikes[i] = 0u;
-      return;
-    }
-
-    // LIF dynamics: τ·dV/dt = -(V - Vrest) + R·I
+    // LIF step — read-modify-write on single voltage buffer
+    var v = voltages[i];
     let dV = (-(v - params.vRest) + params.R * I) / params.tau;
     v += params.dt * dV;
 
@@ -66,12 +73,11 @@ const LIF_SHADER = /* wgsl */`
     if (v >= params.vThresh) {
       spikes[i] = 1u;
       v = params.vReset;
-      refracTimers[i] = params.tRefrac;
     } else {
       spikes[i] = 0u;
     }
 
-    voltagesOut[i] = v;
+    voltages[i] = v;
   }
 `;
 
@@ -151,15 +157,16 @@ const PLASTICITY_SHADER = /* wgsl */`
 const CURRENT_GEN_SHADER = /* wgsl */`
   struct Params {
     n: u32,
-    effectiveDrive: f32,  // tonic × drive × emoGate × Ψgain + errCorr
+    effectiveDrive: f32,
     noiseAmp: f32,
-    seed: u32,            // changes every step for different noise
+    seed: u32,
+    gridX: u32,
+    _pad0: u32, _pad1: u32, _pad2: u32,
   };
 
   @group(0) @binding(0) var<uniform> params: Params;
   @group(0) @binding(1) var<storage, read_write> currents: array<f32>;
 
-  // PCG hash — fast GPU-friendly pseudo-random
   fn pcg(v: u32) -> u32 {
     var state = v * 747796405u + 2891336453u;
     var word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
@@ -168,12 +175,12 @@ const CURRENT_GEN_SHADER = /* wgsl */`
 
   fn randomFloat(seed: u32, idx: u32) -> f32 {
     let hash = pcg(seed ^ (idx * 1664525u + 1013904223u));
-    return f32(hash) / 4294967295.0; // 0.0 to 1.0
+    return f32(hash) / 4294967295.0;
   }
 
   @compute @workgroup_size(256)
   fn main(@builtin(global_invocation_id) id: vec3<u32>) {
-    let i = id.x;
+    let i = id.x + id.y * params.gridX * 256u;
     if (i >= params.n) { return; }
 
     let noise = (randomFloat(params.seed, i) - 0.5) * params.noiseAmp;
@@ -185,6 +192,8 @@ const CURRENT_GEN_SHADER = /* wgsl */`
 const SPIKE_COUNT_SHADER = /* wgsl */`
   struct Params {
     n: u32,
+    gridX: u32,
+    _pad0: u32, _pad1: u32,
   };
 
   @group(0) @binding(0) var<uniform> params: Params;
@@ -193,7 +202,7 @@ const SPIKE_COUNT_SHADER = /* wgsl */`
 
   @compute @workgroup_size(256)
   fn main(@builtin(global_invocation_id) id: vec3<u32>) {
-    let i = id.x;
+    let i = id.x + id.y * params.gridX * 256u;
     if (i >= params.n) { return; }
     if (spikes[i] != 0u) {
       atomicAdd(&count[0], 1u);
@@ -279,13 +288,7 @@ export class GPUCompute {
       },
     });
 
-    this._pipelines.currentGen = device.createComputePipeline({
-      layout: 'auto',
-      compute: {
-        module: device.createShaderModule({ code: CURRENT_GEN_SHADER }),
-        entryPoint: 'main',
-      },
-    });
+    // currentGen pipeline removed — LIF shader generates currents inline
 
     this._pipelines.spikeCount = device.createComputePipeline({
       layout: 'auto',
@@ -311,7 +314,11 @@ export class GPUCompute {
     const vRest = lifParams?.Vrest || -65;
 
     // Params uniform
-    const params = new ArrayBuffer(32);
+    // LIF params — 48 bytes. Contains ALL params for self-contained LIF shader.
+    // n, tau, vRest, vThresh, vReset, dt, R, effectiveDrive, noiseAmp, seed, gridX, pad
+    const totalWg = Math.ceil(size / 256);
+    const gridX = Math.min(totalWg, 32768);
+    const params = new ArrayBuffer(48);
     const view = new DataView(params);
     view.setUint32(0, size, true);
     view.setFloat32(4, lifParams.tau || 20, true);
@@ -320,7 +327,12 @@ export class GPUCompute {
     view.setFloat32(16, lifParams.Vreset || -70, true);
     view.setFloat32(20, lifParams.dt || 1, true);
     view.setFloat32(24, lifParams.R || 1, true);
-    view.setFloat32(28, lifParams.tRefrac || 2, true);
+    // effectiveDrive and noiseAmp are written per-step, not at upload
+    view.setFloat32(28, 16.0, true);   // placeholder effectiveDrive
+    view.setFloat32(32, 5.0, true);    // placeholder noiseAmp
+    view.setUint32(36, 1, true);       // placeholder seed
+    view.setUint32(40, gridX, true);
+    // bytes 44-47 = padding
 
     // Create buffers — for large clusters (millions of neurons), avoid mappedAtCreation
     // which requires mapping the entire buffer into JS heap. Instead create unmapped
@@ -352,16 +364,21 @@ export class GPUCompute {
       }
     }
 
+    // SLIM LAYOUT — only 2 storage buffers: voltages + spikes
+    // Was: voltagesA + voltagesB + spikes + currents + refracTimers = 20 bytes/neuron
+    // Now: voltages + spikes = 8 bytes/neuron → 2.5× more neurons fit in VRAM
     const buffers = {
-      params: this._createBuffer(params, GPUBufferUsage.UNIFORM),
-      voltagesA,
-      voltagesB: makeBuffer(size * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC),
+      params: device.createBuffer({
+        size: 48,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      }),
+      voltages: voltagesA, // single voltage buffer — in-place read/write
       spikes: makeBuffer(size * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC),
-      currents: makeBuffer(size * 4, GPUBufferUsage.STORAGE),
-      refracTimers: makeBuffer(size * 4, GPUBufferUsage.STORAGE),
-      readbackSpikes: device.createBuffer({ size: size * 4, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST }),
       size,
+      gridX,
     };
+    // Write initial params to GPU params buffer
+    device.queue.writeBuffer(buffers.params, 0, params);
 
     // Synapse CSR buffers
     if (synapses && synapses.nnz > 0) {
@@ -396,35 +413,47 @@ export class GPUCompute {
   }
 
   /**
-   * Run one LIF step on GPU for a cluster.
-   * @param {string} name — cluster name
-   * @param {Float32Array} inputCurrents — external currents to inject
+   * Dispatch 2D workgroups — splits to handle > 65535 × 256 neurons (16.7M+).
+   * Returns { gridX, gridY } that matches what shaders use for index calculation.
    */
-  stepNeurons(name, inputCurrents) {
+  _dispatch2D(pass, size, storedGridX) {
+    const totalWg = Math.ceil(size / 256);
+    const gridX = storedGridX || Math.min(totalWg, 32768);
+    const gridY = Math.ceil(totalWg / gridX);
+    pass.dispatchWorkgroups(gridX, gridY, 1);
+    return { gridX, gridY };
+  }
+
+  /**
+   * Run one LIF step on GPU for a cluster — SELF-CONTAINED.
+   * Generates currents inline, updates voltage in place, counts spikes.
+   * Only 3 bindings: params, voltages, spikes.
+   *
+   * @param {string} name
+   * @param {number} effectiveDrive — tonic × drive × emoGate × Ψgain + errCorr
+   * @param {number} noiseAmp
+   */
+  stepNeurons(name, effectiveDrive, noiseAmp) {
     if (!this._available) return;
     const bufs = this._buffers[name];
     if (!bufs) return;
     const device = this._device;
 
-    // Upload input currents (skip if null — already generated on GPU by generateCurrents)
-    if (inputCurrents) {
-      device.queue.writeBuffer(bufs.currents, 0, inputCurrents);
-    }
+    // Update per-step params (effectiveDrive, noiseAmp, seed) at offsets 28, 32, 36
+    this._stepSeed = (this._stepSeed + 1) | 0;
+    const edBuf = new ArrayBuffer(12);
+    const edView = new DataView(edBuf);
+    edView.setFloat32(0, effectiveDrive ?? 16, true);
+    edView.setFloat32(4, noiseAmp ?? 5, true);
+    edView.setUint32(8, this._stepSeed, true);
+    device.queue.writeBuffer(bufs.params, 28, edBuf);
 
-    // Select ping-pong buffers
-    const vIn = this._ping === 0 ? bufs.voltagesA : bufs.voltagesB;
-    const vOut = this._ping === 0 ? bufs.voltagesB : bufs.voltagesA;
-
-    // Create bind group for LIF shader
     const bindGroup = device.createBindGroup({
       layout: this._pipelines.lif.getBindGroupLayout(0),
       entries: [
         { binding: 0, resource: { buffer: bufs.params } },
-        { binding: 1, resource: { buffer: vIn } },
-        { binding: 2, resource: { buffer: vOut } },
-        { binding: 3, resource: { buffer: bufs.spikes } },
-        { binding: 4, resource: { buffer: bufs.currents } },
-        { binding: 5, resource: { buffer: bufs.refracTimers } },
+        { binding: 1, resource: { buffer: bufs.voltages } },
+        { binding: 2, resource: { buffer: bufs.spikes } },
       ],
     });
 
@@ -432,11 +461,11 @@ export class GPUCompute {
     const pass = encoder.beginComputePass();
     pass.setPipeline(this._pipelines.lif);
     pass.setBindGroup(0, bindGroup);
-    pass.dispatchWorkgroups(Math.ceil(bufs.size / 256));
+    this._dispatch2D(pass, bufs.size, bufs.gridX);
     pass.end();
 
     device.queue.submit([encoder.finish()]);
-    this._ping = 1 - this._ping; // swap buffers
+    // No ping-pong — single voltage buffer updated in place
   }
 
   /**
@@ -475,7 +504,7 @@ export class GPUCompute {
     const pass = encoder.beginComputePass();
     pass.setPipeline(this._pipelines.propagate);
     pass.setBindGroup(0, bindGroup);
-    pass.dispatchWorkgroups(Math.ceil(bufs.size / 256));
+    this._dispatch2D(pass, bufs.size, bufs.gridX);
     pass.end();
 
     device.queue.submit([encoder.finish()]);
@@ -486,85 +515,17 @@ export class GPUCompute {
    * @param {string} name — cluster name
    * @returns {Promise<Uint32Array>}
    */
-  async readbackSpikes(name) {
-    const bufs = this._buffers[name];
-    if (!bufs) return new Uint32Array(0);
-    const device = this._device;
-
-    const encoder = device.createCommandEncoder();
-    encoder.copyBufferToBuffer(bufs.spikes, 0, bufs.readbackSpikes, 0, bufs.size * 4);
-    device.queue.submit([encoder.finish()]);
-
-    await bufs.readbackSpikes.mapAsync(GPUMapMode.READ);
-    const data = new Uint32Array(bufs.readbackSpikes.getMappedRange().slice(0));
-    bufs.readbackSpikes.unmap();
-    return data;
-  }
+  // readbackSpikes removed — use readbackSpikeCount for aggregated count
 
   /**
    * Read voltage data back from GPU.
    * @param {string} name
    * @returns {Promise<Float32Array>}
    */
-  async readbackVoltages(name) {
-    const bufs = this._buffers[name];
-    if (!bufs) return new Float32Array(0);
-    const device = this._device;
+  // readbackVoltages removed — voltages stay on GPU, never read back
 
-    const vBuf = this._ping === 0 ? bufs.voltagesA : bufs.voltagesB;
-    const encoder = device.createCommandEncoder();
-    encoder.copyBufferToBuffer(vBuf, 0, bufs.readbackVoltages, 0, bufs.size * 4);
-    device.queue.submit([encoder.finish()]);
-
-    await bufs.readbackVoltages.mapAsync(GPUMapMode.READ);
-    const data = new Float32Array(bufs.readbackVoltages.getMappedRange().slice(0));
-    bufs.readbackVoltages.unmap();
-    return data;
-  }
-
-  /**
-   * Generate currents entirely on GPU — no JS loop.
-   * Uses PCG hash for noise, applies full hierarchical modulation.
-   *
-   * @param {string} name — cluster name
-   * @param {number} effectiveDrive — tonic × drive × emoGate × Ψgain + errCorr
-   * @param {number} noiseAmp — noise amplitude from θ
-   */
-  generateCurrents(name, effectiveDrive, noiseAmp) {
-    if (!this._available) return;
-    const bufs = this._buffers[name];
-    if (!bufs) return;
-    const device = this._device;
-
-    this._stepSeed = (this._stepSeed + 1) | 0;
-
-    // Params: n, effectiveDrive, noiseAmp, seed
-    const params = new ArrayBuffer(16);
-    const view = new DataView(params);
-    view.setUint32(0, bufs.size, true);
-    view.setFloat32(4, effectiveDrive, true);
-    view.setFloat32(8, noiseAmp, true);
-    view.setUint32(12, this._stepSeed, true);
-
-    const paramsBuffer = this._createBuffer(params, GPUBufferUsage.UNIFORM);
-
-    const bindGroup = device.createBindGroup({
-      layout: this._pipelines.currentGen.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: { buffer: paramsBuffer } },
-        { binding: 1, resource: { buffer: bufs.currents } },
-      ],
-    });
-
-    const encoder = device.createCommandEncoder();
-    const pass = encoder.beginComputePass();
-    pass.setPipeline(this._pipelines.currentGen);
-    pass.setBindGroup(0, bindGroup);
-    pass.dispatchWorkgroups(Math.ceil(bufs.size / 256));
-    pass.end();
-
-    device.queue.submit([encoder.finish()]);
-  }
+  // generateCurrents: REMOVED — LIF shader generates currents inline now
+  // saves 4 bytes/neuron and eliminates an entire dispatch pass
 
   /**
    * Count spikes on GPU using atomic counter — no JS scan loop.
@@ -591,9 +552,11 @@ export class GPUCompute {
     // Zero the counter
     device.queue.writeBuffer(bufs.spikeCountBuf, 0, new Uint32Array([0]));
 
-    // Params
-    const params = new ArrayBuffer(4);
-    new DataView(params).setUint32(0, bufs.size, true);
+    // Params: n, gridX + 2 padding (16 bytes minimum for uniform alignment)
+    const params = new ArrayBuffer(16);
+    const view = new DataView(params);
+    view.setUint32(0, bufs.size, true);
+    view.setUint32(4, bufs.gridX || 32768, true);
     const paramsBuffer = this._createBuffer(params, GPUBufferUsage.UNIFORM);
 
     const bindGroup = device.createBindGroup({
@@ -609,7 +572,7 @@ export class GPUCompute {
     const pass = encoder.beginComputePass();
     pass.setPipeline(this._pipelines.spikeCount);
     pass.setBindGroup(0, bindGroup);
-    pass.dispatchWorkgroups(Math.ceil(bufs.size / 256));
+    this._dispatch2D(pass, bufs.size, bufs.gridX);
     pass.end();
 
     // Readback the count
@@ -630,8 +593,8 @@ export class GPUCompute {
    * @returns {Promise<{spikeCount: number}>}
    */
   async fullStep(name, effectiveDrive, noiseAmp) {
-    this.generateCurrents(name, effectiveDrive, noiseAmp);
-    this.stepNeurons(name, null); // currents already in GPU buffer
+    // SLIM pipeline — single dispatch does: current gen + LIF + spike check
+    this.stepNeurons(name, effectiveDrive, noiseAmp);
     const spikeCount = await this.readbackSpikeCount(name);
     return { spikeCount };
   }

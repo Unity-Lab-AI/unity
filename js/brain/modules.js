@@ -120,35 +120,118 @@ export class Hippocampus {
   }
 }
 
-// ── Amygdala — Emotional weighting ─────────────────────────────────
+// ── Amygdala — Energy-based recurrent attractor ─────────────────────
+// Matches the emergent behavior of the 150-LIF amygdala cluster: recurrent
+// lateral connections between nuclei settle into stable low-energy states
+// (fear attractor, reward attractor, or neutral) instead of a flat sigmoid.
+// State evolves via gradient descent on  E = -½ xᵀWx - bᵀx  with tanh squash,
+// then fear/reward are read out from the converged attractor, not the raw input.
 export class Amygdala {
-  constructor(size = 32, persona = 'unity') {
+  constructor(size = 32, opts = {}) {
     this.size = size;
+    // Accept legacy ('unity' string) OR the engine's {arousalBaseline} object
+    const arousalBaseline = typeof opts === 'string'
+      ? (opts === 'unity' ? 0.9 : 0.5)
+      : (opts && typeof opts.arousalBaseline === 'number' ? opts.arousalBaseline : 0.9);
+    this.arousalBaseline = arousalBaseline;
+
+    // Recurrent lateral weights between nuclei — symmetric so energy is defined
+    this.W = new Float64Array(size * size);
+    for (let i = 0; i < size; i++) {
+      for (let j = i + 1; j < size; j++) {
+        const w = (Math.random() - 0.5) * 0.15;
+        this.W[i * size + j] = w;
+        this.W[j * size + i] = w; // symmetry enforced
+      }
+      this.W[i * size + i] = 0; // zero diagonal — no self-coupling
+    }
+
+    // Persistent attractor state — doesn't reset each step, that's the whole point
+    this.x = new Float64Array(size);
+
+    // Fear and reward projection vectors (like central nucleus outputs)
     this.fearW = new Float64Array(size);
     this.rewardW = new Float64Array(size);
-    // random init
     for (let i = 0; i < size; i++) {
-      this.fearW[i] = (Math.random() - 0.5) * 0.2;
-      this.rewardW[i] = (Math.random() - 0.5) * 0.2;
+      this.fearW[i] = (Math.random() - 0.5) * 0.4;
+      this.rewardW[i] = (Math.random() - 0.5) * 0.4;
     }
-    // Unity persona: arousal cranked HIGH
-    this.arousalBias = persona === 'unity' ? 0.85 : 0.3;
+
+    this.settleIters = 5;      // gradient steps per call — enough to fall into a basin
+    this.leak = 0.85;          // state persistence across frames (stria-terminalis-ish)
+    this.inputGain = 0.6;      // external drive strength
+    this.lr = 0.003;           // Hebbian recurrent learning rate
+    this.lastEnergy = 0;
+  }
+
+  // E = -½ xᵀWx  — symmetric recurrent energy
+  _energy(x) {
+    const { size, W } = this;
+    let e = 0;
+    for (let i = 0; i < size; i++) {
+      for (let j = i + 1; j < size; j++) {
+        e -= W[i * size + j] * x[i] * x[j];
+      }
+    }
+    return e;
   }
 
   step(input, _brainState, _dt) {
-    const { size, fearW, rewardW, arousalBias } = this;
-    let fear = 0, reward = 0;
-    for (let i = 0; i < size; i++) {
-      const x = input[i] !== undefined ? input[i] : 0;
-      fear += fearW[i] * x;
-      reward += rewardW[i] * x;
-    }
-    fear = sigmoid(fear);
-    reward = sigmoid(reward);
-    const valence = reward - fear; // [-1, 1] range approx
-    const arousal = Math.min(1, arousalBias + 0.3 * (fear + reward));
+    const { size, W, x, fearW, rewardW, settleIters, leak, inputGain, lr, arousalBaseline } = this;
 
-    return { valence, arousal, fear, reward };
+    // External drive from upstream cluster output (downsampled amygdala spikes)
+    const drive = new Float64Array(size);
+    for (let i = 0; i < size; i++) {
+      drive[i] = (input[i] !== undefined ? input[i] : 0) * inputGain;
+    }
+
+    // Leak previous attractor state forward — memory of the last emotional basin
+    for (let i = 0; i < size; i++) x[i] *= leak;
+
+    // Settle: iterate x ← tanh(Wx + drive) — gradient descent on E with soft squash
+    for (let iter = 0; iter < settleIters; iter++) {
+      const next = new Float64Array(size);
+      for (let i = 0; i < size; i++) {
+        let h = drive[i];
+        const row = i * size;
+        for (let j = 0; j < size; j++) {
+          if (j !== i) h += W[row + j] * x[j];
+        }
+        next[i] = Math.tanh(h);
+      }
+      for (let i = 0; i < size; i++) x[i] = next[i];
+    }
+
+    // Hebbian tweak of recurrent weights, kept symmetric — learns which nuclei co-fire
+    for (let i = 0; i < size; i++) {
+      for (let j = i + 1; j < size; j++) {
+        const dw = lr * x[i] * x[j];
+        W[i * size + j] += dw;
+        W[j * size + i] += dw;
+        // soft weight cap so the basin doesn't explode
+        if (W[i * size + j] > 1) { W[i * size + j] = 1; W[j * size + i] = 1; }
+        else if (W[i * size + j] < -1) { W[i * size + j] = -1; W[j * size + i] = -1; }
+      }
+    }
+
+    // Read fear / reward from the settled attractor, not the raw input
+    let fearRaw = 0, rewardRaw = 0, norm = 0;
+    for (let i = 0; i < size; i++) {
+      fearRaw += fearW[i] * x[i];
+      rewardRaw += rewardW[i] * x[i];
+      norm += x[i] * x[i];
+    }
+    const fear = sigmoid(fearRaw);
+    const reward = sigmoid(rewardRaw);
+    const valence = reward - fear;
+
+    // Arousal = persona baseline + depth of the attractor we fell into
+    const attractorDepth = Math.sqrt(norm / size); // RMS of settled state, [0,1]
+    const arousal = Math.min(1, arousalBaseline * 0.6 + 0.4 * attractorDepth + 0.1 * (fear + reward));
+
+    this.lastEnergy = this._energy(x);
+
+    return { valence, arousal, fear, reward, energy: this.lastEnergy, attractorDepth };
   }
 }
 

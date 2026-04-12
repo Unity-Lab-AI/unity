@@ -1,7 +1,7 @@
 /**
  * brain-3d.js — WebGL 3D brain visualizer
  *
- * 3.2M neurons (20K rendered) as gl.POINTS in MNI-coordinate 3D clusters.
+ * N neurons (scales to hardware, 20K rendered) as gl.POINTS in MNI-coordinate 3D clusters.
  * Raw WebGL — no Three.js, no deps. Inline vertex/fragment shaders.
  *
  * Features:
@@ -19,13 +19,15 @@
 // ── Constants ───────────────────────────────────────────────────────
 
 // Render neuron count — proportional sample of the full brain
-// 3.2M actual neurons rendered as 20K visual points
+// N actual neurons (scales to hardware) rendered as 20K visual points
 let TOTAL = 1000;
 const MAX_RENDER_NEURONS = 20000;
 const AFTERGLOW_DECAY = 0.92;
-const PULSE_LIFE = 40;
-const MAX_PULSES = 200; // enough for all 7 clusters to have visible pulses
-const MAX_CONN = 1200;
+const PULSE_LIFE = 80;  // ~1.3s at 60fps — visible long enough to track
+const MAX_PULSES = 500; // 70+ pulses per cluster simultaneously
+const MAX_CONN = 3000;
+const MAX_TRAILS = 800; // lightning trails traveling along projection pathways
+const TRAIL_LIFE = 45;  // frames — fast expand-converge cycle
 const AUTO_ROT_SPEED = 0.0015;
 
 // ── Cluster definitions ─────────────────────────────────────────────
@@ -61,8 +63,8 @@ void main() {
   vVis = aVis;
   vec4 p = uMVP * vec4(aPos, 1.0);
   gl_Position = p;
-  float sz = mix(4.0, 10.0, aGlow);
-  gl_PointSize = max(2.0, sz * uScale / max(p.w, 0.3));
+  float sz = mix(8.0, 18.0, aGlow);
+  gl_PointSize = max(5.0, sz * uScale / max(p.w, 0.3));
 }
 `;
 
@@ -76,12 +78,39 @@ void main() {
   vec2 c = gl_PointCoord - 0.5;
   float d = length(c);
   if (d > 0.5) discard;
-  float edge = smoothstep(0.5, 0.15, d);
-  float bright = mix(0.25, 1.0, vGlow);
-  float alpha = edge * mix(0.5, 1.0, vGlow);
-  // bloom halo for spiking
-  float halo = vGlow * exp(-d * 5.0) * 0.5;
-  vec3 col = vCol * bright + vec3(1.0) * halo;
+
+  // STRUCTURE: bright solid core + ring + soft halo fading to edge
+  // All three are visible on every neuron — the HALO is the key visual element
+
+  // Core — bright center dot (0 to 0.18)
+  float core = smoothstep(0.18, 0.0, d);
+
+  // Ring — visible colored ring around core (0.22 to 0.32)
+  float ring = smoothstep(0.22, 0.26, d) * smoothstep(0.34, 0.28, d);
+
+  // Halo — soft glow fading from ring edge to dot edge (0.32 to 0.5)
+  float halo = smoothstep(0.5, 0.32, d);
+
+  // Base brightness scales with glow (spiking = brighter)
+  float glowBoost = 1.0 + vGlow * 0.8;
+
+  // Combine: core is brightest, ring is medium, halo is soft
+  float coreAlpha = core * 1.0 * glowBoost;
+  float ringAlpha = ring * 0.8 * glowBoost;
+  float haloAlpha = halo * 0.35 * glowBoost;
+
+  float alpha = max(coreAlpha, max(ringAlpha, haloAlpha));
+
+  // Color: white hot core, colored ring, softer colored halo
+  vec3 coreCol = mix(vCol, vec3(1.0), 0.6 + vGlow * 0.4);
+  vec3 ringCol = vCol * (1.2 + vGlow * 0.5);
+  vec3 haloCol = vCol * (0.7 + vGlow * 0.5);
+
+  vec3 col;
+  if (core > 0.01) col = coreCol;
+  else if (ring > 0.01) col = ringCol;
+  else col = haloCol;
+
   gl_FragColor = vec4(col, alpha);
 }
 `;
@@ -118,7 +147,7 @@ void main() {
   vCol = aCol;
   vec4 p = uMVP * vec4(aPos, 1.0);
   gl_Position = p;
-  gl_PointSize = (4.0 + aLife * 14.0) * uScale / max(p.w, 0.5);
+  gl_PointSize = (8.0 + aLife * 22.0) * uScale / max(p.w, 0.5);
 }
 `;
 
@@ -130,11 +159,54 @@ void main() {
   vec2 c = gl_PointCoord - 0.5;
   float d = length(c);
   if (d > 0.5) discard;
-  // ring shape that fades
-  float ring = smoothstep(0.32, 0.38, d) * smoothstep(0.5, 0.44, d);
-  float core = smoothstep(0.5, 0.0, d) * 0.1;
-  float alpha = (ring * 0.7 + core) * vLife;
-  gl_FragColor = vec4(vCol, alpha);
+  // Bright expanding ring with glowing edge
+  float ring = smoothstep(0.28, 0.38, d) * smoothstep(0.5, 0.42, d);
+  float core = smoothstep(0.5, 0.0, d) * 0.2;
+  float alpha = (ring * 1.4 + core) * vLife;
+  // Brighter color — add white core to make it pop
+  vec3 col = vCol + vec3(0.3) * ring;
+  gl_FragColor = vec4(col, alpha);
+}
+`;
+
+// ── LIGHTNING TRAILS — travel along projection pathways driven by brain equations ──
+// Each trail has source, target, and a phase 0→1.
+// Phase < 0.5: head EXPANDS from source toward midpoint (expand phase)
+// Phase >= 0.5: tail CONVERGES to target (converge phase)
+// Both ends fade to nothing — trail appears, travels, disappears.
+const TRAIL_VS = `
+attribute vec3 aPos;        // can be source or target — which is chosen by aEnd
+attribute vec3 aSource;
+attribute vec3 aTarget;
+attribute float aPhase;     // 0-1, position along path
+attribute float aEndFlag;   // 0 = head, 1 = tail
+attribute float aLife;      // 0-1 remaining life
+attribute vec3 aCol;
+uniform mat4 uMVP;
+uniform float uScale;
+varying float vLife;
+varying vec3 vCol;
+void main() {
+  vCol = aCol;
+  vLife = aLife;
+  // Compute position from phase
+  // Head position = mix(source, target, phase+head_offset)
+  // Tail position = mix(source, target, phase-tail_offset)
+  float t = clamp(aPhase + (aEndFlag > 0.5 ? -0.15 : 0.0), 0.0, 1.0);
+  vec3 pos = mix(aSource, aTarget, t);
+  vec4 p = uMVP * vec4(pos, 1.0);
+  gl_Position = p;
+}
+`;
+
+const TRAIL_FS = `
+precision mediump float;
+varying float vLife;
+varying vec3 vCol;
+void main() {
+  // Bright lightning bolt — white hot core + colored tail
+  vec3 col = mix(vec3(1.0), vCol, 0.5);
+  gl_FragColor = vec4(col, vLife);
 }
 `;
 
@@ -356,35 +428,48 @@ function genHypothalamus(n) {
 }
 
 function genMystery(n) {
-  // Ψ CONSCIOUSNESS — mapped to corpus callosum + cingulate
-  // Corpus callosum: midline, ~(0, 0, 15), largest white matter tract
-  // 200-300 million axons connecting hemispheres
-  // Plus cingulate cortex above (seat of self-awareness, error monitoring)
+  // Ψ CONSCIOUSNESS — corpus callosum + cingulate cortex.
+  //
+  // Fully contained INSIDE the cortex dome (which extends roughly Z=-0.7 to +0.7).
+  // Callosum length 0.55, centered slightly back at Z=-0.05 → range -0.325 to +0.225
+  // Cingulate length 0.5, centered at Z=-0.05 → range -0.30 to +0.20
+  // Pushed ~1/5 back of center so the genu doesn't poke out the front.
+  //
+  // t is normalized 0-1 (NOT 0-π) for proper length control.
+  // Shape is determined by sin(t*π) for the arch curve.
   const pts = [];
-  const callosum = Math.floor(n * 0.6);  // 60% corpus callosum fibers
-  const cingulate = n - callosum;          // 40% cingulate crown
+  const callosum = Math.floor(n * 0.6);
+  const cingulate = n - callosum;
 
-  // Corpus callosum — flat arched band connecting hemispheres at midline
-  // Shaped like a flattened C: genu (front), body (middle), splenium (back)
+  // Corpus callosum — flattened C: genu (front) → body → splenium (back)
+  const cbLength = 0.55;     // front-to-back span
+  const cbCenter = -0.05;    // center slightly back of brain center
+  const cbBackShift = cbLength / 5; // 1/5 back push = 0.11
   for (let i = 0; i < callosum; i++) {
-    const t = (i / callosum) * Math.PI; // front to back arc
-    const genuToSplenium = -0.2 + t * 0.45; // Z sweep from anterior to posterior
+    const tNorm = i / callosum;            // 0 to 1
+    const t = tNorm * Math.PI;             // 0 to π for sin arch
+    // Z: linear from back to front, shifted back by 1/5
+    const z = cbCenter - cbLength / 2 + tNorm * cbLength - cbBackShift;
     pts.push([
-      gauss() * 0.03,                                    // tight to midline (x≈0)
-      0.2 + Math.sin(t) * 0.22 + gauss() * 0.02,        // arched above BG
-      genuToSplenium + gauss() * 0.03,                   // anterior → posterior sweep
+      gauss() * 0.03,                                 // tight to midline
+      0.2 + Math.sin(t) * 0.22 + gauss() * 0.02,     // arched above BG (Y)
+      z + gauss() * 0.03,
     ]);
   }
 
   // Cingulate cortex — curved band above corpus callosum
-  // Anterior cingulate (ACC) for error monitoring, posterior for self-reference
+  const cgLength = 0.5;
+  const cgCenter = -0.05;
+  const cgBackShift = cgLength / 5; // 1/5 back push = 0.1
   for (let i = 0; i < cingulate; i++) {
-    const t = (i / cingulate) * Math.PI;
+    const tNorm = i / cingulate;
+    const t = tNorm * Math.PI;
     const r = 0.1 * Math.cbrt(Math.random());
+    const z = cgCenter - cgLength / 2 + tNorm * cgLength - cgBackShift;
     pts.push([
-      gauss() * 0.05,                                    // near midline
-      0.45 + Math.sin(t) * 0.25 + r * Math.random() * 0.08, // above callosum
-      -0.15 + t * 0.28 + gauss() * 0.04,                // anterior → posterior
+      gauss() * 0.05,
+      0.45 + Math.sin(t) * 0.25 + r * Math.random() * 0.08,
+      z + gauss() * 0.04,
     ]);
   }
   return pts;
@@ -419,6 +504,22 @@ export class Brain3D {
     this._connPos = new Float32Array(MAX_CONN * 6);
     this._connCol = new Float32Array(MAX_CONN * 8);
     this._connN = 0;
+
+    // Lightning trails — travel along projection pathways
+    // Each trail: { src:[x,y,z], tgt:[x,y,z], col:[r,g,b], phase:0, life:1 }
+    this._trails = [];
+    // Per-trail buffers (2 vertices per trail: head + tail)
+    this._trailSrc = new Float32Array(MAX_TRAILS * 6);   // 2 verts × 3 = 6
+    this._trailTgt = new Float32Array(MAX_TRAILS * 6);
+    this._trailPhase = new Float32Array(MAX_TRAILS * 2); // 2 verts per trail
+    this._trailEnd = new Float32Array(MAX_TRAILS * 2);   // 0 = head, 1 = tail
+    this._trailLife = new Float32Array(MAX_TRAILS * 2);
+    this._trailCol = new Float32Array(MAX_TRAILS * 6);
+    // Initialize aEnd flags (head=0, tail=1) — never changes
+    for (let i = 0; i < MAX_TRAILS; i++) {
+      this._trailEnd[i * 2] = 0;     // head
+      this._trailEnd[i * 2 + 1] = 1; // tail
+    }
 
     // Pop-up notifications — floating process labels
     this._notifications = [];  // { text, x, y, z, age, maxAge, color }
@@ -457,26 +558,43 @@ export class Brain3D {
     if (!state || !this._open || this._destroyed) return;
     this._lastState = state;
 
-    // Scale render count from ACTUAL server cluster sizes (one-time)
+    // Scale render count from ACTUAL server cluster sizes
+    // Re-scale if server neuron count changes (server restart with new scale)
     const serverNeurons = state.totalNeurons || 1000;
-    if (serverNeurons > 1000 && !this._scaled) {
+    if (serverNeurons > 1000 && this._lastServerNeurons !== serverNeurons) {
+      this._lastServerNeurons = serverNeurons;
       this._scaled = true;
       TOTAL = Math.min(MAX_RENDER_NEURONS, Math.max(1000, Math.round(serverNeurons / 100)));
 
       // Read ACTUAL cluster sizes from server state — dynamic, not hardcoded
+      // VISUAL BOOST: use sqrt to compress proportions — large clusters don't dominate.
+      // This gives small center clusters (hypothalamus, mystery, amygdala, BG) more
+      // visual weight so they're not lost inside the huge cortex/cerebellum shells.
       if (state.clusters) {
         const serverClusters = state.clusters;
-        const serverTotal = Object.values(serverClusters).reduce((s, c) => s + (c.size || 0), 0) || 1;
-        // Map each CLUSTERS entry to its proportional share of TOTAL
-        for (const cl of CLUSTERS) {
+        // Use sqrt of cluster size for visual proportions — compresses the range
+        const sqrtSizes = CLUSTERS.map(cl => Math.sqrt((serverClusters[cl.key]?.size || 0)));
+        const sqrtTotal = sqrtSizes.reduce((s, v) => s + v, 0) || 1;
+        // Minimum 6% of total render budget per cluster (guarantees visibility)
+        const minFloor = Math.max(200, Math.round(TOTAL * 0.06));
+        for (let i = 0; i < CLUSTERS.length; i++) {
+          const cl = CLUSTERS[i];
           const serverCluster = serverClusters[cl.key];
           if (serverCluster && serverCluster.size) {
-            cl.n = Math.max(10, Math.round((serverCluster.size / serverTotal) * TOTAL));
+            const proportional = Math.round((sqrtSizes[i] / sqrtTotal) * TOTAL);
+            cl.n = Math.max(minFloor, proportional);
           }
         }
-        // Adjust to exactly TOTAL
-        const renderSum = CLUSTERS.reduce((s, c) => s + c.n, 0);
-        if (renderSum !== TOTAL) CLUSTERS[0].n += (TOTAL - renderSum);
+        // Adjust to exactly TOTAL — trim biggest cluster to match
+        let renderSum = CLUSTERS.reduce((s, c) => s + c.n, 0);
+        if (renderSum !== TOTAL) {
+          // Find biggest cluster and adjust
+          let maxIdx = 0;
+          for (let i = 1; i < CLUSTERS.length; i++) {
+            if (CLUSTERS[i].n > CLUSTERS[maxIdx].n) maxIdx = i;
+          }
+          CLUSTERS[maxIdx].n += (TOTAL - renderSum);
+        }
         console.log(`[Brain3D] Scaled: ${CLUSTERS.map(c => `${c.key}=${c.n}`).join(', ')} = ${TOTAL}`);
       } else {
         // No cluster data — scale from base proportions
@@ -549,6 +667,7 @@ export class Brain3D {
     }
 
     this._buildConnsFromEquations(state.clusters || {});
+    this._spawnTrailsFromEquations(state.clusters || {}, clusterSpikeCount);
 
     // ── BRAIN EXPANSION — clusters spread with activity ──
     // Clamp spike ratio so expansion stays sane (max 15% growth)
@@ -634,8 +753,8 @@ export class Brain3D {
 .b3d-tog:hover{border-color:#444}
 .b3d-tog.off{opacity:.3}
 .b3d-dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex-shrink:0}
-.b3d-lbl-wrap{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:1}
-.b3d-lbl{position:absolute;font-size:8px;letter-spacing:1px;font-weight:600;white-space:nowrap;transform:translate(-50%,-50%);opacity:.65;text-shadow:0 0 8px rgba(0,0,0,.95);transition:opacity .3s}
+.b3d-lbl-wrap{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:4}
+.b3d-lbl{position:absolute;font-size:11px;letter-spacing:1.5px;font-weight:800;white-space:nowrap;transform:translate(-50%,-50%);opacity:1;padding:3px 9px;background:rgba(0,0,0,.82);border:1px solid rgba(255,255,255,.25);border-radius:4px;text-shadow:0 0 6px rgba(0,0,0,1),0 0 12px currentColor;box-shadow:0 0 20px rgba(0,0,0,.6);transition:opacity .3s}
 .b3d-foot{position:absolute;bottom:8px;left:12px;right:12px;display:flex;justify-content:space-between;font-size:9px;color:#444;pointer-events:none;z-index:1}
 .b3d-notif-wrap{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:3}
 .b3d-notif{position:absolute;font-size:11px;font-family:inherit;white-space:nowrap;text-shadow:0 0 12px rgba(0,0,0,.95),0 0 4px currentColor;pointer-events:none;letter-spacing:.3px;padding:4px 8px;background:rgba(0,0,0,.6);border-radius:4px;border-left:2px solid currentColor;backdrop-filter:blur(2px);max-width:500px;overflow:hidden;text-overflow:ellipsis}
@@ -785,6 +904,7 @@ export class Brain3D {
     this._neuronProg = this._mkProg(NEURON_VS, NEURON_FS);
     this._lineProg   = this._mkProg(LINE_VS, LINE_FS);
     this._pulseProg  = this._mkProg(PULSE_VS, PULSE_FS);
+    this._trailProg  = this._mkProg(TRAIL_VS, TRAIL_FS);
 
     // Neuron buffers
     this._bPos  = gl.createBuffer();
@@ -800,6 +920,14 @@ export class Brain3D {
     this._bPPos  = gl.createBuffer();
     this._bPLife = gl.createBuffer();
     this._bPCol  = gl.createBuffer();
+
+    // Trail buffers — lightning traveling along projection pathways
+    this._bTSrc   = gl.createBuffer();
+    this._bTTgt   = gl.createBuffer();
+    this._bTPhase = gl.createBuffer();
+    this._bTEnd   = gl.createBuffer();
+    this._bTLife  = gl.createBuffer();
+    this._bTCol   = gl.createBuffer();
   }
 
   _mkProg(vSrc, fSrc) {
@@ -1202,12 +1330,13 @@ export class Brain3D {
 
       const srcRate = act[srcCI].rate;
       const tgtRate = act[tgtCI].rate;
-      if (srcRate === 0 && tgtRate === 0) continue;
 
-      // Seeds proportional to activity × projection strength
-      // More active pathways get more fractal roots
+      // ALWAYS show projections — even dormant pathways get visible connections
+      // so the fractal anatomy is visible. Active pathways get MORE seeds.
       const activity = (srcRate + tgtRate) * 0.5;
-      const seeds = Math.max(1, Math.round(activity * density * strength * 200));
+      // Base 3 seeds per pathway + scale up with activity. Real firing rates are ~1-3%.
+      // 0.02 × 0.08 × 0.5 × 5000 = 4 extra seeds on top of base 3 = 7 seeds per strong pathway
+      const seeds = 3 + Math.round(activity * density * strength * 5000);
 
       for (let s = 0; s < seeds && this._connN < MAX_CONN; s++) {
         // ── DEPTH 0: Source → Target (inter-cluster projection) ──
@@ -1236,16 +1365,15 @@ export class Brain3D {
 
         for (const d1Neuron of depth1Neurons) {
           if (this._connN >= MAX_CONN) break;
-          // Pick one of the target's outgoing projections to follow
-          if (Math.random() > 0.4) continue; // 40% chance to branch further
+          // 80% chance to branch further — make fractal trees deep and visible
+          if (Math.random() > 0.8) continue;
           const nextCI = tgtOutgoing[Math.floor(Math.random() * tgtOutgoing.length)];
-          if (act[nextCI].rate === 0 && Math.random() > 0.2) continue;
 
           const nextNeuron = randNeuron(nextCI);
           this._addConn(d1Neuron, nextNeuron, CLUSTERS[tgtCI].rgb, CLUSTERS[nextCI].rgb);
 
-          // ── DEPTH 3: One more intra-cluster branch at the terminus ──
-          if (this._connN < MAX_CONN && Math.random() < 0.3) {
+          // ── DEPTH 3: terminal branch — 60% chance (was 30%) ──
+          if (this._connN < MAX_CONN && Math.random() < 0.6) {
             const termNeuron = randNeuron(nextCI);
             if (termNeuron !== nextNeuron) {
               this._addConn(nextNeuron, termNeuron, CLUSTERS[nextCI].rgb, CLUSTERS[nextCI].rgb);
@@ -1285,11 +1413,92 @@ export class Brain3D {
     this._connPos[vi+3] = this._pos[bi*3];
     this._connPos[vi+4] = this._pos[bi*3+1];
     this._connPos[vi+5] = this._pos[bi*3+2];
-    // Alpha fades with depth — deeper branches dimmer (fractal falloff)
-    const alpha = 0.12 + Math.random() * 0.08;
+    // Alpha — connections clearly visible, slight variation for depth
+    const alpha = 0.45 + Math.random() * 0.25;
     this._connCol[ci]   = colorA[0]; this._connCol[ci+1] = colorA[1]; this._connCol[ci+2] = colorA[2]; this._connCol[ci+3] = alpha;
     this._connCol[ci+4] = colorB[0]; this._connCol[ci+5] = colorB[1]; this._connCol[ci+6] = colorB[2]; this._connCol[ci+7] = alpha;
     this._connN++;
+  }
+
+  /**
+   * Spawn lightning trails along projection pathways based on brain equations.
+   * Driven by actual cluster firing rates from server — each tick spawns trails
+   * proportional to spike activity. Trails travel source → target then fade.
+   */
+  _spawnTrailsFromEquations(serverClusters, clusterSpikeCount) {
+    const keyToIdx = {};
+    CLUSTERS.forEach((cl, i) => { keyToIdx[cl.key] = i; });
+
+    // Cluster offsets for neuron lookup
+    const offsets = [];
+    let off = 0;
+    for (let c = 0; c < CLUSTERS.length; c++) {
+      offsets.push(off);
+      off += CLUSTERS[c].n;
+    }
+
+    // 20 projection pathways — same as connections
+    const PROJECTIONS = [
+      [keyToIdx.cortex, keyToIdx.hippocampus],
+      [keyToIdx.cortex, keyToIdx.amygdala],
+      [keyToIdx.cortex, keyToIdx.basalGanglia],
+      [keyToIdx.cortex, keyToIdx.cerebellum],
+      [keyToIdx.hippocampus, keyToIdx.cortex],
+      [keyToIdx.hippocampus, keyToIdx.amygdala],
+      [keyToIdx.hippocampus, keyToIdx.hypothalamus],
+      [keyToIdx.amygdala, keyToIdx.cortex],
+      [keyToIdx.amygdala, keyToIdx.hippocampus],
+      [keyToIdx.amygdala, keyToIdx.hypothalamus],
+      [keyToIdx.amygdala, keyToIdx.basalGanglia],
+      [keyToIdx.basalGanglia, keyToIdx.cortex],
+      [keyToIdx.basalGanglia, keyToIdx.cerebellum],
+      [keyToIdx.cerebellum, keyToIdx.cortex],
+      [keyToIdx.cerebellum, keyToIdx.basalGanglia],
+      [keyToIdx.hypothalamus, keyToIdx.amygdala],
+      [keyToIdx.hypothalamus, keyToIdx.basalGanglia],
+      [keyToIdx.mystery, keyToIdx.cortex],
+      [keyToIdx.mystery, keyToIdx.amygdala],
+      [keyToIdx.mystery, keyToIdx.hippocampus],
+    ];
+
+    // For each projection, spawn trails proportional to source activity
+    // Active cluster fires → lightning travels down its outgoing tracts
+    for (const [srcCI, tgtCI] of PROJECTIONS) {
+      if (this._trails.length >= MAX_TRAILS) break;
+
+      const srcSpikes = clusterSpikeCount[srcCI] || 0;
+      const srcN = CLUSTERS[srcCI].n;
+      // Trail spawn rate = firing rate × projection intensity
+      // Biological: 1-3% firing = 10-30 spikes per 1000 neurons
+      // 1-2 trails per projection per tick when active
+      const trailCount = Math.max(1, Math.round((srcSpikes / Math.max(1, srcN)) * 100));
+
+      for (let t = 0; t < Math.min(trailCount, 3); t++) {
+        if (this._trails.length >= MAX_TRAILS) break;
+
+        // Random source neuron in source cluster (biased toward spiking ones)
+        const srcIdx = offsets[srcCI] + Math.floor(Math.random() * srcN);
+        const tgtIdx = offsets[tgtCI] + Math.floor(Math.random() * CLUSTERS[tgtCI].n);
+        if (srcIdx >= TOTAL || tgtIdx >= TOTAL) continue;
+
+        this._trails.push({
+          src: [this._pos[srcIdx * 3], this._pos[srcIdx * 3 + 1], this._pos[srcIdx * 3 + 2]],
+          tgt: [this._pos[tgtIdx * 3], this._pos[tgtIdx * 3 + 1], this._pos[tgtIdx * 3 + 2]],
+          col: [
+            (CLUSTERS[srcCI].rgb[0] + CLUSTERS[tgtCI].rgb[0]) * 0.5,
+            (CLUSTERS[srcCI].rgb[1] + CLUSTERS[tgtCI].rgb[1]) * 0.5,
+            (CLUSTERS[srcCI].rgb[2] + CLUSTERS[tgtCI].rgb[2]) * 0.5,
+          ],
+          age: 0,
+        });
+      }
+    }
+
+    // Age existing trails, cull dead ones
+    for (let i = this._trails.length - 1; i >= 0; i--) {
+      this._trails[i].age++;
+      if (this._trails[i].age > TRAIL_LIFE) this._trails.splice(i, 1);
+    }
   }
 
   // ── Render loop ─────────────────────────────────────────────────
@@ -1333,11 +1542,13 @@ export class Brain3D {
 
     const sc = Math.min(w, h) / 480;
 
-    // 1) Lines
+    // 1) Lines (static connection anatomy)
     this._drawLines(gl, mvp);
-    // 2) Neurons
+    // 2) Lightning trails (firing activity along projection pathways)
+    this._drawTrails(gl, mvp);
+    // 3) Neurons
     this._drawNeurons(gl, mvp, sc);
-    // 3) Pulses
+    // 4) Pulses (activation rings)
     this._drawPulses(gl, mvp, sc);
     // 4) Labels
     this._projectLabels(mvp, cv);
@@ -1392,6 +1603,89 @@ export class Brain3D {
     gl.vertexAttribPointer(colL, 4, gl.FLOAT, false, 0, 0);
 
     gl.drawArrays(gl.LINES, 0, this._connN * 2);
+    gl.depthMask(true);
+  }
+
+  /**
+   * Draw lightning trails — fast-moving line segments along projection pathways.
+   * Each trail expands from source then converges to target, fading out.
+   * Activity-driven: spawned from cluster firing rates (brain equations).
+   */
+  _drawTrails(gl, mvp) {
+    const n = this._trails.length;
+    if (!n) return;
+
+    // Build buffers from active trails
+    const srcBuf = this._trailSrc;
+    const tgtBuf = this._trailTgt;
+    const phaseBuf = this._trailPhase;
+    const lifeBuf = this._trailLife;
+    const colBuf = this._trailCol;
+
+    for (let i = 0; i < n; i++) {
+      const tr = this._trails[i];
+      const phase = tr.age / TRAIL_LIFE; // 0 → 1
+      // Life envelope — fade in quickly, peak mid, fade out
+      // Expand phase: 0 → 0.5 grows from nothing
+      // Converge phase: 0.5 → 1 converges to nothing
+      const expandFade = Math.min(1, phase * 4);       // fade in during first 25%
+      const convergeFade = Math.min(1, (1 - phase) * 4); // fade out during last 25%
+      const life = Math.min(expandFade, convergeFade);
+
+      // 2 vertices per trail — head (end=0) and tail (end=1)
+      const v0 = i * 2;
+      const v1 = i * 2 + 1;
+      const p6 = i * 6;
+
+      // Both vertices use same src/tgt — offset computed in vertex shader from aEnd
+      srcBuf[p6]     = tr.src[0]; srcBuf[p6+1] = tr.src[1]; srcBuf[p6+2] = tr.src[2];
+      srcBuf[p6+3]   = tr.src[0]; srcBuf[p6+4] = tr.src[1]; srcBuf[p6+5] = tr.src[2];
+      tgtBuf[p6]     = tr.tgt[0]; tgtBuf[p6+1] = tr.tgt[1]; tgtBuf[p6+2] = tr.tgt[2];
+      tgtBuf[p6+3]   = tr.tgt[0]; tgtBuf[p6+4] = tr.tgt[1]; tgtBuf[p6+5] = tr.tgt[2];
+
+      phaseBuf[v0] = phase;
+      phaseBuf[v1] = phase;
+      lifeBuf[v0]  = life;
+      lifeBuf[v1]  = life * 0.5; // tail dimmer than head
+
+      colBuf[p6]   = tr.col[0]; colBuf[p6+1] = tr.col[1]; colBuf[p6+2] = tr.col[2];
+      colBuf[p6+3] = tr.col[0]; colBuf[p6+4] = tr.col[1]; colBuf[p6+5] = tr.col[2];
+    }
+
+    const p = this._trailProg;
+    gl.useProgram(p);
+    gl.uniformMatrix4fv(gl.getUniformLocation(p, 'uMVP'), false, mvp);
+    gl.depthMask(false);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE); // additive blend for glow effect
+
+    const bind = (buf, name, size, data, count) => {
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      gl.bufferData(gl.ARRAY_BUFFER, data.subarray(0, count), gl.DYNAMIC_DRAW);
+      const loc = gl.getAttribLocation(p, name);
+      if (loc >= 0) {
+        gl.enableVertexAttribArray(loc);
+        gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 0, 0);
+      }
+    };
+
+    bind(this._bTSrc,   'aSource', 3, srcBuf,   n * 6);
+    bind(this._bTTgt,   'aTarget', 3, tgtBuf,   n * 6);
+    bind(this._bTPhase, 'aPhase',  1, phaseBuf, n * 2);
+    bind(this._bTEnd,   'aEndFlag',1, this._trailEnd, n * 2);
+    bind(this._bTLife,  'aLife',   1, lifeBuf,  n * 2);
+    bind(this._bTCol,   'aCol',    3, colBuf,   n * 6);
+
+    // Need aPos too — use source as position (shader computes real pos)
+    const posLoc = gl.getAttribLocation(p, 'aPos');
+    if (posLoc >= 0) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, this._bTSrc);
+      gl.enableVertexAttribArray(posLoc);
+      gl.vertexAttribPointer(posLoc, 3, gl.FLOAT, false, 0, 0);
+    }
+
+    gl.lineWidth(2);
+    gl.drawArrays(gl.LINES, 0, n * 2);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); // restore default
     gl.depthMask(true);
   }
 

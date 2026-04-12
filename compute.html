@@ -90,7 +90,7 @@ function connectToServer() {
         return;
       }
 
-      // FULL GPU PIPELINE — zero JS loops for 3.2M neurons
+      // FULL GPU PIPELINE — zero JS loops for N neurons (scales to hardware)
       // 1. GPU generates currents (PCG hash noise — no Math.random loop)
       // 2. GPU runs LIF shader (voltage update + spike check)
       // 3. GPU counts spikes (atomic counter — no JS scan)
@@ -108,8 +108,8 @@ function connectToServer() {
       // ALL ON GPU — no JS loops, no CPU→GPU current upload, no GPU→CPU spike readback
       const result = await gpu.fullStep(clusterName, effectiveDrive, noiseAmp);
 
-      // Send back spike count only — server doesn't need individual spike indices
-      // for the simplified server brain (no intra-cluster synapses at 3.2M scale)
+      // Send back spike count only — 4 bytes instead of N-sized array
+      // Server doesn't need individual spike indices (no intra-cluster synapses at scale)
       ws.send(JSON.stringify({
         type: 'compute_result',
         clusterName,

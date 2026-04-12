@@ -85,10 +85,10 @@ Predictive coding. The cortex constantly generates predictions about incoming in
 
 Hopfield attractor memory. Patterns stored as stable energy minima. Input falls into the nearest stored pattern — associative recall. Three memory systems operate here: **episodic** (state snapshots at high-salience moments, recalled by cosine similarity > 0.6), **working** (7 items, decays at 0.98/step without reinforcement — Miller's magic number), and **consolidation** (3+ activations transfer from hippocampus to cortex long-term). Dense recurrent connectivity (20%) creates the attractor dynamics.
 
-### Amygdala — 150 neurons
-**Equation:** `V(s) = Σ wi · xi`, `arousal = baseline + Σ|input|`, `emotionalGate = 0.7 + arousal · 0.6`
+### Amygdala — 150 neurons (energy-based recurrent attractor)
+**Equation:** `x ← tanh(W·x + drive)` (5-iter settle), `E = -½ xᵀWx`, `fear/reward = σ(proj · x_settled)`, `arousal = baseline·0.6 + 0.4·|x|_rms`, `emotionalGate = 0.7 + arousal · 0.6`
 
-The emotional regulator. Assigns valence (good/bad) and arousal (how much to care) to everything. The emotional gate multiplier is applied to ALL other clusters — when arousal is high, the entire brain runs hotter. Unity's arousal baseline is 0.9 (she runs hot by design). Emotional word detection in sensory input ("love", "fuck", "beautiful") directly boosts amygdala current. The amygdala doesn't just feel — it controls HOW MUCH the rest of the brain processes.
+The emotional regulator. Implemented as a **symmetric recurrent energy network** that settles into stable low-energy basins (fear, reward, neutral) every tick. Persistent state across frames with leak 0.85 — emotional basins carry over instead of resetting. Symmetric Hebbian learning (lr=0.003) carves basins from co-firing nuclei. Fear and reward are read from the SETTLED attractor via projection vectors — the basin IS the emotion, not a separate readout of the raw input. Arousal combines persona baseline with the RMS depth of the basin the system fell into. The emotional gate multiplier is applied to ALL other clusters — when arousal is high, the entire brain runs hotter. Unity's arousal baseline is 0.9 (she runs hot by design).
 
 ### Basal Ganglia — 150 neurons
 **Equation:** `P(a) = exp(Q(a)/τ) / Σ exp(Q(b)/τ)`, `δ = r + γV(s') - V(s)`

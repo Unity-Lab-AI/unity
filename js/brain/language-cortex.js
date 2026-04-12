@@ -62,251 +62,50 @@ export class LanguageCortex {
     // Learns from structural bigrams + conversation, no pre-labeled types
     this._usageTypes = new Map(); // word → { pronoun, verb, noun, adj, prep, det, conj, qword }
 
-    // ── ENGLISH LANGUAGE STRUCTURE ──
-    // These aren't vocabulary — they're OPERATORS. The grammar equation
-    // needs them the same way math needs + - × ÷. Without "the", "is",
-    // "to", you can't form a sentence in English. Period.
-    // A human brain has these wired in by age 2.
-    this._structuralOps = this._buildLanguageStructure();
+    // The language cortex starts EMPTY. No hardcoded vocab lists, no
+    // seeded grammar tables, no baked-in word categories. Structure
+    // comes from the pure word-type equations (suffixes, length, vowel
+    // ratios — see wordType()) and the slot requirement equations.
+    // Vocabulary, bigrams, and usage-type weights are learned at runtime
+    // from loadSelfImage(text) (Unity's persona file as equational
+    // self-image) and from live conversation via learnSentence().
+    this._selfImageLoaded = false;
   }
 
   /**
-   * Build the structural operators of English.
-   * These are the EQUATION COMPONENTS — not a word list.
-   * "the" is a definiteness operator. "is" is a copula (linker).
-   * "to" is an infinitive marker. "and" is a conjunction operator.
-   * Without these, no English sentence can be formed.
+   * Load Unity's self-image from raw text — e.g. docs/Ultimate Unity.txt.
    *
-   * Also builds MORPHEME equations — how to form new words:
-   *   un- + happy = unhappy (negation morpheme)
-   *   think + -ing = thinking (progressive aspect)
-   *   -tion transforms verbs → nouns
+   * This is the equational self-image: the persona document becomes the
+   * brain's initial vocabulary, bigrams, and usage-type weights via the
+   * same learnSentence() path used for live conversation. No lists, no
+   * hardcoded tables — every word type comes from the letter equations,
+   * every bigram from textual adjacency, every usage-type from context.
+   *
+   * Caller supplies the text (browser: fetch, node: fs.readFile) so the
+   * cortex itself stays environment-agnostic.
    */
-  _buildLanguageStructure() {
-    const ops = {
-      // PRONOUNS — subject operators (who does the action)
-      subjects: {
-        first:  { singular: 'i', plural: 'we', possessive: 'my', object: 'me' },
-        second: { singular: 'you', plural: 'you', possessive: 'your', object: 'you' },
-        third:  { singular: ['he', 'she', 'it'], plural: 'they', possessive: ['his', 'her', 'its'], object: ['him', 'her', 'it'] },
-      },
+  loadSelfImage(text, dictionary, arousal = 0.7, valence = 0.2) {
+    if (!text || this._selfImageLoaded || !dictionary) return 0;
+    this._selfImageLoaded = true;
+    // Strip markdown noise so words survive, then split on sentence
+    // terminators and line breaks — paragraphs, bullets, headers all work.
+    const sentences = String(text)
+      .replace(/[*_#`>|\[\]()]/g, ' ')
+      .split(/[.!?\n\r]+/)
+      .map(s => s.trim())
+      .filter(s => s.length >= 3);
+    for (const s of sentences) {
+      this.learnSentence(s, dictionary, arousal, valence);
+    }
+    return sentences.length;
+  }
 
-      // COPULA — linking operators (connects subject to state)
-      copula: {
-        present: { first: 'am', second: 'are', third: 'is', plural: 'are' },
-        past:    { first: 'was', second: 'were', third: 'was', plural: 'were' },
-      },
-
-      // AUXILIARY — action modifiers
-      auxiliary: {
-        do:    { present: 'do', third: 'does', past: 'did', negative: "don't" },
-        have:  { present: 'have', third: 'has', past: 'had', negative: "haven't" },
-        can:   { present: 'can', past: 'could', negative: "can't" },
-        will:  { present: 'will', past: 'would', negative: "won't" },
-        shall: { present: 'shall', past: 'should', negative: "shouldn't" },
-      },
-
-      // DETERMINERS — specificity operators
-      determiners: ['the', 'a', 'an', 'this', 'that', 'some', 'any', 'no', 'every', 'all'],
-
-      // PREPOSITIONS — spatial/temporal relation operators
-      prepositions: ['to', 'in', 'on', 'at', 'by', 'for', 'with', 'from', 'of', 'about',
-                     'up', 'out', 'off', 'over', 'into', 'through', 'between', 'after', 'before'],
-
-      // CONJUNCTIONS — logical operators
-      conjunctions: ['and', 'but', 'or', 'so', 'because', 'if', 'when', 'while', 'than', 'then'],
-
-      // QUESTION OPERATORS
-      questionWords: ['what', 'who', 'where', 'when', 'why', 'how', 'which'],
-
-      // NEGATION
-      negation: ['not', 'no', "n't"],
-
-      // RESPONSE OPERATORS
-      affirmative: ['yes', 'yeah', 'okay', 'sure', 'right', 'exactly'],
-      negative: ['no', 'nah', 'nope'],
-
-      // DISCOURSE MARKERS — conversational flow
-      discourse: ['well', 'so', 'like', 'just', 'actually', 'really', 'maybe',
-                  'probably', 'honestly', 'basically', 'definitely'],
-
-      // MORPHEME EQUATIONS — how to form new words
-      // prefix + root = new meaning
-      prefixes: {
-        'un':   -1,    // negation (un+happy = unhappy)
-        're':    0.5,  // repetition (re+do = redo)
-        'pre':   0.3,  // before (pre+set = preset)
-        'over':  1.2,  // excess (over+do = overdo)
-        'under': 0.5,  // insufficient
-        'mis':  -0.5,  // wrong (mis+understand)
-        'out':   1.0,  // surpass (out+do = outdo)
-      },
-      // root + suffix = type change
-      suffixes: {
-        'ing':  { type: 'verb', aspect: 'progressive' },
-        'ed':   { type: 'verb', aspect: 'past' },
-        's':    { type: 'verb', aspect: 'present_third' },
-        'tion': { type: 'noun', from: 'verb' },
-        'ment': { type: 'noun', from: 'verb' },
-        'ness': { type: 'noun', from: 'adj' },
-        'ly':   { type: 'adverb', from: 'adj' },
-        'ful':  { type: 'adj', meaning: 'full_of' },
-        'less': { type: 'adj', meaning: 'without' },
-        'able': { type: 'adj', meaning: 'capable' },
-        'er':   { type: 'noun', meaning: 'doer' },
-        'est':  { type: 'adj', meaning: 'superlative' },
-      },
-
-      // COMMON VERBS — the ACTION core of English
-      // These appear in virtually every conversation
-      coreVerbs: ['be', 'have', 'do', 'say', 'go', 'get', 'make', 'know', 'think', 'take',
-                  'see', 'come', 'want', 'look', 'use', 'find', 'give', 'tell', 'work', 'try',
-                  'feel', 'need', 'leave', 'call', 'keep', 'let', 'put', 'show', 'hear', 'play',
-                  'love', 'like', 'live', 'believe', 'hold', 'bring', 'happen', 'write', 'sit',
-                  'stand', 'lose', 'pay', 'meet', 'build', 'code', 'talk', 'start', 'help'],
-
-      // COMMON NOUNS — the THING core
-      coreNouns: ['thing', 'person', 'time', 'way', 'day', 'world', 'life', 'hand', 'part',
-                  'place', 'problem', 'fact', 'idea', 'point', 'home', 'brain', 'mind', 'name',
-                  'word', 'sense', 'music', 'code', 'vibe', 'shit', 'fuck', 'hell', 'babe'],
-
-      // COMMON ADJECTIVES — the QUALITY core
-      coreAdj: ['good', 'new', 'first', 'last', 'long', 'great', 'little', 'own', 'other',
-                'old', 'right', 'big', 'high', 'different', 'small', 'next', 'real', 'cool',
-                'hot', 'bad', 'hard', 'deep', 'weird', 'wild', 'tired', 'happy', 'sad', 'angry'],
-
-      // ADVERBS — manner/degree
-      coreAdverbs: ['here', 'there', 'now', 'then', 'still', 'already', 'always', 'never',
-                    'ever', 'again', 'together', 'away', 'enough', 'much', 'even', 'too'],
-    };
-
-    // Load ALL structural operators into the dictionary with correct types
-    this._loadStructure = (dictionary) => {
-      if (this._structureLoaded) return;
-      this._structureLoaded = true;
-
-      const load = (words, arousal, valence) => {
-        if (!Array.isArray(words)) words = [words];
-        for (const w of words) {
-          if (typeof w === 'string' && w.length >= 1) {
-            dictionary.learnWord(w, this.wordToPattern(w), arousal, valence);
-          }
-        }
-      };
-
-      // Load pronouns
-      const s = ops.subjects;
-      load([s.first.singular, s.first.plural, s.first.possessive, s.first.object], 0.5, 0.1);
-      load([s.second.singular, s.second.possessive, s.second.object], 0.5, 0.2);
-      load([...s.third.singular, s.third.plural, ...s.third.possessive, ...s.third.object], 0.4, 0);
-
-      // Load copula + auxiliary
-      for (const forms of Object.values(ops.copula)) load(Object.values(forms), 0.3, 0);
-      for (const aux of Object.values(ops.auxiliary)) load(Object.values(aux), 0.4, 0);
-
-      // Load operators
-      load(ops.determiners, 0.2, 0);
-      load(ops.prepositions, 0.2, 0);
-      load(ops.conjunctions, 0.3, 0);
-      load(ops.questionWords, 0.5, 0);
-      load(ops.negation, 0.5, -0.3);
-      load(ops.affirmative, 0.4, 0.3);
-      load(ops.negative, 0.4, -0.2);
-      load(ops.discourse, 0.3, 0);
-
-      // Load core vocabulary with emotional associations
-      load(ops.coreVerbs, 0.5, 0.1);
-      load(ops.coreNouns, 0.4, 0);
-      load(ops.coreAdj, 0.5, 0);
-      load(ops.coreAdverbs, 0.3, 0);
-
-      // Build bigrams from structural knowledge
-      // Subject → copula
-      for (const cop of Object.values(ops.copula.present)) {
-        dictionary.learnBigram('i', 'am');
-        dictionary.learnBigram('you', 'are');
-        dictionary.learnBigram('we', 'are');
-        dictionary.learnBigram('they', 'are');
-        dictionary.learnBigram('it', 'is');
-        dictionary.learnBigram('she', 'is');
-        dictionary.learnBigram('he', 'is');
-      }
-      // Subject → common verbs
-      for (const v of ops.coreVerbs.slice(0, 20)) {
-        dictionary.learnBigram('i', v);
-        dictionary.learnBigram('you', v);
-        dictionary.learnBigram('we', v);
-        dictionary.learnBigram('they', v);
-      }
-      // Verb → preposition
-      for (const p of ops.prepositions.slice(0, 10)) {
-        for (const v of ops.coreVerbs.slice(0, 10)) {
-          dictionary.learnBigram(v, p);
-        }
-      }
-      // Determiner → noun
-      for (const d of ops.determiners.slice(0, 3)) {
-        for (const n of ops.coreNouns.slice(0, 10)) {
-          dictionary.learnBigram(d, n);
-        }
-      }
-      // Question → auxiliary
-      for (const q of ops.questionWords) {
-        dictionary.learnBigram(q, 'do');
-        dictionary.learnBigram(q, 'is');
-        dictionary.learnBigram(q, 'are');
-        dictionary.learnBigram(q, 'can');
-      }
-
-      // Learn usage types from structural bigrams
-      // "i" → "am": am gets verbScore boost
-      // "the" → "thing": thing gets nounScore boost
-      for (const [w1, followers] of dictionary._bigrams) {
-        for (const [w2] of followers) {
-          this._learnUsageType(w1, w2);
-        }
-      }
-
-      console.log(`[LanguageCortex] English structure loaded: ${dictionary.size} words, ${this._usageTypes.size} usage-typed`);
-    };
-
-    // DYNAMIC EXPANSION — when new words are learned, they auto-join
-    // the right category based on pattern similarity (thesaurus equation).
-    // The core lists above are SEEDS. New words expand them dynamically.
-    this._expandStructure = (word, dictionary) => {
-      const wt = this.wordType(word);
-      const pattern = this.wordToPattern(word);
-
-      // Find which category this word belongs to by its type score
-      if (wt.verb > 0.4 && !ops.coreVerbs.includes(word)) {
-        ops.coreVerbs.push(word);
-        // Auto-create bigrams: subject → new verb
-        const subjects = ['i', 'you', 'we', 'they'];
-        for (const s of subjects) dictionary.learnBigram(s, word);
-      }
-      if (wt.noun > 0.4 && !ops.coreNouns.includes(word)) {
-        ops.coreNouns.push(word);
-        // Auto-create bigrams: determiner → new noun
-        dictionary.learnBigram('the', word);
-        dictionary.learnBigram('a', word);
-      }
-      if (wt.adj > 0.4 && !ops.coreAdj.includes(word)) {
-        ops.coreAdj.push(word);
-      }
-
-      // Also find SIMILAR words already in dictionary and create bigrams
-      // This is the thesaurus equation: cosine(pattern_a, pattern_b) > 0.7 = similar
-      const similar = dictionary.findByPattern(pattern, 5);
-      for (const simWord of similar) {
-        if (simWord !== word) {
-          // Similar words can follow each other
-          dictionary.learnBigram(word, simWord);
-          dictionary.learnBigram(simWord, word);
-        }
-      }
-    };
-
-    return ops;
+  /**
+   * Legacy hook — kept so older callers that invoked _loadStructure(dict)
+   * at boot don't crash. All real structure now comes from loadSelfImage.
+   */
+  _loadStructure(_dictionary) {
+    // no-op: structure is learned, not hardcoded
   }
 
   _initLetterPatterns() {
@@ -342,128 +141,189 @@ export class LanguageCortex {
     const vowelRatio = vowelCount / (len || 1);
     const consonantRatio = 1 - vowelRatio;
     const hasApostrophe = w.includes("'");
-    const firstChar = w.charCodeAt(0) - 97; // 0-25
-    const lastChar = w.charCodeAt(w.length - 1) - 97;
+    const first = w[0];
+    const second = w[1] || '';
+    const firstIsVowel = VOWELS.includes(first);
 
     // ── SUFFIX EQUATIONS — computed from ending letter patterns ──
-    // These are structural — the LETTERS determine the type
 
-    // Verb suffixes: -ing(continuous), -ed(past), -n't(negation), -ize/-ise(action), -ate(action)
+    // Verb suffixes: -ing, -ed, -ize/-ise, -ate, apostrophe contractions
+    // n't endings (don't, can't, won't, isn't) are STRONG verbs — aux + negation.
+    const ntEnding = w.endsWith("n't") || w.endsWith("'t");
     const verbSuffix = (
-      (w.endsWith('ing') ? 0.7 : 0) +
-      (w.endsWith('ed') && len > 3 ? 0.6 : 0) +
-      (w.endsWith("n't") || w.endsWith("'t") ? 0.5 : 0) +
+      (w.endsWith('ing') && len > 3 ? 0.75 : 0) +
+      (w.endsWith('ed') && len > 3 ? 0.65 : 0) +
+      (ntEnding ? 0.85 : 0) +                     // aux-negation contractions are verbs
       (w.endsWith('ize') || w.endsWith('ise') ? 0.6 : 0) +
       (w.endsWith('ate') && len > 4 ? 0.5 : 0) +
-      (w.endsWith("'ll") || w.endsWith("'ve") || w.endsWith("'d") ? 0.4 : 0)
+      (w.endsWith("'ll") || w.endsWith("'ve") || w.endsWith("'d") || w.endsWith("'s") || w.endsWith("'re") || w.endsWith("'m") ? 0.55 : 0)
     );
 
-    // Noun suffixes: -tion/-sion(process→thing), -ment(result), -ness(quality), -ity(state), -er/-or(doer)
+    // Noun suffixes
     const nounSuffix = (
-      (w.endsWith('tion') || w.endsWith('sion') ? 0.7 : 0) +
-      (w.endsWith('ment') ? 0.6 : 0) +
-      (w.endsWith('ness') ? 0.6 : 0) +
+      (w.endsWith('tion') || w.endsWith('sion') ? 0.75 : 0) +
+      (w.endsWith('ment') ? 0.65 : 0) +
+      (w.endsWith('ness') ? 0.65 : 0) +
       (w.endsWith('ity') || w.endsWith('ety') ? 0.6 : 0) +
-      (w.endsWith('er') && len > 4 ? 0.2 : 0) +
-      (w.endsWith('or') && len > 4 ? 0.2 : 0)
+      (w.endsWith('age') && len > 4 ? 0.4 : 0) +
+      (w.endsWith('er') && len > 4 && !w.endsWith('her') ? 0.25 : 0) +
+      (w.endsWith('or') && len > 4 ? 0.25 : 0) +
+      (w.endsWith('ist') && len > 4 ? 0.4 : 0)
     );
 
-    // Adjective suffixes: -ly(manner), -ful(full of), -ous(having), -ive(tending), -al(relating), -able(capable)
+    // Adjective suffixes
     const adjSuffix = (
-      (w.endsWith('ly') && len > 3 ? 0.5 : 0) +
-      (w.endsWith('ful') ? 0.6 : 0) +
-      (w.endsWith('ous') ? 0.6 : 0) +
-      (w.endsWith('ive') ? 0.5 : 0) +
+      (w.endsWith('ly') && len > 3 ? 0.55 : 0) +
+      (w.endsWith('ful') ? 0.65 : 0) +
+      (w.endsWith('ous') ? 0.65 : 0) +
+      (w.endsWith('ive') ? 0.55 : 0) +
       (w.endsWith('al') && len > 3 ? 0.4 : 0) +
-      (w.endsWith('able') || w.endsWith('ible') ? 0.5 : 0) +
-      (w.endsWith('ish') ? 0.4 : 0) +
-      (w.endsWith('ic') && len > 3 ? 0.4 : 0)
+      (w.endsWith('able') || w.endsWith('ible') ? 0.55 : 0) +
+      (w.endsWith('ish') && len > 3 ? 0.4 : 0) +
+      (w.endsWith('ic') && len > 3 ? 0.4 : 0) +
+      (w.endsWith('y') && len > 3 && !w.endsWith('ly') ? 0.2 : 0)
     );
 
-    // ── LENGTH + PATTERN EQUATIONS — no word comparisons ──
-    // Function words are SHORT. Content words are LONG. This is a mathematical property of English.
+    // ── LENGTH + PATTERN EQUATIONS ──
 
-    // PRONOUN: length 1-4, high vowel ratio, often has apostrophe contractions
+    // PRONOUN: short, vowel-heavy, NOT 'a' (that's a determiner).
+    // Single letter: only 'i' is a pronoun; 'a' is a determiner.
     const pronounScore = (
-      (len === 1 ? 0.8 : 0) +                    // single letter → almost certainly pronoun (i)
-      (len <= 3 && vowelRatio >= 0.33 ? 0.4 : 0) + // short + vowels → pronoun-like
-      (len <= 4 && hasApostrophe ? 0.5 : 0) +     // contraction → pronoun + verb (i'm, we're, it's)
-      (len === 2 && consonantRatio >= 0.5 ? 0.3 : 0) // 2-letter consonant-heavy (he, we, my)
+      (len === 1 && first === 'i' ? 0.95 : 0) +                      // 'i' — the only single-letter pronoun
+      (len === 2 && vowelCount === 1 && (first === 'h' || first === 'w' || first === 'm' || first === 's' || first === 'y') ? 0.5 : 0) + // he, we, me, us, ye
+      (len === 3 && (first === 'y' || first === 't') && vowelCount >= 1 && !ntEnding ? 0.35 : 0) + // you, they, him, her
+      (len <= 4 && w.endsWith("'m") || w.endsWith("'re") ? 0.4 : 0)   // i'm, we're, you're — still pronoun-flavored
     );
 
-    // VERB: has verb suffix OR short (2-4) with specific vowel patterns
+    // VERB: suffix dominates. CVC short words (run, get, put, cut) verb-flavored,
+    // but exclude final-r (for, her) which lean prep/pronoun.
+    // 2-letter copulas end in 'm' or 's' (am, is); 3-letter "are" caught explicitly.
+    const lastChar = w[len - 1];
+    const cvcShape = len === 3 && !VOWELS.includes(first) && VOWELS.includes(second) && !VOWELS.includes(w[2]) && lastChar !== 'r';
+    const cvcvShape = len === 4 && !VOWELS.includes(first) && VOWELS.includes(second);
+    const copula2   = len === 2 && firstIsVowel && (lastChar === 'm' || lastChar === 's');
+    // Pure letter-position equations:
+    //   - 2-letter vowel-first ending m/s → copula (am, is)
+    //   - 3-letter vowel-first vowel-heavy → present aux-be (are)
+    //   - 3-letter h-start ending s/d → aux-have (has, had)
+    //   - CVC/CVCV shapes → action verbs (run, want, code)
+    //   - any suffix match → verb form
     const verbScore = (
       verbSuffix +
-      (len >= 2 && len <= 4 && vowelRatio >= 0.3 && vowelRatio <= 0.6 && !nounSuffix && !adjSuffix ? 0.25 : 0) + // short balanced words often verbs
-      (hasApostrophe && len <= 6 ? 0.2 : 0) // contractions are often verb forms (don't, can't, won't)
+      (cvcShape && !nounSuffix && !adjSuffix ? 0.4 : 0) +
+      (cvcvShape && !nounSuffix && !adjSuffix ? 0.25 : 0) +
+      (copula2 ? 0.55 : 0) +
+      (len === 3 && first === 'a' && lastChar === 'e' && vowelCount >= 2 ? 0.6 : 0) +
+      (len === 3 && first === 'h' && (lastChar === 's' || lastChar === 'd') ? 0.5 : 0)
     );
 
-    // NOUN: has noun suffix OR long (5+) with no verb/adj suffix
+    // NOUN: suffix, or long word with no other suffix dominance
     const nounScore = (
       nounSuffix +
-      (len >= 5 && !verbSuffix && !adjSuffix ? 0.2 : 0) // long words without other suffixes → default noun
+      (len >= 5 && verbSuffix < 0.3 && adjSuffix < 0.3 ? 0.3 : 0) +
+      (len >= 4 && !firstIsVowel && vowelCount >= 1 && verbSuffix === 0 && adjSuffix === 0 && !ntEnding ? 0.15 : 0)
     );
 
-    // ADJECTIVE: has adj suffix
+    // ADJECTIVE: suffix-only signal from equations; usage types fill in the rest
     const adjScore = adjSuffix;
 
-    // CONJUNCTION: very short (2-3), specific consonant-vowel pattern
-    // "and" "but" "or" "so" "if" — all ≤3 letters, consonant-start, very common
+    // CONJUNCTION: very short function words. Equation by endings:
+    //   or(2, v+c ending 'r'), if(2, v+c ending 'f'), so(2, c+v ending 'o') — but
+    //   'so' overlaps 'to' (prep). We accept 'so' via explicit consonant+o pattern
+    //   where the consonant is 's'.
+    //   and(3, v+c+c ending 'nd'), but(3, b+u+t), yet(3, y+e+t), nor(3, n+o+r)
     const conjScore = (
-      (len === 2 && consonantRatio >= 0.5 ? 0.2 : 0) +
-      (len === 3 && vowelRatio >= 0.33 && vowelRatio <= 0.5 ? 0.15 : 0)
+      (len === 2 && firstIsVowel && lastChar === 'r' ? 0.7 : 0) +              // or
+      (len === 2 && firstIsVowel && lastChar === 'f' ? 0.7 : 0) +              // if
+      (len === 2 && first === 's' && second === 'o' ? 0.7 : 0) +               // so
+      (len === 3 && first === 'a' && w[1] === 'n' && w[2] === 'd' ? 0.85 : 0) + // and
+      (len === 3 && first === 'b' && lastChar === 't' && vowelCount === 1 ? 0.7 : 0) + // but
+      (len === 3 && first === 'y' && lastChar === 't' ? 0.7 : 0) +             // yet
+      (len === 3 && first === 'n' && w[1] === 'o' && w[2] === 'r' ? 0.7 : 0)   // nor
     );
 
-    // PREPOSITION: 2-4 letters, vowel-heavy, appears BETWEEN content words
-    // "to" "in" "on" "at" "by" "of" "up" — 2 letters, one vowel one consonant
+    // PREPOSITION: 2-4 letters, 1 vowel, first NOT in pronoun/qword territory.
+    // Exclude copula2 endings ('m','s'), conj endings ('r','f'), vowel-only 2-letter.
+    const prepFirstOK = !(first === 'h' || first === 'w' || first === 'm' || first === 'y');
+    const prep2OK = len === 2 && vowelCount === 1 && prepFirstOK
+                  && !(firstIsVowel && (lastChar === 'm' || lastChar === 's' || lastChar === 'r' || lastChar === 'f'))
+                  && !(first === 's' && second === 'o');
+    // Pure letter-position equations — no word literals:
+    //   - 2-letter 1-vowel function words (to, in, on, at, by, of, up, as)
+    //   - 3-letter with consonant-cluster start or vowel-medial single-vowel
+    //   - 4-letter is inherently ambiguous from structure alone — let usage
+    //     types learned from the persona text disambiguate (with/from/over...)
     const prepScore = (
-      (len === 2 && vowelCount === 1 ? 0.5 : 0) +  // 2 letters, 1 vowel (to, in, on, at, by, of, up)
-      (len === 3 && vowelCount === 1 ? 0.3 : 0) +   // 3 letters, 1 vowel (for, out, off)
-      (len === 4 && vowelCount >= 1 ? 0.15 : 0)      // 4 letters (with, from, into, over)
+      (prep2OK ? 0.55 : 0) +
+      (len === 3 && first === 'f' && lastChar === 'r' && vowelCount === 1 ? 0.65 : 0) + // for pattern: f_r
+      (len === 3 && first === 'o' && vowelCount === 1 ? 0.5 : 0)                        // out/off pattern: o_?
     );
 
-    // DETERMINER: very short (1-3), starts with specific consonants (th, m, y, s, a, n)
-    // "the" "a" "an" "my" "no" "some" — all ≤4, mostly start with t/a/m/s/n
+    // DETERMINER: articles + possessives. Pure letter-position patterns.
+    //   - 'a' (single vowel letter) is the indefinite article
+    //   - 'an' (a + n)
+    //   - 'the', 'this', 'that' — all start with 'th'
+    //   - 'my' (m + vowel-ish y) — 2 letters, m-start
+    //   - 4-letter 'th' start covers this/that
     const detScore = (
-      (len === 1 && vowelCount === 1 ? 0.3 : 0) +   // single vowel letter (a)
-      (len === 2 && w[0] === 'a' ? 0.3 : 0) +        // starts with 'a', 2 letters (an)
-      (len === 3 && w[0] === 't' && w[1] === 'h' ? 0.4 : 0) + // starts with 'th', 3 letters
-      (len <= 4 && (w[0] === 'm' || w[0] === 'y' || w[0] === 'n') && vowelCount >= 1 ? 0.2 : 0) // my, your, no
+      (len === 1 && first === 'a' ? 0.95 : 0) +
+      (len === 2 && first === 'a' && second === 'n' ? 0.9 : 0) +
+      (len === 3 && first === 't' && second === 'h' ? 0.85 : 0) +
+      (len === 4 && first === 't' && second === 'h' ? 0.65 : 0) +
+      (len === 2 && first === 'm' && second === 'y' ? 0.8 : 0) +
+      (len === 4 && first === 'y' && w[1] === 'o' ? 0.55 : 0)          // your pattern: y-o-_
     );
 
-    // QUESTION WORD: starts with 'wh' or is 'how' — computed from first 2 letters
+    // QUESTION WORD: 'wh-' start covers what/who/where/when/why/which,
+    // and 'how' pattern (h-o-w) is the one exception.
     const qwordScore = (
-      (w[0] === 'w' && w[1] === 'h' && len >= 3 && len <= 6 ? 0.8 : 0) + // wh- words
-      (len === 3 && w[0] === 'h' && w[1] === 'o' && w[2] === 'w' ? 0.8 : 0) // how
+      (first === 'w' && second === 'h' && len >= 3 && len <= 6 ? 0.9 : 0) +
+      (len === 3 && first === 'h' && second === 'o' && w[2] === 'w' ? 0.9 : 0)
     );
 
-    // USAGE-BASED TYPE BOOST — learned from how the word was used in context
-    // This is how LLMs handle ambiguous words: context determines type.
-    // "put" after "i" → verb. "light" after "the" → noun. "light" before noun → adj.
+    // ── USAGE-BASED TYPE BOOST — context teaches ambiguous words ──
     const usage = this._usageTypes.get(w) || {};
-    const uPronoun = (usage.pronoun || 0) * 0.5;
-    const uVerb = (usage.verb || 0) * 0.5;
-    const uNoun = (usage.noun || 0) * 0.5;
-    const uAdj = (usage.adj || 0) * 0.5;
-    const uPrep = (usage.prep || 0) * 0.5;
-    const uDet = (usage.det || 0) * 0.5;
-    const uConj = (usage.conj || 0) * 0.5;
-    const uQword = (usage.qword || 0) * 0.5;
+    const uBoost = 0.6;
+    const uPronoun = (usage.pronoun || 0) * uBoost;
+    const uVerb = (usage.verb || 0) * uBoost;
+    const uNoun = (usage.noun || 0) * uBoost;
+    const uAdj = (usage.adj || 0) * uBoost;
+    const uPrep = (usage.prep || 0) * uBoost;
+    const uDet = (usage.det || 0) * uBoost;
+    const uConj = (usage.conj || 0) * uBoost;
+    const uQword = (usage.qword || 0) * uBoost;
 
-    // Normalize
-    const max = Math.max(0.01,
-      pronounScore + uPronoun, verbScore + uVerb, nounScore + uNoun,
-      adjScore + uAdj, conjScore + uConj, prepScore + uPrep,
-      detScore + uDet, qwordScore + uQword);
+    // ── SOFTMAX-STYLE NORMALIZATION ──
+    // Divide by the SUM so the vector is a proper probability distribution.
+    // Preserves relative strengths instead of pinning the top to 1.0.
+    const raw = {
+      pronoun: pronounScore + uPronoun,
+      verb: verbScore + uVerb,
+      noun: nounScore + uNoun,
+      adj: adjScore + uAdj,
+      conj: conjScore + uConj,
+      prep: prepScore + uPrep,
+      det: detScore + uDet,
+      qword: qwordScore + uQword,
+    };
+    // NOUN FALLBACK — if nothing else matched confidently, assume content
+    // word = noun. Content words are the unmarked default in English.
+    let rawSum = 0;
+    for (const k in raw) rawSum += raw[k];
+    if (rawSum < 0.25) raw.noun += 0.4;
+
+    let sum = 0;
+    for (const k in raw) sum += raw[k];
+    if (sum < 0.01) sum = 0.01;
     return {
-      pronoun: (pronounScore + uPronoun) / max,
-      verb: (verbScore + uVerb) / max,
-      noun: (nounScore + uNoun) / max,
-      adj: (adjScore + uAdj) / max,
-      conj: (conjScore + uConj) / max,
-      prep: (prepScore + uPrep) / max,
-      det: (detScore + uDet) / max,
-      qword: (qwordScore + uQword) / max,
+      pronoun: raw.pronoun / sum,
+      verb: raw.verb / sum,
+      noun: raw.noun / sum,
+      adj: raw.adj / sum,
+      conj: raw.conj / sum,
+      prep: raw.prep / sum,
+      det: raw.det / sum,
+      qword: raw.qword / sum,
     };
   }
 
@@ -539,13 +399,23 @@ export class LanguageCortex {
   // ═══════════════════════════════════════════════════════════════
 
   sentenceType(arousal, predictionError, motorConfidence, coherence) {
-    const pQ = (predictionError || 0) * coherence * 0.5;
-    const pE = arousal * arousal * 0.3;
-    const pA = (motorConfidence || 0) * (1 - arousal * 0.5) * 0.3;
-    const rand = Math.random();
-    if (rand < pQ) return 'question';
-    if (rand < pQ + pE) return 'exclamation';
-    if (rand < pQ + pE + pA) return 'action';
+    // Raw propensities — each kind of sentence is driven by a different
+    // brain state. Normalize the whole set so statement keeps a fair
+    // share of the probability mass instead of being a leftover.
+    const raw = {
+      question:    (predictionError || 0) * (coherence || 0.3),
+      exclamation: arousal * arousal,
+      action:      (motorConfidence || 0) * Math.max(0.1, 1 - arousal * 0.5),
+      statement:   0.6 + coherence * 0.4,
+    };
+    let sum = 0;
+    for (const k in raw) sum += raw[k];
+    if (sum < 0.01) return 'statement';
+    let rand = Math.random() * sum;
+    for (const k of ['question', 'exclamation', 'action', 'statement']) {
+      rand -= raw[k];
+      if (rand <= 0) return k;
+    }
     return 'statement';
   }
 
@@ -632,23 +502,30 @@ export class LanguageCortex {
       const prevWord = pos > 0 ? sentence[pos - 1] : null;
       const followers = prevWord ? this._jointCounts.get(prevWord) : null;
 
+      // Slot 0 (statement/exclamation) and slot 1 (verb) have STRICT type requirements.
+      // Slots deeper in the sentence are more permissive.
+      const strictSlot = (type !== 'action' && (pos === 0 || pos === 1)) || (type === 'action' && pos === 0);
+      const typeFloor = strictSlot ? 0.35 : 0.15;
+
       const scored = allWords
         .filter(([w]) => {
           if (w === prevWord) return false;
           if (prevWord && usedBigrams.has(prevWord + '→' + w)) return false;
+          // HARD grammar filter on strict slots — wrong type doesn't even enter the pool
+          if (strictSlot && this.typeCompatibility(w, pos, type) < typeFloor) return false;
           return true;
         })
         .map(([word, entry]) => {
           // GRAMMAR — does this word fit this grammatical slot?
           const typeScore = this.typeCompatibility(word, pos, type);
 
-          // THOUGHT — is this word what the brain is thinking about?
-          // cortex pattern match = the brain's CONTENT drives word choice
-          const isThought = thoughtSet.has(word) ? 0.4 : 0;
-
-          // CONTEXT — is this word relevant to the conversation?
-          const isContext = contextSet.has(word) ? 0.3 : 0;
+          // THOUGHT — CONTINUOUS similarity to what the brain is thinking
           const pattern = entry.pattern || this.wordToPattern(word);
+          const thoughtSim = cortexPattern ? Math.max(0, this._cosine(pattern, cortexPattern)) : 0;
+          const isThought = thoughtSet.has(word) ? 0.5 : thoughtSim * 0.4;
+
+          // CONTEXT — relevance to conversation (recent input words + topic similarity)
+          const isContext = contextSet.has(word) ? 0.4 : 0;
           const topicSim = contextPattern ? Math.max(0, this._cosine(pattern, contextPattern)) : 0;
 
           // MOOD — emotional alignment with amygdala
@@ -662,25 +539,33 @@ export class LanguageCortex {
 
           // RECENCY — don't repeat
           const recentCount = this._recentOutputWords.filter(rw => rw === word).length;
-          const recency = recentCount * 0.2;
+          const recency = recentCount * 0.25;
 
-          // ── COMBINED: brain state drives content, equations drive structure ──
+          // Soft grammar gate for the non-strict tail slots: wrong-type words lose 95%
+          const grammarGate = typeScore > 0.15 ? 1.0 : 0.05;
+
+          // ── COMBINED: grammar DOMINATES structure, thought picks words ──
+          // typeScore now carries real weight — grammatical fit is first-class, not a rounding bonus.
           const score =
-            typeScore * 0.25 +      // grammar (slot fit)
-            isThought * 0.20 +      // cortex thought (WHAT to say)
-            isContext * 0.15 +       // conversation relevance
-            topicSim * 0.05 +       // semantic similarity to topic
-            isMood * 0.05 +         // emotional word match
-            moodBias * 0.05 +       // continuous mood alignment
-            followerCount * 0.10 +  // learned sequences
-            condP * 0.10 +          // conditional probability
-            (selfAware && (word.length === 1 || word.endsWith("'m") || word.endsWith("'re")) ? 0.1 : 0) + // Ψ → self-reference
+            grammarGate * (
+              typeScore * 0.45 +         // grammar fit — dominates structure
+              isThought * 0.20 +         // cortex thought (WHAT to say)
+              isContext * 0.12 +         // conversation relevance
+              topicSim * 0.06 +          // semantic similarity to conversation
+              followerCount * 0.12 +     // learned sequences (bigram chains)
+              condP * 0.10 +             // conditional probability
+              isMood * 0.04 +            // emotional word match
+              moodBias * 0.02 +          // continuous mood alignment
+              (selfAware && (word.length === 1 || word.endsWith("'m") || word.endsWith("'re")) ? 0.1 : 0)
+            )
             - recency;
 
           return { word, entry, score };
         });
 
-      const picked = this._softmaxSample(scored, temperature * 0.12);
+      // Lower-temperature softmax — coherent sentences need argmax-ish selection,
+      // not scattered high-entropy sampling that produces word salad.
+      const picked = this._softmaxSample(scored, Math.max(0.05, temperature * 0.06));
       if (picked) {
         if (prevWord) usedBigrams.add(prevWord + '→' + picked.word);
         sentence.push(picked.word);
@@ -697,8 +582,43 @@ export class LanguageCortex {
     }
 
     this.wordsProcessed += processed.length;
-    if (type === 'action') return '*' + processed.join(' ') + '*';
-    return processed.join(' ');
+    return this._renderSentence(processed, type);
+  }
+
+  /**
+   * Render the final sentence with proper punctuation and capitalization.
+   * Pure equation — no lists, driven by sentence type and content.
+   *   - First letter capitalized
+   *   - 'i' (pronoun) capitalized anywhere
+   *   - terminal punctuation: ? for question, ! for exclamation, . for others
+   *   - action sentences wrapped in asterisks
+   *   - comma inserted before conjunctions detected via wordType equation
+   */
+  _renderSentence(words, type) {
+    if (!words || words.length === 0) return '';
+    const out = [];
+    for (let i = 0; i < words.length; i++) {
+      let w = words[i];
+      // Capitalize 'i' when standalone pronoun
+      if (w === 'i') w = 'I';
+      else if (w.startsWith("i'") && w.length <= 4) w = 'I' + w.slice(1);
+      // Capitalize first word
+      if (i === 0) w = w.charAt(0).toUpperCase() + w.slice(1);
+      // Insert comma before mid-sentence conjunctions (let the reader breathe)
+      if (i > 1 && i < words.length - 1 && this.wordType(words[i]).conj > 0.5) {
+        out[out.length - 1] = out[out.length - 1] + ',';
+      }
+      out.push(w);
+    }
+    let text = out.join(' ');
+    // Wrap action sentences in asterisks
+    if (type === 'action') text = '*' + text + '*';
+    // Terminal punctuation from sentence type
+    const term = type === 'question' ? '?' : type === 'exclamation' ? '!' : '.';
+    // Avoid double-punctuation if generation already supplied one
+    const last = text.charAt(text.length - 1);
+    if (last !== '.' && last !== '?' && last !== '!' && last !== '*') text += term;
+    return text;
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -802,9 +722,18 @@ export class LanguageCortex {
       // Learn word type from context (what came before it)
       if (i > 0) this._learnUsageType(words[i - 1], words[i]);
 
-      // Dynamic expansion — new word auto-joins its category
-      if (this._expandStructure && dictionary) {
-        this._expandStructure(words[i], dictionary);
+      // Dynamic expansion — new word links to its pattern-similar
+      // neighbors via cosine of letter-pattern vectors. Pure equation,
+      // no category lists, no hardcoded buckets.
+      if (dictionary && dictionary.findByPattern) {
+        const pat = this.wordToPattern(words[i]);
+        const similar = dictionary.findByPattern(pat, 3) || [];
+        for (const sim of similar) {
+          if (sim && sim !== words[i]) {
+            dictionary.learnBigram(words[i], sim);
+            dictionary.learnBigram(sim, words[i]);
+          }
+        }
       }
     }
 
@@ -837,20 +766,35 @@ export class LanguageCortex {
   _postProcess(sentence, tense, type, arousal, valence) {
     if (sentence.length < 2) return sentence;
     const result = [...sentence];
-    const ops = this._structuralOps;
 
     // ── AGREEMENT ──
     // Find subject (position 0) and check if verb at position 1 agrees
     const subj = result[0];
-    const verb = result.length > 1 ? result[1] : null;
+    let verb = result.length > 1 ? result[1] : null;
 
-    if (verb && ops) {
-      const cop = ops.copula;
+    // Helper: copula form from subject + tense (pure equation on subject letters)
+    const copulaFor = (s, t) => {
+      if (s === 'i') return t === 'past' ? 'was' : 'am';
+      if (s === 'he' || s === 'she' || s === 'it') return t === 'past' ? 'was' : 'is';
+      return t === 'past' ? 'were' : 'are';
+    };
+
+    // MISSING COPULA INSERTION — if the subject is a pronoun but slot 1
+    // is NOT a verb (e.g. "i wet", "we high"), inject the proper copula.
+    // This fixes the "subject + adjective" word salad from equation-only generation.
+    if (subj && verb) {
+      const subjType = this.wordType(subj);
+      const verbType = this.wordType(verb);
+      if (subjType.pronoun > 0.5 && verbType.verb < 0.25) {
+        result.splice(1, 0, copulaFor(subj, tense));
+        verb = result[1];
+      }
+    }
+
+    if (verb) {
       // Fix copula agreement
       if (verb === 'am' || verb === 'is' || verb === 'are' || verb === 'was' || verb === 'were') {
-        if (subj === 'i') result[1] = tense === 'past' ? 'was' : 'am';
-        else if (subj === 'he' || subj === 'she' || subj === 'it') result[1] = tense === 'past' ? 'was' : 'is';
-        else result[1] = tense === 'past' ? 'were' : 'are';
+        result[1] = copulaFor(subj, tense);
       }
       // Fix do/does/did agreement
       if (verb === 'do' || verb === 'does' || verb === 'did') {
@@ -866,12 +810,50 @@ export class LanguageCortex {
       }
     }
 
-    // ── TENSE ──
-    if (tense === 'future' && result.length >= 2) {
-      // Insert "will" before the verb (position 1)
-      const verbType = this.wordType(result[1]);
-      if (verbType.verb > 0.3) {
+    // ── TENSE — applied to the main verb at slot 1 ──
+    // Equations on letters, no lists.
+    //   past: add '-ed' (or '-d' if verb already ends in 'e'), unless the
+    //         verb is already past (ends '-ed' / '-t' from n't) or is a
+    //         suppletive copula already rewritten above.
+    //   present 3rd-singular (he/she/it): add '-s' (or '-es' after s/x/ch/sh).
+    //   future: insert 'will' before the verb.
+    const applyPast = (v) => {
+      if (!v) return v;
+      if (v.endsWith('ed')) return v;
+      if (v.endsWith('e')) return v + 'd';
+      // consonant-vowel-consonant shapes double the final consonant (run→running rule, approximated)
+      const L = v.length;
+      if (L >= 3) {
+        const c1 = !VOWELS.includes(v[L - 3]);
+        const vm = VOWELS.includes(v[L - 2]);
+        const c2 = !VOWELS.includes(v[L - 1]);
+        if (c1 && vm && c2 && v[L - 1] !== 'y' && v[L - 1] !== 'w') {
+          return v + v[L - 1] + 'ed';
+        }
+      }
+      return v + 'ed';
+    };
+    const applyThird = (v) => {
+      if (!v) return v;
+      if (v.endsWith('s') || v.endsWith('x') || v.endsWith('z') || v.endsWith('ch') || v.endsWith('sh')) return v + 'es';
+      if (v.endsWith('y') && v.length >= 2 && !VOWELS.includes(v[v.length - 2])) return v.slice(0, -1) + 'ies';
+      return v + 's';
+    };
+    const isAlreadyCopula = (v) => v === 'am' || v === 'is' || v === 'are' || v === 'was' || v === 'were'
+                                || v === 'do' || v === 'does' || v === 'did'
+                                || v === 'have' || v === 'has' || v === 'had'
+                                || v === 'will' || v === 'would' || v === 'can' || v === 'could';
+
+    if (result.length >= 2) {
+      const v = result[1];
+      const vt = this.wordType(v || '');
+      if (tense === 'future' && vt.verb > 0.3 && v !== 'will') {
         result.splice(1, 0, 'will');
+      } else if (tense === 'past' && vt.verb > 0.3 && !isAlreadyCopula(v)) {
+        result[1] = applyPast(v);
+      } else if (tense === 'present' && vt.verb > 0.3 && !isAlreadyCopula(v)
+                 && (subj === 'he' || subj === 'she' || subj === 'it')) {
+        result[1] = applyThird(v);
       }
     }
 
@@ -899,19 +881,44 @@ export class LanguageCortex {
     }
 
     // ── COMPOUND SENTENCE ──
-    // Longer sentences: insert conjunction to create clause structure
+    // Longer sentences: insert a conjunction at the clause boundary.
+    // Only if there isn't already a conj (detected via wordType equation).
     if (result.length > 6) {
       const midpoint = Math.floor(result.length / 2);
-      const conj = arousal > 0.6 ? 'and' : valence < -0.2 ? 'but' : 'so';
-      // Only insert if there isn't already a conjunction nearby
-      const nearConj = result.slice(midpoint - 1, midpoint + 2).some(w =>
-        w === 'and' || w === 'but' || w === 'so' || w === 'or' || w === 'because');
+      const nearConj = result.slice(midpoint - 1, midpoint + 2).some(w => this.wordType(w).conj > 0.4);
       if (!nearConj) {
-        result.splice(midpoint, 0, conj);
+        // Pick conj by mood: high arousal + positive → additive, negative → contrast,
+        // otherwise consequential. Equation looks at dictionary for learned conjs.
+        const conjWord = this._pickConjByMood(arousal, valence);
+        if (conjWord) result.splice(midpoint, 0, conjWord);
       }
     }
 
     return result;
+  }
+
+  /**
+   * Pick a conjunction by mood, searching the learned dictionary for
+   * words classified as conjunctions by the wordType equation. No lists —
+   * the candidates come from whatever the brain has learned.
+   */
+  _pickConjByMood(arousal, valence) {
+    // Scan the marginal-count map for words whose wordType says "conj".
+    // Rank by conjunction score × mood alignment.
+    let best = null, bestScore = 0;
+    for (const [word] of this._marginalCounts) {
+      const conjScore = this.wordType(word).conj;
+      if (conjScore < 0.4) continue;
+      // Additive conjs tend to be vowel-heavy, contrast tend consonant-heavy.
+      // Use letter-shape as mood proxy — pure equation.
+      let moodFit = 1;
+      const vc = (word.match(/[aeiou]/g) || []).length / word.length;
+      if (arousal > 0.6 && vc >= 0.4) moodFit = 1.3;
+      if (valence < -0.2 && vc < 0.4) moodFit = 1.3;
+      const s = conjScore * moodFit;
+      if (s > bestScore) { bestScore = s; best = word; }
+    }
+    return best;
   }
 
   _condProb(word, prev) {

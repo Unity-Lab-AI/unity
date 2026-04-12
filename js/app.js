@@ -807,6 +807,18 @@ async function bootUnity(apiKey, perms) {
     brain = new UnityBrain();
     brain.start();
     console.log(`[Unity] Using local brain${window._brainOnlyMode ? ' (BRAIN ONLY — no AI text)' : ''}`);
+    // Fetch Unity's persona document and feed it through the language
+    // cortex as the equational self-image. No lists, no seeding — the
+    // brain learns its own voice by reading itself.
+    fetch('docs/Ultimate%20Unity.txt')
+      .then(r => r.ok ? r.text() : '')
+      .then(txt => {
+        if (txt && brain?.innerVoice?.loadPersona) {
+          const sentences = brain.innerVoice.loadPersona(txt);
+          console.log(`[Unity] self-image loaded: ${sentences} sentences from persona file`);
+        }
+      })
+      .catch(err => console.warn('[Unity] persona self-image load failed:', err.message));
     // If server is connected, still wire state updates for visualization
     if (landingBrainSource && landingBrainSource.isConnected()) {
       landingBrainSource.on('stateUpdate', (state) => {

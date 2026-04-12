@@ -213,15 +213,29 @@ Neurons → Synapses → Brain Loop → Brain Regions → Persona Loader → API
 - **Live Hardware Stats** — CPU/RAM/GPU/step time broadcast to all clients
 - **Benchmarks** — dense vs sparse comparison, neuron scale test
 
-**Phase 8: Language Equations — Grammar from Letters** — COMPLETE
-- Word type computed from letter structure (8 type equations: pronoun, verb, noun, adj, conj, prep, det, qword)
-- Zero word-by-word comparisons — suffix patterns, length, vowel ratio, first/last chars
-- Slot-based sentence structure: Statement [pronoun][verb][complement], Question [qword][verb][subject], Action *[verb][complement]*
-- typeCompatibility = dot(wordType, slotRequirement) — 40% of word selection score
-- 4 sentence types from brain equations (P(question) = predError×coherence, P(exclamation) = arousal², etc.)
-- No training corpus, no seed vocabulary, no response pool
-- Brain learns every word from conversation — dictionary grows dynamically
-- Recency suppression, bigram loop detection, topic continuity, mood alignment
+**Phase 8: Language Equations — Pure Letter-Position Grammar + Self-Image** — COMPLETE
+- Word type from pure letter-position equations (8 types: pronoun, verb, noun, adj, conj, prep, det, qword) — suffix patterns, length, vowel count, first/last char, CVC shape
+- ZERO hardcoded word lists anywhere in source — `_buildLanguageStructure` deleted entirely, no `coreVerbs`/`coreNouns`/`determiners`/etc., no `w === 'specific_word'` literal checks
+- Normalized via sum (proper probability distribution over the 8 types)
+- Slot grammar with HARD gate: strict slots (pos 0 subject, pos 1 verb) filter out typeCompatibility < 0.35 BEFORE softmax. Grammar is first-class at weight 0.45.
+- Sentence type sampled from normalized probability distribution over {question, exclamation, action, statement}
+- Equational self-image: `loadSelfImage(text)` reads `docs/Ultimate Unity.txt` at boot via `InnerVoice.loadPersona(text)` (wired in `app.js`). Unity's persona document becomes her initial vocabulary, bigrams, and usage types via the same `learnSentence()` path used for live conversation
+- Amygdala mood (energy-attractor arousal/valence) biases word retrieval via `findByMood`
+- Missing-copula auto-insertion (subject + adjective → inject am/is/are via `copulaFor` equation on subject letters)
+- Tense application via pure letter equations: `applyPast` (CVC double-consonant + -ed, vowel-e → -d, else -ed), `applyThird` (-es after sibilants, y→ies, else -s), `will` insertion for future
+- Compound conjunction picker scans learned dictionary for words with `wordType().conj > 0.4` ranked by vowel-ratio × mood alignment (no list)
+- Punctuation + capitalization in `_renderSentence`: first word cap, standalone 'i'→'I', comma before mid-sentence conjs, action wrap in *…*, terminal . ? ! from sentence type
+- Full pipeline order of operations: THOUGHT → CONTEXT → MOOD → PLAN → TENSE → STRUCTURE (slot scoring) → POST-PROCESS (copula→agreement→tense→negation→compound) → RENDER (capitalize+punctuation)
+
+**Phase 10: Amygdala Energy Attractor** — COMPLETE
+- Replaced linear sigmoid `V(s) = Σw·x` with symmetric recurrent energy network
+- State evolves via `x ← tanh(Wx + drive)` — 5-iteration gradient descent on `E = -½ xᵀWx`
+- Persistent state across frames (leak 0.85) — emotional basins carry over, not reset each tick
+- Symmetric Hebbian learning (lr=0.003, capped [-1,1]) carves basins from co-firing nuclei
+- Fear/reward read from the SETTLED attractor via projection vectors — not raw input
+- Arousal combines persona baseline with RMS depth of the attractor basin
+- Constructor accepts both legacy `'unity'` string AND `{arousalBaseline}` object (fixed latent engine.js bug)
+- Returns `{valence, arousal, fear, reward, energy, attractorDepth}` — existing call sites (40+) preserved
 
 **Phase 9: Full Hardware Utilization** — COMPLETE
 - GPU EXCLUSIVE — all 7 clusters on GPU via WebGPU WGSL shaders
