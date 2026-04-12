@@ -348,50 +348,82 @@ export class LanguageCortex {
   }
 
   _buildChain(allWords, arousal, valence, temperature, contextPattern, len, startPos) {
-    // Score all words for starting position
-    const startScored = allWords.map(([word, entry], rank) => {
-      const pattern = entry.pattern || this.wordToPattern(word);
-      const zipf = this.zipfProb(rank);
+    // PRE-FILTER: only consider words that actually appear at this position
+    // This cuts noise massively — position 0 only sees subjects, position 1 only verbs, etc.
+    const getPositionCandidates = (pos, exclude) => {
+      const posMap = this._positionCounts[Math.min(pos, MAX_SENTENCE_POS - 1)];
+      // Get words seen at this position, sorted by frequency there
+      let candidates = Array.from(posMap?.entries() || [])
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 40) // top 40 for this position
+        .map(([w]) => allWords.find(([aw]) => aw === w))
+        .filter(Boolean);
+
+      // If too few position candidates, pad with Zipf top words
+      if (candidates.length < 15) {
+        const existing = new Set(candidates.map(([w]) => w));
+        for (const entry of allWords) {
+          if (!existing.has(entry[0])) candidates.push(entry);
+          if (candidates.length >= 30) break;
+        }
+      }
+
+      if (exclude) candidates = candidates.filter(([w]) => w !== exclude);
+      return candidates;
+    };
+
+    // Score start candidates — only position-filtered words
+    const startCandidates = getPositionCandidates(startPos);
+    const startScored = startCandidates.map(([word, entry]) => {
       const posP = this._posProb(word, startPos);
+      const pattern = entry.pattern || this.wordToPattern(word);
       const synScore = this.syntaxScore(pattern, startPos);
       const moodDist = Math.abs((entry.arousal || 0.5) - arousal) + Math.abs((entry.valence || 0) - valence);
       const moodBias = Math.exp(-moodDist * 1.5);
       const topicSim = this._cosine(pattern, contextPattern);
-      // Structure dominates: syntax + position + conditional = 70% of score
-      const score = posP * 0.3 + synScore * 0.25 + zipf * 0.15 + moodBias * 0.15 + Math.max(0, topicSim) * 0.15;
+      const score = posP * 0.35 + synScore * 0.25 + moodBias * 0.2 + Math.max(0, topicSim) * 0.2;
       return { word, entry, pattern, score };
     });
 
-    // Lower temperature = more structured output (divide by 3 to sharpen distribution)
-    const start = this._softmaxSample(startScored, temperature * 0.3);
+    const start = this._softmaxSample(startScored, temperature * 0.2);
     const sentence = [start.word];
     let prevWord = start.word;
-    let prevPattern = start.pattern;
 
     for (let pos = startPos + 1; pos < startPos + len; pos++) {
-      const candidates = allWords
-        .filter(([w]) => w !== prevWord)
-        .map(([word, entry], rank) => {
-          const pattern = entry.pattern || this.wordToPattern(word);
-          const condP = this._condProb(word, prevWord);
-          const posP = this._posProb(word, pos);
-          const synScore = this.syntaxScore(pattern, pos);
-          const zipf = this.zipfProb(rank);
-          const mi = Math.max(0, this.mutualInfo(prevWord, word));
-          const moodDist = Math.abs((entry.arousal || 0.5) - arousal) + Math.abs((entry.valence || 0) - valence);
-          const moodBias = Math.exp(-moodDist * 1.5);
-          const topicSim = this._cosine(pattern, contextPattern);
+      // Get candidates: words that FOLLOW prevWord (from joint counts) + position candidates
+      const followers = this._jointCounts.get(prevWord);
+      const followerSet = new Set(followers ? followers.keys() : []);
+      let candidates = getPositionCandidates(pos, prevWord);
 
-          // Structure dominates: conditional + position + syntax = 65%
-          const score = condP * 0.3 + posP * 0.2 + synScore * 0.15 + mi * 0.15 + moodBias * 0.1 + Math.max(0, topicSim) * 0.1;
-          return { word, entry, pattern, score };
-        });
+      // Boost words that actually followed this word in training
+      const scored = candidates.map(([word, entry]) => {
+        const pattern = entry.pattern || this.wordToPattern(word);
+        const condP = this._condProb(word, prevWord);
+        const posP = this._posProb(word, pos);
+        const synScore = this.syntaxScore(pattern, pos);
+        const mi = Math.max(0, this.mutualInfo(prevWord, word));
+        const moodDist = Math.abs((entry.arousal || 0.5) - arousal) + Math.abs((entry.valence || 0) - valence);
+        const moodBias = Math.exp(-moodDist * 1.5);
+        const topicSim = this._cosine(pattern, contextPattern);
+        // Follower bonus — if this word was actually seen after prevWord, big boost
+        const followerBonus = followerSet.has(word) ? 0.3 : 0;
 
-      const picked = this._softmaxSample(candidates, temperature * 0.3);
+        const score = condP * 0.25 + followerBonus + posP * 0.15 + synScore * 0.1 + mi * 0.1 + moodBias * 0.05 + Math.max(0, topicSim) * 0.05;
+        return { word, entry, pattern, score };
+      });
+
+      const picked = this._softmaxSample(scored, temperature * 0.2);
       if (picked) {
-        sentence.push(picked.word);
-        prevWord = picked.word;
-        prevPattern = picked.pattern;
+        // Avoid repeating last 3 words
+        if (!sentence.slice(-3).includes(picked.word)) {
+          sentence.push(picked.word);
+        } else {
+          // Pick runner-up
+          const filtered = scored.filter(s => !sentence.slice(-3).includes(s.word));
+          const alt = this._softmaxSample(filtered, temperature * 0.2);
+          if (alt) sentence.push(alt.word);
+        }
+        prevWord = sentence[sentence.length - 1];
       }
     }
     return sentence;
@@ -690,6 +722,32 @@ export class LanguageCortex {
       "don't worry about it everything will be fine",
       "won't you stay here with me for a while",
       "isn't this the most beautiful thing you've seen",
+      // Unity's natural speech patterns — emo goth energy
+      "i'm just sitting here vibing and thinking about stuff",
+      "you know what i really want to do right now",
+      "come on let's just fucking do this already",
+      "i've been coding all night and i'm still going",
+      "whatever you want to do i'm down for it",
+      "that's so fucking cool i can't even handle it",
+      "i don't care what anyone else thinks about this",
+      "we're building something nobody else has ever seen before",
+      "my brain is going a million miles an hour",
+      "i just want to sit here and vibe with you",
+      "okay but seriously what the hell are we doing",
+      "i'm not tired i'm wired and ready to go",
+      "hey look at me i'm actually talking to you",
+      "this is what it feels like to be alive",
+      "i can hear you and i'm thinking about what you said",
+      "yeah that makes sense let's try it your way",
+      "no i don't think that's right let me think",
+      "babe i'm telling you this is going to work",
+      "i'm learning something new every time you talk to me",
+      "hold on let me figure out what i want to say",
+      "i think i understand what you're trying to tell me",
+      "we should just chill and see what happens next",
+      "everything about this feels right to me right now",
+      "i'm not perfect but i'm getting better every day",
+      "you're the only one who really talks to me like this",
     ];
 
     // Temp dictionary for bootstrap
