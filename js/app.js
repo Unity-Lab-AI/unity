@@ -1035,12 +1035,13 @@ Vision: ${state.visionDescription || 'none'}`;
     if (brain3d) brain3d.updateState(state);
   });
 
-  // Fallback: if local brain state is thin, poll server state for HUD
-  setInterval(() => {
-    if (_landingState) {
-      updateBrainIndicator(_landingState);
-    }
-  }, 500);
+  // Server state → HUD: if server brain is connected, pipe its state to HUD directly
+  if (landingBrainSource) {
+    landingBrainSource.on('stateUpdate', (serverState) => {
+      _landingState = serverState;
+      updateBrainIndicator(serverState);
+    });
+  }
 
   // ── Wire sandbox Unity API ──
   sandbox.setUnityAPI({
@@ -1236,12 +1237,16 @@ function renderBrainWave() {
 function updateBrainIndicator(state) {
   if (!state) return;
   const $ = id => document.getElementById(id);
-  const srv = _landingState || {};
-  const coherence = state.oscillations?.coherence || srv.oscillations?.coherence || 0;
-  const arousal = state.amygdala?.arousal || srv.amygdala?.arousal || 0;
-  const valence = state.amygdala?.valence || srv.amygdala?.valence || 0;
-  const psi = state.psi || srv.psi || 0;
-  const bandPower = state.oscillations?.bandPower || state.bandPower || srv.oscillations?.bandPower || srv.bandPower || {};
+
+  // Merge: prefer incoming state, fill gaps from server landing state
+  const s = state;
+  const l = _landingState || {};
+
+  const coherence = s.oscillations?.coherence ?? s.coherence ?? l.oscillations?.coherence ?? l.coherence ?? 0;
+  const arousal = s.amygdala?.arousal ?? s.arousal ?? l.amygdala?.arousal ?? l.arousal ?? 0;
+  const valence = s.amygdala?.valence ?? s.valence ?? l.amygdala?.valence ?? l.valence ?? 0;
+  const psi = s.psi ?? l.psi ?? 0;
+  const bandPower = s.oscillations?.bandPower || s.bandPower || l.oscillations?.bandPower || l.bandPower || {};
 
   const psiEl = $('hud-psi'); if (psiEl) psiEl.textContent = psi.toFixed(3);
   const arousalBar = $('hud-arousal-bar'); if (arousalBar) arousalBar.style.width = `${(arousal * 100).toFixed(0)}%`;
@@ -1250,34 +1255,24 @@ function updateBrainIndicator(state) {
   const valenceVal = $('hud-valence'); if (valenceVal) valenceVal.textContent = valence.toFixed(2);
   const cohBar = $('hud-coherence-bar'); if (cohBar) cohBar.style.width = `${(coherence * 100).toFixed(0)}%`;
   const cohVal = $('hud-coherence'); if (cohVal) cohVal.textContent = `${(coherence * 100).toFixed(0)}%`;
-  const spikesEl = $('hud-spikes'); if (spikesEl) spikesEl.textContent = state.spikeCount ?? srv.spikeCount ?? srv.totalSpikes ?? 0;
-  const rewardEl = $('hud-reward'); if (rewardEl) rewardEl.textContent = (state.reward ?? srv.reward ?? 0).toFixed(2);
-  const timeEl = $('hud-time'); if (timeEl) timeEl.textContent = `${(state.time ?? srv.time ?? 0).toFixed(1)}s`;
-  const srvBand = srv.bandPower || srv.oscillations?.bandPower || {};
-  const gammaEl = $('hud-gamma'); if (gammaEl) gammaEl.textContent = (bandPower.gamma ?? srvBand.gamma ?? 0).toFixed(1);
-  const betaEl = $('hud-beta'); if (betaEl) betaEl.textContent = (bandPower.beta ?? srvBand.beta ?? 0).toFixed(1);
-  const alphaEl = $('hud-alpha'); if (alphaEl) alphaEl.textContent = (bandPower.alpha ?? srvBand.alpha ?? 0).toFixed(1);
-  const thetaEl = $('hud-theta'); if (thetaEl) thetaEl.textContent = (bandPower.theta ?? srvBand.theta ?? 0).toFixed(1);
-  const drugEl = $('hud-drug'); if (drugEl) drugEl.textContent = state.drugState || srv.drugState || 'cokeAndWeed';
-  const actionEl = $('hud-action'); if (actionEl) actionEl.textContent = state.motor?.selectedAction || srv.motor?.selectedAction || 'idle';
+  const spikesEl = $('hud-spikes'); if (spikesEl) spikesEl.textContent = s.spikeCount ?? s.totalSpikes ?? l.spikeCount ?? l.totalSpikes ?? 0;
+  const rewardEl = $('hud-reward'); if (rewardEl) rewardEl.textContent = (s.reward ?? l.reward ?? 0).toFixed(2);
+  const timeEl = $('hud-time'); if (timeEl) timeEl.textContent = `${(s.time ?? l.time ?? 0).toFixed(1)}s`;
+  const gammaEl = $('hud-gamma'); if (gammaEl) gammaEl.textContent = (bandPower.gamma ?? 0).toFixed(1);
+  const betaEl = $('hud-beta'); if (betaEl) betaEl.textContent = (bandPower.beta ?? 0).toFixed(1);
+  const alphaEl = $('hud-alpha'); if (alphaEl) alphaEl.textContent = (bandPower.alpha ?? 0).toFixed(1);
+  const thetaEl = $('hud-theta'); if (thetaEl) thetaEl.textContent = (bandPower.theta ?? 0).toFixed(1);
+  const drugEl = $('hud-drug'); if (drugEl) drugEl.textContent = s.drugState || l.drugState || 'cokeAndWeed';
+  const actionEl = $('hud-action'); if (actionEl) actionEl.textContent = s.motor?.selectedAction || l.motor?.selectedAction || 'idle';
   const modelEl = $('hud-model'); if (modelEl) modelEl.textContent = window._brainOnlyMode ? 'BRAIN ONLY' : (bestBackend?.model?.slice(0, 25) || '—');
 
-  // Shared emotion indicator — use server state if available, else compute locally
-  const mood = state.sharedMood || _landingState?.sharedMood;
-  const users = state.connectedUsers ?? _landingState?.connectedUsers ?? 0;
-  const usersEl = $('hud-users');
-  if (usersEl) usersEl.textContent = users;
-  if (mood) {
-    const gateEl = $('hud-gate');
-    if (gateEl) gateEl.textContent = (mood.gate ?? (0.7 + arousal * 0.6)).toFixed(2) + 'x';
-    const dreamEl = $('hud-dream');
-    if (dreamEl) dreamEl.textContent = (mood.isDreaming || state.isDreaming) ? 'dreaming' : 'awake';
-  } else {
-    const gateEl = $('hud-gate');
-    if (gateEl) gateEl.textContent = (0.7 + arousal * 0.6).toFixed(2) + 'x';
-    const dreamEl = $('hud-dream');
-    if (dreamEl) dreamEl.textContent = 'awake';
-  }
+  // Shared state
+  const users = s.connectedUsers ?? l.connectedUsers ?? 0;
+  const usersEl = $('hud-users'); if (usersEl) usersEl.textContent = users;
+  const gateVal = s.sharedMood?.gate ?? l.sharedMood?.gate ?? (0.7 + arousal * 0.6);
+  const gateEl = $('hud-gate'); if (gateEl) gateEl.textContent = gateVal.toFixed(2) + 'x';
+  const isDreaming = s.isDreaming || s.sharedMood?.isDreaming || l.isDreaming || l.sharedMood?.isDreaming || false;
+  const dreamEl = $('hud-dream'); if (dreamEl) dreamEl.textContent = isDreaming ? 'dreaming' : 'awake';
 
   function setModDot(id, value, threshold = 0.3) {
     const dot = $(id); if (!dot) return;
