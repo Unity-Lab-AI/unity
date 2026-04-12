@@ -654,7 +654,7 @@ export class UnityBrain extends EventEmitter {
     const angle = angles[Math.floor(Math.random() * angles.length)];
     const styles = ['photorealistic', 'cinematic', 'raw unfiltered', 'film grain', 'moody editorial'];
     const style = styles[Math.floor(Math.random() * styles.length)];
-    const prompt = `${angle}, woman, ${mood}, heterochromia eyes one violet one electric green, dark hair with neon streaks, smudged eyeliner, ${vibes}, ${setting}, ${style}`;
+    const prompt = `${angle}, 25 year old woman, ${mood}, heterochromia eyes one violet one electric green, dark hair with neon streaks, smudged eyeliner, ${vibes}, ${setting}, ${style}, adult`;
     const url = this._imageGen.generateImage(prompt, { model: this._storage?.get('image_model') || 'flux', width: 768, height: 768 });
 
     if (url && this._sandbox) {
