@@ -92,3 +92,4 @@ out/
 .next/
 .nuxt/
 .output/
+js/app.bundle.js
