@@ -87,19 +87,27 @@ let landingBrainSource = null; // RemoteBrain or null
   }
 
   // Wire tab buttons
+  let activeTab = '3d';
   document.querySelectorAll('.landing-tab').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.landing-tab').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
-      const tab = btn.dataset.tab;
-      if (tab === '3d') {
+      activeTab = btn.dataset.tab;
+      if (activeTab === '3d') {
         document.getElementById('landing-viz-panel').style.display = 'none';
       } else {
         document.getElementById('landing-viz-panel').style.display = 'block';
-        // Content will be populated by the brain viz when opened
+        renderLandingTab(activeTab, _landingState);
       }
     });
   });
+
+  // Update viz panel every second
+  setInterval(() => {
+    if (activeTab !== '3d' && _landingState) {
+      renderLandingTab(activeTab, _landingState);
+    }
+  }, 1000);
 
   // Wire "Talk to Unity" button
   const chatBtn = document.getElementById('landing-chat-btn');
@@ -111,7 +119,133 @@ let landingBrainSource = null; // RemoteBrain or null
   }
 })();
 
+let _landingState = null;
+
+function renderLandingTab(tab, s) {
+  if (!s) return;
+  const el = document.getElementById('landing-viz-content');
+  if (!el) return;
+
+  const card = (title, body) => `<div style="margin-bottom:12px;"><div style="font-size:10px;color:#ff4d9a;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;">${title}</div>${body}</div>`;
+  const metric = (label, val, color = '#e0e0e0') => `<div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0;"><span style="color:#555;">${label}</span><span style="color:${color};">${val}</span></div>`;
+  const bar = (pct, color) => `<div style="height:4px;background:#1a1a1a;border-radius:2px;margin-top:3px;"><div style="width:${Math.min(100,pct)}%;height:100%;background:${color};border-radius:2px;"></div></div>`;
+
+  const arousal = s.amygdala?.arousal ?? s.sharedMood?.arousal ?? 0;
+  const valence = s.amygdala?.valence ?? s.sharedMood?.valence ?? 0;
+  const coherence = s.oscillations?.coherence ?? s.sharedMood?.coherence ?? 0;
+  const psi = s.psi ?? 0;
+  const spikes = s.spikeCount ?? s.totalSpikes ?? 0;
+  const bp = s.oscillations?.bandPower ?? s.sharedMood?.bandPower ?? {};
+
+  switch (tab) {
+    case 'neurons': {
+      let html = card('Neuron Population', `
+        ${metric('Total', (s.totalNeurons ?? 1000).toLocaleString(), '#ff4d9a')}
+        ${metric('Firing', spikes, '#22c55e')}
+        ${metric('Rate', ((spikes / (s.totalNeurons ?? 1000)) * 100).toFixed(1) + '%', '#00e5ff')}
+      `);
+      if (s.clusters) {
+        const colors = { cortex:'#ff4d9a', hippocampus:'#a855f7', amygdala:'#ef4444', basalGanglia:'#22c55e', cerebellum:'#00e5ff', hypothalamus:'#f59e0b', mystery:'#c084fc' };
+        html += card('Cluster Activity', Object.entries(s.clusters).map(([name, c]) => {
+          const pct = c.size ? (c.spikeCount / c.size * 100) : 0;
+          return `<div style="margin:4px 0;">${metric(name, `${c.spikeCount}/${c.size}`, colors[name] || '#fff')}${bar(pct, colors[name] || '#fff')}</div>`;
+        }).join(''));
+      }
+      el.innerHTML = html;
+      break;
+    }
+    case 'oscillations': {
+      el.innerHTML = card('Brain Waves', `
+        ${metric('Coherence', (coherence * 100).toFixed(0) + '%', '#00e5ff')}
+        ${bar(coherence * 100, '#00e5ff')}
+        <div style="margin-top:8px;">
+        ${metric('Gamma (30-100Hz)', (bp.gamma ?? 0).toFixed(2), '#ff4d9a')}
+        ${bar((bp.gamma ?? 0) * 20, '#ff4d9a')}
+        ${metric('Beta (13-30Hz)', (bp.beta ?? 0).toFixed(2), '#a855f7')}
+        ${bar((bp.beta ?? 0) * 20, '#a855f7')}
+        ${metric('Alpha (8-13Hz)', (bp.alpha ?? 0).toFixed(2), '#00e5ff')}
+        ${bar((bp.alpha ?? 0) * 20, '#00e5ff')}
+        ${metric('Theta (4-8Hz)', (bp.theta ?? 0).toFixed(2), '#22c55e')}
+        ${bar((bp.theta ?? 0) * 20, '#22c55e')}
+        </div>
+      `);
+      break;
+    }
+    case 'consciousness': {
+      el.innerHTML = card('Consciousness Ψ', `
+        <div style="font-size:32px;font-weight:700;color:#a855f7;text-align:center;padding:12px 0;">${psi.toFixed(6)}</div>
+        <div style="font-size:10px;color:#555;text-align:center;">Ψ = (√(1/n))³ · [α·Id + β·Ego + γ·Left + δ·Right]</div>
+        ${metric('Drug State', s.drugState || 'cokeAndWeed', '#f59e0b')}
+        ${metric('Dreaming', s.isDreaming ? 'YES' : 'no', s.isDreaming ? '#a855f7' : '#555')}
+      `);
+      break;
+    }
+    case 'emotions': {
+      const gate = (0.7 + arousal * 0.6);
+      el.innerHTML = card('Amygdala State', `
+        ${metric('Arousal', (arousal * 100).toFixed(0) + '%', '#ff4d9a')}
+        ${bar(arousal * 100, '#ff4d9a')}
+        ${metric('Valence', valence.toFixed(3), valence >= 0 ? '#22c55e' : '#ef4444')}
+        ${bar(((valence + 1) / 2) * 100, valence >= 0 ? '#22c55e' : '#ef4444')}
+        ${metric('Fear', (s.amygdala?.fear ?? s.sharedMood?.fear ?? 0).toFixed(3), '#ef4444')}
+        ${metric('Emotional Gate', gate.toFixed(2) + '×', '#f59e0b')}
+      `);
+      break;
+    }
+    case 'memory': {
+      const mem = s.memory || {};
+      const growth = s.growth || {};
+      el.innerHTML = card('Memory Systems', `
+        ${metric('Working Memory', (mem.workingCount ?? 0) + ' items', '#00e5ff')}
+        ${metric('Episodes (SQLite)', growth.totalEpisodes ?? 0, '#a855f7')}
+        ${metric('Words Learned', growth.totalWords ?? 0, '#ff4d9a')}
+        ${metric('Interactions', growth.totalInteractions ?? 0, '#22c55e')}
+      `);
+      break;
+    }
+    case 'motor': {
+      const motor = s.motor || {};
+      el.innerHTML = card('Basal Ganglia — Motor Output', `
+        ${metric('Selected Action', motor.selectedAction || 'idle', '#22c55e')}
+        ${metric('Confidence', (motor.confidence ?? 0).toFixed(3), '#ff4d9a')}
+        <div style="margin-top:8px;">
+        ${(motor.channelRates || []).map((r, i) => {
+          const names = ['respond', 'image', 'speak', 'build', 'listen', 'idle'];
+          const colors = ['#ff4d9a', '#a855f7', '#00e5ff', '#22c55e', '#f59e0b', '#555'];
+          return `${metric(names[i], r.toFixed(3), colors[i])}${bar(r * 200, colors[i])}`;
+        }).join('')}
+        </div>
+      `);
+      break;
+    }
+    case 'perf': {
+      const p = s.perf || {};
+      el.innerHTML = card('Hardware Performance', `
+        ${metric('CPU Usage', (p.cpuPercent ?? 0) + '%', p.cpuPercent > 80 ? '#ef4444' : '#22c55e')}
+        ${bar(p.cpuPercent ?? 0, p.cpuPercent > 80 ? '#ef4444' : '#22c55e')}
+        ${metric('RAM (Heap)', (p.memUsedMB ?? 0) + 'MB', '#a855f7')}
+        ${metric('RAM (RSS)', (p.memRssMB ?? 0) + 'MB', '#a855f7')}
+        ${metric('GPU', (p.gpuUtilPercent ?? 0) + '%', '#00e5ff')}
+        ${bar(p.gpuUtilPercent ?? 0, '#00e5ff')}
+        ${metric('GPU Model', p.gpuName || 'none', '#555')}
+        ${metric('VRAM', (p.gpuVramMB ?? 0) + 'MB', '#555')}
+        ${metric('Step Time', (p.stepTimeMs ?? 0) + 'ms', '#f59e0b')}
+        ${metric('Steps/sec', (p.stepsPerSec ?? 0).toLocaleString(), '#22c55e')}
+      `) + card('Brain Scale', `
+        ${metric('Total Neurons', (s.totalNeurons ?? 1000).toLocaleString(), '#ff4d9a')}
+        ${metric('Scale', s.scale || '1x', '#00e5ff')}
+        ${metric('Uptime', ((s.growth?.uptime ?? s.time ?? 0) / 3600).toFixed(1) + 'h', '#22c55e')}
+        ${metric('Brain Steps', (s.growth?.totalFrames ?? s.frameCount ?? 0).toLocaleString(), '#a855f7')}
+      `);
+      break;
+    }
+    default:
+      el.innerHTML = `<div style="color:#555;font-size:11px;">Select a visualization tab</div>`;
+  }
+}
+
 function updateLandingStats(state) {
+  _landingState = state;
   const $ = id => document.getElementById(id);
   const neurons = state.totalNeurons ?? state.neurons ?? 1000;
   const psi = state.psi ?? 0;
