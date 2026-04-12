@@ -187,6 +187,11 @@ class ServerBrain {
     // Dictionary (loaded from disk)
     this.dictionary = { words: new Map(), bigrams: new Map() };
 
+    // Emotional history — rolling buffer for charts
+    this._emotionHistory = [];
+    this._historyMaxLen = 3600; // ~1 hour at 1 sample/sec
+    this._lastHistorySample = 0;
+
     // Load saved weights
     this._loadWeights();
   }
@@ -298,6 +303,13 @@ class ServerBrain {
       scale: SCALE + 'x',
       // Shared emotion — everyone sees Unity's mood
       sharedMood: this._getSharedMood(),
+      // Brain growth metrics
+      growth: {
+        totalWords: Object.keys(this._wordFreq || {}).length,
+        totalInteractions: Object.values(this._conversations || {}).reduce((s, c) => s + c.length, 0),
+        uptime: this.time,
+        totalFrames: this.frameCount,
+      },
     };
   }
 
@@ -342,6 +354,23 @@ class ServerBrain {
         // Decay arousal
         this.tonicDrives.amygdala *= 0.9999;
         if (this.tonicDrives.amygdala < 12) this.tonicDrives.amygdala = 12;
+      }
+
+      // Sample emotional history once per second
+      const now = Date.now();
+      if (now - this._lastHistorySample >= 1000) {
+        this._lastHistorySample = now;
+        this._emotionHistory.push({
+          t: this.time,
+          a: +this.arousal.toFixed(3),
+          v: +this.valence.toFixed(3),
+          p: +this.psi.toFixed(4),
+          c: +this.coherence.toFixed(3),
+          s: this.totalSpikes,
+        });
+        if (this._emotionHistory.length > this._historyMaxLen) {
+          this._emotionHistory.shift();
+        }
       }
     }, BRAIN_TICK_MS);
     console.log('[Brain] Started — thinking continuously');
@@ -562,6 +591,58 @@ const httpServer = http.createServer((req, res) => {
     }));
     return;
   }
+  // List brain versions
+  if (req.url === '/versions') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    const versions = [];
+    for (let i = 0; i < 5; i++) {
+      const vFile = WEIGHTS_FILE.replace('.json', `-v${i}.json`);
+      try {
+        if (fs.existsSync(vFile)) {
+          const data = JSON.parse(fs.readFileSync(vFile, 'utf8'));
+          versions.push({ slot: i, version: data.version, savedAt: data.savedAt, time: data.time });
+        }
+      } catch {}
+    }
+    res.end(JSON.stringify({ versions, current: brain._saveVersion || 0 }));
+    return;
+  }
+
+  // Rollback to a version
+  if (req.url?.startsWith('/rollback/')) {
+    const slot = parseInt(req.url.split('/')[2]);
+    if (isNaN(slot) || slot < 0 || slot >= 5) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Invalid slot (0-4)' }));
+      return;
+    }
+    const vFile = WEIGHTS_FILE.replace('.json', `-v${slot}.json`);
+    try {
+      if (!fs.existsSync(vFile)) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Version not found' }));
+        return;
+      }
+      // Copy backup to main file and reload
+      fs.copyFileSync(vFile, WEIGHTS_FILE);
+      brain._loadWeights();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'rolled back', slot }));
+      console.log(`[Brain] Rolled back to version slot ${slot}`);
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message }));
+    }
+    return;
+  }
+
+  // Emotion history (for external tools)
+  if (req.url === '/history') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ history: brain._emotionHistory.slice(-300) }));
+    return;
+  }
+
   res.writeHead(200, { 'Content-Type': 'text/plain' });
   res.end('Unity Brain Server — connect via WebSocket on this port');
 });
@@ -575,7 +656,11 @@ wss.on('connection', (ws, req) => {
   console.log(`[Server] Client connected: ${id} (${brain.clients.size} total)`);
 
   // Send initial state
-  ws.send(JSON.stringify({ type: 'welcome', id, state: brain.getState() }));
+  ws.send(JSON.stringify({
+    type: 'welcome', id,
+    state: brain.getState(),
+    emotionHistory: brain._emotionHistory.slice(-300),
+  }));
 
   ws.on('message', (data) => {
     try {
@@ -596,6 +681,18 @@ wss.on('connection', (ws, req) => {
           brain.processAndRespond(msg.text || '', id).then(result => {
             if (result.text && ws.readyState === ws.OPEN) {
               ws.send(JSON.stringify({ type: 'response', text: result.text, action: result.action }));
+              // Broadcast conversation to all clients (anonymized)
+              const convMsg = JSON.stringify({
+                type: 'conversation',
+                userId: id,
+                text: (msg.text || '').slice(0, 200),
+                response: (result.text || '').slice(0, 500),
+              });
+              for (const [otherWs] of brain.clients) {
+                if (otherWs.readyState === otherWs.OPEN) {
+                  try { otherWs.send(convMsg); } catch {}
+                }
+              }
             }
           }).catch(err => {
             console.warn(`[${id}] Response failed:`, err.message);

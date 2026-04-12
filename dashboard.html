@@ -88,8 +88,29 @@
     </div>
 
     <div class="card" style="margin-top:12px;">
+      <div class="card-title">Emotional History</div>
+      <canvas id="d-emotion-chart" width="800" height="200" style="width:100%;height:200px;background:#0a0a0a;border-radius:4px;"></canvas>
+      <div style="display:flex;gap:16px;margin-top:6px;font-size:10px;color:#555;">
+        <span><span style="color:#ff4d9a;">--</span> arousal</span>
+        <span><span style="color:#a855f7;">--</span> valence</span>
+        <span><span style="color:#00e5ff;">--</span> coherence</span>
+        <span><span style="color:#f59e0b;">--</span> psi</span>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:12px;">
+      <div class="card-title">Brain Growth</div>
+      <div id="d-growth" style="display:flex;gap:20px;flex-wrap:wrap;"></div>
+    </div>
+
+    <div class="card" style="margin-top:12px;">
       <div class="card-title">Cluster Activity</div>
       <div id="d-clusters"></div>
+    </div>
+
+    <div class="card" style="margin-top:12px;">
+      <div class="card-title">Conversation Stream</div>
+      <div class="log" id="d-conversations" style="max-height:200px;"></div>
     </div>
 
     <div class="card" style="margin-top:12px;">
@@ -123,10 +144,19 @@
     function handleMessage(msg) {
       if (msg.type === 'welcome') {
         if (msg.state) updateDashboard(msg.state);
+        // Load emotion history from server
+        if (msg.emotionHistory) {
+          emotionHistory = msg.emotionHistory;
+          drawEmotionChart();
+        }
         log(`Welcome — ${msg.state?.connectedUsers ?? '?'} users online`);
       }
       if (msg.type === 'state') {
         updateDashboard(msg.state);
+        appendEmotionSample(msg.state);
+      }
+      if (msg.type === 'conversation') {
+        addConversation(msg.userId, msg.text, msg.response);
       }
     }
 
@@ -172,6 +202,17 @@
         $('d-emotion-desc').textContent = desc.join(' | ');
       }
 
+      // Brain growth
+      if (s.growth) {
+        const g = s.growth;
+        $('d-growth').innerHTML = `
+          <div style="font-size:11px;"><span style="color:#ff4d9a;font-size:18px;font-weight:700;">${g.totalWords}</span><br><span style="color:#555;">words learned</span></div>
+          <div style="font-size:11px;"><span style="color:#a855f7;font-size:18px;font-weight:700;">${g.totalInteractions}</span><br><span style="color:#555;">interactions</span></div>
+          <div style="font-size:11px;"><span style="color:#00e5ff;font-size:18px;font-weight:700;">${g.totalFrames?.toLocaleString() ?? 0}</span><br><span style="color:#555;">brain steps</span></div>
+          <div style="font-size:11px;"><span style="color:#22c55e;font-size:18px;font-weight:700;">${(g.uptime / 3600).toFixed(1)}h</span><br><span style="color:#555;">uptime</span></div>
+        `;
+      }
+
       // Clusters
       if (s.clusters) {
         const el = $('d-clusters');
@@ -198,6 +239,78 @@
       el.scrollTop = el.scrollHeight;
       while (el.children.length > 200) el.children[0].remove();
     }
+
+    // ── Conversation stream ──
+    function addConversation(userId, text, response) {
+      const el = document.getElementById('d-conversations');
+      const entry = document.createElement('div');
+      entry.className = 'log-entry';
+      const anon = userId ? userId.slice(-4) : '????';
+      entry.innerHTML = `<span style="color:#555;">[${new Date().toLocaleTimeString()}]</span> <span style="color:#22c55e;">user_${anon}:</span> ${escapeHtml(text)}`;
+      el.appendChild(entry);
+      if (response) {
+        const rEntry = document.createElement('div');
+        rEntry.className = 'log-entry';
+        rEntry.innerHTML = `<span style="color:#555;">[${new Date().toLocaleTimeString()}]</span> <span style="color:#ff4d9a;">Unity:</span> ${escapeHtml(response)}`;
+        el.appendChild(rEntry);
+      }
+      el.scrollTop = el.scrollHeight;
+      while (el.children.length > 100) el.children[0].remove();
+    }
+
+    function escapeHtml(str) {
+      const d = document.createElement('div');
+      d.textContent = str || '';
+      return d.innerHTML;
+    }
+
+    // ── Emotion history chart ──
+    let emotionHistory = [];
+    const chartCanvas = document.getElementById('d-emotion-chart');
+    const chartCtx = chartCanvas.getContext('2d');
+
+    function drawEmotionChart() {
+      const w = chartCanvas.width, h = chartCanvas.height;
+      chartCtx.clearRect(0, 0, w, h);
+
+      if (emotionHistory.length < 2) return;
+
+      const len = emotionHistory.length;
+      const xStep = w / Math.max(1, len - 1);
+
+      // Draw each metric as a line
+      const metrics = [
+        { key: 'a', color: '#ff4d9a', min: 0, max: 1 },     // arousal
+        { key: 'v', color: '#a855f7', min: -1, max: 1 },     // valence
+        { key: 'c', color: '#00e5ff', min: 0, max: 1 },      // coherence
+        { key: 'p', color: '#f59e0b', min: 0, max: 0.1 },    // psi (scaled)
+      ];
+
+      for (const m of metrics) {
+        chartCtx.beginPath();
+        chartCtx.strokeStyle = m.color;
+        chartCtx.lineWidth = 1.5;
+        for (let i = 0; i < len; i++) {
+          const val = emotionHistory[i][m.key] ?? 0;
+          const norm = (val - m.min) / (m.max - m.min);
+          const y = h - Math.max(0, Math.min(1, norm)) * h;
+          if (i === 0) chartCtx.moveTo(0, y);
+          else chartCtx.lineTo(i * xStep, y);
+        }
+        chartCtx.stroke();
+      }
+    }
+
+    // Append state samples to local history
+    function appendEmotionSample(s) {
+      if (!s.sharedMood) return;
+      const m = s.sharedMood;
+      emotionHistory.push({ a: m.arousal, v: m.valence, c: m.coherence, p: m.psi });
+      if (emotionHistory.length > 300) emotionHistory.shift();
+    }
+
+    // Redraw chart every 2 seconds
+    setInterval(drawEmotionChart, 2000);
 
     connect();
   </script>
