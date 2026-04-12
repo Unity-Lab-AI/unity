@@ -67,16 +67,17 @@ function detectResources() {
   let scaleSource;
 
   if (gpu.vram > 0) {
-    // GPU EXCLUSIVE — scale to VRAM, not CPU cores
-    // GPU buffers per cluster: voltagesA + voltagesB + spikes + currents + refracTimers = 5 × N × 4 bytes
-    // Plus params uniform = negligible. Total: 20 bytes per neuron on GPU.
-    // Server RAM: voltages (8 bytes) + cluster metadata = ~9 bytes per neuron
-    const usableVRAM = gpu.vram * 0.7; // use 70% of VRAM (MB)
-    const vramNeurons = Math.floor(usableVRAM * 1048576 / 20); // 20 bytes per neuron on GPU
-    const usableRAM = freeRAM * 0.5; // use 50% of free RAM for server state
-    const ramNeurons = Math.floor(usableRAM / 9);
+    // GPU EXCLUSIVE — scale to VRAM
+    // SLIM buffer layout: voltages (4 bytes f32) + spikes (4 bytes u32) = 8 bytes/neuron
+    // Was 20 bytes (voltagesA + voltagesB + spikes + currents + refracTimers)
+    // 2.5× more neurons per GB of VRAM
+    const usableVRAM = gpu.vram * 0.85; // use 85% of VRAM
+    const vramNeurons = Math.floor(usableVRAM * 1048576 / 8);
+    // Server RAM: tiny — only injection arrays, not full cluster state
+    const usableRAM = freeRAM * 0.1;
+    const ramNeurons = Math.floor(usableRAM / 0.001); // essentially unlimited
     maxNeurons = Math.min(vramNeurons, ramNeurons);
-    scaleSource = `GPU: ${gpu.name} (${gpu.vram}MB VRAM, ${Math.round(freeRAM/1024/1024/1024)}GB RAM)`;
+    scaleSource = `GPU: ${gpu.name} (${gpu.vram}MB VRAM, ${Math.round(freeRAM/1024/1024/1024)}GB RAM, SLIM 8bytes/neuron)`;
   } else {
     // CPU only — limited by cores
     const usableRAM = freeRAM * 0.3;
@@ -85,9 +86,8 @@ function detectResources() {
     scaleSource = `CPU: ${cpuModel} (${cpuCount} cores, ${Math.round(freeRAM/1024/1024/1024)}GB free)`;
   }
 
-  // Cap at 64M — 20× the original 3.2M. GPU handles it, WebSocket stays sane.
-  // Raise this cap as GPU compute proves stable at higher scales.
-  maxNeurons = Math.max(1000, Math.min(64000000, maxNeurons));
+  // No artificial cap — hardware decides. VRAM and RAM are the only limits.
+  maxNeurons = Math.max(1000, maxNeurons);
 
   // Round to nice cluster sizes (must divide into 7 clusters)
   const clusterScale = Math.floor(maxNeurons / 1000);
@@ -285,17 +285,18 @@ class ServerBrain {
     this.vReset = -70;
     this.dt = 1; // ms
 
-    // Voltage arrays — minimal server-side allocation
-    // GPU maintains the real voltage state. Server only needs these for:
-    //   - injectText() writes to cortex/amygdala (small region, not full array)
-    //   - Legacy step() if ever called (shouldn't be in GPU mode)
-    // At 64M neurons, full Float64Arrays would be 493MB. Allocate lazily.
+    // Voltage arrays — MINIMAL server-side allocation
+    // GPU maintains the real voltage state. Server only needs voltages for injectText().
+    // injectText touches Wernicke's area (~1000 neurons) + amygdala (~100 neurons).
+    // At 500M neurons, full arrays would be 4GB. We allocate ONLY what's needed.
+    this._injectionSize = Math.min(10000, CLUSTER_SIZES.cortex); // max 10K neurons for text injection
+    this._amygInjectionSize = Math.min(1000, CLUSTER_SIZES.amygdala);
     this.voltages = {};
-    for (const [name, cluster] of Object.entries(this.clusters)) {
-      // Only allocate what injectText touches — cortex + amygdala injection regions
-      // Other clusters get minimal 1-element arrays (never written to in GPU mode)
-      if (name === 'cortex' || name === 'amygdala') {
-        this.voltages[name] = new Float64Array(cluster.size).fill(this.vRest);
+    for (const [name] of Object.entries(this.clusters)) {
+      if (name === 'cortex') {
+        this.voltages[name] = new Float64Array(this._injectionSize).fill(this.vRest);
+      } else if (name === 'amygdala') {
+        this.voltages[name] = new Float64Array(this._amygInjectionSize).fill(this.vRest);
       } else {
         this.voltages[name] = new Float64Array(1).fill(this.vRest);
       }
@@ -631,20 +632,21 @@ class ServerBrain {
   }
 
   injectText(text) {
-    const cortexSize = CLUSTER_SIZES.cortex;
-    const langStart = Math.floor(cortexSize / 2); // Wernicke's = second half of cortex
-    const langSize = cortexSize - langStart;
+    // Inject into server-side voltage array (capped at _injectionSize, not full cluster)
+    const injSize = this._injectionSize || 10000;
+    const langStart = Math.floor(injSize / 2);
+    const langSize = injSize - langStart;
     const V = this.voltages.cortex;
     for (let i = 0; i < text.length; i++) {
       const idx = langStart + ((text.charCodeAt(i) * 31 + i * 7) % langSize);
-      if (idx < cortexSize) V[idx] += 8;
+      if (idx < injSize) V[idx] += 8;
       if (idx > langStart) V[idx - 1] += 3;
-      if (idx < cortexSize - 1) V[idx + 1] += 3;
+      if (idx < injSize - 1) V[idx + 1] += 3;
     }
-    // Social input excites amygdala
-    const amygSize = CLUSTER_SIZES.amygdala;
+    // Social input excites amygdala (capped to injection array size)
+    const amygInj = this._amygInjectionSize || 1000;
     const aV = this.voltages.amygdala;
-    for (let i = 0; i < Math.min(30 * SCALE, amygSize); i++) aV[i] += 4;
+    for (let i = 0; i < Math.min(100, amygInj); i++) aV[i] += 4;
     this.reward += 0.1;
   }
 

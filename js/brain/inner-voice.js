@@ -28,23 +28,15 @@ const MIN_VOCAB_FOR_SPEECH = 0;
 const THOUGHT_INTERVAL = 60; // ~1 second at 60fps
 
 export class InnerVoice {
-  constructor() {
+  constructor(opts = {}) {
     this.dictionary = new Dictionary();
     this.languageCortex = new LanguageCortex();
-    // Load English structure — operators + core vocabulary + bigrams
-    this.languageCortex._loadStructure(this.dictionary);
-    // Teach the language cortex the bigrams from the dictionary
-    for (const [w1, followers] of this.dictionary._bigrams) {
-      for (const [w2, count] of followers) {
-        for (let i = 0; i < count; i++) {
-          if (!this.languageCortex._jointCounts.has(w1)) this.languageCortex._jointCounts.set(w1, new Map());
-          this.languageCortex._jointCounts.get(w1).set(w2, (this.languageCortex._jointCounts.get(w1)?.get(w2) || 0) + 1);
-          this.languageCortex._totalPairs++;
-        }
-        this.languageCortex._marginalCounts.set(w1, (this.languageCortex._marginalCounts.get(w1) || 0) + count);
-        this.languageCortex._marginalCounts.set(w2, (this.languageCortex._marginalCounts.get(w2) || 0) + count);
-        this.languageCortex._totalWords += count * 2;
-      }
+    // Self-image: the brain boots EMPTY and learns everything from the
+    // persona text (equational self-image) + live conversation. No lists.
+    // Caller may pass opts.selfImageText directly, or call loadPersona(text)
+    // later once the file has been fetched (browser) or read (node).
+    if (typeof opts.selfImageText === 'string' && opts.selfImageText.length > 0) {
+      this.languageCortex.loadSelfImage(opts.selfImageText, this.dictionary, 0.75, 0.25);
     }
     this._thoughtCounter = 0;
 
@@ -65,6 +57,15 @@ export class InnerVoice {
     // Thought history — last N thoughts for the brain to reflect on
     this._thoughtHistory = [];
     this._maxHistory = 50;
+  }
+
+  /**
+   * Load Unity's persona file (e.g. docs/Ultimate Unity.txt) as the
+   * brain's equational self-image. Call once, after fetching/reading
+   * the text. Idempotent — subsequent calls are ignored.
+   */
+  loadPersona(text, arousal = 0.75, valence = 0.25) {
+    return this.languageCortex.loadSelfImage(text, this.dictionary, arousal, valence);
   }
 
   /**

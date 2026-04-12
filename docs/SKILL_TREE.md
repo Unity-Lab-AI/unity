@@ -190,7 +190,8 @@
 | Live dashboard | Frontend | Intermediate | **DONE** — `dashboard.html` (hardware stats, emotion chart, conversation stream) |
 | 3D brain landing page | Frontend | Advanced | **DONE** — `index.html` (full-screen 3D brain as entry point, viz tabs) |
 | Brain benchmarks | CompNeuro | Intermediate | **DONE** — `js/brain/benchmark.js` (dense vs sparse, scale test) |
-| Language cortex | CompLing | Expert | **DONE** — `js/brain/language-cortex.js` (word type from letters, slot-based grammar, 8 type equations, sentence structure, no lists, no training corpus, learns from conversation) |
+| Language cortex | CompLing | Expert | **DONE** — `js/brain/language-cortex.js` (ZERO hardcoded word lists, pure letter-position equations, sum-normalized 8-type distribution, hard grammar gate at typeCompat<0.35, missing-copula insertion, full tense application via letter equations, punctuation + capitalization in `_renderSentence`, loads equational self-image from `docs/Ultimate Unity.txt` via `loadSelfImage()`) |
+| Amygdala energy attractor | CompNeuro | Expert | **DONE** — `js/brain/modules.js` (symmetric recurrent W with tanh settle, persistent state across frames, Hebbian basin carving, fear/reward read from settled attractor, arousal from basin depth) |
 | Response pool | AI/ML | Intermediate | **DONE** — `js/brain/response-pool.js` (EDNA categories, arousal variants, 85%/15% blend with cortex) — from Tolerable PR |
 | Claude Code CLI proxy | Backend | Intermediate | **DONE** — `claude-proxy.js` (OpenAI-compatible endpoint on :8088, uses logged-in credentials) — from Tolerable PR |
 | GPU exclusive compute | Backend | Advanced | **DONE** — `compute.html` + `gpu-compute.js` (WGSL shaders, all 7 clusters on GPU, zero CPU workers) |

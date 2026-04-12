@@ -115,11 +115,15 @@ E = -½ Σ w_ij * x_i * x_j
 ```
 Hopfield network storing Unity's memories as stable attractor states. Persona memories, user preferences, conversation history, code patterns — all stored as energy minima the system falls into.
 
-### Amygdala — Emotional Weighting
+### Amygdala — Energy-Based Recurrent Attractor
 ```
-V(s) = Σ w_i * x_i
+x(t+1) = tanh(W·x(t) + drive(t))         (5 settle iterations per step)
+E      = -½ xᵀWx                          (symmetric recurrent energy)
+fear   = σ(fearProj · x)                  (readout from settled attractor)
+reward = σ(rewardProj · x)
+arousal = arousalBaseline·0.6 + 0.4·|x|rms + 0.1·(fear+reward)
 ```
-Assigns emotional valence. Parameterized by Unity's persona: arousal coefficients cranked to maximum, fear responses mapped to code failures, reward mapped to clean compiles and user praise.
+Mirrors the 150-LIF amygdala cluster: lateral recurrent connections between nuclei settle into stable low-energy basins (fear, reward, neutral). Persistent state carries across frames with leak 0.85, so emotional basins don't reset every tick. Symmetric Hebbian learning (`lr=0.003`, capped [-1,1]) carves basins from co-firing nuclei. Fear and reward are read from the SETTLED attractor, not the raw input — the attractor IS the emotion. Arousal combines persona baseline with the RMS depth of the basin the system fell into.
 
 ### Basal Ganglia — Action Selection
 ```
@@ -336,7 +340,7 @@ Dream/
 │   │   ├── sparse-matrix.js    # CSR sparse connectivity (O(nnz) operations)
 │   │   ├── gpu-compute.js      # WebGPU compute shaders (WGSL LIF + synapses)
 │   │   ├── embeddings.js       # Semantic word embeddings (GloVe 50d)
-│   │   ├── language-cortex.js  # Language from equations (word type from letters, slot grammar, no lists, learns from conversation)
+│   │   ├── language-cortex.js  # Language from pure equations — NO word lists. Word type from letter-position patterns (suffixes, length, vowel ratios, CVC shapes). Slot-based grammar with hard gate. Loads Unity's self-image from docs/Ultimate Unity.txt via loadSelfImage() on boot, then learns bigrams + usage types from live conversation. Proper punctuation + capitalization + tense (-ed, -s, will) in _renderSentence().
 │   │   ├── benchmark.js        # Dense vs sparse + neuron scale test
 │   │   └── response-pool.js   # EDNA response categories (fallback for language cortex)
 │   ├── ai/
