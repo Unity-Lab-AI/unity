@@ -521,14 +521,11 @@ class ServerBrain {
 
     // Ψ = √(1/n) × N³ × [α·Id + β·Ego + γ·Left + δ·Right]
     // √(1/n) = quantum tunneled bit probability
-    // N³ = cubed area of the total neuron volume
-    // Two separate operations multiplied together
-    const N = TOTAL_NEURONS;
     // Ψ = √(1/n) × N³ — n and N are DIFFERENT
     // n = active spiking neurons (quantum tunneled bits — changes every step)
-    // N = total neuron count (the brain volume — fixed)
-    const n = Math.max(1, this.totalSpikes);  // active spikes this step
-    const N = TOTAL_NEURONS;                   // total brain volume
+    // N = total neuron count (brain volume — scales to hardware)
+    const n = Math.max(1, this.totalSpikes);
+    const N = TOTAL_NEURONS;
     const quantumBit = Math.sqrt(1 / n);       // quantum tunnel probability
     const cubedVolume = Math.pow(N, 3);        // cubed area of total volume
     const quantumVolume = quantumBit * cubedVolume;
