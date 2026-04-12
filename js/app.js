@@ -64,9 +64,18 @@ let landingBrainSource = null; // RemoteBrain or null
     if (landingBrain3d._overlay) {
       landingBrain3d._overlay.style.position = 'absolute';
       landingBrain3d._overlay.style.zIndex = '0';
-      // Hide the close button and header on landing
+      // Hide elements that collide with landing UI
       const hdr = landingBrain3d._overlay.querySelector('.b3d-hdr');
       if (hdr) hdr.style.display = 'none';
+      const foot = landingBrain3d._overlay.querySelector('.b3d-foot');
+      if (foot) foot.style.display = 'none';
+      const log = landingBrain3d._overlay.querySelector('.b3d-log-wrap');
+      if (log) log.style.display = 'none';
+      const expansion = landingBrain3d._overlay.querySelector('.b3d-expansion');
+      if (expansion) expansion.style.display = 'none';
+      // Move cluster toggles down to avoid top stats
+      const toggles = landingBrain3d._overlay.querySelector('.b3d-tog-wrap');
+      if (toggles) toggles.style.top = '50px';
     }
     landingBrain3d.open();
     console.log('[Landing] 3D brain initialized and visible');
@@ -266,6 +275,7 @@ function updateLandingStats(state) {
 
   const el = (id, text) => { const e = $(id); if (e) e.textContent = text; };
   el('ls-neurons', neurons.toLocaleString() + ' neurons');
+  el('ls-subtitle', neurons.toLocaleString() + '-neuron brain simulation — real equations, alive right now');
   el('ls-psi', 'Ψ = ' + psi.toFixed(4));
   el('ls-users', users + ' online');
   el('ls-arousal', (arousal * 100).toFixed(0) + '%');

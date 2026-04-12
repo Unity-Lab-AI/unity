@@ -94,7 +94,6 @@ const RESOURCES = detectResources();
 // ── Configuration ──────────────────────────────────────────────
 
 const PORT = 8080;
-const BRAIN_TICK_MS = 16;          // ~60fps brain loop
 const STATE_BROADCAST_MS = 100;    // send state to clients 10fps
 const WEIGHT_SAVE_MS = 300000;     // save weights every 5 minutes
 const WEIGHTS_FILE = path.join(__dirname, 'brain-weights.json');
@@ -113,6 +112,11 @@ const CLUSTER_SIZES = {
   mystery:       50 * SCALE,
 };
 const TOTAL_NEURONS = Object.values(CLUSTER_SIZES).reduce((a, b) => a + b, 0);
+
+// Scale tick rate + substeps to neuron count — prevent CPU meltdown
+// 1K neurons: 16ms/10 substeps, 10K: 33ms/5, 50K+: 100ms/2
+const BRAIN_TICK_MS = TOTAL_NEURONS > 50000 ? 100 : TOTAL_NEURONS > 10000 ? 50 : 16;
+const SUBSTEPS = TOTAL_NEURONS > 50000 ? 2 : TOTAL_NEURONS > 10000 ? 5 : 10;
 
 // ── Brain Setup (CommonJS wrapper around ES modules) ──────────
 // Note: The actual brain modules are ES modules. In production,
@@ -367,9 +371,9 @@ class ServerBrain {
     this._isDreaming = false;
 
     this._tickInterval = setInterval(() => {
-      const stepStart = performance.now ? performance.now() : Date.now();
-      for (let i = 0; i < 10; i++) this.step();
-      const stepEnd = performance.now ? performance.now() : Date.now();
+      const stepStart = performance.now();
+      for (let i = 0; i < SUBSTEPS; i++) this.step();
+      const stepEnd = performance.now();
 
       // Track step timing
       this._stepTimeSamples.push(stepEnd - stepStart);
