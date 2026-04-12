@@ -1220,11 +1220,12 @@ function renderBrainWave() {
 function updateBrainIndicator(state) {
   if (!state) return;
   const $ = id => document.getElementById(id);
-  const coherence = state.oscillations?.coherence || 0;
-  const arousal = state.amygdala?.arousal || 0;
-  const valence = state.amygdala?.valence || 0;
-  const psi = state.psi || 0;
-  const bandPower = state.oscillations?.bandPower || {};
+  const srv = _landingState || {};
+  const coherence = state.oscillations?.coherence || srv.oscillations?.coherence || 0;
+  const arousal = state.amygdala?.arousal || srv.amygdala?.arousal || 0;
+  const valence = state.amygdala?.valence || srv.amygdala?.valence || 0;
+  const psi = state.psi || srv.psi || 0;
+  const bandPower = state.oscillations?.bandPower || state.bandPower || srv.oscillations?.bandPower || srv.bandPower || {};
 
   const psiEl = $('hud-psi'); if (psiEl) psiEl.textContent = psi.toFixed(3);
   const arousalBar = $('hud-arousal-bar'); if (arousalBar) arousalBar.style.width = `${(arousal * 100).toFixed(0)}%`;
@@ -1241,8 +1242,6 @@ function updateBrainIndicator(state) {
   const betaEl = $('hud-beta'); if (betaEl) betaEl.textContent = (bandPower.beta ?? srvBand.beta ?? 0).toFixed(1);
   const alphaEl = $('hud-alpha'); if (alphaEl) alphaEl.textContent = (bandPower.alpha ?? srvBand.alpha ?? 0).toFixed(1);
   const thetaEl = $('hud-theta'); if (thetaEl) thetaEl.textContent = (bandPower.theta ?? srvBand.theta ?? 0).toFixed(1);
-  // Use server state for fields the local brain doesn't compute well
-  const srv = _landingState || {};
   const drugEl = $('hud-drug'); if (drugEl) drugEl.textContent = state.drugState || srv.drugState || 'cokeAndWeed';
   const actionEl = $('hud-action'); if (actionEl) actionEl.textContent = state.motor?.selectedAction || srv.motor?.selectedAction || 'idle';
   const modelEl = $('hud-model'); if (modelEl) modelEl.textContent = window._brainOnlyMode ? 'BRAIN ONLY' : (bestBackend?.model?.slice(0, 25) || '—');
