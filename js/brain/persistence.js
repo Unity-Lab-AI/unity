@@ -56,6 +56,11 @@ export class BrainPersistence {
 
         // Motor channel rates (learned action preferences)
         motorChannels: Array.from(brain.motor.channelRates),
+
+        // Semantic weights — learned word→action mapping from sensory processor
+        semanticWeights: brain.sensory?._semanticWeights ? Object.fromEntries(
+          Object.entries(brain.sensory._semanticWeights).map(([k, v]) => [k, Array.from(v)])
+        ) : null,
       };
 
       // Save cluster synapses (sparse — only non-zero weights)
@@ -178,6 +183,16 @@ export class BrainPersistence {
         for (let i = 0; i < Math.min(state.motorChannels.length, brain.motor.channelRates.length); i++) {
           brain.motor.channelRates[i] = state.motorChannels[i];
         }
+      }
+
+      // Restore semantic weights
+      if (state.semanticWeights && brain.sensory?._semanticWeights) {
+        for (const [key, arr] of Object.entries(state.semanticWeights)) {
+          if (brain.sensory._semanticWeights[key] && arr.length === brain.sensory._semanticWeights[key].length) {
+            brain.sensory._semanticWeights[key] = new Float64Array(arr);
+          }
+        }
+        console.log('[Persistence] Restored semantic weights');
       }
 
       // Restore metadata
