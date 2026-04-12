@@ -642,10 +642,13 @@ export class UnityBrain extends EventEmitter {
       return this._handleImage(text, includesSelf);
     }
 
-    // 6. LEARN from user input — every word goes into the dictionary
+    // 6. LEARN from user input — every word goes into the dictionary + language cortex
     const state = this.getState();
     const cortexOutput = this.clusters.cortex.getOutput(32);
     this.innerVoice.learn(text, cortexOutput, state.amygdala?.arousal ?? 0.5, state.amygdala?.valence ?? 0);
+
+    // Analyze input for response context (question detection, topic)
+    this.innerVoice.languageCortex.analyzeInput(text, this.innerVoice.dictionary);
 
     // 7. Generate response — brain speaks from its own equations
     let response = null;

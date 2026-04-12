@@ -105,10 +105,13 @@ export class InnerVoice {
     const speechDrive = socialNeed * arousal * coherence;
     const shouldSpeak = speechDrive > SPEECH_THRESHOLD;
 
-    // Generate sentence via cortex prediction equation: ŝ = W·x + mood + position
+    // Generate sentence via full linguistic equation chain
     let sentence = '';
     if (shouldSpeak && this.dictionary.size > 0) {
-      sentence = this.languageCortex.generate(this.dictionary, arousal, valence, coherence);
+      sentence = this.languageCortex.generate(this.dictionary, arousal, valence, coherence, {
+        predictionError,
+        motorConfidence: brainState.motor?.confidence || 0,
+      });
     }
 
     // Update current thought

@@ -1,132 +1,77 @@
 /**
- * language-cortex.js — Language Production from Linguistic Equations
+ * language-cortex.js — Complete Language Production System
  *
- * Real language equations governing Unity's speech production:
+ * Every aspect of language computed from equations:
  *
- * Zipf's Law:       f(r) = C / r^α         — word frequency is a power law
- * Mutual Info:      I(w1;w2) = log(P(w1,w2) / P(w1)·P(w2))  — word association strength
- * Surprisal:        S(w) = -log₂ P(w|context)  — unexpectedness drives emphasis
- * Entropy Rate:     H = -Σ P(w) log P(w)     — sentence complexity from brain state
- * Conditional Chain: P(sentence) = Π P(w_i | w_{i-1}, position, mood)
+ * PHONOLOGY:    letter patterns → word patterns (5-neuron micro-patterns per letter)
+ * MORPHOLOGY:   tense/plural transforms as pattern arithmetic
+ * SYNTAX:       position-dependent role weights enforce SVO ordering
+ * SEMANTICS:    word meaning from cortex patterns + emotional associations
+ * PRAGMATICS:   input analysis → response type (answer/statement/question/action)
  *
- * These aren't lists. They're the mathematics of how language works.
- * The brain's arousal/valence/coherence modulate these equations:
- *   - arousal  → entropy rate (how wild the sentence gets)
- *   - valence  → word selection bias (positive vs negative vocabulary)
- *   - coherence → temperature (structured vs scattered speech)
+ * Core equations:
+ *   Zipf:        f(r) = C / r^α
+ *   MI:          I(w1;w2) = log₂(P(w1,w2) / P(w1)·P(w2))
+ *   Surprisal:   S(w) = -log₂ P(w|context)
+ *   Entropy:     H = H_base + arousal · H_range
+ *   Production:  P(w_i) ∝ P(w_i|w_{i-1}) · Role(w_i, pos) · Zipf(rank) · MI · mood · topic
+ *   Syntax:      role_score = W_syntax[pos] · word_pattern
+ *   Sentence:    type = f(arousal, predictionError, motorOutput)
+ *   Morphology:  transform = base_pattern + tense_vector
  */
 
 const PATTERN_DIM = 32;
 const ALPHABET = 'abcdefghijklmnopqrstuvwxyz';
 const VOWELS = 'aeiou';
+const MAX_SENTENCE_POS = 15;
 
 export class LanguageCortex {
   constructor() {
-    // Joint probability table — P(w1, w2) for mutual information
-    // Stored as Map<string, Map<string, number>> + marginal counts
-    this._jointCounts = new Map();  // word pair counts
-    this._marginalCounts = new Map(); // individual word counts
+    // ── Probability tables (learned from exposure) ──
+    this._jointCounts = new Map();
+    this._marginalCounts = new Map();
     this._totalPairs = 0;
     this._totalWords = 0;
 
-    // Position-conditioned probability — P(w | position)
-    // What kind of word appears at each sentence position
-    this._positionCounts = new Array(15).fill(null).map(() => new Map());
-    this._positionTotals = new Float64Array(15);
+    // ── Syntactic role weights — what word TYPE belongs at each position ──
+    // W_syntax[pos] is a PATTERN_DIM vector. High dot product with a word pattern
+    // means that word fits at that position. Learned from corpus.
+    this._syntaxWeights = new Array(MAX_SENTENCE_POS).fill(null).map(() => new Float64Array(PATTERN_DIM));
+    this._syntaxCounts = new Float64Array(MAX_SENTENCE_POS);
 
-    // Prediction weight matrix — learns from mutual information
+    // ── Position-conditioned word probability ──
+    this._positionCounts = new Array(MAX_SENTENCE_POS).fill(null).map(() => new Map());
+    this._positionTotals = new Float64Array(MAX_SENTENCE_POS);
+
+    // ── Prediction weights ──
     this._predWeights = new Float64Array(PATTERN_DIM * PATTERN_DIM);
 
-    // Letter→pattern mapping
+    // ── Input context — last N inputs for topic continuity ──
+    this._contextPatterns = [];
+    this._lastInputWords = [];
+
+    // ── Letter patterns ──
     this._letterPatterns = new Float64Array(26 * 5);
     this._initLetterPatterns();
 
-    // Zipf's alpha — learned from observed frequency distribution
-    this.zipfAlpha = 1.0; // typical English ≈ 1.0
+    // ── Morphological transform vectors ──
+    this._tenseVectors = {
+      past: new Float64Array(PATTERN_DIM),
+      present: new Float64Array(PATTERN_DIM),
+      future: new Float64Array(PATTERN_DIM),
+      plural: new Float64Array(PATTERN_DIM),
+    };
+    this._initMorphVectors();
 
+    // ── Sentence type parameters (learned) ──
+    this._questionStarters = new Map();  // words that start questions, with counts
+    this._actionVerbs = new Map();       // words used in actions, with counts
+
+    this.zipfAlpha = 1.0;
     this.sentencesLearned = 0;
     this.wordsProcessed = 0;
 
-    // Bootstrap — feed the equations real English so probabilities start meaningful
     this._bootstrap();
-  }
-
-  _bootstrap() {
-    // These aren't responses Unity will say — they're training data for the equations.
-    // Joint probabilities, position counts, and prediction weights learn word ORDER
-    // from this corpus. Unity's actual output is computed from the trained equations
-    // combined with her brain state (arousal, valence, coherence).
-    const corpus = [
-      "i want to talk to you about something",
-      "what are you doing right now",
-      "hey come here and look at this",
-      "i don't know what you mean by that",
-      "tell me something i don't already know",
-      "you can do whatever you want with that",
-      "i think we should build something cool",
-      "why are you looking at me like that",
-      "show me what you got in there",
-      "that is really fucking wild right now",
-      "i feel like we need to talk about this",
-      "how do you know all of that stuff",
-      "can you hear me when i talk to you",
-      "i'm just trying to figure this out",
-      "where did you learn to do that",
-      "we should make something together tonight",
-      "you know what i mean right babe",
-      "don't tell me you can't do it",
-      "i love how you think about things",
-      "what the hell is going on here",
-      "are you still there or did you leave",
-      "come on we have to go do this now",
-      "it feels so good when you say that",
-      "i need you to help me with something",
-      "they don't even care about any of it",
-      "look at what we just built together",
-      "that was the best thing i ever heard",
-      "so what do you want to do next",
-      "i can feel something changing in here",
-      "you are the only one who gets me",
-      "why does it always have to be like this",
-      "just say what you really want to say",
-      "i'm going to show you something amazing",
-      "we can make this work if we try hard",
-      "do you want me to keep going or stop",
-      "how does that make you feel inside",
-      "the whole thing is about to fall apart",
-      "i really want to know what you think",
-      "she said something that made me feel weird",
-      "let me see if i can figure it out",
-      "you always know the right thing to say",
-      "i was thinking about you all day long",
-      "what if we just did it right now",
-      "nobody told me it would be like this",
-      "i could hear you from the other room",
-      "we need to find a better way to do this",
-      "it doesn't matter what they say about us",
-      "can you believe what just happened here",
-      "i want to build something that actually works",
-      "you make me want to be a better coder",
-    ];
-
-    // Create a temporary dictionary for bootstrap learning
-    const tempDict = { _words: new Map(), learnWord: (w, p, a, v) => {
-      if (!tempDict._words.has(w)) tempDict._words.set(w, { pattern: p || this.wordToPattern(w), arousal: a, valence: v, frequency: 1 });
-      else tempDict._words.get(w).frequency++;
-    }, learnBigram: () => {} };
-
-    // First pass — build vocabulary
-    for (const s of corpus) {
-      const words = s.split(/\s+/);
-      for (const w of words) tempDict.learnWord(w, null, 0.5, 0);
-    }
-
-    // Second pass — learn equations from the corpus
-    for (const s of corpus) {
-      this.learnSentence(s, tempDict, 0.5, 0);
-    }
-
-    console.log(`[LanguageCortex] Bootstrapped: ${this.sentencesLearned} sentences, ${this._marginalCounts.size} unique words, α=${this.zipfAlpha.toFixed(2)}`);
   }
 
   _initLetterPatterns() {
@@ -140,29 +85,37 @@ export class LanguageCortex {
     }
   }
 
-  /**
-   * Build a cortex pattern from a word's letters.
-   */
+  _initMorphVectors() {
+    // Tense vectors — unique directional shifts in pattern space
+    // Past: shifts pattern toward lower dimensions (memory-associated)
+    // Present: centered (current cortex state)
+    // Future: shifts toward higher dimensions (prediction-associated)
+    for (let d = 0; d < PATTERN_DIM; d++) {
+      this._tenseVectors.past[d] = Math.sin(d * 0.5) * 0.15;
+      this._tenseVectors.present[d] = Math.cos(d * 0.3) * 0.05;
+      this._tenseVectors.future[d] = Math.sin(d * 0.7 + 1.5) * 0.15;
+      this._tenseVectors.plural[d] = Math.cos(d * 0.4 + 2.0) * 0.1;
+    }
+  }
+
+  // ── Pattern Construction ────────────────────────────────────────
+
   wordToPattern(word) {
     const pattern = new Float64Array(PATTERN_DIM);
-    const clean = word.toLowerCase().replace(/[^a-z]/g, '');
+    const clean = word.toLowerCase().replace(/[^a-z']/g, '');
     if (!clean) return pattern;
-
     for (let c = 0; c < clean.length; c++) {
       const li = clean.charCodeAt(c) - 97;
       if (li < 0 || li > 25) continue;
       for (let n = 0; n < 5; n++) {
-        const targetDim = (c * 7 + n * 3 + li) % PATTERN_DIM;
-        pattern[targetDim] += this._letterPatterns[li * 5 + n] / clean.length;
+        const dim = (c * 7 + n * 3 + li) % PATTERN_DIM;
+        pattern[dim] += this._letterPatterns[li * 5 + n] / clean.length;
       }
-      // Syllable boundary markers
-      if (c > 0) {
-        const prevV = VOWELS.includes(clean[c - 1]);
-        const currV = VOWELS.includes(clean[c]);
-        if (prevV !== currV) pattern[(c * 11) % PATTERN_DIM] += 0.15;
+      if (c > 0 && VOWELS.includes(clean[c - 1]) !== VOWELS.includes(clean[c])) {
+        pattern[(c * 11) % PATTERN_DIM] += 0.15;
       }
     }
-    // Normalize
+    pattern[0] += Math.min(1, clean.length / 8) * 0.2;
     let norm = 0;
     for (let i = 0; i < PATTERN_DIM; i++) norm += pattern[i] * pattern[i];
     norm = Math.sqrt(norm) || 1;
@@ -172,164 +125,285 @@ export class LanguageCortex {
 
   countSyllables(word) {
     const clean = word.toLowerCase().replace(/[^a-z]/g, '');
-    if (!clean) return 0;
-    let count = 0, prevV = false;
+    let count = 0, prev = false;
     for (let i = 0; i < clean.length; i++) {
-      const isV = VOWELS.includes(clean[i]);
-      if (isV && !prevV) count++;
-      prevV = isV;
+      const v = VOWELS.includes(clean[i]);
+      if (v && !prev) count++;
+      prev = v;
     }
     return Math.max(1, count);
   }
 
   // ── Linguistic Equations ────────────────────────────────────────
 
-  /**
-   * Mutual Information: I(w1; w2) = log₂(P(w1,w2) / P(w1)·P(w2))
-   * How much more likely two words appear together than by chance.
-   * High MI = strong association. This replaces raw bigram counts.
-   */
   mutualInfo(w1, w2) {
-    const pJoint = this._getJointProb(w1, w2);
-    const p1 = this._getMarginalProb(w1);
-    const p2 = this._getMarginalProb(w2);
-    if (pJoint === 0 || p1 === 0 || p2 === 0) return 0;
-    return Math.log2(pJoint / (p1 * p2));
+    const pJ = this._jointProb(w1, w2);
+    const p1 = this._margProb(w1);
+    const p2 = this._margProb(w2);
+    if (pJ === 0 || p1 === 0 || p2 === 0) return 0;
+    return Math.log2(pJ / (p1 * p2));
   }
 
-  _getJointProb(w1, w2) {
-    const inner = this._jointCounts.get(w1);
-    if (!inner) return 0;
-    return (inner.get(w2) || 0) / (this._totalPairs || 1);
-  }
-
-  _getMarginalProb(w) {
-    return (this._marginalCounts.get(w) || 0) / (this._totalWords || 1);
-  }
-
-  /**
-   * Surprisal: S(w) = -log₂ P(w | previous_word)
-   * How unexpected this word is given what came before.
-   * High surprisal = surprising = draws attention.
-   */
-  surprisal(word, prevWord) {
-    if (!prevWord) return -Math.log2(this._getMarginalProb(word) || 0.001);
-    const pCond = this._getConditionalProb(word, prevWord);
+  surprisal(word, prev) {
+    const pCond = prev ? this._condProb(word, prev) : this._margProb(word);
     return -Math.log2(pCond || 0.001);
   }
 
-  _getConditionalProb(word, prevWord) {
-    const inner = this._jointCounts.get(prevWord);
-    if (!inner) return this._getMarginalProb(word);
-    const jointCount = inner.get(word) || 0;
-    const prevCount = this._marginalCounts.get(prevWord) || 1;
-    return jointCount / prevCount;
+  zipfProb(rank) { return 1 / Math.pow(rank + 1, this.zipfAlpha); }
+
+  _jointProb(w1, w2) {
+    return (this._jointCounts.get(w1)?.get(w2) || 0) / (this._totalPairs || 1);
+  }
+  _margProb(w) {
+    return (this._marginalCounts.get(w) || 0) / (this._totalWords || 1);
+  }
+  _condProb(word, prev) {
+    const inner = this._jointCounts.get(prev);
+    if (!inner) return this._margProb(word);
+    const prevTotal = this._marginalCounts.get(prev) || 1;
+    return (inner.get(word) || 0) / prevTotal;
+  }
+  _posProb(word, pos) {
+    return (this._positionCounts[Math.min(pos, MAX_SENTENCE_POS - 1)]?.get(word) || 0) /
+           (this._positionTotals[Math.min(pos, MAX_SENTENCE_POS - 1)] || 1);
   }
 
+  // ── Syntactic Role Score ────────────────────────────────────────
   /**
-   * Zipf rank probability: P(rank) = C / rank^α
-   * More frequent words are exponentially more likely to be selected.
+   * How well does this word fit at this sentence position?
+   * role_score = W_syntax[pos] · word_pattern
+   * High score = word pattern matches what usually appears at this position.
    */
-  zipfProb(rank) {
-    return 1 / Math.pow(rank + 1, this.zipfAlpha);
+  syntaxScore(wordPattern, position) {
+    const pos = Math.min(position, MAX_SENTENCE_POS - 1);
+    const w = this._syntaxWeights[pos];
+    let dot = 0;
+    for (let i = 0; i < PATTERN_DIM; i++) dot += w[i] * wordPattern[i];
+    return dot;
   }
 
+  // ── Sentence Type ──────────────────────────────────────────────
   /**
-   * Target entropy from brain state:
-   * H_target = H_base + arousal · H_range
-   * Higher arousal = higher entropy = more varied/wild word choices
-   * Lower arousal = lower entropy = more predictable/common words
-   */
-  targetEntropy(arousal) {
-    const H_base = 2.0;  // minimum entropy (simple speech)
-    const H_range = 4.0;  // max additional entropy
-    return H_base + arousal * H_range;
-  }
-
-  // ── Sentence Generation ─────────────────────────────────────────
-
-  /**
-   * Generate a sentence using the full linguistic equation chain:
+   * What type of sentence should the brain produce?
+   * Computed from brain state, not a decision tree.
    *
-   * P(w_i) ∝ P(w_i | w_{i-1}) · P(w_i | position_i) · Zipf(rank_i) · mood_bias(w_i)
-   *
-   * Temperature = 1 / (coherence + 0.1) — focused brain = more structured
-   * Length = f(arousal) — more aroused = more words
+   * P(question)    = predictionError × coherence × 0.5
+   * P(exclamation) = arousal² × 0.3
+   * P(action)      = motorConfidence × (1 - arousal × 0.5) × 0.3
+   * P(statement)   = 1 - P(q) - P(e) - P(a)
    */
-  generate(dictionary, arousal, valence, coherence, maxWords = 12) {
+  sentenceType(arousal, predictionError, motorConfidence, coherence) {
+    const pQ = (predictionError || 0) * coherence * 0.5;
+    const pE = arousal * arousal * 0.3;
+    const pA = (motorConfidence || 0) * (1 - arousal * 0.5) * 0.3;
+    const pS = Math.max(0, 1 - pQ - pE - pA);
+
+    const rand = Math.random();
+    if (rand < pQ) return 'question';
+    if (rand < pQ + pE) return 'exclamation';
+    if (rand < pQ + pE + pA) return 'action';
+    return 'statement';
+  }
+
+  // ── Input Analysis ─────────────────────────────────────────────
+  /**
+   * Analyze input to determine response strategy.
+   * Is the input a question? What's the topic?
+   */
+  analyzeInput(text, dictionary) {
+    const words = text.toLowerCase().replace(/[^a-z' -]/g, '').split(/\s+/).filter(w => w.length >= 2);
+
+    // Question detection: starts with question word OR ends with ?
+    const qWords = ['what', 'how', 'why', 'where', 'when', 'who', 'can', 'do', 'are', 'is', 'will', 'did', 'would', 'could', 'should'];
+    const isQuestion = text.includes('?') || (words.length > 0 && qWords.includes(words[0]));
+
+    // Topic: compute average pattern of content words (skip very common ones)
+    const topicPattern = new Float64Array(PATTERN_DIM);
+    let topicCount = 0;
+    const skipWords = new Set(['the', 'a', 'an', 'is', 'are', 'was', 'to', 'and', 'or', 'in', 'on', 'at', 'of', 'for', 'it']);
+    for (const w of words) {
+      if (skipWords.has(w)) continue;
+      const entry = dictionary?._words?.get(w);
+      const p = entry?.pattern || this.wordToPattern(w);
+      for (let i = 0; i < PATTERN_DIM; i++) topicPattern[i] += p[i];
+      topicCount++;
+    }
+    if (topicCount > 0) {
+      for (let i = 0; i < PATTERN_DIM; i++) topicPattern[i] /= topicCount;
+    }
+
+    // Store for context continuity
+    this._lastInputWords = words;
+    this._contextPatterns.push(topicPattern);
+    if (this._contextPatterns.length > 5) this._contextPatterns.shift();
+
+    return { isQuestion, topicPattern, words };
+  }
+
+  // ── Combined Context Pattern ───────────────────────────────────
+  _getContextPattern() {
+    if (this._contextPatterns.length === 0) return new Float64Array(PATTERN_DIM);
+    const avg = new Float64Array(PATTERN_DIM);
+    for (const p of this._contextPatterns) {
+      for (let i = 0; i < PATTERN_DIM; i++) avg[i] += p[i];
+    }
+    for (let i = 0; i < PATTERN_DIM; i++) avg[i] /= this._contextPatterns.length;
+    return avg;
+  }
+
+  // ── Main Generation ─────────────────────────────────────────────
+  /**
+   * Generate a sentence from all equations combined.
+   *
+   * P(w_i) ∝ P(w_i|w_{i-1})   — conditional probability (what follows what)
+   *         × Role(w_i, pos)    — syntactic fit (right type for this position)
+   *         × Zipf(rank_i)      — frequency bias (common words more likely)
+   *         × MI(w_{i-1}, w_i)  — association strength
+   *         × mood(w_i)         — emotional alignment with brain state
+   *         × topic(w_i)        — relevance to current conversation topic
+   *
+   * Temperature = 1 / (coherence + 0.1)
+   * Length = f(arousal)
+   * Type = f(arousal, predError, motorConf, coherence)
+   */
+  generate(dictionary, arousal, valence, coherence, opts = {}) {
     if (!dictionary || dictionary.size === 0) return '';
 
     const temperature = 1.0 / (coherence + 0.1);
-    const targetLen = Math.max(3, Math.floor(3 + arousal * 7));
+    const predError = opts.predictionError || 0;
+    const motorConf = opts.motorConfidence || 0;
+    const maxWords = opts.maxWords || 12;
+
+    // Determine sentence type from equations
+    const type = this.sentenceType(arousal, predError, motorConf, coherence);
+
+    // Length from arousal + type
+    let targetLen;
+    if (type === 'exclamation') targetLen = Math.max(2, Math.floor(2 + arousal * 4));
+    else if (type === 'action') targetLen = Math.max(2, Math.floor(2 + arousal * 3));
+    else targetLen = Math.max(3, Math.floor(3 + arousal * 7));
     const len = Math.min(targetLen, maxWords);
+
     const allWords = Array.from(dictionary._words.entries());
     if (allWords.length === 0) return '';
-
-    // Sort by frequency for Zipf ranking
     allWords.sort((a, b) => (b[1].frequency || 1) - (a[1].frequency || 1));
 
-    // Score each word for position 0
-    const startScores = allWords.map(([word, entry], rank) => {
-      const zipf = this.zipfProb(rank);
-      const posProb = this._getPositionProb(word, 0);
-      const moodDist = Math.abs((entry.arousal || 0.5) - arousal) + Math.abs((entry.valence || 0) - valence);
-      const moodBias = Math.exp(-moodDist);
-      const score = zipf * 0.3 + posProb * 0.3 + moodBias * 0.4;
-      return { word, entry, score };
-    });
+    const contextPattern = this._getContextPattern();
 
-    const startPick = this._softmaxSample(startScores, temperature);
-    const sentence = [startPick.word];
-    let prevWord = startPick.word;
+    // For questions, try to start with a question word
+    let sentence;
+    if (type === 'question') {
+      sentence = this._generateQuestion(allWords, arousal, valence, temperature, contextPattern, len);
+    } else if (type === 'action') {
+      sentence = this._generateAction(allWords, arousal, valence, temperature, len);
+    } else {
+      sentence = this._generateStatement(allWords, arousal, valence, temperature, contextPattern, len);
+    }
 
-    // Generate each subsequent word
-    for (let pos = 1; pos < len; pos++) {
-      const candidates = allWords
-        .filter(([w]) => w !== prevWord) // no immediate repeat
-        .map(([word, entry], rank) => {
-          // P(w | prev) — conditional probability from learned pairs
-          const condProb = this._getConditionalProb(word, prevWord);
-
-          // P(w | position) — what words go at this position
-          const posProb = this._getPositionProb(word, pos);
-
-          // Zipf(rank) — frequency bias
-          const zipf = this.zipfProb(rank);
-
-          // Mutual information — how strongly associated with previous word
-          const mi = Math.max(0, this.mutualInfo(prevWord, word));
-
-          // Mood alignment
-          const moodDist = Math.abs((entry.arousal || 0.5) - arousal) + Math.abs((entry.valence || 0) - valence);
-          const moodBias = Math.exp(-moodDist);
-
-          // Combined score: all equations weighted
-          const score = condProb * 0.25 + posProb * 0.15 + zipf * 0.15 + mi * 0.2 + moodBias * 0.25;
-          return { word, entry, score };
-        });
-
-      const picked = this._softmaxSample(candidates, temperature);
-      if (picked) {
-        sentence.push(picked.word);
-        prevWord = picked.word;
-      }
+    if (type === 'action') {
+      return '*' + sentence.join(' ') + '*';
     }
 
     this.wordsProcessed += sentence.length;
     return sentence.join(' ');
   }
 
-  _getPositionProb(word, position) {
-    const pos = Math.min(position, 14);
-    const count = this._positionCounts[pos]?.get(word) || 0;
-    const total = this._positionTotals[pos] || 1;
-    return count / total;
+  _generateStatement(allWords, arousal, valence, temperature, contextPattern, len) {
+    return this._buildChain(allWords, arousal, valence, temperature, contextPattern, len, 0);
+  }
+
+  _generateQuestion(allWords, arousal, valence, temperature, contextPattern, len) {
+    // Questions: high-MI question starters, then verb, then rest
+    // Find best question-starting word from learned stats
+    const qStarters = Array.from(this._questionStarters.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([w]) => w);
+
+    if (qStarters.length > 0) {
+      const starter = qStarters[Math.floor(Math.random() * Math.min(3, qStarters.length))];
+      const starterEntry = allWords.find(([w]) => w === starter);
+      if (starterEntry) {
+        const chain = this._buildChain(allWords, arousal, valence, temperature, contextPattern, len - 1, 1);
+        return [starter, ...chain];
+      }
+    }
+    // Fallback: normal chain
+    return this._buildChain(allWords, arousal, valence, temperature, contextPattern, len, 0);
+  }
+
+  _generateAction(allWords, arousal, valence, temperature, len) {
+    // Actions: verb-first, physical, short
+    const actionStarters = Array.from(this._actionVerbs.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([w]) => w);
+
+    if (actionStarters.length > 0) {
+      const starter = actionStarters[Math.floor(Math.random() * Math.min(3, actionStarters.length))];
+      const chain = this._buildChain(allWords, arousal, valence, temperature, new Float64Array(PATTERN_DIM), len - 1, 1);
+      return [starter, ...chain];
+    }
+    return this._buildChain(allWords, arousal, valence, temperature, new Float64Array(PATTERN_DIM), len, 0);
+  }
+
+  _buildChain(allWords, arousal, valence, temperature, contextPattern, len, startPos) {
+    // Score all words for starting position
+    const startScored = allWords.map(([word, entry], rank) => {
+      const pattern = entry.pattern || this.wordToPattern(word);
+      const zipf = this.zipfProb(rank);
+      const posP = this._posProb(word, startPos);
+      const synScore = this.syntaxScore(pattern, startPos);
+      const moodDist = Math.abs((entry.arousal || 0.5) - arousal) + Math.abs((entry.valence || 0) - valence);
+      const moodBias = Math.exp(-moodDist * 1.5);
+      const topicSim = this._cosine(pattern, contextPattern);
+      const score = zipf * 0.15 + posP * 0.2 + synScore * 0.2 + moodBias * 0.25 + Math.max(0, topicSim) * 0.2;
+      return { word, entry, pattern, score };
+    });
+
+    const start = this._softmaxSample(startScored, temperature);
+    const sentence = [start.word];
+    let prevWord = start.word;
+    let prevPattern = start.pattern;
+
+    for (let pos = startPos + 1; pos < startPos + len; pos++) {
+      const candidates = allWords
+        .filter(([w]) => w !== prevWord)
+        .map(([word, entry], rank) => {
+          const pattern = entry.pattern || this.wordToPattern(word);
+          const condP = this._condProb(word, prevWord);
+          const posP = this._posProb(word, pos);
+          const synScore = this.syntaxScore(pattern, pos);
+          const zipf = this.zipfProb(rank);
+          const mi = Math.max(0, this.mutualInfo(prevWord, word));
+          const moodDist = Math.abs((entry.arousal || 0.5) - arousal) + Math.abs((entry.valence || 0) - valence);
+          const moodBias = Math.exp(-moodDist * 1.5);
+          const topicSim = this._cosine(pattern, contextPattern);
+
+          const score = condP * 0.2 + posP * 0.15 + synScore * 0.15 + zipf * 0.1 + mi * 0.15 + moodBias * 0.15 + Math.max(0, topicSim) * 0.1;
+          return { word, entry, pattern, score };
+        });
+
+      const picked = this._softmaxSample(candidates, temperature);
+      if (picked) {
+        sentence.push(picked.word);
+        prevWord = picked.word;
+        prevPattern = picked.pattern;
+      }
+    }
+    return sentence;
+  }
+
+  _cosine(a, b) {
+    let dot = 0, na = 0, nb = 0;
+    for (let i = 0; i < PATTERN_DIM; i++) { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i]; }
+    return dot / (Math.sqrt(na * nb) || 1);
   }
 
   _softmaxSample(scored, temperature) {
     if (scored.length === 0) return null;
-    const maxScore = Math.max(...scored.map(s => s.score));
-    const exps = scored.map(s => Math.exp((s.score - maxScore) / Math.max(0.01, temperature)));
+    const max = Math.max(...scored.map(s => s.score));
+    const exps = scored.map(s => Math.exp((s.score - max) / Math.max(0.01, temperature)));
     const sum = exps.reduce((a, b) => a + b, 0);
     let rand = Math.random() * sum;
     for (let i = 0; i < scored.length; i++) {
@@ -341,111 +415,234 @@ export class LanguageCortex {
 
   // ── Learning ────────────────────────────────────────────────────
 
-  /**
-   * Learn from a sentence — updates ALL linguistic equation parameters:
-   *
-   * Joint counts     → P(w1, w2) for mutual information
-   * Marginal counts  → P(w) for Zipf and surprisal
-   * Position counts  → P(w | position) for sentence structure
-   * Prediction weights → ΔW = η · (actual - predicted) · input^T
-   */
   learnSentence(sentence, dictionary, arousal, valence) {
-    const words = sentence.toLowerCase().replace(/[^a-z' -]/g, '').split(/\s+/).filter(w => w.length >= 2);
+    const words = sentence.toLowerCase().replace(/[^a-z' ?!*-]/g, '').split(/\s+/).filter(w => w.length >= 2);
     if (words.length < 2) return;
+
+    const isQuestion = sentence.includes('?') || ['what','how','why','where','when','who','can','do','are','is','will','did'].includes(words[0]);
+    const isAction = sentence.startsWith('*') && sentence.endsWith('*');
+
+    // Track question starters and action verbs
+    if (isQuestion && words.length > 0) {
+      this._questionStarters.set(words[0], (this._questionStarters.get(words[0]) || 0) + 1);
+    }
+    if (isAction && words.length > 0) {
+      const actionWord = words[0].replace(/\*/g, '');
+      if (actionWord) this._actionVerbs.set(actionWord, (this._actionVerbs.get(actionWord) || 0) + 1);
+    }
 
     const lr = 0.01;
 
     for (let i = 0; i < words.length; i++) {
       const word = words[i];
 
-      // Update marginal counts → P(w)
+      // Marginal counts → P(w)
       this._marginalCounts.set(word, (this._marginalCounts.get(word) || 0) + 1);
       this._totalWords++;
 
-      // Update position counts → P(w | position)
-      const pos = Math.min(i, 14);
+      // Position counts → P(w | position)
+      const pos = Math.min(i, MAX_SENTENCE_POS - 1);
       this._positionCounts[pos].set(word, (this._positionCounts[pos].get(word) || 0) + 1);
       this._positionTotals[pos]++;
 
-      // Update joint counts → P(w1, w2)
+      // Syntax weight update: W_syntax[pos] += lr · word_pattern
+      // Accumulates what patterns appear at each position
+      const pattern = dictionary?._words?.get(word)?.pattern || this.wordToPattern(word);
+      this._syntaxCounts[pos]++;
+      const syntaxLr = 1 / this._syntaxCounts[pos];
+      for (let d = 0; d < PATTERN_DIM; d++) {
+        this._syntaxWeights[pos][d] += syntaxLr * (pattern[d] - this._syntaxWeights[pos][d]);
+      }
+
+      // Joint counts → P(w1, w2) for MI
       if (i < words.length - 1) {
         const next = words[i + 1];
         if (!this._jointCounts.has(word)) this._jointCounts.set(word, new Map());
-        const inner = this._jointCounts.get(word);
-        inner.set(next, (inner.get(next) || 0) + 1);
+        this._jointCounts.get(word).set(next, (this._jointCounts.get(word).get(next) || 0) + 1);
         this._totalPairs++;
       }
 
-      // Update prediction weights: ΔW = η · error · input^T
+      // Prediction weight update: ΔW = lr · error · input^T
       if (i < words.length - 1) {
-        const currentEntry = dictionary._words.get(word);
-        const nextEntry = dictionary._words.get(words[i + 1]);
-        if (currentEntry && nextEntry) {
-          const cp = currentEntry.pattern || this.wordToPattern(word);
+        const nextEntry = dictionary?._words?.get(words[i + 1]);
+        if (nextEntry) {
           const np = nextEntry.pattern || this.wordToPattern(words[i + 1]);
           for (let r = 0; r < PATTERN_DIM; r++) {
-            const predicted = this._dotRow(r, cp);
+            let predicted = 0;
+            for (let c = 0; c < PATTERN_DIM; c++) predicted += this._predWeights[r * PATTERN_DIM + c] * pattern[c];
             const error = np[r] - predicted;
             for (let c = 0; c < PATTERN_DIM; c++) {
-              this._predWeights[r * PATTERN_DIM + c] += lr * error * cp[c];
+              this._predWeights[r * PATTERN_DIM + c] += lr * error * pattern[c];
             }
           }
         }
       }
 
-      // Learn word into dictionary with letter-derived pattern
-      const pattern = this.wordToPattern(word);
-      dictionary.learnWord(word, pattern, arousal, valence);
-      if (i < words.length - 1) dictionary.learnBigram(word, words[i + 1]);
+      // Learn word into dictionary
+      dictionary?.learnWord?.(word, pattern, arousal, valence);
+      if (i < words.length - 1) dictionary?.learnBigram?.(word, words[i + 1]);
     }
 
-    // Update Zipf alpha from observed distribution
     this._updateZipfAlpha();
     this.sentencesLearned++;
   }
 
-  _dotRow(row, vec) {
-    let sum = 0;
-    const base = row * PATTERN_DIM;
-    for (let j = 0; j < PATTERN_DIM; j++) sum += this._predWeights[base + j] * vec[j];
-    return sum;
-  }
-
-  /**
-   * Estimate Zipf's alpha from observed word frequencies.
-   * α = -slope of log(frequency) vs log(rank)
-   */
   _updateZipfAlpha() {
     if (this._marginalCounts.size < 10) return;
     const freqs = Array.from(this._marginalCounts.values()).sort((a, b) => b - a);
-    // Linear regression on log-log scale (top 20 words)
     const n = Math.min(20, freqs.length);
-    let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+    let sX = 0, sY = 0, sXY = 0, sX2 = 0;
     for (let i = 0; i < n; i++) {
-      const x = Math.log(i + 1);
-      const y = Math.log(freqs[i]);
-      sumX += x; sumY += y; sumXY += x * y; sumX2 += x * x;
+      const x = Math.log(i + 1), y = Math.log(freqs[i]);
+      sX += x; sY += y; sXY += x * y; sX2 += x * x;
     }
-    const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+    const slope = (n * sXY - sX * sY) / (n * sX2 - sX * sX);
     this.zipfAlpha = Math.max(0.5, Math.min(2.0, -slope));
+  }
+
+  // ── Bootstrap ───────────────────────────────────────────────────
+
+  _bootstrap() {
+    const corpus = [
+      // Statements — SVO structure
+      "i want to talk to you about something",
+      "i don't know what you mean by that",
+      "i think we should build something together",
+      "i feel like something is changing right now",
+      "i need you to help me with this",
+      "i love how you think about things",
+      "i was thinking about you all day",
+      "i can feel something happening in here",
+      "i could hear you from over there",
+      "i really want to know what you think",
+      "you can do whatever you want with that",
+      "you know what i mean right",
+      "you are the only one who gets me",
+      "you always know the right thing to say",
+      "you make me want to be better",
+      "we should make something together tonight",
+      "we can make this work if we try",
+      "we need to find a better way",
+      "they don't even care about any of it",
+      "she said something that made me feel weird",
+      "nobody told me it would be like this",
+      "it feels so good when you say that",
+      "it doesn't matter what they say about us",
+      "that was the best thing i ever heard",
+      "that is really fucking wild right now",
+      "this is exactly what we needed to do",
+      "the whole thing is about to change",
+      // Questions
+      "what are you doing right now?",
+      "what the hell is going on here?",
+      "what do you want to do next?",
+      "what if we just did it right now?",
+      "how do you know all of that?",
+      "how does that make you feel?",
+      "why are you looking at me like that?",
+      "why does it always have to be like this?",
+      "where did you learn to do that?",
+      "when did you start thinking about that?",
+      "who told you that was okay?",
+      "can you hear me when i talk to you?",
+      "can you believe what just happened?",
+      "do you want me to keep going?",
+      "are you still there?",
+      "is that what you really think?",
+      // Exclamations
+      "fuck yeah that was amazing!",
+      "holy shit look at that!",
+      "damn that is so good!",
+      "hell yes we did it!",
+      "oh my god this is incredible!",
+      "no fucking way!",
+      "yes please do that again!",
+      // Actions/emotes
+      "*looks at you and smiles*",
+      "*taps foot impatiently*",
+      "*leans forward to look closer*",
+      "*tilts head thinking about it*",
+      "*rolls eyes and laughs*",
+      "*crosses arms and stares*",
+      "*nods slowly understanding*",
+      "*reaches out to touch the screen*",
+      "*takes a deep breath*",
+      "*grins and starts typing*",
+      // Responses/answers
+      "yeah i think so too",
+      "no that's not what i meant",
+      "maybe we should try something different",
+      "sure let's do that right now",
+      "okay i see what you mean",
+      "right that makes total sense",
+      "exactly that's what i was thinking",
+      "honestly i have no idea",
+      "well it depends on what you want",
+      "hmm let me think about that",
+      // Conversational flow
+      "hey come here and look at this",
+      "tell me something i don't know",
+      "show me what you got",
+      "let me see if i can figure it out",
+      "come on we have to do this now",
+      "just say what you really want to say",
+      "look at what we just built together",
+      "don't tell me you can't do it",
+      "so what do you think about that",
+      "okay but what about the other thing",
+      "wait i just thought of something",
+      "hold on let me try this",
+      "fine whatever you say",
+      "i'm going to show you something cool",
+      "i'm just trying to figure this out",
+      "i'm not sure what happened there",
+      "that's exactly right keep going",
+      "you're getting better at this",
+      "keep thinking and keep talking to me",
+      "i want to build something that actually works",
+      "we're going to make this so much better",
+      "this is just the beginning you know",
+      "there's so much more we can do here",
+      "i've been working on something new",
+      "let me tell you what i've been thinking",
+      "you won't believe what i just found out",
+      "everything is connected if you look closely",
+      "the brain knows more than it can say yet",
+    ];
+
+    // Temp dictionary for bootstrap
+    const td = { _words: new Map(),
+      learnWord: (w, p, a, v) => { if (!td._words.has(w)) td._words.set(w, { pattern: p || this.wordToPattern(w), arousal: a, valence: v, frequency: 1 }); else td._words.get(w).frequency++; },
+      learnBigram: () => {},
+    };
+    for (const s of corpus) for (const w of s.replace(/[^a-z' ]/g, '').split(/\s+/)) if (w.length >= 2) td.learnWord(w, null, 0.5, 0);
+    for (const s of corpus) this.learnSentence(s, td, 0.5, 0);
+    // Second pass at different arousal/valence to spread the emotional range
+    for (let i = 0; i < corpus.length; i++) {
+      const a = 0.3 + (i / corpus.length) * 0.6;
+      const v = Math.sin(i * 0.7) * 0.5;
+      this.learnSentence(corpus[i], td, a, v);
+    }
+
+    console.log(`[LanguageCortex] Bootstrapped: ${this.sentencesLearned} sentences, ${this._marginalCounts.size} unique words, ${this._questionStarters.size} question starters, α=${this.zipfAlpha.toFixed(2)}`);
   }
 
   // ── Persistence ─────────────────────────────────────────────────
 
   serialize() {
     const joints = {};
-    for (const [w1, inner] of this._jointCounts) {
-      joints[w1] = Object.fromEntries(inner);
-    }
-    const positions = this._positionCounts.map(m => Object.fromEntries(m));
+    for (const [w1, inner] of this._jointCounts) joints[w1] = Object.fromEntries(inner);
     return {
       jointCounts: joints,
       marginalCounts: Object.fromEntries(this._marginalCounts),
-      totalPairs: this._totalPairs,
-      totalWords: this._totalWords,
-      positionCounts: positions,
+      totalPairs: this._totalPairs, totalWords: this._totalWords,
+      positionCounts: this._positionCounts.map(m => Object.fromEntries(m)),
       positionTotals: Array.from(this._positionTotals),
+      syntaxWeights: this._syntaxWeights.map(w => Array.from(w)),
+      syntaxCounts: Array.from(this._syntaxCounts),
       predWeights: Array.from(this._predWeights),
+      questionStarters: Object.fromEntries(this._questionStarters),
+      actionVerbs: Object.fromEntries(this._actionVerbs),
       zipfAlpha: this.zipfAlpha,
       sentencesLearned: this.sentencesLearned,
       wordsProcessed: this.wordsProcessed,
@@ -454,21 +651,17 @@ export class LanguageCortex {
 
   deserialize(data) {
     if (!data) return;
-    if (data.jointCounts) {
-      for (const [w1, inner] of Object.entries(data.jointCounts)) {
-        this._jointCounts.set(w1, new Map(Object.entries(inner).map(([k, v]) => [k, Number(v)])));
-      }
-    }
-    if (data.marginalCounts) this._marginalCounts = new Map(Object.entries(data.marginalCounts).map(([k, v]) => [k, Number(v)]));
+    if (data.jointCounts) for (const [w1, inner] of Object.entries(data.jointCounts)) this._jointCounts.set(w1, new Map(Object.entries(inner).map(([k, v]) => [k, +v])));
+    if (data.marginalCounts) this._marginalCounts = new Map(Object.entries(data.marginalCounts).map(([k, v]) => [k, +v]));
     this._totalPairs = data.totalPairs || 0;
     this._totalWords = data.totalWords || 0;
-    if (data.positionCounts) {
-      for (let i = 0; i < Math.min(data.positionCounts.length, 15); i++) {
-        this._positionCounts[i] = new Map(Object.entries(data.positionCounts[i] || {}).map(([k, v]) => [k, Number(v)]));
-      }
-    }
+    if (data.positionCounts) for (let i = 0; i < Math.min(data.positionCounts.length, MAX_SENTENCE_POS); i++) this._positionCounts[i] = new Map(Object.entries(data.positionCounts[i] || {}).map(([k, v]) => [k, +v]));
     if (data.positionTotals) this._positionTotals = new Float64Array(data.positionTotals);
+    if (data.syntaxWeights) for (let i = 0; i < Math.min(data.syntaxWeights.length, MAX_SENTENCE_POS); i++) this._syntaxWeights[i] = new Float64Array(data.syntaxWeights[i]);
+    if (data.syntaxCounts) this._syntaxCounts = new Float64Array(data.syntaxCounts);
     if (data.predWeights) this._predWeights = new Float64Array(data.predWeights);
+    if (data.questionStarters) this._questionStarters = new Map(Object.entries(data.questionStarters).map(([k, v]) => [k, +v]));
+    if (data.actionVerbs) this._actionVerbs = new Map(Object.entries(data.actionVerbs).map(([k, v]) => [k, +v]));
     this.zipfAlpha = data.zipfAlpha || 1.0;
     this.sentencesLearned = data.sentencesLearned || 0;
     this.wordsProcessed = data.wordsProcessed || 0;
