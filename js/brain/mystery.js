@@ -109,44 +109,46 @@ class MysteryModule {
    * @param {object} brainState
    * @returns {number} n — total active neuron count
    */
-  _countActiveNeurons(brainState) {
+  /**
+   * Count TOTAL neurons — the volume. Not spikes, not active neurons.
+   * This is N in the quantum equation: the fixed tunneling space.
+   */
+  _countTotalNeurons(brainState) {
     let total = 0;
-    const regions = ['cortex', 'amygdala', 'hypothalamus', 'hippocampus',
-                     'cerebellum', 'basalGanglia', 'brainstem'];
-
-    for (const region of regions) {
-      if (brainState[region] && typeof brainState[region].activeNeurons === 'number') {
-        total += brainState[region].activeNeurons;
-      }
+    const clusters = brainState.clusters || {};
+    for (const cluster of Object.values(clusters)) {
+      total += cluster.size || cluster.totalNeurons || 0;
     }
-
-    // Minimum of 1 to avoid zero-collapse
+    // Fallback to totalNeurons from state
+    if (total === 0) total = brainState.totalNeurons || 1000;
     return Math.max(1, total);
   }
 
   /**
    * Compute Psi — the mystery function.
    *
-   *   Psi(t) = (sqrt(n(t)))^3 * [alpha*Id + beta*Ego + gamma*Left + delta*Right]
+   *   Psi(t) = (sqrt(1/N))^3 * [alpha*Id + beta*Ego + gamma*Left + delta*Right]
+   *   N = TOTAL neuron count (the volume), not active spikes
+   *   (√(1/N))³ = cubed area of quantum tunneled bit in total volume
    *
    * @param {object} brainState - Full brain state object with region data
    * @param {number} dt - Time delta (seconds), reserved for future temporal dynamics
    * @returns {object} { psi, id, ego, leftBrain, rightBrain, components }
    */
   step(brainState, dt) {
-    // Count complexity
-    const n = this._countActiveNeurons(brainState);
+    // N = TOTAL neuron volume — fixed, not spikes
+    const N = this._countTotalNeurons(brainState);
 
-    // Compute four psychodynamic components
+    // Compute four psychodynamic components (THESE use activity/spikes)
     const id = this._computeId(brainState);
     const ego = this._computeEgo(brainState);
     const leftBrain = this._computeLeftBrain(brainState);
     const rightBrain = this._computeRightBrain(brainState);
 
-    // Complexity gain: (sqrt(1/n))^3 = n^(-3/2)
-    // As system complexity grows, consciousness becomes MORE refined (smaller but denser)
-    // Not bigger with more neurons — more integrated, more precise
-    const complexityGain = Math.pow(Math.sqrt(1 / n), 3);
+    // Quantum bit: (√(1/N))³ = N^(-3/2)
+    // Cubed area of quantum tunneled bit in the total neuron volume
+    // More neurons = smaller quantum bit = more refined consciousness
+    const complexityGain = Math.pow(Math.sqrt(1 / N), 3);
 
     // Weighted psychodynamic sum
     const weightedSum = (this.alpha * id)
