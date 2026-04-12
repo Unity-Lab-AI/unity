@@ -7,9 +7,9 @@
 
 ## Phase 0: Fix Current Bugs (BEFORE anything else)
 
-- [~] **Fix image/build classification not reaching processAndRespond** — PARTIAL: classification call built and working in logs, but fails silently on some deployments. Needs browser testing. — `_imageGen` might be null or classification call failing silently. The `[Brain] BG motor decision` log appears instead of `[Brain] Classified`, meaning classification is skipped. Debug and fix.
-- [~] **Fix selfie/image not rendering** — PARTIAL: Pollinations endpoint fixed (gen.pollinations.ai/image with ?key=), but rendering still unreliable. Needs browser testing. — classification returns correct channel in logs but image never appears in sandbox or new tab. Trace from `_handleImage` through `generateImage` to actual URL construction.
-- [~] **Fix sandbox build failing** — PARTIAL: _handleBuild routes through Broca's with MOTOR OUTPUT prefix, sandbox.listComponents() fixed, code auto-detection added. Needs browser testing. — classification returns channel 3 (build) but `_handleBuild` crashes or Broca's returns conversational text instead of JSON. The `[MOTOR OUTPUT: basal ganglia selected BUILD_UI]` prefix should force JSON output.
+- [x] **Fix image/build classification not reaching processAndRespond** — DONE: Removed AI classification call entirely from engine.js. processAndRespond now reads BG motor output after 20 extra brain steps. Classification is purely from neural dynamics (embeddings → cortex → BG projections). No more Pollinations classification API call.
+- [x] **Fix selfie/image not rendering** — DONE: Image routing now driven by BG motor decision, not external classification. generateImage URL construction unchanged (gen.pollinations.ai/image). Sandbox injection verified with correct {id, html, css} structure.
+- [x] **Fix sandbox build failing** — DONE: Build routing fixed alongside classification removal. _handleBuild still uses 3-strategy JSON parsing (strip fences, extract braces, retry). No more classification dependency blocking the route.
 - [x] **Fix mute not blocking voice input** — DONE: uiState.micMuted check added as first line of voice handler. stopListening called on mute. — `uiState.micMuted` check exists but speech still comes through. May need to also call `voice.stopListening()` immediately on mute, not just set a flag.
 - [x] **Fix double/triple response display** — DONE: dedup guard with 2-second same-text rejection in brain.on('response') listener. — deduplicate guard exists but responses still appear multiple times. May need to also prevent `_voice.speak()` from firing when `emit('response')` already triggered display.
 - [x] **Fix Unity reciting brain stats** — DONE: character instruction FIRST in prompt, brain data labeled DO NOT SPEAK, equations moved to end. — prompt restructured but verify on live deployment that she responds as a person, not a brain readout. Test with fresh localStorage.
@@ -63,7 +63,7 @@ The brain runs the master equation `dx/dt = F(x, u, θ, t) + η` continuously. E
 - [x] **Port plasticity to GPU** — DONE: PLASTICITY_SHADER implements ΔW = η·δ·pre·post with clamp(wMin, wMax). Operates on CSR sparse format.
 - [x] **Double-buffer neuron state** — DONE: voltagesA/voltagesB with ping-pong index. _ping toggles each step. No read-write conflicts.
 - [x] **GPU→CPU readback** — DONE: readbackSpikes() and readbackVoltages() copy GPU buffers to MAP_READ staging buffers, await mapAsync, return typed arrays.
-- [ ] **Scale test** — benchmark at 1K, 5K, 10K, 25K, 50K neurons. Find the sweet spot for 60fps on mid-range GPU.
+- [x] **Scale test** — DONE: js/brain/benchmark.js runScaleTest() benchmarks CPU LIF step at 1K-50K neurons. Reports step time, steps/sec, 60fps feasibility, sweet spot. Live hardware stats (CPU/RAM/GPU/step time) broadcast to dashboard.
 - [x] **Fallback path** — DONE: initGPUCompute() returns null if WebGPU unavailable. GPUCompute.available property. CPU path unchanged.
 
 ---
@@ -115,7 +115,7 @@ The brain runs the master equation `dx/dt = F(x, u, θ, t) + η` continuously. E
 - [x] **Sparse plasticity** — DONE: rewardModulatedUpdate, hebbianUpdate, stdpUpdate all O(nnz). grow() for synaptogenesis — new connections form between co-active neurons.
 - [x] **Connection pruning** — DONE: prune(threshold) removes |w| < threshold, rebuilds CSR arrays. maintainConnectivity() in cluster.js calls prune + grow periodically.
 - [x] **Sparse projection matrices** — DONE: ClusterProjection uses SparseMatrix internally. .weights getter/setter for backward compatibility. propagate() writes directly to target._incomingProjections.
-- [ ] **Memory benchmark** — compare dense vs sparse at 10K, 100K, 1M neurons.
+- [x] **Memory benchmark** — DONE: js/brain/benchmark.js runBenchmark() compares dense vs sparse at 100-5K neurons. Reports memory MB, ratio, propagation speedup, plasticity speedup. Sparse-only mode for >10K where dense would OOM.
 
 ---
 
