@@ -20,8 +20,8 @@ import { Dictionary } from './dictionary.js';
 // shouldSpeak = socialNeed × arousal × cortexCoherence > SPEECH_THRESHOLD
 const SPEECH_THRESHOLD = 0.15;
 
-// Minimum dictionary size before attempting self-generated speech
-const MIN_VOCAB_FOR_SPEECH = 100;
+// No minimum — the brain speaks from whatever it has, even from day one
+const MIN_VOCAB_FOR_SPEECH = 0;
 
 // How often to form a new thought (brain steps)
 const THOUGHT_INTERVAL = 60; // ~1 second at 60fps
@@ -83,36 +83,29 @@ export class InnerVoice {
       ? this._downsample(cortexCluster.voltages, 32)
       : new Float64Array(32);
 
-    // Derive mood from equations (not a lookup — computed)
-    // mood = f(arousal, valence, psi, coherence, predictionError)
+    // Mood IS the equations — no string categories
+    // intensity = arousal × (0.5 + psi × 0.3) — how STRONG the feeling
+    // direction = valence — positive or negative
+    // clarity = coherence — how focused the thought
     const moodIntensity = arousal * (0.5 + psi * 0.3);
     const moodDirection = valence;
     const moodClarity = coherence;
+    // mood as equation signature, not a word
+    const mood = `${moodIntensity.toFixed(2)}/${moodDirection.toFixed(2)}/${moodClarity.toFixed(2)}`;
 
-    let mood;
-    if (moodIntensity > 0.7 && moodDirection > 0.2) mood = 'euphoric';
-    else if (moodIntensity > 0.7 && moodDirection < -0.2) mood = 'aggressive';
-    else if (moodIntensity > 0.7) mood = 'wired';
-    else if (moodIntensity > 0.4 && moodDirection > 0.2) mood = 'warm';
-    else if (moodIntensity > 0.4 && moodDirection < -0.2) mood = 'irritated';
-    else if (moodIntensity > 0.4) mood = 'engaged';
-    else if (moodDirection > 0.2) mood = 'content';
-    else if (moodDirection < -0.2) mood = 'melancholy';
-    else if (predictionError > 0.5) mood = 'curious';
-    else if (psi < 0.3) mood = 'dreaming';
-    else mood = 'neutral';
+    // Find matching words from dictionary — cortex pattern drives selection
+    const words = this.dictionary.findByPattern(pattern, 10);
+    // Also get mood-matched words
+    const moodWords = this.dictionary.findByMood(arousal, valence, 10);
 
-    // Find matching words from dictionary
-    const words = this.dictionary.findByMood(arousal, valence, 15);
-
-    // Should the brain speak this thought?
+    // Should the brain speak? Pure equation: socialNeed × arousal × coherence
     const socialNeed = hypo.drives?.social_need ?? 0.5;
-    const shouldSpeak = (socialNeed * arousal * coherence) > SPEECH_THRESHOLD
-      && this.dictionary.size >= MIN_VOCAB_FOR_SPEECH;
+    const speechDrive = socialNeed * arousal * coherence;
+    const shouldSpeak = speechDrive > SPEECH_THRESHOLD;
 
-    // Generate sentence from dictionary if should speak
+    // Generate sentence — brain speaks from whatever vocabulary it has
     let sentence = '';
-    if (shouldSpeak) {
+    if (shouldSpeak && this.dictionary.size > 0) {
       sentence = this.dictionary.generateSentence(arousal, valence);
     }
 
