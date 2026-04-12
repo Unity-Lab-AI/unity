@@ -742,4 +742,56 @@ The following items were in TODO as pending/partial but were resolved by prior w
 
 - [x] **GPU disconnect cleanup** — resets `_gpuInitialized`, `_gpuConnected`, hit/miss counters on GPU client disconnect so it re-initializes on reconnect. `server/brain-server.js`
 
+### GPU Exclusive Mode — Zero CPU Workers
+
+- [x] **Removed ParallelBrain from startup** — `start()` no longer spawns 7 worker threads. `this._useParallel = false` from the start. Zero CPU burn. Workers were consuming 100% CPU even when no work dispatched (event listener polling overhead across 7 threads). `server/brain-server.js`
+
+- [x] **Kill workers on GPU connect** — `gpu_register` handler calls `_parallelBrain.destroy()` which terminates all worker threads. If workers were already spawned from a previous architecture, they get cleaned up immediately. `server/brain-server.js`
+
+- [x] **All 7 clusters init at once** — was staggering 1 cluster per tick (7 ticks to init, 6 clusters on CPU each tick). Now sends all `gpu_init` messages on the first tick, skips one substep, then all 7 dispatch to GPU. `server/brain-server.js`
+
+- [x] **GPU init acknowledgment** — compute.html sends `gpu_init_ack` with cluster name after `uploadCluster()` succeeds. Server logs confirmation per cluster. `compute.html` + `server/brain-server.js`
+
+- [x] **No CPU fallback anywhere** — removed single-thread `this.step()` from catch block, removed `_parallelBrain.step()` from GPU path, removed all CPU worker dispatch code. Brain either runs on GPU or pauses.
+
+- [x] **start.sh opens compute.html** — was missing GPU compute page. Brain would sit paused forever on Linux/Mac. Both start.bat and start.sh now open compute.html automatically with note that it's required. `start.sh` + `start.bat`
+
+- [x] **Full hierarchical modulation on GPU** — compute_request sends gainMultiplier (Ψ), emotionalGate (amygdala), driveBaseline (hypothalamus), errorCorrection (cerebellum). GPU applies: `I = (tonic × drive × emoGate × Ψgain + errCorr) + noise`. Same equation as client-side cluster.js:step(). `server/brain-server.js` + `compute.html`
+
+- [x] **All docs updated** — EQUATIONS.md (GPU exclusive section), brain-equations.html (section 8.20 rewritten with WGSL shader), ARCHITECTURE.md, ROADMAP.md, SKILL_TREE.md, README.md, SETUP.md, TODO.md, FINALIZED.md all reflect GPU exclusive mode with zero CPU workers.
+
+### Full GPU Pipeline — Zero JS Loops for N Neurons
+
+- [x] **WGSL current generation shader** — PCG hash noise generated entirely on GPU. No more `for (i=0; i<1.28M; i++) currents[i] = tonic + Math.random()*noise` in JavaScript. `gpu-compute.js` new shader + `generateCurrents()` method.
+
+- [x] **WGSL spike count shader** — atomic counter on GPU. No more scanning 1.28M spikes in JS to find which fired. `gpu-compute.js` new shader + `readbackSpikeCount()` method. Returns 4 bytes instead of 5MB.
+
+- [x] **`gpu.fullStep()` method** — single call: generateCurrents → stepNeurons → readbackSpikeCount. Zero JS loops, zero CPU→GPU current upload, 4 bytes GPU→CPU readback.
+
+- [x] **Server only receives spike count** — no more spikeIndices array or full spike array. `compute_result` is `{ clusterName, spikeCount, size }`. Tiny WebSocket message.
+
+- [x] **CPU usage measurement fixed** — was `stepTime / tickInterval × 100` which counted GPU I/O wait as CPU work. Now uses `process.cpuUsage()` for actual CPU time consumed.
+
+- [x] **Client persona.js synced with Ultimate Unity.txt** — added emotionalVolatility, darkHumor, dominance, devotion, drugDrive, partyDrive, profanityRate, recklessness. Fixed `creativityDrive` → `creativity`. Fixed eye color violet → blue. Fixed cyberpunk → emo goth. `getBrainParams()` maps all θ parameters.
+
+- [x] **n ≠ N everywhere** — brain-equations.html consciousness tooltip, equation description, component table all show n=active spikes (dynamic) vs N=total neurons (scales to hardware). No more hardcoded "3.2M" where N should be used.
+
+- [x] **θ → Ψ pipeline documented** — EQUATIONS.md section 9 shows full feedback loop: θ → tonic → firing → cluster rates → Id/Ego/Left/Right → Ψ → gainMultiplier → modulates all clusters. brain-equations.html section 6 updated with θ parameter column in component table.
+
+- [x] **All docs say "scales to hardware"** — README, EQUATIONS.md, ARCHITECTURE.md, brain-equations.html use N not 3.2M for neuron count in equation contexts. 3.2M kept only as example of current hardware scale.
+
+### 64M Neuron Scale — 20× Increase
+
+- [x] **GPU-based scaling formula** — changed from `min(RAM × 0.4 / 9, cpuCores × 200K)` (CPU-bound, 3.2M) to `min(VRAM × 0.7 / 20, RAM × 0.5 / 9)` (GPU-bound, 64M). 16GB VRAM → 573M theoretical, capped at 64M for WebSocket stability. `server/brain-server.js`
+
+- [x] **Zero-transfer GPU init** — removed base64 voltage shipping (was 260MB for cerebellum at 25.6M neurons). GPU creates buffers and fills Vrest internally. Zero WebSocket overhead at init. `server/brain-server.js` + `compute.html`
+
+- [x] **Server RAM optimization** — only allocates Float64Array for cortex + amygdala (text injection targets). Other 5 clusters get 1-element arrays. 161MB instead of 493MB at 64M scale. `server/brain-server.js`
+
+- [x] **GPU buffer optimization** — `uploadCluster` uses `mappedAtCreation` to fill Vrest directly in GPU memory. Zero-initialized buffers don't allocate JS arrays. No 400MB browser heap spike. `gpu-compute.js`
+
+- [x] **Removed CPU step() from text handler** — was running 50 single-thread LIF iterations over 64M neurons on text input. GPU handles stepping now. `server/brain-server.js`
+
+- [x] **Scale: 64M neurons** — cerebellum 25.6M, cortex 16M, hippocampus 6.4M, amygdala 5.12M, BG 5.12M, hypothalamus 3.2M, mystery 3.2M. VRAM: 1.2GB of 16GB. Server RAM: 161MB.
+
 ---

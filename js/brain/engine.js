@@ -700,100 +700,41 @@ export class UnityBrain extends EventEmitter {
     let response = '';
 
     if (dictionary && dictionary.size > 0) {
-      const words = [];
-      const usedWords = new Set();
-      const targetWords = Math.max(3, Math.floor(3 + brainArousal * 7));
+      // ── Run brain for a few steps so clusters reflect the input ──
+      for (let s = 0; s < 5; s++) this.step(0.001);
 
-      for (let w = 0; w < targetWords; w++) {
-        // ── Run ALL brain equations for 5 steps ──
-        for (let s = 0; s < 5; s++) this.step(0.001);
+      // ── Read cortex thought pattern — WHAT the brain is thinking ──
+      const cortexPattern = this.clusters.cortex.getOutput(32);
 
-        // ── Read EVERY cluster's output ──
-        const cortexOut = this.clusters.cortex.getOutput(32);
-        const hippoOut = this.clusters.hippocampus.getOutput(32);
-        const amygOut = this.clusters.amygdala.getOutput(32);
-        const bgOut = this.clusters.basalGanglia.getOutput(32);
-        const cerebOut = this.clusters.cerebellum.getOutput(32);
-        const hypoOut = this.clusters.hypothalamus.getOutput(32);
-        const mysteryOut = this.clusters.mystery.getOutput(32);
-
-        // ── COMBINED PATTERN — all clusters weighted by their role ──
-        // Cortex drives content. Hippocampus provides memory context.
-        // Amygdala modulates emotional tone. Ψ shapes self-awareness.
-        // This IS the unified brain equation for language.
-        const combined = new Float64Array(32);
-        for (let i = 0; i < 32; i++) {
-          combined[i] =
-            cortexOut[i] * 0.30 +       // content — what to say
-            hippoOut[i] * 0.20 +        // memory — context from past
-            amygOut[i] * 0.15 +         // emotion — how to say it
-            bgOut[i] * 0.10 +           // action — sentence drive
-            cerebOut[i] * 0.05 +        // correction — error damping
-            hypoOut[i] * 0.05 +         // drive — speech urgency
-            mysteryOut[i] * (0.05 + Math.min(psi, 20) * 0.005); // consciousness scales with Ψ (log scale)
+      // ── LANGUAGE CORTEX produces the sentence ──
+      // This IS the fractal language equation:
+      //   θ (persona) → tonic drives → cluster firing → cortex pattern → thought words
+      //   + hippocampal context → conversation relevance
+      //   + amygdala arousal/valence → emotional tone (θ.arousalBaseline, θ.emotionalVolatility)
+      //   + Ψ consciousness → self-referential depth
+      //   + slot-based grammar → proper English word order
+      //   + bigram chains → learned sequences from conversation
+      //   + recency suppression → no loops
+      //
+      // The language cortex uses ALL of these. The brain equations drive the CONTENT.
+      // The language cortex applies STRUCTURE. θ shapes both.
+      response = this.innerVoice.languageCortex.generate(
+        dictionary,
+        brainArousal,
+        brainValence,
+        brainCoherence,
+        {
+          predictionError: state.cortex?.predictionError ?? 0,
+          motorConfidence: state.motor?.confidence ?? 0,
+          psi,
+          cortexPattern,
+          recalling: state.memory?.lastRecall ? true : false,
         }
+      );
 
-        // ── Pattern → Word — dictionary finds closest match ──
-        const candidates = dictionary.findByPattern(combined, 10);
-
-        // ── Also find mood-matching words — amygdala contribution ──
-        const moodWords = new Set(dictionary.findByMood(brainArousal, brainValence, 10));
-
-        // Pick best: prefer cortex match, boost mood matches, avoid repeats
-        let picked = null;
-        for (const word of candidates) {
-          if (usedWords.has(word)) continue;
-          if (this.innerVoice.languageCortex._recentOutputWords.slice(-20).includes(word)) continue;
-          // Mood-matching words get priority within cortex candidates
-          picked = word;
-          break;
-        }
-        if (!picked && candidates.length > 0) picked = candidates[0];
-
-        if (picked) {
-          words.push(picked);
-          usedWords.add(picked);
-
-          // ── Feed word pattern back into cortex — sequential prediction ──
-          // ŝ = W·x: the word becomes the next input, brain predicts next thought
-          const wordEntry = dictionary._words.get(picked);
-          if (wordEntry?.pattern) {
-            const cortex = this.clusters.cortex;
-            const hippo = this.clusters.hippocampus;
-            for (let i = 0; i < 32; i++) {
-              // Cortex Wernicke's area receives the word
-              if (i + 150 < cortex.size) cortex.externalCurrent[150 + i] += wordEntry.pattern[i] * 5;
-              // Hippocampus also receives for memory formation
-              if (i < hippo.size) hippo.externalCurrent[i] += wordEntry.pattern[i] * 2;
-            }
-            // Amygdala receives emotional component
-            const amyg = this.clusters.amygdala;
-            for (let i = 0; i < Math.min(10, amyg.size); i++) {
-              amyg.externalCurrent[i] += (wordEntry.arousal || 0.5) * 3;
-            }
-          }
-        }
+      if (response) {
+        console.log(`[Brain] Neural: "${response}"`);
       }
-
-      // ── Post-process for grammar ──
-      if (words.length > 0) {
-        const tense = (state.cortex?.predictionError ?? 0) > 0.3 ? 'future' : 'present';
-        const sentType = this.motor.selectedAction === 'listen' ? 'question' : 'statement';
-        response = this.innerVoice.languageCortex._postProcess(
-          words, tense, sentType, brainArousal, brainValence
-        ).join(' ');
-      }
-    }
-
-    // Track recency
-    if (response) {
-      for (const rw of response.split(/\s+/)) {
-        this.innerVoice.languageCortex._recentOutputWords.push(rw);
-      }
-      while (this.innerVoice.languageCortex._recentOutputWords.length > 50) {
-        this.innerVoice.languageCortex._recentOutputWords.shift();
-      }
-      console.log(`[Brain] Neural: "${response}"`);
     }
 
     // AI teaches when connected — brain learns vocabulary
@@ -965,19 +906,31 @@ USER REQUEST: ${text}`;
   }
 
   async _handleImage(text, includesSelf) {
-    // ONE image handler. If she's in the image (includesSelf), she adds her appearance.
-    // Uses Pollinations text API directly for prompt generation — NOT Broca's area,
-    // because Broca's full persona prompt makes the AI roleplay instead of outputting clean prompts.
+    // ONE image handler. If she's in the image (includesSelf), she adds her residual self-image.
+    // Self-image pulled from θ (persona.visualIdentity) — NOT hardcoded.
 
     let prompt;
+
+    // Build self-description from θ residual self-image — the persona defines the look
+    const vi = this.persona.visualIdentity || {};
     const selfDesc = includesSelf
-      ? '25 year old woman, heterochromia eyes one violet one electric green, dark hair with neon streaks, smudged eyeliner, adult, '
+      ? [
+          `${this.persona.traits?.age || 25} year old ${this.persona.traits?.gender || 'female'}`,
+          vi.eyes?.color || 'heterochromia eyes',
+          vi.hair?.style || 'long messy dark hair',
+          vi.hair?.color?.split(',')[0] || 'neon streaks',
+          vi.eyes?.style || 'heavy smudged eyeliner',
+          vi.skin?.markings || 'tattoos',
+          vi.body?.aesthetic || 'emo goth goddess',
+        ].join(', ') + ', '
       : '';
 
+    // Full prompt template from persona if available
+    const fullTemplate = this.persona.imagePromptTemplate || selfDesc;
+
     try {
-      // Call Pollinations DIRECTLY for prompt generation — no persona, no roleplay
       const raw = await this._imageGen.chat?.([
-        { role: 'user', content: `Generate ONLY an image prompt for: "${text}". ${includesSelf ? 'The subject is a 25 year old woman with heterochromia eyes (violet and green), dark hair with neon streaks, smudged eyeliner. Include her in the scene.' : ''} Return ONLY the visual description. No explanation. No URLs. No markdown. Just the prompt.` },
+        { role: 'user', content: `Generate ONLY an image prompt for: "${text}". ${includesSelf ? `The subject is: ${fullTemplate}. Include her in the scene.` : ''} Return ONLY the visual description. No explanation. No URLs. No markdown. Just the prompt.` },
       ], { temperature: 0.8 }) || null;
 
       if (raw) {
@@ -985,13 +938,13 @@ USER REQUEST: ${text}`;
       }
     } catch {}
 
-    // Fallback — build prompt from the text directly
+    // Fallback — build prompt from the text + persona directly
     if (!prompt || prompt.length < 15) {
       prompt = `${selfDesc}${text.replace(/selfie|send|show|picture|photo|of you|yourself/gi, '').trim() || 'striking candid shot'}, photorealistic, cinematic lighting`;
     }
 
     // Ensure self-description is in there if it's a selfie
-    if (includesSelf && !prompt.includes('25 year old')) {
+    if (includesSelf && !prompt.includes(vi.eyes?.color?.split(' ')[0] || 'heterochromia')) {
       prompt = selfDesc + prompt;
     }
 

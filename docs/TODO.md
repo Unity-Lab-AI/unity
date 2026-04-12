@@ -13,7 +13,7 @@
 
 ### Needs Testing — Code Written, Awaiting Verification
 
-- [ ] **Task:** GPU/CPU split compute — cortex (25%) + cerebellum (40%) offloaded to GPU, CPU handles remaining 35%. GPU maintains own voltage state (init once, step with 2 numbers). Sparse spike indices on return. Staggered init (one cluster per tick). Persona θ drives tonic/noise (hardcoded overwrite removed). Wall clock uptime. Per-cluster resolvers. Auto-retry with 30-tick reset. `server/brain-server.js` + `compute.html` — **Needs Gee to test: both cortex AND cerebellum should show initialized on compute.html, GPU usage should climb, CPU should drop.**
+- [ ] **Task:** GPU exclusive compute at 64M neurons — ALL 7 clusters on GPU, zero CPU workers. Full WGSL pipeline (current gen + LIF + spike count — zero JS loops). N scales to hardware: `min(VRAM×0.7/20, RAM×0.5/9)`. `server/brain-server.js` + `compute.html` + `gpu-compute.js` — **Needs Gee to test: all 7 clusters init on compute.html, CPU near 0%, 64M neurons, GPU doing all work.**
 
 ---
 

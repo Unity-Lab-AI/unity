@@ -50,24 +50,17 @@ ws.onmessage = async (e) => {
     if (msg.type === 'gpu_init' && gpuReady) {
       const { clusterName, size, lifParams } = msg;
 
-      // Decode initial voltages from base64
-      let voltages;
-      if (msg.voltagesBin) {
-        const bin = atob(msg.voltagesBin);
-        const buf = new ArrayBuffer(bin.length);
-        const view = new Uint8Array(buf);
-        for (let i = 0; i < bin.length; i++) view[i] = bin.charCodeAt(i);
-        voltages = new Float64Array(buf);
-      } else {
-        voltages = new Float64Array(size).fill(-65); // default Vrest
-      }
-
-      // Create GPU buffers for this cluster (once)
-      gpu.uploadCluster(clusterName, size, voltages, null, lifParams);
+      // Initialize at Vrest — NO voltage transfer needed
+      // GPU creates buffers and fills with Vrest internally. Zero JS allocation.
+      gpu.uploadCluster(clusterName, size, null, null, lifParams);
       clusterState[clusterName] = { initialized: true, size, lifParams };
 
-      statusEl.textContent = `GPU initialized: ${clusterName} (${size.toLocaleString()} neurons)`;
-      console.log(`[GPU] Initialized ${clusterName}: ${size.toLocaleString()} neurons`);
+      // Tell server this cluster is ready on GPU
+      ws.send(JSON.stringify({ type: 'gpu_init_ack', clusterName, size }));
+
+      const totalInit = Object.keys(clusterState).length;
+      statusEl.textContent = `GPU initialized: ${totalInit}/7 clusters — ${clusterName} (${size.toLocaleString()} neurons)`;
+      console.log(`[GPU] Initialized ${clusterName}: ${size.toLocaleString()} neurons (${totalInit}/7)`);
       return;
     }
 
@@ -83,56 +76,39 @@ ws.onmessage = async (e) => {
         return;
       }
 
-      // Generate currents with FULL hierarchical modulation
+      // FULL GPU PIPELINE — zero JS loops for 3.2M neurons
+      // 1. GPU generates currents (PCG hash noise — no Math.random loop)
+      // 2. GPU runs LIF shader (voltage update + spike check)
+      // 3. GPU counts spikes (atomic counter — no JS scan)
       // I = (tonic × driveBaseline × emotionalGate × gainMultiplier + errorCorrection) + noise
-      //
-      // gainMultiplier = 0.9 + Ψ × 0.004    — consciousness scales everything
-      // emotionalGate  = 0.7 + arousal × 0.6 — amygdala amplification
-      // driveBaseline   = 0.8 + hypo_active   — hypothalamus homeostatic drive
-      // errorCorrection = cerebellum feedback  — negative feedback to cortex/BG
       const tonic = msg.tonicDrive || 16;
       const noiseAmp = msg.noiseAmp || 5;
       const gain = msg.gainMultiplier || 1.0;
       const emoGate = msg.emotionalGate || 1.0;
       const drive = msg.driveBaseline || 1.0;
       const errCorr = msg.errorCorrection || 0;
-      const n = state.size;
       const effectiveDrive = tonic * drive * emoGate * gain + errCorr;
-      const currents = new Float32Array(n);
-      for (let i = 0; i < n; i++) {
-        currents[i] = effectiveDrive + (Math.random() - 0.5) * noiseAmp;
-      }
 
       const t0 = performance.now();
 
-      // Run LIF on GPU — voltages stay on GPU, no transfer needed
-      gpu.stepNeurons(clusterName, currents);
+      // ALL ON GPU — no JS loops, no CPU→GPU current upload, no GPU→CPU spike readback
+      const result = await gpu.fullStep(clusterName, effectiveDrive, noiseAmp);
 
-      // Read back ONLY spikes (not voltages — they stay on GPU for next step)
-      const spikes = await gpu.readbackSpikes(clusterName);
-
-      // Sparse spike indices — only send the ~2% that fired
-      let spikeCount = 0;
-      const spikeIndices = [];
-      for (let i = 0; i < spikes.length; i++) {
-        if (spikes[i]) { spikeCount++; spikeIndices.push(i); }
-      }
-
-      // Send back sparse results — tiny payload
+      // Send back spike count only — server doesn't need individual spike indices
+      // for the simplified server brain (no intra-cluster synapses at 3.2M scale)
       ws.send(JSON.stringify({
         type: 'compute_result',
         clusterName,
-        spikeCount,
-        spikeIndices,
-        size: n,
+        spikeCount: result.spikeCount,
+        size: state.size,
       }));
 
       stepsComputed++;
       const elapsed = performance.now() - t0;
       totalComputeMs += elapsed;
       const avg = totalComputeMs / stepsComputed;
-      statsEl.textContent = `Steps: ${stepsComputed.toLocaleString()} | Avg: ${avg.toFixed(1)}ms | Last: ${elapsed.toFixed(1)}ms | ${n.toLocaleString()} neurons`;
-      perfEl.textContent = `Throughput: ${(n / (elapsed / 1000)).toFixed(0)} neurons/sec | Spikes: ${spikeCount.toLocaleString()} (${(spikeCount/n*100).toFixed(1)}%)`;
+      statsEl.textContent = `Steps: ${stepsComputed.toLocaleString()} | Avg: ${avg.toFixed(1)}ms | Last: ${elapsed.toFixed(1)}ms | ${state.size.toLocaleString()} neurons`;
+      perfEl.textContent = `Throughput: ${(state.size / (elapsed / 1000)).toFixed(0)} neurons/sec | Spikes: ${result.spikeCount.toLocaleString()} (${(result.spikeCount/state.size*100).toFixed(1)}%)`;
     }
   } catch (err) {
     console.warn('[GPU Compute] Error:', err.message, err.stack);

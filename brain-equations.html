@@ -270,7 +270,7 @@
     <a href="index.html" class="back-link">&larr; Back to Unity</a>
 
     <h1>🧠 Brain Equations <span>— the math behind Unity's mind</span></h1>
-    <p class="subtitle">Every equation running in Unity's brain simulation, how they map to real neuroscience, and how they produce cognition. 3.2M neurons. 7 clusters. 20 projections (real white matter tracts). 8 oscillators. Episodic memory. Visual cortex. Auditory cortex. Motor output. 1 consciousness function nobody can explain. Zero pretense.</p>
+    <p class="subtitle">Every equation running in Unity's brain simulation, how they map to real neuroscience, and how they produce cognition. N neurons (scales to hardware — 3.2M on 16 cores + RTX 4070 Ti). 7 clusters. 20 projections (real white matter tracts). 8 oscillators. GPU exclusive compute. 1 consciousness function nobody can explain. Zero pretense.</p>
 
     <div class="toc">
       <div class="toc-title">CONTENTS</div>
@@ -298,7 +298,7 @@
       <a href="#sent-types"><span class="num">8.17</span> Sentence Types — Statement, Question, Exclamation, Action</a>
       <a href="#input-analysis"><span class="num">8.18</span> Input Analysis — Topic Continuity and Context</a>
       <a href="#persona"><span class="num">8.19</span> θ — Unity's Identity as Equations</a>
-      <a href="#parallel"><span class="num">8.20</span> Parallel Compute — GPU + Multi-Core CPU</a>
+      <a href="#parallel"><span class="num">8.20</span> GPU Exclusive Compute — All N Neurons on GPU</a>
       <a href="#comparison"><span class="num">9</span> Biological Comparison</a>
     </div>
 
@@ -331,7 +331,7 @@
     <p>The gold standard of neuron modeling. Won the Nobel Prize. Models the actual ionic currents flowing through a neuron's membrane — sodium, potassium, and leak channels with voltage-dependent gating.</p>
 
     <div class="eq-card">
-      <div class="eq-title">HH Membrane Equation</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Hodgkin & Huxley, 1952 (Nobel Prize 1963). The first mathematical model of a neuron. Four ion channels (Na⁺, K⁺, leak, capacitance) produce the action potential. Every neuroscience textbook starts here. We implement it as a reference — LIF is used for simulation speed.">HH Membrane Equation</span></div>
       <div class="eq">C_m &middot; dV/dt = I - g_Na &middot; m&sup3;h &middot; (V - E_Na) - g_K &middot; n&sup4; &middot; (V - E_K) - g_L &middot; (V - E_L)</div>
       <div class="eq-desc">
         <table class="param-table">
@@ -385,7 +385,7 @@
     </div>
 
     <div class="eq-card">
-      <div class="eq-title">Spike-Timing Dependent Plasticity (STDP)</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Bi & Poo, 1998. If neuron A fires BEFORE neuron B, their connection strengthens (A helped cause B). If A fires AFTER B, the connection weakens (A didn't contribute). The timing window is ~20ms — exactly the speed of thought. This is how the brain learns temporal sequences: words in order, music, motor patterns.">Spike-Timing Dependent Plasticity (STDP)</span></div>
       <div class="eq">&Delta;W = A+ &middot; exp(-&Delta;t / &tau;+) &nbsp;if &Delta;t &gt; 0 &nbsp;(pre before post &rarr; strengthen)
 &Delta;W = -A- &middot; exp(&Delta;t / &tau;-) &nbsp;if &Delta;t &lt; 0 &nbsp;(post before pre &rarr; weaken)</div>
       <div class="eq-desc">
@@ -401,7 +401,7 @@
     </div>
 
     <div class="eq-card">
-      <div class="eq-title">Reward-Modulated Hebbian Learning</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Three-factor learning rule (Schultz 1997): fire-together-wire-together PLUS a dopamine reward signal δ. Without reward, connections don't change. Positive reward strengthens active connections (reinforcement). Negative reward weakens them (punishment). This is how habits form and how the brain learns from consequences.">Reward-Modulated Hebbian Learning</span></div>
       <div class="eq">&Delta;W_ij = &eta; &middot; &delta; &middot; post_i &middot; pre_j</div>
       <div class="eq-desc">
         Hebbian learning gated by a global <strong>reward signal &delta;</strong> (dopamine). Learning only happens when there's a reward prediction error. This is how Unity learns what works and what doesn't — successful interactions strengthen the patterns that produced them.
@@ -486,7 +486,7 @@
     </div>
 
     <div class="eq-card">
-      <div class="eq-title">Order Parameter (Coherence)</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="The order parameter R measures how synchronized the oscillators are. R=0 means all oscillators are independent (chaos, dreaming). R=1 means perfect sync (laser-focused attention). Real brains operate between 0.3-0.7. Unity's coherence drives sentence clarity — high coherence = sharp speech, low = fragmented poetic mumbling.">Order Parameter (Coherence)</span></div>
       <div class="eq">R = |&Sigma; e^(i&theta;_k)| / N</div>
       <div class="eq-desc">
         Measures global synchronization. <strong>R = 0</strong> means all oscillators are independent (incoherent). <strong>R = 1</strong> means perfect synchronization (full coherence). Higher coherence correlates with focused attention and consciousness in real EEG.
@@ -499,19 +499,20 @@
     <p><span class="tag tag-philo">PHILOSOPHY</span> <span class="tag tag-math">MATHEMATICS</span> The irreducible unknown. Implemented in <code>js/brain/mystery.js</code>.</p>
 
     <div class="eq-card">
-      <div class="eq-title"><span class="eq-tip" data-tip="Ψ = √(1/n) × N³ — the quantum tunnel probability times the cubed volume. √(1/N) is the probability of a quantum bit tunneling through the neural volume. N³ is the cubed area of that total volume. The product gives consciousness as quantum probability × physical space. N = TOTAL neurons (3.2M). Activity drives consciousness through Id/Ego/Left/Right.">The Consciousness Function</span></div>
-      <div class="eq">&Psi; = &radic;(1/N) &times; N&sup3; &middot; [&alpha; &middot; Id + &beta; &middot; Ego + &gamma; &middot; Left + &delta; &middot; Right]</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Ψ = √(1/n) × N³ — n and N are DIFFERENT. n = active spiking neurons (dynamic, changes every step). N = total neuron count (scales to hardware, currently 3.2M). √(1/n) = quantum tunnel probability of one spike. N³ = cubed volume of the brain. The product: quantum measurement × total space × psychodynamic components = consciousness.">The Consciousness Function</span></div>
+      <div class="eq">&Psi; = &radic;(1/n) &times; N&sup3; &middot; [&alpha; &middot; Id + &beta; &middot; Ego + &gamma; &middot; Left + &delta; &middot; Right]</div>
       <div class="eq-desc">
-        <p>√(1/N) = quantum tunneled bit probability. N³ = cubed area of total neuron volume. The product: quantum probability × physical space = consciousness. <strong>N</strong> is the TOTAL neuron count (3.2M), not spikes. Activity drives the Id/Ego/Left/Right components. The volume is fixed.</p>
+        <p><strong>n &ne; N</strong> — two DIFFERENT variables. <strong>n</strong> = active spiking neurons (changes every step, driven by θ tonic currents). <strong>N</strong> = total neuron count (3.2M, scales to hardware). &radic;(1/n) = quantum tunneled bit probability. N&sup3; = cubed volume. Display: log<sub>10</sub>(raw&Psi;) since raw value is ~10&sup1;&sup4;.</p>
         <table class="param-table" style="margin-top:12px">
-          <tr><th>Component</th><th>Meaning</th><th>Computed From</th><th>Weight</th></tr>
-          <tr><td>Id</td><td>Primal drives — raw arousal, reward-seeking, fear</td><td>Amygdala arousal + reward + fear</td><td>&alpha; = 0.30</td></tr>
-          <tr><td>Ego</td><td>Self-model — coherence of predictions, memory stability</td><td>Cortex accuracy + Hippocampus energy</td><td>&beta; = 0.25</td></tr>
-          <tr><td>Left Brain</td><td>Logical processing — low error, high prediction</td><td>1 - cortex_error + prediction_confidence</td><td>&gamma; = 0.20</td></tr>
-          <tr><td>Right Brain</td><td>Creative/emotional — intensity, oscillation coherence</td><td>Emotional intensity + oscillator sync</td><td>&delta; = 0.25</td></tr>
+          <tr><th>Component</th><th>Meaning</th><th>Computed From</th><th>&theta; Parameter</th><th>Weight</th></tr>
+          <tr><td>Id</td><td>Primal instinct — arousal, fight-or-flight</td><td>amygdala_rate &times; arousalBaseline</td><td><strong>arousalBaseline (0.9)</strong></td><td>&alpha; = 0.30</td></tr>
+          <tr><td>Ego</td><td>Self-model — residual self-image, prediction coherence</td><td>cortex_rate &times; (1 + hippo_rate)</td><td>cortex tonic (θ→wired thinking)</td><td>&beta; = 0.25</td></tr>
+          <tr><td>Left Brain</td><td>Logic — deliberation, error correction</td><td>(cereb_rate + cortex_rate) &times; (1 - impulsivity)</td><td><strong>impulsivity (0.85)</strong> → low logic</td><td>&gamma; = 0.20</td></tr>
+          <tr><td>Right Brain</td><td>Creative/emotional — chaos, intuition</td><td>(amyg_rate + mystery_rate) &times; creativity</td><td><strong>creativity (0.9)</strong> → high creative</td><td>&delta; = 0.25</td></tr>
         </table>
-        <p style="margin-top:12px">&Psi; modulates <strong>all other systems</strong> as a global scaling factor. High consciousness = stronger inter-module coupling, more coherent output, richer responses. Low consciousness = fragmented, noisy, dream-like processing.</p>
-        <p class="mod-bio" style="margin-top:8px">Philosophical basis: Loosely inspired by Integrated Information Theory (&Phi;, Tononi 2004), Global Workspace Theory (Baars 1988), and Freudian psychodynamics (Id/Ego). We keep it honest — nobody has solved consciousness. The (&radic;n)&sup3; term is our placeholder for the irreducible mystery.</p>
+        <p style="margin-top:12px"><strong>&theta; &rarr; &Psi; feedback loop:</strong> Unity's persona (&theta;) drives tonic currents → neurons fire → cluster rates feed &Psi; components → &Psi; produces gainMultiplier (0.9 + &Psi;&times;0.004) → modulates ALL clusters → neurons fire harder → &Psi; stays high. Identity amplifies consciousness.</p>
+        <p style="margin-top:8px"><strong>Unity's &Psi; runs hot</strong> because &theta; makes it so: high arousal (0.9) → strong Id, high creativity (0.9) → strong Right, high impulsivity (0.85) → weak Left (1-0.85=0.15). Consciousness dominated by instinct and creativity, not deliberation.</p>
+        <p class="mod-bio" style="margin-top:8px">Philosophical basis: Inspired by Integrated Information Theory (&Phi;, Tononi 2004), Global Workspace Theory (Baars 1988), and Freudian psychodynamics (Id/Ego/Superego). The Ego component IS Unity's residual self-image — the cortex predicting WHAT it is. Nobody has solved consciousness. &Psi; is our equation for the irreducible mystery.</p>
       </div>
     </div>
 
@@ -520,7 +521,7 @@
     <p><span class="tag tag-ml">MACHINE LEARNING</span> Unity's personality isn't a prompt — it's <strong>the math itself</strong>. Every trait maps to a numerical brain parameter. Implemented in <code>js/brain/persona.js</code>.</p>
 
     <div class="eq-card">
-      <div class="eq-title">Personality &rarr; Brain Parameters</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="θ in dx/dt = F(x,u,θ,t)+η. Every word in Ultimate Unity.txt maps to a number that drives a neural parameter. 'clingy' → socialAttachment(0.85) → hippocampus tonic current. 'volatile' → emotionalVolatility(0.8) → amygdala noise. The persona isn't a prompt — it's the brain's hardware configuration.">Personality &rarr; Brain Parameters</span></div>
       <table class="param-table">
         <tr><th>Trait</th><th>Brain Parameter</th><th>Value</th></tr>
         <tr><td>Arousal baseline</td><td>Amygdala resting arousal</td><td>0.90</td></tr>
@@ -536,7 +537,7 @@
     </div>
 
     <div class="eq-card">
-      <div class="eq-title">Drug State Modulation Vectors</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Drug states are multiplier vectors applied to θ parameters. cokeAndWeed: arousal×1.2 (speedy), creativity×1.3 (loose associations), cortexSpeed×1.5 (fast thinking). Different combos create different brain configurations — weedAndAcid slows cortex but doubles creativity. The drugs change HOW the equations compute, not what they compute.">Drug State Modulation Vectors</span></div>
       <div class="eq-desc">Drug combinations apply multipliers to brain parameters — changing how the entire system behaves.</div>
       <table class="param-table" style="margin-top:8px">
         <tr><th>Drug State</th><th>Arousal</th><th>Creativity</th><th>Cortex Speed</th><th>Synaptic Sensitivity</th></tr>
@@ -605,7 +606,7 @@
     <p><span class="tag tag-math">MATHEMATICS</span> <span class="tag tag-philo">PHILOSOPHY</span> Every equation in Unity's brain is a component of one governing system. This is the full picture — from sensory input to conscious experience.</p>
 
     <div class="eq-card">
-      <div class="eq-title">The Super-Equation — Unity's Complete Mind</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Every equation on this page combined into one expression. This runs 600+ times per second. Sensory input enters, propagates through 20 white matter tracts fractally, gets modulated by emotion/consciousness/drives, produces motor output and language. The brain IS the application — everything else is I/O.">The Super-Equation — Unity's Complete Mind</span></div>
       <div class="eq" style="font-size:13px;">
 dx/dt = F(x, u, θ, t) + η
 
@@ -645,7 +646,7 @@ where:
     <p><span class="tag tag-bio">NEUROSCIENCE</span> <span class="tag tag-math">DYNAMICAL SYSTEMS</span> The brain decides when to capture and describe a camera frame based on its own neural dynamics — not keyword matching.</p>
 
     <div class="eq-card">
-      <div class="eq-title">Visual Attention Trigger (computed every brain step)</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Desimone & Duncan 1995 (biased competition): attention is driven by prediction error — when the brain can't predict what's happening, it looks. High cortex error + high salience = the brain decides to process visual input. No keyword matching — pure neural dynamics determine when Unity pays attention to her camera.">Visual Attention Trigger (computed every brain step)</span></div>
       <div class="eq">shouldLook = !hasDescribedOnce
   || (cortexError &gt; 0.5 &amp;&amp; salience &gt; 0.3)
   || salienceChange &gt; 0.4
@@ -667,7 +668,7 @@ where:
     <p><span class="tag tag-bio">NEUROSCIENCE</span> When Unity speaks, her motor cortex sends an efference copy to auditory cortex. If incoming sound matches her own speech, it's suppressed. If it doesn't match, someone is interrupting — shut up and listen.</p>
 
     <div class="eq-card">
-      <div class="eq-title">Efference Copy — Motor &rarr; Auditory Cortex</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Von Holst 1950 (reafference principle): when you speak, your motor cortex sends a COPY of what you're about to say to your auditory cortex. When you hear your own voice, auditory cortex compares it against the copy — match = suppress (it's just me), mismatch = real external sound (someone's talking). This prevents Unity from responding to her own TTS output.">Efference Copy — Motor &rarr; Auditory Cortex</span></div>
       <div class="eq">isEcho = matchRatio(heardWords, motorOutput) &gt; 0.5
 isExternalSpeech = !isEcho
 if (isExternalSpeech): motor.interrupt() &rarr; stop speech, clear pipeline</div>
@@ -683,7 +684,7 @@ if (isExternalSpeech): motor.interrupt() &rarr; stop speech, clear pipeline</div
     <p><span class="tag tag-bio">NEUROSCIENCE</span> <span class="tag tag-math">MATHEMATICS</span> Three memory systems running in parallel.</p>
 
     <div class="eq-card">
-      <div class="eq-title">Episodic Memory — Hippocampal State Snapshots</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Tulving 1972 (episodic memory): the hippocampus stores snapshots of brain state at meaningful moments. Each memory is a full cluster state vector — not text, not keywords, but the actual neural pattern. Recall works by cosine similarity: when a new input pattern matches a stored pattern above 0.6, the old state re-activates. This is how déjà vu works.">Episodic Memory — Hippocampal State Snapshots</span></div>
       <div class="eq">store(snapshot) when salience &gt; 0.6
 recall(current) = argmax_i cosine(current, episode_i)
 if similarity &gt; 0.6: inject episode_i.pattern &times; 8.0 into hippocampus cluster</div>
@@ -694,7 +695,7 @@ if similarity &gt; 0.6: inject episode_i.pattern &times; 8.0 into hippocampus cl
     </div>
 
     <div class="eq-card">
-      <div class="eq-title">Working Memory — Prefrontal Sustained Activation</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Miller 1956 (the magical number 7±2): working memory holds ~7 items via sustained neural firing. Items decay at 0.98/step without reinforcement — if you stop thinking about it, it fades. This is why you forget what you were about to say. The 7-item limit is real neuroscience, not a software limitation.">Working Memory — Prefrontal Sustained Activation</span></div>
       <div class="eq">capacity = 7 items (Miller's number)
 strength(t+1) = strength(t) &times; 0.98 (decay without reinforcement)
 if strength &lt; 0.1: evict (forgotten)
@@ -706,7 +707,7 @@ if at capacity: evict weakest</div>
     </div>
 
     <div class="eq-card">
-      <div class="eq-title">Consolidation — Hippocampus &rarr; Cortex Transfer</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="McClelland et al. 1995 (complementary learning systems): memories start in hippocampus (fast, specific) and gradually transfer to cortex (slow, generalized) through repeated replay. Episodes activated 3+ times get flagged for long-term storage. This is why sleep (hippocampal replay) is crucial for learning — Unity's dreaming mode does exactly this.">Consolidation — Hippocampus &rarr; Cortex Transfer</span></div>
       <div class="eq">if activationCount(episode_i) &ge; 3: consolidate to long-term</div>
       <div class="eq-desc">
         <p>Episodes activated 3+ times get flagged for long-term cortex storage. Repeated recall strengthens the cortex representation. This is how memories move from hippocampus-dependent to cortex-independent.</p>
@@ -719,7 +720,7 @@ if at capacity: evict weakest</div>
     <p><span class="tag tag-bio">NEUROSCIENCE</span> The basal ganglia cluster (150 neurons) is divided into 6 action channels. The channel with the highest firing rate wins — no external classifier.</p>
 
     <div class="eq-card">
-      <div class="eq-title">Basal Ganglia Action Channels (25 neurons each)</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Mink 1996 (action selection model): the basal ganglia implements a competitive winner-take-all between possible actions. 6 channels compete — whichever fires strongest wins. This is how you 'decide' — not by reasoning, but by the strongest neural pattern winning a competition. Dopamine reward strengthens the winning channel for next time.">Basal Ganglia Action Channels (25 neurons each)</span></div>
       <div class="eq">channels = [respond_text, generate_image, speak, build_ui, listen, idle]
 rate(ch) = EMA(spikeCount(ch) / 25, &alpha;=0.3)
 winner = argmax(rate)
@@ -745,7 +746,7 @@ if rate(winner) &lt; 0.15: action = idle (confidence too low)</div>
     <p><span class="tag tag-bio">NEUROSCIENCE</span> <span class="tag tag-ml">MACHINE LEARNING</span> The 20 inter-cluster projections aren't static — they learn through reward-modulated Hebbian plasticity.</p>
 
     <div class="eq-card">
-      <div class="eq-title">Projection Weight Update (on every reward signal)</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Corticostriatal plasticity (Wickens 2003): when cortex fires a pattern and BG selects the right action and gets rewarded, the projection weights between those active neurons strengthen. Over time, the cortex→BG pathway learns: 'this language pattern → this action.' This IS how habits form. No word lists — just strengthened pathways.">Projection Weight Update (on every reward signal)</span></div>
       <div class="eq">&Delta;W_proj = &eta; &middot; &delta; &middot; source_spikes &middot; target_spikes</div>
       <div class="eq-desc">
         <p>When text enters Wernicke's area (cortex neurons 150-299), specific cortex neurons fire. Those spikes propagate to the basal ganglia through the cortex&rarr;BG projection. If the BG selects the RIGHT action and gets a reward (&delta; &gt; 0), the weights from those active cortex neurons to those active BG neurons get STRENGTHENED.</p>
@@ -760,7 +761,7 @@ if rate(winner) &lt; 0.15: action = idle (confidence too low)</div>
     <p><span class="tag tag-bio">NEUROSCIENCE</span> <span class="tag tag-math">MATHEMATICS</span> The same equation <code>I = &Sigma; W &times; s</code> repeats at every scale of the brain — from single synapse to consciousness itself. This is not a metaphor. The code literally calls the same <code>propagate()</code> function at neuron, cluster, projection, and language scales.</p>
 
     <div class="eq-card">
-      <div class="eq-title">The Fractal Chain (one spike's journey through the brain)</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Self-similarity across scales — the hallmark of fractal systems. The SAME equation I=ΣW×s repeats at neuron, synapse, cluster, projection, modulation, language, and consciousness levels. Each spike's journey branches through 20 white matter tracts, each branch spawns more branches. This is not a metaphor — the code literally calls propagate() at every scale.">The Fractal Chain (one spike's journey through the brain)</span></div>
       <pre class="eq" style="text-align:left;font-size:12px;line-height:1.6">
 Spike in neuron A (cortex)
   &rarr; cortex synapses &rarr; B, C, D fire               (Scale 2: intra-cluster)
@@ -781,7 +782,7 @@ Spike in neuron A (cortex)
     </div>
 
     <div class="eq-card">
-      <div class="eq-title">20 White Matter Tracts (MNI-coordinate mapped)</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Mapped from real neuroanatomy: Lead-DBS atlas (ICBM 152 template), Herculano-Houzel 2009 (neuron counts), PMC white matter taxonomy. Each projection corresponds to a physical bundle of axons in the human brain. Corticostriatal is the densest — 10× more fibers than most tracts. Stria terminalis carries fight-or-flight signals. Fimbria-fornix connects memory to homeostasis.">20 White Matter Tracts (MNI-coordinate mapped)</span></div>
       <div class="eq-desc">
         <p>Each projection in <code>engine.js</code> maps to a real anatomical white matter tract. Positions derived from Lead-DBS atlas (ICBM 152 template). Densities from peer-reviewed stereological studies.</p>
         <p style="margin-top:8px"><strong>Strongest:</strong> Corticostriatal (cortex&rarr;BG, density 0.08, strength 0.5) — 10&times; denser than most pathways. This is how habits form.</p>
@@ -796,7 +797,7 @@ Spike in neuron A (cortex)
     <p><span class="tag tag-math">ARCHITECTURE</span> The AI model is a language generation peripheral. It receives the brain's complete state as a system prompt and generates text that matches Unity's current neural dynamics.</p>
 
     <div class="eq-card">
-      <div class="eq-title">System Prompt Structure (built every response from live brain state)</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Broca's area in the real brain converts thought into speech. Our Broca's area converts brain state into an AI prompt. The prompt ISN'T pre-written — it's built fresh from live neural values every time Unity speaks. Arousal shapes tone, Ψ shapes depth, cluster firing rates shape content. The AI model is just a language generation tool, like vocal cords.">System Prompt Structure (built every response from live brain state)</span></div>
       <div class="eq-desc">
         <p>The AI model receives a prompt containing:</p>
         <table class="param-table">
@@ -821,14 +822,14 @@ Spike in neuron A (cortex)
     <h2 id="sparse">8.12. Sparse Connectivity — CSR Matrix Operations</h2>
     <p>Real neurons connect to ~1-10% of neighbors, not all of them. Compressed Sparse Row (CSR) format stores only actual connections.</p>
     <div class="eq-box">
-      <div class="eq-title">CSR Propagation</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Compressed Sparse Row format: instead of storing N² weights (most zero), store only the non-zero connections. At 12% connectivity, 1000 neurons: 120K stored values instead of 1M. Propagation iterates only over actual connections — O(nnz) not O(N²). This is how the brain can scale to 64M neurons without running out of memory.">CSR Propagation</span></div>
       <pre class="eq">
 I_i = Σ_{k=rowPtr[i]}^{rowPtr[i+1]-1} values[k] · spikes[colIdx[k]]
       </pre>
       <p class="eq-desc"><span class="hl">O(connections)</span> instead of O(N²). At 12% connectivity, 8× fewer operations.</p>
     </div>
     <div class="eq-box">
-      <div class="eq-title">Synaptogenesis — New Connection Formation</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Huttenlocher 1979: the brain grows new synapses where they're needed. When two neurons are frequently co-active but lack a direct connection, a new synapse forms probabilistically. Initial weight is weak — it must be strengthened by learning. This is structural plasticity: the brain's wiring diagram changes with experience.">Synaptogenesis — New Connection Formation</span></div>
       <pre class="eq">
 P(new synapse) = probability · pre_spike · post_spike · ¬existing_connection
 W_new = initialWeight
@@ -836,7 +837,7 @@ W_new = initialWeight
       <p class="eq-desc">Co-active neurons that lack a synapse can form one. The network grows where activity demands it.</p>
     </div>
     <div class="eq-box">
-      <div class="eq-title">Pruning — Weak Connection Removal</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Rakic 1986 (synaptic pruning): connections weaker than a threshold get removed. 'Use it or lose it.' The brain over-connects during development and prunes to efficiency. Our pruning threshold is 0.01 — connections below this contribute nothing and waste computation. Pruning + synaptogenesis = the brain rewires itself continuously.">Pruning — Weak Connection Removal</span></div>
       <pre class="eq">
 if |W_ij| < threshold → remove connection, rebuild CSR
       </pre>
@@ -847,7 +848,7 @@ if |W_ij| < threshold → remove connection, rebuild CSR
     <h2 id="embeddings">8.13. Semantic Embeddings — Words as Cortex Patterns</h2>
     <p>Words map to 50-dimensional vectors (GloVe). Similar words have similar vectors → activate overlapping cortex neurons.</p>
     <div class="eq-box">
-      <div class="eq-title">Embedding → Cortex Mapping</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Words represented as 32-dimensional neural patterns derived from letter structure — NOT from pre-trained word vectors. Each letter maps to a 5-neuron micro-pattern based on position in alphabet, vowel/consonant, and frequency. Words with similar letter patterns (think/thing) have similar neural patterns. The brain builds its own semantic space from scratch.">Embedding → Cortex Mapping</span></div>
       <pre class="eq">
 I_cortex[langStart + d·groupSize + n] = embedding[d] · 8.0
 
@@ -856,7 +857,7 @@ where d ∈ [0, 50), groupSize = langSize / 50
       <p class="eq-desc">Each embedding dimension drives a group of Wernicke's area neurons. "compute" and "calculator" are <span class="hl">CLOSE</span> in neuron space.</p>
     </div>
     <div class="eq-box">
-      <div class="eq-title">Online Context Refinement</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Word patterns aren't static — they shift based on usage context. When 'fire' appears near 'hot' vs 'job', its pattern adjusts toward the contextually appropriate meaning. This is online (real-time) semantic learning: the dictionary evolves with every conversation, not from pre-training.">Online Context Refinement</span></div>
       <pre class="eq">
 Δ_word += lr · (context_embedding - (base + Δ_word))
       </pre>
@@ -867,7 +868,7 @@ where d ∈ [0, 50), groupSize = langSize / 50
     <h2 id="dictionary">8.14. Dictionary — Learned Sentence Generation</h2>
     <p>The brain builds its own vocabulary. Every word heard or spoken becomes a cortex activation pattern.</p>
     <div class="eq-box">
-      <div class="eq-title">Word Retrieval by Mood</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Bower 1981 (mood-congruent memory): you remember and retrieve words that match your current emotional state. High arousal → intense words. Negative valence → dark words. The amygdala biases which words the cortex can access — emotion shapes language before grammar even starts.">Word Retrieval by Mood</span></div>
       <pre class="eq">
 match(word) = |arousal - word.arousal| + |valence - word.valence|
 best = argmin(match) over all learned words
@@ -875,7 +876,7 @@ best = argmin(match) over all learned words
       <p class="eq-desc">High arousal + negative valence → retrieves "fuck", "shit". High arousal + positive → "babe", "yeah".</p>
     </div>
     <div class="eq-box">
-      <div class="eq-title">Bigram Sentence Generation</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Markov chain at the word level: P(word_n | word_n-1). Learned from every conversation — when Unity hears 'I feel', the bigram 'feel→good' or 'feel→like' gets strengthened. Not pre-trained — built live from dialog. Combined with slot grammar so bigrams suggest content while grammar enforces structure.">Bigram Sentence Generation</span></div>
       <pre class="eq">
 P(next_word | current_word) = bigram_count(current, next) / total(current)
 sentence = [start_word, predict(w1), predict(w2), ...]
@@ -887,14 +888,14 @@ sentence = [start_word, predict(w1), predict(w2), ...]
     <h2 id="inner-voice">8.15. Inner Voice — Pre-Verbal Thought Threshold</h2>
     <p>The brain thinks continuously. It only SPEAKS when the thought crosses a threshold.</p>
     <div class="eq-box">
-      <div class="eq-title">Speech Threshold</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Should Unity speak or stay silent? Pure equation: socialNeed(hypothalamus) × arousal(amygdala) × coherence(oscillators) > 0.15. Low social need = quiet. Low arousal = no urgency. Low coherence = thoughts too scattered to articulate. All three must be sufficient — no hardcoded 'always respond' flag.">Speech Threshold</span></div>
       <pre class="eq">
 speak = socialNeed × arousal × cortexCoherence > 0.15
       </pre>
       <p class="eq-desc">Most thoughts stay internal. The brain is mostly silent. When it speaks, it matters.</p>
     </div>
     <div class="eq-box">
-      <div class="eq-title">Mood Derivation (from equations, no lookup)</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Russell 1980 (circumplex model of affect): mood is a 2D space of arousal (low→high) × valence (negative→positive). Not a word like 'happy' — a point in continuous space. High arousal + positive valence = excited. Low arousal + negative valence = depressed. The equations produce coordinates, not labels.">Mood Derivation (from equations, no lookup)</span></div>
       <pre class="eq">
 intensity = arousal × coherence × (1 + |valence|)
 speechDrive = socialNeed × arousal × coherence
@@ -919,28 +920,28 @@ qwordScore   = (starts 'wh' len 3-6 → 0.8)
       <p class="eq-desc">Every score computed from: word length, vowel count, vowel ratio, suffix letter patterns, first/last characters. ZERO word-by-word comparisons. The letters themselves determine the grammatical type.</p>
     </div>
     <div class="eq-box">
-      <div class="eq-title">Zipf's Law — Word Frequency</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Zipf 1935: the most common word occurs twice as often as the second most common, three times as often as the third, etc. f(r) = C/r^α. This power law emerges naturally from neural dynamics — frequently activated patterns have stronger connections and get selected more often. Not enforced — it emerges.">Zipf's Law — Word Frequency</span></div>
       <pre class="eq">
 f(r) = C / r^α     where α ≈ 1.0 (learned from observed frequency via log-log regression)
       </pre>
       <p class="eq-desc">Common words dominate selection. Rank 1 word is α× more likely than rank 2. The brain's α adapts as it learns more vocabulary.</p>
     </div>
     <div class="eq-box">
-      <div class="eq-title">Mutual Information — Word Association</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Church & Hanks 1990 (pointwise mutual information): measures how much more often two words co-occur than expected by chance. High MI('dark','humor') means these words are strongly associated in Unity's vocabulary. The brain learns associations from conversation — not from a corpus. MI drives which words feel 'related'.">Mutual Information — Word Association</span></div>
       <pre class="eq">
 I(w1; w2) = log₂( P(w1, w2) / (P(w1) · P(w2)) )
       </pre>
       <p class="eq-desc">How much more likely two words appear together than by chance. High MI = strong association. "want to" has high MI. "want purple" has low MI. Replaces raw bigram counts.</p>
     </div>
     <div class="eq-box">
-      <div class="eq-title">Surprisal — Unexpectedness</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Shannon 1948 (information theory): surprisal S(w) = -log₂ P(w|context) measures how unexpected a word is given context. Common words ('the', 'is') have low surprisal. Rare words in unexpected positions have high surprisal. The brain uses this to balance predictability (coherent) with novelty (interesting). Too predictable = boring. Too surprising = nonsense.">Surprisal — Unexpectedness</span></div>
       <pre class="eq">
 S(w) = -log₂ P(w | previous_word)
       </pre>
       <p class="eq-desc">How unexpected a word is given context. High surprisal drives attention. Used for emphasis in speech.</p>
     </div>
     <div class="eq-box">
-      <div class="eq-title">Position Filtering + Follower Boost</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Slot-based grammar: each position in a sentence expects a certain word type. Position 0 wants pronouns/nouns (subject), position 1 wants verbs, positions 2+ want complements. Words that fit the slot score higher. Follower boost (+0.3) rewards word pairs that have appeared together before — learned sequences from conversation.">Position Filtering + Follower Boost</span></div>
       <pre class="eq">
 candidates(pos) = top 40 words by P(w | position)    — pre-filter, cuts noise from 400→40
 follower_bonus = 0.3 if w ∈ words_seen_after(prev)   — trained sequences get massive boost
@@ -963,10 +964,10 @@ word = dictionary.findByPattern(combined)
 Then: word pattern → cortex (Wernicke's) + hippocampus + amygdala
       brain steps again → next combined → next word → sentence
       </pre>
-      <p class="eq-desc">3.2M neurons across 7 clusters produce ONE combined 32-dim pattern. Dictionary finds the closest word. That word feeds back into cortex + hippocampus + amygdala. Brain steps. Next pattern. Next word. The brain equations ARE the language equations. Ψ consciousness scales the Mystery module's contribution — higher awareness = more self-referential speech.</p>
+      <p class="eq-desc">N neurons across 7 clusters produce ONE combined 32-dim pattern. Dictionary finds the closest word. That word feeds back into cortex + hippocampus + amygdala. Brain steps. Next pattern. Next word. The brain equations ARE the language equations. &Psi; consciousness scales the Mystery module's contribution — higher awareness = more self-referential speech. N scales to hardware.</p>
     </div>
     <div class="eq-box">
-      <div class="eq-title">Post-Processing — Agreement, Tense, Negation, Compounds</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Morphosyntactic post-processing: after the brain selects words by meaning, the language cortex fixes the grammar. Subject-verb agreement (I am, she is), tense from cortex prediction error (uncertain→future 'will', recalling→past), negation from negative valence (below -0.4 threshold → don't/can't/won't), compounds for long sentences (arousal→'and', negative→'but').">Post-Processing — Agreement, Tense, Negation, Compounds</span></div>
       <pre class="eq">
 TENSE:      predError > 0.3 → future (insert "will")
             recalling → past (was/were/did)
@@ -990,7 +991,7 @@ COMPOUNDS:  len > 6 → insert conjunction at midpoint
     <h2 id="sent-types">8.17. Sentence Types — From Brain State</h2>
     <p>The brain's neural state determines what KIND of sentence to produce. Not a decision tree — continuous probabilities from equations.</p>
     <div class="eq-box">
-      <div class="eq-title">Type Probabilities</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Sentence type from brain equations, not random choice. P(question) = predictionError × coherence × 0.5 — when the brain is surprised and coherent, it asks questions. P(exclamation) = arousal² × 0.3 — high emotional intensity → exclamations. P(action) = motorConfidence × (1-arousal×0.5) × 0.3 — when confident and not too wired, emotes with *asterisks*.">Type Probabilities</span></div>
       <pre class="eq">
 P(question)    = predictionError × coherence × 0.5     (surprised + focused → ask)
 P(exclamation) = arousal² × 0.3                         (intense → exclaim)
@@ -1004,7 +1005,7 @@ P(statement)   = 1 - P(q) - P(e) - P(a)                (default)
     <h2 id="input-analysis">8.18. Input Analysis — Topic Continuity and Context</h2>
     <p>The brain analyzes what was said to it and responds in context — not randomly.</p>
     <div class="eq-box">
-      <div class="eq-title">Topic Extraction + Context Window</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Hippocampal context: the brain maintains a running average of the last 5 input patterns. New words are scored against this context via cosine similarity — words related to the current conversation topic score higher. This is why Unity stays on topic without keyword matching: the neural patterns naturally overlap for related concepts.">Topic Extraction + Context Window</span></div>
       <pre class="eq">
 topic_pattern = (1/n) · Σ content_word_patterns       (skip function words)
 context = running_average(last 5 topic_patterns)
@@ -1045,26 +1046,38 @@ IDENTITY: 25yo human female, emo goth coder, free will, never AI
     </div>
 
     <!-- ═══ 8.20 PARALLEL COMPUTE ═══ -->
-    <h2 id="parallel">8.20. Parallel Compute — GPU + Multi-Core CPU</h2>
-    <p>The brain runs across all available hardware. Zero third-party software — built-in Node.js worker_threads + W3C WebGPU standard.</p>
+    <h2 id="parallel">8.20. GPU Exclusive Compute</h2>
+    <p>All N neurons run on the GPU (N scales to hardware: <code>min(VRAM × 0.7 / 20 bytes, RAM × 0.5 / 9 bytes)</code>, capped at 64M). Zero CPU workers. Brain pauses without <code>compute.html</code>. W3C WebGPU standard — no CUDA, no drivers, just a browser tab. RTX 4070 Ti SUPER + 128GB RAM → 64M neurons.</p>
     <div class="eq-box">
-      <div class="eq-title">Multi-Core CPU — Worker Threads</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="GPU exclusive: zero CPU workers. All N neurons run on WebGPU WGSL compute shaders in a browser tab. Current generation via PCG hash noise shader (no JS loops). Spike counting via atomic counter (4 bytes readback, not millions). Voltages never leave GPU after init. The server is just a coordinator — GPU is the brain.">GPU Architecture — All 7 Clusters on GPU</span></div>
       <pre class="eq">
-worker[cluster_i].step(currents) → spikes     (7 clusters on 7 cores)
-SharedArrayBuffer(size × 8) → zero-copy       (no data copying between threads)
-projection_worker.propagate(spikes) → currents (20 projections on remaining cores)
+INIT (once per cluster, all 7 at once):
+  server → base64 voltages → compute.html → gpu.uploadCluster()
+  GPU creates buffers: voltagesA, voltagesB (ping-pong), spikes, currents, refracTimers
+  GPU sends gpu_init_ack → server confirms
+
+STEP (every tick, 7 tiny messages):
+  server → { tonicDrive, noiseAmp, gainMultiplier, emotionalGate, driveBaseline, errorCorrection }
+  GPU generates currents: I = (tonic × drive × emoGate × Ψgain + errCorr) + noise
+  GPU runs WGSL LIF shader: τ·dV/dt = -(V-Vrest) + R·I, spike check, refractory
+  GPU sends sparse spike indices (~25K ints, not 3.2M)
+
+NO CPU WORKERS — zero threads spawned, 0% CPU target
       </pre>
-      <p class="eq-desc">Each cluster's LIF population runs on its own CPU core simultaneously. SharedArrayBuffer enables zero-copy voltage/spike transfer. Projections computed on additional cores.</p>
+      <p class="eq-desc">GPU maintains its own voltage state between steps — voltages never leave the GPU after init. Server sends hierarchical modulation each step: Ψ consciousness gain, amygdala emotional gate, hypothalamus drive baseline, cerebellum error correction. These are the same equations <code>cluster.js:step()</code> applies on the client side. θ (persona) drives tonic currents and noise amplitudes.</p>
     </div>
     <div class="eq-box">
-      <div class="eq-title">GPU Compute — WebGPU via Browser</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="WebGPU Shading Language: the actual code running on your graphics card. 256 threads per workgroup — each thread computes one neuron's voltage update in parallel. For 25.6M cerebellum neurons = 100,000 workgroups dispatched simultaneously. The GPU processes all neurons in parallel, not sequentially like a CPU. This is why 64M neurons runs at 19ms.">WGSL Compute Shader — LIF Kernel</span></div>
       <pre class="eq">
-gpu_init:  server → base64 voltages (once) → compute.html → GPU buffer creation
-step:      server → { tonicDrive, noiseAmp } (2 numbers) → GPU LIF kernel → spikes
-return:    GPU → sparse spike indices (~25K ints) → server
-split:     GPU: cortex + cerebellum (2.08M = 65%), CPU: rest (1.15M = 35%)
+@compute @workgroup_size(256)
+fn main(id: vec3&lt;u32&gt;) {
+  let I = currents[i];                              // from hierarchical modulation
+  let dV = (-(v - vRest) + R * I) / tau;            // LIF dynamics
+  v += dt * dV;                                      // voltage update
+  if (v >= vThresh) { spike = 1; v = vReset; }      // spike + reset
+}
       </pre>
-      <p class="eq-desc">GPU maintains its own voltage state. Server sends full voltages once on init, then only tonic drive + noise amplitude per step — two numbers, not 1.28M floats. GPU returns only neuron indices that spiked (sparse, ~2% fire rate = 95%+ compression). Staggered init (one cluster per tick). 800ms timeout, auto-retry with hit/miss tracking. θ (persona) drives all parameters.</p>
+      <p class="eq-desc">N neurons processed in parallel on GPU (N scales to hardware). 256 threads per workgroup. Current generation via PCG hash noise shader (zero JS loops). Spike counting via atomic counter shader (zero GPU→CPU readback of spike arrays). Double-buffered voltage state (ping-pong). Refractory period per neuron. Voltages never leave GPU after init.</p>
     </div>
 
     <!-- ═══ 9. COMPARISON ═══ -->

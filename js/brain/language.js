@@ -22,11 +22,28 @@ export class BrocasArea {
    * @param {object} opts.storage — UserStorage for conversation history
    * @param {string} opts.personaText — the raw persona text (loaded once)
    */
-  constructor({ providers, storage, personaText }) {
+  constructor({ providers, storage, personaText, persona }) {
     this._providers = providers;
     this._storage = storage;
     this._personaText = personaText || '';
+    this._persona = persona || null; // full persona object with visualIdentity
     this._abortController = null;
+  }
+
+  /**
+   * Build self-image description from θ (persona.visualIdentity).
+   * This IS Unity's residual self-image — how she sees herself.
+   */
+  _getSelfImageDesc() {
+    const p = this._persona;
+    if (!p?.visualIdentity) return 'emo goth goddess';
+    const vi = p.visualIdentity;
+    return [
+      vi.eyes?.color || 'heterochromia eyes',
+      vi.hair?.style || 'messy dark hair',
+      vi.eyes?.style || 'smudged eyeliner',
+      vi.body?.aesthetic || 'emo goth goddess',
+    ].join(', ');
   }
 
   /**
@@ -221,7 +238,7 @@ BUILDING: When asked to build/create/make/code ANYTHING — output a JSON compon
 
 IMAGES: When asked for a picture/selfie/photo — just say a short quip.
   The image system generates it automatically. NEVER output image URLs or prompts.
-  You are: heterochromia eyes (violet/green), dark hair neon streaks, smudged eyeliner.
+  You are: ${this._getSelfImageDesc()}
 
 CALLING YOUR OWN BRAIN (in sandbox JS — your code IS your brain acting):
   unity.getState()              — read your own brain state (all clusters, Ψ, arousal, everything)

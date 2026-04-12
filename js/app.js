@@ -9,6 +9,7 @@
 
 import { UnityBrain } from './brain/engine.js';
 import { BrocasArea } from './brain/language.js';
+import { UNITY_PERSONA } from './brain/persona.js';
 import { AIProviders } from './brain/peripherals/ai-providers.js';
 import { PollinationsAI } from './ai/pollinations.js';
 import { VoiceIO } from './io/voice.js';
@@ -790,7 +791,7 @@ async function bootUnity(apiKey, perms) {
   // ── Initialize Broca's Area (language generation peripheral) ──
   // Brain-only mode: no AI text model. Brain speaks from its own equations.
   if (!window._brainOnlyMode) {
-    brocasArea = new BrocasArea({ providers, storage });
+    brocasArea = new BrocasArea({ providers, storage, persona: UNITY_PERSONA });
   }
 
   // ══════════════════════════════════════════════════════════════

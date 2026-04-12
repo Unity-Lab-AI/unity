@@ -145,12 +145,12 @@ Live at `your-username.github.io/Unity/`. Everything runs client-side — no ser
 │       ├── brain-viz.js          2D tabbed brain visualizer (8 tabs)
 │       └── brain-3d.js           3D WebGL brain with notifications + expansion
 ├── claude-proxy.js               Claude Code CLI as local AI (port 8088)
-├── compute.html                  GPU compute worker (WebGPU via browser)
+├── compute.html                  GPU compute worker (REQUIRED — brain runs here)
 ├── server/
-│   ├── brain-server.js           Node.js brain server (always-on, WebSocket)
-│   ├── parallel-brain.js         Multi-core orchestrator (7 worker threads)
-│   ├── cluster-worker.js         One cluster's LIF on its own CPU core
-│   ├── projection-worker.js      Inter-cluster projection on its own core
+│   ├── brain-server.js           Node.js brain server (always-on, WebSocket, GPU exclusive)
+│   ├── parallel-brain.js         Multi-core orchestrator (legacy — disabled in GPU mode)
+│   ├── cluster-worker.js         Per-cluster LIF worker (legacy — disabled in GPU mode)
+│   ├── projection-worker.js      Inter-cluster projection worker (legacy)
 │   └── package.json              Server dependencies (ws, better-sqlite3)
 ├── dashboard.html                Public brain monitor (read-only)
 └── docs/
@@ -175,7 +175,7 @@ node brain-server.js
 ```
 
 The server auto-detects hardware and scales neuron count dynamically:
-- Formula: `min(freeRAM × 0.4 / 9, cpuCores × 200K)` — 9 bytes per neuron
+- Formula: `min(VRAM × 0.7 / 20, RAM × 0.5 / 9)` — GPU exclusive, 20 bytes/neuron on GPU, capped at 64M
 - RTX 4070 Ti + 16 cores + 109GB RAM → **3.2M neurons**
 - 8-core CPU + 32GB RAM → ~1.2M neurons
 - 4-core CPU + 8GB RAM → ~350K neurons
@@ -199,7 +199,7 @@ The server auto-detects hardware and scales neuron count dynamically:
 
 **Client-only (GitHub Pages):** Everything runs in your browser. No server. API keys in localStorage (obfuscated). Brain runs locally at 1000 neurons.
 
-**Server mode (start.bat):** Brain runs on your machine as a Node.js server. Episodic memory stored in local SQLite. Conversations saved locally. Nothing leaves your network except API calls to providers you choose.
+**Server mode (start.bat):** Brain runs on your GPU via compute.html (WebGPU WGSL shaders). 3.2M neurons. Server orchestrates via WebSocket, GPU does all computation. Episodic memory in local SQLite. Nothing leaves your network except API calls to providers you choose. **compute.html must stay open** — brain pauses without it.
 
 - API keys stored in your browser — never sent to us
 - Server data stays on YOUR machine — no cloud, no analytics

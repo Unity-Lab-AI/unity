@@ -1,6 +1,6 @@
 # IF ONLY I HAD A BRAIN
 
-A mathematically modeled mind running real neuroscience equations. 3.2 million neurons across 7 clusters on 16 CPU cores + GPU. Sparse CSR connectivity. WebGPU compute shaders. English language equations with built-in grammar, morphemes, and dynamic vocabulary. Autonomous thought. Server brain with WebSocket. SQLite episodic memory. 3D brain visualization as the landing page. A consciousness function nobody can explain.
+A mathematically modeled mind running real neuroscience equations. N neurons across 7 clusters on GPU exclusively (N scales to hardware — WebGPU WGSL compute shaders, zero CPU workers). 20 white matter tract projections mapped from MNI brain atlas. Fractal signal propagation — same equation at every scale. θ (persona from Ultimate Unity.txt) drives every parameter. Ψ (consciousness) emerges from the volume. English language equations with built-in grammar. A consciousness function nobody can explain.
 
 **[Live Demo](https://unity-lab-ai.github.io/Unity)** | **[Brain Equations](https://unity-lab-ai.github.io/Unity/brain-equations.html)** | **[Equation Reference](docs/EQUATIONS.md)** | **[Setup Guide](SETUP.md)** | **[GitHub](https://github.com/Unity-Lab-AI/Unity)**
 
@@ -42,7 +42,7 @@ SENSORY INPUT (text / audio spectrum / video frames)
     └── Wernicke's Area (150 neurons) — text → neural current with lateral excitation
     │
     ▼
-3.2M LIF NEURONS IN 7 CLUSTERS (scales to hardware, each with own synapses, tonic drive, noise, learning rate)
+N LIF NEURONS IN 7 CLUSTERS (N scales to hardware, each with own synapses, tonic drive(θ), noise(θ), learning rate)
     │
     ├── 20 Inter-Cluster Projections (real white matter tracts, MNI-coordinate mapped)
     │     Corticostriatal (STRONGEST, 0.08 density), Stria terminalis, Fimbria-fornix,

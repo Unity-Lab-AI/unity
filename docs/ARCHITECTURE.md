@@ -26,8 +26,8 @@ The unknown — what we can't model, what makes consciousness CONSCIOUSNESS — 
 | Layer | Technology |
 |-------|------------|
 | **Language** | JavaScript (ES modules, browser + Node.js server) |
-| **Brain Sim** | 3.2M+ neurons, 7 parallel worker threads, sparse CSR, LIF populations |
-| **GPU Accel** | WebGPU compute shaders (WGSL) via browser, CPU fallback, auto-detected |
+| **Brain Sim** | N neurons (scales to hardware), GPU exclusive compute, sparse CSR, LIF populations |
+| **GPU Compute** | WebGPU WGSL shaders via compute.html — all 7 clusters on GPU, zero CPU workers |
 | **Server** | Node.js brain server, 16-core parallel, WebSocket API, auto-scales to hardware |
 | **Database** | SQLite (better-sqlite3) for episodic memory, JSON for weights + conversations |
 | **AI Backends** | Multi-provider: Pollinations, OpenRouter, OpenAI, Claude/Anthropic, Mistral, DeepSeek, Groq, Local AI |
@@ -212,7 +212,7 @@ Unity's persona files (unity-persona.md, unity-coder.md) don't just describe beh
 
 ## Clustered Architecture (scales to hardware)
 
-3.2M neurons (server) / 1000 (client) organized in 7 biologically-proportioned clusters. Implemented in `js/brain/cluster.js` with `NeuronCluster` and `ClusterProjection` classes. Auto-scales: `min(freeRAM × 0.4 / 9, cpuCores × 200K)`.
+N neurons (scales to GPU + RAM) organized in 7 biologically-proportioned clusters. Auto-scales: `min(VRAM × 0.7 / 20, RAM × 0.5 / 9)`, capped at 64M. RTX 4070 Ti SUPER + 128GB → 64M neurons. Client runs 1000 locally. Implemented in `js/brain/cluster.js` with `NeuronCluster` and `ClusterProjection` classes.
 
 ### Cluster Breakdown
 
@@ -354,7 +354,7 @@ Dream/
 │       └── brain-3d.js         # WebGL 3D brain visualizer (20K render neurons, MNI-coordinate positions, fractal connections)
 ├── server/
 │   ├── brain-server.js         # Node.js brain server (always-on, WebSocket, auto-scale)
-│   ├── parallel-brain.js        # Multi-core orchestrator (7 worker threads)
+│   ├── parallel-brain.js        # Multi-core orchestrator (legacy — GPU exclusive mode disables workers)
 │   ├── cluster-worker.js       # One cluster's LIF on its own CPU core
 │   ├── projection-worker.js    # Inter-cluster projection on its own core
 │   └── package.json            # Server deps (ws, better-sqlite3, node-fetch)

@@ -35,15 +35,18 @@ node brain-server.js &
 SERVER_PID=$!
 sleep 2
 
-# Open browser
+# Open browser + GPU compute page (REQUIRED — brain runs on GPU exclusively)
 echo "  Opening browser..."
 if command -v open &>/dev/null; then
     open http://localhost:8080
+    open http://localhost:8080/compute.html
 elif command -v xdg-open &>/dev/null; then
     xdg-open http://localhost:8080
+    xdg-open http://localhost:8080/compute.html
 fi
 
 echo "  Open: http://localhost:8080"
+echo "  GPU compute: http://localhost:8080/compute.html (REQUIRED — brain pauses without it)"
 echo "  Press Ctrl+C to stop."
 echo ""
 

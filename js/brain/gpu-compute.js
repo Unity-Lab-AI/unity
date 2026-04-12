@@ -146,6 +146,61 @@ const PLASTICITY_SHADER = /* wgsl */`
   }
 `;
 
+// Current generation shader — runs entirely on GPU, no JS loop needed
+// Uses PCG hash for deterministic noise (faster than Math.random on CPU)
+const CURRENT_GEN_SHADER = /* wgsl */`
+  struct Params {
+    n: u32,
+    effectiveDrive: f32,  // tonic × drive × emoGate × Ψgain + errCorr
+    noiseAmp: f32,
+    seed: u32,            // changes every step for different noise
+  };
+
+  @group(0) @binding(0) var<uniform> params: Params;
+  @group(0) @binding(1) var<storage, read_write> currents: array<f32>;
+
+  // PCG hash — fast GPU-friendly pseudo-random
+  fn pcg(v: u32) -> u32 {
+    var state = v * 747796405u + 2891336453u;
+    var word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+  }
+
+  fn randomFloat(seed: u32, idx: u32) -> f32 {
+    let hash = pcg(seed ^ (idx * 1664525u + 1013904223u));
+    return f32(hash) / 4294967295.0; // 0.0 to 1.0
+  }
+
+  @compute @workgroup_size(256)
+  fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+    let i = id.x;
+    if (i >= params.n) { return; }
+
+    let noise = (randomFloat(params.seed, i) - 0.5) * params.noiseAmp;
+    currents[i] = params.effectiveDrive + noise;
+  }
+`;
+
+// Spike count shader — atomic counter, no CPU scan needed
+const SPIKE_COUNT_SHADER = /* wgsl */`
+  struct Params {
+    n: u32,
+  };
+
+  @group(0) @binding(0) var<uniform> params: Params;
+  @group(0) @binding(1) var<storage, read> spikes: array<u32>;
+  @group(0) @binding(2) var<storage, read_write> count: array<atomic<u32>>;
+
+  @compute @workgroup_size(256)
+  fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+    let i = id.x;
+    if (i >= params.n) { return; }
+    if (spikes[i] != 0u) {
+      atomicAdd(&count[0], 1u);
+    }
+  }
+`;
+
 // ── GPU Compute Manager ─────────────────────────────────────────
 
 export class GPUCompute {
@@ -223,6 +278,24 @@ export class GPUCompute {
         entryPoint: 'main',
       },
     });
+
+    this._pipelines.currentGen = device.createComputePipeline({
+      layout: 'auto',
+      compute: {
+        module: device.createShaderModule({ code: CURRENT_GEN_SHADER }),
+        entryPoint: 'main',
+      },
+    });
+
+    this._pipelines.spikeCount = device.createComputePipeline({
+      layout: 'auto',
+      compute: {
+        module: device.createShaderModule({ code: SPIKE_COUNT_SHADER }),
+        entryPoint: 'main',
+      },
+    });
+
+    this._stepSeed = 0; // increments each step for noise variation
   }
 
   /**
@@ -235,33 +308,51 @@ export class GPUCompute {
    */
   uploadCluster(name, size, voltages, synapses, lifParams) {
     const device = this._device;
-
-    // Convert Float64 to Float32 (GPU uses f32)
-    const v32 = new Float32Array(size);
-    for (let i = 0; i < size; i++) v32[i] = voltages[i];
+    const vRest = lifParams?.Vrest || -65;
 
     // Params uniform
     const params = new ArrayBuffer(32);
     const view = new DataView(params);
     view.setUint32(0, size, true);
     view.setFloat32(4, lifParams.tau || 20, true);
-    view.setFloat32(8, lifParams.Vrest || -65, true);
+    view.setFloat32(8, vRest, true);
     view.setFloat32(12, lifParams.Vthresh || -50, true);
     view.setFloat32(16, lifParams.Vreset || -70, true);
     view.setFloat32(20, lifParams.dt || 1, true);
     view.setFloat32(24, lifParams.R || 1, true);
     view.setFloat32(28, lifParams.tRefrac || 2, true);
 
+    // Create voltage buffer A — filled with Vrest or provided voltages
+    // For 25.6M neurons, DON'T allocate JS-side Float64+Float32 arrays (400MB)
+    // Instead fill Vrest directly into mapped GPU buffer
+    const voltagesA = device.createBuffer({
+      size: size * 4,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
+      mappedAtCreation: true,
+    });
+    const vA = new Float32Array(voltagesA.getMappedRange());
+    if (voltages && voltages.length >= size) {
+      for (let i = 0; i < size; i++) vA[i] = voltages[i];
+    } else {
+      vA.fill(vRest); // all neurons start at resting potential
+    }
+    voltagesA.unmap();
+
+    // Zero-initialized buffers — no JS-side array allocation needed
+    const zeroBuffer = (sz, usage) => device.createBuffer({
+      size: sz,
+      usage: usage | GPUBufferUsage.COPY_DST,
+      mappedAtCreation: false, // GPU zeros by default
+    });
+
     const buffers = {
       params: this._createBuffer(params, GPUBufferUsage.UNIFORM),
-      voltagesA: this._createBuffer(v32, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC),
-      voltagesB: this._createBuffer(new Float32Array(size), GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC),
-      spikes: this._createBuffer(new Uint32Array(size), GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC),
-      currents: this._createBuffer(new Float32Array(size), GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST),
-      refracTimers: this._createBuffer(new Float32Array(size), GPUBufferUsage.STORAGE),
-      // Readback buffer (MAP_READ)
+      voltagesA,
+      voltagesB: zeroBuffer(size * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC),
+      spikes: zeroBuffer(size * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC),
+      currents: zeroBuffer(size * 4, GPUBufferUsage.STORAGE),
+      refracTimers: zeroBuffer(size * 4, GPUBufferUsage.STORAGE),
       readbackSpikes: device.createBuffer({ size: size * 4, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST }),
-      readbackVoltages: device.createBuffer({ size: size * 4, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST }),
       size,
     };
 
@@ -308,8 +399,10 @@ export class GPUCompute {
     if (!bufs) return;
     const device = this._device;
 
-    // Upload input currents
-    device.queue.writeBuffer(bufs.currents, 0, inputCurrents);
+    // Upload input currents (skip if null — already generated on GPU by generateCurrents)
+    if (inputCurrents) {
+      device.queue.writeBuffer(bufs.currents, 0, inputCurrents);
+    }
 
     // Select ping-pong buffers
     const vIn = this._ping === 0 ? bufs.voltagesA : bufs.voltagesB;
@@ -420,6 +513,120 @@ export class GPUCompute {
     const data = new Float32Array(bufs.readbackVoltages.getMappedRange().slice(0));
     bufs.readbackVoltages.unmap();
     return data;
+  }
+
+  /**
+   * Generate currents entirely on GPU — no JS loop.
+   * Uses PCG hash for noise, applies full hierarchical modulation.
+   *
+   * @param {string} name — cluster name
+   * @param {number} effectiveDrive — tonic × drive × emoGate × Ψgain + errCorr
+   * @param {number} noiseAmp — noise amplitude from θ
+   */
+  generateCurrents(name, effectiveDrive, noiseAmp) {
+    if (!this._available) return;
+    const bufs = this._buffers[name];
+    if (!bufs) return;
+    const device = this._device;
+
+    this._stepSeed = (this._stepSeed + 1) | 0;
+
+    // Params: n, effectiveDrive, noiseAmp, seed
+    const params = new ArrayBuffer(16);
+    const view = new DataView(params);
+    view.setUint32(0, bufs.size, true);
+    view.setFloat32(4, effectiveDrive, true);
+    view.setFloat32(8, noiseAmp, true);
+    view.setUint32(12, this._stepSeed, true);
+
+    const paramsBuffer = this._createBuffer(params, GPUBufferUsage.UNIFORM);
+
+    const bindGroup = device.createBindGroup({
+      layout: this._pipelines.currentGen.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: paramsBuffer } },
+        { binding: 1, resource: { buffer: bufs.currents } },
+      ],
+    });
+
+    const encoder = device.createCommandEncoder();
+    const pass = encoder.beginComputePass();
+    pass.setPipeline(this._pipelines.currentGen);
+    pass.setBindGroup(0, bindGroup);
+    pass.dispatchWorkgroups(Math.ceil(bufs.size / 256));
+    pass.end();
+
+    device.queue.submit([encoder.finish()]);
+  }
+
+  /**
+   * Count spikes on GPU using atomic counter — no JS scan loop.
+   * @param {string} name — cluster name
+   * @returns {Promise<number>} spike count
+   */
+  async readbackSpikeCount(name) {
+    const bufs = this._buffers[name];
+    if (!bufs) return 0;
+    const device = this._device;
+
+    // Create atomic counter buffer if not exists
+    if (!bufs.spikeCountBuf) {
+      bufs.spikeCountBuf = device.createBuffer({
+        size: 4,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
+      });
+      bufs.spikeCountReadback = device.createBuffer({
+        size: 4,
+        usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+      });
+    }
+
+    // Zero the counter
+    device.queue.writeBuffer(bufs.spikeCountBuf, 0, new Uint32Array([0]));
+
+    // Params
+    const params = new ArrayBuffer(4);
+    new DataView(params).setUint32(0, bufs.size, true);
+    const paramsBuffer = this._createBuffer(params, GPUBufferUsage.UNIFORM);
+
+    const bindGroup = device.createBindGroup({
+      layout: this._pipelines.spikeCount.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: paramsBuffer } },
+        { binding: 1, resource: { buffer: bufs.spikes } },
+        { binding: 2, resource: { buffer: bufs.spikeCountBuf } },
+      ],
+    });
+
+    const encoder = device.createCommandEncoder();
+    const pass = encoder.beginComputePass();
+    pass.setPipeline(this._pipelines.spikeCount);
+    pass.setBindGroup(0, bindGroup);
+    pass.dispatchWorkgroups(Math.ceil(bufs.size / 256));
+    pass.end();
+
+    // Readback the count
+    encoder.copyBufferToBuffer(bufs.spikeCountBuf, 0, bufs.spikeCountReadback, 0, 4);
+    device.queue.submit([encoder.finish()]);
+
+    await bufs.spikeCountReadback.mapAsync(GPUMapMode.READ);
+    const count = new Uint32Array(bufs.spikeCountReadback.getMappedRange().slice(0))[0];
+    bufs.spikeCountReadback.unmap();
+    return count;
+  }
+
+  /**
+   * Full GPU step — generate currents + LIF + spike count. No JS loops.
+   * @param {string} name
+   * @param {number} effectiveDrive
+   * @param {number} noiseAmp
+   * @returns {Promise<{spikeCount: number}>}
+   */
+  async fullStep(name, effectiveDrive, noiseAmp) {
+    this.generateCurrents(name, effectiveDrive, noiseAmp);
+    this.stepNeurons(name, null); // currents already in GPU buffer
+    const spikeCount = await this.readbackSpikeCount(name);
+    return { spikeCount };
   }
 
   /**
