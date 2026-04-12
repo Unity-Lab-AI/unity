@@ -595,6 +595,8 @@ async function bootUnity(apiKey, perms) {
     voice.stopSpeaking();
     brocasArea.abort();
     brain.receiveSensoryInput('text', text); // this calls motor.interrupt() internally
+    // Clear the interrupt flag WE just set — it's for detecting NEW interrupts during generation
+    brain.motor._interruptFlag = false;
 
     // Force a fresh vision capture if the user is asking about something visual
     const visualWords = ['see', 'look', 'color', 'wearing', 'holding', 'hat', 'shirt',

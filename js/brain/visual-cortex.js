@@ -46,7 +46,7 @@ export class VisualCortex {
     // IT: high-level description (from AI, updated periodically)
     this.description = '';
     this._lastDescribeTime = 0;
-    this._describeInterval = 5000; // AI description every 5s
+    this._describeInterval = 30000; // AI description every 30s — saves credits
     this._describer = null; // function(frameCanvas) => Promise<string>
     this._describing = false;
 
