@@ -575,10 +575,69 @@ async function bootUnity(apiKey, perms) {
   // already emits 'response', so greeting handler should NOT also display.
   let _greetingDone = false;
 
+  // ── /think command — shows what the brain sends to the AI model ──
+  function handleThink(userText) {
+    const state = brain.getState();
+    const prompt = brocasArea._buildPrompt(state);
+
+    const rawState = `Arousal: ${((state.amygdala?.arousal ?? 0) * 100).toFixed(1)}%
+Valence: ${(state.amygdala?.valence ?? 0).toFixed(3)}
+Ψ Consciousness: ${(state.psi ?? 0).toFixed(4)}
+Coherence: ${((state.oscillations?.coherence ?? 0) * 100).toFixed(1)}%
+Spikes: ${state.spikeCount ?? 0}/1000
+Drug State: ${state.drugState}
+Motor: ${state.motor?.selectedAction ?? 'idle'} (${((state.motor?.confidence ?? 0) * 100).toFixed(1)}%)
+Reward: ${(state.reward ?? 0).toFixed(3)}
+Memory: ${state.memory?.episodeCount ?? 0} episodes, WM ${((state.memory?.workingMemoryLoad ?? 0) * 100).toFixed(0)}%
+Vision: ${state.visionDescription || 'none'}`;
+
+    // Inject into sandbox as a formatted code viewer
+    const id = 'brain-think-view';
+    if (sandbox.has(id)) sandbox.remove(id);
+    sandbox.inject({
+      id,
+      html: `<div class="think-view">
+        <div class="think-header">
+          <span>🧠 /think — What the AI model receives</span>
+          <button onclick="document.getElementById('${id}').remove()" style="background:none;border:1px solid #333;color:#777;border-radius:4px;cursor:pointer;padding:2px 8px;">✕</button>
+        </div>
+        <div class="think-section">
+          <div class="think-label">USER INPUT</div>
+          <div class="think-content">${(userText || '(none)').replace(/</g, '&lt;')}</div>
+        </div>
+        <div class="think-section">
+          <div class="think-label">RAW BRAIN STATE</div>
+          <pre class="think-content think-mono">${rawState}</pre>
+        </div>
+        <div class="think-section">
+          <div class="think-label">FULL SYSTEM PROMPT SENT TO AI MODEL</div>
+          <pre class="think-content think-mono think-prompt">${prompt.replace(/</g, '&lt;')}</pre>
+        </div>
+      </div>`,
+      css: `.think-view{background:#0a0a0a;border:1px solid #ff4d9a33;border-radius:10px;padding:16px;margin:12px 0;font-family:'JetBrains Mono',monospace;max-height:80vh;overflow-y:auto}
+.think-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;font-size:13px;color:#ff4d9a;font-weight:600}
+.think-section{margin-bottom:12px}
+.think-label{font-size:9px;color:#ff4d9a;letter-spacing:1px;margin-bottom:4px;text-transform:uppercase}
+.think-content{font-size:12px;color:#ccc;line-height:1.5;white-space:pre-wrap;word-break:break-word}
+.think-mono{font-family:'JetBrains Mono',monospace;font-size:11px;background:#111;padding:10px;border-radius:6px;border:1px solid #1a1a1a}
+.think-prompt{max-height:400px;overflow-y:auto;color:#888}`,
+      js: '',
+    });
+
+    showSpeechBubble('/think — brain state in sandbox', 3000);
+    console.log('[/think] Brain prompt logged to sandbox');
+  }
+
   // ── Create UI components ──
   chatPanel = new ChatPanel({
     storage,
     onSend: async (text) => {
+      // /think command — show brain prompt, don't send to AI
+      if (text.startsWith('/think')) {
+        const userInput = text.replace(/^\/think\s*/, '').trim();
+        handleThink(userInput);
+        return { response: { text: 'Brain state shown.' }, action: 'think' };
+      }
       setAvatarState('thinking');
       const result = await brain.processAndRespond(text);
       setAvatarState('idle');
@@ -633,10 +692,18 @@ async function bootUnity(apiKey, perms) {
     const myId = ++_currentResponseId;
     showSpeechBubble(`🎤 ${text}`, 2000);
     chatPanel.addMessage('user', text, true);
+
+    // Voice "slash think" / "think" command
+    if (text.toLowerCase().startsWith('slash think') || text.toLowerCase().startsWith('/think')) {
+      const userInput = text.replace(/^(slash think|\/think)\s*/i, '').trim();
+      handleThink(userInput);
+      setAvatarState('idle');
+      return;
+    }
+
     setAvatarState('thinking');
 
     try {
-      // ONE call — brain handles everything: interrupt, vision, response, speech
       const result = await brain.processAndRespond(text);
       if (myId !== _currentResponseId) return; // stale
     } catch (err) {
