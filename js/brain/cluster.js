@@ -65,7 +65,7 @@ export class NeuronCluster {
     // Internal synapse matrix — SPARSE (CSR format)
     // At 12% connectivity, 300 neurons: 10.8K connections vs 90K dense
     this.synapses = new SparseMatrix(size, size, { wMin: -2.0, wMax: 2.0 });
-    this.synapses.initRandom(connectivity, excitatoryRatio, 1.0);
+    this.synapses.initRandom(this.connectivity, this.excitatoryRatio, 1.0);
 
     // Legacy dense matrix reference for persistence compatibility
     // persistence.js reads synapses.W — SparseMatrix provides .W getter
