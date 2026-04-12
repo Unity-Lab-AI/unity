@@ -1082,6 +1082,9 @@ Vision: ${state.visionDescription || 'none'}`;
 
   // ── Show UI ──
   setupModal.classList.add('hidden');
+  setupModal.style.display = 'none';
+  const landingEl = document.getElementById('landing-brain');
+  if (landingEl) landingEl.style.display = 'none';
   unityBubble.classList.remove('hidden');
   brainIndicator.classList.remove('hidden');
   document.getElementById('brain-hud').classList.remove('hidden');
@@ -1126,6 +1129,9 @@ Vision: ${state.visionDescription || 'none'}`;
     await sleep(1000);
     voice.startListening();
     setAvatarState('listening');
+    console.log('[Unity] Mic active — listening for speech');
+  } else {
+    console.log(`[Unity] Mic not started — granted:${perms.mic} muted:${uiState.micMuted}`);
   }
 }
 
