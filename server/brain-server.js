@@ -492,6 +492,20 @@ class ServerBrain {
             this.totalSpikes += result.spikeCount;
           }
           this._updateDerivedState();
+
+          // GPU dispatch — send cortex to GPU client for additional compute
+          if (this._gpuConnected && this._gpuClient?.readyState === 1) {
+            try {
+              this._gpuClient.send(JSON.stringify({
+                type: 'compute_request',
+                clusterName: 'cortex',
+                size: CLUSTER_SIZES.cortex,
+                voltages: Array.from(this.voltages.cortex.slice(0, 1000)), // sample for GPU
+                currents: Array.from(new Float64Array(1000)),
+                lifParams: { tau: 20, Vrest: -65, Vthresh: -50, Vreset: -70, dt: 1, R: 1, tRefrac: 2 },
+              }));
+            } catch {}
+          }
         }
       } else {
         // SINGLE-THREAD: original path
