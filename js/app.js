@@ -253,8 +253,8 @@ function renderLandingTab(tab, s) {
       //   2. local brain   — innerVoice.dictionary + languageCortex (loaded from Ultimate Unity.txt)
       //   3. memory module — working memory buffer (optional, present in local brain)
       // Read whatever is available, show real values, 0 when genuinely zero.
-      const growth = s.growth || l.growth || {};
-      const mem = s.memory || l.memory || {};
+      const growth = s.growth || {};
+      const mem = s.memory || {};
 
       // Local brain detection — even when connected to server, a local
       // InnerVoice instance may exist for language generation.
