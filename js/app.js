@@ -1244,17 +1244,21 @@ function updateBrainIndicator(state) {
   const actionEl = $('hud-action'); if (actionEl) actionEl.textContent = state.motor?.selectedAction || 'idle';
   const modelEl = $('hud-model'); if (modelEl) modelEl.textContent = bestBackend?.model?.slice(0, 25) || '—';
 
-  // Shared emotion indicator — shows when connected to server brain
-  if (state.sharedMood) {
-    const m = state.sharedMood;
-    const usersEl = $('hud-users');
-    if (usersEl) usersEl.textContent = state.connectedUsers ?? 0;
+  // Shared emotion indicator — use server state if available, else compute locally
+  const mood = state.sharedMood || _landingState?.sharedMood;
+  const users = state.connectedUsers ?? _landingState?.connectedUsers ?? 0;
+  const usersEl = $('hud-users');
+  if (usersEl) usersEl.textContent = users;
+  if (mood) {
     const gateEl = $('hud-gate');
-    if (gateEl) gateEl.textContent = m.gate.toFixed(2) + 'x';
-    if (m.isDreaming) {
-      const dreamEl = $('hud-dream');
-      if (dreamEl) dreamEl.textContent = 'dreaming';
-    }
+    if (gateEl) gateEl.textContent = (mood.gate ?? (0.7 + arousal * 0.6)).toFixed(2) + 'x';
+    const dreamEl = $('hud-dream');
+    if (dreamEl) dreamEl.textContent = (mood.isDreaming || state.isDreaming) ? 'dreaming' : 'awake';
+  } else {
+    const gateEl = $('hud-gate');
+    if (gateEl) gateEl.textContent = (0.7 + arousal * 0.6).toFixed(2) + 'x';
+    const dreamEl = $('hud-dream');
+    if (dreamEl) dreamEl.textContent = 'awake';
   }
 
   function setModDot(id, value, threshold = 0.3) {

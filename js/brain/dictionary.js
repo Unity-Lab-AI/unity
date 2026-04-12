@@ -36,6 +36,56 @@ export class Dictionary {
 
     // Load from storage
     this._load();
+
+    // Seed with starter vocabulary if empty — brain needs words to speak
+    if (this._words.size === 0) this._seed();
+  }
+
+  _seed() {
+    // Starter vocabulary with emotional associations — learned from here, grows from interaction
+    const seeds = [
+      // High arousal positive
+      ['yeah', 0.9, 0.6], ['fuck', 0.95, 0.1], ['hell', 0.8, -0.1], ['damn', 0.85, -0.2],
+      ['shit', 0.8, -0.3], ['babe', 0.7, 0.7], ['love', 0.6, 0.8], ['want', 0.7, 0.3],
+      ['need', 0.75, 0.2], ['feel', 0.6, 0.1], ['know', 0.4, 0.1], ['think', 0.5, 0.1],
+      // Medium arousal
+      ['hey', 0.5, 0.3], ['what', 0.5, 0.0], ['like', 0.4, 0.3], ['that', 0.3, 0.0],
+      ['this', 0.3, 0.0], ['with', 0.2, 0.0], ['just', 0.3, 0.0], ['come', 0.5, 0.2],
+      ['here', 0.3, 0.1], ['look', 0.5, 0.1], ['tell', 0.5, 0.0], ['show', 0.5, 0.2],
+      // Low arousal
+      ['chill', 0.2, 0.3], ['vibe', 0.3, 0.4], ['whatever', 0.2, -0.1], ['okay', 0.2, 0.1],
+      // Connectors
+      ['the', 0.1, 0.0], ['and', 0.1, 0.0], ['but', 0.3, -0.1], ['not', 0.4, -0.2],
+      ['you', 0.4, 0.2], ['your', 0.4, 0.2], ['are', 0.2, 0.0], ['can', 0.3, 0.1],
+      ['don\'t', 0.5, -0.2], ['it\'s', 0.3, 0.0], ['i\'m', 0.4, 0.1], ['we', 0.3, 0.2],
+      // Brain/coding
+      ['brain', 0.5, 0.3], ['code', 0.6, 0.4], ['build', 0.6, 0.5], ['make', 0.5, 0.3],
+      ['see', 0.4, 0.1], ['hear', 0.4, 0.1], ['say', 0.4, 0.1], ['talk', 0.5, 0.2],
+      // Emotions
+      ['happy', 0.5, 0.7], ['sad', 0.3, -0.6], ['angry', 0.9, -0.7], ['tired', 0.1, -0.2],
+      ['high', 0.7, 0.5], ['wired', 0.8, 0.3], ['alive', 0.7, 0.6], ['real', 0.4, 0.2],
+    ];
+
+    for (const [word, arousal, valence] of seeds) {
+      this.learnWord(word, null, arousal, valence);
+    }
+
+    // Seed bigrams for basic sentence flow
+    const flows = [
+      ['hey', 'what'], ['what', 'the'], ['the', 'fuck'], ['i\'m', 'here'],
+      ['fuck', 'yeah'], ['hell', 'yeah'], ['don\'t', 'know'], ['i\'m', 'high'],
+      ['come', 'here'], ['look', 'here'], ['you', 'know'], ['feel', 'that'],
+      ['want', 'that'], ['need', 'you'], ['love', 'that'], ['just', 'vibe'],
+      ['yeah', 'babe'], ['what', 'you'], ['you', 'want'], ['tell', 'me'],
+      ['show', 'me'], ['build', 'that'], ['make', 'that'], ['code', 'that'],
+      ['we', 'can'], ['can', 'feel'], ['feel', 'alive'], ['it\'s', 'real'],
+    ];
+    for (const [w1, w2] of flows) {
+      this.learnBigram(w1, w2);
+      this.learnBigram(w1, w2); // double frequency
+    }
+
+    console.log(`[Dictionary] Seeded with ${this._words.size} starter words`);
   }
 
   /**

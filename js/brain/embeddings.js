@@ -17,7 +17,11 @@
  */
 
 const EMBED_DIM = 50; // dimensions per word vector
-const GLOVE_URL = 'https://raw.githubusercontent.com/nickmuchi/glove-embeddings/main/glove.6B.50d.txt';
+// Multiple fallback URLs for GloVe embeddings
+const GLOVE_URLS = [
+  'https://raw.githubusercontent.com/nickmuchi/glove-embeddings/main/glove.6B.50d.txt',
+  'https://huggingface.co/stanfordnlp/glove/resolve/main/glove.6B.50d.txt',
+];
 
 export class SemanticEmbeddings {
   constructor() {
@@ -49,7 +53,14 @@ export class SemanticEmbeddings {
   async _doLoad() {
     try {
       console.log('[Embeddings] Loading pre-trained vectors...');
-      const response = await fetch(GLOVE_URL);
+      let response;
+      for (const url of GLOVE_URLS) {
+        try {
+          response = await fetch(url);
+          if (response.ok) break;
+        } catch { continue; }
+      }
+      if (!response) throw new Error('All GloVe URLs failed');
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
       const text = await response.text();
