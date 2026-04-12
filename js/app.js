@@ -540,214 +540,25 @@ async function bootUnity(apiKey, perms) {
     });
   }
 
-  // ── Register brain action handlers ──
-  // When the brain's motor output decides to act, these execute
+  // ── Connect brain peripherals — brain controls everything ──
+  brain.connectLanguage(brocasArea);
+  brain.connectVoice(voice);
+  brain.connectImageGen(pollinations, sandbox, storage);
 
-  brain.onAction('respond_text', async (motorResult) => {
-    // Don't act if already speaking or was interrupted
-    if (brain.motor.isSpeaking || brain.motor.wasInterrupted()) return;
-    const state = brain.getState();
-    const lastText = storage.getHistory().slice(-1)[0]?.text || '';
-    const response = await brocasArea.generate(state, lastText);
-    if (response && !brain.motor.wasInterrupted()) {
-      voice.stopSpeaking();
-      showSpeechBubble(response, 8000);
-      if (chatPanel) chatPanel.addMessage('assistant', response, true);
-      voice.speak(response).catch(() => {});
-      brain.giveReward(0.1);
+  // ── Listen for brain's response events — app.js just renders ──
+  brain.on('response', ({ text, action }) => {
+    if (text) {
+      showSpeechBubble(text, 8000);
+      if (chatPanel) chatPanel.addMessage('assistant', text, true);
     }
   });
-
-  brain.onAction('generate_image', async () => {
-    const state = brain.getState();
-    const lastText = storage.getHistory().slice(-1)[0]?.text || '';
-    const prompt = await brocasArea.generate(state, `Generate an image prompt for: ${lastText}. Return ONLY the prompt, nothing else.`);
-    if (prompt) {
-      const url = pollinations.generateImage(prompt, { model: storage.get('image_model') || 'flux', width: 768, height: 768 });
-      if (url && sandbox) {
-        sandbox.inject({
-          id: 'img_' + Date.now(),
-          html: `<div style="margin:12px 0;text-align:center;"><img src="${url}" alt="Generated" style="max-width:100%;border-radius:8px;border:1px solid #333;cursor:pointer;" onclick="window.open('${url}','_blank')"></div>`,
-          css: '',
-        });
-        showSpeechBubble('Image generated.', 4000);
-        brain.giveReward(0.1);
-      }
-    }
-  });
-
-  brain.onAction('speak', async () => {
-    // Idle vocalization — only if NOT already speaking and NOT interrupted
-    if (brain.motor.isSpeaking || brain.motor.wasInterrupted()) return;
-    const state = brain.getState();
-    const thought = await brocasArea.generate(state, 'Generate a brief internal thought or observation. 1 sentence.');
-    if (thought && (state.amygdala?.arousal ?? 0) > 0.6 && !brain.motor.wasInterrupted()) {
-      voice.stopSpeaking();
-      voice.speak(thought).catch(() => {});
-      showSpeechBubble(thought, 6000);
-    }
-  });
-
-  // ── Unified input handler — routes text through brain, detects images ──
-  // Uses brain.motor speech lock: ONE speech at a time. Period.
-  async function handleInput(text) {
-    // Motor cortex interrupt — stop any ongoing speech FIRST
-    voice.stopSpeaking();
-    brocasArea.abort();
-    brain.receiveSensoryInput('text', text); // this calls motor.interrupt() internally
-    // Clear the interrupt flag WE just set — it's for detecting NEW interrupts during generation
-    brain.motor._interruptFlag = false;
-
-    // Let the brain's neural dynamics propagate — the brain decides if it needs
-    // to look (cortex prediction error + amygdala salience trigger vision capture).
-    // No keyword matching here. The equations handle it.
-    await sleep(100);
-
-    // If the visual cortex is currently describing (triggered by brain equations),
-    // wait for it to finish so the response has the latest vision data
-    if (brain.visualCortex.isActive() && brain.visualCortex._describing) {
-      const maxWait = 5000;
-      const start = Date.now();
-      while (brain.visualCortex._describing && Date.now() - start < maxWait) {
-        await sleep(200);
-      }
-    }
-
-    // Check if this is an image/selfie request — done by checking the text,
-    // NOT by an external AI classifier. Simple word detection.
-    const lower = text.toLowerCase();
-
-    // Image detection — broad. Catches natural speech patterns, not just keywords.
-    const imageWords = ['selfie', 'picture', 'photo', 'image', 'pic ', 'pics',
-      'show me', 'show yourself', 'send me', 'let me see', 'wanna see',
-      'want to see', 'what do you look', 'how do you look', 'take a pic',
-      'full body', 'head shot', 'headshot', 'portrait', 'draw', 'render',
-      'generate', 'snap a', 'top to bottom', 'outfit', 'what are you wearing'];
-    const isImage = imageWords.some(w => lower.includes(w));
-
-    // Selfie = image request that references Unity/you (not "show me a sunset")
-    const selfWords = ['you', 'your', 'yourself', 'unity', 'self', 'u look', 'urself'];
-    const isSelfie = isImage && selfWords.some(w => lower.includes(w));
-    if (isImage) console.log(`[handleInput] Image request: isSelfie=${isSelfie} text="${lower.slice(0,60)}"`);
-
-    if (isSelfie) {
-      // Build image prompt from brain state directly — no AI call needed
-      // The brain's emotional state determines how she presents herself
-      const state = brain.getState();
-      const arousal = state.amygdala?.arousal ?? 0.5;
-      const valence = state.amygdala?.valence ?? 0;
-      const psi = state.psi ?? 0.5;
-
-      const moods = arousal > 0.7
-        ? ['intense stare', 'biting lip', 'wild grin', 'fierce expression', 'smoldering look']
-        : arousal > 0.4
-        ? ['slight smirk', 'relaxed smile', 'casual glance', 'half-smile', 'thoughtful expression']
-        : ['sleepy eyes', 'dreamy look', 'zoned out', 'mellow expression', 'peaceful face'];
-      const mood = moods[Math.floor(Math.random() * moods.length)];
-
-      const vibes = valence > 0.2
-        ? 'warm neon pink lighting, playful energy'
-        : valence < -0.2
-        ? 'cold blue lighting, dark moody shadows'
-        : 'mixed purple and cyan neon, atmospheric haze';
-
-      const settings = ['messy room with monitors', 'dark club bathroom mirror', 'rooftop at night city lights behind',
-        'bed with tangled sheets and laptop', 'studio with code on screens', 'car backseat neon signs outside'];
-      const setting = settings[Math.floor(Math.random() * settings.length)];
-
-      const cleanPrompt = `Close-up selfie, young woman, ${mood}, heterochromia eyes one violet one electric green, dark hair with neon streaks, smudged eyeliner, ${vibes}, ${setting}, photorealistic, phone camera, raw candid`;
-      console.log('[handleInput] Selfie prompt:', cleanPrompt);
-      const url = pollinations.generateImage(cleanPrompt, { model: storage.get('image_model') || 'flux', width: 768, height: 768 });
-      console.log('[handleInput] Selfie URL:', url);
-      if (url) {
-        // Open image in new tab AND show inline
-        window.open(url, '_blank');
-        if (sandbox) {
-          const imgId = 'img_' + Date.now();
-          sandbox.inject({
-            id: imgId,
-            html: `<div style="margin:12px 0;text-align:center;">
-              <div id="${imgId}-loading" style="color:#777;font-size:12px;font-family:monospace;padding:20px;">Generating selfie...</div>
-              <img src="${url}" alt="" style="max-width:100%;border-radius:8px;border:1px solid #333;cursor:pointer;display:none;"
-                onload="this.style.display='block';if(document.getElementById('${imgId}-loading'))document.getElementById('${imgId}-loading').style.display='none';"
-                onerror="if(document.getElementById('${imgId}-loading'))document.getElementById('${imgId}-loading').textContent='Loading in new tab...';"
-                onclick="window.open('${url}','_blank')">
-            </div>`,
-            css: '',
-          });
-        }
-      }
-      // Quip — tell Broca's NOT to generate URLs or image prompts
-      const quipState = brain.getState();
-      const quip = await brocasArea.generate(quipState,
-        '[SYSTEM: You just sent a selfie. The image is already rendering. Say a short flirty reaction — 1 sentence. Do NOT output any URL, link, image prompt, or markdown. Just words.]'
-      );
-      brain.giveReward(0.1);
-      return { text: quip || 'There you go.', action: 'generate_image' };
-
-    } else if (isImage) {
-      // Non-selfie image — use Broca's to extract a visual prompt
-      const state = brain.getState();
-      const imgPrompt = await brocasArea.generate(state,
-        `[SYSTEM: The user said: "${text}". Create a concise image generation prompt. Return ONLY the descriptive prompt text — no URLs, no links, no markdown, no explanation. Just the visual description.]`
-      );
-      if (imgPrompt) {
-        // Strip any URLs the model might have snuck in
-        const cleanPrompt = imgPrompt.replace(/https?:\/\/[^\s)]+/g, '').replace(/```/g, '').trim();
-        const url = pollinations.generateImage(cleanPrompt || text, { model: storage.get('image_model') || 'flux', width: 768, height: 768 });
-        if (url && sandbox) {
-          sandbox.inject({
-            id: 'img_' + Date.now(),
-            html: `<div style="margin:12px 0;text-align:center;"><img src="${url}" alt="Generated" style="max-width:100%;border-radius:8px;border:1px solid #333;cursor:pointer;" onclick="window.open('${url}','_blank')"></div>`,
-            css: '',
-          });
-        }
-      }
-      brain.giveReward(0.1);
-      return { text: 'Done.', action: 'generate_image' };
-
-    } else {
-      // Normal text response
-      console.log('[handleInput] Generating text response for:', text.slice(0, 50));
-      const state = brain.getState();
-      let response = await brocasArea.generate(state, text);
-
-      // If response is null, retry once
-      if (!response) {
-        console.warn('[handleInput] First attempt returned NULL, retrying...');
-        await sleep(1000);
-        response = await brocasArea.generate(state, text);
-      }
-
-      console.log('[handleInput] Response:', response ? response.slice(0, 50) + '...' : 'NULL');
-      if (!response) {
-        return { text: "Shit — my brain glitched. Say that again?", action: 'respond_text' };
-      }
-
-      // Strip any fake image URLs the model might output
-      response = response.replace(/https?:\/\/[^\s)]+\.(jpg|png|gif|webp)/gi, '[image]')
-                         .replace(/https?:\/\/pollinations\.ai[^\s)"]*/gi, '[image]')
-                         .replace(/```[^`]*```/g, '').trim();
-
-      brain.giveReward(0.1);
-      return { text: response, action: 'respond_text' };
-    }
-  }
 
   // ── Create UI components ──
   chatPanel = new ChatPanel({
     storage,
     onSend: async (text) => {
-      voice.stopSpeaking();
-      brocasArea.abort();
       setAvatarState('thinking');
-      const result = await handleInput(text);
-      // Only speak if brain wasn't interrupted during generation
-      if (result.text && !brain.motor.wasInterrupted()) {
-        showSpeechBubble(result.text, 8000);
-        voice.stopSpeaking(); // kill anything that snuck in
-        voice.speak(result.text).catch(() => {});
-      }
+      const result = await brain.processAndRespond(text);
       setAvatarState('idle');
       return { response: result, action: result.action };
     },
@@ -790,41 +601,24 @@ async function bootUnity(apiKey, perms) {
   let _currentResponseId = 0;
 
   voice.onResult(async ({ text, isFinal }) => {
-    // BRAIN'S AUDITORY CORTEX handles echo detection.
-    // Efference copy: the brain predicts what it will hear from its own voice
-    // and suppresses that signal. If heard speech doesn't match motor output,
-    // it's external — the user is talking. Interrupt.
+    // Brain's auditory cortex handles echo detection
     const isRealInput = brain.auditoryCortex.checkForInterruption(text);
-    if (!isRealInput) return; // echo of our own voice — suppress
+    if (!isRealInput) return; // echo — suppress
 
-    // User is talking — motor cortex inhibition, shut up and listen
-    voice.stopSpeaking();
-    brain.auditoryCortex.clearMotorOutput();
-    brocasArea.abort();
     if (brainViz) brainViz.setHeardText(text);
-
     if (!isFinal) return;
-    const myId = ++_currentResponseId;
 
+    const myId = ++_currentResponseId;
     showSpeechBubble(`🎤 ${text}`, 2000);
     chatPanel.addMessage('user', text, true);
     setAvatarState('thinking');
 
     try {
-      const result = await handleInput(text);
-      if (myId !== _currentResponseId || brain.motor.wasInterrupted()) return;
-      if (result.text) {
-        voice.stopSpeaking();
-        showSpeechBubble(result.text, 8000);
-        chatPanel.addMessage('assistant', result.text, true);
-        // Tell auditory cortex what motor cortex is outputting (efference copy)
-        brain.auditoryCortex.setMotorOutput(result.text);
-        voice.speak(result.text).then(() => {
-          brain.auditoryCortex.clearMotorOutput();
-        }).catch(() => { brain.auditoryCortex.clearMotorOutput(); });
-      }
+      // ONE call — brain handles everything: interrupt, vision, response, speech
+      const result = await brain.processAndRespond(text);
+      if (myId !== _currentResponseId) return; // stale
     } catch (err) {
-      if (err.name !== 'AbortError') console.error('[Unity] Response failed:', err.message);
+      if (err.name !== 'AbortError') console.error('[Unity] Failed:', err.message);
     }
 
     if (myId === _currentResponseId) setAvatarState('idle');
@@ -930,17 +724,14 @@ async function bootUnity(apiKey, perms) {
 }
 
 async function generateGreeting(perms) {
-  const state = brain.getState();
   const isFirst = storage.isFirstVisit();
-
-  // Don't script the greeting — let her brain state drive it.
-  // Just give context, not words to parrot.
   const prompt = isFirst
-    ? "Someone new just showed up. You've never met them. Say something — whatever comes naturally. Don't describe your brain or mention equations unless you feel like it. 1-2 sentences max."
-    : "They're back. You remember them. Say something real. 1 sentence.";
+    ? "Someone new just showed up. Say something natural. 1-2 sentences."
+    : "They're back. Say something real. 1 sentence.";
 
   try {
-    return await brocasArea.generate(state, prompt) || "Hey.";
+    const result = await brain.processAndRespond(prompt);
+    return result.text || "Hey.";
   } catch {
     return "Hey.";
   }

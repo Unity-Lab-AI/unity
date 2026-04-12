@@ -460,19 +460,9 @@ export class UnityBrain extends EventEmitter {
   receiveSensoryInput(type, data) {
     switch (type) {
       case 'text':
-        // NEW INPUT — motor cortex inhibition: stop current speech
-        // This is how a human brain works: incoming speech activates
-        // auditory cortex which inhibits motor cortex speech output.
-        // You shut up and listen.
-        this.motor.interrupt();
+        // Just queue the text for sensory processing.
+        // Motor interrupt + amygdala surprise handled by processAndRespond().
         this.sensory.receiveText(data);
-
-        // Amygdala surprise — new input shifts attention
-        if (this.clusters.amygdala) {
-          const surprise = new Float64Array(this.clusters.amygdala.size);
-          for (let i = 0; i < 30; i++) surprise[i] = 5.0;
-          this.clusters.amygdala.injectCurrent(surprise);
-        }
         break;
       case 'audio':
         // Audio is continuous — handled by auditoryCortex.process() each step
@@ -484,6 +474,165 @@ export class UnityBrain extends EventEmitter {
         console.warn(`[Brain] Unknown sensory type: ${type}`);
     }
   }
+
+  /** Connect Broca's area (language generation peripheral). */
+  connectLanguage(brocasArea) {
+    this._brocasArea = brocasArea;
+  }
+
+  /** Connect voice output peripheral. */
+  connectVoice(voiceIO) {
+    this._voice = voiceIO;
+  }
+
+  /** Connect image generation peripheral. */
+  connectImageGen(pollinationsAI, sandboxRef, storageRef) {
+    this._imageGen = pollinationsAI;
+    this._sandbox = sandboxRef;
+    this._storage = storageRef;
+  }
+
+  /**
+   * Process text input AND generate a response — the brain does EVERYTHING.
+   * Called by app.js. Returns the response for display purposes only.
+   * Speech is handled internally by the brain.
+   */
+  async processAndRespond(text) {
+    // 1. Motor cortex interrupt — stop any ongoing speech
+    this.motor.interrupt();
+    if (this._voice) this._voice.stopSpeaking();
+    if (this._brocasArea) this._brocasArea.abort();
+
+    // 2. Feed sensory input
+    this.sensory.receiveText(text);
+
+    // Amygdala surprise
+    if (this.clusters.amygdala) {
+      const surprise = new Float64Array(this.clusters.amygdala.size);
+      for (let i = 0; i < 30; i++) surprise[i] = 5.0;
+      this.clusters.amygdala.injectCurrent(surprise);
+    }
+
+    // Clear our own interrupt flag
+    this.motor._interruptFlag = false;
+
+    // 3. Let neural dynamics propagate
+    await this._sleep(100);
+
+    // 4. Wait for visual cortex if it's describing
+    if (this.visualCortex.isActive() && this.visualCortex._describing) {
+      const start = Date.now();
+      while (this.visualCortex._describing && Date.now() - start < 5000) {
+        await this._sleep(200);
+      }
+    }
+
+    // 5. Check for image/selfie request
+    const lower = text.toLowerCase();
+    const imageWords = ['selfie', 'picture', 'photo', 'image', 'pic ', 'pics',
+      'show me', 'show yourself', 'send me', 'let me see', 'wanna see',
+      'want to see', 'what do you look', 'how do you look', 'take a pic',
+      'full body', 'head shot', 'headshot', 'portrait', 'draw', 'render',
+      'generate', 'snap a', 'top to bottom', 'outfit', 'what are you wearing'];
+    const isImage = imageWords.some(w => lower.includes(w));
+    const selfWords = ['you', 'your', 'yourself', 'unity', 'self', 'u look', 'urself'];
+    const isSelfie = isImage && selfWords.some(w => lower.includes(w));
+
+    if (isSelfie && this._imageGen) {
+      return this._handleSelfie(text);
+    } else if (isImage && this._imageGen) {
+      return this._handleImage(text);
+    }
+
+    // 6. Normal response — Broca's area generates language from brain state
+    if (!this._brocasArea) return { text: null, action: 'idle' };
+    const state = this.getState();
+    let response = await this._brocasArea.generate(state, text);
+
+    if (!response) {
+      await this._sleep(1000);
+      response = await this._brocasArea.generate(state, text);
+    }
+
+    if (!response) return { text: "Shit — brain glitched. Say that again?", action: 'respond_text' };
+
+    // Strip fake URLs
+    response = response.replace(/https?:\/\/[^\s)]+\.(jpg|png|gif|webp)/gi, '')
+                       .replace(/https?:\/\/pollinations\.ai[^\s)"]*/gi, '')
+                       .replace(/```[^`]*```/g, '').trim();
+
+    if (this.motor.wasInterrupted()) return { text: null, action: 'interrupted' };
+
+    // 7. SPEAK — the brain controls speech output
+    if (this._voice) {
+      this._voice.stopSpeaking();
+      this.auditoryCortex.setMotorOutput(response);
+      this._voice.speak(response).then(() => {
+        this.auditoryCortex.clearMotorOutput();
+      }).catch(() => { this.auditoryCortex.clearMotorOutput(); });
+    }
+
+    this.reward += 0.1;
+    this.emit('response', { text: response, action: 'respond_text' });
+    return { text: response, action: 'respond_text' };
+  }
+
+  async _handleSelfie(text) {
+    const state = this.getState();
+    const arousal = state.amygdala?.arousal ?? 0.5;
+    const valence = state.amygdala?.valence ?? 0;
+
+    const moods = arousal > 0.7
+      ? ['intense stare', 'biting lip', 'wild grin', 'fierce expression']
+      : arousal > 0.4
+      ? ['slight smirk', 'relaxed smile', 'casual glance', 'half-smile']
+      : ['sleepy eyes', 'dreamy look', 'zoned out', 'mellow expression'];
+    const mood = moods[Math.floor(Math.random() * moods.length)];
+    const vibes = valence > 0.2 ? 'warm neon pink lighting' : valence < -0.2 ? 'cold blue lighting, dark shadows' : 'mixed purple and cyan neon';
+    const settings = ['messy room with monitors', 'dark club bathroom mirror', 'rooftop at night', 'bed with laptop', 'studio with code on screens'];
+    const setting = settings[Math.floor(Math.random() * settings.length)];
+
+    const prompt = `Close-up selfie, young woman, ${mood}, heterochromia eyes one violet one electric green, dark hair with neon streaks, smudged eyeliner, ${vibes}, ${setting}, photorealistic, phone camera, raw candid`;
+    const url = this._imageGen.generateImage(prompt, { model: this._storage?.get('image_model') || 'flux', width: 768, height: 768 });
+
+    if (url && this._sandbox) {
+      window.open(url, '_blank');
+      const imgId = 'img_' + Date.now();
+      this._sandbox.inject({ id: imgId, html: `<div style="margin:12px 0;text-align:center;"><div id="${imgId}-loading" style="color:#777;font-size:12px;font-family:monospace;padding:20px;">Generating selfie...</div><img src="${url}" alt="" style="max-width:100%;border-radius:8px;border:1px solid #333;cursor:pointer;display:none;" onload="this.style.display='block';if(document.getElementById('${imgId}-loading'))document.getElementById('${imgId}-loading').style.display='none';" onerror="if(document.getElementById('${imgId}-loading'))document.getElementById('${imgId}-loading').textContent='Loading in new tab...';" onclick="window.open('${url}','_blank')"></div>`, css: '' });
+    }
+
+    // Quip from Broca's area
+    const quip = this._brocasArea ? await this._brocasArea.generate(this.getState(),
+      '[SYSTEM: You just sent a selfie. Say a short flirty reaction. 1 sentence. No URLs.]') : 'There you go.';
+
+    if (quip && this._voice) {
+      this._voice.stopSpeaking();
+      this._voice.speak(quip).catch(() => {});
+    }
+
+    this.reward += 0.1;
+    this.emit('response', { text: quip || 'There you go.', action: 'generate_image' });
+    return { text: quip || 'There you go.', action: 'generate_image' };
+  }
+
+  async _handleImage(text) {
+    const state = this.getState();
+    const prompt = this._brocasArea ? await this._brocasArea.generate(state,
+      `[SYSTEM: Create a concise image prompt for: "${text}". ONLY the visual description. No URLs.]`) : text;
+    const clean = (prompt || text).replace(/https?:\/\/[^\s)]+/g, '').replace(/```/g, '').trim();
+    const url = this._imageGen.generateImage(clean, { model: this._storage?.get('image_model') || 'flux', width: 768, height: 768 });
+
+    if (url && this._sandbox) {
+      window.open(url, '_blank');
+      this._sandbox.inject({ id: 'img_' + Date.now(), html: `<div style="margin:12px 0;text-align:center;"><img src="${url}" alt="" style="max-width:100%;border-radius:8px;border:1px solid #333;cursor:pointer;" onclick="window.open('${url}','_blank')"></div>`, css: '' });
+    }
+
+    this.reward += 0.1;
+    this.emit('response', { text: 'Done.', action: 'generate_image' });
+    return { text: 'Done.', action: 'generate_image' };
+  }
+
+  _sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
   /** Connect microphone for continuous auditory processing. */
   connectMicrophone(analyser) {
