@@ -1003,6 +1003,17 @@ wss.on('connection', (ws, req) => {
     emotionHistory: brain._emotionHistory.slice(-300),
   }));
 
+  // Send trained dictionary to client so its InnerVoice starts with knowledge
+  if (brain.innerVoice?.dictionary) {
+    try {
+      const dictData = brain.innerVoice.dictionary.export ? brain.innerVoice.dictionary.export() : null;
+      if (dictData) {
+        ws.send(JSON.stringify({ type: 'dictionary', data: dictData }));
+        console.log(`[Server] Sent dictionary to ${id} (${brain.innerVoice.dictionary.size} words)`);
+      }
+    } catch {}
+  }
+
   ws.on('message', (data) => {
     try {
       const msg = JSON.parse(data.toString());

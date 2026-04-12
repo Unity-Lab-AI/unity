@@ -335,23 +335,27 @@ export class Dictionary {
 
   save() {
     try {
-      const data = {
-        words: Array.from(this._words.entries()).map(([word, entry]) => ({
-          word,
-          pattern: Array.from(entry.pattern),
-          arousal: entry.arousal,
-          valence: entry.valence,
-          frequency: entry.frequency,
-        })),
-        bigrams: Array.from(this._bigrams.entries()).map(([w1, followers]) => ({
-          word: w1,
-          followers: Array.from(followers.entries()),
-        })),
-      };
+      const data = this.export();
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     } catch (err) {
       console.warn('[Dictionary] Save failed:', err.message);
     }
+  }
+
+  export() {
+    return {
+      words: Array.from(this._words.entries()).map(([word, entry]) => ({
+        word,
+        pattern: Array.from(entry.pattern),
+        arousal: entry.arousal,
+        valence: entry.valence,
+        frequency: entry.frequency,
+      })),
+      bigrams: Array.from(this._bigrams.entries()).map(([w1, followers]) => ({
+        word: w1,
+        followers: Array.from(followers.entries()),
+      })),
+    };
   }
 
   _load() {
