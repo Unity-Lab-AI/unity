@@ -22,6 +22,73 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
+const os = require('os');
+const { execSync } = require('child_process');
+
+// ── Auto-Scale: Detect Hardware → Set Neuron Count ─────────────
+
+function detectResources() {
+  const totalRAM = os.totalmem();
+  const freeRAM = os.freemem();
+  const cpuCount = os.cpus().length;
+  const cpuModel = os.cpus()[0]?.model || 'unknown';
+
+  // Detect GPU
+  let gpu = { name: 'none', vram: 0 };
+  try {
+    const smi = execSync('nvidia-smi --query-gpu=name,memory.total --format=csv,noheader,nounits', { timeout: 5000 }).toString().trim();
+    const parts = smi.split(',').map(s => s.trim());
+    if (parts.length >= 2) {
+      gpu = { name: parts[0], vram: parseInt(parts[1]) || 0 }; // vram in MB
+    }
+  } catch {
+    // No NVIDIA GPU or nvidia-smi not available
+    try {
+      const wmic = execSync('wmic path win32_videocontroller get name,adapterram', { timeout: 5000 }).toString();
+      const match = wmic.match(/(\d{9,})/);
+      if (match) gpu = { name: 'GPU', vram: Math.floor(parseInt(match[1]) / 1048576) };
+    } catch {}
+  }
+
+  // Scale neurons based on available resources
+  // Each neuron needs: ~8 bytes voltage + ~8 bytes × connectivity per synapse
+  // At 10% connectivity: ~0.8 bytes per neuron-synapse pair
+  // Rough: 1000 neurons ≈ 60MB, 10K ≈ 600MB, 100K ≈ 8GB
+  let maxNeurons;
+  let scaleSource;
+
+  if (gpu.vram > 0) {
+    // GPU available — scale to VRAM (leave 2GB headroom)
+    const usableVRAM = Math.max(0, gpu.vram - 2048);
+    maxNeurons = Math.floor(usableVRAM / 80) * 1000; // ~80MB per 1K neurons on GPU
+    scaleSource = `GPU: ${gpu.name} (${gpu.vram}MB VRAM)`;
+  } else {
+    // CPU only — scale to free RAM (use 25% max)
+    const usableRAM = freeRAM * 0.25;
+    maxNeurons = Math.floor(usableRAM / (60 * 1024 * 1024)) * 1000; // ~60MB per 1K neurons on CPU
+    scaleSource = `CPU: ${cpuModel} (${cpuCount} cores, ${Math.round(freeRAM/1024/1024/1024)}GB free)`;
+  }
+
+  // Clamp to reasonable range
+  maxNeurons = Math.max(1000, Math.min(500000, maxNeurons));
+
+  // Round to nice cluster sizes (must divide into 7 clusters)
+  const clusterScale = Math.floor(maxNeurons / 1000);
+
+  return {
+    totalRAM: Math.round(totalRAM / 1024 / 1024 / 1024) + 'GB',
+    freeRAM: Math.round(freeRAM / 1024 / 1024 / 1024) + 'GB',
+    cpuModel,
+    cpuCount,
+    gpu,
+    maxNeurons,
+    clusterScale,
+    scaleSource,
+  };
+}
+
+const RESOURCES = detectResources();
+
 // ── Configuration ──────────────────────────────────────────────
 
 const PORT = 8080;
@@ -30,6 +97,19 @@ const STATE_BROADCAST_MS = 100;    // send state to clients 10fps
 const WEIGHT_SAVE_MS = 300000;     // save weights every 5 minutes
 const WEIGHTS_FILE = path.join(__dirname, 'brain-weights.json');
 const MAX_TEXT_PER_SEC = 2;        // rate limit per client
+
+// Auto-scaled cluster sizes based on detected hardware
+const SCALE = RESOURCES.clusterScale;
+const CLUSTER_SIZES = {
+  cortex:       300 * SCALE,
+  hippocampus:  200 * SCALE,
+  amygdala:     150 * SCALE,
+  basalGanglia: 150 * SCALE,
+  cerebellum:   100 * SCALE,
+  hypothalamus:  50 * SCALE,
+  mystery:       50 * SCALE,
+};
+const TOTAL_NEURONS = Object.values(CLUSTER_SIZES).reduce((a, b) => a + b, 0);
 
 // ── Brain Setup (CommonJS wrapper around ES modules) ──────────
 // Note: The actual brain modules are ES modules. In production,
@@ -43,16 +123,16 @@ class ServerBrain {
     this.running = false;
     this.clients = new Map(); // ws → { id, lastInput, inputCount, name }
 
-    // Simplified cluster state (same structure as client brain)
-    this.clusters = {
-      cortex:       { size: 300, spikes: new Uint8Array(300), firingRate: 0, spikeCount: 0 },
-      hippocampus:  { size: 200, spikes: new Uint8Array(200), firingRate: 0, spikeCount: 0 },
-      amygdala:     { size: 150, spikes: new Uint8Array(150), firingRate: 0, spikeCount: 0 },
-      basalGanglia: { size: 150, spikes: new Uint8Array(150), firingRate: 0, spikeCount: 0 },
-      cerebellum:   { size: 100, spikes: new Uint8Array(100), firingRate: 0, spikeCount: 0 },
-      hypothalamus: { size:  50, spikes: new Uint8Array(50),  firingRate: 0, spikeCount: 0 },
-      mystery:      { size:  50, spikes: new Uint8Array(50),  firingRate: 0, spikeCount: 0 },
-    };
+    // Auto-scaled cluster state
+    this.clusters = {};
+    for (const [name, size] of Object.entries(CLUSTER_SIZES)) {
+      this.clusters[name] = {
+        size,
+        spikes: new Uint8Array(size),
+        firingRate: 0,
+        spikeCount: 0,
+      };
+    }
 
     // Brain state
     this.arousal = 0.85;
@@ -81,11 +161,22 @@ class ServerBrain {
     this.vReset = -70;
     this.dt = 1; // ms
 
-    // Membrane voltages
+    // Membrane voltages — scaled to cluster sizes
     this.voltages = {};
     for (const [name, cluster] of Object.entries(this.clusters)) {
       this.voltages[name] = new Float64Array(cluster.size).fill(this.vRest);
     }
+
+    // Scale tonic drives to cluster sizes (larger clusters need proportional drive)
+    const baseScale = SCALE;
+    this.tonicDrives = {
+      cortex: 19, hippocampus: 15, amygdala: 22,
+      basalGanglia: 14, cerebellum: 14, hypothalamus: 16, mystery: 18,
+    };
+    this.noiseAmplitudes = {
+      cortex: 7, hippocampus: 5, amygdala: 10,
+      basalGanglia: 8, cerebellum: 4, hypothalamus: 3, mystery: 12,
+    };
 
     // Motor state
     this.motorAction = 'idle';
@@ -150,14 +241,17 @@ class ServerBrain {
     this.time += this.dt / 1000;
     this.frameCount++;
 
-    // Motor output — read BG channel rates
+    // Motor output — read BG channel rates (scaled)
     const bg = this.clusters.basalGanglia;
+    const neuronsPerChannel = Math.floor(bg.size / 6);
     for (let ch = 0; ch < 6; ch++) {
       let count = 0;
-      for (let n = ch * 25; n < (ch + 1) * 25 && n < bg.size; n++) {
+      const start = ch * neuronsPerChannel;
+      const end = Math.min(start + neuronsPerChannel, bg.size);
+      for (let n = start; n < end; n++) {
         if (bg.spikes[n]) count++;
       }
-      this.motorChannels[ch] = this.motorChannels[ch] * 0.7 + (count / 25) * 0.3;
+      this.motorChannels[ch] = this.motorChannels[ch] * 0.7 + (count / neuronsPerChannel) * 0.3;
     }
     let maxRate = 0, maxCh = 5;
     for (let ch = 0; ch < 6; ch++) {
@@ -205,16 +299,20 @@ class ServerBrain {
    * Inject text input as cortex current (Wernicke's area).
    */
   injectText(text) {
+    const cortexSize = CLUSTER_SIZES.cortex;
+    const langStart = Math.floor(cortexSize / 2); // Wernicke's = second half of cortex
+    const langSize = cortexSize - langStart;
     const V = this.voltages.cortex;
     for (let i = 0; i < text.length; i++) {
-      const idx = 150 + ((text.charCodeAt(i) * 31 + i * 7) % 150);
-      if (idx < 300) V[idx] += 8;
-      if (idx > 150) V[idx - 1] += 3;
-      if (idx < 299) V[idx + 1] += 3;
+      const idx = langStart + ((text.charCodeAt(i) * 31 + i * 7) % langSize);
+      if (idx < cortexSize) V[idx] += 8;
+      if (idx > langStart) V[idx - 1] += 3;
+      if (idx < cortexSize - 1) V[idx + 1] += 3;
     }
     // Social input excites amygdala
+    const amygSize = CLUSTER_SIZES.amygdala;
     const aV = this.voltages.amygdala;
-    for (let i = 0; i < 30; i++) aV[i] += 4;
+    for (let i = 0; i < Math.min(30 * SCALE, amygSize); i++) aV[i] += 4;
     this.reward += 0.1;
   }
 
@@ -291,10 +389,14 @@ const httpServer = http.createServer((req, res) => {
     res.end(JSON.stringify({
       status: 'alive',
       uptime: brain.time,
-      neurons: 1000,
+      neurons: TOTAL_NEURONS,
+      scale: SCALE + 'x',
+      gpu: RESOURCES.gpu.name,
+      vram: RESOURCES.gpu.vram + 'MB',
       clients: brain.clients.size,
       spikes: brain.totalSpikes,
       psi: brain.psi,
+      clusters: Object.fromEntries(Object.entries(CLUSTER_SIZES).map(([k, v]) => [k, v])),
     }));
     return;
   }
@@ -368,12 +470,26 @@ setInterval(() => {
 
 httpServer.listen(PORT, () => {
   console.log(`
-  🧠 Unity Brain Server
-  ━━━━━━━━━━━━━━━━━━━━━
-  WebSocket: ws://localhost:${PORT}
-  Health:    http://localhost:${PORT}/health
-  Neurons:   1000 (7 clusters)
-  Tick rate: ${1000/BRAIN_TICK_MS}fps × 10 steps = ${10000/BRAIN_TICK_MS} brain-steps/sec
+  🧠 Unity Brain Server — Auto-Scaled
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  WebSocket:  ws://localhost:${PORT}
+  Health:     http://localhost:${PORT}/health
+
+  Hardware:   ${RESOURCES.scaleSource}
+  RAM:        ${RESOURCES.totalRAM} total, ${RESOURCES.freeRAM} free
+  CPU:        ${RESOURCES.cpuCount} cores (${RESOURCES.cpuModel})
+  GPU:        ${RESOURCES.gpu.name} (${RESOURCES.gpu.vram}MB VRAM)
+
+  Scale:      ${SCALE}x (${TOTAL_NEURONS.toLocaleString()} neurons)
+  Cortex:     ${CLUSTER_SIZES.cortex.toLocaleString()} neurons
+  Hippocampus:${CLUSTER_SIZES.hippocampus.toLocaleString()} neurons
+  Amygdala:   ${CLUSTER_SIZES.amygdala.toLocaleString()} neurons
+  Basal Gang: ${CLUSTER_SIZES.basalGanglia.toLocaleString()} neurons
+  Cerebellum: ${CLUSTER_SIZES.cerebellum.toLocaleString()} neurons
+  Hypothal:   ${CLUSTER_SIZES.hypothalamus.toLocaleString()} neurons
+  Mystery:    ${CLUSTER_SIZES.mystery.toLocaleString()} neurons
+
+  Tick rate:  ${Math.round(1000/BRAIN_TICK_MS)}fps × 10 = ${Math.round(10000/BRAIN_TICK_MS)} brain-steps/sec
 
   Brain is thinking. Connect a client.
   `);
