@@ -272,21 +272,19 @@ function genBasalGanglia(n) {
 }
 
 function genCerebellum(n) {
-  // LARGEST cluster — back-bottom, bilateral folia
-  // Based on original working code + bilateral split
+  // LARGEST cluster — wide bilateral spread below and behind cortex
+  // Needs big volume since it has 40% of all neurons
   const pts = [];
   const half = Math.floor(n / 2);
   for (let i = 0; i < n; i++) {
     const side = i < half ? -1 : 1;
-    const layer = Math.floor(Math.random() * 3);
-    const r = 0.45 + layer * 0.07;
-    const theta = (Math.random() - 0.5) * Math.PI * 0.7;
-    const phi = Math.PI + (Math.random() - 0.5) * Math.PI * 0.55;
-    const baseX = r * Math.sin(theta) * Math.cos(phi) * 0.75;
+    const r = 0.3 + Math.random() * 0.6;
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
     pts.push([
-      side * (Math.abs(baseX) * 0.5 + 0.15),
-      -0.85 + layer * 0.05 + gauss() * 0.04,
-      -0.75 + r * Math.sin(theta) * Math.sin(phi) * 0.25,
+      side * (0.2 + Math.abs(r * Math.sin(phi) * Math.cos(theta)) * 0.8),
+      -0.5 - Math.abs(r * Math.cos(phi)) * 0.6 + gauss() * 0.05,
+      -0.2 - Math.abs(r * Math.sin(phi) * Math.sin(theta)) * 0.5,
     ]);
   }
   return pts;
