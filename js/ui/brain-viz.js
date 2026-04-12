@@ -48,41 +48,68 @@ export class BrainVisualizer {
     this._el = document.createElement('div');
     this._el.id = 'brain-viz';
     this._el.className = 'brain-viz hidden';
+    this._activeTab = 'neurons';
     this._el.innerHTML = `
       <div class="bv-header">
-        <span class="bv-title">BRAIN VISUALIZER — LIVE</span>
-        <span class="bv-stats" id="bv-stats">spikes: 0 | rate: 0/s</span>
+        <span class="bv-title">BRAIN VISUALIZER</span>
+        <div class="bv-tabs" id="bv-tabs">
+          <button class="bv-tab active" data-tab="neurons">Neurons</button>
+          <button class="bv-tab" data-tab="synapses">Synapses</button>
+          <button class="bv-tab" data-tab="oscillations">Oscillations</button>
+          <button class="bv-tab" data-tab="modules">Modules</button>
+          <button class="bv-tab" data-tab="senses">Senses</button>
+          <button class="bv-tab" data-tab="consciousness">Ψ Consciousness</button>
+          <button class="bv-tab" data-tab="memory">Memory</button>
+          <button class="bv-tab" data-tab="motor">Motor</button>
+        </div>
+        <span class="bv-stats" id="bv-stats">spikes: 0</span>
         <button class="bv-close-btn">&times;</button>
       </div>
-      <div class="bv-grid-wrap">
-        <div class="bv-section">
-          <div class="bv-section-title">NEURAL CLUSTERS — 1000 LIF neurons across 7 brain regions</div>
-          <div class="bv-equation">τ·dV/dt = -(V - V<sub>rest</sub>) + R·I &nbsp;|&nbsp; <span id="bv-spike-count">0</span>/1000 active &nbsp;|&nbsp; Each region: own synapses, regulation, hierarchy</div>
-          <canvas id="bv-neuron-canvas" width="800" height="500"></canvas>
-        </div>
-        <div class="bv-section">
-          <div class="bv-section-title">SYNAPSE ACTIVITY — Hebbian + STDP + Reward</div>
-          <div class="bv-equation">ΔW = η·pre·post &nbsp;|&nbsp; STDP: Δt = t<sub>post</sub> - t<sub>pre</sub> &nbsp;|&nbsp; Reward: ΔW = η·δ·s<sub>i</sub>·s<sub>j</sub></div>
-          <canvas id="bv-synapse-canvas" width="300" height="300"></canvas>
+      <!-- ═══ TAB PANELS ═══ -->
+      <div class="bv-panel" data-panel="neurons">
+        <div class="bv-grid-wrap">
+          <div class="bv-section bv-wide">
+            <div class="bv-section-title">NEURAL CLUSTERS — 1000 LIF neurons across 7 brain regions</div>
+            <div class="bv-equation">τ·dV/dt = -(V - V<sub>rest</sub>) + R·I &nbsp;|&nbsp; <span id="bv-spike-count">0</span>/1000 active</div>
+            <canvas id="bv-neuron-canvas" width="800" height="500"></canvas>
+          </div>
         </div>
       </div>
-      <div class="bv-grid-wrap">
-        <div class="bv-section bv-wide">
-          <div class="bv-section-title">BAND POWER — Kuramoto oscillators (θ→γ) &nbsp;|&nbsp; coherence: <span id="bv-coherence">0.000</span></div>
-          <div class="bv-equation">dθ<sub>i</sub>/dt = ω<sub>i</sub> + Σ K<sub>ij</sub>·sin(θ<sub>j</sub> - θ<sub>i</sub>) &nbsp;|&nbsp; Plotting smoothed band power envelopes — changes over time, not raw oscillations</div>
-          <canvas id="bv-osc-canvas" width="800" height="260"></canvas>
+
+      <div class="bv-panel bv-hidden" data-panel="synapses">
+        <div class="bv-grid-wrap">
+          <div class="bv-section bv-wide">
+            <div class="bv-section-title">SYNAPSE ACTIVITY — Hebbian + STDP + Reward</div>
+            <div class="bv-equation">ΔW = η·pre·post &nbsp;|&nbsp; STDP: Δt = t<sub>post</sub> - t<sub>pre</sub> &nbsp;|&nbsp; Reward: ΔW = η·δ·s<sub>i</sub>·s<sub>j</sub></div>
+            <canvas id="bv-synapse-canvas" width="600" height="600"></canvas>
+          </div>
         </div>
       </div>
-      <div class="bv-grid-wrap">
-        <div class="bv-section bv-wide">
-          <div class="bv-section-title">BRAIN MODULES — real-time state</div>
-          <div class="bv-modules" id="bv-modules"></div>
+
+      <div class="bv-panel bv-hidden" data-panel="oscillations">
+        <div class="bv-grid-wrap">
+          <div class="bv-section bv-wide">
+            <div class="bv-section-title">BAND POWER — Kuramoto oscillators (θ→γ) &nbsp;|&nbsp; coherence: <span id="bv-coherence">0.000</span></div>
+            <div class="bv-equation">dθ<sub>i</sub>/dt = ω<sub>i</sub> + Σ K<sub>ij</sub>·sin(θ<sub>j</sub> - θ<sub>i</sub>)</div>
+            <canvas id="bv-osc-canvas" width="800" height="400"></canvas>
+          </div>
         </div>
       </div>
-      <div class="bv-grid-wrap">
-        <div class="bv-section">
-          <div class="bv-section-title">👁 UNITY'S EYES — visual cortex input</div>
-          <div class="bv-equation">Webcam → 320×240 capture → AI scene description (10s interval) → sensory context</div>
+
+      <div class="bv-panel bv-hidden" data-panel="modules">
+        <div class="bv-grid-wrap">
+          <div class="bv-section bv-wide">
+            <div class="bv-section-title">BRAIN MODULES — real-time state</div>
+            <div class="bv-modules" id="bv-modules"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="bv-panel bv-hidden" data-panel="senses">
+        <div class="bv-grid-wrap">
+          <div class="bv-section">
+            <div class="bv-section-title">👁 UNITY'S EYES — visual cortex input</div>
+            <div class="bv-equation">V1 edge detection → salience map → saccade → IT recognition (on demand)</div>
           <div class="bv-eyes-wrap" id="bv-eyes-wrap">
             <video id="bv-eye-video" autoplay playsinline muted></video>
             <canvas id="bv-eye-overlay" width="320" height="240"></canvas>
@@ -97,19 +124,43 @@ export class BrainVisualizer {
           <div style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-top:4px;" id="bv-hear-text">Listening...</div>
         </div>
       </div>
-      <div class="bv-grid-wrap">
-        <div class="bv-section bv-wide">
-          <div class="bv-section-title">🧬 SIMULATED SENSES — derived from sight + sound</div>
-          <div class="bv-equation">Touch, smell, taste inferred from visual + auditory context via hypothalamus drive mapping</div>
-          <div class="bv-senses" id="bv-senses"></div>
+        <div class="bv-grid-wrap">
+          <div class="bv-section bv-wide">
+            <div class="bv-section-title">🧬 SIMULATED SENSES — derived from sight + sound</div>
+            <div class="bv-equation">Touch, smell, taste inferred from brain state via hypothalamus</div>
+            <div class="bv-senses" id="bv-senses"></div>
+          </div>
         </div>
       </div>
-      <div class="bv-grid-wrap">
-        <div class="bv-section bv-wide">
-          <div class="bv-section-title">CONSCIOUSNESS — The Mystery Module</div>
-          <div class="bv-equation">Ψ = (√n)³ · [α·Id + β·Ego + γ·Left + δ·Right]</div>
-          <div class="bv-psi" id="bv-psi">Ψ = 0.000</div>
-          <div class="bv-psi-components" id="bv-psi-parts"></div>
+
+      <div class="bv-panel bv-hidden" data-panel="consciousness">
+        <div class="bv-grid-wrap">
+          <div class="bv-section bv-wide">
+            <div class="bv-section-title">CONSCIOUSNESS — The Mystery Module Ψ</div>
+            <div class="bv-equation">Ψ = (√n)³ · [α·Id + β·Ego + γ·Left + δ·Right]</div>
+            <div class="bv-psi" id="bv-psi">Ψ = 0.000</div>
+            <div class="bv-psi-components" id="bv-psi-parts"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="bv-panel bv-hidden" data-panel="memory">
+        <div class="bv-grid-wrap">
+          <div class="bv-section bv-wide">
+            <div class="bv-section-title">MEMORY SYSTEM — Episodic + Working + Consolidation</div>
+            <div class="bv-equation">Episodic: cosine recall | Working: 7 items, 0.98 decay | Consolidation: 3+ activations</div>
+            <div class="bv-memory" id="bv-memory"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="bv-panel bv-hidden" data-panel="motor">
+        <div class="bv-grid-wrap">
+          <div class="bv-section bv-wide">
+            <div class="bv-section-title">MOTOR OUTPUT — Basal Ganglia Action Selection</div>
+            <div class="bv-equation">6 channels × 25 neurons | Winner-take-all | Confidence threshold 0.15</div>
+            <div class="bv-motor" id="bv-motor"></div>
+          </div>
         </div>
       </div>
     `;
@@ -117,6 +168,18 @@ export class BrainVisualizer {
 
     this._el.querySelector('.bv-close-btn').addEventListener('click', () => this.close());
     this._el.addEventListener('keydown', (e) => { if (e.key === 'Escape') this.close(); });
+
+    // Tab switching
+    this._el.querySelectorAll('.bv-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        this._activeTab = tab.dataset.tab;
+        this._el.querySelectorAll('.bv-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        this._el.querySelectorAll('.bv-panel').forEach(p => {
+          p.classList.toggle('bv-hidden', p.dataset.panel !== this._activeTab);
+        });
+      });
+    });
 
     // Canvas contexts
     this._neuronCtx = this._el.querySelector('#bv-neuron-canvas').getContext('2d');
@@ -212,17 +275,27 @@ export class BrainVisualizer {
     const s = this._lastState;
     this._frameCount++;
 
-    this._renderNeurons(s);
-    this._renderSynapses(s);
-    this._renderOscillations(s);
-    this._renderEyes(s);
-    this._renderAudio();
-    // Only update modules DOM every 6 frames (10fps) to avoid layout thrash
+    // Only render the ACTIVE tab — saves performance, reduces visual noise
+    switch (this._activeTab) {
+      case 'neurons': this._renderNeurons(s); break;
+      case 'synapses': this._renderSynapses(s); break;
+      case 'oscillations': this._renderOscillations(s); break;
+      case 'senses':
+        this._renderEyes(s);
+        this._renderAudio();
+        break;
+    }
+
+    // DOM updates at 10fps regardless of tab
     if (this._frameCount % 6 === 0) {
-      this._renderModules(s);
-      this._renderSenses(s);
-      this._renderPsi(s);
       this._renderStats(s);
+      switch (this._activeTab) {
+        case 'modules': this._renderModules(s); break;
+        case 'senses': this._renderSenses(s); break;
+        case 'consciousness': this._renderPsi(s); break;
+        case 'memory': this._renderMemory(s); break;
+        case 'motor': this._renderMotor(s); break;
+      }
     }
 
     this._animId = requestAnimationFrame(() => this._render());
@@ -245,8 +318,8 @@ export class BrainVisualizer {
     const w = canvas.width;
     const h = canvas.height;
 
-    // Semi-transparent clear for motion trails
-    ctx.fillStyle = 'rgba(10,10,10,0.3)';
+    // Gentle fade — slower trails, less seizure-inducing
+    ctx.fillStyle = 'rgba(10,10,10,0.6)';
     ctx.fillRect(0, 0, w, h);
 
     const spikes = s.spikes;
@@ -749,6 +822,67 @@ export class BrainVisualizer {
     if (mystery.n !== undefined) parts.push(`n=${mystery.n}`);
     if (s.reward !== undefined) parts.push(`reward=${s.reward.toFixed(3)}`);
     partsEl.textContent = parts.join('  |  ') || 'waiting for brain state...';
+  }
+
+  _renderMemory(s) {
+    const el = this._el.querySelector('#bv-memory');
+    if (!el) return;
+    const mem = s.memory || {};
+    const wm = mem.workingMemoryItems || [];
+    const recall = mem.lastRecall;
+
+    let html = `
+      <div class="bv-mod-row">
+        <span class="bv-mod-name" style="color:#a855f7">EPISODES</span>
+        <div class="bv-mod-bar-wrap"><div class="bv-mod-bar" style="width:${Math.min(100, (mem.episodeCount || 0))}%;background:#a855f7"></div></div>
+        <span class="bv-mod-detail">${mem.episodeCount || 0}/100 stored</span>
+      </div>
+      <div class="bv-mod-row">
+        <span class="bv-mod-name" style="color:#00e5ff">WORKING MEM</span>
+        <div class="bv-mod-bar-wrap"><div class="bv-mod-bar" style="width:${(mem.workingMemoryLoad || 0) * 100}%;background:#00e5ff"></div></div>
+        <span class="bv-mod-detail">${wm.length}/7 items (${((mem.workingMemoryLoad || 0) * 100).toFixed(0)}% full)</span>
+      </div>
+    `;
+    if (wm.length > 0) {
+      html += '<div style="margin-top:8px;font-family:var(--mono);font-size:10px;color:var(--text-dim);">';
+      for (const item of wm) {
+        const bar = Math.floor(item.strength * 100);
+        html += `<div style="margin:2px 0;">WM: ${item.label || '?'} <span style="color:var(--cyan)">${bar}%</span></div>`;
+      }
+      html += '</div>';
+    }
+    if (recall) {
+      html += `<div style="margin-top:8px;font-family:var(--mono);font-size:10px;color:var(--pink);">Last recall: "${recall.trigger}" (sim=${recall.similarity?.toFixed(2)}, arousal=${recall.arousal?.toFixed(2)})</div>`;
+    }
+    el.innerHTML = html;
+  }
+
+  _renderMotor(s) {
+    const el = this._el.querySelector('#bv-motor');
+    if (!el) return;
+    const motor = s.motor || {};
+    const channels = motor.channelRates || [];
+    const names = ['respond_text', 'generate_image', 'speak', 'build_ui', 'listen', 'idle'];
+    const colors = ['#ff4d9a', '#a855f7', '#f59e0b', '#22c55e', '#00e5ff', '#555'];
+
+    let html = '';
+    for (let i = 0; i < names.length; i++) {
+      const rate = channels[i] || 0;
+      const isWinner = names[i] === motor.selectedAction;
+      const barWidth = Math.min(100, rate * 100 * 3);
+      html += `
+        <div class="bv-mod-row" style="${isWinner ? 'background:rgba(255,255,255,0.03);border-radius:4px;' : ''}">
+          <span class="bv-mod-name" style="color:${colors[i]}">${isWinner ? '► ' : ''}${names[i]}</span>
+          <div class="bv-mod-bar-wrap"><div class="bv-mod-bar" style="width:${barWidth}%;background:${colors[i]}${isWinner ? '' : '88'}"></div></div>
+          <span class="bv-mod-detail">${(rate * 100).toFixed(1)}%${isWinner ? ' ★ ACTIVE' : ''}</span>
+        </div>
+      `;
+    }
+    html += `<div style="margin-top:8px;font-family:var(--mono);font-size:10px;color:var(--text-dim);">
+      Confidence: ${(motor.confidence || 0).toFixed(3)} | ${motor.speechGated ? '<span style="color:var(--red)">SPEECH GATED: ' + motor.gateReason + '</span>' : '<span style="color:var(--green)">speech OK</span>'}
+      | Cooldown: ${motor.cooldown || 0}
+    </div>`;
+    el.innerHTML = html;
   }
 
   toggle() {

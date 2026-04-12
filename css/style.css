@@ -731,6 +731,28 @@ html, body {
   min-width: 140px;
 }
 
+.bv-tabs {
+  display: flex;
+  gap: 2px;
+  flex-wrap: wrap;
+}
+.bv-tab {
+  padding: 4px 10px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 9px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.bv-tab:hover { border-color: var(--pink); color: var(--text); }
+.bv-tab.active { background: var(--pink-dim); border-color: var(--pink); color: var(--pink); }
+
+.bv-panel { }
+.bv-panel.bv-hidden { display: none; }
+
 .bv-stats {
   font-family: var(--mono);
   font-size: 10px;
