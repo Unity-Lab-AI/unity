@@ -870,12 +870,31 @@ async function bootUnity(apiKey, perms) {
   // Images still available even in brain-only mode
   brain.connectImageGen(pollinations, sandbox, storage);
 
-  // Response display handled by processAndRespond caller — no emit listener needed.
-  // Keeping brain.on('response') ONLY for idle thoughts (non-respond_text actions)
-  brain.on('response', ({ text, action }) => {
-    if (!text || action === 'respond_text') return; // caller handles respond_text
+  // Response queue — one at a time, 3s minimum between displays
+  let _responseQueue = [];
+  let _lastDisplayTime = 0;
+  let _displayLock = false;
+  function queueResponse(text) {
+    if (!text || text === '...') return;
+    _responseQueue.push(text);
+    drainQueue();
+  }
+  function drainQueue() {
+    if (_displayLock || _responseQueue.length === 0) return;
+    const now = Date.now();
+    const wait = Math.max(0, 3000 - (now - _lastDisplayTime));
+    if (wait > 0) { setTimeout(drainQueue, wait); return; }
+    _displayLock = true;
+    const text = _responseQueue.shift();
+    _lastDisplayTime = Date.now();
     showSpeechBubble(text, 8000);
     if (chatPanel) chatPanel.addMessage('assistant', text, true);
+    setTimeout(() => { _displayLock = false; drainQueue(); }, 3000);
+  }
+  // Only queue idle thoughts — respond_text handled by caller
+  brain.on('response', ({ text, action }) => {
+    if (!text || action === 'respond_text') return;
+    queueResponse(text);
   });
   // Image display — show generated images inline
   brain.on('image', (url) => {
