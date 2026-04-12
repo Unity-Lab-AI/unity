@@ -31,6 +31,21 @@ export class InnerVoice {
   constructor() {
     this.dictionary = new Dictionary();
     this.languageCortex = new LanguageCortex();
+    // Load English structure — operators + core vocabulary + bigrams
+    this.languageCortex._loadStructure(this.dictionary);
+    // Teach the language cortex the bigrams from the dictionary
+    for (const [w1, followers] of this.dictionary._bigrams) {
+      for (const [w2, count] of followers) {
+        for (let i = 0; i < count; i++) {
+          if (!this.languageCortex._jointCounts.has(w1)) this.languageCortex._jointCounts.set(w1, new Map());
+          this.languageCortex._jointCounts.get(w1).set(w2, (this.languageCortex._jointCounts.get(w1)?.get(w2) || 0) + 1);
+          this.languageCortex._totalPairs++;
+        }
+        this.languageCortex._marginalCounts.set(w1, (this.languageCortex._marginalCounts.get(w1) || 0) + count);
+        this.languageCortex._marginalCounts.set(w2, (this.languageCortex._marginalCounts.get(w2) || 0) + count);
+        this.languageCortex._totalWords += count * 2;
+      }
+    }
     this._thoughtCounter = 0;
 
     // Current internal state — updated every thought cycle

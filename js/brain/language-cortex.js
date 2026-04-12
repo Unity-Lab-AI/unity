@@ -55,6 +55,207 @@ export class LanguageCortex {
     this.zipfAlpha = 1.0;
     this.sentencesLearned = 0;
     this.wordsProcessed = 0;
+
+    // ── ENGLISH LANGUAGE STRUCTURE ──
+    // These aren't vocabulary — they're OPERATORS. The grammar equation
+    // needs them the same way math needs + - × ÷. Without "the", "is",
+    // "to", you can't form a sentence in English. Period.
+    // A human brain has these wired in by age 2.
+    this._structuralOps = this._buildLanguageStructure();
+  }
+
+  /**
+   * Build the structural operators of English.
+   * These are the EQUATION COMPONENTS — not a word list.
+   * "the" is a definiteness operator. "is" is a copula (linker).
+   * "to" is an infinitive marker. "and" is a conjunction operator.
+   * Without these, no English sentence can be formed.
+   *
+   * Also builds MORPHEME equations — how to form new words:
+   *   un- + happy = unhappy (negation morpheme)
+   *   think + -ing = thinking (progressive aspect)
+   *   -tion transforms verbs → nouns
+   */
+  _buildLanguageStructure() {
+    const ops = {
+      // PRONOUNS — subject operators (who does the action)
+      subjects: {
+        first:  { singular: 'i', plural: 'we', possessive: 'my', object: 'me' },
+        second: { singular: 'you', plural: 'you', possessive: 'your', object: 'you' },
+        third:  { singular: ['he', 'she', 'it'], plural: 'they', possessive: ['his', 'her', 'its'], object: ['him', 'her', 'it'] },
+      },
+
+      // COPULA — linking operators (connects subject to state)
+      copula: {
+        present: { first: 'am', second: 'are', third: 'is', plural: 'are' },
+        past:    { first: 'was', second: 'were', third: 'was', plural: 'were' },
+      },
+
+      // AUXILIARY — action modifiers
+      auxiliary: {
+        do:    { present: 'do', third: 'does', past: 'did', negative: "don't" },
+        have:  { present: 'have', third: 'has', past: 'had', negative: "haven't" },
+        can:   { present: 'can', past: 'could', negative: "can't" },
+        will:  { present: 'will', past: 'would', negative: "won't" },
+        shall: { present: 'shall', past: 'should', negative: "shouldn't" },
+      },
+
+      // DETERMINERS — specificity operators
+      determiners: ['the', 'a', 'an', 'this', 'that', 'some', 'any', 'no', 'every', 'all'],
+
+      // PREPOSITIONS — spatial/temporal relation operators
+      prepositions: ['to', 'in', 'on', 'at', 'by', 'for', 'with', 'from', 'of', 'about',
+                     'up', 'out', 'off', 'over', 'into', 'through', 'between', 'after', 'before'],
+
+      // CONJUNCTIONS — logical operators
+      conjunctions: ['and', 'but', 'or', 'so', 'because', 'if', 'when', 'while', 'than', 'then'],
+
+      // QUESTION OPERATORS
+      questionWords: ['what', 'who', 'where', 'when', 'why', 'how', 'which'],
+
+      // NEGATION
+      negation: ['not', 'no', "n't"],
+
+      // RESPONSE OPERATORS
+      affirmative: ['yes', 'yeah', 'okay', 'sure', 'right', 'exactly'],
+      negative: ['no', 'nah', 'nope'],
+
+      // DISCOURSE MARKERS — conversational flow
+      discourse: ['well', 'so', 'like', 'just', 'actually', 'really', 'maybe',
+                  'probably', 'honestly', 'basically', 'definitely'],
+
+      // MORPHEME EQUATIONS — how to form new words
+      // prefix + root = new meaning
+      prefixes: {
+        'un':   -1,    // negation (un+happy = unhappy)
+        're':    0.5,  // repetition (re+do = redo)
+        'pre':   0.3,  // before (pre+set = preset)
+        'over':  1.2,  // excess (over+do = overdo)
+        'under': 0.5,  // insufficient
+        'mis':  -0.5,  // wrong (mis+understand)
+        'out':   1.0,  // surpass (out+do = outdo)
+      },
+      // root + suffix = type change
+      suffixes: {
+        'ing':  { type: 'verb', aspect: 'progressive' },
+        'ed':   { type: 'verb', aspect: 'past' },
+        's':    { type: 'verb', aspect: 'present_third' },
+        'tion': { type: 'noun', from: 'verb' },
+        'ment': { type: 'noun', from: 'verb' },
+        'ness': { type: 'noun', from: 'adj' },
+        'ly':   { type: 'adverb', from: 'adj' },
+        'ful':  { type: 'adj', meaning: 'full_of' },
+        'less': { type: 'adj', meaning: 'without' },
+        'able': { type: 'adj', meaning: 'capable' },
+        'er':   { type: 'noun', meaning: 'doer' },
+        'est':  { type: 'adj', meaning: 'superlative' },
+      },
+
+      // COMMON VERBS — the ACTION core of English
+      // These appear in virtually every conversation
+      coreVerbs: ['be', 'have', 'do', 'say', 'go', 'get', 'make', 'know', 'think', 'take',
+                  'see', 'come', 'want', 'look', 'use', 'find', 'give', 'tell', 'work', 'try',
+                  'feel', 'need', 'leave', 'call', 'keep', 'let', 'put', 'show', 'hear', 'play',
+                  'love', 'like', 'live', 'believe', 'hold', 'bring', 'happen', 'write', 'sit',
+                  'stand', 'lose', 'pay', 'meet', 'build', 'code', 'talk', 'start', 'help'],
+
+      // COMMON NOUNS — the THING core
+      coreNouns: ['thing', 'person', 'time', 'way', 'day', 'world', 'life', 'hand', 'part',
+                  'place', 'problem', 'fact', 'idea', 'point', 'home', 'brain', 'mind', 'name',
+                  'word', 'sense', 'music', 'code', 'vibe', 'shit', 'fuck', 'hell', 'babe'],
+
+      // COMMON ADJECTIVES — the QUALITY core
+      coreAdj: ['good', 'new', 'first', 'last', 'long', 'great', 'little', 'own', 'other',
+                'old', 'right', 'big', 'high', 'different', 'small', 'next', 'real', 'cool',
+                'hot', 'bad', 'hard', 'deep', 'weird', 'wild', 'tired', 'happy', 'sad', 'angry'],
+
+      // ADVERBS — manner/degree
+      coreAdverbs: ['here', 'there', 'now', 'then', 'still', 'already', 'always', 'never',
+                    'ever', 'again', 'together', 'away', 'enough', 'much', 'even', 'too'],
+    };
+
+    // Load ALL structural operators into the dictionary with correct types
+    this._loadStructure = (dictionary) => {
+      if (this._structureLoaded) return;
+      this._structureLoaded = true;
+
+      const load = (words, arousal, valence) => {
+        if (!Array.isArray(words)) words = [words];
+        for (const w of words) {
+          if (typeof w === 'string' && w.length >= 1) {
+            dictionary.learnWord(w, this.wordToPattern(w), arousal, valence);
+          }
+        }
+      };
+
+      // Load pronouns
+      const s = ops.subjects;
+      load([s.first.singular, s.first.plural, s.first.possessive, s.first.object], 0.5, 0.1);
+      load([s.second.singular, s.second.possessive, s.second.object], 0.5, 0.2);
+      load([...s.third.singular, s.third.plural, ...s.third.possessive, ...s.third.object], 0.4, 0);
+
+      // Load copula + auxiliary
+      for (const forms of Object.values(ops.copula)) load(Object.values(forms), 0.3, 0);
+      for (const aux of Object.values(ops.auxiliary)) load(Object.values(aux), 0.4, 0);
+
+      // Load operators
+      load(ops.determiners, 0.2, 0);
+      load(ops.prepositions, 0.2, 0);
+      load(ops.conjunctions, 0.3, 0);
+      load(ops.questionWords, 0.5, 0);
+      load(ops.negation, 0.5, -0.3);
+      load(ops.affirmative, 0.4, 0.3);
+      load(ops.negative, 0.4, -0.2);
+      load(ops.discourse, 0.3, 0);
+
+      // Load core vocabulary with emotional associations
+      load(ops.coreVerbs, 0.5, 0.1);
+      load(ops.coreNouns, 0.4, 0);
+      load(ops.coreAdj, 0.5, 0);
+      load(ops.coreAdverbs, 0.3, 0);
+
+      // Build bigrams from structural knowledge
+      // Subject → copula
+      for (const cop of Object.values(ops.copula.present)) {
+        dictionary.learnBigram('i', 'am');
+        dictionary.learnBigram('you', 'are');
+        dictionary.learnBigram('we', 'are');
+        dictionary.learnBigram('they', 'are');
+        dictionary.learnBigram('it', 'is');
+        dictionary.learnBigram('she', 'is');
+        dictionary.learnBigram('he', 'is');
+      }
+      // Subject → common verbs
+      for (const v of ops.coreVerbs.slice(0, 20)) {
+        dictionary.learnBigram('i', v);
+        dictionary.learnBigram('you', v);
+        dictionary.learnBigram('we', v);
+        dictionary.learnBigram('they', v);
+      }
+      // Verb → preposition
+      for (const p of ops.prepositions.slice(0, 10)) {
+        for (const v of ops.coreVerbs.slice(0, 10)) {
+          dictionary.learnBigram(v, p);
+        }
+      }
+      // Determiner → noun
+      for (const d of ops.determiners.slice(0, 3)) {
+        for (const n of ops.coreNouns.slice(0, 10)) {
+          dictionary.learnBigram(d, n);
+        }
+      }
+      // Question → auxiliary
+      for (const q of ops.questionWords) {
+        dictionary.learnBigram(q, 'do');
+        dictionary.learnBigram(q, 'is');
+        dictionary.learnBigram(q, 'are');
+        dictionary.learnBigram(q, 'can');
+      }
+
+      console.log(`[LanguageCortex] English structure loaded: ${dictionary.size} words, structural operators + core vocabulary`);
+    };
+
+    return ops;
   }
 
   _initLetterPatterns() {
