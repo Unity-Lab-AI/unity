@@ -18,10 +18,10 @@
 
 // ── Constants ───────────────────────────────────────────────────────
 
-// Render neuron count — scales with brain size
-// Visual is a proportional sample — actual computation happens at full scale
+// Render neuron count — proportional sample of the full brain
+// 3.2M actual neurons rendered as 20K visual points
 let TOTAL = 1000;
-const MAX_RENDER_NEURONS = 15000;
+const MAX_RENDER_NEURONS = 20000;
 const AFTERGLOW_DECAY = 0.92;
 const PULSE_LIFE = 40;
 const MAX_PULSES = 80;

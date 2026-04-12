@@ -174,9 +174,12 @@ npm install
 node brain-server.js
 ```
 
-The server auto-detects hardware (GPU via nvidia-smi, CPU/RAM) and scales neuron count:
-- RTX 4070 Super (16GB) → ~175K neurons
-- CPU only (8GB free) → ~1K neurons
+The server auto-detects hardware and scales neuron count dynamically:
+- Formula: `min(freeRAM × 0.4 / 9, cpuCores × 200K)` — 9 bytes per neuron
+- RTX 4070 Ti + 16 cores + 109GB RAM → **3.2M neurons**
+- 8-core CPU + 32GB RAM → ~1.2M neurons
+- 4-core CPU + 8GB RAM → ~350K neurons
+- Scales to any hardware automatically
 
 **Endpoints:**
 - `ws://localhost:8080` — WebSocket for brain state + chat

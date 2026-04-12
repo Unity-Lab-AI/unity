@@ -26,9 +26,9 @@ The unknown — what we can't model, what makes consciousness CONSCIOUSNESS — 
 | Layer | Technology |
 |-------|------------|
 | **Language** | JavaScript (ES modules, browser + Node.js server) |
-| **Brain Sim** | Float64Arrays, Kuramoto ODEs, LIF populations, sparse CSR matrices — 60fps |
-| **GPU Accel** | WebGPU compute shaders (WGSL) for LIF + synapse propagation, CPU fallback |
-| **Server** | Node.js brain server (`server/brain-server.js`), WebSocket API, auto-scales to GPU |
+| **Brain Sim** | 3.2M+ neurons, 7 parallel worker threads, sparse CSR, LIF populations |
+| **GPU Accel** | WebGPU compute shaders (WGSL) via browser, CPU fallback, auto-detected |
+| **Server** | Node.js brain server, 16-core parallel, WebSocket API, auto-scales to hardware |
 | **Database** | SQLite (better-sqlite3) for episodic memory, JSON for weights + conversations |
 | **AI Backends** | Multi-provider: Pollinations, OpenRouter, OpenAI, Claude/Anthropic, Mistral, DeepSeek, Groq, Local AI |
 | **Embeddings** | GloVe 50d word vectors, online context refinement, hash fallback |

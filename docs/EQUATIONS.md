@@ -219,9 +219,11 @@ word = softmax(scores, T × 0.12)    T = 1/(coherence + 0.1)
 
 | Equation | Purpose | File |
 |----------|---------|------|
-| `TICK_MS = N>100K ? 33 : N>50K ? 33 : 16` | Tick rate | `brain-server.js` |
-| `SUBSTEPS = N>100K ? 10 : N>50K ? 5 : 10` | Steps per tick | `brain-server.js` |
-| `maxNeurons = f(VRAM or RAM)` | Auto-scale to hardware | `brain-server.js` |
+| `maxNeurons = min(freeRAM×0.4/9, cpuCores×200K)` | Scale to hardware (9 bytes/neuron) | `brain-server.js` |
+| `TICK_MS = N>1M ? 100 : N>500K ? 50 : N>100K ? 33 : 16` | Tick rate scaling | `brain-server.js` |
+| `SUBSTEPS = N>1M ? 3 : N>500K ? 5 : N>100K ? 10 : 10` | Steps per tick | `brain-server.js` |
+| RTX 4070 Ti + 16 cores + 109GB RAM → **3.2M neurons** | Current hardware scale | `brain-server.js` |
+| Cap: 10M neurons maximum | Upper limit | `brain-server.js` |
 
 ---
 

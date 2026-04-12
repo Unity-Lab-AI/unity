@@ -193,7 +193,7 @@
 | Language cortex | CompLing | Expert | **DONE** — `js/brain/language-cortex.js` (word type from letters, slot-based grammar, 8 type equations, sentence structure, no lists, no training corpus, learns from conversation) |
 | Response pool | AI/ML | Intermediate | **DONE** — `js/brain/response-pool.js` (EDNA categories, arousal variants, 85%/15% blend with cortex) — from Tolerable PR |
 | Claude Code CLI proxy | Backend | Intermediate | **DONE** — `claude-proxy.js` (OpenAI-compatible endpoint on :8088, uses logged-in credentials) — from Tolerable PR |
-| Multi-core CPU compute | Backend | Advanced | **DONE** — `parallel-brain.js` + `cluster-worker.js` (7 worker threads, SharedArrayBuffer zero-copy) |
+| Multi-core CPU compute | Backend | Advanced | **DONE** — `parallel-brain.js` + `cluster-worker.js` (7 worker threads, SharedArrayBuffer, 3.2M neurons on 16 cores) |
 | GPU compute pipeline | Backend | Expert | **DONE** — `compute.html` + WebSocket dispatch (browser WebGPU → server, 50ms timeout fallback) |
 | Projection workers | Backend | Advanced | **DONE** — `projection-worker.js` (sparse weights, propagate + learn on separate cores) |
 
