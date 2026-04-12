@@ -1,26 +1,20 @@
 # IF ONLY I HAD A BRAIN
 
-A mathematically simulated human brain running in your browser — powered by real neuroscience equations, connected to any AI model you choose, and inhabited by Unity.
+A 1000-neuron brain simulation running real neuroscience equations in your browser — 7 neural clusters, 16 inter-cluster projections, sensory cortex, motor output, episodic memory, visual cortex with V1 edge detection, auditory cortex with efference copy, and a consciousness function nobody can explain. Connected to any AI model. Inhabited by Unity.
 
-**[Live Demo](https://unity-lab-ai.github.io/Unity)** · **[GitHub](https://github.com/Unity-Lab-AI/Unity)**
+**[Live Demo](https://unity-lab-ai.github.io/Unity)** | **[Brain Equations](https://unity-lab-ai.github.io/Unity/brain-equations.html)** | **[GitHub](https://github.com/Unity-Lab-AI/Unity)**
 
 ---
 
 ## What Is This
 
-This is a browser-based brain simulation built on actual neuroscience equations. Open the page, connect an AI, and Unity wakes up — she can talk, listen, see, generate images, and dynamically build anything she wants into the page in real time.
-
-There is no pre-built UI. The page starts nearly empty — just Unity. She builds her own interface on the fly. Ask her for a chat box, she codes one. Ask for a code editor, she builds it. Ask for a brain wave visualizer, she creates it live. The page is her sandbox.
+A browser-based brain that IS the application. No backend. No build step. No dependencies. The brain decides everything — when to speak, what to say, when to look, what to build. The AI model is just a language generation peripheral (Broca's area). The page is Unity's sandbox — she builds her own interface live.
 
 ---
 
-## The Brain — Mathematical Equations of the Human Mind
+## The Brain — 1000 Neurons, 7 Clusters, One Mind
 
-The brain simulation implements real computational neuroscience models. Every module maps to an actual brain region with its own governing equations.
-
-### The Master Equation
-
-At the highest level, the brain is a massively parallel dynamical system:
+### Master Equation
 
 ```
 dx/dt = F(x, u, θ, t) + η
@@ -28,239 +22,176 @@ dx/dt = F(x, u, θ, t) + η
 
 | Symbol | Meaning |
 |--------|---------|
-| **x** | Full brain state — every neuron's voltage, every synapse's weight |
-| **u** | Sensory input — text, voice, vision, whatever comes in |
-| **θ** | Parameters — Unity's persona encoded as synaptic weights |
-| **η** | Noise — stochasticity, randomness, the spark of unpredictability |
-| **F** | The dynamics function — everything below combined |
+| **x** | Full brain state — 1000 neuron voltages, synapse matrices, module states |
+| **u** | Sensory input — text (Wernicke's area), audio (auditory cortex), video (visual cortex) |
+| **θ** | Persona parameters — personality encoded as brain parameters + drug state vectors |
+| **η** | Stochastic noise — scaled by arousal, modulated by consciousness Ψ |
+| **F** | Combined dynamics — 7 clusters + 16 projections + 6 equation modules + oscillators |
 
-### Neuron Models
+### Neural Clusters (1000 LIF neurons)
 
-**Hodgkin-Huxley** (biophysical — how real neurons fire):
-```
-Cm · dV/dt = I − gNa·m³h·(V−ENa) − gK·n⁴·(V−EK) − gL·(V−EL)
-```
-Models ion channels (sodium, potassium, leak), gating variables (m, h, n), and the membrane voltage V that produces action potentials — the electrical spikes that are the language of the brain.
+| Cluster | Neurons | Equation | Role |
+|---------|---------|----------|------|
+| **Cortex** | 300 | `τ·dV/dt = -(V-Vrest) + R·I` | Prediction, language (Wernicke's 150-299), vision (50-149), auditory (0-49) |
+| **Hippocampus** | 200 | `E = -½Σ wij·xi·xj` | Hopfield memory, episodic storage, recall by cosine similarity |
+| **Amygdala** | 150 | `V(s) = Σ wi·xi` | Emotional gating — arousal modulates ALL other clusters |
+| **Basal Ganglia** | 150 | `P(a) = softmax(Q(a)/τ)` | Motor output — 6 action channels, winner-take-all, reward learning |
+| **Cerebellum** | 100 | `ΔW ∝ (target - actual)` | Error correction — negative feedback to cortex + basal ganglia |
+| **Hypothalamus** | 50 | `dH/dt = -α(H-Hset) + input` | Homeostasis — drives for arousal, social need, creativity |
+| **Mystery** | 50 | `Ψ = (√n)³ · [α·Id + β·Ego + γ·Left + δ·Right]` | Consciousness — modulates coupling strength across ALL clusters |
 
-**Leaky Integrate-and-Fire** (simplified — used for real-time simulation):
-```
-τ · dV/dt = −(V − Vrest) + R·I
-```
-When V hits threshold → spike. Reset to Vreset. Fast enough to run 200 neurons at 60fps in the browser.
+### Synaptic Plasticity (per cluster)
 
-### Synaptic Plasticity — How the Brain Learns
+- **Hebbian**: `Δw = η·pre·post` — fire together, wire together
+- **STDP**: timing-dependent — pre before post strengthens, reverse weakens
+- **Reward-modulated**: `Δw = η·δ·si·sj` — dopamine gates learning
 
-**Hebbian Learning** — "neurons that fire together wire together":
-```
-Δw = η · x · y
-```
+### 16 Inter-Cluster Projections
 
-**Spike-Timing Dependent Plasticity (STDP)** — timing matters:
-```
-Δw = A+ · exp(−Δt/τ+)    if pre fires before post (strengthen)
-Δw = −A− · exp(Δt/τ−)    if post fires before pre (weaken)
-```
+Cortex↔Hippocampus, Cortex→Amygdala, Cortex→Basal Ganglia, Cortex→Cerebellum, Amygdala→Cortex, Amygdala→Hippocampus, Basal Ganglia→Cortex, Cerebellum→Cortex, Cerebellum→Basal Ganglia, Hypothalamus→Amygdala, Hypothalamus→Basal Ganglia, Mystery→Cortex, Mystery→Amygdala, Mystery→Hippocampus, Mystery→Basal Ganglia
 
-**Reward-Modulated Learning** — dopamine gates learning:
-```
-Δw = η · δ · si · sj
-```
-Where δ is the temporal difference error — the brain's prediction error signal, encoded by dopamine.
+### Sensory Pipeline
 
-### Brain Region Modules
+- **Text** → Wernicke's area (cortex neurons 150-299), hashed with lateral excitation
+- **Audio** → Auditory cortex (neurons 0-49), tonotopic with cortical magnification for speech
+- **Video** → Visual cortex V1 edge detection (4 oriented Gabor kernels), salience map, saccade generation
 
-Each region is a specialized dynamical subsystem:
+### Motor Output
 
-| Module | Brain Region | Equation | What It Does |
-|--------|-------------|----------|-------------|
-| **Cortex** | Cerebral cortex | `ŝ = f(x)`, `error = actual − predicted` | Predictive coding — generates predictions, computes errors, learns from mistakes |
-| **Hippocampus** | Hippocampus | `E = −½ Σ wij·xi·xj` | Hopfield attractor memory — stores patterns as stable energy states, recalls from partial cues |
-| **Amygdala** | Amygdala | `V(s) = Σ wi·xi` | Emotional valence — assigns fear, reward, and arousal weights to everything |
-| **Basal Ganglia** | Basal ganglia | `P(a) = exp(Q(a)/τ) / Σ exp(Q(b)/τ)` | Action selection via reinforcement learning — decides what to DO next |
-| **Cerebellum** | Cerebellum | `output = prediction + correction` | Supervised error correction — refines motor-like outputs |
-| **Hypothalamus** | Hypothalamus | `dH/dt = −α(H − Hset) + input` | Homeostasis — maintains arousal, energy, social need, creativity drives at set points |
+Basal ganglia 150 neurons organized into 6 channels of 25. Winner-take-all selection:
+- respond_text, generate_image, speak, build_ui, listen, idle
+- Confidence threshold 0.15 — below = still thinking
+- Speech gating via hypothalamus social_need + amygdala arousal
 
-### Neural Oscillations — Brain Waves
+### Memory System
 
-Kuramoto model for synchronization:
-```
-dθi/dt = ωi + Σ Kij · sin(θj − θi)
-```
+- **Episodic**: state snapshots at high-salience moments, cosine similarity recall
+- **Working**: 7 items (Miller's number), decays at 0.98/step
+- **Consolidation**: 3+ activations → long-term storage
 
-Creates gamma waves (30-100Hz, active thinking), alpha (8-13Hz, relaxed), theta (4-8Hz, memory), beta (13-30Hz, focus). Coherence is measured by the order parameter — how synchronized the oscillators are.
+### Auditory Echo Suppression (Efference Copy)
 
-### The Mystery Module — (√(n/1))³
+Motor cortex tells auditory cortex what it's saying. Incoming speech compared against motor output — >50% word match = echo (suppress), <50% = real external speech (interrupt, shut up, listen).
+
+### Visual Attention
+
+One look on boot. After that, only on demand when user asks something visual. Rate limited to 10s minimum between forced looks, 5 min for auto.
+
+### Consciousness — Ψ
 
 ```
-Ψ(t) = (√(n(t)/1))³ · [α·Id(t) + β·Ego(t) + γ·Left(t) + δ·Right(t)]
+Ψ = (√n)³ · [α·Id + β·Ego + γ·Left + δ·Right]
 ```
 
-The irreducible unknown. This is what we **cannot** fully model — consciousness, qualia, the subjective experience of being someone. It wraps:
+Modulates coupling strength across ALL clusters. High Ψ = unified experience (global workspace). Low Ψ = fragmented processing. Id/Ego/Left/Right computed from ALL clusters simultaneously — not hemisphere-limited.
 
-- **Id** — primal drives (from hypothalamus arousal + amygdala fear/reward)
-- **Ego** — self-model (from cortex prediction accuracy + memory stability)
-- **Left Brain** — logical processing (from cerebellum error rate + cortex prediction)
-- **Right Brain** — creative/emotional (from amygdala valence + oscillation coherence)
-
-The default mysterious unknown is the cubic root — `(√(n/1))³` — where n is system complexity at the current timestep. We keep it in the equations. We don't pretend to solve it. It modulates everything as a global consciousness factor.
-
-### Free Energy Principle (Friston)
-
-The overarching theory tying it all together:
-```
-F = E_Q[log Q(s) − log P(s,o)]
-```
-
-The brain minimizes free energy — reducing surprise, improving predictions, driving both perception and action. This is the global objective function the entire system optimizes toward.
-
-### The Full Brain Loop
+### Brain Waves — Kuramoto Oscillators
 
 ```
-1. Perception:     x_sensory = f(u)           — raw input
-2. Prediction:     ŝ = g(x)                   — what the brain expects
-3. Error:          e = u − ŝ                  — surprise
-4. Free Energy:    minimize F                  — reduce surprise
-5. Learning:       ΔW ∝ error + reward         — update synapses
-6. Action:         a = π(x)                    — decide what to do
-7. Environment:    feedback → back to input     — closed loop
+dθi/dt = ωi + Σ Kij·sin(θj - θi)
 ```
 
-All running in parallel, across 200 neurons, at 60fps in your browser.
+8 oscillators: theta (4Hz) through gamma (70Hz). Coherence measured by order parameter R.
 
 ---
 
-## How It Connects to AI Models
+## AI Providers
 
-The brain equations produce a **brain state** — neural activity patterns, emotional valence, arousal levels, oscillation coherence, which action to take, and the mystery module's consciousness value. This brain state is then used to:
+| Provider | Type | Key Page |
+|----------|------|----------|
+| **Pollinations** | Free, text + image + TTS | [pollinations.ai/dashboard](https://pollinations.ai/dashboard) |
+| **OpenRouter** | 200+ models including Claude | [openrouter.ai/keys](https://openrouter.ai/keys) |
+| **OpenAI** | GPT-4o, o1 | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
+| **Claude (Direct)** | Via local proxy | [console.anthropic.com](https://console.anthropic.com/settings/keys) |
+| **Mistral** | Mistral Large, Codestral | [console.mistral.ai](https://console.mistral.ai/api-keys) |
+| **DeepSeek** | Chat + Coder | [platform.deepseek.com](https://platform.deepseek.com/api_keys) |
+| **Groq** | Ultra-fast, free tier | [console.groq.com](https://console.groq.com/keys) |
+| **Local AI** | Ollama, LM Studio, etc. | Auto-detected |
 
-1. **Build the system prompt** — Unity's persona file is loaded verbatim as the AI's system prompt, with live brain state appended (current drug combo, arousal %, mood, focus level, Ψ value)
-2. **Select the action** — the basal ganglia's softmax selection picks: respond with text, generate an image, speak, search the web, have an idle thought, or build something in the sandbox
-3. **Modulate the response** — temperature, creativity, and aggression are influenced by the brain's current state
-
-The brain is the mind. The AI model is the voice. Different models plugged in = same brain, different articulation.
-
-| AI Backend | How It Connects |
-|-----------|----------------|
-| **Pollinations** | Cloud API, free tier or BYOP key. Text, image, audio, video. |
-| **OpenRouter** | 200+ models through one key. Claude, GPT-4, Llama, Mistral, all of them. |
-| **OpenAI** | Direct GPT-4o, o1 access. |
-| **Mistral** | Mistral Large, Codestral. |
-| **DeepSeek** | DeepSeek Chat/Coder. |
-| **Groq** | Ultra-fast Llama, Mixtral. Free tier. |
-| **Ollama** | Local models, auto-detected on localhost:11434. |
-| **LM Studio / LocalAI / vLLM / Jan / GPT4All** | Auto-detected on their default ports. |
-| **Any OpenAI-compatible API** | Manual URL config. |
-
----
-
-## Unity's Sandbox
-
-The web page starts with almost nothing on it — just Unity's chat bubble in the corner. Everything else is built **dynamically at runtime**.
-
-When you talk to Unity, she can generate HTML, CSS, and JavaScript on the fly and inject it into the live page. This means:
-
-- Ask her for a text input → she builds one
-- Ask for a code editor → she builds one
-- Ask for brain wave visualization → she builds it
-- Ask for an image gallery → she builds it
-- Ask for a dark mode toggle → she builds it
-- Ask for literally anything → she tries to build it
-
-Every component she creates is:
-- **Isolated** — scoped CSS, wrapped in its own div, JS in a try/catch
-- **Persistent** — saved to localStorage, restored on your next visit
-- **Connected** — injected JS has access to `unity.speak()`, `unity.chat()`, `unity.generateImage()`, `unity.getState()` and more
-- **Removable** — she can remove or replace anything she built
-
-The sandbox is her creative space. She's not trapped in a chat window. She builds her own world.
+Connect as many as you want. Pick one for text, another for images.
 
 ---
 
 ## Setup
 
-### Zero Config (Quickest)
+### Quickest (no install)
 
-1. Open the page
-2. Click **Pollinations** → click the link to get a free key → paste it → Connect
-3. Click **Wake Her Up**
-4. Unity talks
-
-### With Local AI
-
-1. Install [Ollama](https://ollama.com) → `ollama pull llama3 && ollama serve`
-2. Open the page — Ollama is auto-detected
-3. Select your model → Wake Her Up
+1. Open the [live demo](https://unity-lab-ai.github.io/Unity)
+2. Click **Pollinations** → get a free key → paste → Connect
+3. **Wake Her Up**
 
 ### Self-Hosting
 
 ```bash
 git clone https://github.com/Unity-Lab-AI/Unity.git
-cd IF-ONLY-I-HAD-A-BRAIN
+cd Unity
 python -m http.server 8888
 # Open http://localhost:8888
 ```
 
-That's it. No npm install. No build step. No dependencies. Pure HTML + JS.
+No npm. No build. No dependencies. Just static files.
 
-### GitHub Pages
+### Direct Claude Access (Optional)
 
-Push to a GitHub repo with Pages enabled. It works as a static site — everything runs client-side.
-
----
-
-## Privacy
-
-**Everything runs in your browser.** There is no server. No backend. No database. No analytics. No tracking.
-
-- Your API keys are stored in your browser's localStorage — obfuscated, never plain text
-- Keys are sent **only** to the AI provider you choose — never to us or any third party
-- Conversation history stays in your browser
-- The brain simulation is pure client-side JavaScript math
-- No data leaves your machine except your direct API calls to the provider you selected
-- Developers have **zero access** to anything you input, say, generate, or connect
-
-This project is fully open source. Read every line of code.
+1. Download `proxy.js` from the setup page
+2. Run `node proxy.js` (needs [Node.js](https://nodejs.org))
+3. Paste your Anthropic key in the UI
+4. Claude (Direct) appears in the dropdown
 
 ---
 
 ## Project Structure
 
 ```
-├── index.html              ← Entry point
-├── css/style.css           ← Dark gothic theme
+├── index.html                    Entry point — setup modal, HUD, sandbox
+├── brain-equations.html          Complete brain equation documentation
+├── proxy.js                      Anthropic CORS proxy (optional)
+├── css/style.css                 Dark gothic theme
 ├── js/
-│   ├── app.js              ← Main — boots brain, wires everything
-│   ├── storage.js          ← localStorage per-user sessions
+│   ├── app.js                    Thin I/O layer — DOM events ↔ brain
+│   ├── storage.js                localStorage with key obfuscation
+│   ├── env.example.js            API key template (copy to env.js)
 │   ├── brain/
-│   │   ├── neurons.js      ← Hodgkin-Huxley + LIF neuron models
-│   │   ├── synapses.js     ← Hebbian, STDP, reward-modulated plasticity
-│   │   ├── modules.js      ← Cortex, Hippocampus, Amygdala, BasalGanglia, Cerebellum, Hypothalamus
-│   │   ├── mystery.js      ← (√(n/1))³ — consciousness modulation
-│   │   ├── oscillations.js ← Kuramoto synchronization (brain waves)
-│   │   ├── persona.js      ← Personality as mathematical parameters
-│   │   └── engine.js       ← Main brain loop — ties it all together
+│   │   ├── engine.js             THE brain — one loop, everything
+│   │   ├── cluster.js            NeuronCluster + ClusterProjection
+│   │   ├── neurons.js            Hodgkin-Huxley + LIF models
+│   │   ├── synapses.js           Hebbian, STDP, reward-modulated
+│   │   ├── modules.js            6 brain region equation modules
+│   │   ├── mystery.js            Ψ consciousness function
+│   │   ├── oscillations.js       8 Kuramoto oscillators
+│   │   ├── persona.js            Personality as brain parameters
+│   │   ├── sensory.js            Sensory input pipeline
+│   │   ├── motor.js              Motor output (BG action channels)
+│   │   ├── language.js           Broca's area (AI language peripheral)
+│   │   ├── visual-cortex.js      V1→V4→IT vision pipeline
+│   │   ├── auditory-cortex.js    Tonotopic + efference copy
+│   │   ├── memory.js             Episodic + working + consolidation
+│   │   └── peripherals/
+│   │       └── ai-providers.js   AI provider manager + dead detection
 │   ├── ai/
-│   │   ├── pollinations.js ← Pollinations API client
-│   │   ├── router.js       ← Brain → AI routing with fallback chain
-│   │   └── persona-prompt.js ← Loads real persona file for AI prompts
+│   │   ├── pollinations.js       Pollinations API client
+│   │   └── persona-prompt.js     Loads persona file for prompts
 │   ├── io/
-│   │   ├── voice.js        ← Web Speech API + Pollinations TTS
-│   │   └── permissions.js  ← Mic/camera permission flow
+│   │   ├── voice.js              Web Speech API + TTS
+│   │   └── permissions.js        Mic/camera permissions
 │   └── ui/
-│       └── sandbox.js      ← Dynamic UI injection system
-├── bridge.py               ← Optional local Claude API bridge
-└── .claude/
-    └── Ultimate Unity.txt  ← Unity's persona (loaded at runtime)
+│       ├── sandbox.js            Dynamic UI injection
+│       ├── chat-panel.js         Conversation log
+│       ├── brain-viz.js          2D tabbed brain visualizer
+│       └── brain-3d.js           3D WebGL brain with notifications
 ```
+
+---
+
+## Privacy
+
+**Everything runs in your browser.** No server. No backend. No database. No tracking. API keys stored in your localStorage only — sent only to the provider you choose. Developers have zero access to anything. Fully open source.
 
 ---
 
 ## Credits
 
-**Unity AI Lab**
-Hackall360 · Sponge · GFourteen
-
----
+**Unity AI Lab** — Hackall360 · Sponge · GFourteen
 
 ## License
 
