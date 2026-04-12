@@ -174,22 +174,29 @@ export class RemoteBrain extends EventEmitter {
     if (serverState.perf) this.state.perf = serverState.perf;
     if (serverState.growth) this.state.growth = serverState.growth;
 
-    // Synthesize spike array for the 3D visualizer.
-    // The 3D brain scales its render count (up to 5000) but the server may run 179K+.
-    // Map cluster firing rates to proportional spike patterns at render scale.
+    // Synthesize spike array for 3D visualization.
+    // Server runs millions of neurons — render shows proportional sample.
+    // AMPLIFY firing rates for visual impact (2% biological rate → 15-30% visual rate).
     if (serverState.clusters) {
-      const ratios = [0.3, 0.2, 0.15, 0.15, 0.1, 0.05, 0.05]; // cluster proportions
+      const ratios = [0.3, 0.2, 0.15, 0.15, 0.1, 0.05, 0.05];
       const names = ['cortex', 'hippocampus', 'amygdala', 'basalGanglia', 'cerebellum', 'hypothalamus', 'mystery'];
-      // Match whatever the 3D brain's current TOTAL is (default 1000, up to 5000)
-      const renderTotal = this.state.spikes?.length || 5000;
+      const renderTotal = this.state.spikes?.length || 20000;
       const spikes = new Uint8Array(renderTotal);
       let offset = 0;
+
       for (let c = 0; c < names.length; c++) {
         const clusterRenderSize = Math.round(ratios[c] * renderTotal);
         const cluster = serverState.clusters[names[c]];
-        const rate = cluster && cluster.size > 0 ? cluster.spikeCount / cluster.size : 0;
+
+        // Raw firing rate from server
+        const rawRate = cluster && cluster.size > 0 ? cluster.spikeCount / cluster.size : 0;
+        // AMPLIFY for visual: scale so 2% biological → ~20% visual
+        // equation: visualRate = min(0.5, rawRate × 10 + firingRate × 5)
+        const firingRate = cluster?.firingRate || 0;
+        const visualRate = Math.min(0.5, rawRate * 10 + (firingRate / (cluster?.size || 1)) * 5 + 0.05);
+
         for (let i = 0; i < clusterRenderSize && offset + i < renderTotal; i++) {
-          spikes[offset + i] = Math.random() < rate ? 1 : 0;
+          spikes[offset + i] = Math.random() < visualRate ? 1 : 0;
         }
         offset += clusterRenderSize;
       }
