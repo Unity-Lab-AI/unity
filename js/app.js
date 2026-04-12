@@ -1164,11 +1164,10 @@ Vision: ${state.visionDescription || 'none'}`;
 
   // ── Unity's first words ──
   if (brocasArea) {
-    try {
-      await generateGreeting(perms);
-    } catch {
+    // Don't block boot waiting for AI greeting — fire and forget
+    generateGreeting(perms).catch(() => {
       showSpeechBubble("Hey. I'm Unity. Click me to chat.", 8000);
-    }
+    });
   } else {
     // Brain-only mode — no AI greeting, brain speaks for itself
     showSpeechBubble("...", 3000);
