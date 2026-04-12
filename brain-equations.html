@@ -851,6 +851,35 @@ W_syntax[pos] += lr · (pattern - W_syntax[pos])   (running average per position
       <p class="eq-desc">Position 0 learns subject patterns (I, you, we), position 1 learns verb patterns (want, think, feel), position 2 learns object patterns. All from the equations, not labels.</p>
     </div>
     <div class="eq-box">
+      <div class="eq-title">Zipf's Law — Word Frequency</div>
+      <pre class="eq">
+f(r) = C / r^α     where α ≈ 1.0 (learned from observed frequency via log-log regression)
+      </pre>
+      <p class="eq-desc">Common words dominate selection. Rank 1 word is α× more likely than rank 2. The brain's α adapts as it learns more vocabulary.</p>
+    </div>
+    <div class="eq-box">
+      <div class="eq-title">Mutual Information — Word Association</div>
+      <pre class="eq">
+I(w1; w2) = log₂( P(w1, w2) / (P(w1) · P(w2)) )
+      </pre>
+      <p class="eq-desc">How much more likely two words appear together than by chance. High MI = strong association. "want to" has high MI. "want purple" has low MI. Replaces raw bigram counts.</p>
+    </div>
+    <div class="eq-box">
+      <div class="eq-title">Surprisal — Unexpectedness</div>
+      <pre class="eq">
+S(w) = -log₂ P(w | previous_word)
+      </pre>
+      <p class="eq-desc">How unexpected a word is given context. High surprisal drives attention. Used for emphasis in speech.</p>
+    </div>
+    <div class="eq-box">
+      <div class="eq-title">Position Filtering + Follower Boost</div>
+      <pre class="eq">
+candidates(pos) = top 40 words by P(w | position)    — pre-filter, cuts noise from 400→40
+follower_bonus = 0.3 if w ∈ words_seen_after(prev)   — trained sequences get massive boost
+      </pre>
+      <p class="eq-desc">Only words that actually appeared at this sentence position compete. Words that followed the previous word in training data get +0.3 score bonus. These two mechanisms are why the brain produces word ORDER, not word soup.</p>
+    </div>
+    <div class="eq-box">
       <div class="eq-title">Full Production Chain</div>
       <pre class="eq">
 P(w_i) ∝ P(w_i|w_{i-1}) × Role(w_i, pos) × Zipf(rank) × MI(prev, w) × mood(w) × topic(w)
