@@ -519,18 +519,27 @@ export class UnityBrain extends EventEmitter {
       }
     }
 
-    // 5. Check for image/selfie request
+    // 5. Check for BUILD request first (UI components, apps, tools)
     const lower = text.toLowerCase();
-    const imageWords = ['selfie', 'picture', 'photo', 'image', 'pic ', 'pics',
-      'show me', 'show yourself', 'send me', 'let me see', 'wanna see',
-      'want to see', 'what do you look', 'how do you look', 'take a pic',
-      'full body', 'head shot', 'headshot', 'portrait', 'draw', 'render',
-      'generate', 'snap a', 'top to bottom', 'outfit', 'what are you wearing'];
-    const isImage = imageWords.some(w => lower.includes(w));
+    const buildWords = ['build', 'create a', 'make a', 'make me', 'give me a',
+      'add a', 'put a', 'app', 'tool', 'widget', 'component', 'editor',
+      'game', 'calculator', 'timer', 'clock', 'player', 'chat box',
+      'drawing app', 'paint', 'canvas app', 'code editor'];
+    const isBuild = buildWords.some(w => lower.includes(w));
+
+    // 6. Check for image/selfie request (only if NOT a build request)
+    const imageWords = ['selfie', 'picture', 'photo', 'image of', 'pic of',
+      'show me what you look', 'how do you look', 'take a pic', 'take a photo',
+      'full body', 'head shot', 'headshot', 'portrait', 'snap a',
+      'top to bottom', 'outfit', 'what are you wearing',
+      'draw me', 'draw a pic', 'draw a picture', 'render me'];
+    const isImage = !isBuild && imageWords.some(w => lower.includes(w));
     const selfWords = ['you', 'your', 'yourself', 'unity', 'self', 'u look', 'urself'];
     const isSelfie = isImage && selfWords.some(w => lower.includes(w));
 
-    if (isSelfie && this._imageGen) {
+    if (isBuild && this._brocasArea && this._sandbox) {
+      return this._handleBuild(text);
+    } else if (isSelfie && this._imageGen) {
       return this._handleSelfie(text);
     } else if (isImage && this._imageGen) {
       return this._handleImage(text);
@@ -567,6 +576,61 @@ export class UnityBrain extends EventEmitter {
     this.reward += 0.1;
     this.emit('response', { text: response, action: 'respond_text' });
     return { text: response, action: 'respond_text' };
+  }
+
+  async _handleBuild(text) {
+    const buildPrompt = [
+      '[SYSTEM: Generate a JSON response (ONLY valid JSON, no markdown fences) with these keys:',
+      '  { "html": "...", "css": "...", "js": "...", "id": "..." }',
+      'The response creates a self-contained UI component for what the user asked.',
+      'Rules:',
+      '- "id" is a short unique kebab-case identifier.',
+      '- "html" is raw HTML (no <script> or <style> tags).',
+      '- "css" is CSS rules.',
+      '- "js" is JavaScript that runs after injection. It has access to a `unity` API:',
+      '    unity.speak(text), unity.chat(prompt), unity.generateImage(prompt),',
+      '    unity.getState(), unity.storage.get(k), unity.storage.set(k,v)',
+      '- Use dark styling: #0a0a0a backgrounds, #e0e0e0 text, neon accents (#ff00ff, #00ffcc).',
+      '- Be creative. Make it functional. All strings properly escaped.]',
+    ].join('\n');
+
+    const raw = await this._brocasArea.generate(this.getState(), buildPrompt + '\n\nUser request: ' + text);
+    if (!raw) {
+      this.emit('response', { text: "Shit — couldn't build that. Try again?", action: 'build_ui' });
+      return { text: "Shit — couldn't build that. Try again?", action: 'build_ui' };
+    }
+
+    // Parse JSON
+    let component;
+    try {
+      const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+      component = JSON.parse(cleaned);
+    } catch {
+      // If JSON parse fails, try to extract JSON from the response
+      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try { component = JSON.parse(jsonMatch[0]); } catch {}
+      }
+    }
+
+    if (!component || !component.html) {
+      this.emit('response', { text: "Brain couldn't format that right. Let me try again.", action: 'build_ui' });
+      return { text: "Brain couldn't format that right.", action: 'build_ui' };
+    }
+
+    const { html, css, js, id } = component;
+    const componentId = id || ('unity-' + Date.now());
+    this._sandbox.inject({ id: componentId, html: html || '', css: css || '', js: js || '' });
+
+    const quip = `Built it — "${componentId}". Check the sandbox.`;
+    if (this._voice) {
+      this._voice.stopSpeaking();
+      this._voice.speak(quip).catch(() => {});
+    }
+
+    this.reward += 0.2;
+    this.emit('response', { text: quip, action: 'build_ui' });
+    return { text: quip, action: 'build_ui' };
   }
 
   async _handleSelfie(text) {
