@@ -341,6 +341,7 @@ const brainIndicator = document.getElementById('brain-indicator');
 
 // ── Known local AI servers ──
 const LOCAL_AI_ENDPOINTS = [
+  { name: 'Claude Code CLI', url: 'http://localhost:8088', probe: '/v1/models', modelsPath: 'data', modelKey: 'id' },
   { name: 'Ollama', url: 'http://localhost:11434', probe: '/api/tags', modelsPath: 'models', modelKey: 'name' },
   { name: 'LM Studio', url: 'http://localhost:1234', probe: '/v1/models', modelsPath: 'data', modelKey: 'id' },
   { name: 'LocalAI', url: 'http://localhost:8090', probe: '/v1/models', modelsPath: 'data', modelKey: 'id' },
@@ -396,6 +397,11 @@ const PROVIDERS = {
   local: {
     name: 'Local AI', desc: 'Auto-detects Ollama, LM Studio, etc.',
     hint: 'Make sure your local AI server is running.', needsKey: false, isLocal: true,
+  },
+  ocli: {
+    name: 'OCLI (Claude CLI)', desc: 'Connect to a running OCLI instance with full persona engine. Uses your Claude Code Max plan — no extra API key.',
+    hint: 'Start OCLI in another terminal. It runs on port 9889 by default.',
+    url: 'http://localhost:9889', needsKey: false, isLocal: true, isOcli: true,
   },
 };
 
