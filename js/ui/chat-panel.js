@@ -85,7 +85,12 @@ export class ChatPanel {
 
     const body = document.createElement('span');
     body.className = 'chat-msg-text';
-    body.textContent = text;
+    // Render HTML for images, escape text for everything else
+    if (text.includes('<img ') || text.includes('<a ')) {
+      body.innerHTML = text;
+    } else {
+      body.textContent = text;
+    }
 
     msg.appendChild(label);
     msg.appendChild(body);

@@ -880,10 +880,15 @@ async function bootUnity(apiKey, perms) {
     showSpeechBubble(text, 8000);
     if (chatPanel) chatPanel.addMessage('assistant', text, true);
   });
-  // Image display — show generated images inline in chat
+  // Image display — show generated images inline
   brain.on('image', (url) => {
-    if (chatPanel && url) {
-      chatPanel.addMessage('assistant', `<img src="${url}" style="max-width:300px;border-radius:8px;cursor:pointer;" onclick="window.open(this.src,'_blank')">`, true);
+    if (!url) return;
+    // Show image in speech bubble
+    showSpeechBubble('Image generating...', 3000);
+    // Add to chat as clickable image
+    if (chatPanel) {
+      const imgHtml = `<a href="${url}" target="_blank"><img src="${url}" style="max-width:280px;border-radius:8px;border:1px solid #333;display:block;margin:4px 0;" onerror="this.alt='Loading...'"></a>`;
+      chatPanel.addMessage('assistant', imgHtml, false);
     }
   });
 

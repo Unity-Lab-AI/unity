@@ -882,17 +882,12 @@ USER REQUEST: ${text}`;
     const url = this._imageGen.generateImage(prompt, { model: this._storage?.get('image_model') || 'flux', width: 768, height: 768 });
 
     if (url) {
-      // Emit image URL — app.js handles display (no window.open, popup blockers block it)
       this.emit('image', url);
-      if (this._sandbox) {
-        const imgId = 'img_' + Date.now();
-        this._sandbox.inject({ id: imgId, html: `<div style="margin:12px 0;text-align:center;"><img src="${url}" alt="" style="max-width:100%;border-radius:8px;border:1px solid #333;cursor:pointer;" onclick="window.open(this.src,'_blank')" onerror="this.alt='Image loading...'"></div>`, css: '' });
-      }
     }
 
     this.reward += 0.1;
-    this.emit('response', { text: url ? `![image](${url})` : 'Image failed.', action: 'generate_image' });
-    return { text: url ? `![image](${url})` : 'Image failed.', action: 'generate_image' };
+    // Don't emit 'response' for images — the 'image' event handles display
+    return { text: null, action: 'generate_image' };
   }
 
   _sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
