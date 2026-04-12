@@ -400,10 +400,12 @@ export class Brain3D {
     this._expansionFactor += (targetExpansion - this._expansionFactor) * 0.02; // smooth
     this._applyExpansion();
 
-    // ── PROCESS NOTIFICATIONS — ~1% of spikes get a label ──
+    // ── PROCESS NOTIFICATIONS — one every ~5 seconds ──
+    // Translates real neural activity into readable process descriptions.
+    // Not random — derived from actual cluster states and equations.
     const now = performance.now();
-    if (now - this._lastNotifTime > 300) { // max ~3 notifs per second
-      this._generateNotifications(state, spk);
+    if (now - this._lastNotifTime > 5000) {
+      this._generateProcessNotification(state);
       this._lastNotifTime = now;
     }
 
@@ -478,7 +480,7 @@ export class Brain3D {
 .b3d-lbl{position:absolute;font-size:8px;letter-spacing:1px;font-weight:600;white-space:nowrap;transform:translate(-50%,-50%);opacity:.65;text-shadow:0 0 8px rgba(0,0,0,.95);transition:opacity .3s}
 .b3d-foot{position:absolute;bottom:8px;left:12px;right:12px;display:flex;justify-content:space-between;font-size:9px;color:#444;pointer-events:none;z-index:1}
 .b3d-notif-wrap{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:3}
-.b3d-notif{position:absolute;font-size:10px;font-family:inherit;white-space:nowrap;text-shadow:0 0 8px rgba(0,0,0,.9);transition:opacity .3s;pointer-events:none;letter-spacing:.3px}
+.b3d-notif{position:absolute;font-size:11px;font-family:inherit;white-space:nowrap;text-shadow:0 0 12px rgba(0,0,0,.95),0 0 4px currentColor;pointer-events:none;letter-spacing:.3px;padding:4px 8px;background:rgba(0,0,0,.6);border-radius:4px;border-left:2px solid currentColor;backdrop-filter:blur(2px);max-width:500px;overflow:hidden;text-overflow:ellipsis}
 .b3d-log-wrap{position:absolute;bottom:30px;right:10px;width:280px;max-height:200px;z-index:2;pointer-events:auto}
 .b3d-log-title{font-size:9px;color:#555;letter-spacing:1px;margin-bottom:4px}
 .b3d-log{max-height:180px;overflow-y:auto;font-size:8px;line-height:1.5;scrollbar-width:thin;scrollbar-color:#222 transparent}
@@ -740,70 +742,119 @@ export class Brain3D {
 
   // ── Process Notifications ──────────────────────────────────────
 
-  _generateNotifications(state, spk) {
+  /**
+   * Generate ONE rich process notification every ~5 seconds.
+   * Translates actual neural signals into human-readable brain activity.
+   * Cycles through different brain systems, showing real computed values.
+   */
+  _generateProcessNotification(state) {
+    if (!state) return;
     const clusters = state.clusters || {};
-    const notifMessages = [];
-
-    // Cortex — prediction error
-    const cortexErr = state.cortex?.error;
-    const errVal = cortexErr ? (cortexErr.length ? Math.abs(cortexErr[0]) : Math.abs(cortexErr)) : 0;
-    if (errVal > 0.3 && Math.random() < 0.15) {
-      notifMessages.push({ text: `Cortex: prediction error ${errVal.toFixed(3)}`, cluster: 0 });
-    }
-
-    // Amygdala — arousal/valence shifts
     const arousal = state.amygdala?.arousal ?? 0;
     const valence = state.amygdala?.valence ?? 0;
-    if (arousal > 0.7 && Math.random() < 0.1) {
-      notifMessages.push({ text: `Amygdala: arousal ${(arousal*100).toFixed(0)}%`, cluster: 2 });
-    }
-    if (Math.abs(valence) > 0.3 && Math.random() < 0.08) {
-      notifMessages.push({ text: `Amygdala: valence ${valence > 0 ? '+' : ''}${valence.toFixed(2)}`, cluster: 2 });
-    }
-
-    // Basal Ganglia — action selection
-    const action = state.motor?.selectedAction;
-    const conf = state.motor?.confidence ?? 0;
-    if (conf > 0.2 && action && action !== 'idle' && Math.random() < 0.1) {
-      notifMessages.push({ text: `BG: ${action} (${(conf*100).toFixed(0)}%)`, cluster: 3 });
-    }
-
-    // Hippocampus — memory events
-    const memRecall = state.memory?.lastRecall;
-    if (memRecall && Math.random() < 0.15) {
-      notifMessages.push({ text: `Hippo: recall "${memRecall.trigger}" sim=${memRecall.similarity?.toFixed(2)}`, cluster: 1 });
-    }
-    const wmLoad = state.memory?.workingMemoryLoad ?? 0;
-    if (wmLoad > 0.5 && Math.random() < 0.05) {
-      notifMessages.push({ text: `Hippo: WM ${(wmLoad*100).toFixed(0)}% full`, cluster: 1 });
-    }
-
-    // Mystery — consciousness
     const psi = state.psi ?? 0;
-    if (psi > 1.0 && Math.random() < 0.05) {
-      notifMessages.push({ text: `Ψ = ${psi.toFixed(3)} — conscious`, cluster: 6 });
-    }
+    const coherence = state.oscillations?.coherence ?? 0;
+    const mood = state.innerVoice?.mood || 'neutral';
+    const isDreaming = state.isDreaming || false;
 
-    // Cerebellum — error correction
-    const cerebErr = state.cerebellum?.error;
-    const cErr = cerebErr ? (cerebErr.length ? Math.abs(cerebErr[0]) : Math.abs(cerebErr)) : 0;
-    if (cErr > 0.2 && Math.random() < 0.08) {
-      notifMessages.push({ text: `Cerebellum: correcting ${cErr.toFixed(3)}`, cluster: 4 });
-    }
+    // Cycle through systems — each tick shows a different process
+    this._notifCycle = ((this._notifCycle || 0) + 1) % 10;
 
-    // Spike bursts per cluster
-    for (let ci = 0; ci < CLUSTERS.length; ci++) {
-      const c = clusters[CLUSTERS[ci].key];
-      if (c && c.spikeCount > CLUSTERS[ci].n * 0.4 && Math.random() < 0.03) {
-        notifMessages.push({ text: `${CLUSTERS[ci].label}: ${c.spikeCount}/${CLUSTERS[ci].n} firing`, cluster: ci });
+    let text, cluster;
+    switch (this._notifCycle) {
+      case 0: {
+        // Cortex — what it's predicting
+        const cortexC = clusters.cortex;
+        const err = state.cortex?.error;
+        const errVal = err ? (err.length ? Math.abs(err[0]) : Math.abs(err)) : 0;
+        const rate = cortexC?.firingRate?.toFixed(1) || '0';
+        text = errVal > 0.4
+          ? `CORTEX: High prediction error (${errVal.toFixed(3)}) — processing unexpected input at rate ${rate}`
+          : `CORTEX: Predictions stable (err=${errVal.toFixed(3)}) — ${cortexC?.spikeCount || 0} neurons active, rate ${rate}`;
+        cluster = 0;
+        break;
+      }
+      case 1: {
+        // Amygdala — emotional state
+        const gate = (0.7 + arousal * 0.6).toFixed(2);
+        text = `AMYGDALA: ${arousal > 0.7 ? '⚡ HIGH arousal' : arousal > 0.4 ? 'moderate arousal' : '💤 low arousal'} (${(arousal*100).toFixed(0)}%) | valence ${valence > 0.1 ? '↑ positive' : valence < -0.1 ? '↓ negative' : '→ neutral'} (${valence.toFixed(3)}) | gate=${gate}x`;
+        cluster = 2;
+        break;
+      }
+      case 2: {
+        // Hippocampus — memory state
+        const mem = state.memory || {};
+        const recall = mem.lastRecall;
+        text = recall
+          ? `HIPPOCAMPUS: Recalling "${recall.trigger}" (similarity ${(recall.similarity ?? 0).toFixed(2)}) — ${mem.episodeCount || 0} episodes stored, WM ${mem.workingMemoryItems?.length || 0}/7`
+          : `HIPPOCAMPUS: ${mem.episodeCount || 0} episodes stored | working memory ${mem.workingMemoryItems?.length || 0}/7 items | ${isDreaming ? 'consolidating memories...' : 'monitoring for patterns'}`;
+        cluster = 1;
+        break;
+      }
+      case 3: {
+        // Basal Ganglia — action selection
+        const motor = state.motor || {};
+        const channels = motor.channelRates || [];
+        const names = ['respond', 'image', 'speak', 'build', 'listen', 'idle'];
+        let top = 'idle', topRate = 0;
+        channels.forEach?.((r, i) => { if (r > topRate) { topRate = r; top = names[i] || '?'; } });
+        text = `BASAL GANGLIA: Action competition → ${motor.selectedAction || top} winning (${((motor.confidence || topRate) * 100).toFixed(1)}%) | ${motor.speechGated ? '🔇 speech gated' : '🔊 speech active'}`;
+        cluster = 3;
+        break;
+      }
+      case 4: {
+        // Cerebellum — error correction
+        const cerebC = clusters.cerebellum;
+        const err = state.cerebellum?.error;
+        const errVal = err ? (err.length ? Math.abs(err[0]) : Math.abs(err)) : 0;
+        text = `CEREBELLUM: Error correction ${errVal > 0.3 ? '⚠ active' : '✓ minimal'} (${errVal.toFixed(4)}) — dampening cortex by ${(errVal * 2).toFixed(3)} | ${cerebC?.spikeCount || 0} neurons`;
+        cluster = 4;
+        break;
+      }
+      case 5: {
+        // Hypothalamus — drives
+        const hypoC = clusters.hypothalamus;
+        const needs = state.hypothalamus?.needsAttention || [];
+        text = needs.length > 0
+          ? `HYPOTHALAMUS: ⚠ Drives need attention: ${needs.join(', ')} — adjusting baseline for all clusters`
+          : `HYPOTHALAMUS: All drives at setpoint | homeostasis stable | ${hypoC?.spikeCount || 0} neurons regulating`;
+        cluster = 5;
+        break;
+      }
+      case 6: {
+        // Mystery — consciousness
+        text = `MYSTERY Ψ: Consciousness = ${psi.toFixed(4)} | (√(1/${state.spikeCount || 1}))³ × [Id+Ego+Left+Right] | gain=${(0.9 + psi * 0.05).toFixed(4)}x coupling | ${psi > 1 ? '🔮 hyper-aware' : psi > 0.3 ? '👁 present' : '💭 dreaming'}`;
+        cluster = 6;
+        break;
+      }
+      case 7: {
+        // Oscillations — brain waves
+        const bp = state.oscillations?.bandPower || {};
+        text = `OSCILLATIONS: R=${coherence.toFixed(3)} ${coherence > 0.7 ? '🎯 synchronized' : coherence < 0.3 ? '🌀 scattered' : '〰 partial'} | θ=${(bp.theta ?? 0).toFixed(2)} α=${(bp.alpha ?? 0).toFixed(2)} β=${(bp.beta ?? 0).toFixed(2)} γ=${(bp.gamma ?? 0).toFixed(2)}`;
+        cluster = 0;
+        break;
+      }
+      case 8: {
+        // Inner voice — mood/thought state
+        const iv = state.innerVoice || {};
+        text = iv.sentence
+          ? `INNER VOICE: "${iv.sentence}" (mood: ${mood}, vocab: ${iv.vocabSize || 0} words)`
+          : `INNER VOICE: Mood = ${mood} | ${iv.vocabSize || 0} words learned | ${iv.shouldSpeak ? '💬 wants to speak' : '🤫 thinking silently'}`;
+        cluster = 6;
+        break;
+      }
+      case 9: {
+        // Overall state summary
+        const totalSpikes = state.spikeCount || 0;
+        text = isDreaming
+          ? `DREAMING: ${totalSpikes}/${TOTAL} neurons in dream state | theta-dominant oscillations | hippocampal replay active`
+          : `BRAIN: ${totalSpikes}/${TOTAL} firing | Ψ=${psi.toFixed(3)} | mood=${mood} | ${state.drugState} | expansion=${this._expansionFactor.toFixed(2)}x`;
+        cluster = Math.floor(Math.random() * 7);
+        break;
       }
     }
 
-    // Create notification DOM elements (max 1 per call to avoid spam)
-    if (notifMessages.length > 0) {
-      const msg = notifMessages[Math.floor(Math.random() * notifMessages.length)];
-      this._addNotification(msg.text, msg.cluster);
-    }
+    if (text) this._addNotification(text, cluster);
   }
 
   _addNotification(text, clusterIdx) {
@@ -817,14 +868,14 @@ export class Brain3D {
     el.textContent = text;
     wrap.appendChild(el);
 
-    const notif = { el, x: center[0], y: center[1], z: center[2], age: 0, maxAge: 120 };
+    const notif = { el, x: center[0], y: center[1], z: center[2], age: 0, maxAge: 300, clusterIdx };
     this._notifications.push(notif);
 
     // Add to log
     this._addToLog(text, CLUSTERS[clusterIdx]?.hex || '#fff');
 
-    // Limit active notifications
-    while (this._notifications.length > 8) {
+    // Limit active notifications — only 3 at a time (one every 5 sec)
+    while (this._notifications.length > 3) {
       const old = this._notifications.shift();
       old.el.remove();
     }
@@ -835,16 +886,18 @@ export class Brain3D {
       const n = this._notifications[i];
       n.age++;
 
-      // Project 3D position to screen
-      const screen = this._project3Dto2D(n.x, n.y + 0.3, n.z, mvp, canvas);
+      // Project 3D cluster center to screen — notification appears AT the cluster
+      const floatOffset = n.age * 0.003; // slow float upward
+      const screen = this._project3Dto2D(n.x, n.y + 0.3 + floatOffset, n.z, mvp, canvas);
       if (screen) {
         n.el.style.left = screen.x + 'px';
-        n.el.style.top = (screen.y - n.age * 0.5) + 'px'; // float upward
+        n.el.style.top = screen.y + 'px';
       }
 
-      // Fade out
+      // Fade: quick appear, hold, then fade out in last 30%
       const life = n.age / n.maxAge;
-      n.el.style.opacity = Math.max(0, 1 - life * life);
+      const opacity = life < 0.1 ? life * 10 : life > 0.7 ? (1 - life) / 0.3 : 1;
+      n.el.style.opacity = Math.max(0, opacity);
 
       // Remove when dead
       if (n.age >= n.maxAge) {
