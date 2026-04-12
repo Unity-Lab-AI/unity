@@ -127,44 +127,36 @@ let landingBrainSource = null; // RemoteBrain or null
     }
   }, 1000);
 
-  // "FUCK IT — BRAIN ONLY" — full brain, no external AI model for text
-  // The brain runs ALL its systems: cortex, hippocampus, amygdala, BG, cerebellum,
-  // hypothalamus, mystery, dictionary, inner voice, motor, sensory, memory.
-  // Text comes from the brain's own learned patterns. Images still available via Pollinations.
-  const goBtn = document.getElementById('landing-go-btn');
-  if (goBtn) {
-    goBtn.addEventListener('click', () => {
-      console.log('[Landing] BRAIN ONLY — full brain, no AI text model');
-      const landing = document.getElementById('landing-brain');
-      if (landing) landing.style.display = 'none';
-      window._brainOnlyMode = true;
-      // Show setup modal but with text models greyed out
-      const modal = document.getElementById('setup-modal');
-      if (modal) modal.style.display = '';
-      // Grey out text model selection
-      const textSelect = document.getElementById('text-model-select');
-      if (textSelect) { textSelect.disabled = true; textSelect.style.opacity = '0.3'; }
-      const textFilter = document.getElementById('text-model-filter');
-      if (textFilter) { textFilter.disabled = true; textFilter.style.opacity = '0.3'; }
-      // Add label showing brain-only mode
-      const textLabel = document.querySelector('label[for="text-model-select"]') ||
-        document.querySelector('#model-selectors label');
-      if (textLabel) textLabel.innerHTML = '🧠 Text — <span style="color:#ff4d9a;font-weight:700;">BRAIN ONLY</span> (no AI model)';
-      // Enable start button
-      const startBtn = document.getElementById('start-btn');
-      if (startBtn) {
-        startBtn.disabled = false;
-        startBtn.textContent = 'Start Brain — No AI Text';
-      }
-    });
-  }
-
-  // "connect AI models" — opens setup modal for those who want an AI
+  // "TALK TO UNITY" — opens setup modal
   const chatBtn = document.getElementById('landing-chat-btn');
   if (chatBtn) {
     chatBtn.addEventListener('click', () => {
       const modal = document.getElementById('setup-modal');
       if (modal) modal.style.display = '';
+    });
+  }
+
+  // "FUCK IT — BRAIN ONLY" toggle inside setup modal
+  const brainOnlyCb = document.getElementById('brain-only-cb');
+  if (brainOnlyCb) {
+    brainOnlyCb.addEventListener('change', () => {
+      window._brainOnlyMode = brainOnlyCb.checked;
+      const textSelect = document.getElementById('text-model-select');
+      const textFilter = document.getElementById('text-model-filter');
+      const textLabel = document.getElementById('text-model-label');
+      const startBtnEl = document.getElementById('start-btn');
+
+      if (brainOnlyCb.checked) {
+        if (textSelect) { textSelect.disabled = true; textSelect.style.opacity = '0.3'; }
+        if (textFilter) { textFilter.disabled = true; textFilter.style.opacity = '0.3'; }
+        if (textLabel) textLabel.innerHTML = '🧠 Text — <span style="color:#ff4d9a;font-weight:700;">BRAIN ONLY</span>';
+        if (startBtnEl) { startBtnEl.disabled = false; startBtnEl.textContent = 'Wake Up Unity (Brain Only)'; }
+      } else {
+        if (textSelect) { textSelect.disabled = false; textSelect.style.opacity = '1'; }
+        if (textFilter) { textFilter.disabled = false; textFilter.style.opacity = '1'; }
+        if (textLabel) textLabel.textContent = '💬 Text / Chat Model';
+        if (startBtnEl) startBtnEl.textContent = 'Wake Up Unity';
+      }
     });
   }
 })();
