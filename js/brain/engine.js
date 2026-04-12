@@ -503,12 +503,15 @@ export class UnityBrain extends EventEmitter {
       const thought = this.innerVoice.currentThought;
 
       // If the inner voice has something to say AND the brain wants to speak
-      if (thought.shouldSpeak && thought.sentence && this._voice && !this._isDreaming) {
+      // BUT only if nothing else is currently speaking
+      if (thought.shouldSpeak && thought.sentence && this._voice && !this._isDreaming && !this._isSpeaking) {
+        this._isSpeaking = true;
         this._voice.stopSpeaking();
         this.auditoryCortex.setMotorOutput(thought.sentence);
         this._voice.speak(thought.sentence).then(() => {
           this.auditoryCortex.clearMotorOutput();
-        }).catch(() => { this.auditoryCortex.clearMotorOutput(); });
+          this._isSpeaking = false;
+        }).catch(() => { this.auditoryCortex.clearMotorOutput(); this._isSpeaking = false; });
         this.emit('response', { text: thought.sentence, action: 'idle_thought' });
       }
 
@@ -731,13 +734,15 @@ export class UnityBrain extends EventEmitter {
     response = response.replace(/https?:\/\/[^\s)]+\.(jpg|png|gif|webp)/gi, '')
                        .replace(/https?:\/\/pollinations\.ai[^\s)"]*/gi, '').trim();
 
-    // 8. SPEAK — the brain controls speech output
+    // 8. SPEAK — the brain controls speech output (one at a time)
     if (this._voice) {
+      this._isSpeaking = true;
       this._voice.stopSpeaking();
       this.auditoryCortex.setMotorOutput(response);
       this._voice.speak(response).then(() => {
         this.auditoryCortex.clearMotorOutput();
-      }).catch(() => { this.auditoryCortex.clearMotorOutput(); });
+        this._isSpeaking = false;
+      }).catch(() => { this.auditoryCortex.clearMotorOutput(); this._isSpeaking = false; });
     }
 
     this.reward += 0.1;
