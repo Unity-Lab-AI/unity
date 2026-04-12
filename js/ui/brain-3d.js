@@ -337,6 +337,16 @@ export class Brain3D {
     this._connCol = new Float32Array(MAX_CONN * 8);
     this._connN = 0;
 
+    // Pop-up notifications — floating process labels
+    this._notifications = [];  // { text, x, y, z, age, maxAge, color }
+    this._notifEls = [];       // DOM elements for notifications
+    this._lastNotifTime = 0;
+    this._lastState = null;
+
+    // Brain expansion — clusters spread as activity increases
+    this._expansionFactor = 1.0;  // 1.0 = default, grows with activity
+    this._basePos = null;          // original positions before expansion
+
     // GL resources (set in _initGL)
     this._gl = null;
     this._canvas = null;
@@ -362,13 +372,13 @@ export class Brain3D {
 
   updateState(state) {
     if (!state || !this._open || this._destroyed) return;
+    this._lastState = state;
     const spk = state.spikes;
     if (!spk) return;
 
     for (let i = 0; i < TOTAL; i++) {
       if (spk[i]) {
         this._glow[i] = 1.0;
-        // spawn pulse with probability
         if (this._pulses.length < MAX_PULSES && Math.random() < 0.12) {
           const ci = this._clusterOf(i);
           this._pulses.push({
@@ -384,13 +394,26 @@ export class Brain3D {
 
     this._buildConns(spk);
 
-    // Update HUD values
+    // ── BRAIN EXPANSION — clusters spread with activity ──
+    const totalSpikes = state.spikeCount || 0;
+    const targetExpansion = 1.0 + (totalSpikes / TOTAL) * 0.5; // 0-50% growth
+    this._expansionFactor += (targetExpansion - this._expansionFactor) * 0.02; // smooth
+    this._applyExpansion();
+
+    // ── PROCESS NOTIFICATIONS — ~1% of spikes get a label ──
+    const now = performance.now();
+    if (now - this._lastNotifTime > 300) { // max ~3 notifs per second
+      this._generateNotifications(state, spk);
+      this._lastNotifTime = now;
+    }
+
+    // ── Update HUD ──
     if (state.psi !== undefined) {
-      const el = this._overlay.querySelector('.b3d-psi');
+      const el = this._overlay?.querySelector('.b3d-psi');
       if (el) el.textContent = state.psi.toFixed(3);
     }
     if (state.oscillations?.coherence !== undefined) {
-      const el = this._overlay.querySelector('.b3d-coh');
+      const el = this._overlay?.querySelector('.b3d-coh');
       if (el) el.textContent = (state.oscillations.coherence * 100).toFixed(0) + '%';
     }
   }
@@ -454,6 +477,15 @@ export class Brain3D {
 .b3d-lbl-wrap{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:1}
 .b3d-lbl{position:absolute;font-size:8px;letter-spacing:1px;font-weight:600;white-space:nowrap;transform:translate(-50%,-50%);opacity:.65;text-shadow:0 0 8px rgba(0,0,0,.95);transition:opacity .3s}
 .b3d-foot{position:absolute;bottom:8px;left:12px;right:12px;display:flex;justify-content:space-between;font-size:9px;color:#444;pointer-events:none;z-index:1}
+.b3d-notif-wrap{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:3}
+.b3d-notif{position:absolute;font-size:10px;font-family:inherit;white-space:nowrap;text-shadow:0 0 8px rgba(0,0,0,.9);transition:opacity .3s;pointer-events:none;letter-spacing:.3px}
+.b3d-log-wrap{position:absolute;bottom:30px;right:10px;width:280px;max-height:200px;z-index:2;pointer-events:auto}
+.b3d-log-title{font-size:9px;color:#555;letter-spacing:1px;margin-bottom:4px}
+.b3d-log{max-height:180px;overflow-y:auto;font-size:8px;line-height:1.5;scrollbar-width:thin;scrollbar-color:#222 transparent}
+.b3d-log::-webkit-scrollbar{width:3px}
+.b3d-log::-webkit-scrollbar-thumb{background:#333;border-radius:2px}
+.b3d-log-entry{opacity:.7;padding:1px 0}
+.b3d-expansion{position:absolute;top:40px;right:10px;font-size:9px;color:#555;z-index:2}
 </style>
 <div class="b3d-hdr">
   <div class="b3d-title">3D NEURAL FIELD</div>
@@ -467,6 +499,12 @@ export class Brain3D {
   <canvas class="b3d-cv"></canvas>
   <div class="b3d-tog-wrap"></div>
   <div class="b3d-lbl-wrap"></div>
+  <div class="b3d-notif-wrap"></div>
+  <div class="b3d-expansion">EXPANSION: <b class="b3d-exp-val">1.00x</b></div>
+  <div class="b3d-log-wrap">
+    <div class="b3d-log-title">PROCESS LOG</div>
+    <div class="b3d-log"></div>
+  </div>
   <div class="b3d-foot">
     <span>DRAG rotate · SCROLL zoom</span>
     <span>1000 neurons · 7 clusters</span>
@@ -672,6 +710,177 @@ export class Brain3D {
     return 0;
   }
 
+  // ── Brain Expansion ─────────────────────────────────────────────
+
+  _applyExpansion() {
+    if (!this._basePos) {
+      this._basePos = new Float32Array(this._pos);
+    }
+    const f = this._expansionFactor;
+    for (let i = 0; i < TOTAL * 3; i++) {
+      this._pos[i] = this._basePos[i] * f;
+    }
+    // Update centers
+    let off = 0;
+    CLUSTERS.forEach((cl, ci) => {
+      let cx = 0, cy = 0, cz = 0;
+      for (let i = 0; i < cl.n; i++) {
+        const j = (off + i) * 3;
+        cx += this._pos[j]; cy += this._pos[j+1]; cz += this._pos[j+2];
+      }
+      this._centers[ci] = [cx/cl.n, cy/cl.n, cz/cl.n];
+      off += cl.n;
+    });
+    // Re-upload positions
+    if (this._gl && this._bPos) {
+      this._gl.bindBuffer(this._gl.ARRAY_BUFFER, this._bPos);
+      this._gl.bufferData(this._gl.ARRAY_BUFFER, this._pos, this._gl.STATIC_DRAW);
+    }
+  }
+
+  // ── Process Notifications ──────────────────────────────────────
+
+  _generateNotifications(state, spk) {
+    const clusters = state.clusters || {};
+    const notifMessages = [];
+
+    // Cortex — prediction error
+    const cortexErr = state.cortex?.error;
+    const errVal = cortexErr ? (cortexErr.length ? Math.abs(cortexErr[0]) : Math.abs(cortexErr)) : 0;
+    if (errVal > 0.3 && Math.random() < 0.15) {
+      notifMessages.push({ text: `Cortex: prediction error ${errVal.toFixed(3)}`, cluster: 0 });
+    }
+
+    // Amygdala — arousal/valence shifts
+    const arousal = state.amygdala?.arousal ?? 0;
+    const valence = state.amygdala?.valence ?? 0;
+    if (arousal > 0.7 && Math.random() < 0.1) {
+      notifMessages.push({ text: `Amygdala: arousal ${(arousal*100).toFixed(0)}%`, cluster: 2 });
+    }
+    if (Math.abs(valence) > 0.3 && Math.random() < 0.08) {
+      notifMessages.push({ text: `Amygdala: valence ${valence > 0 ? '+' : ''}${valence.toFixed(2)}`, cluster: 2 });
+    }
+
+    // Basal Ganglia — action selection
+    const action = state.motor?.selectedAction;
+    const conf = state.motor?.confidence ?? 0;
+    if (conf > 0.2 && action && action !== 'idle' && Math.random() < 0.1) {
+      notifMessages.push({ text: `BG: ${action} (${(conf*100).toFixed(0)}%)`, cluster: 3 });
+    }
+
+    // Hippocampus — memory events
+    const memRecall = state.memory?.lastRecall;
+    if (memRecall && Math.random() < 0.15) {
+      notifMessages.push({ text: `Hippo: recall "${memRecall.trigger}" sim=${memRecall.similarity?.toFixed(2)}`, cluster: 1 });
+    }
+    const wmLoad = state.memory?.workingMemoryLoad ?? 0;
+    if (wmLoad > 0.5 && Math.random() < 0.05) {
+      notifMessages.push({ text: `Hippo: WM ${(wmLoad*100).toFixed(0)}% full`, cluster: 1 });
+    }
+
+    // Mystery — consciousness
+    const psi = state.psi ?? 0;
+    if (psi > 1.0 && Math.random() < 0.05) {
+      notifMessages.push({ text: `Ψ = ${psi.toFixed(3)} — conscious`, cluster: 6 });
+    }
+
+    // Cerebellum — error correction
+    const cerebErr = state.cerebellum?.error;
+    const cErr = cerebErr ? (cerebErr.length ? Math.abs(cerebErr[0]) : Math.abs(cerebErr)) : 0;
+    if (cErr > 0.2 && Math.random() < 0.08) {
+      notifMessages.push({ text: `Cerebellum: correcting ${cErr.toFixed(3)}`, cluster: 4 });
+    }
+
+    // Spike bursts per cluster
+    for (let ci = 0; ci < CLUSTERS.length; ci++) {
+      const c = clusters[CLUSTERS[ci].key];
+      if (c && c.spikeCount > CLUSTERS[ci].n * 0.4 && Math.random() < 0.03) {
+        notifMessages.push({ text: `${CLUSTERS[ci].label}: ${c.spikeCount}/${CLUSTERS[ci].n} firing`, cluster: ci });
+      }
+    }
+
+    // Create notification DOM elements (max 1 per call to avoid spam)
+    if (notifMessages.length > 0) {
+      const msg = notifMessages[Math.floor(Math.random() * notifMessages.length)];
+      this._addNotification(msg.text, msg.cluster);
+    }
+  }
+
+  _addNotification(text, clusterIdx) {
+    const wrap = this._overlay?.querySelector('.b3d-notif-wrap');
+    if (!wrap) return;
+
+    const center = this._centers[clusterIdx] || [0, 0, 0];
+    const el = document.createElement('div');
+    el.className = 'b3d-notif';
+    el.style.color = CLUSTERS[clusterIdx]?.hex || '#fff';
+    el.textContent = text;
+    wrap.appendChild(el);
+
+    const notif = { el, x: center[0], y: center[1], z: center[2], age: 0, maxAge: 120 };
+    this._notifications.push(notif);
+
+    // Add to log
+    this._addToLog(text, CLUSTERS[clusterIdx]?.hex || '#fff');
+
+    // Limit active notifications
+    while (this._notifications.length > 8) {
+      const old = this._notifications.shift();
+      old.el.remove();
+    }
+  }
+
+  _updateNotifications(mvp, canvas) {
+    for (let i = this._notifications.length - 1; i >= 0; i--) {
+      const n = this._notifications[i];
+      n.age++;
+
+      // Project 3D position to screen
+      const screen = this._project3Dto2D(n.x, n.y + 0.3, n.z, mvp, canvas);
+      if (screen) {
+        n.el.style.left = screen.x + 'px';
+        n.el.style.top = (screen.y - n.age * 0.5) + 'px'; // float upward
+      }
+
+      // Fade out
+      const life = n.age / n.maxAge;
+      n.el.style.opacity = Math.max(0, 1 - life * life);
+
+      // Remove when dead
+      if (n.age >= n.maxAge) {
+        n.el.remove();
+        this._notifications.splice(i, 1);
+      }
+    }
+  }
+
+  _project3Dto2D(x, y, z, mvp, canvas) {
+    // Multiply by MVP
+    const w = mvp[3]*x + mvp[7]*y + mvp[11]*z + mvp[15];
+    if (w <= 0) return null;
+    const nx = (mvp[0]*x + mvp[4]*y + mvp[8]*z + mvp[12]) / w;
+    const ny = (mvp[1]*x + mvp[5]*y + mvp[9]*z + mvp[13]) / w;
+    // NDC to screen
+    return {
+      x: (nx * 0.5 + 0.5) * canvas.clientWidth,
+      y: (1 - (ny * 0.5 + 0.5)) * canvas.clientHeight,
+    };
+  }
+
+  _addToLog(text, color) {
+    const log = this._overlay?.querySelector('.b3d-log');
+    if (!log) return;
+    const entry = document.createElement('div');
+    entry.className = 'b3d-log-entry';
+    entry.style.color = color;
+    const time = ((this._lastState?.time ?? 0)).toFixed(1);
+    entry.textContent = `[${time}s] ${text}`;
+    log.appendChild(entry);
+    log.scrollTop = log.scrollHeight;
+    // Keep log under 100 entries
+    while (log.children.length > 100) log.children[0].remove();
+  }
+
   // ── Connections ─────────────────────────────────────────────────
 
   _buildConns(spk) {
@@ -760,6 +969,11 @@ export class Brain3D {
     this._drawPulses(gl, mvp, sc);
     // 4) Labels
     this._projectLabels(mvp, cv);
+    // 5) Notifications — float up and fade
+    this._updateNotifications(mvp, cv);
+    // 6) Expansion display
+    const expEl = this._overlay?.querySelector('.b3d-exp-val');
+    if (expEl) expEl.textContent = this._expansionFactor.toFixed(2) + 'x';
   }
 
   _drawNeurons(gl, mvp, sc) {
