@@ -618,7 +618,9 @@ class ServerBrain {
       this._useParallel = false;
     }
 
-    this._tickInterval = setInterval(async () => {
+    // Recursive setTimeout — next tick fires AFTER current step completes
+    // Not setInterval which piles up when steps take longer than interval
+    const tick = async () => {
       const stepStart = performance.now();
 
       if (this._useParallel && this._parallelBrain?.isReady) {
@@ -729,7 +731,10 @@ class ServerBrain {
         });
         if (this._emotionHistory.length > this._historyMaxLen) this._emotionHistory.shift();
       }
-    }, BRAIN_TICK_MS);
+      // Schedule next tick AFTER this one completes — no pileup
+      if (this.running) setTimeout(tick, BRAIN_TICK_MS);
+    };
+    tick(); // start the loop
     console.log('[Brain] Started — thinking continuously');
   }
 
@@ -737,8 +742,7 @@ class ServerBrain {
    * Stop the brain loop.
    */
   stop() {
-    this.running = false;
-    if (this._tickInterval) clearInterval(this._tickInterval);
+    this.running = false; // recursive setTimeout checks this.running
   }
 
   /**

@@ -1059,8 +1059,8 @@ export class Brain3D {
     for (let c = 0; c < CLUSTERS.length; c++) {
       const sc = serverClusters[CLUSTERS[c].key];
       const rate = sc ? (sc.spikeCount || 0) / (sc.size || 1) : 0;
-      // Number of connections proportional to ACTUAL firing rate
-      const connCount = Math.max(1, Math.round(rate * 200));
+      // Connections proportional to activity — minimum 3 per active cluster
+      const connCount = rate > 0 ? Math.max(3, Math.round(rate * 300)) : 0;
       clusterActivity.push({ rate, connCount, offset: off, n: CLUSTERS[c].n });
       off += CLUSTERS[c].n;
     }
@@ -1071,7 +1071,8 @@ export class Brain3D {
       for (let cb = ca + 1; cb < CLUSTERS.length && this._connN < MAX_CONN * 0.75; cb++) {
         if (clusterActivity[cb].rate === 0) continue;
         // More connections for more active pairs
-        const count = Math.min(8, clusterActivity[ca].connCount, clusterActivity[cb].connCount);
+        // More connections — proportional to BOTH clusters' activity
+        const count = Math.min(12, clusterActivity[ca].connCount + clusterActivity[cb].connCount);
         for (let k = 0; k < count && this._connN < MAX_CONN; k++) {
           const ai = clusterActivity[ca].offset + Math.floor(Math.random() * clusterActivity[ca].n);
           const bi = clusterActivity[cb].offset + Math.floor(Math.random() * clusterActivity[cb].n);
