@@ -598,17 +598,19 @@ async function bootUnity(apiKey, perms) {
     // Clear the interrupt flag WE just set — it's for detecting NEW interrupts during generation
     brain.motor._interruptFlag = false;
 
-    // Force a fresh vision capture if the user is asking about something visual
-    const visualWords = ['see', 'look', 'color', 'wearing', 'holding', 'hat', 'shirt',
-      'background', 'behind', 'room', 'face', 'hair', 'hand', 'desk', 'what is',
-      'what am', 'show me', 'glasses', 'eyes', 'sitting', 'standing'];
-    if (visualWords.some(w => text.toLowerCase().includes(w)) && brain.visualCortex.isActive()) {
-      // User asked about something visual — force the visual cortex to look NOW
-      brain.visualCortex.processFrame();
-      brain.visualCortex.forceDescribe();
-      await sleep(3000); // wait for the AI vision call to complete
-    } else {
-      await sleep(100); // normal propagation delay
+    // Let the brain's neural dynamics propagate — the brain decides if it needs
+    // to look (cortex prediction error + amygdala salience trigger vision capture).
+    // No keyword matching here. The equations handle it.
+    await sleep(100);
+
+    // If the visual cortex is currently describing (triggered by brain equations),
+    // wait for it to finish so the response has the latest vision data
+    if (brain.visualCortex.isActive() && brain.visualCortex._describing) {
+      const maxWait = 5000;
+      const start = Date.now();
+      while (brain.visualCortex._describing && Date.now() - start < maxWait) {
+        await sleep(200);
+      }
     }
 
     // Check if this is an image/selfie request — done by checking the text,
