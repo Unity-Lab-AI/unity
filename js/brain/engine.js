@@ -769,7 +769,6 @@ export class UnityBrain extends EventEmitter {
     }
 
     this.reward += 0.1;
-    this.emit('response', { text: response, action: 'respond_text' });
     return { text: response, action: 'respond_text' };
   }
 
