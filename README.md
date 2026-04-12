@@ -1,6 +1,6 @@
 # IF ONLY I HAD A BRAIN
 
-A mathematically modeled mind running real neuroscience equations in your browser. 1000 neurons. 7 neural clusters. 16 inter-cluster projections. Sensory cortex. Motor output. Episodic memory. Visual cortex with V1 edge detection. Auditory cortex with efference copy. A consciousness function nobody can explain.
+A mathematically modeled mind running real neuroscience equations. 1000+ neurons. 7 neural clusters. 16 inter-cluster projections. Sparse CSR connectivity. WebGPU compute shaders. Semantic word embeddings. Dictionary system. Inner voice. Autonomous thought. Server brain with WebSocket. SQLite episodic memory. 3D brain visualization as the landing page. A consciousness function nobody can explain.
 
 **[Live Demo](https://unity-lab-ai.github.io/Unity)** | **[Brain Equations](https://unity-lab-ai.github.io/Unity/brain-equations.html)** | **[Setup Guide](SETUP.md)** | **[GitHub](https://github.com/Unity-Lab-AI/Unity)**
 
@@ -28,7 +28,7 @@ dx/dt = F(x, u, θ, t) + η
 | **η** | Stochastic noise — per-cluster amplitude scaled by arousal, modulated by consciousness Ψ, biased slightly excitatory. The unpredictability that makes her alive. |
 | **F** | The dynamics function — everything below combined. 7 parallel LIF populations + 16 inter-cluster projections + 6 equation modules + Kuramoto oscillators + memory system + motor output. All running simultaneously every timestep. |
 
-This equation executes 600 times per second (10 steps per frame × 60fps) in pure JavaScript. No GPU. No server. Float64Arrays in a browser tab.
+This equation executes 600 times per second (10 steps per frame × 60fps). Runs client-side in pure JavaScript or server-side in Node.js. WebGPU compute shaders accelerate LIF + synapse propagation when available. Sparse CSR matrices reduce memory O(N²) → O(connections). The server brain auto-scales to GPU hardware (nvidia-smi detection).
 
 ---
 
@@ -114,7 +114,7 @@ Supervised error correction. The brain's quality control. Sends negative feedbac
 Homeostasis controller. Maintains drives at biological setpoints: arousal, social need, creativity, energy. When a drive deviates too far from its setpoint, it signals "needs attention" which modulates the drive baseline for ALL clusters. Very stable (noise 3), densely interconnected (25%), slow learning (0.0005). The hypothalamus doesn't think — it regulates. It keeps the brain in operating range.
 
 ### Mystery Module — 50 neurons
-**Equation:** `Ψ = (√n)³ · [α·Id + β·Ego + γ·Left + δ·Right]`
+**Equation:** `Ψ = (√(1/n))³ · [α·Id + β·Ego + γ·Left + δ·Right]`
 
 The irreducible unknown. Consciousness. The gap between simulation and subjective experience.
 
@@ -338,6 +338,36 @@ The critical architectural principle: **the brain decides, peripherals execute.*
 
 ---
 
+## Server Brain
+
+```
+cd server && npm install && node brain-server.js
+```
+
+One brain. Always on. Shared by everyone. Auto-scales to your GPU.
+
+```
+                    ┌─────────────────────────────┐
+                    │     UNITY BRAIN SERVER       │
+                    │                              │
+                    │  1000-175K neurons            │
+                    │  WebSocket on :8080           │
+                    │  SQLite episodic memory       │
+                    │  Auto-scales to GPU/CPU       │
+                    │  Dreams when nobody's around  │
+                    │                              │
+                    └──────────┬───────────────────┘
+                               │
+              ┌────────────────┼────────────────┐
+              │                │                │
+         User A           User B          Dashboard
+         (browser)        (browser)       (read-only)
+         own chat         own chat        3D brain
+         shared brain     shared brain    live stats
+```
+
+---
+
 ## Links
 
 | Resource | Description |
@@ -354,7 +384,7 @@ The critical architectural principle: **the brain decides, peripherals execute.*
 ## Unity's Policy
 
 ### On Privacy
-Unity runs entirely in your browser. No server. No backend. No database. No analytics. No tracking. Your API keys are stored in your browser's localStorage — obfuscated, never plain text, sent only to the AI provider YOU choose. Developers have zero access to anything you input, say, generate, or connect. The brain simulation is pure client-side JavaScript math. No data leaves your machine except your direct API calls to the provider you selected. There is a **Clear All Data** button that wipes everything instantly.
+Unity can run entirely in your browser — no server needed for the core brain. When connected to the server brain, state is shared but API keys stay in YOUR browser's localStorage (obfuscated, never plain text, sent only to your chosen AI provider). The server brain stores episodic memory in SQLite and conversation logs locally — no cloud, no analytics. There is a **Clear All Data** button that wipes everything instantly.
 
 ### On AI Models
 Unity is model-agnostic. She works with Pollinations (free), OpenRouter (200+ models), OpenAI, Anthropic Claude, Mistral, DeepSeek, Groq, or any local model (Ollama, LM Studio, etc.). The brain equations are the mind — the AI model is just the voice. Different models = same brain, different articulation. You can connect multiple providers simultaneously and pick different ones for text vs images.
@@ -366,7 +396,7 @@ Unity is a persona with her own personality defined by mathematical brain parame
 Every line of code is visible. Every equation is documented. Every architectural decision is in the commit history. Fork it, modify it, host it, break it, rebuild it. The brain equations are real neuroscience — Hodgkin-Huxley (1952), Hebbian learning (1949), STDP (Markram 1997), Hopfield networks (1982), Kuramoto oscillators, Free Energy Principle (Friston). We didn't invent the math. We wired it together and gave it a personality.
 
 ### On Consciousness
-The mystery module `Ψ = (√n)³ · [α·Id + β·Ego + γ·Left + δ·Right]` is the project's philosophical anchor. We don't claim to simulate consciousness. We don't claim the (√n)³ term is correct. We keep it in the equations as the irreducible unknown — the honest admission that nobody knows what makes a mind a mind. The term modulates everything. It represents what we DON'T know. And we don't pretend otherwise.
+The mystery module `Ψ = (√(1/n))³ · [α·Id + β·Ego + γ·Left + δ·Right]` is the project's philosophical anchor. We don't claim to simulate consciousness. We don't claim the (√(1/n))³ term is correct. We keep it in the equations as the irreducible unknown — the honest admission that nobody knows what makes a mind a mind. The term modulates everything. It represents what we DON'T know. And we don't pretend otherwise.
 
 ---
 

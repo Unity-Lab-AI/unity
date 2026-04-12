@@ -182,7 +182,7 @@ Neurons → Synapses → Brain Loop → Brain Regions → Persona Loader → API
 | Date | Decision | Rationale |
 |------|----------|-----------|
 | 2026-04-11 | ~~Use Python + FastAPI stack~~ → Pure browser JS | Brain sim runs fine with Float64Arrays at 60fps, no backend needed, zero dependencies |
-| 2026-04-11 | Keep (√(n/1))³ as irreducible unknown | Honest about what we can't model — consciousness |
+| 2026-04-11 | Keep (√(1/n))³ as irreducible unknown | Honest about what we can't model — consciousness |
 | 2026-04-11 | Persona as parameters, not prompts | Unity IS the brain, not a wrapper around an LLM |
 | 2026-04-11 | Always-on server daemon | She thinks when nobody is talking — that's the point |
 | 2026-04-11 | Multi-provider AI connect | Users pick different providers for text vs images, connect as many as they want |

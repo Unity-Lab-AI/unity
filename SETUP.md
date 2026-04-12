@@ -132,10 +132,10 @@ Live at `your-username.github.io/Unity/`. Everything runs client-side — no ser
 │   │   └── peripherals/
 │   │       └── ai-providers.js   AI provider manager + dead backend detection
 │   ├── ai/
-│   │   ├── pollinations.js       Pollinations API client (text/image/TTS)
-│   │   └── persona-prompt.js     Loads persona file for prompts
+│   │   └── pollinations.js       Pollinations API client (text/image/TTS)
 │   ├── io/
 │   │   ├── voice.js              Web Speech API + Pollinations TTS
+│   │   ├── vision.js             Webcam capture + AI scene description
 │   │   └── permissions.js        Mic/camera permission requests
 │   └── ui/
 │       ├── sandbox.js            Dynamic UI injection system

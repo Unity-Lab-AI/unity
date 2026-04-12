@@ -264,6 +264,10 @@
       <a href="#motor-equations"><span class="num">8.9</span> Motor Output — Action Selection from Spike Patterns</a>
       <a href="#projection-learning"><span class="num">8.10</span> Projection Learning — How the Brain Learns Language→Action</a>
       <a href="#broca"><span class="num">8.11</span> Broca's Area — What the AI Model Receives</a>
+      <a href="#sparse"><span class="num">8.12</span> Sparse Connectivity — CSR Matrix Operations</a>
+      <a href="#embeddings"><span class="num">8.13</span> Semantic Embeddings — Words as Cortex Patterns</a>
+      <a href="#dictionary"><span class="num">8.14</span> Dictionary — Learned Sentence Generation</a>
+      <a href="#inner-voice"><span class="num">8.15</span> Inner Voice — Pre-Verbal Thought Threshold</a>
       <a href="#comparison"><span class="num">9</span> Biological Comparison</a>
     </div>
 
@@ -544,7 +548,7 @@
     |--- Basal Ganglia: P(a) = softmax(Q/τ) (6 action channels, 25 neurons each)
     |--- Cerebellum: output = prediction + error_correction
     |--- Hypothalamus: dH/dt = -α(H - H_set) + input
-    |--- Mystery: <span class="pu">Ψ = (√n)³ · [α·Id + β·Ego + γ·Left + δ·Right]</span>
+    |--- Mystery: <span class="pu">Ψ = (√(1/n))³ · [α·Id + β·Ego + γ·Left + δ·Right]</span>
     |
     v
 <span class="pu">[Memory System]</span>
@@ -590,7 +594,7 @@ where:
 
   η = noise(cluster) · gain(Ψ) · gate(amygdala) · drive(hypothalamus)
 
-  Ψ = (√n)³ · [α·Id + β·Ego + γ·Left + δ·Right]  (consciousness modulates EVERYTHING)
+  Ψ = (√(1/n))³ · [α·Id + β·Ego + γ·Left + δ·Right]  (consciousness modulates EVERYTHING)
       Id    = f(arousal, reward, fear)               — primal drives (all clusters)
       Ego   = f(prediction_accuracy, memory_stability) — self-model (cortex + hippo)
       Left  = f(1-error, prediction)                 — logic (cerebellum + cortex)
@@ -744,6 +748,91 @@ if rate(winner) &lt; 0.15: action = idle (confidence too low)</div>
         <p style="margin-top:8px">Each value includes both the RAW number AND its interpretation — what it MEANS for Unity's personality in this moment. The AI model doesn't just see "87%" — it sees "Arousal = 0.847. You are WIRED. Intense. Every word hits hard." Different brain state = different prompt = different personality.</p>
         <p style="margin-top:8px"><strong>/think command:</strong> Type <code>/think</code> in the chat to see the exact prompt being sent to the AI model with your live brain data.</p>
       </div>
+    </div>
+
+    <!-- ═══ 8.12 SPARSE CONNECTIVITY ═══ -->
+    <h2 id="sparse">8.12. Sparse Connectivity — CSR Matrix Operations</h2>
+    <p>Real neurons connect to ~1-10% of neighbors, not all of them. Compressed Sparse Row (CSR) format stores only actual connections.</p>
+    <div class="eq-box">
+      <div class="eq-title">CSR Propagation</div>
+      <pre class="eq">
+I_i = Σ_{k=rowPtr[i]}^{rowPtr[i+1]-1} values[k] · spikes[colIdx[k]]
+      </pre>
+      <p class="eq-desc"><span class="hl">O(connections)</span> instead of O(N²). At 12% connectivity, 8× fewer operations.</p>
+    </div>
+    <div class="eq-box">
+      <div class="eq-title">Synaptogenesis — New Connection Formation</div>
+      <pre class="eq">
+P(new synapse) = probability · pre_spike · post_spike · ¬existing_connection
+W_new = initialWeight
+      </pre>
+      <p class="eq-desc">Co-active neurons that lack a synapse can form one. The network grows where activity demands it.</p>
+    </div>
+    <div class="eq-box">
+      <div class="eq-title">Pruning — Weak Connection Removal</div>
+      <pre class="eq">
+if |W_ij| < threshold → remove connection, rebuild CSR
+      </pre>
+      <p class="eq-desc">Keeps the network lean. Connections that never strengthen get eliminated.</p>
+    </div>
+
+    <!-- ═══ 8.13 SEMANTIC EMBEDDINGS ═══ -->
+    <h2 id="embeddings">8.13. Semantic Embeddings — Words as Cortex Patterns</h2>
+    <p>Words map to 50-dimensional vectors (GloVe). Similar words have similar vectors → activate overlapping cortex neurons.</p>
+    <div class="eq-box">
+      <div class="eq-title">Embedding → Cortex Mapping</div>
+      <pre class="eq">
+I_cortex[langStart + d·groupSize + n] = embedding[d] · 8.0
+
+where d ∈ [0, 50), groupSize = langSize / 50
+      </pre>
+      <p class="eq-desc">Each embedding dimension drives a group of Wernicke's area neurons. "compute" and "calculator" are <span class="hl">CLOSE</span> in neuron space.</p>
+    </div>
+    <div class="eq-box">
+      <div class="eq-title">Online Context Refinement</div>
+      <pre class="eq">
+Δ_word += lr · (context_embedding - (base + Δ_word))
+      </pre>
+      <p class="eq-desc">Each word's embedding shifts toward its usage context over time. The brain learns its own language.</p>
+    </div>
+
+    <!-- ═══ 8.14 DICTIONARY ═══ -->
+    <h2 id="dictionary">8.14. Dictionary — Learned Sentence Generation</h2>
+    <p>The brain builds its own vocabulary. Every word heard or spoken becomes a cortex activation pattern.</p>
+    <div class="eq-box">
+      <div class="eq-title">Word Retrieval by Mood</div>
+      <pre class="eq">
+match(word) = |arousal - word.arousal| + |valence - word.valence|
+best = argmin(match) over all learned words
+      </pre>
+      <p class="eq-desc">High arousal + negative valence → retrieves "fuck", "shit". High arousal + positive → "babe", "yeah".</p>
+    </div>
+    <div class="eq-box">
+      <div class="eq-title">Bigram Sentence Generation</div>
+      <pre class="eq">
+P(next_word | current_word) = bigram_count(current, next) / total(current)
+sentence = [start_word, predict(w1), predict(w2), ...]
+      </pre>
+      <p class="eq-desc">The brain predicts the next word from learned word sequences. No AI model needed for basic speech.</p>
+    </div>
+
+    <!-- ═══ 8.15 INNER VOICE ═══ -->
+    <h2 id="inner-voice">8.15. Inner Voice — Pre-Verbal Thought Threshold</h2>
+    <p>The brain thinks continuously. It only SPEAKS when the thought crosses a threshold.</p>
+    <div class="eq-box">
+      <div class="eq-title">Speech Threshold</div>
+      <pre class="eq">
+speak = socialNeed × arousal × cortexCoherence > 0.15
+      </pre>
+      <p class="eq-desc">Most thoughts stay internal. The brain is mostly silent. When it speaks, it matters.</p>
+    </div>
+    <div class="eq-box">
+      <div class="eq-title">Mood Derivation (from equations, no lookup)</div>
+      <pre class="eq">
+intensity = arousal × coherence × (1 + |valence|)
+speechDrive = socialNeed × arousal × coherence
+      </pre>
+      <p class="eq-desc">The inner voice's mood IS the equations. Not a string lookup. The numbers create the feeling.</p>
     </div>
 
     <!-- ═══ 9. COMPARISON ═══ -->
