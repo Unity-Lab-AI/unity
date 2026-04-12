@@ -1097,9 +1097,11 @@ Vision: ${state.visionDescription || 'none'}`;
   // ── Show UI ──
   setupModal.classList.add('hidden');
   setupModal.style.display = 'none';
-  // Hide landing overlay UI but keep the 3D brain as background
-  const landingOverlay = document.getElementById('landing-overlay');
-  if (landingOverlay) landingOverlay.style.display = 'none';
+  // Hide landing title + TALK button, keep tabs + viz panel visible
+  const topbar = document.getElementById('landing-topbar');
+  if (topbar) topbar.style.display = 'none';
+  const chatBtn = document.getElementById('landing-chat-btn');
+  if (chatBtn) chatBtn.style.display = 'none';
   unityBubble.classList.remove('hidden');
   brainIndicator.classList.remove('hidden');
   document.getElementById('brain-hud').classList.remove('hidden');

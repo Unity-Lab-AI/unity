@@ -857,7 +857,7 @@ html, body {
 
 #unity-eye {
   position: fixed;
-  top: 10px; left: 12px;
+  bottom: 80px; left: 12px;
   z-index: 8003;
   pointer-events: auto;
 }
