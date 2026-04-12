@@ -847,8 +847,40 @@ const httpServer = http.createServer((req, res) => {
     return;
   }
 
-  res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('Unity Brain Server — connect via WebSocket on this port');
+  // ── Static file serving — serves the entire client app ──
+  const ROOT = path.join(__dirname, '..');
+  const MIME = {
+    '.html': 'text/html', '.js': 'application/javascript', '.mjs': 'application/javascript',
+    '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml',
+    '.png': 'image/png', '.jpg': 'image/jpeg', '.ico': 'image/x-icon',
+    '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf',
+    '.map': 'application/json', '.txt': 'text/plain',
+  };
+
+  let filePath = path.join(ROOT, req.url.split('?')[0]);
+  if (filePath === ROOT || filePath === ROOT + '/' || filePath === ROOT + '\\') {
+    filePath = path.join(ROOT, 'index.html');
+  }
+
+  // Security: prevent path traversal
+  if (!filePath.startsWith(ROOT)) {
+    res.writeHead(403); res.end('Forbidden'); return;
+  }
+
+  fs.readFile(filePath, (err, data) => {
+    if (err) {
+      // Try with .html extension
+      fs.readFile(filePath + '.html', (err2, data2) => {
+        if (err2) { res.writeHead(404); res.end('Not found'); return; }
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end(data2);
+      });
+      return;
+    }
+    const ext = path.extname(filePath).toLowerCase();
+    res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
+    res.end(data);
+  });
 });
 
 const wss = new WebSocketServer({ server: httpServer });
@@ -951,8 +983,10 @@ httpServer.listen(PORT, () => {
   console.log(`
   🧠 Unity Brain Server — Auto-Scaled
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  WebSocket:  ws://localhost:${PORT}
+  Open:       http://localhost:${PORT}
+  Dashboard:  http://localhost:${PORT}/dashboard.html
   Health:     http://localhost:${PORT}/health
+  WebSocket:  ws://localhost:${PORT}
 
   Hardware:   ${RESOURCES.scaleSource}
   RAM:        ${RESOURCES.totalRAM} total, ${RESOURCES.freeRAM} free
