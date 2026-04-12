@@ -308,8 +308,40 @@
     </div>
   </div>
 
-  <!-- ═══ App Entry Point ═══ -->
-  <script type="module" src="js/app.js?v=20260412"></script>
+  <!-- ═══ App Entry Point — auto-detects environment ═══ -->
+  <script>
+    // Detect environment and load appropriately
+    const isFile = location.protocol === 'file:';
+    const isLocalServer = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+    const isGitHubPages = location.hostname.includes('github.io');
+
+    console.log(`[Unity] Environment: ${isFile ? 'file://' : isLocalServer ? 'local server' : isGitHubPages ? 'GitHub Pages' : location.hostname}`);
+
+    if (isFile) {
+      // file:// can't use ES modules — load the pre-built bundle
+      const s = document.createElement('script');
+      s.type = 'module';
+      s.src = 'js/app.bundle.js';
+      s.onerror = () => {
+        // Bundle also blocked? Show helpful message
+        document.body.innerHTML = `
+          <div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#0a0a0a;color:#e0e0e0;font-family:'JetBrains Mono',monospace;text-align:center;padding:20px;">
+            <div>
+              <h1 style="color:#ff4d9a;font-size:20px;margin-bottom:12px;">Chrome blocks local files</h1>
+              <p style="color:#777;font-size:13px;margin-bottom:20px;">Double-click <strong style="color:#00e5ff;">start.bat</strong> instead — it launches the brain server and opens the app automatically.</p>
+              <p style="color:#555;font-size:11px;">Or run: <code style="background:#111;padding:4px 8px;border-radius:4px;">cd server && node brain-server.js</code> then open <code style="background:#111;padding:4px 8px;border-radius:4px;">http://localhost:8080</code></p>
+            </div>
+          </div>`;
+      };
+      document.body.appendChild(s);
+    } else {
+      // http:// — ES modules work fine
+      const s = document.createElement('script');
+      s.type = 'module';
+      s.src = 'js/app.js?v=20260412';
+      document.body.appendChild(s);
+    }
+  </script>
 
 </body>
 </html>

@@ -23,7 +23,7 @@ import { Brain3D } from './ui/brain-3d.js';
 // ── Load API keys from env.js ──
 let ENV_KEYS = {};
 try {
-  const env = await import('./env.js');
+  const env = await import(/* webpackIgnore: true */ './env.js');
   ENV_KEYS = env.ENV_KEYS || {};
   console.log('[Unity] Loaded keys from env.js:', Object.keys(ENV_KEYS).filter(k => ENV_KEYS[k]).join(', ') || 'none');
 } catch {

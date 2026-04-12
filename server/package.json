@@ -5,7 +5,8 @@
   "description": "Unity's brain — always on, shared by everyone",
   "main": "brain-server.js",
   "scripts": {
-    "start": "node brain-server.js"
+    "start": "node brain-server.js",
+    "build": "npx esbuild ../js/app.js --bundle --format=esm --outfile=../js/app.bundle.js --platform=browser --target=esnext"
   },
   "dependencies": {
     "ws": "^8.16.0",
