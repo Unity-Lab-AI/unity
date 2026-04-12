@@ -219,6 +219,10 @@ export class UnityBrain extends EventEmitter {
     this.clusters.cortex.injectCurrent(sensoryOutput.cortex);
     this.clusters.hippocampus.injectCurrent(sensoryOutput.hippocampus);
     this.clusters.amygdala.injectCurrent(sensoryOutput.amygdala);
+    // Semantic routing → BG: text semantics drive action channel selection
+    if (sensoryOutput.basalGanglia) {
+      this.clusters.basalGanglia.injectCurrent(sensoryOutput.basalGanglia);
+    }
 
     // ── 5. INTER-CLUSTER PROJECTIONS ──
     for (const proj of this.projections) proj.propagate();
@@ -517,36 +521,24 @@ export class UnityBrain extends EventEmitter {
       }
     }
 
-    // 5. Check for BUILD request first (UI components, apps, tools)
+    // 5. LET THE BRAIN DECIDE — no keyword lists.
+    // The sensory processor already injected semantic currents into the BG channels.
+    // Run extra steps to let the BG settle after the semantic injection.
+    for (let i = 0; i < 30; i++) this.step();
+
+    const motorDecision = this.motor.getState();
+    const bgAction = motorDecision.selectedAction;
+    const bgConf = motorDecision.confidence;
+    console.log(`[Brain] BG motor decision: ${bgAction} (${(bgConf * 100).toFixed(1)}%)`);
+
+    // Self-reference for images (is she in it?)
     const lower = text.toLowerCase();
-    const buildWords = ['build', 'create a', 'make a', 'make me', 'give me a',
-      'add a', 'put a', 'app', 'tool', 'widget', 'component', 'editor',
-      'game', 'calculator', 'timer', 'clock', 'player', 'chat box',
-      'drawing app', 'paint', 'canvas app', 'code editor'];
-    const isBuild = buildWords.some(w => lower.includes(w));
+    const includesSelf = ['yourself', 'of you', 'your face', 'your body', 'unity', 'selfie'].some(w => lower.includes(w));
 
-    // 6. Check for image/selfie request (only if NOT a build request)
-    // Image detection — check for image intent
-    const hasImageWord = lower.includes('image') || lower.includes('picture') || lower.includes('photo')
-      || lower.includes('selfie') || lower.includes('pic of') || lower.includes('portrait')
-      || lower.includes('headshot') || lower.includes('full body');
-    const hasImageAction = lower.includes('generate') || lower.includes('send') || lower.includes('take')
-      || lower.includes('show me') || lower.includes('draw') || lower.includes('snap')
-      || lower.includes('create') || lower.includes('make');
-    const isImage = !isBuild && (
-      (hasImageWord && hasImageAction)  // "generate an image", "take a photo", "send me a picture"
-      || lower.includes('selfie')       // selfie is always an image request
-      || (lower.includes('image of') || lower.includes('picture of') || lower.includes('photo of'))
-    );
-    // Selfie = image request specifically of Unity (not "draw me a sunset")
-    const selfWords = ['yourself', 'of you', 'your face', 'your body', 'unity',
-      'of yourself', 'you look like', 'selfie'];
-    const isSelfie = isImage && selfWords.some(w => lower.includes(w));
-
-    if (isBuild && this._brocasArea && this._sandbox) {
+    if (bgAction === 'build_ui' && bgConf > 0.1 && this._brocasArea && this._sandbox) {
       return this._handleBuild(text);
-    } else if ((isImage || isSelfie) && this._imageGen) {
-      return this._handleImage(text, isSelfie);
+    } else if (bgAction === 'generate_image' && bgConf > 0.1 && this._imageGen) {
+      return this._handleImage(text, includesSelf);
     }
 
     // 6. Normal response — Broca's area generates language from brain state
@@ -749,6 +741,9 @@ export class UnityBrain extends EventEmitter {
   giveReward(amount) {
     this.reward += amount;
     this.motor.reinforceAction(this.clusters.basalGanglia, amount);
+    // Also reinforce the semantic→motor mapping in sensory processor
+    // This is how the brain LEARNS which input patterns → which actions
+    this.sensory.reinforceSemanticMapping(this.motor.selectedAction, amount);
   }
 
   getState() { return this.state; }
