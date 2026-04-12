@@ -112,7 +112,7 @@ Live at `your-username.github.io/Unity/`. Everything runs client-side — no ser
 │   │   ├── neurons.js            Hodgkin-Huxley + LIF neuron models
 │   │   ├── synapses.js           Hebbian, STDP, reward-modulated plasticity
 │   │   ├── modules.js            6 brain region equation modules
-│   │   ├── mystery.js            Ψ = (√n)³ · [Id + Ego + Left + Right]
+│   │   ├── mystery.js            Ψ = (√(1/n))³ · [Id + Ego + Left + Right]
 │   │   ├── oscillations.js       8 Kuramoto oscillators (θ→γ)
 │   │   ├── persona.js            Personality as brain parameters + drug states
 │   │   ├── sensory.js            Sensory input pipeline (text/audio/video)
@@ -121,6 +121,14 @@ Live at `your-username.github.io/Unity/`. Everything runs client-side — no ser
 │   │   ├── visual-cortex.js      V1→V4→IT vision pipeline
 │   │   ├── auditory-cortex.js    Tonotopic processing + efference copy
 │   │   ├── memory.js             Episodic + working + consolidation
+│   │   ├── dictionary.js         Learned vocabulary (word→cortex patterns)
+│   │   ├── inner-voice.js        Pre-verbal thought system
+│   │   ├── persistence.js        Save/load brain state (localStorage/disk)
+│   │   ├── remote-brain.js       WebSocket client for server brain
+│   │   ├── sparse-matrix.js      CSR sparse connectivity (O(connections))
+│   │   ├── gpu-compute.js        WebGPU compute shaders (LIF + synapses)
+│   │   ├── embeddings.js         Semantic word embeddings (GloVe 50d)
+│   │   ├── benchmark.js          Dense vs sparse + neuron scale test
 │   │   └── peripherals/
 │   │       └── ai-providers.js   AI provider manager + dead backend detection
 │   ├── ai/
@@ -134,7 +142,44 @@ Live at `your-username.github.io/Unity/`. Everything runs client-side — no ser
 │       ├── chat-panel.js         Conversation log panel
 │       ├── brain-viz.js          2D tabbed brain visualizer (8 tabs)
 │       └── brain-3d.js           3D WebGL brain with notifications + expansion
+├── server/
+│   ├── brain-server.js           Node.js brain server (always-on, WebSocket)
+│   └── package.json              Server dependencies (ws, better-sqlite3)
+├── dashboard.html                Public brain monitor (read-only)
+└── docs/
+    ├── ARCHITECTURE.md           Codebase structure and systems
+    ├── SKILL_TREE.md             Capabilities by domain
+    ├── ROADMAP.md                Milestones and phases
+    ├── TODO.md                   Active tasks
+    ├── TODO-SERVER.md            Server brain task tracking
+    └── FINALIZED.md              Completed work archive
 ```
+
+---
+
+## Server Brain
+
+Run the shared brain on a server so everyone connects to the same Unity:
+
+```bash
+cd server
+npm install
+node brain-server.js
+```
+
+The server auto-detects hardware (GPU via nvidia-smi, CPU/RAM) and scales neuron count:
+- RTX 4070 Super (16GB) → ~175K neurons
+- CPU only (8GB free) → ~1K neurons
+
+**Endpoints:**
+- `ws://localhost:8080` — WebSocket for brain state + chat
+- `http://localhost:8080/health` — Server status JSON
+- `http://localhost:8080/versions` — Brain save versions
+- `http://localhost:8080/rollback/:slot` — Restore previous save
+- `http://localhost:8080/episodes` — Episodic memory query
+- `http://localhost:8080/history` — Emotional history data
+
+**Dashboard:** Open `dashboard.html` in a browser to watch Unity's brain live.
 
 ---
 

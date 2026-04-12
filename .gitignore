@@ -13,12 +13,8 @@ js/env.js
 .claude/settings.local.json
 .claude/start.bat
 
-# === Workflow docs (generated at runtime) ===
-docs/ARCHITECTURE.md
-docs/SKILL_TREE.md
-docs/TODO.md
-docs/ROADMAP.md
-docs/FINALIZED.md
+# === Workflow docs — tracked for project documentation ===
+# (Previously ignored as "generated at runtime" but these are real docs now)
 
 # === Pollinations output ===
 pollinations-output/
