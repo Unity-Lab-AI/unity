@@ -650,64 +650,64 @@ export class UnityBrain extends EventEmitter {
     // Analyze input for response context (question detection, topic)
     this.innerVoice.languageCortex.analyzeInput(text, this.innerVoice.dictionary);
 
-    // 7. Generate response — brain speaks from its own equations
-    let response = null;
+    // ══════════════════════════════════════════════════════════════
+    // 7. LANGUAGE PRODUCTION — one path, brain equations drive everything
+    //
+    // Flow: cortex pattern → language cortex equations → dictionary → words
+    //       arousal/valence/coherence modulate at every step
+    //       response pool provides coherent fallback while equations learn
+    //       AI model (when connected) teaches new vocabulary
+    // ══════════════════════════════════════════════════════════════
+
     const brainArousal = state.amygdala?.arousal ?? 0.5;
     const brainValence = state.amygdala?.valence ?? 0;
-
-    // Brain's own voice — dictionary + inner voice system
     const brainCoherence = state.oscillations?.coherence ?? 0.5;
-    response = this.innerVoice.speak(brainArousal, brainValence, brainCoherence);
+    const predError = state.cortex?.predictionError ?? 0;
 
-    // If first attempt too short, try harder — generate from dictionary directly
-    if (!response || response.length < 5) {
-      if (this.dictionary) {
-        response = this.dictionary.generateSentence?.(brainArousal, brainValence) || null;
-      }
+    // STEP 1: Language cortex generates from trained equations
+    // Zipf + MI + conditional prob + position + syntax + topic
+    let cortexResponse = this.innerVoice.speak(brainArousal, brainValence, brainCoherence);
+
+    // STEP 2: Response pool — brain state selects category + tone
+    // Pool provides the "voice" while equations are still learning
+    let poolResponse = null;
+    try {
+      const { selectResponse } = await import('./response-pool.js');
+      const isQuestion = text.includes('?') || /^(what|how|why|where|when|who|can|do|are|is)\b/i.test(text);
+      poolResponse = selectResponse({
+        arousal: brainArousal, valence: brainValence,
+        coherence: brainCoherence, predictionError: predError,
+        motorConfidence: this.motor.confidence,
+        sentenceType: this.innerVoice.languageCortex.sentenceType(brainArousal, predError, this.motor.confidence, brainCoherence),
+      }, { isQuestion });
+    } catch {}
+
+    // STEP 3: Pick best output — cortex if good enough, pool otherwise
+    let response;
+    if (cortexResponse && cortexResponse.length >= 8 && !cortexResponse.includes('...')) {
+      // Cortex produced something real — use it
+      response = cortexResponse;
+      console.log(`[Brain] Cortex: "${response}"`);
+    } else if (poolResponse) {
+      // Pool provides coherent speech while cortex learns
+      response = poolResponse;
+      console.log(`[Brain] Pool: "${response}"`);
+    } else {
+      response = cortexResponse || '...';
+      console.log(`[Brain] Fallback: "${response}"`);
     }
 
-    // Response pool — EDNA-style category selection driven by brain state.
-    // The brain decided the mood/type, the pool provides coherent words.
-    if (!response || response.length < 5) {
-      try {
-        const { selectResponse, blendResponse } = await import('./response-pool.js');
-        const inputAnalysis = this.innerVoice.languageCortex._lastInputWords
-          ? { isQuestion: text.includes('?') || /^(what|how|why|where|when|who|can|do|are|is)\b/i.test(text) }
-          : {};
-        const poolResponse = selectResponse({
-          arousal: brainArousal,
-          valence: brainValence,
-          coherence: brainCoherence,
-          predictionError: state.cortex?.predictionError ?? 0,
-          motorConfidence: this.motor.confidence,
-          sentenceType: this.innerVoice.languageCortex.sentenceType(brainArousal, state.cortex?.predictionError ?? 0, this.motor.confidence, brainCoherence),
-        }, inputAnalysis);
-        // Blend pool with whatever the cortex managed to produce
-        response = blendResponse(poolResponse, response, 0.85);
-      } catch (e) {
-        // Pool not available — fall back to old behavior
-        const intensity = brainArousal * (1 + Math.abs(brainValence));
-        if (intensity > 0.8) response = this.innerVoice._getIntenseResponse?.(brainValence) || '...';
-        else response = '...';
-      }
-    }
-
-    if (response && response.length >= 3) {
-      console.log(`[Brain] Own voice: "${response}"`);
-    }
-
-    // If Broca's area (AI model) is connected, it can TEACH the brain new words
-    // but the brain's own voice is always the PRIMARY response
-    if (this._brocasArea && (!response || response === '...')) {
+    // STEP 4: AI teaches (when connected) — brain learns new words
+    if (this._brocasArea && response.length < 5) {
       const aiResponse = await this._brocasArea.generate(state, text);
       if (aiResponse) {
-        // AI teaches — brain learns the words, but AI response is used this time
         this.innerVoice.learn(aiResponse, cortexOutput, brainArousal, brainValence);
         response = aiResponse;
+        console.log(`[Brain] AI taught: "${response.slice(0, 50)}"`);
       }
     }
 
-    if (!response) return { text: '...', action: 'respond_text' };
+    if (!response || response.length < 2) return { text: '...', action: 'respond_text' };
 
     if (this.motor.wasInterrupted()) return { text: null, action: 'interrupted' };
 
