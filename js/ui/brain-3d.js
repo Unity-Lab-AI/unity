@@ -795,13 +795,50 @@ export class Brain3D {
    * Emoji from brain equations. One equation, full Unicode range.
    */
   _brainEmoji(arousal, valence, psi, coherence, isDreaming, reward) {
-    // One continuous function: all 6 brain values → one code point
-    // Unicode emoji block U+1F600-1F64F = 80 emoticon faces
-    // The brain's combined state IS the index. No branches, no ifs, no mapping.
-    const v = (valence + 1) / 2;                          // 0-1
-    const combined = v * 0.35 + arousal * 0.25 + coherence * 0.15 + psi * 0.1 + Math.abs(reward) * 0.1 + (isDreaming ? 0.05 : 0);
-    const codePoint = 0x1F600 + Math.floor(combined * 79);
-    return String.fromCodePoint(codePoint);
+    // Full Unicode emoji range — brain equations select from ALL emoji
+    // Multiple blocks spanning faces, nature, objects, symbols, activities
+    // Each brain value shifts into a different Unicode region
+    //
+    // Unicode emoji blocks:
+    //   0x1F600-0x1F64F  Emoticons (faces)         80
+    //   0x1F300-0x1F3FF  Misc symbols (weather/nature) 256
+    //   0x1F400-0x1F4FF  Animals + objects         256
+    //   0x1F500-0x1F5FF  Symbols + UI              256
+    //   0x1F680-0x1F6FF  Transport + maps          128
+    //   0x1F900-0x1F9FF  Supplemental (gestures/faces) 256
+    //   0x2600-0x26FF    Misc symbols              256
+    //   0x2700-0x27BF    Dingbats                  192
+    //   Total: ~1680 emoji accessible
+    //
+    // Brain state → which block + position within block
+
+    // Block selection from dominant brain signal
+    const v = (valence + 1) / 2; // 0-1
+    const blockSignal = (v * 0.3 + coherence * 0.3 + arousal * 0.2 + (isDreaming ? 0.15 : 0) + Math.abs(reward) * 0.05);
+
+    // 8 blocks, blockSignal selects which one
+    const blocks = [
+      [0x1F600, 80],   // faces
+      [0x1F300, 256],   // nature/weather
+      [0x1F400, 256],   // animals/objects
+      [0x1F500, 256],   // symbols
+      [0x1F680, 128],   // transport
+      [0x1F900, 256],   // supplemental faces/gestures
+      [0x2600, 256],    // misc symbols
+      [0x2700, 192],    // dingbats
+    ];
+    const blockIdx = Math.floor(blockSignal * blocks.length) % blocks.length;
+    const [base, range] = blocks[blockIdx];
+
+    // Position within block from remaining brain values
+    const posSignal = arousal * 0.3 + v * 0.25 + psi * 0.2 + Math.abs(reward) * 0.15 + coherence * 0.1;
+    const pos = Math.floor(posSignal * (range - 1)) % range;
+
+    try {
+      return String.fromCodePoint(base + pos);
+    } catch {
+      return String.fromCodePoint(0x1F600); // fallback
+    }
   }
 
   _clusterOf(idx) {
