@@ -194,9 +194,12 @@ function renderLandingTab(tab, s) {
       `);
       if (s.clusters) {
         const colors = { cortex:'#ff4d9a', hippocampus:'#a855f7', amygdala:'#ef4444', basalGanglia:'#22c55e', cerebellum:'#00e5ff', hypothalamus:'#f59e0b', mystery:'#c084fc' };
+        // Scale bars relative to max cluster activity (not absolute %)
+        const maxPct = Math.max(1, ...Object.values(s.clusters).map(c => c.size ? c.spikeCount / c.size * 100 : 0));
         html += card('Cluster Activity', Object.entries(s.clusters).map(([name, c]) => {
           const pct = c.size ? (c.spikeCount / c.size * 100) : 0;
-          return `<div style="margin:4px 0;">${metric(name, `${c.spikeCount}/${c.size}`, colors[name] || '#fff')}${bar(pct, colors[name] || '#fff')}</div>`;
+          const barPct = maxPct > 0 ? (pct / maxPct * 100) : 0; // relative to most active cluster
+          return `<div style="margin:4px 0;">${metric(name, `${c.spikeCount.toLocaleString()}/${c.size.toLocaleString()} (${pct.toFixed(1)}%)`, colors[name] || '#fff')}${bar(barPct, colors[name] || '#fff')}</div>`;
         }).join(''));
       }
       el.innerHTML = html;
@@ -241,13 +244,19 @@ function renderLandingTab(tab, s) {
       break;
     }
     case 'memory': {
-      const mem = s.memory || {};
-      const growth = s.growth || {};
+      const mem = s.memory || l.memory || {};
+      const growth = s.growth || l.growth || {};
+      // Also check local brain's dictionary if available
+      const localVocab = brain?.innerVoice?.dictionary?.size ?? 0;
+      const localSentences = brain?.innerVoice?.languageCortex?.sentencesLearned ?? 0;
       el.innerHTML = card('Memory Systems', `
-        ${metric('Working Memory', (mem.workingCount ?? 0) + ' items', '#00e5ff')}
+        ${metric('Working Memory', (mem.workingCount ?? mem.workingMemoryItems?.length ?? 0) + '/7 items', '#00e5ff')}
         ${metric('Episodes (SQLite)', growth.totalEpisodes ?? 0, '#a855f7')}
-        ${metric('Words Learned', growth.totalWords ?? 0, '#ff4d9a')}
+        ${metric('Words Learned (server)', growth.totalWords ?? 0, '#ff4d9a')}
+        ${metric('Words Learned (local)', localVocab, '#ff4d9a')}
+        ${metric('Sentences Learned', localSentences, '#a855f7')}
         ${metric('Interactions', growth.totalInteractions ?? 0, '#22c55e')}
+        ${metric('Brain Steps', (growth.totalFrames ?? s.frameCount ?? 0).toLocaleString(), '#00e5ff')}
       `);
       break;
     }
@@ -267,7 +276,7 @@ function renderLandingTab(tab, s) {
       break;
     }
     case 'perf': {
-      const p = s.perf || {};
+      const p = s.perf || l.perf || {};
       el.innerHTML = card('Hardware Performance', `
         ${metric('CPU Usage', (p.cpuPercent ?? 0) + '%', p.cpuPercent > 80 ? '#ef4444' : '#22c55e')}
         ${bar(p.cpuPercent ?? 0, p.cpuPercent > 80 ? '#ef4444' : '#22c55e')}
