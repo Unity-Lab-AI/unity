@@ -110,11 +110,11 @@ The brain runs the master equation `dx/dt = F(x, u, θ, t) + η` continuously. E
 
 > Replace dense NxN matrices with biologically realistic sparse connections.
 
-- [ ] **Create `js/brain/sparse-matrix.js`** — compressed sparse row (CSR) or adjacency list format for synapse matrices. Each neuron has ~10-1000 connections, not N.
-- [ ] **Sparse synapse propagation** — `I = Σ W·spike` only iterates over actual connections, not full row. O(connections) instead of O(N).
-- [ ] **Sparse plasticity** — weight updates only on existing connections. New connections can form probabilistically when pre and post fire together (synaptogenesis).
-- [ ] **Connection pruning** — weak connections (|w| < threshold) get removed periodically. Keeps the network lean.
-- [ ] **Sparse projection matrices** — inter-cluster projections already sparse (2-5%). Formalize with CSR format.
+- [x] **Create `js/brain/sparse-matrix.js`** — DONE: CSR format with initRandom, fromDense, propagate (O(nnz)), serialize/deserialize, .W compatibility getter. Full learning rule support.
+- [x] **Sparse synapse propagation** — DONE: propagate() iterates only non-zero entries via CSR rowPtr/colIdx/values. O(connections) not O(N²).
+- [x] **Sparse plasticity** — DONE: rewardModulatedUpdate, hebbianUpdate, stdpUpdate all O(nnz). grow() for synaptogenesis — new connections form between co-active neurons.
+- [x] **Connection pruning** — DONE: prune(threshold) removes |w| < threshold, rebuilds CSR arrays. maintainConnectivity() in cluster.js calls prune + grow periodically.
+- [x] **Sparse projection matrices** — DONE: ClusterProjection uses SparseMatrix internally. .weights getter/setter for backward compatibility. propagate() writes directly to target._incomingProjections.
 - [ ] **Memory benchmark** — compare dense vs sparse at 10K, 100K, 1M neurons.
 
 ---
