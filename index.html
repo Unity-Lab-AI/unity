@@ -103,6 +103,11 @@
       <input type="hidden" id="custom-key-input">
       <span id="ai-status" style="display:none;"></span>
 
+      <!-- Clear Data -->
+      <div style="margin-top:12px;">
+        <button id="clear-data-btn" style="padding:8px 16px;background:rgba(239,68,68,0.1);border:1px solid var(--red);border-radius:8px;color:var(--red);font-family:var(--mono);font-size:11px;cursor:pointer;transition:all 0.2s;" onclick="if(confirm('Clear ALL Unity data? This deletes conversation history, preferences, saved keys, and sandbox state from your browser.')){localStorage.clear();location.reload();}">Clear All Data</button>
+      </div>
+
       <!-- Privacy Notice -->
       <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);">
         <p style="font-size:10px;color:var(--text-dim);line-height:1.6;">
