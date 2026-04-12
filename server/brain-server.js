@@ -672,7 +672,10 @@ When asked to generate an image, respond with ONLY the image description/prompt 
   _updatePerfStats() {
     const mem = process.memoryUsage();
     const cpuNow = process.cpuUsage();
-    const elapsed = (cpuNow.user - this._lastCpuUsage.user + cpuNow.system - this._lastCpuUsage.system) / 1000; // ms
+    // CPU usage = (user + system microseconds) / (wall time microseconds) × 100
+    const cpuDeltaUs = (cpuNow.user - this._lastCpuUsage.user) + (cpuNow.system - this._lastCpuUsage.system);
+    const wallDeltaUs = 1000000; // ~1 second between calls
+    const cpuPercent = Math.min(100, Math.round(cpuDeltaUs / wallDeltaUs * 100 / os.cpus().length));
     this._lastCpuUsage = cpuNow;
 
     // Average step time over last 60 samples
@@ -696,7 +699,7 @@ When asked to generate an image, respond with ONLY the image description/prompt 
     this._perfStats = {
       stepTimeMs: +avgStep.toFixed(3),
       stepsPerSec: avgStep > 0 ? Math.round(1000 / avgStep * SUBSTEPS) : 0,
-      cpuPercent: Math.min(100, Math.round(elapsed / 10)), // ~1s sample
+      cpuPercent,
       memUsedMB: Math.round(mem.heapUsed / 1048576),
       memTotalMB: Math.round(os.totalmem() / 1048576),
       memRssMB: Math.round(mem.rss / 1048576),

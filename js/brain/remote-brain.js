@@ -147,6 +147,10 @@ export class RemoteBrain extends EventEmitter {
     this.state.drugState = serverState.drugState ?? this.state.drugState;
     this.state.spikeCount = serverState.totalSpikes ?? this.state.spikeCount;
     this.state.totalNeurons = serverState.totalNeurons ?? this.state.totalNeurons;
+    if (serverState.scale) this.state.scale = serverState.scale;
+    if (serverState.totalSpikes !== undefined) this.state.totalSpikes = serverState.totalSpikes;
+    if (serverState.time !== undefined) this.state.time = serverState.time;
+    if (serverState.frameCount !== undefined) this.state.frameCount = serverState.frameCount;
     this.state.connectedUsers = serverState.connectedUsers ?? 0;
 
     if (serverState.clusters) this.state.clusters = serverState.clusters;
