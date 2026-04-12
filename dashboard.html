@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Unity Brain — Live Dashboard</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0a0a0a; color: #e0e0e0; font-family: 'JetBrains Mono', monospace; }
+    .dash { max-width: 1200px; margin: 0 auto; padding: 20px; }
+    h1 { color: #ff4d9a; font-size: 18px; margin-bottom: 4px; }
+    .sub { color: #777; font-size: 11px; margin-bottom: 20px; }
+    .status { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; }
+    .status.alive { background: rgba(34,197,94,0.15); color: #22c55e; }
+    .status.dead { background: rgba(239,68,68,0.15); color: #ef4444; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; }
+    .card { background: #111; border: 1px solid #1a1a1a; border-radius: 8px; padding: 14px; }
+    .card-title { font-size: 10px; color: #ff4d9a; letter-spacing: 1px; margin-bottom: 8px; text-transform: uppercase; }
+    .val { font-size: 24px; font-weight: 700; }
+    .val-sm { font-size: 14px; color: #777; }
+    .bar-wrap { height: 4px; background: #1a1a1a; border-radius: 2px; margin-top: 6px; }
+    .bar { height: 100%; border-radius: 2px; transition: width 0.3s; }
+    .bar-pink { background: #ff4d9a; }
+    .bar-purple { background: #a855f7; }
+    .bar-cyan { background: #00e5ff; }
+    .bar-green { background: #22c55e; }
+    .log { max-height: 300px; overflow-y: auto; font-size: 10px; color: #555; line-height: 1.6; }
+    .log-entry { border-bottom: 1px solid #111; padding: 2px 0; }
+    #connection-status { font-size: 12px; margin-bottom: 12px; }
+  </style>
+</head>
+<body>
+  <div class="dash">
+    <h1>🧠 Unity Brain — Live Dashboard</h1>
+    <p class="sub">Read-only view of Unity's brain activity. Shared across all users.</p>
+    <div id="connection-status"><span class="status dead">disconnected</span> Connecting to brain server...</div>
+
+    <div class="grid">
+      <div class="card">
+        <div class="card-title">Neurons</div>
+        <div class="val" id="d-neurons">—</div>
+        <div class="val-sm" id="d-spikes">0 firing</div>
+      </div>
+      <div class="card">
+        <div class="card-title">Consciousness Ψ</div>
+        <div class="val" id="d-psi" style="color:#a855f7">—</div>
+      </div>
+      <div class="card">
+        <div class="card-title">Arousal</div>
+        <div class="val" id="d-arousal">—</div>
+        <div class="bar-wrap"><div class="bar bar-pink" id="d-arousal-bar" style="width:0%"></div></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Valence</div>
+        <div class="val" id="d-valence">—</div>
+        <div class="bar-wrap"><div class="bar bar-purple" id="d-valence-bar" style="width:50%"></div></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Coherence</div>
+        <div class="val" id="d-coherence">—</div>
+        <div class="bar-wrap"><div class="bar bar-cyan" id="d-coherence-bar" style="width:0%"></div></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Users Online</div>
+        <div class="val" id="d-users" style="color:#22c55e">0</div>
+      </div>
+      <div class="card">
+        <div class="card-title">Motor Action</div>
+        <div class="val-sm" id="d-action">idle</div>
+      </div>
+      <div class="card">
+        <div class="card-title">Drug State</div>
+        <div class="val-sm" id="d-drug">—</div>
+      </div>
+      <div class="card">
+        <div class="card-title">Uptime</div>
+        <div class="val-sm" id="d-uptime">0s</div>
+      </div>
+      <div class="card">
+        <div class="card-title">Scale</div>
+        <div class="val-sm" id="d-scale">—</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:12px;">
+      <div class="card-title">Cluster Activity</div>
+      <div id="d-clusters"></div>
+    </div>
+
+    <div class="card" style="margin-top:12px;">
+      <div class="card-title">Process Log</div>
+      <div class="log" id="d-log"></div>
+    </div>
+  </div>
+
+  <script>
+    const SERVER_URL = location.hostname === 'localhost'
+      ? 'ws://localhost:8080'
+      : `wss://${location.hostname}:8080`;
+
+    let ws;
+    function connect() {
+      ws = new WebSocket(SERVER_URL);
+      ws.onopen = () => {
+        document.getElementById('connection-status').innerHTML = '<span class="status alive">connected</span> Brain server active';
+        log('Connected to brain server');
+      };
+      ws.onmessage = (e) => {
+        try { handleMessage(JSON.parse(e.data)); } catch {}
+      };
+      ws.onclose = () => {
+        document.getElementById('connection-status').innerHTML = '<span class="status dead">disconnected</span> Reconnecting...';
+        setTimeout(connect, 3000);
+      };
+      ws.onerror = () => {};
+    }
+
+    function handleMessage(msg) {
+      if (msg.type === 'welcome') {
+        if (msg.state) updateDashboard(msg.state);
+        log(`Welcome — ${msg.state?.connectedUsers ?? '?'} users online`);
+      }
+      if (msg.type === 'state') {
+        updateDashboard(msg.state);
+      }
+    }
+
+    function updateDashboard(s) {
+      const $ = id => document.getElementById(id);
+      $('d-neurons').textContent = (s.totalNeurons ?? s.neurons ?? 1000).toLocaleString();
+      $('d-spikes').textContent = `${s.totalSpikes ?? 0} firing`;
+      $('d-psi').textContent = (s.psi ?? 0).toFixed(4);
+      $('d-arousal').textContent = ((s.arousal ?? 0) * 100).toFixed(0) + '%';
+      $('d-arousal-bar').style.width = ((s.arousal ?? 0) * 100) + '%';
+      $('d-valence').textContent = (s.valence ?? 0).toFixed(3);
+      $('d-valence-bar').style.width = (((s.valence ?? 0) + 1) / 2 * 100) + '%';
+      $('d-coherence').textContent = ((s.coherence ?? 0) * 100).toFixed(0) + '%';
+      $('d-coherence-bar').style.width = ((s.coherence ?? 0) * 100) + '%';
+      $('d-users').textContent = s.connectedUsers ?? 0;
+      $('d-action').textContent = s.motor?.selectedAction ?? 'idle';
+      $('d-drug').textContent = s.drugState ?? '—';
+      $('d-uptime').textContent = (s.time ?? 0).toFixed(1) + 's';
+      $('d-scale').textContent = s.scale ?? '—';
+
+      // Clusters
+      if (s.clusters) {
+        const el = $('d-clusters');
+        let html = '';
+        const colors = { cortex:'#ff4d9a', hippocampus:'#a855f7', amygdala:'#ef4444', basalGanglia:'#22c55e', cerebellum:'#00e5ff', hypothalamus:'#f59e0b', mystery:'#c084fc' };
+        for (const [name, c] of Object.entries(s.clusters)) {
+          const pct = c.size ? (c.spikeCount / c.size * 100).toFixed(1) : 0;
+          html += `<div style="display:flex;align-items:center;gap:8px;margin:4px 0;font-size:11px;">
+            <span style="color:${colors[name]||'#fff'};width:100px;">${name}</span>
+            <div style="flex:1;height:4px;background:#1a1a1a;border-radius:2px;"><div style="width:${pct}%;height:100%;background:${colors[name]||'#fff'};border-radius:2px;"></div></div>
+            <span style="color:#555;width:80px;text-align:right;">${c.spikeCount}/${c.size} (${pct}%)</span>
+          </div>`;
+        }
+        el.innerHTML = html;
+      }
+    }
+
+    function log(text) {
+      const el = document.getElementById('d-log');
+      const entry = document.createElement('div');
+      entry.className = 'log-entry';
+      entry.textContent = `[${new Date().toLocaleTimeString()}] ${text}`;
+      el.appendChild(entry);
+      el.scrollTop = el.scrollHeight;
+      while (el.children.length > 200) el.children[0].remove();
+    }
+
+    connect();
+  </script>
+</body>
+</html>
