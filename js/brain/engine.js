@@ -424,6 +424,7 @@ export class UnityBrain extends EventEmitter {
       auditoryCortex: this.auditoryCortex.getState(),
       visionDescription: this.visualCortex.description,
       innerVoice: this.innerVoice.getState(),
+      isDreaming: this._isDreaming || false,
     };
 
     // ── 16. EMIT EVENTS ──
@@ -450,10 +451,74 @@ export class UnityBrain extends EventEmitter {
     for (let i = 0; i < STEPS_PER_FRAME; i++) this.step(DT);
     this.frameCount++;
 
+    // ── DREAMING MODE ──
+    // When no one has interacted for 30+ seconds, the brain dreams:
+    // - Arousal decays toward 0.2 (low but not zero)
+    // - Oscillations shift toward theta-dominant (memory consolidation)
+    // - Hippocampus replays stored episodes (memory consolidation)
+    // - Cortex generates predictions from noise (imagination)
+    // - Ψ drops (reduced consciousness)
+    // The brain is alive but in a different state. Visible in the visualizer.
     const now = performance.now();
+    const timeSinceInput = now - (this._lastInputTime || now);
+    this._isDreaming = timeSinceInput > 30000;
+
+    if (this._isDreaming) {
+      // Decay arousal toward dream baseline
+      const dreamArousal = 0.2;
+      this.clusters.amygdala.tonicDrive *= 0.999; // slow decay
+      if (this.clusters.amygdala.tonicDrive < 12) this.clusters.amygdala.tonicDrive = 12;
+
+      // Shift oscillation coupling toward theta dominance
+      // (lower frequency oscillators get stronger coupling)
+      if (this.frameCount % 60 === 0) {
+        const n = 8;
+        for (let i = 0; i < n; i++) {
+          for (let j = 0; j < n; j++) {
+            if (i < 3) this.oscCoupling[i * n + j] *= 1.001; // boost theta/alpha
+            else this.oscCoupling[i * n + j] *= 0.999; // dampen beta/gamma
+          }
+        }
+      }
+
+      // Hippocampal replay — re-inject a random stored episode
+      if (this.frameCount % 300 === 0 && this.memorySystem._episodes.length > 0) {
+        const randomEp = this.memorySystem._episodes[
+          Math.floor(Math.random() * this.memorySystem._episodes.length)
+        ];
+        if (randomEp.pattern) {
+          const replayCurrent = new Float64Array(this.clusters.hippocampus.size);
+          for (let i = 0; i < replayCurrent.length && i < randomEp.pattern.length; i++) {
+            replayCurrent[i] = randomEp.pattern[i] * 4; // moderate replay
+          }
+          this.clusters.hippocampus.injectCurrent(replayCurrent);
+          this.emit('dream', { episode: randomEp, time: this.time });
+        }
+      }
+    }
+
+    // ── IDLE THOUGHT (from inner voice, NOT AI) ──
     if (now - this.lastThoughtTime > THOUGHT_INTERVAL) {
       this.lastThoughtTime = now;
-      this._generateIdleThought();
+      const thought = this.innerVoice.currentThought;
+
+      // If the inner voice has something to say AND the brain wants to speak
+      if (thought.shouldSpeak && thought.sentence && this._voice && !this._isDreaming) {
+        this._voice.stopSpeaking();
+        this.auditoryCortex.setMotorOutput(thought.sentence);
+        this._voice.speak(thought.sentence).then(() => {
+          this.auditoryCortex.clearMotorOutput();
+        }).catch(() => { this.auditoryCortex.clearMotorOutput(); });
+        this.emit('response', { text: thought.sentence, action: 'idle_thought' });
+      }
+
+      this.emit('thought', {
+        mood: thought.mood,
+        arousal: thought.arousal,
+        psi: thought.psi,
+        isDreaming: this._isDreaming,
+        time: this.time,
+      });
     }
 
     this._rafId = requestAnimationFrame(() => this.think());
@@ -527,7 +592,12 @@ export class UnityBrain extends EventEmitter {
     if (this._voice) this._voice.stopSpeaking();
     if (this._brocasArea) this._brocasArea.abort();
 
-    // 2. Feed sensory input
+    // 2. Feed sensory input — mark interaction time (exits dreaming)
+    this._lastInputTime = performance.now();
+    this._isDreaming = false;
+    // Restore amygdala tonic drive if we were dreaming
+    const arousal = this.brainParams.arousalBaseline || 0.9;
+    this.clusters.amygdala.tonicDrive = 15 + arousal * 8;
     this.sensory.receiveText(text);
 
     // Amygdala surprise
@@ -899,15 +969,8 @@ USER REQUEST: ${text}`;
     return states;
   }
 
-  _generateIdleThought() {
-    this.emit('thought', {
-      arousal: this.state.amygdala?.arousal || 0.5,
-      coherence: this.state.oscillations?.coherence || 0,
-      psi: this.state.psi,
-      action: this.motor.selectedAction,
-      time: this.time,
-    });
-  }
+  // _generateIdleThought removed — inner voice handles all idle thought
+  // through the equations, not through AI model calls
 }
 
 export default UnityBrain;
