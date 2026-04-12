@@ -30,15 +30,16 @@ const AUTO_ROT_SPEED = 0.0015;
 
 // ── Cluster definitions ─────────────────────────────────────────────
 
-// Biologically proportioned — cerebellum is LARGEST (like real brain)
+// Biologically proportioned — cerebellum LARGEST. MUST sum to exactly 1000.
 const CLUSTERS = [
-  { key: 'cerebellum',   label: 'CEREBELLUM',    n: 400, rgb: [0.0, 0.898, 1.0],     hex: '#00e5ff' },
+  { key: 'cerebellum',   label: 'CEREBELLUM',    n: 380, rgb: [0.0, 0.898, 1.0],     hex: '#00e5ff' },
   { key: 'cortex',       label: 'CORTEX',        n: 250, rgb: [1.0, 0.302, 0.604],  hex: '#ff4d9a' },
   { key: 'hippocampus',  label: 'HIPPOCAMPUS',   n: 100, rgb: [0.659, 0.333, 0.969], hex: '#a855f7' },
   { key: 'amygdala',     label: 'AMYGDALA',       n: 80,  rgb: [0.937, 0.267, 0.267], hex: '#ef4444' },
   { key: 'basalGanglia', label: 'BASAL GANGLIA', n: 80,  rgb: [0.133, 0.773, 0.369], hex: '#22c55e' },
   { key: 'hypothalamus', label: 'HYPOTHALAMUS',  n: 50,  rgb: [0.961, 0.620, 0.043], hex: '#f59e0b' },
-  { key: 'mystery',      label: 'MYSTERY Ψ',     n: 50,  rgb: [0.753, 0.518, 0.988], hex: '#c084fc' },
+  { key: 'mystery',      label: 'MYSTERY Ψ',     n: 60,  rgb: [0.753, 0.518, 0.988], hex: '#c084fc' },
+  // Total: 380+250+100+80+80+50+60 = 1000
 ];
 
 // ── Inline shaders ──────────────────────────────────────────────────
