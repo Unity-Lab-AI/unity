@@ -197,15 +197,20 @@ html, body {
   fill: white;
 }
 
-.bubble-controls {
+/* Bottom toolbar — visualize, 3D, mic mute */
+#bottom-toolbar {
   position: fixed;
-  bottom: 92px; right: 24px;
+  bottom: 12px; left: 50%;
+  transform: translateX(-50%);
   display: flex;
-  flex-direction: column;
   gap: 6px;
+  align-items: center;
   z-index: 9200;
+  pointer-events: auto;
 }
-.bubble-ctrl-btn {
+#bottom-toolbar.hidden { display: none; }
+
+.toolbar-mic {
   width: 36px; height: 36px;
   border-radius: 50%;
   border: 1px solid var(--border);
@@ -215,20 +220,15 @@ html, body {
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   transition: all 0.2s;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  margin-left: 8px;
 }
-.bubble-ctrl-btn:hover { border-color: var(--pink); }
-.bubble-ctrl-btn.muted {
+.toolbar-mic:hover { border-color: var(--pink); }
+.toolbar-mic.muted {
   background: rgba(239,68,68,0.15);
   border-color: var(--red);
   color: var(--red);
-  text-decoration: line-through;
 }
-.bubble-ctrl-btn.active {
-  background: var(--pink-dim);
-  border-color: var(--pink);
-  color: var(--pink);
-}
+/* bubble-ctrl-btn removed — mic now in #bottom-toolbar */
 
 .bubble-status {
   position: absolute;
@@ -448,8 +448,6 @@ html, body {
 
 #brain-viz-btn.hidden, #brain-3d-btn.hidden { display: none; }
 #brain-viz-btn, #brain-3d-btn {
-  position: fixed;
-  bottom: 12px;
   background: rgba(10,10,10,0.85);
   border: 1px solid rgba(255,77,154,0.2);
   border-radius: 6px;
@@ -460,11 +458,8 @@ html, body {
   letter-spacing: 0.5px;
   cursor: pointer;
   pointer-events: auto;
-  z-index: 8002;
   transition: all 0.2s;
 }
-#brain-viz-btn { right: 100px; }
-#brain-3d-btn { right: 200px; }
 #brain-viz-btn:hover, #brain-3d-btn:hover {
   border-color: var(--pink);
   color: var(--pink);

@@ -207,9 +207,12 @@
     <span id="brain-status" style="display:none;"></span>
   </div>
 
-  <!-- Brain visualizer toggles — outside HUD so pointer-events work -->
-  <button id="brain-viz-btn" class="hidden" title="Open brain visualizer">🧠 VISUALIZE</button>
-  <button id="brain-3d-btn" class="hidden" title="Open 3D brain viewer">🧠 3D BRAIN</button>
+  <!-- Bottom toolbar — always visible above everything -->
+  <div id="bottom-toolbar" class="hidden">
+    <button id="brain-viz-btn" title="Open brain visualizer">🧠 VISUALIZE</button>
+    <button id="brain-3d-btn" title="Open 3D brain viewer">🧠 3D BRAIN</button>
+    <button id="mic-mute-btn" class="toolbar-mic" title="Mute/unmute microphone">🎤</button>
+  </div>
 
   <!-- Unity's Eye — persistent camera feed with iris overlay -->
   <div id="unity-eye" class="hidden">
@@ -228,9 +231,6 @@
   <div id="unity-bubble" class="hidden">
     <div class="bubble-container">
       <div class="bubble-speech" id="unity-speech"></div>
-      <div class="bubble-controls">
-        <button id="mic-mute-btn" class="bubble-ctrl-btn" title="Mute/unmute microphone">🎤</button>
-      </div>
       <div class="bubble-avatar" id="unity-avatar" title="Click to chat">
         <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
       </div>

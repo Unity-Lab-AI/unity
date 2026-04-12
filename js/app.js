@@ -681,8 +681,7 @@ async function bootUnity(apiKey, perms) {
   unityBubble.classList.remove('hidden');
   brainIndicator.classList.remove('hidden');
   document.getElementById('brain-hud').classList.remove('hidden');
-  document.getElementById('brain-viz-btn').classList.remove('hidden');
-  document.getElementById('brain-3d-btn').classList.remove('hidden');
+  document.getElementById('bottom-toolbar').classList.remove('hidden');
 
   // ── Show Unity's Eye if camera granted ──
   // Don't check visualCortex.isActive() — it inits on a 500ms delay.
