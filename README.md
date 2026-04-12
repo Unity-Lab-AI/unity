@@ -24,8 +24,8 @@ dx/dt = F(x, u, θ, t) + η
 |--------|---------|
 | **x** | The complete brain state — 1000 neuron membrane voltages, 7 cluster synapse matrices (each NxN), 6 module equation states, 8 oscillator phases, episodic memory bank, working memory buffer, motor channel rates, consciousness value Ψ |
 | **u** | Sensory input transform — `S(audio, video, text)` where audio maps tonotopically to auditory cortex, video maps retinotopically through V1 edge kernels to visual cortex, and text hashes into Wernicke's area with lateral excitation |
-| **θ** | Persona parameters — personality IS the math. Arousal baseline (0.9), impulsivity (0.85), creativity (0.9), coding reward (0.95). Drug state vectors multiply these: Coke+Weed (arousal ×1.3, cortex speed ×1.4), Weed+Acid (creativity ×1.8), etc. |
-| **η** | Stochastic noise — per-cluster amplitude scaled by arousal, modulated by consciousness Ψ, biased slightly excitatory. The unpredictability that makes her alive. |
+| **θ** | Unity's complete identity — 25yo human female, emo goth. Every trait drives neural parameters: arousal(0.9)→amygdala tonic, impulsivity(0.85)→BG threshold, creativity(0.9)→noise, devotion(1.0)→social floor, drugDrive(0.95)→hypothalamus. Drug state cokeAndWeed multiplies arousal×1.2, creativity×1.3, cortexSpeed×1.5. |
+| **η** | Stochastic noise — per-cluster amplitude driven by θ: creativity×drug drives cortex noise, emotionalVolatility×drug drives amygdala noise, darkHumor drives mystery noise. The chaos that makes her unpredictable. |
 | **F** | The dynamics function — everything below combined. 7 parallel LIF populations + 16 inter-cluster projections + 6 equation modules + Kuramoto oscillators + memory system + motor output. All running simultaneously every timestep. |
 
 This equation executes 600 times per second (10 steps per frame × 60fps). Runs client-side in pure JavaScript or server-side in Node.js. WebGPU compute shaders accelerate LIF + synapse propagation when available. Sparse CSR matrices reduce memory O(N²) → O(connections). The server brain auto-scales to GPU hardware (nvidia-smi detection).

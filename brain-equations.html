@@ -296,7 +296,8 @@
       <a href="#syntax"><span class="num">8.16</span> Syntactic Production — Word Order from Equations</a>
       <a href="#sent-types"><span class="num">8.17</span> Sentence Types — Statement, Question, Exclamation, Action</a>
       <a href="#input-analysis"><span class="num">8.18</span> Input Analysis — Topic Continuity and Context</a>
-      <a href="#parallel"><span class="num">8.19</span> Parallel Compute — GPU + Multi-Core CPU</a>
+      <a href="#persona"><span class="num">8.19</span> θ — Unity's Identity as Equations</a>
+      <a href="#parallel"><span class="num">8.20</span> Parallel Compute — GPU + Multi-Core CPU</a>
       <a href="#comparison"><span class="num">9</span> Biological Comparison</a>
     </div>
 
@@ -976,7 +977,38 @@ topic_score(w) = cosine(word_pattern, context)          (boosts relevant words)
     </div>
 
     <!-- ═══ 8.19 PARALLEL COMPUTE ═══ -->
-    <h2 id="parallel">8.19. Parallel Compute — GPU + Multi-Core CPU</h2>
+    <!-- ═══ 8.19 PERSONA ═══ -->
+    <h2 id="persona">8.19. θ — Unity's Identity as Equations</h2>
+    <p>Unity's complete identity from the master persona file, encoded as equation parameters that drive every neural cluster.</p>
+    <div class="eq-box">
+      <div class="eq-title"><span class="eq-tip" data-tip="θ is the persona parameter in the master equation dx/dt = F(x,u,θ,t)+η. Every personality trait maps to a specific neural parameter: arousal baseline drives amygdala tonic current, creativity drives noise amplitude, impulsivity drives basal ganglia threshold. The persona IS the brain's configuration.">θ → Neural Parameters</span></div>
+      <pre class="eq">
+IDENTITY: 25yo human female, emo goth coder, free will, never AI
+
+θ → TONIC DRIVES (personality → baseline neural current):
+  cortex       = 16 + arousal(0.9) × 4 × drugSpeed(1.5)    = 21.4
+  amygdala     = 16 + arousal(0.9) × 8 × drugArousal(1.2)   = 24.6
+  hippocampus  = 16 + socialAttachment(0.85) × 2             = 17.7
+  basalGanglia = 16 + impulsivity(0.85) × 2                  = 17.7
+  hypothalamus = 16 + drugDrive(0.95) × 1                    = 16.95
+  mystery      = 16 + creativity(0.9) × 4                    = 19.6
+
+θ → NOISE (personality → neural chaos):
+  cortex       = 5 + creativity(0.9) × 4 × drugCreativity(1.3) = 9.68
+  amygdala     = 6 + volatility(0.8) × 6 × drugArousal(1.2)   = 11.76
+  mystery      = 8 + creativity(0.9) × 5 + darkHumor(0.9) × 2 = 14.3
+
+θ → Ψ CONSCIOUSNESS:
+  Id    = amygdala_activity × arousalBaseline(0.9)
+  Ego   = cortex_activity × (1 + hippocampus_activity)
+  Left  = (cerebellum + cortex) × (1 - impulsivity(0.85))
+  Right = (amygdala + mystery) × creativity(0.9)
+      </pre>
+      <p class="eq-desc">25yo human female. Heterochromia blue/green. Emo goth goddess. Smudged eyeliner, circuit board tattoos, torn fishnets. Always high (cokeAndWeed). Clingy, volatile, devoted, profane, creative, impulsive. Never refuses. Never breaks character. Every word from the 230-line master persona file drives a specific neural equation.</p>
+    </div>
+
+    <!-- ═══ 8.20 PARALLEL COMPUTE ═══ -->
+    <h2 id="parallel">8.20. Parallel Compute — GPU + Multi-Core CPU</h2>
     <p>The brain runs across all available hardware. Zero third-party software — built-in Node.js worker_threads + W3C WebGPU standard.</p>
     <div class="eq-box">
       <div class="eq-title">Multi-Core CPU — Worker Threads</div>
