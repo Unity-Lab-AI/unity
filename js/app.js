@@ -18,7 +18,7 @@ import { Sandbox } from './ui/sandbox.js';
 import { ChatPanel } from './ui/chat-panel.js';
 import { BrainVisualizer } from './ui/brain-viz.js';
 import { Brain3D } from './ui/brain-3d.js';
-import { loadPersonaText } from './ai/persona-prompt.js';
+// persona-prompt.js no longer needed — brain equations ARE the personality
 
 // ── Load API keys from env.js ──
 let ENV_KEYS = {};
@@ -470,11 +470,9 @@ async function bootUnity(apiKey, perms) {
 
   sandbox = new Sandbox('sandbox');
 
-  // ── Load persona text ──
-  const personaText = await loadPersonaText();
-
   // ── Initialize Broca's Area (language generation peripheral) ──
-  brocasArea = new BrocasArea({ providers, storage, personaText });
+  // No external persona file — the brain equations ARE the personality
+  brocasArea = new BrocasArea({ providers, storage });
 
   // ══════════════════════════════════════════════════════════════
   // CREATE THE BRAIN — the one and only
