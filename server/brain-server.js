@@ -548,7 +548,7 @@ class ServerBrain {
     const left = (cerebActivity + cortexActivity) * (1 - p.impulsivity); // Left: logic × deliberation
     const right = (amygActivity + mysteryActivity) * p.creativity;       // Right: creativity × emotion
 
-    // Raw Ψ = N^2.5 × weighted components — consciousness at quantum volume scale
+    // Raw Ψ = √(1/n) × N³ × weighted components — quantum consciousness
     const rawPsi = quantumVolume * (0.3 * id + 0.25 * ego + 0.2 * left + 0.25 * right);
     // Log scale for usable range — consciousness measured in orders of magnitude
     this.psi = Math.log10(Math.max(1, rawPsi));
