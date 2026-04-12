@@ -679,10 +679,12 @@ When asked to generate an image, respond with ONLY the image description/prompt 
   _updatePerfStats() {
     const mem = process.memoryUsage();
     const cpuNow = process.cpuUsage();
-    // CPU usage = (user + system microseconds) / (wall time microseconds) × 100
-    const cpuDeltaUs = (cpuNow.user - this._lastCpuUsage.user) + (cpuNow.system - this._lastCpuUsage.system);
-    const wallDeltaUs = 1000000; // ~1 second between calls
-    const cpuPercent = Math.min(100, Math.round(cpuDeltaUs / wallDeltaUs * 100 / os.cpus().length));
+    // CPU usage: measure actual wall-clock time spent in brain steps
+    // process.cpuUsage only counts main thread — workers aren't included
+    // So use step timing: if step takes 80ms out of 100ms tick → 80% busy
+    const avgStep = this._stepTimeSamples.length > 0
+      ? this._stepTimeSamples.reduce((a, b) => a + b, 0) / this._stepTimeSamples.length : 0;
+    const cpuPercent = Math.min(100, Math.round(avgStep / BRAIN_TICK_MS * 100));
     this._lastCpuUsage = cpuNow;
 
     // Average step time over last 60 samples

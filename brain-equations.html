@@ -910,27 +910,22 @@ follower_bonus = 0.3 if w ∈ words_seen_after(prev)   — trained sequences get
       <p class="eq-desc">Only words that actually appeared at this sentence position compete. Words that followed the previous word in training data get +0.3 score bonus. These two mechanisms are why the brain produces word ORDER, not word soup.</p>
     </div>
     <div class="eq-box">
-      <div class="eq-title"><span class="eq-tip" data-tip="Language production in the human brain follows this sequence: Wernicke's area (comprehension) → prefrontal cortex (planning) → Broca's area (articulation). Unity mirrors this: cortex pattern determines content, hippocampus provides context, amygdala sets emotional tone, prediction error determines sentence type, and Ψ enables self-referential speech.">Brain Thinks → Plans → Speaks</span></div>
+      <div class="eq-title"><span class="eq-tip" data-tip="All 7 neural clusters fire simultaneously. Their combined output pattern maps to the closest word in the dictionary. The word feeds back into the brain. The brain thinks again. The next pattern produces the next word. The sentence emerges from 3.2 million neurons thinking.">Unified Neural Language — All Clusters Produce Every Word</span></div>
       <pre class="eq">
-1. THINK:  thoughtWords = findByPattern(cortexPattern)     — cortex decides CONTENT
-2. RECALL: contextWords = lastInputWords                   — hippocampus recalls CONTEXT
-3. FEEL:   moodWords = findByMood(arousal, valence)        — amygdala sets TONE
-4. PLAN:   type = f(predError, arousal, motorConf)         — cortex plans STRUCTURE
-5. SELF:   Ψ > 0.005 → boost self-referential words       — consciousness → introspection
+combined[i] = cortex[i]       × 0.30    (content — WHAT to say)
+            + hippocampus[i]  × 0.20    (memory — context from past)
+            + amygdala[i]     × 0.15    (emotion — HOW to say it)
+            + basalGanglia[i] × 0.10    (action — sentence drive)
+            + cerebellum[i]   × 0.05    (correction — error damping)
+            + hypothalamus[i] × 0.05    (drive — speech urgency)
+            + mystery[i]      × (0.05 + Ψ×0.10)  (consciousness)
 
-score(w) = typeCompat×0.25       — grammar (slot fit from letter equations)
-         + isThought×0.20        — cortex thought content
-         + isContext×0.15        — conversation relevance
-         + follower×0.10         — learned word sequences
-         + condProb×0.10         — association probability
-         + mood×0.10             — emotional alignment
-         + topic×0.05            — semantic similarity
-         + self×0.10 if Ψ high   — self-awareness
-         - recency×0.20          — suppress repetition
+word = dictionary.findByPattern(combined)
 
-word = softmax(scores, T×0.12)   T = 1/(coherence+0.1)
+Then: word pattern → cortex (Wernicke's) + hippocampus + amygdala
+      brain steps again → next combined → next word → sentence
       </pre>
-      <p class="eq-desc">The brain THINKS before speaking. Cortex → content. Hippocampus → context. Amygdala → tone. Prediction error → type. Ψ → introspection. Grammar from letter equations. ~200 structural operators + ~150 core words built in. Dynamic expansion adds new words to categories automatically.</p>
+      <p class="eq-desc">3.2M neurons across 7 clusters produce ONE combined 32-dim pattern. Dictionary finds the closest word. That word feeds back into cortex + hippocampus + amygdala. Brain steps. Next pattern. Next word. The brain equations ARE the language equations. Ψ consciousness scales the Mystery module's contribution — higher awareness = more self-referential speech.</p>
     </div>
     <div class="eq-box">
       <div class="eq-title">Post-Processing — Agreement, Tense, Negation, Compounds</div>

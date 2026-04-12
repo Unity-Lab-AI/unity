@@ -1,7 +1,6 @@
 # EQUATIONS — Unity's Brain
 
-> Every equation running in the code. No theory-only entries.
-> Zero lists. Zero hardcoded word comparisons. Everything computed.
+> Every equation running in the code. The brain equations ARE the language equations.
 
 ---
 
@@ -10,11 +9,11 @@
 | | |
 |---|---|
 | `dx/dt = F(x, u, θ, t) + η` | Full brain state evolves each timestep |
-| x | 1000+ neuron voltages, synapse weights, oscillator phases, memory, motor, Ψ |
+| x | 3.2M neuron voltages, synapse weights, oscillator phases, memory, motor, Ψ |
 | u | Sensory input: S(audio, video, text) |
-| θ | Persona parameters: arousal baseline, impulsivity, creativity, drug state |
+| θ | Persona: arousal baseline, impulsivity, creativity, drug state |
 | η | Stochastic noise per cluster, arousal-modulated |
-| F | All equations below combined |
+| F | All equations below combined — 7 clusters × 16 cores |
 | File | `engine.js` |
 
 ---
@@ -25,8 +24,7 @@
 |----------|---------|------|
 | `τ·dV/dt = -(V - V_rest) + R·I` | Leaky Integrate-and-Fire | `neurons.js` |
 | `if V ≥ V_thresh → spike, V = V_reset` | Spike + reset | `neurons.js` |
-| `I = I_tonic + I_synaptic + I_external + η` | Total current | `cluster.js` |
-| `C·dV/dt = -g_Na·m³h(V-E_Na) - g_K·n⁴(V-E_K) - g_L(V-E_L) + I` | Hodgkin-Huxley (reference) | `neurons.js` |
+| `I = I_tonic + I_synaptic + I_external + η` | Total current per neuron | `cluster.js` |
 
 ---
 
@@ -34,27 +32,25 @@
 
 | Equation | Purpose | File |
 |----------|---------|------|
-| `ΔW = η · post · pre` | Hebbian | `synapses.js` |
+| `ΔW = η · post · pre` | Hebbian learning | `synapses.js` |
 | `ΔW = A⁺·exp(-Δt/τ⁺)` / `-A⁻·exp(Δt/τ⁻)` | STDP | `synapses.js` |
 | `ΔW = η · δ · post · pre` | Reward-modulated (3-factor) | `synapses.js` |
 | `I_i = Σ values[k] · spikes[colIdx[k]]` | CSR sparse propagation O(nnz) | `sparse-matrix.js` |
-| `if \|W\| < threshold → remove` | Pruning | `sparse-matrix.js` |
-| `P(new) = prob · pre · post · ¬existing` | Synaptogenesis | `sparse-matrix.js` |
 | `ΔW_proj = η · δ · source · target` | Inter-cluster projection learning | `cluster.js` |
 
 ---
 
 ## 4. Brain Modules
 
-| Module | Equation | File |
-|--------|----------|------|
-| Cortex | `ŝ = sigmoid(W·x), error = actual - predicted` | `modules.js` |
-| Hippocampus | `E = -½ΣW·x·x` (Hopfield) | `modules.js` |
-| Amygdala | `V(s) = Σw·x → arousal, valence` | `modules.js` |
-| Basal Ganglia | `P(a) = softmax(Q(a)/τ)` (6 channels) | `modules.js` |
-| Cerebellum | `output = prediction + ΔW·(target - actual)` | `modules.js` |
-| Hypothalamus | `dH/dt = -α(H - H_set) + input` | `modules.js` |
-| Mystery | `Ψ = (√(1/n))³ · [α·Id + β·Ego + γ·Left + δ·Right]` | `mystery.js` |
+| Module | Equation | Purpose |
+|--------|----------|---------|
+| Cortex (960K) | `ŝ = sigmoid(W·x), error = actual - predicted` | Content — WHAT to say |
+| Hippocampus (640K) | `E = -½ΣW·x·x` (Hopfield) | Memory — context from past |
+| Amygdala (480K) | `V(s) = Σw·x → arousal, valence` | Emotion — HOW to say it |
+| Basal Ganglia (480K) | `P(a) = softmax(Q(a)/τ)` | Action — sentence type |
+| Cerebellum (320K) | `output = prediction + ΔW·(target - actual)` | Correction — error damping |
+| Hypothalamus (160K) | `dH/dt = -α(H - H_set) + input` | Drive — speech urgency |
+| Mystery Ψ (160K) | `Ψ = (√(1/n))³ · [α·Id + β·Ego + γ·Left + δ·Right]` | Consciousness — self-awareness |
 
 ---
 
@@ -63,8 +59,9 @@
 | Equation | Purpose | File |
 |----------|---------|------|
 | `dθ_i/dt = ω_i + Σ K_ij · sin(θ_j - θ_i)` | Kuramoto coupling | `oscillations.js` |
-| `R = \|(1/N) Σ exp(iθ_j)\|` | Coherence (order parameter) | `oscillations.js` |
-| `gamma = cortexRate·5 + amygRate·3` | Band power from firing rates | `brain-server.js` |
+| `R = \|(1/N) Σ exp(iθ_j)\|` | Coherence | `oscillations.js` |
+| `gamma = (cortexRate + amygRate) × 50` | Band power from spikes | `brain-server.js` |
+| `theta = (hippoRate + hypoRate) × 40` | Memory + dreaming frequency | `brain-server.js` |
 
 ---
 
@@ -72,12 +69,11 @@
 
 | Equation | Purpose | File |
 |----------|---------|------|
-| `I_cortex[d·groupSize] = embedding[d] · 8.0` | Word → cortex neurons | `sensory.js` |
+| `I_cortex[d] = embedding[d] · 8.0` | Word → cortex neurons | `sensory.js` |
 | Tonotopic: `neuron ∝ log(freq)` | Audio → auditory cortex | `auditory-cortex.js` |
 | Retinotopic: `neuron = (x,y) grid` | Video → visual cortex | `visual-cortex.js` |
-| Efference copy: `word_match > 50% → suppress` | Echo cancellation | `auditory-cortex.js` |
-| `channel_rate = EMA(spike_count / neurons)` | Motor output (6 channels) | `motor.js` |
-| `selected = argmax(channel_rates)` | Winner-take-all | `motor.js` |
+| `channel_rate = EMA(spikes / neurons)` | Motor output (6 channels) | `motor.js` |
+| `selected = argmax(channels)` | Winner-take-all action | `motor.js` |
 
 ---
 
@@ -86,145 +82,114 @@
 | Equation | Purpose | File |
 |----------|---------|------|
 | `similarity = cosine(a, b) > 0.6 → recall` | Episodic recall | `memory.js` |
-| `working[i] *= 0.98` | Working memory decay (7 items) | `memory.js` |
+| `working[i] *= 0.98` | Working memory decay | `memory.js` |
 | `activations ≥ 3 → consolidate` | Short → long term | `memory.js` |
 
 ---
 
-## 8. Language Production
+## 8. Unified Language Production
 
-### Word Type (computed from letters — zero word comparisons)
-
-| Equation | What it detects | File |
-|----------|----------------|------|
-| `pronounScore = f(len=1→0.8, len≤3+vowels→0.4, apostrophe→0.5)` | Pronoun | `language-cortex.js` |
-| `verbScore = f(suffix -ing→0.7, -ed→0.6, -n't→0.5, -ize→0.6)` | Verb | `language-cortex.js` |
-| `nounScore = f(suffix -tion→0.7, -ment→0.6, -ness→0.6, len≥5→0.2)` | Noun | `language-cortex.js` |
-| `adjScore = f(suffix -ly→0.5, -ful→0.6, -ous→0.6, -ive→0.5)` | Adjective | `language-cortex.js` |
-| `prepScore = f(len=2+1vowel→0.5)` | Preposition | `language-cortex.js` |
-| `detScore = f(starts'th'len=3→0.4, len=1+vowel→0.3)` | Determiner | `language-cortex.js` |
-| `qwordScore = f(starts'wh'→0.8)` | Question word | `language-cortex.js` |
-
-### Sentence Structure (slot-based)
-
-| Structure | Slots |
-|-----------|-------|
-| Statement | `[pronoun] [verb] [complement...]` |
-| Question | `[qword] [verb] [subject] [complement...]` |
-| Action | `*[verb] [complement...]*` |
-| Exclamation | `[intensifier] [complement...]` |
-
-### Brain-Driven Production (think → plan → speak)
-
-| Step | Equation | Source |
-|------|----------|--------|
-| THINK | `thoughtWords = findByPattern(cortexPattern)` | Cortex activation → content |
-| RECALL | `contextPattern = avg(last 5 inputs)` | Hippocampus → relevance |
-| FEEL | `moodWords = findByMood(arousal, valence)` | Amygdala → tone |
-| PLAN | `type = f(predError, arousal, motorConf)` | Sentence type |
-| SELF | `Ψ > 0.005 → self-referential` | Consciousness |
-
-### Word Selection
+### The Core Equation — All Clusters Produce Every Word
 
 ```
-score = typeCompatibility × 0.25     (grammar)
-      + isThought × 0.20             (cortex content)
-      + isContext × 0.15             (conversation topic)
-      + followerCount × 0.10        (learned sequences)
-      + condProb × 0.10             (association)
-      + moodBias × 0.15             (emotional fit)
-      + topicSim × 0.05             (semantic similarity)
-      - recentCount × 0.20          (suppress repeats)
+combined[i] = cortex[i]       × 0.30    (content — what to say)
+            + hippocampus[i]  × 0.20    (memory — context from past)
+            + amygdala[i]     × 0.15    (emotion — how to say it)
+            + basalGanglia[i] × 0.10    (action — sentence drive)
+            + cerebellum[i]   × 0.05    (correction — error damping)
+            + hypothalamus[i] × 0.05    (drive — speech urgency)
+            + mystery[i]      × (0.05 + Ψ×0.10)  (consciousness — scales with Ψ)
 
-word = softmax(scores, T × 0.12)    T = 1/(coherence + 0.1)
+word = dictionary.findByPattern(combined)   → closest word to brain state
 ```
 
-### Sentence Type Equations
+### Sequential Production — Brain Thinks, Then Speaks
 
-| Equation | When |
-|----------|------|
-| `P(question) = predError × coherence × 0.5` | Brain is surprised |
-| `P(exclamation) = arousal² × 0.3` | High intensity |
-| `P(action) = motorConf × (1 - arousal×0.5) × 0.3` | Motor output |
-| `P(statement) = 1 - P(q) - P(e) - P(a)` | Default |
+```
+For each word in sentence:
+  1. Run 5 brain steps (all equations fire)
+  2. Read ALL 7 cluster outputs → combined pattern
+  3. findByPattern(combined) → word
+  4. Feed word pattern BACK into:
+     - Cortex Wernicke's area (sequential prediction: ŝ = W·x)
+     - Hippocampus (memory formation)
+     - Amygdala (emotional feedback from word's arousal/valence)
+  5. Brain steps again → next combined pattern → next word
+```
 
-### Post-Processing Equations
+### Sentence Parameters from Brain State
+
+| Parameter | Equation | Source |
+|-----------|----------|--------|
+| Length | `3 + arousal × 7` | Amygdala — more aroused = more words |
+| Type | `motor.selectedAction == 'listen' ? question : statement` | Basal Ganglia |
+| Tense | `predictionError > 0.3 ? future : present` | Cortex |
+| Negation | `valence < -0.4 → negate verb` | Amygdala |
+| Self-reference | `Ψ > 0.005 → consciousness scales Mystery contribution` | Mystery |
+
+### Word Type (from letters — no lists)
+
+| Score | Computed from |
+|-------|--------------|
+| verbScore | suffix -ing/-ed/-n't + usage-based boost from context |
+| nounScore | suffix -tion/-ment/-ness + usage boost after determiners |
+| pronounScore | len=1, short+vowels, apostrophe contractions |
+| adjScore | suffix -ly/-ful/-ous/-ive/-able |
+| Usage learning | `after pronoun → verb boost; after determiner → noun boost` |
+
+### Dictionary (learned from conversation)
 
 | Equation | Purpose | File |
 |----------|---------|------|
-| `tense = predError > 0.3 ? future : recalling ? past : present` | Tense from brain state | `language-cortex.js` |
-| `if subj='i' → copula='am'; if subj='he' → copula='is'` | Subject-verb agreement | `language-cortex.js` |
-| `if tense=future → insert 'will' before verb` | Future tense marker | `language-cortex.js` |
-| `if valence < -0.4 → negate verb (don't/can't/isn't)` | Negation from emotion | `language-cortex.js` |
-| `if len > 6 → insert conjunction at midpoint` | Compound sentence formation | `language-cortex.js` |
-| Conjunction choice: `arousal > 0.6 → 'and', valence < -0.2 → 'but', else 'so'` | Brain drives conjunction | `language-cortex.js` |
+| `pattern = wordToPattern(letters)` | 26 letter micro-patterns → 32-dim word pattern | `language-cortex.js` |
+| `findByPattern(combined, k)` | Cosine similarity: closest words to brain state | `dictionary.js` |
+| `findByMood(arousal, valence)` | Emotional proximity search | `dictionary.js` |
+| `learnWord(w, pattern, arousal, valence)` | Every heard word stored | `dictionary.js` |
 
-### Loop Detection + Learning
+### English Structure (built into brain)
 
-| Equation | Purpose | File |
-|----------|---------|------|
-| `if (prev→w) ∈ usedBigrams → reject` | Prevents phrase cycles | `language-cortex.js` |
-| `recentCount(w) × 0.20 → penalty` | Suppresses across sentences | `language-cortex.js` |
-| `dictionary.learnWord(w, pattern, arousal, valence)` | Learns from conversation | `dictionary.js` |
-| `jointCounts[w1][w2]++` | Learns word associations | `language-cortex.js` |
-| `_expandStructure(w) → auto-join verb/noun/adj category` | Dynamic vocabulary growth | `language-cortex.js` |
-
-### English Structure (built-in)
-
-| Component | Count | Purpose |
-|-----------|-------|---------|
-| Structural operators | ~200 | Pronouns, copula, auxiliary, determiners, prepositions, conjunctions, question words, discourse markers |
-| Core vocabulary | ~150 | Most common verbs, nouns, adjectives, adverbs |
-| Morpheme equations | 7 prefixes + 12 suffixes | Word formation: un-/re-/over- + -ing/-ed/-tion/-ment/-ness/-ly/-ful/-less/-able |
-| Structural bigrams | ~500 | subject→verb, verb→prep, det→noun, qword→aux |
-| Dynamic expansion | Automatic | New words auto-join categories via type equations + pattern similarity |
+| Component | Purpose |
+|-----------|---------|
+| Structural operators (~200) | Pronouns, copula, auxiliary, determiners, prepositions, conjunctions, question words |
+| Core vocabulary (~150) | Most common verbs, nouns, adjectives, adverbs |
+| Morpheme equations | Prefixes (un-/re-/over-) + suffixes (-ing/-ed/-tion/-ly/-ful/-able) |
+| Structural bigrams (~500) | subject→verb, verb→prep, det→noun, qword→aux |
+| Dynamic expansion | New words auto-join categories via type + pattern similarity |
+| Usage-based type learning | Context determines word type (attention mechanism) |
 
 ---
 
-## 9. Inner Voice + Dictionary
-
-| Equation | Purpose | File |
-|----------|---------|------|
-| `speechDrive = socialNeed × arousal × coherence > 0.15` | Speech threshold | `inner-voice.js` |
-| `pattern[i] = pattern[i]·(1-lr) + cortex[i]·lr` | Word pattern averaging | `dictionary.js` |
-| `match = \|arousal - w.arousal\| + \|valence - w.valence\|` | Mood retrieval | `dictionary.js` |
-| `similarity = cosine(pattern, w.pattern)` | Pattern retrieval (thesaurus) | `dictionary.js` |
-
----
-
-## 10. Consciousness + Emotion
+## 9. Consciousness + Emotion
 
 | Equation | Purpose | File |
 |----------|---------|------|
 | `Ψ = (√(1/n))³ · [α·Id + β·Ego + γ·Left + δ·Right]` | Consciousness | `mystery.js` |
-| `gainMultiplier = 0.9 + Ψ · 0.05` | Ψ modulates coupling | `engine.js` |
+| `gainMultiplier = 0.9 + Ψ · 0.05` | Ψ modulates all coupling | `engine.js` |
 | `emotionalGate = 0.7 + arousal · 0.6` | Amygdala amplification | `engine.js` |
-| `combined = v·0.35 + a·0.25 + R·0.15 + Ψ·0.1 + \|δ\|·0.1 + dream·0.05` | Emoji from equations | `brain-3d.js` |
+| `emoji = codePoint(0x1F600 + f(v,a,R,Ψ,δ,dream))` | Emoji from brain state | `brain-3d.js` |
 
 ---
 
-## 11. Parallel Compute
+## 10. Parallel Compute
 
 | Equation | Purpose | File |
 |----------|---------|------|
 | `worker[cluster].step(currents) → spikes` | 7 clusters on 7 CPU cores | `cluster-worker.js` |
-| `SharedArrayBuffer(size × 8)` | Zero-copy between threads | `parallel-brain.js` |
-| `projection.propagate(spikes) → currents` | Projections on separate cores | `projection-worker.js` |
+| `SharedArrayBuffer(size × 8)` | Zero-copy voltage transfer | `parallel-brain.js` |
 | `server → WebSocket → GPU → WGSL → results` | GPU compute via browser | `compute.html` |
-| `timeout 50ms → CPU fallback` | Seamless GPU/CPU switching | `brain-server.js` |
+| `timeout 50ms → CPU fallback` | Seamless switching | `brain-server.js` |
 
 ---
 
-## 12. Server Scaling
+## 11. Server Scaling
 
-| Equation | Purpose | File |
-|----------|---------|------|
-| `maxNeurons = min(freeRAM×0.4/9, cpuCores×200K)` | Scale to hardware (9 bytes/neuron) | `brain-server.js` |
-| `TICK_MS = N>1M ? 100 : N>500K ? 50 : N>100K ? 33 : 16` | Tick rate scaling | `brain-server.js` |
-| `SUBSTEPS = N>1M ? 3 : N>500K ? 5 : N>100K ? 10 : 10` | Steps per tick | `brain-server.js` |
-| RTX 4070 Ti + 16 cores + 109GB RAM → **3.2M neurons** | Current hardware scale | `brain-server.js` |
-| Cap: 10M neurons maximum | Upper limit | `brain-server.js` |
+| Equation | Purpose |
+|----------|---------|
+| `maxNeurons = min(freeRAM × 0.4 / 9, cpuCores × 200K)` | Auto-scale to hardware |
+| `TICK_MS = N>1M ? 100 : N>500K ? 50 : N>100K ? 33 : 16` | Tick rate |
+| `SUBSTEPS = N>1M ? 3 : N>500K ? 5 : N>100K ? 10 : 10` | Steps per tick |
+| 16 cores + 109GB + RTX 4070 Ti → **3.2M neurons** | Current scale |
 
 ---
 
-*Unity AI Lab — every equation is in the code, every line of code has an equation.*
+*Unity AI Lab — the brain equations ARE the language equations.*

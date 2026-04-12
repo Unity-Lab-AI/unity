@@ -604,6 +604,30 @@ Major: visual attention in brain equations, efference copy echo suppression, Pol
 
 ---
 
+## 2026-04-12 Session: Final — Unified Neural Language + 3.2M Neurons
+
+### The Brain Equations ARE the Language
+- [x] Rewrote language production: ALL 7 clusters produce every word
+- [x] Combined pattern: cortex×0.30 + hippo×0.20 + amyg×0.15 + BG×0.10 + cereb×0.05 + hypo×0.05 + Ψ×(0.05+Ψ×0.10)
+- [x] Sequential: brain steps → combined pattern → findByPattern → word → feed back → next word
+- [x] Word feeds back into cortex (Wernicke's) + hippocampus (memory) + amygdala (emotion)
+- [x] Sentence length from arousal, type from BG motor, tense from prediction error
+- [x] No separate language engine — neural dynamics ARE the language
+
+### Scale + Performance
+- [x] 3.2M neurons (was 179K) — formula: min(RAM×0.4/9, cores×200K)
+- [x] 7 parallel workers on 7 CPU cores + GPU compute
+- [x] CPU% computed from step timing (avgStep/tickMs × 100)
+- [x] 20K render neurons in 3D viz (160:1 ratio to actual)
+- [x] All cluster activity visible with amplified visual rates
+
+### All Docs Rewritten (not addendums)
+- [x] EQUATIONS.md: unified 11-section document centered on combined pattern equation
+- [x] brain-equations.html: section 8.16 rewritten for unified neural language
+- [x] All support docs current
+
+---
+
 ### FILES MODIFIED THIS SESSION
 - `js/brain/engine.js` — removed AI classification, brain-first response
 - `js/brain/cluster.js` — sparse synapses + projections
