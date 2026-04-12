@@ -669,18 +669,24 @@ export class UnityBrain extends EventEmitter {
     // Analyze input for response context (question detection, topic)
     this.innerVoice.languageCortex.analyzeInput(text, this.innerVoice.dictionary);
 
-    // 7. Generate response — POOL FIRST, brain voice learns in background
+    // 7. Generate response — BRAIN TRIES FIRST, pool assists when brain can't
     let response = null;
     const brainArousal = state.amygdala?.arousal ?? 0.5;
     const brainValence = state.amygdala?.valence ?? 0;
     const brainCoherence = state.oscillations?.coherence ?? 0.5;
 
-    // Brain's inner voice practices in background (learning, not displayed)
-    const brainAttempt = this.innerVoice.speak(brainArousal, brainValence, brainCoherence);
-    if (brainAttempt) console.log(`[Brain] Inner voice (learning): "${brainAttempt}"`);
+    // Brain speaks from its own equations — this is the real output
+    response = this.innerVoice.speak(brainArousal, brainValence, brainCoherence);
 
-    // Response pool — PRIMARY. Brain state selects category, pool provides words.
-    {
+    // If brain produced something, try dictionary too for variety
+    if (!response || response.length < 3) {
+      if (this.dictionary) {
+        response = this.dictionary.generateSentence?.(brainArousal, brainValence) || null;
+      }
+    }
+
+    // Pool ASSISTS only when brain has nothing — classified by input text
+    if (!response || response.length < 3) {
       try {
         const { selectResponse, blendResponse } = await import(new URL('./response-pool.js', import.meta.url).href);
         const inputAnalysis = this.innerVoice.languageCortex._lastInputWords
