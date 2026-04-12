@@ -912,24 +912,33 @@ export class Brain3D {
     // Brain values hash into emoji code point ranges, no list
     const emoji = this._brainEmoji(arousal, valence, psi, coherence, isDreaming, reward);
 
+    // Each notification gets its OWN context-specific emoji from brain values
+    const e = (a, v, p, c, d, r) => this._brainEmoji(a, v, p, c, d, r);
+
     const generators = [
-      // Cluster snapshots — rotate through clusters
+      // Cluster snapshots — each cluster's OWN emoji from its activity
       () => {
         const ci = this._notifIndex % CLUSTERS.length;
         const c = clusters[CLUSTERS[ci].key];
         if (!c) return null;
-        const pct = (c.spikeCount / (c.size || 1) * 100).toFixed(0);
-        const rate = c.firingRate?.toFixed?.(1) ?? pct;
-        return { text: `${CLUSTERS[ci].label} ${c.spikeCount}/${c.size} (${pct}%) rate=${rate}`, cluster: ci };
+        const rate = (c.spikeCount || 0) / (c.size || 1);
+        const clusterEmoji = e(rate * 10, valence, psi, coherence, isDreaming, reward);
+        return { text: `${clusterEmoji} ${CLUSTERS[ci].label} ${(rate*100).toFixed(1)}%`, cluster: ci };
       },
-      // Combined state reads
-      () => ({ text: `${emoji} Ψ=${psi.toFixed(4)} gate=${gate.toFixed(2)}x coherence=${(coherence*100).toFixed(0)}%`, cluster: 6 }),
-      () => ({ text: `${emoji} a=${(arousal*100).toFixed(0)}% v=${valence.toFixed(3)}`, cluster: 2 }),
-      () => ({ text: `${emoji} θ=${(bp.theta??0).toFixed(1)} α=${(bp.alpha??0).toFixed(1)} β=${(bp.beta??0).toFixed(1)} γ=${(bp.gamma??0).toFixed(1)}`, cluster: 0 }),
-      () => ({ text: `${emoji} motor: ${motor.selectedAction || 'idle'} conf=${((motor.confidence||0)*100).toFixed(0)}%`, cluster: 3 }),
-      () => iv.sentence ? { text: `${emoji} "${iv.sentence.slice(0, 60)}"`, cluster: 6 } : null,
-      () => mem.lastRecall ? { text: `${emoji} recall: "${mem.lastRecall.trigger}"`, cluster: 1 } : null,
-      () => isDreaming ? { text: `${emoji} dreaming`, cluster: 1 } : null,
+      // Consciousness — emoji from Ψ specifically
+      () => ({ text: `${e(arousal, valence, psi * 100, coherence, false, 0)} Ψ=${psi.toFixed(4)} gate=${gate.toFixed(2)}x`, cluster: 6 }),
+      // Emotion — emoji from arousal+valence
+      () => ({ text: `${e(arousal, valence, 0, 0, false, 0)} a=${(arousal*100).toFixed(0)}% v=${valence.toFixed(3)}`, cluster: 2 }),
+      // Oscillations — emoji from coherence
+      () => ({ text: `${e(0.5, 0.5, 0, coherence, false, 0)} θ=${(bp.theta??0).toFixed(1)} α=${(bp.alpha??0).toFixed(1)} β=${(bp.beta??0).toFixed(1)} γ=${(bp.gamma??0).toFixed(1)}`, cluster: 0 }),
+      // Motor — emoji from motor confidence
+      () => ({ text: `${e(arousal, 0.3, 0, 0, false, motor.confidence||0)} motor: ${motor.selectedAction || 'idle'}`, cluster: 3 }),
+      // Inner voice — emoji from speech content
+      () => iv.sentence ? { text: `${e(0.7, 0.5, psi, coherence, false, 0)} "${iv.sentence.slice(0, 50)}"`, cluster: 6 } : null,
+      // Memory — emoji from recall
+      () => mem.lastRecall ? { text: `${e(0.5, 0.2, 0, 0.8, false, 0.5)} recall: "${mem.lastRecall.trigger}"`, cluster: 1 } : null,
+      // Dreaming — emoji from dream state
+      () => isDreaming ? { text: `${e(0.2, 0, 0, 0.3, true, 0)} dreaming`, cluster: 1 } : null,
       () => Math.abs(reward) > 0.03 ? { text: `${emoji} δ=${reward.toFixed(3)}`, cluster: 3 } : null,
       () => ({ text: `${emoji} ${(state.totalNeurons||1000).toLocaleString()} neurons`, cluster: 0 }),
     ];
