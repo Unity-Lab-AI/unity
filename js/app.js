@@ -1031,17 +1031,22 @@ Vision: ${state.visionDescription || 'none'}`;
   voice.on('speech_end', () => setAvatarState('idle'));
 
   // ── Wire brain state updates to visualizers ──
+  const serverConnected = landingBrainSource && landingBrainSource.isConnected();
+
   brain.on('stateUpdate', (state) => {
-    updateBrainIndicator(state);
+    // Only let local brain drive HUD if no server is connected
+    if (!serverConnected) updateBrainIndicator(state);
     if (brainViz) brainViz.updateState(state);
-    if (brain3d) brain3d.updateState(state);
+    // Don't send local brain state to 3D — server drives that
+    if (!serverConnected && brain3d) brain3d.updateState(state);
   });
 
-  // Server state → HUD: if server brain is connected, pipe its state to HUD directly
-  if (landingBrainSource) {
+  // Server state → HUD + 3D: server is the authority when connected
+  if (serverConnected) {
     landingBrainSource.on('stateUpdate', (serverState) => {
       _landingState = serverState;
       updateBrainIndicator(serverState);
+      if (brain3d) brain3d.updateState(serverState);
     });
   }
 
