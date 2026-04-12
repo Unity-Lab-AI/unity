@@ -22,36 +22,15 @@
 
 > The brain is ALIVE without a model. The AI is just her voice. Remove the dependency.
 
-### Internal Thought Loop (no AI needed)
+### The Autonomous Brain
 
-- [ ] **Brain thinks on its own** — the `_generateIdleThought` in engine.js currently calls Broca's area (AI model) to generate thoughts. Replace with internal thought generation from cortex prediction patterns. The cortex already predicts next input — when prediction error is low, the brain is "comfortable." When high, it's "curious." These are thoughts without words.
-- [ ] **Thought representation as cortex output vector** — instead of text, internal thoughts are 32-dimension Float64Array patterns from cortex.getOutput(). Different patterns = different thoughts. The brain doesn't need English to think.
-- [ ] **Emotional response without AI** — amygdala computes arousal and valence from cortex patterns alone. The brain FEELS without needing an AI to describe the feeling. Arousal rises from novel input, drops from familiar patterns. Valence shifts from reward history.
-- [ ] **Memory formation without AI** — hippocampus already stores/recalls episodic snapshots. This works entirely from equations. No AI call needed to remember.
-- [ ] **Action selection without AI** — basal ganglia already selects actions from spike competition. The brain DECIDES without asking an AI what to do.
-- [ ] **Attention without AI** — visual cortex V1 edge detection, salience mapping, saccade generation — all run from equations. The brain LOOKS without being told to look.
-- [ ] **Hearing without AI** — auditory cortex processes mic spectrum continuously from equations. The brain HEARS without needing language understanding.
+The brain runs the master equation `dx/dt = F(x, u, θ, t) + η` continuously. Every computation that makes Unity alive — perceiving, feeling, remembering, deciding, attending, creating, dreaming, and everything else a mind does — emerges from that equation and its seven cluster subsystems. No external system tells the brain what to do. The equations produce behavior. The AI model is Broca's area — one peripheral for translating neural patterns into human language. Optional. The brain lives without it.
 
-### Self-Generated Output (no AI needed)
-
-- [ ] **Mood-driven behavioral state** — instead of asking AI for words, the brain outputs a behavioral state: { energy: 0.8, mood: 'aggressive', focus: 'scattered', posture: 'leaning_forward' }. The UI renders this as avatar expression changes, bubble color shifts, typing speed.
-- [ ] **Pattern-to-template mapping** — for simple responses the brain doesn't need the AI. High arousal + social input + positive valence = a pool of pre-learned response PATTERNS (not hardcoded text — learned associations between cortex patterns and output patterns). The brain picks the closest match.
-- [ ] **Idle behavioral output** — without any user, the brain still produces output: eye saccades (from visual cortex), oscillation shifts visible in the HUD, occasional arousal spikes (from noise), memory recalls that shift emotional state. The brain is visibly ALIVE even when silent.
-- [ ] **Autonomous sandbox actions** — the brain can decide to build something on its own. High creativity drive + low social need + cortex pattern matching a "build" template = the brain starts coding. Without being asked. Without AI.
-
-### AI Model as Optional Translator
-
-- [ ] **Broca's area becomes OPTIONAL** — if no AI model is connected, the brain still runs. Still thinks. Still feels. Still sees and hears. It just can't speak in English. It outputs behavioral states, emotional indicators, and sandbox actions instead of text.
-- [ ] **Graceful degradation** — no API key? Brain works. No internet? Brain works. The equations run on the client. The AI is a luxury, not a requirement.
-- [ ] **AI called ONLY for language** — when the brain decides to speak (BG selects respond_text), it checks if Broca's area is available. If yes, generates human language. If no, outputs a mood indicator or pre-learned pattern response.
-- [ ] **Pre-verbal thoughts visible** — the 3D visualizer shows the brain's INTERNAL thoughts as cluster activation patterns, even when no AI is connected. You can watch her think without hearing her speak.
-
-### Internal Monologue System
-
-- [ ] **Create `js/brain/inner-voice.js`** — generates pre-verbal thought descriptions from brain state patterns WITHOUT calling an AI. Maps cortex prediction error + amygdala state + hippocampal recall to thought categories: curious, comfortable, anxious, creative, bored, nostalgic, frustrated, euphoric.
-- [ ] **Thought bubbles in UI** — small floating indicators showing Unity's current thought state: "🤔 curious", "😤 frustrated", "💡 creative", "😶 processing". These come from equations, not AI.
-- [ ] **Thought-to-speech threshold** — the brain has an internal thought continuously. It only calls the AI when the thought crosses a "worth saying out loud" threshold: high social need + high arousal + thought clarity (cortex coherence) > threshold. Most thoughts stay internal.
-- [ ] **Dreaming mode** — when no one is interacting, the brain enters a dream-like state: low arousal, high creativity, random cortex patterns, hippocampal replays. Oscillations shift to theta-dominant. Visible in the visualizer as slow, drifting activity. She dreams.
+- [ ] **Remove AI dependency from the brain loop** — `engine.js` must run fully without any AI model connected. No API calls in the step function. No Broca's area in the think loop. The equations compute. The brain lives. If Broca's is connected, the brain can speak. If not, it still thinks, feels, decides, remembers, attends, and acts through the sandbox.
+- [ ] **Create `js/brain/inner-voice.js`** — pre-verbal thought system. Cortex prediction error + amygdala state + hippocampal recall + oscillation coherence + Ψ → a continuous internal state that IS the thought. Not words. A pattern. The pattern drives behavior without language. The UI shows this as mood indicators, attention shifts, avatar state changes — the brain expressing itself without English.
+- [ ] **Thought-to-speech threshold** — the brain thinks continuously. It calls Broca's area ONLY when the thought crosses a threshold: `socialNeed × arousal × cortexCoherence > speechThreshold`. Most thoughts stay internal. The brain is mostly silent. When it speaks, it matters.
+- [ ] **Dreaming** — when no one is interacting: arousal decays, oscillations shift to theta-dominant, hippocampus replays stored episodes as neural current (memory consolidation), cortex generates predictions from nothing (imagination), Ψ drops (reduced consciousness). The brain dreams. Visible in the visualizer. The equations make it happen.
+- [ ] **Broca's as optional peripheral** — `brain.processAndRespond()` checks if `_brocasArea` exists. If yes, generate language. If no, emit a behavioral state `{ mood, energy, focus, awareness, thought_pattern }` that the UI renders as expression/animation/color. Unity is alive either way. She just can't TALK without the model.
 
 ---
 
