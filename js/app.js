@@ -564,12 +564,18 @@ async function bootUnity(apiKey, perms) {
   brain.connectImageGen(pollinations, sandbox, storage);
 
   // ── Listen for brain's response events — app.js just renders ──
-  // This is the ONLY place responses get displayed. No other path.
+  // Deduplicate: track last response to prevent double display
+  let _lastResponseText = '';
+  let _lastResponseTime = 0;
   brain.on('response', ({ text, action }) => {
-    if (text) {
-      showSpeechBubble(text, 8000);
-      if (chatPanel) chatPanel.addMessage('assistant', text, true);
-    }
+    if (!text) return;
+    const now = Date.now();
+    // Skip if same text within 2 seconds (duplicate)
+    if (text === _lastResponseText && now - _lastResponseTime < 2000) return;
+    _lastResponseText = text;
+    _lastResponseTime = now;
+    showSpeechBubble(text, 8000);
+    if (chatPanel) chatPanel.addMessage('assistant', text, true);
   });
   // Suppress duplicate displays — greeting uses processAndRespond which
   // already emits 'response', so greeting handler should NOT also display.
@@ -693,6 +699,9 @@ Vision: ${state.visionDescription || 'none'}`;
   let _currentResponseId = 0;
 
   voice.onResult(async ({ text, isFinal }) => {
+    // MUTE CHECK — if muted, ignore ALL voice input
+    if (uiState.micMuted) return;
+
     // Brain's auditory cortex handles echo detection
     const isRealInput = brain.auditoryCortex.checkForInterruption(text);
     if (!isRealInput) return; // echo — suppress
