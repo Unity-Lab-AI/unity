@@ -61,8 +61,8 @@ void main() {
   vVis = aVis;
   vec4 p = uMVP * vec4(aPos, 1.0);
   gl_Position = p;
-  float sz = mix(2.0, 7.0, aGlow);
-  gl_PointSize = sz * uScale / max(p.w, 0.5);
+  float sz = mix(3.5, 9.0, aGlow);
+  gl_PointSize = max(1.5, sz * uScale / max(p.w, 0.5));
 }
 `;
 
@@ -77,8 +77,8 @@ void main() {
   float d = length(c);
   if (d > 0.5) discard;
   float edge = smoothstep(0.5, 0.15, d);
-  float bright = mix(0.12, 1.0, vGlow);
-  float alpha = edge * mix(0.3, 1.0, vGlow);
+  float bright = mix(0.25, 1.0, vGlow);
+  float alpha = edge * mix(0.5, 1.0, vGlow);
   // bloom halo for spiking
   float halo = vGlow * exp(-d * 5.0) * 0.5;
   vec3 col = vCol * bright + vec3(1.0) * halo;
