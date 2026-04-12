@@ -640,54 +640,24 @@ export class UnityBrain extends EventEmitter {
     const arousal = state.amygdala?.arousal ?? 0.5;
     const valence = state.amygdala?.valence ?? 0;
 
-    const moods = arousal > 0.7
-      ? ['intense stare', 'biting lip', 'wild grin', 'fierce expression', 'laughing hard', 'flipping off camera']
-      : arousal > 0.4
-      ? ['slight smirk', 'relaxed smile', 'casual glance', 'half-smile', 'looking over shoulder', 'mid-conversation']
-      : ['sleepy eyes', 'dreamy look', 'zoned out', 'mellow expression', 'gazing out window', 'lost in thought'];
-    const mood = moods[Math.floor(Math.random() * moods.length)];
+    // Let Broca's area generate the ENTIRE image prompt dynamically.
+    // No hardcoded lists. The brain's state shapes the scene.
+    const arousalDesc = arousal > 0.7 ? 'intense, electric, on fire'
+      : arousal > 0.4 ? 'relaxed, casual, comfortable' : 'dreamy, hazy, half-asleep';
+    const valenceDesc = valence > 0.2 ? 'happy, warm, glowing'
+      : valence < -0.2 ? 'dark, moody, brooding' : 'neutral, contemplative';
 
-    const vibes = valence > 0.2 ? 'warm golden hour lighting, soft glow'
-      : valence < -0.2 ? 'cold blue lighting, rain, moody shadows'
-      : 'mixed purple and cyan neon, atmospheric haze';
-
-    // Wide variety — not just rooms, full scenes and landscapes
-    const settings = [
-      'messy room with glowing monitors and energy drinks',
-      'dark club bathroom mirror, graffiti on walls',
-      'rooftop at night, city skyline behind her',
-      'bed with tangled sheets and open laptop',
-      'neon-lit alley, wet pavement reflections',
-      'beach at sunset, waves crashing',
-      'forest trail, sunlight through trees',
-      'coffee shop window seat, rain outside',
-      'concert crowd, stage lights behind',
-      'motorcycle parked on empty highway at dusk',
-      'train window, countryside blurring past',
-      'library aisle, books towering around her',
-      'graffiti wall, skateboard under foot',
-      'balcony overlooking rainy city, smoking',
-      'campfire in the woods, sparks floating',
-      'studio with code on screens and wires everywhere',
-      'backseat of car, neon signs through window',
-    ];
-    const setting = settings[Math.floor(Math.random() * settings.length)];
-
-    // Mix of shots — not just face closeups
-    const angles = [
-      'close-up selfie', 'mirror selfie', 'full body shot', 'candid photo',
-      'low angle looking up', 'wide shot with environment', 'medium shot waist up',
-      'over the shoulder shot', 'silhouette against light', 'sitting cross-legged',
-      'walking toward camera', 'leaning against wall full body',
-    ];
-    const angle = angles[Math.floor(Math.random() * angles.length)];
-
-    const styles = ['photorealistic', 'cinematic', 'raw unfiltered', 'film grain',
-      'moody editorial', '35mm film', 'golden hour photography', 'street photography',
-      'fashion editorial', 'documentary style'];
-    const style = styles[Math.floor(Math.random() * styles.length)];
-
-    const prompt = `${angle}, 25 year old woman, ${mood}, heterochromia eyes one violet one electric green, dark hair with neon streaks, smudged eyeliner, ${vibes}, ${setting}, ${style}, adult`;
+    let prompt;
+    if (this._brocasArea) {
+      const raw = await this._brocasArea.generate(this.getState(),
+        `[SYSTEM: Generate ONLY an image prompt. You are a 25 year old woman with heterochromia eyes (one violet, one electric green), dark hair with neon streaks, smudged eyeliner. Your mood is ${arousalDesc}, ${valenceDesc}. Create a vivid scene — could be ANYWHERE: a city, a mountain, underwater, space, a kitchen, a concert, a motorcycle, a rooftop, a forest, a bar, a desert, anywhere in the universe. Any pose, any outfit, any angle, any weather, any time of day. Be creative and surprising. Return ONLY the visual prompt, no explanation, no URLs, no markdown. Include "25 year old woman" and "adult" in the prompt.]`
+      );
+      prompt = (raw || '').replace(/https?:\/\/[^\s)]+/g, '').replace(/```/g, '').replace(/\n/g, ', ').trim();
+    }
+    // Fallback if Broca's fails
+    if (!prompt || prompt.length < 20) {
+      prompt = `candid photo, 25 year old woman, heterochromia eyes one violet one electric green, dark hair with neon streaks, smudged eyeliner, ${arousalDesc}, somewhere unexpected and beautiful, photorealistic, adult`;
+    }
     const url = this._imageGen.generateImage(prompt, { model: this._storage?.get('image_model') || 'flux', width: 768, height: 768 });
 
     if (url && this._sandbox) {
