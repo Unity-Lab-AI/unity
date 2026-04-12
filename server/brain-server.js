@@ -114,9 +114,10 @@ const CLUSTER_SIZES = {
 const TOTAL_NEURONS = Object.values(CLUSTER_SIZES).reduce((a, b) => a + b, 0);
 
 // Scale tick rate + substeps to neuron count — prevent CPU meltdown
-// 1K neurons: 16ms/10 substeps, 10K: 33ms/5, 50K+: 100ms/2
-const BRAIN_TICK_MS = TOTAL_NEURONS > 50000 ? 100 : TOTAL_NEURONS > 10000 ? 50 : 16;
-const SUBSTEPS = TOTAL_NEURONS > 50000 ? 2 : TOTAL_NEURONS > 10000 ? 5 : 10;
+// Scale tick rate + substeps to use ~60% CPU, not crawl at 5%
+// 1K: 16ms/10sub (600 steps/sec), 10K: 16ms/8 (500), 50K: 33ms/5 (150), 100K+: 33ms/10 (300)
+const BRAIN_TICK_MS = TOTAL_NEURONS > 100000 ? 33 : TOTAL_NEURONS > 50000 ? 33 : TOTAL_NEURONS > 10000 ? 16 : 16;
+const SUBSTEPS = TOTAL_NEURONS > 100000 ? 10 : TOTAL_NEURONS > 50000 ? 5 : TOTAL_NEURONS > 10000 ? 8 : 10;
 
 // ── Brain Setup (CommonJS wrapper around ES modules) ──────────
 // Note: The actual brain modules are ES modules. In production,
