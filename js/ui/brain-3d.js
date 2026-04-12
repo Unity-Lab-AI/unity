@@ -450,6 +450,21 @@ export class Brain3D {
     const spk = state.spikes;
     if (!spk) return;
 
+    // Debug: count spikes per cluster
+    if (!this._debuggedSpikes) {
+      this._debuggedSpikes = true;
+      let off = 0;
+      for (const cl of CLUSTERS) {
+        let count = 0;
+        for (let i = 0; i < cl.n && off + i < spk.length; i++) {
+          if (spk[off + i]) count++;
+        }
+        console.log(`[Brain3D] Spikes: ${cl.key} offset=${off} n=${cl.n} active=${count}/${cl.n} (${(count/cl.n*100).toFixed(1)}%)`);
+        off += cl.n;
+      }
+      console.log(`[Brain3D] Total spk length: ${spk.length}, TOTAL: ${TOTAL}`);
+    }
+
     for (let i = 0; i < TOTAL; i++) {
       if (spk[i]) {
         this._glow[i] = 1.0;
