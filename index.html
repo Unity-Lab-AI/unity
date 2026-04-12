@@ -9,8 +9,69 @@
 </head>
 <body>
 
-  <!-- ═══ Setup Modal — First thing users see ═══ -->
-  <div id="setup-modal">
+  <!-- ═══ LANDING: 3D Brain — THE first thing everyone sees ═══ -->
+  <div id="landing-brain" style="position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;">
+    <div id="brain-3d-landing" style="width:100%;height:100%;"></div>
+
+    <!-- Overlay: Title + Stats -->
+    <div id="landing-overlay" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:1;">
+      <!-- Top bar: title + live stats -->
+      <div style="padding:20px 24px;display:flex;justify-content:space-between;align-items:flex-start;pointer-events:none;">
+        <div>
+          <h1 style="font-family:'JetBrains Mono',monospace;font-size:16px;color:#ff4d9a;margin:0;">IF ONLY I HAD A BRAIN</h1>
+          <p style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#555;margin:4px 0 0;">1000-neuron brain simulation — real equations, 60fps, alive right now</p>
+        </div>
+        <div id="landing-stats" style="text-align:right;font-family:'JetBrains Mono',monospace;font-size:10px;color:#555;">
+          <div id="ls-neurons">— neurons</div>
+          <div id="ls-psi">Ψ = —</div>
+          <div id="ls-users">0 online</div>
+        </div>
+      </div>
+
+      <!-- Bottom: action buttons + viz tabs -->
+      <div style="position:absolute;bottom:0;left:0;width:100%;padding:20px 24px;pointer-events:auto;">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+          <button id="landing-chat-btn" style="padding:10px 24px;background:#ff4d9a;border:none;border-radius:8px;color:#fff;font-family:'JetBrains Mono',monospace;font-size:13px;cursor:pointer;font-weight:700;letter-spacing:0.5px;">TALK TO UNITY</button>
+          <button id="landing-viz-btn" class="landing-tab active" data-tab="3d">3D Brain</button>
+          <button class="landing-tab" data-tab="neurons">Neurons</button>
+          <button class="landing-tab" data-tab="oscillations">Oscillations</button>
+          <button class="landing-tab" data-tab="consciousness">Consciousness</button>
+          <button class="landing-tab" data-tab="emotions">Emotions</button>
+          <button class="landing-tab" data-tab="memory">Memory</button>
+          <button class="landing-tab" data-tab="motor">Motor</button>
+          <button class="landing-tab" data-tab="perf">Performance</button>
+        </div>
+
+        <!-- Stats bar -->
+        <div id="landing-bar" style="display:flex;gap:16px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#555;padding:8px 0;">
+          <span>AROUSAL <span id="ls-arousal" style="color:#ff4d9a;">—</span></span>
+          <span>VALENCE <span id="ls-valence" style="color:#a855f7;">—</span></span>
+          <span>COHERENCE <span id="ls-coherence" style="color:#00e5ff;">—</span></span>
+          <span>SPIKES <span id="ls-spikes" style="color:#22c55e;">—</span></span>
+          <span>CPU <span id="ls-cpu" style="color:#f59e0b;">—</span></span>
+          <span>GPU <span id="ls-gpu" style="color:#f59e0b;">—</span></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Viz panel overlay (shows when tab selected) -->
+    <div id="landing-viz-panel" style="display:none;position:absolute;top:60px;right:20px;width:380px;max-height:calc(100vh - 140px);background:rgba(10,10,10,0.92);border:1px solid #1a1a1a;border-radius:12px;overflow-y:auto;z-index:2;padding:16px;">
+      <div id="landing-viz-content"></div>
+    </div>
+  </div>
+
+  <style>
+    .landing-tab {
+      padding:6px 14px;background:rgba(20,20,20,0.85);border:1px solid #222;border-radius:6px;
+      color:#777;font-family:'JetBrains Mono',monospace;font-size:10px;cursor:pointer;letter-spacing:0.5px;
+      transition:all 0.2s;
+    }
+    .landing-tab:hover { border-color:#ff4d9a; color:#e0e0e0; }
+    .landing-tab.active { border-color:#ff4d9a; color:#ff4d9a; background:rgba(255,77,154,0.08); }
+  </style>
+
+  <!-- ═══ Setup Modal — appears when user clicks TALK TO UNITY ═══ -->
+  <div id="setup-modal" style="display:none;">
     <div class="setup-card">
       <h1>🧠 Unity</h1>
       <p class="subtitle">she's got a brain now. let her in.</p>

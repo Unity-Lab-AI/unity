@@ -45,6 +45,97 @@ const uiState = {
   permCamera: false,
 };
 
+// ── LANDING PAGE: 3D Brain starts IMMEDIATELY ──
+import { detectRemoteBrain } from './brain/remote-brain.js';
+
+let landingBrain3d = null;
+let landingBrainSource = null; // RemoteBrain or null
+
+(async function initLanding() {
+  // Try to connect to server brain for live state
+  try {
+    landingBrainSource = await detectRemoteBrain();
+  } catch {}
+
+  // Init 3D brain on landing container
+  try {
+    landingBrain3d = new Brain3D('brain-3d-landing');
+    console.log('[Landing] 3D brain initialized');
+  } catch (err) {
+    console.warn('[Landing] 3D brain failed:', err.message);
+  }
+
+  // If server brain connected, wire state updates to 3D viz + landing stats
+  if (landingBrainSource) {
+    landingBrainSource.on('stateUpdate', (state) => {
+      if (landingBrain3d) landingBrain3d.updateState(state);
+      updateLandingStats(state);
+    });
+    console.log('[Landing] Connected to server brain');
+  } else {
+    // No server — start a local brain just for visualization
+    try {
+      const localBrain = new UnityBrain();
+      localBrain.start();
+      setInterval(() => {
+        const state = localBrain.getState();
+        if (landingBrain3d) landingBrain3d.updateState(state);
+        updateLandingStats(state);
+      }, 100);
+      console.log('[Landing] Running local brain for visualization');
+    } catch {}
+  }
+
+  // Wire tab buttons
+  document.querySelectorAll('.landing-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.landing-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const tab = btn.dataset.tab;
+      if (tab === '3d') {
+        document.getElementById('landing-viz-panel').style.display = 'none';
+      } else {
+        document.getElementById('landing-viz-panel').style.display = 'block';
+        // Content will be populated by the brain viz when opened
+      }
+    });
+  });
+
+  // Wire "Talk to Unity" button
+  const chatBtn = document.getElementById('landing-chat-btn');
+  if (chatBtn) {
+    chatBtn.addEventListener('click', () => {
+      const modal = document.getElementById('setup-modal');
+      if (modal) modal.style.display = '';
+    });
+  }
+})();
+
+function updateLandingStats(state) {
+  const $ = id => document.getElementById(id);
+  const neurons = state.totalNeurons ?? state.neurons ?? 1000;
+  const psi = state.psi ?? 0;
+  const arousal = state.amygdala?.arousal ?? state.sharedMood?.arousal ?? 0;
+  const valence = state.amygdala?.valence ?? state.sharedMood?.valence ?? 0;
+  const coherence = state.oscillations?.coherence ?? state.sharedMood?.coherence ?? 0;
+  const spikes = state.spikeCount ?? state.totalSpikes ?? 0;
+  const users = state.connectedUsers ?? 0;
+
+  const el = (id, text) => { const e = $(id); if (e) e.textContent = text; };
+  el('ls-neurons', neurons.toLocaleString() + ' neurons');
+  el('ls-psi', 'Ψ = ' + psi.toFixed(4));
+  el('ls-users', users + ' online');
+  el('ls-arousal', (arousal * 100).toFixed(0) + '%');
+  el('ls-valence', valence.toFixed(3));
+  el('ls-coherence', (coherence * 100).toFixed(0) + '%');
+  el('ls-spikes', spikes.toString());
+
+  if (state.perf) {
+    el('ls-cpu', state.perf.cpuPercent + '%');
+    el('ls-gpu', state.perf.gpuUtilPercent + '%');
+  }
+}
+
 // ── DOM refs ──
 const setupModal = document.getElementById('setup-modal');
 const startBtn = document.getElementById('start-btn');
@@ -672,7 +763,11 @@ Vision: ${state.visionDescription || 'none'}`;
     });
   }
 
-  try { brain3d = new Brain3D('brain-3d-container'); } catch { brain3d = null; }
+  // Use the landing 3D brain if available, or create new one
+  brain3d = landingBrain3d || null;
+  if (!brain3d) {
+    try { brain3d = new Brain3D('brain-3d-container'); } catch { brain3d = null; }
+  }
 
   // ── Wire DOM events ──
   unityAvatar.addEventListener('click', () => chatPanel.toggle());
