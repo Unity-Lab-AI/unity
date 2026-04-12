@@ -248,20 +248,57 @@ function renderLandingTab(tab, s) {
       break;
     }
     case 'memory': {
-      const mem = s.memory || l.memory || {};
+      // Memory stats live in THREE places depending on brain path:
+      //   1. server state  — growth.totalWords, totalEpisodes, totalInteractions, totalFrames
+      //   2. local brain   — innerVoice.dictionary + languageCortex (loaded from Ultimate Unity.txt)
+      //   3. memory module — working memory buffer (optional, present in local brain)
+      // Read whatever is available, show real values, 0 when genuinely zero.
       const growth = s.growth || l.growth || {};
-      // Also check local brain's dictionary if available
-      const localVocab = brain?.innerVoice?.dictionary?.size ?? 0;
-      const localSentences = brain?.innerVoice?.languageCortex?.sentencesLearned ?? 0;
-      el.innerHTML = card('Memory Systems', `
-        ${metric('Working Memory', (mem.workingCount ?? mem.workingMemoryItems?.length ?? 0) + '/7 items', '#00e5ff')}
-        ${metric('Episodes (SQLite)', growth.totalEpisodes ?? 0, '#a855f7')}
-        ${metric('Words Learned (server)', growth.totalWords ?? 0, '#ff4d9a')}
-        ${metric('Words Learned (local)', localVocab, '#ff4d9a')}
-        ${metric('Sentences Learned', localSentences, '#a855f7')}
-        ${metric('Interactions', growth.totalInteractions ?? 0, '#22c55e')}
-        ${metric('Brain Steps', (growth.totalFrames ?? s.frameCount ?? 0).toLocaleString(), '#00e5ff')}
-      `);
+      const mem = s.memory || l.memory || {};
+
+      // Local brain detection — even when connected to server, a local
+      // InnerVoice instance may exist for language generation.
+      const iv = brain?.innerVoice || null;
+      const dict = iv?.dictionary || null;
+      const lc = iv?.languageCortex || null;
+
+      const dictWords = dict?._words?.size ?? dict?.size ?? 0;
+      const dictBigramHeads = dict?._bigrams?.size ?? 0;
+      let dictTotalBigrams = 0;
+      if (dict?._bigrams) {
+        for (const [, followers] of dict._bigrams) dictTotalBigrams += followers.size;
+      }
+      const selfImageLoaded = lc?._selfImageLoaded === true;
+      const sentencesLearned = lc?.sentencesLearned ?? 0;
+      const wordsProcessed = lc?.wordsProcessed ?? 0;
+      const recentOutput = lc?._recentOutputWords?.length ?? 0;
+      const usageTyped = lc?._usageTypes?.size ?? 0;
+
+      const workingItems = Array.isArray(mem.workingMemoryItems) ? mem.workingMemoryItems.length
+                         : (mem.workingCount ?? 0);
+      const episodes = growth.totalEpisodes ?? mem.episodeCount ?? 0;
+      const serverWords = growth.totalWords ?? 0;
+      const interactions = growth.totalInteractions ?? 0;
+      const brainSteps = growth.totalFrames ?? s.frameCount ?? 0;
+
+      el.innerHTML =
+        card('Language Cortex — Self-Image', `
+          ${metric('Persona Loaded', selfImageLoaded ? '✓ Ultimate Unity.txt' : '✗ not loaded', selfImageLoaded ? '#22c55e' : '#ef4444')}
+          ${metric('Sentences Learned', sentencesLearned.toLocaleString(), '#a855f7')}
+          ${metric('Words in Dictionary', dictWords.toLocaleString(), '#ff4d9a')}
+          ${metric('Bigram Heads', dictBigramHeads.toLocaleString(), '#00e5ff')}
+          ${metric('Total Bigrams', dictTotalBigrams.toLocaleString(), '#00e5ff')}
+          ${metric('Usage-Typed Words', usageTyped.toLocaleString(), '#f59e0b')}
+          ${metric('Words Spoken (session)', wordsProcessed.toLocaleString(), '#22c55e')}
+          ${metric('Recent Output Window', recentOutput + ' / ' + (lc?._recentOutputMax ?? 50), '#555')}
+        `) +
+        card('Episodic + Working Memory', `
+          ${metric('Working Memory', workingItems + ' / 7 items', '#00e5ff')}
+          ${metric('Episodes (SQLite)', episodes.toLocaleString(), '#a855f7')}
+          ${metric('Interactions', interactions.toLocaleString(), '#22c55e')}
+          ${metric('Server Word-Freq', serverWords.toLocaleString(), '#ff4d9a')}
+          ${metric('Brain Steps', brainSteps.toLocaleString(), '#00e5ff')}
+        `);
       break;
     }
     case 'motor': {
