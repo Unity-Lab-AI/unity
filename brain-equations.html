@@ -860,7 +860,7 @@ Chain:  cond=0.30  pos=0.20  syntax=0.15  MI=0.15  mood=0.10  topic=0.10  (struc
 
 T_effective = (1/(coherence + 0.1)) × 0.3   — sharpened softmax, structure wins
       </pre>
-      <p class="eq-desc">Six equations combined. Structure (conditional + position + syntax) dominates at 65%. Softmax temperature sharpened 3× so best-fitting words win. 5-pass bootstrap training (500 sentence passes) pre-trains position weights for SVO ordering.</p>
+      <p class="eq-desc">Six equations combined. Structure (conditional + position + syntax) dominates at 65%. Softmax temperature sharpened 3× so best-fitting words win. 10-pass bootstrap training (1700+ sentence passes) across 170+ English sentences: SVO drills, pronoun+verb patterns, question+answer pairs, articles+nouns, prepositions, emotions, contractions.</p>
     </div>
 
     <!-- ═══ 8.17 SENTENCE TYPES ═══ -->
