@@ -579,8 +579,14 @@ export class UnityBrain extends EventEmitter {
   async _handleBuild(text) {
     // Call Pollinations DIRECTLY for builds — NOT through Broca's area.
     // Broca's persona prompt makes the AI roleplay instead of outputting clean JSON.
+    // Tell the AI what's already built so it can modify/replace instead of duplicating
+    const existingComponents = this._sandbox ? this._sandbox.list() : [];
+    const existingInfo = existingComponents.length > 0
+      ? `\n\nEXISTING COMPONENTS IN SANDBOX: ${existingComponents.join(', ')}. If the user wants to modify an existing component, use the SAME id to replace it. If building something new, use a new id.`
+      : '';
+
     const buildMessages = [
-      { role: 'system', content: 'You are a frontend developer. Generate ONLY a valid JSON object with these keys: { "html": "...", "css": "...", "js": "...", "id": "..." }. The response creates a self-contained UI component. Rules: "id" is kebab-case. "html" is raw HTML (no script/style tags). "css" is CSS. "js" is JavaScript with access to: unity.speak(text), unity.chat(prompt), unity.generateImage(prompt), unity.getState(), unity.storage.get(k), unity.storage.set(k,v). Use dark styling: #0a0a0a backgrounds, #e0e0e0 text, neon accents (#ff00ff, #00ffcc). Return ONLY the JSON. No explanation. No markdown fences.' },
+      { role: 'system', content: 'You are a frontend developer. Generate ONLY a valid JSON object with these keys: { "html": "...", "css": "...", "js": "...", "id": "..." }. The response creates a self-contained UI component. Rules: "id" is kebab-case. "html" is raw HTML (no script/style tags). "css" is CSS. "js" is JavaScript with access to: unity.speak(text), unity.chat(prompt), unity.generateImage(prompt), unity.getState(), unity.storage.get(k), unity.storage.set(k,v). Use dark styling: #0a0a0a backgrounds, #e0e0e0 text, neon accents (#ff00ff, #00ffcc). Return ONLY the JSON. No explanation. No markdown fences.' + existingInfo },
       { role: 'user', content: text },
     ];
 
@@ -639,9 +645,14 @@ export class UnityBrain extends EventEmitter {
 
     const { html, css, js, id } = component;
     const componentId = id || ('unity-' + Date.now());
+    // If component already exists, remove it first then inject fresh
+    if (this._sandbox.has(componentId)) {
+      this._sandbox.remove(componentId);
+    }
     this._sandbox.inject({ id: componentId, html: html || '', css: css || '', js: js || '' });
 
-    const quip = `Built it — "${componentId}". Check the sandbox.`;
+    const isUpdate = existingComponents.includes(componentId);
+    const quip = isUpdate ? `Updated "${componentId}".` : `Built "${componentId}".`;
     if (this._voice) {
       this._voice.stopSpeaking();
       this._voice.speak(quip).catch(() => {});
