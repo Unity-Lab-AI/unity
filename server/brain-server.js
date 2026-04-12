@@ -526,38 +526,35 @@ class ServerBrain {
 
       const stepEnd = performance.now();
 
-      // Track step timing
+      // Track step timing — ALWAYS runs regardless of parallel/single
       this._stepTimeSamples.push(stepEnd - stepStart);
       if (this._stepTimeSamples.length > 60) this._stepTimeSamples.shift();
 
-      // Dreaming mode — no interaction for 30+ seconds
+      // Update perf stats every tick (not just once per second)
+      this._perfStats.stepTimeMs = +(stepEnd - stepStart).toFixed(3);
+      if (this._stepTimeSamples.length > 0) {
+        const avg = this._stepTimeSamples.reduce((a, b) => a + b, 0) / this._stepTimeSamples.length;
+        this._perfStats.stepsPerSec = avg > 0 ? Math.round(1000 / avg * SUBSTEPS) : 0;
+      }
+
+      // Dreaming mode
       const timeSinceInput = Date.now() - this._lastInputTime;
       this._isDreaming = timeSinceInput > 30000 && this.clients.size === 0;
-
       if (this._isDreaming) {
-        // Decay arousal
         this.tonicDrives.amygdala *= 0.9999;
         if (this.tonicDrives.amygdala < 12) this.tonicDrives.amygdala = 12;
       }
 
-      // Sample emotional history once per second
+      // Full perf + history once per second
       const now = Date.now();
       if (now - this._lastHistorySample >= 1000) {
         this._lastHistorySample = now;
-        this._emotionHistory.push({
-          t: this.time,
-          a: +this.arousal.toFixed(3),
-          v: +this.valence.toFixed(3),
-          p: +this.psi.toFixed(4),
-          c: +this.coherence.toFixed(3),
-          s: this.totalSpikes,
-        });
-        if (this._emotionHistory.length > this._historyMaxLen) {
-          this._emotionHistory.shift();
-        }
-
-        // Update performance stats
         this._updatePerfStats();
+        this._emotionHistory.push({
+          t: this.time, a: +this.arousal.toFixed(3), v: +this.valence.toFixed(3),
+          p: +this.psi.toFixed(4), c: +this.coherence.toFixed(3), s: this.totalSpikes,
+        });
+        if (this._emotionHistory.length > this._historyMaxLen) this._emotionHistory.shift();
       }
     }, BRAIN_TICK_MS);
     console.log('[Brain] Started — thinking continuously');
