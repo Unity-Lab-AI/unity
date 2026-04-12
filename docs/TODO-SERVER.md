@@ -273,25 +273,25 @@ The brain runs the master equation `dx/dt = F(x, u, θ, t) + η` continuously. E
 > Use EVERY piece of hardware. Zero third-party software. Only built-in Node.js worker_threads + Chrome WebGPU.
 
 ### 9.1: GPU Compute via WebGPU (browser-side)
-- [ ] **GPU compute client** — browser page that connects to brain server, receives neuron state, runs our WGSL shaders on GPU, sends results back. Not a visible page — a headless compute worker.
-- [ ] **Server→Browser neuron state transfer** — WebSocket message type `compute_request` sends voltages + currents + spike arrays as binary (Float32Array transfer).
-- [ ] **Browser→Server spike results** — WebSocket message type `compute_result` sends spike array + updated voltages back as binary.
-- [ ] **Wire gpu-compute.js to server loop** — server detects GPU client connected, offloads LIF step + synapse propagation to GPU, waits for result, continues brain loop.
-- [ ] **GPU fallback** — if no GPU client connected, server runs CPU path (current behavior). Seamless.
-- [ ] **Dedicated compute page** — `compute.html` that auto-connects, runs shaders, no UI. Opens automatically from start.bat.
+- [x] **GPU compute client** — DONE: compute.html connects via WebSocket, runs gpu-compute.js WGSL shaders, sends results back.
+- [ ] **Server→Browser neuron state transfer** — WebSocket `compute_request` with binary Float32Array. Server-side dispatch not wired yet.
+- [ ] **Browser→Server spike results** — WebSocket `compute_result` handler not wired in brain-server.js yet.
+- [ ] **Wire gpu-compute.js to server loop** — server needs to detect GPU client and offload LIF step to it.
+- [x] **GPU fallback** — DONE: parallel brain falls back to single-thread if workers fail. GPU compute is additive.
+- [x] **Dedicated compute page** — DONE: compute.html auto-connects, runs shaders, opens from start.bat.
 
 ### 9.2: Multi-Core CPU via Worker Threads (server-side)
-- [ ] **Worker thread per cluster** — 7 worker threads, one per neural cluster. Each runs its own LIF population step in parallel. Built-in `worker_threads` module, zero npm packages.
-- [ ] **Main thread orchestration** — main thread sends currents to workers, collects spikes, runs inter-cluster projections, then dispatches next step.
-- [ ] **Shared memory buffers** — use SharedArrayBuffer for voltage/spike arrays so workers don't copy data. Zero-copy parallel compute.
-- [ ] **Projection workers** — 16 inter-cluster projections run on cores 8-15. Each projection is independent — perfect parallelism.
-- [ ] **Language cortex on own thread** — language production runs on a dedicated worker so it doesn't block the brain loop.
+- [x] **Worker thread per cluster** — DONE: cluster-worker.js runs LIF per cluster. parallel-brain.js spawns 7 workers.
+- [x] **Main thread orchestration** — DONE: parallel-brain.js dispatches step to all workers, collects results, merges state.
+- [ ] **Shared memory buffers** — SharedArrayBuffer for zero-copy. Currently uses message passing (copy).
+- [ ] **Projection workers** — 16 inter-cluster projections on separate cores. Not yet parallelized.
+- [ ] **Language cortex on own thread** — language production on dedicated worker. Not yet separated.
 
 ### 9.3: Integration + Benchmarking
-- [ ] **Combined pipeline** — GPU handles LIF + synapse math, CPU workers handle cluster management + projections + modules. Both run simultaneously.
-- [ ] **Performance dashboard** — compute.html shows GPU utilization, per-core CPU usage, steps/sec, neuron throughput.
-- [ ] **Scale test** — benchmark at current 179K, then 500K, 1M neurons. Find the ceiling of the hardware.
-- [ ] **Auto-detect and scale** — if GPU client connects, scale neuron count UP (GPU can handle 10x more). If disconnects, scale back down gracefully.
+- [ ] **Combined pipeline** — GPU + CPU workers running simultaneously. Needs server-side GPU dispatch.
+- [ ] **Performance dashboard** — compute.html needs per-core CPU, GPU util, throughput display.
+- [ ] **Scale test** — benchmark at 179K, 500K, 1M neurons. Not yet run.
+- [ ] **Auto-detect and scale** — scale neuron count when GPU connects. Not yet built.
 
 ### 9.4: Documentation
 - [ ] **Update EQUATIONS.md** — GPU compute pipeline, worker thread parallelism
