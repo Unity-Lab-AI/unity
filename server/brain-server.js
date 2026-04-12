@@ -1348,7 +1348,17 @@ const httpServer = http.createServer((req, res) => {
       return;
     }
     const ext = path.extname(filePath).toLowerCase();
-    res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
+    // Disable caching for JS/HTML/bundle so browsers never serve stale code
+    // after start.bat rebuilds the esbuild bundle. Static assets (fonts,
+    // images) can still cache normally.
+    const noCacheExts = new Set(['.js', '.mjs', '.html', '.css', '.json', '.map']);
+    const headers = { 'Content-Type': MIME[ext] || 'application/octet-stream' };
+    if (noCacheExts.has(ext)) {
+      headers['Cache-Control'] = 'no-store, no-cache, must-revalidate';
+      headers['Pragma'] = 'no-cache';
+      headers['Expires'] = '0';
+    }
+    res.writeHead(200, headers);
     res.end(data);
   });
 });
