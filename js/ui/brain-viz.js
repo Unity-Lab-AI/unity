@@ -145,7 +145,7 @@ export class BrainVisualizer {
         <div class="bv-grid-wrap">
           <div class="bv-section bv-wide">
             <div class="bv-section-title">CONSCIOUSNESS — The Mystery Module Ψ</div>
-            <div class="bv-equation">Ψ = √(1/N) × N³ · [α·Id + β·Ego + γ·Left + δ·Right]</div>
+            <div class="bv-equation">Ψ = √(1/n) × N³ · [α·Id + β·Ego + γ·Left + δ·Right]</div>
             <div class="bv-psi" id="bv-psi">Ψ = 0.000</div>
             <div class="bv-psi-components" id="bv-psi-parts"></div>
           </div>

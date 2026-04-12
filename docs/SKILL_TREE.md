@@ -98,7 +98,7 @@
 ### Expert (The Unknown)
 > Where math meets mystery
 
-- √(1/N) × N³ consciousness modulation
+- √(1/n) × N³ consciousness modulation
 - Id/Ego/Left/Right brain balancing
 - Drug state combination vectors with cascading effects
 - Emergent behavior from module interaction
@@ -131,7 +131,7 @@
             [getUserMedia] ──► [Vision] ──► [Eye Widget + Gaze Tracking]
                                                 │
                                       [Mystery Module]
-                                      [√(1/N) × N³]
+                                      [√(1/n) × N³]
 ```
 
 ---
@@ -171,7 +171,7 @@
 | GPU acceleration (WebGPU) | Backend | Advanced | **DONE** — `js/brain/gpu-compute.js` (WGSL compute shaders for LIF + synapses) |
 | Brain wave visualization | Frontend | Advanced | **DONE** — `js/ui/brain-viz.js` (band power envelopes) + `js/ui/brain-3d.js` (WebGL 3D) |
 | Drug combo state vectors | CompNeuro | Expert | **DONE** — 4 combos in `js/brain/persona.js` |
-| √(1/N) × N³ mystery module | CompNeuro | Expert | **DONE** — `js/brain/mystery.js` + 50-neuron cluster |
+| √(1/n) × N³ mystery module | CompNeuro | Expert | **DONE** — `js/brain/mystery.js` + 50-neuron cluster |
 | Attention mechanism | AI/ML | Advanced | Pending |
 | Anthropic CORS proxy | Backend | Intermediate | **DONE** — `proxy.js` (Node.js, translates OpenAI→Anthropic format) |
 | Camera/vision integration | Vision | Intermediate | **DONE** — `js/io/vision.js` (webcam + AI gaze tracking + Unity's Eye widget) |

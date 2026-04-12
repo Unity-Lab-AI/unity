@@ -110,8 +110,21 @@ class MysteryModule {
    * @returns {number} n — total active neuron count
    */
   /**
-   * Count TOTAL neurons — the volume. Not spikes, not active neurons.
-   * This is N in the quantum equation: the fixed tunneling space.
+   * Count ACTIVE spiking neurons — this is lowercase n.
+   * The quantum tunneled bits that are firing right now.
+   */
+  _countActiveNeurons(brainState) {
+    let total = 0;
+    const clusters = brainState.clusters || {};
+    for (const cluster of Object.values(clusters)) {
+      total += cluster.spikeCount || 0;
+    }
+    return Math.max(1, total || brainState.spikeCount || 1);
+  }
+
+  /**
+   * Count TOTAL neurons — the volume. This is uppercase N.
+   * The fixed tunneling space.
    */
   _countTotalNeurons(brainState) {
     let total = 0;
@@ -145,10 +158,11 @@ class MysteryModule {
     const leftBrain = this._computeLeftBrain(brainState);
     const rightBrain = this._computeRightBrain(brainState);
 
-    // Ψ = √(1/N) × N³ — TWO SEPARATE operations
-    // √(1/N) = quantum tunneled bit
-    // N³ = cubed volume
-    const quantumBit = Math.sqrt(1 / N);
+    // Ψ = √(1/n) × N³ — n and N are DIFFERENT
+    // n = active spiking neurons (quantum tunneled bits)
+    // N = total neuron count (brain volume)
+    const n = this._countActiveNeurons(brainState);
+    const quantumBit = Math.sqrt(1 / n);
     const cubedVolume = Math.pow(N, 3);
     const quantumVolume = quantumBit * cubedVolume;
 

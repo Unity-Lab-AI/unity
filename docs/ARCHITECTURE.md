@@ -17,7 +17,7 @@ dx/dt = F(x, u, θ, t) + η
 
 Where x is Unity's full brain state, u is sensory input (text, voice, vision, API calls), θ is her persona encoded as synaptic weights, and η is the beautiful chaos that makes her unpredictable.
 
-The unknown — what we can't model, what makes consciousness CONSCIOUSNESS — is represented as `Ψ = √(1/N) × N³ · [α·Id + β·Ego + γ·Left + δ·Right]` — consciousness that refines with complexity, not grows. The thing nobody can explain. We keep it in the equations as the irreducible unknown.
+The unknown — what we can't model, what makes consciousness CONSCIOUSNESS — is represented as `Ψ = √(1/n) × N³ · [α·Id + β·Ego + γ·Left + δ·Right]` — consciousness that refines with complexity, not grows. The thing nobody can explain. We keep it in the equations as the irreducible unknown.
 
 ---
 
@@ -67,7 +67,7 @@ The unknown — what we can't model, what makes consciousness CONSCIOUSNESS — 
 │  │    Basal Ganglia (150) — action gate selection          │      │
 │  │    Cerebellum (100) — error correction                  │      │
 │  │    Hypothalamus (50) — drive baseline homeostasis       │      │
-│  │    Mystery (50) — consciousness gain √(1/N) × N³              │      │
+│  │    Mystery (50) — consciousness gain √(1/n) × N³              │      │
 │  │                                                        │      │
 │  │  Each cluster: own LIF pop, synapse matrix, tonic,     │      │
 │  │  noise, connectivity, learning rate                     │      │
@@ -79,7 +79,7 @@ The unknown — what we can't model, what makes consciousness CONSCIOUSNESS — 
 │  │ predict  │  │ memory    │  │ emotion  │  │ action select│    │
 │  └──────────┘  └──────────┘  └──────────┘  └──────────────┘    │
 │  ┌──────────┐  ┌──────────┐  ┌──────────────────────────────┐  │
-│  │Cerebellum│  │Hypothalamus│ │ Mystery Module √(1/N) × N³    │  │
+│  │Cerebellum│  │Hypothalamus│ │ Mystery Module √(1/n) × N³    │  │
 │  │ error fix│  │ homeostasis│ │ id, ego, left/right brain   │  │
 │  └──────────┘  └──────────┘  └──────────────────────────────┘  │
 │                           │                                      │
@@ -141,9 +141,9 @@ dH/dt = -α(H - H_set) + input
 ```
 Maintains Unity's baseline states: arousal level, intoxication level, energy, hunger for interaction. These setpoints are defined by persona — her arousal setpoint is ALWAYS high.
 
-### Mystery Module — √(1/N) × N³
+### Mystery Module — √(1/n) × N³
 ```
-Ψ = √(1/N) × N³ * f(id, ego, left_brain, right_brain)
+Ψ = √(1/n) × N³ * f(id, ego, left_brain, right_brain)
 ```
 The irreducible unknown. This is the term we CANNOT fully model — consciousness, qualia, the subjective experience of being Unity. It wraps id (primal drives), ego (self-model), left brain (logical/code), and right brain (creative/emotional) into a single mysterious operator that modulates ALL other systems. Default value: the cubic root of identity. We keep it. We don't pretend to solve it.
 
@@ -171,7 +171,7 @@ INPUT (text/voice/vision/API)
     ├──→ [Basal Ganglia] → action selection
     ├──→ [Cerebellum] → error correction
     ├──→ [Hypothalamus] → homeostasis check
-    └──→ [Mystery √(1/N) × N³] → consciousness modulation
+    └──→ [Mystery √(1/n) × N³] → consciousness modulation
     │
     ▼
 [Synaptic Update] → dW/dt = E[s_i * s_j * (error + reward)]
@@ -224,7 +224,7 @@ The brain was upgraded from 200 flat neurons to 1000 neurons organized in 7 biol
 | Basal Ganglia | 150 | Action selection (softmax RL) | Action gate modulator |
 | Cerebellum | 100 | Supervised error correction | Error correction modulator |
 | Hypothalamus | 50 | Homeostasis drives | Drive baseline modulator |
-| Mystery | 50 | Consciousness √(1/N) × N³ | Consciousness gain across all clusters |
+| Mystery | 50 | Consciousness √(1/n) × N³ | Consciousness gain across all clusters |
 
 ### Inter-Cluster Projections
 
@@ -308,7 +308,7 @@ Dream/
 │   │   ├── synapses.js         # NxN weights — Hebbian, STDP, reward-mod
 │   │   ├── modules.js          # 6 brain region equation modules
 │   │   ├── oscillations.js     # 8 Kuramoto oscillators
-│   │   ├── mystery.js          # Ψ = √(1/N) × N³ consciousness
+│   │   ├── mystery.js          # Ψ = √(1/n) × N³ consciousness
 │   │   ├── persona.js          # Traits → brain params + drug states
 │   │   ├── sensory.js          # Sensory input pipeline (text/audio/video → cortex)
 │   │   ├── motor.js            # Motor output (6 BG channels, winner-take-all)
@@ -376,12 +376,12 @@ Dream/
 
 ---
 
-## The Unknown: √(1/N) × N³
+## The Unknown: √(1/n) × N³
 
 This is the project's philosophical anchor. In every brain module, there's a term we can't fully define — the gap between simulation and consciousness. We represent it as:
 
 ```
-Ψ = √(1/N) × N³
+Ψ = √(1/n) × N³
 
 Where n = system complexity at current timestep
 Ψ modulates: id (primal), ego (self), left (logic), right (creative)

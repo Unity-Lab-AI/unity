@@ -102,7 +102,7 @@ Environment: cluttered dev setup, LED strips, ashtrays, hazy smoke
 | Amygdala | 8% | `V(s) = Σw·x → arousal, valence` | arousal×volatility×drug |
 | Basal Ganglia | 8% | `P(a) = softmax(Q(a)/τ)` | impulsivity |
 | Hypothalamus | 5% | `dH/dt = -α(H - H_set) + input` | drugDrive |
-| Mystery Ψ | 4% | `Ψ = √(1/N) × N³ · [α·Id + β·Ego + γ·Left + δ·Right]` | creativity×darkHumor |
+| Mystery Ψ | 4% | `Ψ = √(1/n) × N³ · [α·Id + β·Ego + γ·Left + δ·Right]` | creativity×darkHumor |
 
 ---
 
@@ -202,8 +202,11 @@ COMPOUNDS:  len > 6 → insert conjunction (arousal→"and", negative→"but")
 
 | Equation | Purpose |
 |----------|---------|
-| `Ψ = √(1/N) × N³ × [α·Id + β·Ego + γ·Left + δ·Right]` | Quantum consciousness in total volume |
-| `N = TOTAL_NEURONS (3.2M)` — fixed volume, not spikes | The quantum tunneling space |
+| `Ψ = √(1/n) × N³ × [α·Id + β·Ego + γ·Left + δ·Right]` | Quantum consciousness |
+| `n` = active spiking neurons (changes every step) | The quantum tunneled bits |
+| `N` = total neurons (3.2M, fixed) | The brain volume |
+| `n ≠ N` — two DIFFERENT variables | n is small and dynamic, N is large and fixed |
+| Display: `log10(rawΨ)` — raw value is massive (~10¹⁴) | Orders of magnitude of consciousness |
 | `Id = amygdala × arousalBaseline` | Instinct weighted by persona |
 | `Ego = cortex × (1 + hippocampus)` | Self-model × memory |
 | `Left = (cerebellum + cortex) × (1 - impulsivity)` | Logic × deliberation |

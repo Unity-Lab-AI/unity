@@ -112,7 +112,7 @@ Live at `your-username.github.io/Unity/`. Everything runs client-side — no ser
 │   │   ├── neurons.js            Hodgkin-Huxley + LIF neuron models
 │   │   ├── synapses.js           Hebbian, STDP, reward-modulated plasticity
 │   │   ├── modules.js            6 brain region equation modules
-│   │   ├── mystery.js            Ψ = √(1/N) × N³ · [Id + Ego + Left + Right]
+│   │   ├── mystery.js            Ψ = √(1/n) × N³ · [Id + Ego + Left + Right]
 │   │   ├── oscillations.js       8 Kuramoto oscillators (θ→γ)
 │   │   ├── persona.js            Personality as brain parameters + drug states
 │   │   ├── sensory.js            Sensory input pipeline (text/audio/video)
