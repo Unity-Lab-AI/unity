@@ -71,6 +71,11 @@ export class LanguageCortex {
     this.sentencesLearned = 0;
     this.wordsProcessed = 0;
 
+    // Recency suppression — words used in recent outputs get penalized
+    // Prevents "want to do you" loops across sentences
+    this._recentOutputWords = []; // rolling buffer of last 50 output words
+    this._recentOutputMax = 50;
+
     this._bootstrap();
   }
 
@@ -304,6 +309,12 @@ export class LanguageCortex {
       return '*' + sentence.join(' ') + '*';
     }
 
+    // Track output words for recency suppression
+    for (const w of sentence) {
+      this._recentOutputWords.push(w);
+      if (this._recentOutputWords.length > this._recentOutputMax) this._recentOutputWords.shift();
+    }
+
     this.wordsProcessed += sentence.length;
     return sentence.join(' ');
   }
@@ -362,8 +373,11 @@ export class LanguageCortex {
       const moodBias = Math.exp(-moodDist * 1.5);
       const topicSim = contextPattern ? this._cosine(entry.pattern || this.wordToPattern(word), contextPattern) : 0;
 
-      // Follower count dominates when available
-      const score = followerCount * 0.4 + condP * 0.2 + posP * 0.2 + moodBias * 0.1 + Math.max(0, topicSim) * 0.1;
+      // Recency penalty — suppress words used in recent outputs
+      const recentCount = this._recentOutputWords.filter(w => w === word).length;
+      const recencyPenalty = recentCount * 0.15; // each recent use reduces score
+
+      const score = followerCount * 0.4 + condP * 0.2 + posP * 0.2 + moodBias * 0.1 + Math.max(0, topicSim) * 0.1 - recencyPenalty;
       return { word, entry, score };
     });
 
@@ -397,7 +411,8 @@ export class LanguageCortex {
             const entry = allWords.find(([w]) => w === word);
             if (!entry) return null;
             const moodDist = Math.abs((entry[1].arousal || 0.5) - arousal) + Math.abs((entry[1].valence || 0) - valence);
-            return { word, entry: entry[1], score: count + Math.exp(-moodDist) * 2 };
+            const recentCount = this._recentOutputWords.filter(w => w === word).length;
+            return { word, entry: entry[1], score: count + Math.exp(-moodDist) * 2 - recentCount * 0.15 };
           })
           .filter(Boolean);
 
@@ -413,7 +428,8 @@ export class LanguageCortex {
           const scored = posCandidates.map(([word, entry]) => {
             const posP = this._posProb(word, i + 2);
             const moodDist = Math.abs((entry.arousal || 0.5) - arousal) + Math.abs((entry.valence || 0) - valence);
-            return { word, entry, score: posP * 0.5 + Math.exp(-moodDist) * 0.5 };
+            const recentCount = this._recentOutputWords.filter(w => w === word).length;
+            return { word, entry, score: posP * 0.5 + Math.exp(-moodDist) * 0.5 - recentCount * 0.15 };
           });
           picked = this._softmaxSample(scored, temperature * 0.2);
         }
