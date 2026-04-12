@@ -526,12 +526,18 @@ export class UnityBrain extends EventEmitter {
     const isBuild = buildWords.some(w => lower.includes(w));
 
     // 6. Check for image/selfie request (only if NOT a build request)
-    // Image detection — ONLY explicit image requests, not "show me how" or "send me info"
-    const imageWords = ['selfie', 'take a picture', 'take a photo', 'take a pic',
-      'send a pic', 'send a photo', 'send a selfie', 'send me a pic',
-      'generate an image', 'generate image', 'draw me a', 'draw a picture',
-      'full body shot', 'headshot', 'head shot', 'portrait of'];
-    const isImage = !isBuild && imageWords.some(w => lower.includes(w));
+    // Image detection — check for image intent
+    const hasImageWord = lower.includes('image') || lower.includes('picture') || lower.includes('photo')
+      || lower.includes('selfie') || lower.includes('pic of') || lower.includes('portrait')
+      || lower.includes('headshot') || lower.includes('full body');
+    const hasImageAction = lower.includes('generate') || lower.includes('send') || lower.includes('take')
+      || lower.includes('show me') || lower.includes('draw') || lower.includes('snap')
+      || lower.includes('create') || lower.includes('make');
+    const isImage = !isBuild && (
+      (hasImageWord && hasImageAction)  // "generate an image", "take a photo", "send me a picture"
+      || lower.includes('selfie')       // selfie is always an image request
+      || (lower.includes('image of') || lower.includes('picture of') || lower.includes('photo of'))
+    );
     // Selfie = image request specifically of Unity (not "draw me a sunset")
     const selfWords = ['yourself', 'of you', 'your face', 'your body', 'unity',
       'of yourself', 'you look like', 'selfie'];
