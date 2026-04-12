@@ -666,11 +666,30 @@ export class UnityBrain extends EventEmitter {
       }
     }
 
-    // Still nothing? Use raw cortex state to form a minimal response
-    if (!response || response.length < 3) {
-      const intensity = brainArousal * (1 + Math.abs(brainValence));
-      if (intensity > 0.8) response = this.innerVoice._getIntenseResponse?.(brainValence) || '...';
-      else response = '...';
+    // Response pool — EDNA-style category selection driven by brain state.
+    // The brain decided the mood/type, the pool provides coherent words.
+    if (!response || response.length < 5) {
+      try {
+        const { selectResponse, blendResponse } = await import('./response-pool.js');
+        const inputAnalysis = this.innerVoice.languageCortex._lastInputWords
+          ? { isQuestion: text.includes('?') || /^(what|how|why|where|when|who|can|do|are|is)\b/i.test(text) }
+          : {};
+        const poolResponse = selectResponse({
+          arousal: brainArousal,
+          valence: brainValence,
+          coherence: brainCoherence,
+          predictionError: state.cortex?.predictionError ?? 0,
+          motorConfidence: this.motor.confidence,
+          sentenceType: this.innerVoice.languageCortex.sentenceType(brainArousal, state.cortex?.predictionError ?? 0, this.motor.confidence, brainCoherence),
+        }, inputAnalysis);
+        // Blend pool with whatever the cortex managed to produce
+        response = blendResponse(poolResponse, response, 0.85);
+      } catch (e) {
+        // Pool not available — fall back to old behavior
+        const intensity = brainArousal * (1 + Math.abs(brainValence));
+        if (intensity > 0.8) response = this.innerVoice._getIntenseResponse?.(brainValence) || '...';
+        else response = '...';
+      }
     }
 
     if (response && response.length >= 3) {
