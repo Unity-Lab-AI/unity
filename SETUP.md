@@ -130,6 +130,7 @@ Live at `your-username.github.io/Unity/`. Everything runs client-side — no ser
 │   │   ├── embeddings.js         Semantic word embeddings (GloVe 50d)
 │   │   ├── language-cortex.js    Complete language production (syntax, types, morphology, context)
 │   │   ├── benchmark.js          Dense vs sparse + neuron scale test
+│   │   ├── response-pool.js     EDNA response categories (training wheels for language cortex)
 │   │   └── peripherals/
 │   │       └── ai-providers.js   AI provider manager + dead backend detection
 │   ├── ai/
@@ -143,6 +144,7 @@ Live at `your-username.github.io/Unity/`. Everything runs client-side — no ser
 │       ├── chat-panel.js         Conversation log panel
 │       ├── brain-viz.js          2D tabbed brain visualizer (8 tabs)
 │       └── brain-3d.js           3D WebGL brain with notifications + expansion
+├── claude-proxy.js               Claude Code CLI as local AI (port 8088)
 ├── server/
 │   ├── brain-server.js           Node.js brain server (always-on, WebSocket)
 │   └── package.json              Server dependencies (ws, better-sqlite3)

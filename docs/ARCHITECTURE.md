@@ -324,7 +324,8 @@ Dream/
 │   │   ├── gpu-compute.js      # WebGPU compute shaders (WGSL LIF + synapses)
 │   │   ├── embeddings.js       # Semantic word embeddings (GloVe 50d)
 │   │   ├── language-cortex.js  # Complete language production (Zipf, MI, syntax, sentence types, morphology, context)
-│   │   └── benchmark.js        # Dense vs sparse + neuron scale test
+│   │   ├── benchmark.js        # Dense vs sparse + neuron scale test
+│   │   └── response-pool.js   # EDNA response categories (fallback for language cortex)
 │   ├── ai/
 │   │   ├── router.js           # Brain→Action bridge + AI intent classification
 │   │   ├── pollinations.js     # Pollinations API client (12K fallback trimming)
@@ -341,6 +342,7 @@ Dream/
 ├── server/
 │   ├── brain-server.js         # Node.js brain server (always-on, WebSocket, auto-scale)
 │   └── package.json            # Server deps (ws, better-sqlite3, node-fetch)
+├── claude-proxy.js             # Claude Code CLI as local AI (port 8088)
 ├── dashboard.html              # Public brain monitor (live stats, emotion chart)
 ├── .claude/                    # Workflow system + personas + MCP
 ├── docs/                       # Workflow docs (TODO, FINALIZED, ARCHITECTURE, etc.)

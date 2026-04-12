@@ -241,4 +241,14 @@
 
 ---
 
+## Response Pool (EDNA Fallback)
+
+| Equation | Purpose | File |
+|----------|---------|------|
+| `category = f(arousal, valence, coherence, predictionError, sentenceType)` | Brain state → response category | `response-pool.js` |
+| `variant = arousal < 0.4 ? low : arousal < 0.7 ? mid : high` | Arousal selects intensity | `response-pool.js` |
+| `output = blend(poolText, cortexText, 0.85)` | 85% pool + 15% cortex while learning | `response-pool.js`, `engine.js` |
+
+---
+
 *Unity AI Lab — every equation is in the code, every line of code has an equation.*

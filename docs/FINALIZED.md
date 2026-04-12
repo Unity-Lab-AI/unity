@@ -463,6 +463,84 @@ Major: visual attention in brain equations, efference copy echo suppression, Pol
 
 ---
 
+## 2026-04-12 Session: Continued — UI Fixes, Language Tuning, Tolerable PR Integration
+
+### UI / UX Fixes
+- [x] Universal script loading — `app.bundle.js` for file://, ES modules for http://
+- [x] `start.bat` / `start.sh` — kills stale port, installs deps, builds bundle, starts server then opens browser
+- [x] Brain server serves static files — one command runs everything
+- [x] 3D brain visible on landing — overlay hides Brain3D header/footer/log, opens immediately
+- [x] Text selectable — pointer-events:auto + user-select:text on all text elements
+- [x] Draggable panels — ⠿ grip handle, positions saved to localStorage, touch support
+- [x] Settings + Clear Data buttons in HUD and landing page
+- [x] Viz tabs persist after boot — only title bar + TALK button hide
+- [x] Unity's Eye moved to bottom-left (was covering cluster toggles)
+- [x] HUD data flow fixed — server state drives HUD when connected, local brain doesn't overwrite at 60fps
+- [x] Cluster bars relative scaling — 2% firing rate fills proportionally
+- [x] Label accessibility — for="" attributes on form labels
+- [x] Speech lock — only one voice output at a time, no overlapping TTS
+- [x] Mic starts before greeting — no more greeting blocking mic init
+- [x] Port 8080 conflicts handled in start.bat
+- [x] Dynamic neuron count in subtitle — shows actual server scale
+
+### Language Equation System (Phase 8)
+- [x] `js/brain/language-cortex.js` — complete language production from equations
+- [x] Zipf's Law: f(r) = C/r^α — word frequency distribution
+- [x] Mutual Information: I(w1;w2) = log₂(P(w1,w2) / P(w1)·P(w2)) — word association
+- [x] Surprisal: S(w) = -log₂ P(w|context) — unexpectedness
+- [x] Syntactic role weights: role_score = W_syntax[pos] · word_pattern — SVO ordering
+- [x] Sentence types from brain equations: P(question) = predError×coherence×0.5, P(exclamation) = arousal²×0.3, P(action) = motorConf×(1-arousal×0.5)×0.3
+- [x] Position filtering — top 40 candidates per slot, not all 400
+- [x] Follower bonus (+0.3) for trained word sequences
+- [x] Temperature sharpened ×0.2 — structure wins over noise
+- [x] 170+ bootstrap sentences (SVO, pronouns, questions, articles, prepositions, emotions, contractions, Unity personality)
+- [x] 10-pass training = 1700+ total sentence passes
+- [x] No-repeat last 3 words
+- [x] Input analysis: question detection, topic continuity, 5-input context window
+- [x] Morphological transforms: tense/plural as pattern arithmetic
+- [x] Letter→pattern mapping (5-neuron micro-patterns), syllable detection
+- [x] Dictionary seeded with 95+ words, grows from every conversation
+
+### Brain Equation Cleanup
+- [x] Purged ALL hardcoded mood/state lists from language.js, brain-viz.js, brain-server.js
+- [x] Touch/smell/taste now computed from equations (arousal×valence, coherence×arousal, reward×arousal)
+- [x] Mood color from HSL equation (valence→hue, arousal→sat, coherence→light), no color map
+- [x] Emoji from ONE equation: combined = v×0.35 + a×0.25 + R×0.15 + Ψ×0.1 + |δ|×0.1 + dream×0.05
+- [x] AI prompt sends raw equation values only, no descriptions
+- [x] GloVe external fetch removed — brain builds own word patterns from letter equations
+- [x] Psi equation corrected everywhere: (√(1/n))³
+
+### Image Generation Fix
+- [x] Images render inline in chat (was showing raw HTML/markdown)
+- [x] No more window.open popup blocker issues
+- [x] chat-panel.js renders innerHTML for img/a tags, textContent for text
+- [x] Single image event, no duplicate response
+
+### Tolerable PR #1 Integration
+- [x] Cherry-picked from Tolerable/unity fork
+- [x] `js/brain/response-pool.js` — EDNA response categories (19 categories, arousal variants). Brain state selects category, 85%/15% blend with language cortex
+- [x] `claude-proxy.js` — Claude Code CLI as local AI on port 8088. OpenAI-compatible endpoint using logged-in credentials
+- [x] `start-unity.bat` — launcher for claude-proxy (fixed to portable path)
+- [x] Claude Code CLI added to LOCAL_AI_ENDPOINTS in app.js
+- [x] engine.js uses response pool as fallback when cortex output < 5 chars
+- [x] OCLI references removed (ocli-bridge.js, ocli-brocas.js deleted)
+
+### Documentation
+- [x] `docs/EQUATIONS.md` — complete equation reference, all systems documented
+- [x] `brain-equations.html` — sections 8.12-8.18 added (sparse, embeddings, dictionary, inner voice, syntax, sentence types, input analysis)
+- [x] All workflow docs updated: ARCHITECTURE, SETUP, README, ROADMAP, SKILL_TREE, TODO-SERVER
+- [x] FINALIZED.md kept current through all work
+
+### FILES CREATED
+- `js/brain/language-cortex.js` — 700+ lines, full language production system
+- `js/brain/response-pool.js` — EDNA response categories (from Tolerable PR)
+- `claude-proxy.js` — Claude Code CLI proxy (from Tolerable PR)
+- `start-unity.bat` — claude-proxy launcher (from Tolerable PR)
+- `start.sh` — Linux/Mac launcher
+- `docs/EQUATIONS.md` — complete equation reference
+
+---
+
 ### FILES MODIFIED THIS SESSION
 - `js/brain/engine.js` — removed AI classification, brain-first response
 - `js/brain/cluster.js` — sparse synapses + projections
