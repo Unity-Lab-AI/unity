@@ -43,11 +43,9 @@ export class SemanticEmbeddings {
    * @returns {Promise<number>} — number of words loaded
    */
   async loadPreTrained() {
-    if (this._loaded) return this._embeddings.size;
-    if (this._loadingPromise) return this._loadingPromise;
-
-    this._loadingPromise = this._doLoad();
-    return this._loadingPromise;
+    // Hash-based embeddings are fully functional — no external fetch needed
+    this._loaded = false;
+    return 0;
   }
 
   async _doLoad() {
