@@ -757,104 +757,76 @@ export class Brain3D {
     const mood = state.innerVoice?.mood || 'neutral';
     const isDreaming = state.isDreaming || false;
 
-    // Cycle through systems — each tick shows a different process
-    this._notifCycle = ((this._notifCycle || 0) + 1) % 10;
+    // Build ALL possible notifications from CURRENT activity, pick the most relevant
+    const candidates = [];
+    const add = (t, c, priority) => candidates.push({ text: t, cluster: c, priority });
 
-    let text, cluster;
-    switch (this._notifCycle) {
-      case 0: {
-        // Cortex — what it's predicting
-        const cortexC = clusters.cortex;
-        const err = state.cortex?.error;
-        const errVal = err ? (err.length ? Math.abs(err[0]) : Math.abs(err)) : 0;
-        const rate = cortexC?.firingRate?.toFixed(1) || '0';
-        text = errVal > 0.4
-          ? `CORTEX: High prediction error (${errVal.toFixed(3)}) — processing unexpected input at rate ${rate}`
-          : `CORTEX: Predictions stable (err=${errVal.toFixed(3)}) — ${cortexC?.spikeCount || 0} neurons active, rate ${rate}`;
-        cluster = 0;
-        break;
-      }
-      case 1: {
-        // Amygdala — emotional state
-        const gate = (0.7 + arousal * 0.6).toFixed(2);
-        text = `AMYGDALA: ${arousal > 0.7 ? '⚡ HIGH arousal' : arousal > 0.4 ? 'moderate arousal' : '💤 low arousal'} (${(arousal*100).toFixed(0)}%) | valence ${valence > 0.1 ? '↑ positive' : valence < -0.1 ? '↓ negative' : '→ neutral'} (${valence.toFixed(3)}) | gate=${gate}x`;
-        cluster = 2;
-        break;
-      }
-      case 2: {
-        // Hippocampus — memory state
-        const mem = state.memory || {};
-        const recall = mem.lastRecall;
-        text = recall
-          ? `HIPPOCAMPUS: Recalling "${recall.trigger}" (similarity ${(recall.similarity ?? 0).toFixed(2)}) — ${mem.episodeCount || 0} episodes stored, WM ${mem.workingMemoryItems?.length || 0}/7`
-          : `HIPPOCAMPUS: ${mem.episodeCount || 0} episodes stored | working memory ${mem.workingMemoryItems?.length || 0}/7 items | ${isDreaming ? 'consolidating memories...' : 'monitoring for patterns'}`;
-        cluster = 1;
-        break;
-      }
-      case 3: {
-        // Basal Ganglia — action selection
-        const motor = state.motor || {};
-        const channels = motor.channelRates || [];
-        const names = ['respond', 'image', 'speak', 'build', 'listen', 'idle'];
-        let top = 'idle', topRate = 0;
-        channels.forEach?.((r, i) => { if (r > topRate) { topRate = r; top = names[i] || '?'; } });
-        text = `BASAL GANGLIA: Action competition → ${motor.selectedAction || top} winning (${((motor.confidence || topRate) * 100).toFixed(1)}%) | ${motor.speechGated ? '🔇 speech gated' : '🔊 speech active'}`;
-        cluster = 3;
-        break;
-      }
-      case 4: {
-        // Cerebellum — error correction
-        const cerebC = clusters.cerebellum;
-        const err = state.cerebellum?.error;
-        const errVal = err ? (err.length ? Math.abs(err[0]) : Math.abs(err)) : 0;
-        text = `CEREBELLUM: Error correction ${errVal > 0.3 ? '⚠ active' : '✓ minimal'} (${errVal.toFixed(4)}) — dampening cortex by ${(errVal * 2).toFixed(3)} | ${cerebC?.spikeCount || 0} neurons`;
-        cluster = 4;
-        break;
-      }
-      case 5: {
-        // Hypothalamus — drives
-        const hypoC = clusters.hypothalamus;
-        const needs = state.hypothalamus?.needsAttention || [];
-        text = needs.length > 0
-          ? `HYPOTHALAMUS: ⚠ Drives need attention: ${needs.join(', ')} — adjusting baseline for all clusters`
-          : `HYPOTHALAMUS: All drives at setpoint | homeostasis stable | ${hypoC?.spikeCount || 0} neurons regulating`;
-        cluster = 5;
-        break;
-      }
-      case 6: {
-        // Mystery — consciousness
-        text = `MYSTERY Ψ: Consciousness = ${psi.toFixed(4)} | (√(1/${state.spikeCount || 1}))³ × [Id+Ego+Left+Right] | gain=${(0.9 + psi * 0.05).toFixed(4)}x coupling | ${psi > 1 ? '🔮 hyper-aware' : psi > 0.3 ? '👁 present' : '💭 dreaming'}`;
-        cluster = 6;
-        break;
-      }
-      case 7: {
-        // Oscillations — brain waves
-        const bp = state.oscillations?.bandPower || {};
-        text = `OSCILLATIONS: R=${coherence.toFixed(3)} ${coherence > 0.7 ? '🎯 synchronized' : coherence < 0.3 ? '🌀 scattered' : '〰 partial'} | θ=${(bp.theta ?? 0).toFixed(2)} α=${(bp.alpha ?? 0).toFixed(2)} β=${(bp.beta ?? 0).toFixed(2)} γ=${(bp.gamma ?? 0).toFixed(2)}`;
-        cluster = 0;
-        break;
-      }
-      case 8: {
-        // Inner voice — mood/thought state
-        const iv = state.innerVoice || {};
-        text = iv.sentence
-          ? `INNER VOICE: "${iv.sentence}" (mood: ${mood}, vocab: ${iv.vocabSize || 0} words)`
-          : `INNER VOICE: Mood = ${mood} | ${iv.vocabSize || 0} words learned | ${iv.shouldSpeak ? '💬 wants to speak' : '🤫 thinking silently'}`;
-        cluster = 6;
-        break;
-      }
-      case 9: {
-        // Overall state summary
-        const totalSpikes = state.spikeCount || 0;
-        text = isDreaming
-          ? `DREAMING: ${totalSpikes}/${TOTAL} neurons in dream state | theta-dominant oscillations | hippocampal replay active`
-          : `BRAIN: ${totalSpikes}/${TOTAL} firing | Ψ=${psi.toFixed(3)} | mood=${mood} | ${state.drugState} | expansion=${this._expansionFactor.toFixed(2)}x`;
-        cluster = Math.floor(Math.random() * 7);
-        break;
+    // Always-available processes (the brain is always doing these):
+    // ── Core processes (always running) ──
+    const cortexC = clusters.cortex;
+    const cortexErr = state.cortex?.error;
+    const errVal = cortexErr ? (cortexErr.length ? Math.abs(cortexErr[0]) : Math.abs(cortexErr)) : 0;
+    add(`Predictive coding: error=${errVal.toFixed(3)} → ${errVal > 0.4 ? 'unexpected input, adjusting' : 'stable predictions'}`, 0, errVal);
+
+    const gate = (0.7 + arousal * 0.6);
+    add(`Emotional gate: ${gate.toFixed(2)}x multiplier on all clusters → ${gate > 1.1 ? 'amplifying' : 'normal'} processing`, 2, Math.abs(gate - 1));
+
+    add(`Arousal=${(arousal*100).toFixed(0)}% Valence=${valence.toFixed(3)} → mood: ${mood}`, 2, arousal);
+
+    const mem = state.memory || {};
+    add(`Memory: ${mem.episodeCount || 0} episodes, WM ${mem.workingMemoryItems?.length || 0}/7 → ${mem.lastRecall ? 'recalling "' + mem.lastRecall.trigger + '"' : 'monitoring'}`, 1, (mem.lastRecall ? 1 : 0.2));
+
+    const motor = state.motor || {};
+    add(`Action selection: ${motor.selectedAction || 'idle'} (${((motor.confidence || 0) * 100).toFixed(1)}%) → ${motor.speechGated ? 'speech suppressed' : 'ready to act'}`, 3, motor.confidence || 0);
+
+    const cerebErr = state.cerebellum?.error;
+    const cErr = cerebErr ? (cerebErr.length ? Math.abs(cerebErr[0]) : Math.abs(cerebErr)) : 0;
+    add(`Error correction: dampening=${(cErr * 2).toFixed(3)} → ${cErr > 0.3 ? 'actively correcting' : 'minimal correction'}`, 4, cErr);
+
+    add(`Ψ = ${psi.toFixed(4)} → coupling ${(0.9 + psi * 0.05).toFixed(3)}x → ${psi > 1 ? 'hyper-integrated' : psi > 0.3 ? 'coherent' : 'fragmented'}`, 6, psi);
+
+    const bp = state.oscillations?.bandPower || {};
+    add(`Oscillations R=${coherence.toFixed(3)} | θ=${(bp.theta??0).toFixed(2)} α=${(bp.alpha??0).toFixed(2)} β=${(bp.beta??0).toFixed(2)} γ=${(bp.gamma??0).toFixed(2)}`, 0, coherence);
+
+    const needs = state.hypothalamus?.needsAttention || [];
+    add(`Homeostasis: ${needs.length > 0 ? '⚠ ' + needs.join(', ') + ' need attention' : 'all drives at setpoint'}`, 5, needs.length > 0 ? 0.8 : 0.1);
+
+    // ── Conditional processes (only when active) ──
+    const iv = state.innerVoice || {};
+    if (iv.sentence) add(`Inner voice: "${iv.sentence}"`, 6, 0.9);
+    else if (iv.vocabSize > 0) add(`Vocabulary: ${iv.vocabSize} words learned | thinking: ${mood}`, 6, 0.3);
+
+    if (isDreaming) add(`Dreaming: theta-dominant, hippocampal replay, Ψ dropping`, 1, 0.8);
+
+    if (mem.lastRecall) add(`Recall: "${mem.lastRecall.trigger}" (sim=${(mem.lastRecall.similarity??0).toFixed(2)}) → re-activating stored pattern`, 1, 0.9);
+
+    // ── Cluster-specific activity ──
+    for (let ci = 0; ci < CLUSTERS.length; ci++) {
+      const c = clusters[CLUSTERS[ci].key];
+      if (c) {
+        const pct = c.spikeCount / (c.size || 1);
+        if (pct > 0.3) add(`${CLUSTERS[ci].label}: ${c.spikeCount}/${c.size} firing (${(pct*100).toFixed(0)}%) — ${pct > 0.5 ? 'burst activity' : 'elevated'}`, ci, pct);
       }
     }
 
-    if (text) this._addNotification(text, cluster);
+    // ── Inter-cluster signaling ──
+    add(`Cortex→BG projection: language patterns routing to action channels`, 3, 0.4);
+    add(`Amygdala→all: emotional gate ${gate.toFixed(2)}x scaling all cluster drives`, 2, Math.abs(gate - 1) * 2);
+    add(`Mystery→all: consciousness gain ${(0.9+psi*0.05).toFixed(3)}x coupling strength`, 6, psi * 0.5);
+
+    // ── Synaptic learning ──
+    if (state.reward > 0.05) add(`Reward δ=${state.reward.toFixed(3)} → strengthening active projection weights`, 3, state.reward);
+    if (state.reward < -0.05) add(`Negative δ=${state.reward.toFixed(3)} → weakening active pathways`, 3, Math.abs(state.reward));
+
+    // Pick the MOST relevant notification (highest priority that wasn't shown recently)
+    candidates.sort((a, b) => b.priority - a.priority);
+    // Don't repeat the same cluster twice in a row
+    const lastCluster = this._lastNotifCluster ?? -1;
+    const pick = candidates.find(c => c.cluster !== lastCluster) || candidates[0];
+    if (pick) {
+      this._lastNotifCluster = pick.cluster;
+      this._addNotification(pick.text, pick.cluster);
+    }
   }
 
   _addNotification(text, clusterIdx) {
