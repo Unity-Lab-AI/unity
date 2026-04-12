@@ -853,4 +853,9 @@ The following items were in TODO as pending/partial but were resolved by prior w
 
 - [x] **Scale: 64M neurons** — cerebellum 25.6M, cortex 16M, hippocampus 6.4M, amygdala 5.12M, BG 5.12M, hypothalamus 3.2M, mystery 3.2M. VRAM: 1.2GB of 16GB. Server RAM: 161MB.
 
+## 2026-04-12 Session: GitHub Pages — detectRemoteBrain localhost leak
+
+### COMPLETED
+- [x] **Pages UI was displaying 1.8B neurons instead of the local 1000-neuron fallback** — `detectRemoteBrain()` in `js/brain/remote-brain.js` defaulted to `ws://localhost:8080` with no hostname gate. Modern Chrome allows loopback WebSocket from HTTPS secure-context, so visiting the Pages URL from a dev box with `brain-server.js` running would silently connect to the local server and the Pages landing UI would render the dev box's auto-scaled neuron count (1.78B on a 16GB-VRAM GPU via `CLUSTER_SIZES × SCALE`). Side effect: every stranger visiting Pages had their browser poke their own loopback on page load. Fix: added a hostname gate at the top of `detectRemoteBrain` that only runs the probe when `location.hostname` is `localhost`/`127.0.0.1`/`[::1]`/empty OR `location.protocol === 'file:'`. All other origins (github.io, any future public hosting) return `null` immediately and `app.js:106` falls through to `new UnityBrain()` (hardcoded 1000 neurons via `engine.js:43`). Patched both `js/brain/remote-brain.js` source AND the committed `js/app.bundle.js` (used by `file://` path in `index.html:336-352`) so dev and prod behave consistently.
+
 ---

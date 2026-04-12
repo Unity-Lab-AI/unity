@@ -285,6 +285,26 @@ export class RemoteBrain extends EventEmitter {
  * @returns {Promise<RemoteBrain|null>}
  */
 export async function detectRemoteBrain(url = 'ws://localhost:8080') {
+  // Hostname gate: only probe ws://localhost:8080 when the page is actually
+  // served from localhost/127.0.0.1/file://. On GitHub Pages (or any other
+  // public origin) there is no server — skip the probe, return null, let
+  // app.js fall through to the local 1000-neuron UnityBrain.
+  //
+  // Without this gate, visiting the Pages URL from a dev box with brain-server
+  // running would connect to ws://localhost:8080 (Chrome allows loopback from
+  // https secure-context) and the Pages UI would display the dev box's
+  // auto-scaled neuron count (1.8B on a 16GB-VRAM GPU). It also prevents every
+  // stranger's browser from silently poking their own loopback on page load.
+  if (typeof location !== 'undefined') {
+    const host = location.hostname;
+    const isLocal =
+      host === 'localhost' ||
+      host === '127.0.0.1' ||
+      host === '[::1]' ||
+      host === '' ||
+      location.protocol === 'file:';
+    if (!isLocal) return null;
+  }
   return new Promise((resolve) => {
     try {
       const ws = new WebSocket(url);
