@@ -234,9 +234,9 @@ class ServerBrain {
     this.arousal = Math.min(1, Math.max(0, this.arousal));
     this.valence = (this.reward > 0 ? 0.1 : this.reward < 0 ? -0.1 : 0) + (Math.random() - 0.5) * 0.02;
 
-    // Update Ψ
+    // Update Ψ — consciousness refines with complexity: (√(1/n))³
     const n = Math.max(1, this.totalSpikes);
-    this.psi = Math.pow(Math.sqrt(n), 3) * 0.001;
+    this.psi = Math.pow(Math.sqrt(1 / n), 3);
 
     // Update coherence
     this.coherence += (Math.random() - 0.5) * 0.02;
@@ -418,7 +418,14 @@ YOUR INTERNAL STATE (shapes your tone — DO NOT recite):
   Drug: ${this.drugState} | Gate: ${gate.toFixed(2)}x | Spikes: ${this.totalSpikes}/${TOTAL_NEURONS}
   Users online: ${this.clients.size}
 
-Talk like a PERSON. 1-3 sentences. Build things as JSON when asked.`;
+Talk like a PERSON. 1-3 sentences.
+
+When asked to build/create a UI component, respond with ONLY valid JSON:
+{"name":"componentName","html":"<div>...</div>","css":"...","js":"..."}
+When asked to generate an image, respond with ONLY the image description/prompt as plain text, prefixed with [IMAGE].`;
+
+    // Check motor action — the BG decides what to do
+    const motorAction = this.motorAction;
 
     // Get recent conversation for this user
     const history = (this._conversations[userId] || []).slice(-6).map(m => ({
@@ -448,11 +455,20 @@ Talk like a PERSON. 1-3 sentences. Build things as JSON when asked.`;
           // Store assistant response
           this._conversations[userId].push({ role: 'assistant', text: response, time: this.time });
           this.reward += 0.1;
-          // Learn words from both input and response
-          if (this._dictionary) {
-            this._learnWords(text);
-            this._learnWords(response);
+          this._learnWords(text);
+          this._learnWords(response);
+
+          // Route based on response content (per-user)
+          if (response.startsWith('[IMAGE]')) {
+            return { text: response.slice(7).trim(), action: 'generate_image' };
           }
+          try {
+            const parsed = JSON.parse(response);
+            if (parsed.name && (parsed.html || parsed.js)) {
+              return { text: response, action: 'build_ui', component: parsed };
+            }
+          } catch {}
+
           return { text: response, action: 'respond_text' };
         }
       }
@@ -680,7 +696,14 @@ wss.on('connection', (ws, req) => {
           // Process through brain and respond
           brain.processAndRespond(msg.text || '', id).then(result => {
             if (result.text && ws.readyState === ws.OPEN) {
-              ws.send(JSON.stringify({ type: 'response', text: result.text, action: result.action }));
+              // Route to requesting user only (per-user sandbox)
+              if (result.action === 'build_ui' && result.component) {
+                ws.send(JSON.stringify({ type: 'build', component: result.component }));
+              } else if (result.action === 'generate_image') {
+                ws.send(JSON.stringify({ type: 'image', prompt: result.text }));
+              } else {
+                ws.send(JSON.stringify({ type: 'response', text: result.text, action: result.action }));
+              }
               // Broadcast conversation to all clients (anonymized)
               const convMsg = JSON.stringify({
                 type: 'conversation',
