@@ -84,49 +84,43 @@ export class LanguageCortex {
 
     const len = w.length;
 
-    // PRONOUN equation: short, specific letter combinations
-    // "i" "you" "we" "he" "she" "they" "it" "me" "my" "your" "our" "this" "that"
-    const pronounScore = (
-      (len <= 4 ? 0.4 : 0) +
-      (w === 'i' || w === "i'm" ? 0.6 : 0) +
-      (w.endsWith('ou') || w.endsWith('ey') || w.endsWith('e') && len <= 3 ? 0.3 : 0) +
-      (w === 'it' || w === "it's" || w === 'we' || w === "we're" ? 0.5 : 0) +
-      (w.startsWith('th') && len <= 5 ? 0.2 : 0) +
-      (w.endsWith("'m") || w.endsWith("'re") || w.endsWith("'s") ? 0.3 : 0)
-    );
+    // ── Structural properties computed from letters ──
+    let vowelCount = 0;
+    for (let i = 0; i < w.length; i++) if (VOWELS.includes(w[i])) vowelCount++;
+    const vowelRatio = vowelCount / (len || 1);
+    const consonantRatio = 1 - vowelRatio;
+    const hasApostrophe = w.includes("'");
+    const firstChar = w.charCodeAt(0) - 97; // 0-25
+    const lastChar = w.charCodeAt(w.length - 1) - 97;
 
-    // VERB equation: suffix patterns -ing, -ed, -s (3rd person), -'t, -n't
-    const verbScore = (
+    // ── SUFFIX EQUATIONS — computed from ending letter patterns ──
+    // These are structural — the LETTERS determine the type
+
+    // Verb suffixes: -ing(continuous), -ed(past), -n't(negation), -ize/-ise(action), -ate(action)
+    const verbSuffix = (
       (w.endsWith('ing') ? 0.7 : 0) +
       (w.endsWith('ed') && len > 3 ? 0.6 : 0) +
       (w.endsWith("n't") || w.endsWith("'t") ? 0.5 : 0) +
       (w.endsWith('ize') || w.endsWith('ise') ? 0.6 : 0) +
       (w.endsWith('ate') && len > 4 ? 0.5 : 0) +
-      (len >= 3 && len <= 6 && !w.endsWith('ly') && !w.endsWith('tion') ? 0.15 : 0) +
-      // Common verb patterns detectable from structure
-      (w === 'am' || w === 'is' || w === 'are' || w === 'was' || w === 'were' ? 0.8 : 0) +
-      (w === 'have' || w === 'has' || w === 'had' || w === "haven't" ? 0.7 : 0) +
-      (w === 'do' || w === 'does' || w === 'did' || w === "don't" || w === "doesn't" ? 0.7 : 0) +
-      (w === 'can' || w === 'could' || w === 'will' || w === 'would' || w === 'should' ? 0.7 : 0) +
-      (w === "can't" || w === "won't" || w === "wouldn't" || w === "shouldn't" ? 0.7 : 0)
+      (w.endsWith("'ll") || w.endsWith("'ve") || w.endsWith("'d") ? 0.4 : 0)
     );
 
-    // NOUN equation: suffix patterns -tion, -ment, -ness, -er, -or, -ity
-    const nounScore = (
+    // Noun suffixes: -tion/-sion(process→thing), -ment(result), -ness(quality), -ity(state), -er/-or(doer)
+    const nounSuffix = (
       (w.endsWith('tion') || w.endsWith('sion') ? 0.7 : 0) +
       (w.endsWith('ment') ? 0.6 : 0) +
       (w.endsWith('ness') ? 0.6 : 0) +
       (w.endsWith('ity') || w.endsWith('ety') ? 0.6 : 0) +
-      (w.endsWith('er') && len > 3 && !w.endsWith('ever') ? 0.3 : 0) +
-      (w.endsWith('or') && len > 3 ? 0.3 : 0) +
-      (len >= 5 && !w.endsWith('ing') && !w.endsWith('ly') ? 0.1 : 0)
+      (w.endsWith('er') && len > 4 ? 0.2 : 0) +
+      (w.endsWith('or') && len > 4 ? 0.2 : 0)
     );
 
-    // ADJECTIVE equation: suffix patterns -ly, -ful, -ous, -ive, -al, -able
-    const adjScore = (
+    // Adjective suffixes: -ly(manner), -ful(full of), -ous(having), -ive(tending), -al(relating), -able(capable)
+    const adjSuffix = (
       (w.endsWith('ly') && len > 3 ? 0.5 : 0) +
       (w.endsWith('ful') ? 0.6 : 0) +
-      (w.endsWith('ous') || w.endsWith('ious') ? 0.6 : 0) +
+      (w.endsWith('ous') ? 0.6 : 0) +
       (w.endsWith('ive') ? 0.5 : 0) +
       (w.endsWith('al') && len > 3 ? 0.4 : 0) +
       (w.endsWith('able') || w.endsWith('ible') ? 0.5 : 0) +
@@ -134,36 +128,64 @@ export class LanguageCortex {
       (w.endsWith('ic') && len > 3 ? 0.4 : 0)
     );
 
-    // CONJUNCTION equation: short connecting words
+    // ── LENGTH + PATTERN EQUATIONS — no word comparisons ──
+    // Function words are SHORT. Content words are LONG. This is a mathematical property of English.
+
+    // PRONOUN: length 1-4, high vowel ratio, often has apostrophe contractions
+    const pronounScore = (
+      (len === 1 ? 0.8 : 0) +                    // single letter → almost certainly pronoun (i)
+      (len <= 3 && vowelRatio >= 0.33 ? 0.4 : 0) + // short + vowels → pronoun-like
+      (len <= 4 && hasApostrophe ? 0.5 : 0) +     // contraction → pronoun + verb (i'm, we're, it's)
+      (len === 2 && consonantRatio >= 0.5 ? 0.3 : 0) // 2-letter consonant-heavy (he, we, my)
+    );
+
+    // VERB: has verb suffix OR short (2-4) with specific vowel patterns
+    const verbScore = (
+      verbSuffix +
+      (len >= 2 && len <= 4 && vowelRatio >= 0.3 && vowelRatio <= 0.6 && !nounSuffix && !adjSuffix ? 0.25 : 0) + // short balanced words often verbs
+      (hasApostrophe && len <= 6 ? 0.2 : 0) // contractions are often verb forms (don't, can't, won't)
+    );
+
+    // NOUN: has noun suffix OR long (5+) with no verb/adj suffix
+    const nounScore = (
+      nounSuffix +
+      (len >= 5 && !verbSuffix && !adjSuffix ? 0.2 : 0) // long words without other suffixes → default noun
+    );
+
+    // ADJECTIVE: has adj suffix
+    const adjScore = adjSuffix;
+
+    // CONJUNCTION: very short (2-3), specific consonant-vowel pattern
+    // "and" "but" "or" "so" "if" — all ≤3 letters, consonant-start, very common
     const conjScore = (
-      (w === 'and' || w === 'but' || w === 'or' || w === 'so' || w === 'yet' ? 0.9 : 0) +
-      (w === 'because' || w === 'since' || w === 'while' || w === 'although' ? 0.7 : 0) +
-      (w === 'if' || w === 'when' || w === 'then' || w === 'than' ? 0.6 : 0)
+      (len === 2 && consonantRatio >= 0.5 ? 0.2 : 0) +
+      (len === 3 && vowelRatio >= 0.33 && vowelRatio <= 0.5 ? 0.15 : 0)
     );
 
-    // PREPOSITION equation: short spatial/temporal words
+    // PREPOSITION: 2-4 letters, vowel-heavy, appears BETWEEN content words
+    // "to" "in" "on" "at" "by" "of" "up" — 2 letters, one vowel one consonant
     const prepScore = (
-      (w === 'to' || w === 'in' || w === 'on' || w === 'at' || w === 'by' ? 0.9 : 0) +
-      (w === 'for' || w === 'with' || w === 'from' || w === 'of' || w === 'about' ? 0.8 : 0) +
-      (w === 'up' || w === 'out' || w === 'off' || w === 'over' || w === 'into' ? 0.7 : 0) +
-      (w === 'through' || w === 'between' || w === 'after' || w === 'before' ? 0.6 : 0)
+      (len === 2 && vowelCount === 1 ? 0.5 : 0) +  // 2 letters, 1 vowel (to, in, on, at, by, of, up)
+      (len === 3 && vowelCount === 1 ? 0.3 : 0) +   // 3 letters, 1 vowel (for, out, off)
+      (len === 4 && vowelCount >= 1 ? 0.15 : 0)      // 4 letters (with, from, into, over)
     );
 
-    // DETERMINER equation: articles + demonstratives
+    // DETERMINER: very short (1-3), starts with specific consonants (th, m, y, s, a, n)
+    // "the" "a" "an" "my" "no" "some" — all ≤4, mostly start with t/a/m/s/n
     const detScore = (
-      (w === 'the' || w === 'a' || w === 'an' ? 0.9 : 0) +
-      (w === 'this' || w === 'that' || w === 'these' || w === 'those' ? 0.6 : 0) +
-      (w === 'my' || w === 'your' || w === 'his' || w === 'her' || w === 'our' || w === 'their' ? 0.7 : 0) +
-      (w === 'some' || w === 'any' || w === 'no' || w === 'every' || w === 'all' ? 0.5 : 0)
+      (len === 1 && vowelCount === 1 ? 0.3 : 0) +   // single vowel letter (a)
+      (len === 2 && w[0] === 'a' ? 0.3 : 0) +        // starts with 'a', 2 letters (an)
+      (len === 3 && w[0] === 't' && w[1] === 'h' ? 0.4 : 0) + // starts with 'th', 3 letters
+      (len <= 4 && (w[0] === 'm' || w[0] === 'y' || w[0] === 'n') && vowelCount >= 1 ? 0.2 : 0) // my, your, no
     );
 
-    // QUESTION WORD equation
+    // QUESTION WORD: starts with 'wh' or is 'how' — computed from first 2 letters
     const qwordScore = (
-      (w === 'what' || w === 'who' || w === 'where' || w === 'when' || w === 'why' || w === 'how' ? 0.9 : 0) +
-      (w === 'which' || w === 'whose' ? 0.7 : 0)
+      (w[0] === 'w' && w[1] === 'h' && len >= 3 && len <= 6 ? 0.8 : 0) + // wh- words
+      (len === 3 && w[0] === 'h' && w[1] === 'o' && w[2] === 'w' ? 0.8 : 0) // how
     );
 
-    // Normalize so max = 1
+    // Normalize
     const max = Math.max(0.01, pronounScore, verbScore, nounScore, adjScore, conjScore, prepScore, detScore, qwordScore);
     return {
       pronoun: pronounScore / max,

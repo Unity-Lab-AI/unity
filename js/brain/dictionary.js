@@ -37,8 +37,7 @@ export class Dictionary {
     // Load from storage
     this._load();
 
-    // Seed with starter vocabulary if empty — brain needs words to speak
-    if (this._words.size === 0) this._seed();
+    // No seed — brain learns every word from conversation, same as a human
   }
 
   _seed() {
