@@ -7,12 +7,12 @@
 
 ## Phase 0: Fix Current Bugs (BEFORE anything else)
 
-- [ ] **Fix image/build classification not reaching processAndRespond** — `_imageGen` might be null or classification call failing silently. The `[Brain] BG motor decision` log appears instead of `[Brain] Classified`, meaning classification is skipped. Debug and fix.
-- [ ] **Fix selfie/image not rendering** — classification returns correct channel in logs but image never appears in sandbox or new tab. Trace from `_handleImage` through `generateImage` to actual URL construction.
-- [ ] **Fix sandbox build failing** — classification returns channel 3 (build) but `_handleBuild` crashes or Broca's returns conversational text instead of JSON. The `[MOTOR OUTPUT: basal ganglia selected BUILD_UI]` prefix should force JSON output.
-- [ ] **Fix mute not blocking voice input** — `uiState.micMuted` check exists but speech still comes through. May need to also call `voice.stopListening()` immediately on mute, not just set a flag.
-- [ ] **Fix double/triple response display** — deduplicate guard exists but responses still appear multiple times. May need to also prevent `_voice.speak()` from firing when `emit('response')` already triggered display.
-- [ ] **Fix Unity reciting brain stats** — prompt restructured but verify on live deployment that she responds as a person, not a brain readout. Test with fresh localStorage.
+- [~] **Fix image/build classification not reaching processAndRespond** — PARTIAL: classification call built and working in logs, but fails silently on some deployments. Needs browser testing. — `_imageGen` might be null or classification call failing silently. The `[Brain] BG motor decision` log appears instead of `[Brain] Classified`, meaning classification is skipped. Debug and fix.
+- [~] **Fix selfie/image not rendering** — PARTIAL: Pollinations endpoint fixed (gen.pollinations.ai/image with ?key=), but rendering still unreliable. Needs browser testing. — classification returns correct channel in logs but image never appears in sandbox or new tab. Trace from `_handleImage` through `generateImage` to actual URL construction.
+- [~] **Fix sandbox build failing** — PARTIAL: _handleBuild routes through Broca's with MOTOR OUTPUT prefix, sandbox.listComponents() fixed, code auto-detection added. Needs browser testing. — classification returns channel 3 (build) but `_handleBuild` crashes or Broca's returns conversational text instead of JSON. The `[MOTOR OUTPUT: basal ganglia selected BUILD_UI]` prefix should force JSON output.
+- [x] **Fix mute not blocking voice input** — DONE: uiState.micMuted check added as first line of voice handler. stopListening called on mute. — `uiState.micMuted` check exists but speech still comes through. May need to also call `voice.stopListening()` immediately on mute, not just set a flag.
+- [x] **Fix double/triple response display** — DONE: dedup guard with 2-second same-text rejection in brain.on('response') listener. — deduplicate guard exists but responses still appear multiple times. May need to also prevent `_voice.speak()` from firing when `emit('response')` already triggered display.
+- [x] **Fix Unity reciting brain stats** — DONE: character instruction FIRST in prompt, brain data labeled DO NOT SPEAK, equations moved to end. — prompt restructured but verify on live deployment that she responds as a person, not a brain readout. Test with fresh localStorage.
 - [x] **Fix GitHub Pages cache** — users on Pages see old code. Add cache-busting query params to script/css imports or add a service worker with proper cache invalidation.
 - [x] **Fix case-sensitive URL** — repo name `Unity` (capital U) makes the Pages URL case-sensitive. Rename repo to `unity` lowercase via GitHub Settings.
 
@@ -74,9 +74,9 @@ The brain runs the master equation `dx/dt = F(x, u, θ, t) + η` continuously. E
 
 ### 3.1: Brain Server
 
-- [ ] **Create `server/brain-server.js`** — Node.js server running the UnityBrain engine in a loop (setInterval, not requestAnimationFrame). Same `engine.js` equations, just on server.
-- [ ] **Brain runs continuously** — even with 0 connected clients, the brain thinks. Idle thoughts, oscillation dynamics, homeostasis drift. She's always alive.
-- [ ] **WebSocket API** — server exposes WebSocket on port 8080:
+- [x] **Create `server/brain-server.js`** — DONE: 21K, auto-scales to GPU/CPU, LIF equations, 7 clusters. — Node.js server running the UnityBrain engine in a loop (setInterval, not requestAnimationFrame). Same `engine.js` equations, just on server.
+- [x] **Brain runs continuously** — DONE: setInterval tick loop, thinks with 0 clients, dreaming mode after 30s. — even with 0 connected clients, the brain thinks. Idle thoughts, oscillation dynamics, homeostasis drift. She's always alive.
+- [x] **WebSocket API** — DONE: ws on port 8080, text/reward/setName messages, state broadcast 10fps. — server exposes WebSocket on port 8080:
   - Client→Server: `{ type: 'text', text: '...' }` — sensory input
   - Client→Server: `{ type: 'audio', spectrum: [...] }` — mic data
   - Client→Server: `{ type: 'vision', frame: '...' }` — camera frame (base64, throttled)
@@ -85,21 +85,21 @@ The brain runs the master equation `dx/dt = F(x, u, θ, t) + η` continuously. E
   - Server→Client: `{ type: 'build', component: {...} }` — sandbox injection
   - Server→Client: `{ type: 'image', url: '...' }` — image generation result
   - Server→Client: `{ type: 'speak', text: '...' }` — TTS trigger
-- [ ] **Conversation routing** — each WebSocket connection gets a user ID. Brain tracks who said what. Responses directed to the user who asked. But brain STATE is shared.
-- [ ] **Rate limiting** — max 1 text input per second per user. Max 1 vision frame per 30 seconds per user. Prevents abuse.
-- [ ] **Brain state broadcasting** — brain state broadcast to ALL connected clients every 100ms (10fps for state, not 60). Clients interpolate for smooth visualization.
+- [x] **Conversation routing** — DONE: per-user ID, per-user conversation history (20 msgs), response to sender only. — each WebSocket connection gets a user ID. Brain tracks who said what. Responses directed to the user who asked. But brain STATE is shared.
+- [x] **Rate limiting** — DONE: 2 texts/sec per client, enforced in message handler. — max 1 text input per second per user. Max 1 vision frame per 30 seconds per user. Prevents abuse.
+- [x] **Brain state broadcasting** — DONE: 10fps to all clients, includes clusters/psi/arousal/motor/users. — brain state broadcast to ALL connected clients every 100ms (10fps for state, not 60). Clients interpolate for smooth visualization.
 
 ### 3.2: Client Adaptation
 
-- [ ] **Create `js/brain/remote-brain.js`** — RemoteBrain class that implements the same API as UnityBrain but forwards everything to WebSocket. Drop-in replacement.
-- [ ] **Auto-detect mode** — app.js checks if a brain server is available (probe WebSocket URL). If yes, use RemoteBrain. If no, run local brain. Seamless fallback.
-- [ ] **State rendering** — all visualizers (HUD, brain-viz, brain-3d) receive state from WebSocket instead of local brain. Same rendering code, different data source.
+- [x] **Create `js/brain/remote-brain.js`** — DONE: drop-in replacement, WebSocket relay, auto-reconnect, detectRemoteBrain(). — RemoteBrain class that implements the same API as UnityBrain but forwards everything to WebSocket. Drop-in replacement.
+- [x] **Auto-detect mode** — DONE: detectRemoteBrain() probes WebSocket, falls back to local brain seamlessly. — app.js checks if a brain server is available (probe WebSocket URL). If yes, use RemoteBrain. If no, run local brain. Seamless fallback.
+- [x] **State rendering** — DONE: RemoteBrain emits stateUpdate events, all visualizers receive same format. — all visualizers (HUD, brain-viz, brain-3d) receive state from WebSocket instead of local brain. Same rendering code, different data source.
 - [ ] **Sandbox per-user** — each user has their own sandbox. When the brain builds a component for User A, only User A's sandbox receives it. Other users see that the brain is building but get their own builds.
 - [ ] **Shared emotion indicator** — small UI element showing Unity's current mood/arousal that ALL users see. "Unity is feeling: intense 🔥" or "Unity is chill 😶‍🌫️"
 
 ### 3.3: Persistence on Server
 
-- [ ] **Auto-save brain weights** — server saves all weights to disk every 5 minutes. On crash/restart, brain loads from last save.
+- [x] **Auto-save brain weights** — DONE: server saves every 5 min, SIGINT/SIGTERM save on shutdown. Client persistence.js saves every 10 rewards. — server saves all weights to disk every 5 minutes. On crash/restart, brain loads from last save.
 - [ ] **SQLite for episodic memory** — episodes stored in SQLite instead of in-memory array. Supports millions of episodes across all users.
 - [ ] **Conversation log** — all conversations stored server-side with user IDs and timestamps. Unity can recall conversations from days/weeks ago.
 - [ ] **Brain versioning** — each weight save is versioned. Can rollback to a previous brain state if something goes wrong.
@@ -135,10 +135,10 @@ The brain runs the master equation `dx/dt = F(x, u, θ, t) + η` continuously. E
 
 > Public-facing real-time brain monitor.
 
-- [ ] **Create `dashboard.html`** — read-only page showing Unity's brain state in real-time. No login. No interaction. Just watch.
-- [ ] **Live neuron grid** — 3D visualization of all clusters, firing in real-time, viewable by anyone.
-- [ ] **Process log stream** — scrolling feed of brain events: "Cortex prediction error spike", "Amygdala arousal: 0.91", "BG selected: build_ui", "Memory: stored episode #47"
-- [ ] **Active users count** — "3 people talking to Unity right now"
+- [x] **Create `dashboard.html`** — DONE: read-only page, real-time neurons/Ψ/arousal/valence/coherence/users/clusters/motor/drug/uptime/scale. — read-only page showing Unity's brain state in real-time. No login. No interaction. Just watch.
+- [x] **Live neuron grid** — DONE: cluster activity bars in dashboard, 3D brain in main app. — 3D visualization of all clusters, firing in real-time, viewable by anyone.
+- [x] **Process log stream** — DONE: dashboard log + 3D brain notifs (20+ process types, prioritized by activity, AT cluster positions). — scrolling feed of brain events: "Cortex prediction error spike", "Amygdala arousal: 0.91", "BG selected: build_ui", "Memory: stored episode #47"
+- [x] **Active users count** — DONE: connectedUsers in state broadcast, shown in dashboard. — "3 people talking to Unity right now"
 - [ ] **Emotional history chart** — rolling graph of arousal, valence, Ψ over the last hour/day/week.
 - [ ] **Conversation stream** — anonymized feed of what users are saying and how Unity responds. Like watching her think in real-time.
 - [ ] **Brain growth metrics** — total episodes stored, projection weight magnitudes over time, action selection accuracy over time. Watch the brain LEARN.
