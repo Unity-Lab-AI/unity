@@ -732,7 +732,19 @@ When asked to generate an image, respond with ONLY the image description/prompt 
       const backupFile = WEIGHTS_FILE.replace('.json', `-v${this._saveVersion % 5}.json`);
       fs.writeFileSync(backupFile, JSON.stringify(data, null, 2));
 
-      console.log(`[Brain] State saved v${this._saveVersion} at t=${this.time.toFixed(1)}s`);
+      // Also save InnerVoice dictionary if available
+      if (brain?.innerVoice?.dictionary?.export) {
+        try {
+          const dictData = brain.innerVoice.dictionary.export();
+          const dictFile = path.join(__dirname, 'brain-dictionary.json');
+          fs.writeFileSync(dictFile, JSON.stringify(dictData));
+          console.log(`[Brain] State saved v${this._saveVersion} + dictionary (${brain.innerVoice.dictionary.size} words)`);
+        } catch (de) {
+          console.log(`[Brain] State saved v${this._saveVersion} (dict save failed: ${de.message})`);
+        }
+      } else {
+        console.log(`[Brain] State saved v${this._saveVersion} at t=${this.time.toFixed(1)}s`);
+      }
     } catch (err) {
       console.warn('[Brain] Save failed:', err.message);
     }
@@ -785,9 +797,34 @@ brain.start();
   try {
     const { InnerVoice } = await import('../js/brain/inner-voice.js');
     brain.innerVoice = new InnerVoice();
-    // Load saved dictionary if exists
-    if (brain.innerVoice.load) brain.innerVoice.load();
-    console.log(`[Brain] InnerVoice loaded — dictionary: ${brain.innerVoice.dictionary?.size || 0} words`);
+    // Load saved dictionary from server-side file (not localStorage)
+    const dictFile = path.join(__dirname, 'brain-dictionary.json');
+    if (fs.existsSync(dictFile)) {
+      try {
+        const dictData = JSON.parse(fs.readFileSync(dictFile, 'utf-8'));
+        if (dictData.words) {
+          for (const entry of dictData.words) {
+            brain.innerVoice.dictionary._words.set(entry.word, {
+              word: entry.word,
+              pattern: new Float64Array(entry.pattern),
+              arousal: entry.arousal,
+              valence: entry.valence,
+              frequency: entry.frequency,
+            });
+          }
+        }
+        if (dictData.bigrams) {
+          for (const bg of dictData.bigrams) {
+            brain.innerVoice.dictionary._bigrams.set(bg.word, new Map(bg.followers));
+          }
+        }
+        console.log(`[Brain] Dictionary loaded from disk: ${brain.innerVoice.dictionary.size} words`);
+      } catch (e) {
+        console.warn(`[Brain] Dictionary load failed: ${e.message}`);
+      }
+    } else {
+      console.log(`[Brain] No saved dictionary — starting fresh (${brain.innerVoice.dictionary?.size || 0} bootstrap words)`);
+    }
   } catch (e) {
     console.warn(`[Brain] InnerVoice not available: ${e.message}`);
     brain.innerVoice = null;
@@ -939,6 +976,26 @@ const httpServer = http.createServer((req, res) => {
         res.end(JSON.stringify({ error: e.message }));
       }
     });
+    return;
+  }
+
+  // ── Force save dictionary now ──
+  if (req.url === '/api/save-dict') {
+    if (brain.innerVoice?.dictionary?.export) {
+      try {
+        const dictData = brain.innerVoice.dictionary.export();
+        const dictFile = path.join(__dirname, 'brain-dictionary.json');
+        fs.writeFileSync(dictFile, JSON.stringify(dictData));
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, words: brain.innerVoice.dictionary.size }));
+      } catch (e) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    } else {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'no dictionary' }));
+    }
     return;
   }
 
