@@ -1042,6 +1042,7 @@ Vision: ${state.visionDescription || 'none'}`;
   };
   wireSettings('settings-btn');
   wireSettings('hud-settings-btn');
+  wireSettings('landing-settings-btn');
 
   // ── Wire voice input → brain ──
   let _currentResponseId = 0;
