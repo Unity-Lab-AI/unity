@@ -339,3 +339,20 @@ Tasks completed: 12
 Major: visual attention in brain equations, efference copy echo suppression, Pollinations vision working, dead backend detection, brain equations page complete with all systems documented.
 
 ---
+
+## 2026-04-11 Session: SESSION_20260411_7 — Projection Learning + Full Brain Prompt + Commands
+
+### COMPLETED
+
+- [x] **Projection learning on inter-cluster weights** — `ΔW = η·δ·source·target` on all 16 projections via `ClusterProjection.learn()`. Reward shapes cortex→BG mapping over time.
+- [x] **Full brain state in AI prompt** — Broca's area sends arousal/valence/Ψ/coherence with INTERPRETATIONS ("You are WIRED"), not just percentages. All cluster firing rates, memory state, vision, drug effects.
+- [x] **Synchronous intent classification** — replaced async fire-and-forget with direct await call. No more race conditions on build/image routing.
+- [x] **Code auto-detection in responses** — brain detects code blocks in text responses and auto-injects into sandbox. Catches JSON components and raw JS/HTML.
+- [x] **Sandbox capabilities in prompt** — Unity knows about Blob URLs, drag-and-drop, FileReader, code editors, full DOM access.
+- [x] **/think command** — shows exact system prompt + brain state in sandbox code viewer.
+- [x] **Settings button** — ⚙ in bottom toolbar reopens setup modal for model changes.
+- [x] **Removed ALL word lists** — no emotional words, no visual question words, no self-reference words. All routing through neural projections + AI classification bootstrap.
+- [x] **Unified image handler** — single _handleImage for all image types, AI generates prompts directly via Pollinations.
+- [x] **Brain equations page** — added sections 8.10 (Projection Learning) and 8.11 (Broca's Area / What AI Receives).
+
+---

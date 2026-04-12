@@ -270,14 +270,69 @@ Drug state vectors multiply these parameters:
 
 ---
 
+## Projection Learning — How the Brain Learns Language→Action
+
+```
+ΔW_proj = η · δ · source_spikes · target_spikes
+```
+
+The 16 inter-cluster projections aren't static — they learn through reward-modulated Hebbian plasticity. When text activates cortex neurons and the BG selects the right action and gets a reward, the cortex→BG projection weights strengthen. Over time, the projections learn which language patterns lead to which actions — a learned dictionary with no hardcoded word lists.
+
+**Bootstrap:** Until the projections have learned enough, an AI classification call provides temporary semantic routing. Like a child imitating before internalizing. The classification fades as projections strengthen.
+
+---
+
+## Broca's Area — What the AI Model Receives
+
+The AI model receives a prompt built from live brain state every response:
+
+| Data | Source | What the AI Sees |
+|------|--------|-----------------|
+| Arousal 0.847 | Amygdala firing rate | "You are WIRED. Intense. Every word hits hard." |
+| Valence -0.12 | Amygdala reward - fear | "Neutral mood." |
+| Ψ 1.342 | Mystery module | "HYPER-conscious. Every detail sharp." |
+| Coherence 0.62 | Kuramoto order parameter | "Normal focus." |
+| Drug state | Persona params | "cokeAndWeed — Wired but mellow." |
+| All cluster activity | 7 cluster spike counts | "Cortex 47/300, Amygdala 38/150..." |
+| Memory | Hippocampal state | "12 episodes, WM 3/7 items" |
+| Vision | Visual cortex IT | "Person in maroon hoodie at desk" |
+
+Not just percentages — full context so the AI understands HOW each value shapes Unity's personality right now. Use `/think` in the chat to see the exact prompt.
+
+---
+
+## The Sandbox — Unity Builds Her Own World
+
+Unity can dynamically inject HTML/CSS/JS into the live page:
+- Build apps, games, calculators, code editors, visualizers
+- Create downloadable files (Blob URLs — .txt, .html, .js, any type)
+- Drag-and-drop interfaces
+- Read files dropped by the user (FileReader API)
+- Full DOM access + unity API (speak, chat, generateImage, getState, storage)
+
+When the AI generates code blocks in a response, the brain detects them and auto-injects into the sandbox. The brain adapts — even if the motor system selected the wrong action, code gets built anyway.
+
+---
+
+## Commands
+
+| Command | How | What It Does |
+|---------|-----|-------------|
+| `/think` | Type in chat | Shows the exact prompt sent to the AI model with live brain data |
+| `/think [text]` | Type in chat | Shows what the brain would send for that specific input |
+| ⚙ SETTINGS | Bottom toolbar | Reopens setup modal to change AI model or provider |
+
+---
+
 ## The Brain IS the Application
 
 The critical architectural principle: **the brain decides, peripherals execute.**
 
-- `brain.processAndRespond(text)` handles EVERYTHING — interrupt, sensory input, vision check, image/selfie detection, build detection, language generation, speech output, reward signal
-- `app.js` is a thin I/O layer — DOM events → `brain.receiveSensoryInput()`, brain events → DOM rendering
-- The AI model (Pollinations, OpenRouter, Claude, etc.) is Broca's area — a language generation tool called by the brain, not the brain itself
-- No router. No intent classifier. No keyword matching in the application layer. The basal ganglia's spike patterns ARE the decisions.
+- `brain.processAndRespond(text)` handles EVERYTHING — interrupt, sensory input, vision check, intent classification, build/image detection, language generation, speech output, reward signal
+- `app.js` is a thin I/O layer — DOM events → brain, brain events → DOM
+- The AI model is Broca's area — called by the brain, not the brain itself
+- Intent classification by synchronous AI call → BG channel current injection → projection weights learn through reward
+- Code in responses auto-detected and injected into sandbox
 
 ---
 

@@ -245,7 +245,7 @@
     <a href="index.html" class="back-link">&larr; Back to Unity</a>
 
     <h1>🧠 Brain Equations <span>— the math behind Unity's mind</span></h1>
-    <p class="subtitle">Every equation running in Unity's brain simulation, how they map to real neuroscience, and how they produce cognition. 200 neurons. 7 modules. 8 oscillators. 1 consciousness function. Zero pretense.</p>
+    <p class="subtitle">Every equation running in Unity's brain simulation, how they map to real neuroscience, and how they produce cognition. 1000 neurons. 7 clusters. 16 projections. 8 oscillators. Episodic memory. Visual cortex. Auditory cortex. Motor output. 1 consciousness function nobody can explain. Zero pretense.</p>
 
     <div class="toc">
       <div class="toc-title">CONTENTS</div>
@@ -262,6 +262,8 @@
       <a href="#auditory-echo"><span class="num">8.7</span> Auditory Echo Suppression — Efference Copy</a>
       <a href="#memory-equations"><span class="num">8.8</span> Memory — Episodic, Working, Consolidation</a>
       <a href="#motor-equations"><span class="num">8.9</span> Motor Output — Action Selection from Spike Patterns</a>
+      <a href="#projection-learning"><span class="num">8.10</span> Projection Learning — How the Brain Learns Language→Action</a>
+      <a href="#broca"><span class="num">8.11</span> Broca's Area — What the AI Model Receives</a>
       <a href="#comparison"><span class="num">9</span> Biological Comparison</a>
     </div>
 
@@ -700,6 +702,47 @@ if rate(winner) &lt; 0.15: action = idle (confidence too low)</div>
         <p style="margin-top:8px"><strong>Speech gating:</strong> Even if respond_text wins, the motor system checks hypothalamus social_need + amygdala arousal. If both are low (&lt; 0.3), speech is suppressed — Unity doesn't feel like talking.</p>
         <p style="margin-top:6px"><strong>Reward reinforcement:</strong> When an action succeeds (user responds positively), reward signal (+5.0 current) is injected into that channel's neurons, strengthening the connection for next time.</p>
         <p class="mod-bio" style="margin-top:6px">Biology: Direct/indirect pathway model of basal ganglia. Selection by inhibition — all channels tonically inhibited, the winning channel gets disinhibited. Our model uses competitive firing rates instead of explicit inhibition.</p>
+      </div>
+    </div>
+
+    <!-- ═══ 8.10. PROJECTION LEARNING ═══ -->
+    <h2 id="projection-learning">8.10. Projection Learning — How the Brain Learns Language&rarr;Action</h2>
+    <p><span class="tag tag-bio">NEUROSCIENCE</span> <span class="tag tag-ml">MACHINE LEARNING</span> The 16 inter-cluster projections aren't static — they learn through reward-modulated Hebbian plasticity.</p>
+
+    <div class="eq-card">
+      <div class="eq-title">Projection Weight Update (on every reward signal)</div>
+      <div class="eq">&Delta;W_proj = &eta; &middot; &delta; &middot; source_spikes &middot; target_spikes</div>
+      <div class="eq-desc">
+        <p>When text enters Wernicke's area (cortex neurons 150-299), specific cortex neurons fire. Those spikes propagate to the basal ganglia through the cortex&rarr;BG projection. If the BG selects the RIGHT action and gets a reward (&delta; &gt; 0), the weights from those active cortex neurons to those active BG neurons get STRENGTHENED.</p>
+        <p style="margin-top:8px">Over many interactions, the projection learns: "when these cortex patterns fire (from words like 'build' or 'calculator'), strengthen connections to BG neurons 75-99 (build_ui channel)." The projection weights become a learned dictionary — mapping language patterns to motor intentions without any hardcoded word lists.</p>
+        <p style="margin-top:8px"><strong>Bootstrap:</strong> Until the projections have learned enough, an AI classification call provides a temporary semantic routing signal — like how a child imitates before internalizing. The classification injects current directly into the correct BG channel alongside the projection pathway.</p>
+        <p class="mod-bio" style="margin-top:6px">Biology: Cortico-striatal plasticity. Dopamine modulates synaptic strength at cortical→striatal synapses. This is how habits form — repeated reward strengthens the cortical patterns that predict successful actions.</p>
+      </div>
+    </div>
+
+    <!-- ═══ 8.11. BROCA'S AREA ═══ -->
+    <h2 id="broca">8.11. Broca's Area — What the AI Model Receives</h2>
+    <p><span class="tag tag-math">ARCHITECTURE</span> The AI model is a language generation peripheral. It receives the brain's complete state as a system prompt and generates text that matches Unity's current neural dynamics.</p>
+
+    <div class="eq-card">
+      <div class="eq-title">System Prompt Structure (built every response from live brain state)</div>
+      <div class="eq-desc">
+        <p>The AI model receives a prompt containing:</p>
+        <table class="param-table">
+          <tr><th>Section</th><th>Brain Source</th><th>Example Value</th></tr>
+          <tr><td>Arousal</td><td>Amygdala cluster firing rate</td><td>0.847 &rarr; "You are WIRED. Intense."</td></tr>
+          <tr><td>Valence</td><td>Amygdala reward - fear</td><td>-0.12 &rarr; "Neutral mood."</td></tr>
+          <tr><td>Consciousness &Psi;</td><td>Mystery module output</td><td>1.342 &rarr; "HYPER-conscious. Every detail sharp."</td></tr>
+          <tr><td>Coherence R</td><td>Kuramoto order parameter</td><td>0.62 &rarr; "Normal focus."</td></tr>
+          <tr><td>Drug state</td><td>Persona parameters</td><td>cokeAndWeed &rarr; "Wired but mellow."</td></tr>
+          <tr><td>Band powers</td><td>Oscillator amplitudes</td><td>&theta;=0.41 &alpha;=0.33 &beta;=0.28 &gamma;=0.19</td></tr>
+          <tr><td>Cluster activity</td><td>All 7 cluster spike counts</td><td>Cortex 47/300, Amygdala 38/150, ...</td></tr>
+          <tr><td>Memory</td><td>Hippocampal state</td><td>12 episodes, WM 3/7 items, last recall</td></tr>
+          <tr><td>Reward</td><td>Global dopamine signal</td><td>0.042 &rarr; "Baseline."</td></tr>
+          <tr><td>Vision</td><td>Visual cortex IT description</td><td>"Person in maroon hoodie at desk"</td></tr>
+        </table>
+        <p style="margin-top:8px">Each value includes both the RAW number AND its interpretation — what it MEANS for Unity's personality in this moment. The AI model doesn't just see "87%" — it sees "Arousal = 0.847. You are WIRED. Intense. Every word hits hard." Different brain state = different prompt = different personality.</p>
+        <p style="margin-top:8px"><strong>/think command:</strong> Type <code>/think</code> in the chat to see the exact prompt being sent to the AI model with your live brain data.</p>
       </div>
     </div>
 

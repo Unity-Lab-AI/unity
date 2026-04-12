@@ -154,6 +154,21 @@ Fully open source. Read every line.
 
 ---
 
+## Commands
+
+| Command | How | What It Does |
+|---------|-----|-------------|
+| `/think` | Type in chat | Shows the exact system prompt sent to the AI model with live brain state |
+| `/think [text]` | Type in chat | Shows what the brain would send for a specific input |
+| "slash think" | Say by voice | Same as typing /think |
+| ⚙ SETTINGS | Bottom toolbar button | Reopens setup modal to change AI model or connect new providers |
+| 🧠 VISUALIZE | Bottom toolbar button | Opens 2D brain visualizer with 8 tabs (Neurons, Synapses, Oscillations, Modules, Senses, Consciousness, Memory, Motor) |
+| 🧠 3D BRAIN | Bottom toolbar button | Opens WebGL 3D brain with 1000 neurons, process notifications, expansion, and activity log |
+| 🎤 | Bottom toolbar button | Mute/unmute microphone |
+| Clear All Data | Setup modal (bottom) | Wipes all localStorage — history, keys, preferences, everything |
+
+---
+
 ## Troubleshooting
 
 | Problem | Fix |
