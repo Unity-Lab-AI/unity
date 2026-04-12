@@ -818,7 +818,9 @@ async function bootUnity(apiKey, perms) {
 
   if (perms.camera && perms.cameraStream) {
     brain.connectCamera(perms.cameraStream);
-    // Set up IT-level vision describer (calls AI for object recognition)
+    // Set up IT-level vision describer (only for local brain — server brain handles its own)
+    if (!brain.visualCortex?.setDescriber) console.log('[Unity] Server brain — skipping local vision describer');
+    else {
     // Vision describer — sends actual camera frame to Pollinations GPT-4o
     // which DOES support vision/image understanding via the openai model.
     brain.visualCortex.setDescriber(async (dataUrl) => {
@@ -859,6 +861,7 @@ async function bootUnity(apiKey, perms) {
         return 'Camera active, processing...';
       }
     });
+    } // close setDescriber guard
   }
 
   // ── Connect brain peripherals — brain controls everything ──
