@@ -765,9 +765,26 @@ async function bootUnity(apiKey, perms) {
   }
 
   // ══════════════════════════════════════════════════════════════
-  // CREATE THE BRAIN — the one and only
+  // CREATE THE BRAIN
+  // Server connected + NOT brain-only → use server for everything
+  // Brain-only mode → local brain (own dictionary, no AI)
+  // No server → local brain
   // ══════════════════════════════════════════════════════════════
-  brain = new UnityBrain();
+  if (landingBrainSource && landingBrainSource.isConnected() && !window._brainOnlyMode) {
+    brain = landingBrainSource;
+    console.log('[Unity] Using server brain (text via Pollinations on server)');
+  } else {
+    brain = new UnityBrain();
+    brain.start();
+    console.log(`[Unity] Using local brain${window._brainOnlyMode ? ' (BRAIN ONLY — no AI text)' : ''}`);
+    // If server is connected, still wire state updates for visualization
+    if (landingBrainSource && landingBrainSource.isConnected()) {
+      landingBrainSource.on('stateUpdate', (state) => {
+        if (landingBrain3d) landingBrain3d.updateState(state);
+        updateLandingStats(state);
+      });
+    }
+  }
 
   // ── Connect sensory peripherals ──
   if (perms.mic && perms.micStream) {
