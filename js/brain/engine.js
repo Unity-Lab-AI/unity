@@ -628,7 +628,7 @@ export class UnityBrain extends EventEmitter {
     // Call Pollinations DIRECTLY for builds — NOT through Broca's area.
     // Broca's persona prompt makes the AI roleplay instead of outputting clean JSON.
     // Tell the AI what's already built so it can modify/replace instead of duplicating
-    const existingComponents = this._sandbox ? this._sandbox.list() : [];
+    const existingComponents = this._sandbox ? this._sandbox.listComponents() : [];
     const existingInfo = existingComponents.length > 0
       ? `\n\nEXISTING COMPONENTS IN SANDBOX: ${existingComponents.join(', ')}. If the user wants to modify an existing component, use the SAME id to replace it. If building something new, use a new id.`
       : '';
