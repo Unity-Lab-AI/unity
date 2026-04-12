@@ -678,6 +678,17 @@ Vision: ${state.visionDescription || 'none'}`;
   const micMuteBtn = document.getElementById('mic-mute-btn');
   if (micMuteBtn) micMuteBtn.addEventListener('click', toggleMicMute);
 
+  // Settings button — shows setup modal again for model changes
+  const settingsBtn = document.getElementById('settings-btn');
+  if (settingsBtn) {
+    settingsBtn.addEventListener('click', () => {
+      setupModal.classList.remove('hidden');
+      // Update start button text since brain is already running
+      startBtn.textContent = 'Apply Changes';
+      startBtn.disabled = false;
+    });
+  }
+
   // ── Wire voice input → brain ──
   let _currentResponseId = 0;
 
