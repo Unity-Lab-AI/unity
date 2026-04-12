@@ -10,7 +10,15 @@
  *
  * The visualizers, sandbox, voice, chat — all work the same.
  * They just receive state from the server instead of local math.
+ *
+ * NOTE: even on the server-brain path, we still instantiate a REAL
+ * local InnerVoice. The server handles the N-neuron simulation but
+ * the language cortex runs client-side so Unity's persona self-image
+ * (docs/Ultimate Unity.txt) is loaded into the browser dictionary via
+ * the same pure-equation learnSentence() pipeline used by local brain.
  */
+
+import { InnerVoice } from './inner-voice.js';
 
 class EventEmitter {
   constructor() { this._listeners = {}; }
@@ -65,7 +73,10 @@ export class RemoteBrain extends EventEmitter {
       _describing: false,
     };
     this.sensory = { _cameraStream: null };
-    this.innerVoice = { save() {}, getState() { return {}; }, learn() {} };
+    // REAL local InnerVoice so loadPersona works and the memory tab shows
+    // dictionary / bigram / usage-type stats from the actual persona file.
+    // app.js fetches docs/Ultimate Unity.txt and calls loadPersona() on this.
+    this.innerVoice = new InnerVoice();
     this.clusters = {};
 
     this._connect();
