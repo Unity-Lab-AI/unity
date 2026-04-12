@@ -610,25 +610,15 @@ export class UnityBrain extends EventEmitter {
     // Clear our own interrupt flag
     this.motor._interruptFlag = false;
 
-    // 3. CLASSIFY INTENT — direct synchronous call, not fire-and-forget.
-    // The AI model IS Wernicke's area for semantic understanding.
-    // This determines what action the brain takes.
-    let classifiedAction = 'respond_text'; // default
-    console.log('[Brain] _imageGen exists:', !!this._imageGen, 'has chat:', !!this._imageGen?.chat);
-    if (this._imageGen?.chat) {
-      try {
-        const classResult = await this._imageGen.chat([
-          { role: 'system', content: 'Classify this message into ONE action. Reply with ONLY the number:\n0 = conversation/chat/question\n1 = generate/show image/picture/photo/selfie\n3 = build/create/code a UI component/app/tool/game/calculator/widget in the sandbox\nReply ONLY the digit.' },
-          { role: 'user', content: text },
-        ], { temperature: 0 });
-        const digit = parseInt((classResult || '0').trim().charAt(0));
-        if (digit === 1) classifiedAction = 'generate_image';
-        else if (digit === 3) classifiedAction = 'build_ui';
-        console.log(`[Brain] Classified "${text.slice(0, 40)}..." → ${classifiedAction}`);
-      } catch (err) {
-        console.warn('[Brain] Classification failed:', err.message, '— defaulting to respond_text');
-      }
-    }
+    // 3. READ MOTOR OUTPUT — the BG decides the action.
+    // Embedding-based semantic routing + learned projection weights
+    // drive BG channel firing. The motor output IS the classification.
+    // No external AI call needed.
+    // Run a few extra steps to let the input propagate through cortex→BG
+    for (let i = 0; i < 20; i++) this.step(0.001);
+
+    const classifiedAction = this.motor.selectedAction || 'respond_text';
+    console.log(`[Brain] BG motor decision: ${classifiedAction} (confidence: ${this.motor.confidence.toFixed(3)})`);
 
     // 4. Wait for visual cortex if describing
     if (this.visualCortex.isActive() && this.visualCortex._describing) {
@@ -642,12 +632,9 @@ export class UnityBrain extends EventEmitter {
     const includesSelf = true;
 
     if (classifiedAction === 'build_ui' && this._brocasArea && this._sandbox) {
-      // Inject build current into BG for learning
-      for (let i = 75; i < 100; i++) this.clusters.basalGanglia.injectCurrent(new Float64Array(150).fill(0).map((_, idx) => idx >= 75 && idx < 100 ? 15 : 0));
-      this.giveReward(0.1); // reinforce this classification
+      this.giveReward(0.1);
       return this._handleBuild(text);
     } else if (classifiedAction === 'generate_image' && this._imageGen) {
-      for (let i = 25; i < 50; i++) this.clusters.basalGanglia.injectCurrent(new Float64Array(150).fill(0).map((_, idx) => idx >= 25 && idx < 50 ? 15 : 0));
       this.giveReward(0.1);
       return this._handleImage(text, includesSelf);
     }
