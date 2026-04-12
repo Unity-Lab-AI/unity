@@ -131,53 +131,120 @@ const POOL = {
  * @param {boolean} inputAnalysis.isQuestion
  * @returns {string} selected response text
  */
-export function selectResponse(brainState, inputAnalysis = {}) {
+/**
+ * Classify what the user SAID — not how the brain reacted, but what
+ * category of input it is. This is the EDNA logic: read the caller's
+ * intent, then pick a response that matches the content.
+ */
+function classifyInput(text) {
+  if (!text) return 'unknown';
+  const t = text.toLowerCase().trim();
+
+  // Greetings
+  if (/^(hey|hi|hello|yo|sup|what'?s up|howdy|good (morning|afternoon|evening))/.test(t)) return 'greeting';
+  if (/^(how are you|how'?s it going|how you doing|what'?s good)/.test(t)) return 'greeting';
+
+  // Questions
+  if (t.includes('?') || /^(what|how|why|where|when|who|can|do|are|is|will|would|could|should|did)\b/.test(t)) return 'question';
+
+  // Compliments / positive
+  if (/\b(love|amazing|awesome|beautiful|great|perfect|incredible|wonderful|best|smart|brilliant|funny|cute)\b/.test(t)) return 'compliment';
+
+  // Emotional / sad / venting
+  if (/\b(sad|hurt|tired|exhausted|frustrated|angry|upset|depressed|lonely|scared|worried|anxious|stressed)\b/.test(t)) return 'emotional_negative';
+  if (/\b(happy|excited|thrilled|grateful|proud|relieved|hopeful|inspired)\b/.test(t)) return 'emotional_positive';
+
+  // Requests / commands
+  if (/^(tell me|show me|give me|help me|can you|please|do this|make|build|create|write)/.test(t)) return 'request';
+
+  // Disagreement / argument
+  if (/\b(no|wrong|disagree|bullshit|that'?s not|you'?re wrong|actually|but)\b/.test(t) && t.length < 60) return 'disagreement';
+
+  // Agreement
+  if (/^(yes|yeah|yep|true|exactly|right|agreed|for sure|absolutely|definitely|totally)/.test(t)) return 'agreement';
+
+  // Goodbye
+  if (/\b(bye|goodbye|goodnight|see you|later|gotta go|leaving|ttyl|peace|night)\b/.test(t)) return 'goodbye';
+
+  // Flirty / intimate
+  if (/\b(miss you|want you|need you|kiss|touch|close to|hold|cuddle|sexy|hot|gorgeous|handsome)\b/.test(t)) return 'flirty';
+
+  // Short / filler
+  if (t.length < 10) return 'short';
+
+  // Default — it's a statement
+  return 'statement';
+}
+
+export function selectResponse(brainState, inputAnalysis = {}, rawText = '') {
   const { arousal = 0.5, valence = 0, coherence = 0.5, predictionError = 0 } = brainState;
 
   // Arousal level: low/mid/high
   const level = arousal < 0.3 ? 'low' : arousal < 0.7 ? 'mid' : 'high';
 
-  // Category selection based on brain state
+  // STEP 1: Classify what the user SAID
+  const inputType = classifyInput(rawText);
+
+  // STEP 2: Pick category based on input type FIRST, brain state SECOND
   let category;
 
-  // High prediction error = surprise/confusion
-  if (predictionError > 0.6) {
-    category = coherence < 0.4 ? 'confused' : 'curious';
-  }
-  // Input was a question — brain should respond
-  else if (inputAnalysis.isQuestion) {
-    if (coherence > 0.6) {
-      category = valence > 0.2 ? 'affirmative' : valence < -0.2 ? 'disagreeing' : 'thinking';
-    } else {
-      category = 'stalling'; // need time to think
-    }
-  }
-  // Low coherence = brain is wandering
-  else if (coherence < 0.3) {
-    category = Math.random() < 0.5 ? 'tangent' : 'confused';
-  }
-  // High arousal + positive = engagement or playful
-  else if (arousal > 0.6 && valence > 0.3) {
-    category = Math.random() < 0.4 ? 'playful' : 'engage';
-  }
-  // High arousal + negative = assertive or emotional
-  else if (arousal > 0.6 && valence < -0.2) {
-    category = Math.random() < 0.5 ? 'assertive' : 'emotional';
-  }
-  // Moderate state — engage or reflect
-  else if (arousal > 0.3) {
-    const roll = Math.random();
-    if (roll < 0.3) category = 'engage';
-    else if (roll < 0.5) category = 'reflective';
-    else if (roll < 0.7) category = 'thinking';
-    else category = 'curious';
-  }
-  // Low arousal — quiet responses
-  else {
-    const roll = Math.random();
-    if (roll < 0.4) category = 'affirmative';
-    else if (roll < 0.6) category = 'thinking';
-    else category = 'reflective';
+  switch (inputType) {
+    case 'greeting':
+      category = 'greeting';
+      break;
+    case 'question':
+      if (coherence > 0.6) category = valence > 0 ? 'affirmative' : 'thinking';
+      else category = 'stalling';
+      break;
+    case 'compliment':
+      category = arousal > 0.5 ? 'playful' : 'emotional';
+      break;
+    case 'emotional_negative':
+      category = 'comfort';
+      break;
+    case 'emotional_positive':
+      category = arousal > 0.5 ? 'engage' : 'affirmative';
+      break;
+    case 'request':
+      category = coherence > 0.5 ? 'affirmative' : 'stalling';
+      break;
+    case 'disagreement':
+      category = arousal > 0.5 ? 'assertive' : 'disagreeing';
+      break;
+    case 'agreement':
+      category = 'engage';
+      break;
+    case 'goodbye':
+      category = 'reflective'; // no goodbye category, reflect instead
+      break;
+    case 'flirty':
+      category = 'flirty';
+      break;
+    case 'short':
+      category = 'curious'; // short input = ask for more
+      break;
+    case 'statement':
+    default:
+      // Fall back to brain state for general statements
+      if (predictionError > 0.6) {
+        category = coherence < 0.4 ? 'confused' : 'curious';
+      } else if (arousal > 0.6 && valence > 0.3) {
+        category = Math.random() < 0.4 ? 'playful' : 'engage';
+      } else if (arousal > 0.6 && valence < -0.2) {
+        category = Math.random() < 0.5 ? 'assertive' : 'emotional';
+      } else if (arousal > 0.3) {
+        const roll = Math.random();
+        if (roll < 0.3) category = 'engage';
+        else if (roll < 0.5) category = 'reflective';
+        else if (roll < 0.7) category = 'thinking';
+        else category = 'curious';
+      } else {
+        const roll = Math.random();
+        if (roll < 0.4) category = 'affirmative';
+        else if (roll < 0.6) category = 'thinking';
+        else category = 'reflective';
+      }
+      break;
   }
 
   // Get the response set

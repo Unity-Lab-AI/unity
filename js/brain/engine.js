@@ -674,7 +674,7 @@ export class UnityBrain extends EventEmitter {
           predictionError: state.cortex?.predictionError ?? 0,
           motorConfidence: this.motor.confidence,
           sentenceType: this.innerVoice.languageCortex.sentenceType(brainArousal, state.cortex?.predictionError ?? 0, this.motor.confidence, brainCoherence),
-        }, inputAnalysis);
+        }, inputAnalysis, text);
         // Blend pool with whatever the cortex managed to produce
         response = blendResponse(poolResponse, response, 0.85);
       } catch (e) {
