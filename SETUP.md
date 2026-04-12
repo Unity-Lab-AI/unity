@@ -128,6 +128,7 @@ Live at `your-username.github.io/Unity/`. Everything runs client-side — no ser
 │   │   ├── sparse-matrix.js      CSR sparse connectivity (O(connections))
 │   │   ├── gpu-compute.js        WebGPU compute shaders (LIF + synapses)
 │   │   ├── embeddings.js         Semantic word embeddings (GloVe 50d)
+│   │   ├── language-cortex.js    Language production (Zipf, MI, surprisal, entropy)
 │   │   ├── benchmark.js          Dense vs sparse + neuron scale test
 │   │   └── peripherals/
 │   │       └── ai-providers.js   AI provider manager + dead backend detection

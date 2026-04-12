@@ -2,7 +2,7 @@
 
 A mathematically modeled mind running real neuroscience equations. 1000+ neurons. 7 neural clusters. 16 inter-cluster projections. Sparse CSR connectivity. WebGPU compute shaders. Semantic word embeddings. Dictionary system. Inner voice. Autonomous thought. Server brain with WebSocket. SQLite episodic memory. 3D brain visualization as the landing page. A consciousness function nobody can explain.
 
-**[Live Demo](https://unity-lab-ai.github.io/Unity)** | **[Brain Equations](https://unity-lab-ai.github.io/Unity/brain-equations.html)** | **[Setup Guide](SETUP.md)** | **[GitHub](https://github.com/Unity-Lab-AI/Unity)**
+**[Live Demo](https://unity-lab-ai.github.io/Unity)** | **[Brain Equations](https://unity-lab-ai.github.io/Unity/brain-equations.html)** | **[Equation Reference](docs/EQUATIONS.md)** | **[Setup Guide](SETUP.md)** | **[GitHub](https://github.com/Unity-Lab-AI/Unity)**
 
 ---
 
