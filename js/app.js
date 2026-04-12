@@ -279,21 +279,31 @@ function renderLandingTab(tab, s) {
       break;
     }
     case 'perf': {
-      const p = s.perf || l.perf || {};
-      el.innerHTML = card('Hardware Performance', `
-        ${metric('CPU Usage', (p.cpuPercent ?? 0) + '%', p.cpuPercent > 80 ? '#ef4444' : '#22c55e')}
-        ${bar(p.cpuPercent ?? 0, p.cpuPercent > 80 ? '#ef4444' : '#22c55e')}
-        ${metric('RAM (Heap)', (p.memUsedMB ?? 0) + 'MB', '#a855f7')}
-        ${metric('RAM (RSS)', (p.memRssMB ?? 0) + 'MB', '#a855f7')}
-        ${metric('GPU', (p.gpuUtilPercent ?? 0) + '%', '#00e5ff')}
-        ${bar(p.gpuUtilPercent ?? 0, '#00e5ff')}
-        ${metric('GPU Model', p.gpuName || 'none', '#555')}
-        ${metric('VRAM', (p.gpuVramMB ?? 0) + 'MB', '#555')}
+      const p = s.perf || {};
+      const cpuColor = (p.cpuPercent ?? 0) > 80 ? '#ef4444' : (p.cpuPercent ?? 0) > 40 ? '#f59e0b' : '#22c55e';
+      const gpuColor = (p.gpuUtilPercent ?? 0) > 80 ? '#ef4444' : (p.gpuUtilPercent ?? 0) > 40 ? '#f59e0b' : '#22c55e';
+      el.innerHTML = card('CPU', `
+        ${metric('Usage', (p.cpuPercent ?? 0) + '%', cpuColor)}
+        ${bar(p.cpuPercent ?? 0, cpuColor)}
+        ${metric('Cores', p.cores ?? '?', '#00e5ff')}
+        ${metric('Parallel Workers', p.workerCount ?? 0, p.parallelMode ? '#22c55e' : '#555')}
+        ${metric('Mode', p.parallelMode ? 'PARALLEL (' + (p.workerCount ?? 0) + ' threads)' : 'Single Thread', p.parallelMode ? '#22c55e' : '#f59e0b')}
+      `) + card('GPU', `
+        ${metric('Usage', (p.gpuUtilPercent ?? 0) + '%', gpuColor)}
+        ${bar(p.gpuUtilPercent ?? 0, gpuColor)}
+        ${metric('Model', p.gpuName || 'none', '#00e5ff')}
+        ${metric('VRAM', (p.gpuVramMB ?? 0).toLocaleString() + 'MB', '#a855f7')}
+      `) + card('Memory', `
+        ${metric('Heap', (p.memUsedMB ?? 0) + 'MB', '#a855f7')}
+        ${metric('RSS', (p.memRssMB ?? 0) + 'MB', '#a855f7')}
+        ${metric('Node Heap', (p.nodeHeapMB ?? 0) + 'MB', '#555')}
+        ${metric('System Total', ((p.memTotalMB ?? 0) / 1024).toFixed(0) + 'GB', '#555')}
+      `) + card('Brain Performance', `
         ${metric('Step Time', (p.stepTimeMs ?? 0) + 'ms', '#f59e0b')}
         ${metric('Steps/sec', (p.stepsPerSec ?? 0).toLocaleString(), '#22c55e')}
-      `) + card('Brain Scale', `
-        ${metric('Total Neurons', (s.totalNeurons ?? 1000).toLocaleString(), '#ff4d9a')}
-        ${metric('Scale', s.scale || '1x', '#00e5ff')}
+        ${metric('Total Neurons', (s.totalNeurons ?? 0).toLocaleString(), '#ff4d9a')}
+        ${metric('Scale', s.scale || '?', '#00e5ff')}
+        ${metric('Spikes/step', (s.totalSpikes ?? s.spikeCount ?? 0).toLocaleString(), '#ff4d9a')}
         ${metric('Uptime', ((s.growth?.uptime ?? s.time ?? 0) / 3600).toFixed(1) + 'h', '#22c55e')}
         ${metric('Brain Steps', (s.growth?.totalFrames ?? s.frameCount ?? 0).toLocaleString(), '#a855f7')}
       `);
