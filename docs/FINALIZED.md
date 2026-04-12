@@ -356,3 +356,100 @@ Major: visual attention in brain equations, efference copy echo suppression, Pol
 - [x] **Brain equations page** — added sections 8.10 (Projection Learning) and 8.11 (Broca's Area / What AI Receives).
 
 ---
+
+## 2026-04-12 Session: Server Brain — Full Stack Build
+
+### COMPLETED (78 tasks across 8 phases)
+
+**Phase 0: Bug Fixes**
+- [x] Image/build classification → replaced AI call with BG motor output from embeddings
+- [x] Selfie rendering → routing fixed via neural dynamics
+- [x] Sandbox build → 3-strategy JSON parsing, no classification dependency
+- [x] Mute blocking, double responses, stat reciting, cache, URL — all fixed previously
+
+**Phase 0.5: Autonomous Brain**
+- [x] AI dependency removed from brain loop — brain runs fully without any model
+- [x] `js/brain/inner-voice.js` — pre-verbal thought, speech threshold: socialNeed × arousal × coherence > 0.15
+- [x] `js/brain/dictionary.js` — learned vocabulary with cortex patterns, bigram sentence generation, seeded with 50+ starter words
+- [x] Dreaming mode — theta-dominant, hippocampus replays, cortex imagines
+- [x] Thesaurus as synaptic proximity — similar emotional states = overlapping word patterns
+- [x] AI as teacher — when connected, brain learns words from AI responses
+
+**Phase 1: Persistence**
+- [x] `js/brain/persistence.js` — save/load projections, cluster synapses (sparse CSR), oscillator coupling, episodic memory, semantic weights, motor channels
+- [x] Version migration, export/import brain as JSON
+
+**Phase 2: WebGPU**
+- [x] `js/brain/gpu-compute.js` — WGSL compute shaders: LIF neuron update, sparse synapse propagation, reward-modulated plasticity
+- [x] Double-buffered neuron state (ping-pong), GPU→CPU readback, CPU fallback
+- [x] `js/brain/benchmark.js` — dense vs sparse comparison, neuron scale test
+
+**Phase 3: Server Brain**
+- [x] `server/brain-server.js` — Node.js, WebSocket :8080, auto-scales to GPU (nvidia-smi), 179K neurons on RTX 4070 Ti SUPER
+- [x] Per-user conversations, rate limiting, dreaming mode, conversation logging
+- [x] `js/brain/remote-brain.js` — drop-in WebSocket client, auto-detect server
+- [x] SQLite episodic memory (better-sqlite3), recall by mood/user
+- [x] Brain versioning — rolling 5 backups, HTTP rollback API (/versions, /rollback/:slot)
+- [x] Per-user sandbox routing — build/image to requesting user only
+- [x] Static file serving — brain-server.js serves entire client app
+- [x] `start.bat` — one double-click launches everything, kills stale port
+
+**Phase 4: Sparse Connectivity**
+- [x] `js/brain/sparse-matrix.js` — CSR format, O(nnz) propagation/plasticity, pruning, synaptogenesis
+- [x] Cluster + projection matrices converted to sparse
+- [x] Persistence updated for CSR save/load
+
+**Phase 5: Semantic Embeddings**
+- [x] `js/brain/embeddings.js` — GloVe 50d with fallback URLs, hash fallback for unknowns
+- [x] Embedding→cortex mapping, online context refinement
+- [x] AI classification bootstrap removed — embeddings drive BG routing via _semanticRoute
+
+**Phase 6: Dashboard + Landing**
+- [x] `dashboard.html` — live stats, emotion chart (canvas), conversation stream, brain growth metrics, hardware performance (CPU/RAM/GPU/step time)
+- [x] Shared emotion indicator — raw equation values, no emoji
+- [x] 3D brain landing page — full-screen WebGL as entry point, 8 viz tabs, live stats overlay
+- [x] Scalable 3D viz — up to 5000 render neurons, spike synthesis from server firing rates
+- [x] "FUCK IT — BRAIN ONLY" toggle — no AI text, brain speaks from equations + dictionary
+- [x] Band power derived from cluster firing rates, broadcast to all clients
+- [x] HUD pulls from server state for all fields
+
+**Phase 7: Documentation**
+- [x] All docs verified against code: README, SETUP, ARCHITECTURE, ROADMAP, SKILL_TREE, brain-equations.html
+- [x] Ψ equation corrected everywhere: (√(1/n))³
+- [x] brain-equations.html — 4 new sections: sparse connectivity, embeddings, dictionary, inner voice
+- [x] .gitignore updated for server data, docs unignored
+
+### FILES CREATED THIS SESSION
+- `server/brain-server.js` — 800+ lines, the shared brain
+- `server/package.json` — ws, better-sqlite3, node-fetch
+- `js/brain/sparse-matrix.js` — CSR sparse connectivity
+- `js/brain/gpu-compute.js` — WebGPU WGSL compute shaders
+- `js/brain/embeddings.js` — semantic word embeddings
+- `js/brain/benchmark.js` — performance benchmarks
+- `js/app-entry.js` — bundle entry wrapper
+- `js/app.bundle.js` — 335KB single-file bundle (esbuild)
+- `dashboard.html` — public brain monitor
+- `start.bat` — one-click launcher
+
+### FILES MODIFIED THIS SESSION
+- `js/brain/engine.js` — removed AI classification, brain-first response
+- `js/brain/cluster.js` — sparse synapses + projections
+- `js/brain/sensory.js` — embedding-based routing, removed AI classify
+- `js/brain/persistence.js` — CSR save/load, semantic weights
+- `js/brain/remote-brain.js` — spike synthesis, sharedMood/perf/growth passthrough
+- `js/brain/dictionary.js` — seeded starter vocabulary
+- `js/brain/language.js` — fixed Ψ equation
+- `js/ui/brain-3d.js` — scalable render count, landing mode
+- `js/ui/brain-viz.js` — fixed Ψ equation
+- `js/app.js` — landing page, brain-only mode, HUD server fallback
+- `index.html` — 3D landing, viz tabs, brain-only toggle, universal loader
+- `brain-equations.html` — 4 new equation sections, fixed Ψ
+- `README.md` — server brain, updated architecture
+- `SETUP.md` — all files listed, server section
+- `docs/ARCHITECTURE.md` — 15 new files, tech stack updated
+- `docs/ROADMAP.md` — Phase 0-6 complete
+- `docs/SKILL_TREE.md` — 13 new skills
+- `docs/TODO-SERVER.md` — 78/78 complete
+- `.gitignore` — server data, docs unignored
+
+---

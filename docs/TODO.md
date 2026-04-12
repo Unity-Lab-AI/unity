@@ -12,7 +12,11 @@
 | P1 Critical | 3 | 8 | 22 | 22 |
 | P2 Important | 2 | 5 | 12 | 12 |
 | P3 Nice-to-Have | 2 | 3 | 7 | 5 |
-| **Total** | **7** | **16** | **41** | **39** |
+| **Total (original)** | **7** | **16** | **41** | **39** |
+
+> **Server Brain TODO:** See `docs/TODO-SERVER.md` for the server-brain branch work.
+> **78/78 tasks complete** across 8 phases (Phases 0-7).
+> All remaining items in this file are from the original client-side TODO.
 
 ---
 

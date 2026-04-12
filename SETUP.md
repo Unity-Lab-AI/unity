@@ -185,17 +185,16 @@ The server auto-detects hardware (GPU via nvidia-smi, CPU/RAM) and scales neuron
 
 ## Privacy
 
-**Everything runs in your browser.** No server. No backend. No database. No analytics. No tracking.
+**Two modes:**
 
-- API keys stored in localStorage only — obfuscated with XOR + base64
-- Keys sent ONLY to the provider you choose — never to us or third parties
-- Conversation history stays in your browser
-- Brain simulation is pure client-side JavaScript
-- No data leaves your machine except your direct API calls
-- Developers have zero access to anything you input
-- **Clear All Data** button in setup modal wipes everything
+**Client-only (GitHub Pages):** Everything runs in your browser. No server. API keys in localStorage (obfuscated). Brain runs locally at 1000 neurons.
 
-Fully open source. Read every line.
+**Server mode (start.bat):** Brain runs on your machine as a Node.js server. Episodic memory stored in local SQLite. Conversations saved locally. Nothing leaves your network except API calls to providers you choose.
+
+- API keys stored in your browser — never sent to us
+- Server data stays on YOUR machine — no cloud, no analytics
+- **Clear All Data** button wipes browser storage
+- Fully open source — read every line
 
 ---
 
@@ -208,7 +207,8 @@ Fully open source. Read every line.
 | "slash think" | Say by voice | Same as typing /think |
 | ⚙ SETTINGS | Bottom toolbar button | Reopens setup modal to change AI model or connect new providers |
 | 🧠 VISUALIZE | Bottom toolbar button | Opens 2D brain visualizer with 8 tabs (Neurons, Synapses, Oscillations, Modules, Senses, Consciousness, Memory, Motor) |
-| 🧠 3D BRAIN | Bottom toolbar button | Opens WebGL 3D brain with 1000 neurons, process notifications, expansion, and activity log |
+| 🧠 3D BRAIN | Bottom toolbar button | Opens WebGL 3D brain with up to 5000 render neurons, process notifications, expansion |
+| FUCK IT — BRAIN ONLY | Setup modal checkbox | No AI text model — brain speaks from its own equations + dictionary. Image models still available |
 | 🎤 | Bottom toolbar button | Mute/unmute microphone |
 | Clear All Data | Setup modal (bottom) | Wipes all localStorage — history, keys, preferences, everything |
 

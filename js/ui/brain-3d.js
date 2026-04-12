@@ -811,7 +811,8 @@ export class Brain3D {
     add(`Oscillations R=${coherence.toFixed(3)} | θ=${(bp.theta??0).toFixed(2)} α=${(bp.alpha??0).toFixed(2)} β=${(bp.beta??0).toFixed(2)} γ=${(bp.gamma??0).toFixed(2)}`, 0, coherence);
 
     const needs = state.hypothalamus?.needsAttention || [];
-    add(`Homeostasis: ${needs.length > 0 ? '⚠ ' + needs.join(', ') + ' need attention' : 'all drives at setpoint'}`, 5, needs.length > 0 ? 0.8 : 0.1);
+    if (needs.length > 0) add(`Homeostasis: ${needs.join(', ')} adjusting`, 5, 0.3);
+    else add(`Homeostasis: all drives at setpoint`, 5, 0.05);
 
     // ── Conditional processes (only when active) ──
     const iv = state.innerVoice || {};
