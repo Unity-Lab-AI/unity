@@ -46,7 +46,8 @@ export class VisualCortex {
     // IT: high-level description (from AI, updated periodically)
     this.description = '';
     this._lastDescribeTime = 0;
-    this._describeInterval = 30000; // AI description every 30s — saves credits
+    this._describeInterval = Infinity; // Don't auto-describe — only on demand or first frame
+    this._hasDescribedOnce = false; // first look on boot
     this._describer = null; // function(frameCanvas) => Promise<string>
     this._describing = false;
 
@@ -255,13 +256,28 @@ export class VisualCortex {
 
   // ── IT: Object recognition (AI call — LAST step) ─────────────
 
+  /**
+   * Force a vision description NOW. Called by handleInput on visual questions
+   * or by the brain when it decides it needs to look.
+   */
+  forceDescribe() {
+    this._lastDescribeTime = 0;
+    this._maybeDescribe();
+  }
+
   _maybeDescribe() {
     if (!this._describer || this._describing) return;
-    const now = performance.now();
-    if (now - this._lastDescribeTime < this._describeInterval) return;
+
+    // Only auto-describe ONCE on boot (first look). After that, only on demand.
+    if (this._hasDescribedOnce) {
+      // Rate limit: minimum 5 seconds between descriptions even when demanded
+      const now = performance.now();
+      if (now - this._lastDescribeTime < 5000) return;
+    }
 
     this._describing = true;
-    this._lastDescribeTime = now;
+    this._hasDescribedOnce = true;
+    this._lastDescribeTime = performance.now();
 
     // Get a higher-res frame for AI description
     const descCanvas = document.createElement('canvas');

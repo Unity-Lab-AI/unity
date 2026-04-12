@@ -603,11 +603,10 @@ async function bootUnity(apiKey, perms) {
       'background', 'behind', 'room', 'face', 'hair', 'hand', 'desk', 'what is',
       'what am', 'show me', 'glasses', 'eyes', 'sitting', 'standing'];
     if (visualWords.some(w => text.toLowerCase().includes(w)) && brain.visualCortex.isActive()) {
-      // Force visual cortex to re-describe NOW
-      const vc = brain.visualCortex;
-      vc._lastDescribeTime = 0; // reset timer to force immediate capture
-      vc.processFrame(); // process one frame right now
-      await sleep(200); // let the describer run
+      // User asked about something visual — force the visual cortex to look NOW
+      brain.visualCortex.processFrame();
+      brain.visualCortex.forceDescribe();
+      await sleep(3000); // wait for the AI vision call to complete
     } else {
       await sleep(100); // normal propagation delay
     }
