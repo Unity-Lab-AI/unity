@@ -372,17 +372,10 @@ export class SensoryProcessor {
     // Default respond bias (most inputs are conversational)
     for (let i = 0; i < 25; i++) this.bgCurrent[i] += 3.0;
 
-    // Emotional words boost amygdala
-    const emotionalWords = ['love', 'hate', 'fuck', 'shit', 'beautiful', 'ugly',
-      'amazing', 'terrible', 'happy', 'sad', 'angry', 'scared', 'sexy', 'hot',
-      'cute', 'kill', 'die', 'please', 'sorry', 'thank'];
-    for (const ew of emotionalWords) {
-      if (lower.includes(ew)) {
-        for (let i = 30; i < 60; i++) this.amygdalaCurrent[i] += 6.0;
-        this.salience += 0.3;
-        break;
-      }
-    }
+    // Emotional response handled by cortex→amygdala projection weights.
+    // All text gets a small amygdala bump (social input = someone talking).
+    // The projection learns emotional patterns through reward.
+    for (let i = 0; i < 15; i++) this.amygdalaCurrent[i] += 3.0;
   }
 
   // ── Accessors ─────────────────────────────────────────────────

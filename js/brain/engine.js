@@ -328,11 +328,16 @@ export class UnityBrain extends EventEmitter {
     this.memorySystem.updateWorkingMemory(cortexInput);
 
     // ── 11.5. VISUAL ATTENTION ──
-    // Look ONCE on boot. After that, ONLY when forceDescribe() is called
-    // explicitly by processAndRespond (user asked something visual).
-    // No automatic triggers. No salience checks. Just boot + on demand.
-    if (this.visualCortex.isActive() && !this.visualCortex._hasDescribedOnce) {
-      this.visualCortex.forceDescribe();
+    // Driven by cortex prediction error — when the brain can't predict
+    // what's happening, it looks. No word lists. The equation decides:
+    //   shouldLook = cortexError > threshold AND salience > threshold
+    if (this.visualCortex.isActive()) {
+      if (!this.visualCortex._hasDescribedOnce) {
+        this.visualCortex.forceDescribe(); // first look on boot
+      } else if (cortexError > 0.7 && sensoryOutput.salience > 0.5 && this._lastVisCheckFrame !== this.frameCount) {
+        this._lastVisCheckFrame = this.frameCount;
+        this.visualCortex.forceDescribe(); // prediction error + salience = look
+      }
     }
 
     // ── 12. MOTOR OUTPUT — read BG spikes for action ──
@@ -504,13 +509,9 @@ export class UnityBrain extends EventEmitter {
     // Clear our own interrupt flag
     this.motor._interruptFlag = false;
 
-    // 3. Check if user asked something visual — trigger a look ON DEMAND
-    const visualQ = ['see', 'look', 'color', 'wearing', 'holding', 'hat',
-      'shirt', 'background', 'behind', 'room', 'face', 'hair', 'what am',
-      'what is', 'glasses', 'describe', 'can you see'].some(w => text.toLowerCase().includes(w));
-    if (visualQ && this.visualCortex.isActive()) {
-      this.visualCortex.forceDescribe();
-    }
+    // 3. Visual attention — if cortex prediction error is high after text input,
+    // the brain needs more context. The visual cortex captures a frame.
+    // No word lists. The cortex error determines if vision is needed.
 
     // 4. Let neural dynamics propagate
     await this._sleep(100);
@@ -533,9 +534,10 @@ export class UnityBrain extends EventEmitter {
     const bgConf = motorDecision.confidence;
     console.log(`[Brain] BG motor decision: ${bgAction} (${(bgConf * 100).toFixed(1)}%)`);
 
-    // Self-reference for images (is she in it?)
-    const lower = text.toLowerCase();
-    const includesSelf = ['yourself', 'of you', 'your face', 'your body', 'unity', 'selfie'].some(w => lower.includes(w));
+    // Self-reference — let the AI classification handle this.
+    // Channel 1 (image) + the AI prompt already tells it about Unity's appearance.
+    // The image handler always includes self-description as available context.
+    const includesSelf = true; // always available — AI decides if she's in the scene
 
     if (bgAction === 'build_ui' && bgConf > 0.1 && this._brocasArea && this._sandbox) {
       return this._handleBuild(text);
