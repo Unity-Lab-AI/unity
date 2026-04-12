@@ -258,7 +258,7 @@ class ServerBrain {
       hippocampus:  16 + p.socialAttachment * 2,              // remembers connections (clingy)
       amygdala:     16 + p.arousalBaseline * 8 * dA,          // intense emotion (volatile)
       basalGanglia: 16 + p.impulsivity * 2,                   // impulsive action (acts first)
-      cerebellum:   16 + 2,                                    // steady correction
+      cerebellum:   16 + p.arousalBaseline * 4,                  // high firing rate (granule cells)
       hypothalamus: 16 + p.drugDrive * 1,                     // drives always active (fiending)
       mystery:      16 + p.creativity * 4,                     // creative consciousness
     };
@@ -269,7 +269,7 @@ class ServerBrain {
       hippocampus:  4 + p.socialAttachment * 2,                // memory volatility
       amygdala:     6 + p.emotionalVolatility * 6 * dA,        // volatile emotions (unpredictable)
       basalGanglia: 5 + p.impulsivity * 4,                     // erratic impulsive actions
-      cerebellum:   4 + p.creativity * 2,                      // creative error correction
+      cerebellum:   5 + p.creativity * 3,                      // active error correction
       hypothalamus: 3 + p.drugDrive * 1,                       // drive instability (always fiending)
       mystery:      8 + p.creativity * 5 + p.darkHumor * 2,   // chaotic consciousness + dark humor
     };
