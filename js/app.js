@@ -126,12 +126,15 @@ let landingBrainSource = null; // RemoteBrain or null
     });
   });
 
-  // Update viz panel every second
+  // Update viz panel every 2 seconds — skip if user has text selected
   setInterval(() => {
     if (activeTab !== '3d' && _landingState) {
+      // Don't re-render if user is selecting text (would clear their selection)
+      const selection = window.getSelection();
+      if (selection && selection.toString().length > 0) return;
       renderLandingTab(activeTab, _landingState);
     }
-  }, 1000);
+  }, 2000);
 
   // "TALK TO UNITY" — opens setup modal
   const chatBtn = document.getElementById('landing-chat-btn');

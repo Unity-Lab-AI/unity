@@ -321,16 +321,18 @@ class ServerBrain {
       };
     }
 
-    // Derive band power from cluster firing rates (no Kuramoto on server yet)
-    const cortexRate = this.clusters.cortex.firingRate / CLUSTER_SIZES.cortex;
-    const hippoRate = this.clusters.hippocampus.firingRate / CLUSTER_SIZES.hippocampus;
-    const amygRate = this.clusters.amygdala.firingRate / CLUSTER_SIZES.amygdala;
-    const bgRate = this.clusters.basalGanglia.firingRate / CLUSTER_SIZES.basalGanglia;
+    // Derive band power from INSTANT spike rates (not slow EMA)
+    const cortexRate = this.clusters.cortex.spikeCount / (CLUSTER_SIZES.cortex || 1);
+    const hippoRate = this.clusters.hippocampus.spikeCount / (CLUSTER_SIZES.hippocampus || 1);
+    const amygRate = this.clusters.amygdala.spikeCount / (CLUSTER_SIZES.amygdala || 1);
+    const bgRate = this.clusters.basalGanglia.spikeCount / (CLUSTER_SIZES.basalGanglia || 1);
+    const cerebRate = this.clusters.cerebellum.spikeCount / (CLUSTER_SIZES.cerebellum || 1);
+    const hypoRate = this.clusters.hypothalamus.spikeCount / (CLUSTER_SIZES.hypothalamus || 1);
     const bandPower = {
-      gamma: cortexRate * 5 + amygRate * 3,           // fast cortical + emotional
-      beta:  bgRate * 4 + cortexRate * 2,              // motor planning + attention
+      gamma: (cortexRate + amygRate) * 50,              // fast cortical + emotional
+      beta:  (bgRate + cortexRate) * 30,                // motor planning + attention
       alpha: this.coherence * 3 + (1 - this.arousal) * 2, // relaxed coherence
-      theta: hippoRate * 5 + (this._isDreaming ? 3 : 0),  // memory + dreaming
+      theta: (hippoRate + hypoRate) * 40 + (this._isDreaming ? 3 : 0), // memory + dreaming
     };
 
     return {
@@ -693,7 +695,7 @@ When asked to generate an image, respond with ONLY the image description/prompt 
 
     this._perfStats = {
       stepTimeMs: +avgStep.toFixed(3),
-      stepsPerSec: avgStep > 0 ? Math.round(1000 / avgStep * 10) : 0, // ×10 substeps
+      stepsPerSec: avgStep > 0 ? Math.round(1000 / avgStep * SUBSTEPS) : 0,
       cpuPercent: Math.min(100, Math.round(elapsed / 10)), // ~1s sample
       memUsedMB: Math.round(mem.heapUsed / 1048576),
       memTotalMB: Math.round(os.totalmem() / 1048576),
