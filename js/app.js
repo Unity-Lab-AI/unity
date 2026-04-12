@@ -821,45 +821,56 @@ async function bootUnity(apiKey, perms) {
     // Set up IT-level vision describer (only for local brain — server brain handles its own)
     if (!brain.visualCortex?.setDescriber) console.log('[Unity] Server brain — skipping local vision describer');
     else {
-    // Vision describer — sends actual camera frame to Pollinations GPT-4o
-    // which DOES support vision/image understanding via the openai model.
+    // Vision describer — Ollama llama3.2-vision:11b (local, free)
+    // Falls back to Pollinations if Ollama unavailable
     brain.visualCortex.setDescriber(async (dataUrl) => {
       if (!dataUrl) return 'No frame captured.';
+
+      // 1. Try Ollama vision (local)
       try {
-        // Pollinations openai model supports multimodal — send the actual image
+        const res = await fetch('http://localhost:11434/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: 'llama3.2-vision:11b',
+            prompt: 'Describe what you see. What is the person doing, how do they seem, what is around them. 1 sentence.',
+            images: [dataUrl.replace(/^data:image\/[^;]+;base64,/, '')],
+            stream: false,
+          }),
+          signal: AbortSignal.timeout(15000),
+        });
+        if (res.ok) {
+          const json = await res.json();
+          const desc = json.response || '';
+          console.log('[Vision] Ollama description:', desc.slice(0, 80));
+          return desc;
+        }
+      } catch (err) {
+        console.log('[Vision] Ollama not available:', err.message);
+      }
+
+      // 2. Fallback to Pollinations
+      try {
         const headers = { 'Content-Type': 'application/json' };
         if (pollinations._apiKey) headers['Authorization'] = `Bearer ${pollinations._apiKey}`;
-
         const res = await fetch('https://gen.pollinations.ai/v1/chat/completions', {
-          method: 'POST',
-          headers,
+          method: 'POST', headers,
           body: JSON.stringify({
             model: 'openai',
             messages: [
-              { role: 'system', content: 'Describe what you see through a webcam. What is the person doing, how do they seem, what is around them. 1 sentence. No privacy disclaimers.' },
-              { role: 'user', content: [
-                { type: 'text', text: 'What do you see?' },
-                { type: 'image_url', image_url: { url: dataUrl } },
-              ]},
+              { role: 'system', content: 'Describe what you see. 1 sentence.' },
+              { role: 'user', content: [{ type: 'text', text: 'What do you see?' }, { type: 'image_url', image_url: { url: dataUrl } }] },
             ],
             temperature: 0.3,
           }),
           signal: AbortSignal.timeout(15000),
         });
-
         if (res.ok) {
           const json = await res.json();
-          const desc = json.choices?.[0]?.message?.content || '';
-          console.log('[Vision] AI description:', desc.slice(0, 80));
-          return desc;
-        } else {
-          console.warn('[Vision] Pollinations vision returned', res.status);
-          return 'Camera active, processing...';
+          return json.choices?.[0]?.message?.content || 'Camera active.';
         }
-      } catch (err) {
-        console.warn('[Vision] Description failed:', err.message);
-        return 'Camera active, processing...';
-      }
+      } catch {}
+      return 'Camera active, processing...';
     });
     } // close setDescriber guard
   }

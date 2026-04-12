@@ -185,19 +185,42 @@ class VoiceIO {
 
     const voice = options.voice || this._pollinationsVoice;
 
-    // Try Pollinations TTS — retry once on 5xx errors before falling back
+    // Try local ChatterboxTTS first (port 3000), then Pollinations, then browser
     let spoke = false;
-    for (let attempt = 0; attempt < 2 && !spoke; attempt++) {
+
+    // 1. ChatterboxTTS — local, free, your own voice
+    if (!spoke) {
       try {
-        await this._speakPollinations(text, voice);
-        console.log(`[VoiceIO] Spoke via Pollinations (voice: ${voice})`);
-        spoke = true;
+        const resp = await fetch('http://localhost:3000/tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text, voice: voice || 'Female' }),
+          signal: AbortSignal.timeout(10000),
+        });
+        if (resp.ok) {
+          const arrayBuffer = await resp.arrayBuffer();
+          try { await this._playWithAudioContext(arrayBuffer); } catch (_) { await this._playWithAudioElement(arrayBuffer); }
+          console.log(`[VoiceIO] Spoke via ChatterboxTTS (local)`);
+          spoke = true;
+        }
       } catch (err) {
-        if (attempt === 0 && err.message?.includes('5')) {
-          console.warn(`[VoiceIO] Pollinations TTS 5xx — retrying in 1s...`);
-          await new Promise(r => setTimeout(r, 1000));
-        } else {
-          console.warn(`[VoiceIO] Pollinations TTS failed: ${err.message} — falling back to browser`);
+        console.log(`[VoiceIO] ChatterboxTTS not available: ${err.message}`);
+      }
+    }
+
+    // 2. Pollinations TTS — cloud fallback
+    if (!spoke) {
+      for (let attempt = 0; attempt < 2 && !spoke; attempt++) {
+        try {
+          await this._speakPollinations(text, voice);
+          console.log(`[VoiceIO] Spoke via Pollinations (voice: ${voice})`);
+          spoke = true;
+        } catch (err) {
+          if (attempt === 0 && err.message?.includes('5')) {
+            await new Promise(r => setTimeout(r, 1000));
+          } else {
+            console.warn(`[VoiceIO] Pollinations TTS failed: ${err.message}`);
+          }
         }
       }
     }
