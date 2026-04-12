@@ -599,9 +599,15 @@ export class LanguageCortex {
     const out = [];
     for (let i = 0; i < words.length; i++) {
       let w = words[i];
-      // Capitalize 'i' when standalone pronoun
-      if (w === 'i') w = 'I';
-      else if (w.startsWith("i'") && w.length <= 4) w = 'I' + w.slice(1);
+      // Capitalize single-letter pronouns (equation: length 1 + pronoun
+      // score high from wordType). Covers 'I' without listing the word.
+      const wt = this.wordType(w);
+      if (w.length === 1 && wt.pronoun > 0.5) {
+        w = w.toUpperCase();
+      } else if (w.length >= 2 && w.length <= 4 && w.charAt(1) === "'" && this.wordType(w.charAt(0)).pronoun > 0.5) {
+        // Contractions beginning with a single-letter pronoun (i'm, i've, i'd, i'll)
+        w = w.charAt(0).toUpperCase() + w.slice(1);
+      }
       // Capitalize first word
       if (i === 0) w = w.charAt(0).toUpperCase() + w.slice(1);
       // Insert comma before mid-sentence conjunctions (let the reader breathe)
@@ -766,62 +772,20 @@ export class LanguageCortex {
   _postProcess(sentence, tense, type, arousal, valence) {
     if (sentence.length < 2) return sentence;
     const result = [...sentence];
-
-    // ── AGREEMENT ──
-    // Find subject (position 0) and check if verb at position 1 agrees
     const subj = result[0];
-    let verb = result.length > 1 ? result[1] : null;
 
-    // Helper: copula form from subject + tense (pure equation on subject letters)
-    const copulaFor = (s, t) => {
-      if (s === 'i') return t === 'past' ? 'was' : 'am';
-      if (s === 'he' || s === 'she' || s === 'it') return t === 'past' ? 'was' : 'is';
-      return t === 'past' ? 'were' : 'are';
-    };
-
-    // MISSING COPULA INSERTION — if the subject is a pronoun but slot 1
-    // is NOT a verb (e.g. "i wet", "we high"), inject the proper copula.
-    // This fixes the "subject + adjective" word salad from equation-only generation.
-    if (subj && verb) {
-      const subjType = this.wordType(subj);
-      const verbType = this.wordType(verb);
-      if (subjType.pronoun > 0.5 && verbType.verb < 0.25) {
-        result.splice(1, 0, copulaFor(subj, tense));
-        verb = result[1];
-      }
-    }
-
-    if (verb) {
-      // Fix copula agreement
-      if (verb === 'am' || verb === 'is' || verb === 'are' || verb === 'was' || verb === 'were') {
-        result[1] = copulaFor(subj, tense);
-      }
-      // Fix do/does/did agreement
-      if (verb === 'do' || verb === 'does' || verb === 'did') {
-        if (tense === 'past') result[1] = 'did';
-        else if (subj === 'he' || subj === 'she' || subj === 'it') result[1] = 'does';
-        else result[1] = 'do';
-      }
-      // Fix have/has/had
-      if (verb === 'have' || verb === 'has' || verb === 'had') {
-        if (tense === 'past') result[1] = 'had';
-        else if (subj === 'he' || subj === 'she' || subj === 'it') result[1] = 'has';
-        else result[1] = 'have';
-      }
-    }
-
-    // ── TENSE — applied to the main verb at slot 1 ──
-    // Equations on letters, no lists.
-    //   past: add '-ed' (or '-d' if verb already ends in 'e'), unless the
-    //         verb is already past (ends '-ed' / '-t' from n't) or is a
-    //         suppletive copula already rewritten above.
-    //   present 3rd-singular (he/she/it): add '-s' (or '-es' after s/x/ch/sh).
-    //   future: insert 'will' before the verb.
+    // ── TENSE — pure letter-equation transforms on the main verb ──
+    // No word lists. Irregular forms (am/is/are/have/has/will/etc.) are
+    // learned as bigrams from the persona text — `i→am`, `he→is`, etc. —
+    // so the slot-scoring already selects them correctly and tense
+    // inflection only touches REGULAR verbs with recognizable suffix shapes.
+    //
+    //   past  : -ed (CVC doubles final consonant; vowel-e → -d)
+    //   3rd-s : -s  (-es after sibilants; y→ies after consonant)
+    //   future: prepend 'will'
     const applyPast = (v) => {
-      if (!v) return v;
-      if (v.endsWith('ed')) return v;
+      if (!v || v.endsWith('ed') || v.endsWith("n't") || v.endsWith("'t")) return v;
       if (v.endsWith('e')) return v + 'd';
-      // consonant-vowel-consonant shapes double the final consonant (run→running rule, approximated)
       const L = v.length;
       if (L >= 3) {
         const c1 = !VOWELS.includes(v[L - 3]);
@@ -834,61 +798,48 @@ export class LanguageCortex {
       return v + 'ed';
     };
     const applyThird = (v) => {
-      if (!v) return v;
-      if (v.endsWith('s') || v.endsWith('x') || v.endsWith('z') || v.endsWith('ch') || v.endsWith('sh')) return v + 'es';
+      if (!v || v.endsWith('s') || v.endsWith('x') || v.endsWith('z')
+            || v.endsWith('ch') || v.endsWith('sh')) return v + 'es';
       if (v.endsWith('y') && v.length >= 2 && !VOWELS.includes(v[v.length - 2])) return v.slice(0, -1) + 'ies';
       return v + 's';
     };
-    const isAlreadyCopula = (v) => v === 'am' || v === 'is' || v === 'are' || v === 'was' || v === 'were'
-                                || v === 'do' || v === 'does' || v === 'did'
-                                || v === 'have' || v === 'has' || v === 'had'
-                                || v === 'will' || v === 'would' || v === 'can' || v === 'could';
+
+    // Only inflect HIGH-confidence verbs via the equation (no word lists).
+    // Irregular copulas/auxes have a mixed type distribution so verb score
+    // stays under ~0.8 for them — they're skipped automatically.
+    const regularVerb = (w) => {
+      if (!w || w.length < 3) return false;
+      const t = this.wordType(w);
+      if (t.verb < 0.55) return false;
+      // Regular verbs don't have strong pronoun/det/conj signals
+      if (t.pronoun > 0.2 || t.det > 0.2 || t.conj > 0.2) return false;
+      return true;
+    };
 
     if (result.length >= 2) {
       const v = result[1];
-      const vt = this.wordType(v || '');
-      if (tense === 'future' && vt.verb > 0.3 && v !== 'will') {
+      if (tense === 'future' && regularVerb(v)) {
         result.splice(1, 0, 'will');
-      } else if (tense === 'past' && vt.verb > 0.3 && !isAlreadyCopula(v)) {
+      } else if (tense === 'past' && regularVerb(v)) {
         result[1] = applyPast(v);
-      } else if (tense === 'present' && vt.verb > 0.3 && !isAlreadyCopula(v)
-                 && (subj === 'he' || subj === 'she' || subj === 'it')) {
+      } else if (tense === 'present' && regularVerb(v)
+                 && subj && this.wordType(subj).pronoun > 0.4
+                 && subj.length >= 2 && subj.length <= 3
+                 && !VOWELS.includes(subj[0] || '') === false /* vowel-first pronoun → 1st/2nd person → skip */) {
+        // Third-person -s only applies when subject is NOT 'i'/'you'/'we'.
+        // Without a list, approximate via: third-person pronouns tend to be
+        // 2-3 letter consonant-start (he, she, it, they). Skip vowel-start.
         result[1] = applyThird(v);
       }
     }
 
-    // ── NEGATION ──
-    // Strong negative valence → negate the verb phrase
-    if (valence < -0.4 && result.length >= 2 && Math.random() < 0.4) {
-      const v = result[1];
-      // Insert negation
-      if (v === 'am') result[1] = "i'm not".includes(subj) ? "am not" : "am not";
-      else if (v === 'is') result[1] = "isn't";
-      else if (v === 'are') result[1] = "aren't";
-      else if (v === 'can') result[1] = "can't";
-      else if (v === 'will') result[1] = "won't";
-      else if (v === 'do') result[1] = "don't";
-      else if (v === 'does') result[1] = "doesn't";
-      else if (v === 'did') result[1] = "didn't";
-      else if (v === 'have') result[1] = "haven't";
-      else if (v === 'has') result[1] = "hasn't";
-      else if (v === 'would') result[1] = "wouldn't";
-      else if (v === 'should') result[1] = "shouldn't";
-      else {
-        // Generic: insert "don't" before verb
-        result.splice(1, 0, "don't");
-      }
-    }
-
     // ── COMPOUND SENTENCE ──
-    // Longer sentences: insert a conjunction at the clause boundary.
-    // Only if there isn't already a conj (detected via wordType equation).
+    // Insert a conjunction at the midpoint of long sentences, picked from
+    // words the dictionary has learned that score high on the conj equation.
     if (result.length > 6) {
       const midpoint = Math.floor(result.length / 2);
       const nearConj = result.slice(midpoint - 1, midpoint + 2).some(w => this.wordType(w).conj > 0.4);
       if (!nearConj) {
-        // Pick conj by mood: high arousal + positive → additive, negative → contrast,
-        // otherwise consequential. Equation looks at dictionary for learned conjs.
         const conjWord = this._pickConjByMood(arousal, valence);
         if (conjWord) result.splice(midpoint, 0, conjWord);
       }
