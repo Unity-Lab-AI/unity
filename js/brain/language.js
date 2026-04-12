@@ -61,8 +61,10 @@ export class BrocasArea {
 
       if (!response) return null;
 
-      // Store the exchange
-      if (userInput) this._storage.saveMessage('user', userInput);
+      // Store the exchange — but NOT system prompts (greeting, selfie quip instructions)
+      if (userInput && !userInput.startsWith('[SYSTEM')) {
+        this._storage.saveMessage('user', userInput);
+      }
       this._storage.saveMessage('assistant', response);
 
       return response;

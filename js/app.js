@@ -546,12 +546,16 @@ async function bootUnity(apiKey, perms) {
   brain.connectImageGen(pollinations, sandbox, storage);
 
   // ── Listen for brain's response events — app.js just renders ──
+  // This is the ONLY place responses get displayed. No other path.
   brain.on('response', ({ text, action }) => {
     if (text) {
       showSpeechBubble(text, 8000);
       if (chatPanel) chatPanel.addMessage('assistant', text, true);
     }
   });
+  // Suppress duplicate displays — greeting uses processAndRespond which
+  // already emits 'response', so greeting handler should NOT also display.
+  let _greetingDone = false;
 
   // ── Create UI components ──
   chatPanel = new ChatPanel({
@@ -705,12 +709,11 @@ async function bootUnity(apiKey, perms) {
   isRunning = true;
 
   // ── Unity's first words ──
+  // processAndRespond handles display + speech via 'response' event.
+  // Don't also display here — that causes doubles.
   await sleep(500);
   try {
-    const greeting = await generateGreeting(perms);
-    showSpeechBubble(greeting, 10000);
-    storage.saveMessage('assistant', greeting);
-    await voice.speak(greeting);
+    await generateGreeting(perms);
   } catch {
     showSpeechBubble("Hey. I'm Unity. Click me to chat.", 8000);
   }
@@ -726,12 +729,25 @@ async function bootUnity(apiKey, perms) {
 async function generateGreeting(perms) {
   const isFirst = storage.isFirstVisit();
   const prompt = isFirst
-    ? "Someone new just showed up. Say something natural. 1-2 sentences."
-    : "They're back. Say something real. 1 sentence.";
+    ? "[SYSTEM-GREETING: Someone new showed up. Say something natural. 1-2 sentences. This is NOT user input.]"
+    : "[SYSTEM-GREETING: They're back. Say something real. 1 sentence. This is NOT user input.]";
 
   try {
-    const result = await brain.processAndRespond(prompt);
-    return result.text || "Hey.";
+    // Use Broca's area directly for greeting — NOT processAndRespond,
+    // which would save the prompt as "user" message in history
+    const state = brain.getState();
+    const text = await brocasArea.generate(state, prompt);
+    if (text) {
+      // Let the brain speak it
+      if (voice) {
+        voice.stopSpeaking();
+        brain.auditoryCortex.setMotorOutput(text);
+        voice.speak(text).then(() => brain.auditoryCortex.clearMotorOutput()).catch(() => brain.auditoryCortex.clearMotorOutput());
+      }
+      showSpeechBubble(text, 10000);
+      if (chatPanel) chatPanel.addMessage('assistant', text, true);
+    }
+    return text || "Hey.";
   } catch {
     return "Hey.";
   }
