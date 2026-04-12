@@ -170,6 +170,7 @@ export class RemoteBrain extends EventEmitter {
 
     if (serverState.innerVoice) this.state.innerVoice = serverState.innerVoice;
     if (serverState.memory) this.state.memory = serverState.memory;
+    if (serverState.sharedMood) this.state.sharedMood = serverState.sharedMood;
   }
 
   // ── Public API (same as UnityBrain) ──────────────────────────

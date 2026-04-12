@@ -952,6 +952,19 @@ function updateBrainIndicator(state) {
   const actionEl = $('hud-action'); if (actionEl) actionEl.textContent = state.motor?.selectedAction || 'idle';
   const modelEl = $('hud-model'); if (modelEl) modelEl.textContent = bestBackend?.model?.slice(0, 25) || '—';
 
+  // Shared emotion indicator — shows when connected to server brain
+  if (state.sharedMood) {
+    const m = state.sharedMood;
+    const usersEl = $('hud-users');
+    if (usersEl) usersEl.textContent = state.connectedUsers ?? 0;
+    const gateEl = $('hud-gate');
+    if (gateEl) gateEl.textContent = m.gate.toFixed(2) + 'x';
+    if (m.isDreaming) {
+      const dreamEl = $('hud-dream');
+      if (dreamEl) dreamEl.textContent = 'dreaming';
+    }
+  }
+
   function setModDot(id, value, threshold = 0.3) {
     const dot = $(id); if (!dot) return;
     dot.classList.remove('active', 'high');

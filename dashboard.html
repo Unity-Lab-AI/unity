@@ -65,9 +65,9 @@
         <div class="val" id="d-users" style="color:#22c55e">0</div>
       </div>
       <div class="card">
-        <div class="card-title">Unity's Mood</div>
-        <div class="val" id="d-mood-emoji" style="font-size:32px;">😶</div>
-        <div class="val-sm" id="d-mood-desc">—</div>
+        <div class="card-title">Emotional State</div>
+        <div id="d-emotion-visual" style="height:48px;display:flex;align-items:center;gap:6px;"></div>
+        <div class="val-sm" id="d-emotion-desc">—</div>
       </div>
       <div class="card">
         <div class="card-title">Motor Action</div>
@@ -146,6 +146,31 @@
       $('d-drug').textContent = s.drugState ?? '—';
       $('d-uptime').textContent = (s.time ?? 0).toFixed(1) + 's';
       $('d-scale').textContent = s.scale ?? '—';
+
+      // Emotional state — rendered from raw equation values, no lookups
+      if (s.sharedMood) {
+        const m = s.sharedMood;
+        // Arousal → bar intensity (red→white), Valence → hue shift (neg=blue, pos=pink)
+        const hue = m.valence >= 0 ? 330 + m.valence * 30 : 240 - m.valence * 60; // pink↔blue
+        const sat = 60 + Math.abs(m.valence) * 40;
+        const light = 40 + m.arousal * 30;
+        const gateWidth = Math.min(100, m.gate * 70);
+        const psiGlow = Math.min(1, m.psi * 10);
+
+        $('d-emotion-visual').innerHTML = `
+          <div style="width:${gateWidth}%;height:8px;background:hsl(${hue},${sat}%,${light}%);border-radius:4px;
+            box-shadow:0 0 ${psiGlow * 12}px hsl(${hue},${sat}%,${light}%);transition:all 0.5s;"></div>
+          <span style="font-size:10px;color:#555;">${m.gate.toFixed(2)}×</span>
+        `;
+        const desc = [];
+        desc.push(`a=${m.arousal.toFixed(2)}`);
+        desc.push(`v=${m.valence.toFixed(3)}`);
+        desc.push(`Ψ=${m.psi.toFixed(4)}`);
+        desc.push(`c=${m.coherence.toFixed(2)}`);
+        if (m.fear > 0.1) desc.push(`f=${m.fear.toFixed(2)}`);
+        if (m.isDreaming) desc.push('dreaming');
+        $('d-emotion-desc').textContent = desc.join(' | ');
+      }
 
       // Clusters
       if (s.clusters) {
