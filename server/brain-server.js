@@ -53,26 +53,38 @@ function detectResources() {
   }
 
   // Scale neurons based on available resources
-  // Each neuron needs: ~8 bytes voltage + ~8 bytes × connectivity per synapse
-  // At 10% connectivity: ~0.8 bytes per neuron-synapse pair
-  // Rough: 1000 neurons ≈ 60MB, 10K ≈ 600MB, 100K ≈ 8GB
+  // Server neuron memory: 9 bytes each (8 voltage + 1 spike)
+  // No NxN synapse matrices on server — those are client-side
+  // Real constraint: CPU time per step, not memory
+  //
+  // With parallel workers (7 cores):
+  //   1M neurons = ~9MB RAM, ~180 steps/sec at 60% CPU
+  //   5M neurons = ~45MB RAM, ~30 steps/sec
+  //   10M neurons = ~90MB RAM, ~15 steps/sec
+  //
+  // Scale based on: RAM for allocation, CPU cores for throughput
   let maxNeurons;
   let scaleSource;
 
   if (gpu.vram > 0) {
-    // GPU available — scale to VRAM (leave 2GB headroom)
-    const usableVRAM = Math.max(0, gpu.vram - 2048);
-    maxNeurons = Math.floor(usableVRAM / 80) * 1000; // ~80MB per 1K neurons on GPU
+    // GPU + CPU — scale aggressively
+    // VRAM handles GPU compute, RAM handles server state
+    const usableRAM = freeRAM * 0.4; // use 40% of free RAM
+    const ramNeurons = Math.floor(usableRAM / 9); // 9 bytes per neuron
+    // Also factor in CPU cores — more cores = more parallel throughput
+    const cpuFactor = Math.min(cpuCount, 16); // cap at 16 cores
+    maxNeurons = Math.min(ramNeurons, cpuFactor * 200000); // 200K per core
     scaleSource = `GPU: ${gpu.name} (${gpu.vram}MB VRAM)`;
   } else {
-    // CPU only — scale to free RAM (use 25% max)
-    const usableRAM = freeRAM * 0.25;
-    maxNeurons = Math.floor(usableRAM / (60 * 1024 * 1024)) * 1000; // ~60MB per 1K neurons on CPU
+    // CPU only
+    const usableRAM = freeRAM * 0.3;
+    const ramNeurons = Math.floor(usableRAM / 9);
+    maxNeurons = Math.min(ramNeurons, cpuCount * 150000); // 150K per core
     scaleSource = `CPU: ${cpuModel} (${cpuCount} cores, ${Math.round(freeRAM/1024/1024/1024)}GB free)`;
   }
 
-  // Clamp to reasonable range
-  maxNeurons = Math.max(1000, Math.min(500000, maxNeurons));
+  // Scale to millions
+  maxNeurons = Math.max(1000, Math.min(10000000, maxNeurons)); // cap at 10M
 
   // Round to nice cluster sizes (must divide into 7 clusters)
   const clusterScale = Math.floor(maxNeurons / 1000);
@@ -114,10 +126,10 @@ const CLUSTER_SIZES = {
 const TOTAL_NEURONS = Object.values(CLUSTER_SIZES).reduce((a, b) => a + b, 0);
 
 // Scale tick rate + substeps to neuron count — prevent CPU meltdown
-// Scale tick rate + substeps to use ~60% CPU, not crawl at 5%
-// 1K: 16ms/10sub (600 steps/sec), 10K: 16ms/8 (500), 50K: 33ms/5 (150), 100K+: 33ms/10 (300)
-const BRAIN_TICK_MS = TOTAL_NEURONS > 100000 ? 33 : TOTAL_NEURONS > 50000 ? 33 : TOTAL_NEURONS > 10000 ? 16 : 16;
-const SUBSTEPS = TOTAL_NEURONS > 100000 ? 10 : TOTAL_NEURONS > 50000 ? 5 : TOTAL_NEURONS > 10000 ? 8 : 10;
+// Scale tick rate to neuron count — target ~60% CPU across all cores
+// Parallel workers split the load, so more neurons are feasible
+const BRAIN_TICK_MS = TOTAL_NEURONS > 1000000 ? 100 : TOTAL_NEURONS > 500000 ? 50 : TOTAL_NEURONS > 100000 ? 33 : 16;
+const SUBSTEPS = TOTAL_NEURONS > 1000000 ? 3 : TOTAL_NEURONS > 500000 ? 5 : TOTAL_NEURONS > 100000 ? 10 : 10;
 
 // ── Brain Setup (CommonJS wrapper around ES modules) ──────────
 // Note: The actual brain modules are ES modules. In production,
