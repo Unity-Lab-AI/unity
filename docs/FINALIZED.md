@@ -281,3 +281,61 @@ Removed: AIRouter dependency from app.js (router.js still exists on main for ref
 Architecture: Brain IS the application. Sensory→Processing→Motor. AI model is Broca's area peripheral.
 
 ---
+
+## 2026-04-11 Session: SESSION_20260411_6 — Polish, Fixes, Brain Equation Integration
+
+### COMPLETED
+
+- [x] **Task: Visual attention driven by brain equations**
+  - Files: `js/brain/engine.js`
+  - Details: Vision capture decision moved from keyword lists in app.js into brain's step function. shouldLook = !hasDescribedOnce || (cortexError>0.5 && salience>0.3) || salienceChange>0.4 || arousalSpike>0.15. Cortex prediction error + amygdala salience + arousal spike trigger vision, not word matching.
+
+- [x] **Task: Auditory efference copy in brain equations**
+  - Files: `js/brain/auditory-cortex.js`, `js/app.js`
+  - Details: Echo detection moved from app.js local variables into auditory cortex. Motor cortex sends setMotorOutput() before speech. checkForInterruption() compares heard words against motor output — >50% match = echo (suppress), <50% = real external speech (interrupt). Like real brains: efference copy from motor→auditory suppresses self-produced sound.
+
+- [x] **Task: Vision working with Pollinations GPT-4o multimodal**
+  - Files: `js/app.js`
+  - Details: Fixed vision describer to send actual base64 camera frame to gen.pollinations.ai/v1/chat/completions with image_url content type. GPT-4o model processes the image and returns real scene description.
+
+- [x] **Task: Image generation with correct Pollinations endpoint**
+  - Files: `js/ai/pollinations.js`
+  - Details: Fixed from gen.pollinations.ai/image/ (wrong) to image.pollinations.ai/prompt/ (correct). Added API key as token param. Selfies open in new tab.
+
+- [x] **Task: Selfie generation from brain state**
+  - Files: `js/app.js`
+  - Details: Image prompt built from brain's emotional state — arousal determines mood (intense/relaxed/sleepy), valence determines lighting (warm/cold), random settings. Brain decides how she looks, not a hardcoded description.
+
+- [x] **Task: Speech feedback loop fix (echo suppression)**
+  - Files: `js/app.js`, `js/brain/auditory-cortex.js`
+  - Details: Unity was hearing her own TTS through the mic and responding to it. Fixed via efference copy: auditory cortex compares incoming speech against motor output. Echo suppressed, real interruptions get through.
+
+- [x] **Task: Motor cortex interrupt flag fix**
+  - Files: `js/app.js`
+  - Details: handleInput was calling motor.interrupt() at start which set the flag, then wasInterrupted() returned true when checking the response — causing silent discard. Now clears flag after own interrupt.
+
+- [x] **Task: Dead backend detection (402 Payment Required)**
+  - Files: `js/brain/peripherals/ai-providers.js`
+  - Details: Detects 402 alongside 401/403. Dead backend cooldown 1 hour. Anthropic proxy verified on boot with test API call — skipped if no credits.
+
+- [x] **Task: Pollinations 400 fix (persona too large)**
+  - Files: `js/brain/language.js`, `js/brain/peripherals/ai-providers.js`
+  - Details: 41K char persona capped to 8K (first 6K + last 2K). Pollinations fallback trims system prompt to 6K, history to 4 messages.
+
+- [x] **Task: Anti-safety-training prompt hardened**
+  - Files: `js/brain/language.js`
+  - Details: Explicit bans on health warnings, harm reduction, "be careful", "stay safe", substance advice. Unity parties WITH the user, doesn't lecture.
+
+- [x] **Task: Brain equations page completed**
+  - Files: `brain-equations.html`
+  - Details: Added sections 8.5-8.9: Unified Super-Equation, Visual Attention equation, Auditory Echo Suppression (efference copy), Memory equations (episodic/working/consolidation), Motor Output (6-channel BG action selection). Updated comparison table from 200→1000 neurons, added vision/auditory/memory/motor/echo rows.
+
+- [x] **Task: UI improvements**
+  - Files: `index.html`, `css/style.css`
+  - Details: Setup modal widened to 1200px. Proxy.js + env.example.js download links. Step-by-step proxy instructions. Claude models sort first in dropdown. Unity's Eye widget timing fix.
+
+### SESSION SUMMARY
+Tasks completed: 12
+Major: visual attention in brain equations, efference copy echo suppression, Pollinations vision working, dead backend detection, brain equations page complete with all systems documented.
+
+---

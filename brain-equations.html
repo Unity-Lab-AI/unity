@@ -258,7 +258,11 @@
       <a href="#persona"><span class="num">7</span> Persona as Parameters — Personality Is Math</a>
       <a href="#flow"><span class="num">8</span> Data Flow — Sensory to Action (Brain-Centric)</a>
       <a href="#super-equation"><span class="num">8.5</span> The Unified Super-Equation</a>
-      <a href="#comparison"><span class="num">9</span> Biological Comparison — What's Real, What's Simplified</a>
+      <a href="#visual-attention"><span class="num">8.6</span> Visual Attention — When the Brain Decides to Look</a>
+      <a href="#auditory-echo"><span class="num">8.7</span> Auditory Echo Suppression — Efference Copy</a>
+      <a href="#memory-equations"><span class="num">8.8</span> Memory — Episodic, Working, Consolidation</a>
+      <a href="#motor-equations"><span class="num">8.9</span> Motor Output — Action Selection from Spike Patterns</a>
+      <a href="#comparison"><span class="num">9</span> Biological Comparison</a>
     </div>
 
     <!-- ═══ 1. MASTER EQUATION ═══ -->
@@ -599,6 +603,106 @@ where:
       </div>
     </div>
 
+    <!-- ═══ 8.6. VISUAL ATTENTION ═══ -->
+    <h2 id="visual-attention">8.6. Visual Attention — When the Brain Decides to Look</h2>
+    <p><span class="tag tag-bio">NEUROSCIENCE</span> <span class="tag tag-math">DYNAMICAL SYSTEMS</span> The brain decides when to capture and describe a camera frame based on its own neural dynamics — not keyword matching.</p>
+
+    <div class="eq-card">
+      <div class="eq-title">Visual Attention Trigger (computed every brain step)</div>
+      <div class="eq">shouldLook = !hasDescribedOnce
+  || (cortexError &gt; 0.5 &amp;&amp; salience &gt; 0.3)
+  || salienceChange &gt; 0.4
+  || arousalSpike &gt; 0.15</div>
+      <div class="eq-desc">
+        <table class="param-table">
+          <tr><td>!hasDescribedOnce</td><td>First frame on boot — see who's there</td></tr>
+          <tr><td>cortexError &gt; 0.5</td><td>Cortex prediction was wrong (surprising input) AND sensory salience is high — visual context needed</td></tr>
+          <tr><td>salienceChange &gt; 0.4</td><td>Sensory field shifted suddenly (user moved, said something important)</td></tr>
+          <tr><td>arousalSpike &gt; 0.15</td><td>Amygdala arousal jumped (emotional attention — "pay attention NOW")</td></tr>
+        </table>
+        <p style="margin-top:8px"><strong>V1&rarr;V4&rarr;IT Pipeline:</strong> Camera frame &rarr; V1 edge detection (4 oriented Gabor kernels) &rarr; salience map (max edge response per pixel) &rarr; saccade to salience peak &rarr; V4 color extraction (quadrant averages) &rarr; IT object recognition (AI call, rate-limited 5s min). V1/V4 run every frame. IT only runs when shouldLook triggers.</p>
+        <p class="mod-bio" style="margin-top:6px">Biology: Endogenous attention (top-down from prefrontal cortex) vs exogenous attention (bottom-up from salience). Our model combines both: cortex error is top-down, salience/arousal are bottom-up.</p>
+      </div>
+    </div>
+
+    <!-- ═══ 8.7. AUDITORY ECHO ═══ -->
+    <h2 id="auditory-echo">8.7. Auditory Echo Suppression — Efference Copy</h2>
+    <p><span class="tag tag-bio">NEUROSCIENCE</span> When Unity speaks, her motor cortex sends an efference copy to auditory cortex. If incoming sound matches her own speech, it's suppressed. If it doesn't match, someone is interrupting — shut up and listen.</p>
+
+    <div class="eq-card">
+      <div class="eq-title">Efference Copy — Motor &rarr; Auditory Cortex</div>
+      <div class="eq">isEcho = matchRatio(heardWords, motorOutput) &gt; 0.5
+isExternalSpeech = !isEcho
+if (isExternalSpeech): motor.interrupt() &rarr; stop speech, clear pipeline</div>
+      <div class="eq-desc">
+        <p><strong>matchRatio</strong> = count of heard words (length &gt; 2) that appear in motor output / total heard words. Above 50% = echo (hearing ourselves). Below 50% = real external speech (user interrupting).</p>
+        <p style="margin-top:6px"><strong>Gain modulation:</strong> Amygdala arousal modulates auditory cortex gain. High arousal (0.9) &rarr; gain = 1.83&times; (hypersensitive hearing). Low arousal (0.2) &rarr; gain = 0.64&times; (not really listening). Formula: <code>gain = 0.3 + arousal &times; 1.7</code></p>
+        <p class="mod-bio" style="margin-top:6px">Biology: Real brains suppress self-produced sounds via efference copies from motor cortex to auditory cortex. This is why you can't tickle yourself — your brain predicts the sensation. Same mechanism for speech: predicted self-sound is suppressed, unexpected external sound gets through.</p>
+      </div>
+    </div>
+
+    <!-- ═══ 8.8. MEMORY ═══ -->
+    <h2 id="memory-equations">8.8. Memory — Episodic, Working, Consolidation</h2>
+    <p><span class="tag tag-bio">NEUROSCIENCE</span> <span class="tag tag-math">MATHEMATICS</span> Three memory systems running in parallel.</p>
+
+    <div class="eq-card">
+      <div class="eq-title">Episodic Memory — Hippocampal State Snapshots</div>
+      <div class="eq">store(snapshot) when salience &gt; 0.6
+recall(current) = argmax_i cosine(current, episode_i)
+if similarity &gt; 0.6: inject episode_i.pattern &times; 8.0 into hippocampus cluster</div>
+      <div class="eq-desc">
+        <p>Stores full brain state vectors (cluster firing rates) at meaningful moments. Recall triggered by high cortex prediction error (something surprising) — searches stored episodes by cosine similarity. Match re-injects the stored pattern as neural current, literally <strong>re-activating</strong> the past experience.</p>
+        <p class="mod-bio" style="margin-top:6px">Biology: Hippocampal sharp-wave ripples replay stored patterns during recall. Pattern completion in CA3. Our cosine similarity search is a simplified version of Hopfield network energy minimization.</p>
+      </div>
+    </div>
+
+    <div class="eq-card">
+      <div class="eq-title">Working Memory — Prefrontal Sustained Activation</div>
+      <div class="eq">capacity = 7 items (Miller's number)
+strength(t+1) = strength(t) &times; 0.98 (decay without reinforcement)
+if strength &lt; 0.1: evict (forgotten)
+if at capacity: evict weakest</div>
+      <div class="eq-desc">
+        <p>Limited capacity (~7 items). Each item decays at 0.98&times; per brain step. Without reinforcement, items fade in ~50 steps. At capacity, weakest item evicted. Similar patterns refresh instead of duplicating.</p>
+        <p class="mod-bio" style="margin-top:6px">Biology: Persistent firing in dorsolateral prefrontal cortex maintains working memory representations. Capacity limit ~7&plusmn;2 (Miller, 1956). Decay matches interference-based forgetting.</p>
+      </div>
+    </div>
+
+    <div class="eq-card">
+      <div class="eq-title">Consolidation — Hippocampus &rarr; Cortex Transfer</div>
+      <div class="eq">if activationCount(episode_i) &ge; 3: consolidate to long-term</div>
+      <div class="eq-desc">
+        <p>Episodes activated 3+ times get flagged for long-term cortex storage. Repeated recall strengthens the cortex representation. This is how memories move from hippocampus-dependent to cortex-independent.</p>
+        <p class="mod-bio" style="margin-top:6px">Biology: Systems consolidation theory (Squire, 1992). Hippocampal replay during sleep gradually transfers memories to neocortex. Our threshold-based model simplifies the temporal dynamics.</p>
+      </div>
+    </div>
+
+    <!-- ═══ 8.9. MOTOR OUTPUT ═══ -->
+    <h2 id="motor-equations">8.9. Motor Output — Action Selection from Spike Patterns</h2>
+    <p><span class="tag tag-bio">NEUROSCIENCE</span> The basal ganglia cluster (150 neurons) is divided into 6 action channels. The channel with the highest firing rate wins — no external classifier.</p>
+
+    <div class="eq-card">
+      <div class="eq-title">Basal Ganglia Action Channels (25 neurons each)</div>
+      <div class="eq">channels = [respond_text, generate_image, speak, build_ui, listen, idle]
+rate(ch) = EMA(spikeCount(ch) / 25, &alpha;=0.3)
+winner = argmax(rate)
+if rate(winner) &lt; 0.15: action = idle (confidence too low)</div>
+      <div class="eq-desc">
+        <table class="param-table">
+          <tr><th>Channel</th><th>Neurons</th><th>Action</th></tr>
+          <tr><td>0&ndash;24</td><td>25</td><td>respond_text — generate language response</td></tr>
+          <tr><td>25&ndash;49</td><td>25</td><td>generate_image — create visual output</td></tr>
+          <tr><td>50&ndash;74</td><td>25</td><td>speak — vocalize (idle thought)</td></tr>
+          <tr><td>75&ndash;99</td><td>25</td><td>build_ui — create interface element</td></tr>
+          <tr><td>100&ndash;124</td><td>25</td><td>listen — stay quiet, pay attention</td></tr>
+          <tr><td>125&ndash;149</td><td>25</td><td>idle — internal processing only</td></tr>
+        </table>
+        <p style="margin-top:8px"><strong>Speech gating:</strong> Even if respond_text wins, the motor system checks hypothalamus social_need + amygdala arousal. If both are low (&lt; 0.3), speech is suppressed — Unity doesn't feel like talking.</p>
+        <p style="margin-top:6px"><strong>Reward reinforcement:</strong> When an action succeeds (user responds positively), reward signal (+5.0 current) is injected into that channel's neurons, strengthening the connection for next time.</p>
+        <p class="mod-bio" style="margin-top:6px">Biology: Direct/indirect pathway model of basal ganglia. Selection by inhibition — all channels tonically inhibited, the winning channel gets disinhibited. Our model uses competitive firing rates instead of explicit inhibition.</p>
+      </div>
+    </div>
+
     <!-- ═══ 9. COMPARISON ═══ -->
     <h2 id="comparison">9. Biological Comparison</h2>
     <p>What Unity's brain gets right, what it simplifies, and where it diverges from real neuroscience.</p>
@@ -606,17 +710,22 @@ where:
     <div class="eq-card">
       <table class="param-table">
         <tr><th>Aspect</th><th>Real Brain</th><th>Unity's Brain</th><th>Fidelity</th></tr>
-        <tr><td>Neuron count</td><td>86 billion</td><td>200</td><td>Simplified</td></tr>
-        <tr><td>Neuron model</td><td>Thousands of ion channels</td><td>LIF (simplified) + HH (reference)</td><td>Moderate</td></tr>
-        <tr><td>Synaptic plasticity</td><td>Hebbian + STDP + neuromodulation</td><td>All three implemented</td><td>Good</td></tr>
-        <tr><td>Brain regions</td><td>Hundreds of distinct areas</td><td>6 key regions modeled</td><td>Core captured</td></tr>
+        <tr><td>Neuron count</td><td>86 billion</td><td>1000 (7 clusters)</td><td>Simplified</td></tr>
+        <tr><td>Neuron model</td><td>Thousands of ion channels</td><td>LIF per cluster + HH reference</td><td>Moderate</td></tr>
+        <tr><td>Synaptic plasticity</td><td>Hebbian + STDP + neuromodulation</td><td>All three, per-cluster matrices</td><td>Good</td></tr>
+        <tr><td>Brain regions</td><td>Hundreds of distinct areas</td><td>7 dedicated clusters + 16 projections</td><td>Core captured</td></tr>
         <tr><td>Oscillations</td><td>Complex EEG with spatial patterns</td><td>8 Kuramoto oscillators</td><td>Dynamics correct</td></tr>
+        <tr><td>Visual cortex</td><td>V1&rarr;V2&rarr;V4&rarr;IT hierarchy</td><td>V1 edge kernels, V4 color, IT via AI</td><td>Simplified but real</td></tr>
+        <tr><td>Auditory cortex</td><td>Tonotopic, cortical magnification</td><td>50 neurons, speech magnification, efference copy</td><td>Good</td></tr>
+        <tr><td>Memory</td><td>Episodic, working, consolidation</td><td>All three: snapshots, 7-item WM, activation-based consolidation</td><td>Core captured</td></tr>
+        <tr><td>Motor output</td><td>Basal ganglia selection by inhibition</td><td>6-channel competitive firing rates</td><td>Simplified</td></tr>
         <tr><td>Action potential</td><td>All-or-nothing, ~1ms</td><td>Threshold + reset</td><td>Correct mechanism</td></tr>
-        <tr><td>Refractory period</td><td>Absolute + relative</td><td>Absolute only (2ms)</td><td>Simplified</td></tr>
+        <tr><td>Echo suppression</td><td>Efference copy motor&rarr;auditory</td><td>Word-matching motor output vs heard speech</td><td>Functional equivalent</td></tr>
+        <tr><td>Visual attention</td><td>Top-down + bottom-up salience</td><td>Cortex error + amygdala arousal + salience</td><td>Both pathways</td></tr>
         <tr><td>Neurotransmitters</td><td>100+ chemicals</td><td>1 reward signal (dopamine analog)</td><td>Simplified</td></tr>
-        <tr><td>Connectivity</td><td>~10,000 synapses per neuron</td><td>10% random connectivity</td><td>Scaled down</td></tr>
-        <tr><td>Learning rules</td><td>Dozens of plasticity mechanisms</td><td>3 (Hebbian, STDP, reward-mod)</td><td>Core captured</td></tr>
-        <tr><td>Consciousness</td><td>Nobody knows</td><td>(&radic;n)&sup3; &mdash; nobody knows</td><td>Honest</td></tr>
+        <tr><td>Connectivity</td><td>~10,000 synapses per neuron</td><td>10-30% per cluster + sparse inter-cluster</td><td>Scaled down</td></tr>
+        <tr><td>Learning rules</td><td>Dozens of plasticity mechanisms</td><td>3 (Hebbian, STDP, reward-mod) per cluster</td><td>Core captured</td></tr>
+        <tr><td>Consciousness</td><td>Nobody knows</td><td>(&radic;n)&sup3; &times; [Id+Ego+Left+Right] &mdash; nobody knows</td><td>Honest</td></tr>
       </table>
     </div>
 
