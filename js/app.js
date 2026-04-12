@@ -983,14 +983,25 @@ async function bootUnity(apiKey, perms) {
   // ── Listen for brain's response events — app.js just renders ──
   // Deduplicate: track last response to prevent double display.
   //
+  // Handler identity is stored on the brain instance so that re-running
+  // bootUnity (Settings → Apply Changes path) can OFF the previous handler
+  // before attaching the new one. Without this, every Apply Changes click
+  // added another response listener to the same brain, producing 2x / 3x
+  // / ... duplicate chat messages per user input.
+  //
   // Idle thoughts (engine.js:539, emitted from the think() frame loop when
   // thought.shouldSpeak fires) are INTERNAL — they update the HUD and brain
   // state but MUST NOT appear in the chat alongside the real respond_text
-  // reply. Without this filter, every user message generates 2+ Unity
-  // messages in the chat (one real response + one or more idle thoughts).
+  // reply.
+  if (brain.__appResponseHandler) {
+    brain.off('response', brain.__appResponseHandler);
+  }
+  if (brain.__appImageHandler) {
+    brain.off('image', brain.__appImageHandler);
+  }
   let _lastResponseText = '';
   let _lastResponseTime = 0;
-  brain.on('response', ({ text, action }) => {
+  brain.__appResponseHandler = ({ text, action }) => {
     if (!text) return;
     if (action === 'idle_thought') return;  // internal brain chatter — HUD-only
     const now = Date.now();
@@ -1000,18 +1011,21 @@ async function bootUnity(apiKey, perms) {
     _lastResponseTime = now;
     showSpeechBubble(text, 8000);
     if (chatPanel) chatPanel.addMessage('assistant', text, true);
-  });
+  };
+  brain.on('response', brain.__appResponseHandler);
+
   // Image display — show generated images inline. If the image URL fails
   // to load, the <img> element is hidden entirely (no "Loading..." alt
   // placeholder bleeding into the chat) and a brief text fallback shows.
-  brain.on('image', (url) => {
+  brain.__appImageHandler = (url) => {
     if (!url) return;
     showSpeechBubble('Image generating...', 3000);
     if (chatPanel) {
       const imgHtml = `<a href="${url}" target="_blank"><img src="${url}" style="max-width:280px;border-radius:8px;border:1px solid #333;display:block;margin:4px 0;" onerror="this.style.display='none';this.parentElement.parentElement.querySelector('.img-fail')?.style.setProperty('display','block')"></a><div class="img-fail" style="display:none;color:#777;font-size:11px;">(image generation failed)</div>`;
       chatPanel.addMessage('assistant', imgHtml, false);
     }
-  });
+  };
+  brain.on('image', brain.__appImageHandler);
 
   // Suppress duplicate displays — greeting uses processAndRespond which
   // already emits 'response', so greeting handler should NOT also display.
