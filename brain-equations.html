@@ -842,13 +842,17 @@ speechDrive = socialNeed × arousal × coherence
     <h2 id="syntax">8.16. Syntactic Production — Word Order from Equations</h2>
     <p>The brain learns what TYPE of word belongs at each sentence position. No grammar rules — position weights accumulate patterns from every sentence heard.</p>
     <div class="eq-box">
-      <div class="eq-title">Syntactic Role Score</div>
+      <div class="eq-title">Word Type — Computed from Letters</div>
       <pre class="eq">
-role_score(w, pos) = W_syntax[pos] · word_pattern
-
-W_syntax[pos] += lr · (pattern - W_syntax[pos])   (running average per position)
+pronounScore = (len=1 → 0.8) + (len≤3, vowelRatio≥0.33 → 0.4) + (apostrophe → 0.5)
+verbScore    = (suffix -ing → 0.7) + (-ed → 0.6) + (-n't → 0.5) + (-ize → 0.6)
+nounScore    = (suffix -tion → 0.7) + (-ment → 0.6) + (-ness → 0.6) + (len≥5 → 0.2)
+adjScore     = (suffix -ly → 0.5) + (-ful → 0.6) + (-ous → 0.6) + (-ive → 0.5)
+prepScore    = (len=2, 1 vowel → 0.5) + (len=3, 1 vowel → 0.3)
+detScore     = (len=1 vowel → 0.3) + (starts 'th' len=3 → 0.4)
+qwordScore   = (starts 'wh' len 3-6 → 0.8)
       </pre>
-      <p class="eq-desc">Position 0 learns subject patterns (I, you, we), position 1 learns verb patterns (want, think, feel), position 2 learns object patterns. All from the equations, not labels.</p>
+      <p class="eq-desc">Every score computed from: word length, vowel count, vowel ratio, suffix letter patterns, first/last characters. ZERO word-by-word comparisons. The letters themselves determine the grammatical type.</p>
     </div>
     <div class="eq-box">
       <div class="eq-title">Zipf's Law — Word Frequency</div>
@@ -882,16 +886,19 @@ follower_bonus = 0.3 if w ∈ words_seen_after(prev)   — trained sequences get
     <div class="eq-box">
       <div class="eq-title">Slot-Based Sentence Structure</div>
       <pre class="eq">
-Statement:    [SUBJECT]  [VERB]  [COMPLEMENT...]
-Question:     [Q-WORD]   [VERB]  [COMPLEMENT...]
-Action:       *[VERB]    [COMPLEMENT...]*
-Exclamation:  [INTENSE]  [COMPLEMENT...]
+Statement:    [pronoun×1.0]  [verb×1.0]  [noun×0.5, adj×0.4, prep×0.5...]
+Question:     [qword×1.0]   [verb×1.0]  [pronoun×1.0] [complement...]
+Action:       *[verb×1.0]   [complement...]*
 
-subject = argmax( followerCount×0.4 + P(w|prev)×0.2 + P(w|pos=0)×0.2 + mood×0.1 + topic×0.1 )
-verb    = argmax( followerCount×0.4 + P(w|subject)×0.2 + P(w|pos=1)×0.2 + mood×0.1 + topic×0.1 )
-complement[i] = softmax( trainedFollowers(prev) + mood, T×0.15 )
+typeCompatibility(w, slot) = dot(wordType(w), slotRequirement(slot))
+
+score(w) = typeCompat×0.40 + follower×0.15 + condProb×0.10
+         + moodBias×0.15 + topicSim×0.10 + frequency×0.10
+         - recentCount×0.20
+
+word = softmax(scores, T×0.12)    T = 1/(coherence+0.1)
       </pre>
-      <p class="eq-desc">Structure is PLANNED first (which slots to fill), then each slot is filled by the equation. Trained follower sequences dominate (×0.4 weight). Loop detection via bigram set: <code>if (prev→w) ∈ usedBigrams → reject</code>. Temperature ×0.15 = very sharp, best structural fit wins. 170+ bootstrap sentences, 10 passes, 1700+ total training.</p>
+      <p class="eq-desc">Grammar IS the equations. Word type computed from letters (suffix, length, vowel ratio). Slot requirements define what type each position needs. Type compatibility (40% of score) ensures pronouns go at position 0, verbs at position 1. No training corpus. No word lists. Brain learns vocabulary from conversation. Loop detection: <code>if (prev→w) ∈ usedBigrams → reject</code>. Recency suppression: words used in last 50 outputs get score penalty.</p>
     </div>
 
     <!-- ═══ 8.17 SENTENCE TYPES ═══ -->

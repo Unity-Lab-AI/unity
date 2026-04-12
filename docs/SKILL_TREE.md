@@ -190,7 +190,7 @@
 | Live dashboard | Frontend | Intermediate | **DONE** — `dashboard.html` (hardware stats, emotion chart, conversation stream) |
 | 3D brain landing page | Frontend | Advanced | **DONE** — `index.html` (full-screen 3D brain as entry point, viz tabs) |
 | Brain benchmarks | CompNeuro | Intermediate | **DONE** — `js/brain/benchmark.js` (dense vs sparse, scale test) |
-| Language cortex | CompLing | Expert | **DONE** — `js/brain/language-cortex.js` (Zipf, MI, syntax, 4 sentence types, morphology, topic, position filtering, follower boost, 10-pass/1700+ training) |
+| Language cortex | CompLing | Expert | **DONE** — `js/brain/language-cortex.js` (word type from letters, slot-based grammar, 8 type equations, sentence structure, no lists, no training corpus, learns from conversation) |
 | Response pool | AI/ML | Intermediate | **DONE** — `js/brain/response-pool.js` (EDNA categories, arousal variants, 85%/15% blend with cortex) — from Tolerable PR |
 | Claude Code CLI proxy | Backend | Intermediate | **DONE** — `claude-proxy.js` (OpenAI-compatible endpoint on :8088, uses logged-in credentials) — from Tolerable PR |
 

@@ -213,14 +213,15 @@ Neurons → Synapses → Brain Loop → Brain Regions → Persona Loader → API
 - **Live Hardware Stats** — CPU/RAM/GPU/step time broadcast to all clients
 - **Benchmarks** — dense vs sparse comparison, neuron scale test
 
-**Phase 8: Complete Language Equation System** — COMPLETE
-- Syntactic role weights: `role_score = W_syntax[pos] · word_pattern`
-- 4 sentence types from brain equations (statement/question/exclamation/action)
-- Full production chain: 6 equations, structure at 65%, sharpened softmax
-- Input analysis: question detection, topic continuity, 5-input context window
-- Morphological transforms: tense/plural as pattern arithmetic
-- 100+ sentence bootstrap, 5-pass training (500 total passes)
-- Letter awareness, syllable detection, contraction patterns
+**Phase 8: Language Equations — Grammar from Letters** — COMPLETE
+- Word type computed from letter structure (8 type equations: pronoun, verb, noun, adj, conj, prep, det, qword)
+- Zero word-by-word comparisons — suffix patterns, length, vowel ratio, first/last chars
+- Slot-based sentence structure: Statement [pronoun][verb][complement], Question [qword][verb][subject], Action *[verb][complement]*
+- typeCompatibility = dot(wordType, slotRequirement) — 40% of word selection score
+- 4 sentence types from brain equations (P(question) = predError×coherence, P(exclamation) = arousal², etc.)
+- No training corpus, no seed vocabulary, no response pool
+- Brain learns every word from conversation — dictionary grows dynamically
+- Recency suppression, bigram loop detection, topic continuity, mood alignment
 
 ### Remaining
 - Attention mechanism (transformer-like) in Cortex

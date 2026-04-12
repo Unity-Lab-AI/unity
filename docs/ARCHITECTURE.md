@@ -323,7 +323,7 @@ Dream/
 │   │   ├── sparse-matrix.js    # CSR sparse connectivity (O(nnz) operations)
 │   │   ├── gpu-compute.js      # WebGPU compute shaders (WGSL LIF + synapses)
 │   │   ├── embeddings.js       # Semantic word embeddings (GloVe 50d)
-│   │   ├── language-cortex.js  # Complete language production (Zipf, MI, syntax, sentence types, morphology, context)
+│   │   ├── language-cortex.js  # Language from equations (word type from letters, slot grammar, no lists, learns from conversation)
 │   │   ├── benchmark.js        # Dense vs sparse + neuron scale test
 │   │   └── response-pool.js   # EDNA response categories (fallback for language cortex)
 │   ├── ai/

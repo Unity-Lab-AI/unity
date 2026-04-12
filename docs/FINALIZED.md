@@ -541,6 +541,34 @@ Major: visual attention in brain equations, efference copy echo suppression, Pol
 
 ---
 
+## 2026-04-12 Session: Final — Pure Equation Language System
+
+### Language Equations Rebuilt from Scratch
+- [x] Nuked ALL training corpus (170 sentences, 10 passes — gone)
+- [x] Nuked ALL response pool usage from engine.js
+- [x] Nuked ALL dictionary seed words (95 starter words — gone)
+- [x] Nuked ALL word-by-word comparisons (w==='the', w==='and' — zero remaining)
+- [x] Word type computed ONLY from letter structure:
+  - pronounScore: length + vowel ratio + apostrophe presence
+  - verbScore: suffix -ing/-ed/-n't/-ize/-ate + length/vowel balance
+  - nounScore: suffix -tion/-ment/-ness/-ity + length
+  - adjScore: suffix -ly/-ful/-ous/-ive/-al/-able/-ish/-ic
+  - prepScore: length=2 + 1 vowel equation
+  - detScore: first char pattern + length equation
+  - qwordScore: starts 'wh' equation
+  - conjScore: length + consonant ratio equation
+- [x] Slot-based grammar: typeCompatibility = dot(wordType, slotRequirement) = 40% of score
+- [x] Statement: [pronoun slot] [verb slot] [complement slots]
+- [x] Question: [qword slot] [verb slot] [subject slot] [complement slots]
+- [x] Action: *[verb slot] [complement slots]*
+- [x] Recency suppression: -0.2 per recent use across 50-word rolling buffer
+- [x] Bigram loop detection: usedBigrams set prevents cycles
+- [x] Brain learns ONLY from conversation — every heard word stored with pattern + arousal + valence
+- [x] Claude Code CLI proxy integrated into brain server on port 8080
+- [x] All docs updated: EQUATIONS.md, brain-equations.html, ARCHITECTURE, SETUP, SKILL_TREE, ROADMAP
+
+---
+
 ### FILES MODIFIED THIS SESSION
 - `js/brain/engine.js` — removed AI classification, brain-first response
 - `js/brain/cluster.js` — sparse synapses + projections

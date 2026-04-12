@@ -118,11 +118,17 @@
 | `α = -slope(log(freq) vs log(rank))` | Zipf alpha estimation (log-log regression) | `language-cortex.js` |
 | `ΔW_pred = η · (actual_next - predicted) · current^T` | Prediction weight learning | `language-cortex.js` |
 
-### Syntactic Production
-| Equation | Purpose | File |
-|----------|---------|------|
-| `role_score(w, pos) = W_syntax[pos] · word_pattern` | Word-type fitness for sentence position | `language-cortex.js` |
-| `W_syntax[pos] += lr · (pattern - W_syntax[pos])` | Position weight learning (running average) | `language-cortex.js` |
+### Word Type Equations (computed from letters — no word comparisons)
+| Equation | What it computes | File |
+|----------|-----------------|------|
+| `pronounScore = f(len=1→0.8, len≤3+vowelRatio≥0.33→0.4, apostrophe→0.5)` | Pronoun likelihood from length + vowels + contractions | `language-cortex.js` |
+| `verbScore = f(suffix -ing→0.7, -ed→0.6, -n't→0.5, -ize→0.6, -ate→0.5)` | Verb likelihood from suffix letter patterns | `language-cortex.js` |
+| `nounScore = f(suffix -tion→0.7, -ment→0.6, -ness→0.6, -ity→0.6, len≥5→0.2)` | Noun likelihood from suffix + length | `language-cortex.js` |
+| `adjScore = f(suffix -ly→0.5, -ful→0.6, -ous→0.6, -ive→0.5, -able→0.5)` | Adjective likelihood from suffix patterns | `language-cortex.js` |
+| `prepScore = f(len=2+1vowel→0.5, len=3+1vowel→0.3)` | Preposition from length + vowel count | `language-cortex.js` |
+| `detScore = f(len=1+vowel→0.3, starts'a'len=2→0.3, starts'th'len=3→0.4)` | Determiner from first letters + length | `language-cortex.js` |
+| `qwordScore = f(starts'wh'len3-6→0.8, 'how'pattern→0.8)` | Question word from first 2 letters | `language-cortex.js` |
+| `conjScore = f(len=2+consonant-heavy→0.2, len=3+mixed→0.15)` | Conjunction from length + consonant ratio | `language-cortex.js` |
 
 ### Slot-Based Sentence Structure
 | Structure | Slots | File |
@@ -135,22 +141,23 @@
 ### Slot Filling Equation
 | Equation | Purpose | File |
 |----------|---------|------|
-| `slot_score = followerCount×0.4 + P(w\|prev)×0.2 + P(w\|pos)×0.2 + mood×0.1 + topic×0.1` | Word selection per slot | `language-cortex.js` |
-| `word = softmax(scores, T×0.15)` | Sharp sampling — best fit wins | `language-cortex.js` |
-| Trained followers used DIRECTLY when count > 0 | Learned sequences ARE structure | `language-cortex.js` |
-| Fallback: `score = P(w\|pos)×0.35 + syntax×0.25 + mood×0.2 + topic×0.2` | When no trained follower | `language-cortex.js` |
+| `typeCompatibility = dot(wordType, slotRequirement)` | Does this word FIT this grammatical slot? | `language-cortex.js` |
+| `score = type×0.40 + follower×0.15 + cond×0.10 + mood×0.15 + topic×0.10 + freq×0.10 - recency×0.20` | Combined word selection | `language-cortex.js` |
+| `word = softmax(scores, T×0.12)` | Sharp sampling — best structural fit wins | `language-cortex.js` |
 
 ### Loop Detection
 | Equation | Purpose | File |
 |----------|---------|------|
 | `if (prev→w) ∈ usedBigrams → reject` | Bigram tracking prevents cycles | `language-cortex.js` |
 
-### Bootstrap Training
-| Metric | Value | File |
-|--------|-------|------|
-| Corpus | 170+ sentences (SVO, questions, actions, emotions, contractions) | `language-cortex.js` |
-| Passes | 10 (1700+ total) | `language-cortex.js` |
-| Vocabulary | 400+ words with patterns + arousal/valence | `language-cortex.js` |
+### Learning (from conversation only — no pre-loaded data)
+| Equation | Purpose | File |
+|----------|---------|------|
+| `jointCounts[w1][w2]++` on every heard word pair | Learns word associations from conversation | `language-cortex.js` |
+| `marginalCounts[w]++` on every heard word | Learns word frequency from exposure | `language-cortex.js` |
+| `dictionary.learnWord(w, pattern, arousal, valence)` | Stores word with cortex pattern + emotional state | `dictionary.js` |
+| `dictionary.learnBigram(w1, w2)` | Stores word sequences | `dictionary.js` |
+| `recentOutputWords[] -= 0.2 per use` | Suppresses repeated words across sentences | `language-cortex.js` |
 
 ### Sentence Type Equations
 | Equation | Purpose | File |
