@@ -687,11 +687,6 @@ When asked to generate an image, respond with ONLY the image description/prompt 
     const cpuPercent = Math.min(100, Math.round(avgStep / BRAIN_TICK_MS * 100));
     this._lastCpuUsage = cpuNow;
 
-    // Average step time over last 60 samples
-    const avgStep = this._stepTimeSamples.length > 0
-      ? this._stepTimeSamples.reduce((a, b) => a + b, 0) / this._stepTimeSamples.length
-      : 0;
-
     // GPU utilization (poll nvidia-smi periodically)
     let gpuUtil = 0;
     if (RESOURCES.gpu.vram > 0 && (!this._lastGpuPoll || Date.now() - this._lastGpuPoll > 5000)) {
