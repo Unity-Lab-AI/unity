@@ -148,6 +148,17 @@ word = softmax(scores, T × 0.12)    T = 1/(coherence + 0.1)
 | `P(action) = motorConf × (1 - arousal×0.5) × 0.3` | Motor output |
 | `P(statement) = 1 - P(q) - P(e) - P(a)` | Default |
 
+### Post-Processing Equations
+
+| Equation | Purpose | File |
+|----------|---------|------|
+| `tense = predError > 0.3 ? future : recalling ? past : present` | Tense from brain state | `language-cortex.js` |
+| `if subj='i' → copula='am'; if subj='he' → copula='is'` | Subject-verb agreement | `language-cortex.js` |
+| `if tense=future → insert 'will' before verb` | Future tense marker | `language-cortex.js` |
+| `if valence < -0.4 → negate verb (don't/can't/isn't)` | Negation from emotion | `language-cortex.js` |
+| `if len > 6 → insert conjunction at midpoint` | Compound sentence formation | `language-cortex.js` |
+| Conjunction choice: `arousal > 0.6 → 'and', valence < -0.2 → 'but', else 'so'` | Brain drives conjunction | `language-cortex.js` |
+
 ### Loop Detection + Learning
 
 | Equation | Purpose | File |
@@ -156,6 +167,17 @@ word = softmax(scores, T × 0.12)    T = 1/(coherence + 0.1)
 | `recentCount(w) × 0.20 → penalty` | Suppresses across sentences | `language-cortex.js` |
 | `dictionary.learnWord(w, pattern, arousal, valence)` | Learns from conversation | `dictionary.js` |
 | `jointCounts[w1][w2]++` | Learns word associations | `language-cortex.js` |
+| `_expandStructure(w) → auto-join verb/noun/adj category` | Dynamic vocabulary growth | `language-cortex.js` |
+
+### English Structure (built-in)
+
+| Component | Count | Purpose |
+|-----------|-------|---------|
+| Structural operators | ~200 | Pronouns, copula, auxiliary, determiners, prepositions, conjunctions, question words, discourse markers |
+| Core vocabulary | ~150 | Most common verbs, nouns, adjectives, adverbs |
+| Morpheme equations | 7 prefixes + 12 suffixes | Word formation: un-/re-/over- + -ing/-ed/-tion/-ment/-ness/-ly/-ful/-less/-able |
+| Structural bigrams | ~500 | subject→verb, verb→prep, det→noun, qword→aux |
+| Dynamic expansion | Automatic | New words auto-join categories via type equations + pattern similarity |
 
 ---
 

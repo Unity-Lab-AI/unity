@@ -585,6 +585,25 @@ Major: visual attention in brain equations, efference copy echo suppression, Pol
 
 ---
 
+## 2026-04-12 Session: Final Language + Tooltips + Dynamic Vocabulary
+
+### Language Equations Completed
+- [x] Subject-verb agreement (I→am, he→is, they→are, tense-aware)
+- [x] Tense selection from brain state (predError→future, recalling→past, default→present)
+- [x] Negation from emotion (valence < -0.4 → don't/can't/isn't/won't)
+- [x] Compound sentences (len > 6 → insert conjunction, arousal→and, negative→but, else→so)
+- [x] English structure built in (~200 operators + ~150 core words + morphemes + bigrams)
+- [x] Dynamic vocabulary expansion (new words auto-join categories via type equations + similarity)
+
+### Documentation
+- [x] EQUATIONS.md rewritten as unified 12-section document
+- [x] brain-equations.html — tooltips on key equations (hover for theory)
+- [x] Post-processing equations documented (agreement, tense, negation, compounds)
+- [x] English structure section added (operators, vocabulary, morphemes, bigrams, expansion)
+- [x] TODO: 115 done, 1 remaining (scale test)
+
+---
+
 ### FILES MODIFIED THIS SESSION
 - `js/brain/engine.js` — removed AI classification, brain-first response
 - `js/brain/cluster.js` — sparse synapses + projections

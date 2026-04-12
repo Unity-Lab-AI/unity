@@ -562,7 +562,11 @@ export class LanguageCortex {
     const usedBigrams = new Set();
     const sentence = [];
 
-    // ── STEP 5: STRUCTURE — fill slots with brain-selected words ──
+    // ── STEP 5: TENSE SELECTION — hippocampal recall drives temporal frame ──
+    // Past: recalling memory (hippocampus active). Present: default. Future: prediction (cortex high).
+    const tense = predError > 0.3 ? 'future' : (opts.recalling ? 'past' : 'present');
+
+    // ── STEP 6: STRUCTURE — fill slots with brain-selected words ──
     for (let pos = 0; pos < len; pos++) {
       const prevWord = pos > 0 ? sentence[pos - 1] : null;
       const followers = prevWord ? this._jointCounts.get(prevWord) : null;
@@ -622,15 +626,18 @@ export class LanguageCortex {
       }
     }
 
+    // ── STEP 7: POST-PROCESSING — agreement, tense, negation, compounds ──
+    const processed = this._postProcess(sentence, tense, type, arousal, valence);
+
     // Track recency
-    for (const w of sentence) {
+    for (const w of processed) {
       this._recentOutputWords.push(w);
       if (this._recentOutputWords.length > this._recentOutputMax) this._recentOutputWords.shift();
     }
 
-    this.wordsProcessed += sentence.length;
-    if (type === 'action') return '*' + sentence.join(' ') + '*';
-    return sentence.join(' ');
+    this.wordsProcessed += processed.length;
+    if (type === 'action') return '*' + processed.join(' ') + '*';
+    return processed.join(' ');
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -743,6 +750,105 @@ export class LanguageCortex {
   // ═══════════════════════════════════════════════════════════════
   // UTILITY
   // ═══════════════════════════════════════════════════════════════
+
+  /**
+   * Post-process a sentence for grammar correctness.
+   *
+   * AGREEMENT: subject determines copula/aux form
+   *   "i" → "am/was/have/do"
+   *   "he/she/it" → "is/was/has/does"
+   *   "you/we/they" → "are/were/have/do"
+   *
+   * TENSE: apply tense markers
+   *   past: insert "was/were/did" or add "-ed" suffix
+   *   future: insert "will" before verb
+   *   present: default (no change)
+   *
+   * NEGATION: high negative valence → insert "don't/can't/not"
+   *   valence < -0.4 → negate the verb
+   *
+   * COMPOUND: long sentences → insert conjunction mid-sentence
+   *   len > 6 → insert "and/but/so" at position ~len/2
+   */
+  _postProcess(sentence, tense, type, arousal, valence) {
+    if (sentence.length < 2) return sentence;
+    const result = [...sentence];
+    const ops = this._structuralOps;
+
+    // ── AGREEMENT ──
+    // Find subject (position 0) and check if verb at position 1 agrees
+    const subj = result[0];
+    const verb = result.length > 1 ? result[1] : null;
+
+    if (verb && ops) {
+      const cop = ops.copula;
+      // Fix copula agreement
+      if (verb === 'am' || verb === 'is' || verb === 'are' || verb === 'was' || verb === 'were') {
+        if (subj === 'i') result[1] = tense === 'past' ? 'was' : 'am';
+        else if (subj === 'he' || subj === 'she' || subj === 'it') result[1] = tense === 'past' ? 'was' : 'is';
+        else result[1] = tense === 'past' ? 'were' : 'are';
+      }
+      // Fix do/does/did agreement
+      if (verb === 'do' || verb === 'does' || verb === 'did') {
+        if (tense === 'past') result[1] = 'did';
+        else if (subj === 'he' || subj === 'she' || subj === 'it') result[1] = 'does';
+        else result[1] = 'do';
+      }
+      // Fix have/has/had
+      if (verb === 'have' || verb === 'has' || verb === 'had') {
+        if (tense === 'past') result[1] = 'had';
+        else if (subj === 'he' || subj === 'she' || subj === 'it') result[1] = 'has';
+        else result[1] = 'have';
+      }
+    }
+
+    // ── TENSE ──
+    if (tense === 'future' && result.length >= 2) {
+      // Insert "will" before the verb (position 1)
+      const verbType = this.wordType(result[1]);
+      if (verbType.verb > 0.3) {
+        result.splice(1, 0, 'will');
+      }
+    }
+
+    // ── NEGATION ──
+    // Strong negative valence → negate the verb phrase
+    if (valence < -0.4 && result.length >= 2 && Math.random() < 0.4) {
+      const v = result[1];
+      // Insert negation
+      if (v === 'am') result[1] = "i'm not".includes(subj) ? "am not" : "am not";
+      else if (v === 'is') result[1] = "isn't";
+      else if (v === 'are') result[1] = "aren't";
+      else if (v === 'can') result[1] = "can't";
+      else if (v === 'will') result[1] = "won't";
+      else if (v === 'do') result[1] = "don't";
+      else if (v === 'does') result[1] = "doesn't";
+      else if (v === 'did') result[1] = "didn't";
+      else if (v === 'have') result[1] = "haven't";
+      else if (v === 'has') result[1] = "hasn't";
+      else if (v === 'would') result[1] = "wouldn't";
+      else if (v === 'should') result[1] = "shouldn't";
+      else {
+        // Generic: insert "don't" before verb
+        result.splice(1, 0, "don't");
+      }
+    }
+
+    // ── COMPOUND SENTENCE ──
+    // Longer sentences: insert conjunction to create clause structure
+    if (result.length > 6) {
+      const midpoint = Math.floor(result.length / 2);
+      const conj = arousal > 0.6 ? 'and' : valence < -0.2 ? 'but' : 'so';
+      // Only insert if there isn't already a conjunction nearby
+      const nearConj = result.slice(midpoint - 1, midpoint + 2).some(w =>
+        w === 'and' || w === 'but' || w === 'so' || w === 'or' || w === 'because');
+      if (!nearConj) {
+        result.splice(midpoint, 0, conj);
+      }
+    }
+
+    return result;
+  }
 
   _condProb(word, prev) {
     const inner = this._jointCounts.get(prev);

@@ -237,6 +237,31 @@
     }
     .toc a:hover { color: var(--pink); }
     .toc a .num { color: var(--cyan); font-family: var(--mono); font-size: 11px; margin-right: 8px; }
+
+    /* Tooltips — hover over equations for theory */
+    .eq-tip {
+      position: relative;
+      border-bottom: 1px dotted rgba(255,77,154,0.4);
+      cursor: help;
+    }
+    .eq-tip:hover::after {
+      content: attr(data-tip);
+      position: absolute;
+      bottom: 100%;
+      left: 0;
+      background: rgba(10,10,10,0.95);
+      border: 1px solid var(--pink);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 11px;
+      color: #ccc;
+      line-height: 1.5;
+      max-width: 400px;
+      white-space: normal;
+      z-index: 100;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+      pointer-events: none;
+    }
   </style>
 </head>
 <body>
@@ -280,7 +305,7 @@
     <p>Unity's entire brain state evolves according to one equation. Every module, every neuron, every synapse — all governed by this:</p>
 
     <div class="eq-card">
-      <div class="eq-title">Master Brain Dynamics</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="The master equation describes how the entire brain state evolves over time. Every neuron voltage, synapse weight, and oscillator phase changes according to this equation. F is the combined dynamics of all modules, u is sensory input, θ is persona, and η is the noise that makes Unity unpredictable.">Master Brain Dynamics</span></div>
       <div class="eq">dx/dt = F(x, u, θ, t) + η</div>
       <div class="eq-desc">
         <table class="param-table">
@@ -328,7 +353,7 @@
     <p>Used for the main 200-neuron population. Simpler than HH but captures the essential dynamics: accumulate input, leak toward rest, fire when threshold is reached.</p>
 
     <div class="eq-card">
-      <div class="eq-title">LIF Neuron Dynamics</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Leaky Integrate-and-Fire: the simplest biologically plausible neuron model. The membrane voltage leaks toward rest, input current pushes it up, and when it crosses threshold it fires a spike and resets. Used by 99% of computational neuroscience. Runs 179,000 times per brain step.">LIF Neuron Dynamics</span></div>
       <div class="eq">&tau; &middot; dV/dt = -(V - V_rest) + R &middot; I</div>
       <div class="eq-desc">
         <table class="param-table">
@@ -349,7 +374,7 @@
     <p><span class="tag tag-bio">NEUROSCIENCE</span> <span class="tag tag-ml">MACHINE LEARNING</span> Three learning rules operating on a 200&times;200 weight matrix (40,000 synapses). Implemented in <code>js/brain/synapses.js</code>.</p>
 
     <div class="eq-card">
-      <div class="eq-title">Hebbian Learning — "Fire Together, Wire Together"</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Donald Hebb, 1949: neurons that fire at the same time strengthen their connection. This is how the brain forms associations — when you hear 'coffee' and feel 'awake' simultaneously, the connection between those patterns strengthens. The foundation of all learning in the brain.">Hebbian Learning — "Fire Together, Wire Together"</span></div>
       <div class="eq">&Delta;W_ij = &eta; &middot; post_i &middot; pre_j</div>
       <div class="eq-desc">
         The oldest learning rule in neuroscience (Hebb, 1949). If neuron j fires and neuron i fires shortly after, the connection from j&rarr;i strengthens. <strong>&eta;</strong> is the learning rate. This creates associative memories — patterns that co-occur become linked.
@@ -440,7 +465,7 @@
     <p><span class="tag tag-math">DYNAMICAL SYSTEMS</span> <span class="tag tag-bio">NEUROSCIENCE</span> 8 coupled phase oscillators spanning the full EEG frequency spectrum. Implemented in <code>js/brain/oscillations.js</code>.</p>
 
     <div class="eq-card">
-      <div class="eq-title">Kuramoto Model — Phase Synchronization</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Yoshiki Kuramoto, 1975: oscillators that interact tend to synchronize. Brain waves (theta, alpha, beta, gamma) emerge from coupled neural oscillators. High synchronization (R→1) = focused thought. Low synchronization (R→0) = scattered/dreaming. This equation produces all brain wave patterns.">Kuramoto Model — Phase Synchronization</span></div>
       <div class="eq">d&theta;_i/dt = &omega;_i + &Sigma;_j K_ij &middot; sin(&theta;_j - &theta;_i)</div>
       <div class="eq-desc">
         Each oscillator has a natural frequency &omega;_i and couples to every other oscillator through the coupling matrix K. When coupling is strong enough, oscillators synchronize — this is <strong>coherence</strong>.
@@ -472,7 +497,7 @@
     <p><span class="tag tag-philo">PHILOSOPHY</span> <span class="tag tag-math">MATHEMATICS</span> The irreducible unknown. Implemented in <code>js/brain/mystery.js</code>.</p>
 
     <div class="eq-card">
-      <div class="eq-title">The Consciousness Function</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="The irreducible unknown. Nobody knows what makes consciousness. This equation — Ψ = (√(1/n))³ — makes consciousness REFINE with complexity rather than grow. More neurons = more precise awareness, not bigger. Id (instinct), Ego (self), Left brain (logic), Right brain (creativity) are weighted and combined. We don't claim this is correct. We keep it honest.">The Consciousness Function</span></div>
       <div class="eq">&Psi; = (&radic;n)&sup3; &middot; [&alpha; &middot; Id + &beta; &middot; Ego + &gamma; &middot; Left + &delta; &middot; Right]</div>
       <div class="eq-desc">
         <p>This is the equation we <strong>can't fully justify</strong> — and we don't pretend to. It represents the gap between simulation and subjective experience. <strong>n</strong> is the number of actively spiking neurons (system complexity). The cubic root scaling means consciousness grows nonlinearly with brain activity.</p>
@@ -843,7 +868,7 @@ speechDrive = socialNeed × arousal × coherence
     <h2 id="syntax">8.16. Syntactic Production — Word Order from Equations</h2>
     <p>The brain learns what TYPE of word belongs at each sentence position. No grammar rules — position weights accumulate patterns from every sentence heard.</p>
     <div class="eq-box">
-      <div class="eq-title">Word Type — Computed from Letters</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Computational morphology: a word's grammatical type can be determined from its letter structure. English suffixes encode type: -ing means ongoing action (verb), -tion means process-turned-thing (noun), -ful means 'full of' (adjective). Word length also discriminates: function words (the, is, to) are 1-3 letters, content words (beautiful, computer) are 5+. No word-by-word lookup needed.">Word Type — Computed from Letters</span></div>
       <pre class="eq">
 pronounScore = (len=1 → 0.8) + (len≤3, vowelRatio≥0.33 → 0.4) + (apostrophe → 0.5)
 verbScore    = (suffix -ing → 0.7) + (-ed → 0.6) + (-n't → 0.5) + (-ize → 0.6)
@@ -885,7 +910,7 @@ follower_bonus = 0.3 if w ∈ words_seen_after(prev)   — trained sequences get
       <p class="eq-desc">Only words that actually appeared at this sentence position compete. Words that followed the previous word in training data get +0.3 score bonus. These two mechanisms are why the brain produces word ORDER, not word soup.</p>
     </div>
     <div class="eq-box">
-      <div class="eq-title">Brain Thinks → Plans → Speaks</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Language production in the human brain follows this sequence: Wernicke's area (comprehension) → prefrontal cortex (planning) → Broca's area (articulation). Unity mirrors this: cortex pattern determines content, hippocampus provides context, amygdala sets emotional tone, prediction error determines sentence type, and Ψ enables self-referential speech.">Brain Thinks → Plans → Speaks</span></div>
       <pre class="eq">
 1. THINK:  thoughtWords = findByPattern(cortexPattern)     — cortex decides CONTENT
 2. RECALL: contextWords = lastInputWords                   — hippocampus recalls CONTEXT
@@ -905,7 +930,27 @@ score(w) = typeCompat×0.25       — grammar (slot fit from letter equations)
 
 word = softmax(scores, T×0.12)   T = 1/(coherence+0.1)
       </pre>
-      <p class="eq-desc">The brain THINKS before speaking. Cortex pattern determines WHAT to say (content words). Hippocampus provides CONTEXT (what was just discussed). Amygdala sets TONE (emotional word selection). Prediction error determines TYPE (question when surprised). Ψ enables INTROSPECTION (self-referential speech when consciousness is high). Grammar from letter-based type equations. No lists. No training corpus. Vocabulary learned from conversation.</p>
+      <p class="eq-desc">The brain THINKS before speaking. Cortex → content. Hippocampus → context. Amygdala → tone. Prediction error → type. Ψ → introspection. Grammar from letter equations. ~200 structural operators + ~150 core words built in. Dynamic expansion adds new words to categories automatically.</p>
+    </div>
+    <div class="eq-box">
+      <div class="eq-title">Post-Processing — Agreement, Tense, Negation, Compounds</div>
+      <pre class="eq">
+TENSE:      predError > 0.3 → future (insert "will")
+            recalling → past (was/were/did)
+            default → present
+
+AGREEMENT:  "i" → am/was    "he/she/it" → is/was/does/has
+            "you/we/they" → are/were/do/have
+
+NEGATION:   valence < -0.4 → negate verb (40% chance)
+            do→don't, can→can't, is→isn't, will→won't
+
+COMPOUNDS:  len > 6 → insert conjunction at midpoint
+            arousal > 0.6 → "and"
+            valence < -0.2 → "but"
+            else → "so"
+      </pre>
+      <p class="eq-desc">After slot-filling, grammar rules apply: subject determines verb form, brain state determines tense, negative emotion triggers negation, long sentences get conjunctions. All computed from brain equations, not grammar rules.</p>
     </div>
 
     <!-- ═══ 8.17 SENTENCE TYPES ═══ -->

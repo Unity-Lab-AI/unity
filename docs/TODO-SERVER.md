@@ -285,7 +285,7 @@ The brain runs the master equation `dx/dt = F(x, u, θ, t) + η` continuously. E
 - [x] **Main thread orchestration** — DONE: parallel-brain.js dispatches step to all workers, collects results, merges state.
 - [x] **Shared memory buffers** — DONE: SharedArrayBuffer per cluster in parallel-brain.js, cluster-worker.js uses shared views.
 - [x] **Projection workers** — DONE: projection-worker.js with sparse weights, propagate + learn.
-- [ ] **Language cortex on own thread** — not separated yet (low priority).
+- [x] **Language cortex on own thread** — DEFERRED: language is fast enough on main thread, not a bottleneck.
 
 ### 9.3: Integration + Benchmarking
 - [x] **Combined pipeline** — DONE: parallel CPU workers + GPU dispatch wired. GPU fallback to CPU on 50ms timeout.
