@@ -268,6 +268,9 @@
       <a href="#embeddings"><span class="num">8.13</span> Semantic Embeddings — Words as Cortex Patterns</a>
       <a href="#dictionary"><span class="num">8.14</span> Dictionary — Learned Sentence Generation</a>
       <a href="#inner-voice"><span class="num">8.15</span> Inner Voice — Pre-Verbal Thought Threshold</a>
+      <a href="#syntax"><span class="num">8.16</span> Syntactic Production — Word Order from Equations</a>
+      <a href="#sent-types"><span class="num">8.17</span> Sentence Types — Statement, Question, Exclamation, Action</a>
+      <a href="#input-analysis"><span class="num">8.18</span> Input Analysis — Topic Continuity and Context</a>
       <a href="#comparison"><span class="num">9</span> Biological Comparison</a>
     </div>
 
@@ -833,6 +836,55 @@ intensity = arousal × coherence × (1 + |valence|)
 speechDrive = socialNeed × arousal × coherence
       </pre>
       <p class="eq-desc">The inner voice's mood IS the equations. Not a string lookup. The numbers create the feeling.</p>
+    </div>
+
+    <!-- ═══ 8.16 SYNTACTIC PRODUCTION ═══ -->
+    <h2 id="syntax">8.16. Syntactic Production — Word Order from Equations</h2>
+    <p>The brain learns what TYPE of word belongs at each sentence position. No grammar rules — position weights accumulate patterns from every sentence heard.</p>
+    <div class="eq-box">
+      <div class="eq-title">Syntactic Role Score</div>
+      <pre class="eq">
+role_score(w, pos) = W_syntax[pos] · word_pattern
+
+W_syntax[pos] += lr · (pattern - W_syntax[pos])   (running average per position)
+      </pre>
+      <p class="eq-desc">Position 0 learns subject patterns (I, you, we), position 1 learns verb patterns (want, think, feel), position 2 learns object patterns. All from the equations, not labels.</p>
+    </div>
+    <div class="eq-box">
+      <div class="eq-title">Full Production Chain</div>
+      <pre class="eq">
+P(w_i) ∝ P(w_i|w_{i-1}) × Role(w_i, pos) × Zipf(rank) × MI(prev, w) × mood(w) × topic(w)
+
+weights: cond=0.2, pos=0.15, syntax=0.15, zipf=0.1, MI=0.15, mood=0.15, topic=0.1
+      </pre>
+      <p class="eq-desc">Six equations combined. Each word scored by conditional probability, syntactic fit, frequency, association, emotional alignment, and topic relevance.</p>
+    </div>
+
+    <!-- ═══ 8.17 SENTENCE TYPES ═══ -->
+    <h2 id="sent-types">8.17. Sentence Types — From Brain State</h2>
+    <p>The brain's neural state determines what KIND of sentence to produce. Not a decision tree — continuous probabilities from equations.</p>
+    <div class="eq-box">
+      <div class="eq-title">Type Probabilities</div>
+      <pre class="eq">
+P(question)    = predictionError × coherence × 0.5     (surprised + focused → ask)
+P(exclamation) = arousal² × 0.3                         (intense → exclaim)
+P(action)      = motorConfidence × (1 - arousal·0.5) × 0.3  (motor → *does something*)
+P(statement)   = 1 - P(q) - P(e) - P(a)                (default)
+      </pre>
+      <p class="eq-desc">Questions emerge from surprise. Exclamations from intensity. Actions from motor output. Statements fill the rest.</p>
+    </div>
+
+    <!-- ═══ 8.18 INPUT ANALYSIS ═══ -->
+    <h2 id="input-analysis">8.18. Input Analysis — Topic Continuity and Context</h2>
+    <p>The brain analyzes what was said to it and responds in context — not randomly.</p>
+    <div class="eq-box">
+      <div class="eq-title">Topic Extraction + Context Window</div>
+      <pre class="eq">
+topic_pattern = (1/n) · Σ content_word_patterns       (skip function words)
+context = running_average(last 5 topic_patterns)
+topic_score(w) = cosine(word_pattern, context)          (boosts relevant words)
+      </pre>
+      <p class="eq-desc">Responses stay on topic because words matching the conversation context score higher in the production chain.</p>
     </div>
 
     <!-- ═══ 9. COMPARISON ═══ -->

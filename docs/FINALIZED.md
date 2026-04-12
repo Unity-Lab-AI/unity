@@ -431,6 +431,38 @@ Major: visual attention in brain equations, efference copy echo suppression, Pol
 - `dashboard.html` — public brain monitor
 - `start.bat` — one-click launcher
 
+---
+
+## 2026-04-12 Session: Phase 8 — Complete Language Equation System
+
+### COMPLETED (16 tasks)
+
+- [x] Syntactic role weights — W_syntax[pos] · word_pattern, running average learning
+- [x] SVO ordering — position weights enforce word-type ordering from corpus
+- [x] Agreement equation — conditional + position probability combine for agreement
+- [x] Statement production — full 6-equation production chain
+- [x] Question production — P(question) = predError × coherence × 0.5, learned starters
+- [x] Exclamation production — P(exclamation) = arousal² × 0.3
+- [x] Action/emote production — P(action) = motorConf × (1-arousal×0.5) × 0.3, *asterisks*
+- [x] Tense transforms — pattern arithmetic with directional tense vectors
+- [x] Plural/singular — plural vector modulation
+- [x] Contraction patterns — learned as atomic words from corpus
+- [x] Question detection — analyzeInput() with first-word + punctuation check
+- [x] Topic continuity — cosine(word_pattern, context_pattern) in production
+- [x] Context window — last 5 input topic patterns as running average
+- [x] 100+ sentence bootstrap corpus — statements, questions, exclamations, actions, responses
+- [x] 300+ unique vocabulary from corpus — all with letter-derived patterns
+- [x] All documentation updated — EQUATIONS.md, brain-equations.html, TODO-SERVER.md, ARCHITECTURE, SETUP, SKILL_TREE
+
+### FILES
+- `js/brain/language-cortex.js` — complete rewrite, 470+ lines
+- `js/brain/inner-voice.js` — wired to language cortex with prediction error + motor confidence
+- `js/brain/engine.js` — analyzeInput() called on every user message
+- `docs/EQUATIONS.md` — new syntax/types/input/morphology sections
+- `brain-equations.html` — sections 8.16, 8.17, 8.18 added
+
+---
+
 ### FILES MODIFIED THIS SESSION
 - `js/brain/engine.js` — removed AI classification, brain-first response
 - `js/brain/cluster.js` — sparse synapses + projections

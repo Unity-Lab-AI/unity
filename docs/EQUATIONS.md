@@ -108,16 +108,49 @@
 
 ## Language Production
 
+### Core Equations
 | Equation | Purpose | File |
 |----------|---------|------|
 | `f(r) = C / r^α` | Zipf's Law — word frequency distribution | `language-cortex.js` |
 | `I(w1;w2) = log₂(P(w1,w2) / P(w1)·P(w2))` | Mutual Information — word association | `language-cortex.js` |
 | `S(w) = -log₂ P(w\|context)` | Surprisal — unexpectedness | `language-cortex.js` |
-| `H = H_base + arousal · H_range` | Entropy Rate — sentence complexity from brain | `language-cortex.js` |
-| `P(w_i) ∝ P(w_i\|w_{i-1})·P(w_i\|pos)·Zipf(rank)·MI·mood` | Conditional production chain | `language-cortex.js` |
 | `P(w) = softmax(scores / T), T = 1/(coherence + 0.1)` | Sampling with brain temperature | `language-cortex.js` |
-| `ΔW_pred = η · (actual_next - predicted) · current^T` | Prediction weight learning | `language-cortex.js` |
 | `α = -slope(log(freq) vs log(rank))` | Zipf alpha estimation (log-log regression) | `language-cortex.js` |
+| `ΔW_pred = η · (actual_next - predicted) · current^T` | Prediction weight learning | `language-cortex.js` |
+
+### Syntactic Production
+| Equation | Purpose | File |
+|----------|---------|------|
+| `role_score(w, pos) = W_syntax[pos] · word_pattern` | Word-type fitness for sentence position | `language-cortex.js` |
+| `W_syntax[pos] += lr · (pattern - W_syntax[pos])` | Position weight learning (running average) | `language-cortex.js` |
+
+### Combined Production Chain
+| Equation | Purpose | File |
+|----------|---------|------|
+| `P(w_i) ∝ P(w_i\|w_{i-1}) × Role(w_i,pos) × Zipf(rank) × MI(prev,w) × mood × topic` | Full sentence production | `language-cortex.js` |
+| Weights: `cond=0.2, pos=0.15, syntax=0.15, zipf=0.1, MI=0.15, mood=0.15, topic=0.1` | Component weights | `language-cortex.js` |
+
+### Sentence Type Equations
+| Equation | Purpose | File |
+|----------|---------|------|
+| `P(question) = predictionError × coherence × 0.5` | Question production | `language-cortex.js` |
+| `P(exclamation) = arousal² × 0.3` | Exclamation production | `language-cortex.js` |
+| `P(action) = motorConfidence × (1 - arousal×0.5) × 0.3` | Action/emote production (`*text*`) | `language-cortex.js` |
+| `P(statement) = 1 - P(q) - P(e) - P(a)` | Statement production (default) | `language-cortex.js` |
+
+### Input Analysis
+| Equation | Purpose | File |
+|----------|---------|------|
+| `topic_pattern = avg(content_word_patterns)` | Extract conversation topic | `language-cortex.js` |
+| `topic_score = cosine(word_pattern, context_pattern)` | Topic continuity in responses | `language-cortex.js` |
+| `context = running_avg(last_5_input_patterns)` | Conversation context window | `language-cortex.js` |
+
+### Morphological Transforms
+| Equation | Purpose | File |
+|----------|---------|------|
+| `tense_pattern = base_pattern + tense_vector` | Tense as pattern arithmetic | `language-cortex.js` |
+| Past: `shift toward lower dims`, Future: `shift toward higher dims` | Temporal direction in pattern space | `language-cortex.js` |
+| `plural_pattern = base_pattern + plural_vector` | Number transform | `language-cortex.js` |
 
 ---
 
