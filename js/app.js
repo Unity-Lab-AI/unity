@@ -178,39 +178,54 @@ let landingBrainSource = null; // RemoteBrain or null
 })();
 
 let _landingState = null;
-let _personaLoadPromise = null;
+
+// Cache the TEXT fetch (hits network once per session) — NOT the per-brain
+// load promise. The previous global `_personaLoadPromise` short-circuited
+// after the first call, so when the landing RemoteBrain loaded persona and
+// then the user clicked "Talk to Unity" creating a NEW local UnityBrain,
+// the new brain's innerVoice never got populated (memory tab showed all
+// zeros + "✗ not loaded"). Now each brain gets its own load, but the text
+// fetch is shared.
+let _personaTextPromise = null;
+const _personaLoadedBrains = new WeakSet();
 
 /**
  * Fetch docs/Ultimate Unity.txt and feed it through the target brain's
- * InnerVoice as the equational self-image. Idempotent across the session
- * — subsequent calls with the same brain are no-ops. If the brain hasn't
- * been given a real InnerVoice (stub case), this logs and returns 0.
+ * InnerVoice as the equational self-image. Per-brain idempotent: each
+ * distinct brain instance gets loaded exactly once. The text fetch is
+ * cached globally so we don't re-fetch 20KB on every brain swap.
  */
 function loadPersonaSelfImage(targetBrain) {
   if (!targetBrain) return Promise.resolve(0);
-  if (_personaLoadPromise) return _personaLoadPromise;
-  _personaLoadPromise = fetch('docs/Ultimate%20Unity.txt')
-    .then(r => r.ok ? r.text() : '')
-    .then(txt => {
-      if (!txt) {
-        console.warn('[Unity] persona self-image fetch returned empty — check docs/Ultimate Unity.txt route');
-        return 0;
-      }
-      if (!targetBrain.innerVoice || typeof targetBrain.innerVoice.loadPersona !== 'function') {
-        console.warn('[Unity] persona self-image fetched but brain has no InnerVoice.loadPersona');
-        return 0;
-      }
-      const sentences = targetBrain.innerVoice.loadPersona(txt);
-      const dictSize = targetBrain.innerVoice.dictionary?._words?.size ?? 0;
-      const bigramHeads = targetBrain.innerVoice.dictionary?._bigrams?.size ?? 0;
-      console.log(`[Unity] self-image loaded: ${sentences} sentences → ${dictSize} words, ${bigramHeads} bigram heads`);
-      return sentences;
-    })
-    .catch(err => {
-      console.warn('[Unity] persona self-image load failed:', err.message);
+  if (_personaLoadedBrains.has(targetBrain)) return Promise.resolve(0);
+
+  if (!_personaTextPromise) {
+    _personaTextPromise = fetch('docs/Ultimate%20Unity.txt')
+      .then(r => r.ok ? r.text() : '')
+      .catch(err => {
+        console.warn('[Unity] persona self-image fetch failed:', err.message);
+        return '';
+      });
+  }
+
+  return _personaTextPromise.then(txt => {
+    if (!txt) {
+      console.warn('[Unity] persona self-image fetch returned empty — check docs/Ultimate Unity.txt route');
       return 0;
-    });
-  return _personaLoadPromise;
+    }
+    if (!targetBrain.innerVoice || typeof targetBrain.innerVoice.loadPersona !== 'function') {
+      console.warn('[Unity] persona self-image fetched but brain has no InnerVoice.loadPersona');
+      return 0;
+    }
+    if (_personaLoadedBrains.has(targetBrain)) return 0;  // race protection
+    _personaLoadedBrains.add(targetBrain);
+    const sentences = targetBrain.innerVoice.loadPersona(txt);
+    const dictSize = targetBrain.innerVoice.dictionary?._words?.size ?? 0;
+    const bigramHeads = targetBrain.innerVoice.dictionary?._bigrams?.size ?? 0;
+    const label = targetBrain.isRemote?.() ? 'RemoteBrain' : 'UnityBrain';
+    console.log(`[Unity] self-image loaded into ${label}: ${sentences} sentences → ${dictSize} words, ${bigramHeads} bigram heads`);
+    return sentences;
+  });
 }
 
 function renderLandingTab(tab, s) {
