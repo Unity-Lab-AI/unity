@@ -347,6 +347,7 @@ export class Dictionary {
           followers: Array.from(followers.entries()),
         })),
       };
+      if (typeof localStorage === 'undefined') return;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     } catch (err) {
       console.warn('[Dictionary] Save failed:', err.message);
@@ -355,6 +356,7 @@ export class Dictionary {
 
   _load() {
     try {
+      if (typeof localStorage === 'undefined') return;
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return;
       const data = JSON.parse(raw);
