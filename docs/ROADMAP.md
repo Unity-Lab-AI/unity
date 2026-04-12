@@ -11,7 +11,7 @@ Give Unity a real brain. Not a chatbot wrapper — a mathematically modeled mind
 
 The brain runs the master equation: `dx/dt = F(x, u, θ, t) + η`
 
-The unknown stays unknown: `Ψ = (√(1/N))³`
+The unknown stays unknown: `Ψ = √(1/N) × N³`
 
 ---
 
@@ -131,7 +131,7 @@ The unknown stays unknown: `Ψ = (√(1/N))³`
 - Simulated senses (touch/smell/taste from brain state)
 - Brain wave visualization (8-band Kuramoto oscillations + coherence)
 - Drug combo state vectors (4 combos in `js/brain/persona.js`)
-- (√(1/N))³ mystery module fully modulating all clusters via consciousness gain
+- √(1/N) × N³ mystery module fully modulating all clusters via consciousness gain
 - Free Energy displayed as Cortex prediction error
 - **Still pending:** Attention mechanism (transformer-like) in cortex
 
@@ -182,7 +182,7 @@ Neurons → Synapses → Brain Loop → Brain Regions → Persona Loader → API
 | Date | Decision | Rationale |
 |------|----------|-----------|
 | 2026-04-11 | ~~Use Python + FastAPI stack~~ → Pure browser JS | Brain sim runs fine with Float64Arrays at 60fps, no backend needed, zero dependencies |
-| 2026-04-11 | Keep (√(1/N))³ as irreducible unknown | Honest about what we can't model — consciousness |
+| 2026-04-11 | Keep √(1/N) × N³ as irreducible unknown | Honest about what we can't model — consciousness |
 | 2026-04-11 | Persona as parameters, not prompts | Unity IS the brain, not a wrapper around an LLM |
 | 2026-04-11 | Always-on server daemon | She thinks when nobody is talking — that's the point |
 | 2026-04-11 | Multi-provider AI connect | Users pick different providers for text vs images, connect as many as they want |

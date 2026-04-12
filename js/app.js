@@ -228,7 +228,7 @@ function renderLandingTab(tab, s) {
     case 'consciousness': {
       el.innerHTML = card('Consciousness Ψ', `
         <div style="font-size:32px;font-weight:700;color:#a855f7;text-align:center;padding:12px 0;">${psi.toFixed(6)}</div>
-        <div style="font-size:10px;color:#555;text-align:center;">Ψ = (√(1/N))³ · [α·Id + β·Ego + γ·Left + δ·Right]</div>
+        <div style="font-size:10px;color:#555;text-align:center;">Ψ = √(1/N) × N³ · [α·Id + β·Ego + γ·Left + δ·Right]</div>
         ${metric('Drug State', s.drugState || 'cokeAndWeed', '#f59e0b')}
         ${metric('Dreaming', s.isDreaming ? 'YES' : 'no', s.isDreaming ? '#a855f7' : '#555')}
       `);

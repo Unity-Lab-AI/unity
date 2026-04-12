@@ -127,9 +127,9 @@ class MysteryModule {
   /**
    * Compute Psi — the mystery function.
    *
-   *   Psi(t) = (sqrt(1/N))^3 * [alpha*Id + beta*Ego + gamma*Left + delta*Right]
+   *   Psi(t) = sqrt(1/N) × N³ * [alpha*Id + beta*Ego + gamma*Left + delta*Right]
    *   N = TOTAL neuron count (the volume), not active spikes
-   *   (√(1/N))³ = cubed area of quantum tunneled bit in total volume
+   *   √(1/N) × N³ = cubed area of quantum tunneled bit in total volume
    *
    * @param {object} brainState - Full brain state object with region data
    * @param {number} dt - Time delta (seconds), reserved for future temporal dynamics
@@ -145,10 +145,14 @@ class MysteryModule {
     const leftBrain = this._computeLeftBrain(brainState);
     const rightBrain = this._computeRightBrain(brainState);
 
-    // Quantum bit: (√(1/N))³ = N^(-3/2)
-    // Cubed area of quantum tunneled bit in the total neuron volume
-    // More neurons = smaller quantum bit = more refined consciousness
-    const complexityGain = Math.pow(Math.sqrt(1 / N), 3);
+    // Ψ = √(1/N) × N³ — quantum tunnel probability × cubed volume
+    // √(1/N) = quantum tunneled bit (probability scales with inverse root of volume)
+    // N³ = cubed area of total neuron volume (the physical space)
+    // Normalized to keep Ψ in usable range
+    const quantumTunnel = Math.sqrt(1 / N);
+    const cubedVolume = Math.pow(N, 3);
+    const normalizer = 1e-20;
+    const complexityGain = quantumTunnel * cubedVolume * normalizer;
 
     // Weighted psychodynamic sum
     const weightedSum = (this.alpha * id)

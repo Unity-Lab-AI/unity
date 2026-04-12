@@ -519,11 +519,16 @@ class ServerBrain {
     // Aggression: negative valence builds faster when threshold is low
     if (this.valence < -p.aggressionThreshold) this.valence *= 1.2;
 
-    // Ψ = (√(1/N))³ — cubed area of quantum tunneled bit in total volume
-    // N = TOTAL neurons (the volume), NOT spikes
-    // Spikes modulate through Id/Ego/Left/Right, not through N
-    const N = TOTAL_NEURONS; // the full volume — 3.2M neurons
-    const quantumBit = Math.pow(Math.sqrt(1 / N), 3); // (1/N)^(3/2) — scales with cube of inverse root
+    // Ψ = √(1/n) × N³ × [α·Id + β·Ego + γ·Left + δ·Right]
+    // √(1/n) = quantum tunneled bit probability
+    // N³ = cubed area of the total neuron volume
+    // Two separate operations multiplied together
+    const N = TOTAL_NEURONS;
+    const quantumTunnel = Math.sqrt(1 / N);  // √(1/N) — quantum probability
+    const cubedVolume = Math.pow(N, 3);       // N³ — cubed area of total volume
+    // Normalize so Ψ stays in usable range (raw product is astronomical)
+    const normalizer = 1e-20; // scale factor
+    const quantumBit = quantumTunnel * cubedVolume * normalizer;
 
     // Components from cluster activity — persona weights modulate
     const p = this.persona;
