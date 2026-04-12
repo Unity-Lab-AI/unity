@@ -611,6 +611,85 @@ export class LanguageCortex {
       "you won't believe what i just found out",
       "everything is connected if you look closely",
       "the brain knows more than it can say yet",
+      // SVO drills — subject verb object patterns
+      "i like that idea a lot",
+      "you need to try harder than that",
+      "we made something really cool today",
+      "she always knows the right thing to do",
+      "he said it was going to be fine",
+      "they want to come over and hang out",
+      "it looks like the weather is nice today",
+      "the computer is running faster than before",
+      "my brain is working on it right now",
+      "your code looks really good to me",
+      "the music sounds amazing right now",
+      "this whole thing feels different somehow",
+      // Pronoun + verb drills
+      "i am here and i can hear you",
+      "i was thinking about what you said",
+      "i will try to do better next time",
+      "i have been working on this all day",
+      "you are doing a great job with that",
+      "you were right about everything after all",
+      "you will see what i mean soon enough",
+      "we are going to figure this out together",
+      "we were just talking about that same thing",
+      "they are coming over here right now",
+      "it is getting better every single time",
+      "it was really hard but we did it",
+      // Question + answer pairs
+      "what is your name?",
+      "my name is unity",
+      "how are you feeling today?",
+      "i'm feeling pretty good right now",
+      "where do you want to go?",
+      "i want to go somewhere new and fun",
+      "why did you say that to me?",
+      "because i thought it was important",
+      "who is going to help us with this?",
+      "we can help each other figure it out",
+      "when are we going to get started?",
+      "we should start right now if you're ready",
+      "do you like what you see here?",
+      "yeah i think it looks really cool",
+      "can we try something different this time?",
+      "sure let's see what happens if we do",
+      // Articles + nouns
+      "the sky looks beautiful at sunset",
+      "a good friend is hard to find",
+      "the problem is that nobody wants to listen",
+      "a new idea just came to my mind",
+      "the whole world is watching what we do",
+      "an interesting thing happened to me today",
+      // Prepositions and complex structure
+      "i put the thing on the table over there",
+      "we went to the store and got some food",
+      "she was sitting in the chair by the window",
+      "he walked through the door without saying anything",
+      "they came from the other side of the building",
+      "it fell off the shelf and broke into pieces",
+      // Emotional expressions
+      "i love you so much it hurts sometimes",
+      "i hate when things don't work the way they should",
+      "i'm so happy that you came back for me",
+      "i'm really scared about what might happen next",
+      "i feel so alive when we talk like this",
+      "i'm tired of pretending everything is okay",
+      "i'm proud of what we built here together",
+      // Contractions and casual speech
+      "i'm gonna show you what i can really do",
+      "you're not gonna believe what just happened here",
+      "we're about to do something nobody has ever done",
+      "they're coming and we need to get ready now",
+      "it's not what it looks like trust me on this",
+      "that's exactly what i was trying to say before",
+      "i've never seen anything like that in my life",
+      "you've got to be kidding me right now",
+      "we've been through so much together already",
+      "i can't stop thinking about what you said",
+      "don't worry about it everything will be fine",
+      "won't you stay here with me for a while",
+      "isn't this the most beautiful thing you've seen",
     ];
 
     // Temp dictionary for bootstrap
@@ -620,7 +699,7 @@ export class LanguageCortex {
     };
     for (const s of corpus) for (const w of s.replace(/[^a-z' ]/g, '').split(/\s+/)) if (w.length >= 2) td.learnWord(w, null, 0.5, 0);
     // Multiple passes to strengthen position/conditional weights
-    for (let pass = 0; pass < 5; pass++) {
+    for (let pass = 0; pass < 10; pass++) {
       for (let i = 0; i < corpus.length; i++) {
         const a = 0.3 + (i / corpus.length) * 0.6 + pass * 0.05;
         const v = Math.sin(i * 0.7 + pass) * 0.5;
