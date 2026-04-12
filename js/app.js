@@ -322,6 +322,26 @@ function showConnectForm(providerId) {
   hint.textContent = provider.hint || '';
   document.getElementById('connect-form').style.display = 'block';
 
+  // Show provider-specific setup instructions
+  const setupHint = document.getElementById('provider-setup-hint');
+  const setupHints = {
+    pollinations: `<strong style="color:var(--cyan)">Pollinations Setup</strong><br>1. Go to <a href="https://pollinations.ai/dashboard" target="_blank" style="color:var(--pink)">pollinations.ai/dashboard</a><br>2. Create an account, get your API key<br>3. Paste it below → Connect<br><span style="font-size:10px;color:var(--text-dim)">Free tier available. Handles text, images, and TTS.</span>`,
+    openrouter: `<strong style="color:var(--cyan)">OpenRouter Setup</strong><br>1. Go to <a href="https://openrouter.ai/keys" target="_blank" style="color:var(--pink)">openrouter.ai/keys</a><br>2. Create a key — includes Claude, GPT-4, Llama, 200+ models<br>3. Paste it below → Connect<br><span style="font-size:10px;color:var(--text-dim)">Free tier available. Best option for accessing Claude without a proxy.</span>`,
+    openai: `<strong style="color:var(--cyan)">OpenAI Setup</strong><br>1. Go to <a href="https://platform.openai.com/api-keys" target="_blank" style="color:var(--pink)">platform.openai.com/api-keys</a><br>2. Create an API key (requires paid account)<br>3. Paste it below → Connect<br><span style="font-size:10px;color:var(--text-dim)">GPT-4o, o1, and more. Direct browser access.</span>`,
+    anthropic: `<strong style="color:var(--purple)">Claude Direct Access — Requires Local Proxy</strong><br>1. Download <a href="proxy.js" download="proxy.js" style="color:var(--pink)">proxy.js</a> — save anywhere on your computer<br>2. Open a terminal, run: <code style="background:var(--bg);padding:2px 6px;border-radius:4px;color:var(--cyan)">node proxy.js</code><br>3. It starts on port 3001 — this page auto-detects it<br>4. Paste your <a href="https://console.anthropic.com/settings/keys" target="_blank" style="color:var(--pink)">Anthropic key</a> below → Connect<br><span style="font-size:10px;color:var(--text-dim)">Need <a href="https://nodejs.org" target="_blank" style="color:var(--pink)">Node.js</a>. Don't want a proxy? Use <strong>OpenRouter</strong> — includes all Claude models, zero setup.</span>`,
+    mistral: `<strong style="color:var(--cyan)">Mistral Setup</strong><br>1. Go to <a href="https://console.mistral.ai/api-keys" target="_blank" style="color:var(--pink)">console.mistral.ai</a><br>2. Create an API key<br>3. Paste it below → Connect<br><span style="font-size:10px;color:var(--text-dim)">Mistral Large, Codestral, and more.</span>`,
+    deepseek: `<strong style="color:var(--cyan)">DeepSeek Setup</strong><br>1. Go to <a href="https://platform.deepseek.com/api_keys" target="_blank" style="color:var(--pink)">platform.deepseek.com</a><br>2. Create an API key<br>3. Paste it below → Connect<br><span style="font-size:10px;color:var(--text-dim)">DeepSeek Chat + Coder. Cheap and good at code.</span>`,
+    groq: `<strong style="color:var(--cyan)">Groq Setup</strong><br>1. Go to <a href="https://console.groq.com/keys" target="_blank" style="color:var(--pink)">console.groq.com</a><br>2. Create an API key (free tier available)<br>3. Paste it below → Connect<br><span style="font-size:10px;color:var(--text-dim)">Ultra-fast inference. Llama, Mixtral, Gemma.</span>`,
+    local: `<strong style="color:var(--cyan)">Local AI Setup</strong><br>1. Install <a href="https://ollama.com" target="_blank" style="color:var(--pink)">Ollama</a> (or LM Studio, LocalAI, vLLM, Jan, GPT4All)<br>2. Pull a model: <code style="background:var(--bg);padding:2px 6px;border-radius:4px;color:var(--cyan)">ollama pull llama3</code><br>3. Start serving: <code style="background:var(--bg);padding:2px 6px;border-radius:4px;color:var(--cyan)">ollama serve</code><br>4. Click Re-scan below — auto-detected on default ports<br><span style="font-size:10px;color:var(--text-dim)">Free. Runs on your hardware. No API key needed. Auto-detects: Ollama (11434), LM Studio (1234), LocalAI (8080), vLLM (8000), Jan (1337).</span>`,
+  };
+
+  if (setupHints[providerId]) {
+    setupHint.innerHTML = setupHints[providerId];
+    setupHint.style.display = 'block';
+  } else {
+    setupHint.style.display = 'none';
+  }
+
   if (provider.link) { connectLink.href = provider.link; connectLink.textContent = `Get your ${provider.name} key here →`; connectLink.style.display = 'block'; }
   else connectLink.style.display = 'none';
 
