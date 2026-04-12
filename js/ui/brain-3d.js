@@ -24,7 +24,7 @@ let TOTAL = 1000;
 const MAX_RENDER_NEURONS = 20000;
 const AFTERGLOW_DECAY = 0.92;
 const PULSE_LIFE = 40;
-const MAX_PULSES = 80;
+const MAX_PULSES = 200; // enough for all 7 clusters to have visible pulses
 const MAX_CONN = 500;
 const AUTO_ROT_SPEED = 0.0015;
 
@@ -447,20 +447,32 @@ export class Brain3D {
     const spk = state.spikes;
     if (!spk) return;
 
-    for (let i = 0; i < TOTAL; i++) {
-      if (spk[i]) {
-        this._glow[i] = 1.0;
-        if (this._pulses.length < MAX_PULSES && Math.random() < 0.12) {
-          const ci = this._clusterOf(i);
-          this._pulses.push({
-            x: this._pos[i*3], y: this._pos[i*3+1], z: this._pos[i*3+2],
-            age: 0, col: CLUSTERS[ci].rgb,
-          });
+    // Glow update + pulses distributed EQUALLY across ALL clusters
+    const pulsesPerCluster = Math.floor(MAX_PULSES / CLUSTERS.length); // ~71 each
+    const clusterPulseCount = new Array(CLUSTERS.length).fill(0);
+    let off = 0;
+
+    for (let ci = 0; ci < CLUSTERS.length; ci++) {
+      const cn = CLUSTERS[ci].n;
+      for (let j = 0; j < cn; j++) {
+        const i = off + j;
+        if (i >= TOTAL) break;
+        if (spk[i]) {
+          this._glow[i] = 1.0;
+          // Each cluster gets its OWN pulse budget
+          if (clusterPulseCount[ci] < pulsesPerCluster && this._pulses.length < MAX_PULSES && Math.random() < 0.15) {
+            clusterPulseCount[ci]++;
+            this._pulses.push({
+              x: this._pos[i*3], y: this._pos[i*3+1], z: this._pos[i*3+2],
+              age: 0, col: CLUSTERS[ci].rgb,
+            });
+          }
+        } else {
+          this._glow[i] *= AFTERGLOW_DECAY;
+          if (this._glow[i] < 0.005) this._glow[i] = 0;
         }
-      } else {
-        this._glow[i] *= AFTERGLOW_DECAY;
-        if (this._glow[i] < 0.005) this._glow[i] = 0;
       }
+      off += cn;
     }
 
     this._buildConns(spk);
