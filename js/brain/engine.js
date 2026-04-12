@@ -509,25 +509,22 @@ export class UnityBrain extends EventEmitter {
     // Clear our own interrupt flag
     this.motor._interruptFlag = false;
 
-    // 3. Visual attention — if cortex prediction error is high after text input,
-    // the brain needs more context. The visual cortex captures a frame.
-    // No word lists. The cortex error determines if vision is needed.
+    // 3. WAIT for AI semantic classification to inject BG current.
+    // The sensory processor's _classifyAndRoute is async — it calls the AI model
+    // to determine intent and injects current into the correct BG channel.
+    // We MUST wait for this before reading the motor output.
+    await this._sleep(2000); // give classification time to complete
 
-    // 4. Let neural dynamics propagate
-    await this._sleep(100);
-
-    // 5. Wait for visual cortex if it's describing
+    // 4. Wait for visual cortex if it's describing
     if (this.visualCortex.isActive() && this.visualCortex._describing) {
       const start = Date.now();
-      while (this.visualCortex._describing && Date.now() - start < 5000) {
+      while (this.visualCortex._describing && Date.now() - start < 3000) {
         await this._sleep(200);
       }
     }
 
-    // 5. LET THE BRAIN DECIDE — no keyword lists.
-    // The sensory processor already injected semantic currents into the BG channels.
-    // Run extra steps to let the BG settle after the semantic injection.
-    for (let i = 0; i < 30; i++) this.step();
+    // 5. Run brain steps to let BG channels settle after classification current
+    for (let i = 0; i < 50; i++) this.step();
 
     const motorDecision = this.motor.getState();
     const bgAction = motorDecision.selectedAction;
