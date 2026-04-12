@@ -204,7 +204,7 @@ COMPOUNDS:  len > 6 → insert conjunction (arousal→"and", negative→"but")
 |----------|---------|
 | `Ψ = √(1/n) × N³ × [α·Id + β·Ego + γ·Left + δ·Right]` | Quantum consciousness |
 | `n` = active spiking neurons (changes every step) | The quantum tunneled bits |
-| `N` = total neurons (3.2M, fixed) | The brain volume |
+| `N` = total neurons (scales to hardware) | The brain volume |
 | `n ≠ N` — two DIFFERENT variables | n is small and dynamic, N is large and fixed |
 | Display: `log10(rawΨ)` — raw value is massive (~10¹⁴) | Orders of magnitude of consciousness |
 | `Id = amygdala × arousalBaseline` | Instinct weighted by persona |
