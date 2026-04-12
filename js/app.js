@@ -880,6 +880,13 @@ async function bootUnity(apiKey, perms) {
     showSpeechBubble(text, 8000);
     if (chatPanel) chatPanel.addMessage('assistant', text, true);
   });
+  // Image display — show generated images inline in chat
+  brain.on('image', (url) => {
+    if (chatPanel && url) {
+      chatPanel.addMessage('assistant', `<img src="${url}" style="max-width:300px;border-radius:8px;cursor:pointer;" onclick="window.open(this.src,'_blank')">`, true);
+    }
+  });
+
   // Suppress duplicate displays — greeting uses processAndRespond which
   // already emits 'response', so greeting handler should NOT also display.
   let _greetingDone = false;

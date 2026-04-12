@@ -882,17 +882,17 @@ USER REQUEST: ${text}`;
     const url = this._imageGen.generateImage(prompt, { model: this._storage?.get('image_model') || 'flux', width: 768, height: 768 });
 
     if (url) {
-      window.open(url, '_blank');
+      // Emit image URL — app.js handles display (no window.open, popup blockers block it)
+      this.emit('image', url);
       if (this._sandbox) {
         const imgId = 'img_' + Date.now();
-        this._sandbox.inject({ id: imgId, html: `<div style="margin:12px 0;text-align:center;"><div id="${imgId}-loading" style="color:#777;font-size:12px;font-family:monospace;padding:20px;">Generating...</div><img src="${url}" alt="" style="max-width:100%;border-radius:8px;border:1px solid #333;cursor:pointer;display:none;" onload="this.style.display='block';if(document.getElementById('${imgId}-loading'))document.getElementById('${imgId}-loading').style.display='none';" onerror="if(document.getElementById('${imgId}-loading'))document.getElementById('${imgId}-loading').textContent='Loading in new tab...';" onclick="window.open('${url}','_blank')"></div>`, css: '' });
+        this._sandbox.inject({ id: imgId, html: `<div style="margin:12px 0;text-align:center;"><img src="${url}" alt="" style="max-width:100%;border-radius:8px;border:1px solid #333;cursor:pointer;" onclick="window.open(this.src,'_blank')" onerror="this.alt='Image loading...'"></div>`, css: '' });
       }
     }
 
     this.reward += 0.1;
-    // Single response emission — no separate quip, no extra speech
-    this.emit('response', { text: 'Image generating.', action: 'generate_image' });
-    return { text: 'Image generating.', action: 'generate_image' };
+    this.emit('response', { text: url ? `![image](${url})` : 'Image failed.', action: 'generate_image' });
+    return { text: url ? `![image](${url})` : 'Image failed.', action: 'generate_image' };
   }
 
   _sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
