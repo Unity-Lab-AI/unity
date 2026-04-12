@@ -94,7 +94,7 @@ The brain runs the master equation `dx/dt = F(x, u, θ, t) + η` continuously. E
 - [x] **Create `js/brain/remote-brain.js`** — DONE: drop-in replacement, WebSocket relay, auto-reconnect, detectRemoteBrain(). — RemoteBrain class that implements the same API as UnityBrain but forwards everything to WebSocket. Drop-in replacement.
 - [x] **Auto-detect mode** — DONE: detectRemoteBrain() probes WebSocket, falls back to local brain seamlessly. — app.js checks if a brain server is available (probe WebSocket URL). If yes, use RemoteBrain. If no, run local brain. Seamless fallback.
 - [x] **State rendering** — DONE: RemoteBrain emits stateUpdate events, all visualizers receive same format. — all visualizers (HUD, brain-viz, brain-3d) receive state from WebSocket instead of local brain. Same rendering code, different data source.
-- [ ] **Sandbox per-user** — each user has their own sandbox. When the brain builds a component for User A, only User A's sandbox receives it. Other users see that the brain is building but get their own builds.
+- [x] **Sandbox per-user** — DONE: processAndRespond routes build_ui and generate_image actions to requesting user's WebSocket only. Build components sent as {type:'build'}, image prompts as {type:'image'}. Other users see conversation in stream but get their own builds.
 - [x] **Shared emotion indicator** — DONE: dashboard renders raw equation values (arousal→hue, valence→color, gate→width, psi→glow). Main app HUD gets USERS/GATE/STATE rows. sharedMood from _getSharedMood() returns raw equation outputs — no emoji, no string lookups.
 
 ### 3.3: Persistence on Server

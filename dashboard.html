@@ -208,6 +208,7 @@
         $('d-growth').innerHTML = `
           <div style="font-size:11px;"><span style="color:#ff4d9a;font-size:18px;font-weight:700;">${g.totalWords}</span><br><span style="color:#555;">words learned</span></div>
           <div style="font-size:11px;"><span style="color:#a855f7;font-size:18px;font-weight:700;">${g.totalInteractions}</span><br><span style="color:#555;">interactions</span></div>
+          <div style="font-size:11px;"><span style="color:#f59e0b;font-size:18px;font-weight:700;">${g.totalEpisodes ?? 0}</span><br><span style="color:#555;">episodes</span></div>
           <div style="font-size:11px;"><span style="color:#00e5ff;font-size:18px;font-weight:700;">${g.totalFrames?.toLocaleString() ?? 0}</span><br><span style="color:#555;">brain steps</span></div>
           <div style="font-size:11px;"><span style="color:#22c55e;font-size:18px;font-weight:700;">${(g.uptime / 3600).toFixed(1)}h</span><br><span style="color:#555;">uptime</span></div>
         `;

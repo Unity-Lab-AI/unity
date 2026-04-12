@@ -21,6 +21,7 @@ const { WebSocketServer } = require('ws');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const Database = require('better-sqlite3');
 
 const os = require('os');
 const { execSync } = require('child_process');
@@ -192,6 +193,9 @@ class ServerBrain {
     this._historyMaxLen = 3600; // ~1 hour at 1 sample/sec
     this._lastHistorySample = 0;
 
+    // Episodic memory — SQLite for persistent storage across sessions
+    this._initEpisodicDB();
+
     // Load saved weights
     this._loadWeights();
   }
@@ -307,6 +311,7 @@ class ServerBrain {
       growth: {
         totalWords: Object.keys(this._wordFreq || {}).length,
         totalInteractions: Object.values(this._conversations || {}).reduce((s, c) => s + c.length, 0),
+        totalEpisodes: this._db ? this.getEpisodeCount() : 0,
         uptime: this.time,
         totalFrames: this.frameCount,
       },
@@ -458,6 +463,9 @@ When asked to generate an image, respond with ONLY the image description/prompt 
           this._learnWords(text);
           this._learnWords(response);
 
+          // Store episode in SQLite
+          this.storeEpisode(userId, 'interaction', text, response);
+
           // Route based on response content (per-user)
           if (response.startsWith('[IMAGE]')) {
             return { text: response.slice(7).trim(), action: 'generate_image' };
@@ -507,6 +515,113 @@ When asked to generate an image, respond with ONLY the image description/prompt 
     for (const w of words) {
       if (w.length >= 2) this._wordFreq[w] = (this._wordFreq[w] || 0) + 1;
     }
+  }
+
+  // ── Episodic Memory (SQLite) ─────────────────────────────────
+
+  _initEpisodicDB() {
+    const dbPath = path.join(__dirname, 'episodic-memory.db');
+    this._db = new Database(dbPath);
+
+    // WAL mode for concurrent reads during brain loop
+    this._db.pragma('journal_mode = WAL');
+
+    this._db.exec(`
+      CREATE TABLE IF NOT EXISTS episodes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp REAL NOT NULL,
+        brain_time REAL NOT NULL,
+        user_id TEXT,
+        type TEXT NOT NULL DEFAULT 'interaction',
+        arousal REAL,
+        valence REAL,
+        psi REAL,
+        coherence REAL,
+        total_spikes INTEGER,
+        input_text TEXT,
+        response_text TEXT,
+        cortex_pattern TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_episodes_time ON episodes(brain_time);
+      CREATE INDEX IF NOT EXISTS idx_episodes_type ON episodes(type);
+      CREATE INDEX IF NOT EXISTS idx_episodes_user ON episodes(user_id);
+    `);
+
+    // Prepared statements for fast insert/query
+    this._stmtInsertEpisode = this._db.prepare(`
+      INSERT INTO episodes (timestamp, brain_time, user_id, type, arousal, valence, psi, coherence, total_spikes, input_text, response_text, cortex_pattern)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    this._stmtRecentEpisodes = this._db.prepare(`
+      SELECT * FROM episodes ORDER BY id DESC LIMIT ?
+    `);
+
+    this._stmtRecallByUser = this._db.prepare(`
+      SELECT * FROM episodes WHERE user_id = ? ORDER BY id DESC LIMIT ?
+    `);
+
+    this._stmtRecallByMood = this._db.prepare(`
+      SELECT * FROM episodes
+      WHERE ABS(arousal - ?) < 0.2 AND ABS(valence - ?) < 0.3
+      ORDER BY id DESC LIMIT ?
+    `);
+
+    this._stmtEpisodeCount = this._db.prepare('SELECT COUNT(*) as count FROM episodes');
+
+    const count = this._stmtEpisodeCount.get().count;
+    console.log(`[Brain] Episodic memory: ${count} episodes in database`);
+  }
+
+  /**
+   * Store an episode — a snapshot of brain state at a meaningful moment.
+   */
+  storeEpisode(userId, type, inputText, responseText) {
+    // Sample cortex pattern — first 32 firing rates as compact representation
+    const cortexV = this.voltages.cortex;
+    const pattern = [];
+    const step = Math.floor(CLUSTER_SIZES.cortex / 32);
+    for (let i = 0; i < 32; i++) {
+      const idx = i * step;
+      pattern.push(+(cortexV[idx] > this.vThresh ? 1 : 0));
+    }
+
+    this._stmtInsertEpisode.run(
+      Date.now(),
+      this.time,
+      userId || null,
+      type,
+      this.arousal,
+      this.valence,
+      this.psi,
+      this.coherence,
+      this.totalSpikes,
+      inputText || null,
+      responseText || null,
+      JSON.stringify(pattern),
+    );
+  }
+
+  /**
+   * Recall episodes by mood similarity (cosine on arousal/valence).
+   */
+  recallByMood(arousal, valence, limit = 5) {
+    return this._stmtRecallByMood.all(arousal, valence, limit);
+  }
+
+  /**
+   * Recall recent episodes for a specific user.
+   */
+  recallByUser(userId, limit = 10) {
+    return this._stmtRecallByUser.all(userId, limit);
+  }
+
+  /**
+   * Get total episode count.
+   */
+  getEpisodeCount() {
+    return this._stmtEpisodeCount.get().count;
   }
 
   // ── Persistence ──────────────────────────────────────────────
@@ -652,6 +767,14 @@ const httpServer = http.createServer((req, res) => {
     return;
   }
 
+  // Episodic memory query
+  if (req.url === '/episodes') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    const recent = brain._stmtRecentEpisodes.all(20);
+    res.end(JSON.stringify({ count: brain.getEpisodeCount(), recent }));
+    return;
+  }
+
   // Emotion history (for external tools)
   if (req.url === '/history') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -791,12 +914,14 @@ process.on('SIGINT', () => {
   console.log('\n[Brain] Shutting down — saving everything...');
   brain.saveWeights();
   brain.saveConversations();
+  if (brain._db) brain._db.close();
   brain.stop();
   process.exit(0);
 });
 process.on('SIGTERM', () => {
   brain.saveWeights();
   brain.saveConversations();
+  if (brain._db) brain._db.close();
   brain.stop();
   process.exit(0);
 });

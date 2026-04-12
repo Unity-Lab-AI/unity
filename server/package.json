@@ -1,0 +1,15 @@
+{
+  "name": "unity-brain-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Unity's brain — always on, shared by everyone",
+  "main": "brain-server.js",
+  "scripts": {
+    "start": "node brain-server.js"
+  },
+  "dependencies": {
+    "ws": "^8.16.0",
+    "node-fetch": "^3.3.2",
+    "better-sqlite3": "^11.0.0"
+  }
+}
