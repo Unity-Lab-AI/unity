@@ -689,14 +689,22 @@ export class UnityBrain extends EventEmitter {
       console.log(`[Brain] Own voice: "${response}"`);
     }
 
-    // If Broca's area (AI model) is connected, it can TEACH the brain new words
-    // but the brain's own voice is always the PRIMARY response
-    if (this._brocasArea && (!response || response === '...')) {
-      const aiResponse = await this._brocasArea.generate(state, text);
-      if (aiResponse) {
-        // AI teaches — brain learns the words, but AI response is used this time
-        this.innerVoice.learn(aiResponse, cortexOutput, brainArousal, brainValence);
-        response = aiResponse;
+    // Broca's area (AI model) ALWAYS teaches the brain when connected.
+    // Pool provides the immediate response, Claude teaches in background.
+    // If pool failed, Claude's response is used directly.
+    if (this._brocasArea) {
+      const poolResponse = response; // save pool response
+      try {
+        const aiResponse = await this._brocasArea.generate(state, text);
+        if (aiResponse) {
+          // AI teaches — brain learns every word Claude says
+          this.innerVoice.learn(aiResponse, cortexOutput, brainArousal, brainValence);
+          console.log(`[Brain] Claude taught: "${aiResponse.slice(0, 60)}..."`);
+          // If pool had nothing useful, use Claude's response directly
+          if (!poolResponse || poolResponse === '...') response = aiResponse;
+        }
+      } catch (e) {
+        console.warn(`[Brain] Broca's area error: ${e.message}`);
       }
     }
 
