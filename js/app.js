@@ -60,7 +60,16 @@ let landingBrainSource = null; // RemoteBrain or null
   // Init 3D brain on landing container
   try {
     landingBrain3d = new Brain3D('brain-3d-landing');
-    console.log('[Landing] 3D brain initialized');
+    // Make the overlay fit inside the landing container, not fullscreen
+    if (landingBrain3d._overlay) {
+      landingBrain3d._overlay.style.position = 'absolute';
+      landingBrain3d._overlay.style.zIndex = '0';
+      // Hide the close button and header on landing
+      const hdr = landingBrain3d._overlay.querySelector('.b3d-hdr');
+      if (hdr) hdr.style.display = 'none';
+    }
+    landingBrain3d.open();
+    console.log('[Landing] 3D brain initialized and visible');
   } catch (err) {
     console.warn('[Landing] 3D brain failed:', err.message);
   }
@@ -285,7 +294,7 @@ const brainIndicator = document.getElementById('brain-indicator');
 const LOCAL_AI_ENDPOINTS = [
   { name: 'Ollama', url: 'http://localhost:11434', probe: '/api/tags', modelsPath: 'models', modelKey: 'name' },
   { name: 'LM Studio', url: 'http://localhost:1234', probe: '/v1/models', modelsPath: 'data', modelKey: 'id' },
-  { name: 'LocalAI', url: 'http://localhost:8080', probe: '/v1/models', modelsPath: 'data', modelKey: 'id' },
+  { name: 'LocalAI', url: 'http://localhost:8090', probe: '/v1/models', modelsPath: 'data', modelKey: 'id' },
 ];
 
 let detectedAI = [];
