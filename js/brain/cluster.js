@@ -260,4 +260,36 @@ export class ClusterProjection {
   propagate() {
     this.target.receiveProjection(this.source.lastSpikes, this.weights);
   }
+
+  /**
+   * Reward-modulated Hebbian learning on projection weights.
+   * ΔW_proj = η · δ · source_spikes · target_spikes
+   *
+   * When source fires AND target fires AND reward is positive,
+   * the connection strengthens. This is how the brain learns
+   * which cortex patterns (language) lead to which BG actions.
+   *
+   * @param {number} reward — positive = strengthen, negative = weaken
+   * @param {number} lr — learning rate
+   */
+  learn(reward, lr = 0.001) {
+    if (Math.abs(reward) < 0.01) return; // no learning without reward signal
+    const srcSpikes = this.source.lastSpikes;
+    const tgtSpikes = this.target.lastSpikes;
+    const srcSize = this.source.size;
+    const tgtSize = this.target.size;
+
+    for (let i = 0; i < tgtSize; i++) {
+      if (!tgtSpikes[i]) continue; // target not firing — skip
+      for (let j = 0; j < srcSize; j++) {
+        if (!srcSpikes[j]) continue; // source not firing — skip
+        // Both fired — update weight based on reward
+        const idx = i * srcSize + j;
+        this.weights[idx] += lr * reward;
+        // Clamp weights
+        if (this.weights[idx] > 1.0) this.weights[idx] = 1.0;
+        if (this.weights[idx] < -0.5) this.weights[idx] = -0.5;
+      }
+    }
+  }
 }

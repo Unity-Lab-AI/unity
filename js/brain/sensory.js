@@ -113,6 +113,44 @@ export class SensoryProcessor {
     }
   }
 
+  /**
+   * Set the AI provider for semantic classification.
+   * The AI model IS the semantic cortex — it understands language.
+   */
+  setAIProvider(provider) {
+    this._aiProvider = provider;
+  }
+
+  /**
+   * Classify text intent using the AI model and inject current into the winning BG channel.
+   * This is Wernicke's area → prefrontal cortex → BG pathway.
+   * The AI does what no word list can — understands MEANING.
+   */
+  async _classifyAndRoute(text) {
+    if (!this._aiProvider?.chat) return;
+
+    try {
+      const result = await this._aiProvider.chat([
+        { role: 'system', content: 'Classify this message into ONE action. Reply with ONLY the number:\n0 = conversation/chat/question/response\n1 = generate/show image/picture/photo/selfie/drawing\n2 = sing/vocalize/sound effect\n3 = build/create/code UI component/app/tool/game/calculator/widget\n4 = wait/listen/stop/be quiet\n5 = nothing/idle\nReply with ONLY the digit 0-5.' },
+        { role: 'user', content: text },
+      ], { temperature: 0 });
+
+      const channel = parseInt((result || '0').trim().charAt(0));
+      if (channel >= 0 && channel <= 5) {
+        // Inject STRONG current into the classified channel
+        const start = channel * 25;
+        const w = this._semanticWeights;
+        const weightKey = ['respond', 'image', 'speak', 'build', 'listen', 'idle'][channel];
+        for (let i = start; i < start + 25; i++) {
+          this.bgCurrent[i] += 15.0 * (w[weightKey]?.[i] || 0.5);
+        }
+        console.log(`[Sensory] AI classified "${text.slice(0, 30)}..." → channel ${channel} (${weightKey})`);
+      }
+    } catch {
+      // AI classification failed — BG will use default respond bias
+    }
+  }
+
   // ── Setup ──────────────────────────────────────────────────────
 
   /**
@@ -318,68 +356,21 @@ export class SensoryProcessor {
     // Text input is always salient
     this.salience += 0.5 + text.length * 0.01;
 
-    // ── SEMANTIC → BASAL GANGLIA ROUTING ──
-    // Map text meaning to BG action channels through neural current.
-    // This is the prefrontal cortex → BG pathway.
+    // ── SEMANTIC → BASAL GANGLIA ──
+    // Text → cortex (Wernicke's) → cortex→BG projection (LEARNED weights) → BG channels.
+    // The projection weights ARE the dictionary: ΔW = η · δ · cortex · BG
+    // Shaped by reward-modulated Hebbian plasticity over time.
     //
-    // Instead of character hashing (which is meaningless), we use a
-    // semantic vocabulary — words that MEAN specific actions get routed
-    // to specific channels. The base activation from vocabulary is then
-    // scaled by learnable weights that get shaped through reward.
-    //
-    // BG channels: 0-24=respond, 25-49=image, 50-74=speak, 75-99=build, 100-124=listen, 125-149=idle
-    const lower = text.toLowerCase();
+    // BOOTSTRAP: until the projection weights have learned enough, the AI model
+    // classifies intent and injects current directly. This is Broca's area
+    // short-circuiting the slow learning pathway — like how a child first
+    // imitates before internalizing. The classification weakens as projections
+    // strengthen. Eventually the brain routes semantics purely through
+    // cortex→BG neural dynamics.
+    this._classifyAndRoute(text);
 
-    // Semantic vocabulary — maps word MEANING to channel activation
-    // This IS the brain's learned language→action mapping
-    const semanticMap = {
-      // respond_text (channel 0): conversational words
-      respond: ['what', 'who', 'how', 'why', 'when', 'where', 'tell', 'explain', 'think',
-        'feel', 'know', 'mean', 'say', 'talk', 'chat', 'opinion', 'believe', 'want',
-        'need', 'like', 'love', 'hate', 'remember', 'name', 'age', 'doing', 'been',
-        'hello', 'hey', 'hi', 'yo', 'sup', 'thanks', 'sorry', 'please', 'yes', 'no',
-        'yeah', 'nah', 'okay', 'cool', 'nice', 'fuck', 'shit', 'damn', 'babe', 'baby'],
-
-      // generate_image (channel 1): visual/image words
-      image: ['image', 'picture', 'photo', 'selfie', 'pic', 'draw', 'painting',
-        'portrait', 'render', 'generate', 'visual', 'illustration', 'artwork',
-        'sketch', 'headshot', 'snapshot', 'capture', 'shot', 'scene'],
-
-      // speak (channel 2): vocalization
-      speak: ['sing', 'scream', 'shout', 'whisper', 'hum', 'rap', 'voice'],
-
-      // build_ui (channel 3): construction/tool words
-      build: ['build', 'create', 'make', 'code', 'program', 'app', 'tool', 'widget',
-        'calculator', 'editor', 'game', 'player', 'timer', 'clock', 'chart',
-        'component', 'interface', 'button', 'slider', 'form', 'input', 'output',
-        'sandbox', 'canvas', 'display', 'panel', 'window', 'menu', 'dashboard',
-        'counter', 'list', 'table', 'grid', 'layout', 'design', 'ui', 'ux'],
-
-      // listen (channel 4): pause/wait
-      listen: ['wait', 'hold', 'stop', 'pause', 'listen', 'quiet', 'shh', 'shut'],
-
-      // idle (channel 5): nothing
-      idle: ['nothing', 'nevermind', 'nvm', 'forget', 'chill', 'relax', 'idle'],
-    };
-
-    // Score each channel based on word presence
-    const scores = { respond: 0.3, image: 0, speak: 0, build: 0, listen: 0, idle: 0 }; // respond gets base activation (default action)
-    for (const [channel, vocab] of Object.entries(semanticMap)) {
-      for (const word of vocab) {
-        if (lower.includes(word)) {
-          scores[channel] += 1.0;
-        }
-      }
-    }
-
-    // Inject scores into BG channels through learnable weights
-    const w = this._semanticWeights;
-    for (let i = 0; i < 25; i++)   this.bgCurrent[i]   += scores.respond * w.respond[i] * 12;
-    for (let i = 25; i < 50; i++)  this.bgCurrent[i]    += scores.image * w.image[i] * 12;
-    for (let i = 50; i < 75; i++)  this.bgCurrent[i]    += scores.speak * w.speak[i] * 12;
-    for (let i = 75; i < 100; i++) this.bgCurrent[i]    += scores.build * w.build[i] * 12;
-    for (let i = 100; i < 125; i++) this.bgCurrent[i]   += scores.listen * w.listen[i] * 12;
-    for (let i = 125; i < 150; i++) this.bgCurrent[i]   += scores.idle * w.idle[i] * 12;
+    // Default respond bias (most inputs are conversational)
+    for (let i = 0; i < 25; i++) this.bgCurrent[i] += 3.0;
 
     // Emotional words boost amygdala
     const emotionalWords = ['love', 'hate', 'fuck', 'shit', 'beautiful', 'ugly',

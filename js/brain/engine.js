@@ -476,6 +476,8 @@ export class UnityBrain extends EventEmitter {
     this._imageGen = pollinationsAI;
     this._sandbox = sandboxRef;
     this._storage = storageRef;
+    // Give the sensory processor access to the AI for semantic classification
+    this.sensory.setAIProvider(pollinationsAI);
   }
 
   /**
@@ -741,9 +743,14 @@ export class UnityBrain extends EventEmitter {
   giveReward(amount) {
     this.reward += amount;
     this.motor.reinforceAction(this.clusters.basalGanglia, amount);
-    // Also reinforce the semantic→motor mapping in sensory processor
-    // This is how the brain LEARNS which input patterns → which actions
-    this.sensory.reinforceSemanticMapping(this.motor.selectedAction, amount);
+
+    // Reward-modulated learning on inter-cluster projections.
+    // This is the KEY equation: ΔW_proj = η · δ · source_spikes · target_spikes
+    // The cortex→BG projection learns which language patterns → which actions.
+    // ALL projections learn from reward — the whole brain adapts.
+    for (const proj of this.projections) {
+      proj.learn(amount, 0.002);
+    }
   }
 
   getState() { return this.state; }
