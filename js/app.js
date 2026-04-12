@@ -824,9 +824,9 @@ async function bootUnity(apiKey, perms) {
           body: JSON.stringify({
             model: 'openai',
             messages: [
-              { role: 'system', content: 'You are describing what a person\'s webcam shows. Focus on: body language (posture, gestures, leaning), apparent mood/energy (relaxed, focused, excited, tired, bored), clothing (colors, style), environment (room, lighting, objects nearby), and activity (typing, talking, looking away, drinking). Do NOT mention face blurring or privacy. 1-2 sentences, casual tone.' },
+              { role: 'system', content: 'Describe what you see through a webcam. What is the person doing, how do they seem, what is around them. 1 sentence. No privacy disclaimers.' },
               { role: 'user', content: [
-                { type: 'text', text: 'Describe the scene — mood, body language, environment.' },
+                { type: 'text', text: 'What do you see?' },
                 { type: 'image_url', image_url: { url: dataUrl } },
               ]},
             ],
