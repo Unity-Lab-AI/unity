@@ -185,12 +185,24 @@ class VoiceIO {
 
     const voice = options.voice || this._pollinationsVoice;
 
-    try {
-      await this._speakPollinations(text, voice);
-      console.log(`[VoiceIO] Spoke via Pollinations (voice: ${voice})`);
-    } catch (err) {
-      console.warn(`[VoiceIO] Pollinations TTS failed: ${err.message} — falling back to browser`);
-      // Pollinations failed — fall back to browser TTS
+    // Try Pollinations TTS — retry once on 5xx errors before falling back
+    let spoke = false;
+    for (let attempt = 0; attempt < 2 && !spoke; attempt++) {
+      try {
+        await this._speakPollinations(text, voice);
+        console.log(`[VoiceIO] Spoke via Pollinations (voice: ${voice})`);
+        spoke = true;
+      } catch (err) {
+        if (attempt === 0 && err.message?.includes('5')) {
+          console.warn(`[VoiceIO] Pollinations TTS 5xx — retrying in 1s...`);
+          await new Promise(r => setTimeout(r, 1000));
+        } else {
+          console.warn(`[VoiceIO] Pollinations TTS failed: ${err.message} — falling back to browser`);
+        }
+      }
+    }
+
+    if (!spoke) {
       try {
         await this._speakBrowser(text);
       } catch (fallbackErr) {
@@ -322,6 +334,23 @@ class VoiceIO {
     return new Promise((resolve, reject) => {
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = 'en-US';
+      utterance.rate = 1.0;
+      utterance.pitch = 1.1;
+
+      // Try to pick a decent female voice instead of the default robot
+      const voices = speechSynthesis.getVoices();
+      const preferred = ['Samantha', 'Karen', 'Moira', 'Tessa', 'Victoria',
+        'Google UK English Female', 'Microsoft Zira', 'Microsoft Aria'];
+      for (const name of preferred) {
+        const v = voices.find(v => v.name.includes(name));
+        if (v) { utterance.voice = v; break; }
+      }
+      // Fallback: any female-sounding English voice
+      if (!utterance.voice) {
+        const femaleEn = voices.find(v => v.lang.startsWith('en') && /female|woman|zira|aria|samantha/i.test(v.name));
+        if (femaleEn) utterance.voice = femaleEn;
+      }
+
       this._currentUtterance = utterance;
 
       utterance.onend = () => {
