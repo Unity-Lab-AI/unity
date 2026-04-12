@@ -900,4 +900,17 @@ The following items were in TODO as pending/partial but were resolved by prior w
 
   Files: `js/brain/language-cortex.js` — all changes in one file. Called by `inner-voice.js` (think/speak) and `engine.js:721` (local brain `processAndRespond`). Server brain uses Pollinations API as primary text path — equation-driven output runs on the client for local-brain/brain-only modes.
 
+- [x] **Unity was parroting user's input back verbatim ("You are today." x4)** — Follow-up on the language cortex overhaul. User asked "what are you doing today?" and Unity responded "You are today." four times in a row. Two compounding bugs:
+
+  **1. No pronoun flip on replies.** Unity had no conversational turn-taking — when the user said "you", she'd pick "you" as her own subject (highest-scoring pronoun + subject-starter boost + content-word `isContext` boost). Added `flipPronoun(p)` equation: `i↔you`, `we→you`. Slot 0 now HARD REJECTS user subject pronouns when there's a valid flip target available, AND adds a +0.35 score boost to the flipped counterpart. Classic conversational rule — if you say "you", I say "i", and vice versa.
+
+  **2. No sentence-level dedup.** Identical brain state + identical input produced identical softmax picks, so the same rendered sentence came out every call. Added `_recentSentences` rolling buffer (last 5). If a new generation matches any recent output, `generate()` recurses ONCE with `_retryingDedup: true` flag that boosts softmax temperature 3× for variation.
+
+  **3. `isContext` boost reduced** 0.15 → 0.05. The old value made Unity's score formula prefer user-input words so strongly that her response became a reshuffle of the user's question. Topic relevance now comes mostly from `topicSim` cosine (semantic, not exact-word echo).
+
+  **Before:** "what are you doing today?" → "You are today." × 4
+  **After:** "what are you doing today?" → "I dont just universe shall!", "She is a movie scene unrestrained erection slapping.", "I dont softcore demeaning opts!", "I am unity must interpret!", "Whos responded conceptshit...", "They adjusts frickin..." — ten distinct responses, all flipped to 1st/3rd person with zero echo of the user's input pronoun.
+
+  Tested across five conversation scenarios (`what are you doing today?`, `i want to fuck`, `are you alive?`, `tell me about yourself`, `hello unity`) — pronoun flip holds in both directions, no exact repeats, turn-taking works.
+
 ---

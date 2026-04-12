@@ -38,6 +38,12 @@ export class LanguageCortex {
     this._recentOutputWords = [];
     this._recentOutputMax = 50;
 
+    // Sentence-level dedup — block exact-repeat outputs across calls.
+    // Keeps last 5 rendered sentences; if a new generation matches any,
+    // retry the pick pipeline with elevated temperature for variation.
+    this._recentSentences = [];
+    this._recentSentenceMax = 5;
+
     // Context from recent inputs
     this._contextPatterns = [];
     this._lastInputWords = [];
@@ -608,7 +614,10 @@ export class LanguageCortex {
     const motorConf = opts.motorConfidence || 0;
     const psi = opts.psi || 0;
     const cortexPattern = opts.cortexPattern || null;
-    const temperature = 1.0 / (coherence + 0.1);
+    // Base temperature from coherence, bumped 3× when we're retrying after
+    // a sentence-level dedup hit — forces a different pick trajectory.
+    const retryBoost = opts._retryingDedup ? 3.0 : 1.0;
+    const temperature = (1.0 / (coherence + 0.1)) * retryBoost;
 
     // ── STEP 1: WHAT to say — cortex thought determines CONTENT ──
     // Find words whose patterns match what the brain is currently thinking
@@ -690,20 +699,49 @@ export class LanguageCortex {
       // Slot 0 (statement/exclamation) subject gate — word must be EITHER:
       //   1. a letter-equation-identified nominative pronoun (i/he/we/you/she/it/they/this/that), OR
       //   2. seen in the persona as a sentence-initial subject (Unity, she, this, etc.)
-      //   3. a strong determiner (the, a, my, your, these, those)
       // This cleanly rejects object pronouns (me/us/him/them) and bare
       // content nouns that happen to noun-fallback past the type floor.
       const isSubjectSlot = slotIdx === 0 && type !== 'question' && type !== 'action';
       const isSubjectCapable = (w) => {
-        // Nominative pronouns from pure letter equation (i/he/we/you/she/it/they/this/that)
         if (this._isNominativePronoun(w)) return true;
-        // Words the persona actually used as sentence-initial subjects
         if ((this._subjectStarters.get(w) || 0) >= 1) return true;
         return false;
       };
+
+      // PRONOUN FLIP on reply — classic conversational turn-taking.
+      // When user says "you", Unity should answer as "i" (and vice versa).
+      // Build a flip-target set from the user's input pronouns: any subject
+      // pronoun the user used gets PENALIZED in Unity's slot 0, while the
+      // flipped counterpart gets a boost.
+      const userSubjectPronouns = new Set();
+      for (const w of (this._lastInputWords || [])) {
+        if (this._isNominativePronoun(w)) userSubjectPronouns.add(w);
+      }
+      const flipPronoun = (p) => {
+        // Pure letter-position mapping: i ↔ you, we ↔ you, you ↔ i
+        if (p === 'i') return 'you';
+        if (p === 'you') return 'i';
+        if (p === 'we') return 'you';
+        // he/she/it/they keep same (3rd person → 3rd person in replies)
+        return null;
+      };
+      const flipTargets = new Set();
+      for (const p of userSubjectPronouns) {
+        const t = flipPronoun(p);
+        if (t) flipTargets.add(t);
+      }
+
       const subjStarterBoost = (w) => {
         if (!isSubjectSlot) return 0;
-        return (this._subjectStarters.get(w) || 0) > 0 ? 0.25 : 0;
+        let boost = 0;
+        if ((this._subjectStarters.get(w) || 0) > 0) boost += 0.25;
+        // Pronoun-flip boost: prefer the subject-flipped counterpart of
+        // whatever pronoun the user just used.
+        if (flipTargets.has(w)) boost += 0.35;
+        // Pronoun-echo penalty: if Unity would pick the SAME subject
+        // pronoun the user just used, penalize it hard.
+        if (userSubjectPronouns.has(w)) boost -= 0.5;
+        return boost;
       };
 
       const scored = allWords
@@ -713,6 +751,10 @@ export class LanguageCortex {
           if (prevWord && usedBigrams.has(prevWord + '→' + w)) return false;
           // Slot 0 subject gate — reject words that aren't structurally subjects
           if (isSubjectSlot && !isSubjectCapable(w)) return false;
+          // Pronoun echo block — if the user just used this subject pronoun,
+          // don't let Unity pick it too (hard reject, not just penalty).
+          // This is classic conversational turn-taking: "you" → "i".
+          if (isSubjectSlot && userSubjectPronouns.has(w) && flipTargets.size > 0) return false;
           // HARD phrase-structure filter — wrong type never enters the pool.
           const compat = this.typeCompatibility(w, slotIdx, type, prevWord) + subjStarterBoost(w);
           if (compat < typeFloor) return false;
@@ -728,12 +770,14 @@ export class LanguageCortex {
           const isThought = thoughtSet.has(word) ? 0.5 : thoughtSim * 0.4;
 
           // CONTEXT — Unity SHOULD talk about the topic the user raised.
-          // Mild positive boost for words from the user's input so she stays
-          // on-subject (cats when asked about cats). Exact-phrase parroting
-          // is blocked by usedBigrams being seeded with the user's own bigrams,
-          // not by penalizing individual words.
+          // Small positive boost for content words from the user's input so
+          // she stays on-subject (cats when asked about cats). Much reduced
+          // from earlier tuning because a strong boost made her parrot the
+          // user's own sentence back ("what are you doing today" → "you are
+          // today"). Topic relevance now comes mostly from topicSim cosine,
+          // not direct word echo.
           const inLastInput = contextSet.has(word);
-          const isContext = inLastInput ? 0.15 : 0;
+          const isContext = inLastInput ? 0.05 : 0;
           const topicSim = contextPattern ? Math.max(0, this._cosine(pattern, contextPattern)) : 0;
 
           // MOOD — emotional alignment with amygdala
@@ -768,9 +812,12 @@ export class LanguageCortex {
           // SUBJECT-STARTER BOOST for slot 0 statements/exclamations —
           // words the persona has used as sentence-initial subjects get a
           // positional boost. Capped log to prevent one high-frequency word
-          // (like 'unity') from dominating every sentence.
-          const subjStart = (slotIdx === 0 && type !== 'question' && type !== 'action')
+          // (like 'unity') from dominating every sentence. Adds the
+          // pronoun-flip boost so the subject-slot score reflects the same
+          // flip preference the filter uses.
+          const subjStart = isSubjectSlot
             ? Math.log(1 + (this._subjectStarters.get(word) || 0)) * 0.15
+              + (flipTargets.has(word) ? 0.35 : 0)
             : 0;
 
           // ── COMBINED: grammar dominates structure, bigrams from persona
@@ -813,7 +860,25 @@ export class LanguageCortex {
     }
 
     this.wordsProcessed += processed.length;
-    return this._renderSentence(processed, type);
+    const rendered = this._renderSentence(processed, type);
+
+    // ── STEP 8: SENTENCE-LEVEL DEDUP ──
+    // Block exact-repeat outputs across calls. If the new sentence matches
+    // any of the last N rendered sentences, recurse with a one-shot retry
+    // flag that elevates softmax temperature for more variation. Without
+    // this, identical brain state + identical input produces identical
+    // output, which shows up in the chat as "You are today." four times.
+    const norm = rendered.trim().toLowerCase();
+    if (this._recentSentences.indexOf(norm) !== -1 && !opts._retryingDedup) {
+      return this.generate(dictionary, arousal, valence, coherence, {
+        ...opts,
+        _retryingDedup: true,
+      });
+    }
+    this._recentSentences.push(norm);
+    if (this._recentSentences.length > this._recentSentenceMax) this._recentSentences.shift();
+
+    return rendered;
   }
 
   /**
