@@ -5,6 +5,7 @@
 <h3>Unity GPU Compute Worker</h3>
 <div id="status">Connecting to brain server...</div>
 <div id="stats" style="margin-top:10px;font-size:12px;color:#555;"></div>
+<div id="perf" style="margin-top:10px;font-size:11px;color:#444;"></div>
 <script type="module">
 import { GPUCompute } from './js/brain/gpu-compute.js';
 
@@ -15,6 +16,8 @@ const statsEl = document.getElementById('stats');
 let gpu = null;
 let gpuReady = false;
 let stepsComputed = 0;
+let totalComputeMs = 0;
+let computeStart = 0;
 
 // Init WebGPU
 (async () => {
@@ -42,6 +45,7 @@ ws.onmessage = async (e) => {
       // Server sent neuron state — run on GPU
       const { clusterName, size, voltages, currents, lifParams } = msg;
 
+      computeStart = performance.now();
       // Upload and compute
       gpu.uploadCluster(clusterName, size,
         new Float64Array(voltages),
@@ -63,7 +67,9 @@ ws.onmessage = async (e) => {
       }));
 
       stepsComputed++;
-      statsEl.textContent = `Steps computed: ${stepsComputed.toLocaleString()}`;
+      const elapsed = performance.now() - computeStart;
+      totalComputeMs += elapsed;
+      statsEl.textContent = `Steps: ${stepsComputed.toLocaleString()} | Avg: ${(totalComputeMs/stepsComputed).toFixed(2)}ms/step | Throughput: ${(size/(elapsed/1000)).toFixed(0)} neurons/sec`;
     }
   } catch {}
 };

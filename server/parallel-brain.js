@@ -35,6 +35,16 @@ class ParallelBrain {
     const workerPath = path.join(__dirname, 'cluster-worker.js');
     const names = Object.keys(this._clusterSizes);
 
+    // Allocate SharedArrayBuffers for zero-copy transfer
+    this._sharedBuffers = {};
+    for (const name of names) {
+      const size = this._clusterSizes[name];
+      this._sharedBuffers[name] = {
+        voltages: new SharedArrayBuffer(size * 8), // Float64
+        spikes: new SharedArrayBuffer(size),       // Uint8
+      };
+    }
+
     const readyPromises = names.map(name => {
       return new Promise((resolve) => {
         const worker = new Worker(workerPath, {
@@ -43,6 +53,8 @@ class ParallelBrain {
             size: this._clusterSizes[name],
             tonicDrive: this._tonicDrives[name] || 15,
             noiseAmplitude: this._noiseAmps[name] || 8,
+            sharedVoltages: this._sharedBuffers[name].voltages,
+            sharedSpikes: this._sharedBuffers[name].spikes,
           },
         });
 

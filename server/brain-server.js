@@ -366,6 +366,38 @@ class ServerBrain {
    * Update derived brain state after parallel step.
    * Arousal, valence, Ψ, coherence, motor — computed from cluster results.
    */
+  /**
+   * Offload one cluster's LIF computation to the GPU client.
+   * Returns a promise that resolves when the GPU sends results back.
+   */
+  async _gpuStep(clusterName) {
+    if (!this._gpuClient || this._gpuClient.readyState !== 1) return null;
+
+    const size = CLUSTER_SIZES[clusterName];
+    const V = this.voltages[clusterName];
+
+    // Send voltages + currents to GPU client
+    this._gpuClient.send(JSON.stringify({
+      type: 'compute_request',
+      clusterName,
+      size,
+      voltages: Array.from(V),
+      currents: Array.from(new Float64Array(size)), // external currents
+      lifParams: { tau: 20, Vrest: -65, Vthresh: -50, Vreset: -70, dt: 1, R: 1, tRefrac: 2 },
+    }));
+
+    // Wait for result (with timeout)
+    return new Promise((resolve) => {
+      this._gpuResolve = resolve;
+      setTimeout(() => {
+        if (this._gpuResolve === resolve) {
+          this._gpuResolve = null;
+          resolve(null); // timeout — fall back to CPU
+        }
+      }, 50); // 50ms timeout — if GPU takes longer, skip
+    });
+  }
+
   _updateDerivedState() {
     // Amygdala → arousal
     this.arousal = 0.85 + (this.clusters.amygdala.firingRate / CLUSTER_SIZES.amygdala) * 0.3;
@@ -1111,6 +1143,22 @@ wss.on('connection', (ws, req) => {
 
         case 'setName':
           client.name = msg.name;
+          break;
+
+        case 'gpu_register':
+          client.isGPU = true;
+          brain._gpuClient = ws;
+          brain._gpuConnected = true;
+          console.log(`[${id}] GPU compute client registered — GPU acceleration active`);
+          // Could scale neurons up here when GPU is available
+          break;
+
+        case 'compute_result':
+          // GPU client sent back computed spikes
+          if (brain._gpuResolve) {
+            brain._gpuResolve(msg);
+            brain._gpuResolve = null;
+          }
           break;
 
         default:

@@ -15,9 +15,15 @@ const { name, size, tonicDrive, noiseAmplitude } = workerData;
 // LIF parameters
 const tau = 20, vRest = -65, vThresh = -50, vReset = -70, dt = 1;
 
-// Neuron state — owned by this worker
-const voltages = new Float64Array(size).fill(vRest);
-const spikes = new Uint8Array(size);
+// Neuron state — use SharedArrayBuffer if available for zero-copy
+let voltages, spikes;
+if (workerData.sharedVoltages) {
+  voltages = new Float64Array(workerData.sharedVoltages);
+  spikes = new Uint8Array(workerData.sharedSpikes);
+} else {
+  voltages = new Float64Array(size).fill(vRest);
+  spikes = new Uint8Array(size);
+}
 
 // Receive step command from main thread
 parentPort.on('message', (msg) => {
