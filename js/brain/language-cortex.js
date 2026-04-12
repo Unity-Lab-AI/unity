@@ -308,43 +308,164 @@ export class LanguageCortex {
     return sentence.join(' ');
   }
 
+  /**
+   * SLOT-BASED GENERATION
+   *
+   * Instead of chaining word-by-word (which loops), plan the STRUCTURE first:
+   *
+   * Statement:    [SUBJECT] [VERB] [COMPLEMENT...]
+   * Question:     [Q-WORD] [VERB] [SUBJECT] [COMPLEMENT...]
+   * Exclamation:  [INTENSE] [COMPLEMENT...]
+   * Action:       [VERB] [COMPLEMENT...]
+   *
+   * Each SLOT is filled by the word with highest score for that position type.
+   * Trained followers connect the slots. Loop detection prevents repeating phrases.
+   */
+
   _generateStatement(allWords, arousal, valence, temperature, contextPattern, len) {
-    return this._buildChain(allWords, arousal, valence, temperature, contextPattern, len, 0);
+    // SLOT 0: Subject — pick from position-0 words (I, you, we, that, it, this, the...)
+    const subject = this._pickForSlot(allWords, 0, null, arousal, valence, contextPattern, temperature);
+    if (!subject) return this._buildChain(allWords, arousal, valence, temperature, contextPattern, len, 0);
+
+    // SLOT 1: Verb — pick from trained followers of subject, filtered to position-1 words
+    const verb = this._pickForSlot(allWords, 1, subject.word, arousal, valence, contextPattern, temperature);
+    if (!verb) return [subject.word, ...this._buildChain(allWords, arousal, valence, temperature, contextPattern, len - 1, 1).slice(0)];
+
+    // SLOTS 2+: Complement — chain from verb using trained sequences
+    const complement = this._buildComplement(allWords, verb.word, arousal, valence, temperature, contextPattern, len - 2, [subject.word, verb.word]);
+
+    return [subject.word, verb.word, ...complement];
+  }
+
+  /**
+   * Pick best word for a structural slot.
+   * Combines position probability with trained follower data.
+   */
+  _pickForSlot(allWords, slotPos, prevWord, arousal, valence, contextPattern, temperature) {
+    const posMap = this._positionCounts[Math.min(slotPos, MAX_SENTENCE_POS - 1)];
+    let candidates = Array.from(posMap?.entries() || [])
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 30)
+      .map(([w]) => allWords.find(([aw]) => aw === w))
+      .filter(Boolean);
+
+    if (candidates.length === 0) return null;
+
+    // If we have a previous word, boost trained followers
+    const followers = prevWord ? this._jointCounts.get(prevWord) : null;
+
+    const scored = candidates.map(([word, entry]) => {
+      const posP = this._posProb(word, slotPos);
+      const condP = prevWord ? this._condProb(word, prevWord) : 0;
+      const followerCount = followers?.get(word) || 0;
+      const moodDist = Math.abs((entry.arousal || 0.5) - arousal) + Math.abs((entry.valence || 0) - valence);
+      const moodBias = Math.exp(-moodDist * 1.5);
+      const topicSim = contextPattern ? this._cosine(entry.pattern || this.wordToPattern(word), contextPattern) : 0;
+
+      // Follower count dominates when available
+      const score = followerCount * 0.4 + condP * 0.2 + posP * 0.2 + moodBias * 0.1 + Math.max(0, topicSim) * 0.1;
+      return { word, entry, score };
+    });
+
+    return this._softmaxSample(scored, temperature * 0.15);
+  }
+
+  /**
+   * Build complement (slots 2+) with LOOP DETECTION.
+   * Follows trained sequences but breaks any repeating phrase.
+   */
+  _buildComplement(allWords, startWord, arousal, valence, temperature, contextPattern, maxLen, usedWords) {
+    const result = [];
+    let prev = startWord;
+    const usedBigrams = new Set(); // track "word1→word2" to prevent cycles
+
+    for (let i = 0; i < maxLen; i++) {
+      const followers = this._jointCounts.get(prev);
+      let picked = null;
+
+      if (followers && followers.size > 0) {
+        const followerScored = Array.from(followers.entries())
+          .filter(([w]) => {
+            // LOOP DETECTION: block if this bigram was already used
+            const bigram = prev + '→' + w;
+            if (usedBigrams.has(bigram)) return false;
+            // Block if last 2 words would repeat
+            if (result.length >= 1 && result[result.length - 1] === prev && w === (result.length >= 2 ? result[result.length - 2] : '')) return false;
+            return true;
+          })
+          .map(([word, count]) => {
+            const entry = allWords.find(([w]) => w === word);
+            if (!entry) return null;
+            const moodDist = Math.abs((entry[1].arousal || 0.5) - arousal) + Math.abs((entry[1].valence || 0) - valence);
+            return { word, entry: entry[1], score: count + Math.exp(-moodDist) * 2 };
+          })
+          .filter(Boolean);
+
+        if (followerScored.length > 0) {
+          picked = this._softmaxSample(followerScored, temperature * 0.15);
+        }
+      }
+
+      if (!picked) {
+        // No trained follower — pick from position candidates
+        const posCandidates = this._getPositionCandidates(allWords, i + 2, prev);
+        if (posCandidates.length > 0) {
+          const scored = posCandidates.map(([word, entry]) => {
+            const posP = this._posProb(word, i + 2);
+            const moodDist = Math.abs((entry.arousal || 0.5) - arousal) + Math.abs((entry.valence || 0) - valence);
+            return { word, entry, score: posP * 0.5 + Math.exp(-moodDist) * 0.5 };
+          });
+          picked = this._softmaxSample(scored, temperature * 0.2);
+        }
+      }
+
+      if (picked) {
+        usedBigrams.add(prev + '→' + picked.word);
+        result.push(picked.word);
+        prev = picked.word;
+      } else {
+        break; // no more words to add
+      }
+    }
+    return result;
+  }
+
+  _getPositionCandidates(allWords, pos, exclude) {
+    const posMap = this._positionCounts[Math.min(pos, MAX_SENTENCE_POS - 1)];
+    return Array.from(posMap?.entries() || [])
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 25)
+      .map(([w]) => allWords.find(([aw]) => aw === w))
+      .filter(Boolean)
+      .filter(([w]) => w !== exclude);
   }
 
   _generateQuestion(allWords, arousal, valence, temperature, contextPattern, len) {
-    // Questions: high-MI question starters, then verb, then rest
-    // Find best question-starting word from learned stats
+    // SLOT 0: Question word — from learned starters
     const qStarters = Array.from(this._questionStarters.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 10)
-      .map(([w]) => w);
+      .sort((a, b) => b[1] - a[1]).slice(0, 8).map(([w]) => w);
+    const qWord = qStarters.length > 0 ? qStarters[Math.floor(Math.random() * Math.min(3, qStarters.length))] : 'what';
 
-    if (qStarters.length > 0) {
-      const starter = qStarters[Math.floor(Math.random() * Math.min(3, qStarters.length))];
-      const starterEntry = allWords.find(([w]) => w === starter);
-      if (starterEntry) {
-        const chain = this._buildChain(allWords, arousal, valence, temperature, contextPattern, len - 1, 1);
-        return [starter, ...chain];
-      }
-    }
-    // Fallback: normal chain
-    return this._buildChain(allWords, arousal, valence, temperature, contextPattern, len, 0);
+    // SLOT 1: Verb — trained follower of question word
+    const verb = this._pickForSlot(allWords, 1, qWord, arousal, valence, contextPattern, temperature);
+    const verbWord = verb ? verb.word : 'do';
+
+    // SLOTS 2+: Subject + complement
+    const complement = this._buildComplement(allWords, verbWord, arousal, valence, temperature, contextPattern, len - 2, [qWord, verbWord]);
+
+    return [qWord, verbWord, ...complement];
   }
 
   _generateAction(allWords, arousal, valence, temperature, len) {
-    // Actions: verb-first, physical, short
+    // SLOT 0: Action verb — from learned action verbs
     const actionStarters = Array.from(this._actionVerbs.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 10)
-      .map(([w]) => w);
+      .sort((a, b) => b[1] - a[1]).slice(0, 8).map(([w]) => w);
+    const verb = actionStarters.length > 0 ? actionStarters[Math.floor(Math.random() * Math.min(3, actionStarters.length))] : 'looks';
 
-    if (actionStarters.length > 0) {
-      const starter = actionStarters[Math.floor(Math.random() * Math.min(3, actionStarters.length))];
-      const chain = this._buildChain(allWords, arousal, valence, temperature, new Float64Array(PATTERN_DIM), len - 1, 1);
-      return [starter, ...chain];
-    }
-    return this._buildChain(allWords, arousal, valence, temperature, new Float64Array(PATTERN_DIM), len, 0);
+    // SLOTS 1+: complement
+    const complement = this._buildComplement(allWords, verb, arousal, valence, temperature, new Float64Array(PATTERN_DIM), len - 1, [verb]);
+
+    return [verb, ...complement];
   }
 
   _buildChain(allWords, arousal, valence, temperature, contextPattern, len, startPos) {
