@@ -505,14 +505,29 @@ export class UnityBrain extends EventEmitter {
       // If the inner voice has something to say AND the brain wants to speak
       // BUT only if nothing else is currently speaking
       if (thought.shouldSpeak && thought.sentence && this._voice && !this._isDreaming && !this._isSpeaking) {
+        // Brain generated raw thought — log for learning, but voice through pool
+        console.log(`[Brain] Raw idle thought: "${thought.sentence}"`);
+
+        // Route through response pool for coherent output
+        let voicedThought = thought.sentence;
+        if (this._poolSelectResponse) {
+          try {
+            const state = this.getState();
+            voicedThought = this._poolSelectResponse(
+              { arousal: state.amygdala?.arousal ?? 0.5, valence: state.amygdala?.valence ?? 0, coherence: state.oscillations?.coherence ?? 0.5, predictionError: state.cortex?.predictionError ?? 0 },
+              {}, ''
+            );
+          } catch {}
+        }
+
         this._isSpeaking = true;
         this._voice.stopSpeaking();
-        this.auditoryCortex.setMotorOutput(thought.sentence);
-        this._voice.speak(thought.sentence).then(() => {
+        this.auditoryCortex.setMotorOutput(voicedThought);
+        this._voice.speak(voicedThought).then(() => {
           this.auditoryCortex.clearMotorOutput();
           this._isSpeaking = false;
         }).catch(() => { this.auditoryCortex.clearMotorOutput(); this._isSpeaking = false; });
-        this.emit('response', { text: thought.sentence, action: 'idle_thought' });
+        this.emit('response', { text: voicedThought, action: 'idle_thought' });
       }
 
       this.emit('thought', {
@@ -531,6 +546,10 @@ export class UnityBrain extends EventEmitter {
     if (this.running) return;
     this.running = true;
     this.lastThoughtTime = performance.now();
+    // Cache response pool for sync access in step()
+    import(new URL('./response-pool.js', import.meta.url).href)
+      .then(m => { this._poolSelectResponse = m.selectResponse; console.log('[Brain] Response pool cached for idle thoughts'); })
+      .catch(() => { this._poolSelectResponse = null; });
     this._rafId = requestAnimationFrame(() => this.think());
   }
 
