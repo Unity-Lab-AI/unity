@@ -192,12 +192,12 @@ class ServerBrain {
       // These drive the image prompt when Unity generates a selfie
       appearance: {
         hair: 'dark with neon streaks',
-        eyes: 'heterochromia violet and electric green',
+        eyes: 'heterochromia blue and green',
         skin: 'pale, tattoos circuit board patterns',
         style: 'torn fishnets, oversized band tees, smudged eyeliner',
         age: 25,
         build: 'lean',
-        aesthetic: 'cyberpunk goth',
+        aesthetic: 'emo goth',
       },
       // Voice characteristics (for TTS selection)
       voice: 'female, young, slightly raspy',
