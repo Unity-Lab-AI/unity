@@ -663,7 +663,7 @@ export class UnityBrain extends EventEmitter {
     // Response pool — PRIMARY. Brain state selects category, pool provides words.
     {
       try {
-        const { selectResponse, blendResponse } = await import('./response-pool.js');
+        const { selectResponse, blendResponse } = await import(new URL('./response-pool.js', import.meta.url).href);
         const inputAnalysis = this.innerVoice.languageCortex._lastInputWords
           ? { isQuestion: text.includes('?') || /^(what|how|why|where|when|who|can|do|are|is)\b/i.test(text) }
           : {};
