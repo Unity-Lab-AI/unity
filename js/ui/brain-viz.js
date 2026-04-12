@@ -68,6 +68,7 @@ export class BrainVisualizer {
           <button class="bv-tab" data-tab="consciousness">Ψ Consciousness</button>
           <button class="bv-tab" data-tab="memory">Memory</button>
           <button class="bv-tab" data-tab="motor">Motor</button>
+          <button class="bv-tab" data-tab="innervoice">Inner Voice</button>
         </div>
         <span class="bv-stats" id="bv-stats">spikes: 0</span>
         <button class="bv-close-btn">&times;</button>
@@ -157,6 +158,16 @@ export class BrainVisualizer {
             <div class="bv-section-title">MEMORY SYSTEM — Episodic + Working + Consolidation</div>
             <div class="bv-equation">Episodic: cosine recall | Working: 7 items, 0.98 decay | Consolidation: 3+ activations</div>
             <div class="bv-memory" id="bv-memory"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="bv-panel bv-hidden" data-panel="innervoice">
+        <div class="bv-grid-wrap">
+          <div class="bv-section bv-wide">
+            <div class="bv-section-title">INNER VOICE — Brain's Own Language</div>
+            <div class="bv-equation">Dictionary + bigrams + cortex prediction → self-generated speech</div>
+            <div class="bv-innervoice" id="bv-innervoice"></div>
           </div>
         </div>
       </div>
@@ -302,6 +313,7 @@ export class BrainVisualizer {
         case 'consciousness': this._renderPsi(s); break;
         case 'memory': this._renderMemory(s); break;
         case 'motor': this._renderMotor(s); break;
+        case 'innervoice': this._renderInnerVoice(s); break;
       }
     }
 
@@ -938,6 +950,51 @@ export class BrainVisualizer {
       Confidence: ${(motor.confidence || 0).toFixed(3)} | ${motor.speechGated ? '<span style="color:var(--red)">GATED: ' + motor.gateReason + '</span>' : '<span style="color:var(--green)">speech OK</span>'}
       | Cooldown: ${motor.cooldown || 0}
     </div>`;
+    el.innerHTML = html;
+  }
+
+  _renderInnerVoice(s) {
+    const el = this._el.querySelector('#bv-innervoice');
+    if (!el) return;
+    const iv = s.innerVoice || {};
+    const mood = iv.mood || 'neutral';
+    const moodColors = { euphoric:'#ff4d9a', aggressive:'#ef4444', wired:'#f59e0b', warm:'#22c55e', irritated:'#ef4444', engaged:'#a855f7', content:'#22c55e', melancholy:'#6366f1', curious:'#00e5ff', dreaming:'#c084fc', neutral:'#555' };
+    const color = moodColors[mood] || '#555';
+
+    let html = `
+      <div style="text-align:center;margin:12px 0;">
+        <div style="font-size:24px;color:${color};font-weight:700;font-family:var(--mono);">${mood.toUpperCase()}</div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">intensity: ${(iv.moodIntensity ?? 0).toFixed(2)} | vocab: ${iv.vocabSize ?? 0} words | bigrams: ${iv.bigramCount ?? 0}</div>
+      </div>
+    `;
+
+    if (iv.sentence) {
+      html += `<div style="background:#111;border:1px solid ${color}33;border-radius:8px;padding:12px;margin:8px 0;font-family:var(--mono);font-size:13px;color:${color};line-height:1.5;">"${iv.sentence}"</div>`;
+      html += `<div style="font-size:9px;color:var(--text-dim);">↑ Self-generated from dictionary (no AI model)</div>`;
+    } else {
+      html += `<div style="font-size:11px;color:var(--text-dim);margin:8px 0;">${iv.vocabSize < 100 ? `Learning vocabulary... (${iv.vocabSize}/100 words needed for self-speech)` : 'Thought below speech threshold'}</div>`;
+    }
+
+    if (iv.words && iv.words.length > 0) {
+      html += `<div style="margin-top:12px;font-size:9px;color:var(--text-dim);">MOOD-MATCHING WORDS</div>`;
+      html += `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;">`;
+      for (const w of iv.words) {
+        html += `<span style="background:${color}22;border:1px solid ${color}44;border-radius:4px;padding:2px 6px;font-family:var(--mono);font-size:10px;color:${color}">${w}</span>`;
+      }
+      html += `</div>`;
+    }
+
+    if (iv.history && iv.history.length > 0) {
+      html += `<div style="margin-top:12px;font-size:9px;color:var(--text-dim);">MOOD HISTORY</div>`;
+      html += `<div style="display:flex;gap:2px;margin-top:4px;height:20px;align-items:flex-end;">`;
+      for (const h of iv.history) {
+        const c = moodColors[h.mood] || '#555';
+        const height = Math.max(3, h.arousal * 20);
+        html += `<div style="flex:1;height:${height}px;background:${c};border-radius:1px;" title="${h.mood} a=${h.arousal?.toFixed(2)}"></div>`;
+      }
+      html += `</div>`;
+    }
+
     el.innerHTML = html;
   }
 

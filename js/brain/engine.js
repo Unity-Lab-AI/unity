@@ -26,6 +26,7 @@ import { MotorOutput } from './motor.js';
 import { MemorySystem } from './memory.js';
 import { AuditoryCortex } from './auditory-cortex.js';
 import { VisualCortex } from './visual-cortex.js';
+import { InnerVoice } from './inner-voice.js';
 
 // ── EventEmitter ────────────────────────────────────────────────────
 
@@ -152,6 +153,7 @@ export class UnityBrain extends EventEmitter {
     this.memorySystem = new MemorySystem(this.clusters.hippocampus);
     this.auditoryCortex = new AuditoryCortex();
     this.visualCortex = new VisualCortex();
+    this.innerVoice = new InnerVoice();
 
     // ══════════════════════════════════════════════════════════════
     // STATE
@@ -340,6 +342,9 @@ export class UnityBrain extends EventEmitter {
       }
     }
 
+    // ── 11.6. INNER VOICE — the brain thinks continuously ──
+    const thought = this.innerVoice.think(this.state);
+
     // ── 12. MOTOR OUTPUT — read BG spikes for action ──
     const motorResult = this.motor.readOutput(
       clusterResults.basalGanglia.spikes,
@@ -393,6 +398,7 @@ export class UnityBrain extends EventEmitter {
       visualCortex: this.visualCortex.getState(),
       auditoryCortex: this.auditoryCortex.getState(),
       visionDescription: this.visualCortex.description,
+      innerVoice: this.innerVoice.getState(),
     };
 
     // ── 16. EMIT EVENTS ──
@@ -551,17 +557,36 @@ export class UnityBrain extends EventEmitter {
       return this._handleImage(text, includesSelf);
     }
 
-    // 6. Normal response — Broca's area generates language from brain state
-    if (!this._brocasArea) return { text: null, action: 'idle' };
+    // 6. LEARN from user input — every word goes into the dictionary
     const state = this.getState();
-    let response = await this._brocasArea.generate(state, text);
+    const cortexOutput = this.clusters.cortex.getOutput(32);
+    this.innerVoice.learn(text, cortexOutput, state.amygdala?.arousal ?? 0.5, state.amygdala?.valence ?? 0);
 
-    if (!response) {
-      await this._sleep(1000);
-      response = await this._brocasArea.generate(state, text);
+    // 7. Generate response — try brain's own voice first, fall back to AI
+    let response = null;
+    const ownVoice = this.innerVoice.speak(state.amygdala?.arousal ?? 0.5, state.amygdala?.valence ?? 0);
+
+    if (ownVoice && ownVoice.length > 10) {
+      // Brain generated its own sentence from learned dictionary
+      response = ownVoice;
+      console.log(`[Brain] Own voice: "${response}"`);
     }
 
-    if (!response) return { text: "Shit — brain glitched. Say that again?", action: 'respond_text' };
+    // If own voice insufficient or unavailable, use Broca's area (AI model)
+    if (!response && this._brocasArea) {
+      response = await this._brocasArea.generate(state, text);
+      if (!response) {
+        await this._sleep(1000);
+        response = await this._brocasArea.generate(state, text);
+      }
+      // Learn from AI's response — the dictionary grows
+      if (response) {
+        this.innerVoice.learn(response, cortexOutput, state.amygdala?.arousal ?? 0.5, state.amygdala?.valence ?? 0);
+      }
+    }
+
+    if (!response && ownVoice) response = ownVoice; // use whatever the brain had
+    if (!response) return { text: "...", action: 'respond_text' };
 
     if (this.motor.wasInterrupted()) return { text: null, action: 'interrupted' };
 
@@ -800,11 +825,14 @@ USER REQUEST: ${text}`;
     this.motor.reinforceAction(this.clusters.basalGanglia, amount);
 
     // Reward-modulated learning on inter-cluster projections.
-    // This is the KEY equation: ΔW_proj = η · δ · source_spikes · target_spikes
-    // The cortex→BG projection learns which language patterns → which actions.
-    // ALL projections learn from reward — the whole brain adapts.
     for (const proj of this.projections) {
       proj.learn(amount, 0.002);
+    }
+
+    // Save dictionary every 10 rewards (periodic persistence)
+    this._rewardCount = (this._rewardCount || 0) + 1;
+    if (this._rewardCount % 10 === 0) {
+      this.innerVoice.save();
     }
   }
 
