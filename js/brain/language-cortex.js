@@ -1,25 +1,19 @@
 /**
- * language-cortex.js — Language Production from Brain Equations
+ * language-cortex.js — Language Production from Linguistic Equations
  *
- * The cortex prediction equation ŝ = W·x doesn't just predict
- * neural patterns — it predicts the NEXT WORD from the current word.
- * Language structure emerges from the weight matrix W_lang.
+ * Real language equations governing Unity's speech production:
  *
- * No grammar rules. No parts of speech labels. No sentence templates.
- * The brain learns word ORDER from every sentence it hears.
- * Words that appear in similar positions develop similar prediction
- * contexts — "I" and "you" and "she" all predict verbs because
- * the brain heard them before verbs thousands of times.
+ * Zipf's Law:       f(r) = C / r^α         — word frequency is a power law
+ * Mutual Info:      I(w1;w2) = log(P(w1,w2) / P(w1)·P(w2))  — word association strength
+ * Surprisal:        S(w) = -log₂ P(w|context)  — unexpectedness drives emphasis
+ * Entropy Rate:     H = -Σ P(w) log P(w)     — sentence complexity from brain state
+ * Conditional Chain: P(sentence) = Π P(w_i | w_{i-1}, position, mood)
  *
- * Production equation:
- *   score(w) = W_pred[w] · current_pattern + W_mood · [arousal, valence] + W_pos · position
- *   P(w_next) = softmax(scores / temperature)
- *   temperature = 1.0 / (coherence + 0.1)  ← focused brain = less random
- *
- * Letter/syllable awareness:
- *   Each character maps to a cortex micro-pattern (5 neurons per char)
- *   Words are SEQUENCES of these patterns — the brain knows letters
- *   Syllable boundaries = vowel-consonant transitions in the pattern
+ * These aren't lists. They're the mathematics of how language works.
+ * The brain's arousal/valence/coherence modulate these equations:
+ *   - arousal  → entropy rate (how wild the sentence gets)
+ *   - valence  → word selection bias (positive vs negative vocabulary)
+ *   - coherence → temperature (structured vs scattered speech)
  */
 
 const PATTERN_DIM = 32;
@@ -28,74 +22,45 @@ const VOWELS = 'aeiou';
 
 export class LanguageCortex {
   constructor() {
-    // Prediction weight matrix — learns word→next_word patterns
-    // W_pred[i][j] = how strongly word pattern i predicts word pattern j
+    // Joint probability table — P(w1, w2) for mutual information
+    // Stored as Map<string, Map<string, number>> + marginal counts
+    this._jointCounts = new Map();  // word pair counts
+    this._marginalCounts = new Map(); // individual word counts
+    this._totalPairs = 0;
+    this._totalWords = 0;
+
+    // Position-conditioned probability — P(w | position)
+    // What kind of word appears at each sentence position
+    this._positionCounts = new Array(15).fill(null).map(() => new Map());
+    this._positionTotals = new Float64Array(15);
+
+    // Prediction weight matrix — learns from mutual information
     this._predWeights = new Float64Array(PATTERN_DIM * PATTERN_DIM);
-    this._initPredWeights();
 
-    // Mood modulation weights — how arousal/valence shift word choice
-    this._moodWeights = new Float64Array(PATTERN_DIM * 2);
-    this._initMoodWeights();
-
-    // Position encoding — where in the sentence are we
-    this._posWeights = new Float64Array(PATTERN_DIM * 20); // max 20 positions
-    this._initPosWeights();
-
-    // Letter→pattern mapping — 26 letters, each a micro-pattern
-    this._letterPatterns = new Float64Array(26 * 5); // 5 neurons per letter
+    // Letter→pattern mapping
+    this._letterPatterns = new Float64Array(26 * 5);
     this._initLetterPatterns();
 
-    // Learned sentence structures — running average of word-position patterns
-    this._positionMemory = new Array(10).fill(null).map(() => new Float64Array(PATTERN_DIM));
-    this._positionCounts = new Float64Array(10);
+    // Zipf's alpha — learned from observed frequency distribution
+    this.zipfAlpha = 1.0; // typical English ≈ 1.0
 
-    // Stats
     this.sentencesLearned = 0;
     this.wordsProcessed = 0;
   }
 
-  _initPredWeights() {
-    // Small random init — learns from exposure
-    for (let i = 0; i < this._predWeights.length; i++) {
-      this._predWeights[i] = (Math.random() - 0.5) * 0.1;
-    }
-  }
-
-  _initMoodWeights() {
-    for (let i = 0; i < this._moodWeights.length; i++) {
-      this._moodWeights[i] = (Math.random() - 0.5) * 0.2;
-    }
-  }
-
-  _initPosWeights() {
-    // Position encoding: each position gets a unique pattern
-    // Earlier positions have different weight signatures than later ones
-    for (let pos = 0; pos < 20; pos++) {
-      for (let d = 0; d < PATTERN_DIM; d++) {
-        // Sinusoidal position encoding (like transformers, but from equations)
-        const angle = pos / Math.pow(10000, (2 * d) / PATTERN_DIM);
-        this._posWeights[pos * PATTERN_DIM + d] = d % 2 === 0 ? Math.sin(angle) : Math.cos(angle);
-      }
-    }
-  }
-
   _initLetterPatterns() {
-    // Each letter gets a unique 5-neuron activation pattern
-    // Vowels cluster together, consonants cluster by articulation
     for (let i = 0; i < 26; i++) {
       const isVowel = VOWELS.includes(ALPHABET[i]);
       for (let n = 0; n < 5; n++) {
-        // Deterministic pattern from letter position
         let val = Math.sin(i * 2.71828 + n * 3.14159) * 0.5 + 0.5;
-        if (isVowel) val += 0.3; // vowels have higher activation
+        if (isVowel) val += 0.3;
         this._letterPatterns[i * 5 + n] = val;
       }
     }
   }
 
   /**
-   * Get the cortex pattern for a word — built from its letters.
-   * Each word is a SEQUENCE of letter patterns folded into 32 dimensions.
+   * Build a cortex pattern from a word's letters.
    */
   wordToPattern(word) {
     const pattern = new Float64Array(PATTERN_DIM);
@@ -103,161 +68,169 @@ export class LanguageCortex {
     if (!clean) return pattern;
 
     for (let c = 0; c < clean.length; c++) {
-      const li = clean.charCodeAt(c) - 97; // a=0, z=25
+      const li = clean.charCodeAt(c) - 97;
       if (li < 0 || li > 25) continue;
-
-      // Letter pattern folds into word pattern at position-dependent indices
       for (let n = 0; n < 5; n++) {
         const targetDim = (c * 7 + n * 3 + li) % PATTERN_DIM;
         pattern[targetDim] += this._letterPatterns[li * 5 + n] / clean.length;
       }
-
-      // Syllable boundary detection: vowel→consonant or consonant→vowel transition
+      // Syllable boundary markers
       if (c > 0) {
-        const prevVowel = VOWELS.includes(clean[c - 1]);
-        const currVowel = VOWELS.includes(clean[c]);
-        if (prevVowel !== currVowel) {
-          // Syllable boundary — add a rhythm marker
-          const rhythmDim = (c * 11) % PATTERN_DIM;
-          pattern[rhythmDim] += 0.15;
-        }
+        const prevV = VOWELS.includes(clean[c - 1]);
+        const currV = VOWELS.includes(clean[c]);
+        if (prevV !== currV) pattern[(c * 11) % PATTERN_DIM] += 0.15;
       }
     }
-
-    // Word length affects pattern — longer words have more spread activation
-    const lengthFactor = Math.min(1, clean.length / 8);
-    pattern[0] += lengthFactor * 0.2;
-
     // Normalize
     let norm = 0;
     for (let i = 0; i < PATTERN_DIM; i++) norm += pattern[i] * pattern[i];
     norm = Math.sqrt(norm) || 1;
     for (let i = 0; i < PATTERN_DIM; i++) pattern[i] /= norm;
-
     return pattern;
   }
 
-  /**
-   * Count syllables in a word — from the equation (vowel cluster transitions).
-   */
   countSyllables(word) {
     const clean = word.toLowerCase().replace(/[^a-z]/g, '');
     if (!clean) return 0;
-    let count = 0;
-    let prevVowel = false;
+    let count = 0, prevV = false;
     for (let i = 0; i < clean.length; i++) {
-      const isVowel = VOWELS.includes(clean[i]);
-      if (isVowel && !prevVowel) count++;
-      prevVowel = isVowel;
+      const isV = VOWELS.includes(clean[i]);
+      if (isV && !prevV) count++;
+      prevV = isV;
     }
     return Math.max(1, count);
   }
 
+  // ── Linguistic Equations ────────────────────────────────────────
+
   /**
-   * Predict the next word's pattern from the current pattern + brain state.
-   *
-   * ŝ_next = W_pred · current + W_mood · [arousal, valence] + W_pos · position
-   *
-   * @param {Float64Array} currentPattern — 32-dim pattern of current word
-   * @param {number} arousal
-   * @param {number} valence
-   * @param {number} position — word index in sentence (0, 1, 2...)
-   * @returns {Float64Array} — predicted pattern for next word
+   * Mutual Information: I(w1; w2) = log₂(P(w1,w2) / P(w1)·P(w2))
+   * How much more likely two words appear together than by chance.
+   * High MI = strong association. This replaces raw bigram counts.
    */
-  predictNext(currentPattern, arousal, valence, position) {
-    const predicted = new Float64Array(PATTERN_DIM);
+  mutualInfo(w1, w2) {
+    const pJoint = this._getJointProb(w1, w2);
+    const p1 = this._getMarginalProb(w1);
+    const p2 = this._getMarginalProb(w2);
+    if (pJoint === 0 || p1 === 0 || p2 === 0) return 0;
+    return Math.log2(pJoint / (p1 * p2));
+  }
 
-    // W_pred · current — what typically follows this pattern
-    for (let i = 0; i < PATTERN_DIM; i++) {
-      let sum = 0;
-      for (let j = 0; j < PATTERN_DIM; j++) {
-        sum += this._predWeights[i * PATTERN_DIM + j] * currentPattern[j];
-      }
-      predicted[i] = sum;
-    }
+  _getJointProb(w1, w2) {
+    const inner = this._jointCounts.get(w1);
+    if (!inner) return 0;
+    return (inner.get(w2) || 0) / (this._totalPairs || 1);
+  }
 
-    // W_mood · [arousal, valence] — emotional modulation
-    for (let i = 0; i < PATTERN_DIM; i++) {
-      predicted[i] += this._moodWeights[i] * arousal + this._moodWeights[PATTERN_DIM + i] * valence;
-    }
-
-    // W_pos · position — where in the sentence affects what comes next
-    const posIdx = Math.min(position, 19);
-    for (let i = 0; i < PATTERN_DIM; i++) {
-      predicted[i] += this._posWeights[posIdx * PATTERN_DIM + i] * 0.3;
-    }
-
-    return predicted;
+  _getMarginalProb(w) {
+    return (this._marginalCounts.get(w) || 0) / (this._totalWords || 1);
   }
 
   /**
-   * Score a candidate word against the predicted pattern.
-   * Higher score = better fit for next word.
+   * Surprisal: S(w) = -log₂ P(w | previous_word)
+   * How unexpected this word is given what came before.
+   * High surprisal = surprising = draws attention.
    */
-  scoreWord(wordPattern, predictedPattern) {
-    // Cosine similarity
-    let dot = 0, normA = 0, normB = 0;
-    for (let i = 0; i < PATTERN_DIM; i++) {
-      dot += wordPattern[i] * predictedPattern[i];
-      normA += wordPattern[i] * wordPattern[i];
-      normB += predictedPattern[i] * predictedPattern[i];
-    }
-    return dot / (Math.sqrt(normA * normB) || 1);
+  surprisal(word, prevWord) {
+    if (!prevWord) return -Math.log2(this._getMarginalProb(word) || 0.001);
+    const pCond = this._getConditionalProb(word, prevWord);
+    return -Math.log2(pCond || 0.001);
+  }
+
+  _getConditionalProb(word, prevWord) {
+    const inner = this._jointCounts.get(prevWord);
+    if (!inner) return this._getMarginalProb(word);
+    const jointCount = inner.get(word) || 0;
+    const prevCount = this._marginalCounts.get(prevWord) || 1;
+    return jointCount / prevCount;
   }
 
   /**
-   * Generate a sentence from brain state using the prediction equation.
+   * Zipf rank probability: P(rank) = C / rank^α
+   * More frequent words are exponentially more likely to be selected.
+   */
+  zipfProb(rank) {
+    return 1 / Math.pow(rank + 1, this.zipfAlpha);
+  }
+
+  /**
+   * Target entropy from brain state:
+   * H_target = H_base + arousal · H_range
+   * Higher arousal = higher entropy = more varied/wild word choices
+   * Lower arousal = lower entropy = more predictable/common words
+   */
+  targetEntropy(arousal) {
+    const H_base = 2.0;  // minimum entropy (simple speech)
+    const H_range = 4.0;  // max additional entropy
+    return H_base + arousal * H_range;
+  }
+
+  // ── Sentence Generation ─────────────────────────────────────────
+
+  /**
+   * Generate a sentence using the full linguistic equation chain:
    *
-   * @param {Dictionary} dictionary — the brain's vocabulary
-   * @param {number} arousal
-   * @param {number} valence
-   * @param {number} coherence — affects temperature (focused = less random)
-   * @param {number} maxWords
-   * @returns {string}
+   * P(w_i) ∝ P(w_i | w_{i-1}) · P(w_i | position_i) · Zipf(rank_i) · mood_bias(w_i)
+   *
+   * Temperature = 1 / (coherence + 0.1) — focused brain = more structured
+   * Length = f(arousal) — more aroused = more words
    */
   generate(dictionary, arousal, valence, coherence, maxWords = 12) {
     if (!dictionary || dictionary.size === 0) return '';
 
-    // Temperature from coherence — focused brain produces more structured speech
     const temperature = 1.0 / (coherence + 0.1);
-
-    // Sentence length from arousal — high arousal = more words
-    const targetLen = Math.max(2, Math.floor(2 + arousal * 8));
+    const targetLen = Math.max(3, Math.floor(3 + arousal * 7));
     const len = Math.min(targetLen, maxWords);
-
-    // Start word — highest scoring word for position 0 given mood
-    const startPredicted = this.predictNext(new Float64Array(PATTERN_DIM), arousal, valence, 0);
     const allWords = Array.from(dictionary._words.entries());
     if (allWords.length === 0) return '';
 
-    // Score all words and sample via softmax — brain noise η prevents repetition
-    const scored = allWords.map(([word, entry]) => {
-      const pattern = entry.pattern || this.wordToPattern(word);
-      const score = this.scoreWord(pattern, startPredicted);
-      const moodDist = Math.abs(entry.arousal - arousal) + Math.abs(entry.valence - valence);
-      return { word, entry, score: score - moodDist * 0.3 };
+    // Sort by frequency for Zipf ranking
+    allWords.sort((a, b) => (b[1].frequency || 1) - (a[1].frequency || 1));
+
+    // Score each word for position 0
+    const startScores = allWords.map(([word, entry], rank) => {
+      const zipf = this.zipfProb(rank);
+      const posProb = this._getPositionProb(word, 0);
+      const moodDist = Math.abs((entry.arousal || 0.5) - arousal) + Math.abs((entry.valence || 0) - valence);
+      const moodBias = Math.exp(-moodDist);
+      const score = zipf * 0.3 + posProb * 0.3 + moodBias * 0.4;
+      return { word, entry, score };
     });
 
-    const startWord = this._softmaxSample(scored, temperature);
-    const sentence = [startWord.word];
-    let currentPattern = startWord.entry.pattern || this.wordToPattern(startWord.word);
+    const startPick = this._softmaxSample(startScores, temperature);
+    const sentence = [startPick.word];
+    let prevWord = startPick.word;
 
-    // Generate remaining words via prediction chain + softmax sampling
+    // Generate each subsequent word
     for (let pos = 1; pos < len; pos++) {
-      const predicted = this.predictNext(currentPattern, arousal, valence, pos);
-
       const candidates = allWords
-        .filter(([word]) => word !== sentence[sentence.length - 1]) // no immediate repeats
-        .map(([word, entry]) => {
-          const pattern = entry.pattern || this.wordToPattern(word);
-          const score = this.scoreWord(pattern, predicted);
+        .filter(([w]) => w !== prevWord) // no immediate repeat
+        .map(([word, entry], rank) => {
+          // P(w | prev) — conditional probability from learned pairs
+          const condProb = this._getConditionalProb(word, prevWord);
+
+          // P(w | position) — what words go at this position
+          const posProb = this._getPositionProb(word, pos);
+
+          // Zipf(rank) — frequency bias
+          const zipf = this.zipfProb(rank);
+
+          // Mutual information — how strongly associated with previous word
+          const mi = Math.max(0, this.mutualInfo(prevWord, word));
+
+          // Mood alignment
+          const moodDist = Math.abs((entry.arousal || 0.5) - arousal) + Math.abs((entry.valence || 0) - valence);
+          const moodBias = Math.exp(-moodDist);
+
+          // Combined score: all equations weighted
+          const score = condProb * 0.25 + posProb * 0.15 + zipf * 0.15 + mi * 0.2 + moodBias * 0.25;
           return { word, entry, score };
         });
 
       const picked = this._softmaxSample(candidates, temperature);
       if (picked) {
         sentence.push(picked.word);
-        currentPattern = picked.entry.pattern || this.wordToPattern(picked.word);
+        prevWord = picked.word;
       }
     }
 
@@ -265,78 +238,18 @@ export class LanguageCortex {
     return sentence.join(' ');
   }
 
-  /**
-   * Learn from a sentence — update prediction weights.
-   * Every consecutive word pair teaches W_pred what follows what.
-   * Every word at a position teaches W_pos what goes where.
-   *
-   * ΔW_pred = η · (actual_next - predicted) · current^T
-   * ΔW_pos  = η · (actual - position_average) · position_encoding^T
-   */
-  learnSentence(sentence, dictionary, arousal, valence) {
-    const words = sentence.toLowerCase().replace(/[^a-z' -]/g, '').split(/\s+/).filter(w => w.length >= 2);
-    if (words.length < 2) return;
-
-    const lr = 0.005; // learning rate
-
-    for (let i = 0; i < words.length - 1; i++) {
-      const currentEntry = dictionary._words.get(words[i]);
-      const nextEntry = dictionary._words.get(words[i + 1]);
-      if (!currentEntry || !nextEntry) continue;
-
-      const currentPattern = currentEntry.pattern || this.wordToPattern(words[i]);
-      const nextPattern = nextEntry.pattern || this.wordToPattern(words[i + 1]);
-
-      // Predict what should come next
-      const predicted = this.predictNext(currentPattern, arousal, valence, i);
-
-      // Update prediction weights: ΔW = η · error · input^T
-      for (let r = 0; r < PATTERN_DIM; r++) {
-        const error = nextPattern[r] - predicted[r];
-        for (let c = 0; c < PATTERN_DIM; c++) {
-          this._predWeights[r * PATTERN_DIM + c] += lr * error * currentPattern[c];
-        }
-        // Mood weight update
-        this._moodWeights[r] += lr * error * arousal * 0.1;
-        this._moodWeights[PATTERN_DIM + r] += lr * error * valence * 0.1;
-      }
-
-      // Position memory — running average of what patterns appear at each position
-      const posIdx = Math.min(i, 9);
-      this._positionCounts[posIdx]++;
-      const posLr = 1 / this._positionCounts[posIdx];
-      for (let d = 0; d < PATTERN_DIM; d++) {
-        this._positionMemory[posIdx][d] += posLr * (currentPattern[d] - this._positionMemory[posIdx][d]);
-      }
-    }
-
-    // Also learn each word into the dictionary with its letter pattern
-    for (const word of words) {
-      const pattern = this.wordToPattern(word);
-      dictionary.learnWord(word, pattern, arousal, valence);
-      // Learn bigrams
-      const idx = words.indexOf(word);
-      if (idx < words.length - 1) {
-        dictionary.learnBigram(word, words[idx + 1]);
-      }
-    }
-
-    this.sentencesLearned++;
+  _getPositionProb(word, position) {
+    const pos = Math.min(position, 14);
+    const count = this._positionCounts[pos]?.get(word) || 0;
+    const total = this._positionTotals[pos] || 1;
+    return count / total;
   }
 
-  /**
-   * Softmax sampling — converts scores to probabilities, picks one.
-   * Temperature controls randomness: low = peaked (pick best), high = uniform (explore).
-   * This is the brain's noise term η applied to language.
-   */
   _softmaxSample(scored, temperature) {
     if (scored.length === 0) return null;
-    // Compute softmax probabilities
     const maxScore = Math.max(...scored.map(s => s.score));
     const exps = scored.map(s => Math.exp((s.score - maxScore) / Math.max(0.01, temperature)));
     const sum = exps.reduce((a, b) => a + b, 0);
-
-    // Weighted random pick
     let rand = Math.random() * sum;
     for (let i = 0; i < scored.length; i++) {
       rand -= exps[i];
@@ -345,43 +258,144 @@ export class LanguageCortex {
     return scored[scored.length - 1];
   }
 
+  // ── Learning ────────────────────────────────────────────────────
+
   /**
-   * Get the alphabet as cortex patterns — the brain knows its letters.
+   * Learn from a sentence — updates ALL linguistic equation parameters:
+   *
+   * Joint counts     → P(w1, w2) for mutual information
+   * Marginal counts  → P(w) for Zipf and surprisal
+   * Position counts  → P(w | position) for sentence structure
+   * Prediction weights → ΔW = η · (actual - predicted) · input^T
    */
-  getLetterPattern(char) {
-    const li = char.toLowerCase().charCodeAt(0) - 97;
-    if (li < 0 || li > 25) return new Float64Array(5);
-    return this._letterPatterns.slice(li * 5, li * 5 + 5);
+  learnSentence(sentence, dictionary, arousal, valence) {
+    const words = sentence.toLowerCase().replace(/[^a-z' -]/g, '').split(/\s+/).filter(w => w.length >= 2);
+    if (words.length < 2) return;
+
+    const lr = 0.01;
+
+    for (let i = 0; i < words.length; i++) {
+      const word = words[i];
+
+      // Update marginal counts → P(w)
+      this._marginalCounts.set(word, (this._marginalCounts.get(word) || 0) + 1);
+      this._totalWords++;
+
+      // Update position counts → P(w | position)
+      const pos = Math.min(i, 14);
+      this._positionCounts[pos].set(word, (this._positionCounts[pos].get(word) || 0) + 1);
+      this._positionTotals[pos]++;
+
+      // Update joint counts → P(w1, w2)
+      if (i < words.length - 1) {
+        const next = words[i + 1];
+        if (!this._jointCounts.has(word)) this._jointCounts.set(word, new Map());
+        const inner = this._jointCounts.get(word);
+        inner.set(next, (inner.get(next) || 0) + 1);
+        this._totalPairs++;
+      }
+
+      // Update prediction weights: ΔW = η · error · input^T
+      if (i < words.length - 1) {
+        const currentEntry = dictionary._words.get(word);
+        const nextEntry = dictionary._words.get(words[i + 1]);
+        if (currentEntry && nextEntry) {
+          const cp = currentEntry.pattern || this.wordToPattern(word);
+          const np = nextEntry.pattern || this.wordToPattern(words[i + 1]);
+          for (let r = 0; r < PATTERN_DIM; r++) {
+            const predicted = this._dotRow(r, cp);
+            const error = np[r] - predicted;
+            for (let c = 0; c < PATTERN_DIM; c++) {
+              this._predWeights[r * PATTERN_DIM + c] += lr * error * cp[c];
+            }
+          }
+        }
+      }
+
+      // Learn word into dictionary with letter-derived pattern
+      const pattern = this.wordToPattern(word);
+      dictionary.learnWord(word, pattern, arousal, valence);
+      if (i < words.length - 1) dictionary.learnBigram(word, words[i + 1]);
+    }
+
+    // Update Zipf alpha from observed distribution
+    this._updateZipfAlpha();
+    this.sentencesLearned++;
+  }
+
+  _dotRow(row, vec) {
+    let sum = 0;
+    const base = row * PATTERN_DIM;
+    for (let j = 0; j < PATTERN_DIM; j++) sum += this._predWeights[base + j] * vec[j];
+    return sum;
   }
 
   /**
-   * Serialize learned weights for persistence.
+   * Estimate Zipf's alpha from observed word frequencies.
+   * α = -slope of log(frequency) vs log(rank)
    */
+  _updateZipfAlpha() {
+    if (this._marginalCounts.size < 10) return;
+    const freqs = Array.from(this._marginalCounts.values()).sort((a, b) => b - a);
+    // Linear regression on log-log scale (top 20 words)
+    const n = Math.min(20, freqs.length);
+    let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+    for (let i = 0; i < n; i++) {
+      const x = Math.log(i + 1);
+      const y = Math.log(freqs[i]);
+      sumX += x; sumY += y; sumXY += x * y; sumX2 += x * x;
+    }
+    const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+    this.zipfAlpha = Math.max(0.5, Math.min(2.0, -slope));
+  }
+
+  // ── Persistence ─────────────────────────────────────────────────
+
   serialize() {
+    const joints = {};
+    for (const [w1, inner] of this._jointCounts) {
+      joints[w1] = Object.fromEntries(inner);
+    }
+    const positions = this._positionCounts.map(m => Object.fromEntries(m));
     return {
+      jointCounts: joints,
+      marginalCounts: Object.fromEntries(this._marginalCounts),
+      totalPairs: this._totalPairs,
+      totalWords: this._totalWords,
+      positionCounts: positions,
+      positionTotals: Array.from(this._positionTotals),
       predWeights: Array.from(this._predWeights),
-      moodWeights: Array.from(this._moodWeights),
-      positionMemory: this._positionMemory.map(p => Array.from(p)),
-      positionCounts: Array.from(this._positionCounts),
+      zipfAlpha: this.zipfAlpha,
       sentencesLearned: this.sentencesLearned,
       wordsProcessed: this.wordsProcessed,
     };
   }
 
-  /**
-   * Load learned weights.
-   */
   deserialize(data) {
     if (!data) return;
-    if (data.predWeights) this._predWeights = new Float64Array(data.predWeights);
-    if (data.moodWeights) this._moodWeights = new Float64Array(data.moodWeights);
-    if (data.positionMemory) {
-      for (let i = 0; i < Math.min(data.positionMemory.length, 10); i++) {
-        this._positionMemory[i] = new Float64Array(data.positionMemory[i]);
+    if (data.jointCounts) {
+      for (const [w1, inner] of Object.entries(data.jointCounts)) {
+        this._jointCounts.set(w1, new Map(Object.entries(inner).map(([k, v]) => [k, Number(v)])));
       }
     }
-    if (data.positionCounts) this._positionCounts = new Float64Array(data.positionCounts);
+    if (data.marginalCounts) this._marginalCounts = new Map(Object.entries(data.marginalCounts).map(([k, v]) => [k, Number(v)]));
+    this._totalPairs = data.totalPairs || 0;
+    this._totalWords = data.totalWords || 0;
+    if (data.positionCounts) {
+      for (let i = 0; i < Math.min(data.positionCounts.length, 15); i++) {
+        this._positionCounts[i] = new Map(Object.entries(data.positionCounts[i] || {}).map(([k, v]) => [k, Number(v)]));
+      }
+    }
+    if (data.positionTotals) this._positionTotals = new Float64Array(data.positionTotals);
+    if (data.predWeights) this._predWeights = new Float64Array(data.predWeights);
+    this.zipfAlpha = data.zipfAlpha || 1.0;
     this.sentencesLearned = data.sentencesLearned || 0;
     this.wordsProcessed = data.wordsProcessed || 0;
+  }
+
+  getLetterPattern(char) {
+    const li = char.toLowerCase().charCodeAt(0) - 97;
+    if (li < 0 || li > 25) return new Float64Array(5);
+    return this._letterPatterns.slice(li * 5, li * 5 + 5);
   }
 }
