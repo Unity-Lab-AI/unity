@@ -696,9 +696,8 @@ When asked to generate an image, respond with ONLY the image description/prompt 
       gpuUtil = this._cachedGpuUtil || 0;
     }
 
-    this._perfStats = {
-      stepTimeMs: +avgStep.toFixed(3),
-      stepsPerSec: avgStep > 0 ? Math.round(1000 / avgStep * SUBSTEPS) : 0,
+    // UPDATE existing object — don't replace (tick loop writes stepTimeMs/stepsPerSec)
+    Object.assign(this._perfStats, {
       cpuPercent,
       memUsedMB: Math.round(mem.heapUsed / 1048576),
       memTotalMB: Math.round(os.totalmem() / 1048576),
@@ -710,7 +709,7 @@ When asked to generate an image, respond with ONLY the image description/prompt 
       cores: os.cpus().length,
       parallelMode: this._useParallel,
       workerCount: this._parallelBrain?.workerCount || 0,
-    };
+    });
   }
 
   _getSharedMood() {
