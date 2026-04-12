@@ -25,7 +25,7 @@ const MAX_RENDER_NEURONS = 20000;
 const AFTERGLOW_DECAY = 0.92;
 const PULSE_LIFE = 40;
 const MAX_PULSES = 80;
-const MAX_CONN = 200;
+const MAX_CONN = 500;
 const AUTO_ROT_SPEED = 0.0015;
 
 // ── Cluster definitions ─────────────────────────────────────────────
@@ -941,40 +941,62 @@ export class Brain3D {
   // ── Connections ─────────────────────────────────────────────────
 
   _buildConns(spk) {
-    const active = [];
+    // Collect active neurons PER CLUSTER — ensures all clusters participate
+    const perCluster = [];
     let off = 0;
     for (let c = 0; c < CLUSTERS.length; c++) {
-      if (!this._clusterOn[c]) { off += CLUSTERS[c].n; continue; }
-      for (let i = 0; i < CLUSTERS[c].n; i++) {
-        const ni = off + i;
-        if (spk[ni]) active.push({ i: ni, c });
+      const clusterActive = [];
+      if (this._clusterOn[c]) {
+        for (let i = 0; i < CLUSTERS[c].n; i++) {
+          if (spk[off + i]) clusterActive.push(off + i);
+        }
       }
+      perCluster.push(clusterActive);
       off += CLUSTERS[c].n;
     }
 
     this._connN = 0;
-    if (active.length < 2) return;
 
-    const tries = Math.min(MAX_CONN, active.length * 3);
-    for (let p = 0; p < tries && this._connN < MAX_CONN; p++) {
-      const a = active[Math.floor(Math.random() * active.length)];
-      const b = active[Math.floor(Math.random() * active.length)];
-      if (a.c === b.c) continue;
-
-      const vi = this._connN * 6;
-      const ci = this._connN * 8;
-      this._connPos[vi]   = this._pos[a.i*3];
-      this._connPos[vi+1] = this._pos[a.i*3+1];
-      this._connPos[vi+2] = this._pos[a.i*3+2];
-      this._connPos[vi+3] = this._pos[b.i*3];
-      this._connPos[vi+4] = this._pos[b.i*3+1];
-      this._connPos[vi+5] = this._pos[b.i*3+2];
-
-      const ca = CLUSTERS[a.c].rgb, cb = CLUSTERS[b.c].rgb;
-      this._connCol[ci]   = ca[0]; this._connCol[ci+1] = ca[1]; this._connCol[ci+2] = ca[2]; this._connCol[ci+3] = 0.1;
-      this._connCol[ci+4] = cb[0]; this._connCol[ci+5] = cb[1]; this._connCol[ci+6] = cb[2]; this._connCol[ci+7] = 0.1;
-      this._connN++;
+    // INTER-CLUSTER connections — between different clusters (projections)
+    // Ensure EVERY cluster pair with active neurons gets connections
+    for (let ca = 0; ca < CLUSTERS.length && this._connN < MAX_CONN * 0.7; ca++) {
+      if (perCluster[ca].length === 0) continue;
+      for (let cb = ca + 1; cb < CLUSTERS.length && this._connN < MAX_CONN * 0.7; cb++) {
+        if (perCluster[cb].length === 0) continue;
+        // Draw 2-4 connections per cluster pair
+        const count = Math.min(4, perCluster[ca].length, perCluster[cb].length);
+        for (let k = 0; k < count && this._connN < MAX_CONN; k++) {
+          const ai = perCluster[ca][Math.floor(Math.random() * perCluster[ca].length)];
+          const bi = perCluster[cb][Math.floor(Math.random() * perCluster[cb].length)];
+          this._addConn(ai, bi, CLUSTERS[ca].rgb, CLUSTERS[cb].rgb);
+        }
+      }
     }
+
+    // INTRA-CLUSTER connections — within same cluster (synapses)
+    for (let c = 0; c < CLUSTERS.length && this._connN < MAX_CONN; c++) {
+      if (perCluster[c].length < 2) continue;
+      const count = Math.min(3, perCluster[c].length - 1);
+      for (let k = 0; k < count && this._connN < MAX_CONN; k++) {
+        const ai = perCluster[c][Math.floor(Math.random() * perCluster[c].length)];
+        const bi = perCluster[c][Math.floor(Math.random() * perCluster[c].length)];
+        if (ai !== bi) this._addConn(ai, bi, CLUSTERS[c].rgb, CLUSTERS[c].rgb);
+      }
+    }
+  }
+
+  _addConn(ai, bi, colorA, colorB) {
+    const vi = this._connN * 6;
+    const ci = this._connN * 8;
+    this._connPos[vi]   = this._pos[ai*3];
+    this._connPos[vi+1] = this._pos[ai*3+1];
+    this._connPos[vi+2] = this._pos[ai*3+2];
+    this._connPos[vi+3] = this._pos[bi*3];
+    this._connPos[vi+4] = this._pos[bi*3+1];
+    this._connPos[vi+5] = this._pos[bi*3+2];
+    this._connCol[ci]   = colorA[0]; this._connCol[ci+1] = colorA[1]; this._connCol[ci+2] = colorA[2]; this._connCol[ci+3] = 0.15;
+    this._connCol[ci+4] = colorB[0]; this._connCol[ci+5] = colorB[1]; this._connCol[ci+6] = colorB[2]; this._connCol[ci+7] = 0.15;
+    this._connN++;
   }
 
   // ── Render loop ─────────────────────────────────────────────────
