@@ -52,6 +52,11 @@ export class LanguageCortex {
     this._questionStarters = new Map();
     this._actionVerbs = new Map();
 
+    // Subject starters — words the brain has seen used as sentence-initial
+    // subjects. Learned at the sentence boundary (i===0 in learnSentence).
+    // Used by slot 0 to boost subject-capable words without hardcoding lists.
+    this._subjectStarters = new Map();
+
     this.zipfAlpha = 1.0;
     this.sentencesLearned = 0;
     this.wordsProcessed = 0;
@@ -191,7 +196,13 @@ export class LanguageCortex {
     const pronounScore = (
       (len === 1 && first === 'i' ? 0.95 : 0) +                      // 'i' — the only single-letter pronoun
       (len === 2 && vowelCount === 1 && (first === 'h' || first === 'w' || first === 'm' || first === 's' || first === 'y') ? 0.5 : 0) + // he, we, me, us, ye
-      (len === 3 && (first === 'y' || first === 't') && vowelCount >= 1 && !ntEnding ? 0.35 : 0) + // you, they, him, her
+      (len === 2 && first === 'i' && w[1] === 't' ? 0.85 : 0) +       // it
+      (len === 3 && first === 's' && second === 'h' && w[2] === 'e' ? 0.9 : 0) + // she
+      (len === 3 && first === 'h' && second === 'e' && w[2] === 'r' ? 0.8 : 0) + // her
+      (len === 3 && first === 'h' && second === 'i' && w[2] === 'm' ? 0.8 : 0) + // him
+      (len === 3 && (first === 'y' || first === 't') && vowelCount >= 1 && !ntEnding ? 0.5 : 0) + // you, the (ambig — det gate wins for 'the')
+      (len === 4 && first === 't' && second === 'h' && w[2] === 'e' && w[3] === 'y' ? 0.9 : 0) + // they
+      (len === 4 && first === 't' && second === 'h' && w[2] === 'e' && w[3] === 'm' ? 0.8 : 0) + // them
       (len <= 4 && w.endsWith("'m") || w.endsWith("'re") ? 0.4 : 0)   // i'm, we're, you're — still pronoun-flavored
     );
 
@@ -208,10 +219,15 @@ export class LanguageCortex {
     //   - 3-letter h-start ending s/d → aux-have (has, had)
     //   - CVC/CVCV shapes → action verbs (run, want, code)
     //   - any suffix match → verb form
+    // CVC/CVCV shapes are a WEAK verb signal. Most 3-letter content words are
+    // nouns (son, cat, dog, man, sun, box, fog, cup). Keep the signal non-zero
+    // so shape can disambiguate, but well below the noun fallback threshold
+    // (raw.noun += 0.4 when rawSum < 0.25) so bare CVC words land as nouns
+    // unless usage-type learning from the persona text lifts them to verb.
     const verbScore = (
       verbSuffix +
-      (cvcShape && !nounSuffix && !adjSuffix ? 0.4 : 0) +
-      (cvcvShape && !nounSuffix && !adjSuffix ? 0.25 : 0) +
+      (cvcShape && !nounSuffix && !adjSuffix ? 0.18 : 0) +
+      (cvcvShape && !nounSuffix && !adjSuffix ? 0.12 : 0) +
       (copula2 ? 0.55 : 0) +
       (len === 3 && first === 'a' && lastChar === 'e' && vowelCount >= 2 ? 0.6 : 0) +
       (len === 3 && first === 'h' && (lastChar === 's' || lastChar === 'd') ? 0.5 : 0)
@@ -233,8 +249,9 @@ export class LanguageCortex {
     //   where the consonant is 's'.
     //   and(3, v+c+c ending 'nd'), but(3, b+u+t), yet(3, y+e+t), nor(3, n+o+r)
     const conjScore = (
-      (len === 2 && firstIsVowel && lastChar === 'r' ? 0.7 : 0) +              // or
-      (len === 2 && firstIsVowel && lastChar === 'f' ? 0.7 : 0) +              // if
+      (len === 2 && firstIsVowel && lastChar === 'r' && first !== 'o' ? 0.7 : 0) + // or (but NOT "or" vs content)
+      (len === 2 && first === 'o' && lastChar === 'r' ? 0.7 : 0) +              // or — explicit
+      (len === 2 && first === 'i' && lastChar === 'f' ? 0.7 : 0) +              // if — ONLY 'i' start, not 'o' (of is prep)
       (len === 2 && first === 's' && second === 'o' ? 0.7 : 0) +               // so
       (len === 3 && first === 'a' && w[1] === 'n' && w[2] === 'd' ? 0.85 : 0) + // and
       (len === 3 && first === 'b' && lastChar === 't' && vowelCount === 1 ? 0.7 : 0) + // but
@@ -255,6 +272,7 @@ export class LanguageCortex {
     //     types learned from the persona text disambiguate (with/from/over...)
     const prepScore = (
       (prep2OK ? 0.55 : 0) +
+      (len === 2 && first === 'o' && lastChar === 'f' ? 0.85 : 0) +                    // 'of' — explicit (excluded from prep2OK)
       (len === 3 && first === 'f' && lastChar === 'r' && vowelCount === 1 ? 0.65 : 0) + // for pattern: f_r
       (len === 3 && first === 'o' && vowelCount === 1 ? 0.5 : 0)                        // out/off pattern: o_?
     );
@@ -337,14 +355,21 @@ export class LanguageCortex {
   _learnUsageType(prevWord, word) {
     if (!prevWord || !word) return;
     const prevType = this.wordType(prevWord);
+    // Treat subject-starters (learned or equation-identified subjects) as
+    // functional pronouns for verb-boost purposes. "Unity expresses..." must
+    // teach "expresses" as a verb even though "unity" isn't a pronoun by letters.
+    const prevIsSubject = prevType.pronoun > 0.5
+      || this._isNominativePronoun(prevWord)
+      || (this._subjectStarters.get(prevWord.toLowerCase()) || 0) >= 1;
+
     if (!this._usageTypes.has(word)) {
       this._usageTypes.set(word, { pronoun: 0, verb: 0, noun: 0, adj: 0, prep: 0, det: 0, conj: 0, qword: 0 });
     }
     const u = this._usageTypes.get(word);
     const lr = 0.1;
 
-    // What follows a pronoun? → verb
-    if (prevType.pronoun > 0.5) u.verb += lr;
+    // What follows a subject (pronoun OR proper-noun subject)? → verb
+    if (prevIsSubject) u.verb += lr;
     // What follows a determiner? → noun or adjective
     if (prevType.det > 0.5) { u.noun += lr * 0.7; u.adj += lr * 0.3; }
     // What follows a verb? → noun, prep, adj, or pronoun
@@ -358,37 +383,164 @@ export class LanguageCortex {
   }
 
   /**
-   * What type does this sentence SLOT require?
-   * Returns the same shape as wordType — compatibility score.
-   *
-   * Statement slots: [pronoun/det+noun] [verb] [det/adj/noun/pronoun/prep...]
-   * Question slots:  [qword] [verb] [pronoun] [verb/noun/prep...]
+   * Legacy position-based slot requirement. Only used as a seed for slot 0
+   * (no prev word yet) and as a last-resort fallback when the phrase-structure
+   * equation can't decide. All real slot decisions go through nextSlotRequirement.
    */
   slotRequirement(slotPos, sentenceType) {
     if (sentenceType === 'question') {
       if (slotPos === 0) return { pronoun: 0, verb: 0, noun: 0, adj: 0, conj: 0, prep: 0, det: 0, qword: 1 };
-      if (slotPos === 1) return { pronoun: 0, verb: 1, noun: 0, adj: 0, conj: 0, prep: 0, det: 0, qword: 0 };
-      if (slotPos === 2) return { pronoun: 1, verb: 0, noun: 0.5, adj: 0, conj: 0, prep: 0, det: 0.5, qword: 0 };
-      return { pronoun: 0.3, verb: 0.4, noun: 0.5, adj: 0.3, conj: 0.2, prep: 0.4, det: 0.2, qword: 0 };
+      return { pronoun: 0, verb: 1, noun: 0, adj: 0, conj: 0, prep: 0, det: 0, qword: 0 };
     }
     if (sentenceType === 'action') {
-      if (slotPos === 0) return { pronoun: 0, verb: 1, noun: 0, adj: 0, conj: 0, prep: 0, det: 0, qword: 0 };
-      return { pronoun: 0.3, verb: 0.2, noun: 0.4, adj: 0.4, conj: 0.1, prep: 0.4, det: 0.3, qword: 0 };
+      return { pronoun: 0, verb: 1, noun: 0, adj: 0, conj: 0, prep: 0, det: 0, qword: 0 };
     }
-    // Statement / exclamation
-    if (slotPos === 0) return { pronoun: 1, verb: 0, noun: 0.3, adj: 0, conj: 0, prep: 0, det: 0.5, qword: 0 };
-    if (slotPos === 1) return { pronoun: 0, verb: 1, noun: 0, adj: 0, conj: 0, prep: 0, det: 0, qword: 0 };
-    if (slotPos === 2) return { pronoun: 0.3, verb: 0.1, noun: 0.5, adj: 0.4, conj: 0.1, prep: 0.5, det: 0.4, qword: 0 };
-    return { pronoun: 0.3, verb: 0.3, noun: 0.4, adj: 0.3, conj: 0.3, prep: 0.3, det: 0.2, qword: 0 };
+    // Statement / exclamation: subject slot 0. Noun weight tightened to 0.15
+    // so bare content nouns don't leak in — proper-noun subjects get lifted
+    // via _subjectStarters (sentence-initial frequency from persona text).
+    return { pronoun: 0.95, verb: 0, noun: 0.15, adj: 0, conj: 0, prep: 0, det: 0.4, qword: 0 };
+  }
+
+  /**
+   * Pure letter-position equation for nominative (subject) pronouns.
+   * Distinguishes subject pronouns (i, he, we, you, she, it, they, this,
+   * that) from object pronouns (me, us, him, them) by letter shape alone.
+   *
+   * Rules derived from English morphology:
+   *   - len 1 + 'i'                                 → I (nominative singular 1st)
+   *   - len 2 + consonant-vowel + NOT m-start       → he, we (excludes 'me')
+   *   - len 2 + 'it'                                → it
+   *   - len 3 + y-vowel-vowel                       → you
+   *   - len 3 + 's-h-e'                             → she
+   *   - len 4 + 'th-' start                         → they, this, that
+   *
+   * Object pronouns (me, us, him, them) fail every pattern above because
+   * they either m-start (me/mine), end in consonant 's'/'m' with vowel-first
+   * shape (us), or are CVC ending in 'm' (him, them).
+   */
+  _isNominativePronoun(word) {
+    const w = (word || '').toLowerCase();
+    const len = w.length;
+    if (!len) return false;
+    const first = w[0];
+    const last = w[len - 1];
+    if (len === 1 && first === 'i') return true;
+    if (len === 2 && !VOWELS.includes(first) && VOWELS.includes(last) && first !== 'm') return true;
+    if (len === 2 && first === 'i' && last === 't') return true;
+    if (len === 3 && first === 'y' && VOWELS.includes(w[1]) && VOWELS.includes(w[2])) return true;
+    if (len === 3 && first === 's' && w[1] === 'h' && w[2] === 'e') return true;
+    // 4-letter 'th-' subjects: they, this, that — but NOT 'them' (object form)
+    if (len === 4 && first === 't' && w[1] === 'h' && last !== 'm') return true;
+    return false;
+  }
+
+  /**
+   * Argmax over a word's type distribution. Used by nextSlotRequirement to
+   * drive phrase-structure transitions.
+   */
+  _dominantType(word) {
+    const wt = this.wordType(word);
+    let best = 'noun', bestScore = 0;
+    for (const k in wt) {
+      if (wt[k] > bestScore) { bestScore = wt[k]; best = k; }
+    }
+    return best;
+  }
+
+  /**
+   * Base continuation for a single POS. Used by nextSlotRequirement, which
+   * blends the top-2 continuations proportionally to the prev word's type
+   * distribution. Factored out so ambiguous words (CVC verb-or-noun like
+   * "ran", "run", "put") get BOTH continuation paths instead of flipping
+   * entirely to one.
+   */
+  _continuationFor(type) {
+    switch (type) {
+      case 'pronoun':
+        // Subject pronoun → verb (I run, you see, we code)
+        return { pronoun: 0, verb: 1.0, noun: 0.05, adj: 0.1, conj: 0, prep: 0, det: 0, qword: 0 };
+      case 'verb':
+        // Verb → object region: noun, pronoun, det(→noun), adj(copula), prep(PP)
+        return { pronoun: 0.45, verb: 0.05, noun: 0.7, adj: 0.55, conj: 0, prep: 0.55, det: 0.7, qword: 0 };
+      case 'det':
+        // Determiner → noun phrase interior: noun or adj+noun
+        return { pronoun: 0, verb: 0, noun: 1.0, adj: 0.7, conj: 0, prep: 0, det: 0, qword: 0 };
+      case 'adj':
+        // Adjective → another adj or the head noun
+        return { pronoun: 0, verb: 0.05, noun: 1.0, adj: 0.35, conj: 0, prep: 0, det: 0, qword: 0 };
+      case 'noun':
+        // Noun end-of-NP → verb (if subject), prep, conj, or compound head noun
+        return { pronoun: 0.05, verb: 0.65, noun: 0.25, adj: 0.1, conj: 0.55, prep: 0.55, det: 0, qword: 0 };
+      case 'prep':
+        // Preposition → object of prep: det, noun, or pronoun
+        return { pronoun: 0.55, verb: 0, noun: 0.75, adj: 0.2, conj: 0, prep: 0, det: 0.85, qword: 0 };
+      case 'conj':
+        // Conjunction → start of new clause
+        return { pronoun: 0.7, verb: 0.4, noun: 0.4, adj: 0.1, conj: 0, prep: 0.1, det: 0.55, qword: 0 };
+      case 'qword':
+        // Question word → verb / aux (what IS, who DID, where DO)
+        return { pronoun: 0.1, verb: 1.0, noun: 0.05, adj: 0, conj: 0, prep: 0, det: 0, qword: 0 };
+    }
+    return { pronoun: 0.3, verb: 0.3, noun: 0.4, adj: 0.3, conj: 0.2, prep: 0.3, det: 0.3, qword: 0 };
+  }
+
+  /**
+   * Phrase-structure Markov slot requirement.
+   *
+   * The type we want NEXT depends on what came BEFORE — this is how real
+   * English phrase structure works. A determiner wants a noun. A preposition
+   * wants a noun phrase. A verb wants an object region. A pronoun wants a
+   * verb. Position alone is not enough — grammar is local.
+   *
+   * For ambiguous prev words (e.g. CVC shapes where verb≈0.31, noun≈0.69
+   * after the noun fallback) we BLEND the top-2 type continuations weighted
+   * by the word's type distribution. This lets "ran" continue as either a
+   * verb (→ object) or a noun (→ prep/conj) without a hard commitment.
+   */
+  nextSlotRequirement(prevWord, slotPos, sentenceType) {
+    if (!prevWord || slotPos === 0) {
+      return this.slotRequirement(slotPos, sentenceType);
+    }
+
+    const wt = this.wordType(prevWord);
+    const sorted = Object.entries(wt).sort((a, b) => b[1] - a[1]);
+    const [topType, topScore] = sorted[0];
+    const [secondType, secondScore] = sorted[1] || ['noun', 0];
+
+    const req1 = this._continuationFor(topType);
+
+    // Skip blend when top type clearly dominates OR second type is marginal.
+    // Only ambiguous words (CVC shapes where verb≈noun after usage learning)
+    // need the blend — strongly-typed words (pronouns, dets, preps, suffix-
+    // marked verbs/nouns) should use pure phrase-structure continuation.
+    if (secondScore < 0.25) return req1;
+    if (topScore < 0.001) return req1;
+    if (topScore > secondScore * 1.8) return req1;
+
+    // Blend top-2 continuations proportionally
+    const req2 = this._continuationFor(secondType);
+    const total = topScore + secondScore;
+    const w1 = topScore / total;
+    const w2 = secondScore / total;
+    const blended = {};
+    for (const k of ['pronoun', 'verb', 'noun', 'adj', 'conj', 'prep', 'det', 'qword']) {
+      blended[k] = (req1[k] || 0) * w1 + (req2[k] || 0) * w2;
+    }
+    return blended;
   }
 
   /**
    * Type compatibility: dot product of word type × slot requirement.
    * High = word fits this slot. Low = wrong type for this position.
+   *
+   * When prevWord is supplied, uses phrase-structure Markov grammar
+   * (nextSlotRequirement). Otherwise falls back to position-based slot seed.
    */
-  typeCompatibility(word, slotPos, sentenceType) {
+  typeCompatibility(word, slotPos, sentenceType, prevWord = null) {
     const wt = this.wordType(word);
-    const req = this.slotRequirement(slotPos, sentenceType);
+    const req = prevWord
+      ? this.nextSlotRequirement(prevWord, slotPos, sentenceType)
+      : this.slotRequirement(slotPos, sentenceType);
     return wt.pronoun * req.pronoun + wt.verb * req.verb + wt.noun * req.noun +
            wt.adj * req.adj + wt.conj * req.conj + wt.prep * req.prep +
            wt.det * req.det + wt.qword * req.qword;
@@ -515,6 +667,9 @@ export class LanguageCortex {
     const RECENT_SLOT_WINDOW = 3;
 
     // ── STEP 6: STRUCTURE — fill slots with brain-selected words ──
+    // Phrase-structure gate is now enforced on EVERY slot (not just 0/1).
+    // nextSlotRequirement drives a Markov grammar where the type we want
+    // next depends on the dominant type of the previous word.
     for (let pos = 0; pos < effectiveLen; pos++) {
       // Track the REAL last pushed word, not the loop index. If the previous
       // slot produced nothing (empty pool → picked=null), `sentence.length`
@@ -524,25 +679,48 @@ export class LanguageCortex {
       const prevWord = sentence.length > 0 ? sentence[sentence.length - 1] : null;
       const recentSlots = sentence.slice(-RECENT_SLOT_WINDOW);
       const followers = prevWord ? this._jointCounts.get(prevWord) : null;
-
-      // Slot 0 (statement/exclamation) and slot 1 (verb) have STRICT type requirements.
-      // Slots deeper in the sentence are more permissive.
       const slotIdx = sentence.length;
-      const strictSlot = (type !== 'action' && (slotIdx === 0 || slotIdx === 1)) || (type === 'action' && slotIdx === 0);
-      const typeFloor = strictSlot ? 0.35 : 0.15;
+
+      // Strict floor applied to EVERY slot — no more free-for-all tail.
+      // Slot 0 is the tightest (must be a valid subject/qword/verb-for-action).
+      // All downstream slots still require phrase-structure compatibility.
+      const typeFloor = slotIdx === 0 ? 0.35 : 0.22;
+      const prevDominant = prevWord ? this._dominantType(prevWord) : null;
+
+      // Slot 0 (statement/exclamation) subject gate — word must be EITHER:
+      //   1. a letter-equation-identified nominative pronoun (i/he/we/you/she/it/they/this/that), OR
+      //   2. seen in the persona as a sentence-initial subject (Unity, she, this, etc.)
+      //   3. a strong determiner (the, a, my, your, these, those)
+      // This cleanly rejects object pronouns (me/us/him/them) and bare
+      // content nouns that happen to noun-fallback past the type floor.
+      const isSubjectSlot = slotIdx === 0 && type !== 'question' && type !== 'action';
+      const isSubjectCapable = (w) => {
+        // Nominative pronouns from pure letter equation (i/he/we/you/she/it/they/this/that)
+        if (this._isNominativePronoun(w)) return true;
+        // Words the persona actually used as sentence-initial subjects
+        if ((this._subjectStarters.get(w) || 0) >= 1) return true;
+        return false;
+      };
+      const subjStarterBoost = (w) => {
+        if (!isSubjectSlot) return 0;
+        return (this._subjectStarters.get(w) || 0) > 0 ? 0.25 : 0;
+      };
 
       const scored = allWords
         .filter(([w]) => {
           if (w === prevWord) return false;
           if (recentSlots.indexOf(w) !== -1) return false;            // no repeat within window
           if (prevWord && usedBigrams.has(prevWord + '→' + w)) return false;
-          // HARD grammar filter on strict slots — wrong type doesn't even enter the pool
-          if (strictSlot && this.typeCompatibility(w, slotIdx, type) < typeFloor) return false;
+          // Slot 0 subject gate — reject words that aren't structurally subjects
+          if (isSubjectSlot && !isSubjectCapable(w)) return false;
+          // HARD phrase-structure filter — wrong type never enters the pool.
+          const compat = this.typeCompatibility(w, slotIdx, type, prevWord) + subjStarterBoost(w);
+          if (compat < typeFloor) return false;
           return true;
         })
         .map(([word, entry]) => {
-          // GRAMMAR — does this word fit this grammatical slot?
-          const typeScore = this.typeCompatibility(word, pos, type);
+          // GRAMMAR — does this word fit this grammatical slot given prev word?
+          const typeScore = this.typeCompatibility(word, slotIdx, type, prevWord);
 
           // THOUGHT — CONTINUOUS similarity to what the brain is thinking
           const pattern = entry.pattern || this.wordToPattern(word);
@@ -571,8 +749,29 @@ export class LanguageCortex {
           const recentCount = this._recentOutputWords.filter(rw => rw === word).length;
           const recency = recentCount * 0.25;
 
-          // Soft grammar gate for the non-strict tail slots: wrong-type words lose 95%
-          const grammarGate = typeScore > 0.15 ? 1.0 : 0.05;
+          // HARD grammar gate — anything below floor is dead, no 5% leak.
+          // Wrong-type words got filtered above but bigrams from persona can
+          // still lift marginal candidates; this catches them.
+          const grammarGate = typeScore >= typeFloor ? 1.0 : 0.0;
+
+          // SAME-TYPE REPETITION PENALTY — avoid verb-verb-verb cascades.
+          // Noun-noun and adj-adj are allowed (compound NPs, stacked adjectives).
+          // Verb-verb gets an extra-harsh penalty — it's the worst offender
+          // (persona file has many -ing/-ed words that all look like verbs).
+          const currDominant = this._dominantType(word);
+          const sameType = prevDominant && currDominant === prevDominant
+                           && prevDominant !== 'noun' && prevDominant !== 'adj';
+          const sameTypePenalty = sameType
+            ? (prevDominant === 'verb' ? 0.65 : 0.35)
+            : 0;
+
+          // SUBJECT-STARTER BOOST for slot 0 statements/exclamations —
+          // words the persona has used as sentence-initial subjects get a
+          // positional boost. Capped log to prevent one high-frequency word
+          // (like 'unity') from dominating every sentence.
+          const subjStart = (slotIdx === 0 && type !== 'question' && type !== 'action')
+            ? Math.log(1 + (this._subjectStarters.get(word) || 0)) * 0.15
+            : 0;
 
           // ── COMBINED: grammar dominates structure, bigrams from persona
           // drive content, context keeps her on-topic ──
@@ -586,9 +785,11 @@ export class LanguageCortex {
               topicSim * 0.06 +          // semantic relevance to topic
               isMood * 0.04 +            // emotional word match
               moodBias * 0.03 +          // continuous mood alignment
+              subjStart +                // sentence-start subject boost (slot 0)
               (selfAware && (word.length === 1 || word.endsWith("'m") || word.endsWith("'re")) ? 0.08 : 0)
             )
-            - recency;
+            - recency
+            - sameTypePenalty;
 
           return { word, entry, score };
         });
@@ -745,6 +946,13 @@ export class LanguageCortex {
       if (v) this._actionVerbs.set(v, (this._actionVerbs.get(v) || 0) + 1);
     }
 
+    // Sentence-initial word learned as a subject starter. Pure structural
+    // observation — no type labels, just "this word appears at position 0".
+    if (words.length > 0) {
+      const first = words[0].replace(/\*/g, '');
+      if (first) this._subjectStarters.set(first, (this._subjectStarters.get(first) || 0) + 1);
+    }
+
     for (let i = 0; i < words.length; i++) {
       this._marginalCounts.set(words[i], (this._marginalCounts.get(words[i]) || 0) + 1);
       this._totalWords++;
@@ -867,17 +1075,42 @@ export class LanguageCortex {
       }
     }
 
-    // ── COMPOUND SENTENCE ──
-    // Insert a conjunction at the midpoint of long sentences, picked from
-    // words the dictionary has learned that score high on the conj equation.
-    if (result.length > 6) {
-      const midpoint = Math.floor(result.length / 2);
-      const nearConj = result.slice(midpoint - 1, midpoint + 2).some(w => this.wordType(w).conj > 0.4);
-      if (!nearConj) {
-        const conjWord = this._pickConjByMood(arousal, valence);
-        if (conjWord) result.splice(midpoint, 0, conjWord);
+    // ── COPULA AGREEMENT via learned bigrams (no hardcoded lists) ──
+    // If slot 0 is a subject-pronoun and slot 1 is a copula-like verb BUT the
+    // pair was never seen in training ("you am", "i are"), look up the most
+    // common copula follower of slot 0 in learned bigrams and swap. Copula
+    // detection is pure equation: short word, high verb score, no noun/prep
+    // signal — matches am/is/are (plus learned past copulas was/were).
+    const verbIsCopula = (v) => {
+      if (!v || v.length > 4) return false;
+      const wt = this.wordType(v);
+      return wt.verb > 0.7 && wt.noun < 0.3 && wt.prep < 0.1 && wt.conj < 0.1 && wt.pronoun < 0.2;
+    };
+    if (result.length >= 2 && subj) {
+      const subjKey = subj.toLowerCase();
+      const verbKey = (result[1] || '').toLowerCase();
+      if (verbIsCopula(verbKey) && this.wordType(subjKey).pronoun > 0.4) {
+        const seen = this._jointCounts.get(subjKey)?.get(verbKey) || 0;
+        if (seen === 0) {
+          const followers = this._jointCounts.get(subjKey);
+          if (followers) {
+            let best = null, bestCount = 0;
+            for (const [w, c] of followers) {
+              if (verbIsCopula(w) && c > bestCount) { bestCount = c; best = w; }
+            }
+            if (best && best !== verbKey) result[1] = best;
+          }
+        }
       }
     }
+
+    // ── COMPOUND SENTENCE ──
+    // Conj-splicing is DISABLED — the tail was generated against the wrong
+    // predecessor (pre-conj word), so splicing ', and' mid-sentence violates
+    // phrase structure on the far side. A proper compound requires re-planning
+    // the tail with the conj word as the new predecessor, which means lifting
+    // sentence construction into _postProcess. For now, prefer shorter
+    // grammatical sentences over longer broken compounds.
 
     return result;
   }
@@ -889,18 +1122,22 @@ export class LanguageCortex {
    */
   _pickConjByMood(arousal, valence) {
     // Scan the marginal-count map for words whose wordType says "conj".
-    // Rank by conjunction score × mood alignment.
+    // Rank by conjunction score × mood alignment × learned frequency.
+    // Mood multiplier is a TIE-BREAKER (capped at 1.1), not a dominance
+    // swapper — base conjScore must drive the pick so 'and' (0.85) beats
+    // 'if' (0.7) regardless of arousal level.
     let best = null, bestScore = 0;
-    for (const [word] of this._marginalCounts) {
+    for (const [word, count] of this._marginalCounts) {
       const conjScore = this.wordType(word).conj;
       if (conjScore < 0.4) continue;
-      // Additive conjs tend to be vowel-heavy, contrast tend consonant-heavy.
-      // Use letter-shape as mood proxy — pure equation.
       let moodFit = 1;
       const vc = (word.match(/[aeiou]/g) || []).length / word.length;
-      if (arousal > 0.6 && vc >= 0.4) moodFit = 1.3;
-      if (valence < -0.2 && vc < 0.4) moodFit = 1.3;
-      const s = conjScore * moodFit;
+      if (arousal > 0.6 && vc >= 0.4) moodFit = 1.08;
+      if (valence < -0.2 && vc < 0.4) moodFit = 1.08;
+      // Frequency weighting — conjunctions used more often in the persona
+      // text are more natural choices. log to keep dominance bounded.
+      const freqWeight = 1 + Math.log(1 + (count || 0)) * 0.05;
+      const s = conjScore * moodFit * freqWeight;
       if (s > bestScore) { bestScore = s; best = word; }
     }
     return best;
@@ -943,15 +1180,20 @@ export class LanguageCortex {
   serialize() {
     const joints = {};
     for (const [w1, inner] of this._jointCounts) joints[w1] = Object.fromEntries(inner);
+    const usage = {};
+    for (const [w, u] of this._usageTypes) usage[w] = u;
     return {
       jointCounts: joints,
       marginalCounts: Object.fromEntries(this._marginalCounts),
       totalPairs: this._totalPairs, totalWords: this._totalWords,
       questionStarters: Object.fromEntries(this._questionStarters),
       actionVerbs: Object.fromEntries(this._actionVerbs),
+      subjectStarters: Object.fromEntries(this._subjectStarters),
+      usageTypes: usage,
       zipfAlpha: this.zipfAlpha,
       sentencesLearned: this.sentencesLearned,
       wordsProcessed: this.wordsProcessed,
+      selfImageLoaded: this._selfImageLoaded,
     };
   }
 
@@ -963,8 +1205,11 @@ export class LanguageCortex {
     this._totalWords = data.totalWords || 0;
     if (data.questionStarters) this._questionStarters = new Map(Object.entries(data.questionStarters).map(([k, v]) => [k, +v]));
     if (data.actionVerbs) this._actionVerbs = new Map(Object.entries(data.actionVerbs).map(([k, v]) => [k, +v]));
+    if (data.subjectStarters) this._subjectStarters = new Map(Object.entries(data.subjectStarters).map(([k, v]) => [k, +v]));
+    if (data.usageTypes) this._usageTypes = new Map(Object.entries(data.usageTypes));
     this.sentencesLearned = data.sentencesLearned || 0;
     this.wordsProcessed = data.wordsProcessed || 0;
+    if (data.selfImageLoaded) this._selfImageLoaded = true;
   }
 
   getLetterPattern(char) {
