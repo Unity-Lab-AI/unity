@@ -25,6 +25,10 @@
           <div id="ls-neurons">— neurons</div>
           <div id="ls-psi">Ψ = —</div>
           <div id="ls-users">0 online</div>
+          <div style="margin-top:6px;display:flex;gap:4px;justify-content:flex-end;">
+            <button onclick="document.getElementById('setup-modal').style.display=''" style="padding:2px 8px;background:rgba(20,20,20,0.8);border:1px solid #333;border-radius:4px;color:#777;font-family:'JetBrains Mono',monospace;font-size:9px;cursor:pointer;">⚙</button>
+            <button onclick="if(confirm('Clear ALL data?')){localStorage.clear();location.reload();}" style="padding:2px 8px;background:rgba(20,20,20,0.8);border:1px solid rgba(239,68,68,0.2);border-radius:4px;color:#ef4444;font-family:'JetBrains Mono',monospace;font-size:9px;cursor:pointer;">✕</button>
+          </div>
         </div>
       </div>
 
@@ -266,6 +270,11 @@
       <div class="hud-row">
         <span class="hud-label">STATE</span>
         <span class="hud-val hud-val-sm" id="hud-dream" style="color:#a855f7;">awake</span>
+      </div>
+      <div class="hud-sep"></div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:2px;">
+        <button id="hud-settings-btn" style="flex:1;padding:3px 6px;background:rgba(255,77,154,0.08);border:1px solid rgba(255,77,154,0.2);border-radius:4px;color:#ff4d9a;font-family:var(--mono);font-size:8px;cursor:pointer;letter-spacing:0.5px;" title="Change AI model, providers">⚙ SETTINGS</button>
+        <button id="hud-clear-btn" style="padding:3px 6px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:4px;color:#ef4444;font-family:var(--mono);font-size:8px;cursor:pointer;" title="Clear all saved data" onclick="if(confirm('Clear ALL Unity data? Keys, history, positions, everything.')){localStorage.clear();location.reload();}">✕ CLEAR</button>
       </div>
     </div>
 

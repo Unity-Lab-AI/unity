@@ -976,16 +976,18 @@ Vision: ${state.visionDescription || 'none'}`;
   const micMuteBtn = document.getElementById('mic-mute-btn');
   if (micMuteBtn) micMuteBtn.addEventListener('click', toggleMicMute);
 
-  // Settings button — shows setup modal again for model changes
-  const settingsBtn = document.getElementById('settings-btn');
-  if (settingsBtn) {
-    settingsBtn.addEventListener('click', () => {
+  // Settings buttons — both toolbar and HUD open setup modal
+  const wireSettings = (btnId) => {
+    const btn = document.getElementById(btnId);
+    if (btn) btn.addEventListener('click', () => {
       setupModal.classList.remove('hidden');
-      // Update start button text since brain is already running
+      setupModal.style.display = '';
       startBtn.textContent = 'Apply Changes';
       startBtn.disabled = false;
     });
-  }
+  };
+  wireSettings('settings-btn');
+  wireSettings('hud-settings-btn');
 
   // ── Wire voice input → brain ──
   let _currentResponseId = 0;
