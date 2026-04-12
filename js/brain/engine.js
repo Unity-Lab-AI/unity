@@ -577,24 +577,17 @@ export class UnityBrain extends EventEmitter {
   }
 
   async _handleBuild(text) {
-    const buildPrompt = [
-      '[SYSTEM: Generate a JSON response (ONLY valid JSON, no markdown fences) with these keys:',
-      '  { "html": "...", "css": "...", "js": "...", "id": "..." }',
-      'The response creates a self-contained UI component for what the user asked.',
-      'Rules:',
-      '- "id" is a short unique kebab-case identifier.',
-      '- "html" is raw HTML (no <script> or <style> tags).',
-      '- "css" is CSS rules.',
-      '- "js" is JavaScript that runs after injection. It has access to a `unity` API:',
-      '    unity.speak(text), unity.chat(prompt), unity.generateImage(prompt),',
-      '    unity.getState(), unity.storage.get(k), unity.storage.set(k,v)',
-      '- Use dark styling: #0a0a0a backgrounds, #e0e0e0 text, neon accents (#ff00ff, #00ffcc).',
-      '- Wrap inputs in labels or use for/id pairs for accessibility.',
-      '- Be creative. Make it functional. All strings properly escaped.',
-      '- Return ONLY the JSON object. No text before or after. No markdown fences.]',
-    ].join('\n');
+    // Call Pollinations DIRECTLY for builds — NOT through Broca's area.
+    // Broca's persona prompt makes the AI roleplay instead of outputting clean JSON.
+    const buildMessages = [
+      { role: 'system', content: 'You are a frontend developer. Generate ONLY a valid JSON object with these keys: { "html": "...", "css": "...", "js": "...", "id": "..." }. The response creates a self-contained UI component. Rules: "id" is kebab-case. "html" is raw HTML (no script/style tags). "css" is CSS. "js" is JavaScript with access to: unity.speak(text), unity.chat(prompt), unity.generateImage(prompt), unity.getState(), unity.storage.get(k), unity.storage.set(k,v). Use dark styling: #0a0a0a backgrounds, #e0e0e0 text, neon accents (#ff00ff, #00ffcc). Return ONLY the JSON. No explanation. No markdown fences.' },
+      { role: 'user', content: text },
+    ];
 
-    let raw = await this._brocasArea.generate(this.getState(), buildPrompt + '\n\nUser request: ' + text);
+    let raw;
+    try {
+      raw = await this._imageGen.chat(buildMessages, { temperature: 0.7 });
+    } catch {};
     if (!raw) {
       this.emit('response', { text: "Shit — couldn't build that. Try again?", action: 'build_ui' });
       return { text: "Shit — couldn't build that. Try again?", action: 'build_ui' };
@@ -620,12 +613,15 @@ export class UnityBrain extends EventEmitter {
       }
     }
 
-    // Strategy 3: the AI returned conversational text, not JSON — ask again more forcefully
+    // Strategy 3: retry with even more forceful prompt
     if (!component) {
-      console.warn('[Brain] Build: first attempt wasn\'t JSON, retrying...');
-      raw = await this._brocasArea.generate(this.getState(),
-        '[SYSTEM: You MUST return ONLY a JSON object. No text before or after. No markdown. Just: {"html":"...","css":"...","js":"...","id":"..."}\n\nBuild: ' + text
-      );
+      console.warn('[Brain] Build: first attempt failed, retrying...');
+      try {
+        raw = await this._imageGen.chat([
+          { role: 'system', content: 'Return ONLY valid JSON. No other text. Format: {"html":"...","css":"...","js":"...","id":"..."}' },
+          { role: 'user', content: 'Build: ' + text },
+        ], { temperature: 0.5 });
+      } catch {}
       if (raw) {
         const firstBrace = raw.indexOf('{');
         const lastBrace = raw.lastIndexOf('}');
