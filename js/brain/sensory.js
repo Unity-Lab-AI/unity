@@ -120,40 +120,47 @@ export class SensoryProcessor {
   }
 
   /**
-   * Set the AI provider for semantic classification.
-   * The AI model IS the semantic cortex — it understands language.
+   * Set the AI provider. No longer used for classification —
+   * semantic routing now handled by embeddings + learned BG weights.
+   * Kept for backward compatibility.
    */
   setAIProvider(provider) {
     this._aiProvider = provider;
   }
 
   /**
-   * Classify text intent using the AI model and inject current into the winning BG channel.
-   * This is Wernicke's area → prefrontal cortex → BG pathway.
-   * The AI does what no word list can — understands MEANING.
+   * Route text semantically through embedding→BG pathway.
+   * The sentence embedding activates BG channels based on learned semantic weights.
+   * No external AI call — routing is computed from the equations.
+   *
+   * The cortex→BG projection weights learn through reward which patterns
+   * lead to which actions. With real embeddings, similar requests activate
+   * similar cortex patterns, making the projections generalize.
    */
-  async _classifyAndRoute(text) {
-    if (!this._aiProvider?.chat) return;
+  _semanticRoute(text) {
+    if (!this._embeddings._loaded) return;
 
-    try {
-      const result = await this._aiProvider.chat([
-        { role: 'system', content: 'Classify this message into ONE action. Reply with ONLY the number:\n0 = conversation/chat/question/response\n1 = generate/show image/picture/photo/selfie/drawing\n2 = sing/vocalize/sound effect\n3 = build/create/code UI component/app/tool/game/calculator/widget\n4 = wait/listen/stop/be quiet\n5 = nothing/idle\nReply with ONLY the digit 0-5.' },
-        { role: 'user', content: text },
-      ], { temperature: 0 });
+    const sentenceEmbed = this._embeddings.getSentenceEmbedding(text);
+    const w = this._semanticWeights;
 
-      const channel = parseInt((result || '0').trim().charAt(0));
-      if (channel >= 0 && channel <= 5) {
-        // Inject STRONG current into the classified channel
-        const start = channel * 25;
-        const w = this._semanticWeights;
-        const weightKey = ['respond', 'image', 'speak', 'build', 'listen', 'idle'][channel];
-        for (let i = start; i < start + 25; i++) {
-          this.bgCurrent[i] += 15.0 * (w[weightKey]?.[i] || 0.5);
-        }
-        console.log(`[Sensory] AI classified "${text.slice(0, 30)}..." → channel ${channel} (${weightKey})`);
+    // Compute similarity between sentence embedding and each channel's learned vector
+    // The semantic weights encode what KIND of input each BG channel responds to
+    const channelKeys = ['respond', 'image', 'speak', 'build', 'listen', 'idle'];
+    for (let ch = 0; ch < 6; ch++) {
+      const channelWeights = w[channelKeys[ch]];
+      let activation = 0;
+
+      // Weight each embedding dimension by the channel's learned sensitivity
+      for (let d = 0; d < 50 && d < 25; d++) {
+        const bgIdx = ch * 25 + d;
+        activation += sentenceEmbed[d] * (channelWeights[bgIdx] || 0.5);
       }
-    } catch {
-      // AI classification failed — BG will use default respond bias
+
+      // Inject proportional current into this BG channel
+      const start = ch * 25;
+      for (let i = start; i < start + 25; i++) {
+        this.bgCurrent[i] += Math.max(0, activation) * 8.0;
+      }
     }
   }
 
@@ -416,7 +423,7 @@ export class SensoryProcessor {
     // imitates before internalizing. The classification weakens as projections
     // strengthen. Eventually the brain routes semantics purely through
     // cortex→BG neural dynamics.
-    this._classifyAndRoute(text);
+    this._semanticRoute(text);
 
     // Default respond bias (most inputs are conversational)
     for (let i = 0; i < 25; i++) this.bgCurrent[i] += 3.0;
