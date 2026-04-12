@@ -495,8 +495,11 @@ class ServerBrain {
 
       if (this._useParallel && this._parallelBrain?.isReady) {
         // PARALLEL: all clusters step simultaneously on separate cores
-        for (let i = 0; i < SUBSTEPS; i++) {
-          const results = await this._parallelBrain.step();
+        try { for (let i = 0; i < SUBSTEPS; i++) {
+          const results = await Promise.race([
+            this._parallelBrain.step(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 500)),
+          ]);
           // Merge worker results into brain state
           this.totalSpikes = 0;
           for (const [name, result] of Object.entries(results)) {
@@ -520,6 +523,10 @@ class ServerBrain {
               }));
             } catch {}
           }
+        }
+        } catch (err) {
+          // Parallel failed — fall back to single thread this tick
+          for (let i = 0; i < SUBSTEPS; i++) this.step();
         }
       } else {
         // SINGLE-THREAD: original path

@@ -56,6 +56,12 @@ export class LanguageCortex {
     this.sentencesLearned = 0;
     this.wordsProcessed = 0;
 
+    // Usage-based type learning — words get type boosts from how they're used
+    // "put" after "i" (pronoun) → verbScore boosted
+    // "cat" after "the" (determiner) → nounScore boosted
+    // Learns from structural bigrams + conversation, no pre-labeled types
+    this._usageTypes = new Map(); // word → { pronoun, verb, noun, adj, prep, det, conj, qword }
+
     // ── ENGLISH LANGUAGE STRUCTURE ──
     // These aren't vocabulary — they're OPERATORS. The grammar equation
     // needs them the same way math needs + - × ÷. Without "the", "is",
@@ -252,7 +258,16 @@ export class LanguageCortex {
         dictionary.learnBigram(q, 'can');
       }
 
-      console.log(`[LanguageCortex] English structure loaded: ${dictionary.size} words`);
+      // Learn usage types from structural bigrams
+      // "i" → "am": am gets verbScore boost
+      // "the" → "thing": thing gets nounScore boost
+      for (const [w1, followers] of dictionary._bigrams) {
+        for (const [w2] of followers) {
+          this._learnUsageType(w1, w2);
+        }
+      }
+
+      console.log(`[LanguageCortex] English structure loaded: ${dictionary.size} words, ${this._usageTypes.size} usage-typed`);
     };
 
     // DYNAMIC EXPANSION — when new words are learned, they auto-join
@@ -422,18 +437,64 @@ export class LanguageCortex {
       (len === 3 && w[0] === 'h' && w[1] === 'o' && w[2] === 'w' ? 0.8 : 0) // how
     );
 
+    // USAGE-BASED TYPE BOOST — learned from how the word was used in context
+    // This is how LLMs handle ambiguous words: context determines type.
+    // "put" after "i" → verb. "light" after "the" → noun. "light" before noun → adj.
+    const usage = this._usageTypes.get(w) || {};
+    const uPronoun = (usage.pronoun || 0) * 0.5;
+    const uVerb = (usage.verb || 0) * 0.5;
+    const uNoun = (usage.noun || 0) * 0.5;
+    const uAdj = (usage.adj || 0) * 0.5;
+    const uPrep = (usage.prep || 0) * 0.5;
+    const uDet = (usage.det || 0) * 0.5;
+    const uConj = (usage.conj || 0) * 0.5;
+    const uQword = (usage.qword || 0) * 0.5;
+
     // Normalize
-    const max = Math.max(0.01, pronounScore, verbScore, nounScore, adjScore, conjScore, prepScore, detScore, qwordScore);
+    const max = Math.max(0.01,
+      pronounScore + uPronoun, verbScore + uVerb, nounScore + uNoun,
+      adjScore + uAdj, conjScore + uConj, prepScore + uPrep,
+      detScore + uDet, qwordScore + uQword);
     return {
-      pronoun: pronounScore / max,
-      verb: verbScore / max,
-      noun: nounScore / max,
-      adj: adjScore / max,
-      conj: conjScore / max,
-      prep: prepScore / max,
-      det: detScore / max,
-      qword: qwordScore / max,
+      pronoun: (pronounScore + uPronoun) / max,
+      verb: (verbScore + uVerb) / max,
+      noun: (nounScore + uNoun) / max,
+      adj: (adjScore + uAdj) / max,
+      conj: (conjScore + uConj) / max,
+      prep: (prepScore + uPrep) / max,
+      det: (detScore + uDet) / max,
+      qword: (qwordScore + uQword) / max,
     };
+  }
+
+  /**
+   * Learn word type from usage context.
+   * After "i/you/we/they" → word is probably a VERB
+   * After "the/a/an/my" → word is probably a NOUN
+   * After a verb → word is probably a NOUN/ADJ/PREP
+   * This is the ATTENTION mechanism — context determines type.
+   */
+  _learnUsageType(prevWord, word) {
+    if (!prevWord || !word) return;
+    const prevType = this.wordType(prevWord);
+    if (!this._usageTypes.has(word)) {
+      this._usageTypes.set(word, { pronoun: 0, verb: 0, noun: 0, adj: 0, prep: 0, det: 0, conj: 0, qword: 0 });
+    }
+    const u = this._usageTypes.get(word);
+    const lr = 0.1;
+
+    // What follows a pronoun? → verb
+    if (prevType.pronoun > 0.5) u.verb += lr;
+    // What follows a determiner? → noun or adjective
+    if (prevType.det > 0.5) { u.noun += lr * 0.7; u.adj += lr * 0.3; }
+    // What follows a verb? → noun, prep, adj, or pronoun
+    if (prevType.verb > 0.5) { u.noun += lr * 0.3; u.prep += lr * 0.3; u.adj += lr * 0.2; u.pronoun += lr * 0.2; }
+    // What follows a preposition? → determiner or noun
+    if (prevType.prep > 0.5) { u.det += lr * 0.4; u.noun += lr * 0.6; }
+    // What follows a conjunction? → pronoun or determiner (start of new clause)
+    if (prevType.conj > 0.5) { u.pronoun += lr * 0.5; u.det += lr * 0.3; u.noun += lr * 0.2; }
+    // What follows a question word? → verb or auxiliary
+    if (prevType.qword > 0.5) u.verb += lr;
   }
 
   /**
@@ -737,6 +798,9 @@ export class LanguageCortex {
       const pattern = this.wordToPattern(words[i]);
       dictionary?.learnWord?.(words[i], pattern, arousal, valence);
       if (i < words.length - 1) dictionary?.learnBigram?.(words[i], words[i + 1]);
+
+      // Learn word type from context (what came before it)
+      if (i > 0) this._learnUsageType(words[i - 1], words[i]);
 
       // Dynamic expansion — new word auto-joins its category
       if (this._expandStructure && dictionary) {
