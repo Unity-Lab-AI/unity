@@ -404,16 +404,31 @@ export class Brain3D {
     if (!state || !this._open || this._destroyed) return;
     this._lastState = state;
 
-    // Scale render count if server reports more neurons (one-time)
+    // Scale render count from ACTUAL server cluster sizes (one-time)
     const serverNeurons = state.totalNeurons || 1000;
     if (serverNeurons > 1000 && !this._scaled) {
       this._scaled = true;
-      // Scale up to MAX_RENDER_NEURONS proportionally
-      const scale = Math.min(MAX_RENDER_NEURONS / 1000, serverNeurons / 1000);
-      TOTAL = Math.min(MAX_RENDER_NEURONS, Math.round(1000 * scale));
-      // Rescale cluster sizes proportionally
-      const clusterScale = TOTAL / 1000;
-      for (const c of CLUSTERS) c.n = Math.round(c.n * clusterScale);
+      TOTAL = Math.min(MAX_RENDER_NEURONS, Math.max(1000, Math.round(serverNeurons / 100)));
+
+      // Read ACTUAL cluster sizes from server state — dynamic, not hardcoded
+      if (state.clusters) {
+        const serverClusters = state.clusters;
+        const serverTotal = Object.values(serverClusters).reduce((s, c) => s + (c.size || 0), 0) || 1;
+        // Map each CLUSTERS entry to its proportional share of TOTAL
+        for (const cl of CLUSTERS) {
+          const serverCluster = serverClusters[cl.key];
+          if (serverCluster && serverCluster.size) {
+            cl.n = Math.max(10, Math.round((serverCluster.size / serverTotal) * TOTAL));
+          }
+        }
+        // Adjust to exactly TOTAL
+        const renderSum = CLUSTERS.reduce((s, c) => s + c.n, 0);
+        if (renderSum !== TOTAL) CLUSTERS[0].n += (TOTAL - renderSum);
+      } else {
+        // No cluster data — scale from base proportions
+        const clusterScale = TOTAL / 1000;
+        for (const c of CLUSTERS) c.n = Math.round(c.n * clusterScale);
+      }
       // Rebuild neuron positions and GL buffers
       this._glow = new Float32Array(TOTAL);
       this._vis = new Float32Array(TOTAL).fill(1);

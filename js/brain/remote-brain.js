@@ -182,9 +182,10 @@ export class RemoteBrain extends EventEmitter {
     // Server runs millions of neurons — render shows proportional sample.
     // AMPLIFY firing rates for visual impact (2% biological rate → 15-30% visual rate).
     if (serverState.clusters) {
-      // MUST match CLUSTERS order in brain-3d.js (sum to 1.0)
-      const ratios = [0.20, 0.10, 0.08, 0.08, 0.38, 0.05, 0.11];
+      // Dynamic ratios from ACTUAL server cluster sizes — not hardcoded
       const names = ['cortex', 'hippocampus', 'amygdala', 'basalGanglia', 'cerebellum', 'hypothalamus', 'mystery'];
+      const totalSize = names.reduce((s, n) => s + (serverState.clusters[n]?.size || 0), 0) || 1;
+      const ratios = names.map(n => (serverState.clusters[n]?.size || 0) / totalSize);
       const renderTotal = this.state.spikes?.length || 20000;
       const spikes = new Uint8Array(renderTotal);
       let offset = 0;
