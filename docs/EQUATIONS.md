@@ -278,6 +278,18 @@
 
 ---
 
+## Parallel Compute
+
+| Equation | Purpose | File |
+|----------|---------|------|
+| `worker[i].step(currents) → spikes` | Each cluster on its own CPU core | `cluster-worker.js` |
+| `SharedArrayBuffer(size × 8)` | Zero-copy voltage transfer between threads | `parallel-brain.js` |
+| `I_target = Σ W_ij × spike_j` | Projection propagation on separate core | `projection-worker.js` |
+| `_gpuStep() → WebSocket → compute.html → WGSL → results` | GPU offload via browser WebGPU | `brain-server.js` |
+| `timeout = 50ms → fallback to CPU` | GPU compute with CPU fallback | `brain-server.js` |
+
+---
+
 ## Response Pool (EDNA Fallback)
 
 | Equation | Purpose | File |

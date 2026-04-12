@@ -145,8 +145,12 @@ Live at `your-username.github.io/Unity/`. Everything runs client-side — no ser
 │       ├── brain-viz.js          2D tabbed brain visualizer (8 tabs)
 │       └── brain-3d.js           3D WebGL brain with notifications + expansion
 ├── claude-proxy.js               Claude Code CLI as local AI (port 8088)
+├── compute.html                  GPU compute worker (WebGPU via browser)
 ├── server/
 │   ├── brain-server.js           Node.js brain server (always-on, WebSocket)
+│   ├── parallel-brain.js         Multi-core orchestrator (7 worker threads)
+│   ├── cluster-worker.js         One cluster's LIF on its own CPU core
+│   ├── projection-worker.js      Inter-cluster projection on its own core
 │   └── package.json              Server dependencies (ws, better-sqlite3)
 ├── dashboard.html                Public brain monitor (read-only)
 └── docs/

@@ -271,6 +271,7 @@
       <a href="#syntax"><span class="num">8.16</span> Syntactic Production — Word Order from Equations</a>
       <a href="#sent-types"><span class="num">8.17</span> Sentence Types — Statement, Question, Exclamation, Action</a>
       <a href="#input-analysis"><span class="num">8.18</span> Input Analysis — Topic Continuity and Context</a>
+      <a href="#parallel"><span class="num">8.19</span> Parallel Compute — GPU + Multi-Core CPU</a>
       <a href="#comparison"><span class="num">9</span> Biological Comparison</a>
     </div>
 
@@ -932,6 +933,28 @@ context = running_average(last 5 topic_patterns)
 topic_score(w) = cosine(word_pattern, context)          (boosts relevant words)
       </pre>
       <p class="eq-desc">Responses stay on topic because words matching the conversation context score higher in the production chain.</p>
+    </div>
+
+    <!-- ═══ 8.19 PARALLEL COMPUTE ═══ -->
+    <h2 id="parallel">8.19. Parallel Compute — GPU + Multi-Core CPU</h2>
+    <p>The brain runs across all available hardware. Zero third-party software — built-in Node.js worker_threads + W3C WebGPU standard.</p>
+    <div class="eq-box">
+      <div class="eq-title">Multi-Core CPU — Worker Threads</div>
+      <pre class="eq">
+worker[cluster_i].step(currents) → spikes     (7 clusters on 7 cores)
+SharedArrayBuffer(size × 8) → zero-copy       (no data copying between threads)
+projection_worker.propagate(spikes) → currents (16 projections on remaining cores)
+      </pre>
+      <p class="eq-desc">Each cluster's LIF population runs on its own CPU core simultaneously. SharedArrayBuffer enables zero-copy voltage/spike transfer. Projections computed on additional cores.</p>
+    </div>
+    <div class="eq-box">
+      <div class="eq-title">GPU Compute — WebGPU via Browser</div>
+      <pre class="eq">
+server → WebSocket → compute.html → gpu-compute.js → WGSL shaders → GPU
+GPU: LIF kernel (179K neurons in parallel) + synapse propagation
+results → WebSocket → server (50ms timeout → CPU fallback)
+      </pre>
+      <p class="eq-desc">The browser's WebGPU runs our WGSL compute shaders on the GPU. Server dispatches neuron state, browser computes on GPU, sends results back. If GPU takes > 50ms, server falls back to CPU — seamless.</p>
     </div>
 
     <!-- ═══ 9. COMPARISON ═══ -->

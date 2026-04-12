@@ -18,10 +18,10 @@
 
 // ── Constants ───────────────────────────────────────────────────────
 
-// Render neuron count — scales up for bigger brains but caps for GPU sanity
-// Server may run 179K neurons but rendering >10K WebGL points gets heavy
+// Render neuron count — scales with brain size
+// Visual is a proportional sample — actual computation happens at full scale
 let TOTAL = 1000;
-const MAX_RENDER_NEURONS = 5000;
+const MAX_RENDER_NEURONS = 15000;
 const AFTERGLOW_DECAY = 0.92;
 const PULSE_LIFE = 40;
 const MAX_PULSES = 80;
@@ -393,6 +393,12 @@ export class Brain3D {
       this._genPositions();
       if (this._gl) this._uploadStatic();
       console.log(`[Brain3D] Scaled to ${TOTAL} render neurons (server has ${serverNeurons.toLocaleString()})`);
+      // Update footer with actual vs rendered scale
+      const scaleInfo = this._overlay?.querySelector('.b3d-scale-info');
+      if (scaleInfo) {
+        const ratio = Math.round(serverNeurons / TOTAL);
+        scaleInfo.textContent = `${TOTAL.toLocaleString()} rendered · ${serverNeurons.toLocaleString()} actual (${ratio}:1) · 7 clusters`;
+      }
     }
 
     const spk = state.spikes;
@@ -531,7 +537,7 @@ export class Brain3D {
   </div>
   <div class="b3d-foot">
     <span>DRAG rotate · SCROLL zoom</span>
-    <span>1000 neurons · 7 clusters</span>
+    <span class="b3d-scale-info">1000 neurons · 7 clusters</span>
   </div>
 </div>`;
 

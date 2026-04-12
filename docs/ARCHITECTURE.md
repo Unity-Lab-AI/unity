@@ -341,8 +341,12 @@ Dream/
 │       └── brain-3d.js         # WebGL 3D brain visualizer (1000 neurons in clusters)
 ├── server/
 │   ├── brain-server.js         # Node.js brain server (always-on, WebSocket, auto-scale)
+│   ├── parallel-brain.js        # Multi-core orchestrator (7 worker threads)
+│   ├── cluster-worker.js       # One cluster's LIF on its own CPU core
+│   ├── projection-worker.js    # Inter-cluster projection on its own core
 │   └── package.json            # Server deps (ws, better-sqlite3, node-fetch)
 ├── claude-proxy.js             # Claude Code CLI as local AI (port 8088)
+├── compute.html                # GPU compute worker (WebGPU shaders via browser)
 ├── dashboard.html              # Public brain monitor (live stats, emotion chart)
 ├── .claude/                    # Workflow system + personas + MCP
 ├── docs/                       # Workflow docs (TODO, FINALIZED, ARCHITECTURE, etc.)

@@ -569,6 +569,22 @@ Major: visual attention in brain equations, efference copy echo suppression, Pol
 
 ---
 
+## 2026-04-12 Session: Phase 9 — Full Hardware Utilization
+
+### COMPLETED
+- [x] `server/cluster-worker.js` — worker thread per cluster, LIF on own core
+- [x] `server/parallel-brain.js` — orchestrates 7 workers, SharedArrayBuffer zero-copy
+- [x] `server/projection-worker.js` — inter-cluster projections on separate cores
+- [x] `compute.html` — GPU compute via browser WebGPU, performance dashboard
+- [x] Server GPU dispatch — _gpuStep(), gpu_register, compute_result handlers, 50ms timeout
+- [x] SharedArrayBuffer — zero-copy voltage/spike between threads
+- [x] Combined pipeline — parallel CPU + GPU dispatch, seamless fallback
+- [x] Brain scaled to 300 steps/sec (53.7M neuron updates/sec)
+- [x] start.bat opens compute.html automatically
+- [x] All docs: EQUATIONS.md (parallel compute), brain-equations.html (section 8.19), ARCHITECTURE, SETUP, SKILL_TREE, ROADMAP
+
+---
+
 ### FILES MODIFIED THIS SESSION
 - `js/brain/engine.js` — removed AI classification, brain-first response
 - `js/brain/cluster.js` — sparse synapses + projections

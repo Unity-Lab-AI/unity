@@ -223,7 +223,17 @@ Neurons → Synapses → Brain Loop → Brain Regions → Persona Loader → API
 - Brain learns every word from conversation — dictionary grows dynamically
 - Recency suppression, bigram loop detection, topic continuity, mood alignment
 
+**Phase 9: Full Hardware Utilization** — MOSTLY COMPLETE
+- 7 CPU worker threads (one per cluster) via built-in worker_threads
+- SharedArrayBuffer for zero-copy voltage/spike transfer
+- GPU compute via browser WebGPU (compute.html runs our WGSL shaders)
+- Projection workers on separate cores
+- GPU dispatch with 50ms timeout fallback to CPU
+- Performance dashboard in compute.html
+
 ### Remaining
+- Scale test at 500K, 1M neurons
+- Language cortex on own thread
 - Attention mechanism (transformer-like) in Cortex
 - Mobile-responsive UI polish
 
