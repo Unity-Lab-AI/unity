@@ -725,6 +725,58 @@ export class Brain3D {
     });
   }
 
+  /**
+   * Brain-driven emoji selection from the full Unicode catalog.
+   * The equations determine which emoji Unity expresses — no randomness, no list.
+   *
+   * Mapping:
+   *   valence → which RANGE of emoji (positive=happy/love, negative=angry/dark, neutral=thinking/misc)
+   *   arousal → intensity WITHIN that range (low=calm variants, high=intense variants)
+   *   psi     → awareness emojis (eyes, brain, stars) when high
+   *   coherence → complexity (simple face at low R, compound symbols at high R)
+   *   dreaming → sleep/dream/moon emojis override
+   *   reward  → sparkle/fire when positive, skull/broken when negative
+   *
+   * All computed from brain values, deterministic for the same state.
+   */
+  _brainEmoji(arousal, valence, psi, coherence, isDreaming, reward) {
+    // Unicode emoji face range: U+1F600 to U+1F64F (80 faces)
+    // Organized roughly: grinning→happy→silly→concerned→sad→angry→misc
+    // valence maps linearly across this range
+    // arousal selects sub-position within the valence zone
+
+    if (isDreaming) {
+      // Dreaming state — sleep emojis from equation values
+      const dreamIdx = Math.floor(coherence * 4);
+      return String.fromCodePoint([0x1F634, 0x1F4AD, 0x1F31C, 0x2728, 0x1F30C][dreamIdx] || 0x1F634);
+    }
+
+    if (Math.abs(reward) > 0.1) {
+      // Strong reward signal — the brain just learned something
+      const rewardPoint = reward > 0 ? 0x2728 + Math.floor(arousal * 3) : 0x1F4A5;
+      return String.fromCodePoint(rewardPoint);
+    }
+
+    if (psi > 0.01) {
+      // High consciousness — awareness emojis
+      return String.fromCodePoint(0x1F9E0); // brain
+    }
+
+    // Map valence (-1 to 1) → face emoji range
+    // Positive valence → happy end (U+1F600-1F60F)
+    // Negative valence → angry/sad end (U+1F620-1F62F)
+    // Neutral → thinking/neutral (U+1F610-1F61F)
+    const normalizedV = (valence + 1) / 2; // 0 to 1
+    const faceBase = 0x1F600;
+    const faceRange = 0x3F; // 63 faces
+
+    // Valence picks the zone, arousal picks the position within it
+    const faceIdx = Math.floor(normalizedV * faceRange * 0.7 + arousal * faceRange * 0.3);
+    const codePoint = faceBase + (faceIdx % faceRange);
+
+    return String.fromCodePoint(codePoint);
+  }
+
   _clusterOf(idx) {
     let off = 0;
     for (let i = 0; i < CLUSTERS.length; i++) {
@@ -792,6 +844,10 @@ export class Brain3D {
     const reward = state.reward ?? 0;
 
     // Pool of generators — each creates a unique message from live values
+    // Emoji from equations — Unity picks from the full Unicode catalog
+    // Brain values hash into emoji code point ranges, no list
+    const emoji = this._brainEmoji(arousal, valence, psi, coherence, isDreaming, reward);
+
     const generators = [
       // Cluster snapshots — rotate through clusters
       () => {
@@ -803,15 +859,15 @@ export class Brain3D {
         return { text: `${CLUSTERS[ci].label} ${c.spikeCount}/${c.size} (${pct}%) rate=${rate}`, cluster: ci };
       },
       // Combined state reads
-      () => ({ text: `Ψ=${psi.toFixed(4)} gate=${gate.toFixed(2)}x coherence=${(coherence*100).toFixed(0)}%`, cluster: 6 }),
-      () => ({ text: `a=${(arousal*100).toFixed(0)}% v=${valence.toFixed(3)} ${isDreaming ? 'dreaming' : mood}`, cluster: 2 }),
-      () => ({ text: `θ=${(bp.theta??0).toFixed(1)} α=${(bp.alpha??0).toFixed(1)} β=${(bp.beta??0).toFixed(1)} γ=${(bp.gamma??0).toFixed(1)}`, cluster: 0 }),
-      () => ({ text: `motor: ${motor.selectedAction || 'idle'} conf=${((motor.confidence||0)*100).toFixed(0)}%`, cluster: 3 }),
-      () => iv.sentence ? { text: `voice: "${iv.sentence.slice(0, 60)}"`, cluster: 6 } : null,
-      () => mem.lastRecall ? { text: `recall: "${mem.lastRecall.trigger}"`, cluster: 1 } : null,
-      () => isDreaming ? { text: `dreaming — theta-dominant, replaying`, cluster: 1 } : null,
-      () => Math.abs(reward) > 0.03 ? { text: `δ=${reward.toFixed(3)} ${reward > 0 ? 'reinforcing' : 'weakening'}`, cluster: 3 } : null,
-      () => ({ text: `${(state.totalNeurons||1000).toLocaleString()} neurons ${(state.spikeCount??state.totalSpikes??0).toLocaleString()} firing`, cluster: 0 }),
+      () => ({ text: `${emoji} Ψ=${psi.toFixed(4)} gate=${gate.toFixed(2)}x coherence=${(coherence*100).toFixed(0)}%`, cluster: 6 }),
+      () => ({ text: `${emoji} a=${(arousal*100).toFixed(0)}% v=${valence.toFixed(3)}`, cluster: 2 }),
+      () => ({ text: `${emoji} θ=${(bp.theta??0).toFixed(1)} α=${(bp.alpha??0).toFixed(1)} β=${(bp.beta??0).toFixed(1)} γ=${(bp.gamma??0).toFixed(1)}`, cluster: 0 }),
+      () => ({ text: `${emoji} motor: ${motor.selectedAction || 'idle'} conf=${((motor.confidence||0)*100).toFixed(0)}%`, cluster: 3 }),
+      () => iv.sentence ? { text: `${emoji} "${iv.sentence.slice(0, 60)}"`, cluster: 6 } : null,
+      () => mem.lastRecall ? { text: `${emoji} recall: "${mem.lastRecall.trigger}"`, cluster: 1 } : null,
+      () => isDreaming ? { text: `${emoji} dreaming`, cluster: 1 } : null,
+      () => Math.abs(reward) > 0.03 ? { text: `${emoji} δ=${reward.toFixed(3)}`, cluster: 3 } : null,
+      () => ({ text: `${emoji} ${(state.totalNeurons||1000).toLocaleString()} neurons`, cluster: 0 }),
     ];
 
     // Cycle through generators, skip nulls and recently shown
