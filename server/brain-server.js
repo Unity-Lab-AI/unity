@@ -1322,7 +1322,12 @@ const httpServer = http.createServer((req, res) => {
     '.map': 'application/json', '.txt': 'text/plain',
   };
 
-  let filePath = path.join(ROOT, req.url.split('?')[0]);
+  // URL-decode the path so names like "Ultimate%20Unity.txt" resolve to
+  // the real file on disk ("Ultimate Unity.txt"). Without this the persona
+  // self-image fetch 404s silently and Unity boots with an empty dictionary.
+  let rawPath = req.url.split('?')[0];
+  try { rawPath = decodeURIComponent(rawPath); } catch { /* keep raw on bad encoding */ }
+  let filePath = path.join(ROOT, rawPath);
   if (filePath === ROOT || filePath === ROOT + '/' || filePath === ROOT + '\\') {
     filePath = path.join(ROOT, 'index.html');
   }

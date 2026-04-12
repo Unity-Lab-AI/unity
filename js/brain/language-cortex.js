@@ -497,22 +497,41 @@ export class LanguageCortex {
     // Past: recalling memory (hippocampus active). Present: default. Future: prediction (cortex high).
     const tense = predError > 0.3 ? 'future' : (opts.recalling ? 'past' : 'present');
 
+    // Cap the sentence length to what the vocabulary can actually support
+    // without immediate repetition. With only N distinct words we can't
+    // produce more than N slots of non-adjacent variety — trying to force
+    // `len=9` from a 4-word dictionary guarantees a repetition cascade.
+    const vocabCap = Math.max(2, Math.min(len, Math.floor(allWords.length * 0.6)));
+    const effectiveLen = Math.min(len, vocabCap);
+
+    // Short-term window of recently-chosen words — prevents picking the
+    // same word within the last 3 slots even if grammar/score would pick it.
+    const RECENT_SLOT_WINDOW = 3;
+
     // ── STEP 6: STRUCTURE — fill slots with brain-selected words ──
-    for (let pos = 0; pos < len; pos++) {
-      const prevWord = pos > 0 ? sentence[pos - 1] : null;
+    for (let pos = 0; pos < effectiveLen; pos++) {
+      // Track the REAL last pushed word, not the loop index. If the previous
+      // slot produced nothing (empty pool → picked=null), `sentence.length`
+      // stays at its prior value and prevWord still points to the actual
+      // last spoken word — otherwise `sentence[pos-1]` becomes undefined
+      // and the repetition filter silently disengages.
+      const prevWord = sentence.length > 0 ? sentence[sentence.length - 1] : null;
+      const recentSlots = sentence.slice(-RECENT_SLOT_WINDOW);
       const followers = prevWord ? this._jointCounts.get(prevWord) : null;
 
       // Slot 0 (statement/exclamation) and slot 1 (verb) have STRICT type requirements.
       // Slots deeper in the sentence are more permissive.
-      const strictSlot = (type !== 'action' && (pos === 0 || pos === 1)) || (type === 'action' && pos === 0);
+      const slotIdx = sentence.length;
+      const strictSlot = (type !== 'action' && (slotIdx === 0 || slotIdx === 1)) || (type === 'action' && slotIdx === 0);
       const typeFloor = strictSlot ? 0.35 : 0.15;
 
       const scored = allWords
         .filter(([w]) => {
           if (w === prevWord) return false;
+          if (recentSlots.indexOf(w) !== -1) return false;            // no repeat within window
           if (prevWord && usedBigrams.has(prevWord + '→' + w)) return false;
           // HARD grammar filter on strict slots — wrong type doesn't even enter the pool
-          if (strictSlot && this.typeCompatibility(w, pos, type) < typeFloor) return false;
+          if (strictSlot && this.typeCompatibility(w, slotIdx, type) < typeFloor) return false;
           return true;
         })
         .map(([word, entry]) => {
@@ -524,8 +543,14 @@ export class LanguageCortex {
           const thoughtSim = cortexPattern ? Math.max(0, this._cosine(pattern, cortexPattern)) : 0;
           const isThought = thoughtSet.has(word) ? 0.5 : thoughtSim * 0.4;
 
-          // CONTEXT — relevance to conversation (recent input words + topic similarity)
-          const isContext = contextSet.has(word) ? 0.4 : 0;
+          // CONTEXT — relevance to conversation (recent input words + topic similarity).
+          // Mild positive bias for topicality, but a HARD penalty for words the
+          // user just said verbatim — otherwise Unity parrots input back when her
+          // vocabulary is small. Anti-echo: -0.6 for exact-match words from
+          // the most recent input turn.
+          const inLastInput = contextSet.has(word);
+          const isContext = 0; // no positive boost — topicSim handles semantic relevance
+          const echoPenalty = inLastInput ? 0.6 : 0;
           const topicSim = contextPattern ? Math.max(0, this._cosine(pattern, contextPattern)) : 0;
 
           // MOOD — emotional alignment with amygdala
@@ -544,21 +569,22 @@ export class LanguageCortex {
           // Soft grammar gate for the non-strict tail slots: wrong-type words lose 95%
           const grammarGate = typeScore > 0.15 ? 1.0 : 0.05;
 
-          // ── COMBINED: grammar DOMINATES structure, thought picks words ──
-          // typeScore now carries real weight — grammatical fit is first-class, not a rounding bonus.
+          // ── COMBINED: grammar DOMINATES structure, bigrams + thought pick words ──
+          // Grammar is the floor (0.45), bigrams from the persona are the main
+          // content driver (0.25), and echo penalty hard-suppresses parroting.
           const score =
             grammarGate * (
               typeScore * 0.45 +         // grammar fit — dominates structure
-              isThought * 0.20 +         // cortex thought (WHAT to say)
-              isContext * 0.12 +         // conversation relevance
-              topicSim * 0.06 +          // semantic similarity to conversation
-              followerCount * 0.12 +     // learned sequences (bigram chains)
-              condP * 0.10 +             // conditional probability
+              followerCount * 0.25 +     // learned sequences (bigrams from persona)
+              condP * 0.15 +             // conditional probability from persona
+              isThought * 0.15 +         // cortex thought (WHAT to say)
+              topicSim * 0.05 +          // semantic relevance (no exact-word bonus)
               isMood * 0.04 +            // emotional word match
-              moodBias * 0.02 +          // continuous mood alignment
-              (selfAware && (word.length === 1 || word.endsWith("'m") || word.endsWith("'re")) ? 0.1 : 0)
+              moodBias * 0.03 +          // continuous mood alignment
+              (selfAware && (word.length === 1 || word.endsWith("'m") || word.endsWith("'re")) ? 0.08 : 0)
             )
-            - recency;
+            - recency
+            - echoPenalty;               // anti-parrot: user just said this word
 
           return { word, entry, score };
         });
