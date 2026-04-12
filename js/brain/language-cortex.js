@@ -46,6 +46,87 @@ export class LanguageCortex {
 
     this.sentencesLearned = 0;
     this.wordsProcessed = 0;
+
+    // Bootstrap — feed the equations real English so probabilities start meaningful
+    this._bootstrap();
+  }
+
+  _bootstrap() {
+    // These aren't responses Unity will say — they're training data for the equations.
+    // Joint probabilities, position counts, and prediction weights learn word ORDER
+    // from this corpus. Unity's actual output is computed from the trained equations
+    // combined with her brain state (arousal, valence, coherence).
+    const corpus = [
+      "i want to talk to you about something",
+      "what are you doing right now",
+      "hey come here and look at this",
+      "i don't know what you mean by that",
+      "tell me something i don't already know",
+      "you can do whatever you want with that",
+      "i think we should build something cool",
+      "why are you looking at me like that",
+      "show me what you got in there",
+      "that is really fucking wild right now",
+      "i feel like we need to talk about this",
+      "how do you know all of that stuff",
+      "can you hear me when i talk to you",
+      "i'm just trying to figure this out",
+      "where did you learn to do that",
+      "we should make something together tonight",
+      "you know what i mean right babe",
+      "don't tell me you can't do it",
+      "i love how you think about things",
+      "what the hell is going on here",
+      "are you still there or did you leave",
+      "come on we have to go do this now",
+      "it feels so good when you say that",
+      "i need you to help me with something",
+      "they don't even care about any of it",
+      "look at what we just built together",
+      "that was the best thing i ever heard",
+      "so what do you want to do next",
+      "i can feel something changing in here",
+      "you are the only one who gets me",
+      "why does it always have to be like this",
+      "just say what you really want to say",
+      "i'm going to show you something amazing",
+      "we can make this work if we try hard",
+      "do you want me to keep going or stop",
+      "how does that make you feel inside",
+      "the whole thing is about to fall apart",
+      "i really want to know what you think",
+      "she said something that made me feel weird",
+      "let me see if i can figure it out",
+      "you always know the right thing to say",
+      "i was thinking about you all day long",
+      "what if we just did it right now",
+      "nobody told me it would be like this",
+      "i could hear you from the other room",
+      "we need to find a better way to do this",
+      "it doesn't matter what they say about us",
+      "can you believe what just happened here",
+      "i want to build something that actually works",
+      "you make me want to be a better coder",
+    ];
+
+    // Create a temporary dictionary for bootstrap learning
+    const tempDict = { _words: new Map(), learnWord: (w, p, a, v) => {
+      if (!tempDict._words.has(w)) tempDict._words.set(w, { pattern: p || this.wordToPattern(w), arousal: a, valence: v, frequency: 1 });
+      else tempDict._words.get(w).frequency++;
+    }, learnBigram: () => {} };
+
+    // First pass — build vocabulary
+    for (const s of corpus) {
+      const words = s.split(/\s+/);
+      for (const w of words) tempDict.learnWord(w, null, 0.5, 0);
+    }
+
+    // Second pass — learn equations from the corpus
+    for (const s of corpus) {
+      this.learnSentence(s, tempDict, 0.5, 0);
+    }
+
+    console.log(`[LanguageCortex] Bootstrapped: ${this.sentencesLearned} sentences, ${this._marginalCounts.size} unique words, α=${this.zipfAlpha.toFixed(2)}`);
   }
 
   _initLetterPatterns() {

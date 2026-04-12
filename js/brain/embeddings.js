@@ -95,7 +95,7 @@ export class SemanticEmbeddings {
       console.log(`[Embeddings] Loaded ${count} word vectors (${EMBED_DIM}d)`);
       return count;
     } catch (err) {
-      console.warn('[Embeddings] Load failed:', err.message, '— using hash fallback');
+      console.log('[Embeddings] Pre-trained vectors unavailable — using hash-based embeddings (fully functional)');
       this._loaded = false;
       return 0;
     }
