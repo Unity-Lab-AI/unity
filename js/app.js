@@ -341,7 +341,7 @@ const brainIndicator = document.getElementById('brain-indicator');
 
 // ── Known local AI servers ──
 const LOCAL_AI_ENDPOINTS = [
-  { name: 'Claude Code CLI', url: 'http://localhost:8088', probe: '/v1/models', modelsPath: 'data', modelKey: 'id' },
+  { name: 'Claude Code CLI', url: 'http://localhost:8080', probe: '/v1/models', modelsPath: 'data', modelKey: 'id' },
   { name: 'Ollama', url: 'http://localhost:11434', probe: '/api/tags', modelsPath: 'models', modelKey: 'name' },
   { name: 'LM Studio', url: 'http://localhost:1234', probe: '/v1/models', modelsPath: 'data', modelKey: 'id' },
   { name: 'LocalAI', url: 'http://localhost:8090', probe: '/v1/models', modelsPath: 'data', modelKey: 'id' },

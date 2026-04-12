@@ -864,6 +864,70 @@ const httpServer = http.createServer((req, res) => {
     return;
   }
 
+  // ── Claude Code CLI proxy — /v1/chat/completions + /v1/models ──
+  if (req.method === 'GET' && req.url === '/v1/models') {
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+    res.end(JSON.stringify({
+      data: [
+        { id: 'claude-opus-4-6', name: 'Claude Opus 4.6 (CLI)' },
+        { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6 (CLI)' },
+      ]
+    }));
+    return;
+  }
+
+  if (req.method === 'POST' && req.url === '/v1/chat/completions') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; if (body.length > 500000) req.destroy(); });
+    req.on('end', () => {
+      try {
+        const data = JSON.parse(body);
+        const messages = data.messages || [];
+        let systemPrompt = '', userPrompt = '';
+        for (const msg of messages) {
+          if (msg.role === 'system') systemPrompt = msg.content;
+          if (msg.role === 'user') userPrompt = msg.content;
+        }
+        const fullPrompt = systemPrompt ? `${systemPrompt}\n\n${userPrompt}` : userPrompt;
+        if (!fullPrompt.trim()) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'empty prompt' }));
+          return;
+        }
+        console.log(`[Claude CLI] Calling (${fullPrompt.length} chars)...`);
+        execSync; // ensure available
+        const { execFile: execFileCli } = require('child_process');
+        execFileCli('claude', ['-p', fullPrompt, '--output-format', 'text'], {
+          timeout: 60000, maxBuffer: 1024 * 1024,
+        }, (err, stdout) => {
+          if (err) {
+            console.error(`[Claude CLI] Error: ${err.message}`);
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
+            return;
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          res.end(JSON.stringify({
+            id: 'cli-' + Date.now(),
+            object: 'chat.completion',
+            model: data.model || 'claude-opus-4-6',
+            choices: [{ index: 0, message: { role: 'assistant', content: stdout.trim() }, finish_reason: 'stop' }],
+          }));
+        });
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET,POST,OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type,Authorization' });
+    res.end();
+    return;
+  }
+
   // ── Static file serving — serves the entire client app ──
   const ROOT = path.join(__dirname, '..');
   const MIME = {

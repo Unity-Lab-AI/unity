@@ -390,40 +390,50 @@ export class LanguageCortex {
     let prevWord = start.word;
 
     for (let pos = startPos + 1; pos < startPos + len; pos++) {
-      // Get candidates: words that FOLLOW prevWord (from joint counts) + position candidates
       const followers = this._jointCounts.get(prevWord);
-      const followerSet = new Set(followers ? followers.keys() : []);
-      let candidates = getPositionCandidates(pos, prevWord);
+      let picked = null;
 
-      // Boost words that actually followed this word in training
-      const scored = candidates.map(([word, entry]) => {
-        const pattern = entry.pattern || this.wordToPattern(word);
-        const condP = this._condProb(word, prevWord);
-        const posP = this._posProb(word, pos);
-        const synScore = this.syntaxScore(pattern, pos);
-        const mi = Math.max(0, this.mutualInfo(prevWord, word));
-        const moodDist = Math.abs((entry.arousal || 0.5) - arousal) + Math.abs((entry.valence || 0) - valence);
-        const moodBias = Math.exp(-moodDist * 1.5);
-        const topicSim = this._cosine(pattern, contextPattern);
-        // Follower bonus — if this word was actually seen after prevWord, big boost
-        const followerBonus = followerSet.has(word) ? 0.3 : 0;
+      // STRATEGY 1: If trained followers exist, pick from them directly
+      // This is the key — trained word sequences ARE the sentence structure
+      if (followers && followers.size > 0) {
+        const followerScored = Array.from(followers.entries())
+          .filter(([w]) => !sentence.slice(-3).includes(w))
+          .map(([word, count]) => {
+            const entry = allWords.find(([w]) => w === word);
+            if (!entry) return null;
+            const moodDist = Math.abs((entry[1].arousal || 0.5) - arousal) + Math.abs((entry[1].valence || 0) - valence);
+            // Score = raw count (how often this follows) + mood alignment
+            return { word, entry: entry[1], score: count + Math.exp(-moodDist) * 2 };
+          })
+          .filter(Boolean);
 
-        const score = condP * 0.25 + followerBonus + posP * 0.15 + synScore * 0.1 + mi * 0.1 + moodBias * 0.05 + Math.max(0, topicSim) * 0.05;
-        return { word, entry, pattern, score };
-      });
-
-      const picked = this._softmaxSample(scored, temperature * 0.2);
-      if (picked) {
-        // Avoid repeating last 3 words
-        if (!sentence.slice(-3).includes(picked.word)) {
-          sentence.push(picked.word);
-        } else {
-          // Pick runner-up
-          const filtered = scored.filter(s => !sentence.slice(-3).includes(s.word));
-          const alt = this._softmaxSample(filtered, temperature * 0.2);
-          if (alt) sentence.push(alt.word);
+        if (followerScored.length > 0) {
+          picked = this._softmaxSample(followerScored, temperature * 0.15);
         }
-        prevWord = sentence[sentence.length - 1];
+      }
+
+      // STRATEGY 2: No trained followers — use position candidates + full scoring
+      if (!picked) {
+        const candidates = getPositionCandidates(pos, prevWord)
+          .filter(([w]) => !sentence.slice(-3).includes(w));
+
+        const scored = candidates.map(([word, entry]) => {
+          const posP = this._posProb(word, pos);
+          const pattern = entry.pattern || this.wordToPattern(word);
+          const synScore = this.syntaxScore(pattern, pos);
+          const moodDist = Math.abs((entry.arousal || 0.5) - arousal) + Math.abs((entry.valence || 0) - valence);
+          const moodBias = Math.exp(-moodDist * 1.5);
+          const topicSim = this._cosine(pattern, contextPattern);
+          const score = posP * 0.35 + synScore * 0.25 + moodBias * 0.2 + Math.max(0, topicSim) * 0.2;
+          return { word, entry, score };
+        });
+
+        if (scored.length > 0) picked = this._softmaxSample(scored, temperature * 0.2);
+      }
+
+      if (picked) {
+        sentence.push(picked.word);
+        prevWord = picked.word;
       }
     }
     return sentence;
