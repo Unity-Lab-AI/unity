@@ -498,29 +498,44 @@ async function bootUnity(apiKey, perms) {
   if (perms.camera && perms.cameraStream) {
     brain.connectCamera(perms.cameraStream);
     // Set up IT-level vision describer (calls AI for object recognition)
-    // Vision describer — captures a frame and asks Pollinations to describe it.
-    // Uses the image.pollinations.ai endpoint which CAN process images,
-    // unlike the text chat endpoint.
+    // Vision describer — sends actual camera frame to Pollinations GPT-4o
+    // which DOES support vision/image understanding via the openai model.
     brain.visualCortex.setDescriber(async (dataUrl) => {
-      // Build a description from V1/V4 neural data as baseline
-      const vc = brain.visualCortex;
-      const colors = vc.colors || { tl: [128,128,128], tr: [128,128,128], bl: [128,128,128], br: [128,128,128] };
-      const avgR = (colors.tl[0] + colors.tr[0] + colors.bl[0] + colors.br[0]) / 4;
-      const avgG = (colors.tl[1] + colors.tr[1] + colors.bl[1] + colors.br[1]) / 4;
-      const avgB = (colors.tl[2] + colors.tr[2] + colors.bl[2] + colors.br[2]) / 4;
-      const brightness = (avgR + avgG + avgB) / (3 * 255);
-      const motion = vc.motionEnergy > 0.05 ? 'movement detected' : 'still';
-      const lighting = brightness > 0.6 ? 'bright' : brightness > 0.3 ? 'moderate' : 'dim';
-
-      // Try to get an AI description using the text chat with context hints
+      if (!dataUrl) return 'No frame captured.';
       try {
-        const raw = await pollinations.chat([
-          { role: 'system', content: 'You are a camera describing what you see. Based on the context clues given, describe what the webcam is likely showing in 1 sentence. Be specific about objects, clothing, colors.' },
-          { role: 'user', content: `Webcam data: ${lighting} lighting, color balance R=${Math.round(avgR)} G=${Math.round(avgG)} B=${Math.round(avgB)}, ${motion}. Scene has a person at a computer/desk. Describe what you likely see.` },
-        ], { model: 'openai', temperature: 0.7 });
-        return raw || `Camera active: ${lighting} lighting, person present, ${motion}.`;
-      } catch {
-        return `Camera active: ${lighting} lighting, person present, ${motion}.`;
+        // Pollinations openai model supports multimodal — send the actual image
+        const headers = { 'Content-Type': 'application/json' };
+        if (pollinations._apiKey) headers['Authorization'] = `Bearer ${pollinations._apiKey}`;
+
+        const res = await fetch('https://gen.pollinations.ai/v1/chat/completions', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            model: 'openai',
+            messages: [
+              { role: 'system', content: 'Describe what you see in this webcam image in 1-2 sentences. Be specific: mention clothing colors, objects, background items, expressions. Be casual and brief.' },
+              { role: 'user', content: [
+                { type: 'text', text: 'What do you see?' },
+                { type: 'image_url', image_url: { url: dataUrl } },
+              ]},
+            ],
+            temperature: 0.3,
+          }),
+          signal: AbortSignal.timeout(15000),
+        });
+
+        if (res.ok) {
+          const json = await res.json();
+          const desc = json.choices?.[0]?.message?.content || '';
+          console.log('[Vision] AI description:', desc.slice(0, 80));
+          return desc;
+        } else {
+          console.warn('[Vision] Pollinations vision returned', res.status);
+          return 'Camera active, processing...';
+        }
+      } catch (err) {
+        console.warn('[Vision] Description failed:', err.message);
+        return 'Camera active, processing...';
       }
     });
   }
