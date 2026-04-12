@@ -35,11 +35,15 @@ if %errorlevel% equ 0 (
 )
 echo.
 
-:: Start server and open browser
+:: Start server in background, wait for it, then open browser
 echo   Starting brain server...
-echo   Open: http://localhost:8080
-echo.
 cd /d "%~dp0server"
+start /b node brain-server.js
+ping -n 3 127.0.0.1 >nul
 start "" http://localhost:8080
-node brain-server.js
-pause
+echo   Browser opened: http://localhost:8080
+echo   Press Ctrl+C to stop.
+echo.
+
+:: Keep window open (server runs in background)
+cmd /k

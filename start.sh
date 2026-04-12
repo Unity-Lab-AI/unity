@@ -8,8 +8,10 @@ echo ""
 # Kill anything on port 8080
 lsof -ti:8080 2>/dev/null | xargs kill -9 2>/dev/null
 
+DIR="$(cd "$(dirname "$0")" && pwd)"
+
 # Install server deps if missing
-cd "$(dirname "$0")/server"
+cd "$DIR/server"
 if [ ! -d "node_modules" ]; then
     echo "  Installing dependencies..."
     npm install
@@ -17,7 +19,7 @@ if [ ! -d "node_modules" ]; then
 fi
 
 # Build bundle if npx available
-cd "$(dirname "$0")"
+cd "$DIR"
 if command -v npx &>/dev/null; then
     echo "  Building bundle..."
     npx esbuild js/app.js --bundle --format=esm --outfile=js/app.bundle.js --platform=browser --target=esnext 2>/dev/null && echo "  Bundle built." || echo "  Using pre-built bundle."
@@ -26,18 +28,24 @@ else
 fi
 echo ""
 
-# Open browser
+# Start server in background
+cd "$DIR/server"
 echo "  Starting brain server..."
-echo "  Open: http://localhost:8080"
-echo ""
+node brain-server.js &
+SERVER_PID=$!
+sleep 2
 
-# Try to open browser (works on Mac + Linux)
+# Open browser
+echo "  Opening browser..."
 if command -v open &>/dev/null; then
     open http://localhost:8080
 elif command -v xdg-open &>/dev/null; then
     xdg-open http://localhost:8080
 fi
 
-# Start server
-cd "$(dirname "$0")/server"
-node brain-server.js
+echo "  Open: http://localhost:8080"
+echo "  Press Ctrl+C to stop."
+echo ""
+
+# Wait for server
+wait $SERVER_PID
