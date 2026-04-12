@@ -850,15 +850,20 @@ async function bootUnity(apiKey, perms) {
   document.getElementById('brain-viz-btn').classList.remove('hidden');
   document.getElementById('brain-3d-btn').classList.remove('hidden');
 
-  // ── Show Unity's Eye if camera active ──
-  if (brain.visualCortex.isActive()) {
+  // ── Show Unity's Eye if camera granted ──
+  // Don't check visualCortex.isActive() — it inits on a 500ms delay.
+  // Check the camera stream directly.
+  if (perms.camera && perms.cameraStream) {
     const eyeEl = document.getElementById('unity-eye');
     const eyeFeed = document.getElementById('eye-feed');
-    if (eyeEl && eyeFeed && brain.sensory._cameraStream) {
-      eyeFeed.srcObject = brain.sensory._cameraStream;
+    if (eyeEl && eyeFeed) {
+      eyeFeed.srcObject = perms.cameraStream;
       eyeFeed.play().catch(() => {});
       eyeEl.classList.remove('hidden');
-      startEyeIris(document.getElementById('eye-iris'), brain.visualCortex);
+      // Start iris after visual cortex has initialized (wait for the 500ms delay)
+      setTimeout(() => {
+        startEyeIris(document.getElementById('eye-iris'), brain.visualCortex);
+      }, 600);
     }
   }
 
