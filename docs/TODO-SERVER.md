@@ -44,7 +44,7 @@ The brain runs the master equation `dx/dt = F(x, u, θ, t) + η` continuously. E
 
 - [x] **Save projection weights to localStorage** — after each `giveReward()`, serialize all 16 projection weight matrices to localStorage. Key: `unity_brain_projections`.
 - [x] **Load projection weights on boot** — `engine.js` constructor checks localStorage for saved projections. If found, deserialize and apply to `ClusterProjection` instances. Brain starts where it left off.
-- [ ] **Save semantic weights** — sensory processor's `_semanticWeights` saved alongside projections. The brain's learned word→action mappings persist.
+- [x] **Save semantic weights** — DONE: persistence.js saves/loads sensory._semanticWeights alongside projections, synapses, oscillator coupling. Serialized as Float64Array→Array, restored with size validation.
 - [x] **Save cluster synapse matrices** — each cluster's internal NxN weight matrix saved. Per-cluster learning persists.
 - [x] **Save/load oscillator coupling** — Kuramoto coupling matrix persists. Brain's coherence patterns carry over.
 - [x] **Save episodic memory** — hippocampal episode bank serialized to localStorage. Max 100 episodes, FIFO eviction.
@@ -100,7 +100,7 @@ The brain runs the master equation `dx/dt = F(x, u, θ, t) + η` continuously. E
 ### 3.3: Persistence on Server
 
 - [x] **Auto-save brain weights** — DONE: server saves every 5 min, SIGINT/SIGTERM save on shutdown. Client persistence.js saves every 10 rewards. — server saves all weights to disk every 5 minutes. On crash/restart, brain loads from last save.
-- [ ] **SQLite for episodic memory** — episodes stored in SQLite instead of in-memory array. Supports millions of episodes across all users.
+- [x] **SQLite for episodic memory** — DONE: better-sqlite3 with WAL mode. Episodes table stores brain state snapshots (arousal, valence, psi, coherence, spikes, cortex pattern), user IDs, input/output text, timestamps. Prepared statements for insert, recall by mood, recall by user, count. HTTP endpoint /episodes. DB closes on shutdown.
 - [x] **Conversation log** — DONE: saveConversations() writes conversations.json with per-user message history (last 50 per user). Saved on periodic interval + graceful shutdown. Conversation broadcast to all clients for live stream.
 - [x] **Brain versioning** — DONE: Rolling 5 versioned backups (brain-weights-v0..v4.json). HTTP endpoints: /versions lists all saved versions, /rollback/:slot restores a previous save and reloads brain state.
 
