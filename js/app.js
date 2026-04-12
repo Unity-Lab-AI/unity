@@ -870,17 +870,10 @@ async function bootUnity(apiKey, perms) {
   // Images still available even in brain-only mode
   brain.connectImageGen(pollinations, sandbox, storage);
 
-  // ── Listen for brain's response events — app.js just renders ──
-  // Deduplicate: track last response to prevent double display
-  let _lastResponseText = '';
-  let _lastResponseTime = 0;
+  // Response display handled by processAndRespond caller — no emit listener needed.
+  // Keeping brain.on('response') ONLY for idle thoughts (non-respond_text actions)
   brain.on('response', ({ text, action }) => {
-    if (!text) return;
-    const now = Date.now();
-    // Skip if same text within 2 seconds (duplicate)
-    if (text === _lastResponseText && now - _lastResponseTime < 2000) return;
-    _lastResponseText = text;
-    _lastResponseTime = now;
+    if (!text || action === 'respond_text') return; // caller handles respond_text
     showSpeechBubble(text, 8000);
     if (chatPanel) chatPanel.addMessage('assistant', text, true);
   });
