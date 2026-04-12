@@ -337,7 +337,7 @@
       // file:// can't use ES modules — load the pre-built bundle
       const s = document.createElement('script');
       s.type = 'module';
-      s.src = 'js/app.bundle.js';
+      s.src = 'js/app.bundle.js?v=' + Date.now();
       s.onerror = () => {
         // Bundle also blocked? Show helpful message
         document.body.innerHTML = `
