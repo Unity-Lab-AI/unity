@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head><title>Unity GPU Compute</title></head>
+<body style="background:#0a0a0a;color:#22c55e;font-family:monospace;padding:20px;">
+<h3>Unity GPU Compute Worker</h3>
+<div id="status">Connecting to brain server...</div>
+<div id="stats" style="margin-top:10px;font-size:12px;color:#555;"></div>
+<script type="module">
+import { GPUCompute } from './js/brain/gpu-compute.js';
+
+const ws = new WebSocket('ws://localhost:8080');
+const statusEl = document.getElementById('status');
+const statsEl = document.getElementById('stats');
+
+let gpu = null;
+let gpuReady = false;
+let stepsComputed = 0;
+
+// Init WebGPU
+(async () => {
+  gpu = new GPUCompute();
+  gpuReady = await gpu.init();
+  if (gpuReady) {
+    statusEl.textContent = 'GPU ready — waiting for brain server';
+    statusEl.style.color = '#22c55e';
+  } else {
+    statusEl.textContent = 'WebGPU not available — GPU compute disabled';
+    statusEl.style.color = '#ef4444';
+  }
+})();
+
+ws.onopen = () => {
+  statusEl.textContent = gpuReady ? 'GPU + Server connected — computing' : 'Server connected (no GPU)';
+  // Register as GPU compute client
+  ws.send(JSON.stringify({ type: 'gpu_register' }));
+};
+
+ws.onmessage = async (e) => {
+  try {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'compute_request' && gpuReady) {
+      // Server sent neuron state — run on GPU
+      const { clusterName, size, voltages, currents, lifParams } = msg;
+
+      // Upload and compute
+      gpu.uploadCluster(clusterName, size,
+        new Float64Array(voltages),
+        null, // no sparse synapses for now — server handles projections
+        lifParams
+      );
+      gpu.stepNeurons(clusterName, new Float32Array(currents));
+
+      // Read back results
+      const spikes = await gpu.readbackSpikes(clusterName);
+      const newVoltages = await gpu.readbackVoltages(clusterName);
+
+      // Send back to server
+      ws.send(JSON.stringify({
+        type: 'compute_result',
+        clusterName,
+        spikes: Array.from(spikes),
+        voltages: Array.from(newVoltages),
+      }));
+
+      stepsComputed++;
+      statsEl.textContent = `Steps computed: ${stepsComputed.toLocaleString()}`;
+    }
+  } catch {}
+};
+
+ws.onclose = () => {
+  statusEl.textContent = 'Disconnected — reconnecting...';
+  statusEl.style.color = '#f59e0b';
+  setTimeout(() => location.reload(), 3000);
+};
+</script>
+</body>
+</html>

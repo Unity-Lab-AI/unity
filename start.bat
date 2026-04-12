@@ -35,13 +35,15 @@ if %errorlevel% equ 0 (
 )
 echo.
 
-:: Start server in background, wait for it, then open browser
+:: Start server in background, wait for it, then open browser + GPU compute
 echo   Starting brain server...
 cd /d "%~dp0server"
 start /b node brain-server.js
 ping -n 3 127.0.0.1 >nul
 start "" http://localhost:8080
+start "" http://localhost:8080/compute.html
 echo   Browser opened: http://localhost:8080
+echo   GPU compute page opened: http://localhost:8080/compute.html
 echo   Press Ctrl+C to stop.
 echo.
 

@@ -214,6 +214,10 @@ class ServerBrain {
     this._stepTimeSamples = [];
     this._lastCpuUsage = process.cpuUsage();
 
+    // Parallel brain — worker threads for multi-core
+    this._parallelBrain = null;
+    this._useParallel = false;
+
     // Episodic memory — SQLite for persistent storage across sessions
     this._initEpisodicDB();
 
@@ -358,6 +362,49 @@ class ServerBrain {
   /**
    * Inject text input as cortex current (Wernicke's area).
    */
+  /**
+   * Update derived brain state after parallel step.
+   * Arousal, valence, Ψ, coherence, motor — computed from cluster results.
+   */
+  _updateDerivedState() {
+    // Amygdala → arousal
+    this.arousal = 0.85 + (this.clusters.amygdala.firingRate / CLUSTER_SIZES.amygdala) * 0.3;
+    this.arousal = Math.min(1, Math.max(0, this.arousal));
+    this.valence = (this.reward > 0 ? 0.1 : this.reward < 0 ? -0.1 : 0) + (Math.random() - 0.5) * 0.02;
+
+    // Ψ = (√(1/n))³
+    const n = Math.max(1, this.totalSpikes);
+    this.psi = Math.pow(Math.sqrt(1 / n), 3);
+
+    // Coherence
+    this.coherence += (Math.random() - 0.5) * 0.02;
+    this.coherence = Math.max(0, Math.min(1, this.coherence));
+
+    // Reward decay
+    this.reward *= 0.99;
+    this.time += 1 / 1000;
+    this.frameCount++;
+
+    // Motor from BG
+    const bg = this.clusters.basalGanglia;
+    if (bg.spikes) {
+      const neuronsPerCh = Math.floor(CLUSTER_SIZES.basalGanglia / 6);
+      for (let ch = 0; ch < 6; ch++) {
+        let count = 0;
+        for (let nn = ch * neuronsPerCh; nn < Math.min((ch + 1) * neuronsPerCh, bg.spikes.length); nn++) {
+          if (bg.spikes[nn]) count++;
+        }
+        this.motorChannels[ch] = this.motorChannels[ch] * 0.7 + (count / neuronsPerCh) * 0.3;
+      }
+    }
+    let maxRate = 0, maxCh = 5;
+    for (let ch = 0; ch < 6; ch++) {
+      if (this.motorChannels[ch] > maxRate) { maxRate = this.motorChannels[ch]; maxCh = ch; }
+    }
+    this.motorAction = ['respond_text', 'generate_image', 'speak', 'build_ui', 'listen', 'idle'][maxCh];
+    this.motorConfidence = maxRate;
+  }
+
   injectText(text) {
     const cortexSize = CLUSTER_SIZES.cortex;
     const langStart = Math.floor(cortexSize / 2); // Wernicke's = second half of cortex
@@ -379,15 +426,46 @@ class ServerBrain {
   /**
    * Start the brain loop.
    */
-  start() {
+  async start() {
     if (this.running) return;
     this.running = true;
     this._lastInputTime = Date.now();
     this._isDreaming = false;
 
-    this._tickInterval = setInterval(() => {
+    // Try to start parallel brain (multi-core)
+    try {
+      const { ParallelBrain } = require('./parallel-brain.js');
+      this._parallelBrain = new ParallelBrain(CLUSTER_SIZES, this.tonicDrives, this.noiseAmplitudes);
+      await this._parallelBrain.init();
+      this._useParallel = true;
+      console.log(`[Brain] PARALLEL MODE — ${this._parallelBrain.workerCount} cores active`);
+    } catch (err) {
+      console.warn(`[Brain] Parallel init failed: ${err.message} — using single-thread`);
+      this._useParallel = false;
+    }
+
+    this._tickInterval = setInterval(async () => {
       const stepStart = performance.now();
-      for (let i = 0; i < SUBSTEPS; i++) this.step();
+
+      if (this._useParallel && this._parallelBrain?.isReady) {
+        // PARALLEL: all clusters step simultaneously on separate cores
+        for (let i = 0; i < SUBSTEPS; i++) {
+          const results = await this._parallelBrain.step();
+          // Merge worker results into brain state
+          this.totalSpikes = 0;
+          for (const [name, result] of Object.entries(results)) {
+            this.clusters[name].spikeCount = result.spikeCount;
+            this.clusters[name].firingRate = this.clusters[name].firingRate * 0.95 + result.spikeCount * 0.05;
+            this.clusters[name].spikes = new Uint8Array(result.spikes);
+            this.totalSpikes += result.spikeCount;
+          }
+          this._updateDerivedState();
+        }
+      } else {
+        // SINGLE-THREAD: original path
+        for (let i = 0; i < SUBSTEPS; i++) this.step();
+      }
+
       const stepEnd = performance.now();
 
       // Track step timing
@@ -569,6 +647,9 @@ When asked to generate an image, respond with ONLY the image description/prompt 
       gpuVramMB: RESOURCES.gpu.vram,
       gpuUtilPercent: gpuUtil,
       nodeHeapMB: Math.round(mem.heapTotal / 1048576),
+      cores: os.cpus().length,
+      parallelMode: this._useParallel,
+      workerCount: this._parallelBrain?.workerCount || 0,
     };
   }
 
