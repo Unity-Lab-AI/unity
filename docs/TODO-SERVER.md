@@ -198,15 +198,36 @@ The brain runs the master equation `dx/dt = F(x, u, θ, t) + η` continuously. E
 
 ---
 
+## Phase 7: Documentation Verification — Everything Reflects the Full Working Unity
+
+> NOTHING ships until every doc matches the actual code.
+
+- [ ] **Verify FINALIZED.md** — every completed task from every session preserved with full descriptions, files modified, implementation details. Nothing deleted. Only appended. Check against git log to ensure no work was lost.
+- [ ] **Verify TODO.md** — all completed tasks marked [x] with descriptions preserved. Remaining tasks accurate. No phantom tasks that were done but unmarked.
+- [ ] **Verify README.md** — reflects the full brain-centric architecture: 1000 neurons, 7 clusters, dictionary system, inner voice, autonomous brain, projection learning, all equations documented, project structure matches actual files, all links valid.
+- [ ] **Verify SETUP.md** — all commands listed (/think, settings, all visualizer tabs including Inner Voice), provider table accurate, troubleshooting current, project structure matches actual files.
+- [ ] **Verify brain-equations.html** — every equation that runs in the code is documented: master equation, LIF, HH, all plasticity rules, all 7 modules, Kuramoto, Ψ, visual attention, efference copy, memory, motor, projection learning, Broca's area, dictionary sentence generation, inner voice thought system. Comparison table accurate. TOC complete.
+- [ ] **Verify ARCHITECTURE.md** — reflects current architecture: clusters, projections, sensory/motor pipeline, dictionary, inner voice, autonomous operation.
+- [ ] **Verify ROADMAP.md** — current phase accurate, completed milestones marked, remaining work reflects this TODO.
+- [ ] **Verify SKILL_TREE.md** — all implemented skills marked DONE with correct file paths. New skills: dictionary, inner voice, autonomous brain, projection learning.
+- [ ] **Verify all links** — README→SETUP.md, brain-equations.html, GitHub, proxy.js, env.example. Index→brain-equations, proxy, env. Brain-equations→index. No broken links.
+- [ ] **Verify .gitignore** — js/env.js excluded, no secrets exposed, no junk tracked.
+- [ ] **Verify project structure in docs matches actual files on disk** — every file listed exists, every existing file is listed.
+- [ ] **Final git log review** — last 50 commits, no reverted work, no deleted features, no lost files between branches.
+
+---
+
 ## Order of Operations
 
 1. Fix Phase 0 bugs on `main`
-2. Build Phase 1 (persistence) on `main` — immediate value
-3. Build Phase 3 (server brain) on `server-brain` branch
-4. Build Phase 2 (WebGPU) on server — scale up neurons
-5. Build Phase 4 (sparse) when hitting memory limits
-6. Build Phase 5 (embeddings) when semantic routing needs to be autonomous
-7. Build Phase 6 (dashboard) when server is stable and public
+2. Build Phase 0.5 (autonomous brain + dictionary + inner voice) on `main`
+3. Build Phase 1 (persistence) on `main` — immediate value
+4. Build Phase 3 (server brain) on `server-brain` branch
+5. Build Phase 2 (WebGPU) on server — scale up neurons
+6. Build Phase 4 (sparse) when hitting memory limits
+7. Build Phase 5 (embeddings) when semantic routing needs to be autonomous
+8. Build Phase 6 (dashboard) when server is stable and public
+9. Phase 7 verification — EVERY doc matches code before any release
 
 ---
 
