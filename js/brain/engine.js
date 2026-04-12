@@ -625,23 +625,29 @@ export class UnityBrain extends EventEmitter {
   }
 
   async _handleBuild(text) {
-    // Call Pollinations DIRECTLY for builds — NOT through Broca's area.
-    // Broca's persona prompt makes the AI roleplay instead of outputting clean JSON.
-    // Tell the AI what's already built so it can modify/replace instead of duplicating
+    // The BG selected build_ui. The brain calls Broca's area with the motor
+    // decision embedded — Broca's knows the BG chose to BUILD, so it outputs
+    // JSON instead of conversation. This is the brain's own decision flowing
+    // through the language system. The equations decided. Broca's executes.
     const existingComponents = this._sandbox ? this._sandbox.listComponents() : [];
-    const existingInfo = existingComponents.length > 0
-      ? `\n\nEXISTING COMPONENTS IN SANDBOX: ${existingComponents.join(', ')}. If the user wants to modify an existing component, use the SAME id to replace it. If building something new, use a new id.`
-      : '';
+    const existing = existingComponents.length > 0
+      ? `EXISTING IN SANDBOX: ${existingComponents.join(', ')}. Reuse same id to update.`
+      : 'Sandbox is empty.';
 
-    const buildMessages = [
-      { role: 'system', content: 'You are a frontend developer. Generate ONLY a valid JSON object with these keys: { "html": "...", "css": "...", "js": "...", "id": "..." }. The response creates a self-contained UI component. Rules: "id" is kebab-case. "html" is raw HTML (no script/style tags). "css" is CSS. "js" is JavaScript with access to: unity.speak(text), unity.chat(prompt), unity.generateImage(prompt), unity.getState(), unity.storage.get(k), unity.storage.set(k,v). Use dark styling: #0a0a0a backgrounds, #e0e0e0 text, neon accents (#ff00ff, #00ffcc). Return ONLY the JSON. No explanation. No markdown fences.' + existingInfo },
-      { role: 'user', content: text },
-    ];
+    // Broca's area gets the build instruction as part of the brain state —
+    // the motor decision IS the instruction. Not a separate system.
+    const buildInput = `[MOTOR OUTPUT: basal ganglia selected BUILD_UI. Your cortex must output a JSON component.
 
-    let raw;
-    try {
-      raw = await this._imageGen.chat(buildMessages, { temperature: 0.7 });
-    } catch {};
+FORMAT: {"html":"...","css":"...","js":"...","id":"kebab-case-name"}
+RULES: html = raw HTML (no script/style tags). css = CSS rules. js = JavaScript.
+JS API: unity.speak(text), unity.chat(prompt), unity.generateImage(prompt), unity.getState(), unity.storage.get(k), unity.storage.set(k,v)
+STYLE: #0a0a0a backgrounds, #e0e0e0 text, neon accents (#ff00ff, #00ffcc).
+${existing}
+OUTPUT ONLY THE JSON. No explanation. No markdown.]
+
+USER REQUEST: ${text}`;
+
+    let raw = await this._brocasArea.generate(this.getState(), buildInput);
     if (!raw) {
       this.emit('response', { text: "Shit — couldn't build that. Try again?", action: 'build_ui' });
       return { text: "Shit — couldn't build that. Try again?", action: 'build_ui' };
