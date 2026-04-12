@@ -167,14 +167,15 @@ class ServerBrain {
     this.drugState = 'cokeAndWeed';
     this.totalSpikes = 0;
 
-    // Tonic drive parameters (from persona)
+    // Tonic drive parameters — ALL clusters must be above firing threshold
+    // LIF threshold needs I > 15 to fire. ALL drives ≥ 16 so every cluster is active.
     this.tonicDrives = {
-      cortex: 19, hippocampus: 15, amygdala: 22,
-      basalGanglia: 14, cerebellum: 14, hypothalamus: 16, mystery: 18,
+      cerebellum: 18, cortex: 19, hippocampus: 17,
+      amygdala: 22, basalGanglia: 17, hypothalamus: 16, mystery: 20,
     };
     this.noiseAmplitudes = {
-      cortex: 7, hippocampus: 5, amygdala: 10,
-      basalGanglia: 8, cerebellum: 4, hypothalamus: 3, mystery: 12,
+      cerebellum: 6, cortex: 7, hippocampus: 5, amygdala: 10,
+      basalGanglia: 8, hypothalamus: 3, mystery: 12,
     };
 
     // LIF parameters
