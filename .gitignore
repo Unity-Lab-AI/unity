@@ -51,6 +51,16 @@ yarn-error.log*
 .yarn/cache
 .yarn/unplugged
 .pnp.*
+package-lock.json
+
+# === Server Brain Data ===
+server/brain-weights*.json
+server/conversations.json
+server/episodic-memory.db
+server/episodic-memory.db-wal
+server/episodic-memory.db-shm
+server/node_modules/
+server/package-lock.json
 
 # === OS junk ===
 .DS_Store
