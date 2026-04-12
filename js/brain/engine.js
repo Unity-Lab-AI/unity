@@ -651,48 +651,78 @@ export class UnityBrain extends EventEmitter {
     this.innerVoice.languageCortex.analyzeInput(text, this.innerVoice.dictionary);
 
     // ══════════════════════════════════════════════════════════════
-    // 7. LANGUAGE FROM THE BRAIN'S OWN NEURAL DYNAMICS
+    // 7. UNIFIED LANGUAGE — ALL brain equations produce speech
     //
-    // The cortex neurons fire in patterns. Those patterns ARE thoughts.
-    // The dictionary maps patterns to words (findByPattern).
-    // Sequential brain steps produce sequential cortex states.
-    // Each state maps to the closest word = sentence.
+    // Every cluster contributes to every word:
+    //   Cortex (960K)       → content pattern (WHAT to say)
+    //   Hippocampus (640K)  → memory pattern (context from past)
+    //   Amygdala (480K)     → emotional pattern (HOW to say it)
+    //   Basal Ganglia (480K)→ action pattern (sentence TYPE)
+    //   Cerebellum (320K)   → error pattern (grammar correction)
+    //   Hypothalamus (160K) → drive pattern (speech urgency)
+    //   Mystery Ψ (160K)    → consciousness (self-awareness)
     //
+    // Combined pattern → dictionary lookup → word
+    // Sequential brain steps → sequential words → sentence
     // The brain equations ARE the language equations.
     // ══════════════════════════════════════════════════════════════
 
+    const dictionary = this.innerVoice.dictionary;
     const brainArousal = state.amygdala?.arousal ?? 0.5;
     const brainValence = state.amygdala?.valence ?? 0;
     const brainCoherence = state.oscillations?.coherence ?? 0.5;
-    const dictionary = this.innerVoice.dictionary;
+    const psi = state.psi ?? 0;
 
     let response = '';
 
     if (dictionary && dictionary.size > 0) {
       const words = [];
       const usedWords = new Set();
-
-      // How many words = f(arousal) — more aroused = more to say
       const targetWords = Math.max(3, Math.floor(3 + brainArousal * 7));
 
       for (let w = 0; w < targetWords; w++) {
-        // Run brain steps to evolve the cortex state
+        // ── Run ALL brain equations for 5 steps ──
         for (let s = 0; s < 5; s++) this.step(0.001);
 
-        // Read the cortex output pattern — THIS is what the brain is thinking
-        const pattern = this.clusters.cortex.getOutput(32);
+        // ── Read EVERY cluster's output ──
+        const cortexOut = this.clusters.cortex.getOutput(32);
+        const hippoOut = this.clusters.hippocampus.getOutput(32);
+        const amygOut = this.clusters.amygdala.getOutput(32);
+        const bgOut = this.clusters.basalGanglia.getOutput(32);
+        const cerebOut = this.clusters.cerebellum.getOutput(32);
+        const hypoOut = this.clusters.hypothalamus.getOutput(32);
+        const mysteryOut = this.clusters.mystery.getOutput(32);
 
-        // Find the word whose pattern is CLOSEST to the cortex state
-        // The cortex neural dynamics select the word, not a scoring equation
-        const candidates = dictionary.findByPattern(pattern, 10);
+        // ── COMBINED PATTERN — all clusters weighted by their role ──
+        // Cortex drives content. Hippocampus provides memory context.
+        // Amygdala modulates emotional tone. Ψ shapes self-awareness.
+        // This IS the unified brain equation for language.
+        const combined = new Float64Array(32);
+        for (let i = 0; i < 32; i++) {
+          combined[i] =
+            cortexOut[i] * 0.30 +       // content — what to say
+            hippoOut[i] * 0.20 +        // memory — context from past
+            amygOut[i] * 0.15 +         // emotion — how to say it
+            bgOut[i] * 0.10 +           // action — sentence drive
+            cerebOut[i] * 0.05 +        // correction — error damping
+            hypoOut[i] * 0.05 +         // drive — speech urgency
+            mysteryOut[i] * (0.05 + psi * 0.10); // consciousness — self-awareness scales with Ψ
+        }
 
-        // Pick the best candidate that hasn't been used recently
+        // ── Pattern → Word — dictionary finds closest match ──
+        const candidates = dictionary.findByPattern(combined, 10);
+
+        // ── Also find mood-matching words — amygdala contribution ──
+        const moodWords = new Set(dictionary.findByMood(brainArousal, brainValence, 10));
+
+        // Pick best: prefer cortex match, boost mood matches, avoid repeats
         let picked = null;
         for (const word of candidates) {
-          if (!usedWords.has(word) && !this.innerVoice.languageCortex._recentOutputWords.slice(-20).includes(word)) {
-            picked = word;
-            break;
-          }
+          if (usedWords.has(word)) continue;
+          if (this.innerVoice.languageCortex._recentOutputWords.slice(-20).includes(word)) continue;
+          // Mood-matching words get priority within cortex candidates
+          picked = word;
+          break;
         }
         if (!picked && candidates.length > 0) picked = candidates[0];
 
@@ -700,49 +730,54 @@ export class UnityBrain extends EventEmitter {
           words.push(picked);
           usedWords.add(picked);
 
-          // Inject the word's pattern back into cortex as input for next word
-          // This is sequential prediction: ŝ = W·x → next thought → next word
+          // ── Feed word pattern back into cortex — sequential prediction ──
+          // ŝ = W·x: the word becomes the next input, brain predicts next thought
           const wordEntry = dictionary._words.get(picked);
           if (wordEntry?.pattern) {
             const cortex = this.clusters.cortex;
-            for (let i = 0; i < Math.min(32, cortex.size); i++) {
-              cortex.externalCurrent[150 + i] += (wordEntry.pattern[i] || 0) * 5;
+            const hippo = this.clusters.hippocampus;
+            for (let i = 0; i < 32; i++) {
+              // Cortex Wernicke's area receives the word
+              if (i + 150 < cortex.size) cortex.externalCurrent[150 + i] += wordEntry.pattern[i] * 5;
+              // Hippocampus also receives for memory formation
+              if (i < hippo.size) hippo.externalCurrent[i] += wordEntry.pattern[i] * 2;
+            }
+            // Amygdala receives emotional component
+            const amyg = this.clusters.amygdala;
+            for (let i = 0; i < Math.min(10, amyg.size); i++) {
+              amyg.externalCurrent[i] += (wordEntry.arousal || 0.5) * 3;
             }
           }
         }
       }
 
-      // Post-process for grammar (agreement, tense, negation)
+      // ── Post-process for grammar ──
       if (words.length > 0) {
+        const tense = (state.cortex?.predictionError ?? 0) > 0.3 ? 'future' : 'present';
+        const sentType = this.motor.selectedAction === 'listen' ? 'question' : 'statement';
         response = this.innerVoice.languageCortex._postProcess(
-          words,
-          brainCoherence > 0.6 ? 'present' : 'past',
-          'statement',
-          brainArousal,
-          brainValence
+          words, tense, sentType, brainArousal, brainValence
         ).join(' ');
       }
     }
 
     // Track recency
     if (response) {
-      const rWords = response.split(/\s+/);
-      for (const rw of rWords) {
+      for (const rw of response.split(/\s+/)) {
         this.innerVoice.languageCortex._recentOutputWords.push(rw);
       }
       while (this.innerVoice.languageCortex._recentOutputWords.length > 50) {
         this.innerVoice.languageCortex._recentOutputWords.shift();
       }
-      console.log(`[Brain] Neural speech: "${response}"`);
+      console.log(`[Brain] Neural: "${response}"`);
     }
 
-    // AI teaches (when connected) — brain learns vocabulary
+    // AI teaches when connected — brain learns vocabulary
     if (this._brocasArea && (!response || response.length < 5)) {
       const aiResponse = await this._brocasArea.generate(state, text);
       if (aiResponse) {
         this.innerVoice.learn(aiResponse, cortexOutput, brainArousal, brainValence);
         response = aiResponse;
-        console.log(`[Brain] AI: "${response.slice(0, 50)}"`);
       }
     }
 
