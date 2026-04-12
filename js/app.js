@@ -1162,18 +1162,16 @@ Vision: ${state.visionDescription || 'none'}`;
     console.log(`[Unity] Mic not started — granted:${perms.mic} muted:${uiState.micMuted}`);
   }
 
-  // ── Unity's first words ──
+  // ── Unity's first words — NEVER blocks boot ──
   if (brocasArea) {
-    try {
-      await generateGreeting(perms);
-    } catch {
+    generateGreeting(perms).catch(() => {
       showSpeechBubble("Hey. I'm Unity. Click me to chat.", 8000);
-    }
+    });
   } else {
-    // Brain-only mode — no AI greeting, brain speaks for itself
     showSpeechBubble("...", 3000);
     console.log('[Unity] Brain-only mode — no AI greeting');
   }
+  console.log('[Unity] Boot complete — ready');
 }
 
 async function generateGreeting(perms) {
