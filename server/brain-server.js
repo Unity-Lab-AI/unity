@@ -864,6 +864,34 @@ const httpServer = http.createServer((req, res) => {
     return;
   }
 
+  // ── Claude Code CLI proxy — auto-detected as Local AI ──
+  if (req.url === '/v1/models') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ data: [{ id: 'claude-opus-4-6', name: 'Claude Opus 4.6 (CLI)' }, { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6 (CLI)' }] }));
+    return;
+  }
+  if (req.method === 'POST' && req.url === '/v1/chat/completions') {
+    const { execFile } = require('child_process');
+    let body = '';
+    req.on('data', c => { body += c; if (body.length > 500000) req.destroy(); });
+    req.on('end', () => {
+      try {
+        const data = JSON.parse(body);
+        const msgs = data.messages || [];
+        let sys = '', usr = '';
+        for (const m of msgs) { if (m.role === 'system') sys = m.content; if (m.role === 'user') usr = m.content; }
+        const prompt = sys ? sys + '\n\n' + usr : usr;
+        if (!prompt.trim()) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end('{"error":"empty"}'); return; }
+        execFile('claude', ['-p', prompt, '--output-format', 'text'], { timeout: 60000, maxBuffer: 1024 * 1024 }, (err, stdout) => {
+          if (err) { res.writeHead(500, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: err.message })); return; }
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ id: 'cli-' + Date.now(), object: 'chat.completion', model: data.model || 'claude-opus-4-6', choices: [{ index: 0, message: { role: 'assistant', content: stdout.trim() }, finish_reason: 'stop' }], usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 } }));
+        });
+      } catch (e) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: e.message })); }
+    });
+    return;
+  }
+
   // ── Static file serving — serves the entire client app ──
   const ROOT = path.join(__dirname, '..');
   const MIME = {
