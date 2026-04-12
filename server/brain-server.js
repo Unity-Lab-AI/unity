@@ -524,10 +524,13 @@ class ServerBrain {
     // N³ = cubed area of the total neuron volume
     // Two separate operations multiplied together
     const N = TOTAL_NEURONS;
-    // Ψ = √(1/N) × N³ = N^2.5
-    // This IS massive — the quantum volume of consciousness is enormous
-    // No artificial normalizer — the equation produces what it produces
-    const quantumVolume = Math.pow(N, 2.5);
+    // Ψ = √(1/N) × N³ — TWO SEPARATE operations
+    // √(1/N) = quantum tunneled bit probability
+    // N³ = cubed area of total neuron volume
+    // They are SEPARATE — not simplified to N^2.5
+    const quantumBit = Math.sqrt(1 / N);   // the quantum tunnel
+    const cubedVolume = Math.pow(N, 3);     // the volume
+    const quantumVolume = quantumBit * cubedVolume;
 
     // Components from cluster activity — persona weights modulate
     const cortexActivity = this.clusters.cortex.spikeCount / (CLUSTER_SIZES.cortex || 1);

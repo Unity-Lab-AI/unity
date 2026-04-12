@@ -145,9 +145,12 @@ class MysteryModule {
     const leftBrain = this._computeLeftBrain(brainState);
     const rightBrain = this._computeRightBrain(brainState);
 
-    // Ψ = √(1/N) × N³ = N^2.5
-    // The quantum volume IS massive — consciousness at quantum scale
-    const quantumVolume = Math.pow(N, 2.5);
+    // Ψ = √(1/N) × N³ — TWO SEPARATE operations
+    // √(1/N) = quantum tunneled bit
+    // N³ = cubed volume
+    const quantumBit = Math.sqrt(1 / N);
+    const cubedVolume = Math.pow(N, 3);
+    const quantumVolume = quantumBit * cubedVolume;
 
     // Weighted psychodynamic sum
     const weightedSum = (this.alpha * id)
