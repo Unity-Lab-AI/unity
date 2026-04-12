@@ -252,7 +252,43 @@ export class LanguageCortex {
         dictionary.learnBigram(q, 'can');
       }
 
-      console.log(`[LanguageCortex] English structure loaded: ${dictionary.size} words, structural operators + core vocabulary`);
+      console.log(`[LanguageCortex] English structure loaded: ${dictionary.size} words`);
+    };
+
+    // DYNAMIC EXPANSION — when new words are learned, they auto-join
+    // the right category based on pattern similarity (thesaurus equation).
+    // The core lists above are SEEDS. New words expand them dynamically.
+    this._expandStructure = (word, dictionary) => {
+      const wt = this.wordType(word);
+      const pattern = this.wordToPattern(word);
+
+      // Find which category this word belongs to by its type score
+      if (wt.verb > 0.4 && !ops.coreVerbs.includes(word)) {
+        ops.coreVerbs.push(word);
+        // Auto-create bigrams: subject → new verb
+        const subjects = ['i', 'you', 'we', 'they'];
+        for (const s of subjects) dictionary.learnBigram(s, word);
+      }
+      if (wt.noun > 0.4 && !ops.coreNouns.includes(word)) {
+        ops.coreNouns.push(word);
+        // Auto-create bigrams: determiner → new noun
+        dictionary.learnBigram('the', word);
+        dictionary.learnBigram('a', word);
+      }
+      if (wt.adj > 0.4 && !ops.coreAdj.includes(word)) {
+        ops.coreAdj.push(word);
+      }
+
+      // Also find SIMILAR words already in dictionary and create bigrams
+      // This is the thesaurus equation: cosine(pattern_a, pattern_b) > 0.7 = similar
+      const similar = dictionary.findByPattern(pattern, 5);
+      for (const simWord of similar) {
+        if (simWord !== word) {
+          // Similar words can follow each other
+          dictionary.learnBigram(word, simWord);
+          dictionary.learnBigram(simWord, word);
+        }
+      }
     };
 
     return ops;
@@ -694,6 +730,11 @@ export class LanguageCortex {
       const pattern = this.wordToPattern(words[i]);
       dictionary?.learnWord?.(words[i], pattern, arousal, valence);
       if (i < words.length - 1) dictionary?.learnBigram?.(words[i], words[i + 1]);
+
+      // Dynamic expansion — new word auto-joins its category
+      if (this._expandStructure && dictionary) {
+        this._expandStructure(words[i], dictionary);
+      }
     }
 
     this.sentencesLearned++;
