@@ -9,40 +9,54 @@
 <script type="module">
 import { GPUCompute } from './js/brain/gpu-compute.js';
 
-const ws = new WebSocket('ws://localhost:8080');
 const statusEl = document.getElementById('status');
 const statsEl = document.getElementById('stats');
 const perfEl = document.getElementById('perf');
 
 let gpu = null;
 let gpuReady = false;
+let ws = null;
 let stepsComputed = 0;
 let totalComputeMs = 0;
 
-// Init WebGPU
+// Init WebGPU FIRST, then connect WebSocket
 (async () => {
+  statusEl.textContent = 'Initializing WebGPU...';
   gpu = new GPUCompute();
   gpuReady = await gpu.init();
-  if (gpuReady) {
-    statusEl.textContent = 'GPU ready — waiting for brain server';
-    statusEl.style.color = '#22c55e';
-  } else {
+  if (!gpuReady) {
     statusEl.textContent = 'WebGPU not available — GPU compute disabled';
     statusEl.style.color = '#ef4444';
+    return;
   }
+  statusEl.textContent = 'GPU ready — connecting to brain server...';
+  statusEl.style.color = '#22c55e';
+
+  // NOW connect WebSocket — GPU is ready
+  connectToServer();
 })();
 
-ws.onopen = () => {
-  statusEl.textContent = gpuReady ? 'GPU + Server connected — computing' : 'Server connected (no GPU)';
-  ws.send(JSON.stringify({ type: 'gpu_register' }));
-};
+const clusterState = {}; // persists across reconnects
 
-// GPU maintains its OWN voltage state. Server sends voltages ONCE (init),
-// then only sends tonicDrive + noiseAmp per step (two numbers).
-// GPU runs LIF independently and sends back sparse spike indices.
-const clusterState = {}; // { name: { initialized, size, lifParams } }
+function connectToServer() {
+  ws = new WebSocket('ws://localhost:8080');
 
-ws.onmessage = async (e) => {
+  ws.onopen = () => {
+    statusEl.textContent = 'GPU + Server connected — registering as compute client...';
+    ws.send(JSON.stringify({ type: 'gpu_register' }));
+  };
+
+  ws.onerror = (err) => {
+    statusEl.textContent = 'WebSocket error — retrying in 3s...';
+    statusEl.style.color = '#ef4444';
+    console.warn('[GPU Compute] WebSocket error:', err);
+  };
+
+  // GPU maintains its OWN voltage state. Server sends voltages ONCE (init),
+  // then only sends tonicDrive + noiseAmp per step (two numbers).
+  // GPU runs LIF independently and sends back sparse spike indices.
+
+  ws.onmessage = async (e) => {
   try {
     const msg = JSON.parse(e.data);
 
@@ -115,11 +129,12 @@ ws.onmessage = async (e) => {
   }
 };
 
-ws.onclose = () => {
-  statusEl.textContent = 'Disconnected — reconnecting...';
-  statusEl.style.color = '#f59e0b';
-  setTimeout(() => location.reload(), 3000);
-};
+  ws.onclose = () => {
+    statusEl.textContent = 'Disconnected — reconnecting in 3s...';
+    statusEl.style.color = '#f59e0b';
+    setTimeout(() => connectToServer(), 3000);
+  };
+} // end connectToServer
 </script>
 </body>
 </html>

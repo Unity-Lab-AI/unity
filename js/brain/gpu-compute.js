@@ -322,36 +322,43 @@ export class GPUCompute {
     view.setFloat32(24, lifParams.R || 1, true);
     view.setFloat32(28, lifParams.tRefrac || 2, true);
 
-    // Create voltage buffer A — filled with Vrest or provided voltages
-    // For 25.6M neurons, DON'T allocate JS-side Float64+Float32 arrays (400MB)
-    // Instead fill Vrest directly into mapped GPU buffer
-    const voltagesA = device.createBuffer({
-      size: size * 4,
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
-      mappedAtCreation: true,
-    });
-    const vA = new Float32Array(voltagesA.getMappedRange());
-    if (voltages && voltages.length >= size) {
-      for (let i = 0; i < size; i++) vA[i] = voltages[i];
-    } else {
-      vA.fill(vRest); // all neurons start at resting potential
-    }
-    voltagesA.unmap();
+    // Create buffers — for large clusters (millions of neurons), avoid mappedAtCreation
+    // which requires mapping the entire buffer into JS heap. Instead create unmapped
+    // and fill Vrest in chunks via writeBuffer.
+    const CHUNK = 1000000; // 1M floats at a time = 4MB per chunk
+    const makeBuffer = (sz, usage) => device.createBuffer({ size: sz, usage: usage | GPUBufferUsage.COPY_DST });
 
-    // Zero-initialized buffers — no JS-side array allocation needed
-    const zeroBuffer = (sz, usage) => device.createBuffer({
-      size: sz,
-      usage: usage | GPUBufferUsage.COPY_DST,
-      mappedAtCreation: false, // GPU zeros by default
-    });
+    const voltagesA = makeBuffer(size * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC);
+
+    // Fill voltagesA with Vrest in chunks — never allocate full-size JS array
+    if (voltages && voltages.length >= size) {
+      // Provided voltages — write in chunks
+      for (let offset = 0; offset < size; offset += CHUNK) {
+        const chunkSize = Math.min(CHUNK, size - offset);
+        const chunk = new Float32Array(chunkSize);
+        for (let i = 0; i < chunkSize; i++) chunk[i] = voltages[offset + i];
+        device.queue.writeBuffer(voltagesA, offset * 4, chunk);
+      }
+    } else {
+      // Fill with Vrest in chunks
+      const chunk = new Float32Array(Math.min(CHUNK, size)).fill(vRest);
+      for (let offset = 0; offset < size; offset += CHUNK) {
+        const writeSize = Math.min(CHUNK, size - offset);
+        if (writeSize < chunk.length) {
+          device.queue.writeBuffer(voltagesA, offset * 4, chunk.subarray(0, writeSize));
+        } else {
+          device.queue.writeBuffer(voltagesA, offset * 4, chunk);
+        }
+      }
+    }
 
     const buffers = {
       params: this._createBuffer(params, GPUBufferUsage.UNIFORM),
       voltagesA,
-      voltagesB: zeroBuffer(size * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC),
-      spikes: zeroBuffer(size * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC),
-      currents: zeroBuffer(size * 4, GPUBufferUsage.STORAGE),
-      refracTimers: zeroBuffer(size * 4, GPUBufferUsage.STORAGE),
+      voltagesB: makeBuffer(size * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC),
+      spikes: makeBuffer(size * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC),
+      currents: makeBuffer(size * 4, GPUBufferUsage.STORAGE),
+      refracTimers: makeBuffer(size * 4, GPUBufferUsage.STORAGE),
       readbackSpikes: device.createBuffer({ size: size * 4, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST }),
       size,
     };
