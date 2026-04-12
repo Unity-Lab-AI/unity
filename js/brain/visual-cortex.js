@@ -261,7 +261,11 @@ export class VisualCortex {
    * or by the brain when it decides it needs to look.
    */
   forceDescribe() {
-    this._lastDescribeTime = 0;
+    // User-requested look — bypass the 5 min auto limit
+    // but still rate limit to 10 seconds between forced looks
+    const now = performance.now();
+    if (this._hasDescribedOnce && now - this._lastDescribeTime < 10000) return;
+    this._lastDescribeTime = 0; // reset to allow _maybeDescribe through
     this._maybeDescribe();
   }
 
@@ -270,9 +274,10 @@ export class VisualCortex {
 
     // Only auto-describe ONCE on boot (first look). After that, only on demand.
     if (this._hasDescribedOnce) {
-      // Rate limit: minimum 15 seconds between descriptions
+      // Rate limit: 5 minutes between auto descriptions.
+      // forceDescribe from user request bypasses this.
       const now = performance.now();
-      if (now - this._lastDescribeTime < 15000) return;
+      if (now - this._lastDescribeTime < 300000) return; // 5 minutes
     }
 
     this._describing = true;

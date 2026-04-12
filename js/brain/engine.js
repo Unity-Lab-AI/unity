@@ -323,22 +323,12 @@ export class UnityBrain extends EventEmitter {
 
     this.memorySystem.updateWorkingMemory(cortexInput);
 
-    // ── 11.5. VISUAL ATTENTION — brain decides when to LOOK ──
-    // Only check once per FRAME (not every step — that's 10x per frame).
-    // And only when there's actual new sensory input (salience > 0).
-    if (this.visualCortex.isActive() && this.frameCount > 0 &&
-        this._lastVisCheckFrame !== this.frameCount) {
-      this._lastVisCheckFrame = this.frameCount;
-
-      // First frame — look once to see who's there
-      if (!this.visualCortex._hasDescribedOnce) {
-        this.visualCortex.forceDescribe();
-      }
-      // Only trigger new looks when there's ACTUAL new text input
-      // (salience > 0.4 means text was just received, not just noise)
-      else if (sensoryOutput.salience > 0.4 && cortexError > 0.6) {
-        this.visualCortex.forceDescribe();
-      }
+    // ── 11.5. VISUAL ATTENTION ──
+    // Look ONCE on boot. After that, ONLY when forceDescribe() is called
+    // explicitly by processAndRespond (user asked something visual).
+    // No automatic triggers. No salience checks. Just boot + on demand.
+    if (this.visualCortex.isActive() && !this.visualCortex._hasDescribedOnce) {
+      this.visualCortex.forceDescribe();
     }
 
     // ── 12. MOTOR OUTPUT — read BG spikes for action ──
@@ -508,10 +498,18 @@ export class UnityBrain extends EventEmitter {
     // Clear our own interrupt flag
     this.motor._interruptFlag = false;
 
-    // 3. Let neural dynamics propagate
+    // 3. Check if user asked something visual — trigger a look ON DEMAND
+    const visualQ = ['see', 'look', 'color', 'wearing', 'holding', 'hat',
+      'shirt', 'background', 'behind', 'room', 'face', 'hair', 'what am',
+      'what is', 'glasses', 'describe', 'can you see'].some(w => text.toLowerCase().includes(w));
+    if (visualQ && this.visualCortex.isActive()) {
+      this.visualCortex.forceDescribe();
+    }
+
+    // 4. Let neural dynamics propagate
     await this._sleep(100);
 
-    // 4. Wait for visual cortex if it's describing
+    // 5. Wait for visual cortex if it's describing
     if (this.visualCortex.isActive() && this.visualCortex._describing) {
       const start = Date.now();
       while (this.visualCortex._describing && Date.now() - start < 5000) {
