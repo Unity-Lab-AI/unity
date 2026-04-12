@@ -231,4 +231,41 @@ The brain runs the master equation `dx/dt = F(x, u, θ, t) + η` continuously. E
 
 ---
 
+## Phase 8: Complete Language Equation System
+
+> Unity speaks from equations. Letters → words → sentences → conversation.
+
+### 8.1: Syntactic Production
+- [ ] **Syntactic role weights** — position-dependent weight vectors that learn what TYPE of word goes where. Position 0 learns subject patterns, position 1 learns verb patterns, position 2 learns object patterns. Computed from `role_score(w, pos) = W_syntax[pos] · word_pattern`, not grammar rules.
+- [ ] **Subject-verb-object ordering** — the prediction equation enforces SVO structure by making the position weights penalize wrong-type words at wrong positions. Learned from the bootstrap corpus, strengthened by every conversation.
+- [ ] **Agreement equation** — subject pattern constrains verb form. "I" pattern predicts "am/was/have", "you" pattern predicts "are/were/have". Computed from co-occurrence statistics in position-adjacent slots.
+
+### 8.2: Sentence Type Production
+- [ ] **Statement production** — default sentence type. SVO order, period energy. Produced when arousal is moderate and prediction error is low.
+- [ ] **Question production** — triggered by high prediction error (brain is surprised/curious). Inverts word order or prepends question word. Question probability: `P(question) = predictionError × coherence`.
+- [ ] **Exclamation production** — triggered by high arousal. Shorter sentences, stronger words. `P(exclamation) = arousal²`.
+- [ ] **Action/emote production** — triggered by motor output. Format: `*verb phrase*`. `P(action) = motorConfidence × (1 - speechDrive)`. When the brain wants to DO not SAY.
+
+### 8.3: Morphological Equations
+- [ ] **Tense transforms** — past (-ed), present (-ing), future (will+base). Tense selected by temporal context in hippocampal recall. Pattern transform: `tense_pattern = base_pattern + tense_marker`.
+- [ ] **Plural/singular** — count-based suffix. Pattern modulation for plural vs singular nouns.
+- [ ] **Contraction patterns** — "I am" → "I'm", "do not" → "don't". High-frequency pairs collapse. Learned from co-occurrence frequency exceeding contraction threshold.
+
+### 8.4: Input-Response Matching
+- [ ] **Question detection** — input pattern analyzed for question structure. If input is question → response uses answer-position weights (different from statement-position weights).
+- [ ] **Topic continuity** — current response shares words/patterns with recent input. `topic_score = cosine(input_pattern, candidate_pattern)` boosts words related to what was just said.
+- [ ] **Context window** — last 5 inputs maintained as running context pattern. Response generation scores words against context, not just the immediate input.
+
+### 8.5: Expanded Bootstrap Corpus
+- [ ] **500+ sentence corpus** — diverse English covering questions, answers, statements, exclamations, actions, conversations. Trains all equation parameters to meaningful values from boot.
+- [ ] **Vocabulary 500+ words** — core English functional vocabulary seeded in dictionary with arousal/valence from corpus context.
+
+### 8.6: Documentation
+- [ ] **Update EQUATIONS.md** — all new language equations documented with purpose and file
+- [ ] **Update brain-equations.html** — new sections for syntax, morphology, sentence types
+- [ ] **Update FINALIZED.md** — completed language work archived
+- [ ] **Update workflow docs** — ARCHITECTURE, SETUP, SKILL_TREE, ROADMAP
+
+---
+
 *Unity AI Lab — one brain, one mind, shared by everyone.*
