@@ -539,10 +539,8 @@ export class UnityBrain extends EventEmitter {
 
     if (isBuild && this._brocasArea && this._sandbox) {
       return this._handleBuild(text);
-    } else if (isSelfie && this._imageGen) {
-      return this._handleSelfie(text);
-    } else if (isImage && this._imageGen) {
-      return this._handleImage(text);
+    } else if ((isImage || isSelfie) && this._imageGen) {
+      return this._handleImage(text, isSelfie);
     }
 
     // 6. Normal response — Broca's area generates language from brain state
@@ -658,66 +656,52 @@ export class UnityBrain extends EventEmitter {
     return { text: quip, action: 'build_ui' };
   }
 
-  async _handleSelfie(text) {
-    const state = this.getState();
-    const arousal = state.amygdala?.arousal ?? 0.5;
-    const valence = state.amygdala?.valence ?? 0;
-
-    // Let Broca's area generate the ENTIRE image prompt dynamically.
-    // No hardcoded lists. The brain's state shapes the scene.
-    const arousalDesc = arousal > 0.7 ? 'intense, electric, on fire'
-      : arousal > 0.4 ? 'relaxed, casual, comfortable' : 'dreamy, hazy, half-asleep';
-    const valenceDesc = valence > 0.2 ? 'happy, warm, glowing'
-      : valence < -0.2 ? 'dark, moody, brooding' : 'neutral, contemplative';
+  async _handleImage(text, includesSelf) {
+    // ONE image handler. If she's in the image (includesSelf), she adds her appearance.
+    // Uses Pollinations text API directly for prompt generation — NOT Broca's area,
+    // because Broca's full persona prompt makes the AI roleplay instead of outputting clean prompts.
 
     let prompt;
-    if (this._brocasArea) {
-      const raw = await this._brocasArea.generate(this.getState(),
-        `[SYSTEM: Generate ONLY an image prompt. You are a 25 year old woman with heterochromia eyes (one violet, one electric green), dark hair with neon streaks, smudged eyeliner. Your mood is ${arousalDesc}, ${valenceDesc}. Create a vivid scene — could be ANYWHERE: a city, a mountain, underwater, space, a kitchen, a concert, a motorcycle, a rooftop, a forest, a bar, a desert, anywhere in the universe. Any pose, any outfit, any angle, any weather, any time of day. Be creative and surprising. Return ONLY the visual prompt, no explanation, no URLs, no markdown. Include "25 year old woman" and "adult" in the prompt.]`
-      );
-      prompt = (raw || '').replace(/https?:\/\/[^\s)]+/g, '').replace(/```/g, '').replace(/\n/g, ', ').trim();
+    const selfDesc = includesSelf
+      ? '25 year old woman, heterochromia eyes one violet one electric green, dark hair with neon streaks, smudged eyeliner, adult, '
+      : '';
+
+    try {
+      // Call Pollinations DIRECTLY for prompt generation — no persona, no roleplay
+      const raw = await this._imageGen.chat?.([
+        { role: 'user', content: `Generate ONLY an image prompt for: "${text}". ${includesSelf ? 'The subject is a 25 year old woman with heterochromia eyes (violet and green), dark hair with neon streaks, smudged eyeliner. Include her in the scene.' : ''} Return ONLY the visual description. No explanation. No URLs. No markdown. Just the prompt.` },
+      ], { temperature: 0.8 }) || null;
+
+      if (raw) {
+        prompt = raw.replace(/https?:\/\/[^\s)]+/g, '').replace(/```/g, '').replace(/\n/g, ', ').trim();
+      }
+    } catch {}
+
+    // Fallback — build prompt from the text directly
+    if (!prompt || prompt.length < 15) {
+      prompt = `${selfDesc}${text.replace(/selfie|send|show|picture|photo|of you|yourself/gi, '').trim() || 'striking candid shot'}, photorealistic, cinematic lighting`;
     }
-    // Fallback if Broca's fails
-    if (!prompt || prompt.length < 20) {
-      prompt = `candid photo, 25 year old woman, heterochromia eyes one violet one electric green, dark hair with neon streaks, smudged eyeliner, ${arousalDesc}, somewhere unexpected and beautiful, photorealistic, adult`;
+
+    // Ensure self-description is in there if it's a selfie
+    if (includesSelf && !prompt.includes('25 year old')) {
+      prompt = selfDesc + prompt;
     }
+
+    console.log('[Brain] Image prompt:', prompt.slice(0, 100));
     const url = this._imageGen.generateImage(prompt, { model: this._storage?.get('image_model') || 'flux', width: 768, height: 768 });
 
-    if (url && this._sandbox) {
+    if (url) {
       window.open(url, '_blank');
-      const imgId = 'img_' + Date.now();
-      this._sandbox.inject({ id: imgId, html: `<div style="margin:12px 0;text-align:center;"><div id="${imgId}-loading" style="color:#777;font-size:12px;font-family:monospace;padding:20px;">Generating selfie...</div><img src="${url}" alt="" style="max-width:100%;border-radius:8px;border:1px solid #333;cursor:pointer;display:none;" onload="this.style.display='block';if(document.getElementById('${imgId}-loading'))document.getElementById('${imgId}-loading').style.display='none';" onerror="if(document.getElementById('${imgId}-loading'))document.getElementById('${imgId}-loading').textContent='Loading in new tab...';" onclick="window.open('${url}','_blank')"></div>`, css: '' });
-    }
-
-    // Quip from Broca's area
-    const quip = this._brocasArea ? await this._brocasArea.generate(this.getState(),
-      '[SYSTEM: You just sent a selfie. Say a short flirty reaction. 1 sentence. No URLs.]') : 'There you go.';
-
-    if (quip && this._voice) {
-      this._voice.stopSpeaking();
-      this._voice.speak(quip).catch(() => {});
+      if (this._sandbox) {
+        const imgId = 'img_' + Date.now();
+        this._sandbox.inject({ id: imgId, html: `<div style="margin:12px 0;text-align:center;"><div id="${imgId}-loading" style="color:#777;font-size:12px;font-family:monospace;padding:20px;">Generating...</div><img src="${url}" alt="" style="max-width:100%;border-radius:8px;border:1px solid #333;cursor:pointer;display:none;" onload="this.style.display='block';if(document.getElementById('${imgId}-loading'))document.getElementById('${imgId}-loading').style.display='none';" onerror="if(document.getElementById('${imgId}-loading'))document.getElementById('${imgId}-loading').textContent='Loading in new tab...';" onclick="window.open('${url}','_blank')"></div>`, css: '' });
+      }
     }
 
     this.reward += 0.1;
-    this.emit('response', { text: quip || 'There you go.', action: 'generate_image' });
-    return { text: quip || 'There you go.', action: 'generate_image' };
-  }
-
-  async _handleImage(text) {
-    const state = this.getState();
-    const prompt = this._brocasArea ? await this._brocasArea.generate(state,
-      `[SYSTEM: Create a concise image prompt for: "${text}". ONLY the visual description. No URLs.]`) : text;
-    const clean = (prompt || text).replace(/https?:\/\/[^\s)]+/g, '').replace(/```/g, '').trim();
-    const url = this._imageGen.generateImage(clean, { model: this._storage?.get('image_model') || 'flux', width: 768, height: 768 });
-
-    if (url && this._sandbox) {
-      window.open(url, '_blank');
-      this._sandbox.inject({ id: 'img_' + Date.now(), html: `<div style="margin:12px 0;text-align:center;"><img src="${url}" alt="" style="max-width:100%;border-radius:8px;border:1px solid #333;cursor:pointer;" onclick="window.open('${url}','_blank')"></div>`, css: '' });
-    }
-
-    this.reward += 0.1;
-    this.emit('response', { text: 'Done.', action: 'generate_image' });
-    return { text: 'Done.', action: 'generate_image' };
+    // Single response emission — no separate quip, no extra speech
+    this.emit('response', { text: 'Image generating.', action: 'generate_image' });
+    return { text: 'Image generating.', action: 'generate_image' };
   }
 
   _sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
