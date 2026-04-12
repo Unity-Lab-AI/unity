@@ -475,7 +475,7 @@ export class Brain3D {
       off += cn;
     }
 
-    this._buildConns(spk);
+    this._buildConnsFromEquations(state.clusters || {});
 
     // ── BRAIN EXPANSION — clusters spread with activity ──
     const totalSpikes = state.spikeCount || 0;
@@ -1000,46 +1000,47 @@ export class Brain3D {
 
   // ── Connections ─────────────────────────────────────────────────
 
-  _buildConns(spk) {
-    // Collect active neurons PER CLUSTER — ensures all clusters participate
-    const perCluster = [];
+  /**
+   * Build connections from ACTUAL equation outputs — server-reported cluster activity.
+   * Not from the synthesized spike array. From the real spikeCount per cluster.
+   */
+  _buildConnsFromEquations(serverClusters) {
+    this._connN = 0;
+
+    // Get activity level per cluster from server equations
+    const clusterActivity = [];
     let off = 0;
     for (let c = 0; c < CLUSTERS.length; c++) {
-      const clusterActive = [];
-      if (this._clusterOn[c]) {
-        for (let i = 0; i < CLUSTERS[c].n; i++) {
-          if (spk[off + i]) clusterActive.push(off + i);
-        }
-      }
-      perCluster.push(clusterActive);
+      const sc = serverClusters[CLUSTERS[c].key];
+      const rate = sc ? (sc.spikeCount || 0) / (sc.size || 1) : 0;
+      // Number of connections proportional to ACTUAL firing rate
+      const connCount = Math.max(1, Math.round(rate * 200));
+      clusterActivity.push({ rate, connCount, offset: off, n: CLUSTERS[c].n });
       off += CLUSTERS[c].n;
     }
 
-    this._connN = 0;
-
-    // INTER-CLUSTER connections — between different clusters (projections)
-    // Ensure EVERY cluster pair with active neurons gets connections
-    for (let ca = 0; ca < CLUSTERS.length && this._connN < MAX_CONN * 0.7; ca++) {
-      if (perCluster[ca].length === 0) continue;
-      for (let cb = ca + 1; cb < CLUSTERS.length && this._connN < MAX_CONN * 0.7; cb++) {
-        if (perCluster[cb].length === 0) continue;
-        // Draw 2-4 connections per cluster pair
-        const count = Math.min(4, perCluster[ca].length, perCluster[cb].length);
+    // INTER-CLUSTER — connections between every pair, proportional to activity
+    for (let ca = 0; ca < CLUSTERS.length && this._connN < MAX_CONN * 0.75; ca++) {
+      if (clusterActivity[ca].rate === 0) continue;
+      for (let cb = ca + 1; cb < CLUSTERS.length && this._connN < MAX_CONN * 0.75; cb++) {
+        if (clusterActivity[cb].rate === 0) continue;
+        // More connections for more active pairs
+        const count = Math.min(8, clusterActivity[ca].connCount, clusterActivity[cb].connCount);
         for (let k = 0; k < count && this._connN < MAX_CONN; k++) {
-          const ai = perCluster[ca][Math.floor(Math.random() * perCluster[ca].length)];
-          const bi = perCluster[cb][Math.floor(Math.random() * perCluster[cb].length)];
+          const ai = clusterActivity[ca].offset + Math.floor(Math.random() * clusterActivity[ca].n);
+          const bi = clusterActivity[cb].offset + Math.floor(Math.random() * clusterActivity[cb].n);
           this._addConn(ai, bi, CLUSTERS[ca].rgb, CLUSTERS[cb].rgb);
         }
       }
     }
 
-    // INTRA-CLUSTER connections — within same cluster (synapses)
+    // INTRA-CLUSTER — within each cluster
     for (let c = 0; c < CLUSTERS.length && this._connN < MAX_CONN; c++) {
-      if (perCluster[c].length < 2) continue;
-      const count = Math.min(3, perCluster[c].length - 1);
+      if (clusterActivity[c].rate === 0) continue;
+      const count = Math.min(5, clusterActivity[c].connCount);
       for (let k = 0; k < count && this._connN < MAX_CONN; k++) {
-        const ai = perCluster[c][Math.floor(Math.random() * perCluster[c].length)];
-        const bi = perCluster[c][Math.floor(Math.random() * perCluster[c].length)];
+        const ai = clusterActivity[c].offset + Math.floor(Math.random() * clusterActivity[c].n);
+        const bi = clusterActivity[c].offset + Math.floor(Math.random() * clusterActivity[c].n);
         if (ai !== bi) this._addConn(ai, bi, CLUSTERS[c].rgb, CLUSTERS[c].rgb);
       }
     }
