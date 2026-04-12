@@ -726,54 +726,15 @@ export class Brain3D {
   }
 
   /**
-   * Brain-driven emoji selection from the full Unicode catalog.
-   * The equations determine which emoji Unity expresses — no randomness, no list.
-   *
-   * Mapping:
-   *   valence → which RANGE of emoji (positive=happy/love, negative=angry/dark, neutral=thinking/misc)
-   *   arousal → intensity WITHIN that range (low=calm variants, high=intense variants)
-   *   psi     → awareness emojis (eyes, brain, stars) when high
-   *   coherence → complexity (simple face at low R, compound symbols at high R)
-   *   dreaming → sleep/dream/moon emojis override
-   *   reward  → sparkle/fire when positive, skull/broken when negative
-   *
-   * All computed from brain values, deterministic for the same state.
+   * Emoji from brain equations. One equation, full Unicode range.
    */
   _brainEmoji(arousal, valence, psi, coherence, isDreaming, reward) {
-    // Unicode emoji face range: U+1F600 to U+1F64F (80 faces)
-    // Organized roughly: grinning→happy→silly→concerned→sad→angry→misc
-    // valence maps linearly across this range
-    // arousal selects sub-position within the valence zone
-
-    if (isDreaming) {
-      // Dreaming state — sleep emojis from equation values
-      const dreamIdx = Math.floor(coherence * 4);
-      return String.fromCodePoint([0x1F634, 0x1F4AD, 0x1F31C, 0x2728, 0x1F30C][dreamIdx] || 0x1F634);
-    }
-
-    if (Math.abs(reward) > 0.1) {
-      // Strong reward signal — the brain just learned something
-      const rewardPoint = reward > 0 ? 0x2728 + Math.floor(arousal * 3) : 0x1F4A5;
-      return String.fromCodePoint(rewardPoint);
-    }
-
-    if (psi > 0.01) {
-      // High consciousness — awareness emojis
-      return String.fromCodePoint(0x1F9E0); // brain
-    }
-
-    // Map valence (-1 to 1) → face emoji range
-    // Positive valence → happy end (U+1F600-1F60F)
-    // Negative valence → angry/sad end (U+1F620-1F62F)
-    // Neutral → thinking/neutral (U+1F610-1F61F)
-    const normalizedV = (valence + 1) / 2; // 0 to 1
-    const faceBase = 0x1F600;
-    const faceRange = 0x3F; // 63 faces
-
-    // Valence picks the zone, arousal picks the position within it
-    const faceIdx = Math.floor(normalizedV * faceRange * 0.7 + arousal * faceRange * 0.3);
-    const codePoint = faceBase + (faceIdx % faceRange);
-
+    // One continuous function: all 6 brain values → one code point
+    // Unicode emoji block U+1F600-1F64F = 80 emoticon faces
+    // The brain's combined state IS the index. No branches, no ifs, no mapping.
+    const v = (valence + 1) / 2;                          // 0-1
+    const combined = v * 0.35 + arousal * 0.25 + coherence * 0.15 + psi * 0.1 + Math.abs(reward) * 0.1 + (isDreaming ? 0.05 : 0);
+    const codePoint = 0x1F600 + Math.floor(combined * 79);
     return String.fromCodePoint(codePoint);
   }
 
