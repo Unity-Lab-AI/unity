@@ -296,6 +296,8 @@ class ServerBrain {
       isDreaming: this._isDreaming || false,
       totalNeurons: TOTAL_NEURONS,
       scale: SCALE + 'x',
+      // Shared emotion — everyone sees Unity's mood
+      sharedMood: this._getSharedMood(),
     };
   }
 
@@ -434,6 +436,25 @@ Talk like a PERSON. 1-3 sentences. Build things as JSON when asked.`;
     return { text: '...', action: 'respond_text' };
   }
 
+  _getSharedMood() {
+    // Computed from equations — not a lookup.
+    // The amygdala equation: V(s) = Σw·x → arousal and valence
+    // The gate equation: emotionalGate = 0.7 + arousal·0.6
+    // These ARE the mood. Raw values. The dashboard renders them however it wants.
+    return {
+      arousal: this.arousal,
+      valence: this.valence,
+      fear: this.fear,
+      psi: this.psi,
+      coherence: this.coherence,
+      gate: (0.7 + this.arousal * 0.6),
+      isDreaming: this._isDreaming || false,
+      drugState: this.drugState,
+      totalSpikes: this.totalSpikes,
+      // The raw equation outputs ARE the mood. No translation.
+    };
+  }
+
   _learnWords(text) {
     // Simple word frequency tracking for server-side dictionary
     if (!this._wordFreq) this._wordFreq = {};
@@ -447,7 +468,10 @@ Talk like a PERSON. 1-3 sentences. Build things as JSON when asked.`;
 
   saveWeights() {
     try {
+      // Versioned save — keep last 5 versions for rollback
+      this._saveVersion = (this._saveVersion || 0) + 1;
       const data = {
+        version: this._saveVersion,
         arousal: this.arousal,
         valence: this.valence,
         psi: this.psi,
@@ -458,11 +482,37 @@ Talk like a PERSON. 1-3 sentences. Build things as JSON when asked.`;
         savedAt: new Date().toISOString(),
         wordFreq: this._wordFreq || {},
         totalInteractions: Object.values(this._conversations || {}).reduce((sum, c) => sum + c.length, 0),
+        sharedMood: this._getSharedMood(),
       };
       fs.writeFileSync(WEIGHTS_FILE, JSON.stringify(data, null, 2));
-      console.log(`[Brain] Weights saved at t=${this.time.toFixed(1)}s`);
+
+      // Keep versioned backups (last 5)
+      const backupFile = WEIGHTS_FILE.replace('.json', `-v${this._saveVersion % 5}.json`);
+      fs.writeFileSync(backupFile, JSON.stringify(data, null, 2));
+
+      console.log(`[Brain] State saved v${this._saveVersion} at t=${this.time.toFixed(1)}s`);
     } catch (err) {
       console.warn('[Brain] Save failed:', err.message);
+    }
+  }
+
+  /**
+   * Save all conversations to disk (separate file).
+   */
+  saveConversations() {
+    try {
+      const convFile = path.join(__dirname, 'conversations.json');
+      const data = {
+        savedAt: new Date().toISOString(),
+        users: Object.entries(this._conversations || {}).map(([id, msgs]) => ({
+          userId: id,
+          messageCount: msgs.length,
+          messages: msgs.slice(-50), // keep last 50 per user
+        })),
+      };
+      fs.writeFileSync(convFile, JSON.stringify(data, null, 2));
+    } catch (err) {
+      console.warn('[Brain] Conversation save failed:', err.message);
     }
   }
 
@@ -488,8 +538,11 @@ Talk like a PERSON. 1-3 sentences. Build things as JSON when asked.`;
 const brain = new ServerBrain();
 brain.start();
 
-// Periodic weight save
-setInterval(() => brain.saveWeights(), WEIGHT_SAVE_MS);
+// Periodic saves
+setInterval(() => {
+  brain.saveWeights();
+  brain.saveConversations();
+}, WEIGHT_SAVE_MS);
 
 // HTTP server for health checks
 const httpServer = http.createServer((req, res) => {
@@ -615,13 +668,15 @@ httpServer.listen(PORT, () => {
 
 // Graceful shutdown
 process.on('SIGINT', () => {
-  console.log('\n[Brain] Shutting down — saving weights...');
+  console.log('\n[Brain] Shutting down — saving everything...');
   brain.saveWeights();
+  brain.saveConversations();
   brain.stop();
   process.exit(0);
 });
 process.on('SIGTERM', () => {
   brain.saveWeights();
+  brain.saveConversations();
   brain.stop();
   process.exit(0);
 });
