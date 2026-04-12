@@ -182,8 +182,9 @@ export class RemoteBrain extends EventEmitter {
     // Server runs millions of neurons — render shows proportional sample.
     // AMPLIFY firing rates for visual impact (2% biological rate → 15-30% visual rate).
     if (serverState.clusters) {
-      const ratios = [0.3, 0.2, 0.15, 0.15, 0.1, 0.05, 0.05];
-      const names = ['cortex', 'hippocampus', 'amygdala', 'basalGanglia', 'cerebellum', 'hypothalamus', 'mystery'];
+      // Biologically proportioned — cerebellum largest
+      const ratios = [0.40, 0.25, 0.10, 0.08, 0.08, 0.05, 0.04];
+      const names = ['cerebellum', 'cortex', 'hippocampus', 'amygdala', 'basalGanglia', 'hypothalamus', 'mystery'];
       const renderTotal = this.state.spikes?.length || 20000;
       const spikes = new Uint8Array(renderTotal);
       let offset = 0;

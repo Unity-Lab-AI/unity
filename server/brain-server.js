@@ -112,15 +112,18 @@ const WEIGHTS_FILE = path.join(__dirname, 'brain-weights.json');
 const MAX_TEXT_PER_SEC = 2;        // rate limit per client
 const POLLINATIONS_URL = 'https://gen.pollinations.ai/v1/chat/completions';
 
-// Auto-scaled cluster sizes based on detected hardware
+// Auto-scaled cluster sizes — biologically proportioned
+// Real brain: cerebellum has 80% of neurons (69B/86B), cortex 19%, rest 1%
+// Our balance: cerebellum largest (motor/timing), cortex second (language/thought)
 const SCALE = RESOURCES.clusterScale;
 const CLUSTER_SIZES = {
-  cortex:       300 * SCALE,
-  hippocampus:  200 * SCALE,
-  amygdala:     150 * SCALE,
-  basalGanglia: 150 * SCALE,
-  cerebellum:   100 * SCALE,
-  hypothalamus:  50 * SCALE,
+  cerebellum:   400 * SCALE,  // 40% — largest, like real brain (error correction, timing)
+  cortex:       250 * SCALE,  // 25% — language, prediction, consciousness
+  hippocampus:  100 * SCALE,  // 10% — memory formation and recall
+  amygdala:      80 * SCALE,  //  8% — emotional processing
+  basalGanglia:  80 * SCALE,  //  8% — action selection, motor
+  hypothalamus:  50 * SCALE,  //  5% — homeostatic drives
+
   mystery:       50 * SCALE,
 };
 const TOTAL_NEURONS = Object.values(CLUSTER_SIZES).reduce((a, b) => a + b, 0);

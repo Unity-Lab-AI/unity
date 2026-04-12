@@ -30,12 +30,13 @@ const AUTO_ROT_SPEED = 0.0015;
 
 // ── Cluster definitions ─────────────────────────────────────────────
 
+// Biologically proportioned — cerebellum is LARGEST (like real brain)
 const CLUSTERS = [
-  { key: 'cortex',       label: 'CORTEX',        n: 300, rgb: [1.0, 0.302, 0.604],  hex: '#ff4d9a' },
-  { key: 'hippocampus',  label: 'HIPPOCAMPUS',   n: 200, rgb: [0.659, 0.333, 0.969], hex: '#a855f7' },
-  { key: 'amygdala',     label: 'AMYGDALA',       n: 150, rgb: [0.937, 0.267, 0.267], hex: '#ef4444' },
-  { key: 'basalGanglia', label: 'BASAL GANGLIA', n: 150, rgb: [0.133, 0.773, 0.369], hex: '#22c55e' },
-  { key: 'cerebellum',   label: 'CEREBELLUM',    n: 100, rgb: [0.0, 0.898, 1.0],     hex: '#00e5ff' },
+  { key: 'cerebellum',   label: 'CEREBELLUM',    n: 400, rgb: [0.0, 0.898, 1.0],     hex: '#00e5ff' },
+  { key: 'cortex',       label: 'CORTEX',        n: 250, rgb: [1.0, 0.302, 0.604],  hex: '#ff4d9a' },
+  { key: 'hippocampus',  label: 'HIPPOCAMPUS',   n: 100, rgb: [0.659, 0.333, 0.969], hex: '#a855f7' },
+  { key: 'amygdala',     label: 'AMYGDALA',       n: 80,  rgb: [0.937, 0.267, 0.267], hex: '#ef4444' },
+  { key: 'basalGanglia', label: 'BASAL GANGLIA', n: 80,  rgb: [0.133, 0.773, 0.369], hex: '#22c55e' },
   { key: 'hypothalamus', label: 'HYPOTHALAMUS',  n: 50,  rgb: [0.961, 0.620, 0.043], hex: '#f59e0b' },
   { key: 'mystery',      label: 'MYSTERY Ψ',     n: 50,  rgb: [0.753, 0.518, 0.988], hex: '#c084fc' },
 ];
@@ -198,14 +199,18 @@ function gauss() {
 // Each returns an array of [x,y,z] for every neuron in that cluster.
 
 function genCortex(n) {
-  // Large shell across the top — cerebral cortex dome
+  // TWO HEMISPHERES — left brain (logic) + right brain (creativity)
+  // Split at x=0 with longitudinal fissure gap
   const pts = [];
+  const half = Math.floor(n / 2);
   for (let i = 0; i < n; i++) {
-    const theta = Math.acos(1 - Math.random() * 1.2); // upper hemisphere
+    const side = i < half ? -1 : 1;
+    const theta = Math.acos(1 - Math.random() * 1.2);
     const phi = Math.random() * Math.PI * 2;
     const r = 1.6 + (Math.random() - 0.5) * 0.25;
+    const x = r * Math.sin(theta) * Math.cos(phi);
     pts.push([
-      r * Math.sin(theta) * Math.cos(phi),
+      side * (Math.abs(x) * 0.5 + 0.15), // hemispheres pushed apart
       r * Math.cos(theta) * 0.65 + 0.45,
       r * Math.sin(theta) * Math.sin(phi),
     ]);
@@ -214,13 +219,15 @@ function genCortex(n) {
 }
 
 function genHippocampus(n) {
-  // Curved seahorse, inner left-center
+  // Bilateral seahorse — one in each hemisphere
   const pts = [];
+  const half = Math.floor(n / 2);
   for (let i = 0; i < n; i++) {
-    const t = (i / n) * Math.PI * 1.5;
+    const side = i < half ? -1 : 1;
+    const t = ((i % half) / half) * Math.PI * 1.5;
     const r = 0.14 + Math.random() * 0.1;
     pts.push([
-      -0.35 + Math.cos(t) * 0.45 + gauss() * r * 0.5,
+      side * (0.35 + Math.cos(t) * 0.25) + gauss() * r * 0.3,
       -0.1 + Math.sin(t * 0.6) * 0.28 + gauss() * r * 0.3,
       0.1 + Math.sin(t) * 0.28 + gauss() * r * 0.5,
     ]);
@@ -263,17 +270,20 @@ function genBasalGanglia(n) {
 }
 
 function genCerebellum(n) {
-  // Back-bottom with layered folia
+  // LARGEST cluster — bilateral with vermis (center bridge)
+  // Two hemispheres at back-bottom, wider than before
   const pts = [];
+  const half = Math.floor(n / 2);
   for (let i = 0; i < n; i++) {
-    const layer = Math.floor(Math.random() * 3);
-    const r = 0.45 + layer * 0.07;
-    const theta = (Math.random() - 0.5) * Math.PI * 0.7;
-    const phi = Math.PI + (Math.random() - 0.5) * Math.PI * 0.55;
+    const side = i < half ? -1 : 1;
+    const layer = Math.floor(Math.random() * 4);
+    const r = 0.55 + layer * 0.06;
+    const theta = (Math.random() - 0.5) * Math.PI * 0.8;
+    const phi = Math.PI + (Math.random() - 0.5) * Math.PI * 0.6;
     pts.push([
-      r * Math.sin(theta) * Math.cos(phi) * 0.75,
-      -0.85 + layer * 0.05 + gauss() * 0.04,
-      -0.75 + r * Math.sin(theta) * Math.sin(phi) * 0.25,
+      side * (Math.abs(r * Math.sin(theta) * Math.cos(phi)) * 0.5 + 0.1),
+      -0.85 + layer * 0.04 + gauss() * 0.04,
+      -0.75 + r * Math.sin(theta) * Math.sin(phi) * 0.3,
     ]);
   }
   return pts;
@@ -296,22 +306,36 @@ function genHypothalamus(n) {
 }
 
 function genMystery(n) {
-  // Floating above everything — ethereal cloud
+  // Ψ CONSCIOUSNESS — bridge between hemispheres (corpus callosum)
+  // Runs through the CENTER connecting left and right brain
+  // Plus a crown above for the "higher" consciousness
   const pts = [];
-  for (let i = 0; i < n; i++) {
-    const r = 0.22 * Math.cbrt(Math.random());
-    const theta = Math.random() * Math.PI * 2;
-    const phi = Math.acos(2 * Math.random() - 1);
+  const bridge = Math.floor(n * 0.6); // 60% in the bridge
+  const crown = n - bridge; // 40% above as ethereal crown
+  // Bridge — thin band connecting hemispheres at x=0
+  for (let i = 0; i < bridge; i++) {
+    const t = (i / bridge) * Math.PI * 2;
     pts.push([
-      r * Math.sin(phi) * Math.cos(theta),
-      1.35 + r * Math.cos(phi) * 0.35,
-      r * Math.sin(phi) * Math.sin(theta),
+      gauss() * 0.05,  // tight to center (x≈0)
+      0.1 + Math.sin(t) * 0.4 + gauss() * 0.05,
+      Math.cos(t) * 0.4 + gauss() * 0.05,
+    ]);
+  }
+  // Crown — ethereal cloud above
+  for (let i = 0; i < crown; i++) {
+    const r = 0.2 * Math.cbrt(Math.random());
+    const theta = Math.random() * Math.PI * 2;
+    pts.push([
+      r * Math.cos(theta) * 0.3,
+      1.4 + r * Math.sin(theta) * 0.2 + Math.random() * 0.15,
+      r * Math.sin(theta) * 0.3,
     ]);
   }
   return pts;
 }
 
-const POS_GEN = [genCortex, genHippocampus, genAmygdala, genBasalGanglia, genCerebellum, genHypothalamus, genMystery];
+// Order matches CLUSTERS array: cerebellum, cortex, hippocampus, amygdala, basalGanglia, hypothalamus, mystery
+const POS_GEN = [genCerebellum, genCortex, genHippocampus, genAmygdala, genBasalGanglia, genHypothalamus, genMystery];
 
 // ── Brain3D class ───────────────────────────────────────────────────
 
