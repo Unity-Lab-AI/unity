@@ -657,7 +657,7 @@ class ServerBrain {
             // Every cluster always has CPU-computed spikes as baseline.
             const cpuResults = await Promise.race([
               this._parallelBrain.step({}),
-              new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 500)),
+              new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
             ]);
 
             // Merge CPU worker results

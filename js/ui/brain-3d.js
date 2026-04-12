@@ -412,20 +412,17 @@ export class Brain3D {
       if (state.clusters) {
         const serverClusters = state.clusters;
         const serverTotal = Object.values(serverClusters).reduce((s, c) => s + (c.size || 0), 0) || 1;
-        console.log(`[Brain3D] Server clusters:`, Object.entries(serverClusters).map(([k,v]) => `${k}=${v.size}`).join(', '));
-        console.log(`[Brain3D] Server total: ${serverTotal}, TOTAL render: ${TOTAL}`);
         // Map each CLUSTERS entry to its proportional share of TOTAL
         for (const cl of CLUSTERS) {
           const serverCluster = serverClusters[cl.key];
           if (serverCluster && serverCluster.size) {
             cl.n = Math.max(10, Math.round((serverCluster.size / serverTotal) * TOTAL));
           }
-          console.log(`[Brain3D] ${cl.key}: server=${serverCluster?.size || 'MISSING'} → render=${cl.n}`);
         }
         // Adjust to exactly TOTAL
         const renderSum = CLUSTERS.reduce((s, c) => s + c.n, 0);
         if (renderSum !== TOTAL) CLUSTERS[0].n += (TOTAL - renderSum);
-        console.log(`[Brain3D] Final render neurons:`, CLUSTERS.map(c => `${c.key}=${c.n}`).join(', '));
+        console.log(`[Brain3D] Scaled: ${CLUSTERS.map(c => `${c.key}=${c.n}`).join(', ')} = ${TOTAL}`);
       } else {
         // No cluster data — scale from base proportions
         const clusterScale = TOTAL / 1000;
@@ -449,21 +446,6 @@ export class Brain3D {
 
     const spk = state.spikes;
     if (!spk) return;
-
-    // Debug: count spikes per cluster
-    if (!this._debuggedSpikes) {
-      this._debuggedSpikes = true;
-      let off = 0;
-      for (const cl of CLUSTERS) {
-        let count = 0;
-        for (let i = 0; i < cl.n && off + i < spk.length; i++) {
-          if (spk[off + i]) count++;
-        }
-        console.log(`[Brain3D] Spikes: ${cl.key} offset=${off} n=${cl.n} active=${count}/${cl.n} (${(count/cl.n*100).toFixed(1)}%)`);
-        off += cl.n;
-      }
-      console.log(`[Brain3D] Total spk length: ${spk.length}, TOTAL: ${TOTAL}`);
-    }
 
     for (let i = 0; i < TOTAL; i++) {
       if (spk[i]) {
