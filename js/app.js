@@ -1233,16 +1233,19 @@ function updateBrainIndicator(state) {
   const valenceVal = $('hud-valence'); if (valenceVal) valenceVal.textContent = valence.toFixed(2);
   const cohBar = $('hud-coherence-bar'); if (cohBar) cohBar.style.width = `${(coherence * 100).toFixed(0)}%`;
   const cohVal = $('hud-coherence'); if (cohVal) cohVal.textContent = `${(coherence * 100).toFixed(0)}%`;
-  const spikesEl = $('hud-spikes'); if (spikesEl) spikesEl.textContent = state.spikeCount ?? 0;
-  const rewardEl = $('hud-reward'); if (rewardEl) rewardEl.textContent = (state.reward ?? 0).toFixed(2);
-  const timeEl = $('hud-time'); if (timeEl) timeEl.textContent = `${(state.time ?? 0).toFixed(1)}s`;
-  const gammaEl = $('hud-gamma'); if (gammaEl) gammaEl.textContent = (bandPower.gamma ?? 0).toFixed(1);
-  const betaEl = $('hud-beta'); if (betaEl) betaEl.textContent = (bandPower.beta ?? 0).toFixed(1);
-  const alphaEl = $('hud-alpha'); if (alphaEl) alphaEl.textContent = (bandPower.alpha ?? 0).toFixed(1);
-  const thetaEl = $('hud-theta'); if (thetaEl) thetaEl.textContent = (bandPower.theta ?? 0).toFixed(1);
-  const drugEl = $('hud-drug'); if (drugEl) drugEl.textContent = state.drugState || 'cokeAndWeed';
-  const actionEl = $('hud-action'); if (actionEl) actionEl.textContent = state.motor?.selectedAction || 'idle';
-  const modelEl = $('hud-model'); if (modelEl) modelEl.textContent = bestBackend?.model?.slice(0, 25) || '—';
+  const spikesEl = $('hud-spikes'); if (spikesEl) spikesEl.textContent = state.spikeCount ?? srv.spikeCount ?? srv.totalSpikes ?? 0;
+  const rewardEl = $('hud-reward'); if (rewardEl) rewardEl.textContent = (state.reward ?? srv.reward ?? 0).toFixed(2);
+  const timeEl = $('hud-time'); if (timeEl) timeEl.textContent = `${(state.time ?? srv.time ?? 0).toFixed(1)}s`;
+  const srvBand = srv.bandPower || srv.oscillations?.bandPower || {};
+  const gammaEl = $('hud-gamma'); if (gammaEl) gammaEl.textContent = (bandPower.gamma ?? srvBand.gamma ?? 0).toFixed(1);
+  const betaEl = $('hud-beta'); if (betaEl) betaEl.textContent = (bandPower.beta ?? srvBand.beta ?? 0).toFixed(1);
+  const alphaEl = $('hud-alpha'); if (alphaEl) alphaEl.textContent = (bandPower.alpha ?? srvBand.alpha ?? 0).toFixed(1);
+  const thetaEl = $('hud-theta'); if (thetaEl) thetaEl.textContent = (bandPower.theta ?? srvBand.theta ?? 0).toFixed(1);
+  // Use server state for fields the local brain doesn't compute well
+  const srv = _landingState || {};
+  const drugEl = $('hud-drug'); if (drugEl) drugEl.textContent = state.drugState || srv.drugState || 'cokeAndWeed';
+  const actionEl = $('hud-action'); if (actionEl) actionEl.textContent = state.motor?.selectedAction || srv.motor?.selectedAction || 'idle';
+  const modelEl = $('hud-model'); if (modelEl) modelEl.textContent = window._brainOnlyMode ? 'BRAIN ONLY' : (bestBackend?.model?.slice(0, 25) || '—');
 
   // Shared emotion indicator — use server state if available, else compute locally
   const mood = state.sharedMood || _landingState?.sharedMood;
