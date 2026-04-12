@@ -304,7 +304,8 @@ export class UnityBrain extends EventEmitter {
     // ── 9. HIERARCHICAL MODULATION ──
     const emotionalGate = 0.7 + amygdalaOut.arousal * 0.6;
     const driveFactor = 0.8 + (hypoOut.needsAttention?.length > 0 ? 0.4 : 0.0);
-    const psiGain = Math.max(0.8, Math.min(1.5, 0.9 + mysteryOut.psi * 0.05));
+    // Ψ is now log scale (~14 for 3.2M neurons). Normalize gain to 0.8-1.5 range.
+    const psiGain = Math.max(0.8, Math.min(1.5, 0.9 + mysteryOut.psi * 0.004));
     const errorSignal = this._meanAbs(cerebOut.error) * 2;
 
     for (const cluster of Object.values(this.clusters)) {
@@ -706,7 +707,7 @@ export class UnityBrain extends EventEmitter {
             bgOut[i] * 0.10 +           // action — sentence drive
             cerebOut[i] * 0.05 +        // correction — error damping
             hypoOut[i] * 0.05 +         // drive — speech urgency
-            mysteryOut[i] * (0.05 + psi * 0.10); // consciousness — self-awareness scales with Ψ
+            mysteryOut[i] * (0.05 + Math.min(psi, 20) * 0.005); // consciousness scales with Ψ (log scale)
         }
 
         // ── Pattern → Word — dictionary finds closest match ──

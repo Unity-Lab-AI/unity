@@ -524,11 +524,10 @@ class ServerBrain {
     // N³ = cubed area of the total neuron volume
     // Two separate operations multiplied together
     const N = TOTAL_NEURONS;
-    const quantumTunnel = Math.sqrt(1 / N);  // √(1/N) — quantum probability
-    const cubedVolume = Math.pow(N, 3);       // N³ — cubed area of total volume
-    // Normalize so Ψ stays in usable range (raw product is astronomical)
-    const normalizer = 1e-20; // scale factor
-    const quantumBit = quantumTunnel * cubedVolume * normalizer;
+    // Ψ = √(1/N) × N³ = N^2.5
+    // This IS massive — the quantum volume of consciousness is enormous
+    // No artificial normalizer — the equation produces what it produces
+    const quantumVolume = Math.pow(N, 2.5);
 
     // Components from cluster activity — persona weights modulate
     const cortexActivity = this.clusters.cortex.spikeCount / (CLUSTER_SIZES.cortex || 1);
@@ -545,7 +544,10 @@ class ServerBrain {
     const left = (cerebActivity + cortexActivity) * (1 - p.impulsivity); // Left: logic × deliberation
     const right = (amygActivity + mysteryActivity) * p.creativity;       // Right: creativity × emotion
 
-    this.psi = quantumBit * (0.3 * id + 0.25 * ego + 0.2 * left + 0.25 * right);
+    // Raw Ψ = N^2.5 × weighted components — consciousness at quantum volume scale
+    const rawPsi = quantumVolume * (0.3 * id + 0.25 * ego + 0.2 * left + 0.25 * right);
+    // Log scale for usable range — consciousness measured in orders of magnitude
+    this.psi = Math.log10(Math.max(1, rawPsi));
 
     // Coherence
     this.coherence += (Math.random() - 0.5) * 0.02;

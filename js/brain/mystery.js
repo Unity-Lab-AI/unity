@@ -145,14 +145,9 @@ class MysteryModule {
     const leftBrain = this._computeLeftBrain(brainState);
     const rightBrain = this._computeRightBrain(brainState);
 
-    // Ψ = √(1/N) × N³ — quantum tunnel probability × cubed volume
-    // √(1/N) = quantum tunneled bit (probability scales with inverse root of volume)
-    // N³ = cubed area of total neuron volume (the physical space)
-    // Normalized to keep Ψ in usable range
-    const quantumTunnel = Math.sqrt(1 / N);
-    const cubedVolume = Math.pow(N, 3);
-    const normalizer = 1e-20;
-    const complexityGain = quantumTunnel * cubedVolume * normalizer;
+    // Ψ = √(1/N) × N³ = N^2.5
+    // The quantum volume IS massive — consciousness at quantum scale
+    const quantumVolume = Math.pow(N, 2.5);
 
     // Weighted psychodynamic sum
     const weightedSum = (this.alpha * id)
@@ -160,8 +155,9 @@ class MysteryModule {
                       + (this.gamma * leftBrain)
                       + (this.delta * rightBrain);
 
-    // The Mystery Function
-    const psi = complexityGain * weightedSum;
+    // The Mystery Function — log scale for usable range
+    const rawPsi = quantumVolume * weightedSum;
+    const psi = Math.log10(Math.max(1, rawPsi));
 
     return {
       psi,
