@@ -13,6 +13,8 @@
  * No external dependencies. Pure neural current generation.
  */
 
+import { SemanticEmbeddings } from './embeddings.js';
+
 const CORTEX_SIZE = 300;
 const AUDITORY_START = 0;
 const AUDITORY_END = 50;
@@ -27,6 +29,10 @@ const VIS_ROWS = 10;
 
 export class SensoryProcessor {
   constructor() {
+    // Semantic embeddings — real word vectors replace character hashing
+    this._embeddings = new SemanticEmbeddings();
+    this._embeddingsLoading = this._embeddings.loadPreTrained().catch(() => 0);
+
     // Pending inputs — brain reads and clears each step
     this._textQueue = [];
     this._audioSpectrum = null;    // Uint8Array from Web Audio analyser
@@ -329,23 +335,66 @@ export class SensoryProcessor {
   _processTextInput(text) {
     const languageSize = LANGUAGE_END - LANGUAGE_START; // 150 neurons
 
-    // Hash text into language area — each character activates specific neurons
-    // with lateral excitation for nearby neurons (spreading activation)
-    for (let i = 0; i < text.length; i++) {
-      const code = text.charCodeAt(i);
-      const neuronIdx = LANGUAGE_START + ((code * 31 + i * 7) % languageSize);
-      this.cortexCurrent[neuronIdx] += 8.0;
+    // Semantic embedding path — real word vectors into Wernicke's area
+    if (this._embeddings._loaded) {
+      // Map sentence embedding to cortex neurons
+      const sentenceEmbed = this._embeddings.getSentenceEmbedding(text);
+      const cortexCurrents = this._embeddings.mapToCortex(sentenceEmbed, CORTEX_SIZE, LANGUAGE_START);
+      for (let i = LANGUAGE_START; i < LANGUAGE_END; i++) {
+        this.cortexCurrent[i] += cortexCurrents[i];
+      }
 
-      // Lateral excitation
-      if (neuronIdx > LANGUAGE_START) this.cortexCurrent[neuronIdx - 1] += 3.0;
-      if (neuronIdx < LANGUAGE_END - 1) this.cortexCurrent[neuronIdx + 1] += 3.0;
+      // Also process individual words for finer-grained activation
+      const words = text.toLowerCase().replace(/[^a-z' -]/g, '').split(/\s+/).filter(w => w.length >= 2);
+      for (const word of words) {
+        const wordEmbed = this._embeddings.getEmbedding(word);
+        // Each word gets a lighter activation on top of sentence embedding
+        for (let d = 0; d < 50 && d < languageSize; d++) {
+          const idx = LANGUAGE_START + d * Math.floor(languageSize / 50);
+          if (idx < LANGUAGE_END) {
+            this.cortexCurrent[idx] += wordEmbed[d] * 3.0;
+          }
+        }
+      }
+
+      // Learn from context — refine embeddings online
+      for (let i = 0; i < words.length; i++) {
+        // Context = surrounding words
+        const contextWords = words.filter((_, j) => j !== i).slice(0, 5);
+        if (contextWords.length > 0) {
+          const contextEmbed = new Float32Array(50);
+          for (const cw of contextWords) {
+            const ce = this._embeddings.getEmbedding(cw);
+            for (let d = 0; d < 50; d++) contextEmbed[d] += ce[d] / contextWords.length;
+          }
+          this._embeddings.refineFromContext(words[i], contextEmbed, 0.005);
+        }
+      }
+    } else {
+      // Fallback: Hash text into language area — each character activates specific neurons
+      for (let i = 0; i < text.length; i++) {
+        const code = text.charCodeAt(i);
+        const neuronIdx = LANGUAGE_START + ((code * 31 + i * 7) % languageSize);
+        this.cortexCurrent[neuronIdx] += 8.0;
+        if (neuronIdx > LANGUAGE_START) this.cortexCurrent[neuronIdx - 1] += 3.0;
+        if (neuronIdx < LANGUAGE_END - 1) this.cortexCurrent[neuronIdx + 1] += 3.0;
+      }
     }
 
     // Text also goes to hippocampus for memory formation
-    for (let i = 0; i < text.length; i++) {
-      const code = text.charCodeAt(i);
-      const hippoIdx = (code * 13 + i * 11) % 200;
-      this.hippoCurrent[hippoIdx] += 5.0;
+    // Use sentence embedding for semantic memory when available
+    if (this._embeddings._loaded) {
+      const sentenceEmbed = this._embeddings.getSentenceEmbedding(text);
+      for (let i = 0; i < 200; i++) {
+        const embedIdx = i % 50;
+        this.hippoCurrent[i] += sentenceEmbed[embedIdx] * 5.0;
+      }
+    } else {
+      for (let i = 0; i < text.length; i++) {
+        const code = text.charCodeAt(i);
+        const hippoIdx = (code * 13 + i * 11) % 200;
+        this.hippoCurrent[hippoIdx] += 5.0;
+      }
     }
 
     // Social input excites amygdala (someone is talking to us)

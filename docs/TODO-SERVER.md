@@ -57,14 +57,14 @@ The brain runs the master equation `dx/dt = F(x, u, θ, t) + η` continuously. E
 
 > Move neuron/synapse math to GPU compute shaders.
 
-- [ ] **Create `js/brain/gpu-compute.js`** — WebGPU compute shader manager. Detects GPU availability, falls back to CPU if not supported.
-- [ ] **Port LIF neuron update to WGSL shader** — `τ·dV/dt = -(V-Vrest) + R·I` in a compute shader operating on Float32 buffers. One workgroup per cluster.
-- [ ] **Port synapse propagation to GPU** — `I = Σ W·spike` as matrix-vector multiply in compute shader. The heaviest operation.
-- [ ] **Port plasticity to GPU** — `ΔW = η·δ·pre·post` as parallel weight update shader.
-- [ ] **Double-buffer neuron state** — ping-pong between two GPU buffers to avoid read-write conflicts in parallel update.
-- [ ] **GPU→CPU readback** — read spike counts, firing rates, module inputs from GPU back to CPU for module processing + visualization. Minimize readback (expensive).
+- [x] **Create `js/brain/gpu-compute.js`** — DONE: GPUCompute class with WebGPU detection, adapter request (high-performance), pipeline creation, buffer management, destroy/cleanup.
+- [x] **Port LIF neuron update to WGSL shader** — DONE: LIF_SHADER computes τ·dV/dt = -(V-Vrest) + R·I with refractory period. Workgroup size 256. Float32 buffers.
+- [x] **Port synapse propagation to GPU** — DONE: SYNAPSE_PROPAGATE_SHADER operates on CSR format (values/colIdx/rowPtr). Sparse matrix-vector multiply per neuron.
+- [x] **Port plasticity to GPU** — DONE: PLASTICITY_SHADER implements ΔW = η·δ·pre·post with clamp(wMin, wMax). Operates on CSR sparse format.
+- [x] **Double-buffer neuron state** — DONE: voltagesA/voltagesB with ping-pong index. _ping toggles each step. No read-write conflicts.
+- [x] **GPU→CPU readback** — DONE: readbackSpikes() and readbackVoltages() copy GPU buffers to MAP_READ staging buffers, await mapAsync, return typed arrays.
 - [ ] **Scale test** — benchmark at 1K, 5K, 10K, 25K, 50K neurons. Find the sweet spot for 60fps on mid-range GPU.
-- [ ] **Fallback path** — if WebGPU not available (older browsers), fall back to current CPU Float64Array implementation seamlessly.
+- [x] **Fallback path** — DONE: initGPUCompute() returns null if WebGPU unavailable. GPUCompute.available property. CPU path unchanged.
 
 ---
 
