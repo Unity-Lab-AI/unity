@@ -554,14 +554,55 @@ export class UnityBrain extends EventEmitter {
 
     if (!response) return { text: "Shit — brain glitched. Say that again?", action: 'respond_text' };
 
-    // Strip fake URLs
-    response = response.replace(/https?:\/\/[^\s)]+\.(jpg|png|gif|webp)/gi, '')
-                       .replace(/https?:\/\/pollinations\.ai[^\s)"]*/gi, '')
-                       .replace(/```[^`]*```/g, '').trim();
-
     if (this.motor.wasInterrupted()) return { text: null, action: 'interrupted' };
 
-    // 7. SPEAK — the brain controls speech output
+    // 7. DETECT CODE IN RESPONSE — if the AI generated code, build it.
+    // The brain recognizes its own output: code blocks = something to inject.
+    // This catches cases where BG selected respond_text but the AI
+    // generated a component anyway. The brain adapts.
+    const codeMatch = response.match(/```(?:json|javascript|js|html)?\s*([\s\S]*?)```/);
+    if (codeMatch && this._sandbox) {
+      const code = codeMatch[1].trim();
+      // Try to parse as JSON component
+      let component;
+      try {
+        const jsonMatch = code.match(/\{[\s\S]*\}/);
+        if (jsonMatch) component = JSON.parse(jsonMatch[0]);
+      } catch {}
+
+      if (component && (component.html || component.js)) {
+        // It's a JSON component — inject it
+        const id = component.id || 'unity-' + Date.now();
+        if (this._sandbox.has(id)) this._sandbox.remove(id);
+        this._sandbox.inject({ id, html: component.html || '', css: component.css || '', js: component.js || '' });
+        const quip = response.replace(/```[\s\S]*```/g, '').trim() || `Built "${id}".`;
+        this.giveReward(0.2);
+        this.emit('response', { text: quip, action: 'build_ui' });
+        if (this._voice) { this._voice.stopSpeaking(); this._voice.speak(quip.slice(0, 100)).catch(() => {}); }
+        return { text: quip, action: 'build_ui' };
+      } else if (code.includes('document.') || code.includes('function ') || code.includes('const ') || code.includes('<div')) {
+        // It's raw code — wrap it and inject
+        const id = 'unity-' + Date.now();
+        const hasHtml = code.includes('<');
+        this._sandbox.inject({
+          id,
+          html: hasHtml ? code.replace(/<script[\s\S]*?<\/script>/gi, '') : '',
+          css: '',
+          js: hasHtml ? '' : code,
+        });
+        const quip = response.replace(/```[\s\S]*```/g, '').trim() || `Built it.`;
+        this.giveReward(0.2);
+        this.emit('response', { text: quip, action: 'build_ui' });
+        if (this._voice) { this._voice.stopSpeaking(); this._voice.speak(quip.slice(0, 100)).catch(() => {}); }
+        return { text: quip, action: 'build_ui' };
+      }
+    }
+
+    // Strip URLs from non-code responses
+    response = response.replace(/https?:\/\/[^\s)]+\.(jpg|png|gif|webp)/gi, '')
+                       .replace(/https?:\/\/pollinations\.ai[^\s)"]*/gi, '').trim();
+
+    // 8. SPEAK — the brain controls speech output
     if (this._voice) {
       this._voice.stopSpeaking();
       this.auditoryCortex.setMotorOutput(response);
