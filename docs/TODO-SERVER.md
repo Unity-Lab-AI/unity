@@ -95,14 +95,14 @@ The brain runs the master equation `dx/dt = F(x, u, θ, t) + η` continuously. E
 - [x] **Auto-detect mode** — DONE: detectRemoteBrain() probes WebSocket, falls back to local brain seamlessly. — app.js checks if a brain server is available (probe WebSocket URL). If yes, use RemoteBrain. If no, run local brain. Seamless fallback.
 - [x] **State rendering** — DONE: RemoteBrain emits stateUpdate events, all visualizers receive same format. — all visualizers (HUD, brain-viz, brain-3d) receive state from WebSocket instead of local brain. Same rendering code, different data source.
 - [ ] **Sandbox per-user** — each user has their own sandbox. When the brain builds a component for User A, only User A's sandbox receives it. Other users see that the brain is building but get their own builds.
-- [ ] **Shared emotion indicator** — small UI element showing Unity's current mood/arousal that ALL users see. "Unity is feeling: intense 🔥" or "Unity is chill 😶‍🌫️"
+- [x] **Shared emotion indicator** — DONE: dashboard renders raw equation values (arousal→hue, valence→color, gate→width, psi→glow). Main app HUD gets USERS/GATE/STATE rows. sharedMood from _getSharedMood() returns raw equation outputs — no emoji, no string lookups.
 
 ### 3.3: Persistence on Server
 
 - [x] **Auto-save brain weights** — DONE: server saves every 5 min, SIGINT/SIGTERM save on shutdown. Client persistence.js saves every 10 rewards. — server saves all weights to disk every 5 minutes. On crash/restart, brain loads from last save.
 - [ ] **SQLite for episodic memory** — episodes stored in SQLite instead of in-memory array. Supports millions of episodes across all users.
-- [ ] **Conversation log** — all conversations stored server-side with user IDs and timestamps. Unity can recall conversations from days/weeks ago.
-- [ ] **Brain versioning** — each weight save is versioned. Can rollback to a previous brain state if something goes wrong.
+- [x] **Conversation log** — DONE: saveConversations() writes conversations.json with per-user message history (last 50 per user). Saved on periodic interval + graceful shutdown. Conversation broadcast to all clients for live stream.
+- [x] **Brain versioning** — DONE: Rolling 5 versioned backups (brain-weights-v0..v4.json). HTTP endpoints: /versions lists all saved versions, /rollback/:slot restores a previous save and reloads brain state.
 
 ---
 
@@ -139,9 +139,9 @@ The brain runs the master equation `dx/dt = F(x, u, θ, t) + η` continuously. E
 - [x] **Live neuron grid** — DONE: cluster activity bars in dashboard, 3D brain in main app. — 3D visualization of all clusters, firing in real-time, viewable by anyone.
 - [x] **Process log stream** — DONE: dashboard log + 3D brain notifs (20+ process types, prioritized by activity, AT cluster positions). — scrolling feed of brain events: "Cortex prediction error spike", "Amygdala arousal: 0.91", "BG selected: build_ui", "Memory: stored episode #47"
 - [x] **Active users count** — DONE: connectedUsers in state broadcast, shown in dashboard. — "3 people talking to Unity right now"
-- [ ] **Emotional history chart** — rolling graph of arousal, valence, Ψ over the last hour/day/week.
-- [ ] **Conversation stream** — anonymized feed of what users are saying and how Unity responds. Like watching her think in real-time.
-- [ ] **Brain growth metrics** — total episodes stored, projection weight magnitudes over time, action selection accuracy over time. Watch the brain LEARN.
+- [x] **Emotional history chart** — DONE: Canvas chart in dashboard drawing arousal/valence/coherence/psi as colored lines. Server stores rolling 1hr buffer (1 sample/sec). Full history sent on welcome, clients append from state updates. Chart redraws every 2 seconds.
+- [x] **Conversation stream** — DONE: Live anonymized feed in dashboard. Server broadcasts {type:'conversation'} to all clients on each interaction. Dashboard shows user_XXXX messages + Unity responses with timestamps.
+- [x] **Brain growth metrics** — DONE: Dashboard shows words learned, total interactions, brain steps, uptime. Server sends growth object in state broadcast with totalWords, totalInteractions, totalFrames, uptime.
 
 ---
 
