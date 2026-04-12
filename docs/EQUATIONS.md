@@ -124,15 +124,33 @@
 | `role_score(w, pos) = W_syntax[pos] · word_pattern` | Word-type fitness for sentence position | `language-cortex.js` |
 | `W_syntax[pos] += lr · (pattern - W_syntax[pos])` | Position weight learning (running average) | `language-cortex.js` |
 
-### Combined Production Chain
+### Slot-Based Sentence Structure
+| Structure | Slots | File |
+|-----------|-------|------|
+| Statement | `[SUBJECT] [VERB] [COMPLEMENT...]` | `language-cortex.js` |
+| Question | `[Q-WORD] [VERB] [COMPLEMENT...]` | `language-cortex.js` |
+| Action | `*[VERB] [COMPLEMENT...]*` | `language-cortex.js` |
+| Exclamation | `[INTENSIFIER] [COMPLEMENT...]` | `language-cortex.js` |
+
+### Slot Filling Equation
 | Equation | Purpose | File |
 |----------|---------|------|
-| `P(w_i) ∝ P(w_i\|w_{i-1}) × Role(w_i,pos) × Zipf(rank) × MI(prev,w) × mood × topic` | Full sentence production | `language-cortex.js` |
-| Start weights: `pos=0.3, syntax=0.25, zipf=0.15, mood=0.15, topic=0.15` | First word selection — structure 55% | `language-cortex.js` |
-| Chain weights: `cond=0.3, pos=0.2, syntax=0.15, MI=0.15, mood=0.1, topic=0.1` | Subsequent words — structure 65% | `language-cortex.js` |
-| `T_effective = T × 0.3` where `T = 1/(coherence + 0.1)` | Sharpened softmax — structure wins | `language-cortex.js` |
-| 10-pass bootstrap training (1700+ total sentence passes) | Position/conditional weights 5× stronger | `language-cortex.js` |
-| 170+ corpus sentences: SVO, pronouns, questions, articles, prepositions, emotions, contractions | English structure training data | `language-cortex.js` |
+| `slot_score = followerCount×0.4 + P(w\|prev)×0.2 + P(w\|pos)×0.2 + mood×0.1 + topic×0.1` | Word selection per slot | `language-cortex.js` |
+| `word = softmax(scores, T×0.15)` | Sharp sampling — best fit wins | `language-cortex.js` |
+| Trained followers used DIRECTLY when count > 0 | Learned sequences ARE structure | `language-cortex.js` |
+| Fallback: `score = P(w\|pos)×0.35 + syntax×0.25 + mood×0.2 + topic×0.2` | When no trained follower | `language-cortex.js` |
+
+### Loop Detection
+| Equation | Purpose | File |
+|----------|---------|------|
+| `if (prev→w) ∈ usedBigrams → reject` | Bigram tracking prevents cycles | `language-cortex.js` |
+
+### Bootstrap Training
+| Metric | Value | File |
+|--------|-------|------|
+| Corpus | 170+ sentences (SVO, questions, actions, emotions, contractions) | `language-cortex.js` |
+| Passes | 10 (1700+ total) | `language-cortex.js` |
+| Vocabulary | 400+ words with patterns + arousal/valence | `language-cortex.js` |
 
 ### Sentence Type Equations
 | Equation | Purpose | File |

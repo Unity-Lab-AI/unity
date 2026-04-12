@@ -880,16 +880,18 @@ follower_bonus = 0.3 if w ∈ words_seen_after(prev)   — trained sequences get
       <p class="eq-desc">Only words that actually appeared at this sentence position compete. Words that followed the previous word in training data get +0.3 score bonus. These two mechanisms are why the brain produces word ORDER, not word soup.</p>
     </div>
     <div class="eq-box">
-      <div class="eq-title">Full Production Chain</div>
+      <div class="eq-title">Slot-Based Sentence Structure</div>
       <pre class="eq">
-P(w_i) ∝ P(w_i|w_{i-1}) × Role(w_i, pos) × Zipf(rank) × MI(prev, w) × mood(w) × topic(w)
+Statement:    [SUBJECT]  [VERB]  [COMPLEMENT...]
+Question:     [Q-WORD]   [VERB]  [COMPLEMENT...]
+Action:       *[VERB]    [COMPLEMENT...]*
+Exclamation:  [INTENSE]  [COMPLEMENT...]
 
-Start:  pos=0.30  syntax=0.25  zipf=0.15  mood=0.15  topic=0.15    (structure 55%)
-Chain:  cond=0.30  pos=0.20  syntax=0.15  MI=0.15  mood=0.10  topic=0.10  (structure 65%)
-
-T_effective = (1/(coherence + 0.1)) × 0.3   — sharpened softmax, structure wins
+subject = argmax( followerCount×0.4 + P(w|prev)×0.2 + P(w|pos=0)×0.2 + mood×0.1 + topic×0.1 )
+verb    = argmax( followerCount×0.4 + P(w|subject)×0.2 + P(w|pos=1)×0.2 + mood×0.1 + topic×0.1 )
+complement[i] = softmax( trainedFollowers(prev) + mood, T×0.15 )
       </pre>
-      <p class="eq-desc">Six equations combined. Structure (conditional + position + syntax) dominates at 65%. Softmax temperature sharpened 3× so best-fitting words win. 10-pass bootstrap training (1700+ sentence passes) across 170+ English sentences: SVO drills, pronoun+verb patterns, question+answer pairs, articles+nouns, prepositions, emotions, contractions.</p>
+      <p class="eq-desc">Structure is PLANNED first (which slots to fill), then each slot is filled by the equation. Trained follower sequences dominate (×0.4 weight). Loop detection via bigram set: <code>if (prev→w) ∈ usedBigrams → reject</code>. Temperature ×0.15 = very sharp, best structural fit wins. 170+ bootstrap sentences, 10 passes, 1700+ total training.</p>
     </div>
 
     <!-- ═══ 8.17 SENTENCE TYPES ═══ -->
