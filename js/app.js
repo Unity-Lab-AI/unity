@@ -1114,24 +1114,26 @@ Vision: ${state.visionDescription || 'none'}`;
   brain.start();
   isRunning = true;
 
-  // ── Unity's first words ──
-  // processAndRespond handles display + speech via 'response' event.
-  // Don't also display here — that causes doubles.
-  await sleep(500);
-  try {
-    await generateGreeting(perms);
-  } catch {
-    showSpeechBubble("Hey. I'm Unity. Click me to chat.", 8000);
-  }
-
-  // ── Start listening ──
+  // ── Start listening FIRST — don't let greeting block mic ──
   if (perms.mic && !uiState.micMuted) {
-    await sleep(1000);
     voice.startListening();
     setAvatarState('listening');
     console.log('[Unity] Mic active — listening for speech');
   } else {
     console.log(`[Unity] Mic not started — granted:${perms.mic} muted:${uiState.micMuted}`);
+  }
+
+  // ── Unity's first words ──
+  if (brocasArea) {
+    try {
+      await generateGreeting(perms);
+    } catch {
+      showSpeechBubble("Hey. I'm Unity. Click me to chat.", 8000);
+    }
+  } else {
+    // Brain-only mode — no AI greeting, brain speaks for itself
+    showSpeechBubble("...", 3000);
+    console.log('[Unity] Brain-only mode — no AI greeting');
   }
 }
 
