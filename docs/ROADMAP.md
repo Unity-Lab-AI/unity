@@ -213,8 +213,16 @@ Neurons → Synapses → Brain Loop → Brain Regions → Persona Loader → API
 - **Live Hardware Stats** — CPU/RAM/GPU/step time broadcast to all clients
 - **Benchmarks** — dense vs sparse comparison, neuron scale test
 
+**Phase 8: Complete Language Equation System** — COMPLETE
+- Syntactic role weights: `role_score = W_syntax[pos] · word_pattern`
+- 4 sentence types from brain equations (statement/question/exclamation/action)
+- Full production chain: 6 equations, structure at 65%, sharpened softmax
+- Input analysis: question detection, topic continuity, 5-input context window
+- Morphological transforms: tense/plural as pattern arithmetic
+- 100+ sentence bootstrap, 5-pass training (500 total passes)
+- Letter awareness, syllable detection, contraction patterns
+
 ### Remaining
-- Phase 7 documentation verification (in progress)
 - Attention mechanism (transformer-like) in Cortex
 - Mobile-responsive UI polish
 

@@ -128,7 +128,10 @@
 | Equation | Purpose | File |
 |----------|---------|------|
 | `P(w_i) ∝ P(w_i\|w_{i-1}) × Role(w_i,pos) × Zipf(rank) × MI(prev,w) × mood × topic` | Full sentence production | `language-cortex.js` |
-| Weights: `cond=0.2, pos=0.15, syntax=0.15, zipf=0.1, MI=0.15, mood=0.15, topic=0.1` | Component weights | `language-cortex.js` |
+| Start weights: `pos=0.3, syntax=0.25, zipf=0.15, mood=0.15, topic=0.15` | First word selection — structure 55% | `language-cortex.js` |
+| Chain weights: `cond=0.3, pos=0.2, syntax=0.15, MI=0.15, mood=0.1, topic=0.1` | Subsequent words — structure 65% | `language-cortex.js` |
+| `T_effective = T × 0.3` where `T = 1/(coherence + 0.1)` | Sharpened softmax — structure wins | `language-cortex.js` |
+| 5-pass bootstrap training (500+ total sentence passes) | Position/conditional weights 2.5× stronger | `language-cortex.js` |
 
 ### Sentence Type Equations
 | Equation | Purpose | File |

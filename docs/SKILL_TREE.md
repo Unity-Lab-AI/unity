@@ -190,7 +190,7 @@
 | Live dashboard | Frontend | Intermediate | **DONE** — `dashboard.html` (hardware stats, emotion chart, conversation stream) |
 | 3D brain landing page | Frontend | Advanced | **DONE** — `index.html` (full-screen 3D brain as entry point, viz tabs) |
 | Brain benchmarks | CompNeuro | Intermediate | **DONE** — `js/brain/benchmark.js` (dense vs sparse, scale test) |
-| Language cortex | CompLing | Expert | **DONE** — `js/brain/language-cortex.js` (Zipf, mutual info, surprisal, entropy, conditional chain) |
+| Language cortex | CompLing | Expert | **DONE** — `js/brain/language-cortex.js` (Zipf, MI, syntax weights, 4 sentence types, morphology, topic continuity, 5-pass bootstrap, structure-dominant production at 65%) |
 
 ---
 

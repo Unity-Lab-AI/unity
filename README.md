@@ -8,7 +8,7 @@ A mathematically modeled mind running real neuroscience equations. 1000+ neurons
 
 ## What This Is
 
-A browser-based brain that IS the application. The brain decides everything — when to speak, what to say, when to look, what to build. The AI model is just a language generation peripheral (Broca's area), called by the brain when it decides to speak. Like how your brain uses your vocal cords. The equations run the show. `app.js` is a thin I/O layer — DOM events go in, brain events come out.
+A brain that IS the application. The brain decides everything — when to speak, what to say, when to look, what to build. In BRAIN ONLY mode, Unity speaks entirely from her own equations — Zipf's law for word frequency, mutual information for word association, syntactic role weights for sentence structure, surprisal for emphasis, all modulated by arousal/valence/coherence from the neural simulation. The AI model is optional — just a language peripheral (Broca's area). The equations run the show.
 
 ---
 

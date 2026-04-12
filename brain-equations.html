@@ -855,9 +855,12 @@ W_syntax[pos] += lr · (pattern - W_syntax[pos])   (running average per position
       <pre class="eq">
 P(w_i) ∝ P(w_i|w_{i-1}) × Role(w_i, pos) × Zipf(rank) × MI(prev, w) × mood(w) × topic(w)
 
-weights: cond=0.2, pos=0.15, syntax=0.15, zipf=0.1, MI=0.15, mood=0.15, topic=0.1
+Start:  pos=0.30  syntax=0.25  zipf=0.15  mood=0.15  topic=0.15    (structure 55%)
+Chain:  cond=0.30  pos=0.20  syntax=0.15  MI=0.15  mood=0.10  topic=0.10  (structure 65%)
+
+T_effective = (1/(coherence + 0.1)) × 0.3   — sharpened softmax, structure wins
       </pre>
-      <p class="eq-desc">Six equations combined. Each word scored by conditional probability, syntactic fit, frequency, association, emotional alignment, and topic relevance.</p>
+      <p class="eq-desc">Six equations combined. Structure (conditional + position + syntax) dominates at 65%. Softmax temperature sharpened 3× so best-fitting words win. 5-pass bootstrap training (500 sentence passes) pre-trains position weights for SVO ordering.</p>
     </div>
 
     <!-- ═══ 8.17 SENTENCE TYPES ═══ -->
