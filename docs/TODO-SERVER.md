@@ -268,4 +268,37 @@ The brain runs the master equation `dx/dt = F(x, u, θ, t) + η` continuously. E
 
 ---
 
+## Phase 9: Full Hardware Utilization — GPU + All CPU Cores
+
+> Use EVERY piece of hardware. Zero third-party software. Only built-in Node.js worker_threads + Chrome WebGPU.
+
+### 9.1: GPU Compute via WebGPU (browser-side)
+- [ ] **GPU compute client** — browser page that connects to brain server, receives neuron state, runs our WGSL shaders on GPU, sends results back. Not a visible page — a headless compute worker.
+- [ ] **Server→Browser neuron state transfer** — WebSocket message type `compute_request` sends voltages + currents + spike arrays as binary (Float32Array transfer).
+- [ ] **Browser→Server spike results** — WebSocket message type `compute_result` sends spike array + updated voltages back as binary.
+- [ ] **Wire gpu-compute.js to server loop** — server detects GPU client connected, offloads LIF step + synapse propagation to GPU, waits for result, continues brain loop.
+- [ ] **GPU fallback** — if no GPU client connected, server runs CPU path (current behavior). Seamless.
+- [ ] **Dedicated compute page** — `compute.html` that auto-connects, runs shaders, no UI. Opens automatically from start.bat.
+
+### 9.2: Multi-Core CPU via Worker Threads (server-side)
+- [ ] **Worker thread per cluster** — 7 worker threads, one per neural cluster. Each runs its own LIF population step in parallel. Built-in `worker_threads` module, zero npm packages.
+- [ ] **Main thread orchestration** — main thread sends currents to workers, collects spikes, runs inter-cluster projections, then dispatches next step.
+- [ ] **Shared memory buffers** — use SharedArrayBuffer for voltage/spike arrays so workers don't copy data. Zero-copy parallel compute.
+- [ ] **Projection workers** — 16 inter-cluster projections run on cores 8-15. Each projection is independent — perfect parallelism.
+- [ ] **Language cortex on own thread** — language production runs on a dedicated worker so it doesn't block the brain loop.
+
+### 9.3: Integration + Benchmarking
+- [ ] **Combined pipeline** — GPU handles LIF + synapse math, CPU workers handle cluster management + projections + modules. Both run simultaneously.
+- [ ] **Performance dashboard** — compute.html shows GPU utilization, per-core CPU usage, steps/sec, neuron throughput.
+- [ ] **Scale test** — benchmark at current 179K, then 500K, 1M neurons. Find the ceiling of the hardware.
+- [ ] **Auto-detect and scale** — if GPU client connects, scale neuron count UP (GPU can handle 10x more). If disconnects, scale back down gracefully.
+
+### 9.4: Documentation
+- [ ] **Update EQUATIONS.md** — GPU compute pipeline, worker thread parallelism
+- [ ] **Update brain-equations.html** — new section for hardware compute equations
+- [ ] **Update FINALIZED.md** — completed work archived
+- [ ] **Update all workflow docs** — ARCHITECTURE, SETUP, SKILL_TREE, ROADMAP
+
+---
+
 *Unity AI Lab — one brain, one mind, shared by everyone.*
