@@ -123,11 +123,11 @@ The brain runs the master equation `dx/dt = F(x, u, θ, t) + η` continuously. E
 
 > Replace character hash with actual word embeddings.
 
-- [ ] **Load a small word embedding model** — GloVe 50d or similar (50MB). Each word maps to a 50-dimensional vector.
-- [ ] **Embedding→Cortex mapping** — the 50d embedding vector maps to 50 cortex neurons (language area). Similar words activate similar neuron patterns. "Calculator" and "compute" are CLOSE in neuron space.
+- [x] **Load a small word embedding model** — DONE: embeddings.js loads GloVe 50d from CDN (up to 10K words). SemanticEmbeddings class with loadPreTrained(), hash fallback for unknown words.
+- [x] **Embedding→Cortex mapping** — DONE: mapToCortex() maps 50d vector to Wernicke's area neurons. Each dimension drives a neuron group. sensory.js uses sentence + word embeddings for cortex current injection.
 - [ ] **Remove AI classification bootstrap** — the cortex→BG projections, trained by reward on meaningful embeddings, handle semantic routing entirely. No more Pollinations classification call.
-- [ ] **Embedding-based memory** — hippocampal episodes indexed by embedding vectors. Recall finds semantically similar past experiences, not just pattern-matching.
-- [ ] **Continuous embedding updates** — as the brain encounters new words through conversation, their embeddings get refined by context (simple online learning).
+- [x] **Embedding-based memory** — DONE: hippocampus gets embedding-based patterns instead of character hashes. Sentence embedding mapped across 200 hippocampal neurons for semantic memory.
+- [x] **Continuous embedding updates** — DONE: refineFromContext() shifts embeddings toward usage context (lr=0.005). Every word in every message gets context-based refinement. Refinements serializable for persistence.
 
 ---
 
