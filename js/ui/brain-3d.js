@@ -393,12 +393,14 @@ export class Brain3D {
       this._genPositions();
       if (this._gl) this._uploadStatic();
       console.log(`[Brain3D] Scaled to ${TOTAL} render neurons (server has ${serverNeurons.toLocaleString()})`);
-      // Update footer with actual vs rendered scale
+      // Update scale displays
+      const ratio = Math.round(serverNeurons / TOTAL);
       const scaleInfo = this._overlay?.querySelector('.b3d-scale-info');
-      if (scaleInfo) {
-        const ratio = Math.round(serverNeurons / TOTAL);
-        scaleInfo.textContent = `${TOTAL.toLocaleString()} rendered · ${serverNeurons.toLocaleString()} actual (${ratio}:1) · 7 clusters`;
-      }
+      if (scaleInfo) scaleInfo.textContent = `${TOTAL.toLocaleString()} rendered · ${serverNeurons.toLocaleString()} actual (${ratio}:1) · 7 clusters`;
+      const actualEl = this._overlay?.querySelector('.b3d-actual-count');
+      if (actualEl) actualEl.textContent = serverNeurons.toLocaleString();
+      const ratioEl = this._overlay?.querySelector('.b3d-render-ratio');
+      if (ratioEl) ratioEl.textContent = `showing 1:${ratio} (${TOTAL.toLocaleString()} of ${serverNeurons.toLocaleString()})`;
     }
 
     const spk = state.spikes;
@@ -531,6 +533,11 @@ export class Brain3D {
   <div class="b3d-lbl-wrap"></div>
   <div class="b3d-notif-wrap"></div>
   <div class="b3d-expansion">EXPANSION: <b class="b3d-exp-val">1.00x</b></div>
+  <div class="b3d-scale-display" style="position:absolute;top:55px;right:10px;font-size:10px;color:#ff4d9a;z-index:2;text-align:right;line-height:1.4;">
+    <div style="font-size:14px;font-weight:700;" class="b3d-actual-count">—</div>
+    <div style="font-size:9px;color:#555;">actual neurons</div>
+    <div style="font-size:11px;color:#a855f7;" class="b3d-render-ratio">—</div>
+  </div>
   <div class="b3d-log-wrap">
     <div class="b3d-log-title">PROCESS LOG</div>
     <div class="b3d-log"></div>
