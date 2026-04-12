@@ -528,9 +528,9 @@ class ServerBrain {
             // Build a filtered set for the parallel brain
             const cpuClusterNames = Object.keys(CLUSTER_SIZES).filter(n => !gpuClusters.includes(n));
 
-            // Run CPU workers for non-GPU clusters
+            // Run CPU workers — EXCLUDE clusters the GPU is handling
             const cpuResults = await Promise.race([
-              this._parallelBrain.step(), // steps ALL clusters on workers
+              this._parallelBrain.step({}, gpuClusters),
               new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 500)),
             ]);
 

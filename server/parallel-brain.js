@@ -65,8 +65,9 @@ class ParallelBrain {
           }
           if (msg.type === 'result') {
             this._pendingResults[msg.name] = msg;
-            // Check if all results are in
-            if (this._resolvers.step && Object.keys(this._pendingResults).length === names.length) {
+            // Check if expected results are in
+            const needed = this._expectedCount || names.length;
+            if (this._resolvers.step && Object.keys(this._pendingResults).length >= needed) {
               this._resolvers.step(this._pendingResults);
               this._resolvers.step = null;
               this._pendingResults = {};
@@ -94,20 +95,40 @@ class ParallelBrain {
    * @param {object} externalCurrents — { cortex: Float64Array, hippocampus: Float64Array, ... }
    * @returns {Promise<object>} — { cortex: { spikeCount, spikes, firingRate }, ... }
    */
-  async step(externalCurrents = {}) {
+  /**
+   * @param {object} externalCurrents
+   * @param {string[]} excludeClusters — clusters handled by GPU, skip on CPU
+   */
+  async step(externalCurrents = {}, excludeClusters = []) {
     if (!this._initialized) throw new Error('ParallelBrain not initialized');
 
-    // Dispatch step to ALL workers simultaneously
-    for (const [name, worker] of Object.entries(this._workers)) {
-      worker.postMessage({
+    const excludeSet = new Set(excludeClusters);
+    const activeNames = Object.keys(this._workers).filter(n => !excludeSet.has(n));
+
+    this._expectedCount = activeNames.length;
+
+    // Dispatch step ONLY to non-GPU workers
+    for (const name of activeNames) {
+      this._workers[name].postMessage({
         type: 'step',
         currents: externalCurrents[name] || null,
       });
     }
 
-    // Wait for ALL workers to respond
+    // Wait for active workers to respond
     return new Promise((resolve) => {
-      this._resolvers.step = resolve;
+      // Override: resolve when we have results from all ACTIVE workers
+      const needed = activeNames.length;
+      const collected = {};
+      this._resolvers.step = (allResults) => {
+        // Filter to only active clusters
+        for (const [name, result] of Object.entries(allResults)) {
+          if (!excludeSet.has(name)) collected[name] = result;
+        }
+        resolve(collected);
+      };
+      // If no active workers, resolve immediately
+      if (needed === 0) resolve({});
     });
   }
 

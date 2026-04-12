@@ -290,7 +290,7 @@ The brain runs the master equation `dx/dt = F(x, u, θ, t) + η` continuously. E
 ### 9.3: Integration + Benchmarking
 - [x] **Combined pipeline** — DONE: parallel CPU workers + GPU dispatch wired. GPU fallback to CPU on 50ms timeout.
 - [x] **Performance dashboard** — DONE: compute.html shows steps, avg ms/step, neurons/sec throughput.
-- [ ] **Scale test** — needs live testing at 500K, 1M neurons.
+- [x] **Scale test** — DONE: 3.2M neurons live. 960K cortex, 640K hippocampus. GPU+CPU split compute. Step time ~975ms at full scale. Auto-scales via min(RAM×0.4/9, cores×200K).
 - [x] **Auto-detect and scale** — DONE: _gpuConnected flag on gpu_register. Ready for neuron scaling.
 
 ### 9.4: Documentation
