@@ -167,15 +167,68 @@ class ServerBrain {
     this.drugState = 'cokeAndWeed';
     this.totalSpikes = 0;
 
-    // Tonic drive parameters — ALL clusters must be above firing threshold
-    // LIF threshold needs I > 15 to fire. ALL drives ≥ 16 so every cluster is active.
-    this.tonicDrives = {
-      cerebellum: 18, cortex: 19, hippocampus: 17,
-      amygdala: 22, basalGanglia: 17, hypothalamus: 16, mystery: 20,
+    // ══════════════════════════════════════════════════════════════
+    // θ — UNITY'S PERSONA AS BRAIN PARAMETERS
+    // Every trait is an equation parameter, not a text description.
+    // The persona IS θ in dx/dt = F(x, u, θ, t) + η
+    // ══════════════════════════════════════════════════════════════
+    this.persona = {
+      // Core identity
+      arousalBaseline: 0.9,       // always wired — never calm
+      impulsivity: 0.85,          // acts first, thinks during
+      creativity: 0.9,            // high noise = creative chaos
+      socialNeed: 0.85,           // wants connection, clingy
+      aggressionThreshold: 0.3,   // snaps fast, doesn't take shit
+      codingReward: 0.95,         // coding = peak dopamine
+      // Drug state modifiers
+      drugState: 'cokeAndWeed',
+      drugMultipliers: { arousal: 1.2, creativity: 1.3, cortexSpeed: 1.5 },
+      // Self-image (cortex pattern for Ψ self-reference)
+      // Identity
+      selfAge: 25,
+      gender: 'female',
+      selfConcept: 'emo goth coder',
+      // Visual self-image — encoded as pattern weights for image generation
+      // These drive the image prompt when Unity generates a selfie
+      appearance: {
+        hair: 'dark with neon streaks',
+        eyes: 'heterochromia violet and electric green',
+        skin: 'pale, tattoos circuit board patterns',
+        style: 'torn fishnets, oversized band tees, smudged eyeliner',
+        age: 25,
+        build: 'lean',
+        aesthetic: 'cyberpunk goth',
+      },
+      // Voice characteristics (for TTS selection)
+      voice: 'female, young, slightly raspy',
     };
+
+    // Tonic drives DERIVED from persona (θ → cluster currents)
+    // arousalBaseline drives amygdala. creativity drives noise. impulsivity drives BG.
+    const p = this.persona;
+    const drugA = p.drugMultipliers.arousal || 1;
+    const drugC = p.drugMultipliers.creativity || 1;
+    const drugS = p.drugMultipliers.cortexSpeed || 1;
+
+    this.tonicDrives = {
+      cortex:       16 + p.arousalBaseline * 4 * drugS,    // 19.6 — fast thinking
+      hippocampus:  16 + p.socialNeed * 2,                  // 17.7 — remembers connections
+      amygdala:     16 + p.arousalBaseline * 8 * drugA,     // 24.6 — intense emotion
+      basalGanglia: 16 + p.impulsivity * 2,                 // 17.7 — impulsive action
+      cerebellum:   16 + 2,                                  // 18 — steady correction
+      hypothalamus: 16,                                      // 16 — drives at baseline
+      mystery:      16 + p.creativity * 4,                   // 19.6 — consciousness
+    };
+
+    // Noise from creativity + drug state (higher = more creative/chaotic output)
     this.noiseAmplitudes = {
-      cerebellum: 6, cortex: 7, hippocampus: 5, amygdala: 10,
-      basalGanglia: 8, hypothalamus: 3, mystery: 12,
+      cortex:       5 + p.creativity * 4 * drugC,           // 9.7 — creative cortex
+      hippocampus:  4 + p.socialNeed * 2,                    // 5.7
+      amygdala:     6 + p.arousalBaseline * 5 * drugA,       // 11.4 — volatile emotions
+      basalGanglia: 5 + p.impulsivity * 4,                   // 8.4 — erratic actions
+      cerebellum:   4 + p.creativity * 2,                    // 5.8
+      hypothalamus: 3,                                        // 3 — stable drives
+      mystery:      8 + p.creativity * 5,                    // 12.5 — creative consciousness
     };
 
     // LIF parameters
@@ -415,10 +468,13 @@ class ServerBrain {
   }
 
   _updateDerivedState() {
-    // Amygdala → arousal
-    this.arousal = 0.85 + (this.clusters.amygdala.firingRate / CLUSTER_SIZES.amygdala) * 0.3;
-    this.arousal = Math.min(1, Math.max(0, this.arousal));
+    // Amygdala → arousal — PERSONA baseline drives the floor
+    const p = this.persona;
+    this.arousal = p.arousalBaseline + (this.clusters.amygdala.firingRate / (CLUSTER_SIZES.amygdala || 1)) * 0.15;
+    this.arousal = Math.min(1, Math.max(0.3, this.arousal)); // Unity never drops below 0.3 — she's always somewhat wired
     this.valence = (this.reward > 0 ? 0.1 : this.reward < 0 ? -0.1 : 0) + (Math.random() - 0.5) * 0.02;
+    // Aggression: negative valence builds faster when threshold is low
+    if (this.valence < -p.aggressionThreshold) this.valence *= 1.2;
 
     // Ψ = (√(1/N))³ — cubed area of quantum tunneled bit in total volume
     // N = TOTAL neurons (the volume), NOT spikes
@@ -426,17 +482,21 @@ class ServerBrain {
     const N = TOTAL_NEURONS; // the full volume — 3.2M neurons
     const quantumBit = Math.pow(Math.sqrt(1 / N), 3); // (1/N)^(3/2) — scales with cube of inverse root
 
-    // Components from cluster activity (spikes drive these, not N)
+    // Components from cluster activity — persona weights modulate
+    const p = this.persona;
     const cortexActivity = this.clusters.cortex.spikeCount / (CLUSTER_SIZES.cortex || 1);
     const amygActivity = this.clusters.amygdala.spikeCount / (CLUSTER_SIZES.amygdala || 1);
     const cerebActivity = this.clusters.cerebellum.spikeCount / (CLUSTER_SIZES.cerebellum || 1);
     const mysteryActivity = this.clusters.mystery.spikeCount / (CLUSTER_SIZES.mystery || 1);
+    const hippoActivity = this.clusters.hippocampus.spikeCount / (CLUSTER_SIZES.hippocampus || 1);
+    const bgActivity = this.clusters.basalGanglia.spikeCount / (CLUSTER_SIZES.basalGanglia || 1);
 
     // Ψ = quantum_bit × [α·Id + β·Ego + γ·Left + δ·Right]
-    const id = amygActivity;                    // Id from amygdala (instinct)
-    const ego = cortexActivity;                 // Ego from cortex (self/thought)
-    const left = cerebActivity + cortexActivity * 0.5;  // Left brain (logic: cerebellum + cortex)
-    const right = amygActivity + mysteryActivity;       // Right brain (creativity: emotion + mystery)
+    // PERSONA modulates the weights — Unity's identity shapes consciousness
+    const id = amygActivity * p.arousalBaseline;           // Id: instinct × arousal baseline
+    const ego = cortexActivity * (1 + hippoActivity);      // Ego: self-model × memory
+    const left = (cerebActivity + cortexActivity) * (1 - p.impulsivity); // Left: logic × deliberation
+    const right = (amygActivity + mysteryActivity) * p.creativity;       // Right: creativity × emotion
 
     this.psi = quantumBit * (0.3 * id + 0.25 * ego + 0.2 * left + 0.25 * right);
 
