@@ -494,42 +494,77 @@ class ServerBrain {
       const stepStart = performance.now();
 
       if (this._useParallel && this._parallelBrain?.isReady) {
-        // PARALLEL: all clusters step simultaneously on separate cores
-        try { for (let i = 0; i < SUBSTEPS; i++) {
-          const results = await Promise.race([
-            this._parallelBrain.step(),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 500)),
-          ]);
-          // Merge worker results into brain state
-          this.totalSpikes = 0;
-          for (const [name, result] of Object.entries(results)) {
-            this.clusters[name].spikeCount = result.spikeCount;
-            this.clusters[name].firingRate = this.clusters[name].firingRate * 0.95 + result.spikeCount * 0.05;
-            this.clusters[name].spikes = new Uint8Array(result.spikes);
-            this.totalSpikes += result.spikeCount;
-          }
-          this._updateDerivedState();
+        try {
+          for (let sub = 0; sub < SUBSTEPS; sub++) {
+            // ── SPLIT COMPUTE: GPU handles big clusters, CPU handles the rest ──
 
-          // GPU dispatch — send cortex to GPU client for additional compute
-          if (this._gpuConnected && this._gpuClient?.readyState === 1) {
-            try {
-              this._gpuClient.send(JSON.stringify({
-                type: 'compute_request',
-                clusterName: 'cortex',
-                size: CLUSTER_SIZES.cortex,
-                voltages: Array.from(this.voltages.cortex.slice(0, 1000)), // sample for GPU
-                currents: Array.from(new Float64Array(1000)),
-                lifParams: { tau: 20, Vrest: -65, Vthresh: -50, Vreset: -70, dt: 1, R: 1, tRefrac: 2 },
-              }));
-            } catch {}
+            // GPU CLUSTERS: cortex + hippocampus (1.6M neurons)
+            // Send to GPU client, don't wait — compute in parallel with CPU
+            const gpuPromises = [];
+            const gpuClusters = this._gpuConnected ? ['cortex', 'hippocampus'] : [];
+
+            for (const gc of gpuClusters) {
+              const size = CLUSTER_SIZES[gc];
+              const batchSize = Math.min(size, 100000); // WebSocket batch limit
+              if (this._gpuClient?.readyState === 1) {
+                this._gpuClient.send(JSON.stringify({
+                  type: 'compute_request',
+                  clusterName: gc,
+                  size: batchSize,
+                  voltages: Array.from(this.voltages[gc].slice(0, batchSize)),
+                  currents: Array.from(new Float64Array(batchSize)),
+                  lifParams: { tau: 20, Vrest: -65, Vthresh: -50, Vreset: -70, dt: 1, R: 1, tRefrac: 2 },
+                }));
+                gpuPromises.push(new Promise(resolve => {
+                  const handler = (msg) => { resolve(msg); };
+                  this._gpuResolvers = this._gpuResolvers || [];
+                  this._gpuResolvers.push(handler);
+                  setTimeout(() => resolve(null), 200); // timeout
+                }));
+              }
+            }
+
+            // CPU CLUSTERS: everything GPU isn't handling
+            // Build a filtered set for the parallel brain
+            const cpuClusterNames = Object.keys(CLUSTER_SIZES).filter(n => !gpuClusters.includes(n));
+
+            // Run CPU workers for non-GPU clusters
+            const cpuResults = await Promise.race([
+              this._parallelBrain.step(), // steps ALL clusters on workers
+              new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 500)),
+            ]);
+
+            // Merge CPU worker results
+            this.totalSpikes = 0;
+            for (const [name, result] of Object.entries(cpuResults)) {
+              this.clusters[name].spikeCount = result.spikeCount;
+              this.clusters[name].firingRate = this.clusters[name].firingRate * 0.95 + result.spikeCount * 0.05;
+              this.clusters[name].spikes = new Uint8Array(result.spikes);
+              this.totalSpikes += result.spikeCount;
+            }
+
+            // Wait for GPU results (if any dispatched)
+            if (gpuPromises.length > 0) {
+              const gpuResults = await Promise.all(gpuPromises);
+              for (const gr of gpuResults) {
+                if (gr && gr.clusterName && gr.spikes) {
+                  const name = gr.clusterName;
+                  const spikeCount = gr.spikes.reduce((a, b) => a + b, 0);
+                  this.clusters[name].spikeCount = spikeCount;
+                  this.clusters[name].firingRate = this.clusters[name].firingRate * 0.95 + spikeCount * 0.05;
+                  this.totalSpikes += spikeCount;
+                }
+              }
+            }
+
+            this._updateDerivedState();
           }
-        }
         } catch (err) {
-          // Parallel failed — fall back to single thread this tick
+          // Parallel failed — fall back to single thread
           for (let i = 0; i < SUBSTEPS; i++) this.step();
         }
       } else {
-        // SINGLE-THREAD: original path
+        // SINGLE-THREAD
         for (let i = 0; i < SUBSTEPS; i++) this.step();
       }
 
@@ -1185,10 +1220,10 @@ wss.on('connection', (ws, req) => {
           break;
 
         case 'compute_result':
-          // GPU client sent back computed spikes
-          if (brain._gpuResolve) {
-            brain._gpuResolve(msg);
-            brain._gpuResolve = null;
+          // GPU client sent back computed spikes — dispatch to waiting resolver
+          if (brain._gpuResolvers && brain._gpuResolvers.length > 0) {
+            const resolver = brain._gpuResolvers.shift();
+            if (resolver) resolver(msg);
           }
           break;
 
