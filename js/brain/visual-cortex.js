@@ -270,9 +270,9 @@ export class VisualCortex {
 
     // Only auto-describe ONCE on boot (first look). After that, only on demand.
     if (this._hasDescribedOnce) {
-      // Rate limit: minimum 5 seconds between descriptions even when demanded
+      // Rate limit: minimum 15 seconds between descriptions
       const now = performance.now();
-      if (now - this._lastDescribeTime < 5000) return;
+      if (now - this._lastDescribeTime < 15000) return;
     }
 
     this._describing = true;

@@ -324,27 +324,19 @@ export class UnityBrain extends EventEmitter {
     this.memorySystem.updateWorkingMemory(cortexInput);
 
     // ── 11.5. VISUAL ATTENTION — brain decides when to LOOK ──
-    // The cortex prediction error on visual neurons determines if what
-    // the brain sees doesn't match expectations → triggers a fresh capture.
-    // High amygdala salience change also triggers a look (something changed).
-    // This replaces keyword matching in app.js — the EQUATIONS decide.
-    if (this.visualCortex.isActive()) {
-      const visualError = cortexError; // cortex prediction error
-      const salienceJump = sensoryOutput.salienceChange || 0;
-      const arousalSpike = amygdalaOut.arousal - (this._prevArousal || 0);
-      this._prevArousal = amygdalaOut.arousal;
+    // Only check once per FRAME (not every step — that's 10x per frame).
+    // And only when there's actual new sensory input (salience > 0).
+    if (this.visualCortex.isActive() && this.frameCount > 0 &&
+        this._lastVisCheckFrame !== this.frameCount) {
+      this._lastVisCheckFrame = this.frameCount;
 
-      // Vision capture triggers:
-      // 1. High cortex prediction error on text input (something surprising was said)
-      // 2. Salience jump (sensory change — user moved, said something important)
-      // 3. Arousal spike (emotional state shifted — amygdala says "pay attention")
-      // 4. First frame (boot — see who's there)
-      const shouldLook = !this.visualCortex._hasDescribedOnce
-        || (visualError > 0.5 && sensoryOutput.salience > 0.3)
-        || salienceJump > 0.4
-        || arousalSpike > 0.15;
-
-      if (shouldLook) {
+      // First frame — look once to see who's there
+      if (!this.visualCortex._hasDescribedOnce) {
+        this.visualCortex.forceDescribe();
+      }
+      // Only trigger new looks when there's ACTUAL new text input
+      // (salience > 0.4 means text was just received, not just noise)
+      else if (sensoryOutput.salience > 0.4 && cortexError > 0.6) {
         this.visualCortex.forceDescribe();
       }
     }
