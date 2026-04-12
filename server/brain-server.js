@@ -25,6 +25,7 @@ const Database = require('better-sqlite3');
 
 const os = require('os');
 const { execSync } = require('child_process');
+const { performance } = require('perf_hooks');
 
 // ── Auto-Scale: Detect Hardware → Set Neuron Count ─────────────
 
@@ -193,6 +194,21 @@ class ServerBrain {
     this._historyMaxLen = 3600; // ~1 hour at 1 sample/sec
     this._lastHistorySample = 0;
 
+    // Performance monitoring — live stats for dashboard
+    this._perfStats = {
+      stepTimeMs: 0,
+      stepsPerSec: 0,
+      cpuPercent: 0,
+      memUsedMB: 0,
+      memTotalMB: Math.round(os.totalmem() / 1048576),
+      gpuName: RESOURCES.gpu.name,
+      gpuVramMB: RESOURCES.gpu.vram,
+      gpuUtilPercent: 0,
+      lastUpdate: 0,
+    };
+    this._stepTimeSamples = [];
+    this._lastCpuUsage = process.cpuUsage();
+
     // Episodic memory — SQLite for persistent storage across sessions
     this._initEpisodicDB();
 
@@ -307,6 +323,8 @@ class ServerBrain {
       scale: SCALE + 'x',
       // Shared emotion — everyone sees Unity's mood
       sharedMood: this._getSharedMood(),
+      // Live performance stats
+      perf: this._perfStats,
       // Brain growth metrics
       growth: {
         totalWords: Object.keys(this._wordFreq || {}).length,
@@ -349,7 +367,13 @@ class ServerBrain {
     this._isDreaming = false;
 
     this._tickInterval = setInterval(() => {
+      const stepStart = performance.now ? performance.now() : Date.now();
       for (let i = 0; i < 10; i++) this.step();
+      const stepEnd = performance.now ? performance.now() : Date.now();
+
+      // Track step timing
+      this._stepTimeSamples.push(stepEnd - stepStart);
+      if (this._stepTimeSamples.length > 60) this._stepTimeSamples.shift();
 
       // Dreaming mode — no interaction for 30+ seconds
       const timeSinceInput = Date.now() - this._lastInputTime;
@@ -376,6 +400,9 @@ class ServerBrain {
         if (this._emotionHistory.length > this._historyMaxLen) {
           this._emotionHistory.shift();
         }
+
+        // Update performance stats
+        this._updatePerfStats();
       }
     }, BRAIN_TICK_MS);
     console.log('[Brain] Started — thinking continuously');
@@ -487,6 +514,44 @@ When asked to generate an image, respond with ONLY the image description/prompt 
     // AI failed — try brain's own dictionary
     // TODO: implement server-side dictionary
     return { text: '...', action: 'respond_text' };
+  }
+
+  _updatePerfStats() {
+    const mem = process.memoryUsage();
+    const cpuNow = process.cpuUsage();
+    const elapsed = (cpuNow.user - this._lastCpuUsage.user + cpuNow.system - this._lastCpuUsage.system) / 1000; // ms
+    this._lastCpuUsage = cpuNow;
+
+    // Average step time over last 60 samples
+    const avgStep = this._stepTimeSamples.length > 0
+      ? this._stepTimeSamples.reduce((a, b) => a + b, 0) / this._stepTimeSamples.length
+      : 0;
+
+    // GPU utilization (poll nvidia-smi periodically)
+    let gpuUtil = 0;
+    if (RESOURCES.gpu.vram > 0 && (!this._lastGpuPoll || Date.now() - this._lastGpuPoll > 5000)) {
+      try {
+        const smi = execSync('nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits', { timeout: 2000 }).toString().trim();
+        gpuUtil = parseInt(smi) || 0;
+        this._lastGpuPoll = Date.now();
+        this._cachedGpuUtil = gpuUtil;
+      } catch { gpuUtil = this._cachedGpuUtil || 0; }
+    } else {
+      gpuUtil = this._cachedGpuUtil || 0;
+    }
+
+    this._perfStats = {
+      stepTimeMs: +avgStep.toFixed(3),
+      stepsPerSec: avgStep > 0 ? Math.round(1000 / avgStep * 10) : 0, // ×10 substeps
+      cpuPercent: Math.min(100, Math.round(elapsed / 10)), // ~1s sample
+      memUsedMB: Math.round(mem.heapUsed / 1048576),
+      memTotalMB: Math.round(os.totalmem() / 1048576),
+      memRssMB: Math.round(mem.rss / 1048576),
+      gpuName: RESOURCES.gpu.name,
+      gpuVramMB: RESOURCES.gpu.vram,
+      gpuUtilPercent: gpuUtil,
+      nodeHeapMB: Math.round(mem.heapTotal / 1048576),
+    };
   }
 
   _getSharedMood() {

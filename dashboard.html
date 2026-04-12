@@ -88,6 +88,11 @@
     </div>
 
     <div class="card" style="margin-top:12px;">
+      <div class="card-title">Hardware Performance</div>
+      <div id="d-perf" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;"></div>
+    </div>
+
+    <div class="card" style="margin-top:12px;">
       <div class="card-title">Emotional History</div>
       <canvas id="d-emotion-chart" width="800" height="200" style="width:100%;height:200px;background:#0a0a0a;border-radius:4px;"></canvas>
       <div style="display:flex;gap:16px;margin-top:6px;font-size:10px;color:#555;">
@@ -200,6 +205,35 @@
         if (m.fear > 0.1) desc.push(`f=${m.fear.toFixed(2)}`);
         if (m.isDreaming) desc.push('dreaming');
         $('d-emotion-desc').textContent = desc.join(' | ');
+      }
+
+      // Hardware performance
+      if (s.perf) {
+        const p = s.perf;
+        const cpuColor = p.cpuPercent > 80 ? '#ef4444' : p.cpuPercent > 50 ? '#f59e0b' : '#22c55e';
+        const gpuColor = p.gpuUtilPercent > 80 ? '#ef4444' : p.gpuUtilPercent > 50 ? '#f59e0b' : '#22c55e';
+        $('d-perf').innerHTML = `
+          <div>
+            <div style="font-size:10px;color:#555;">CPU</div>
+            <div style="font-size:18px;font-weight:700;color:${cpuColor};">${p.cpuPercent}%</div>
+            <div class="bar-wrap"><div class="bar" style="width:${p.cpuPercent}%;background:${cpuColor};height:100%;border-radius:2px;"></div></div>
+          </div>
+          <div>
+            <div style="font-size:10px;color:#555;">RAM</div>
+            <div style="font-size:18px;font-weight:700;color:#a855f7;">${p.memUsedMB}MB</div>
+            <div style="font-size:9px;color:#444;">heap ${p.nodeHeapMB ?? 0}MB / RSS ${p.memRssMB ?? 0}MB</div>
+          </div>
+          <div>
+            <div style="font-size:10px;color:#555;">GPU</div>
+            <div style="font-size:18px;font-weight:700;color:${gpuColor};">${p.gpuUtilPercent}%</div>
+            <div style="font-size:9px;color:#444;">${p.gpuName || 'none'} (${p.gpuVramMB || 0}MB)</div>
+          </div>
+          <div>
+            <div style="font-size:10px;color:#555;">STEP TIME</div>
+            <div style="font-size:18px;font-weight:700;color:#00e5ff;">${p.stepTimeMs}ms</div>
+            <div style="font-size:9px;color:#444;">${p.stepsPerSec?.toLocaleString() ?? 0} steps/sec</div>
+          </div>
+        `;
       }
 
       // Brain growth
