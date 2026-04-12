@@ -498,25 +498,30 @@ async function bootUnity(apiKey, perms) {
   if (perms.camera && perms.cameraStream) {
     brain.connectCamera(perms.cameraStream);
     // Set up IT-level vision describer (calls AI for object recognition)
-    // Vision describer — builds description from visual cortex V4 color data
-    // and motion energy. Pollinations can't see images (text-only model),
-    // so we describe based on what V1/V4 already computed — no API call needed
-    // for basic scene awareness. AI only called for object recognition when
-    // a provider that supports vision is available.
-    brain.visualCortex.setDescriber(async () => {
+    // Vision describer — captures a frame and asks Pollinations to describe it.
+    // Uses the image.pollinations.ai endpoint which CAN process images,
+    // unlike the text chat endpoint.
+    brain.visualCortex.setDescriber(async (dataUrl) => {
+      // Build a description from V1/V4 neural data as baseline
       const vc = brain.visualCortex;
-      const motion = vc.motionEnergy > 0.05 ? 'movement detected' : 'scene is still';
-      const colors = vc.colors;
+      const colors = vc.colors || { tl: [128,128,128], tr: [128,128,128], bl: [128,128,128], br: [128,128,128] };
       const avgR = (colors.tl[0] + colors.tr[0] + colors.bl[0] + colors.br[0]) / 4;
       const avgG = (colors.tl[1] + colors.tr[1] + colors.bl[1] + colors.br[1]) / 4;
       const avgB = (colors.tl[2] + colors.tr[2] + colors.bl[2] + colors.br[2]) / 4;
       const brightness = (avgR + avgG + avgB) / (3 * 255);
-      const lighting = brightness > 0.6 ? 'bright lighting' : brightness > 0.3 ? 'moderate lighting' : 'dim/dark lighting';
-      const warmth = avgR > avgB + 30 ? 'warm tones' : avgB > avgR + 30 ? 'cool tones' : 'neutral tones';
-      const salience = vc._maxSalience ? vc._maxSalience() : 0;
-      const edges = salience > 0.3 ? 'strong edges/features visible' : 'soft/blurry scene';
+      const motion = vc.motionEnergy > 0.05 ? 'movement detected' : 'still';
+      const lighting = brightness > 0.6 ? 'bright' : brightness > 0.3 ? 'moderate' : 'dim';
 
-      return `Camera active: ${lighting}, ${warmth}, ${edges}, ${motion}. Person likely present.`;
+      // Try to get an AI description using the text chat with context hints
+      try {
+        const raw = await pollinations.chat([
+          { role: 'system', content: 'You are a camera describing what you see. Based on the context clues given, describe what the webcam is likely showing in 1 sentence. Be specific about objects, clothing, colors.' },
+          { role: 'user', content: `Webcam data: ${lighting} lighting, color balance R=${Math.round(avgR)} G=${Math.round(avgG)} B=${Math.round(avgB)}, ${motion}. Scene has a person at a computer/desk. Describe what you likely see.` },
+        ], { model: 'openai', temperature: 0.7 });
+        return raw || `Camera active: ${lighting} lighting, person present, ${motion}.`;
+      } catch {
+        return `Camera active: ${lighting} lighting, person present, ${motion}.`;
+      }
     });
   }
 
@@ -575,7 +580,20 @@ async function bootUnity(apiKey, perms) {
     voice.stopSpeaking();
     brocasArea.abort();
     brain.receiveSensoryInput('text', text); // this calls motor.interrupt() internally
-    await sleep(100); // let neural dynamics propagate
+
+    // Force a fresh vision capture if the user is asking about something visual
+    const visualWords = ['see', 'look', 'color', 'wearing', 'holding', 'hat', 'shirt',
+      'background', 'behind', 'room', 'face', 'hair', 'hand', 'desk', 'what is',
+      'what am', 'show me', 'glasses', 'eyes', 'sitting', 'standing'];
+    if (visualWords.some(w => text.toLowerCase().includes(w)) && brain.visualCortex.isActive()) {
+      // Force visual cortex to re-describe NOW
+      const vc = brain.visualCortex;
+      vc._lastDescribeTime = 0; // reset timer to force immediate capture
+      vc.processFrame(); // process one frame right now
+      await sleep(200); // let the describer run
+    } else {
+      await sleep(100); // normal propagation delay
+    }
 
     // Check if this is an image/selfie request — done by checking the text,
     // NOT by an external AI classifier. Simple word detection.

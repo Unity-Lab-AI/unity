@@ -151,9 +151,18 @@ Emotional state:
 ${this._clusterSummary(clusters)}`;
 
     // Vision context
-    const visionBlock = brainState.visionDescription
-      ? `\nVISION: You can see through your webcam. Right now you see: "${brainState.visionDescription}"\nReference what you see naturally when relevant.\n`
-      : '\nVISION: Camera not active.\n';
+    // Vision context — what the visual cortex has processed
+    let visionBlock;
+    if (brainState.visionDescription) {
+      visionBlock = `\nVISION: Your camera IS on. Your visual cortex is processing: "${brainState.visionDescription}"
+You CAN see the user through the webcam. Reference what you see when relevant.
+If the user asks what you see — describe based on the visual data above.
+If the data is limited (just lighting/colors), say what you CAN see and be honest about the rest.\n`;
+    } else if (brainState.visualCortex?.motionEnergy !== undefined) {
+      visionBlock = `\nVISION: Camera is on but visual processing is starting up. You can sense ${brainState.visualCortex.motionEnergy > 0.05 ? 'movement' : 'stillness'} but details are blurry.\n`;
+    } else {
+      visionBlock = '\nVISION: Camera not active — you cannot see the user.\n';
+    }
 
     // Sensory awareness
     const sensoryBlock = `
