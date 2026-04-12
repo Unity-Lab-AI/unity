@@ -30,16 +30,17 @@ const AUTO_ROT_SPEED = 0.0015;
 
 // ── Cluster definitions ─────────────────────────────────────────────
 
-// Biologically proportioned — cerebellum LARGEST. MUST sum to exactly 1000.
+// ORIGINAL ORDER preserved (changing order breaks indexing chain)
+// Sizes biologically proportioned — cerebellum LARGEST
+// Total MUST = 1000: 200+100+80+80+380+50+110 = 1000
 const CLUSTERS = [
-  { key: 'cerebellum',   label: 'CEREBELLUM',    n: 380, rgb: [0.0, 0.898, 1.0],     hex: '#00e5ff' },
-  { key: 'cortex',       label: 'CORTEX',        n: 250, rgb: [1.0, 0.302, 0.604],  hex: '#ff4d9a' },
+  { key: 'cortex',       label: 'CORTEX',        n: 200, rgb: [1.0, 0.302, 0.604],  hex: '#ff4d9a' },
   { key: 'hippocampus',  label: 'HIPPOCAMPUS',   n: 100, rgb: [0.659, 0.333, 0.969], hex: '#a855f7' },
   { key: 'amygdala',     label: 'AMYGDALA',       n: 80,  rgb: [0.937, 0.267, 0.267], hex: '#ef4444' },
   { key: 'basalGanglia', label: 'BASAL GANGLIA', n: 80,  rgb: [0.133, 0.773, 0.369], hex: '#22c55e' },
+  { key: 'cerebellum',   label: 'CEREBELLUM',    n: 380, rgb: [0.0, 0.898, 1.0],     hex: '#00e5ff' },
   { key: 'hypothalamus', label: 'HYPOTHALAMUS',  n: 50,  rgb: [0.961, 0.620, 0.043], hex: '#f59e0b' },
-  { key: 'mystery',      label: 'MYSTERY Ψ',     n: 60,  rgb: [0.753, 0.518, 0.988], hex: '#c084fc' },
-  // Total: 380+250+100+80+80+50+60 = 1000
+  { key: 'mystery',      label: 'MYSTERY Ψ',     n: 110, rgb: [0.753, 0.518, 0.988], hex: '#c084fc' },
 ];
 
 // ── Inline shaders ──────────────────────────────────────────────────
@@ -271,20 +272,21 @@ function genBasalGanglia(n) {
 }
 
 function genCerebellum(n) {
-  // LARGEST cluster — bilateral, below and behind the cortex
-  // Wraps around the bottom like a cauliflower
+  // LARGEST cluster — back-bottom, bilateral folia
+  // Based on original working code + bilateral split
   const pts = [];
   const half = Math.floor(n / 2);
   for (let i = 0; i < n; i++) {
     const side = i < half ? -1 : 1;
-    const layer = Math.floor(Math.random() * 4);
-    const r = 0.4 + layer * 0.08 + Math.random() * 0.1;
-    const theta = Math.random() * Math.PI * 2;
-    const phi = Math.acos(2 * Math.random() - 1);
+    const layer = Math.floor(Math.random() * 3);
+    const r = 0.45 + layer * 0.07;
+    const theta = (Math.random() - 0.5) * Math.PI * 0.7;
+    const phi = Math.PI + (Math.random() - 0.5) * Math.PI * 0.55;
+    const baseX = r * Math.sin(theta) * Math.cos(phi) * 0.75;
     pts.push([
-      side * (r * Math.sin(phi) * Math.cos(theta) * 0.4 + 0.3),
-      -0.7 + layer * 0.05 + gauss() * 0.06 - r * 0.2,
-      -0.3 + r * Math.sin(phi) * Math.sin(theta) * 0.3,
+      side * (Math.abs(baseX) * 0.5 + 0.15),
+      -0.85 + layer * 0.05 + gauss() * 0.04,
+      -0.75 + r * Math.sin(theta) * Math.sin(phi) * 0.25,
     ]);
   }
   return pts;
@@ -335,8 +337,8 @@ function genMystery(n) {
   return pts;
 }
 
-// Order matches CLUSTERS array: cerebellum, cortex, hippocampus, amygdala, basalGanglia, hypothalamus, mystery
-const POS_GEN = [genCerebellum, genCortex, genHippocampus, genAmygdala, genBasalGanglia, genHypothalamus, genMystery];
+// Order matches CLUSTERS array
+const POS_GEN = [genCortex, genHippocampus, genAmygdala, genBasalGanglia, genCerebellum, genHypothalamus, genMystery];
 
 // ── Brain3D class ───────────────────────────────────────────────────
 
