@@ -271,20 +271,20 @@ function genBasalGanglia(n) {
 }
 
 function genCerebellum(n) {
-  // LARGEST cluster — bilateral with vermis (center bridge)
-  // Two hemispheres at back-bottom, wider than before
+  // LARGEST cluster — bilateral, below and behind the cortex
+  // Wraps around the bottom like a cauliflower
   const pts = [];
   const half = Math.floor(n / 2);
   for (let i = 0; i < n; i++) {
     const side = i < half ? -1 : 1;
     const layer = Math.floor(Math.random() * 4);
-    const r = 0.55 + layer * 0.06;
-    const theta = (Math.random() - 0.5) * Math.PI * 0.8;
-    const phi = Math.PI + (Math.random() - 0.5) * Math.PI * 0.6;
+    const r = 0.4 + layer * 0.08 + Math.random() * 0.1;
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
     pts.push([
-      side * (Math.abs(r * Math.sin(theta) * Math.cos(phi)) * 0.5 + 0.1),
-      -0.85 + layer * 0.04 + gauss() * 0.04,
-      -0.75 + r * Math.sin(theta) * Math.sin(phi) * 0.3,
+      side * (r * Math.sin(phi) * Math.cos(theta) * 0.4 + 0.3),
+      -0.7 + layer * 0.05 + gauss() * 0.06 - r * 0.2,
+      -0.3 + r * Math.sin(phi) * Math.sin(theta) * 0.3,
     ]);
   }
   return pts;
