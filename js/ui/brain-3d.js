@@ -412,16 +412,20 @@ export class Brain3D {
       if (state.clusters) {
         const serverClusters = state.clusters;
         const serverTotal = Object.values(serverClusters).reduce((s, c) => s + (c.size || 0), 0) || 1;
+        console.log(`[Brain3D] Server clusters:`, Object.entries(serverClusters).map(([k,v]) => `${k}=${v.size}`).join(', '));
+        console.log(`[Brain3D] Server total: ${serverTotal}, TOTAL render: ${TOTAL}`);
         // Map each CLUSTERS entry to its proportional share of TOTAL
         for (const cl of CLUSTERS) {
           const serverCluster = serverClusters[cl.key];
           if (serverCluster && serverCluster.size) {
             cl.n = Math.max(10, Math.round((serverCluster.size / serverTotal) * TOTAL));
           }
+          console.log(`[Brain3D] ${cl.key}: server=${serverCluster?.size || 'MISSING'} → render=${cl.n}`);
         }
         // Adjust to exactly TOTAL
         const renderSum = CLUSTERS.reduce((s, c) => s + c.n, 0);
         if (renderSum !== TOTAL) CLUSTERS[0].n += (TOTAL - renderSum);
+        console.log(`[Brain3D] Final render neurons:`, CLUSTERS.map(c => `${c.key}=${c.n}`).join(', '));
       } else {
         // No cluster data — scale from base proportions
         const clusterScale = TOTAL / 1000;
