@@ -919,7 +919,7 @@ async function bootUnity(apiKey, perms) {
 Valence: ${(state.amygdala?.valence ?? 0).toFixed(3)}
 Ψ Consciousness: ${(state.psi ?? 0).toFixed(4)}
 Coherence: ${((state.oscillations?.coherence ?? 0) * 100).toFixed(1)}%
-Spikes: ${state.spikeCount ?? 0}/1000
+Spikes: ${(state.spikeCount ?? 0).toLocaleString()}/${(state.totalNeurons ?? 1000).toLocaleString()}
 Drug State: ${state.drugState}
 Motor: ${state.motor?.selectedAction ?? 'idle'} (${((state.motor?.confidence ?? 0) * 100).toFixed(1)}%)
 Reward: ${(state.reward ?? 0).toFixed(3)}
@@ -1303,7 +1303,9 @@ function updateBrainIndicator(state) {
   const valenceVal = $('hud-valence'); if (valenceVal) valenceVal.textContent = valence.toFixed(2);
   const cohBar = $('hud-coherence-bar'); if (cohBar) cohBar.style.width = `${(coherence * 100).toFixed(0)}%`;
   const cohVal = $('hud-coherence'); if (cohVal) cohVal.textContent = `${(coherence * 100).toFixed(0)}%`;
-  const spikesEl = $('hud-spikes'); if (spikesEl) spikesEl.textContent = s.spikeCount ?? s.totalSpikes ?? l.spikeCount ?? l.totalSpikes ?? 0;
+  const totalNeurons = s.totalNeurons ?? l.totalNeurons ?? 1000;
+  const spikesEl = $('hud-spikes'); if (spikesEl) spikesEl.textContent = (s.spikeCount ?? s.totalSpikes ?? l.spikeCount ?? l.totalSpikes ?? 0).toLocaleString();
+  const totalEl = $('hud-total-neurons'); if (totalEl) totalEl.textContent = '/' + totalNeurons.toLocaleString();
   const rewardEl = $('hud-reward'); if (rewardEl) rewardEl.textContent = (s.reward ?? l.reward ?? 0).toFixed(2);
   const timeEl = $('hud-time'); if (timeEl) timeEl.textContent = `${(s.time ?? l.time ?? 0).toFixed(1)}s`;
   const gammaEl = $('hud-gamma'); if (gammaEl) gammaEl.textContent = (bandPower.gamma ?? 0).toFixed(1);

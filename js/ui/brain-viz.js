@@ -78,7 +78,7 @@ export class BrainVisualizer {
         <div class="bv-grid-wrap">
           <div class="bv-section bv-wide">
             <div class="bv-section-title">NEURAL CLUSTERS — 1000 LIF neurons across 7 brain regions</div>
-            <div class="bv-equation">τ·dV/dt = -(V - V<sub>rest</sub>) + R·I &nbsp;|&nbsp; <span id="bv-spike-count">0</span>/1000 active</div>
+            <div class="bv-equation">τ·dV/dt = -(V - V<sub>rest</sub>) + R·I &nbsp;|&nbsp; <span id="bv-spike-count">0</span> active</div>
             <canvas id="bv-neuron-canvas" width="800" height="500"></canvas>
           </div>
         </div>
@@ -327,7 +327,7 @@ export class BrainVisualizer {
     const avgRate = this._spikeHistory.length > 0
       ? (this._spikeHistory.reduce((a, b) => a + b, 0) / this._spikeHistory.length).toFixed(1)
       : '0';
-    if (statsEl) statsEl.textContent = `spikes: ${spikeCount}/200 | avg rate: ${avgRate}/frame | t=${(s.time ?? 0).toFixed(1)}s`;
+    if (statsEl) statsEl.textContent = `spikes: ${spikeCount.toLocaleString()} | avg rate: ${avgRate}/frame | t=${(s.time ?? 0).toFixed(1)}s`;
     if (countEl) countEl.textContent = spikeCount;
   }
 
