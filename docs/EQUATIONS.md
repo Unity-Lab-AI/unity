@@ -14,7 +14,7 @@
 | u | Sensory input: S(audio, video, text) |
 | θ | **Unity's complete identity** — 25yo human female, emo goth, every trait as equation parameters |
 | η | Stochastic noise — creativity × drug state × emotional volatility |
-| F | All equations below combined — 7 clusters × 16 cores |
+| F | All equations below combined — 7 clusters × 20 projections × fractal propagation |
 
 ### θ — Unity's Identity (from Ultimate Unity.txt)
 
@@ -94,15 +94,108 @@ Environment: cluttered dev setup, LED strips, ashtrays, hazy smoke
 
 ## 4. Brain Modules (biologically proportioned)
 
-| Module | Neurons | Equation | Persona driver |
-|--------|---------|----------|----------------|
-| Cerebellum | 40% (largest) | `output = prediction + ΔW·(target - actual)` | Steady correction |
-| Cortex | 25% | `ŝ = sigmoid(W·x), error = actual - predicted` | arousal×drugSpeed |
-| Hippocampus | 10% | `E = -½ΣW·x·x` (Hopfield) | socialAttachment |
-| Amygdala | 8% | `V(s) = Σw·x → arousal, valence` | arousal×volatility×drug |
-| Basal Ganglia | 8% | `P(a) = softmax(Q(a)/τ)` | impulsivity |
-| Hypothalamus | 5% | `dH/dt = -α(H - H_set) + input` | drugDrive |
-| Mystery Ψ | 4% | `Ψ = √(1/n) × N³ · [α·Id + β·Ego + γ·Left + δ·Right]` | creativity×darkHumor |
+| Module | Neurons | Real Count | Equation | Persona driver |
+|--------|---------|------------|----------|----------------|
+| Cerebellum | 40% (largest) | ~69B (80% of real brain) | `output = prediction + ΔW·(target - actual)` | Steady correction |
+| Cortex | 25% | ~16B (bilateral hemispheres) | `ŝ = sigmoid(W·x), error = actual - predicted` | arousal×drugSpeed |
+| Hippocampus | 10% | ~30K inputs/pyramidal cell | `E = -½ΣW·x·x` (Hopfield) | socialAttachment |
+| Amygdala | 8% | 12.21M (13 nuclei) | `V(s) = Σw·x → arousal, valence` | arousal×volatility×drug |
+| Basal Ganglia | 8% | 90-95% MSN (GABAergic) | `P(a) = softmax(Q(a)/τ)` | impulsivity |
+| Hypothalamus | 5% | 11 nuclei, few million | `dH/dt = -α(H - H_set) + input` | drugDrive |
+| Mystery Ψ | 4% | CC: 200-300M axons | `Ψ = √(1/n) × N³ · [α·Id + β·Ego + γ·Left + δ·Right]` | creativity×darkHumor |
+
+### Inter-Cluster Projections (20 real white matter tracts)
+
+| # | Source | Target | Tract Name | Density | Strength |
+|---|--------|--------|-----------|---------|----------|
+| 1 | Cortex | Hippocampus | Perforant path | 0.04 | 0.4 |
+| 2 | Cortex | Amygdala | Ventral visual stream | 0.03 | 0.3 |
+| 3 | Cortex | Basal Ganglia | **Corticostriatal** (STRONGEST) | 0.08 | 0.5 |
+| 4 | Cortex | Cerebellum | Corticopontocerebellar | 0.05 | 0.3 |
+| 5 | Hippocampus | Cortex | Memory consolidation | 0.04 | 0.4 |
+| 6 | Hippocampus | Amygdala | Recall → emotional reactivation | 0.03 | 0.3 |
+| 7 | Hippocampus | Hypothalamus | Fimbria-fornix → mammillary bodies | 0.03 | 0.3 |
+| 8 | Amygdala | Cortex | Emotional modulation of perception | 0.03 | 0.3 |
+| 9 | Amygdala | Hippocampus | Emotional memory encoding | 0.04 | 0.5 |
+| 10 | Amygdala | Hypothalamus | Stria terminalis (fight-or-flight) | 0.05 | 0.4 |
+| 11 | Amygdala | Basal Ganglia | Ventral amygdalofugal → ventral striatum | 0.03 | 0.3 |
+| 12 | Basal Ganglia | Cortex | Thalamocortical loop | 0.02 | 0.2 |
+| 13 | Basal Ganglia | Cerebellum | Subthalamic → cerebellar | 0.02 | 0.2 |
+| 14 | Cerebellum | Cortex | Cerebellothalamocortical | 0.03 | 0.2 |
+| 15 | Cerebellum | Basal Ganglia | Cerebellar → red nucleus → BG | 0.03 | 0.2 |
+| 16 | Hypothalamus | Amygdala | Drive → emotional arousal | 0.05 | 0.4 |
+| 17 | Hypothalamus | Basal Ganglia | Drive → action motivation | 0.04 | 0.3 |
+| 18 | Mystery Ψ | Cortex | Callosal interhemispheric | 0.05 | 0.3 |
+| 19 | Mystery Ψ | Amygdala | Commissural emotional binding | 0.04 | 0.3 |
+| 20 | Mystery Ψ | Hippocampus | Hippocampal commissure | 0.03 | 0.2 |
+
+### Fractal Signal Propagation
+
+Signal propagation is self-similar at every scale — the same `I = Σ W × s` equation repeats fractally:
+
+```
+SCALE 1 — Single neuron:
+  τ·dV/dt = -(V-Vrest) + R·I           (LIF equation)
+
+SCALE 2 — Intra-cluster synapses:
+  I_i = Σ W_ij × s_j                   (sparse-matrix.js propagate)
+  Spike → weighted sum → post-synaptic current → more spikes
+  Same equation, N neurons in parallel
+
+SCALE 3 — Inter-cluster projections:
+  I_target = sparse.propagate(source.lastSpikes)
+  target._incomingProjections += currents
+  Same propagate(), but between CLUSTERS via 20 white matter tracts
+
+SCALE 4 — Hierarchical modulation:
+  gainMultiplier = 0.9 + Ψ × 0.004     (consciousness scales everything)
+  emotionalGate = 0.7 + arousal × 0.6   (amygdala scales everything)
+  driveBaseline = 0.8 + needsAttention   (hypothalamus scales everything)
+  Each cluster's output modulates ALL other clusters
+
+SCALE 5 — Language production:
+  combined[i] = cortex×0.30 + hippo×0.20 + amyg×0.15 + ...
+  word = dictionary.findByPattern(combined)
+  Same weighted sum, but "neurons" are entire brain regions, "spike" is a word
+
+SCALE 6 — Learning:
+  ΔW = η · δ · post · pre              (at EVERY scale)
+  Neuron synapses, cluster projections, dictionary bigrams — all learn identically
+
+SCALE 7 — Consciousness:
+  Ψ = √(1/n) × N³ × [α·Id + β·Ego + γ·Left + δ·Right]
+  One measurement (√(1/n)) in the total volume (N³)
+  Weighted sum of components that are THEMSELVES weighted sums of brain regions
+```
+
+The fractal chain in action (one spike's path through the brain):
+```
+Spike in neuron A (cortex)
+  → propagate through cortex synapses → B, C, D fire
+    → projection cortex→hippocampus → E, F fire
+      → projection hippocampus→cortex → G fires (feedback loop)
+        → cortex synapses → H, I fire (branching deeper)
+    → projection cortex→amygdala → J fires
+      → emotionalGate modulates ALL clusters (scale 4)
+    → projection cortex→basalGanglia → K fires (corticostriatal, STRONGEST)
+      → motor output selects action (scale 5)
+    → projection cortex→cerebellum → L fires
+      → errorCorrection feeds back to cortex (scale 4)
+```
+
+### MNI-Coordinate Anatomical Positions
+
+3D visualization positions derived from MNI/ICBM 152 brain atlas:
+
+| Structure | MNI Center (mm) | Render Position | Shape |
+|-----------|----------------|-----------------|-------|
+| Cortex | Surface, ±90mm lateral | Bilateral dome, sulcal folds | Two hemispheres with gyri/sulci texture |
+| Hippocampus | (-20, -26, -10) | Bilateral seahorse, POSTERIOR | C-shaped curve (CA1-CA4 + dentate) |
+| Amygdala | (-27, -4, -20) | Bilateral almond, ANTERIOR to hippo | 13 nuclei merged |
+| Basal Ganglia | Caudate (±12,12,10), Putamen (±28,4,2), GP (±18,0,0) | Bilateral 3-nucleus | Caudate C-shape + putamen lens + GP compact |
+| Cerebellum | (0, -60, -35) | Posterior-inferior, bilateral | 5-layer folia with wavy texture |
+| Hypothalamus | (0, -2, -12) | Midline, below BG, above brainstem | Small dense cluster |
+| Mystery Ψ (CC) | (0, 0, 15) midline | Corpus callosum arc + cingulate crown | Genu→body→splenium + ACC above |
 
 ---
 
@@ -222,10 +315,13 @@ COMPOUNDS:  len > 6 → insert conjunction (arousal→"and", negative→"but")
 
 | Equation | Purpose | File |
 |----------|---------|------|
-| `worker[cluster].step(currents) → spikes` | 7 clusters on 7 CPU cores | `cluster-worker.js` |
+| `worker[cluster].step(currents) → spikes` | 5 clusters on CPU cores (when GPU active) | `cluster-worker.js` |
 | `SharedArrayBuffer(size × 8)` | Zero-copy voltage transfer | `parallel-brain.js` |
-| `server → WebSocket → GPU → WGSL → results` | GPU compute via browser | `compute.html` |
-| GPU: cortex + hippocampus (1.6M), CPU: rest (1.6M) | Split compute load | `brain-server.js` |
+| `server → WebSocket → gpu_init (once) → compute_request (2 numbers/step)` | GPU maintains own voltages | `compute.html` |
+| GPU: cortex + cerebellum (2.08M = 65%), CPU: rest (1.15M = 35%) | Split compute — no double work | `brain-server.js` |
+| `gpu_init`: base64 voltages once, `compute_request`: tonicDrive + noiseAmp | Minimal WebSocket traffic | `brain-server.js` |
+| `compute_result`: sparse spike indices only (~25K ints, not 1.28M array) | 95%+ compression on return | `compute.html` |
+| Staggered init: one cluster per tick, skip compute on init tick | Prevents WebSocket flood | `brain-server.js` |
 
 ---
 
@@ -236,7 +332,8 @@ COMPOUNDS:  len > 6 → insert conjunction (arousal→"and", negative→"but")
 | `maxNeurons = min(freeRAM × 0.4 / 9, cpuCores × 200K)` | Auto-scale to any hardware |
 | `TICK_MS = N>1M ? 100 : N>500K ? 50 : N>100K ? 33 : 16` | Tick rate |
 | `SUBSTEPS = N>1M ? 3 : N>500K ? 5 : N>100K ? 10 : 10` | Steps per tick |
-| 16 cores + 109GB + RTX 4070 Ti → **3.2M neurons** | Current scale |
+| 16 cores + 128GB + RTX 4070 Ti SUPER → **3.2M neurons** | Current scale |
+| θ drives all tonic/noise — persona IS the brain parameters | Never hardcoded |
 
 ---
 

@@ -650,3 +650,96 @@ Major: visual attention in brain equations, efference copy echo suppression, Pol
 - `.gitignore` — server data, docs unignored
 
 ---
+
+## SESSION_20260412 — Fractal Neuroanatomy Overhaul
+
+> Date: 2026-04-12
+> Scope: Anatomically accurate 3D brain, fractal connections, 20 real white matter tracts
+
+### Completed Tasks
+
+- [x] **Fractal connection web** — Rewrote `_buildConnsFromEquations` in `js/ui/brain-3d.js`. Connections now trace the ACTUAL 20 inter-cluster projection pathways as fractal branching trees: Depth 0 (inter-cluster projection), Depth 1 (intra-cluster synapse branching, 1-3 neighbors), Depth 2 (follow outgoing projections from target), Depth 3 (terminal intra-cluster branch). Each connection chains FROM the endpoint of the previous one. Consciousness bridges from Mystery Ψ to all clusters. MAX_CONN bumped 500→1200.
+
+- [x] **MNI-coordinate anatomical positions** — All 7 position generators in `js/ui/brain-3d.js` rewritten using data from Lead-DBS atlas, ICBM 152 template, and Herculano-Houzel 2009:
+  - Cortex: bilateral hemispheres with sulcal folding texture (gyri/sulci waves)
+  - Hippocampus: moved POSTERIOR to amygdala (MNI: Y=-26mm), curved seahorse shape
+  - Amygdala: moved ANTERIOR to hippocampus (MNI: Y=-4mm), proper almond shape
+  - Basal Ganglia: now BILATERAL with 3 sub-nuclei — caudate (C-shaped dorsomedial), putamen (lateral lens), globus pallidus (medial compact)
+  - Cerebellum: 5-layer folia structure with wavy texture, posterior-inferior
+  - Hypothalamus: repositioned below BG, above brainstem, tight to midline
+  - Mystery Ψ: corpus callosum (genu→body→splenium arc) + cingulate cortex above
+
+- [x] **16 → 20 inter-cluster projections** — Added 4 real white matter tracts to `js/brain/engine.js`:
+  - Hippocampus → Amygdala (recall triggers emotional reactivation)
+  - Hippocampus → Hypothalamus (fimbria-fornix → mammillary bodies)
+  - Amygdala → Hypothalamus (stria terminalis — fight-or-flight)
+  - Amygdala → Basal Ganglia (ventral amygdalofugal pathway → ventral striatum)
+  - Corticostriatal projection bumped from 0.03/0.3 to 0.08/0.5 (STRONGEST projection in brain, 10× others)
+  - Removed mystery→basalGanglia (corpus callosum doesn't directly project to BG)
+  - Added basalGanglia→cerebellum (subthalamic pathway)
+
+- [x] **Adaptive pulse system** — Per-cluster pulse probability now inversely proportional to spike count: `pulseProb = clamp(4/spikeCount, 0.05, 0.6)`. Every cluster gets ~4 ring activations per frame regardless of firing rate. Cerebellum now has same visual pop as cortex.
+
+- [x] **Fixed mystery.js bug** — `complexityGain` (undefined) → `quantumVolume` in return object. Variable was renamed during Ψ equation correction but return wasn't updated.
+
+- [x] **EQUATIONS.md updated** — Added 20-pathway white matter tract table with real tract names, densities, strengths. Added real neuron counts per structure from peer-reviewed stereological studies (Herculano-Houzel 2009, PMC amygdala study).
+
+- [x] **Stale reference sweep** — Updated all references across docs, HTML, and source files from 16→20 projections. Context: codebase had 15+ files still referencing "1000 neurons" and "16 projections" from earlier architecture.
+
+### Files Modified
+- `js/ui/brain-3d.js` — fractal connections, MNI positions, adaptive pulses, buffer bounds
+- `js/brain/engine.js` — 20 projection pathways with real white matter tract names
+- `js/brain/mystery.js` — fixed complexityGain → quantumVolume
+- `docs/EQUATIONS.md` — 20-pathway table, real neuron counts
+- `docs/TODO.md` — session tasks logged
+- `docs/FINALIZED.md` — this entry
+- `docs/ARCHITECTURE.md` — updated neuron counts, projection count
+- `docs/ROADMAP.md` — updated projection references
+- `docs/SKILL_TREE.md` — updated architecture references
+- `README.md` — updated projection count, architecture references
+- `brain-equations.html` — updated subtitle and references
+
+### Research Sources
+- Herculano-Houzel 2009 (neuron counts: 86B total, 69B cerebellum, 16B cortex)
+- Lead-DBS subcortical atlas (MNI coordinates for all structures)
+- PMC stereological study (amygdala: 12.21M neurons across 13 nuclei)
+- PMC white matter taxonomy (21 major tracts)
+- Frontiers in Neuroanatomy (amygdala white matter tracts: stria terminalis, VAFP)
+- PMC fimbria-fornix anatomy (hippocampus → hypothalamus)
+- Nature Communications (corticostriatal topographic precision)
+
+### TODO Cleanup — Resolved Items
+
+The following items were in TODO as pending/partial but were resolved by prior work:
+
+- [x] **Attention mechanism (transformer QKV)** — SUPERSEDED. Brain uses LIF neurons + Kuramoto oscillations + Ψ gain modulation + amygdala emotional gating + visual cortex salience for attention. Transformer attention doesn't fit the spiking neuron architecture. Removed from TODO.
+
+- [x] **Real Φ (phi) approximation** — SUPERSEDED. Ψ = √(1/n) × N³ × [α·Id + β·Ego + γ·Left + δ·Right] IS the consciousness equation. Designed and corrected by Gee across multiple sessions. Not a placeholder for Tononi's IIT — it's the project's own quantum consciousness formulation. Removed from TODO.
+
+- [x] **Attention as Ψ focus** — RESOLVED. Visual attention already driven by brain equations in engine.js: `shouldLook = cortexError > 0.7 && salience > 0.5`. Ψ modulates all clusters via psiGain. Vision calls moved from render loop to brain step function. The gating IS equation-driven.
+
+- [x] **BUG: Vision render loop spams API** — FIXED. `startEyeIris()` in app.js is now pure rendering (reads visualCortex.getState() getter only). Vision API calls moved to engine.js `forceDescribe()` gated by cortex prediction error + salience threshold.
+
+- [x] **BUG: Dead backend not detected** — FIXED. `ai-providers.js` has `_deadBackends` Map with timestamp tracking and cooldown (1 hour). Detects 401/402/403 and marks backend dead immediately.
+
+- [x] **BUG: Vision capture interval not enforced** — FIXED. Vision capture moved from `requestAnimationFrame` render loop to engine.js brain step function. Gated by `cortexError > 0.7 && salience > 0.5` — brain equations control when to look.
+
+- [x] **BUG: Proxy returns 401 on /v1/models** — FIXED. Both `claude-proxy.js` (line 45) and `brain-server.js` (line 1181) handle GET /v1/models and return model lists.
+
+- [x] **BUG: requestAnimationFrame stack traces** — FIXED. Root cause was API calls inside render loops. All API calls moved to brain step function or timer-based intervals. Render loops are now pure drawing.
+
+### GPU/CPU Split Compute + Server Fixes
+
+- [x] **GPU compute pipeline rewrite** — GPU maintains own voltage state (init once with full voltages, step with tonicDrive + noiseAmp = 2 numbers per cluster). Sparse spike indices on return (~25K ints vs 1.28M array). Staggered cluster init (one per tick, not both simultaneously). Per-cluster resolvers keyed by name (no queue race). Auto-retry with 30-tick counter reset. 800ms timeout. `server/brain-server.js` + `compute.html`
+
+- [x] **Persona θ overwrite removed** — server had hardcoded `tonicDrives = { cortex: 19, ... }` on line 293 that overwrote the persona-driven values computed from `arousalBaseline × drugSpeed`, `emotionalVolatility × drugArousal`, `creativity × darkHumor`, etc. Removed. θ now drives the server brain. `server/brain-server.js`
+
+- [x] **Wall clock uptime** — `time` in brain state changed from simulation dt accumulation (0.001s/step) to `(Date.now() - startedAt) / 1000`. Dashboard now shows real elapsed time. `server/brain-server.js`
+
+- [x] **CPU double-work eliminated** — CPU workers skip clusters dispatched to GPU via `excludeClusters`. During GPU init tick, cluster still runs on CPU (no data gap). After init, GPU handles it exclusively. Step time dropped 1863ms → 304ms. `server/brain-server.js`
+
+- [x] **3D brain zoom/expansion fix** — brain expansion capped at 15% (was uncapped, reaching 350% with server spike counts). Zoom range widened 1.0-20 (was 1.5-12). All position generators scaled ~73% for tighter brain. Point size floor increased. Default zoom 3.5 (was 4.2). `js/ui/brain-3d.js`
+
+- [x] **GPU disconnect cleanup** — resets `_gpuInitialized`, `_gpuConnected`, hit/miss counters on GPU client disconnect so it re-initializes on reconnect. `server/brain-server.js`
+
+---

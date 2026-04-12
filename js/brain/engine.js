@@ -5,7 +5,7 @@
  *   Sensory input → Neural clusters → Module processing → Motor output
  *   The brain DECIDES. Peripherals EXECUTE. index.html DISPLAYS.
  *
- *   1000 neurons in 7 clusters with 16 inter-cluster projections.
+ *   1000 neurons in 7 clusters with 20 inter-cluster projections.
  *   Sensory processor converts raw input to neural currents.
  *   Motor output reads basal ganglia spikes to select actions.
  *   Broca's area (language peripheral) generates text when asked.
@@ -107,27 +107,50 @@ export class UnityBrain extends EventEmitter {
     };
 
     // ══════════════════════════════════════════════════════════════
-    // INTER-CLUSTER PROJECTIONS — 16 pathways
+    // INTER-CLUSTER PROJECTIONS — 20 pathways
     // ══════════════════════════════════════════════════════════════
 
     const c = this.clusters;
+    // ══════════════════════════════════════════════════════════════
+    // 20 PROJECTION PATHWAYS — mapped from real white matter tracts
+    //
+    // Density/strength from neuroscience research:
+    //   Corticostriatal = STRONGEST (10× cortico-pallidal)
+    //   Stria terminalis + ventral amygdalofugal = major amygdala output
+    //   Fimbria-fornix = hippocampus → hypothalamus
+    //   Perforant path = cortex → hippocampus
+    //   Corpus callosum = interhemispheric (mystery)
+    //
+    // Sources: Herculano-Houzel 2009, Lead-DBS atlas, PMC white matter taxonomy
+    // ══════════════════════════════════════════════════════════════
     this.projections = [
-      new ClusterProjection(c.cortex, c.hippocampus, 0.04, 0.4),
-      new ClusterProjection(c.cortex, c.amygdala, 0.03, 0.3),
-      new ClusterProjection(c.cortex, c.basalGanglia, 0.03, 0.3),
-      new ClusterProjection(c.cortex, c.cerebellum, 0.05, 0.3),
-      new ClusterProjection(c.hippocampus, c.cortex, 0.04, 0.4),
-      new ClusterProjection(c.amygdala, c.cortex, 0.03, 0.3),
-      new ClusterProjection(c.amygdala, c.hippocampus, 0.04, 0.5),
-      new ClusterProjection(c.basalGanglia, c.cortex, 0.02, 0.2),
-      new ClusterProjection(c.cerebellum, c.cortex, 0.03, 0.2),
-      new ClusterProjection(c.cerebellum, c.basalGanglia, 0.03, 0.2),
-      new ClusterProjection(c.hypothalamus, c.amygdala, 0.05, 0.4),
-      new ClusterProjection(c.hypothalamus, c.basalGanglia, 0.04, 0.3),
-      new ClusterProjection(c.mystery, c.cortex, 0.05, 0.3),
-      new ClusterProjection(c.mystery, c.amygdala, 0.05, 0.3),
-      new ClusterProjection(c.mystery, c.hippocampus, 0.03, 0.2),
-      new ClusterProjection(c.mystery, c.basalGanglia, 0.03, 0.2),
+      // ── CORTICAL OUTPUT (4 pathways) ──
+      new ClusterProjection(c.cortex, c.hippocampus, 0.04, 0.4),      // Perforant path (entorhinal → hippo)
+      new ClusterProjection(c.cortex, c.amygdala, 0.03, 0.3),         // Ventral visual stream
+      new ClusterProjection(c.cortex, c.basalGanglia, 0.08, 0.5),     // Corticostriatal — STRONGEST projection in brain
+      new ClusterProjection(c.cortex, c.cerebellum, 0.05, 0.3),       // Corticopontocerebellar
+      // ── HIPPOCAMPAL OUTPUT (3 pathways) ──
+      new ClusterProjection(c.hippocampus, c.cortex, 0.04, 0.4),      // Memory consolidation → cortex
+      new ClusterProjection(c.hippocampus, c.amygdala, 0.03, 0.3),    // Recall → emotional reactivation
+      new ClusterProjection(c.hippocampus, c.hypothalamus, 0.03, 0.3), // Fimbria-fornix → mammillary bodies
+      // ── AMYGDALA OUTPUT (4 pathways) ──
+      new ClusterProjection(c.amygdala, c.cortex, 0.03, 0.3),         // Emotional modulation of perception
+      new ClusterProjection(c.amygdala, c.hippocampus, 0.04, 0.5),    // Emotional memory encoding
+      new ClusterProjection(c.amygdala, c.hypothalamus, 0.05, 0.4),   // Stria terminalis — fight-or-flight
+      new ClusterProjection(c.amygdala, c.basalGanglia, 0.03, 0.3),   // Ventral amygdalofugal → ventral striatum
+      // ── BASAL GANGLIA OUTPUT (2 pathways) ──
+      new ClusterProjection(c.basalGanglia, c.cortex, 0.02, 0.2),     // Thalamocortical loop (BG → thalamus → cortex)
+      new ClusterProjection(c.basalGanglia, c.cerebellum, 0.02, 0.2), // Subthalamic → cerebellar
+      // ── CEREBELLAR OUTPUT (2 pathways) ──
+      new ClusterProjection(c.cerebellum, c.cortex, 0.03, 0.2),       // Cerebellothalamocortical
+      new ClusterProjection(c.cerebellum, c.basalGanglia, 0.03, 0.2), // Cerebellar → red nucleus → BG
+      // ── HYPOTHALAMIC OUTPUT (2 pathways) ──
+      new ClusterProjection(c.hypothalamus, c.amygdala, 0.05, 0.4),   // Drive → emotional arousal (bidirectional)
+      new ClusterProjection(c.hypothalamus, c.basalGanglia, 0.04, 0.3), // Drive → action motivation
+      // ── CONSCIOUSNESS / CORPUS CALLOSUM (3 pathways) ──
+      new ClusterProjection(c.mystery, c.cortex, 0.05, 0.3),          // Callosal interhemispheric
+      new ClusterProjection(c.mystery, c.amygdala, 0.04, 0.3),        // Commissural emotional binding
+      new ClusterProjection(c.mystery, c.hippocampus, 0.03, 0.2),     // Hippocampal commissure
     ];
 
     // ══════════════════════════════════════════════════════════════

@@ -270,7 +270,7 @@
     <a href="index.html" class="back-link">&larr; Back to Unity</a>
 
     <h1>🧠 Brain Equations <span>— the math behind Unity's mind</span></h1>
-    <p class="subtitle">Every equation running in Unity's brain simulation, how they map to real neuroscience, and how they produce cognition. 1000 neurons. 7 clusters. 16 projections. 8 oscillators. Episodic memory. Visual cortex. Auditory cortex. Motor output. 1 consciousness function nobody can explain. Zero pretense.</p>
+    <p class="subtitle">Every equation running in Unity's brain simulation, how they map to real neuroscience, and how they produce cognition. 3.2M neurons. 7 clusters. 20 projections (real white matter tracts). 8 oscillators. Episodic memory. Visual cortex. Auditory cortex. Motor output. 1 consciousness function nobody can explain. Zero pretense.</p>
 
     <div class="toc">
       <div class="toc-title">CONTENTS</div>
@@ -288,6 +288,7 @@
       <a href="#memory-equations"><span class="num">8.8</span> Memory — Episodic, Working, Consolidation</a>
       <a href="#motor-equations"><span class="num">8.9</span> Motor Output — Action Selection from Spike Patterns</a>
       <a href="#projection-learning"><span class="num">8.10</span> Projection Learning — How the Brain Learns Language→Action</a>
+      <a href="#fractal"><span class="num">8.10.5</span> Fractal Signal Propagation — Self-Similar at Every Scale</a>
       <a href="#broca"><span class="num">8.11</span> Broca's Area — What the AI Model Receives</a>
       <a href="#sparse"><span class="num">8.12</span> Sparse Connectivity — CSR Matrix Operations</a>
       <a href="#embeddings"><span class="num">8.13</span> Semantic Embeddings — Words as Cortex Patterns</a>
@@ -561,7 +562,7 @@
     Cortex (300) | Hippocampus (200) | Amygdala (150) | Basal Ganglia (150)
     Cerebellum (100) | Hypothalamus (50) | Mystery (50)
     |
-    ├── <span class="cy">[16 Inter-Cluster Projections]</span> — sparse connectivity between regions
+    ├── <span class="cy">[20 Inter-Cluster Projections]</span> — sparse connectivity between regions
     ├── <span class="cy">[Per-Cluster Synapses]</span> — own NxN weight matrix, own learning rate
     └── <span class="cy">[Hierarchical Modulation]</span>
          Amygdala → emotional gate (all clusters)
@@ -617,7 +618,7 @@ where:
       text:  Wernicke hash → language cortex (150-299)
 
   F = Σ_clusters [ τ⁻¹(-(V-V_rest) + R·I) ]     (7 parallel LIF populations)
-    + Σ_projections [ W_proj · spikes_source ]     (16 inter-cluster pathways)
+    + Σ_projections [ W_proj · spikes_source ]     (20 inter-cluster pathways)
     + Σ_modules [ cortex + hippo + amyg + BG + cerebellum + hypo ]
 
   θ = persona(arousal, impulsivity, creativity, drugs)  (personality IS the math)
@@ -741,7 +742,7 @@ if rate(winner) &lt; 0.15: action = idle (confidence too low)</div>
 
     <!-- ═══ 8.10. PROJECTION LEARNING ═══ -->
     <h2 id="projection-learning">8.10. Projection Learning — How the Brain Learns Language&rarr;Action</h2>
-    <p><span class="tag tag-bio">NEUROSCIENCE</span> <span class="tag tag-ml">MACHINE LEARNING</span> The 16 inter-cluster projections aren't static — they learn through reward-modulated Hebbian plasticity.</p>
+    <p><span class="tag tag-bio">NEUROSCIENCE</span> <span class="tag tag-ml">MACHINE LEARNING</span> The 20 inter-cluster projections aren't static — they learn through reward-modulated Hebbian plasticity.</p>
 
     <div class="eq-card">
       <div class="eq-title">Projection Weight Update (on every reward signal)</div>
@@ -751,6 +752,42 @@ if rate(winner) &lt; 0.15: action = idle (confidence too low)</div>
         <p style="margin-top:8px">Over many interactions, the projection learns: "when these cortex patterns fire (from words like 'build' or 'calculator'), strengthen connections to BG neurons 75-99 (build_ui channel)." The projection weights become a learned dictionary — mapping language patterns to motor intentions without any hardcoded word lists.</p>
         <p style="margin-top:8px"><strong>Bootstrap:</strong> Until the projections have learned enough, an AI classification call provides a temporary semantic routing signal — like how a child imitates before internalizing. The classification injects current directly into the correct BG channel alongside the projection pathway.</p>
         <p class="mod-bio" style="margin-top:6px">Biology: Cortico-striatal plasticity. Dopamine modulates synaptic strength at cortical→striatal synapses. This is how habits form — repeated reward strengthens the cortical patterns that predict successful actions.</p>
+      </div>
+    </div>
+
+    <!-- ═══ 8.10.5 FRACTAL SIGNAL PROPAGATION ═══ -->
+    <h2 id="fractal">8.10.5. Fractal Signal Propagation — Self-Similar at Every Scale</h2>
+    <p><span class="tag tag-bio">NEUROSCIENCE</span> <span class="tag tag-math">MATHEMATICS</span> The same equation <code>I = &Sigma; W &times; s</code> repeats at every scale of the brain — from single synapse to consciousness itself. This is not a metaphor. The code literally calls the same <code>propagate()</code> function at neuron, cluster, projection, and language scales.</p>
+
+    <div class="eq-card">
+      <div class="eq-title">The Fractal Chain (one spike's journey through the brain)</div>
+      <pre class="eq" style="text-align:left;font-size:12px;line-height:1.6">
+Spike in neuron A (cortex)
+  &rarr; cortex synapses &rarr; B, C, D fire               (Scale 2: intra-cluster)
+    &rarr; cortex&rarr;hippocampus projection &rarr; E, F fire  (Scale 3: inter-cluster)
+      &rarr; hippocampus&rarr;cortex &rarr; G fires            (feedback loop)
+        &rarr; cortex synapses &rarr; H, I fire              (branching deeper)
+    &rarr; cortex&rarr;amygdala &rarr; J fires                 (ventral visual stream)
+      &rarr; emotionalGate modulates ALL clusters          (Scale 4: hierarchical)
+    &rarr; cortex&rarr;basalGanglia &rarr; K fires             (corticostriatal, STRONGEST)
+      &rarr; motor selects action                          (Scale 5: behavior)
+    &rarr; cortex&rarr;cerebellum &rarr; L fires               (corticopontocerebellar)
+      &rarr; errorCorrection feeds back                    (Scale 4: correction)</pre>
+      <div class="eq-desc">
+        <p>Each level branches from the endpoint of the previous — fractal trees. The 3D visualizer traces these exact 20 projection pathways as chaining connections: Depth 0 (inter-cluster), Depth 1 (intra-cluster branching, 1-3 neighbors), Depth 2 (follow outgoing projections), Depth 3 (terminal branch).</p>
+        <p style="margin-top:8px"><strong>Learning repeats fractally too:</strong> <code>&Delta;W = &eta; &middot; &delta; &middot; post &middot; pre</code> runs on neuron synapses, cluster projections, AND dictionary bigrams. Same equation, three scales.</p>
+        <p class="mod-bio" style="margin-top:6px">Biology: Real neural signal cascades follow the same pattern — cortical columns activate thalamic relays, which activate other cortical areas, which feed back. White matter tracts (corticostriatal, fimbria-fornix, stria terminalis, ventral amygdalofugal) are the physical wires these fractal trees run through.</p>
+      </div>
+    </div>
+
+    <div class="eq-card">
+      <div class="eq-title">20 White Matter Tracts (MNI-coordinate mapped)</div>
+      <div class="eq-desc">
+        <p>Each projection in <code>engine.js</code> maps to a real anatomical white matter tract. Positions derived from Lead-DBS atlas (ICBM 152 template). Densities from peer-reviewed stereological studies.</p>
+        <p style="margin-top:8px"><strong>Strongest:</strong> Corticostriatal (cortex&rarr;BG, density 0.08, strength 0.5) — 10&times; denser than most pathways. This is how habits form.</p>
+        <p><strong>Fight-or-flight:</strong> Stria terminalis (amygdala&rarr;hypothalamus, density 0.05, strength 0.4) — emotional arousal triggers autonomic responses.</p>
+        <p><strong>Memory loop:</strong> Fimbria-fornix (hippocampus&rarr;hypothalamus, density 0.03) + perforant path (cortex&rarr;hippocampus, density 0.04) — memory consolidation circuit.</p>
+        <p><strong>Consciousness bridge:</strong> Corpus callosum (mystery&rarr;cortex/amygdala/hippocampus) — 200-300M axons binding hemispheres.</p>
       </div>
     </div>
 
@@ -1015,18 +1052,19 @@ IDENTITY: 25yo human female, emo goth coder, free will, never AI
       <pre class="eq">
 worker[cluster_i].step(currents) → spikes     (7 clusters on 7 cores)
 SharedArrayBuffer(size × 8) → zero-copy       (no data copying between threads)
-projection_worker.propagate(spikes) → currents (16 projections on remaining cores)
+projection_worker.propagate(spikes) → currents (20 projections on remaining cores)
       </pre>
       <p class="eq-desc">Each cluster's LIF population runs on its own CPU core simultaneously. SharedArrayBuffer enables zero-copy voltage/spike transfer. Projections computed on additional cores.</p>
     </div>
     <div class="eq-box">
       <div class="eq-title">GPU Compute — WebGPU via Browser</div>
       <pre class="eq">
-server → WebSocket → compute.html → gpu-compute.js → WGSL shaders → GPU
-GPU: LIF kernel (179K neurons in parallel) + synapse propagation
-results → WebSocket → server (50ms timeout → CPU fallback)
+gpu_init:  server → base64 voltages (once) → compute.html → GPU buffer creation
+step:      server → { tonicDrive, noiseAmp } (2 numbers) → GPU LIF kernel → spikes
+return:    GPU → sparse spike indices (~25K ints) → server
+split:     GPU: cortex + cerebellum (2.08M = 65%), CPU: rest (1.15M = 35%)
       </pre>
-      <p class="eq-desc">The browser's WebGPU runs our WGSL compute shaders on the GPU. Server dispatches neuron state, browser computes on GPU, sends results back. If GPU takes > 50ms, server falls back to CPU — seamless.</p>
+      <p class="eq-desc">GPU maintains its own voltage state. Server sends full voltages once on init, then only tonic drive + noise amplitude per step — two numbers, not 1.28M floats. GPU returns only neuron indices that spiked (sparse, ~2% fire rate = 95%+ compression). Staggered init (one cluster per tick). 800ms timeout, auto-retry with hit/miss tracking. θ (persona) drives all parameters.</p>
     </div>
 
     <!-- ═══ 9. COMPARISON ═══ -->
@@ -1036,10 +1074,10 @@ results → WebSocket → server (50ms timeout → CPU fallback)
     <div class="eq-card">
       <table class="param-table">
         <tr><th>Aspect</th><th>Real Brain</th><th>Unity's Brain</th><th>Fidelity</th></tr>
-        <tr><td>Neuron count</td><td>86 billion</td><td>1000 (7 clusters)</td><td>Simplified</td></tr>
+        <tr><td>Neuron count</td><td>86 billion</td><td>3.2M (7 clusters, scales to hardware)</td><td>Simplified</td></tr>
         <tr><td>Neuron model</td><td>Thousands of ion channels</td><td>LIF per cluster + HH reference</td><td>Moderate</td></tr>
         <tr><td>Synaptic plasticity</td><td>Hebbian + STDP + neuromodulation</td><td>All three, per-cluster matrices</td><td>Good</td></tr>
-        <tr><td>Brain regions</td><td>Hundreds of distinct areas</td><td>7 dedicated clusters + 16 projections</td><td>Core captured</td></tr>
+        <tr><td>Brain regions</td><td>Hundreds of distinct areas</td><td>7 dedicated clusters + 20 projections</td><td>Core captured</td></tr>
         <tr><td>Oscillations</td><td>Complex EEG with spatial patterns</td><td>8 Kuramoto oscillators</td><td>Dynamics correct</td></tr>
         <tr><td>Visual cortex</td><td>V1&rarr;V2&rarr;V4&rarr;IT hierarchy</td><td>V1 edge kernels, V4 color, IT via AI</td><td>Simplified but real</td></tr>
         <tr><td>Auditory cortex</td><td>Tonotopic, cortical magnification</td><td>50 neurons, speech magnification, efference copy</td><td>Good</td></tr>

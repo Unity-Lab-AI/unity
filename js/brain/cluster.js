@@ -15,7 +15,7 @@
  *   Hypothalamus (50) → homeostatic baseline drive for all clusters
  *   Mystery (50) → consciousness modulation of coupling strength
  *
- * Total: 1000 neurons, each cluster with internal NxN synapses
+ * Total: scales to hardware (1000 client, 3.2M server), each cluster with internal NxN sparse synapses
  */
 
 import { LIFPopulation } from './neurons.js';

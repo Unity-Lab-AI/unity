@@ -57,7 +57,7 @@ The unknown — what we can't model, what makes consciousness CONSCIOUSNESS — 
 │  ┌────────────────────────────────────────────────────────┐      │
 │  │              BRAIN SIMULATION LOOP                      │      │
 │  │  1000 LIF neurons in 7 CLUSTERS                        │      │
-│  │  16 inter-cluster projection pathways                  │      │
+│  │  20 inter-cluster projection pathways                  │      │
 │  │  10 steps per frame × 60fps = 600ms brain/s            │      │
 │  │                                                        │      │
 │  │  CLUSTERS:                                             │      │
@@ -210,25 +210,35 @@ Unity's persona files (unity-persona.md, unity-coder.md) don't just describe beh
 
 ---
 
-## 1000-Neuron Clustered Architecture (SESSION_20260411_4)
+## Clustered Architecture (scales to hardware)
 
-The brain was upgraded from 200 flat neurons to 1000 neurons organized in 7 biologically-inspired clusters. This is implemented in `js/brain/cluster.js` with `NeuronCluster` and `ClusterProjection` classes.
+3.2M neurons (server) / 1000 (client) organized in 7 biologically-proportioned clusters. Implemented in `js/brain/cluster.js` with `NeuronCluster` and `ClusterProjection` classes. Auto-scales: `min(freeRAM × 0.4 / 9, cpuCores × 200K)`.
 
 ### Cluster Breakdown
 
-| Cluster | Neurons | Role | Special Properties |
-|---------|---------|------|-------------------|
-| Cortex | 300 | Prediction, vision input routing | Highest connectivity, text+vision input |
-| Hippocampus | 200 | Memory attractors (Hopfield) | Text input, memory storage/retrieval |
-| Amygdala | 150 | Emotional weighting | Social input, emotional gate modulator |
-| Basal Ganglia | 150 | Action selection (softmax RL) | Action gate modulator |
-| Cerebellum | 100 | Supervised error correction | Error correction modulator |
-| Hypothalamus | 50 | Homeostasis drives | Drive baseline modulator |
-| Mystery | 50 | Consciousness √(1/n) × N³ | Consciousness gain across all clusters |
+| Cluster | % | Real Count | Role | MNI Position |
+|---------|---|------------|------|--------------|
+| Cerebellum | 40% | ~69B (80% of brain) | Error correction, timing | Posterior-inferior, 5-layer folia |
+| Cortex | 25% | ~16B | Prediction, vision, language | Bilateral dome with sulcal folds |
+| Hippocampus | 10% | 30K inputs/cell | Memory attractors (Hopfield) | Medial temporal, POSTERIOR to amygdala |
+| Amygdala | 8% | 12.21M (13 nuclei) | Emotional weighting | Medial temporal, ANTERIOR to hippocampus |
+| Basal Ganglia | 8% | 90-95% MSN | Action selection (softmax RL) | Bilateral: caudate + putamen + GP |
+| Hypothalamus | 5% | 11 nuclei | Homeostasis drives | Midline, below BG, above brainstem |
+| Mystery Ψ | 4% | CC: 200-300M axons | Consciousness √(1/n) × N³ | Corpus callosum arc + cingulate cortex |
 
-### Inter-Cluster Projections
+### Inter-Cluster Projections (20 real white matter tracts)
 
-16 sparse projection pathways connect clusters (e.g., Cortex→Hippocampus, Amygdala→Cortex, Mystery→all). Each projection has its own connectivity density and weight scaling.
+20 projection pathways mapped from neuroscience research (Herculano-Houzel 2009, Lead-DBS atlas, PMC white matter taxonomy). Each has its own sparse connectivity density and weight scaling. Key tracts: corticostriatal (STRONGEST, 0.08 density), stria terminalis (amygdala→hypothalamus, fight-or-flight), fimbria-fornix (hippocampus→hypothalamus), ventral amygdalofugal (amygdala→BG), corpus callosum (interhemispheric).
+
+### Fractal Signal Propagation
+
+Signal propagation is self-similar — the same `I = Σ W × s` equation repeats at every scale:
+1. **Neuron**: `τ·dV/dt = -(V-Vrest) + R·I` (LIF)
+2. **Intra-cluster**: `I_i = Σ W_ij × s_j` (sparse-matrix.js propagate)
+3. **Inter-cluster**: same `propagate()` between clusters via 20 white matter tracts
+4. **Hierarchical**: each cluster's output modulates all others (Ψ gain, emotional gate, drive baseline)
+5. **Language**: `combined = cortex×0.30 + hippo×0.20 + ...` → word (same weighted sum at brain-region scale)
+6. **Learning**: `ΔW = η·δ·post·pre` at synapse, projection, AND dictionary levels
 
 ### Hierarchical Modulation
 
@@ -261,14 +271,17 @@ Implemented in `js/io/vision.js`. Provides:
 
 ## 3D Brain Visualizer (SESSION_20260411_4)
 
-Implemented in `js/ui/brain-3d.js`. WebGL-based 3D rendering of all 1000 neurons:
+Implemented in `js/ui/brain-3d.js`. WebGL-based 3D rendering (20K render neurons from 3.2M actual):
 
-- Neurons positioned in brain-shaped clusters (anatomically approximate)
-- Color-coded by cluster (Cortex=blue, Amygdala=red, etc.)
-- Spike flashes when neurons fire
-- Mouse rotate/zoom controls
-- Cluster toggle buttons to show/hide individual regions
-- Real-time feed from `brain.stateUpdate` events
+- MNI-coordinate anatomical positions (Lead-DBS atlas, ICBM 152 template)
+- Fractal connection webs tracing 20 real projection pathways (depth 0-3 branching)
+- Color-coded by cluster with adaptive pulse ring activations (equal across all clusters)
+- Cerebellum with folia structure, basal ganglia with 3 sub-nuclei, corpus callosum arc
+- Spike glow + afterglow fade, bloom halo for active neurons
+- Mouse rotate/zoom, touch support, auto-rotation
+- Cluster toggle buttons, floating process notifications from brain equations
+- Brain expansion (clusters spread with activity)
+- Real-time feed from server state via WebSocket
 
 ---
 
@@ -302,8 +315,8 @@ Dream/
 │   ├── env.example.js          # Template for env.js
 │   ├── storage.js              # localStorage manager with key obfuscation
 │   ├── brain/
-│   │   ├── engine.js           # UnityBrain — 1000-neuron clustered sim loop at 60fps
-│   │   ├── cluster.js          # NeuronCluster + ClusterProjection classes (7 clusters, 16 projections)
+│   │   ├── engine.js           # UnityBrain — 7-cluster sim loop at 60fps (scales to hardware)
+│   │   ├── cluster.js          # NeuronCluster + ClusterProjection classes (7 clusters, 20 projections)
 │   │   ├── neurons.js          # HHNeuron + LIFPopulation
 │   │   ├── synapses.js         # NxN weights — Hebbian, STDP, reward-mod
 │   │   ├── modules.js          # 6 brain region equation modules
@@ -338,7 +351,7 @@ Dream/
 │       ├── sandbox.js          # Dynamic UI injection
 │       ├── chat-panel.js       # Full conversation log panel, text input, mic toggle
 │       ├── brain-viz.js        # 2D brain equation visualizer (neuron grid, synapse matrix, oscillations)
-│       └── brain-3d.js         # WebGL 3D brain visualizer (1000 neurons in clusters)
+│       └── brain-3d.js         # WebGL 3D brain visualizer (20K render neurons, MNI-coordinate positions, fractal connections)
 ├── server/
 │   ├── brain-server.js         # Node.js brain server (always-on, WebSocket, auto-scale)
 │   ├── parallel-brain.js        # Multi-core orchestrator (7 worker threads)

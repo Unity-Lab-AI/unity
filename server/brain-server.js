@@ -141,7 +141,8 @@ const SUBSTEPS = TOTAL_NEURONS > 1000000 ? 3 : TOTAL_NEURONS > 500000 ? 5 : TOTA
 
 class ServerBrain {
   constructor() {
-    this.time = 0;
+    this.time = 0;          // simulation time (dt accumulation)
+    this._startedAt = 0;    // wall clock start (set in start())
     this.frameCount = 0;
     this.running = false;
     this.clients = new Map(); // ws → { id, lastInput, inputCount, name }
@@ -287,16 +288,8 @@ class ServerBrain {
       this.voltages[name] = new Float64Array(cluster.size).fill(this.vRest);
     }
 
-    // Scale tonic drives to cluster sizes (larger clusters need proportional drive)
-    const baseScale = SCALE;
-    this.tonicDrives = {
-      cortex: 19, hippocampus: 15, amygdala: 22,
-      basalGanglia: 14, cerebellum: 14, hypothalamus: 16, mystery: 18,
-    };
-    this.noiseAmplitudes = {
-      cortex: 7, hippocampus: 5, amygdala: 10,
-      basalGanglia: 8, cerebellum: 4, hypothalamus: 3, mystery: 12,
-    };
+    // Persona-driven tonic drives and noise are set above (lines 257-275)
+    // DO NOT overwrite them — θ IS Unity's identity
 
     // Motor state
     this.motorAction = 'idle';
@@ -434,7 +427,8 @@ class ServerBrain {
     };
 
     return {
-      time: this.time,
+      time: (Date.now() - (this._startedAt || Date.now())) / 1000, // wall clock uptime in seconds
+      simTime: this.time,  // simulation dt accumulation
       frameCount: this.frameCount,
       totalSpikes: this.totalSpikes,
       spikeCount: this.totalSpikes,
@@ -465,7 +459,7 @@ class ServerBrain {
         totalWords: Object.keys(this._wordFreq || {}).length,
         totalInteractions: Object.values(this._conversations || {}).reduce((s, c) => s + c.length, 0),
         totalEpisodes: this._db ? this.getEpisodeCount() : 0,
-        uptime: this.time,
+        uptime: (Date.now() - (this._startedAt || Date.now())) / 1000,
         totalFrames: this.frameCount,
       },
     };
@@ -482,31 +476,78 @@ class ServerBrain {
    * Offload one cluster's LIF computation to the GPU client.
    * Returns a promise that resolves when the GPU sends results back.
    */
+  /**
+   * Offload cluster LIF to GPU client via WebSocket.
+   *
+   * KEY DESIGN: GPU maintains its OWN voltage state. Server does NOT
+   * send 1.28M floats every step. Server sends only:
+   *   - init: full voltages (once, on first dispatch per cluster)
+   *   - step: tonicDrive + noiseAmp (two numbers, not arrays)
+   * GPU sends back: sparse spike indices only (~25K ints, not 1.28M)
+   *
+   * This cuts WebSocket traffic from ~10MB/step to ~100KB/step.
+   */
   async _gpuStep(clusterName) {
     if (!this._gpuClient || this._gpuClient.readyState !== 1) return null;
+    if (!this._gpuPending) this._gpuPending = {};
+    if (!this._gpuInitialized) this._gpuInitialized = {};
 
     const size = CLUSTER_SIZES[clusterName];
-    const V = this.voltages[clusterName];
 
-    // Send voltages + currents to GPU client
+    if (!this._gpuInitialized[clusterName]) {
+      // FIRST DISPATCH — send full voltages to initialize GPU state
+      // Don't send compute_request on init tick — GPU needs time to create buffers
+      const V = this.voltages[clusterName];
+      const buf = Buffer.from(V.buffer, V.byteOffset, V.byteLength);
+      this._gpuClient.send(JSON.stringify({
+        type: 'gpu_init',
+        clusterName,
+        size,
+        voltagesBin: buf.toString('base64'),
+        tonicDrive: this.tonicDrives[clusterName],
+        noiseAmp: this.noiseAmplitudes[clusterName],
+        lifParams: { tau: 20, Vrest: -65, Vthresh: -50, Vreset: -70, dt: 1, R: 1, tRefrac: 2 },
+      }));
+      this._gpuInitialized[clusterName] = true;
+      console.log(`[Brain] GPU init sent: ${clusterName} (${size.toLocaleString()} neurons)`);
+      // Skip this step — GPU needs to process init first. Return null = use stale data.
+      return Promise.resolve(null);
+    }
+
+    // STEP — send cluster params + hierarchical modulation.
+    // GPU applies the FULL current equation:
+    //   I = (tonicDrive × driveBaseline × emotionalGate × gainMultiplier + errorCorrection)
+    //       + noise × noiseAmp
+    // These are the same modulation factors engine.js applies on the client side.
+    const p = this.persona;
+    const psiGain = Math.max(0.8, Math.min(1.5, 0.9 + (this.psi || 0) * 0.004));
+    const emotionalGate = 0.7 + (this.arousal || 0.5) * 0.6;
+    const driveFactor = 0.8 + ((this.clusters.hypothalamus?.spikeCount || 0) > 100 ? 0.4 : 0.0);
+    const errorSignal = clusterName === 'cortex' || clusterName === 'basalGanglia'
+      ? -(this.clusters.cerebellum?.spikeCount || 0) / (CLUSTER_SIZES.cerebellum || 1) * 2 : 0;
+
     this._gpuClient.send(JSON.stringify({
       type: 'compute_request',
       clusterName,
       size,
-      voltages: Array.from(V),
-      currents: Array.from(new Float64Array(size)), // external currents
-      lifParams: { tau: 20, Vrest: -65, Vthresh: -50, Vreset: -70, dt: 1, R: 1, tRefrac: 2 },
+      tonicDrive: this.tonicDrives[clusterName],
+      noiseAmp: this.noiseAmplitudes[clusterName],
+      // Hierarchical modulation from brain equations
+      gainMultiplier: psiGain,          // Ψ consciousness gain
+      emotionalGate,                     // amygdala arousal amplification
+      driveBaseline: driveFactor,        // hypothalamus homeostatic drive
+      errorCorrection: errorSignal,      // cerebellum error feedback
+      reward: this.reward,               // for future plasticity
     }));
 
-    // Wait for result (with timeout)
     return new Promise((resolve) => {
-      this._gpuResolve = resolve;
+      this._gpuPending[clusterName] = resolve;
       setTimeout(() => {
-        if (this._gpuResolve === resolve) {
-          this._gpuResolve = null;
-          resolve(null); // timeout — fall back to CPU
+        if (this._gpuPending[clusterName] === resolve) {
+          delete this._gpuPending[clusterName];
+          resolve(null);
         }
-      }, 50); // 50ms timeout — if GPU takes longer, skip
+      }, 800);
     });
   }
 
@@ -603,6 +644,7 @@ class ServerBrain {
   async start() {
     if (this.running) return;
     this.running = true;
+    this._startedAt = Date.now();
     this._lastInputTime = Date.now();
     this._isDreaming = false;
 
@@ -626,77 +668,115 @@ class ServerBrain {
       if (this._useParallel && this._parallelBrain?.isReady) {
         try {
           for (let sub = 0; sub < SUBSTEPS; sub++) {
-            // ── SPLIT COMPUTE: GPU handles big clusters, CPU handles the rest ──
+            // ── SPLIT COMPUTE: GPU + CPU work on DIFFERENT clusters simultaneously ──
+            // GPU gets the two biggest: cortex (25%) + cerebellum (40%) = 65% of neurons
+            // CPU gets the remaining 5 clusters = 35% of neurons
+            // NO DOUBLE WORK — each cluster computed by exactly one device
 
-            // GPU CLUSTERS: cortex + hippocampus (1.6M neurons)
-            // Send to GPU client, don't wait — compute in parallel with CPU
-            const gpuPromises = [];
-            const gpuClusters = this._gpuConnected ? ['cortex', 'hippocampus'] : [];
+            // ── DECIDE GPU vs ALL-CPU ──
+            // Only use GPU if client is actually connected AND responding
+            // Track GPU success rate — if it keeps timing out, stop trying
+            if (!this._gpuHits) this._gpuHits = 0;
+            if (!this._gpuMisses) this._gpuMisses = 0;
+            // Reset GPU stats every 30 ticks so it retries if GPU comes online late
+            if ((this._gpuHits + this._gpuMisses) > 30) {
+              this._gpuHits = Math.floor(this._gpuHits / 2);
+              this._gpuMisses = Math.floor(this._gpuMisses / 2);
+            }
+            const gpuConnected = this._gpuConnected && this._gpuClient?.readyState === 1;
+            // Give GPU 10 attempts before judging, then need >30% success rate
+            const gpuTested = this._gpuHits + this._gpuMisses >= 10;
+            const gpuWorking = gpuConnected && (!gpuTested || this._gpuHits > this._gpuMisses * 0.3);
 
-            for (const gc of gpuClusters) {
-              const size = CLUSTER_SIZES[gc];
-              const batchSize = Math.min(size, 100000); // WebSocket batch limit
-              if (this._gpuClient?.readyState === 1) {
-                this._gpuClient.send(JSON.stringify({
-                  type: 'compute_request',
-                  clusterName: gc,
-                  size: batchSize,
-                  voltages: Array.from(this.voltages[gc].slice(0, batchSize)),
-                  currents: Array.from(new Float64Array(batchSize)),
-                  lifParams: { tau: 20, Vrest: -65, Vthresh: -50, Vreset: -70, dt: 1, R: 1, tRefrac: 2 },
-                }));
-                gpuPromises.push(new Promise(resolve => {
-                  const handler = (msg) => { resolve(msg); };
-                  this._gpuResolvers = this._gpuResolvers || [];
-                  this._gpuResolvers.push(handler);
-                  setTimeout(() => resolve(null), 200); // timeout
-                }));
+            if (gpuWorking) {
+              if (!this._gpuModeLogged) {
+                console.log(`[Brain] GPU MODE — all 7 clusters → GPU (staggered init, 1 per tick)`);
+                this._gpuModeLogged = true;
               }
-            }
+              // ── ALL-GPU MODE: every cluster on the GPU ──
+              // GPU at 7% with 65% of neurons = easily handles 100%
+              // CPU workers only run for clusters not yet initialized on GPU
+              if (!this._gpuInitialized) this._gpuInitialized = {};
+              const allClusterNames = Object.keys(CLUSTER_SIZES);
+              const gpuClusters = [];   // dispatched to GPU this tick
+              const cpuClusters = [];   // CPU handles these (not yet on GPU)
+              let initThisTick = false;
 
-            // CPU CLUSTERS: everything GPU isn't handling
-            // Build a filtered set for the parallel brain
-            const cpuClusterNames = Object.keys(CLUSTER_SIZES).filter(n => !gpuClusters.includes(n));
-
-            // Run CPU workers — ALL clusters. GPU results overlay on top.
-            // Every cluster always has CPU-computed spikes as baseline.
-            const cpuResults = await Promise.race([
-              this._parallelBrain.step({}),
-              new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
-            ]);
-
-            // Merge CPU worker results
-            this.totalSpikes = 0;
-            for (const [name, result] of Object.entries(cpuResults)) {
-              this.clusters[name].spikeCount = result.spikeCount;
-              this.clusters[name].firingRate = this.clusters[name].firingRate * 0.95 + result.spikeCount * 0.05;
-              this.clusters[name].spikes = new Uint8Array(result.spikes);
-              this.totalSpikes += result.spikeCount;
-            }
-
-            // Wait for GPU results (if any dispatched)
-            if (gpuPromises.length > 0) {
-              const gpuResults = await Promise.all(gpuPromises);
-              for (const gr of gpuResults) {
-                if (gr && gr.clusterName && gr.spikes) {
-                  const name = gr.clusterName;
-                  const spikeCount = gr.spikes.reduce((a, b) => a + b, 0);
-                  this.clusters[name].spikeCount = spikeCount;
-                  this.clusters[name].firingRate = this.clusters[name].firingRate * 0.95 + spikeCount * 0.05;
-                  this.totalSpikes += spikeCount;
+              for (const gc of allClusterNames) {
+                if (!this._gpuInitialized[gc]) {
+                  if (!initThisTick) {
+                    gpuClusters.push(gc);  // init this one on GPU
+                    initThisTick = true;   // only one init per tick
+                  } else {
+                    cpuClusters.push(gc);  // CPU handles until GPU catches up
+                  }
+                } else {
+                  gpuClusters.push(gc);    // already on GPU — dispatch
                 }
               }
+
+              // Fire GPU dispatches
+              const gpuPromises = gpuClusters.map(gc => this._gpuStep(gc));
+
+              // CPU workers handle only clusters NOT on GPU yet
+              let cpuResults = {};
+              if (cpuClusters.length > 0) {
+                const cpuExclude = allClusterNames.filter(n => !cpuClusters.includes(n));
+                cpuResults = await Promise.race([
+                  this._parallelBrain.step({}, cpuExclude),
+                  new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
+                ]);
+              }
+
+              // Merge CPU results
+              this.totalSpikes = 0;
+              for (const [name, result] of Object.entries(cpuResults)) {
+                this.clusters[name].spikeCount = result.spikeCount;
+                this.clusters[name].firingRate = this.clusters[name].firingRate * 0.95 + result.spikeCount * 0.05;
+                this.clusters[name].spikes = new Uint8Array(result.spikes);
+                this.totalSpikes += result.spikeCount;
+              }
+
+              // Wait for GPU results
+              const gpuResults = await Promise.all(gpuPromises);
+              for (let gi = 0; gi < gpuResults.length; gi++) {
+                const gr = gpuResults[gi];
+                const name = gpuClusters[gi];
+                if (gr && gr.spikes) {
+                  this._gpuHits++;
+                  this.clusters[name].spikeCount = gr.spikeCount;
+                  this.clusters[name].firingRate = this.clusters[name].firingRate * 0.95 + gr.spikeCount * 0.05;
+                  this.clusters[name].spikes = gr.spikes;
+                  this.totalSpikes += gr.spikeCount;
+                } else {
+                  this._gpuMisses++;
+                  this.totalSpikes += this.clusters[name].spikeCount || 0;
+                }
+              }
+            } else {
+              // ── NO GPU — WAIT for it, don't burn the CPU ──
+              // Brain pauses until compute.html connects
+              if (!this._gpuWaitLogged) {
+                console.log('[Brain] Waiting for GPU compute client (compute.html) — brain paused');
+                this._gpuWaitLogged = true;
+              }
+              // Idle tick — no computation, just wait
+              await new Promise(r => setTimeout(r, 1000));
             }
 
             this._updateDerivedState();
           }
         } catch (err) {
-          // Parallel failed — fall back to single thread
-          for (let i = 0; i < SUBSTEPS; i++) this.step();
+          console.warn('[Brain] GPU step error:', err.message, '— waiting for GPU');
+          await new Promise(r => setTimeout(r, 1000));
         }
       } else {
-        // SINGLE-THREAD
-        for (let i = 0; i < SUBSTEPS; i++) this.step();
+        // No parallel brain — wait for GPU
+        if (!this._gpuWaitLogged2) {
+          console.log('[Brain] No parallel workers — waiting for GPU compute client');
+          this._gpuWaitLogged2 = true;
+        }
+        await new Promise(r => setTimeout(r, 1000));
       }
 
       const stepEnd = performance.now();
@@ -877,6 +957,9 @@ When asked to generate an image, respond with ONLY the image description/prompt 
       gpuName: RESOURCES.gpu.name,
       gpuVramMB: RESOURCES.gpu.vram,
       gpuUtilPercent: gpuUtil,
+      gpuComputeConnected: !!(this._gpuConnected && this._gpuClient?.readyState === 1),
+      gpuHits: this._gpuHits || 0,
+      gpuMisses: this._gpuMisses || 0,
       nodeHeapMB: Math.round(mem.heapTotal / 1048576),
       cores: os.cpus().length,
       parallelMode: this._useParallel,
@@ -1348,17 +1431,35 @@ wss.on('connection', (ws, req) => {
           client.isGPU = true;
           brain._gpuClient = ws;
           brain._gpuConnected = true;
-          console.log(`[${id}] GPU compute client registered — GPU acceleration active`);
-          // Could scale neurons up here when GPU is available
+          brain._gpuWaitLogged = false;  // reset wait message
+          brain._gpuWaitLogged2 = false;
+          brain._gpuModeLogged = false;  // re-log GPU mode
+          console.log(`[${id}] GPU compute client registered — brain will use GPU exclusively`);
           break;
 
-        case 'compute_result':
-          // GPU client sent back computed spikes — dispatch to waiting resolver
-          if (brain._gpuResolvers && brain._gpuResolvers.length > 0) {
-            const resolver = brain._gpuResolvers.shift();
-            if (resolver) resolver(msg);
+        case 'compute_result': {
+          // GPU sent back sparse spike indices — tiny payload
+          const name = msg.clusterName;
+          if (!brain._gpuPending || !name || !brain._gpuPending[name]) break;
+
+          // Reconstruct full spike array from sparse indices
+          const totalSize = msg.size || CLUSTER_SIZES[name] || 0;
+          const fullSpikes = new Uint8Array(totalSize);
+          if (msg.spikeIndices) {
+            for (const idx of msg.spikeIndices) {
+              if (idx >= 0 && idx < totalSize) fullSpikes[idx] = 1;
+            }
           }
+
+          const resolver = brain._gpuPending[name];
+          delete brain._gpuPending[name];
+          resolver({
+            clusterName: name,
+            spikes: fullSpikes,
+            spikeCount: msg.spikeCount || msg.spikeIndices?.length || 0,
+          });
           break;
+        }
 
         default:
           console.log(`[${id}] Unknown message type: ${msg.type}`);
@@ -1370,6 +1471,15 @@ wss.on('connection', (ws, req) => {
 
   ws.on('close', () => {
     brain.clients.delete(ws);
+    // If GPU client disconnected, reset GPU state so it re-initializes on reconnect
+    if (ws === brain._gpuClient) {
+      brain._gpuClient = null;
+      brain._gpuConnected = false;
+      brain._gpuInitialized = {};
+      brain._gpuHits = 0;
+      brain._gpuMisses = 0;
+      console.log(`[Server] GPU compute client disconnected — switching to all-CPU`);
+    }
     console.log(`[Server] Client disconnected: ${id} (${brain.clients.size} remaining)`);
   });
 

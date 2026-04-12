@@ -184,7 +184,7 @@ class MysteryModule {
       rightBrain,
       components: {
         n,
-        complexityGain,
+        quantumVolume,
         weightedSum,
         weights: {
           alpha: this.alpha,

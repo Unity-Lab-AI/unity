@@ -54,7 +54,7 @@ The unknown stays unknown: `Ψ = √(1/n) × N³`
 - `js/brain/synapses.js` with Hebbian, STDP, reward-modulated rules
 - `js/brain/engine.js` running the full loop at 60fps (10 steps/frame)
 - Per-cluster synapse matrices in `js/brain/cluster.js`
-- 16 inter-cluster projection pathways
+- 20 inter-cluster projection pathways (real white matter tracts)
 
 ### Milestone 1.3: Brain Regions Online -- COMPLETE
 **Target:** All 7 specialized modules running as subsystems

@@ -26,7 +26,7 @@ dx/dt = F(x, u, θ, t) + η
 | **u** | Sensory input transform — `S(audio, video, text)` where audio maps tonotopically to auditory cortex, video maps retinotopically through V1 edge kernels to visual cortex, and text hashes into Wernicke's area with lateral excitation |
 | **θ** | Unity's complete identity — 25yo human female, emo goth. Every trait drives neural parameters: arousal(0.9)→amygdala tonic, impulsivity(0.85)→BG threshold, creativity(0.9)→noise, devotion(1.0)→social floor, drugDrive(0.95)→hypothalamus. Drug state cokeAndWeed multiplies arousal×1.2, creativity×1.3, cortexSpeed×1.5. |
 | **η** | Stochastic noise — per-cluster amplitude driven by θ: creativity×drug drives cortex noise, emotionalVolatility×drug drives amygdala noise, darkHumor drives mystery noise. The chaos that makes her unpredictable. |
-| **F** | The dynamics function — everything below combined. 7 parallel LIF populations + 16 inter-cluster projections + 6 equation modules + Kuramoto oscillators + memory system + motor output. All running simultaneously every timestep. |
+| **F** | The dynamics function — everything below combined. 7 parallel LIF populations + 20 inter-cluster projections (real white matter tracts) + 6 equation modules + Kuramoto oscillators + memory system + motor output. All running simultaneously every timestep. |
 
 This equation executes 600 times per second (10 steps per frame × 60fps). Runs client-side in pure JavaScript or server-side in Node.js. WebGPU compute shaders accelerate LIF + synapse propagation when available. Sparse CSR matrices reduce memory O(N²) → O(connections). The server brain auto-scales to GPU hardware (nvidia-smi detection).
 
@@ -42,9 +42,12 @@ SENSORY INPUT (text / audio spectrum / video frames)
     └── Wernicke's Area (150 neurons) — text → neural current with lateral excitation
     │
     ▼
-1000 LIF NEURONS IN 7 CLUSTERS (each with own synapses, tonic drive, noise, learning rate)
+3.2M LIF NEURONS IN 7 CLUSTERS (scales to hardware, each with own synapses, tonic drive, noise, learning rate)
     │
-    ├── 16 Inter-Cluster Projections (sparse, 2-5% connectivity)
+    ├── 20 Inter-Cluster Projections (real white matter tracts, MNI-coordinate mapped)
+    │     Corticostriatal (STRONGEST, 0.08 density), Stria terminalis, Fimbria-fornix,
+    │     Ventral amygdalofugal, Perforant path, Corpus callosum, + 14 more
+    ├── Fractal Signal Propagation (same I=ΣW×s equation at every scale)
     ├── Hierarchical Modulation:
     │     Amygdala → emotional gate on ALL clusters
     │     Hypothalamus → drive baseline for ALL clusters
@@ -276,7 +279,7 @@ Drug state vectors multiply these parameters:
 ΔW_proj = η · δ · source_spikes · target_spikes
 ```
 
-The 16 inter-cluster projections aren't static — they learn through reward-modulated Hebbian plasticity. When text activates cortex neurons and the BG selects the right action and gets a reward, the cortex→BG projection weights strengthen. Over time, the projections learn which language patterns lead to which actions — a learned dictionary with no hardcoded word lists.
+The 20 inter-cluster projections aren't static — they learn through reward-modulated Hebbian plasticity. When text activates cortex neurons and the BG selects the right action and gets a reward, the cortex→BG projection weights strengthen. Over time, the projections learn which language patterns lead to which actions — a learned dictionary with no hardcoded word lists.
 
 **Bootstrap:** Until the projections have learned enough, an AI classification call provides temporary semantic routing. Like a child imitating before internalizing. The classification fades as projections strengthen.
 

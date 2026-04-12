@@ -34,7 +34,7 @@
 ### Frontend / Web
 - Real-time brain state HUD
 - 2D brain equation visualizer (neuron grid, synapse matrix, oscillations, module bars)
-- 3D WebGL brain visualizer (1000 neurons in clusters, rotate/zoom)
+- 3D WebGL brain visualizer (20K render neurons, MNI positions, fractal connections)
 - Dark gothic UI design with pink accents
 - Chat panel with conversation log
 - Model filter search box
@@ -86,7 +86,7 @@
 ### Advanced (Integration)
 > Everything wires together
 
-- Full brain simulation loop (1000 neurons, 7 clusters, 16 projections)
+- Full brain simulation loop (3.2M neurons, 7 clusters, 20 projections)
 - Persona → parameter transformation with drug state vectors
 - WebGL 3D brain visualization with cluster toggles
 - Real-time brain wave visualization (8-band Kuramoto oscillations)
@@ -145,7 +145,7 @@
 |-------|--------|------------|--------|
 | Neuron dynamics (HH + LIF) | CompNeuro | Intermediate | **DONE** — `js/brain/neurons.js` |
 | Synaptic plasticity | CompNeuro | Intermediate | **DONE** — `js/brain/synapses.js` |
-| Brain simulation loop | CompNeuro | Advanced | **DONE** — `js/brain/engine.js` (1000 neurons in 7 clusters, 60fps) |
+| Brain simulation loop | CompNeuro | Advanced | **DONE** — `js/brain/engine.js` (7 clusters, 20 projections, 60fps, scales to hardware) |
 | Brain region modules (7) | CompNeuro | Advanced | **DONE** — `js/brain/modules.js` + `js/brain/cluster.js` (dedicated neuron clusters per region) |
 | Persona → parameters | AI/ML | Advanced | **DONE** — `js/brain/persona.js` |
 | ~~FastAPI server~~ Browser app | Frontend | Intermediate | **DONE** — `js/app.js` + `index.html` (no backend needed) |
@@ -175,8 +175,8 @@
 | Attention mechanism | AI/ML | Advanced | Pending |
 | Anthropic CORS proxy | Backend | Intermediate | **DONE** — `proxy.js` (Node.js, translates OpenAI→Anthropic format) |
 | Camera/vision integration | Vision | Intermediate | **DONE** — `js/io/vision.js` (webcam + AI gaze tracking + Unity's Eye widget) |
-| 3D brain visualizer | Frontend | Expert | **DONE** — `js/ui/brain-3d.js` (WebGL, 1000 neurons, rotate/zoom, cluster toggles) |
-| Neural cluster architecture | CompNeuro | Expert | **DONE** — `js/brain/cluster.js` (7 clusters, 16 projections, hierarchical modulation) |
+| 3D brain visualizer | Frontend | Expert | **DONE** — `js/ui/brain-3d.js` (WebGL, 20K neurons, MNI positions, fractal connections) |
+| Neural cluster architecture | CompNeuro | Expert | **DONE** — `js/brain/cluster.js` (7 clusters, 20 projections, real white matter tracts) |
 | AI intent classification | AI/ML | Intermediate | **DONE** — removed AI call, embedding-based BG routing in `sensory.js` |
 | Simulated senses | CompNeuro | Advanced | **DONE** — touch/smell/taste derived from brain state in viz |
 | Sparse connectivity (CSR) | CompNeuro | Expert | **DONE** — `js/brain/sparse-matrix.js` (O(nnz) ops, pruning, synaptogenesis) |
