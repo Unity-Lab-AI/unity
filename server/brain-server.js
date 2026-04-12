@@ -279,9 +279,7 @@ class ServerBrain {
     this.arousal = Math.min(1, Math.max(0, this.arousal));
     this.valence = (this.reward > 0 ? 0.1 : this.reward < 0 ? -0.1 : 0) + (Math.random() - 0.5) * 0.02;
 
-    // Update Ψ — consciousness refines with complexity: (√(1/n))³
-    const n = Math.max(1, this.totalSpikes);
-    this.psi = Math.pow(Math.sqrt(1 / n), 3);
+    // Ψ — computed in _updateDerivedState (uses full volume equation)
 
     // Update coherence
     this.coherence += (Math.random() - 0.5) * 0.02;
@@ -422,9 +420,25 @@ class ServerBrain {
     this.arousal = Math.min(1, Math.max(0, this.arousal));
     this.valence = (this.reward > 0 ? 0.1 : this.reward < 0 ? -0.1 : 0) + (Math.random() - 0.5) * 0.02;
 
-    // Ψ = (√(1/n))³
-    const n = Math.max(1, this.totalSpikes);
-    this.psi = Math.pow(Math.sqrt(1 / n), 3);
+    // Ψ = (√(1/N))³ — cubed area of quantum tunneled bit in total volume
+    // N = TOTAL neurons (the volume), NOT spikes
+    // Spikes modulate through Id/Ego/Left/Right, not through N
+    const N = TOTAL_NEURONS; // the full volume — 3.2M neurons
+    const quantumBit = Math.pow(Math.sqrt(1 / N), 3); // (1/N)^(3/2) — scales with cube of inverse root
+
+    // Components from cluster activity (spikes drive these, not N)
+    const cortexActivity = this.clusters.cortex.spikeCount / (CLUSTER_SIZES.cortex || 1);
+    const amygActivity = this.clusters.amygdala.spikeCount / (CLUSTER_SIZES.amygdala || 1);
+    const cerebActivity = this.clusters.cerebellum.spikeCount / (CLUSTER_SIZES.cerebellum || 1);
+    const mysteryActivity = this.clusters.mystery.spikeCount / (CLUSTER_SIZES.mystery || 1);
+
+    // Ψ = quantum_bit × [α·Id + β·Ego + γ·Left + δ·Right]
+    const id = amygActivity;                    // Id from amygdala (instinct)
+    const ego = cortexActivity;                 // Ego from cortex (self/thought)
+    const left = cerebActivity + cortexActivity * 0.5;  // Left brain (logic: cerebellum + cortex)
+    const right = amygActivity + mysteryActivity;       // Right brain (creativity: emotion + mystery)
+
+    this.psi = quantumBit * (0.3 * id + 0.25 * ego + 0.2 * left + 0.25 * right);
 
     // Coherence
     this.coherence += (Math.random() - 0.5) * 0.02;

@@ -163,7 +163,8 @@ For each word in sentence:
 
 | Equation | Purpose | File |
 |----------|---------|------|
-| `Ψ = (√(1/n))³ · [α·Id + β·Ego + γ·Left + δ·Right]` | Consciousness | `mystery.js` |
+| `Ψ = (√(1/N))³ · [α·Id + β·Ego + γ·Left + δ·Right]` | Consciousness — N=TOTAL neurons (volume), not spikes | `mystery.js`, `brain-server.js` |
+| `(√(1/N))³ = N^(-3/2)` = cubed area of quantum tunneled bit in total volume | Quantum consciousness scaling | `brain-server.js` |
 | `gainMultiplier = 0.9 + Ψ · 0.05` | Ψ modulates all coupling | `engine.js` |
 | `emotionalGate = 0.7 + arousal · 0.6` | Amygdala amplification | `engine.js` |
 | `emoji = codePoint(0x1F600 + f(v,a,R,Ψ,δ,dream))` | Emoji from brain state | `brain-3d.js` |
