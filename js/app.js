@@ -83,11 +83,17 @@ let landingBrainSource = null; // RemoteBrain or null
     console.warn('[Landing] 3D brain failed:', err.message);
   }
 
-  // If server brain connected, wire state updates to 3D viz + landing stats
+  // If server brain connected, wire state updates to 3D viz + landing stats + HUD
   if (landingBrainSource) {
+    // Show HUD immediately — server data drives it
+    const hudEl = document.getElementById('brain-hud');
+    if (hudEl) hudEl.classList.remove('hidden');
+
     landingBrainSource.on('stateUpdate', (state) => {
+      _landingState = state;
       if (landingBrain3d) landingBrain3d.updateState(state);
       updateLandingStats(state);
+      updateBrainIndicator(state);
     });
     console.log('[Landing] Connected to server brain');
   } else {
