@@ -531,9 +531,10 @@ class ServerBrain {
             // Build a filtered set for the parallel brain
             const cpuClusterNames = Object.keys(CLUSTER_SIZES).filter(n => !gpuClusters.includes(n));
 
-            // Run CPU workers — EXCLUDE clusters the GPU is handling
+            // Run CPU workers — ALL clusters. GPU results overlay on top.
+            // Every cluster always has CPU-computed spikes as baseline.
             const cpuResults = await Promise.race([
-              this._parallelBrain.step({}, gpuClusters),
+              this._parallelBrain.step({}),
               new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 500)),
             ]);
 
