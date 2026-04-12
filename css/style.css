@@ -309,7 +309,7 @@ html, body {
 /* ── Brain HUD ───────────────────────────────────── */
 
 #brain-hud {
-  pointer-events: none;
+  pointer-events: auto;
   z-index: 8001;
   font-family: var(--mono);
 }
@@ -324,6 +324,26 @@ html, body {
   min-width: 180px;
   backdrop-filter: blur(8px);
 }
+
+/* ── Draggable panel system ── */
+.drag-handle {
+  position: absolute;
+  top: 0; right: 0;
+  width: 28px; height: 28px;
+  cursor: grab;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #333;
+  font-size: 10px;
+  z-index: 10;
+  user-select: none;
+  border-radius: 0 8px 0 4px;
+  transition: color 0.2s, background 0.2s;
+}
+.drag-handle:hover { color: #ff4d9a; background: rgba(255,77,154,0.08); }
+.drag-handle:active { cursor: grabbing; color: #ff4d9a; }
+.draggable-panel { user-select: text; }
 
 .hud-row {
   display: flex;

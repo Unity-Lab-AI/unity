@@ -1035,6 +1035,13 @@ Vision: ${state.visionDescription || 'none'}`;
     if (brain3d) brain3d.updateState(state);
   });
 
+  // Fallback: if local brain state is thin, poll server state for HUD
+  setInterval(() => {
+    if (_landingState) {
+      updateBrainIndicator(_landingState);
+    }
+  }, 500);
+
   // ── Wire sandbox Unity API ──
   sandbox.setUnityAPI({
     speak: (text) => voice.speak(text),
@@ -1320,10 +1327,119 @@ function startEyeIris(canvas, visualCortex) {
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 // ═══════════════════════════════════════════════════════════════
+// DRAGGABLE PANEL SYSTEM — persistent positions across sessions
+// ═══════════════════════════════════════════════════════════════
+
+const PANEL_POS_KEY = 'unity_panel_positions';
+
+function makeDraggable(el, id) {
+  if (!el) return;
+  el.classList.add('draggable-panel');
+  el.style.position = el.style.position || 'fixed';
+
+  // Add drag handle (grip icon in top-right corner)
+  const handle = document.createElement('div');
+  handle.className = 'drag-handle';
+  handle.innerHTML = '⠿';
+  handle.title = 'Drag to move';
+  el.style.position = 'fixed';
+  el.appendChild(handle);
+
+  // Load saved position
+  try {
+    const saved = JSON.parse(localStorage.getItem(PANEL_POS_KEY) || '{}');
+    if (saved[id]) {
+      el.style.top = saved[id].top;
+      el.style.left = saved[id].left;
+      el.style.right = 'auto';
+      el.style.bottom = 'auto';
+    }
+  } catch {}
+
+  // Drag logic — only from the handle
+  let dragging = false, startX, startY, startLeft, startTop;
+
+  handle.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragging = true;
+    const rect = el.getBoundingClientRect();
+    startX = e.clientX;
+    startY = e.clientY;
+    startLeft = rect.left;
+    startTop = rect.top;
+    handle.style.cursor = 'grabbing';
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    el.style.left = (startLeft + dx) + 'px';
+    el.style.top = (startTop + dy) + 'px';
+    el.style.right = 'auto';
+    el.style.bottom = 'auto';
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    handle.style.cursor = 'grab';
+    // Save position
+    try {
+      const saved = JSON.parse(localStorage.getItem(PANEL_POS_KEY) || '{}');
+      saved[id] = { top: el.style.top, left: el.style.left };
+      localStorage.setItem(PANEL_POS_KEY, JSON.stringify(saved));
+    } catch {}
+  });
+
+  // Touch support
+  handle.addEventListener('touchstart', (e) => {
+    e.stopPropagation();
+    const touch = e.touches[0];
+    const rect = el.getBoundingClientRect();
+    startX = touch.clientX;
+    startY = touch.clientY;
+    startLeft = rect.left;
+    startTop = rect.top;
+    dragging = true;
+  }, { passive: true });
+
+  window.addEventListener('touchmove', (e) => {
+    if (!dragging) return;
+    const touch = e.touches[0];
+    el.style.left = (startLeft + touch.clientX - startX) + 'px';
+    el.style.top = (startTop + touch.clientY - startY) + 'px';
+    el.style.right = 'auto';
+    el.style.bottom = 'auto';
+  }, { passive: true });
+
+  window.addEventListener('touchend', () => {
+    if (!dragging) return;
+    dragging = false;
+    try {
+      const saved = JSON.parse(localStorage.getItem(PANEL_POS_KEY) || '{}');
+      saved[id] = { top: el.style.top, left: el.style.left };
+      localStorage.setItem(PANEL_POS_KEY, JSON.stringify(saved));
+    } catch {}
+  });
+}
+
+// Make all panels draggable after DOM is ready
+function initDraggablePanels() {
+  makeDraggable(document.getElementById('hud-metrics'), 'hud-metrics');
+  makeDraggable(document.getElementById('hud-modules'), 'hud-modules');
+  makeDraggable(document.getElementById('unity-eye'), 'unity-eye');
+  makeDraggable(document.getElementById('landing-viz-panel'), 'landing-viz-panel');
+}
+
+// ═══════════════════════════════════════════════════════════════
 // BOOT
 // ═══════════════════════════════════════════════════════════════
 
 init();
+// Init draggable panels after a tick so DOM is ready
+setTimeout(initDraggablePanels, 100);
 
 window.addEventListener('beforeunload', () => {
   if (voice) voice.destroy();
