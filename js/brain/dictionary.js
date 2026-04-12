@@ -17,7 +17,7 @@
  * No hardcoded vocabulary. Everything learned. Everything persistent.
  */
 
-const MAX_WORDS = 5000;
+const MAX_WORDS = 50000;
 const PATTERN_DIM = 32; // cortex output dimensionality
 const STORAGE_KEY = 'unity_brain_dictionary';
 

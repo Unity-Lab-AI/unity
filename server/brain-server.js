@@ -780,6 +780,20 @@ When asked to generate an image, respond with ONLY the image description/prompt 
 const brain = new ServerBrain();
 brain.start();
 
+// Load InnerVoice for language learning (ESM module, dynamic import)
+(async () => {
+  try {
+    const { InnerVoice } = await import('../js/brain/inner-voice.js');
+    brain.innerVoice = new InnerVoice();
+    // Load saved dictionary if exists
+    if (brain.innerVoice.load) brain.innerVoice.load();
+    console.log(`[Brain] InnerVoice loaded — dictionary: ${brain.innerVoice.dictionary?.size || 0} words`);
+  } catch (e) {
+    console.warn(`[Brain] InnerVoice not available: ${e.message}`);
+    brain.innerVoice = null;
+  }
+})();
+
 // Periodic saves
 setInterval(() => {
   brain.saveWeights();
@@ -882,13 +896,59 @@ const httpServer = http.createServer((req, res) => {
         for (const m of msgs) { if (m.role === 'system') sys = m.content; if (m.role === 'user') usr = m.content; }
         const prompt = sys ? sys + '\n\n' + usr : usr;
         if (!prompt.trim()) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end('{"error":"empty"}'); return; }
-        execFile('claude', ['-p', prompt, '--output-format', 'text'], { timeout: 60000, maxBuffer: 1024 * 1024 }, (err, stdout) => {
+        execFile('claude', ['-p', prompt, '--output-format', 'text'], { timeout: 60000, maxBuffer: 1024 * 1024, cwd: require('os').tmpdir() }, (err, stdout) => {
           if (err) { res.writeHead(500, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: err.message })); return; }
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ id: 'cli-' + Date.now(), object: 'chat.completion', model: data.model || 'claude-opus-4-6', choices: [{ index: 0, message: { role: 'assistant', content: stdout.trim() }, finish_reason: 'stop' }], usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 } }));
         });
       } catch (e) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: e.message })); }
     });
+    return;
+  }
+
+  // ── Bulk teach endpoint — feed the brain lots of text at once ──
+  if (req.method === 'POST' && req.url === '/api/teach') {
+    let body = '';
+    req.on('data', c => { body += c; if (body.length > 2000000) req.destroy(); });
+    req.on('end', () => {
+      try {
+        const data = JSON.parse(body);
+        const sentences = data.sentences || [];
+        const text = data.text || '';
+        let taught = 0;
+
+        // If raw text, split into sentences
+        const toTeach = sentences.length > 0 ? sentences :
+          text.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length > 5);
+
+        for (const sentence of toTeach) {
+          if (brain.innerVoice) {
+            const cortexOutput = new Float64Array(32); // placeholder pattern
+            const arousal = brain.arousal ?? 0.5;
+            const valence = brain.valence ?? 0;
+            brain.innerVoice.learn(sentence, cortexOutput, arousal, valence);
+            taught++;
+          }
+        }
+
+        const dictSize = brain.innerVoice?.dictionary?.size || 0;
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, taught, dictSize }));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
+  // ── Brain stats — vocabulary size, learning progress ──
+  if (req.url === '/api/brain-stats') {
+    const dictSize = brain.innerVoice?.dictionary?.size || 0;
+    const cortexSentences = brain.innerVoice?.languageCortex?.sentencesLearned || 0;
+    const wordsProcessed = brain.innerVoice?.languageCortex?.wordsProcessed || 0;
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ dictSize, cortexSentences, wordsProcessed }));
     return;
   }
 
