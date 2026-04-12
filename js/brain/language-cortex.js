@@ -230,42 +230,34 @@ export class LanguageCortex {
     const allWords = Array.from(dictionary._words.entries());
     if (allWords.length === 0) return '';
 
-    // Score all words for starting position
-    let bestStart = allWords[0];
-    let bestScore = -Infinity;
-    for (const [word, entry] of allWords) {
+    // Score all words and sample via softmax — brain noise η prevents repetition
+    const scored = allWords.map(([word, entry]) => {
       const pattern = entry.pattern || this.wordToPattern(word);
       const score = this.scoreWord(pattern, startPredicted);
-      // Mood proximity boost
       const moodDist = Math.abs(entry.arousal - arousal) + Math.abs(entry.valence - valence);
-      const finalScore = score - moodDist * 0.3;
-      if (finalScore > bestScore) { bestScore = finalScore; bestStart = [word, entry]; }
-    }
+      return { word, entry, score: score - moodDist * 0.3 };
+    });
 
-    const sentence = [bestStart[0]];
-    let currentPattern = bestStart[1].pattern || this.wordToPattern(bestStart[0]);
+    const startWord = this._softmaxSample(scored, temperature);
+    const sentence = [startWord.word];
+    let currentPattern = startWord.entry.pattern || this.wordToPattern(startWord.word);
 
-    // Generate remaining words via prediction chain
+    // Generate remaining words via prediction chain + softmax sampling
     for (let pos = 1; pos < len; pos++) {
       const predicted = this.predictNext(currentPattern, arousal, valence, pos);
 
-      // Score all candidate words
-      let best = null;
-      let bestS = -Infinity;
-      for (const [word, entry] of allWords) {
-        if (sentence.includes(word) && sentence.length < 5) continue; // avoid early repeats
-        const pattern = entry.pattern || this.wordToPattern(word);
-        let score = this.scoreWord(pattern, predicted);
+      const candidates = allWords
+        .filter(([word]) => word !== sentence[sentence.length - 1]) // no immediate repeats
+        .map(([word, entry]) => {
+          const pattern = entry.pattern || this.wordToPattern(word);
+          const score = this.scoreWord(pattern, predicted);
+          return { word, entry, score };
+        });
 
-        // Temperature scaling — low temp = pick the best, high temp = more variety
-        score = score / temperature;
-
-        if (score > bestS) { bestS = score; best = [word, entry]; }
-      }
-
-      if (best) {
-        sentence.push(best[0]);
-        currentPattern = best[1].pattern || this.wordToPattern(best[0]);
+      const picked = this._softmaxSample(candidates, temperature);
+      if (picked) {
+        sentence.push(picked.word);
+        currentPattern = picked.entry.pattern || this.wordToPattern(picked.word);
       }
     }
 
@@ -330,6 +322,27 @@ export class LanguageCortex {
     }
 
     this.sentencesLearned++;
+  }
+
+  /**
+   * Softmax sampling — converts scores to probabilities, picks one.
+   * Temperature controls randomness: low = peaked (pick best), high = uniform (explore).
+   * This is the brain's noise term η applied to language.
+   */
+  _softmaxSample(scored, temperature) {
+    if (scored.length === 0) return null;
+    // Compute softmax probabilities
+    const maxScore = Math.max(...scored.map(s => s.score));
+    const exps = scored.map(s => Math.exp((s.score - maxScore) / Math.max(0.01, temperature)));
+    const sum = exps.reduce((a, b) => a + b, 0);
+
+    // Weighted random pick
+    let rand = Math.random() * sum;
+    for (let i = 0; i < scored.length; i++) {
+      rand -= exps[i];
+      if (rand <= 0) return scored[i];
+    }
+    return scored[scored.length - 1];
   }
 
   /**
