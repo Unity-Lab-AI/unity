@@ -357,11 +357,13 @@ export class LanguageCortex {
       const moodDist = Math.abs((entry.arousal || 0.5) - arousal) + Math.abs((entry.valence || 0) - valence);
       const moodBias = Math.exp(-moodDist * 1.5);
       const topicSim = this._cosine(pattern, contextPattern);
-      const score = zipf * 0.15 + posP * 0.2 + synScore * 0.2 + moodBias * 0.25 + Math.max(0, topicSim) * 0.2;
+      // Structure dominates: syntax + position + conditional = 70% of score
+      const score = posP * 0.3 + synScore * 0.25 + zipf * 0.15 + moodBias * 0.15 + Math.max(0, topicSim) * 0.15;
       return { word, entry, pattern, score };
     });
 
-    const start = this._softmaxSample(startScored, temperature);
+    // Lower temperature = more structured output (divide by 3 to sharpen distribution)
+    const start = this._softmaxSample(startScored, temperature * 0.3);
     const sentence = [start.word];
     let prevWord = start.word;
     let prevPattern = start.pattern;
@@ -380,11 +382,12 @@ export class LanguageCortex {
           const moodBias = Math.exp(-moodDist * 1.5);
           const topicSim = this._cosine(pattern, contextPattern);
 
-          const score = condP * 0.2 + posP * 0.15 + synScore * 0.15 + zipf * 0.1 + mi * 0.15 + moodBias * 0.15 + Math.max(0, topicSim) * 0.1;
+          // Structure dominates: conditional + position + syntax = 65%
+          const score = condP * 0.3 + posP * 0.2 + synScore * 0.15 + mi * 0.15 + moodBias * 0.1 + Math.max(0, topicSim) * 0.1;
           return { word, entry, pattern, score };
         });
 
-      const picked = this._softmaxSample(candidates, temperature);
+      const picked = this._softmaxSample(candidates, temperature * 0.3);
       if (picked) {
         sentence.push(picked.word);
         prevWord = picked.word;
@@ -616,12 +619,13 @@ export class LanguageCortex {
       learnBigram: () => {},
     };
     for (const s of corpus) for (const w of s.replace(/[^a-z' ]/g, '').split(/\s+/)) if (w.length >= 2) td.learnWord(w, null, 0.5, 0);
-    for (const s of corpus) this.learnSentence(s, td, 0.5, 0);
-    // Second pass at different arousal/valence to spread the emotional range
-    for (let i = 0; i < corpus.length; i++) {
-      const a = 0.3 + (i / corpus.length) * 0.6;
-      const v = Math.sin(i * 0.7) * 0.5;
-      this.learnSentence(corpus[i], td, a, v);
+    // Multiple passes to strengthen position/conditional weights
+    for (let pass = 0; pass < 5; pass++) {
+      for (let i = 0; i < corpus.length; i++) {
+        const a = 0.3 + (i / corpus.length) * 0.6 + pass * 0.05;
+        const v = Math.sin(i * 0.7 + pass) * 0.5;
+        this.learnSentence(corpus[i], td, Math.min(1, a), v);
+      }
     }
 
     console.log(`[LanguageCortex] Bootstrapped: ${this.sentencesLearned} sentences, ${this._marginalCounts.size} unique words, ${this._questionStarters.size} question starters, α=${this.zipfAlpha.toFixed(2)}`);
