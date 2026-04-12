@@ -143,8 +143,10 @@ class MysteryModule {
     const leftBrain = this._computeLeftBrain(brainState);
     const rightBrain = this._computeRightBrain(brainState);
 
-    // Complexity gain: (sqrt(n))^3 = n^(3/2)
-    const complexityGain = Math.pow(Math.sqrt(n), 3);
+    // Complexity gain: (sqrt(1/n))^3 = n^(-3/2)
+    // As system complexity grows, consciousness becomes MORE refined (smaller but denser)
+    // Not bigger with more neurons — more integrated, more precise
+    const complexityGain = Math.pow(Math.sqrt(1 / n), 3);
 
     // Weighted psychodynamic sum
     const weightedSum = (this.alpha * id)

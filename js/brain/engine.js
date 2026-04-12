@@ -27,6 +27,7 @@ import { MemorySystem } from './memory.js';
 import { AuditoryCortex } from './auditory-cortex.js';
 import { VisualCortex } from './visual-cortex.js';
 import { InnerVoice } from './inner-voice.js';
+import { BrainPersistence } from './persistence.js';
 
 // ── EventEmitter ────────────────────────────────────────────────────
 
@@ -177,6 +178,30 @@ export class UnityBrain extends EventEmitter {
       motor: null, memory: null, sensory: null,
       visualCortex: null, auditoryCortex: null,
     };
+  }
+
+  /**
+   * Load saved brain state from persistence.
+   * Called after construction, before start().
+   */
+  loadSavedState() {
+    return BrainPersistence.load(this);
+  }
+
+  /**
+   * Save brain state to persistence.
+   */
+  saveBrainState() {
+    BrainPersistence.save(this);
+    this.innerVoice.save();
+  }
+
+  /**
+   * Export brain as downloadable file.
+   */
+  exportBrain() {
+    this.saveBrainState();
+    return BrainPersistence.export(this);
   }
 
   _initOscCoupling() {
@@ -829,10 +854,10 @@ USER REQUEST: ${text}`;
       proj.learn(amount, 0.002);
     }
 
-    // Save dictionary every 10 rewards (periodic persistence)
+    // Save brain state every 10 rewards (periodic persistence)
     this._rewardCount = (this._rewardCount || 0) + 1;
     if (this._rewardCount % 10 === 0) {
-      this.innerVoice.save();
+      this.saveBrainState();
     }
   }
 
