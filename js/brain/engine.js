@@ -644,31 +644,44 @@ export class UnityBrain extends EventEmitter {
     const cortexOutput = this.clusters.cortex.getOutput(32);
     this.innerVoice.learn(text, cortexOutput, state.amygdala?.arousal ?? 0.5, state.amygdala?.valence ?? 0);
 
-    // 7. Generate response — try brain's own voice first, fall back to AI
+    // 7. Generate response — brain speaks from its own equations
     let response = null;
-    const ownVoice = this.innerVoice.speak(state.amygdala?.arousal ?? 0.5, state.amygdala?.valence ?? 0);
+    const brainArousal = state.amygdala?.arousal ?? 0.5;
+    const brainValence = state.amygdala?.valence ?? 0;
 
-    if (ownVoice && ownVoice.length > 10) {
-      // Brain generated its own sentence from learned dictionary
-      response = ownVoice;
+    // Brain's own voice — dictionary + inner voice system
+    response = this.innerVoice.speak(brainArousal, brainValence);
+
+    // If first attempt too short, try harder — generate from dictionary directly
+    if (!response || response.length < 5) {
+      if (this.dictionary) {
+        response = this.dictionary.generateSentence?.(brainArousal, brainValence) || null;
+      }
+    }
+
+    // Still nothing? Use raw cortex state to form a minimal response
+    if (!response || response.length < 3) {
+      const intensity = brainArousal * (1 + Math.abs(brainValence));
+      if (intensity > 0.8) response = this.innerVoice._getIntenseResponse?.(brainValence) || '...';
+      else response = '...';
+    }
+
+    if (response && response.length >= 3) {
       console.log(`[Brain] Own voice: "${response}"`);
     }
 
-    // If own voice insufficient or unavailable, use Broca's area (AI model)
-    if (!response && this._brocasArea) {
-      response = await this._brocasArea.generate(state, text);
-      if (!response) {
-        await this._sleep(1000);
-        response = await this._brocasArea.generate(state, text);
-      }
-      // Learn from AI's response — the dictionary grows
-      if (response) {
-        this.innerVoice.learn(response, cortexOutput, state.amygdala?.arousal ?? 0.5, state.amygdala?.valence ?? 0);
+    // If Broca's area (AI model) is connected, it can TEACH the brain new words
+    // but the brain's own voice is always the PRIMARY response
+    if (this._brocasArea && (!response || response === '...')) {
+      const aiResponse = await this._brocasArea.generate(state, text);
+      if (aiResponse) {
+        // AI teaches — brain learns the words, but AI response is used this time
+        this.innerVoice.learn(aiResponse, cortexOutput, brainArousal, brainValence);
+        response = aiResponse;
       }
     }
 
-    if (!response && ownVoice) response = ownVoice; // use whatever the brain had
-    if (!response) return { text: "...", action: 'respond_text' };
+    if (!response) return { text: '...', action: 'respond_text' };
 
     if (this.motor.wasInterrupted()) return { text: null, action: 'interrupted' };
 

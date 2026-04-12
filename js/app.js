@@ -127,7 +127,39 @@ let landingBrainSource = null; // RemoteBrain or null
     }
   }, 1000);
 
-  // Wire "Talk to Unity" button
+  // "FUCK IT — BRAIN ONLY" — full brain, no external AI model for text
+  // The brain runs ALL its systems: cortex, hippocampus, amygdala, BG, cerebellum,
+  // hypothalamus, mystery, dictionary, inner voice, motor, sensory, memory.
+  // Text comes from the brain's own learned patterns. Images still available via Pollinations.
+  const goBtn = document.getElementById('landing-go-btn');
+  if (goBtn) {
+    goBtn.addEventListener('click', () => {
+      console.log('[Landing] BRAIN ONLY — full brain, no AI text model');
+      const landing = document.getElementById('landing-brain');
+      if (landing) landing.style.display = 'none';
+      window._brainOnlyMode = true;
+      // Show setup modal but with text models greyed out
+      const modal = document.getElementById('setup-modal');
+      if (modal) modal.style.display = '';
+      // Grey out text model selection
+      const textSelect = document.getElementById('text-model-select');
+      if (textSelect) { textSelect.disabled = true; textSelect.style.opacity = '0.3'; }
+      const textFilter = document.getElementById('text-model-filter');
+      if (textFilter) { textFilter.disabled = true; textFilter.style.opacity = '0.3'; }
+      // Add label showing brain-only mode
+      const textLabel = document.querySelector('label[for="text-model-select"]') ||
+        document.querySelector('#model-selectors label');
+      if (textLabel) textLabel.innerHTML = '🧠 Text — <span style="color:#ff4d9a;font-weight:700;">BRAIN ONLY</span> (no AI model)';
+      // Enable start button
+      const startBtn = document.getElementById('start-btn');
+      if (startBtn) {
+        startBtn.disabled = false;
+        startBtn.textContent = 'Start Brain — No AI Text';
+      }
+    });
+  }
+
+  // "connect AI models" — opens setup modal for those who want an AI
   const chatBtn = document.getElementById('landing-chat-btn');
   if (chatBtn) {
     chatBtn.addEventListener('click', () => {
@@ -735,8 +767,10 @@ async function bootUnity(apiKey, perms) {
   sandbox = new Sandbox('sandbox');
 
   // ── Initialize Broca's Area (language generation peripheral) ──
-  // No external persona file — the brain equations ARE the personality
-  brocasArea = new BrocasArea({ providers, storage });
+  // Brain-only mode: no AI text model. Brain speaks from its own equations.
+  if (!window._brainOnlyMode) {
+    brocasArea = new BrocasArea({ providers, storage });
+  }
 
   // ══════════════════════════════════════════════════════════════
   // CREATE THE BRAIN — the one and only
@@ -803,8 +837,9 @@ async function bootUnity(apiKey, perms) {
   }
 
   // ── Connect brain peripherals — brain controls everything ──
-  brain.connectLanguage(brocasArea);
+  if (brocasArea) brain.connectLanguage(brocasArea);
   brain.connectVoice(voice);
+  // Images still available even in brain-only mode
   brain.connectImageGen(pollinations, sandbox, storage);
 
   // ── Listen for brain's response events — app.js just renders ──
