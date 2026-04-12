@@ -138,12 +138,24 @@
 | Action | `*[VERB] [COMPLEMENT...]*` | `language-cortex.js` |
 | Exclamation | `[INTENSIFIER] [COMPLEMENT...]` | `language-cortex.js` |
 
+### Brain-Driven Speech Production (think → plan → speak)
+| Step | Equation | What it does | File |
+|------|----------|-------------|------|
+| 1. THINK | `thoughtWords = dictionary.findByPattern(cortexPattern, 15)` | Cortex activation → content words | `language-cortex.js` |
+| 2. RECALL | `contextWords = lastInputWords; contextPattern = avg(last5Inputs)` | Hippocampus → conversation relevance | `language-cortex.js` |
+| 3. FEEL | `moodWords = dictionary.findByMood(arousal, valence, 15)` | Amygdala → emotional tone | `language-cortex.js` |
+| 4. PLAN | `type = f(predError, arousal, motorConf, coherence)` | Cortex prediction → sentence type | `language-cortex.js` |
+| 5. SELF | `selfAware = Ψ > 0.005 → boost self-referential words` | Mystery module → introspection | `language-cortex.js` |
+
 ### Slot Filling Equation
 | Equation | Purpose | File |
 |----------|---------|------|
-| `typeCompatibility = dot(wordType, slotRequirement)` | Does this word FIT this grammatical slot? | `language-cortex.js` |
-| `score = type×0.40 + follower×0.15 + cond×0.10 + mood×0.15 + topic×0.10 + freq×0.10 - recency×0.20` | Combined word selection | `language-cortex.js` |
-| `word = softmax(scores, T×0.12)` | Sharp sampling — best structural fit wins | `language-cortex.js` |
+| `typeCompatibility = dot(wordType, slotRequirement)` | Grammar — does this word fit this slot? | `language-cortex.js` |
+| `isThought = 0.4 if word ∈ thoughtWords` | Content — is this what the brain is thinking? | `language-cortex.js` |
+| `isContext = 0.3 if word ∈ contextWords` | Relevance — was this word just said? | `language-cortex.js` |
+| `isMood = 0.2 if word ∈ moodWords` | Tone — does this match the emotion? | `language-cortex.js` |
+| `score = type×0.25 + thought×0.20 + context×0.15 + topic×0.05 + mood×0.10 + assoc×0.20 + self - recency` | Combined scoring | `language-cortex.js` |
+| `word = softmax(scores, T×0.12)` | Sharp sampling | `language-cortex.js` |
 
 ### Loop Detection
 | Equation | Purpose | File |

@@ -255,13 +255,62 @@ export class LanguageCortex {
   // GENERATION — structure from equations, words from dictionary
   // ═══════════════════════════════════════════════════════════════
 
+  /**
+   * Generate speech from the brain's FULL state.
+   *
+   * The brain THINKS before speaking:
+   *
+   * 1. CORTEX PATTERN → what is the brain thinking about?
+   *    thoughtPattern = cortex output (32-dim activation)
+   *    Finds words whose patterns are CLOSEST to the thought → these are the CONTENT
+   *
+   * 2. HIPPOCAMPAL RECALL → what was said recently?
+   *    contextPattern = average of recent input patterns
+   *    Boosts words related to the conversation → RELEVANCE
+   *
+   * 3. AMYGDALA → how does the brain feel?
+   *    arousal/valence → selects words with matching emotional associations → TONE
+   *
+   * 4. PREDICTION → what SHOULD come next?
+   *    cortex predictionError → high = ask question, low = make statement
+   *    Ψ (consciousness) → high = self-referential, introspective
+   *
+   * 5. STRUCTURE → arrange content words grammatically
+   *    wordType equations + slot requirements → proper English word order
+   *
+   * 6. ARTICULATE → final sentence output
+   *    Loop detection, recency suppression, softmax sampling
+   */
   generate(dictionary, arousal, valence, coherence, opts = {}) {
     if (!dictionary || dictionary.size === 0) return '';
 
-    const temperature = 1.0 / (coherence + 0.1);
     const predError = opts.predictionError || 0;
     const motorConf = opts.motorConfidence || 0;
+    const psi = opts.psi || 0;
+    const cortexPattern = opts.cortexPattern || null;
+    const temperature = 1.0 / (coherence + 0.1);
+
+    // ── STEP 1: WHAT to say — cortex thought determines CONTENT ──
+    // Find words whose patterns match what the brain is currently thinking
+    const thoughtWords = cortexPattern
+      ? dictionary.findByPattern(cortexPattern, 15)  // words closest to cortex activation
+      : [];
+    const thoughtSet = new Set(thoughtWords);
+
+    // ── STEP 2: CONTEXT — hippocampal recall of recent conversation ──
+    const contextPattern = this._getContextPattern();
+    const contextWords = this._lastInputWords || [];
+    const contextSet = new Set(contextWords);
+
+    // ── STEP 3: MOOD — amygdala emotional tone ──
+    const moodWords = dictionary.findByMood(arousal, valence, 15);
+    const moodSet = new Set(moodWords);
+
+    // ── STEP 4: PLAN — what type of sentence? ──
     const type = this.sentenceType(arousal, predError, motorConf, coherence);
+
+    // Self-referential when Ψ is high — the brain talks ABOUT ITSELF
+    const selfAware = psi > 0.005;
 
     // Length from arousal
     let targetLen;
@@ -273,50 +322,58 @@ export class LanguageCortex {
     const allWords = Array.from(dictionary._words.entries());
     if (allWords.length === 0) return '';
 
-    const contextPattern = this._getContextPattern();
     const usedBigrams = new Set();
     const sentence = [];
 
-    // Fill each slot using type compatibility + mood + association + recency
+    // ── STEP 5: STRUCTURE — fill slots with brain-selected words ──
     for (let pos = 0; pos < len; pos++) {
       const prevWord = pos > 0 ? sentence[pos - 1] : null;
       const followers = prevWord ? this._jointCounts.get(prevWord) : null;
 
-      // Score every word for this slot
       const scored = allWords
         .filter(([w]) => {
-          if (w === prevWord) return false; // no immediate repeat
-          if (prevWord && usedBigrams.has(prevWord + '→' + w)) return false; // no bigram repeat
+          if (w === prevWord) return false;
+          if (prevWord && usedBigrams.has(prevWord + '→' + w)) return false;
           return true;
         })
         .map(([word, entry]) => {
-          // TYPE COMPATIBILITY — does this word FIT this slot?
-          // This IS the grammar equation. No training needed.
+          // GRAMMAR — does this word fit this grammatical slot?
           const typeScore = this.typeCompatibility(word, pos, type);
 
-          // ASSOCIATION — does this word follow the previous word?
-          const condP = prevWord ? this._condProb(word, prevWord) : 0;
-          const followerCount = followers?.get(word) || 0;
+          // THOUGHT — is this word what the brain is thinking about?
+          // cortex pattern match = the brain's CONTENT drives word choice
+          const isThought = thoughtSet.has(word) ? 0.4 : 0;
 
-          // MOOD — does this word match the brain's emotional state?
-          const moodDist = Math.abs((entry.arousal || 0.5) - arousal) + Math.abs((entry.valence || 0) - valence);
-          const moodBias = Math.exp(-moodDist * 1.5);
-
-          // TOPIC — is this word relevant to what was just said?
+          // CONTEXT — is this word relevant to the conversation?
+          const isContext = contextSet.has(word) ? 0.3 : 0;
           const pattern = entry.pattern || this.wordToPattern(word);
           const topicSim = contextPattern ? Math.max(0, this._cosine(pattern, contextPattern)) : 0;
 
-          // FREQUENCY — Zipf: common words more likely
-          const freq = entry.frequency || 1;
-          const zipf = 1 / Math.pow(freq + 1, 0.3); // inverse — less frequent = slightly novel
+          // MOOD — emotional alignment with amygdala
+          const isMood = moodSet.has(word) ? 0.2 : 0;
+          const moodDist = Math.abs((entry.arousal || 0.5) - arousal) + Math.abs((entry.valence || 0) - valence);
+          const moodBias = Math.exp(-moodDist * 1.5);
 
-          // RECENCY — suppress recently used words
+          // ASSOCIATION — learned word sequences from conversation
+          const condP = prevWord ? this._condProb(word, prevWord) : 0;
+          const followerCount = followers?.get(word) || 0;
+
+          // RECENCY — don't repeat
           const recentCount = this._recentOutputWords.filter(rw => rw === word).length;
           const recency = recentCount * 0.2;
 
-          // COMBINED SCORE — type compatibility DOMINATES
-          const score = typeScore * 0.40 + followerCount * 0.15 + condP * 0.10 +
-                        moodBias * 0.15 + topicSim * 0.10 + (1 / (freq + 1)) * 0.10 - recency;
+          // ── COMBINED: brain state drives content, equations drive structure ──
+          const score =
+            typeScore * 0.25 +      // grammar (slot fit)
+            isThought * 0.20 +      // cortex thought (WHAT to say)
+            isContext * 0.15 +       // conversation relevance
+            topicSim * 0.05 +       // semantic similarity to topic
+            isMood * 0.05 +         // emotional word match
+            moodBias * 0.05 +       // continuous mood alignment
+            followerCount * 0.10 +  // learned sequences
+            condP * 0.10 +          // conditional probability
+            (selfAware && (word.length === 1 || word.endsWith("'m") || word.endsWith("'re")) ? 0.1 : 0) + // Ψ → self-reference
+            - recency;
 
           return { word, entry, score };
         });
@@ -328,14 +385,13 @@ export class LanguageCortex {
       }
     }
 
-    // Track for recency
+    // Track recency
     for (const w of sentence) {
       this._recentOutputWords.push(w);
       if (this._recentOutputWords.length > this._recentOutputMax) this._recentOutputWords.shift();
     }
 
     this.wordsProcessed += sentence.length;
-
     if (type === 'action') return '*' + sentence.join(' ') + '*';
     return sentence.join(' ');
   }

@@ -662,8 +662,14 @@ export class UnityBrain extends EventEmitter {
     const brainValence = state.amygdala?.valence ?? 0;
     const brainCoherence = state.oscillations?.coherence ?? 0.5;
 
-    // Language cortex generates from structure equations
-    let response = this.innerVoice.speak(brainArousal, brainValence, brainCoherence);
+    // Language cortex generates from brain state — cortex thinks, then speaks
+    const cortexPattern = this.clusters.cortex ? this.clusters.cortex.getOutput(32) : null;
+    let response = this.innerVoice.speak(brainArousal, brainValence, brainCoherence, {
+      cortex: { predictionError: state.cortex?.predictionError ?? 0 },
+      motor: { confidence: this.motor.confidence },
+      psi: state.psi ?? 0,
+      cortexPattern,
+    });
     if (response) console.log(`[Brain] Cortex: "${response}"`);
 
     // AI teaches (when connected) — brain learns vocabulary from AI responses

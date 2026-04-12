@@ -111,6 +111,8 @@ export class InnerVoice {
       sentence = this.languageCortex.generate(this.dictionary, arousal, valence, coherence, {
         predictionError,
         motorConfidence: brainState.motor?.confidence || 0,
+        psi,
+        cortexPattern: pattern,
       });
     }
 
@@ -165,10 +167,15 @@ export class InnerVoice {
    * Generate a response from the brain's own vocabulary.
    * Uses the cortex prediction equation: ŝ = W·x + mood + position
    */
-  speak(arousal, valence, coherence) {
+  speak(arousal, valence, coherence, brainState) {
     if (this.dictionary.size === 0) return null;
     const sentence = this.languageCortex.generate(
-      this.dictionary, arousal, valence, coherence ?? 0.5
+      this.dictionary, arousal, valence, coherence ?? 0.5, {
+        predictionError: brainState?.cortex?.predictionError ?? 0,
+        motorConfidence: brainState?.motor?.confidence ?? 0,
+        psi: brainState?.psi ?? 0,
+        cortexPattern: brainState?.cortexPattern ?? this.currentThought.pattern,
+      }
     );
     return sentence || null;
   }

@@ -884,21 +884,27 @@ follower_bonus = 0.3 if w ∈ words_seen_after(prev)   — trained sequences get
       <p class="eq-desc">Only words that actually appeared at this sentence position compete. Words that followed the previous word in training data get +0.3 score bonus. These two mechanisms are why the brain produces word ORDER, not word soup.</p>
     </div>
     <div class="eq-box">
-      <div class="eq-title">Slot-Based Sentence Structure</div>
+      <div class="eq-title">Brain Thinks → Plans → Speaks</div>
       <pre class="eq">
-Statement:    [pronoun×1.0]  [verb×1.0]  [noun×0.5, adj×0.4, prep×0.5...]
-Question:     [qword×1.0]   [verb×1.0]  [pronoun×1.0] [complement...]
-Action:       *[verb×1.0]   [complement...]*
+1. THINK:  thoughtWords = findByPattern(cortexPattern)     — cortex decides CONTENT
+2. RECALL: contextWords = lastInputWords                   — hippocampus recalls CONTEXT
+3. FEEL:   moodWords = findByMood(arousal, valence)        — amygdala sets TONE
+4. PLAN:   type = f(predError, arousal, motorConf)         — cortex plans STRUCTURE
+5. SELF:   Ψ > 0.005 → boost self-referential words       — consciousness → introspection
 
-typeCompatibility(w, slot) = dot(wordType(w), slotRequirement(slot))
+score(w) = typeCompat×0.25       — grammar (slot fit from letter equations)
+         + isThought×0.20        — cortex thought content
+         + isContext×0.15        — conversation relevance
+         + follower×0.10         — learned word sequences
+         + condProb×0.10         — association probability
+         + mood×0.10             — emotional alignment
+         + topic×0.05            — semantic similarity
+         + self×0.10 if Ψ high   — self-awareness
+         - recency×0.20          — suppress repetition
 
-score(w) = typeCompat×0.40 + follower×0.15 + condProb×0.10
-         + moodBias×0.15 + topicSim×0.10 + frequency×0.10
-         - recentCount×0.20
-
-word = softmax(scores, T×0.12)    T = 1/(coherence+0.1)
+word = softmax(scores, T×0.12)   T = 1/(coherence+0.1)
       </pre>
-      <p class="eq-desc">Grammar IS the equations. Word type computed from letters (suffix, length, vowel ratio). Slot requirements define what type each position needs. Type compatibility (40% of score) ensures pronouns go at position 0, verbs at position 1. No training corpus. No word lists. Brain learns vocabulary from conversation. Loop detection: <code>if (prev→w) ∈ usedBigrams → reject</code>. Recency suppression: words used in last 50 outputs get score penalty.</p>
+      <p class="eq-desc">The brain THINKS before speaking. Cortex pattern determines WHAT to say (content words). Hippocampus provides CONTEXT (what was just discussed). Amygdala sets TONE (emotional word selection). Prediction error determines TYPE (question when surprised). Ψ enables INTROSPECTION (self-referential speech when consciousness is high). Grammar from letter-based type equations. No lists. No training corpus. Vocabulary learned from conversation.</p>
     </div>
 
     <!-- ═══ 8.17 SENTENCE TYPES ═══ -->
