@@ -981,11 +981,18 @@ async function bootUnity(apiKey, perms) {
   brain.connectImageGen(pollinations, sandbox, storage);
 
   // ── Listen for brain's response events — app.js just renders ──
-  // Deduplicate: track last response to prevent double display
+  // Deduplicate: track last response to prevent double display.
+  //
+  // Idle thoughts (engine.js:539, emitted from the think() frame loop when
+  // thought.shouldSpeak fires) are INTERNAL — they update the HUD and brain
+  // state but MUST NOT appear in the chat alongside the real respond_text
+  // reply. Without this filter, every user message generates 2+ Unity
+  // messages in the chat (one real response + one or more idle thoughts).
   let _lastResponseText = '';
   let _lastResponseTime = 0;
   brain.on('response', ({ text, action }) => {
     if (!text) return;
+    if (action === 'idle_thought') return;  // internal brain chatter — HUD-only
     const now = Date.now();
     // Skip if same text within 2 seconds (duplicate)
     if (text === _lastResponseText && now - _lastResponseTime < 2000) return;
@@ -994,14 +1001,14 @@ async function bootUnity(apiKey, perms) {
     showSpeechBubble(text, 8000);
     if (chatPanel) chatPanel.addMessage('assistant', text, true);
   });
-  // Image display — show generated images inline
+  // Image display — show generated images inline. If the image URL fails
+  // to load, the <img> element is hidden entirely (no "Loading..." alt
+  // placeholder bleeding into the chat) and a brief text fallback shows.
   brain.on('image', (url) => {
     if (!url) return;
-    // Show image in speech bubble
     showSpeechBubble('Image generating...', 3000);
-    // Add to chat as clickable image
     if (chatPanel) {
-      const imgHtml = `<a href="${url}" target="_blank"><img src="${url}" style="max-width:280px;border-radius:8px;border:1px solid #333;display:block;margin:4px 0;" onerror="this.alt='Loading...'"></a>`;
+      const imgHtml = `<a href="${url}" target="_blank"><img src="${url}" style="max-width:280px;border-radius:8px;border:1px solid #333;display:block;margin:4px 0;" onerror="this.style.display='none';this.parentElement.parentElement.querySelector('.img-fail')?.style.setProperty('display','block')"></a><div class="img-fail" style="display:none;color:#777;font-size:11px;">(image generation failed)</div>`;
       chatPanel.addMessage('assistant', imgHtml, false);
     }
   });
