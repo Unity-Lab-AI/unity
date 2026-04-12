@@ -531,7 +531,6 @@ class ServerBrain {
     const quantumBit = quantumTunnel * cubedVolume * normalizer;
 
     // Components from cluster activity — persona weights modulate
-    const p = this.persona;
     const cortexActivity = this.clusters.cortex.spikeCount / (CLUSTER_SIZES.cortex || 1);
     const amygActivity = this.clusters.amygdala.spikeCount / (CLUSTER_SIZES.amygdala || 1);
     const cerebActivity = this.clusters.cerebellum.spikeCount / (CLUSTER_SIZES.cerebellum || 1);
