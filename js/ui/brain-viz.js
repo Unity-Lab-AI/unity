@@ -41,6 +41,13 @@ export class BrainVisualizer {
     this._frameCount = 0;
     // Smoothed band power (exponential moving average)
     this._smoothBands = { theta: 0, alpha: 0, beta: 0, gamma: 0 };
+
+    // Rolling history for motor, modules, consciousness — shows trends not just instants
+    this._motorHistory = []; // array of { channels: [], action: string, confidence: number }
+    this._moduleHistory = []; // array of { cortex, hippo, amyg, bg, cereb, hypo }
+    this._psiHistory = [];
+    this._maxHistory = 200; // ~3 seconds at 60fps/6
+
     this._build();
   }
 
@@ -782,17 +789,27 @@ export class BrainVisualizer {
       }
 
       const barWidth = Math.min(100, value * 100);
+
+      // Cluster firing rate from state
+      const cluster = s.clusters?.[mod.key];
+      const spikeInfo = cluster ? `${cluster.spikeCount}/${cluster.size || '?'} firing, rate=${(cluster.firingRate ?? 0).toFixed(1)}` : '';
+
       html += `
         <div class="bv-mod-row">
           <span class="bv-mod-name" style="color:${mod.color}">${mod.name}</span>
           <div class="bv-mod-bar-wrap">
             <div class="bv-mod-bar" style="width:${barWidth}%;background:${mod.color};box-shadow:0 0 ${barWidth > 50 ? 8 : 0}px ${mod.color}"></div>
           </div>
-          <span class="bv-mod-eq">${mod.eq}</span>
           <span class="bv-mod-detail">${detail}</span>
         </div>
+        <div style="font-family:var(--mono);font-size:8px;color:${mod.color}55;margin:-2px 0 4px 108px;">${spikeInfo} | ${mod.eq}</div>
       `;
     }
+
+    // Track Ψ history for consciousness tab
+    this._psiHistory.push(s.psi ?? 0);
+    if (this._psiHistory.length > this._maxHistory) this._psiHistory.shift();
+
     el.innerHTML = html;
   }
 
@@ -822,6 +839,21 @@ export class BrainVisualizer {
     if (mystery.n !== undefined) parts.push(`n=${mystery.n}`);
     if (s.reward !== undefined) parts.push(`reward=${s.reward.toFixed(3)}`);
     partsEl.textContent = parts.join('  |  ') || 'waiting for brain state...';
+
+    // Ψ history sparkline
+    if (this._psiHistory.length > 1) {
+      let sparkHtml = '<div style="margin-top:12px;font-family:var(--mono);font-size:9px;color:var(--text-dim);">Ψ HISTORY</div>';
+      sparkHtml += '<div style="display:flex;gap:1px;margin-top:4px;height:30px;align-items:flex-end;">';
+      const maxPsi = Math.max(0.1, ...this._psiHistory);
+      const recent = this._psiHistory.slice(-100);
+      for (const val of recent) {
+        const h = Math.max(1, (val / maxPsi) * 30);
+        const color = val > 1 ? '#ff4d9a' : val > 0.3 ? '#a855f7' : '#333';
+        sparkHtml += `<div style="flex:1;height:${h}px;background:${color};border-radius:1px;"></div>`;
+      }
+      sparkHtml += '</div>';
+      partsEl.insertAdjacentHTML('afterend', sparkHtml);
+    }
   }
 
   _renderMemory(s) {
@@ -865,21 +897,45 @@ export class BrainVisualizer {
     const names = ['respond_text', 'generate_image', 'speak', 'build_ui', 'listen', 'idle'];
     const colors = ['#ff4d9a', '#a855f7', '#f59e0b', '#22c55e', '#00e5ff', '#555'];
 
+    // Track history
+    this._motorHistory.push({ channels: [...channels], action: motor.selectedAction, confidence: motor.confidence || 0 });
+    if (this._motorHistory.length > this._maxHistory) this._motorHistory.shift();
+
     let html = '';
     for (let i = 0; i < names.length; i++) {
       const rate = channels[i] || 0;
       const isWinner = names[i] === motor.selectedAction;
       const barWidth = Math.min(100, rate * 100 * 3);
+
+      // Peak value from history (highest this channel ever reached recently)
+      let peak = 0;
+      for (const h of this._motorHistory) { if ((h.channels[i] || 0) > peak) peak = h.channels[i]; }
+
       html += `
         <div class="bv-mod-row" style="${isWinner ? 'background:rgba(255,255,255,0.03);border-radius:4px;' : ''}">
           <span class="bv-mod-name" style="color:${colors[i]}">${isWinner ? '► ' : ''}${names[i]}</span>
-          <div class="bv-mod-bar-wrap"><div class="bv-mod-bar" style="width:${barWidth}%;background:${colors[i]}${isWinner ? '' : '88'}"></div></div>
-          <span class="bv-mod-detail">${(rate * 100).toFixed(1)}%${isWinner ? ' ★ ACTIVE' : ''}</span>
+          <div class="bv-mod-bar-wrap">
+            <div class="bv-mod-bar" style="width:${Math.min(100, peak * 100 * 3)}%;background:${colors[i]}33;position:absolute;height:100%;border-radius:3px;"></div>
+            <div class="bv-mod-bar" style="width:${barWidth}%;background:${colors[i]}${isWinner ? '' : '88'}"></div>
+          </div>
+          <span class="bv-mod-detail">${(rate * 100).toFixed(1)}% (peak ${(peak * 100).toFixed(1)}%)${isWinner ? ' ★' : ''}</span>
         </div>
       `;
     }
+
+    // Action history timeline — last 50 decisions
+    const recentActions = this._motorHistory.slice(-50);
+    html += '<div style="margin-top:10px;font-family:var(--mono);font-size:9px;color:var(--text-dim);">DECISION HISTORY</div>';
+    html += '<div style="display:flex;gap:1px;margin-top:4px;height:12px;">';
+    for (const h of recentActions) {
+      const ci = names.indexOf(h.action);
+      const c = ci >= 0 ? colors[ci] : '#333';
+      html += `<div style="flex:1;background:${c};border-radius:1px;opacity:${0.3 + (h.confidence || 0) * 0.7}" title="${h.action} ${((h.confidence||0)*100).toFixed(0)}%"></div>`;
+    }
+    html += '</div>';
+
     html += `<div style="margin-top:8px;font-family:var(--mono);font-size:10px;color:var(--text-dim);">
-      Confidence: ${(motor.confidence || 0).toFixed(3)} | ${motor.speechGated ? '<span style="color:var(--red)">SPEECH GATED: ' + motor.gateReason + '</span>' : '<span style="color:var(--green)">speech OK</span>'}
+      Confidence: ${(motor.confidence || 0).toFixed(3)} | ${motor.speechGated ? '<span style="color:var(--red)">GATED: ' + motor.gateReason + '</span>' : '<span style="color:var(--green)">speech OK</span>'}
       | Cooldown: ${motor.cooldown || 0}
     </div>`;
     el.innerHTML = html;
