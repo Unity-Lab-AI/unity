@@ -304,10 +304,23 @@ class ServerBrain {
       };
     }
 
+    // Derive band power from cluster firing rates (no Kuramoto on server yet)
+    const cortexRate = this.clusters.cortex.firingRate / CLUSTER_SIZES.cortex;
+    const hippoRate = this.clusters.hippocampus.firingRate / CLUSTER_SIZES.hippocampus;
+    const amygRate = this.clusters.amygdala.firingRate / CLUSTER_SIZES.amygdala;
+    const bgRate = this.clusters.basalGanglia.firingRate / CLUSTER_SIZES.basalGanglia;
+    const bandPower = {
+      gamma: cortexRate * 5 + amygRate * 3,           // fast cortical + emotional
+      beta:  bgRate * 4 + cortexRate * 2,              // motor planning + attention
+      alpha: this.coherence * 3 + (1 - this.arousal) * 2, // relaxed coherence
+      theta: hippoRate * 5 + (this._isDreaming ? 3 : 0),  // memory + dreaming
+    };
+
     return {
       time: this.time,
       frameCount: this.frameCount,
       totalSpikes: this.totalSpikes,
+      spikeCount: this.totalSpikes,
       arousal: this.arousal,
       valence: this.valence,
       fear: this.fear,
@@ -315,6 +328,7 @@ class ServerBrain {
       coherence: this.coherence,
       reward: this.reward,
       drugState: this.drugState,
+      bandPower,
       clusters: clusterStates,
       motor: {
         selectedAction: this.motorAction,
