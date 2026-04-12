@@ -653,7 +653,8 @@ export class UnityBrain extends EventEmitter {
     const brainValence = state.amygdala?.valence ?? 0;
 
     // Brain's own voice — dictionary + inner voice system
-    response = this.innerVoice.speak(brainArousal, brainValence);
+    const brainCoherence = state.oscillations?.coherence ?? 0.5;
+    response = this.innerVoice.speak(brainArousal, brainValence, brainCoherence);
 
     // If first attempt too short, try harder — generate from dictionary directly
     if (!response || response.length < 5) {

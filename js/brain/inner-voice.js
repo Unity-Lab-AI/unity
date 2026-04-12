@@ -15,6 +15,7 @@
  */
 
 import { Dictionary } from './dictionary.js';
+import { LanguageCortex } from './language-cortex.js';
 
 // Thought-to-speech threshold equation:
 // shouldSpeak = socialNeed × arousal × cortexCoherence > SPEECH_THRESHOLD
@@ -29,6 +30,7 @@ const THOUGHT_INTERVAL = 60; // ~1 second at 60fps
 export class InnerVoice {
   constructor() {
     this.dictionary = new Dictionary();
+    this.languageCortex = new LanguageCortex();
     this._thoughtCounter = 0;
 
     // Current internal state — updated every thought cycle
@@ -103,10 +105,10 @@ export class InnerVoice {
     const speechDrive = socialNeed * arousal * coherence;
     const shouldSpeak = speechDrive > SPEECH_THRESHOLD;
 
-    // Generate sentence — brain speaks from whatever vocabulary it has
+    // Generate sentence via cortex prediction equation: ŝ = W·x + mood + position
     let sentence = '';
     if (shouldSpeak && this.dictionary.size > 0) {
-      sentence = this.dictionary.generateSentence(arousal, valence);
+      sentence = this.languageCortex.generate(this.dictionary, arousal, valence, coherence);
     }
 
     // Update current thought
@@ -152,24 +154,24 @@ export class InnerVoice {
    */
   learn(text, cortexPattern, arousal, valence) {
     this.dictionary.learnSentence(text, cortexPattern, arousal, valence);
+    // Teach the language cortex word order + prediction weights
+    this.languageCortex.learnSentence(text, this.dictionary, arousal, valence);
   }
 
   /**
    * Generate a response from the brain's own vocabulary.
-   * No AI model needed. Returns null if vocabulary is too small.
-   *
-   * @param {number} arousal
-   * @param {number} valence
-   * @returns {string|null}
+   * Uses the cortex prediction equation: ŝ = W·x + mood + position
    */
-  speak(arousal, valence) {
-    if (this.dictionary.size < MIN_VOCAB_FOR_SPEECH) return null;
-    const sentence = this.dictionary.generateSentence(arousal, valence);
+  speak(arousal, valence, coherence) {
+    if (this.dictionary.size === 0) return null;
+    const sentence = this.languageCortex.generate(
+      this.dictionary, arousal, valence, coherence ?? 0.5
+    );
     return sentence || null;
   }
 
   /**
-   * Save dictionary to persistent storage.
+   * Save dictionary + language weights to persistent storage.
    */
   save() {
     this.dictionary.save();
