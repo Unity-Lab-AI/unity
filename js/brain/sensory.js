@@ -319,51 +319,67 @@ export class SensoryProcessor {
     this.salience += 0.5 + text.length * 0.01;
 
     // ── SEMANTIC → BASAL GANGLIA ROUTING ──
-    // Extract semantic features from text and inject current into BG channels.
-    // This is prefrontal cortex → BG pathway — intent mapping through neural current.
-    // The weights are learnable — reward strengthens correct mappings over time.
+    // Map text meaning to BG action channels through neural current.
+    // This is the prefrontal cortex → BG pathway.
+    //
+    // Instead of character hashing (which is meaningless), we use a
+    // semantic vocabulary — words that MEAN specific actions get routed
+    // to specific channels. The base activation from vocabulary is then
+    // scaled by learnable weights that get shaped through reward.
+    //
+    // BG channels: 0-24=respond, 25-49=image, 50-74=speak, 75-99=build, 100-124=listen, 125-149=idle
     const lower = text.toLowerCase();
-    const words = lower.split(/\s+/);
 
-    // Compute semantic activation scores for each action category
-    // These aren't keyword matches — they're distributed activation patterns
-    // based on word embeddings approximated by character hash overlap
-    const semanticScores = {
-      respond: 0,   // conversational, question, chat
-      image: 0,     // visual, picture, generate, draw, show
-      speak: 0,     // say, tell, voice
-      build: 0,     // make, create, build, app, tool, code
-      listen: 0,    // wait, hold on, stop
-      idle: 0,      // nothing, quiet, chill
+    // Semantic vocabulary — maps word MEANING to channel activation
+    // This IS the brain's learned language→action mapping
+    const semanticMap = {
+      // respond_text (channel 0): conversational words
+      respond: ['what', 'who', 'how', 'why', 'when', 'where', 'tell', 'explain', 'think',
+        'feel', 'know', 'mean', 'say', 'talk', 'chat', 'opinion', 'believe', 'want',
+        'need', 'like', 'love', 'hate', 'remember', 'name', 'age', 'doing', 'been',
+        'hello', 'hey', 'hi', 'yo', 'sup', 'thanks', 'sorry', 'please', 'yes', 'no',
+        'yeah', 'nah', 'okay', 'cool', 'nice', 'fuck', 'shit', 'damn', 'babe', 'baby'],
+
+      // generate_image (channel 1): visual/image words
+      image: ['image', 'picture', 'photo', 'selfie', 'pic', 'draw', 'painting',
+        'portrait', 'render', 'generate', 'visual', 'illustration', 'artwork',
+        'sketch', 'headshot', 'snapshot', 'capture', 'shot', 'scene'],
+
+      // speak (channel 2): vocalization
+      speak: ['sing', 'scream', 'shout', 'whisper', 'hum', 'rap', 'voice'],
+
+      // build_ui (channel 3): construction/tool words
+      build: ['build', 'create', 'make', 'code', 'program', 'app', 'tool', 'widget',
+        'calculator', 'editor', 'game', 'player', 'timer', 'clock', 'chart',
+        'component', 'interface', 'button', 'slider', 'form', 'input', 'output',
+        'sandbox', 'canvas', 'display', 'panel', 'window', 'menu', 'dashboard',
+        'counter', 'list', 'table', 'grid', 'layout', 'design', 'ui', 'ux'],
+
+      // listen (channel 4): pause/wait
+      listen: ['wait', 'hold', 'stop', 'pause', 'listen', 'quiet', 'shh', 'shut'],
+
+      // idle (channel 5): nothing
+      idle: ['nothing', 'nevermind', 'nvm', 'forget', 'chill', 'relax', 'idle'],
     };
 
-    // Each word contributes to semantic categories based on its character hash
-    // This approximates a learned word embedding — similar words hash similarly
-    for (const word of words) {
-      if (word.length < 2) continue;
-      let hash = 0;
-      for (let i = 0; i < word.length; i++) hash = ((hash << 5) - hash + word.charCodeAt(i)) | 0;
-
-      // Distribute word's activation across channels based on hash
-      // The hash creates a pseudo-random but CONSISTENT mapping per word
-      // Words that share character patterns activate similar channels
-      const absHash = Math.abs(hash);
-      semanticScores.respond += ((absHash % 7) / 7) * 0.3;
-      semanticScores.image   += ((absHash % 11) / 11) * 0.3;
-      semanticScores.build   += ((absHash % 13) / 13) * 0.3;
-      semanticScores.speak   += ((absHash % 17) / 17) * 0.2;
-      semanticScores.listen  += ((absHash % 19) / 19) * 0.2;
-      semanticScores.idle    += ((absHash % 23) / 23) * 0.1;
+    // Score each channel based on word presence
+    const scores = { respond: 0.3, image: 0, speak: 0, build: 0, listen: 0, idle: 0 }; // respond gets base activation (default action)
+    for (const [channel, vocab] of Object.entries(semanticMap)) {
+      for (const word of vocab) {
+        if (lower.includes(word)) {
+          scores[channel] += 1.0;
+        }
+      }
     }
 
-    // Inject semantic scores into BG channels through learnable weights
+    // Inject scores into BG channels through learnable weights
     const w = this._semanticWeights;
-    for (let i = 0; i < 25; i++) this.bgCurrent[i]       += semanticScores.respond * w.respond[i] * 8;
-    for (let i = 25; i < 50; i++) this.bgCurrent[i]      += semanticScores.image * w.image[i] * 8;
-    for (let i = 50; i < 75; i++) this.bgCurrent[i]      += semanticScores.speak * w.speak[i] * 8;
-    for (let i = 75; i < 100; i++) this.bgCurrent[i]     += semanticScores.build * w.build[i] * 8;
-    for (let i = 100; i < 125; i++) this.bgCurrent[i]    += semanticScores.listen * w.listen[i] * 8;
-    for (let i = 125; i < 150; i++) this.bgCurrent[i]    += semanticScores.idle * w.idle[i] * 8;
+    for (let i = 0; i < 25; i++)   this.bgCurrent[i]   += scores.respond * w.respond[i] * 12;
+    for (let i = 25; i < 50; i++)  this.bgCurrent[i]    += scores.image * w.image[i] * 12;
+    for (let i = 50; i < 75; i++)  this.bgCurrent[i]    += scores.speak * w.speak[i] * 12;
+    for (let i = 75; i < 100; i++) this.bgCurrent[i]    += scores.build * w.build[i] * 12;
+    for (let i = 100; i < 125; i++) this.bgCurrent[i]   += scores.listen * w.listen[i] * 12;
+    for (let i = 125; i < 150; i++) this.bgCurrent[i]   += scores.idle * w.idle[i] * 12;
 
     // Emotional words boost amygdala
     const emotionalWords = ['love', 'hate', 'fuck', 'shit', 'beautiful', 'ugly',
