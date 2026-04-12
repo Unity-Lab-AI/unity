@@ -97,6 +97,12 @@ let landingBrainSource = null; // RemoteBrain or null
       updateBrainIndicator(state);
     });
     console.log('[Landing] Connected to server brain');
+
+    // Load the equational self-image (persona text) into the landing
+    // brain IMMEDIATELY — before the user clicks through the setup modal.
+    // Memory tab checks `brain?.innerVoice?.languageCortex._selfImageLoaded`
+    // which has to be true as soon as someone looks at the landing page.
+    loadPersonaSelfImage(landingBrainSource);
   } else {
     // No server — start a local brain just for visualization
     try {
@@ -172,6 +178,40 @@ let landingBrainSource = null; // RemoteBrain or null
 })();
 
 let _landingState = null;
+let _personaLoadPromise = null;
+
+/**
+ * Fetch docs/Ultimate Unity.txt and feed it through the target brain's
+ * InnerVoice as the equational self-image. Idempotent across the session
+ * — subsequent calls with the same brain are no-ops. If the brain hasn't
+ * been given a real InnerVoice (stub case), this logs and returns 0.
+ */
+function loadPersonaSelfImage(targetBrain) {
+  if (!targetBrain) return Promise.resolve(0);
+  if (_personaLoadPromise) return _personaLoadPromise;
+  _personaLoadPromise = fetch('docs/Ultimate%20Unity.txt')
+    .then(r => r.ok ? r.text() : '')
+    .then(txt => {
+      if (!txt) {
+        console.warn('[Unity] persona self-image fetch returned empty — check docs/Ultimate Unity.txt route');
+        return 0;
+      }
+      if (!targetBrain.innerVoice || typeof targetBrain.innerVoice.loadPersona !== 'function') {
+        console.warn('[Unity] persona self-image fetched but brain has no InnerVoice.loadPersona');
+        return 0;
+      }
+      const sentences = targetBrain.innerVoice.loadPersona(txt);
+      const dictSize = targetBrain.innerVoice.dictionary?._words?.size ?? 0;
+      const bigramHeads = targetBrain.innerVoice.dictionary?._bigrams?.size ?? 0;
+      console.log(`[Unity] self-image loaded: ${sentences} sentences → ${dictSize} words, ${bigramHeads} bigram heads`);
+      return sentences;
+    })
+    .catch(err => {
+      console.warn('[Unity] persona self-image load failed:', err.message);
+      return 0;
+    });
+  return _personaLoadPromise;
+}
 
 function renderLandingTab(tab, s) {
   if (!s) return;
@@ -256,9 +296,10 @@ function renderLandingTab(tab, s) {
       const growth = s.growth || {};
       const mem = s.memory || {};
 
-      // Local brain detection — even when connected to server, a local
-      // InnerVoice instance may exist for language generation.
-      const iv = brain?.innerVoice || null;
+      // Read InnerVoice from whichever brain is alive right now — `brain`
+      // is only assigned after the setup modal start button; before that
+      // the landing page still has a RemoteBrain with a real InnerVoice.
+      const iv = brain?.innerVoice || landingBrainSource?.innerVoice || null;
       const dict = iv?.dictionary || null;
       const lc = iv?.languageCortex || null;
 
@@ -853,21 +894,11 @@ async function bootUnity(apiKey, perms) {
     }
   }
 
-  // ALWAYS fetch Unity's persona and load it into whichever brain is active.
-  // Both UnityBrain and RemoteBrain now expose a real InnerVoice with
-  // loadPersona(), so the equational self-image works on server and local paths.
-  fetch('docs/Ultimate%20Unity.txt')
-    .then(r => r.ok ? r.text() : '')
-    .then(txt => {
-      if (txt && brain?.innerVoice?.loadPersona) {
-        const sentences = brain.innerVoice.loadPersona(txt);
-        const dictSize = brain.innerVoice.dictionary?._words?.size ?? 0;
-        console.log(`[Unity] self-image loaded: ${sentences} sentences → ${dictSize} words`);
-      } else if (!txt) {
-        console.warn('[Unity] persona self-image fetch returned empty (check docs/Ultimate Unity.txt route)');
-      }
-    })
-    .catch(err => console.warn('[Unity] persona self-image load failed:', err.message));
+  // Load persona into whichever brain is now active. Idempotent —
+  // landing already called this if the server was available, so this
+  // is a no-op on subsequent calls. Local-brain path gets a first-run
+  // load here.
+  loadPersonaSelfImage(brain);
 
   // ── Connect sensory peripherals ──
   if (perms.mic && perms.micStream) {
