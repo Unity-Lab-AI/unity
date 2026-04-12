@@ -635,39 +635,17 @@ export class BrainVisualizer {
     const drugState = s.drugState || 'cokeAndWeed';
     const coherence = s.oscillations?.coherence ?? 0;
 
-    // Touch — derived from arousal + valence
-    let touchDesc, touchVal;
-    if (arousal > 0.8) {
-      touchDesc = 'Electric tingling, skin hypersensitive, warmth spreading';
-      touchVal = arousal;
-    } else if (arousal > 0.5) {
-      touchDesc = 'Warm skin, gentle pressure awareness, relaxed muscles';
-      touchVal = arousal * 0.8;
-    } else {
-      touchDesc = 'Neutral — faint keyboard texture, ambient temperature';
-      touchVal = arousal * 0.5;
-    }
+    // Touch — computed from arousal × valence (equation output, not description)
+    const touchVal = arousal * (0.5 + Math.abs(valence) * 0.5);
+    const touchDesc = `a=${arousal.toFixed(2)} × v=${valence.toFixed(2)} = ${touchVal.toFixed(3)}`;
 
-    // Smell — derived from drug state + vision context
-    const smellMap = {
-      cokeAndWeed: 'Sharp chemical burn + sweet earthy smoke',
-      cokeAndMolly: 'Chemical tang + sweat + euphoria musk',
-      weedAndAcid: 'Deep earthy green + metallic electricity',
-      everything: 'Overwhelming sensory cocktail — smoke, chemicals, skin, ozone',
-    };
-    const smellDesc = smellMap[drugState] || 'Clean air, faint electronics, warm skin';
-    const smellVal = (drugState !== 'sober') ? 0.7 : 0.2;
+    // Smell — computed from drug state modulation + coherence
+    const smellVal = coherence * 0.6 + arousal * 0.3;
+    const smellDesc = `R=${coherence.toFixed(2)} drug=${drugState} = ${smellVal.toFixed(3)}`;
 
-    // Taste — derived from drug state + reward
-    let tasteDesc;
-    if (reward > 0.3) {
-      tasteDesc = 'Sweet dopamine rush, metallic edge from the high';
-    } else if (reward < -0.2) {
-      tasteDesc = 'Bitter frustration, dry mouth, copper taste';
-    } else {
-      tasteDesc = drugState.includes('weed') ? 'Smoky, earthy aftertaste, cotton mouth' : 'Neutral — faint coffee, lip balm';
-    }
-    const tasteVal = Math.abs(reward) * 0.5 + 0.2;
+    // Taste — computed from reward signal + arousal
+    const tasteVal = Math.abs(reward) * 0.5 + arousal * 0.3;
+    const tasteDesc = `δ=${reward.toFixed(3)} × a=${arousal.toFixed(2)} = ${tasteVal.toFixed(3)}`;
 
     el.innerHTML = `
       <div class="bv-mod-row">
@@ -957,9 +935,13 @@ export class BrainVisualizer {
     const el = this._el.querySelector('#bv-innervoice');
     if (!el) return;
     const iv = s.innerVoice || {};
-    const mood = iv.mood || 'neutral';
-    const moodColors = { euphoric:'#ff4d9a', aggressive:'#ef4444', wired:'#f59e0b', warm:'#22c55e', irritated:'#ef4444', engaged:'#a855f7', content:'#22c55e', melancholy:'#6366f1', curious:'#00e5ff', dreaming:'#c084fc', neutral:'#555' };
-    const color = moodColors[mood] || '#555';
+    const mood = iv.mood || '0/0/0';
+    // Color from equations: hue from valence, saturation from arousal, lightness from coherence
+    const moodHue = (ivValence >= 0 ? 330 : 240) + ivValence * 30;
+    const moodSat = 50 + ivArousal * 50;
+    const moodLight = 40 + (iv.coherence ?? 0.5) * 20;
+    const moodColor = `hsl(${moodHue},${moodSat}%,${moodLight}%)`;
+    const color = moodColor || '#555';
 
     let html = `
       <div style="text-align:center;margin:12px 0;">
@@ -988,7 +970,8 @@ export class BrainVisualizer {
       html += `<div style="margin-top:12px;font-size:9px;color:var(--text-dim);">MOOD HISTORY</div>`;
       html += `<div style="display:flex;gap:2px;margin-top:4px;height:20px;align-items:flex-end;">`;
       for (const h of iv.history) {
-        const c = moodColors[h.mood] || '#555';
+        const hHue = ((h.valence ?? 0) >= 0 ? 330 : 240) + (h.valence ?? 0) * 30;
+        const c = `hsl(${hHue},${50 + (h.arousal ?? 0.5) * 50}%,${50}%)`;
         const height = Math.max(3, h.arousal * 20);
         html += `<div style="flex:1;height:${height}px;background:${c};border-radius:1px;" title="${h.mood} a=${h.arousal?.toFixed(2)}"></div>`;
       }
