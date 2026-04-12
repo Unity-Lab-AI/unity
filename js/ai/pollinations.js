@@ -131,10 +131,9 @@ export class PollinationsAI {
             }
 
             const encoded = encodeURIComponent(finalPrompt);
-            let url = `${GEN_URL}/image/${encoded}?model=${encodeURIComponent(model)}&width=${width}&height=${height}&nologo=true`;
-            // Add API key for auth — try both common param names
+            let url = `${IMAGE_URL}/prompt/${encoded}?model=${encodeURIComponent(model)}&width=${width}&height=${height}&nologo=true`;
             if (this._apiKey) {
-                url += `&token=${encodeURIComponent(this._apiKey)}&api_key=${encodeURIComponent(this._apiKey)}`;
+                url += `&token=${encodeURIComponent(this._apiKey)}`;
             }
             return url;
         } catch (err) {

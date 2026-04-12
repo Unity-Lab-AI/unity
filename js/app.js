@@ -585,7 +585,7 @@ async function bootUnity(apiKey, perms) {
       'generate an image', 'generate image', 'show yourself'].some(w => lower.includes(w));
 
     const isSelfie = isImage && ['you', 'your', 'yourself', 'unity', 'self'].some(w => lower.includes(w));
-    console.log(`[handleInput] isImage=${isImage} isSelfie=${isSelfie} text="${lower.slice(0,60)}"`);
+    if (isImage) console.log(`[handleInput] Image request detected: isSelfie=${isSelfie} text="${lower.slice(0,60)}"`);
 
     if (isSelfie) {
       // Build image prompt from brain state directly — no AI call needed
@@ -615,19 +615,24 @@ async function bootUnity(apiKey, perms) {
       const cleanPrompt = `Close-up selfie, young woman, ${mood}, heterochromia eyes one violet one electric green, dark hair with neon streaks, smudged eyeliner, ${vibes}, ${setting}, photorealistic, phone camera, raw candid`;
       console.log('[handleInput] Selfie prompt:', cleanPrompt);
       const url = pollinations.generateImage(cleanPrompt, { model: storage.get('image_model') || 'flux', width: 768, height: 768 });
-      if (url && sandbox) {
-        const imgId = 'img_' + Date.now();
-        sandbox.inject({
-          id: imgId,
-          html: `<div style="margin:12px 0;text-align:center;">
-            <div id="${imgId}-loading" style="color:#777;font-size:12px;font-family:monospace;padding:20px;">Generating selfie...</div>
-            <img src="${url}" alt="" style="max-width:100%;border-radius:8px;border:1px solid #333;cursor:pointer;display:none;"
-              onload="this.style.display='block';document.getElementById('${imgId}-loading').style.display='none';"
-              onerror="document.getElementById('${imgId}-loading').textContent='Image failed to load';"
-              onclick="window.open('${url}','_blank')">
-          </div>`,
-          css: '',
-        });
+      console.log('[handleInput] Selfie URL:', url);
+      if (url) {
+        // Open image in new tab AND show inline
+        window.open(url, '_blank');
+        if (sandbox) {
+          const imgId = 'img_' + Date.now();
+          sandbox.inject({
+            id: imgId,
+            html: `<div style="margin:12px 0;text-align:center;">
+              <div id="${imgId}-loading" style="color:#777;font-size:12px;font-family:monospace;padding:20px;">Generating selfie...</div>
+              <img src="${url}" alt="" style="max-width:100%;border-radius:8px;border:1px solid #333;cursor:pointer;display:none;"
+                onload="this.style.display='block';if(document.getElementById('${imgId}-loading'))document.getElementById('${imgId}-loading').style.display='none';"
+                onerror="if(document.getElementById('${imgId}-loading'))document.getElementById('${imgId}-loading').textContent='Loading in new tab...';"
+                onclick="window.open('${url}','_blank')">
+            </div>`,
+            css: '',
+          });
+        }
       }
       // Quip — tell Broca's NOT to generate URLs or image prompts
       const quipState = brain.getState();
