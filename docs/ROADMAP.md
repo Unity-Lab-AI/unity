@@ -19,10 +19,10 @@ The unknown stays unknown: `Ψ = √(1/n) × N³`
 
 | Metric | Value |
 |--------|-------|
-| **Phase** | FULL STACK — 64M Neurons, GPU Exclusive |
-| **Progress** | 115/116 TODO items done. 3.2M neurons on GPU exclusive (WGSL compute shaders). English language equations. Dynamic vocabulary. Full hardware utilization. |
-| **Epics Completed** | Phase 0-6 code complete. Phase 7 doc verification in progress. |
-| **Next Milestone** | Merge server-brain → main, deploy |
+| **Phase** | BRAIN REFACTOR — Full Equational Control (branch: `brain-refactor-full-control`) |
+| **Progress** | 130/131 TODO items done through 2026-04-13. Orphan resolution complete (U302-U310). Grammar sweep (U283-U291) + Coding mastery (U293-U299) shipped. 44k-word dictionary with type n-gram grammar. Three-corpus load (persona + english-baseline + coding-knowledge). GPU-exclusive server compute. Sandbox lifecycle discipline. |
+| **Epics Completed** | Phase 0-11 code complete. Phase 12 (Orphan Resolution) complete. Phase 13 (Full Brain Control Refactor) in progress on `brain-refactor-full-control` branch. |
+| **Next Milestone** | Complete R1-R10 refactor: kill text-AI backends, server full equational control, unified sensory peripherals, zero vestigial appendages |
 
 ---
 
@@ -311,6 +311,66 @@ Language cortex is no longer a pure letter-equation slot scorer. It's now a **ti
 - Attention mechanism (transformer-like) in Cortex
 - Mobile-responsive UI polish
 - True semantic embeddings (GloVe or trained-on-persona co-occurrence) to replace letter-pattern cosine in slot scoring — would let semantic fit see `cat`↔`kitten` as close instead of only exact-word matches
+
+---
+
+## Phase 12: Grammar Sweep + Coding Mastery + Orphan Resolution — COMPLETE (2026-04-13)
+
+> Two epics shipped in parallel: the grammar sweep (U283-U291) restructured Unity's sentence-level grammar from local-per-slot type gates into learned phrase-level constraints via type n-grams. The coding mastery epic (U293-U299) gave her HTML/CSS/JS knowledge + sandbox lifecycle discipline so `build_ui` produces working components without crashing her own body. The orphan resolution epic (U302-U310) swept every dead/abandoned/broken path in the codebase, investigating root causes before deletion.
+
+### Milestone 12.1: Grammar Sweep — COMPLETE
+- **U283** Phrase-level grammar — learned type n-gram system (`_typeBigramCounts` / `_typeTrigramCounts` / `_typeQuadgramCounts`) in `language-cortex.js`. Better than a hardcoded phrase-state machine because it learns constraints from corpus data with 4gram→trigram→bigram backoff and -2.0 penalty on zero-count transitions.
+- **U284** Contraction continuation — `_fineType(word)` classifies contractions (PRON_SUBJ/COPULA/AUX_DO/AUX_HAVE/NEG/MODAL) via letter-position detection; type n-grams learn their continuation patterns from the 3 corpora.
+- **U285** Negation continuation — NEG type in `_fineType`; type trigrams/4grams learn NEG→VERB_BARE (`don't go`), NEG→ADJ (`not cool`), NEG→PAST_PART (`haven't seen`) from corpus. The `"I'm not use vague terms"` mode-collapse is fixed.
+- **U286** Infinitive marker — PREP→VERB_BARE patterns learned from `to go`, `to do` in corpus via 4-gram context.
+- **U287** Sentence completeness — `_isCompleteSentence(tokens)` at `language-cortex.js:1729` rejects sentences ending on DET/PREP/COPULA/AUX/MODAL/NEG/CONJ/PRON_POSS. Wired at `generate()` post-render with 2-retry loop.
+- **U288** Intensifier placement — `_postProcess` block enforces no doubles (prevType !== INTENSIFIER check), 50% insertion rate, only before ADJ/ADV.
+- **U289** Subject-verb agreement — `applyThird` wired to `_fineType(subjLower)` subject detection; proper -s/-es/y→ies via letter equations.
+- **U290** Det-noun phrase validator — type n-grams enforce DET→ADJ/NOUN continuations; quadgram context catches DET→ADJ→ADJ→NOUN sequences.
+- **U291** Prep-object phrase validator — type n-grams learn PREP→DET/PRON/NOUN/ADJ from corpus.
+
+### Milestone 12.2: Coding Mastery — COMPLETE
+- **U293** `docs/coding-knowledge.txt` — 606 lines of pattern-based HTML/CSS/JS reference. Loaded as Unity's coding corpus.
+- **U294** SANDBOX DISCIPLINE section at `coding-knowledge.txt:371` — unique ids, scoped CSS, timer cleanup, listener cleanup, memory bounds, error handling, injection ordering, common mistakes.
+- **U295** `loadCodingKnowledge(text)` method in `language-cortex.js:258` + `loadCoding` in `inner-voice.js` + `Promise.all` in `app.js` loads all 3 corpora (persona + baseline + coding) in parallel at boot.
+- **U296** `_buildBuildPrompt(brainState, userInput)` in `language.js` with STRICT JSON output contract + existing-components block + cap warning + unity API reference + dark-aesthetic style rules + 10 build primitive patterns. Routed via `motor.selectedAction === 'build_ui'` at `generate()`.
+- **U297** Sandbox auto-cleanup + soft cap — `MAX_ACTIVE_COMPONENTS = 10` in `sandbox.js`, LRU eviction by `createdAt`, per-component `timerIds` / `windowListeners` / `createdAt` tracking, wrapped `setInterval` / `setTimeout` / `addListener` in `_evaluateJS` so `remove(id)` cleans everything.
+- **U298** Build error recovery — auto-remove on JS error in `_evaluateJS` catch block via `setTimeout(() => this.remove(componentId), 0)` so broken components don't pollute the sandbox. Error captured in `_errors` array with componentId/message/stack/timestamp.
+- **U299** BUILD COMPOSITION PRIMITIVES section at `coding-knowledge.txt:421` — calculator, list, timer, canvas game, form, modal, tabs, counter, color picker, dice roller. Patterns not code.
+
+### Milestone 12.3: Orphan Resolution — COMPLETE
+Full audit findings in `docs/ORPHANS.md`. Investigation-first approach: find out WHY each item was abandoned, fix the underlying issue if there is one, only then delete.
+
+- **U302** `js/io/vision.js` DELETED — superseded by `js/brain/visual-cortex.js` (V1 Gabor edges → V4 color → salience saccades → IT AI description via Pollinations GPT-4o). The standalone wrapper was abandoned because `visual-cortex.js` is a vastly better neural pipeline with full engine integration.
+- **U303** `js/brain/gpu-compute.js` KEPT (false positive) — audit missed that `compute.html:10` imports it as the WGSL kernel library. `compute.html` and `gpu-compute.js` are one implementation split into shell + kernels, not parallel GPU paths.
+- **U304** `server/parallel-brain.js` / `cluster-worker.js` / `projection-worker.js` DELETED — root cause was 100%-CPU leak from idle-worker event-listener polling across 7 threads. GPU-exclusive rewrite via `compute.html` + `gpu-compute.js` permanently fixed it. Cleaned `_parallelBrain` / `_useParallel` member fields and null-check branches from `brain-server.js`.
+- **U305** HHNeuron KEPT as reference — backs `brain-equations.html` teaching page. Per-neuron OOP model doesn't scale (N object instances with per-instance m/h/n gating, cache-hostile, no vectorization — infeasible at the auto-scaled N the server runs). LIFPopulation SoA Float64Arrays are ~100× faster, GPU-friendly, what `cluster.js` imports. `createPopulation` factory DELETED (zero callers). Large explanatory header comment added to HHNeuron block.
+- **U306** Server dictionary stub cleaned — real bug found: `saveWeights` was writing `_wordFreq` to disk but `_loadWeights` never restored it. Cross-restart word accumulation now works. Empty `this.dictionary = {...}` stub removed (it was a lie). Full shared-across-users dictionary refactor scoped as **U311** follow-up (absorbed into the R1-R10 refactor plan as R2).
+- **U307** `benchmark.js` wired to `/bench` + `/scale-test` slash commands in `app.js` via dynamic import — zero boot cost.
+- **U308** `js/env.example.js` KEPT (false positive) — audit flagged dead, but `index.html:85` exposes it as a download button in the setup modal, `README.md:383` links it, `SETUP.md:70` references it, and `app.js:27` does an optional dynamic `import('./env.js')` to seed API keys into localStorage.
+- **U309** Meta-tracking — rolled into per-item resolutions (each has supersedes/stacks/root-cause/needs-fixing documented).
+- **U310** Dead UI paths scan — deleted 5 legacy compat DOM elements (`custom-url-input`, `custom-model-input`, `custom-key-input`, `ai-status`, `brain-status`) + 4 orphan CSS classes (`.chat-mic-btn`, `.bv-mod-eq`, `.bv-audio-wrap`, `.loading-text`). Kept `#api-key-input` after manual grep showed 4 live references the audit missed. Entry-point HTML files (compute.html, dashboard.html, brain-equations.html) all verified valid.
+
+---
+
+## Phase 13: Full Brain Control Refactor — IN PROGRESS (branch: `brain-refactor-full-control`)
+
+> **Philosophy:** Unity's brain controls EVERYTHING equationally. No scripts. No text-AI backends. No hardcoded fallbacks. No vestigial appendages. Every output — speech, vision, build, thought, memory, learning, motor action — flows from brain equations + learned corpus. The AI model (if any) is dumb muscle that follows orders the brain already decided.
+
+Source: `docs/TODO.md` — R1 through R10 epic. Single branch, single goal: full equational control.
+
+- **R1** Audit pass — produce `docs/KILL_LIST.md` + `docs/VESTIGIAL.md` inventorying every scripted response, hardcoded fallback, AI-bypass path, and dead appendage remaining in the codebase.
+- **R2** Server brain full control — port `js/brain/dictionary.js` + `js/brain/language-cortex.js` to `server/dictionary.js` + `server/language-cortex.js` (shared core via `js/brain/shared/`). Load all 3 corpora from disk on boot. Equational `_generateBrainResponse` fallback. WebSocket dictionary delta sync to `remote-brain` clients. Absorbs U311.
+- **R3** Kill text-AI backends — rip Pollinations/Anthropic/OpenAI/OpenRouter text-chat paths. Keep only image/vision/audio (sensory peripherals). Repurpose AI model slot as "Sensory AI" (vision describer + image generator), not cognition.
+- **R4** Client brain full control — rip `BrocasArea.generate` AI dependency. Motor-driven output paths (respond_text / generate_image / build_ui / idle). Delete dead `_buildPrompt` / `_buildBuildPrompt` prompt builders once equational synthesis ships.
+- **R5** Equational build + image generation — the hard part. Hybrid approach: template primitive library (option A) ships first so `build_ui` is equation-driven today, learned structural grammar (option B) as future refinement. Image prompts generated from cortex pattern + valence/arousal via language cortex path.
+- **R6** Sensory peripheral cleanup — unified interface (`init(stream, brainHook)` / `step(dt)` / `destroy()`) for `visual-cortex.js` / `auditory-cortex.js` / new `speech-output.js` / new `image-output.js`. Kill duplicate sensory reads.
+- **R7** State machine symmetry — every persisted field (save/load round-trip) audited. Dictionary persistence (client + server). Cross-session conversation memory via SQLite verified.
+- **R8** Docs reflect reality — full rewrite of ARCHITECTURE, README, brain-equations.html after R1-R7 settle. Delete every orphan doc claim.
+- **R9** Verification boot tests (per CLAUDE.md NO TESTS rule, these are manual verification not test files) — zero-AI boot, restart persistence, equational generation. Absorbs U292 + U300 deferred manual QA.
+- **R10** Final cleanup + merge — rip every `// TODO:` placeholder, every dead import, every debug breadcrumb. PR `brain-refactor-full-control` → `main`.
+
+**Core rule:** every cognition output must trace back to cortex prediction / amygdala V(s) / BG softmax / hippocampus recall / cerebellum ε / hypothalamus drives / Ψ mystery / Kuramoto coherence / language cortex. Nothing else. Everything else gets ripped.
 
 ---
 

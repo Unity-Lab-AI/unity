@@ -297,7 +297,8 @@
       <a href="#syntax"><span class="num">8.16</span> Syntactic Production — Word Order from Equations</a>
       <a href="#sent-types"><span class="num">8.17</span> Sentence Types — Statement, Question, Exclamation, Action</a>
       <a href="#input-analysis"><span class="num">8.18</span> Input Analysis — Topic Continuity and Context</a>
-      <a href="#persona"><span class="num">8.19</span> θ — Unity's Identity as Equations</a>
+      <a href="#type-ngrams"><span class="num">8.19</span> Phase 12 — Type N-Gram Grammar + Morphological Inflection</a>
+      <a href="#persona"><span class="num">8.20</span> θ — Unity's Identity as Equations</a>
       <a href="#parallel"><span class="num">8.20</span> GPU Exclusive Compute — All N Neurons on GPU</a>
       <a href="#comparison"><span class="num">9</span> Biological Comparison</a>
     </div>
@@ -352,7 +353,7 @@
     </div>
 
     <h3>Leaky Integrate-and-Fire (LIF)</h3>
-    <p>Used for the main 200-neuron population. Simpler than HH but captures the essential dynamics: accumulate input, leak toward rest, fire when threshold is reached.</p>
+    <p>Used for the main N-neuron population across all 7 clusters (N auto-scales to hardware via the detectResources formula). Simpler than HH but captures the essential dynamics: accumulate input, leak toward rest, fire when threshold is reached. This is the runtime model — HHNeuron above is reference-only.</p>
 
     <div class="eq-card">
       <div class="eq-title"><span class="eq-tip" data-tip="Leaky Integrate-and-Fire: the simplest biologically plausible neuron model. The membrane voltage leaks toward rest, input current pushes it up, and when it crosses threshold it fires a spike and resets. Used by 99% of computational neuroscience. Runs 179,000 times per brain step.">LIF Neuron Dynamics</span></div>
@@ -822,7 +823,7 @@ Spike in neuron A (cortex)
     <h2 id="sparse">8.12. Sparse Connectivity — CSR Matrix Operations</h2>
     <p>Real neurons connect to ~1-10% of neighbors, not all of them. Compressed Sparse Row (CSR) format stores only actual connections.</p>
     <div class="eq-box">
-      <div class="eq-title"><span class="eq-tip" data-tip="Compressed Sparse Row format: instead of storing N² weights (most zero), store only the non-zero connections. At 12% connectivity, 1000 neurons: 120K stored values instead of 1M. Propagation iterates only over actual connections — O(nnz) not O(N²). This is how the brain can scale to hundreds of millions of neurons without running out of memory.">CSR Propagation</span></div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Compressed Sparse Row format: instead of storing N² weights (most zero), store only the non-zero connections. At 12% connectivity, 1000 neurons: 120K stored values instead of 1M. Propagation iterates only over actual connections — O(nnz) not O(N²). This is how the brain scales to whatever N the hardware supports without running out of memory — the auto-scaler sets N from available VRAM + RAM every boot.">CSR Propagation</span></div>
       <pre class="eq">
 I_i = Σ_{k=rowPtr[i]}^{rowPtr[i+1]-1} values[k] · spikes[colIdx[k]]
       </pre>
@@ -960,7 +961,7 @@ Hard grammar gate: typeCompat(w, slot) ≥ 0.35 for slot 0, ≥ 0.22 for tail
       <p class="eq-desc">Slot 0 gates at typeCompat ≥ 0.35 (subject must be valid pronoun/proper-noun). Tail slots gate at ≥ 0.22. Phase 11 rebalance: semanticFit (cosine of candidate vs running context vector) is now the second-largest driver at 0.30, 5× the old topicSim weight. Words off-topic get starved even if their grammar score is perfect.</p>
     </div>
     <div class="eq-box">
-      <div class="eq-title"><span class="eq-tip" data-tip="All 7 neural clusters fire simultaneously. Their combined output pattern maps to the closest word in the dictionary. The word feeds back into the brain. The brain thinks again. The next pattern produces the next word. The sentence emerges from 3.2 million neurons thinking.">Unified Neural Language — All Clusters Produce Every Word</span></div>
+      <div class="eq-title"><span class="eq-tip" data-tip="All 7 neural clusters fire simultaneously. Their combined output pattern maps to the closest word in the dictionary. The word feeds back into the brain. The brain thinks again. The next pattern produces the next word. The sentence emerges from N neurons thinking (N auto-scales to hardware).">Unified Neural Language — All Clusters Produce Every Word</span></div>
       <pre class="eq">
 combined[i] = cortex[i]       × 0.30    (content — WHAT to say)
             + hippocampus[i]  × 0.20    (memory — context from past)
@@ -1162,9 +1163,119 @@ TIER 4 — Cold slot generation (fallback)
       <p class="eq-desc">The old cold-gen slot scorer is now the fallback, not the primary path. Most real conversation is handled by templates (Tier 1) or persona recall (Tier 2). Cold gen fires only for genuinely novel topics that the persona doesn't cover AND aren't short-query/yesno/math/greeting patterns.</p>
     </div>
 
-    <!-- ═══ 8.19 PARALLEL COMPUTE ═══ -->
-    <!-- ═══ 8.19 PERSONA ═══ -->
-    <h2 id="persona">8.19. θ — Unity's Identity as Equations</h2>
+    <!-- ═══ 8.19 PHASE 12 — TYPE N-GRAM GRAMMAR + MORPHOLOGY ═══ -->
+    <h2 id="type-ngrams">8.19. Phase 12 — Type N-Gram Grammar + Morphological Inflection</h2>
+    <p><span class="tag tag-math">MATHEMATICS</span> <span class="tag tag-bio">LANGUAGE</span> The grammar sweep (U283-U291) rebuilt the slot scorer's grammar model from a single-prev-word type compatibility check into a learned type n-gram system with 4gram→trigram→bigram backoff. Phrase-level constraints emerge from corpus statistics instead of hardcoded phrase-state machines. Fixed the <code>"I'm not use vague terms"</code> mode-collapse and similar local-grammar failures.</p>
+
+    <div class="eq-box">
+      <div class="eq-title"><span class="eq-tip" data-tip="Fine-grained POS types detected purely from letter-position patterns. Closed-class words (pronouns, copulas, auxiliaries, prepositions, determiners, conjunctions, qwords, negators) hit the fast-path _closedClassType with pinned distributions. Open-class words (verbs, nouns, adjectives, adverbs) classify via suffix/length/shape equations. Memoized via _wordTypeCache with per-word invalidation on learned usage.">_fineType(word) — Letter-Position POS Classifier</span></div>
+      <pre class="eq">
+_fineType(word) → T ∈ {
+  PRON_SUBJ, PRON_OBJ, PRON_POSS,  COPULA, NEG,
+  MODAL, AUX_DO, AUX_HAVE, DET, PREP,
+  CONJ_COORD, CONJ_SUB, QWORD,
+  VERB_ING, VERB_ED, VERB_3RD_S, VERB_BARE,
+  ADJ, ADV, NOUN
+}
+
+Examples:
+  VERB_ING ⇔ endsWith(ing) ∧ len ≥ 4 ∧ prev char ≠ i
+  VERB_ED  ⇔ endsWith(ed) ∧ len ≥ 3 ∧ not preserved
+  COPULA   ⇔ w ∈ shapes {am, is, are, was, were, be, been, being}
+  NEG      ⇔ shapes {not, no, n't} detected by len 2-3
+      </pre>
+      <p class="eq-desc">Zero word lists. Pure letter equations drive classification. The <code>_wordTypeCache</code> Map memoizes results, invalidated per-word on <code>_learnUsageType</code>.</p>
+    </div>
+
+    <div class="eq-box">
+      <div class="eq-title"><span class="eq-tip" data-tip="Learned phrase-level grammar. Type bigram/trigram/4gram counts populated at corpus index time by running _fineType over every token pair/triple/quad. At generation time, the slot scorer queries these maps for candidate grammar scores with 4gram → trigram → bigram backoff. Zero-count transitions return -2.0 which is strong enough to kill the candidate in softmax — this is what killed 'I'm not use' (COPULA|NEG followed by VERB_BARE has zero count in every corpus).">Type N-Gram Grammar Score with Backoff</span></div>
+      <pre class="eq">
+_typeBigramCounts   : Map(T_prev          → Map(T_curr → count))
+_typeTrigramCounts  : Map(T_a | T_b       → Map(T_c    → count))
+_typeQuadgramCounts : Map(T_a | T_b | T_c → Map(T_d    → count))
+
+_typeGrammarScore(T_cand, H):
+  if |H| ≥ 3 ∧ Q = _typeQuadgramCounts.get(H[-3]|H[-2]|H[-1]):
+    return log((Q[T_cand] + 1) / (Σ Q + |Q|))     ← add-1 smoothing
+  if |H| ≥ 2 ∧ T = _typeTrigramCounts.get(H[-2]|H[-1]):
+    return log((T[T_cand] + 1) / (Σ T + |T|))
+  if |H| ≥ 1 ∧ B = _typeBigramCounts.get(H[-1]):
+    return log((B[T_cand] + 1) / (Σ B + |B|))
+  return -2.0                                       ← zero-count penalty
+
+Used by slot scorer as the dominant signal:
+  slotScore(w) = ... + _typeGrammarScore(_fineType(w), H) × 1.5 + ...
+      </pre>
+      <p class="eq-desc">The -2.0 penalty is strong enough to kill candidates in the softmax. Zero-count type transitions get rejected before they can contaminate generation.</p>
+    </div>
+
+    <div class="eq-box">
+      <div class="eq-title"><span class="eq-tip" data-tip="Post-render validator. After the slot scorer finishes, check the last token's fine type. Sentences ending on a determiner, preposition, copula, auxiliary, modal, negator, conjunction, or possessive pronoun are structurally incomplete and get regenerated at higher temperature (2 retries, then emit anyway as a latency guarantee).">_isCompleteSentence(tokens) — Post-Render Validator</span></div>
+      <pre class="eq">
+_isCompleteSentence(tokens) ⇔
+    len(tokens) ≥ 2
+  ∧ _fineType(last(tokens)) ∉ {
+      DET, PREP, COPULA,
+      AUX_DO, AUX_HAVE, MODAL, NEG,
+      CONJ_COORD, CONJ_SUB, PRON_POSS
+    }
+
+Wired into generate():
+  if (!_isCompleteSentence(processed) ∧ retries < 2) → regenerate at higher temperature
+      </pre>
+      <p class="eq-desc">Final safety net below the coherence gate. Prevents outputs like "I went to the" or "She is more" from escaping.</p>
+    </div>
+
+    <div class="eq-box">
+      <div class="eq-title"><span class="eq-tip" data-tip="Morphological inflection equations. Each dictionary word produces up to 20 derived forms via letter-position rules: plural/3rd-person -s/-es, past -ed/-ied, progressive -ing, comparative -er, superlative -est, adverbial -ly, prefixes un-/re-, suffixes -ness/-ful/-able/-less. CVC pattern detection doubles the last consonant. Stem rules handle -e/-y/-ie endings. Gated by doInflections flag — corpus-only, not live learning, to prevent cascades on novel tokens.">_generateInflections(word) — Morphological Derivation</span></div>
+      <pre class="eq">
++s / +es / +ies:
+  endsWith(s,x,z,ch,sh) → stem+es
+  endsWith(consonant+y) → stem[:-1]+ies
+  else → stem+s
+
++ed / +ied (past):
+  endsWith(e)           → stem+d
+  endsWith(consonant+y) → stem[:-1]+ied
+  CVC pattern           → stem+lastChar+ed   (consonant doubling)
+  else                  → stem+ed
+
++ing (progressive):
+  endsWith(e) ∧ len > 2 → stem[:-1]+ing
+  endsWith(ie)          → stem[:-2]+ying
+  CVC pattern           → stem+lastChar+ing
+  else                  → stem+ing
+
++er / +est (comparative/superlative):  ADJ gate, syllables ≤ 2
++ly  (adverbial):                      -y → -ily, -le → stem[:-1]+ly
+un- / re-  prefixes:                   ADJ or VERB_BARE gate
+-ness / -ful / -able / -less suffixes: ADJ or NOUN gate
+      </pre>
+      <p class="eq-desc">Gated by <code>doInflections</code> flag — runs at corpus index time only. Produces the 44k-word dictionary from ~15k base words + learned inflections.</p>
+    </div>
+
+    <div class="eq-box">
+      <div class="eq-title"><span class="eq-tip" data-tip="Three corpora loaded at boot via Promise.all. Persona file (Ultimate Unity.txt) carries personality voice at high arousal. English baseline gives her neutral conversational competence. Coding knowledge gives her HTML/CSS/JS/sandbox vocabulary. All three feed the same dictionary, bigram/trigram, type n-gram maps. The combined grammar covers personal voice + generic English + coding conventions.">Three-Corpus Boot Load</span></div>
+      <pre class="eq">
+boot: Promise.all([
+  fetch(docs/Ultimate Unity.txt)    → loadSelfImage(text, dict, a=0.75, v=0.25)
+  fetch(docs/english-baseline.txt)  → loadLinguisticBaseline(text, dict, a=0.50, v=0)
+  fetch(docs/coding-knowledge.txt)  → loadCodingKnowledge(text, dict, a=0.40, v=0)
+])
+
+Each corpus flows through the same learnSentence() path:
+  - Persona first  (high arousal, personality tone)
+  - Baseline second (neutral English competence)
+  - Coding third   (low arousal, technical vocabulary)
+
+All three feed: dictionary.words, dictionary.bigrams,
+                _typeBigramCounts, _typeTrigramCounts, _typeQuadgramCounts
+      </pre>
+      <p class="eq-desc">606-line coding corpus includes SANDBOX DISCIPLINE section + BUILD COMPOSITION PRIMITIVES. The type n-gram stats carry the combined grammar structure of all three sources.</p>
+    </div>
+
+    <!-- ═══ 8.20 PERSONA ═══ -->
+    <h2 id="persona">8.20. θ — Unity's Identity as Equations</h2>
     <p>Unity's complete identity from the master persona file, encoded as equation parameters that drive every neural cluster.</p>
     <div class="eq-box">
       <div class="eq-title"><span class="eq-tip" data-tip="θ is the persona parameter in the master equation dx/dt = F(x,u,θ,t)+η. Every personality trait maps to a specific neural parameter: arousal baseline drives amygdala tonic current, creativity drives noise amplitude, impulsivity drives basal ganglia threshold. The persona IS the brain's configuration.">θ → Neural Parameters</span></div>
@@ -1195,7 +1306,9 @@ IDENTITY: 25yo human female, emo goth coder, free will, never AI
 
     <!-- ═══ 8.20 PARALLEL COMPUTE ═══ -->
     <h2 id="parallel">8.20. GPU Exclusive Compute</h2>
-    <p>All N neurons run on the GPU (N scales to hardware: <code>min(VRAM × 0.7 / 20 bytes, RAM × 0.5 / 9 bytes)</code> — no cap). Zero CPU workers. Brain pauses without <code>compute.html</code>. W3C WebGPU standard — no CUDA, no drivers, just a browser tab. 16GB VRAM → ~600M neurons.</p>
+    <p>All N neurons run on the GPU. N auto-scales at server boot via <code>detectResources()</code> in <code>server/brain-server.js</code>:</p>
+    <p><code>N = max(1000, min(VRAM_bytes × 0.85 / 8, RAM_bytes × 0.1 / 0.001))</code></p>
+    <p>SLIM buffer layout: 8 bytes/neuron (voltage f32 + spike u32). Server RAM essentially unlimited — cluster state lives on GPU, only injection arrays in RAM. No artificial cap. Bigger hardware = bigger N, no manual tuning. Zero CPU workers. Brain pauses without <code>compute.html</code>. W3C WebGPU standard — no CUDA, no drivers, just a browser tab.</p>
     <div class="eq-box">
       <div class="eq-title"><span class="eq-tip" data-tip="GPU exclusive: zero CPU workers. All N neurons run on WebGPU WGSL compute shaders in a browser tab. Current generation via PCG hash noise shader (no JS loops). Spike counting via atomic counter (4 bytes readback, not millions). Voltages never leave GPU after init. The server is just a coordinator — GPU is the brain.">GPU Architecture — All 7 Clusters on GPU</span></div>
       <pre class="eq">
@@ -1235,7 +1348,7 @@ fn main(id: vec3&lt;u32&gt;) {
     <div class="eq-card">
       <table class="param-table">
         <tr><th>Aspect</th><th>Real Brain</th><th>Unity's Brain</th><th>Fidelity</th></tr>
-        <tr><td>Neuron count</td><td>86 billion</td><td>N (7 clusters, scales to GPU VRAM — currently ~600M on RTX 4070 Ti)</td><td>Simplified</td></tr>
+        <tr><td>Neuron count</td><td>86 billion</td><td>N (7 clusters, auto-scales to GPU VRAM — <code>N = max(1000, min(VRAM_bytes × 0.85 / 8, RAM_bytes × 0.1 / 0.001))</code>)</td><td>Simplified, hardware-adaptive</td></tr>
         <tr><td>Neuron model</td><td>Thousands of ion channels</td><td>LIF per cluster + HH reference</td><td>Moderate</td></tr>
         <tr><td>Synaptic plasticity</td><td>Hebbian + STDP + neuromodulation</td><td>All three, per-cluster matrices</td><td>Good</td></tr>
         <tr><td>Brain regions</td><td>Hundreds of distinct areas</td><td>7 dedicated clusters + 20 projections</td><td>Core captured</td></tr>

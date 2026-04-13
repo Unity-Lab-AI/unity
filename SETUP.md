@@ -109,7 +109,7 @@ Live at `your-username.github.io/Unity/`. Everything runs client-side — no ser
 │   ├── brain/
 │   │   ├── engine.js             THE brain — master loop, processAndRespond
 │   │   ├── cluster.js            NeuronCluster + ClusterProjection classes
-│   │   ├── neurons.js            Hodgkin-Huxley + LIF neuron models
+│   │   ├── neurons.js            LIFPopulation (live runtime) + HHNeuron (reference for brain-equations.html)
 │   │   ├── synapses.js           Hebbian, STDP, reward-modulated plasticity
 │   │   ├── modules.js            6 brain region equation modules
 │   │   ├── mystery.js            Ψ = √(1/n) × N³ · [Id + Ego + Left + Right]
@@ -128,8 +128,8 @@ Live at `your-username.github.io/Unity/`. Everything runs client-side — no ser
 │   │   ├── sparse-matrix.js      CSR sparse connectivity (O(connections))
 │   │   ├── gpu-compute.js        WebGPU compute shaders (LIF + synapses)
 │   │   ├── embeddings.js         Semantic word embeddings (GloVe 50d)
-│   │   ├── language-cortex.js    Language from equations (word type from letters, slot grammar, learns from conversation)
-│   │   ├── benchmark.js          Dense vs sparse + neuron scale test
+│   │   ├── language-cortex.js    Language from equations (44k dict, type n-grams, 4-tier gen pipeline, hippocampus recall, morphological inflection, 3-corpus load)
+│   │   ├── benchmark.js          Dense vs sparse + neuron scale test (invoked via /bench + /scale-test slash commands)
 │   │   ├── response-pool.js     EDNA response categories (training wheels for language cortex)
 │   │   └── peripherals/
 │   │       └── ai-providers.js   AI provider manager + dead backend detection
@@ -137,18 +137,20 @@ Live at `your-username.github.io/Unity/`. Everything runs client-side — no ser
 │   │   └── pollinations.js       Pollinations API client (text/image/TTS)
 │   ├── io/
 │   │   ├── voice.js              Web Speech API + Pollinations TTS
-│   │   ├── vision.js             Webcam capture + AI scene description
 │   │   └── permissions.js        Mic/camera permission requests
+│                                   (vision.js deleted in U302 — vision lives in js/brain/visual-cortex.js)
 │   └── ui/
-│       ├── sandbox.js            Dynamic UI injection system
+│       ├── sandbox.js            Dynamic UI injection (MAX_ACTIVE_COMPONENTS=10, LRU eviction, tracked timers+listeners, auto-remove on JS error)
 │       ├── chat-panel.js         Conversation log panel
 │       ├── brain-viz.js          2D tabbed brain visualizer (8 tabs)
 │       └── brain-3d.js           3D WebGL brain with notifications + expansion
 ├── claude-proxy.js               Claude Code CLI as local AI (port 8088)
 ├── compute.html                  GPU compute worker (REQUIRED — brain runs here)
 ├── server/
-│   ├── brain-server.js           Node.js brain server (always-on, WebSocket, GPU exclusive)
+│   ├── brain-server.js           Node.js brain server (always-on, WebSocket, GPU exclusive, restores _wordFreq from disk)
 │   └── package.json              Server dependencies (ws, better-sqlite3)
+│                                   (parallel-brain.js / cluster-worker.js / projection-worker.js
+│                                    DELETED in U304 — GPU-exclusive fixed the idle-worker CPU leak root cause)
 ├── dashboard.html                Public brain monitor (read-only)
 └── docs/
     ├── ARCHITECTURE.md           Codebase structure and systems
@@ -171,12 +173,15 @@ npm install
 node brain-server.js
 ```
 
-The server auto-detects hardware and scales neuron count dynamically:
-- Formula: `min(VRAM × 0.7 / 20, RAM × 0.5 / 9)` — GPU exclusive, 20 bytes/neuron on GPU, capped at 64M
-- RTX 4070 Ti + 16 cores + 109GB RAM → **3.2M neurons**
-- 8-core CPU + 32GB RAM → ~1.2M neurons
-- 4-core CPU + 8GB RAM → ~350K neurons
-- Scales to any hardware automatically
+The server auto-detects hardware (nvidia-smi for VRAM, `os` for RAM) and scales neuron count dynamically:
+- **Formula (from `server/brain-server.js:detectResources`):**
+  `N_vram = floor(VRAM_bytes × 0.85 / 8)` (SLIM buffer: voltage f32 + spikes u32 = 8 bytes/neuron)
+  `N_ram = floor(RAM_bytes × 0.1 / 0.001)` (essentially unlimited — cluster state on server is tiny, only injection arrays live in RAM)
+  **`N = min(N_vram, N_ram)`** — VRAM-bound in practice
+- Floor: 1000 neurons (absolute minimum for sim integrity). No upper cap. Line 89 of `brain-server.js`: *"No artificial cap — hardware decides. VRAM and RAM are the only limits."*
+- The formula expands with whatever GPU + RAM is available — bigger hardware = more neurons, no manual tuning
+- Cluster sizes are proportional: cerebellum 40%, cortex 25%, hippocampus 10%, amygdala 8%, basal ganglia 8%, hypothalamus 5%, mystery 4%
+- Client (browser-only mode, no server): runs a local CPU LIF fallback brain sized to what the browser JS engine can sustain
 
 **Endpoints:**
 - `ws://localhost:8080` — WebSocket for brain state + chat
@@ -194,9 +199,9 @@ The server auto-detects hardware and scales neuron count dynamically:
 
 **Two modes:**
 
-**Client-only (GitHub Pages):** Everything runs in your browser. No server. API keys in localStorage (obfuscated). Brain runs locally at 1000 neurons.
+**Client-only (GitHub Pages):** Everything runs in your browser. No server. API keys in localStorage (obfuscated). Brain runs locally in fallback mode — CPU LIF single-threaded, 60fps, auto-sized to what your browser JS engine can sustain.
 
-**Server mode (start.bat):** Brain runs on your GPU via compute.html (WebGPU WGSL shaders). 3.2M neurons. Server orchestrates via WebSocket, GPU does all computation. Episodic memory in local SQLite. Nothing leaves your network except API calls to providers you choose. **compute.html must stay open** — brain pauses without it.
+**Server mode (start.bat):** Brain runs on your GPU via compute.html (WebGPU WGSL shaders). N auto-scales to your VRAM + RAM via the formula above. Server orchestrates via WebSocket, GPU does all computation. Episodic memory in local SQLite. Nothing leaves your network except API calls to providers you choose. **compute.html must stay open** — brain pauses without it.
 
 - API keys stored in your browser — never sent to us
 - Server data stays on YOUR machine — no cloud, no analytics
@@ -211,6 +216,8 @@ The server auto-detects hardware and scales neuron count dynamically:
 |---------|-----|-------------|
 | `/think` | Type in chat | Shows the exact system prompt sent to the AI model with live brain state |
 | `/think [text]` | Type in chat | Shows what the brain would send for a specific input |
+| `/bench` | Type in chat | Runs the dense vs sparse matrix micro-benchmark (CPU-JS sanity test — real runtime is the GPU auto-scaled path via compute.html). Output in console. |
+| `/scale-test` | Type in chat | Runs the CPU LIF scale test to find the 60fps sweet spot for browser-only fallback mode. Output in console. Not representative of the production GPU path. |
 | "slash think" | Say by voice | Same as typing /think |
 | ⚙ SETTINGS | Bottom toolbar button | Reopens setup modal to change AI model or connect new providers |
 | 🧠 VISUALIZE | Bottom toolbar button | Opens 2D brain visualizer with 8 tabs (Neurons, Synapses, Oscillations, Modules, Senses, Consciousness, Memory, Motor) |

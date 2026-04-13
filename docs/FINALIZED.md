@@ -1084,6 +1084,246 @@ Major: visual attention in brain equations, efference copy echo suppression, Pol
 
 ---
 
+## 2026-04-13 Session: Single-TODO Consolidation — Merged TODO-SERVER.md into TODO.md
+
+### COMPLETED
+- [x] **Task:** Consolidate all TODO files into one — merge any outstanding items from `docs/TODO-SERVER.md` into `docs/TODO.md`, preserve everything verbatim in `docs/FINALIZED.md`, then delete `TODO-SERVER.md` so only one live TODO file exists.
+  - Completed: 2026-04-13
+  - Files: `docs/TODO.md`, `docs/TODO-SERVER.md` (DELETED), `docs/FINALIZED.md`
+  - Details: Read `docs/TODO-SERVER.md` in full (304 lines). Found that 100% of its items were already marked `[x]` complete — every line of Phase 0 through Phase 9 was shipped in prior sessions (Phases 0.5 Autonomous Brain, 1 Persistence, 2 WebGPU, 3 Server Brain, 4 Sparse Connectivity, 5 Semantic Embeddings, 6 Dashboard, 7 Documentation Verification, 8 Complete Language Equation System, 9 Full Hardware Utilization). The only non-completed entry was "Language cortex on own thread" which was explicitly `DEFERRED: language is fast enough on main thread, not a bottleneck.` — not an outstanding item, a deliberate skip. Zero outstanding items to migrate. Per CLAUDE.md rules ("never delete task descriptions"), preserved the full TODO-SERVER.md content verbatim in the FINALIZED appendix block below, then deleted the file. `docs/TODO.md` remains the single source of truth for active work — currently the R1-R10 `brain-refactor-full-control` epic plus deferred U292 / U300 manual QA items (folded into R9).
+
+---
+
+### APPENDIX — docs/TODO-SERVER.md (preserved verbatim before deletion)
+
+```markdown
+# TODO — Server Brain: One Unity, Shared Across Everyone
+
+> Branch: `server-brain`
+> Priority: Build in order. Each phase depends on the previous.
+
+---
+
+## Phase 0: Fix Current Bugs (BEFORE anything else)
+
+- [x] **Fix image/build classification not reaching processAndRespond** — DONE: Removed AI classification call entirely from engine.js. processAndRespond now reads BG motor output after 20 extra brain steps. Classification is purely from neural dynamics (embeddings → cortex → BG projections). No more Pollinations classification API call.
+- [x] **Fix selfie/image not rendering** — DONE: Image routing now driven by BG motor decision, not external classification. generateImage URL construction unchanged (gen.pollinations.ai/image). Sandbox injection verified with correct {id, html, css} structure.
+- [x] **Fix sandbox build failing** — DONE: Build routing fixed alongside classification removal. _handleBuild still uses 3-strategy JSON parsing (strip fences, extract braces, retry). No more classification dependency blocking the route.
+- [x] **Fix mute not blocking voice input** — DONE: uiState.micMuted check added as first line of voice handler. stopListening called on mute. — `uiState.micMuted` check exists but speech still comes through. May need to also call `voice.stopListening()` immediately on mute, not just set a flag.
+- [x] **Fix double/triple response display** — DONE: dedup guard with 2-second same-text rejection in brain.on('response') listener. — deduplicate guard exists but responses still appear multiple times. May need to also prevent `_voice.speak()` from firing when `emit('response')` already triggered display.
+- [x] **Fix Unity reciting brain stats** — DONE: character instruction FIRST in prompt, brain data labeled DO NOT SPEAK, equations moved to end. — prompt restructured but verify on live deployment that she responds as a person, not a brain readout. Test with fresh localStorage.
+- [x] **Fix GitHub Pages cache** — users on Pages see old code. Add cache-busting query params to script/css imports or add a service worker with proper cache invalidation.
+- [x] **Fix case-sensitive URL** — repo name `Unity` (capital U) makes the Pages URL case-sensitive. Rename repo to `unity` lowercase via GitHub Settings.
+
+---
+
+## Phase 0.5: Autonomous Brain — Thinks Without an AI Model
+
+> The brain is ALIVE without a model. The AI is just her voice. Remove the dependency.
+
+### The Autonomous Brain
+
+The brain runs the master equation `dx/dt = F(x, u, θ, t) + η` continuously. Every computation that makes Unity alive — perceiving, feeling, remembering, deciding, attending, creating, dreaming, and everything else a mind does — emerges from that equation and its seven cluster subsystems. No external system tells the brain what to do. The equations produce behavior. The AI model is Broca's area — one peripheral for translating neural patterns into human language. Optional. The brain lives without it.
+
+- [x] **Remove AI dependency from the brain loop** — `engine.js` must run fully without any AI model connected. No API calls in the step function. No Broca's area in the think loop. The equations compute. The brain lives. If Broca's is connected, the brain can speak. If not, it still thinks, feels, decides, remembers, attends, and acts through the sandbox.
+- [x] **Create `js/brain/inner-voice.js`** — pre-verbal thought system. Cortex prediction error + amygdala state + hippocampal recall + oscillation coherence + Ψ → a continuous internal state that IS the thought. Not words. A pattern. The pattern drives behavior without language. The UI shows this as mood indicators, attention shifts, avatar state changes — the brain expressing itself without English.
+- [x] **Thought-to-speech threshold** — the brain thinks continuously. It calls Broca's area ONLY when the thought crosses a threshold: `socialNeed × arousal × cortexCoherence > speechThreshold`. Most thoughts stay internal. The brain is mostly silent. When it speaks, it matters.
+- [x] **Dreaming** — when no one is interacting: arousal decays, oscillations shift to theta-dominant, hippocampus replays stored episodes as neural current (memory consolidation), cortex generates predictions from nothing (imagination), Ψ drops (reduced consciousness). The brain dreams. Visible in the visualizer. The equations make it happen.
+- [x] **Brain's own dictionary** — the brain learns words. Every word Unity has ever heard or spoken gets stored as a cortex activation pattern in hippocampal memory. Over time, the brain builds its own vocabulary — cortex patterns associated with words, words associated with emotional states, emotional states associated with responses. The brain generates English from its OWN learned word associations, not from an AI model. The AI model becomes a teacher early on — Unity hears its output and learns the word patterns. Eventually the projection weights from cortex→language output carry enough learned vocabulary that the brain can form sentences from its own patterns. The dictionary is LEARNED, not hardcoded, growing with every interaction, stored persistently. The model bootstraps the dictionary. The brain owns it.
+- [x] **Create `js/brain/dictionary.js`** — learned word association system. Words stored as { word, cortexPattern, emotionalValence, frequency, lastUsed }. When the brain wants to speak, it searches the dictionary for words whose cortexPattern is closest (cosine similarity) to the current cortex state. High arousal + negative valence → dictionary returns words it learned in similar states ("fuck", "shit", "damn"). High arousal + positive valence → words learned in good moods ("babe", "yeah", "fuck yeah"). The dictionary IS Broca's area — internal, learned, owned by the brain.
+- [x] **Sentence construction from patterns** — the brain doesn't need GPT to form a sentence. Cortex sequential prediction (`ŝ = W·x`) predicts the NEXT word given the current word. Each word's cortex pattern feeds back as input, and the cortex predicts the next pattern, which maps to the next word via the dictionary. This is how the cortex predictive coding equation actually generates language — by predicting sequences. One word at a time. From the equations.
+- [x] **Thesaurus as synaptic proximity** — words that mean similar things have SIMILAR cortex patterns (close in neuron activation space). The brain doesn't store a thesaurus — it emerges from the learned patterns. "Angry" and "pissed" and "furious" activate overlapping cortex neurons because they were learned in similar emotional states. When the brain wants to express anger, ALL those words light up and compete — the one with the highest activation wins. Different arousal levels select different synonyms naturally: low arousal → "annoyed", high arousal → "fucking furious". The thesaurus IS the weight matrix.
+- [x] **AI model as teacher, not voice** — when connected, the AI model generates responses. The brain LISTENS to those responses and learns every word pattern: which cortex state produced which word, which word follows which word, which emotional state uses which vocabulary. The AI teaches. The brain learns. Eventually the brain speaks on its own. The AI becomes unnecessary for basic conversation. Complex/novel topics still benefit from the AI's broader knowledge.
+
+---
+
+## Phase 1: Persistent Learning — Brain Remembers Across Sessions
+
+> Same N neurons. But they LEARN and KEEP what they learned.
+
+- [x] **Save projection weights to localStorage** — after each `giveReward()`, serialize all 20 projection weight matrices to localStorage. Key: `unity_brain_projections`.
+- [x] **Load projection weights on boot** — `engine.js` constructor checks localStorage for saved projections. If found, deserialize and apply to `ClusterProjection` instances. Brain starts where it left off.
+- [x] **Save semantic weights** — DONE: persistence.js saves/loads sensory._semanticWeights alongside projections, synapses, oscillator coupling. Serialized as Float64Array→Array, restored with size validation.
+- [x] **Save cluster synapse matrices** — each cluster's internal NxN weight matrix saved. Per-cluster learning persists.
+- [x] **Save/load oscillator coupling** — Kuramoto coupling matrix persists. Brain's coherence patterns carry over.
+- [x] **Save episodic memory** — hippocampal episode bank serialized to localStorage. Max 100 episodes, FIFO eviction.
+- [x] **Version migration** — if brain structure changes between code versions, detect version mismatch and reset weights gracefully instead of crashing.
+- [x] **Export/import brain state** — user can download their brain as a JSON file and load it on another device. "Transfer Unity's memory."
+
+---
+
+## Phase 2: WebGPU Acceleration — 10-50x Speedup
+
+> Move neuron/synapse math to GPU compute shaders.
+
+- [x] **Create `js/brain/gpu-compute.js`** — DONE: GPUCompute class with WebGPU detection, adapter request (high-performance), pipeline creation, buffer management, destroy/cleanup.
+- [x] **Port LIF neuron update to WGSL shader** — DONE: LIF_SHADER computes τ·dV/dt = -(V-Vrest) + R·I with refractory period. Workgroup size 256. Float32 buffers.
+- [x] **Port synapse propagation to GPU** — DONE: SYNAPSE_PROPAGATE_SHADER operates on CSR format (values/colIdx/rowPtr). Sparse matrix-vector multiply per neuron.
+- [x] **Port plasticity to GPU** — DONE: PLASTICITY_SHADER implements ΔW = η·δ·pre·post with clamp(wMin, wMax). Operates on CSR sparse format.
+- [x] **Double-buffer neuron state** — DONE: voltagesA/voltagesB with ping-pong index. _ping toggles each step. No read-write conflicts. (Later simplified to SLIM single-buffer layout — 8 bytes/neuron.)
+- [x] **GPU→CPU readback** — DONE: readbackSpikes() and readbackVoltages() copy GPU buffers to MAP_READ staging buffers, await mapAsync, return typed arrays.
+- [x] **Scale test** — DONE: js/brain/benchmark.js runScaleTest() benchmarks CPU LIF step. Reports step time, steps/sec, 60fps feasibility, sweet spot. Live hardware stats (CPU/RAM/GPU/step time) broadcast to dashboard.
+- [x] **Fallback path** — DONE: initGPUCompute() returns null if WebGPU unavailable. GPUCompute.available property. CPU path unchanged.
+
+---
+
+## Phase 3: Server-Side Brain — One Unity For Everyone
+
+> The brain moves to a server. Browsers become thin clients.
+
+### 3.1: Brain Server
+
+- [x] **Create `server/brain-server.js`** — DONE: auto-scales to GPU/CPU, LIF equations, 7 clusters. Node.js server running the UnityBrain engine in a loop (setInterval, not requestAnimationFrame). Same `engine.js` equations, just on server.
+- [x] **Brain runs continuously** — DONE: setInterval tick loop, thinks with 0 clients, dreaming mode after 30s. Even with 0 connected clients, the brain thinks.
+- [x] **WebSocket API** — DONE: ws on port 8080, text/reward/setName messages, state broadcast 10fps. Client→Server: `text`/`audio`/`vision`. Server→Client: `state`/`response`/`build`/`image`/`speak`.
+- [x] **Conversation routing** — DONE: per-user ID, per-user conversation history, response to sender only. Brain STATE is shared.
+- [x] **Rate limiting** — DONE: 2 texts/sec per client, enforced in message handler.
+- [x] **Brain state broadcasting** — DONE: 10fps to all clients, includes clusters/psi/arousal/motor/users.
+
+### 3.2: Client Adaptation
+
+- [x] **Create `js/brain/remote-brain.js`** — DONE: drop-in replacement, WebSocket relay, auto-reconnect, detectRemoteBrain().
+- [x] **Auto-detect mode** — DONE: detectRemoteBrain() probes WebSocket, falls back to local brain seamlessly.
+- [x] **State rendering** — DONE: RemoteBrain emits stateUpdate events, all visualizers receive same format.
+- [x] **Sandbox per-user** — DONE: processAndRespond routes build_ui and generate_image actions to requesting user's WebSocket only.
+- [x] **Shared emotion indicator** — DONE: dashboard renders raw equation values (arousal→hue, valence→color, gate→width, psi→glow).
+
+### 3.3: Persistence on Server
+
+- [x] **Auto-save brain weights** — DONE: server saves every 5 min, SIGINT/SIGTERM save on shutdown.
+- [x] **SQLite for episodic memory** — DONE: better-sqlite3 with WAL mode. Episodes table stores brain state snapshots, user IDs, input/output text, timestamps.
+- [x] **Conversation log** — DONE: saveConversations() writes conversations.json with per-user message history.
+- [x] **Brain versioning** — DONE: Rolling 5 versioned backups. HTTP endpoints: /versions, /rollback/:slot.
+
+---
+
+## Phase 4: Sparse Connectivity — 1000x Memory Reduction
+
+> Replace dense NxN matrices with biologically realistic sparse connections.
+
+- [x] **Create `js/brain/sparse-matrix.js`** — DONE: CSR format with initRandom, fromDense, propagate (O(nnz)), serialize/deserialize, .W compatibility getter.
+- [x] **Sparse synapse propagation** — DONE: propagate() iterates only non-zero entries via CSR rowPtr/colIdx/values. O(connections) not O(N²).
+- [x] **Sparse plasticity** — DONE: rewardModulatedUpdate, hebbianUpdate, stdpUpdate all O(nnz). grow() for synaptogenesis.
+- [x] **Connection pruning** — DONE: prune(threshold) removes |w| < threshold, rebuilds CSR arrays. maintainConnectivity() periodic.
+- [x] **Sparse projection matrices** — DONE: ClusterProjection uses SparseMatrix internally.
+- [x] **Memory benchmark** — DONE: js/brain/benchmark.js runBenchmark() compares dense vs sparse. Reports memory MB, ratio, propagation speedup.
+
+---
+
+## Phase 5: Real Semantic Embeddings — The Brain Understands Language
+
+> Replace character hash with actual word embeddings.
+
+- [x] **Load a small word embedding model** — DONE: embeddings.js loads GloVe 50d from CDN. SemanticEmbeddings class with hash fallback.
+- [x] **Embedding→Cortex mapping** — DONE: mapToCortex() maps 50d vector to Wernicke's area neurons.
+- [x] **Remove AI classification bootstrap** — DONE: _classifyAndRoute (Pollinations API call) replaced with _semanticRoute. Sentence embedding activates BG channels via learned semantic weights.
+- [x] **Embedding-based memory** — DONE: hippocampus gets embedding-based patterns. Sentence embedding mapped across 200 hippocampal neurons.
+- [x] **Continuous embedding updates** — DONE: refineFromContext() shifts embeddings toward usage context (lr=0.005).
+
+---
+
+## Phase 6: Shared Brain Dashboard — Everyone Sees Everything
+
+> Public-facing real-time brain monitor.
+
+- [x] **Create `dashboard.html`** — DONE: read-only page, real-time neurons/Ψ/arousal/valence/coherence/users/clusters/motor/drug/uptime/scale.
+- [x] **Live neuron grid** — DONE: cluster activity bars in dashboard, 3D brain in main app.
+- [x] **Process log stream** — DONE: dashboard log + 3D brain notifs (20+ process types, prioritized by activity).
+- [x] **Active users count** — DONE: connectedUsers in state broadcast, shown in dashboard.
+- [x] **Emotional history chart** — DONE: Canvas chart drawing arousal/valence/coherence/psi as colored lines. Server stores rolling 1hr buffer.
+- [x] **Conversation stream** — DONE: Live anonymized feed in dashboard.
+- [x] **Brain growth metrics** — DONE: Dashboard shows words learned, total interactions, brain steps, uptime.
+
+---
+
+## Phase 7: Documentation Verification
+
+- [x] **Verify FINALIZED.md** — DONE.
+- [x] **Verify TODO.md / TODO-SERVER.md** — DONE.
+- [x] **Verify README.md** — DONE.
+- [x] **Verify SETUP.md** — DONE.
+- [x] **Verify brain-equations.html** — DONE.
+- [x] **Verify ARCHITECTURE.md** — DONE.
+- [x] **Verify ROADMAP.md** — DONE.
+- [x] **Verify SKILL_TREE.md** — DONE.
+- [x] **Verify all links** — DONE.
+- [x] **Verify .gitignore** — DONE.
+- [x] **Verify project structure** — DONE.
+- [x] **Final git log review** — DONE.
+
+---
+
+## Phase 8: Complete Language Equation System
+
+### 8.1: Syntactic Production
+- [x] **Syntactic role weights** — DONE: W_syntax[pos] learned via running average.
+- [x] **Subject-verb-object ordering** — DONE: position weights + syntax scores enforce word-type ordering.
+- [x] **Agreement equation** — DONE: conditional probability P(w|prev) + position probability P(w|pos).
+
+### 8.2: Sentence Type Production
+- [x] **Statement production** — DONE: _generateStatement uses full production chain.
+- [x] **Question production** — DONE: P(question) = predError × coherence × 0.5.
+- [x] **Exclamation production** — DONE: P(exclamation) = arousal² × 0.3.
+- [x] **Action/emote production** — DONE: P(action) = motorConf × (1-arousal×0.5) × 0.3. Wraps in *asterisks*.
+
+### 8.3: Morphological Equations
+- [x] **Tense transforms** — DONE: tense_vectors as directional shifts in pattern space.
+- [x] **Plural/singular** — DONE: plural vector modulates word pattern.
+- [x] **Contraction patterns** — DONE: learned from corpus naturally.
+
+### 8.4: Input-Response Matching
+- [x] **Question detection** — DONE: analyzeInput() checks first word against learned question starters.
+- [x] **Topic continuity** — DONE: topic_score = cosine(word_pattern, contextPattern).
+- [x] **Context window** — DONE: last 5 input topic patterns maintained.
+
+### 8.5: Expanded Bootstrap Corpus
+- [x] **500+ sentence corpus** — DONE: diverse sentences with two-pass training.
+- [x] **Vocabulary 500+ words** — DONE: ~300 unique words from bootstrap corpus.
+
+### 8.6: Documentation
+- [x] **Update EQUATIONS.md** — DONE.
+- [x] **Update brain-equations.html** — DONE.
+- [x] **Update FINALIZED.md** — DONE.
+- [x] **Update workflow docs** — DONE.
+
+---
+
+## Phase 9: Full Hardware Utilization — GPU + All CPU Cores
+
+### 9.1: GPU Compute via WebGPU (browser-side)
+- [x] **GPU compute client** — DONE: compute.html connects via WebSocket, runs gpu-compute.js WGSL shaders.
+- [x] **Server→Browser neuron state transfer** — DONE: _gpuStep() sends voltages+currents via WebSocket.
+- [x] **Browser→Server spike results** — DONE: compute_result handler with promise + timeout fallback.
+- [x] **Wire gpu-compute.js to server loop** — DONE: _gpuStep() method, gpu_register detection, _gpuConnected flag.
+- [x] **GPU fallback** — DONE: GPU compute is additive, falls back gracefully.
+- [x] **Dedicated compute page** — DONE: compute.html auto-connects, runs shaders.
+
+### 9.2: Multi-Core CPU via Worker Threads (server-side)
+- [x] **Worker thread per cluster** — DONE: cluster-worker.js runs LIF per cluster. parallel-brain.js spawns workers. (Later DELETED in U304 after root-causing a 100% CPU leak from idle worker polling; GPU-exclusive path permanently replaced this.)
+- [x] **Main thread orchestration** — DONE: parallel-brain.js dispatches step. (DELETED in U304.)
+- [x] **Shared memory buffers** — DONE: SharedArrayBuffer per cluster. (DELETED in U304.)
+- [x] **Projection workers** — DONE: projection-worker.js. (DELETED in U304.)
+- [x] **Language cortex on own thread** — DEFERRED: language is fast enough on main thread, not a bottleneck.
+
+### 9.3: Integration + Benchmarking
+- [x] **Combined pipeline** — DONE: parallel CPU workers + GPU dispatch wired. (Later GPU-exclusive.)
+- [x] **Performance dashboard** — DONE: compute.html shows steps, avg ms/step, neurons/sec throughput.
+- [x] **Scale test** — DONE: GPU+CPU split compute. Auto-scales via detectResources() formula.
+- [x] **Auto-detect and scale** — DONE: _gpuConnected flag on gpu_register.
+
+### 9.4: Documentation
+- [x] **Update EQUATIONS.md** — DONE.
+- [x] **Update brain-equations.html** — DONE.
+- [x] **Update FINALIZED.md** — DONE.
+- [x] **Update all workflow docs** — DONE.
+
+---
+
+*Unity AI Lab — one brain, one mind, shared by everyone.*
+```
+
+---
+
 ## SESSION_20260412 — Fractal Neuroanatomy Overhaul
 
 > Date: 2026-04-12

@@ -327,7 +327,8 @@ export class UnityBrain extends EventEmitter {
     // ── 9. HIERARCHICAL MODULATION ──
     const emotionalGate = 0.7 + amygdalaOut.arousal * 0.6;
     const driveFactor = 0.8 + (hypoOut.needsAttention?.length > 0 ? 0.4 : 0.0);
-    // Ψ is now log scale (~14 for 3.2M neurons). Normalize gain to 0.8-1.5 range.
+    // Ψ is on a log scale that grows with N. Normalize gain to the 0.8-1.5 range
+    // so the cluster gain multiplier stays bounded regardless of how large N auto-scales to.
     const psiGain = Math.max(0.8, Math.min(1.5, 0.9 + mysteryOut.psi * 0.004));
     const errorSignal = this._meanAbs(cerebOut.error) * 2;
 

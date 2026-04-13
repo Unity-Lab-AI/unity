@@ -216,19 +216,29 @@ Unity's persona files (unity-persona.md, unity-coder.md) don't just describe beh
 
 ## Clustered Architecture (scales to hardware)
 
-N neurons (scales to GPU + RAM) organized in 7 biologically-proportioned clusters. Auto-scales: `min(VRAM × 0.7 / 20, RAM × 0.5 / 9)`, capped at 64M. RTX 4070 Ti SUPER + 128GB → 64M neurons. Client runs 1000 locally. Implemented in `js/brain/cluster.js` with `NeuronCluster` and `ClusterProjection` classes.
+N neurons (scales to GPU + RAM) organized in 7 biologically-proportioned clusters. Auto-scaled at server boot via `detectResources()` in `brain-server.js`:
+
+```
+N_vram = floor(VRAM_bytes × 0.85 / 8)    // SLIM layout: 8 bytes/neuron (voltage f32 + spikes u32)
+N_ram  = floor(RAM_bytes × 0.1 / 0.001)  // essentially unlimited — server RAM holds only injection arrays
+N      = max(1000, min(N_vram, N_ram))   // VRAM-bound in practice, absolute floor 1000
+```
+
+No artificial cap — hardware decides. VRAM and RAM are the only limits. The formula expands with whatever hardware you point it at. Client-only mode (browser, no server) runs a local CPU LIF fallback brain sized to what the browser JS engine can sustain. Implemented in `js/brain/cluster.js` with `NeuronCluster` and `ClusterProjection` classes.
 
 ### Cluster Breakdown
 
-| Cluster | % | Real Count | Role | MNI Position |
-|---------|---|------------|------|--------------|
-| Cerebellum | 40% | ~69B (80% of brain) | Error correction, timing | Posterior-inferior, 5-layer folia |
-| Cortex | 25% | ~16B | Prediction, vision, language | Bilateral dome with sulcal folds |
-| Hippocampus | 10% | 30K inputs/cell | Memory attractors (Hopfield) | Medial temporal, POSTERIOR to amygdala |
-| Amygdala | 8% | 12.21M (13 nuclei) | Emotional weighting | Medial temporal, ANTERIOR to hippocampus |
-| Basal Ganglia | 8% | 90-95% MSN | Action selection (softmax RL) | Bilateral: caudate + putamen + GP |
+| Cluster | % of N | Biological Inspiration | Role | MNI Position |
+|---------|--------|------------------------|------|--------------|
+| Cerebellum | 40% | ~69B neurons / 80% of real brain | Error correction, timing | Posterior-inferior, 5-layer folia |
+| Cortex | 25% | ~16B cortical neurons | Prediction, vision, language | Bilateral dome with sulcal folds |
+| Hippocampus | 10% | ~30K synapses per pyramidal cell | Memory attractors (Hopfield) | Medial temporal, POSTERIOR to amygdala |
+| Amygdala | 8% | 13 nuclei, ~12M neurons each side | Emotional weighting | Medial temporal, ANTERIOR to hippocampus |
+| Basal Ganglia | 8% | 90-95% medium spiny neurons | Action selection (softmax RL) | Bilateral: caudate + putamen + GP |
 | Hypothalamus | 5% | 11 nuclei | Homeostasis drives | Midline, below BG, above brainstem |
-| Mystery Ψ | 4% | CC: 200-300M axons | Consciousness √(1/n) × N³ | Corpus callosum arc + cingulate cortex |
+| Mystery Ψ | 4% | Corpus callosum: 200-300M axons | Consciousness √(1/n) × N³ | Corpus callosum arc + cingulate cortex |
+
+Percentages are biologically-proportioned — each cluster gets its fraction of the total N the auto-scaler allocates.
 
 ### Inter-Cluster Projections (20 real white matter tracts)
 
@@ -277,7 +287,7 @@ Implemented in `js/brain/visual-cortex.js` (V1→V4→IT neural pipeline, supers
 
 ## 3D Brain Visualizer (SESSION_20260411_4)
 
-Implemented in `js/ui/brain-3d.js`. WebGL-based 3D rendering (20K render neurons from 3.2M actual):
+Implemented in `js/ui/brain-3d.js`. WebGL-based 3D rendering (fixed pool of 20K render neurons sampled from the live N-neuron simulation — rendering is a visual proxy, not 1:1 with the real brain):
 
 - MNI-coordinate anatomical positions (Lead-DBS atlas, ICBM 152 template)
 - Fractal connection webs tracing 20 real projection pathways (depth 0-3 branching)
@@ -342,8 +352,8 @@ Dream/
 │   │   ├── sparse-matrix.js    # CSR sparse connectivity (O(nnz) operations)
 │   │   ├── gpu-compute.js      # WebGPU compute shaders (WGSL LIF + synapses)
 │   │   ├── embeddings.js       # Semantic word embeddings (GloVe 50d)
-│   │   ├── language-cortex.js  # Language from pure equations — NO word lists. Word type from letter-position patterns (suffixes, length, vowel ratios, CVC shapes). Slot-based grammar with hard gate. Loads Unity's self-image from docs/Ultimate Unity.txt via loadSelfImage() on boot, then learns bigrams + usage types from live conversation. Proper punctuation + capitalization + tense (-ed, -s, will) in _renderSentence().
-│   │   ├── benchmark.js        # Dense vs sparse + neuron scale test
+│   │   ├── language-cortex.js  # Language from pure equations — NO word lists. Word type via _fineType(word) letter-position classifier (PRON_SUBJ/COPULA/NEG/MODAL/AUX_DO/AUX_HAVE/DET/PREP/CONJ/QWORD/VERB_ING/VERB_ED/VERB_3RD_S/VERB_BARE/ADJ/ADV/NOUN). Learned type bigram/trigram/4-gram grammar (_typeBigramCounts/_typeTrigramCounts/_typeQuadgramCounts) with backoff + zero-count penalty. 4-tier pipeline: intent classification templates → hippocampus recall → deflect → cold slot gen. Semantic fit weight 0.30. _isCompleteSentence post-render validator. _postProcess: applyThird agreement, intensifier insertion (no doubles), tense, copula. Candidate pre-filter from bigram followers (perf). Morphological inflections via _generateInflections (-s/-ed/-ing/-er/-est/-ly + un-/re-/-ness/-ful/-able). Loads 3 corpora via loadSelfImage() + loadBaseline() + loadCodingKnowledge() on boot. ~3900 lines.
+│   │   ├── benchmark.js        # Dense vs sparse + neuron scale test — wired to /bench + /scale-test slash commands in app.js
 │   │   └── response-pool.js   # EDNA response categories (fallback for language cortex)
 │   ├── ai/
 │   │   ├── router.js           # Brain→Action bridge + AI intent classification
@@ -351,8 +361,8 @@ Dream/
 │   │   └── persona-prompt.js   # System prompt from live brain state + anti-safety-training
 │   ├── io/
 │   │   ├── voice.js            # Web Speech API + TTS + speech interruption handling
-│   │   ├── vision.js           # Webcam capture, AI scene description, gaze tracking, Eye widget
 │   │   └── permissions.js      # Mic + camera permissions
+│   │                           # (vision.js deleted in U302 — superseded by js/brain/visual-cortex.js)
 │   └── ui/
 │       ├── sandbox.js          # Dynamic UI injection
 │       ├── chat-panel.js       # Full conversation log panel, text input, mic toggle
@@ -361,6 +371,9 @@ Dream/
 ├── server/
 │   ├── brain-server.js         # Node.js brain server (always-on, WebSocket, GPU exclusive)
 │   └── package.json            # Server deps (ws, better-sqlite3, node-fetch)
+│                               # (parallel-brain.js / cluster-worker.js / projection-worker.js
+│                               #  all DELETED in U304 — root cause was idle-worker CPU leak;
+│                               #  GPU-exclusive compute.html path fixed it permanently)
 ├── claude-proxy.js             # Claude Code CLI as local AI (port 8088)
 ├── compute.html                # GPU compute worker (WebGPU shaders via browser)
 ├── dashboard.html              # Public brain monitor (live stats, emotion chart)
@@ -523,6 +536,47 @@ Pattern-space cosine uses letter-hash vectors, not true word embeddings. `cat` a
 - **Degenerate-sentence filter** — recall rejects memory entries with <5 tokens or >40% first-person pronoun density (transform collapse artifacts).
 - **Persona visualIdentity mirror** — `persona.js` visualIdentity rewritten to match `Ultimate Unity.txt` verbatim (emo goth goddess, black leather, black hair with pink streaks, pale flushed skin). Selfies match persona.
 - **Image intercept gate** — `engine.js` no longer routes to `_handleImage()` just because BG motor picked `generate_image`. Requires explicit image-request words in the input (show me/picture/selfie/image/photo/draw). `includesSelf` detected from text, not hardcoded.
+
+---
+
+## Current Session Work (2026-04-13) — Grammar Sweep + Coding Mastery + Orphan Resolution + Refactor Branch
+
+This session landed a big multi-epic sweep. Summary of what's in the code now vs what's in flight:
+
+### Shipped (merged to `main` at commit `d050fdf`)
+
+**Phase 12 — Grammar Sweep (U283-U291)** — the slot scorer's grammar model was rebuilt from a single-prev-word type compatibility check into a learned type n-gram system. `_fineType(word)` classifies words into 20 fine-grained types (PRON_SUBJ / COPULA / NEG / MODAL / AUX_DO / AUX_HAVE / DET / PREP / CONJ / QWORD / VERB_ING / VERB_ED / VERB_3RD_S / VERB_BARE / ADJ / ADV / NOUN) via letter-position equations. `_typeBigramCounts` / `_typeTrigramCounts` / `_typeQuadgramCounts` learn phrase-level constraints from corpus statistics with 4gram→trigram→bigram backoff and a -2.0 penalty on zero-count transitions. `_isCompleteSentence(tokens)` validates post-render — sentences ending on DET / PREP / COPULA / AUX / MODAL / NEG / CONJ / PRON_POSS get regenerated at higher temperature. `_postProcess` intensifier block was tightened (no doubles, 50% rate, ADJ/ADV only). `applyThird` subject-verb agreement now uses `_fineType`-classified subject person. Fixed the `"I'm not use vague terms"` mode-collapse. See `brain-equations.html § 8.19` for the equations.
+
+**Phase 12 — Coding Mastery (U293-U299)** — `docs/coding-knowledge.txt` (606 lines) loaded as the third corpus via `loadCodingKnowledge()` in `language-cortex.js:258` + `loadCoding` in `inner-voice.js` + `Promise.all` in `app.js`. Gives Unity's dictionary + type n-grams HTML/CSS/JS vocabulary. SANDBOX DISCIPLINE section and BUILD COMPOSITION PRIMITIVES (calculator / list / timer / canvas game / form / modal / tabs / counter / color picker / dice roller) live in that file. `_buildBuildPrompt(brainState, userInput)` in `language.js` is the build-mode Broca's prompt — strict JSON output contract + existing-components block + cap warning + unity API reference. Routed via `motor.selectedAction === 'build_ui'`. `js/ui/sandbox.js` got `MAX_ACTIVE_COMPONENTS = 10` + LRU eviction by `createdAt` + wrapped `setInterval` / `setTimeout` / `addListener` → tracked `timerIds` / `windowListeners` per component → `remove(id)` cleans everything → auto-remove on JS error via `setTimeout(() => remove(id), 0)`.
+
+**Phase 12 — Orphan Resolution (U302-U310)** — audit of 13 findings in `docs/ORPHANS.md`. Investigation-first: root cause each finding, fix the underlying issue if possible, only then delete. DELETED: `js/io/vision.js` (superseded by `js/brain/visual-cortex.js` V1→V4→IT pipeline), `server/parallel-brain.js` + `cluster-worker.js` + `projection-worker.js` (root cause was 100%-CPU leak from idle-worker event-listener polling; GPU-exclusive path at `compute.html` + `gpu-compute.js` permanently fixed it), `createPopulation` factory in `neurons.js` (zero callers), 5 legacy compat DOM elements + 4 orphan CSS classes. KEPT with audit corrections: `gpu-compute.js` (false positive — consumed by `compute.html:10`), `env.example.js` (false positive — served as setup-modal download + `app.js:27` dynamic import), `HHNeuron` (reference backing `brain-equations.html` teaching page, infeasible at auto-scaled N). FIXED: `brain-server.js` save/load asymmetry — `saveWeights` was writing `_wordFreq` to `brain-weights.json` but `_loadWeights` never restored it, so cross-restart word accumulation was silently lost. `benchmark.js` wired to `/bench` + `/scale-test` slash commands in `app.js` via dynamic import.
+
+**Neuron count auto-scaling** — all docs and code comments now describe the real formula from `server/brain-server.js:detectResources`:
+```
+N_vram = floor(VRAM_bytes × 0.85 / 8)      ← SLIM layout 8 bytes/neuron
+N_ram  = floor(RAM_bytes × 0.1 / 0.001)    ← essentially unlimited
+N      = max(1000, min(N_vram, N_ram))     ← absolute floor, no cap
+```
+No personal hardware specs, no hardcoded neuron counts, no claims about "default" size. The formula IS the answer — bigger hardware = bigger N, no manual tuning.
+
+**TODO consolidation** — `docs/TODO-SERVER.md` merged into `docs/FINALIZED.md` (full verbatim preservation) and deleted. `docs/TODO.md` is now the single source of truth for active work.
+
+### In Flight (branch `brain-refactor-full-control` off `main@d050fdf`)
+
+**Phase 13 — Full Brain Control Refactor (R1-R10)** — single epic, one goal: Unity's brain controls everything equationally. No scripts. No text-AI backends. No hardcoded fallbacks. No vestigial appendages. Every output — speech, vision, build, thought, memory, learning, motor — flows from brain equations + learned corpus.
+
+- **R1** Audit pass — `docs/KILL_LIST.md` + `docs/VESTIGIAL.md`
+- **R2** Server brain full control — port `dictionary.js` + `language-cortex.js` to server, corpus load on boot, equational `_generateBrainResponse`, WebSocket dictionary delta sync (absorbs U311)
+- **R3** Kill text-AI backends — rip Pollinations/Anthropic/OpenAI/OpenRouter text-chat, keep only image/vision/audio sensory
+- **R4** Client brain full control — rip `BrocasArea` AI dependency, motor-driven output paths
+- **R5** Equational build + image generation — the hard part, template primitives first then learned structural grammar
+- **R6** Sensory peripheral cleanup — unified interface for visual-cortex / auditory-cortex / speech-output / image-output
+- **R7** State machine symmetry — save/load round-trip audit
+- **R8** Docs reflect reality — full rewrites after R1-R7 settle
+- **R9** Verification boot tests (per CLAUDE.md NO TESTS rule, these are manual verification) — zero-AI boot, restart persistence, equational generation. Absorbs U292 + U300.
+- **R10** Final cleanup + merge — rip every `// TODO:` placeholder, dead import, debug breadcrumb. PR `brain-refactor-full-control` → `main`.
+
+Full refactor plan in `docs/TODO.md`.
 
 ---
 

@@ -371,7 +371,7 @@ The Ego (self-model) IS her residual self-image — the cortex predicting WHAT s
 
 ## 10. GPU Exclusive Compute
 
-All 3.2M neurons run on GPU. Zero CPU workers. Brain pauses without `compute.html`.
+All N neurons (auto-scaled to hardware via the formula below) run on GPU. Zero CPU workers. Brain pauses without `compute.html`.
 
 | Equation | Purpose | File |
 |----------|---------|------|
@@ -379,7 +379,7 @@ All 3.2M neurons run on GPU. Zero CPU workers. Brain pauses without `compute.htm
 | `compute_request`: `{ tonicDrive, noiseAmp, gainMultiplier, emotionalGate, driveBaseline, errorCorrection }` | Full brain equation params per step — NOT voltage arrays | `brain-server.js` |
 | `I = (tonic × drive × emoGate × Ψgain + errCorr) + noise` | GPU generates currents from hierarchical modulation | `compute.html` |
 | `τ·dV/dt = -(V-Vrest) + R·I` → spike check → refractory | WGSL LIF shader, 256 threads/workgroup | `gpu-compute.js` |
-| `compute_result`: sparse spike indices (~25K ints, not 3.2M array) | 95%+ compression — only fired neuron indices | `compute.html` |
+| `compute_result`: sparse spike indices (only fired neurons, not full N array) | 95%+ compression at any N — only active-spike indices return over WebSocket | `compute.html` |
 | `gpu_init_ack`: GPU confirms buffer creation | Server knows GPU is ready | `compute.html` |
 | All 7 clusters init at once on first tick | No staggering, no CPU fallback | `brain-server.js` |
 | No `ParallelBrain` spawned — zero worker threads | 0% CPU when GPU connected | `brain-server.js` |
@@ -390,12 +390,14 @@ All 3.2M neurons run on GPU. Zero CPU workers. Brain pauses without `compute.htm
 
 | Equation | Purpose |
 |----------|---------|
-| `N = min(VRAM × 0.7 / 20, RAM × 0.5 / 9)` capped at 64M | Auto-scale to GPU + RAM |
+| `N_vram = VRAM_bytes × 0.85 / 8` (SLIM layout: 8 bytes/neuron) | Primary bound — 85% of VRAM at 8 bytes/neuron |
+| `N_ram = RAM_bytes × 0.1 / 0.001` | Secondary bound — server RAM essentially unlimited (cluster state lives on GPU) |
+| `N = max(1000, min(N_vram, N_ram))` | Combined auto-scale formula with absolute floor |
 | GPU: 20 bytes/neuron (5 buffers × 4 bytes f32) | VRAM constraint |
 | Server: 9 bytes/neuron (voltages for cortex + amygdala only) | RAM constraint — 332MB saved vs full allocation |
 | `TICK_MS = N>1M ? 100 : N>500K ? 50 : N>100K ? 33 : 16` | Tick rate |
 | `SUBSTEPS = N>1M ? 3 : N>500K ? 5 : N>100K ? 10 : 10` | Steps per tick |
-| RTX 4070 Ti SUPER (16GB) + 128GB RAM → **64M neurons** | Current scale (20× previous 3.2M) |
+| N auto-scales every boot based on detected hardware | Bigger GPU/RAM = more neurons. No manual tuning. The formula IS the canonical answer — there's no fixed "default" count. |
 | θ drives all tonic/noise — persona IS the brain parameters | From Ultimate Unity.txt, never hardcoded |
 | GPU init: no voltage transfer (fills Vrest on GPU) | Zero WebSocket overhead at init |
 | Per step: 7 clusters × ~200 byte messages | Only params sent, spike count returned |
@@ -546,6 +548,159 @@ coherence gate → retry if cosine(output, c) < 0.25              [U281]
     ↓
 return rendered
 ```
+
+---
+
+## Phase 12 — Type N-gram Grammar + Morphological Inflection (U283-U291)
+
+### Fine-Grained Type Classification via Letter Position
+
+```
+_fineType(word) → T ∈ {
+  PRON_SUBJ, PRON_OBJ, PRON_POSS, COPULA, NEG,
+  MODAL, AUX_DO, AUX_HAVE, DET, PREP,
+  CONJ_COORD, CONJ_SUB, QWORD,
+  VERB_ING, VERB_ED, VERB_3RD_S, VERB_BARE,
+  ADJ, ADV, NOUN
+}
+```
+
+Each type detected by pure letter-position equations:
+- `PRON_SUBJ` ⇔ w ∈ shapes {`i`, `you`, `he`, `she`, `we`, `they`, `it`} detected by length + first/last char + vowel position
+- `COPULA` ⇔ w ∈ shapes {`am`, `is`, `are`, `was`, `were`, `be`, `been`, `being`} detected by len + first-char constraints
+- `NEG` ⇔ w ∈ shapes {`not`, `no`, `n't`} detected by len 2-3 + `n`-first or apostrophe-embedded
+- `AUX_DO` / `AUX_HAVE` / `MODAL` similarly by letter shape
+- `VERB_ING` ⇔ len ≥ 4 ∧ endsWith(`ing`) ∧ prev char ≠ `i`
+- `VERB_ED` ⇔ endsWith(`ed`) ∧ len ≥ 3 ∧ not a preserved form
+- `VERB_3RD_S` ⇔ endsWith(`s`) ∧ len ≥ 3 ∧ not -ss/-us/-is/-os terminal, stem doesn't parse as NOUN
+- `ADJ` / `ADV` / `NOUN` by suffix equations (-ly → ADV, -ness/-tion/-ity → NOUN, -ful/-ous/-ive → ADJ) with soft fallthrough
+
+Closed-class words hit the fast-path `_closedClassType(w)` which returns a pinned type distribution bypassing softmax — fixes the `"this"` winning slot 0 over `"i"` problem from the 44k expansion. Memoized via `_wordTypeCache` Map with per-word invalidation.
+
+### Learned Type N-gram Grammar
+
+```
+_typeBigramCounts   : Map(T_prev      → Map(T_curr → count))
+_typeTrigramCounts  : Map(T_a | T_b   → Map(T_c    → count))
+_typeQuadgramCounts : Map(T_a|T_b|T_c → Map(T_d    → count))
+```
+
+Built at corpus index time (`learnSentence`): each sentence's tokens are classified via `_fineType`, consecutive-type pairs/triples/quads incremented in their respective maps.
+
+### Type Grammar Scoring with Backoff
+
+```
+_typeGrammarScore(T_cand, H) where H = [T_-3, T_-2, T_-1] or suffix:
+
+  if |H| ≥ 3 and Q = _typeQuadgramCounts.get(H[-3]|H[-2]|H[-1]):
+    return log((Q.get(T_cand) + 1) / (Σ Q.values() + |Q|))
+  if |H| ≥ 2 and T = _typeTrigramCounts.get(H[-2]|H[-1]):
+    return log((T.get(T_cand) + 1) / (Σ T.values() + |T|))
+  if |H| ≥ 1 and B = _typeBigramCounts.get(H[-1]):
+    return log((B.get(T_cand) + 1) / (Σ B.values() + |B|))
+  return -2.0                                          ← zero-count penalty
+```
+
+Add-1 smoothing at each level. 4gram → trigram → bigram backoff. When no context matches, the -2.0 penalty is strong enough to kill the candidate in the softmax.
+
+The slot scorer uses this as the dominant signal at weight 1.5:
+
+```
+slotScore(w) = ... + typeGrammarScore(_fineType(w), historyTypes) × 1.5 + ...
+```
+
+This is what killed the `"I'm not use vague terms"` mode-collapse — COPULA|NEG followed by VERB_BARE has zero count in every persona/baseline/coding corpus, so it gets -2.0 and never wins.
+
+### Sentence Completeness Validator
+
+```
+_isCompleteSentence(tokens) ⇔
+    len(tokens) ≥ 2
+  ∧ _fineType(stripped(last(tokens))) ∉ {DET, PREP, COPULA, AUX_DO, AUX_HAVE, MODAL, NEG, CONJ_COORD, CONJ_SUB, PRON_POSS}
+```
+
+Wired into `generate()` with a 2-retry loop. Incomplete sentences trigger regeneration at higher temperature. Third strike: emit anyway (latency guarantee).
+
+### Morphological Inflection Equations
+
+```
+_generateInflections(word) produces up to 20 forms:
+
+  + s  suffix:
+      if endsWith(s,x,z,ch,sh) → +es
+      elif endsWith(consonant+y) → stem[:-1]+ies
+      elif endsWith(vowel+y) → +s
+      else → +s
+
+  + ed suffix (past):
+      if endsWith(e) → +d
+      elif endsWith(consonant+y) → stem[:-1]+ied
+      elif CVC pattern (consonant-vowel-consonant, last not w/x/y) → double last consonant + ed
+      else → +ed
+
+  + ing suffix (progressive):
+      if endsWith(e) ∧ len > 2 → stem[:-1]+ing
+      elif endsWith(ie) → stem[:-2]+ying
+      elif CVC pattern → double last consonant + ing
+      else → +ing
+
+  + er / est (comparative/superlative):
+      adjective gate: _fineType = ADJ ∧ syllables ≤ 2
+      stem rules same as -ed for spelling
+
+  + ly (adverbial):
+      adjective gate; -y → -ily; -le → -ly with stem[:-1]
+
+  + un- / re- prefixes: ADJ or VERB_BARE gates
+  + -ness / -ful / -able / -less suffixes: ADJ or NOUN gates
+```
+
+Gated by `doInflections` flag — only runs on corpus-indexed words, not live-learned live-conversation words (prevents inflection cascades on novel tokens). Produces the 44k dictionary from ~15k base words + learned inflections.
+
+### Three-Corpus Load Order
+
+```
+boot:
+  Promise.all([
+    fetch(docs/Ultimate Unity.txt)    →  loadSelfImage(text, dict, a=0.75, v=0.25)
+    fetch(docs/english-baseline.txt)  →  loadLinguisticBaseline(text, dict, a=0.50, v=0)
+    fetch(docs/coding-knowledge.txt)  →  loadCodingKnowledge(text, dict, a=0.40, v=0)
+  ])
+```
+
+Each corpus flows through the same `learnSentence()` path:
+- persona first (highest arousal, personality tone)
+- baseline second (neutral English competence)
+- coding third (low arousal, technical vocabulary)
+
+All three feed the same dictionary + bigram/trigram + type n-gram maps. The type n-gram stats carry the combined grammar structure of personal voice + generic English + coding conventions.
+
+### Mood Signature at Index Time
+
+```
+_computeMoodSignature(text) → {arousal, valence}:
+  f_exclaim = countChar(text, '!') / max(1, len(text))
+  f_caps    = countUpper(text) / max(1, len(text))
+  f_vowel   = countVowel(text) / max(1, len(text))
+  f_wlen    = mean(wordLengths)
+  f_neg     = countOccurrences(' not ', ' no ', "n't") / wordCount
+
+  arousal = clamp(0, 1, 0.5 + 0.8·f_exclaim + 0.5·f_caps - 0.2·f_wlen/8)
+  valence = clamp(-1, 1, 0.3·f_vowel - 0.4·f_neg - 0.2·f_exclaim)
+```
+
+Each persona sentence gets its own mood signature at index time. `_recallSentence` weights candidates by `moodAlignment = exp(-moodDistance × 1.2)` at weight 0.25 against current brain state. Same query under different brain state → different memory.
+
+### Dictionary Cap and Memory Bounds
+
+```
+MAX_WORDS      = 100000   (capped LRU, prevents unbounded growth)
+_wordTypeCache : Map      (memoized _fineType, invalidated on _learnUsageType)
+candidatePool  : from _bigramFollowers(prevWord), |pool| ≤ 200
+                 (avoids materializing 44k entries per slot, primary perf fix)
+```
+
+Generation latency dropped 490ms → 133ms after candidate pool pre-filter + wordType memoization + stripping `findByPattern` / `findByMood` calls from the per-frame `think()` cycle.
 
 ---
 

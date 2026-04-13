@@ -9,9 +9,9 @@
 // cluster.js imports LIFPopulation directly. HHNeuron exists to
 // back the `brain-equations.html` teaching page (equations, gating
 // kinetics, Nobel-prize history). We don't use it for simulation
-// because HH is per-neuron OOP: at 3.2M neurons it's infeasible —
-// 3.2M object instances, per-instance m/h/n state, no vectorization,
-// cache-hostile. LIFPopulation uses a single SoA (Float64Array V,
+// because HH is per-neuron OOP: at the auto-scaled N the server runs, it's
+// infeasible — N object instances with per-instance m/h/n state, no
+// vectorization, cache-hostile. LIFPopulation uses a single SoA (Float64Array V,
 // spikes, refracRemaining) in one tight loop — GPU-friendly and
 // ~100× faster. If you ever need true biophysical fidelity for a
 // small group (mystery cluster, research experiments), instantiate

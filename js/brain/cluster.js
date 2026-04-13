@@ -15,7 +15,10 @@
  *   Hypothalamus (50) → homeostatic baseline drive for all clusters
  *   Mystery (50) → consciousness modulation of coupling strength
  *
- * Total: scales to hardware (1000 client, 3.2M server), each cluster with internal NxN sparse synapses
+ * Total: N scales to hardware — client runs a CPU LIF fallback sized to what the
+ *        browser JS engine can sustain, server runs the full auto-scaled N via GPU
+ *        (see `server/brain-server.js:detectResources` — N = max(1000, min(VRAM_bytes×0.85/8, RAM_bytes×0.1/0.001)).
+ *        Each cluster with internal NxN sparse synapses.
  */
 
 import { LIFPopulation } from './neurons.js';
