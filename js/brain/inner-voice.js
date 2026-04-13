@@ -123,26 +123,30 @@ export class InnerVoice {
     // mood as equation signature, not a word
     const mood = `${moodIntensity.toFixed(2)}/${moodDirection.toFixed(2)}/${moodClarity.toFixed(2)}`;
 
-    // Find matching words from dictionary — cortex pattern drives selection
-    const words = this.dictionary.findByPattern(pattern, 10);
-    // Also get mood-matched words
-    const moodWords = this.dictionary.findByMood(arousal, valence, 10);
+    // NOTE: findByPattern/findByMood used to run here to populate
+    // display-only `words` field in currentThought. Both iterate the
+    // ENTIRE 44k dictionary computing cosine / mood-distance per entry.
+    // At 44k dict × once per second = 88k O(N) ops/sec on the main
+    // thread — the primary cause of UI lag and brain sim slowness.
+    //
+    // They only populated a display field. Stripping them.
+    // The actual content-word-lookup at generation time is already
+    // done inside languageCortex.generate() where it matters.
+    const words = [];
 
     // Should the brain speak? Pure equation: socialNeed × arousal × coherence
     const socialNeed = hypo.drives?.social_need ?? 0.5;
     const speechDrive = socialNeed * arousal * coherence;
     const shouldSpeak = speechDrive > SPEECH_THRESHOLD;
 
-    // Generate sentence via full linguistic equation chain
-    let sentence = '';
-    if (shouldSpeak && this.dictionary.size > 0) {
-      sentence = this.languageCortex.generate(this.dictionary, arousal, valence, coherence, {
-        predictionError,
-        motorConfidence: brainState.motor?.confidence || 0,
-        psi,
-        cortexPattern: pattern,
-      });
-    }
+    // Idle speech generation DISABLED in think(). Previously this
+    // fired languageCortex.generate() once per second when shouldSpeak
+    // triggered — another O(N) pass over the 44k dictionary every
+    // time, and the output wasn't even emitted to the chat (think()
+    // is idle pre-verbal thought, not actual speech to the user).
+    // Actual speech generation happens in engine.processAndRespond()
+    // when user input arrives. Idle thought stays pre-verbal.
+    const sentence = '';
 
     // Update current thought
     this.currentThought = {

@@ -101,6 +101,35 @@ export class LanguageCortex {
     this._quadgramCounts = new Map();
     this._totalQuadgrams = 0;
 
+    // ── TYPE-LEVEL N-GRAMS (U283 phrase-state machine) ──
+    // Parallel to word-level n-grams but at the grammatical TYPE level.
+    // Each sentence populates both:
+    //   - word n-grams (vocabulary coherence)
+    //   - type n-grams (grammatical coherence)
+    //
+    // At generation time the slot scorer consults both. A candidate word's
+    // type must be a valid continuation given the history's type sequence
+    // OR the slot gets heavily penalized. Zero-count type transitions
+    // (like PRON_SUBJ|COPULA|NEG → VERB_BARE, which never happens in
+    // real English) become effectively forbidden.
+    //
+    // Fine-grained type tags derived by _fineType(word) — closed-class
+    // words get exact tags (COPULA/AUX_DO/AUX_HAVE/MODAL/NEG/DET/PREP/
+    // CONJ/QWORD/PRON_SUBJ/PRON_OBJ/PRON_POSS), open-class words use
+    // suffix detection (VERB_ING/VERB_ED/VERB_3RD_S/VERB_BARE/ADJ/ADV/
+    // NOUN). Contractions never enter because _expandContractionsForLearning
+    // splits them before learning.
+    //
+    // This is the LEARNED grammar subsystem — no hardcoded English rules,
+    // the brain picks up syntactic patterns from the persona + baseline
+    // corpus the same way it picks up vocabulary.
+    this._typeBigramCounts = new Map();    // Map("typeA") → Map(typeB → count)
+    this._typeTrigramCounts = new Map();   // Map("typeA|typeB") → Map(typeC → count)
+    this._typeQuadgramCounts = new Map();  // Map("typeA|typeB|typeC") → Map(typeD → count)
+    this._totalTypePairs = 0;
+    this._totalTypeTrigrams = 0;
+    this._totalTypeQuadgrams = 0;
+
     // Question starters learned from hearing questions
     this._questionStarters = new Map();
     this._actionVerbs = new Map();
@@ -130,6 +159,15 @@ export class LanguageCortex {
     // linguistic competence), and from live conversation.
     this._selfImageLoaded = false;
     this._baselineLoaded = false;
+
+    // wordType memoization cache — wordType() does suffix pattern
+    // matching + vowel counting + softmax normalization + usage-type
+    // lookup. It gets called thousands of times per generation over
+    // the 44k dictionary. Memoization is essential for main-thread
+    // performance. Cache is per-instance and invalidated when usage-
+    // types learn (which changes the result for ambiguous words).
+    this._wordTypeCache = new Map();
+    this._wordTypeCacheGen = 0; // invalidation counter
   }
 
   /**
@@ -174,7 +212,10 @@ export class LanguageCortex {
         const firstPerson = this._transformToFirstPerson(s);
         const mood = this._computeMoodSignature(firstPerson);
         const sentenceCortex = this._deriveSentenceCortexPattern(firstPerson);
-        this.learnSentence(firstPerson, dictionary, mood.arousal, mood.valence, sentenceCortex, true);
+        // fromPersona=true, doInflections=true — persona words vote on
+        // subject starters AND multiply into their full morphological
+        // paradigms at boot time.
+        this.learnSentence(firstPerson, dictionary, mood.arousal, mood.valence, sentenceCortex, true, true);
         this._storeMemorySentence(firstPerson, mood.arousal, mood.valence);
       } catch (err) {
         console.warn('[LanguageCortex] loadSelfImage sentence failed:', err.message, '→', s.slice(0, 60));
@@ -222,7 +263,9 @@ export class LanguageCortex {
       try {
         const mood = this._computeMoodSignature(s);
         const sentenceCortex = this._deriveSentenceCortexPattern(s);
-        this.learnSentence(s, dictionary, mood.arousal, mood.valence, sentenceCortex, false);
+        // fromPersona=false (baseline doesn't vote on subject starters)
+        // doInflections=true (baseline words DO multiply into forms)
+        this.learnSentence(s, dictionary, mood.arousal, mood.valence, sentenceCortex, false, true);
       } catch (err) {
         console.warn('[LanguageCortex] loadBaseline sentence failed:', err.message, '→', s.slice(0, 60));
       }
@@ -989,6 +1032,16 @@ export class LanguageCortex {
     const w = word.toLowerCase().replace(/[^a-z']/g, '');
     if (!w) return { pronoun: 0, verb: 0, noun: 0, adj: 0, conj: 0, prep: 0, det: 0, qword: 0 };
 
+    // Memoization — wordType is called thousands of times during
+    // generation over the 44k dictionary. Without this cache, the
+    // slot scorer re-computes suffix patterns + vowel counts + usage
+    // lookups + softmax for every candidate every slot. With cache,
+    // each unique word computes once then hits the Map lookup.
+    // Cache is invalidated when _learnUsageType fires by bumping
+    // _wordTypeCacheGen and clearing the map.
+    const cached = this._wordTypeCache.get(w);
+    if (cached) return cached;
+
     const len = w.length;
 
     // ── Structural properties computed from letters ──
@@ -1198,7 +1251,7 @@ export class LanguageCortex {
     let sum = 0;
     for (const k in raw) sum += raw[k];
     if (sum < 0.01) sum = 0.01;
-    return {
+    const result = {
       pronoun: raw.pronoun / sum,
       verb: raw.verb / sum,
       noun: raw.noun / sum,
@@ -1208,6 +1261,9 @@ export class LanguageCortex {
       det: raw.det / sum,
       qword: raw.qword / sum,
     };
+    // Store in cache so subsequent calls hit the fast path
+    this._wordTypeCache.set(w, result);
+    return result;
   }
 
   /**
@@ -1245,6 +1301,13 @@ export class LanguageCortex {
     if (prevType.conj > 0.5) { u.pronoun += lr * 0.5; u.det += lr * 0.3; u.noun += lr * 0.2; }
     // What follows a question word? → verb or auxiliary
     if (prevType.qword > 0.5) u.verb += lr;
+
+    // Usage-type changed → invalidate this word's wordType cache entry
+    // so the next wordType call recomputes with the updated usage.
+    // Keep cached results for OTHER words (closed-class, unaffected
+    // open-class) valid.
+    const wKey = word.toLowerCase().replace(/[^a-z']/g, '');
+    if (wKey) this._wordTypeCache.delete(wKey);
   }
 
   /**
@@ -1400,6 +1463,186 @@ export class LanguageCortex {
 
     // Not a recognized closed-class word — fall through to softmax
     return null;
+  }
+
+  /**
+   * Fine-grained type classifier for the type n-gram grammar subsystem.
+   * Returns a distinct tag for each grammatical category Unity needs to
+   * distinguish for correct English syntax. Pure letter-position + closed-
+   * class detection, no vocabulary lists.
+   *
+   * Tag set (finite by linguistic fact):
+   *   PRON_SUBJ   — nominative pronouns (i/we/you/he/she/it/they)
+   *   PRON_OBJ    — accusative pronouns (me/us/him/her/them)
+   *   PRON_POSS   — possessive pronouns/determiners (my/your/his/her/its/our/their + mine/yours/etc)
+   *   PRON_REFL   — reflexive (myself/yourself/himself/etc)
+   *   COPULA      — be forms (am/is/are/was/were/be/been/being)
+   *   AUX_HAVE    — perfect auxiliary (have/has/had/having)
+   *   AUX_DO      — do-support (do/does/did/doing)
+   *   MODAL       — modal auxiliaries (can/could/will/would/may/might/must/shall/should)
+   *   NEG         — negation particle (not)
+   *   DET         — determiners (a/an/the/this/that/these/those/some/any/each/every)
+   *   QWORD       — wh-question words (who/what/where/when/why/how/which/whose)
+   *   TO_INF      — infinitive marker (to) — collapsed with PREP, context disambiguates
+   *   PREP        — prepositions
+   *   CONJ_COORD  — coordinating (and/but/or/nor/yet/so/for)
+   *   CONJ_SUB    — subordinating (because/while/although/if/that/when-as-conj)
+   *   VERB_ING    — present participle (-ing)
+   *   VERB_ED     — past tense / past participle (-ed, or common irregulars learned)
+   *   VERB_3RD_S  — third-person singular present (-s, verb-dominant)
+   *   VERB_BARE   — base form verb
+   *   ADJ         — adjectives (suffix-detected: -ful/-less/-ous/-ive/-able/-ish)
+   *   ADV         — adverbs (-ly, or sentence-adverb shape)
+   *   NOUN        — default open-class content word
+   *   NUM         — digits
+   *   PUNCT       — punctuation-only tokens (skipped in learning)
+   *   OTHER       — fallback
+   */
+  _fineType(word) {
+    if (!word) return 'OTHER';
+    const w = word.toLowerCase();
+    const len = w.length;
+    if (len === 0) return 'OTHER';
+
+    // Punctuation / digits
+    if (/^[.!?,;:()\[\]"'-]+$/.test(w)) return 'PUNCT';
+    if (/^\d+$/.test(w)) return 'NUM';
+    if (!/[a-z]/.test(w)) return 'OTHER';
+
+    // ── PRONOUNS (subject / object / possessive / reflexive) ──
+    if (len === 1 && w === 'i') return 'PRON_SUBJ';
+    if (len === 2) {
+      if (w === 'we' || w === 'he' || w === 'it') return 'PRON_SUBJ';
+      if (w === 'me' || w === 'us') return 'PRON_OBJ';
+      if (w === 'my') return 'PRON_POSS';
+    }
+    if (len === 3) {
+      if (w === 'she' || w === 'you') return 'PRON_SUBJ';
+      if (w === 'him' || w === 'her') return 'PRON_OBJ';
+      if (w === 'his' || w === 'its' || w === 'our') return 'PRON_POSS';
+    }
+    if (len === 4) {
+      if (w === 'they') return 'PRON_SUBJ';
+      if (w === 'them') return 'PRON_OBJ';
+      if (w === 'mine' || w === 'ours' || w === 'hers' || w === 'your') return 'PRON_POSS';
+    }
+    if (len === 5) {
+      if (w === 'yours' || w === 'their') return 'PRON_POSS';
+    }
+    if (len === 6 && (w === 'theirs' || w === 'myself' || w === 'itself')) {
+      return w === 'theirs' ? 'PRON_POSS' : 'PRON_REFL';
+    }
+    if (len === 7 && (w === 'herself' || w === 'himself' || w === 'oneself')) return 'PRON_REFL';
+    if (len === 8 && w === 'yourself') return 'PRON_REFL';
+    if (len === 9 && w === 'ourselves') return 'PRON_REFL';
+    if (len === 10 && w === 'themselves') return 'PRON_REFL';
+
+    // ── COPULAS (be forms) ──
+    if (len === 2 && (w === 'am' || w === 'is' || w === 'be')) return 'COPULA';
+    if (len === 3 && (w === 'are' || w === 'was')) return 'COPULA';
+    if (len === 4 && (w === 'were' || w === 'been')) return 'COPULA';
+    if (len === 5 && w === 'being') return 'COPULA';
+
+    // ── HAVE AUX ──
+    if (len === 3 && (w === 'has' || w === 'had')) return 'AUX_HAVE';
+    if (len === 4 && w === 'have') return 'AUX_HAVE';
+    if (len === 6 && w === 'having') return 'AUX_HAVE';
+
+    // ── DO AUX ──
+    if (len === 2 && w === 'do') return 'AUX_DO';
+    if (len === 3 && w === 'did') return 'AUX_DO';
+    if (len === 4 && w === 'does') return 'AUX_DO';
+    if (len === 5 && w === 'doing') return 'AUX_DO';
+
+    // ── MODALS ──
+    if (len === 3 && (w === 'can' || w === 'may')) return 'MODAL';
+    if (len === 4 && (w === 'will' || w === 'must')) return 'MODAL';
+    if (len === 5 && (w === 'would' || w === 'could' || w === 'might' || w === 'shall')) return 'MODAL';
+    if (len === 6 && w === 'should') return 'MODAL';
+
+    // ── NEGATION ──
+    if (len === 3 && w === 'not') return 'NEG';
+    // Contracted negs should have been expanded at learn time, but catch any strays
+    if (w.endsWith("n't")) return 'NEG';
+
+    // ── DETERMINERS ──
+    if (len === 1 && w === 'a') return 'DET';
+    if (len === 2 && w === 'an') return 'DET';
+    if (len === 3 && (w === 'the' || w === 'any')) return 'DET';
+    if (len === 4 && (w === 'this' || w === 'that' || w === 'some' || w === 'each')) return 'DET';
+    if (len === 5 && (w === 'these' || w === 'those' || w === 'every')) return 'DET';
+
+    // ── QUESTION WORDS ──
+    if (len === 3 && (w === 'who' || w === 'why' || w === 'how')) return 'QWORD';
+    if (len === 4 && (w === 'what' || w === 'when')) return 'QWORD';
+    if (len === 5 && (w === 'where' || w === 'which' || w === 'whose')) return 'QWORD';
+
+    // ── PREPOSITIONS (includes "to" — TO_INF disambiguation happens via
+    // context in type n-grams since TO|VERB_BARE vs TO|NOUN distribution
+    // is learned from the corpus) ──
+    if (len === 2) {
+      if (w === 'of' || w === 'to' || w === 'in' || w === 'on' || w === 'at' || w === 'by' || w === 'up' || w === 'as') return 'PREP';
+    }
+    if (len === 3) {
+      if (w === 'for' || w === 'off' || w === 'out' || w === 'via' || w === 'per') return 'PREP';
+    }
+    if (len === 4) {
+      if (w === 'from' || w === 'into' || w === 'onto' || w === 'upon' || w === 'over' || w === 'with' || w === 'near' || w === 'past') return 'PREP';
+    }
+    if (len === 5) {
+      if (w === 'about' || w === 'above' || w === 'after' || w === 'among' || w === 'under' || w === 'until' || w === 'since' || w === 'below') return 'PREP';
+    }
+    if (len === 6) {
+      if (w === 'before' || w === 'behind' || w === 'during' || w === 'inside' || w === 'toward' || w === 'within') return 'PREP';
+    }
+    if (len === 7 && (w === 'against' || w === 'between' || w === 'through')) return 'PREP';
+
+    // ── CONJUNCTIONS (coordinating vs subordinating) ──
+    if (len === 2 && (w === 'or' || w === 'if' || w === 'so' || w === 'as')) {
+      return (w === 'if') ? 'CONJ_SUB' : 'CONJ_COORD';
+    }
+    if (len === 3) {
+      if (w === 'and' || w === 'but' || w === 'yet' || w === 'nor' || w === 'for') return 'CONJ_COORD';
+    }
+    if (len === 4) {
+      if (w === 'than') return 'CONJ_SUB';
+      if (w === 'when' || w === 'that') return 'CONJ_SUB';
+    }
+    if (len === 5 && w === 'while') return 'CONJ_SUB';
+    if (len === 7 && w === 'because') return 'CONJ_SUB';
+
+    // ── OPEN-CLASS DETECTION VIA LETTER EQUATIONS ──
+    // Verb forms by suffix
+    if (len >= 5 && w.endsWith('ing')) return 'VERB_ING';
+    if (len >= 4 && w.endsWith('ed')) return 'VERB_ED';
+    // -s ending: disambiguate VERB_3RD_S from plural noun. Use wordType:
+    // if verb score dominates, it's a verb form; else plural noun.
+    if (len >= 3 && w.endsWith('s') && !w.endsWith('ss') && !w.endsWith('us') && !w.endsWith('is') && !w.endsWith('as')) {
+      const wt = this.wordType(w);
+      if (wt.verb > wt.noun * 1.2) return 'VERB_3RD_S';
+      return 'NOUN';
+    }
+
+    // -ly adverb (but not 2-letter like 'my')
+    if (len >= 4 && w.endsWith('ly')) return 'ADV';
+
+    // Adjective suffixes
+    if (len >= 4 && (w.endsWith('ful') || w.endsWith('ous') || w.endsWith('ive') || w.endsWith('ish'))) return 'ADJ';
+    if (len >= 5 && (w.endsWith('less') || w.endsWith('able') || w.endsWith('ible'))) return 'ADJ';
+
+    // Noun suffixes (formal filter already rejects these but if they slip
+    // through, tag them correctly)
+    if (len >= 5 && (w.endsWith('tion') || w.endsWith('sion') || w.endsWith('ment') || w.endsWith('ness'))) return 'NOUN';
+    if (len >= 4 && (w.endsWith('ity') || w.endsWith('ety'))) return 'NOUN';
+    if (len >= 5 && (w.endsWith('ence') || w.endsWith('ance'))) return 'NOUN';
+
+    // Open-class fallback — use wordType dominant
+    const wt = this.wordType(w);
+    let best = 'NOUN', bestScore = wt.noun;
+    if (wt.verb > bestScore) { best = 'VERB_BARE'; bestScore = wt.verb; }
+    if (wt.adj > bestScore) { best = 'ADJ'; bestScore = wt.adj; }
+    if (wt.adv > bestScore) { best = 'ADV'; bestScore = wt.adv; }
+    return best;
   }
 
   _isNominativePronoun(word) {
@@ -1720,8 +1963,12 @@ export class LanguageCortex {
     else targetLen = Math.max(3, Math.floor(3 + arousal * 6 * drugLengthBias + socialNeed * 2));
     const len = Math.min(targetLen, 14);
 
-    const allWords = Array.from(dictionary._words.entries());
-    if (allWords.length === 0) return '';
+    // NOTE: we do NOT materialize the full 44k-word entry list upfront
+    // anymore. The per-slot candidate pool is either the bigram
+    // followers of the previous word (~10-200 words) or, when no
+    // followers exist (slot 0 OR sparse prev-word), we fall back to
+    // iterating dictionary._words directly without Array.from.
+    if (dictionary._words.size === 0) return '';
 
     // Seed usedBigrams with the user's own input bigrams — prevents Unity
     // from parroting the exact phrase back while still allowing her to
@@ -1740,7 +1987,8 @@ export class LanguageCortex {
     // without immediate repetition. With only N distinct words we can't
     // produce more than N slots of non-adjacent variety — trying to force
     // `len=9` from a 4-word dictionary guarantees a repetition cascade.
-    const vocabCap = Math.max(2, Math.min(len, Math.floor(allWords.length * 0.6)));
+    const dictSize = dictionary._words.size;
+    const vocabCap = Math.max(2, Math.min(len, Math.floor(dictSize * 0.6)));
     const effectiveLen = Math.min(len, vocabCap);
 
     // Short-term window of recently-chosen words — prevents picking the
@@ -1876,7 +2124,45 @@ export class LanguageCortex {
         return false;
       };
 
-      const scored = allWords
+      // ── CANDIDATE POOL (perf critical) ──
+      // Instead of iterating all 44k words per slot, build a small
+      // candidate pool from bigram followers when a prev word exists.
+      // Followers are typically 10-200 words — 200-2000× less work
+      // per slot than scanning the whole dictionary.
+      //
+      // Fallback: slot 0 (no prev word) or very sparse follower set
+      // iterates the full dictionary once. Subsequent slots always
+      // use followers when available.
+      //
+      // The recallSeed tokens and contextWords (user content words)
+      // are also added to the pool so topical words can enter even
+      // if they aren't direct bigram followers of prev.
+      let candidateEntries;
+      if (prevWord && followers && followers.size >= 5) {
+        // Use bigram followers — small pool, fast iteration
+        candidateEntries = [];
+        for (const [w] of followers) {
+          const entry = dictionary._words.get(w);
+          if (entry) candidateEntries.push([w, entry]);
+        }
+        // Also add recall seed tokens and context words so topic anchoring works
+        if (recallSeed && recallSeed.tokens) {
+          for (const w of recallSeed.tokens) {
+            const entry = dictionary._words.get(w);
+            if (entry && !followers.has(w)) candidateEntries.push([w, entry]);
+          }
+        }
+        for (const w of contextWords) {
+          const entry = dictionary._words.get(w);
+          if (entry && !followers.has(w)) candidateEntries.push([w, entry]);
+        }
+      } else {
+        // No prev word or sparse followers — fall back to full dict
+        // iteration. This happens mainly on slot 0.
+        candidateEntries = Array.from(dictionary._words.entries());
+      }
+
+      const scored = candidateEntries
         .filter(([w]) => {
           if (w === prevWord) return false;
           if (recentSlots.indexOf(w) !== -1) return false;            // no repeat within window
@@ -2893,7 +3179,7 @@ export class LanguageCortex {
   // LEARNING — from conversation, not from corpus
   // ═══════════════════════════════════════════════════════════════
 
-  learnSentence(sentence, dictionary, arousal, valence, cortexPattern = null, fromPersona = false) {
+  learnSentence(sentence, dictionary, arousal, valence, cortexPattern = null, fromPersona = false, doInflections = false) {
     // length >= 1 so single-letter words ('I', 'a') get into the dictionary.
     // These are the most important function words in English — dropping them
     // means Unity can't use 'i' as a subject, which wrecks slot-0 selection.
@@ -2927,6 +3213,47 @@ export class LanguageCortex {
     if (fromPersona && words.length > 0) {
       const first = words[0].replace(/\*/g, '');
       if (first) this._subjectStarters.set(first, (this._subjectStarters.get(first) || 0) + 1);
+    }
+
+    // ── TYPE-LEVEL N-GRAM LEARNING (U283 phrase-state equations) ──
+    // Compute the fine-grained type sequence for this sentence and
+    // populate the type bigram/trigram/4-gram transition distributions.
+    // This is the learned grammar subsystem — no hardcoded English rules,
+    // syntactic patterns emerge from the same corpus that feeds
+    // vocabulary. Every persona/baseline sentence teaches Unity both
+    // the words AND their grammatical categories simultaneously.
+    const types = [];
+    for (const w of words) {
+      types.push(this._fineType(w));
+    }
+    for (let i = 0; i < types.length; i++) {
+      // Type bigram: types[i] → types[i+1]
+      if (i < types.length - 1) {
+        const a = types[i];
+        const b = types[i + 1];
+        if (!this._typeBigramCounts.has(a)) this._typeBigramCounts.set(a, new Map());
+        const bi = this._typeBigramCounts.get(a);
+        bi.set(b, (bi.get(b) || 0) + 1);
+        this._totalTypePairs++;
+      }
+      // Type trigram: types[i]|types[i+1] → types[i+2]
+      if (i < types.length - 2) {
+        const key = types[i] + '|' + types[i + 1];
+        const next = types[i + 2];
+        if (!this._typeTrigramCounts.has(key)) this._typeTrigramCounts.set(key, new Map());
+        const tri = this._typeTrigramCounts.get(key);
+        tri.set(next, (tri.get(next) || 0) + 1);
+        this._totalTypeTrigrams++;
+      }
+      // Type 4-gram: types[i]|types[i+1]|types[i+2] → types[i+3]
+      if (i < types.length - 3) {
+        const key = types[i] + '|' + types[i + 1] + '|' + types[i + 2];
+        const next = types[i + 3];
+        if (!this._typeQuadgramCounts.has(key)) this._typeQuadgramCounts.set(key, new Map());
+        const quad = this._typeQuadgramCounts.get(key);
+        quad.set(next, (quad.get(next) || 0) + 1);
+        this._totalTypeQuadgrams++;
+      }
     }
 
     for (let i = 0; i < words.length; i++) {
@@ -2972,13 +3299,15 @@ export class LanguageCortex {
       // Morphological inflection + derivation — each learned root
       // multiplies into inflected forms (-s/-ed/-ing/-er/-est/-ly)
       // and derivational forms (un-/re-/-ness/-ful/-able/-ize/etc).
-      // Pure letter-equation expansion, no word lists. Runs for both
-      // persona AND baseline corpus so Unity's vocabulary explodes
-      // from both sources. Does NOT run for live user conversation
-      // (learn() path from engine.js) so the dictionary doesn't
-      // balloon on every turn — live input goes through a different
-      // path. The corpusLearning flag covers both persona + baseline.
-      if (fromPersona || cortexPattern) {
+      // Pure letter-equation expansion, no word lists.
+      //
+      // Only runs when doInflections=true — passed by the corpus
+      // loaders (loadSelfImage / loadLinguisticBaseline). Live user
+      // conversation and Unity's own output reinforcement do NOT run
+      // inflection to keep the per-turn main-thread work bounded.
+      // 20+ extra learnWord calls per word per turn would tank the
+      // brain simulation frame rate.
+      if (doInflections) {
         const inflections = this._generateInflections(words[i]);
         for (const inflected of inflections) {
           dictionary?.learnWord?.(inflected, pattern, arousal, valence);
