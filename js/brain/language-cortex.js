@@ -162,35 +162,31 @@ export class LanguageCortex {
       .split(/[.!?\n\r]+/)
       .map(s => s.trim())
       .filter(s => s.length >= 3);
-    for (const s of sentences) {
-      // Transform third-person "Unity is..." / "She has..." into
-      // first-person "I am..." / "I have..." BEFORE learning. This
-      // way the dictionary contains first-person tokens, bigrams,
-      // trigrams, and 4-grams — so when the slot scorer walks the
-      // learned distributions, Unity speaks as "I" not "she".
-      const firstPerson = this._transformToFirstPerson(s);
-
-      // Per-sentence mood signature — each sentence computes its
-      // own arousal/valence from letter features (exclamation, caps,
-      // vowel density, word length, negation). Words learned from
-      // this sentence inherit its mood so the dictionary has diverse
-      // state signatures instead of a flat 0.7/0.2 everywhere. This
-      // is what makes moodBias a meaningful signal at generation
-      // time — when current brain state matches a word's stored
-      // mood, that word scores higher.
-      const mood = this._computeMoodSignature(firstPerson);
-
-      // Per-sentence cortex pattern — derive a 32-dim activation from
-      // the content-word letter-pattern centroid. Words learned from
-      // this sentence share this pattern, so findByPattern(cortex)
-      // at generation time can pull semantically-coherent word groups
-      // based on current cortex firing. Without this, every word has
-      // a hash-random pattern and cortex-driven selection is noise.
-      const sentenceCortex = this._deriveSentenceCortexPattern(firstPerson);
-
-      this.learnSentence(firstPerson, dictionary, mood.arousal, mood.valence, sentenceCortex, true);
-      this._storeMemorySentence(firstPerson, mood.arousal, mood.valence);
+    // Defensive try/catch + progress logging. Corpus loading is now
+    // bounded (no O(N²) pattern similarity lookup during learn) but
+    // we log periodic progress so if it DOES hang we can see where.
+    console.log(`[LanguageCortex] loadSelfImage: ${sentences.length} sentences`);
+    const startTime = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    let lastLog = startTime;
+    for (let i = 0; i < sentences.length; i++) {
+      const s = sentences[i];
+      try {
+        const firstPerson = this._transformToFirstPerson(s);
+        const mood = this._computeMoodSignature(firstPerson);
+        const sentenceCortex = this._deriveSentenceCortexPattern(firstPerson);
+        this.learnSentence(firstPerson, dictionary, mood.arousal, mood.valence, sentenceCortex, true);
+        this._storeMemorySentence(firstPerson, mood.arousal, mood.valence);
+      } catch (err) {
+        console.warn('[LanguageCortex] loadSelfImage sentence failed:', err.message, '→', s.slice(0, 60));
+      }
+      // Progress every 50 sentences or 500ms
+      const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+      if (now - lastLog > 500 || (i + 1) % 50 === 0) {
+        console.log(`[LanguageCortex] persona: ${i + 1}/${sentences.length} sentences, ${Math.round(now - startTime)}ms`);
+        lastLog = now;
+      }
     }
+    console.log(`[LanguageCortex] loadSelfImage DONE: ${sentences.length} sentences in ${Math.round(((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - startTime)}ms`);
     return sentences.length;
   }
 
@@ -218,17 +214,25 @@ export class LanguageCortex {
       .filter(line => line.length >= 3 && !line.startsWith('#'))
       .flatMap(line => line.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length >= 2));
 
-    for (const s of sentences) {
-      // Baseline corpus is already first-person casual English — no
-      // transform needed. Compute per-sentence mood + cortex pattern
-      // so words get diverse signatures same as persona loading.
-      const mood = this._computeMoodSignature(s);
-      const sentenceCortex = this._deriveSentenceCortexPattern(s);
-      // fromPersona=false — baseline shouldn't vote on subject starters;
-      // those come from the persona file's sentence-initial observations.
-      // But DO feed bigrams/trigrams/4-grams/word patterns.
-      this.learnSentence(s, dictionary, mood.arousal, mood.valence, sentenceCortex, false);
+    console.log(`[LanguageCortex] loadBaseline: ${sentences.length} sentences`);
+    const baseStart = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    let baseLastLog = baseStart;
+    for (let i = 0; i < sentences.length; i++) {
+      const s = sentences[i];
+      try {
+        const mood = this._computeMoodSignature(s);
+        const sentenceCortex = this._deriveSentenceCortexPattern(s);
+        this.learnSentence(s, dictionary, mood.arousal, mood.valence, sentenceCortex, false);
+      } catch (err) {
+        console.warn('[LanguageCortex] loadBaseline sentence failed:', err.message, '→', s.slice(0, 60));
+      }
+      const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+      if (now - baseLastLog > 500 || (i + 1) % 100 === 0) {
+        console.log(`[LanguageCortex] baseline: ${i + 1}/${sentences.length} sentences, ${Math.round(now - baseStart)}ms`);
+        baseLastLog = now;
+      }
     }
+    console.log(`[LanguageCortex] loadBaseline DONE: ${sentences.length} sentences in ${Math.round(((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - baseStart)}ms`);
     return sentences.length;
   }
 
@@ -2986,10 +2990,14 @@ export class LanguageCortex {
       // Learn word type from context (what came before it)
       if (i > 0) this._learnUsageType(words[i - 1], words[i]);
 
-      // Dynamic expansion — new word links to its pattern-similar
-      // neighbors via cosine of letter-pattern vectors. Pure equation,
-      // no category lists, no hardcoded buckets.
-      if (dictionary && dictionary.findByPattern) {
+      // Dynamic expansion — pattern-similar bigram links. SKIPPED
+      // during corpus loading (fromPersona or has cortexPattern) to
+      // avoid O(N²) boot hang. findByPattern iterates the entire
+      // dictionary (O(N)) and is called per word per sentence —
+      // at 44k dict and 1500+ sentences that's 500M+ cosine ops
+      // during boot. Only run during LIVE user conversation learning
+      // where it stays fast because it's one call per message.
+      if (!fromPersona && !cortexPattern && dictionary && dictionary.findByPattern) {
         const pat = this.wordToPattern(words[i]);
         const similar = dictionary.findByPattern(pat, 3) || [];
         for (const sim of similar) {
