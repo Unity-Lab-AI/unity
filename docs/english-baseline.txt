@@ -633,3 +633,876 @@ have fun
 enjoy yourself
 take it easy
 bye for now
+
+# ═══════════════════════════════════════════════════════════════
+# TOPIC VOCABULARY EXPANSION
+#
+# Concentrated vocabulary across the topics a 25yo american would
+# talk about in casual conversation. Goal: give Unity the words she
+# needs to say "kitten" when asked about cats, "pizza" when asked
+# about food, "happy" when asked how she feels. Neutral register,
+# not Unity personality — pure english linguistic competence.
+# ═══════════════════════════════════════════════════════════════
+
+# Animals and Pets
+i love cats so much
+dogs are the best
+i have a kitten named luna
+my cat sleeps all day
+puppies make me happy
+i saw a cute dog at the park
+i want a pet bird someday
+fish are so calming to watch
+my friend has a hamster
+i'm kind of scared of snakes
+horses are beautiful creatures
+i've never owned a rabbit
+i love watching squirrels in the yard
+that's a gorgeous bird
+a bunny hopped across the lawn
+my dog is part of the family
+cats knock things off tables
+her kitten is tiny and fluffy
+the puppy chewed my slipper
+i love the sound of birds singing
+the owl hooted all night
+my cat knocked over my water
+dogs need so much attention
+i miss my old golden retriever
+the neighbor's cat visits us
+we have two cats and a dog
+my hamster runs on its wheel
+i feed the ducks at the pond
+wild rabbits live near my yard
+deer came into the garden
+spiders freak me out honestly
+a butterfly landed on my hand
+bees are actually really important
+moths always fly at lights
+my dog barks at everything
+cats purr when they're content
+puppies bite everything in sight
+i love elephants at the zoo
+monkeys are so smart
+lions look majestic
+penguins are adorable
+dolphins seem so friendly
+sharks are terrifying but cool
+my pet turtle is named shell
+frogs live in the pond behind us
+a baby raccoon was on the porch
+
+# Food and Drink
+i love pizza with extra cheese
+tacos are my favorite food
+i could eat sushi every day
+burgers are comfort food
+i want chinese takeout tonight
+thai food is so good
+i make pasta at least twice a week
+let's get ice cream
+chocolate makes everything better
+i need coffee to function
+i drink tea in the afternoon
+water is underrated honestly
+i love a good cold beer
+wine is nice with dinner
+whiskey warms you up
+i'm trying to eat healthier
+salads can be really tasty
+fresh fruit is the best snack
+i love strawberries and raspberries
+apples and peanut butter
+bananas are a quick breakfast
+oranges in the winter are amazing
+grapes are addictive
+i hate cucumbers for some reason
+carrots with ranch are perfect
+broccoli isn't as bad as people say
+i love roasted potatoes
+french fries with ketchup
+mashed potatoes with gravy
+garlic bread is incredible
+i could live on cheese alone
+eggs any style please
+i like my steak medium rare
+chicken wings at the game
+fried rice with soy sauce
+noodles in hot broth
+soup on a cold day
+chili makes me happy
+tomato soup and grilled cheese
+i want pancakes for breakfast
+waffles with maple syrup
+toast with butter and jam
+bagels with cream cheese
+donuts are my weakness
+cookies straight from the oven
+brownies are chocolate heaven
+cake on birthdays
+pie with whipped cream
+ice cream sundaes
+milkshakes are the best
+smoothies in the morning
+lemonade on a hot day
+i need something sweet
+i want something salty
+spicy food makes me sweat
+the seasoning is perfect
+this dish is seriously good
+i'm picky about seafood
+shrimp in garlic butter
+lobster is expensive but worth it
+crab legs at a buffet
+raw oysters aren't for me
+i love fresh bread warm
+homemade cookies beat store bought
+
+# Movies Music and Entertainment
+i watched a movie last night
+that film was incredible
+the plot was so twisted
+the ending made me cry
+i love horror movies honestly
+i hate jump scares though
+comedies are my go-to
+romantic movies are alright
+action flicks are exciting
+documentaries teach me things
+animated films are art
+i watched that show everyone is talking about
+i binged the whole season
+the new episode was wild
+i can't wait for next week
+my favorite character died
+the writing is so good this year
+the acting is amazing
+the cinematography blew me away
+the soundtrack is incredible
+i listen to music all day
+i love this song right now
+that band is my favorite
+i saw them in concert last year
+concerts are the best experience
+live music hits different
+i play guitar a little
+i wish i could sing
+music changes my mood
+headphones on all day
+i made a new playlist
+rock music gets me hyped
+pop songs get stuck in my head
+rap lyrics are poetry sometimes
+indie music feels personal
+classical music is calming
+jazz is sophisticated
+country isn't my thing
+metal is intense
+electronic music is fun
+i read books when i can
+fiction lets me escape
+nonfiction teaches me things
+poetry is underrated
+short stories are perfect
+my favorite author just released a new book
+i finished that novel in two days
+i bought three books yesterday
+libraries are the best
+bookstores are cozy
+i play video games sometimes
+online games are fun with friends
+my console is getting old
+gaming all weekend
+i beat that game last night
+the graphics are insane
+multiplayer is chaos
+single player story games are my favorite
+board games with family
+card games are timeless
+chess requires patience
+puzzles relax my brain
+theater performances are magical
+broadway shows are iconic
+ballet is beautiful art
+opera is powerful
+i love live comedy shows
+
+# Emotions and Feelings
+i'm so happy right now
+i feel really sad today
+i'm actually pretty angry
+i'm super excited about tomorrow
+i feel nervous about the interview
+i'm calm and peaceful
+i feel stressed out
+i'm frustrated with everything
+i'm confused about what happened
+i feel disappointed in myself
+i'm proud of what i did
+i'm grateful for my friends
+i feel lonely sometimes
+i'm jealous and i know it
+i feel embarrassed about earlier
+i'm worried about my friend
+i'm relieved that's over
+i feel overwhelmed with work
+i'm content with life
+i'm bored out of my mind
+i feel inspired today
+i'm motivated to start
+i feel numb honestly
+i'm hopeful about the future
+i feel anxious sometimes
+i'm scared of the unknown
+i'm amazed by nature
+i'm shocked by the news
+i feel surprised
+i'm satisfied with the result
+i feel fulfilled
+i'm disgusted by that
+i feel awkward in crowds
+i'm curious about everything
+i feel playful today
+i'm serious about this
+i feel lazy and tired
+i'm determined to finish
+i feel powerful
+i feel weak and tired
+love makes me feel whole
+heartbreak is the worst
+friendship keeps me going
+family is complicated
+hugs help when i'm sad
+laughter is the best medicine
+crying actually feels good sometimes
+anger never solves anything
+forgiveness is hard
+gratitude changes your life
+joy comes in small moments
+grief never really goes away
+hope is what keeps us going
+
+# Nature and Weather
+it's raining pretty hard
+the sun is shining today
+i love a cloudy day
+snow makes everything magical
+the wind is so strong
+it's really humid out
+the air feels crisp
+the sky is bright blue
+the clouds look like cotton
+the sunset was gorgeous
+the sunrise woke me up
+i love thunderstorms
+lightning lit up the sky
+the thunder was deafening
+a rainbow after the rain
+the moon is full tonight
+stars are everywhere out here
+the ocean is so vast
+waves crashing on the beach
+the sand is warm
+i love the smell of the forest
+trees in autumn are stunning
+the leaves are changing colors
+spring flowers are blooming
+summer heat is brutal
+winter cold is bitter
+the mountains look incredible
+the river runs fast here
+the lake is so still
+the waterfall is loud
+hiking through the woods
+camping under the stars
+the campfire crackled all night
+fresh mountain air
+grass is so green this year
+flowers in the garden
+trees swaying in the breeze
+a gentle breeze cooled me off
+birds singing at dawn
+crickets chirping at night
+fog rolled in quickly
+ice on the windows
+frost on the grass
+puddles from the rain
+mud after a storm
+the creek is running high
+the pond has frogs
+the meadow is full of wildflowers
+the forest floor is soft
+moss on the rocks
+mushrooms after rain
+
+# Colors
+red like a rose
+orange like the sunset
+yellow like sunshine
+green like grass
+blue like the ocean
+purple like twilight
+pink like cotton candy
+black is my favorite
+white is pure
+gray is moody
+brown is earthy
+gold is fancy
+silver is elegant
+beige is boring
+turquoise is vibrant
+navy is classic
+maroon is rich
+teal is beautiful
+lavender is calming
+crimson is intense
+emerald green eyes
+sapphire blue sky
+amber light
+ruby red lips
+neon colors pop
+pastels are soft
+bright colors are cheerful
+dark colors are moody
+black clothes always work
+white sneakers go with everything
+
+# People and Relationships
+my mom is the best
+my dad works a lot
+my brother is annoying sometimes
+my sister is my best friend
+my grandma bakes amazing cookies
+my grandpa tells stories
+my aunt is the fun one
+my uncle makes bad jokes
+my cousin and i are close
+my best friend knows everything
+my friends are my chosen family
+my neighbor is really nice
+my coworker is kind of annoying
+my boss is fair at least
+my roommate is cool
+my teacher changed my life
+my doctor is good
+my dentist is friendly
+my boyfriend is sweet
+my girlfriend is amazing
+my partner understands me
+my ex is still a friend
+my crush doesn't know yet
+we met at a coffee shop
+we've been together a year
+we just started dating
+we broke up last month
+we're getting back together
+we're taking a break
+friends help through tough times
+family drives you crazy and you love them anyway
+relationships are work
+dating is weird these days
+being single is freeing
+long distance is hard
+first dates are awkward
+love at first sight is rare
+trust takes time to build
+communication is everything
+compromise is necessary
+boundaries are healthy
+respect goes both ways
+loyalty matters most
+honesty always wins
+
+# Places and Locations
+i live in the city
+i grew up in a small town
+the suburbs are quiet
+i love visiting the countryside
+the beach is paradise
+the mountains call my name
+i want to see the desert
+forests feel ancient
+the park is beautiful today
+the museum had cool exhibits
+the library is my happy place
+the gym is torture
+the coffee shop knows my order
+the bakery smells amazing
+the restaurant was packed
+the bar was crowded
+the club was loud
+the concert venue was huge
+the stadium holds thousands
+the mall was empty
+the grocery store was busy
+the pharmacy was quick
+the bank took forever
+the post office always has a line
+the school is nearby
+the church is historic
+the hospital is downtown
+the airport is far
+the train station is convenient
+the bus stop is on the corner
+the parking lot was full
+the sidewalk was crowded
+the street is quiet at night
+the highway was backed up
+the bridge has a great view
+the tunnel is long
+the skyline is impressive
+downtown is lively
+uptown is quieter
+the neighborhood is safe
+the apartment is small but cozy
+the house has a big yard
+
+# Time and Seasons
+morning is my worst time
+afternoons drag on
+evening is my favorite
+nighttime is peaceful
+midnight feels magical
+dawn is beautiful
+dusk is melancholy
+monday is rough
+tuesday is manageable
+wednesday is hump day
+thursday is almost there
+friday is party time
+saturday is for fun
+sunday is for rest
+this week flew by
+last week was rough
+next week looks busy
+this month has been wild
+last month was good
+this year has been crazy
+last year was hard
+next year will be better
+spring brings new life
+summer is hot and long
+fall is my favorite season
+winter makes me want to hibernate
+january is slow
+february is the shortest month
+march starts to warm up
+april brings showers
+may flowers bloom
+june starts summer
+july is all heat
+august feels endless
+september cools down
+october has halloween
+november has thanksgiving
+december has christmas
+yesterday was fun
+today is decent
+tomorrow will be busy
+next weekend i'm free
+last weekend was relaxing
+a few minutes ago
+an hour from now
+later tonight
+early morning
+late afternoon
+never again
+always and forever
+
+# Clothing and Style
+i'm wearing jeans and a t shirt
+my favorite hoodie is black
+that sweater looks cozy
+her dress is gorgeous
+his suit fits perfectly
+sneakers are comfortable
+high heels kill my feet
+boots are so versatile
+sandals for summer
+i need new socks
+underwear matters
+a good bra is hard to find
+jackets are essential
+coats for winter
+scarves keep me warm
+hats complete the outfit
+sunglasses are always needed
+gloves in the cold
+belts hold everything up
+a nice watch is classy
+earrings complete my look
+i love layered necklaces
+rings on every finger
+bracelets stack well
+my backpack goes everywhere
+my purse is full of stuff
+wallets should be simple
+keychains collect over time
+perfume smells amazing
+cologne is nice too
+my style is casual
+i love vintage clothes
+thrift stores are gold mines
+fashion changes too fast
+trends come and go
+classic styles last forever
+comfort matters more than fashion
+i wear what feels right
+my closet is chaos
+i have nothing to wear
+
+# Body and Physical
+my head hurts a little
+my eyes are tired
+my ears are ringing
+my nose is stuffy
+my mouth is dry
+my throat feels sore
+my neck is stiff
+my shoulders are tight
+my back aches
+my chest feels heavy
+my stomach is growling
+my arms are sore from lifting
+my hands are cold
+my fingers are sticky
+my legs are tired
+my feet hurt from walking
+my knees ache
+my ankles are weak
+my hair looks crazy today
+my skin is dry
+my face is breaking out
+my teeth need brushing
+my nails need cutting
+i need a shower
+i need to stretch
+i need some sleep
+i need fresh air
+i need to eat
+i need water
+i need coffee
+my body is exhausted
+my mind is racing
+my heart is pounding
+i'm breathing deeply
+i'm yawning a lot
+i'm shivering from cold
+i'm sweating from the heat
+goosebumps on my arms
+butterflies in my stomach
+a lump in my throat
+tears in my eyes
+a smile on my face
+a frown i can't hide
+
+# Activities and Hobbies
+i love to read
+i'm into painting
+i write in my journal
+i play piano sometimes
+i'm learning guitar
+i sing in the shower
+i dance in my kitchen
+i draw when i'm bored
+i take photos of everything
+i bake on weekends
+i cook almost every night
+i garden in the spring
+i go hiking when i can
+i run in the mornings
+i lift weights twice a week
+i do yoga
+i meditate before bed
+i stretch when i wake up
+i swim at the pool
+i ride my bike around
+i skate at the park
+i play tennis sometimes
+i like bowling with friends
+i shoot pool at the bar
+i golf occasionally
+i fish with my dad
+i hunt in the fall
+i camp every summer
+i ski in the winter
+i snowboard when i can
+i surf when i visit the coast
+i climb rock walls
+i rappel down cliffs
+i kayak on the lake
+i canoe down rivers
+i rollerblade sometimes
+i jump rope for cardio
+i box at the gym
+i do martial arts
+i practice archery
+i love puzzles
+i solve crosswords
+i play sudoku
+i collect records
+i build models
+i knit blankets
+i crochet scarves
+i sew my own clothes
+i embroider pillowcases
+i make jewelry
+i do pottery
+i sculpt with clay
+i woodwork in the garage
+i restore old furniture
+
+# Common Objects and Stuff
+my phone is dead again
+my laptop is slow
+the keyboard sticks
+the mouse is broken
+my headphones are charging
+my charger is missing
+my remote needs batteries
+my tv is huge
+my speakers are loud
+my camera takes great photos
+my watch ran out of battery
+my glasses are smudged
+my wallet is empty
+my keys are somewhere
+my lighter is out of fuel
+my pen is out of ink
+my notebook is almost full
+my planner keeps me sane
+my calendar is packed
+my alarm wakes me up
+my coffee mug is chipped
+my water bottle is essential
+my sunglasses are missing
+my umbrella is broken
+my bag is heavy
+the chair is comfy
+the couch is my favorite spot
+the bed is so soft
+the pillow is just right
+the blanket is warm
+the rug ties the room together
+the lamp is dim
+the candle smells good
+the mirror needs cleaning
+the window is dirty
+the door squeaks
+the floor needs sweeping
+the wall needs painting
+the ceiling has a crack
+the stairs creak
+the sink is clogged
+the toilet runs forever
+the shower is broken
+the fridge is empty
+the stove doesn't work
+the microwave is old
+the oven takes forever
+the dishwasher is loud
+the washer is shaking
+the dryer takes too long
+
+# Simple Actions and Verbs
+i walk to work
+i run in the park
+i jump over puddles
+i climb the stairs
+i swim every saturday
+i dance when alone
+i sing in the car
+i laugh at dumb jokes
+i cry at sad movies
+i sleep eight hours usually
+i wake up early
+i eat three meals a day
+i drink lots of water
+i cook dinner most nights
+i bake when i'm stressed
+i drive to the store
+i fly twice a year
+i drove all night
+i took the train once
+i built a table
+i fixed the leak
+i painted the room
+i cleaned the kitchen
+i washed the dishes
+i vacuumed the carpet
+i mowed the lawn
+i watered the plants
+i walked the dog
+i fed the cat
+i brushed my teeth
+i washed my face
+i combed my hair
+i got dressed quickly
+i tied my shoes
+i zipped my jacket
+i grabbed my keys
+i locked the door
+i unlocked the door
+i opened the window
+i closed the blinds
+i turned on the lights
+i turned off the stove
+i plugged in my phone
+i unplugged the toaster
+i threw away the trash
+i took out the recycling
+i folded the laundry
+i made the bed
+i swept the floor
+i dusted the shelves
+i organized my closet
+
+# Technology
+my phone has a cracked screen
+i dropped my laptop again
+the wifi is slow today
+the internet is down
+i need to update my apps
+my storage is almost full
+i'm charging my battery
+i need a new charger
+my bluetooth isn't connecting
+the speaker won't pair
+my headphones are wireless
+i got new earbuds
+my smartwatch tracks my steps
+i use a fitness app
+i stream music all day
+i download podcasts weekly
+i scroll social media too much
+i post pictures sometimes
+i send memes to friends
+i text my mom every day
+i video call my grandma
+i email my teacher
+i zoom into work meetings
+i use slack at work
+i code in python
+i build websites
+i design apps
+i make videos for fun
+i edit photos sometimes
+i use an old camera
+i backup my files
+i lost my files
+my computer crashed
+i rebooted the router
+the printer is jammed
+the scanner is slow
+online shopping is addictive
+i order stuff online weekly
+i track my packages obsessively
+deliveries are like christmas
+
+# Travel
+i love to travel
+i want to visit japan
+paris is on my list
+italy sounds amazing
+mexico is close and warm
+hawaii is paradise
+i went to new york last year
+i drove across country once
+road trips are the best
+flying stresses me out
+airports are chaotic
+hotels are nice for a night
+airbnbs feel like home
+hostels are cheap and social
+i packed too much again
+i forgot my toothbrush
+my luggage got lost once
+i made the flight just barely
+the layover was brutal
+jet lag is real
+the hotel was lovely
+the view was worth it
+the beach was crowded
+the mountains were peaceful
+the city was busy
+the locals were friendly
+the food was incredible
+the culture was fascinating
+i learned some phrases
+i took a million photos
+i met amazing people
+i wish i stayed longer
+
+# Work and School
+i have a meeting at ten
+my boss needs this by friday
+i'm swamped at work
+my coworkers are alright
+the commute is brutal
+working from home is nice
+i love my job honestly
+i hate my job sometimes
+i'm looking for new opportunities
+i got promoted recently
+i took a day off
+i had to call in sick
+i quit last month
+i started a new job
+orientation was boring
+training takes forever
+my desk is a mess
+my inbox is overflowing
+i have too many emails
+meetings waste my time
+i love a productive day
+breaks are essential
+lunch is the highlight
+payday is the best
+i want a raise
+i need benefits
+health insurance is expensive
+taxes are confusing
+bills pile up
+rent is too high
+groceries got expensive
+gas prices are crazy
+i'm saving for something
+i'm budgeting carefully
+i'm trying to invest
+school was rough
+college was fun
+my professor was strict
+my classmates were great
+i stayed up studying
+i aced that test
+i failed that exam
+graduation was emotional
+my diploma is framed
+i'm still learning every day
+
+# Conversation Closers
+that makes sense now
+i get what you mean
+i understand completely
+i hear you loud and clear
+i'm tracking with you
+i follow your logic
+i see where you're going
+i'm on the same page
+i appreciate your input
+thanks for sharing
+i valued this talk
+i enjoyed our chat
+good conversation as always
+let's continue this later
+to be continued
+to be honest with you
+if i'm being real
+truth be told
+not gonna lie
+in all honesty
+for what it's worth
+at the end of the day
+when all is said and done
+in the grand scheme
+looking at the big picture

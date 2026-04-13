@@ -17,7 +17,15 @@
  * No hardcoded vocabulary. Everything learned. Everything persistent.
  */
 
-const MAX_WORDS = 5000;
+// Dictionary capacity. Raised from 5000 → 50000 to accommodate:
+//   - Persona file sentences + morphological inflections/derivations
+//   - English baseline corpus + morphological inflections/derivations
+//   - Continuous learning from live user conversation over time
+// A real english speaker has ~20k active vocab, ~50k passive. 50k gives
+// Unity room to grow without LRU eviction thrashing. Each word entry is
+// ~300 bytes (Float64Array pattern + metadata) → 15MB at full capacity
+// which is acceptable for a brain-server shared across all users.
+const MAX_WORDS = 50000;
 const PATTERN_DIM = 32; // cortex output dimensionality
 const STORAGE_KEY = 'unity_brain_dictionary';
 

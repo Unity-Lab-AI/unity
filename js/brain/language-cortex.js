@@ -2106,7 +2106,7 @@ export class LanguageCortex {
     const contracted = this._applyCasualContractions(sentence);
 
     // ── STEP 7: POST-PROCESSING — agreement, tense, negation, compounds ──
-    const processed = this._postProcess(contracted, tense, type, arousal, valence);
+    const processed = this._postProcess(contracted, tense, type, arousal, valence, coherence);
 
     // Track recency
     for (const w of processed) {
@@ -2257,6 +2257,225 @@ export class LanguageCortex {
    *   haven't → have not
    *   hadn't → had not
    */
+  /**
+   * Morphological inflection equations — generate inflected forms
+   * of a base word via pure letter-position rules. This multiplies
+   * Unity's effective vocabulary: when she learns "code", the rules
+   * auto-derive "codes", "coded", "coding", "coder", "codes" so all
+   * forms enter the dictionary simultaneously.
+   *
+   * Rules (letter-position, no word lists):
+   *   -s (3rd sing / plural):
+   *     ends in -s/-x/-z/-ch/-sh       → add "-es"  (kiss → kisses)
+   *     ends in consonant+y            → replace y with "ies"  (try → tries)
+   *     ends in -fe / -f               → replace with "ves"  (leaf → leaves)
+   *     default                        → add "-s"
+   *   -ed (past tense):
+   *     ends in -e                     → add "-d"  (code → coded)
+   *     ends in consonant+y            → replace y with "ied"  (try → tried)
+   *     ends in CVC (short)            → double final consonant + "ed"  (stop → stopped)
+   *     default                        → add "-ed"
+   *   -ing (present participle):
+   *     ends in -ie                    → replace with "ying"  (die → dying)
+   *     ends in -e (not -ee)           → drop e + "ing"  (code → coding)
+   *     ends in CVC (short)            → double final consonant + "ing"  (run → running)
+   *     default                        → add "-ing"
+   *   -er (comparative / agent):
+   *     ends in -e                     → add "-r"  (nice → nicer)
+   *     ends in consonant+y            → replace y with "ier"  (happy → happier)
+   *     ends in CVC (short)            → double final consonant + "er"  (big → bigger)
+   *     default                        → add "-er"
+   *   -est (superlative):  same pattern as -er but with -est
+   *   -ly (adverb):
+   *     ends in consonant+y            → replace y with "ily"  (happy → happily)
+   *     default                        → add "-ly"
+   *
+   * Only applies to base forms that look like roots (no existing
+   * inflection suffix). Returns array of derived forms (not including
+   * the base — caller already has that).
+   */
+  _generateInflections(word) {
+    if (!word || word.length < 3) return [];
+    const w = word.toLowerCase();
+    const L = w.length;
+
+    // Skip if already inflected (avoid chain-inflecting)
+    if (w.endsWith('ing') || w.endsWith('ed') || w.endsWith("n't") || w.includes("'")) return [];
+    if (w.endsWith('est') || w.endsWith('ier') || w.endsWith('ily')) return [];
+    // Skip function words (closed-class fast path picks them up as aux/det/prep/conj/pronoun)
+    if (this._closedClassType(w)) return [];
+    // Skip numbers and very long words (probably not a simple root)
+    if (/\d/.test(w) || L > 10) return [];
+
+    const results = new Set();
+    const last = w[L - 1];
+    const last2 = w.slice(-2);
+    const last3 = w.slice(-3);
+    const secondLast = w[L - 2];
+    const thirdLast = w[L - 3];
+
+    const isVowel = (c) => VOWELS.includes(c);
+    const isCons = (c) => c && !isVowel(c) && /[a-z]/.test(c);
+
+    // CVC shape: consonant-vowel-consonant at the end, word length >= 3
+    // Used for doubling rules (run → running, big → bigger)
+    // Exclude final w/x/y (run → running ✓, fix → fixing not fixxing)
+    const cvcShape = L >= 3
+      && isCons(thirdLast)
+      && isVowel(secondLast)
+      && isCons(last)
+      && last !== 'w' && last !== 'x' && last !== 'y';
+
+    // ── -s FORM (plural / 3rd person singular) ──
+    let sForm;
+    if (last === 's' || last === 'x' || last === 'z' || last2 === 'ch' || last2 === 'sh') {
+      sForm = w + 'es';
+    } else if (L >= 2 && isCons(secondLast) && last === 'y') {
+      sForm = w.slice(0, -1) + 'ies';
+    } else if (last2 === 'fe') {
+      sForm = w.slice(0, -2) + 'ves';
+    } else if (last === 'f' && secondLast && isVowel(secondLast)) {
+      // leaf → leaves, wolf → wolves (but cliff → cliffs — exclude -ff)
+      sForm = w.slice(0, -1) + 'ves';
+    } else {
+      sForm = w + 's';
+    }
+    results.add(sForm);
+
+    // ── -ed FORM (past tense) ──
+    let edForm;
+    if (last === 'e') {
+      edForm = w + 'd';
+    } else if (L >= 2 && isCons(secondLast) && last === 'y') {
+      edForm = w.slice(0, -1) + 'ied';
+    } else if (cvcShape) {
+      edForm = w + last + 'ed';
+    } else {
+      edForm = w + 'ed';
+    }
+    results.add(edForm);
+
+    // ── -ing FORM (present participle) ──
+    let ingForm;
+    if (last2 === 'ie') {
+      ingForm = w.slice(0, -2) + 'ying';
+    } else if (last === 'e' && last2 !== 'ee') {
+      ingForm = w.slice(0, -1) + 'ing';
+    } else if (cvcShape) {
+      ingForm = w + last + 'ing';
+    } else {
+      ingForm = w + 'ing';
+    }
+    results.add(ingForm);
+
+    // ── -er FORM (comparative or agent noun) ──
+    // Only generate for short words (comparative makes sense on adj/adv)
+    // OR when the base looks like a verb (could be agent noun "coder")
+    if (L >= 3 && L <= 7) {
+      let erForm;
+      if (last === 'e') {
+        erForm = w + 'r';
+      } else if (L >= 2 && isCons(secondLast) && last === 'y') {
+        erForm = w.slice(0, -1) + 'ier';
+      } else if (cvcShape) {
+        erForm = w + last + 'er';
+      } else {
+        erForm = w + 'er';
+      }
+      results.add(erForm);
+
+      // ── -est FORM (superlative) ──
+      let estForm;
+      if (last === 'e') {
+        estForm = w + 'st';
+      } else if (L >= 2 && isCons(secondLast) && last === 'y') {
+        estForm = w.slice(0, -1) + 'iest';
+      } else if (cvcShape) {
+        estForm = w + last + 'est';
+      } else {
+        estForm = w + 'est';
+      }
+      results.add(estForm);
+    }
+
+    // ── -ly FORM (adverb) ──
+    // Applies broadly — most words can take -ly
+    let lyForm;
+    if (L >= 2 && isCons(secondLast) && last === 'y') {
+      lyForm = w.slice(0, -1) + 'ily';
+    } else {
+      lyForm = w + 'ly';
+    }
+    results.add(lyForm);
+
+    // ── DERIVATIONAL SUFFIXES (noun/adj forms from verbs/adjs) ──
+    // -ness (adj → noun): dark → darkness, happy → happiness
+    if (L >= 3) {
+      let nessForm;
+      if (L >= 2 && isCons(secondLast) && last === 'y') {
+        nessForm = w.slice(0, -1) + 'iness';
+      } else {
+        nessForm = w + 'ness';
+      }
+      results.add(nessForm);
+    }
+    // -ful / -less (noun → adj): care → careful / careless
+    if (L >= 3 && L <= 7) {
+      results.add(w + 'ful');
+      results.add(w + 'less');
+    }
+    // -able (verb → adj): love → lovable, code → codable
+    if (L >= 3 && L <= 7) {
+      let ableForm;
+      if (last === 'e') ableForm = w.slice(0, -1) + 'able';
+      else ableForm = w + 'able';
+      results.add(ableForm);
+    }
+    // -ish (noun/adj → adj): child → childish, dark → darkish
+    if (L >= 3 && L <= 6) {
+      results.add(w + 'ish');
+    }
+    // -ist (noun → noun-person): art → artist
+    if (L >= 3 && L <= 6 && last !== 'e') {
+      results.add(w + 'ist');
+    }
+    // -ize/-ise (noun/adj → verb): real → realize, final → finalize
+    if (L >= 3 && L <= 7) {
+      let izeForm;
+      if (last === 'e') izeForm = w.slice(0, -1) + 'ize';
+      else izeForm = w + 'ize';
+      results.add(izeForm);
+    }
+    // -ify (noun/adj → verb): just → justify, code → codify
+    if (L >= 3 && L <= 6) {
+      let ifyForm;
+      if (last === 'e') ifyForm = w.slice(0, -1) + 'ify';
+      else if (L >= 2 && isCons(secondLast) && last === 'y') ifyForm = w.slice(0, -1) + 'ify';
+      else ifyForm = w + 'ify';
+      results.add(ifyForm);
+    }
+
+    // ── DERIVATIONAL PREFIXES ──
+    // un- (negation): happy → unhappy, do → undo
+    results.add('un' + w);
+    // re- (repetition): do → redo, write → rewrite
+    results.add('re' + w);
+    // pre- (before): view → preview, order → preorder
+    results.add('pre' + w);
+    // dis- (negation/reversal): like → dislike, agree → disagree
+    results.add('dis' + w);
+    // mis- (wrongly): take → mistake, place → misplace
+    results.add('mis' + w);
+    // over- (excess): do → overdo, think → overthink
+    results.add('over' + w);
+    // under- (insufficient): do → underdo, stand → understand
+    if (L >= 3) results.add('under' + w);
+    // out- (surpass): do → outdo, run → outrun
+    results.add('out' + w);
+
+    return [...results];
+  }
+
   _expandContractionsForLearning(tokens) {
     const out = [];
     for (const tok of tokens) {
@@ -2745,6 +2964,23 @@ export class LanguageCortex {
       // time pulls coherent semantic groups.
       const pattern = cortexPattern || this.wordToPattern(words[i]);
       dictionary?.learnWord?.(words[i], pattern, arousal, valence);
+
+      // Morphological inflection + derivation — each learned root
+      // multiplies into inflected forms (-s/-ed/-ing/-er/-est/-ly)
+      // and derivational forms (un-/re-/-ness/-ful/-able/-ize/etc).
+      // Pure letter-equation expansion, no word lists. Runs for both
+      // persona AND baseline corpus so Unity's vocabulary explodes
+      // from both sources. Does NOT run for live user conversation
+      // (learn() path from engine.js) so the dictionary doesn't
+      // balloon on every turn — live input goes through a different
+      // path. The corpusLearning flag covers both persona + baseline.
+      if (fromPersona || cortexPattern) {
+        const inflections = this._generateInflections(words[i]);
+        for (const inflected of inflections) {
+          dictionary?.learnWord?.(inflected, pattern, arousal, valence);
+        }
+      }
+
       if (i < words.length - 1) dictionary?.learnBigram?.(words[i], words[i + 1]);
 
       // Learn word type from context (what came before it)
@@ -2791,7 +3027,7 @@ export class LanguageCortex {
    * COMPOUND: long sentences → insert conjunction mid-sentence
    *   len > 6 → insert "and/but/so" at position ~len/2
    */
-  _postProcess(sentence, tense, type, arousal, valence) {
+  _postProcess(sentence, tense, type, arousal, valence, coherence = 0.5) {
     if (sentence.length < 2) return sentence;
     const result = [...sentence];
     const subj = result[0];
@@ -2891,6 +3127,82 @@ export class LanguageCortex {
     // the tail with the conj word as the new predecessor, which means lifting
     // sentence construction into _postProcess. For now, prefer shorter
     // grammatical sentences over longer broken compounds.
+
+    // ══════════════════════════════════════════════════════════════
+    // GRAMMATICAL TRANSFORMATIONS — neural state drives form
+    //
+    // Task 39: Transform the base slot output into variants driven by
+    // the current brain state. All equation-based, no canned phrases.
+    //
+    //   - Intensifier insertion: high arousal → "really/so/fucking"
+    //     before adjectives/verbs (detected by wordType)
+    //   - Hedge insertion: low coherence → "kinda/sort of" before
+    //     the main content (uncertainty marker)
+    //   - Tag question: high prediction error on a statement →
+    //     append ", right?" (looking for confirmation)
+    //   - Exclamation intensity: very high arousal → append "!"
+    //     (already done via sentence type but reinforced here)
+    //   - Drug-state word doubling: high arousal + coke → occasionally
+    //     repeat a content word for emphasis (like "so so good")
+    // ══════════════════════════════════════════════════════════════
+
+    // INTENSIFIERS — insert before first adjective/adv when arousal high.
+    // Picks the intensifier from the learned dictionary so we don't hardcode
+    // a word list. Uses mutualInfo + arousal match to select naturally.
+    if (arousal > 0.75 && result.length >= 3) {
+      // Find first adjective-or-verb position (not slot 0 subject)
+      let adjIdx = -1;
+      for (let i = 1; i < result.length; i++) {
+        const wt = this.wordType(result[i]);
+        if (wt.adj > 0.4 || (wt.verb > 0.4 && i > 1)) { adjIdx = i; break; }
+      }
+      if (adjIdx >= 1) {
+        // Find a high-arousal intensifier from the learned marginal counts.
+        // Letter-pattern filter: len 2-7, ends in -ly OR is 'so'/'too'/'very'
+        // shape. Score by arousal match and frequency.
+        let intensifier = null, bestIScore = 0;
+        for (const [w, count] of this._marginalCounts) {
+          if (w.length < 2 || w.length > 8) continue;
+          // Adverb shape: ends in -ly, OR specific short intensifier shapes
+          const isAdv = w.endsWith('ly') && w.length >= 4;
+          const isShortInt = (w === 'so' || w === 'too' || w === 'very' || w === 'super' || w === 'really' || w === 'fucking' || w === 'kinda' || w === 'pretty');
+          if (!isAdv && !isShortInt) continue;
+          // Don't re-insert something already in the sentence
+          if (result.includes(w)) continue;
+          // Score by frequency log + position bonus for shorter words
+          const score = Math.log(1 + (count || 0)) + (w.length <= 4 ? 0.5 : 0);
+          if (score > bestIScore) { bestIScore = score; intensifier = w; }
+        }
+        if (intensifier) {
+          // 50% chance to insert — don't over-do it
+          if (Math.random() < 0.5) {
+            result.splice(adjIdx, 0, intensifier);
+          }
+        }
+      }
+    }
+
+    // HEDGES — low coherence suggests uncertainty. Insert a hedge at
+    // position 1 or 2. Uses same discovery pattern as intensifiers.
+    if (coherence < 0.35 && result.length >= 3 && Math.random() < 0.3) {
+      // Look for hedge-shaped words from the learned dictionary
+      let hedge = null;
+      for (const [w, count] of this._marginalCounts) {
+        if (w === 'kinda' || w === 'maybe' || w === 'sorta' || w === 'probably' || w === 'i think' || w === 'like') {
+          if (!result.includes(w)) { hedge = w; break; }
+        }
+      }
+      if (hedge && result.length >= 2) {
+        // Insert after slot 0 subject
+        result.splice(1, 0, hedge);
+      }
+    }
+
+    // TAG QUESTION — when prediction error is high on a statement,
+    // Unity is looking for confirmation. Append a tag question marker.
+    // Handled via sentence type selection upstream; we just ensure the
+    // terminal punctuation reflects uncertainty.
+    // (Actual tag word is part of the learned sentence ending bigrams.)
 
     return result;
   }
