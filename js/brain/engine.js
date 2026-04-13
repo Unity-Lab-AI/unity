@@ -256,6 +256,18 @@ export class UnityBrain extends EventEmitter {
 
     // ── 3. VISUAL CORTEX — process camera frames through V1→V4→IT ──
     if (this.visualCortex.isActive() && this.frameCount % 3 === 0) {
+      // Top-down attention: tell the visual cortex how engaged Unity
+      // is so it can clamp her gaze toward the user (high arousal +
+      // recent input) or let it free-roam (idle). The gaze becomes
+      // neurally governed by amygdala state, not just V1 edges.
+      const secondsSinceInput = this._lastInputTime
+        ? (performance.now() - this._lastInputTime) / 1000
+        : 9999;
+      this.visualCortex.setAttentionState({
+        arousal: this.state.amygdala?.arousal ?? 0.5,
+        secondsSinceInput,
+      });
+
       const visOutput = this.visualCortex.processFrame();
       // Inject V1 edge responses into cortex visual region (neurons 50-149)
       const visCurrent = new Float64Array(CLUSTER_SIZES.cortex);
