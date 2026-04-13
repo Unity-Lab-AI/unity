@@ -69,6 +69,18 @@ export class InnerVoice {
   }
 
   /**
+   * Load the baseline English linguistic layer — generic casual
+   * American English covering conversational patterns, common verbs,
+   * greetings, reactions, questions. This is NOT Unity's persona,
+   * it's her linguistic competence as a 25yo English speaker.
+   * Loaded separately so persona defines WHO she is and baseline
+   * gives her the English to express it. Call after loadPersona.
+   */
+  loadBaseline(text, arousal = 0.5, valence = 0) {
+    return this.languageCortex.loadLinguisticBaseline(text, this.dictionary, arousal, valence);
+  }
+
+  /**
    * Process one thought cycle. Called by the brain engine each frame.
    * Takes the full brain state, derives a thought, optionally forms words.
    *

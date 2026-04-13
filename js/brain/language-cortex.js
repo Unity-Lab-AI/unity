@@ -126,8 +126,10 @@ export class LanguageCortex {
     // ratios — see wordType()) and the slot requirement equations.
     // Vocabulary, bigrams, and usage-type weights are learned at runtime
     // from loadSelfImage(text) (Unity's persona file as equational
-    // self-image) and from live conversation via learnSentence().
+    // self-image), loadLinguisticBaseline(text) (generic English
+    // linguistic competence), and from live conversation.
     this._selfImageLoaded = false;
+    this._baselineLoaded = false;
   }
 
   /**
@@ -166,13 +168,94 @@ export class LanguageCortex {
       // way the dictionary contains first-person tokens, bigrams,
       // trigrams, and 4-grams — so when the slot scorer walks the
       // learned distributions, Unity speaks as "I" not "she".
-      // Without this, the whole dictionary is third-person descriptive
-      // prose and Unity refers to herself in third person.
       const firstPerson = this._transformToFirstPerson(s);
-      this.learnSentence(firstPerson, dictionary, arousal, valence);
-      this._storeMemorySentence(firstPerson, arousal, valence);
+
+      // Per-sentence mood signature — each sentence computes its
+      // own arousal/valence from letter features (exclamation, caps,
+      // vowel density, word length, negation). Words learned from
+      // this sentence inherit its mood so the dictionary has diverse
+      // state signatures instead of a flat 0.7/0.2 everywhere. This
+      // is what makes moodBias a meaningful signal at generation
+      // time — when current brain state matches a word's stored
+      // mood, that word scores higher.
+      const mood = this._computeMoodSignature(firstPerson);
+
+      // Per-sentence cortex pattern — derive a 32-dim activation from
+      // the content-word letter-pattern centroid. Words learned from
+      // this sentence share this pattern, so findByPattern(cortex)
+      // at generation time can pull semantically-coherent word groups
+      // based on current cortex firing. Without this, every word has
+      // a hash-random pattern and cortex-driven selection is noise.
+      const sentenceCortex = this._deriveSentenceCortexPattern(firstPerson);
+
+      this.learnSentence(firstPerson, dictionary, mood.arousal, mood.valence, sentenceCortex, true);
+      this._storeMemorySentence(firstPerson, mood.arousal, mood.valence);
     }
     return sentences.length;
+  }
+
+  /**
+   * Load baseline English linguistic layer — generic casual American
+   * English sentences covering conversational patterns, common verbs,
+   * greetings, questions, reactions, etc. This is NOT Unity's persona
+   * (her voice comes from Ultimate Unity.txt). This is the English
+   * she grew up speaking — her linguistic competence, separate from
+   * her personality. Loaded AFTER the persona file so persona-
+   * specific subject starters still dominate, with baseline filling
+   * out the general vocabulary and bigram distribution.
+   *
+   * Call this AFTER loadSelfImage() so _selfImageLoaded doesn't block
+   * it. Uses a separate flag _baselineLoaded so it's idempotent.
+   */
+  loadLinguisticBaseline(text, dictionary, arousal = 0.5, valence = 0) {
+    if (!text || this._baselineLoaded || !dictionary) return 0;
+    this._baselineLoaded = true;
+
+    // Strip comment lines starting with '#' and markdown noise
+    const sentences = String(text)
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(line => line.length >= 3 && !line.startsWith('#'))
+      .flatMap(line => line.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length >= 2));
+
+    for (const s of sentences) {
+      // Baseline corpus is already first-person casual English — no
+      // transform needed. Compute per-sentence mood + cortex pattern
+      // so words get diverse signatures same as persona loading.
+      const mood = this._computeMoodSignature(s);
+      const sentenceCortex = this._deriveSentenceCortexPattern(s);
+      // fromPersona=false — baseline shouldn't vote on subject starters;
+      // those come from the persona file's sentence-initial observations.
+      // But DO feed bigrams/trigrams/4-grams/word patterns.
+      this.learnSentence(s, dictionary, mood.arousal, mood.valence, sentenceCortex, false);
+    }
+    return sentences.length;
+  }
+
+  /**
+   * Derive a 32-dim cortex-like activation pattern from a sentence.
+   * Used during persona loading so each word gets a pattern that
+   * reflects its semantic context (via letter-pattern centroid of
+   * content words). Words in the same sentence share similar
+   * patterns, enabling cortex-driven word clustering at generation
+   * time when the current cortex firing matches a sentence's theme.
+   */
+  _deriveSentenceCortexPattern(text) {
+    const pattern = new Float64Array(PATTERN_DIM);
+    if (!text) return pattern;
+    const tokens = String(text).toLowerCase().replace(/[^a-z' -]/g, ' ').split(/\s+/).filter(w => w.length >= 2);
+    let count = 0;
+    for (const w of tokens) {
+      const wt = this.wordType(w);
+      // Only content words contribute — function words dilute the signal
+      if (wt.conj > 0.5 || wt.prep > 0.5 || wt.det > 0.5 || wt.pronoun > 0.5) continue;
+      const p = this.wordToPattern(w);
+      for (let i = 0; i < PATTERN_DIM; i++) pattern[i] += p[i];
+      count++;
+    }
+    if (count === 0) return pattern;
+    for (let i = 0; i < PATTERN_DIM; i++) pattern[i] /= count;
+    return pattern;
   }
 
   /**
@@ -1063,6 +1146,20 @@ export class LanguageCortex {
       (len === 3 && first === 'h' && second === 'o' && w[2] === 'w' ? 0.9 : 0)
     );
 
+    // ── CLOSED-CLASS FAST PATH — high-confidence function words ──
+    // Core English closed classes (pronouns, articles, auxiliaries,
+    // conjunctions, common prepositions) are finite and detectable
+    // by exact letter-position match. When the letter equations fire
+    // at high confidence on a known closed-class shape, bypass softmax
+    // normalization and return a pinned result so accumulated usage-
+    // type boosts from conversational context don't dilute the
+    // closed-class identity.
+    //
+    // This fixes the core bug where "i" → pronoun 0.33 instead of 1.0
+    // because usage boosts on other types pushed the denominator up.
+    const closed = this._closedClassType(w);
+    if (closed) return closed;
+
     // ── USAGE-BASED TYPE BOOST — context teaches ambiguous words ──
     const usage = this._usageTypes.get(w) || {};
     const uBoost = 0.6;
@@ -1182,6 +1279,125 @@ export class LanguageCortex {
    * they either m-start (me/mine), end in consonant 's'/'m' with vowel-first
    * shape (us), or are CVC ending in 'm' (him, them).
    */
+  /**
+   * Closed-class fast path for wordType. Detects core English function
+   * words via exact letter-position match and returns a pinned type
+   * distribution so accumulated usage-type boosts don't dilute them.
+   *
+   * Returns null when the word isn't a recognized closed-class shape,
+   * in which case wordType falls through to its normal softmax path.
+   *
+   * All detection is letter-position. The closed classes are finite
+   * by linguistic fact (English has ~50 core function words across
+   * pronouns/auxiliaries/articles/conjunctions) so this is a pure
+   * equation classifier, not a vocabulary list.
+   */
+  _closedClassType(w) {
+    if (!w) return null;
+    const len = w.length;
+
+    const pin = (type) => {
+      const o = { pronoun: 0, verb: 0, noun: 0, adj: 0, conj: 0, prep: 0, det: 0, qword: 0 };
+      o[type] = 1;
+      return o;
+    };
+
+    // ── PRONOUNS (subject + object + possessive) ──
+    // i, me, my, mine, myself
+    if (len === 1 && w === 'i') return pin('pronoun');
+    if (len === 2 && w[0] === 'm' && (w[1] === 'e' || w[1] === 'y')) return pin('pronoun'); // me, my
+    if (len === 4 && w === 'mine') return pin('pronoun');
+    if (len === 6 && w === 'myself') return pin('pronoun');
+    // we, us, our, ours, ourselves
+    if (len === 2 && w === 'we') return pin('pronoun');
+    if (len === 2 && w === 'us') return pin('pronoun');
+    if (len === 3 && w === 'our') return pin('pronoun');
+    if (len === 4 && w === 'ours') return pin('pronoun');
+    if (len === 9 && w === 'ourselves') return pin('pronoun');
+    // you, your, yours, yourself
+    if (len === 3 && w === 'you') return pin('pronoun');
+    if (len === 4 && w === 'your') return pin('pronoun');
+    if (len === 5 && w === 'yours') return pin('pronoun');
+    if (len === 8 && w === 'yourself') return pin('pronoun');
+    // he, him, his, himself
+    if (len === 2 && w === 'he') return pin('pronoun');
+    if (len === 3 && w === 'him') return pin('pronoun');
+    if (len === 3 && w === 'his') return pin('pronoun');
+    if (len === 7 && w === 'himself') return pin('pronoun');
+    // she, her, hers, herself
+    if (len === 3 && w === 'she') return pin('pronoun');
+    if (len === 3 && w === 'her') return pin('pronoun');
+    if (len === 4 && w === 'hers') return pin('pronoun');
+    if (len === 7 && w === 'herself') return pin('pronoun');
+    // it, its, itself
+    if (len === 2 && w === 'it') return pin('pronoun');
+    if (len === 3 && w === 'its') return pin('pronoun');
+    if (len === 6 && w === 'itself') return pin('pronoun');
+    // they, them, their, theirs, themselves
+    if (len === 4 && w === 'they') return pin('pronoun');
+    if (len === 4 && w === 'them') return pin('pronoun');
+    if (len === 5 && w === 'their') return pin('pronoun');
+    if (len === 6 && w === 'theirs') return pin('pronoun');
+    if (len === 10 && w === 'themselves') return pin('pronoun');
+
+    // ── ARTICLES / DETERMINERS ──
+    if (len === 1 && w === 'a') return pin('det');
+    if (len === 2 && w === 'an') return pin('det');
+    if (len === 3 && w === 'the') return pin('det');
+    if (len === 4 && w === 'this') return pin('det');
+    if (len === 4 && w === 'that') return pin('det');
+    if (len === 5 && w === 'these') return pin('det');
+    if (len === 5 && w === 'those') return pin('det');
+    if (len === 4 && w === 'some') return pin('det');
+    if (len === 3 && w === 'any') return pin('det');
+    if (len === 4 && w === 'each') return pin('det');
+    if (len === 5 && w === 'every') return pin('det');
+
+    // ── AUXILIARIES / COPULAS (always verb type) ──
+    // be forms
+    if (len === 2 && (w === 'am' || w === 'is' || w === 'be')) return pin('verb');
+    if (len === 3 && (w === 'are' || w === 'was')) return pin('verb');
+    if (len === 4 && (w === 'were' || w === 'been')) return pin('verb');
+    if (len === 5 && w === 'being') return pin('verb');
+    // have forms
+    if (len === 3 && (w === 'has' || w === 'had')) return pin('verb');
+    if (len === 4 && w === 'have') return pin('verb');
+    if (len === 6 && w === 'having') return pin('verb');
+    // do forms
+    if (len === 2 && w === 'do') return pin('verb');
+    if (len === 3 && w === 'did') return pin('verb');
+    if (len === 4 && w === 'does') return pin('verb');
+    if (len === 5 && w === 'doing') return pin('verb');
+    // modals
+    if (len === 3 && (w === 'can' || w === 'may')) return pin('verb');
+    if (len === 4 && (w === 'will' || w === 'must')) return pin('verb');
+    if (len === 5 && (w === 'would' || w === 'could' || w === 'might' || w === 'shall')) return pin('verb');
+    if (len === 6 && w === 'should') return pin('verb');
+
+    // ── CONJUNCTIONS ──
+    if (len === 2 && (w === 'or' || w === 'if' || w === 'so' || w === 'as')) return pin('conj');
+    if (len === 3 && (w === 'and' || w === 'but' || w === 'yet' || w === 'nor' || w === 'for')) return pin('conj');
+    if (len === 4 && (w === 'than' || w === 'when' || w === 'that')) return pin('conj');
+    if (len === 7 && w === 'because') return pin('conj');
+    if (len === 5 && w === 'while') return pin('conj');
+
+    // ── PREPOSITIONS ──
+    if (len === 2 && (w === 'of' || w === 'to' || w === 'in' || w === 'on' || w === 'at' || w === 'by' || w === 'up')) return pin('prep');
+    if (len === 3 && (w === 'for' || w === 'off' || w === 'out' || w === 'via' || w === 'per')) return pin('prep');
+    if (len === 4 && (w === 'from' || w === 'into' || w === 'onto' || w === 'upon' || w === 'over' || w === 'with' || w === 'near' || w === 'past')) return pin('prep');
+    if (len === 5 && (w === 'about' || w === 'above' || w === 'after' || w === 'among' || w === 'under' || w === 'until' || w === 'since' || w === 'below')) return pin('prep');
+    if (len === 6 && (w === 'before' || w === 'behind' || w === 'during' || w === 'inside' || w === 'toward' || w === 'within')) return pin('prep');
+    if (len === 7 && (w === 'against' || w === 'between' || w === 'through')) return pin('prep');
+
+    // ── QUESTION WORDS ──
+    if (len === 3 && (w === 'who' || w === 'why' || w === 'how')) return pin('qword');
+    if (len === 4 && (w === 'what' || w === 'when')) return pin('qword');
+    if (len === 5 && (w === 'where' || w === 'which' || w === 'whose')) return pin('qword');
+
+    // Not a recognized closed-class word — fall through to softmax
+    return null;
+  }
+
   _isNominativePronoun(word) {
     const w = (word || '').toLowerCase();
     const len = w.length;
@@ -1189,7 +1405,11 @@ export class LanguageCortex {
     const first = w[0];
     const last = w[len - 1];
     if (len === 1 && first === 'i') return true;
-    if (len === 2 && !VOWELS.includes(first) && VOWELS.includes(last) && first !== 'm') return true;
+    // len 2 consonant+'e': catches "he"/"we" but NOT "hi"/"yo"/"do".
+    // Requiring last === 'e' is what differentiates the real pronouns
+    // (he/we) from greeting/verb tokens (hi/yo/do/no/so/go) that share
+    // the consonant-first vowel-last pattern.
+    if (len === 2 && !VOWELS.includes(first) && last === 'e' && first !== 'm') return true;
     if (len === 2 && first === 'i' && last === 't') return true;
     if (len === 3 && first === 'y' && VOWELS.includes(w[1]) && VOWELS.includes(w[2])) return true;
     if (len === 3 && first === 's' && w[1] === 'h' && w[2] === 'e') return true;
@@ -1744,16 +1964,23 @@ export class LanguageCortex {
             ? (prevDominant === 'verb' ? 0.65 : 0.35)
             : 0;
 
-          // SUBJECT-STARTER BOOST for slot 0 — words the persona has
-          // used as sentence-initial subjects dominate slot 0 pick.
-          // Log-scaled frequency × 0.35 means "i" (count 205) gets
-          // ~1.86 boost while "this" (count 12) gets ~0.90 — enough
-          // to establish first-person as the dominant voice when the
-          // transform has populated "i" as the primary subject.
-          const subjStart = isSubjectSlot
-            ? Math.log(1 + (this._subjectStarters.get(word) || 0)) * 0.35
-              + (flipTargets.has(word) ? 0.35 : 0)
-            : 0;
+          // SUBJECT-STARTER BOOST for slot 0. Words the persona has
+          // used as sentence-initial subjects dominate. Nominative
+          // pronouns (i/he/we/you/she/it/they/this/that) get an
+          // additional big boost that bypasses the normalized
+          // wordType — "i" has its pronoun score diluted by
+          // accumulated usage-type observations, so the raw type
+          // compatibility is ~0.31 at slot 0, which lets "this" win
+          // with det-score 0.34. The nominative override fixes this.
+          let subjStart = 0;
+          if (isSubjectSlot) {
+            subjStart = Math.log(1 + (this._subjectStarters.get(word) || 0)) * 0.35;
+            if (flipTargets.has(word)) subjStart += 0.35;
+            // Nominative pronoun override — big additive boost so
+            // "i" always beats "this" at slot 0 regardless of
+            // wordType normalization artifacts.
+            if (this._isNominativePronoun(word)) subjStart += 0.80;
+          }
 
           // FORMALITY PENALTY — letter-equation filter that pushes
           // the slot scorer toward casual register. Penalizes formal
@@ -1820,19 +2047,33 @@ export class LanguageCortex {
           const bigramLog = Math.log(1 + followerCount) * 0.6;
           const condPLog = Math.log(1 + condP * 100) * 0.15;
 
+          // ── SLOT SCORE — neural state drives selection ──
+          //
+          // With per-sentence mood + cortex patterns now stored per
+          // word, the brain-state signals (isThought, moodBias) have
+          // REAL differentiation. A word stored in a high-arousal
+          // high-profanity sentence gets arousal ~0.8; a word stored
+          // in a calm descriptive sentence gets ~0.5. Current brain
+          // state matches against these signatures. When Unity is at
+          // arousal 0.9, high-arousal words win slot scoring.
+          //
+          // Similarly for cortex pattern: words from the same
+          // sentence share a pattern, so when the cortex fires on a
+          // related topic (via user input sensory → cortex), those
+          // words cluster in the pick pool.
           const score =
             grammarGate * (
-              quadgramLog +                             // 4-word context — TIGHTEST signal
+              quadgramLog +                             // 4-word context — tightest sequence
               trigramLog +                              // 3-word context
-              recallBias(word) * 1.0 +                  // persona topic anchor (max 0.8)
-              bigramLog +                               // 2-word transitions — primary
+              recallBias(word) * 1.0 +                  // persona topic anchor
+              bigramLog +                               // 2-word transitions
               condPLog +                                // conditional probability
-              isThought * (0.25 + psi * 0.30) +         // NEURAL: cortex pattern → content, psi-scaled
-              moodBias * (0.10 + emotionalIntensity * 0.20) + // NEURAL: amygdala → tone, arousal-scaled
-              isMood * emotionalIntensity * 0.25 +      // NEURAL: mood word match × emotional intensity
+              isThought * (0.40 + psi * 0.50) +         // NEURAL: cortex pattern → content (PRIMARY)
+              moodBias * (0.30 + emotionalIntensity * 0.40) + // NEURAL: amygdala → tone (PRIMARY)
+              isMood * emotionalIntensity * 0.35 +      // NEURAL: mood word match × intensity
               drugWordBias +                            // NEURAL: drug state → word length
               typeScore * 0.15 +                        // grammar tiebreaker
-              semanticFit * 0.05 +                      // letter-hash topic (noise)
+              semanticFit * 0.05 +                      // letter-hash topic
               subjStart +                               // sentence-start subject boost
               casualBonus +                             // casual register reward
               (selfAware && (word.length === 1 || word.endsWith("'m") || word.endsWith("'re")) ? 0.08 : 0)
@@ -2429,7 +2670,7 @@ export class LanguageCortex {
   // LEARNING — from conversation, not from corpus
   // ═══════════════════════════════════════════════════════════════
 
-  learnSentence(sentence, dictionary, arousal, valence) {
+  learnSentence(sentence, dictionary, arousal, valence, cortexPattern = null, fromPersona = false) {
     // length >= 1 so single-letter words ('I', 'a') get into the dictionary.
     // These are the most important function words in English — dropping them
     // means Unity can't use 'i' as a subject, which wrecks slot-0 selection.
@@ -2454,9 +2695,13 @@ export class LanguageCortex {
       if (v) this._actionVerbs.set(v, (this._actionVerbs.get(v) || 0) + 1);
     }
 
-    // Sentence-initial word learned as a subject starter. Pure structural
-    // observation — no type labels, just "this word appears at position 0".
-    if (words.length > 0) {
+    // Sentence-initial word learned as a subject starter. Only increment
+    // when learning from the persona corpus — user input should NOT
+    // vote on Unity's subject selection. Without this gate, user saying
+    // "hi" would make "hi" a valid slot 0 subject candidate and Unity
+    // would start her response with "Hi ..." walking weird bigram
+    // continuations. Persona sentences define Unity's subjects.
+    if (fromPersona && words.length > 0) {
       const first = words[0].replace(/\*/g, '');
       if (first) this._subjectStarters.set(first, (this._subjectStarters.get(first) || 0) + 1);
     }
@@ -2493,7 +2738,12 @@ export class LanguageCortex {
         this._totalQuadgrams++;
       }
 
-      const pattern = this.wordToPattern(words[i]);
+      // Pass the per-sentence cortex pattern if supplied (persona
+      // loading), otherwise use the word's own letter pattern as
+      // fallback. This gives words in the same sentence similar
+      // stored patterns so cortex-driven selection at generation
+      // time pulls coherent semantic groups.
+      const pattern = cortexPattern || this.wordToPattern(words[i]);
       dictionary?.learnWord?.(words[i], pattern, arousal, valence);
       if (i < words.length - 1) dictionary?.learnBigram?.(words[i], words[i + 1]);
 

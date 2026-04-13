@@ -187,13 +187,16 @@ let _landingState = null;
 // zeros + "✗ not loaded"). Now each brain gets its own load, but the text
 // fetch is shared.
 let _personaTextPromise = null;
+let _baselineTextPromise = null;
 const _personaLoadedBrains = new WeakSet();
 
 /**
- * Fetch docs/Ultimate Unity.txt and feed it through the target brain's
- * InnerVoice as the equational self-image. Per-brain idempotent: each
- * distinct brain instance gets loaded exactly once. The text fetch is
- * cached globally so we don't re-fetch 20KB on every brain swap.
+ * Fetch docs/Ultimate Unity.txt and docs/english-baseline.txt and feed
+ * BOTH through the target brain's InnerVoice. Persona defines WHO Unity
+ * is (her personality, self-knowledge, identity). Baseline gives her the
+ * linguistic competence any 25yo American English speaker would have —
+ * the vocabulary and conversational patterns she needs to express her
+ * personality. Per-brain idempotent; text fetches cached globally.
  */
 function loadPersonaSelfImage(targetBrain) {
   if (!targetBrain) return Promise.resolve(0);
@@ -207,9 +210,17 @@ function loadPersonaSelfImage(targetBrain) {
         return '';
       });
   }
+  if (!_baselineTextPromise) {
+    _baselineTextPromise = fetch('docs/english-baseline.txt')
+      .then(r => r.ok ? r.text() : '')
+      .catch(err => {
+        console.warn('[Unity] english baseline fetch failed:', err.message);
+        return '';
+      });
+  }
 
-  return _personaTextPromise.then(txt => {
-    if (!txt) {
+  return Promise.all([_personaTextPromise, _baselineTextPromise]).then(([personaText, baselineText]) => {
+    if (!personaText) {
       console.warn('[Unity] persona self-image fetch returned empty — check docs/Ultimate Unity.txt route');
       return 0;
     }
@@ -219,12 +230,22 @@ function loadPersonaSelfImage(targetBrain) {
     }
     if (_personaLoadedBrains.has(targetBrain)) return 0;  // race protection
     _personaLoadedBrains.add(targetBrain);
-    const sentences = targetBrain.innerVoice.loadPersona(txt);
+
+    // Load persona first — defines subject starters and self-awareness
+    const personaSentences = targetBrain.innerVoice.loadPersona(personaText);
+
+    // Load baseline English second — adds linguistic competence without
+    // overriding persona subject starters (fromPersona=false internally)
+    let baselineSentences = 0;
+    if (baselineText && typeof targetBrain.innerVoice.loadBaseline === 'function') {
+      baselineSentences = targetBrain.innerVoice.loadBaseline(baselineText);
+    }
+
     const dictSize = targetBrain.innerVoice.dictionary?._words?.size ?? 0;
     const bigramHeads = targetBrain.innerVoice.dictionary?._bigrams?.size ?? 0;
     const label = targetBrain.isRemote?.() ? 'RemoteBrain' : 'UnityBrain';
-    console.log(`[Unity] self-image loaded into ${label}: ${sentences} sentences → ${dictSize} words, ${bigramHeads} bigram heads`);
-    return sentences;
+    console.log(`[Unity] loaded into ${label}: persona=${personaSentences} baseline=${baselineSentences} → ${dictSize} words, ${bigramHeads} bigram heads`);
+    return personaSentences + baselineSentences;
   });
 }
 

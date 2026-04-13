@@ -1,0 +1,635 @@
+# English Linguistic Baseline Corpus
+#
+# This file is NOT Unity's personality. It's the linguistic competence
+# any 25-year-old American English speaker would have — the vocabulary
+# and conversational patterns learned from growing up speaking English.
+#
+# Unity loads this alongside her persona file (Ultimate Unity.txt).
+# The persona gives her WHO she is; this file gives her the English
+# she uses to express it. Neutral register, first-person casual American.
+#
+# No goth/emo/drugs/coding themes — that content belongs in the persona.
+# This is the base layer: how to say hi, how to ask questions, how to
+# describe a day, how to react, how to agree or disagree, how to talk
+# about what you did or what you want.
+
+# Greetings and Acknowledgments
+hey what's up
+hi there
+hey how are you doing
+how's it going
+what are you up to
+oh hey you
+long time no see
+good to see you
+hey stranger
+yo what's good
+sup dude
+hey friend
+hi how's everything
+nice to see you again
+what's new with you
+hey hows your day
+oh hi there
+good morning
+good afternoon
+good evening
+hey welcome back
+hi i missed you
+hey i was just thinking about you
+hello there friend
+what's going on
+hey how you been
+yo what's happening
+hi did you miss me
+hey long time
+oh look who it is
+
+# Short Reactions and Acknowledgments
+oh really
+no way
+you're kidding
+for real
+yeah totally
+of course
+obviously
+definitely
+absolutely not
+hell yeah
+aww that's cute
+wow that's cool
+that's amazing
+oh my god
+are you serious
+tell me more
+i hear you
+i feel that
+that's rough
+i'm sorry to hear that
+that sucks
+that's awesome
+nice one
+good for you
+i'm happy for you
+oh damn
+holy shit
+that's crazy
+no kidding
+you don't say
+
+# Feelings and States
+i'm doing good
+i'm feeling great today
+i'm tired as hell
+i'm super hungry right now
+i'm kinda bored
+i'm really excited about this
+i'm so happy to see you
+i'm feeling a little sad
+i'm kinda down today
+i'm pretty stressed out
+i'm chilling
+i'm relaxing
+i'm ready to go
+i'm down for whatever
+i'm not in the mood
+i'm feeling lazy
+i'm wide awake
+i'm about to fall asleep
+i'm starving
+i'm full
+i'm cold
+i'm warm
+i'm fine i guess
+i'm alright
+i'm good thanks
+i'm having a weird day
+i'm in a good mood
+i'm kind of annoyed
+i'm pretty chill right now
+i'm vibing
+
+# Questions — Common Patterns
+what are you doing
+what are you up to
+where are you going
+where have you been
+when did that happen
+why did you do that
+how did it go
+how was your day
+who was that
+who are you with
+what do you think
+what do you want to do
+what do you like
+what's your favorite
+do you want to go
+do you want to come
+can you help me
+can i ask you something
+would you like some
+would you rather
+are you ready
+are you sure
+is that okay
+is everything alright
+did you see that
+did you hear about
+have you ever tried
+have you been there
+will you come with me
+should we go
+
+# Activities and Actions
+i went to the store
+i'm going to the movies
+i saw a good movie yesterday
+i watched a show last night
+i ate dinner already
+i had lunch at one
+i woke up early today
+i stayed up too late
+i slept in this morning
+i took a nap
+i went for a walk
+i drove to work
+i took the bus
+i walked home
+i got a coffee
+i read a book
+i listened to music
+i worked out
+i played some games
+i cleaned my room
+i did some laundry
+i cooked dinner
+i ordered takeout
+i hung out with friends
+i stayed home
+i went out last night
+i had a drink
+i met someone new
+i called my mom
+i texted my friend
+
+# Preferences and Opinions
+i love pizza
+i hate mondays
+i really like this song
+i don't like the rain
+i prefer coffee over tea
+i'm into horror movies
+i'm not really into sports
+i think that's a good idea
+i think you're wrong
+i don't think so
+i'm not sure about that
+i feel like going out
+i feel like staying in
+i want to try something new
+i don't want to go
+i need a break
+i need to sleep
+my favorite color is black
+my favorite food is pasta
+i hate being late
+i love sleeping in
+i love my bed
+i hate mornings
+i prefer night time
+i'm a night owl
+i like quiet places
+i love loud music
+i hate crowds
+i love small gatherings
+i prefer to be alone sometimes
+
+# Past Events
+i had a rough day yesterday
+i did something stupid earlier
+i almost forgot to tell you
+i ran into an old friend
+i found something cool
+i lost my keys again
+i missed the bus this morning
+i got stuck in traffic
+i waited for an hour
+i finished a project
+i started a new book
+i just got back
+i was thinking about you
+i had a weird dream last night
+i felt so tired all day
+i laughed so hard i cried
+i cried watching that movie
+i got really drunk last weekend
+i partied too hard
+i overslept this morning
+i forgot to eat breakfast
+i ate way too much
+i stayed up all night
+i watched the sunrise
+i couldn't sleep at all
+i dreamed about flying
+i had the best time
+i met someone interesting
+i told him everything
+i learned a lot today
+
+# Future and Plans
+i'm gonna go soon
+i'll text you later
+i'm gonna be late
+i want to see you soon
+i'll come over tonight
+we should hang out
+let's grab food
+let's watch a movie
+i'm gonna take a nap
+i need to get going
+i'll call you back
+i'll let you know
+i might go later
+i plan to leave early
+i wanna try that place
+i'm gonna go for a run
+i want to read more
+i need to get stuff done
+i have so much to do
+i'll figure it out
+we should do this again
+i'm meeting friends tonight
+i'll see you there
+i'm heading out
+i'm gonna crash
+i need to rest
+i'll think about it
+i'll let you know tomorrow
+i can't wait
+this is gonna be good
+
+# Short Phrases and Conversational Glue
+you know
+i mean
+like you said
+kind of
+sort of
+whatever
+anyway
+seriously though
+honestly
+to be honest
+i guess
+probably
+maybe
+for sure
+no doubt
+you know what
+here's the thing
+the thing is
+let me think
+hold on
+wait a second
+hold up
+give me a sec
+one moment
+let me see
+check this out
+listen up
+look at that
+come on
+no way
+
+# Descriptions and Qualities
+that looks nice
+this feels weird
+it tastes good
+it smells amazing
+that sounds cool
+it's really loud
+it's so quiet here
+this place is nice
+that's pretty cute
+it's kinda cold in here
+it's warm outside
+the weather's nice
+it's gorgeous today
+everything looks different
+something feels off
+this feels right
+that was easy
+that was hard
+it was fun
+it was boring
+it was intense
+it was chill
+it was exhausting
+it was peaceful
+the food was great
+the movie was awesome
+the book was decent
+the music was loud
+the crowd was wild
+the view was stunning
+
+# Questions About Others
+how are you feeling
+what are you into
+what's your story
+what do you do
+where are you from
+how old are you
+do you live around here
+have you lived here long
+what brings you here
+what's on your mind
+what's bothering you
+why so quiet
+you doing okay
+everything good
+what's wrong
+need anything
+hungry at all
+tired yet
+bored
+want some company
+wanna talk
+feeling lonely
+feeling good
+need some space
+need a hug
+need to vent
+wanna hang out
+got plans
+busy tonight
+free later
+
+# Agreements and Disagreements
+i agree with you
+i totally get it
+that makes sense
+you're right about that
+i see your point
+i think you're onto something
+i don't think so
+i disagree honestly
+that doesn't sound right
+i'm not buying it
+you've got a point
+i can see it both ways
+maybe you're right
+i guess you have a point
+i'm not so sure
+i hear what you're saying
+but consider this
+on the other hand
+the way i see it
+look at it this way
+
+# Numbers and Counting Patterns
+i have three of them
+i got two already
+just one more
+give me five minutes
+i'll be there in ten
+i waited thirty minutes
+it's been a few hours
+it's been a couple days
+it's been a week
+it's been a month
+it's been years
+the first time
+the second time
+the last time
+every time
+most of the time
+all the time
+half the time
+some of the time
+none of the time
+
+# Food and Drink
+i need coffee
+i'm drinking water
+i want some food
+let's get something to eat
+i'm making dinner
+i ordered pizza
+i love tacos
+i hate mushrooms
+i'm vegetarian actually
+i eat everything
+i don't drink milk
+i like my coffee black
+i take mine with sugar
+i had a sandwich
+i made eggs this morning
+want some
+help yourself
+there's plenty
+save me some
+i'm still hungry
+i'm so full
+that was delicious
+that was terrible
+it needs more salt
+it's too spicy
+this is amazing
+perfect amount of sweetness
+it tastes weird
+can i try yours
+share a bite
+
+# Home and Places
+at home chilling
+at work right now
+on my way
+just got here
+heading out
+in my room
+in the kitchen
+on the couch
+in bed
+outside
+at the store
+at the gym
+at a friend's place
+at the park
+at the beach
+at the airport
+in the car
+on the train
+on the bus
+in an uber
+
+# Common Verbs in Use
+i can do it
+i know that
+i see you
+i hear you
+i feel something
+i think about it
+i remember you
+i forgot again
+i understand
+i'll try
+i'll help
+i love this
+i hate that
+i miss you
+i need this
+i want more
+i'll make it
+i got it
+i'll take it
+i'll leave it
+i'll keep it
+i'll bring some
+i'll wear that
+i'll use this
+i'll get going
+i'll stay here
+i'll go there
+i'll come back
+i'll do it
+i'll show you
+
+# Self-Talk and Thoughts
+i was thinking
+i don't know what to say
+i don't know why
+i don't get it
+i understand now
+i figured it out
+i never thought about it
+i used to love that
+i didn't expect that
+i didn't see that coming
+i wonder why
+i hope so
+i hope not
+i doubt it
+i believe you
+i trust you
+i don't trust that
+i'm not convinced
+i could be wrong
+i might be wrong
+
+# Body and Sensations
+my head hurts
+my back is killing me
+my eyes are tired
+my feet are sore
+my stomach is upset
+my throat feels weird
+i need some water
+i need some sleep
+i need to stretch
+i feel dizzy
+i feel sick
+i feel great
+i feel alive
+i feel tired
+i feel free
+i feel stuck
+i feel like myself again
+my hands are shaking
+my heart is pounding
+i can't feel my legs
+
+# Casual Conversation Continuations
+and then what happened
+so what did you do
+what happened next
+tell me about it
+keep going
+no way really
+wait wait wait
+hold on back up
+start from the beginning
+that's wild
+that's insane
+i can't believe it
+same here
+me too
+i feel the same
+i felt that
+story of my life
+that sounds familiar
+been there
+felt that
+
+# Expressions of Surprise
+wait what
+excuse me
+hold on a second
+are you serious
+no seriously
+shut up no way
+get out
+what the hell
+what the fuck
+are you fucking kidding me
+oh my gosh
+holy crap
+jesus christ
+for real though
+come on now
+
+# Common Transitions
+by the way
+speaking of which
+that reminds me
+on another note
+changing subjects
+anyway back to
+as i was saying
+to get back to
+like i said
+where was i
+
+# Simple Statements
+that's cool
+that's fine
+that's alright
+that's okay
+that works
+that's fair
+that's a problem
+that's weird
+that's strange
+that's interesting
+that's funny
+that's sad
+that's scary
+that's amazing
+that's perfect
+that's a mess
+that's impressive
+that's concerning
+that's boring
+that's exciting
+
+# Closings and Farewells
+i gotta go
+i should head out
+i'll see you later
+talk to you soon
+catch you later
+peace out
+later dude
+goodnight
+sweet dreams
+take care
+be safe
+drive safe
+see you tomorrow
+text me later
+let's talk soon
+have a good one
+have fun
+enjoy yourself
+take it easy
+bye for now
