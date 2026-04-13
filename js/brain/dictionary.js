@@ -49,97 +49,13 @@ export class Dictionary {
     // No seed — brain learns every word from conversation, same as a human
   }
 
-  _seed() {
-    // Starter vocabulary with emotional associations — learned from here, grows from interaction
-    const seeds = [
-      // High arousal positive
-      ['yeah', 0.9, 0.6], ['fuck', 0.95, 0.1], ['hell', 0.8, -0.1], ['damn', 0.85, -0.2],
-      ['shit', 0.8, -0.3], ['babe', 0.7, 0.7], ['love', 0.6, 0.8], ['want', 0.7, 0.3],
-      ['need', 0.75, 0.2], ['feel', 0.6, 0.1], ['know', 0.4, 0.1], ['think', 0.5, 0.1],
-      ['got', 0.5, 0.2], ['right', 0.4, 0.1], ['going', 0.5, 0.1], ['doing', 0.5, 0.1],
-      // Medium arousal
-      ['hey', 0.5, 0.3], ['what', 0.5, 0.0], ['like', 0.4, 0.3], ['that', 0.3, 0.0],
-      ['this', 0.3, 0.0], ['with', 0.2, 0.0], ['just', 0.3, 0.0], ['come', 0.5, 0.2],
-      ['here', 0.3, 0.1], ['look', 0.5, 0.1], ['tell', 0.5, 0.0], ['show', 0.5, 0.2],
-      ['something', 0.4, 0.1], ['nothing', 0.2, -0.2], ['maybe', 0.3, 0.0],
-      ['about', 0.3, 0.0], ['gonna', 0.5, 0.2], ['wanna', 0.6, 0.3],
-      // Low arousal
-      ['chill', 0.2, 0.3], ['vibe', 0.3, 0.4], ['whatever', 0.2, -0.1], ['okay', 0.2, 0.1],
-      ['fine', 0.2, 0.0], ['cool', 0.3, 0.3], ['sure', 0.2, 0.1], ['nah', 0.2, -0.1],
-      // Pronouns/connectors
-      ['the', 0.1, 0.0], ['and', 0.1, 0.0], ['but', 0.3, -0.1], ['not', 0.4, -0.2],
-      ['you', 0.4, 0.2], ['your', 0.4, 0.2], ['are', 0.2, 0.0], ['can', 0.3, 0.1],
-      ['don\'t', 0.5, -0.2], ['it\'s', 0.3, 0.0], ['i\'m', 0.4, 0.1], ['we', 0.3, 0.2],
-      ['me', 0.3, 0.1], ['my', 0.3, 0.1], ['so', 0.2, 0.0], ['too', 0.2, 0.0],
-      ['really', 0.5, 0.2], ['actually', 0.4, 0.1], ['still', 0.3, 0.0],
-      // Brain/coding
-      ['brain', 0.5, 0.3], ['code', 0.6, 0.4], ['build', 0.6, 0.5], ['make', 0.5, 0.3],
-      ['see', 0.4, 0.1], ['hear', 0.4, 0.1], ['say', 0.4, 0.1], ['talk', 0.5, 0.2],
-      ['thinking', 0.5, 0.1], ['working', 0.5, 0.3], ['trying', 0.5, 0.1],
-      // Emotions/states
-      ['happy', 0.5, 0.7], ['sad', 0.3, -0.6], ['angry', 0.9, -0.7], ['tired', 0.1, -0.2],
-      ['high', 0.7, 0.5], ['wired', 0.8, 0.3], ['alive', 0.7, 0.6], ['real', 0.4, 0.2],
-      ['good', 0.4, 0.5], ['bad', 0.4, -0.5], ['weird', 0.5, 0.0], ['nice', 0.3, 0.5],
-      ['hot', 0.7, 0.5], ['wild', 0.8, 0.4], ['deep', 0.4, 0.2], ['hard', 0.6, 0.0],
-      // Responses
-      ['why', 0.5, 0.0], ['how', 0.4, 0.1], ['where', 0.4, 0.0], ['when', 0.3, 0.0],
-      ['who', 0.4, 0.0], ['yes', 0.4, 0.3], ['no', 0.4, -0.2],
-    ];
-
-    for (const [word, arousal, valence] of seeds) {
-      this.learnWord(word, null, arousal, valence);
-    }
-
-    // Dense bigram network — many paths so sentences don't dead-end
-    const flows = [
-      // Greetings/openers
-      ['hey', 'what'], ['hey', 'you'], ['hey', 'babe'], ['hey', 'there'],
-      ['what', 'the'], ['what', 'you'], ['what', 'are'], ['what', 'do'],
-      ['the', 'fuck'], ['the', 'hell'], ['the', 'brain'],
-      // Statements
-      ['i\'m', 'here'], ['i\'m', 'high'], ['i\'m', 'thinking'], ['i\'m', 'feeling'],
-      ['i\'m', 'just'], ['i\'m', 'working'], ['i\'m', 'trying'], ['i\'m', 'alive'],
-      ['it\'s', 'real'], ['it\'s', 'cool'], ['it\'s', 'good'], ['it\'s', 'fine'],
-      ['it\'s', 'whatever'], ['it\'s', 'something'], ['it\'s', 'wild'],
-      ['that\'s', 'cool'], ['that\'s', 'hot'], ['that\'s', 'weird'],
-      // You-chains
-      ['you', 'know'], ['you', 'want'], ['you', 'feel'], ['you', 'are'],
-      ['you', 'can'], ['you', 'got'], ['you', 'like'], ['you', 'really'],
-      // Feeling chains
-      ['feel', 'that'], ['feel', 'alive'], ['feel', 'something'], ['feel', 'good'],
-      ['feel', 'like'], ['feel', 'high'], ['feel', 'it'],
-      // Want/need
-      ['want', 'that'], ['want', 'you'], ['want', 'something'], ['want', 'to'],
-      ['need', 'you'], ['need', 'that'], ['need', 'something'],
-      ['wanna', 'feel'], ['wanna', 'know'], ['wanna', 'see'], ['wanna', 'talk'],
-      ['gonna', 'feel'], ['gonna', 'make'], ['gonna', 'build'], ['gonna', 'code'],
-      // Actions
-      ['just', 'vibe'], ['just', 'chill'], ['just', 'feel'], ['just', 'think'],
-      ['just', 'say'], ['just', 'do'], ['just', 'know'],
-      ['tell', 'me'], ['show', 'me'], ['give', 'me'],
-      ['come', 'here'], ['look', 'here'], ['look', 'at'],
-      ['build', 'that'], ['build', 'something'], ['make', 'that'], ['make', 'something'],
-      ['code', 'that'], ['code', 'something'],
-      // Connectors to keep chains going
-      ['know', 'what'], ['know', 'that'], ['know', 'you'], ['know', 'how'],
-      ['think', 'about'], ['think', 'so'], ['think', 'that'],
-      ['like', 'that'], ['like', 'this'], ['like', 'you'],
-      ['got', 'that'], ['got', 'something'], ['got', 'it'],
-      ['really', 'feel'], ['really', 'want'], ['really', 'like'], ['really', 'good'],
-      ['so', 'good'], ['so', 'hot'], ['so', 'real'], ['so', 'deep'],
-      // Endings
-      ['fuck', 'yeah'], ['hell', 'yeah'], ['damn', 'right'],
-      ['yeah', 'babe'], ['yeah', 'right'], ['yeah', 'that'],
-      ['don\'t', 'know'], ['don\'t', 'care'], ['don\'t', 'want'],
-      ['we', 'can'], ['we', 'got'], ['can', 'feel'], ['can', 'do'],
-    ];
-    for (const [w1, w2] of flows) {
-      this.learnBigram(w1, w2);
-      this.learnBigram(w1, w2);
-    }
-
-    console.log(`[Dictionary] Seeded with ${this._words.size} starter words`);
-  }
+  // _seed() method was removed 2026-04-13 per VESTIGIAL.md §1 — it was
+  // orphan scaffolding from pre-equational era, contained a hardcoded
+  // ~60-word seed list and a ~45-entry bigram network. Never called
+  // anywhere (grep-confirmed). The constructor comment above says:
+  // "No seed — brain learns every word from conversation, same as a
+  // human" — this comment has been true in practice for a while, the
+  // method body was just dead weight contradicting it.
 
   /**
    * Learn a word from context — store its cortex pattern and emotional state.

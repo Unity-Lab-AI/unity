@@ -144,7 +144,8 @@ Live at `your-username.github.io/Unity/`. Everything runs client-side — no ser
 │       ├── chat-panel.js         Conversation log panel
 │       ├── brain-viz.js          2D tabbed brain visualizer (8 tabs)
 │       └── brain-3d.js           3D WebGL brain with notifications + expansion
-├── claude-proxy.js               Claude Code CLI as local AI (port 8088)
+│                                   (claude-proxy.js + start-unity.bat DELETED 2026-04-13 —
+│                                    Claude CLI text-AI backend, obsolete after R4 refactor)
 ├── compute.html                  GPU compute worker (REQUIRED — brain runs here)
 ├── server/
 │   ├── brain-server.js           Node.js brain server (always-on, WebSocket, GPU exclusive, restores _wordFreq from disk)

@@ -14,6 +14,29 @@
 
 ## COMPLETED TASKS LOG
 
+## 2026-04-13 Session: Refactor R1 Audit + VESTIGIAL Cleanup (branch: brain-refactor-full-control)
+
+### COMPLETED
+- [x] **Task:** R1 — Audit pass producing three inventory docs before touching code.
+  - Completed: 2026-04-13 (commit `af5f52c` on `brain-refactor-full-control`)
+  - Files created:
+    - `docs/KILL_LIST.md` (253 lines) — every hardcoded / scripted / AI-bypass path with file:line precision, classified DELETE-AI / REPLACE-SEMANTIC / REPLACE-EQUATIONAL / MOVE-CORPUS / KEEP-SAFETY. Estimated 900 lines to delete, 100 lines to replace across the refactor.
+    - `docs/VESTIGIAL.md` (261 lines) — 18 dead-code items across the 34-file stack. Identified 2 standalone deletions safe to ship before R2 (`_seed()` in dictionary.js and `claude-proxy.js` top-level file).
+    - `docs/SEMANTIC_GAP.md` (250 lines) — THE core fix map. Documents the key finding: `sensory.js` already wires semantic embeddings on the INPUT side (GloVe 50d loaded, cortex semantic injection at lines 346-377), but `language-cortex.js:3391 wordToPattern(word)` still returns letter-hash vectors on the OUTPUT side. Replacing that one function's body with `embeddings.getEmbedding(word)` + bumping `semanticFit` slot-score weight from 0.05 → 0.80 is the R2 core — estimated ~75 lines across 5 files for the whole semantic grounding fix.
+  - Details: Grep + read audit across all 34 source files. Identified 15+ text-AI call sites (~600 lines to delete across pollinations.js / ai-providers.js / language.js / brain-server.js / claude-proxy.js), the `_seed()` orphan (90 lines of hardcoded word list + bigram network, never called), and every letter-hash pattern reference in language-cortex.js that needs semantic replacement. KILL_LIST has 8 sections with per-line action plans. SEMANTIC_GAP maps 11 call sites of `wordToPattern` in language-cortex.js to their replacement path, plus 5 concrete test cases that will prove R2 works (hungry/food matching, movies/watch matching, coding/html matching, naming/identity recall, mood variance).
+
+- [x] **Task:** VESTIGIAL.md §1 — Delete orphan `_seed()` method from `js/brain/dictionary.js`.
+  - Completed: 2026-04-13
+  - Files: `js/brain/dictionary.js`
+  - Details: The `_seed()` method at lines 52-140 contained ~60 hardcoded word seeds with arousal/valence tuples (`['yeah', 0.9, 0.6]`, `['fuck', 0.95, 0.1]`, etc.) and ~45 hardcoded bigram flow entries (`['gonna', 'feel']`, `['i\'m', 'high']`, etc.). The constructor comment at line 49 explicitly said `// No seed — brain learns every word from conversation, same as a human` — grep confirmed zero call sites anywhere. It was orphan scaffolding from pre-equational refactor era that survived despite the brain already being equation-driven. Deleted the entire method (90 lines removed), replaced with a short comment block explaining the removal and linking to VESTIGIAL.md §1. Dictionary file dropped from 416 → 332 lines.
+
+- [x] **Task:** VESTIGIAL.md §9 — Delete obsolete `claude-proxy.js` top-level file + `start-unity.bat` launcher.
+  - Completed: 2026-04-13
+  - Files: `claude-proxy.js` (DELETED), `start-unity.bat` (DELETED), `SETUP.md`, `docs/ARCHITECTURE.md`, `docs/SKILL_TREE.md`
+  - Details: `claude-proxy.js` was a Node dev-convenience script (~100 lines) that exposed the user's logged-in Claude Code CLI (`claude -p`) as an OpenAI-compatible `/v1/chat/completions` HTTP endpoint on localhost:8088. Purpose: let Unity use the Claude Max subscription as a text-AI backend without paying API tokens. Obsolete because the brain-refactor-full-control branch R4 kills text-AI backends entirely (Unity speaks equationally from her own brain via language cortex). `start-unity.bat` (9 lines) was the orphaned Windows launcher that ONLY ran `node claude-proxy.js` — no other purpose. The real Unity launcher is `start.bat` which boots the brain server + GPU compute, zero dependency on claude-proxy. Both files deleted. Live docs updated to remove references: `SETUP.md:147` directory tree, `docs/ARCHITECTURE.md:377` directory tree, `docs/SKILL_TREE.md:201` skill row marked REMOVED with rationale. Historical references in `docs/FINALIZED.md` archive left intact per CLAUDE.md rule. Total: ~109 lines of obsolete dev tooling removed.
+
+---
+
 ## 2026-04-13 Session: Orphan Resolution
 
 ### ORIGINAL TASK DESCRIPTIONS (verbatim from TODO.md before move — preserved per CLAUDE.md rule "keep every word of the original description")

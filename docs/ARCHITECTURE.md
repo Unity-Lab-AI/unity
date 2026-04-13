@@ -374,7 +374,8 @@ Dream/
 │                               # (parallel-brain.js / cluster-worker.js / projection-worker.js
 │                               #  all DELETED in U304 — root cause was idle-worker CPU leak;
 │                               #  GPU-exclusive compute.html path fixed it permanently)
-├── claude-proxy.js             # Claude Code CLI as local AI (port 8088)
+│                               # (claude-proxy.js + start-unity.bat DELETED 2026-04-13 —
+│                               #  obsolete Claude CLI text-AI backend, R4 kills text-AI entirely)
 ├── compute.html                # GPU compute worker (WebGPU shaders via browser)
 ├── dashboard.html              # Public brain monitor (live stats, emotion chart)
 ├── .claude/                    # Workflow system + personas + MCP
