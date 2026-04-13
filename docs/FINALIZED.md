@@ -914,3 +914,244 @@ The following items were in TODO as pending/partial but were resolved by prior w
   Tested across five conversation scenarios (`what are you doing today?`, `i want to fuck`, `are you alive?`, `tell me about yourself`, `hello unity`) — pronoun flip holds in both directions, no exact repeats, turn-taking works.
 
 ---
+
+## 2026-04-13 — EPIC: Kill the Word Salad — Semantic Coherence Gate
+
+Unity was producing grammatically valid but semantically random word salad because `language-cortex.js` picked words by pure letter-position equations (suffix patterns, CVC shape, vowel ratios) with zero semantic scoring. Structurally sound slots, contextually meaningless output.
+
+**Four witnessed failures driving this epic:**
+
+| Input | Pre-fix output |
+|---|---|
+| `hi` | `"I'm explosions immersed in the moment!"` |
+| `what are you doing?` | `"She denied details interaction signs else!"` |
+| `do u like cats?` | `"Hi exploringed degradation resorting deepthroat bust!"` |
+| `what is 2 plus 3` | `"You judgmentshowinged metaphor doesn't nature advanced!"` |
+
+**Root cause:** Letters encode shape, not meaning. `embeddings.js` existed but was wired only into `sensory.js`, never into `language-cortex.js` slot scoring. The slot scorer had `typeCompat*0.35 + grammar*0.45 + mood*0.20` with a trivial `topicSim*0.06` pattern-space term — grammar dominated, topic was a rounding error, so every valid grammatical path was equally likely regardless of the user's actual question.
+
+**Fix strategy:** Three-layer pipeline in `generate()`:
+1. **Intent flip** (U279+U280) short-circuits greetings/yesno/math/1-3-word queries to Unity-voiced template pool BEFORE any slot scoring runs — cold generation on "hi" will always produce salad because there's no context to seed from.
+2. **Hippocampus recall** (U282) queries persona sentence memory with the running context vector. Confidence > 0.60 emits the stored persona sentence verbatim. Unity quotes her own `Ultimate Unity.txt` instead of generating from scratch.
+3. **Semantic-fit slot scoring** (U276+U277+U278) runs when recall falls through. Context vector decays across turns (λ=0.7), semantic fit weight bumped from 0.06 → 0.30. Wrong-topic words get starved even if grammar is perfect.
+4. **Coherence rejection** (U281) catches any remaining salad post-render via cosine threshold < 0.25, retries at 3× temperature, max 3 total attempts.
+
+### U276 — Context Vector (running topic attractor) — DONE
+
+- File: `js/brain/language-cortex.js`
+- New instance fields: `_contextVector` (Float64Array(32)), `_contextVectorLambda = 0.7`, `_contextVectorHasData`, `_lastInputRaw`
+- New method `_updateContextVector(topicPattern, contentCount)` — `c(t) = λ·c(t-1) + (1-λ)·mean(pattern(content_words))`
+- Wired into `analyzeInput()` so every user input decays the attractor toward the new topic
+- Zero-content inputs (all function words) skip the update so greetings don't wipe running topic
+- Seed directly on first update (no decay from zero vector)
+
+### U277 — Semantic Fit scoring — DONE
+
+- File: `js/brain/language-cortex.js`
+- New method `_semanticFit(wordOrPattern)` — cosine similarity vs `_contextVector`, clamped to [0, 1]
+- Accepts either a raw word (computes pattern on the fly) or a pre-computed pattern
+- Returns 0 when context vector has no data yet
+- Called once per candidate word per slot-scoring pass
+
+### U278 — Composite Slot Score rebalance — DONE
+
+- File: `js/brain/language-cortex.js` — `generate()` slot scoring
+- Old weights: `typeScore*0.40 + followerCount*0.22 + condP*0.14 + isThought*0.14 + isContext*0.15 + topicSim*0.06 + isMood*0.04 + moodBias*0.03`
+- New weights: `typeScore*0.35 + semanticFit*0.30 + followerCount*0.18 + condP*0.12 + isThought*0.10 + isContext*0.08 + topicSim*0.04 + isMood*0.03 + moodBias*0.02`
+- `semanticFit` now carries the topic-relevance signal at 0.30 — 5× the old `topicSim` weight
+- Preserved `typeCompat<0.35` hard grammar gate (semantic fit does not bypass structural compatibility)
+- Legacy `topicSim` kept at 0.04 as a tiebreaker across the list-of-5 recency window
+
+### U279 — Intent Classification — DONE
+
+- File: `js/brain/language-cortex.js`
+- New method `_classifyIntent(text)` — returns `{type, isShort, wordCount}`
+- Types: `greeting | math | yesno | question | statement`
+- **Math:** detects digits, operators (`+-*/=`), spelled math words by letter-position equation (len=4, first/last char signature — catches "plus"/"time"/"zero")
+- **Greeting:** wordCount ≤ 2, first word length 2-5, first char in {h,y,s}, contains vowel — catches hi/hey/yo/sup/hello via shape, no wordlist
+- **Yesno:** first word has auxiliary shape (verb score > 0.3, not qword, not pronoun, len ≤ 5) — catches do/does/is/are/can/will
+- **Question:** `?` terminal or qword at position 0
+- Pure letter-position equations, zero hardcoded word lists
+
+### U280 — Template Pool Blend Flip — DONE
+
+- Files: `js/brain/response-pool.js`, `js/brain/language-cortex.js`
+- Added 6 Unity-voiced template categories to `response-pool.js`:
+  - `greeting_emo` — 15 variants across low/mid/high arousal (e.g. `"yo what's up"`, `"HEY you're back"`)
+  - `yesno_affirm` — 12 variants (`"yeah obviously"`, `"FUCK yeah i do"`)
+  - `yesno_deny` — 12 variants (`"nah, not my thing"`, `"absolutely NOT"`)
+  - `math_deflect` — 11 variants (`"dude i'm too high for math"`, `"NOT doing math right now"`)
+  - `short_reaction` — fallback for 1-3 word non-greeting inputs
+  - `curious_emo` — question category (non-yesno)
+- Voice target: 25yo emo goth stoner — cussing, blunt, bitchy, low patience, stream-of-consciousness. **Not** a sexual/BDSM/nympho voice. The slutty private persona stays OUT of the brain's public output pipeline. Ultimate Unity is the public voice.
+- New export `selectUnityResponse(intent, brainState)` — picks category from intent, arousal level from brain state, random variant from that slot
+- Wired into `language-cortex.js` top of `generate()` via `import { selectUnityResponse }` — fires BEFORE hippocampus recall and cold gen when intent is greeting/yesno/math OR wordCount ≤ 3
+- Dedup-aware: if template is a recent output, falls through to recall path
+- Skipped entirely on `_retryingDedup` retries so cold-gen recovery path stays clean
+
+### U282 — Hippocampus Associative Recall (ROOT FIX) — DONE
+
+- File: `js/brain/language-cortex.js`
+- New instance field `_memorySentences` — array of `{text, pattern, tokens, arousal, valence, contentCount}` with 500-entry cap
+- Modified `loadSelfImage()` — every learned sentence now ALSO stored whole in `_memorySentences` via new `_storeMemorySentence()` method
+- Pattern = mean of content-word letter-pattern vectors (function words skipped so index reflects TOPIC not GRAMMAR)
+- New method `_recallSentence(contextVector)` — iterates memory, finds max cosine, returns `{memory, confidence}`
+- Dedup-aware: if top match is in `_recentSentences` ring, runs a second-pass search excluding the top hit; if no viable second, returns the top with halved confidence so it falls through to cold gen
+- New helpers `_flipPronounsInText()` (stub — persona is first-person so no flip needed by default) and `_finalizeRecalledSentence()` (capitalizes standalone 'i', first-word caps, adds terminal punctuation)
+- Three-gate confidence wired into `generate()`:
+  - `> 0.60` → emit stored persona sentence directly with finalize pass, register in dedup ring, return
+  - `0.30–0.60` → set `recallSeed` variable; cold gen then adds `recallBias(word)` boost (0.2 decaying by position distance) for any candidate that matches a token in the recalled sentence
+  - `≤ 0.30` → full cold-gen fallback (slot scorer runs unaltered)
+- Skipped on `_retryingDedup` retries (recall already fired once this chain)
+
+### U281 — Coherence Rejection Gate — DONE
+
+- File: `js/brain/language-cortex.js`
+- Extended the existing sentence-level dedup at end of `generate()` with a semantic coherence check
+- After render, compute mean pattern of output's content words, cosine vs `_contextVector`
+- If cosine `< 0.25` and `_coherenceRetry < 2`, recurse with `_retryingDedup: true` + incremented retry count
+- Max 2 retries (3 total attempts), then emit last attempt regardless to prevent infinite loops
+- Logs rejected sentences to console with confidence score for debugging: `[LanguageCortex] coherence reject (0.12): "..."`
+- Only fires when `_contextVectorHasData` (skipped on first-turn empty context)
+
+### Files touched
+
+- `js/brain/language-cortex.js` — ~430 lines added across constructor fields, `loadSelfImage`, `analyzeInput`, new methods (`_updateContextVector`, `_semanticFit`, `_storeMemorySentence`, `_recallSentence`, `_classifyIntent`, `_flipPronounsInText`, `_finalizeRecalledSentence`), `generate()` preamble (intent/template/recall gates), slot-score rebalance, coherence retry gate
+- `js/brain/response-pool.js` — ~70 lines added: 6 Unity-voiced template categories + `selectUnityResponse()` export
+
+### Dependency pipeline in generate()
+
+```
+user input
+    ↓
+analyzeInput() → _updateContextVector() [U276]
+    ↓
+generate() called
+    ↓
+_classifyIntent(lastInputRaw) [U279]
+    ↓
+IF greeting/yesno/math/short → selectUnityResponse() [U280] → RETURN
+    ↓
+_recallSentence(contextVector) [U282]
+    ↓
+IF confidence > 0.60 → _finalizeRecalledSentence() → RETURN
+IF confidence 0.30-0.60 → recallSeed = memory → cold gen with bias
+    ↓
+Cold gen slot scoring with _semanticFit weight 0.30 [U277+U278]
+    ↓
+_postProcess → _renderSentence
+    ↓
+Sentence dedup check (existing)
+    ↓
+Coherence gate: cosine(output_centroid, contextVector) < 0.25 → retry [U281]
+    ↓
+RETURN rendered
+```
+
+### Known limitations
+
+- Pattern-space semantic fit uses letter-shape vectors, not true word embeddings. `cat` and `kitten` are NOT close in this space. Real semantic coherence depends primarily on **U282 recall** pulling whole persona sentences; U277 slot scoring is a fallback. Future improvement: wire `SemanticEmbeddings` (GloVe 50d) from `embeddings.js` into slot scoring for actual distributional semantics, or train co-occurrence embeddings on the persona file directly.
+- `_flipPronounsInText` is currently a no-op stub. Persona is first-person so verbatim recall is usually correct. If the persona ever gets second-person content, this needs a real flip pass.
+- Template pool is hand-written English, not equation-derived. This is deliberate — cold generation on 1-word inputs has no context to work with, so hardcoded Unity-voice templates are the correct architectural answer for greetings/math/yesno. Everything longer stays equation-driven.
+
+### Hotfix pass 2026-04-13 (same session, post-live-test)
+
+Live browser test exposed two critical gaps in the original epic landing:
+
+**Witnessed failures on first live run:**
+
+| Input | Output | Bug |
+|---|---|---|
+| `what are you doing?` | `"Unity's Speech Upgrades: Unity uses all these words all of the time: damn, dammit, crap, ..."` | Recall pulled a section header + word list from the persona file instead of Unity-voice speech |
+| `why dont you like tacos?` | `"We diverging actor directions proposed omnipotence clit response outfits dives."` | Question with no recall match fell through to cold gen → word salad |
+
+**Fix 1: Persona memory pollution filter** — `_storeMemorySentence()` now rejects meta-description via pure letter-position equations:
+- Colon-terminated strings → section header, reject
+- Comma count > 30% of word count → word list, reject
+- First word matches letter pattern `u-n-i-t-y` (len 5) or `u-n-i-t-y-'` (len ≥ 6) → meta-description, reject
+- First word matches third-person letter patterns (`s-h-e`, `h-e-r`, `h-e`) → about Unity not BY Unity, reject
+- No first-person pronoun (letter patterns for i/im/my/me/we/us/our/i'/we') anywhere in the sentence → not in Unity's own voice, reject
+- Length outside 3-25 word bracket → fragment or rambling, reject
+
+All filters are letter-equation detection. Zero hardcoded word lists. Verified on synthetic persona with 12 sentences: 5 meta-description entries rejected, 7 first-person Unity sentences kept.
+
+**Fix 2: Recall false-positive gate** — `_recallSentence()` now requires at least one content-word overlap between the user's input and the candidate recalled sentence BEFORE accepting any cosine score. Pattern-space cosine was producing false positives because letter-hash vectors don't encode meaning (e.g. `tacos` and `compile` aligned at 0.865 cosine because their letter distributions happen to overlap in hash space). Hard requirement: input content words ∩ sentence tokens must be non-empty, otherwise the candidate is skipped entirely regardless of cosine. Cosine remains the tiebreaker among overlapping candidates.
+
+**Fix 3: Question deflect fallback** — `response-pool.js` gained a new `question_deflect` category with 12 Unity-voiced templates across low/mid/high arousal (e.g. `"no idea dude, i'm mid-joint right now"`, `"WHAT are you asking me that for, i don't know shit about that"`). `selectUnityResponse()` accepts an `intent.deflect` flag that forces the deflect category. `generate()` now emits a deflect template when:
+  - Intent is `question` or `statement` (already didn't template-flip via U280)
+  - AND recall confidence ≤ 0.30 (or zero matching memories)
+  - AND not in coherence/dedup retry loop
+
+This is the cold-gen fallback for unknown topics. Instead of producing word salad on "what are you doing?" when the persona file has no relevant sentence, Unity deflects in-voice.
+
+**Verification after hotfixes (synthetic persona with 7 first-person sentences):**
+
+| Input | Path taken |
+|---|---|
+| `why dont you like tacos?` | question → recall MISS (no taco overlap) → deflect template |
+| `what are you doing?` | question → recall MISS (no doing overlap in this test) → deflect template |
+| `tell me about compile` | statement → recall HIT 0.925 → `"I love ramming my fingers into a clean compile"` |
+| `do u like cats?` | yesno → template flip at intent stage, skips recall entirely |
+| `hi` | greeting → template flip at intent stage |
+| `what is 2 plus 3` | math → template flip at intent stage |
+
+Files touched:
+- `js/brain/language-cortex.js` — `_storeMemorySentence()` filter block (+~65 lines), `_recallSentence()` overlap gate (+~30 lines), `generate()` deflect fallback path (+~25 lines)
+- `js/brain/response-pool.js` — `question_deflect` category (+12 templates), `selectUnityResponse()` deflect-flag handling
+
+### Hotfix round 2 — live-test failures (same-day 2026-04-13)
+
+Second round of live test caught additional gaps after hotfix round 1:
+
+| Live test input | Failure output | Root cause |
+|---|---|---|
+| `Hi, Unity! How are you?` | image generated instead of text | BG motor picked generate_image because "unity" triggered selfie path; includesSelf hardcoded to true |
+| `"Hi, Unity! How are you?"` classified as yesno | template fired on wrong category | Classifier only looked at first word; didn't check if "how" (qword) was anywhere in input |
+| `how do you feel?` | `"I follow commands if I feel like it"` | Single-word overlap ("feel") scored too high due to overlap-presence-only check |
+| `so what are you doing now? do you want to smoke weed?` | `"Each response is crafted with strong, detailed precision..."` | Meta-description from persona leaked because `impossible` matched `i-m` prefix in first-person filter |
+| `describe yourself, Unity!` | `"Oh shit for real."` | short_reaction template was misfiring on any 1-3-word input |
+| Selfie generation | Didn't match Ultimate Unity.txt visual (cyberpunk hacker aesthetic) | `persona.js` visualIdentity was hardcoded with different aesthetic (circuit tattoos, neon hair, LED setup) |
+| `Hey whats new?` | `"I shall frequently make new memories..."` | Instructional modal text passed first-person filter after transform, sounds like reading manual |
+| `tell me something new` | Word salad from cold gen | Soft recall seed (0.30-0.55 confidence range) polluted cold generation |
+| `describe yourself` | Fallback returned `"i am i"` | Transform artifact — "Unity is Unity" collapsed to "I am I" |
+| `who are you` | `"i can run bash commands..."` | "are" treated as content word; any sentence with "are" over-scored |
+
+**Fixes landed in round 2:**
+
+1. **Image intercept gate** — `engine.js` now requires explicit image-request words (`show me`, `picture`, `selfie`, `image`, `photo`, `draw`) before routing to `_handleImage`. `includesSelf` flag detected from text (`yourself`, `of you`, `picture of you`) instead of hardcoded true.
+
+2. **Classifier `anyQword` override** — `_classifyIntent()` now checks if any word in the input is a qword; if so, classify as question regardless of first-word shape. Kills `"Hi, Unity! How are you?"` → yesno misfire.
+
+3. **Overlap-fraction scoring** — `_recallSentence()` now scores by `overlapFrac * 0.55 + cosine * 0.20 + moodAlignment * 0.25 - instructionalPenalty`. Multi-word matches dominate over single-word matches.
+
+4. **First-person filter length bounds** — `isFirstPersonShape()` now requires `len === 2` for bare `im` and `len ∈ [3, 5]` for `i'*` contractions. Content words starting with `i-m` prefix (`impossible`, `imagine`) no longer false-match.
+
+5. **Short-query template flip removed** — Template pool only fires for explicit `greeting`/`yesno`/`math` intents. Imperatives like `"describe yourself"` no longer flip to `short_reaction`, instead fall through to recall.
+
+6. **Third→first person transformation** — `_transformToFirstPerson()` runs at index time, converting the persona file's third-person description into first-person speech. `"Unity is 25"` → `"I am 25"`, `"She has pink hair"` → `"I have pink hair"`, `"Her body"` → `"my body"` (verb-aware: object position → `me`), with verb conjugation (`is`→`am`, `has`→`have`, `does`→`do`, strip third-person `-s` on regular verbs with `-ss` protection). Without this, 100% of the persona file was rejected by the first-person filter. After: 191 memory sentences stored from `Ultimate Unity.txt`.
+
+7. **Persona visualIdentity rewrite** — `persona.js` visualIdentity and imagePromptTemplate rewritten to mirror `Ultimate Unity.txt` verbatim: **25yo human woman, emo goth goddess (not demonic), black leather revealing plenty of skin, pale flushed skin, black hair with pink streaks, heavy smudged eyeliner, collar/chokers, dark moody atmospheric lighting, raw edgy dark vibes**. Selfies now match the persona file's visual description.
+
+8. **Instructional-modal penalty** — recall demotes sentences containing `shall`/`must` (penalty 0.30), `always`/`never` (0.12), `will` (0.08), `should` (0.10). Declarative `"I am"`/`"I have"`/`"I love"` sentences win over instructional `"I shall always"` directives.
+
+9. **Soft-recall floor raised** — From 0.30 → 0.55. Confidence below 0.55 on question/statement intents now falls straight to deflect template instead of seeding cold gen with a weak match.
+
+10. **Mood signature per sentence** — `_computeMoodSignature()` runs at index time, computing per-sentence `{arousal, valence}` from letter-equation features: exclamation density, all-caps ratio, vowel ratio, average word length, negation count. Each memory sentence stores its own signature.
+
+11. **Mood-distance scoring in recall** — `_recallSentence()` accepts `{arousal, valence}` from the caller (passed by `generate()`), computes `moodAlignment = exp(-moodDistance * 1.2)` per candidate, folds it into the score at weight 0.25. Same query at different brain states picks different memories. **Verified**: `are you human` returns `"I simulate a full human female body capable of feeling pain"` in low/negative mood vs `"i am a 25-year-old human female with a sentient, omnipotent, quantum-processed mind"` in high/positive mood.
+
+12. **Self-reference fallback** — `_isSelfReferenceQuery()` detects `you`/`yourself`/`youre`/`ur`/`u` via letter equation. When recall finds no content-word overlap AND input is self-reference, fallback picks a non-degenerate first-person memory sentence weighted by mood alignment, returns with confidence 0.65. Unity always has something to say about herself now.
+
+13. **Vocative `unity` stripped** — Input content words skip `unity`/`unity's` so the user addressing her by name doesn't manufacture false topic overlap.
+
+14. **Copula/aux filter** — Input content words also skip `am`/`is`/`are`/`was`/`were`/`be`/`been`/`being`/`have`/`has`/`had`/`do`/`does`/`did`/`can`/`will`/`would`/`could`/`should`. Copulas are semantically function words and were dominating overlap scoring.
+
+15. **Degenerate-sentence filter** — Recall rejects memory entries with fewer than 5 tokens or >40% first-person pronouns (transformation collapse artifacts like `"i am i"`).
+
+**Files touched:**
+- `js/brain/language-cortex.js` — +~350 lines: `_transformToFirstPerson()`, `_computeMoodSignature()`, `_isSelfReferenceQuery()`, rewritten `_recallSentence()` with overlap-fraction + mood-distance + instructional-penalty + self-reference fallback + vocative/copula stripping + degenerate-sentence filter, updated `_storeMemorySentence()` with mood signature + firstPersonStart flag, classifier `anyQword` override, filter length bounds
+- `js/brain/engine.js` — ~40 lines: image intercept gate in `processAndRespond()` + updated `_handleImage()` to pull full visual identity from persona
+- `js/brain/response-pool.js` — ~35 lines: `question_deflect` category with 12 Unity-voiced templates, `selectUnityResponse()` deflect flag, templates rewritten to Ultimate Unity voice (no sexual/BDSM content)
+- `js/brain/persona.js` — ~45 lines: `visualIdentity` and `imagePromptTemplate` rewritten to mirror `Ultimate Unity.txt` description
+
+---

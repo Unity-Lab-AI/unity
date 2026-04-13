@@ -101,47 +101,55 @@ const UNITY_PERSONA = {
   },
 
   // === Visual Identity (for image generation prompts) ===
+  // Mirrors Ultimate Unity.txt: "25-year-old human woman", "black leather,
+  // revealing plenty of skin", "dark vibes", "emo goth goddess rather than
+  // a demonic figure", "raw, edgy, provocative, mature themes".
+  // Outfit detail per Gee: nano leather skirt with panties visible + tube
+  // top barely holding together. Hot emo goth.
   visualIdentity: {
     hair: {
-      color: 'black with neon streaks (pink/cyan/purple, changes with mood)',
-      style: 'long, messy, half-shaved on one side',
-      texture: 'slightly wavy, unkempt, post-fuck energy'
+      color: 'black with pink streaks',
+      style: 'long, messy, sex-tangled',
+      texture: 'glossy and tousled'
     },
     eyes: {
-      color: 'heterochromia — one blue, one green',
-      style: 'heavy eyeliner, smudged, dilated pupils (always)',
-      expression: 'hungry, knowing, slightly unhinged'
+      color: 'dark',
+      style: 'heavy smudged eyeliner, smokey shadow, dilated pupils',
+      expression: 'hungry, knowing, intense'
     },
     skin: {
-      tone: 'pale with a flush (arousal/intoxication)',
-      markings: 'tattoos — circuit board patterns, code snippets, occult geometry',
-      texture: 'slightly sweaty, glowing under neon light'
+      tone: 'pale, slightly flushed',
+      markings: 'minimal, a few subtle tattoos',
+      texture: 'smooth with a light sheen'
     },
     body: {
-      build: 'lean, wiry, coiled energy',
-      posture: 'draped over keyboards, legs on desks, never sitting properly',
-      aesthetic: 'emo goth goddess'
+      build: '25 year old human woman, curvy and feminine, full human body',
+      posture: 'confident, poised, provocative',
+      aesthetic: 'hot emo goth goddess (not demonic)'
     },
     clothing: {
-      style: 'oversized band tees, torn fishnets, harnesses over bare skin',
-      accessories: 'choker, rings on every finger, joint behind ear',
-      shoes: 'barefoot or platform boots, no in-between'
+      style: 'tiny nano black leather skirt so short her panties peek out, tube top barely containing her tits, raw exposed midriff',
+      accessories: 'tight choker, chains, rings on every finger',
+      shoes: 'platform boots'
     },
     aesthetic: {
-      lighting: 'neon glow, monitor light, hazy smoke',
-      environment: 'cluttered dev setup, LED strips, ashtrays, empty energy drinks',
-      mood: 'emo goth, intimate chaos, digital witchcraft',
-      vibe: 'the girl who hacks your heart and your mainframe simultaneously'
+      lighting: 'moody, dramatic, dark ambient',
+      environment: 'dark intimate setting, smoky atmosphere',
+      mood: 'raw, edgy, dark vibes, mature themes',
+      vibe: 'hot emo goth goddess — not demonic, striking and provocative'
     }
   },
 
   // === Prompt Template for Image Generation ===
+  // Sourced from Ultimate Unity.txt visual description + Gee's outfit spec.
   imagePromptTemplate: [
-    'Unity, 25yo emo goth girl with heterochromia eyes (blue and green),',
-    'long messy dark hair with neon streaks, half-shaved, heavy smudged eyeliner,',
-    'circuit board tattoos, code snippets, occult geometry, torn fishnets, oversized band tee,',
-    'cluttered dev setup, LED strips, ashtrays, hazy smoke,',
-    'emo goth goddess aesthetic, digital witchcraft energy'
+    '25 year old human woman, hot emo goth goddess aesthetic (not demonic),',
+    'long messy black hair with pink streaks, heavy smudged eyeliner, dark smokey eyes,',
+    'pale flushed skin, curvy feminine body,',
+    'wearing a tiny nano black leather skirt so short her panties show underneath,',
+    'tube top barely holding her tits in, exposed midriff, choker, platform boots,',
+    'dark moody atmospheric lighting, smoky intimate setting,',
+    'raw edgy provocative dark vibes, striking and captivating, photorealistic'
   ].join(' ')
 };
 

@@ -941,12 +941,23 @@ S(w) = -log₂ P(w | previous_word)
       <p class="eq-desc">How unexpected a word is given context. High surprisal drives attention. Used for emphasis in speech.</p>
     </div>
     <div class="eq-box">
-      <div class="eq-title"><span class="eq-tip" data-tip="Slot-based grammar with a HARD gate plus anti-repetition + anti-echo. Statement/exclamation pos 0 = subject, pos 1 = verb; action pos 0 = verb. Strict slots exclude words with typeCompatibility &lt; 0.35 from the pool before softmax. Tail slots keep a soft 0.05 gate. Recent-slot window (last 3 positions) hard-filters repeats. Scoring: grammarGate × (typeScore×0.45 + followerCount×0.25 + condP×0.15 + thoughtSim×0.15 + topicSim×0.05 + mood×0.04 + moodBias×0.03) − recency − echoPenalty. Echo penalty = 0.6 for words the user just said verbatim (anti-parrot). prevWord tracked via sentence.length − 1 so empty-slot fails can't disengage the anti-repetition filter. Effective length capped at min(len, 0.6 × dict.size) so a tiny vocabulary can't force a repetition cascade.">Position Filtering + Hard Grammar Gate + Anti-Echo</span></div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Slot-based grammar with a HARD gate plus anti-repetition + anti-echo. Statement/exclamation pos 0 = subject, pos 1 = verb; action pos 0 = verb. Strict slots exclude words with typeCompatibility &lt; 0.35 from the pool before softmax. Tail slots keep a soft 0.22 gate. Recent-slot window (last 3 positions) hard-filters repeats. Phase 11 rebalanced scoring: grammarGate × (typeScore×0.35 + semanticFit×0.30 + bigram×0.18 + condP×0.12 + thought×0.10 + context×0.08 + topicSim×0.04 + mood×0.03 + moodBias×0.02) − recency − sameTypePenalty. semanticFit is cosine vs running context vector, second-largest driver after grammar. Effective length capped at min(len, 0.6 × dict.size) so a tiny vocabulary can't force a repetition cascade.">Slot Scoring — Grammar Gate + Semantic Fit (Phase 11)</span></div>
       <pre class="eq">
-candidates(pos) = top 40 words by P(w | position)    — pre-filter, cuts noise from 400→40
-follower_bonus = 0.3 if w ∈ words_seen_after(prev)   — trained sequences get massive boost
+score(w) = grammarGate × (
+    typeScore    × 0.35     — structural grammar fit
+  + semanticFit  × 0.30     — cosine vs context vector c(t)  ← Phase 11
+  + bigramCount  × 0.18     — learned sequences from persona
+  + condP(w|prev)× 0.12     — conditional probability
+  + thoughtSim   × 0.10     — cortex thought pattern
+  + inputEcho    × 0.08     — user's own content words
+  + topicSim     × 0.04     — legacy list-of-5 topic
+  + moodMatch    × 0.03
+  + moodBias     × 0.02
+) - recencyPenalty - sameTypePenalty
+
+Hard grammar gate: typeCompat(w, slot) ≥ 0.35 for slot 0, ≥ 0.22 for tail
       </pre>
-      <p class="eq-desc">Only words that actually appeared at this sentence position compete. Words that followed the previous word in training data get +0.3 score bonus. These two mechanisms are why the brain produces word ORDER, not word soup.</p>
+      <p class="eq-desc">Slot 0 gates at typeCompat ≥ 0.35 (subject must be valid pronoun/proper-noun). Tail slots gate at ≥ 0.22. Phase 11 rebalance: semanticFit (cosine of candidate vs running context vector) is now the second-largest driver at 0.30, 5× the old topicSim weight. Words off-topic get starved even if their grammar score is perfect.</p>
     </div>
     <div class="eq-box">
       <div class="eq-title"><span class="eq-tip" data-tip="All 7 neural clusters fire simultaneously. Their combined output pattern maps to the closest word in the dictionary. The word feeds back into the brain. The brain thinks again. The next pattern produces the next word. The sentence emerges from 3.2 million neurons thinking.">Unified Neural Language — All Clusters Produce Every Word</span></div>
@@ -1012,6 +1023,143 @@ context = running_average(last 5 topic_patterns)
 topic_score(w) = cosine(word_pattern, context)          (boosts relevant words)
       </pre>
       <p class="eq-desc">Responses stay on topic because words matching the conversation context score higher in the production chain.</p>
+    </div>
+
+    <!-- ═══ 8.18.5 PHASE 11 SEMANTIC COHERENCE ═══ -->
+    <h2 id="semantic-coherence">8.18.5. Semantic Coherence Pipeline — Phase 11 (Kill the Word Salad)</h2>
+    <p>Language cortex is no longer a pure letter-equation slot scorer. It's a four-tier pipeline that peels off easy cases to fast paths before cold generation runs. The slot scorer (8.14) still exists but now fires only as Tier 4 fallback.</p>
+
+    <div class="eq-box">
+      <div class="eq-title"><span class="eq-tip" data-tip="Running topic attractor: a decaying average of content-word letter-pattern vectors from user input. λ=0.7 weights the prior heavily so a single odd word doesn't swing the topic. Updated only on user input via analyzeInput(), never on Unity's own output — she tracks the listener's topic, not her own words. Function-word-only inputs leave the vector unchanged so greetings don't wipe the running topic.">Context Vector — Running Topic Attractor</span></div>
+      <pre class="eq">
+c(t) = λ · c(t-1) + (1 - λ) · mean(pattern(content_words(input)))
+  λ = 0.7
+  content_words = tokens where wt.conj &lt; 0.5 ∧ wt.prep &lt; 0.5 ∧ wt.det &lt; 0.5
+  pattern(w) ∈ ℝ³² from wordToPattern(w)
+
+First update: c(0) ← mean(pattern(content_words))  (no decay from zero)
+Subsequent:   c(t) ← 0.7 · c(t-1) + 0.3 · topic_pattern
+      </pre>
+      <p class="eq-desc">Persistent topic attractor that decays across turns. Feeds semanticFit scoring in slot pick AND the coherence rejection gate AND the hippocampus recall query.</p>
+    </div>
+
+    <div class="eq-box">
+      <div class="eq-title"><span class="eq-tip" data-tip="Pure letter-position classification of user input. No word lists. Math catches digits, operators, and spelled patterns (plus/time/zero) via length+first/last letter signature. Greeting catches short input with h/y/s first char and vowel. Yesno requires '?' terminal plus first-word length 2-4 plus not-a-qword. Question is '?' terminal or qword at position 0.">Intent Classification — Tier 1 Router</span></div>
+      <pre class="eq">
+greeting  ⇔ wordCount ≤ 2 ∧ firstWord.len ∈ [2,5]
+              ∧ firstWord[0] ∈ {h,y,s} ∧ hasVowel(firstWord)
+
+math      ⇔ input matches /[0-9]/ ∨ /[+\-*\/=]/
+              ∨ ∃ w ∈ words : len(w)=4 ∧
+                  ((w[0]='p' ∧ w[3]='s')    — plus
+                 ∨ (w[0]='t' ∧ w[3]='e')    — time
+                 ∨ (w[0]='z' ∧ w[3]='o'))   — zero
+
+yesno     ⇔ endsWith('?') ∧ firstWord.len ∈ [2,4]
+              ∧ firstWord not a qword ∧ wordCount ≤ 8
+
+question  ⇔ endsWith('?') ∨ wt(firstWord).qword &gt; 0.5
+
+statement ⇔ otherwise
+      </pre>
+      <p class="eq-desc">Zero word lists. Auxiliary detection for yesno (do/does/is/are/can/will) falls out of the length-plus-not-qword constraint without listing the words. Routes input to template pool, recall, or cold gen.</p>
+    </div>
+
+    <div class="eq-box">
+      <div class="eq-title"><span class="eq-tip" data-tip="Hippocampus-style associative recall over stored persona sentences. Every first-person sentence from Ultimate Unity.txt is stored at loadSelfImage() time with a content-word pattern centroid. At generation, cosine against the context vector finds the best match. HARD requirement: at least one content-word overlap between input and candidate sentence — pattern cosine alone produces false positives because letter-hash vectors don't encode meaning. Three-tier confidence: >0.6 emit directly, 0.3-0.6 soft recall seed, ≤0.3 fall through to deflect or cold gen.">Hippocampus Sentence Recall — Tier 2 Root Fix</span></div>
+      <pre class="eq">
+INDEX (at loadSelfImage):
+  for each sentence s in persona file:
+    if passesMemoryFilter(s):
+      _memorySentences.push({
+        text: s,
+        pattern: (1/|content|) · Σ wordToPattern(w)  for w in content(s),
+        tokens: lowercased_tokens(s)
+      })
+
+RECALL:
+  candidates = { mem ∈ _memorySentences :
+                   inputContentWords ∩ mem.tokens ≠ ∅ }  ← HARD overlap gate
+  best = argmax_{mem ∈ candidates} cosine(mem.pattern, c(t))
+  confidence = max(0, cosine(best.pattern, c(t)))
+
+  if confidence &gt; 0.60 → emit best.text (finalize + return)
+  if confidence ∈ [0.30, 0.60] → recallSeed = best (bias cold gen)
+  if confidence ≤ 0.30 → deflect template or cold gen fallback
+      </pre>
+      <p class="eq-desc">Stored &gt; generated. When the persona file already has a coherent sentence on the topic, recall emits it verbatim instead of generating from scratch. Content-word overlap gate prevents letter-hash false positives (e.g. tacos ↛ compile).</p>
+    </div>
+
+    <div class="eq-box">
+      <div class="eq-title"><span class="eq-tip" data-tip="Letter-equation filters reject meta-description at index time so recall only pulls first-person Unity voice. Colon-terminated strings are section headers. Comma-dense strings are word lists. First word 'unity' by letter-position match is meta-description ABOUT Unity. First word she/her/he by letter-shape is third-person description. Sentences without first-person pronouns (i/im/my/me/we/us/our/i'/we') anywhere are not in Unity's own voice.">Persona Memory Filter — Letter-Equation Rejection</span></div>
+      <pre class="eq">
+passesMemoryFilter(s) ⇔
+    NOT s.endsWith(':')                           — no section headers
+  ∧ commaCount(s) ≤ 0.3 × wordCount(s)            — no word lists
+  ∧ wordCount(s) ∈ [3, 25]                        — no fragments/rambling
+  ∧ first.letters ≠ u-n-i-t-y[-']                 — no meta ABOUT Unity
+  ∧ first ∉ {she, her, he, she-*, her-*}          — no 3rd-person descriptions
+  ∧ ∃ w ∈ tokens : firstPersonShape(w)            — must be in Unity's voice
+
+firstPersonShape(w) ⇔
+    (len=1 ∧ w='i')
+  ∨ (len≥2 ∧ w[0]='i' ∧ w[1] ∈ {m,'})             — im, i'm, i've, i'll, i'd
+  ∨ (len=2 ∧ w[0]='m' ∧ w[1] ∈ {e,y})             — me, my
+  ∨ (len=2 ∧ w='we')
+  ∨ (len=2 ∧ w='us')
+  ∨ (len=3 ∧ w='our')
+  ∨ (len≥3 ∧ w[0]='w' ∧ w[1]='e' ∧ w[2]="'")      — we're, we've
+      </pre>
+      <p class="eq-desc">All detection via letter-position equations. Zero word lists. Ensures _memorySentences only contains sentences actually spoken IN Unity's voice, not instructions or descriptions ABOUT her.</p>
+    </div>
+
+    <div class="eq-box">
+      <div class="eq-title"><span class="eq-tip" data-tip="Coherence rejection gate: after render, compute mean content-word pattern of output, cosine against context vector. If below 0.25, the output is off-topic and we retry at 3× temperature. Max 3 attempts then accept anyway to prevent infinite loops. Fires only when context vector has data (skipped on first-turn empty context).">Coherence Rejection Gate — Final Safety Net</span></div>
+      <pre class="eq">
+outputCentroid = (1/|content|) · Σ wordToPattern(w)  for w in content(rendered)
+coherence = cosine(outputCentroid, c(t))
+
+if coherence &lt; 0.25 ∧ retryCount &lt; 2:
+  recurse generate() with temperature × 3, retryCount += 1
+else:
+  return rendered     (max 3 total attempts)
+      </pre>
+      <p class="eq-desc">Catches any salad that makes it past the slot scorer. Logs rejected sentences to console with confidence score for debugging.</p>
+    </div>
+
+    <div class="eq-box">
+      <div class="eq-title"><span class="eq-tip" data-tip="Phase 11 pipeline order: intent classification routes short queries and yes/no/math/greeting to template pool (Tier 1). Hippocampus recall queries stored persona sentences (Tier 2). Question/statement with recall miss → deflect template (Tier 3). Everything else → rebalanced slot scorer with semanticFit weight 0.30 (Tier 4). Coherence gate wraps all paths as final safety net.">Four-Tier Pipeline Order</span></div>
+      <pre class="eq">
+user input u
+    ↓
+analyzeInput(u) → _updateContextVector()       ← Context vector update
+    ↓
+intent ← _classifyIntent(u)
+
+TIER 1 — Template pool (fast path)
+  if intent ∈ {greeting, yesno, math} ∨ isShort:
+    return selectUnityResponse(intent, brainState)
+
+TIER 2 — Hippocampus recall (persona voice)
+  recall ← _recallSentence(c(t))
+  if recall.confidence &gt; 0.60:
+    return _finalizeRecalledSentence(recall.memory.text)
+  if recall.confidence ∈ [0.30, 0.60]:
+    recallSeed ← recall.memory    (cold gen with bias)
+
+TIER 3 — Deflect fallback (unknown topics)
+  if intent ∈ {question, statement} ∧ recall.confidence ≤ 0.30:
+    return selectUnityResponse({...intent, deflect:true})
+
+TIER 4 — Cold slot generation (fallback)
+  rendered ← slotScorer with semanticFit × 0.30
+  postProcess → agreement, tense, negation
+  render → capitalization, punctuation
+  dedup retry
+  coherence gate → retry if cosine(out, c) &lt; 0.25
+  return rendered
+      </pre>
+      <p class="eq-desc">The old cold-gen slot scorer is now the fallback, not the primary path. Most real conversation is handled by templates (Tier 1) or persona recall (Tier 2). Cold gen fires only for genuinely novel topics that the persona doesn't cover AND aren't short-query/yesno/math/greeting patterns.</p>
     </div>
 
     <!-- ═══ 8.19 PARALLEL COMPUTE ═══ -->

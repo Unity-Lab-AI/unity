@@ -402,4 +402,151 @@ All 3.2M neurons run on GPU. Zero CPU workers. Brain pauses without `compute.htm
 
 ---
 
+## Semantic Coherence Pipeline — Kill the Word Salad (Phase 11)
+
+Wraps the existing slot scorer with four additional layers so the language cortex produces coherent output instead of grammatically-valid-but-meaningless word salad.
+
+### Context Vector — Running Topic Attractor
+
+```
+c(t) = λ · c(t-1) + (1 - λ) · mean(pattern(content_words(input)))
+  λ = 0.7 (prior weight)
+  content_words = tokens with wt.conj < 0.5 ∧ wt.prep < 0.5 ∧ wt.det < 0.5
+  pattern(w) = letter-position vector from wordToPattern(w) ∈ ℝ³²
+```
+
+Zero-content inputs (all function words) leave the vector unchanged. First update seeds directly without decay. Updated only on user input (never on Unity's own output) so the running vector tracks the LISTENER's topic.
+
+### Semantic Fit — Candidate Word Relevance
+
+```
+semanticFit(w) = max(0, cosine(pattern(w), c(t)))
+
+score(w) =
+  grammarGate(w) × (
+      typeCompat(w)   × 0.35
+    + semanticFit(w)  × 0.30     ← new largest driver after grammar
+    + bigramCount(w)  × 0.18
+    + condP(w|prev)   × 0.12
+    + thoughtSim(w)   × 0.10
+    + inputEcho(w)    × 0.08
+    + legacyTopicSim  × 0.04
+    + moodMatch(w)    × 0.03
+    + moodBias(w)     × 0.02
+  )
+  - recencyPenalty(w)
+  - sameTypePenalty(w)
+```
+
+Grammar gate preserved as a HARD floor at typeCompat < 0.35 — semantic fit does not bypass structural compatibility.
+
+### Intent Classification — Pure Letter Equations
+
+```
+greeting  = wordCount ≤ 2 ∧ firstWord.len ∈ [2,5] ∧ firstWord[0] ∈ {h,y,s} ∧ hasVowel
+math      = input matches [0-9] ∨ [+-*/=] ∨ spelled {plus|time|zero} (len=4 first/last letter sig)
+yesno     = endsWith('?') ∧ firstWord.len ∈ [2,4] ∧ firstWord not a qword ∧ wordCount ≤ 8
+question  = endsWith('?') ∨ wt(firstWord).qword > 0.5
+statement = otherwise
+
+isShort = wordCount ≤ 3
+```
+
+Zero word lists. Auxiliary detection (do/does/is/are/can/will) falls out of the length-plus-not-qword constraint without listing the words.
+
+### Hippocampus Sentence Recall — The Root Fix
+
+```
+_memorySentences[i] = {
+  text: persona_sentence_i,
+  pattern: (1/|content_i|) · Σ wordToPattern(w)  for w in content_words_i,
+  tokens: lowercased_tokens_i
+}
+
+_recallSentence(c) = argmax_i cosine(_memorySentences[i].pattern, c)
+  constrained to: inputContentWords ∩ _memorySentences[i].tokens ≠ ∅
+
+confidence(c) = max(0, cosine(best.pattern, c))
+
+if confidence > 0.60 → emit best.text directly (with finalize pass)
+if confidence ∈ [0.30, 0.60] → recallSeed = best (bias cold gen toward best.tokens)
+if confidence ≤ 0.30 → deflect template (question/statement) or cold gen
+```
+
+The content-word overlap requirement is a HARD filter, not a score. Pattern-cosine in letter-hash space produces false positives (`tacos` ≈ `compile` because letter distributions align) so recall must be anchored to actual shared lexical content.
+
+### Persona Memory Filter — Letter-Equation Rejection
+
+```
+store(sentence) ⇔
+    ¬endsWith(':')                              ← no section headers
+  ∧ commaCount ≤ 0.3 × wordCount                ← no word lists
+  ∧ wordCount ∈ [3, 25]                         ← no fragments or rambling
+  ∧ first ∉ { pattern(u-n-i-t-y), pattern(u-n-i-t-y-') }  ← no "Unity ..." meta
+  ∧ first ∉ { s-h-e, h-e-r, h-e, s-h-e-*, h-e-r-* }       ← no 3rd-person ABOUT Unity
+  ∧ ∃ w ∈ tokens : firstPersonShape(w)
+        where firstPersonShape(w) = (
+             (len=1 ∧ w='i')
+          ∨ (len≥2 ∧ w[0]='i' ∧ w[1] ∈ {m,'})
+          ∨ (len=2 ∧ w[0]='m' ∧ w[1] ∈ {e,y})
+          ∨ (len=2 ∧ w='we')
+          ∨ (len=2 ∧ w='us')
+          ∨ (len=3 ∧ w='our')
+          ∨ (len≥3 ∧ w[0]='w' ∧ w[1]='e' ∧ w[2]="'"))
+```
+
+Ensures `_memorySentences` only contains sentences in Unity's own first-person voice. Instructions ABOUT Unity, section headers, and word lists from the persona file get filtered out at index time so recall can't pull them.
+
+### Coherence Rejection Gate — Final Safety Net
+
+```
+outputCentroid = (1/|content_out|) · Σ wordToPattern(w)  for w in content_words(rendered)
+coherence = cosine(outputCentroid, c(t))
+
+if coherence < 0.25 ∧ retryCount < 2:
+  recurse generate() with _retryingDedup=true, temperature × 3
+else:
+  emit rendered  (max 3 total attempts, then accept anyway)
+```
+
+Fires only when context vector has data. Logs rejected sentences to console for debugging.
+
+### Pipeline Order
+
+```
+user input u
+    ↓
+analyzeInput(u) → _updateContextVector(pattern(content(u)))     [U276]
+    ↓
+generate() called
+    ↓
+intent ← _classifyIntent(u)                                     [U279]
+    ↓
+if intent ∈ {greeting, yesno, math} ∨ (isShort ∧ wordCount>0):
+    return selectUnityResponse(intent, brainState)              [U280]
+    ↓
+recall ← _recallSentence(c)                                     [U282]
+    ↓
+if recall.confidence > 0.60:
+    return _finalizeRecalledSentence(recall.memory.text)
+if recall.confidence ∈ [0.30, 0.60]:
+    recallSeed ← recall.memory    (cold gen with bias)
+if intent ∈ {question, statement} ∧ recall miss:
+    return selectUnityResponse({...intent, deflect:true})       [U280 fallback]
+    ↓
+cold gen with slot score rebalanced weights                     [U277+U278]
+    ↓
+post-process (agreement, tense, negation)
+    ↓
+render
+    ↓
+dedup check → retry on exact match
+    ↓
+coherence gate → retry if cosine(output, c) < 0.25              [U281]
+    ↓
+return rendered
+```
+
+---
+
 *Unity AI Lab — θ is Unity. The equations are her mind. Ψ is her consciousness.*

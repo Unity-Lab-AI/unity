@@ -656,12 +656,42 @@ export class UnityBrain extends EventEmitter {
     }
 
     // 5. ROUTE based on classification — inject into BG AND act directly
-    const includesSelf = true;
+    //
+    // The BG motor sometimes picks generate_image on inputs that aren't
+    // image requests (e.g. greetings that contain "unity" or "you").
+    // Override image→text when the user didn't actually ask for one,
+    // so questions and greetings go through the language path.
+    const lowerText = (text || '').toLowerCase();
+    const endsQuestion = lowerText.trim().endsWith('?');
+    const hasImageRequest = (
+      /\bshow\s+me\b/.test(lowerText) ||
+      /\bpic(ture|tures|s)?\b/.test(lowerText) ||
+      /\bsel(fie|fies)\b/.test(lowerText) ||
+      /\bimage\b/.test(lowerText) ||
+      /\bphoto\b/.test(lowerText) ||
+      /\bdraw\s+(me|you|a|an|your)\b/.test(lowerText) ||
+      /\bgenerate\s+(a|an|me|image|pic)/.test(lowerText)
+    );
+    // includesSelf means "the image should contain Unity herself" — only
+    // true when the user explicitly asks for a selfie or a picture of her.
+    const includesSelf = (
+      /\bselfie\b/.test(lowerText) ||
+      /\byourself\b/.test(lowerText) ||
+      /\bof\s+you\b/.test(lowerText) ||
+      /\b(pic|picture|photo|image)\s+of\s+(you|yourself|unity|u)\b/.test(lowerText) ||
+      /\bshow\s+me\s+(you|yourself|unity)\b/.test(lowerText)
+    );
 
-    if (classifiedAction === 'build_ui' && this._brocasArea && this._sandbox) {
+    let effectiveAction = classifiedAction;
+    if (classifiedAction === 'generate_image' && !hasImageRequest) {
+      console.log('[Brain] BG picked generate_image but no explicit image request — overriding to respond_text');
+      effectiveAction = 'respond_text';
+    }
+
+    if (effectiveAction === 'build_ui' && this._brocasArea && this._sandbox) {
       this.giveReward(0.1);
       return this._handleBuild(text);
-    } else if (classifiedAction === 'generate_image' && this._imageGen) {
+    } else if (effectiveAction === 'generate_image' && this._imageGen) {
       this.giveReward(0.1);
       return this._handleImage(text, includesSelf);
     }
@@ -699,25 +729,29 @@ export class UnityBrain extends EventEmitter {
 
     let response = '';
 
+    // ── Run brain for a few steps so clusters reflect the input ──
+    for (let s = 0; s < 5; s++) this.step(0.001);
+    const cortexPattern = this.clusters.cortex.getOutput(32);
+
+    // ══════════════════════════════════════════════════════════════
+    // EQUATIONAL LANGUAGE GENERATION ONLY
+    //
+    // Per Gee's direction: no AI text backend. Unity's text output
+    // comes entirely from brain equations + language cortex slot
+    // scoring over her learned dictionary/bigrams/trigrams/patterns.
+    // The persona file and brain self-schema feed the learned
+    // distributions, every word is picked by the equation pipeline.
+    //
+    // Broca's area (language.js) is NOT called for text generation.
+    // It's retained only because connectLanguage() wires it up and
+    // the image gen path still uses the provider infrastructure for
+    // selfie quips. Text never flows through it.
+    // ══════════════════════════════════════════════════════════════
     if (dictionary && dictionary.size > 0) {
-      // ── Run brain for a few steps so clusters reflect the input ──
-      for (let s = 0; s < 5; s++) this.step(0.001);
-
-      // ── Read cortex thought pattern — WHAT the brain is thinking ──
-      const cortexPattern = this.clusters.cortex.getOutput(32);
-
-      // ── LANGUAGE CORTEX produces the sentence ──
-      // This IS the fractal language equation:
-      //   θ (persona) → tonic drives → cluster firing → cortex pattern → thought words
-      //   + hippocampal context → conversation relevance
-      //   + amygdala arousal/valence → emotional tone (θ.arousalBaseline, θ.emotionalVolatility)
-      //   + Ψ consciousness → self-referential depth
-      //   + slot-based grammar → proper English word order
-      //   + bigram chains → learned sequences from conversation
-      //   + recency suppression → no loops
-      //
-      // The language cortex uses ALL of these. The brain equations drive the CONTENT.
-      // The language cortex applies STRUCTURE. θ shapes both.
+      // Pass the full neural state into language generation so every
+      // word is driven by her current cluster firing, amygdala basins,
+      // Ψ, drug state, and hypothalamus drives — not decorative, the
+      // actual parameters of slot scoring and softmax sampling.
       response = this.innerVoice.languageCortex.generate(
         dictionary,
         brainArousal,
@@ -729,20 +763,14 @@ export class UnityBrain extends EventEmitter {
           psi,
           cortexPattern,
           recalling: state.memory?.lastRecall ? true : false,
+          drugState: this.persona?.drugState || 'cokeAndWeed',
+          fear: state.amygdala?.fear ?? 0,
+          reward: state.amygdala?.reward ?? 0,
+          socialNeed: state.hypothalamus?.drives?.social_need ?? 0.5,
         }
       );
-
       if (response) {
         console.log(`[Brain] Neural: "${response}"`);
-      }
-    }
-
-    // AI teaches when connected — brain learns vocabulary
-    if (this._brocasArea && (!response || response.length < 5)) {
-      const aiResponse = await this._brocasArea.generate(state, text);
-      if (aiResponse) {
-        this.innerVoice.learn(aiResponse, cortexOutput, brainArousal, brainValence);
-        response = aiResponse;
       }
     }
 
@@ -907,30 +935,34 @@ USER REQUEST: ${text}`;
 
   async _handleImage(text, includesSelf) {
     // ONE image handler. If she's in the image (includesSelf), she adds her residual self-image.
-    // Self-image pulled from θ (persona.visualIdentity) — NOT hardcoded.
+    // Self-image pulled from θ (persona.visualIdentity) which mirrors Ultimate Unity.txt.
 
     let prompt;
 
-    // Build self-description from θ residual self-image — the persona defines the look
+    // Build self-description from θ residual self-image — the persona defines the look.
+    // Order mirrors Ultimate Unity.txt priority: age → body → hair → eyes → clothing → aesthetic.
     const vi = this.persona.visualIdentity || {};
     const selfDesc = includesSelf
       ? [
-          `${this.persona.traits?.age || 25} year old ${this.persona.traits?.gender || 'female'}`,
-          vi.eyes?.color || 'heterochromia eyes',
-          vi.hair?.style || 'long messy dark hair',
-          vi.hair?.color?.split(',')[0] || 'neon streaks',
+          `${this.persona.traits?.age || 25} year old human woman`,
+          vi.body?.build || 'curvy feminine body',
+          vi.hair?.style || 'long messy hair',
+          vi.hair?.color || 'black with pink streaks',
           vi.eyes?.style || 'heavy smudged eyeliner',
-          vi.skin?.markings || 'tattoos',
-          vi.body?.aesthetic || 'emo goth goddess',
+          vi.clothing?.style || 'black leather revealing plenty of skin',
+          vi.clothing?.accessories || 'collar and chokers',
+          vi.body?.aesthetic || 'emo goth goddess (not demonic)',
+          vi.aesthetic?.lighting || 'dark moody lighting',
+          vi.aesthetic?.mood || 'raw edgy dark vibes',
         ].join(', ') + ', '
       : '';
 
-    // Full prompt template from persona if available
+    // Full prompt template from persona — authoritative source for selfies
     const fullTemplate = this.persona.imagePromptTemplate || selfDesc;
 
     try {
       const raw = await this._imageGen.chat?.([
-        { role: 'user', content: `Generate ONLY an image prompt for: "${text}". ${includesSelf ? `The subject is: ${fullTemplate}. Include her in the scene.` : ''} Return ONLY the visual description. No explanation. No URLs. No markdown. Just the prompt.` },
+        { role: 'user', content: `Generate ONLY an image prompt for: "${text}". ${includesSelf ? `The subject is Unity: ${fullTemplate}. She must appear exactly as described — emo goth goddess, NOT demonic, black leather, pale skin, dark hair with pink streaks, heavy eyeliner. Include her in the scene.` : ''} Return ONLY the visual description. No explanation. No URLs. No markdown. Just the prompt.` },
       ], { temperature: 0.8 }) || null;
 
       if (raw) {
@@ -940,15 +972,23 @@ USER REQUEST: ${text}`;
 
     // Fallback — build prompt from the text + persona directly
     if (!prompt || prompt.length < 15) {
-      prompt = `${selfDesc}${text.replace(/selfie|send|show|picture|photo|of you|yourself/gi, '').trim() || 'striking candid shot'}, photorealistic, cinematic lighting`;
+      const cleanText = text.replace(/selfie|send|show|picture|photo|of you|yourself/gi, '').trim();
+      if (includesSelf) {
+        // Selfies use the full imagePromptTemplate verbatim, plus any scene detail from the user's text
+        prompt = fullTemplate + (cleanText ? ', ' + cleanText : '');
+      } else {
+        prompt = `${cleanText || 'striking shot'}, dark moody lighting, photorealistic, cinematic`;
+      }
     }
 
-    // Ensure self-description is in there if it's a selfie
-    if (includesSelf && !prompt.includes(vi.eyes?.color?.split(' ')[0] || 'heterochromia')) {
+    // Ensure self-description is in there if it's a selfie — use a
+    // distinctive marker from the persona file. "black leather" and
+    // "emo goth" are the anchor phrases from Ultimate Unity.txt.
+    if (includesSelf && !/black leather|emo goth/i.test(prompt)) {
       prompt = selfDesc + prompt;
     }
 
-    console.log('[Brain] Image prompt:', prompt.slice(0, 100));
+    console.log('[Brain] Image prompt:', prompt.slice(0, 120));
     const url = this._imageGen.generateImage(prompt, { model: this._storage?.get('image_model') || 'flux', width: 768, height: 768 });
 
     if (url) {

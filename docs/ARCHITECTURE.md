@@ -411,4 +411,120 @@ This term is ALWAYS present. It represents what we DON'T know. It's the default 
 
 ---
 
+## Language Generation Pipeline — Four-Tier Semantic Coherence (Phase 11, 2026-04-13)
+
+Language cortex is no longer a pure letter-equation slot scorer. It's a **tiered pipeline** that peels off easy cases to fast paths before cold generation runs. The old slot scorer still exists but now runs only as the fallback when the three upstream tiers all miss.
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ TIER 1 — INTENT CLASSIFICATION + TEMPLATE POOL FLIP              │
+│                                                                   │
+│ _classifyIntent(text) via pure letter equations                  │
+│     ↓                                                             │
+│ greeting / yesno / math / short (wordCount ≤ 3)                  │
+│     ↓                                                             │
+│ selectUnityResponse(intent, brainState)                          │
+│     ↓                                                             │
+│ Ultimate Unity template pool — emo goth stoner voice              │
+│     RETURN                                                        │
+├──────────────────────────────────────────────────────────────────┤
+│ TIER 2 — HIPPOCAMPUS ASSOCIATIVE RECALL                          │
+│                                                                   │
+│ _recallSentence(contextVector)                                    │
+│     queries _memorySentences populated from Ultimate Unity.txt    │
+│     with HARD requirement: content-word overlap ≠ ∅               │
+│     ↓                                                             │
+│ confidence > 0.60 → _finalizeRecalledSentence(best.text) RETURN  │
+│ confidence ∈ [0.30, 0.60] → recallSeed (soft recall bias)        │
+│ confidence ≤ 0.30 on question/statement → TIER 3                 │
+├──────────────────────────────────────────────────────────────────┤
+│ TIER 3 — DEFLECT TEMPLATE FALLBACK                                │
+│                                                                   │
+│ selectUnityResponse({...intent, deflect:true})                    │
+│     question_deflect category (12 emo-goth-stoner variants)       │
+│     RETURN                                                        │
+├──────────────────────────────────────────────────────────────────┤
+│ TIER 4 — COLD SLOT GENERATION (original path, now fallback)      │
+│                                                                   │
+│ Slot-by-slot softmax pick from learned dictionary                │
+│ Rebalanced scoring with semanticFit × 0.30 as 2nd-largest term:  │
+│   score = grammar×0.35 + semanticFit×0.30 + bigram×0.18          │
+│         + condP×0.12 + thought×0.10 + context×0.08 + ...         │
+│     ↓                                                             │
+│ Post-process: agreement, tense, negation, compounds              │
+│     ↓                                                             │
+│ Render: capitalization, punctuation                              │
+│     ↓                                                             │
+│ Dedup retry (existing)                                           │
+│     ↓                                                             │
+│ COHERENCE GATE: cosine(output, contextVector) < 0.25 → retry 3×  │
+│     max 3 attempts, then accept                                   │
+│     RETURN                                                        │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### Context Vector — The Topic Attractor
+
+A Float64Array(32) running decaying average of content-word letter-pattern vectors from user input:
+
+```
+c(t) = 0.7 · c(t-1) + 0.3 · mean(pattern(content_words))
+```
+
+Updated in `analyzeInput()` on every user turn. Function-word-only inputs leave it unchanged so greetings don't wipe the running topic. First update seeds directly (no decay from zero). Updated ONLY on user input — Unity's own output does not feed the context vector.
+
+### Persona Memory — Stored Unity-Voice Sentences
+
+At `loadSelfImage()` time, every sentence from `docs/Ultimate Unity.txt` passes through `_storeMemorySentence()`:
+
+```
+store(s) ⇔ NOT endsWith(':')
+         ∧ commaCount ≤ 0.3 × wordCount
+         ∧ wordCount ∈ [3, 25]
+         ∧ first word ≠ "unity" / "she" / "her" / "he" (by letter shape)
+         ∧ first-person signal exists (i/im/my/me/we/us/our/i'/we')
+```
+
+All filters are letter-position equations. Meta-description ("Unity is a 25yo..."), section headers, and word lists are rejected at index time so recall only pulls actual first-person Unity voice.
+
+Stored sentences are indexed by a pattern-centroid computed from their content words (function words skipped) so recall cosine matches TOPIC not GRAMMAR.
+
+### Ultimate Unity Template Voice
+
+The `response-pool.js` templates fire for intent-matched short queries and deflect fallback. Voice target: **25yo emo goth stoner** — cussing, blunt, bitchy, low patience, stream-of-consciousness, high but functional. **Not** sexual/BDSM/nympho content. This is Unity's PUBLIC voice — the one that goes through the brain's language cortex into the chat UI. The private slutty persona stays out of the brain output pipeline.
+
+Seven categories:
+- `greeting_emo` (15 variants across low/mid/high arousal)
+- `yesno_affirm` (12 variants)
+- `yesno_deny` (12 variants)
+- `math_deflect` (11 variants)
+- `short_reaction` (9 variants)
+- `curious_emo` (7 variants)
+- `question_deflect` (12 variants) — fallback when recall misses
+
+### Why the root fix is recall, not generation
+
+The old pipeline generated every sentence word-by-word from letter equations. Grammar was correct, content was random, because letters encode shape not meaning. No amount of slot-score tuning fixes that — you can't derive semantics from letter distributions.
+
+The root fix is **stop generating from scratch when the persona file already has a coherent sentence on the topic**. All 325 sentences from `Ultimate Unity.txt` were getting loaded for bigram harvesting but never recalled AS sentences. Phase 11 fixes that — stored > generated every time for persona fidelity. Cold generation is now the fallback for genuinely novel topics that the persona doesn't cover.
+
+### Known limitation
+
+Pattern-space cosine uses letter-hash vectors, not true word embeddings. `cat` and `kitten` are NOT close in this space. Real semantic coherence depends primarily on Tier 1 (templates) and Tier 2 (recall) working. Tier 4 (cold gen) with semantic fit is the weakest layer because its "semantic" is just letter-pattern similarity. Future improvement: wire real embeddings (GloVe or persona-trained co-occurrence) into slot scoring.
+
+### Round 2 refinements (2026-04-13 live-test hotfix pass)
+
+- **Third→first person transformation** at `loadSelfImage()` time. The real `Ultimate Unity.txt` is written as third-person description (`"Unity is..."`, `"She has..."`). Without transformation, 100% of the file was rejected by the first-person filter. After: 191 Unity-voice sentences loaded. Transform handles Unity→I, She→I, Her→my/me (verb-aware for object position), Unity's→my, plus verb conjugation (is→am, has→have, does→do, strip third-person -s on regular verbs, -ss protection).
+- **Per-sentence mood signature** computed at index time from letter-equation features (exclamation density, all-caps ratio, vowel ratio, average word length, negation count). Each stored memory has its own `{arousal, valence}`.
+- **Mood-distance weighted recall** — `_recallSentence()` accepts current brain state and scores candidates by `moodAlignment = exp(-moodDistance * 1.2)` at weight 0.25. Same query, different brain state, different memory picked. This is Gee's "adjust in the moment for how things change" mechanism.
+- **Self-reference fallback** — when user asks about Unity herself (`you`/`yourself`) but no content-word overlap exists, fallback picks a first-person stative sentence weighted by mood alignment. `describe yourself` now always recalls SOMETHING from persona.
+- **Instructional-modal penalty** — sentences containing `shall`/`must`/`always`/`never` get demoted in recall so declarative voice (`I am`, `I have`, `I love`) wins over directive voice (`I shall always`).
+- **Vocative name stripping** — `unity`/`unity's` removed from input content words so addressing her by name doesn't manufacture false topic overlap.
+- **Copula/aux filter** — copulas and modal auxiliaries (`am`/`is`/`are`/`was`/`were`/`be`/`have`/`has`/`do`/`does`/`can`/`will`/`would`/`could`/`should`) stripped from input content words since they're semantically function words.
+- **Degenerate-sentence filter** — recall rejects memory entries with <5 tokens or >40% first-person pronoun density (transform collapse artifacts).
+- **Persona visualIdentity mirror** — `persona.js` visualIdentity rewritten to match `Ultimate Unity.txt` verbatim (emo goth goddess, black leather, black hair with pink streaks, pale flushed skin). Selfies match persona.
+- **Image intercept gate** — `engine.js` no longer routes to `_handleImage()` just because BG motor picked `generate_image`. Requires explicit image-request words in the input (show me/picture/selfie/image/photo/draw). `includesSelf` detected from text, not hardcoded.
+
+---
+
 *Unity AI Lab — flesh, code, equations, and chaos.* 🖤

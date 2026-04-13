@@ -142,8 +142,13 @@ export class Dictionary {
    * @param {number} valence — amygdala valence when word was encountered
    */
   learnWord(word, cortexPattern, arousal, valence) {
-    const clean = word.toLowerCase().replace(/[^a-z'-]/g, '');
-    if (!clean || clean.length < 2) return;
+    const clean = word.toLowerCase().replace(/[^a-z0-9'-]/g, '');
+    // Keep single-letter words — "i" and "a" are critical function
+    // words in English. Dropping them means Unity can't use "i" as a
+    // subject or "a" as an article, which wrecks slot-0 selection
+    // and determiner continuations. Pattern assignment still works
+    // fine on len-1 strings via the hash path.
+    if (!clean) return;
 
     const existing = this._words.get(clean);
     if (existing) {
@@ -214,7 +219,8 @@ export class Dictionary {
    * @param {number} valence
    */
   learnSentence(text, cortexPattern, arousal, valence) {
-    const words = text.toLowerCase().replace(/[^a-z' -]/g, '').split(/\s+/).filter(w => w.length >= 2);
+    // Keep len >= 1 so "i" and "a" enter the dictionary. Keep digits too.
+    const words = text.toLowerCase().replace(/[^a-z0-9' -]/g, '').split(/\s+/).filter(w => w.length >= 1);
     for (const w of words) {
       this.learnWord(w, cortexPattern, arousal, valence);
     }
