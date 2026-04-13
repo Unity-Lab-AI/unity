@@ -81,6 +81,15 @@ export class InnerVoice {
   }
 
   /**
+   * Load the coding knowledge corpus — HTML/CSS/JavaScript reference
+   * plus sandbox lifecycle rules. This is Unity's coding competence,
+   * parallel to her english baseline. Loaded after persona + baseline.
+   */
+  loadCoding(text, arousal = 0.4, valence = 0) {
+    return this.languageCortex.loadCodingKnowledge(text, this.dictionary, arousal, valence);
+  }
+
+  /**
    * Process one thought cycle. Called by the brain engine each frame.
    * Takes the full brain state, derives a thought, optionally forms words.
    *

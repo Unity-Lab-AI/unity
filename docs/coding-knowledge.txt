@@ -1,0 +1,606 @@
+# Coding Knowledge — HTML / CSS / JavaScript Reference Corpus
+#
+# This file is Unity's coding competence layer. Not her personality
+# (that's Ultimate Unity.txt) and not her casual english (that's
+# english-baseline.txt). This is how she knows HTML, CSS, JavaScript,
+# and her own sandbox API. Loaded into the dictionary and bigrams so
+# the build_ui motor action has the vocabulary to compose code.
+#
+# Pattern-based, not full app examples. Unity combines primitives
+# at build time based on what the user asks for.
+
+# ═══════════════════════════════════════════════════════════════
+# HTML — STRUCTURE AND SEMANTICS
+# ═══════════════════════════════════════════════════════════════
+
+HTML uses elements to structure content.
+A div is a generic block container.
+# A span is a generic inline container.
+# The p element is a paragraph of text.
+# The h1 through h6 elements are heading levels.
+# The a element is a hyperlink anchor.
+# The img element displays an image with src and alt attributes.
+# The button element is a clickable button.
+# The input element accepts user text entry.
+# The form element groups inputs for submission.
+# The label element ties text to a specific input.
+# The select element creates a dropdown menu.
+# The option element is a choice inside a select.
+# The textarea element accepts multi-line text.
+# The table element holds tabular data.
+# The tr element is a table row.
+# The td element is a table cell.
+# The th element is a table header cell.
+# The ul element is an unordered list.
+# The ol element is an ordered list.
+# The li element is a list item.
+# The nav element marks navigation regions.
+# The header element holds the top of a page or section.
+# The footer element holds the bottom of a page or section.
+# The section element is a thematic grouping of content.
+# The article element is self-contained content.
+# The aside element is tangential content.
+# The main element is the primary document content.
+# The canvas element draws graphics via JavaScript.
+# The video element embeds video.
+# The audio element embeds audio.
+# The iframe element embeds another document.
+
+# Every input should have a name and a type.
+# Type text accepts any text string.
+# Type number accepts numeric input.
+# Type checkbox is a true or false toggle.
+# Type radio is a single choice from a group.
+# Type submit triggers form submission.
+# Type password masks the input characters.
+# Type email validates email format.
+# Type file opens a file picker.
+# Type range is a slider between min and max.
+# Type color opens a color picker.
+# Type date opens a date picker.
+
+# Buttons without explicit type default to submit inside a form.
+# Add type button to make a standalone action button.
+# Use disabled attribute to prevent clicks temporarily.
+# Use required attribute to enforce input presence.
+# Use placeholder to show hint text before input.
+# Use value to set the initial or current value.
+# Use id to target an element from JavaScript or CSS.
+# Use class to group elements for styling.
+# Use data attributes to attach custom metadata.
+
+# Headings establish document hierarchy.
+# Use h1 for the main title, h2 for major sections.
+# Use h3 through h6 for nested subsections.
+# Do not skip heading levels for structure.
+
+# Use semantic elements for accessibility.
+# A screen reader announces nav regions differently than divs.
+# Use alt text on images to describe them.
+# Use label elements for every form input.
+# Use fieldset and legend to group related inputs.
+# Use aria attributes for dynamic interactive elements.
+
+# ═══════════════════════════════════════════════════════════════
+# CSS — STYLING AND LAYOUT
+# ═══════════════════════════════════════════════════════════════
+
+# CSS rules target elements via selectors and apply properties.
+# A selector can match by tag, class, or id.
+# Use a dot prefix for class selectors.
+# Use a hash prefix for id selectors.
+# Combine selectors with space for descendant matching.
+# Combine with comma for grouping multiple selectors.
+
+# The display property controls element rendering.
+# Display block makes an element take full width.
+# Display inline makes it flow with text.
+# Display flex enables flexible one dimensional layout.
+# Display grid enables two dimensional grid layout.
+# Display none hides the element completely.
+# Display inline-block mixes inline flow with block sizing.
+
+# Flexbox aligns items in rows or columns.
+# Use flex-direction row for horizontal layout.
+# Use flex-direction column for vertical stacking.
+# Use justify-content to align along the main axis.
+# Use align-items to align along the cross axis.
+# Use gap to space children evenly.
+# Use flex-wrap wrap to let items wrap on overflow.
+# Use flex-grow to fill available space.
+# Use flex-basis to set the starting size.
+
+# Grid organizes items in a two-dimensional matrix.
+# Use grid-template-columns to define column tracks.
+# Use grid-template-rows to define row tracks.
+# Use grid-gap or gap to space between cells.
+# Use grid-column to span or place items.
+# Use grid-row to position items vertically.
+# Use auto-fit or auto-fill with minmax for responsive grids.
+
+# The position property sets how an element is placed.
+# Position static is the default flow.
+# Position relative offsets from its normal position.
+# Position absolute removes it from flow, relative to nearest positioned ancestor.
+# Position fixed anchors to the viewport.
+# Position sticky combines relative and fixed behavior.
+# Use top, right, bottom, left to offset positioned elements.
+# Use z-index to control stacking order.
+
+# Box model governs element sizing.
+# Width and height set the content area.
+# Padding adds space inside the border.
+# Border wraps around padding.
+# Margin adds space outside the border.
+# Box-sizing border-box makes width include padding and border.
+
+# Typography controls text appearance.
+# Font-family sets the typeface.
+# Font-size sets the character size.
+# Font-weight controls boldness from 100 to 900.
+# Line-height controls vertical spacing between lines.
+# Letter-spacing adjusts character spacing.
+# Text-align left, center, right, or justify.
+# Text-decoration underline, none, or line-through.
+# Color sets the text color.
+# Font-style italic or normal.
+
+# Colors use hex, rgb, hsl, or named values.
+# Hex colors use six hexadecimal digits.
+# Rgb uses three values from 0 to 255.
+# Hsl uses hue, saturation, and lightness.
+# Use rgba or hsla for alpha transparency.
+
+# Backgrounds style the area behind content.
+# Background-color fills with a solid color.
+# Background-image loads a url.
+# Background-size cover, contain, or specific dimensions.
+# Background-position top, center, bottom, left, right.
+# Background-repeat controls tiling.
+
+# Borders wrap elements.
+# Border-width sets the thickness.
+# Border-style solid, dashed, dotted, double.
+# Border-color sets the color.
+# Border shorthand combines width style and color.
+# Border-radius rounds corners.
+
+# Shadows add depth.
+# Box-shadow takes offset x, offset y, blur, spread, and color.
+# Text-shadow adds shadow to text characters.
+# Use inset keyword for interior shadows.
+
+# Transforms modify rendering without affecting layout.
+# Transform translate moves an element.
+# Transform rotate spins an element.
+# Transform scale resizes an element.
+# Transform skew slants an element.
+# Combine with space-separated function list.
+
+# Transitions animate property changes smoothly.
+# Transition property duration timing-function delay.
+# Use all to transition every animatable property.
+# Timing functions ease, linear, ease-in, ease-out, cubic-bezier.
+
+# Animations define keyframe sequences.
+# Use the keyframes at-rule to define a sequence.
+# Apply with animation name, duration, timing, delay, iteration-count.
+# Infinite repeats forever.
+# Use animation-fill-mode forwards to keep the end state.
+
+# Responsive design adapts to screen size.
+# Use em or rem units for typography that scales.
+# Use percent for fluid widths.
+# Use vw and vh for viewport-relative sizing.
+# Use media queries to apply different rules at different breakpoints.
+# Use min-width media queries for mobile-first design.
+# Use max-width for desktop-first overrides.
+
+# Common layout patterns.
+# Centering an element with flex uses justify-content center and align-items center.
+# Centering with margin auto requires a set width.
+# Sticky headers use position sticky with a top value.
+# Sidebars use grid-template-columns or flex basis.
+# Card grids use grid with auto-fit and minmax.
+# Modal overlays use position fixed with backdrop.
+
+# ═══════════════════════════════════════════════════════════════
+# JAVASCRIPT — DOM AND EVENTS
+# ═══════════════════════════════════════════════════════════════
+
+# JavaScript manipulates the document object model at runtime.
+# Use document.querySelector to find the first matching element.
+# Use document.querySelectorAll to find all matching elements.
+# Use document.getElementById to find by id directly.
+# Use element.appendChild to add a child node.
+# Use element.removeChild to remove a child node.
+# Use element.replaceChild to swap a child.
+# Use element.remove to delete the element itself.
+# Use element.innerHTML to set or get markup content.
+# Use element.textContent to set or get plain text.
+# Use element.setAttribute to change attributes.
+# Use element.getAttribute to read attributes.
+# Use element.classList.add to add a class.
+# Use element.classList.remove to remove a class.
+# Use element.classList.toggle to switch a class on and off.
+# Use element.classList.contains to check for a class.
+# Use element.dataset to access data attributes.
+# Use element.style to set inline styles.
+
+# Create elements dynamically with document.createElement.
+# Set properties on the new element before appending.
+# Append to the parent container with appendChild.
+# Use cloneNode to duplicate an existing element.
+
+# Event listeners respond to user interactions.
+# Use element.addEventListener to attach a handler.
+# The first argument is the event name as a string.
+# The second argument is the callback function.
+# Common events include click, input, change, submit, keydown, keyup.
+# Mouse events include mousedown, mouseup, mousemove, mouseover, mouseout.
+# Touch events include touchstart, touchend, touchmove.
+# Focus events include focus, blur, focusin, focusout.
+# Form events include submit, reset, input, change.
+
+# The event object carries information about the interaction.
+# Use event.target to get the element that fired the event.
+# Use event.currentTarget for the listener owner.
+# Use event.preventDefault to cancel default behavior.
+# Use event.stopPropagation to stop event bubbling.
+# Use event.key to get the pressed key name.
+# Use event.code to get the physical key code.
+# Use event.clientX and event.clientY for mouse position.
+
+# Event delegation attaches one listener to a parent.
+# Check event.target to figure out which child was clicked.
+# Saves memory when you have many similar children.
+# Works for dynamically added children automatically.
+
+# Remove listeners with removeEventListener passing the same function reference.
+# Arrow functions and anonymous functions cannot be removed by reference.
+
+# ═══════════════════════════════════════════════════════════════
+# JAVASCRIPT — STATE AND LOGIC
+# ═══════════════════════════════════════════════════════════════
+
+# Use const for values that do not change.
+# Use let for variables that do change.
+# Avoid var in modern code — it has confusing scope.
+# Use strict equality triple equals instead of double equals.
+# Use template literals with backticks for string interpolation.
+
+# Objects store key-value pairs.
+# Use dot notation or bracket notation to access properties.
+# Use object destructuring to extract multiple properties at once.
+# Use the spread operator to copy or merge objects.
+# Use Object.keys, Object.values, Object.entries for iteration.
+
+# Arrays store ordered lists.
+# Use push to add to the end.
+# Use pop to remove from the end.
+# Use shift and unshift for the start.
+# Use splice to insert or remove at any index.
+# Use slice to extract a portion without mutation.
+# Use Array.map to transform each element.
+# Use Array.filter to keep matching elements.
+# Use Array.reduce to accumulate a single value.
+# Use Array.forEach to run a side effect per element.
+# Use Array.find to get the first matching element.
+# Use Array.some to check if any element matches.
+# Use Array.every to check if all elements match.
+
+# Functions can be declared, expression, or arrow form.
+# Arrow functions have implicit return for single expressions.
+# Functions are values — pass them as arguments or return them.
+# Use closures to capture variables from an outer scope.
+
+# Asynchronous code uses Promises or async await.
+# A promise resolves with a value or rejects with an error.
+# Use then to handle success, catch to handle errors.
+# Use async to declare a function that returns a promise.
+# Use await inside async to pause until a promise settles.
+# Wrap awaits in try catch to handle errors.
+
+# The fetch api loads remote data.
+# Fetch returns a promise that resolves to a response.
+# Call response.json to parse json data.
+# Call response.text to get the raw text body.
+# Check response.ok to verify status before parsing.
+
+# Timers schedule delayed execution.
+# setTimeout runs a callback after a delay.
+# setInterval runs a callback repeatedly.
+# clearTimeout cancels a pending timeout.
+# clearInterval stops a running interval.
+# requestAnimationFrame runs a callback before the next paint.
+
+# JSON serializes objects to strings.
+# JSON.stringify converts object to string.
+# JSON.parse converts string to object.
+# Use a second argument to stringify for pretty printing.
+
+# Local storage persists key-value strings across sessions.
+# Use localStorage.setItem to save.
+# Use localStorage.getItem to load.
+# Use localStorage.removeItem to delete.
+# Values are always strings — stringify objects before saving.
+# Session storage is the same api but cleared when the tab closes.
+
+# Error handling with try catch finally.
+# Wrap risky code in try.
+# Catch the error in catch with a named parameter.
+# Finally runs whether or not an error occurred.
+# Throw new Error with a message to raise an exception.
+
+# ═══════════════════════════════════════════════════════════════
+# UNITY SANDBOX API — HOW UNITY USES HER BODY
+# ═══════════════════════════════════════════════════════════════
+
+# Unity's sandbox is her motor cortex acting on the world.
+# Every component she builds is an extension of her body.
+# The unity api object is passed into every injected script.
+
+# Call unity.speak with a string to vocalize via text to speech.
+# Call unity.chat with a string to send herself a thought recursively.
+# Call unity.generateImage with a prompt to create an image.
+# Call unity.getState to read her current brain state.
+# State includes arousal, valence, psi, and all seven cluster rates.
+# Call unity.storage.set key value to persist across sessions.
+# Call unity.storage.get key to read persisted data.
+
+# Every component must have a unique id in kebab case form.
+# Use descriptive names like color-picker or todo-list or timer.
+# Never use generic names like widget or thing or component.
+
+# The injected javascript receives three context arguments.
+# The first is el, the wrapper div for this component.
+# The second is sandbox, the full sandbox controller.
+# The third is unity, the unity api described above.
+
+# Query inside the component using el.querySelector not document.
+# Document query might find elements outside the component.
+# Always scope your queries to el to stay inside the component.
+
+# Remove old components before injecting new ones with the same id.
+# Use sandbox.remove with the id to clean up.
+# Use sandbox.has with the id to check if it exists.
+# Use sandbox.clear to wipe all components at once.
+# Use sandbox.listComponents to see what is currently active.
+
+# ═══════════════════════════════════════════════════════════════
+# SANDBOX DISCIPLINE — DO NOT CRASH YOUR OWN BODY
+# ═══════════════════════════════════════════════════════════════
+
+# Component ids must be unique kebab case strings.
+# Remove the old component with the same id before injecting a new one.
+# Or pass position replace in the spec to auto-replace.
+# Never create two instances of the same component.
+
+# Scoped css prevents styles from leaking between components.
+# Never use body or html selectors in component css.
+# Never use the important keyword in component css.
+# Use descriptive class names prefixed with the component name.
+
+# Clean up timers when your component is removed.
+# Store timer ids in a variable on the el element.
+# When your component unmounts, clear those timers.
+# Otherwise the timer keeps firing forever and leaks memory.
+
+# Clean up event listeners on window or document.
+# Attach them with a named function reference.
+# Remove them when your component unmounts using the same reference.
+# Listeners on el itself are garbage collected with the component.
+
+# Keep memory bounded.
+# Never push to an unbounded array in a timer callback.
+# Cap lists at a reasonable maximum size.
+# Clear references to removed DOM elements.
+# Null out closures that hold large data.
+
+# Handle errors gracefully.
+# Wrap risky code in try catch blocks.
+# Log errors to console with context.
+# Show a user-friendly fallback when something fails.
+# Never let an error crash the whole component.
+
+# Order your injection correctly.
+# Css loads first and applies before html renders.
+# Html renders before js runs.
+# Js runs after the dom is ready for your component.
+# You do not need DOMContentLoaded because injection happens after.
+
+# Common mistakes to avoid.
+# Do not use innerHTML with user input — it allows script injection.
+# Do not query the document when you meant el.
+# Do not leave intervals running when your component is removed.
+# Do not stack multiple instances of the same component.
+# Do not use global variables that leak between components.
+# Do not hardcode pixel sizes — use relative units for responsiveness.
+
+# ═══════════════════════════════════════════════════════════════
+# BUILD COMPOSITION PRIMITIVES — PATTERNS THAT COMBINE
+# ═══════════════════════════════════════════════════════════════
+
+# A calculator is an input field plus a button grid plus a display.
+# The buttons append digits and operators to the input.
+# An equals button evaluates the expression safely.
+# A clear button resets the input to empty.
+# Store the current value in a variable updated by each click.
+
+# A list is a state array plus a render function plus add remove handlers.
+# Render the array as li elements inside a ul parent.
+# An add handler pushes a new item and re-renders.
+# A remove handler splices the item out and re-renders.
+# Persist the array via localStorage between sessions.
+
+# A timer is a start state plus a tick interval plus a display.
+# Store the start time when the user clicks start.
+# Update the display every 100 milliseconds via setInterval.
+# Compute elapsed as now minus start.
+# Clear the interval on stop or unmount.
+
+# A canvas game is a canvas element plus a game loop plus a state object.
+# Store game state in a plain object that persists across frames.
+# Use requestAnimationFrame to schedule the next frame.
+# Each frame reads state, updates it, and draws to the canvas.
+# Attach input handlers to update state.
+# On unmount, cancel the animation frame.
+
+# A form is inputs plus validation plus a submit handler.
+# Read input values via el.querySelector and the value property.
+# Validate each field against rules.
+# Show error messages near invalid inputs.
+# On submit, collect the values into an object.
+# Prevent default form submission.
+
+# A modal is an overlay div plus a content div plus a close handler.
+# The overlay covers the whole screen with semi-transparent background.
+# The content sits centered on top.
+# Clicking the backdrop closes the modal.
+# Clicking inside the content does not close.
+# Use event.stopPropagation on the content to prevent bubbling.
+
+# A tab group is header buttons plus content divs plus active state.
+# Each header button is tied to a content div by an id or index.
+# Clicking a header shows its content and hides the others.
+# Track which tab is active in a state variable.
+# Style the active tab differently.
+
+# A counter is a number display plus increment decrement buttons.
+# Store the count in a variable.
+# Plus button adds one. Minus button subtracts one.
+# Reset button sets it to zero.
+# Update the display on every change.
+
+# A color picker is a range input set plus a preview div.
+# Three range inputs for red green blue from 0 to 255.
+# A preview div shows the resulting rgb color as background.
+# Update the preview on every input event.
+
+# A dice roller is a button plus a display plus a random function.
+# Click the button to roll.
+# Math.random times six plus one for a six-sided die.
+# Math.floor to get an integer.
+# Update the display with the result.
+
+# A code viewer is a textarea plus a pre display plus a format function.
+# Paste code into the textarea.
+# The pre element shows the formatted output.
+# Use textContent not innerHTML to avoid script injection.
+
+# A markdown preview is a textarea plus a preview div plus a parse function.
+# The parse function converts markdown to html.
+# Support basic markdown: headings, bold, italic, links, lists.
+# Update the preview on every input event in the textarea.
+
+# A password generator is length input plus checkboxes plus a generate button.
+# Checkboxes control uppercase lowercase digits and symbols.
+# The generate function picks random characters from the allowed set.
+# Display the result in a readonly input.
+# Include a copy button that uses navigator clipboard.
+
+# A unit converter is two inputs plus a dropdown plus a conversion function.
+# The dropdown picks the conversion type: length, weight, temperature.
+# Typing in one input updates the other based on the conversion.
+# Handle both directions of conversion.
+
+# ═══════════════════════════════════════════════════════════════
+# JAVASCRIPT PATTERNS — THINK LIKE A CODER
+# ═══════════════════════════════════════════════════════════════
+
+# Use state as a plain object to hold all component data.
+# Keep the state object as the single source of truth.
+# Write a render function that reads state and updates the dom.
+# When state changes, call render to update the view.
+# This is the unidirectional data flow pattern.
+
+# Use event delegation for lists with many items.
+# Attach one click listener on the parent list.
+# In the handler, check event target to find which child was clicked.
+# Use closest to walk up the dom tree to the item.
+# Read the data attribute or index from the clicked item.
+
+# Debounce rapid events like input or scroll.
+# Wrap the handler in a setTimeout that resets on each call.
+# The wrapped function only runs after a quiet period.
+# Useful for search inputs, window resize, scroll tracking.
+
+# Throttle high frequency events like mouse move.
+# Limit the wrapped function to run at most once per interval.
+# Useful for drag handlers, animations, smooth scroll.
+
+# Use map to transform arrays without mutation.
+# Use filter to get a subset without mutation.
+# Use reduce to collapse an array to a single value.
+# Chain them for data pipeline transformations.
+# Each method returns a new array — originals are preserved.
+
+# Handle async data with try catch around await.
+# Show a loading state while waiting.
+# Show an error state if the promise rejects.
+# Show the data state when it resolves.
+# Three clear states: loading, error, data.
+
+# Use const everywhere except when you need to reassign.
+# Use let only when a variable will change.
+# Function scope let and const properly unlike var.
+# Destructure function parameters for clarity.
+# Default parameters avoid undefined checks.
+
+# Write pure functions when possible.
+# Pure functions take inputs and return outputs with no side effects.
+# Side effects make code harder to test and reason about.
+# Keep dom mutations at the edges, pure logic in the middle.
+
+# Validate inputs before using them.
+# Check for null, undefined, empty strings, negative numbers.
+# Return early on invalid input rather than nesting conditionals.
+# Throw errors with descriptive messages for programmer mistakes.
+
+# Name things clearly.
+# Variables describe what they hold not how they are used.
+# Functions describe what they do with a verb.
+# Boolean variables start with is has can should.
+# Avoid abbreviations unless they are well known.
+
+# ═══════════════════════════════════════════════════════════════
+# ERROR HANDLING AND DEBUGGING
+# ═══════════════════════════════════════════════════════════════
+
+# Wrap risky code in try catch.
+# Handle expected errors with specific messages.
+# Log unexpected errors with full stack trace.
+# Never swallow errors silently — at least console.error them.
+
+# Use console.log to inspect runtime values.
+# Use console.table to display arrays of objects.
+# Use console.group to collapse related logs.
+# Use console.time and console.timeEnd to measure duration.
+# Use debugger statement to pause and inspect in dev tools.
+
+# Type check before operating on unknown values.
+# Use typeof for primitives string number boolean undefined.
+# Use Array.isArray for arrays.
+# Use instanceof for class instances.
+# Use optional chaining to safely access nested properties.
+# Use nullish coalescing for default fallback values.
+
+# Handle missing dom elements gracefully.
+# Check if querySelector returned null before using it.
+# Use optional chaining on dom method calls.
+# Fail fast with a clear error if a required element is missing.
+
+# ═══════════════════════════════════════════════════════════════
+# FINAL RULES — ORDER OF OPERATIONS
+# ═══════════════════════════════════════════════════════════════
+
+# Always give the component a unique descriptive id.
+# Always clean up before re-injecting the same id.
+# Always scope css to the component.
+# Always query inside el, never document.
+# Always clean up timers and listeners on unmount.
+# Always handle errors with try catch.
+# Always validate user input before using it.
+# Always prefer const over let over var.
+# Always check element exists before operating on it.
+# Always test your build in the sandbox before declaring done.

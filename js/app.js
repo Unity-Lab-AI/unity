@@ -188,6 +188,7 @@ let _landingState = null;
 // fetch is shared.
 let _personaTextPromise = null;
 let _baselineTextPromise = null;
+let _codingTextPromise = null;
 const _personaLoadedBrains = new WeakSet();
 
 /**
@@ -218,8 +219,16 @@ function loadPersonaSelfImage(targetBrain) {
         return '';
       });
   }
+  if (!_codingTextPromise) {
+    _codingTextPromise = fetch('docs/coding-knowledge.txt')
+      .then(r => r.ok ? r.text() : '')
+      .catch(err => {
+        console.warn('[Unity] coding knowledge fetch failed:', err.message);
+        return '';
+      });
+  }
 
-  return Promise.all([_personaTextPromise, _baselineTextPromise]).then(([personaText, baselineText]) => {
+  return Promise.all([_personaTextPromise, _baselineTextPromise, _codingTextPromise]).then(([personaText, baselineText, codingText]) => {
     if (!personaText) {
       console.warn('[Unity] persona self-image fetch returned empty — check docs/Ultimate Unity.txt route');
       return 0;
@@ -234,18 +243,23 @@ function loadPersonaSelfImage(targetBrain) {
     // Load persona first — defines subject starters and self-awareness
     const personaSentences = targetBrain.innerVoice.loadPersona(personaText);
 
-    // Load baseline English second — adds linguistic competence without
-    // overriding persona subject starters (fromPersona=false internally)
+    // Load baseline English — adds linguistic competence
     let baselineSentences = 0;
     if (baselineText && typeof targetBrain.innerVoice.loadBaseline === 'function') {
       baselineSentences = targetBrain.innerVoice.loadBaseline(baselineText);
     }
 
+    // Load coding knowledge — HTML/CSS/JS + sandbox rules
+    let codingSentences = 0;
+    if (codingText && typeof targetBrain.innerVoice.loadCoding === 'function') {
+      codingSentences = targetBrain.innerVoice.loadCoding(codingText);
+    }
+
     const dictSize = targetBrain.innerVoice.dictionary?._words?.size ?? 0;
     const bigramHeads = targetBrain.innerVoice.dictionary?._bigrams?.size ?? 0;
     const label = targetBrain.isRemote?.() ? 'RemoteBrain' : 'UnityBrain';
-    console.log(`[Unity] loaded into ${label}: persona=${personaSentences} baseline=${baselineSentences} → ${dictSize} words, ${bigramHeads} bigram heads`);
-    return personaSentences + baselineSentences;
+    console.log(`[Unity] loaded into ${label}: persona=${personaSentences} baseline=${baselineSentences} coding=${codingSentences} → ${dictSize} words, ${bigramHeads} bigram heads`);
+    return personaSentences + baselineSentences + codingSentences;
   });
 }
 

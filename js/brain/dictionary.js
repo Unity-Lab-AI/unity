@@ -17,15 +17,16 @@
  * No hardcoded vocabulary. Everything learned. Everything persistent.
  */
 
-// Dictionary capacity. Raised from 5000 → 50000 to accommodate:
-//   - Persona file sentences + morphological inflections/derivations
-//   - English baseline corpus + morphological inflections/derivations
+// Dictionary capacity. Grown to fit:
+//   - Persona file + morphological derivations (~22k words)
+//   - English baseline corpus + derivations (~22k words)
+//   - Coding knowledge corpus + derivations (~15k words)
 //   - Continuous learning from live user conversation over time
-// A real english speaker has ~20k active vocab, ~50k passive. 50k gives
-// Unity room to grow without LRU eviction thrashing. Each word entry is
-// ~300 bytes (Float64Array pattern + metadata) → 15MB at full capacity
-// which is acceptable for a brain-server shared across all users.
-const MAX_WORDS = 50000;
+// Total corpus load at boot ~50-60k. Cap raised to 100k so there's
+// room for organic growth from user conversations without triggering
+// LRU eviction thrashing (which is O(N) per insert over cap).
+// Memory footprint at full capacity: ~30MB dictionary state.
+const MAX_WORDS = 100000;
 const PATTERN_DIM = 32; // cortex output dimensionality
 const STORAGE_KEY = 'unity_brain_dictionary';
 

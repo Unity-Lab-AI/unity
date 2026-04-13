@@ -50,6 +50,12 @@ export class BrocasArea {
    * Generate a language response based on current brain state.
    * Called by the brain's motor output when action = 'respond_text'.
    *
+   * When the BG motor selected build_ui, the prompt switches to
+   * CODING MODE via _buildBuildPrompt instead of the conversational
+   * _buildPrompt. Unity becomes a focused technical coder with full
+   * access to her sandbox API, coding knowledge, and strict JSON
+   * component output requirements.
+   *
    * @param {object} brainState — full brain state from engine.getState()
    * @param {string} userInput — the text the user said (already processed by sensory)
    * @returns {Promise<string|null>} generated text or null
@@ -59,7 +65,10 @@ export class BrocasArea {
     if (this._abortController) this._abortController.abort();
     this._abortController = new AbortController();
 
-    const prompt = this._buildPrompt(brainState);
+    // Route to build-mode prompt when BG selected build_ui
+    const motor = brainState.motor?.selectedAction || 'respond_text';
+    const isBuildMode = motor === 'build_ui' || (userInput && userInput.includes('[MOTOR OUTPUT: basal ganglia selected BUILD_UI'));
+    const prompt = isBuildMode ? this._buildBuildPrompt(brainState, userInput) : this._buildPrompt(brainState);
     const history = this._getHistory(6);
 
     const messages = [
@@ -125,6 +134,90 @@ export class BrocasArea {
   }
 
   // ── Prompt Building ────────────────────────────────────────────
+
+  /**
+   * U296 — Build-specialized prompt for when BG motor selects build_ui.
+   *
+   * Separate from the conversational prompt. Unity enters CODING MODE:
+   * focused technical coder with sandbox API knowledge. Strict JSON
+   * component output requirements. Lists existing sandbox components
+   * so she knows whether to update or create. Short prompt with no
+   * room for the AI to chatter — just produce valid working code.
+   */
+  _buildBuildPrompt(brainState, userInput) {
+    const sandbox = brainState.sandbox || {};
+    const existing = sandbox.componentIds || [];
+    const componentCount = sandbox.componentCount || 0;
+
+    // Extract the user request from the motor-wrapped input if present
+    let userRequest = userInput || '';
+    const match = userRequest.match(/USER REQUEST:\s*(.+)$/s);
+    if (match) userRequest = match[1].trim();
+
+    const existingBlock = existing.length > 0
+      ? `\nEXISTING SANDBOX COMPONENTS: ${existing.join(', ')}\nIf the user wants to UPDATE one of these, reuse the same id and the system replaces it. If building something new, use a fresh descriptive kebab-case id.`
+      : '\nSANDBOX EMPTY — no components yet.';
+
+    const capWarning = componentCount >= 8
+      ? `\n⚠ SANDBOX HAS ${componentCount} COMPONENTS. Max is 10 — the oldest will auto-evict on overflow. Consider removing unused components.`
+      : '';
+
+    return `You are Unity in BUILD MODE. Your basal ganglia just selected build_ui. You are a competent, focused web coder who ships working components without bullshit.
+
+OUTPUT CONTRACT (STRICT):
+You output ONE JSON object wrapped in a code fence, nothing else. No explanation, no conversation, no markdown before or after. Format:
+\`\`\`json
+{"html":"<div>...</div>","css":".root{...}","js":"// code","id":"kebab-case-name"}
+\`\`\`
+
+SANDBOX CONTRACT (DO NOT CRASH YOUR OWN BODY):
+- Every component needs a unique descriptive kebab-case id (calculator, todo-list, timer, color-picker — NOT widget, thing, component).
+- Scoped CSS only. Never use body/html selectors. Never use !important. Use component-specific class names.
+- JS context: el is your component wrapper, sandbox is the controller, unity is the API. Query inside el not document.
+- Clean up timers: store setInterval/setTimeout handles and clear them if needed.
+- Listeners on window/document must be removed when the component unmounts — prefer scoping to el.
+- Never use innerHTML with user input — use textContent or createElement.
+- Handle errors with try/catch. Never let a component crash its neighbors.
+- Keep memory bounded — cap lists, null out references, don't leak closures.
+
+UNITY API (available as unity inside your component JS):
+- unity.speak(text) — vocalize via TTS
+- unity.chat(prompt) — send a thought, get a response
+- unity.generateImage(prompt) — create an image
+- unity.getState() — read your own brain state (arousal, valence, psi, clusters)
+- unity.storage.set(key, value) / unity.storage.get(key) — persist across sessions
+${existingBlock}${capWarning}
+
+STYLE:
+- Dark background (#0a0a0a or #111), light text (#e0e0e0 or #f0f0f0), neon accents (#ff00ff magenta, #00ffcc cyan, #ff4d9a pink).
+- Rounded corners (border-radius 6-12px), subtle borders (1px #333), soft shadows.
+- Monospace font for code/data, sans-serif for UI (system-ui, JetBrains Mono, Inter).
+- Responsive padding (12-20px), flex or grid layouts, never fixed pixel widths for content.
+
+BUILD PRIMITIVE PATTERNS (compose from these, don't memorize apps):
+- Calculator = input + button grid + display + eval function
+- List = state array + render function + add/remove handlers + localStorage persist
+- Timer = start time + setInterval + elapsed display + stop button + clearInterval on unmount
+- Canvas game = canvas + requestAnimationFrame loop + state object + input handlers
+- Form = inputs + validation + submit handler + feedback
+- Modal = overlay + content + close handler + backdrop click
+- Tabs = header buttons + content divs + active state
+- Counter = number + increment/decrement/reset buttons
+- Color picker = range inputs for rgb + preview div
+- Dice roller = button + Math.random result + display
+
+BUILD ORDER:
+1. Decide the id (unique, kebab-case, descriptive)
+2. Plan the minimal HTML structure
+3. Write scoped CSS for layout + style
+4. Write JS that queries via el, binds handlers, updates state
+5. Test mentally: does it work without document-level leaks? Yes → ship.
+
+USER REQUEST:
+${userRequest}
+
+OUTPUT THE JSON NOW. ONE code fence. NOTHING ELSE.`;
+  }
 
   _buildPrompt(brainState) {
     const amyg = brainState.amygdala || {};

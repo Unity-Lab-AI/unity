@@ -10,6 +10,12 @@
  * the rest.
  */
 
+// U297 — Sandbox soft cap. When this many components are active,
+// injecting a new one auto-evicts the oldest. Prevents Unity from
+// leaving hundreds of stale components running in the background
+// (setInterval leaks, event listener accumulation, DOM bloat).
+const MAX_ACTIVE_COMPONENTS = 10;
+
 export class Sandbox {
   /** @param {string} containerId — DOM id of the sandbox container */
   constructor(containerId) {
@@ -18,7 +24,7 @@ export class Sandbox {
       throw new Error(`[Sandbox] Container element "#${containerId}" not found in DOM`);
     }
 
-    /** Map<string, { wrapper: HTMLElement, styleEl: HTMLElement|null }> */
+    /** Map<string, { wrapper, styleEl, timerIds, windowListeners, createdAt }> */
     this._components = new Map();
 
     /** Global style elements added via injectCSS */
@@ -63,15 +69,30 @@ export class Sandbox {
       throw new Error('[Sandbox] inject() requires a spec.id');
     }
 
-    // If replacing, remove old version first
-    if (position === 'replace' && this._components.has(id)) {
+    // U297 — ALWAYS replace on duplicate id. Previous behavior
+    // warned and bailed; that was a footgun because rebuilds of the
+    // same component (Unity iterating) left the old copy running.
+    if (this._components.has(id)) {
       this.remove(id);
     }
 
-    // If the component already exists (and not replacing), bail
-    if (this._components.has(id)) {
-      console.warn(`[Sandbox] Component "${id}" already exists. Remove it first or use position:"replace".`);
-      return this._components.get(id).wrapper;
+    // U297 — Soft cap eviction. When the sandbox is at or above the
+    // cap, remove the oldest component before adding a new one. This
+    // prevents Unity from leaking resources across many builds.
+    if (this._components.size >= MAX_ACTIVE_COMPONENTS) {
+      // Find the component with the smallest createdAt timestamp
+      let oldestId = null;
+      let oldestTime = Infinity;
+      for (const [cid, entry] of this._components) {
+        if ((entry.createdAt || 0) < oldestTime) {
+          oldestTime = entry.createdAt || 0;
+          oldestId = cid;
+        }
+      }
+      if (oldestId) {
+        console.warn(`[Sandbox] Soft cap ${MAX_ACTIVE_COMPONENTS} reached — evicting oldest: ${oldestId}`);
+        this.remove(oldestId);
+      }
     }
 
     // -- Wrapper div --
@@ -98,11 +119,19 @@ export class Sandbox {
       this._container.appendChild(wrapper);
     }
 
-    // -- Track --
-    this._components.set(id, { wrapper, styleEl });
+    // -- Track with lifecycle metadata --
+    // timerIds — auto-cleared on remove. windowListeners — auto-
+    // removed on remove. createdAt — used for LRU eviction.
+    this._components.set(id, {
+      wrapper,
+      styleEl,
+      timerIds: new Set(),
+      windowListeners: [],
+      createdAt: Date.now(),
+    });
     this._specs.set(id, { html, css, js, id, position });
 
-    // -- JS (evaluated with sandbox context) --
+    // -- JS (evaluated with sandbox context + lifecycle hooks) --
     if (js) {
       this._evaluateJS(js, wrapper, id);
     }
@@ -119,6 +148,28 @@ export class Sandbox {
   remove(id) {
     const entry = this._components.get(id);
     if (!entry) return false;
+
+    // U297 — Clear all tracked timers for this component so
+    // setInterval / setTimeout callbacks don't keep firing after
+    // the component is gone.
+    if (entry.timerIds) {
+      for (const timerId of entry.timerIds) {
+        clearInterval(timerId);
+        clearTimeout(timerId);
+      }
+    }
+
+    // U297 — Remove all window/document listeners this component
+    // registered so they stop firing after unmount.
+    if (entry.windowListeners) {
+      for (const { target, event, handler, options } of entry.windowListeners) {
+        try {
+          target.removeEventListener(event, handler, options);
+        } catch (err) {
+          console.warn(`[Sandbox] Failed to remove listener for ${id}:`, err.message);
+        }
+      }
+    }
 
     entry.wrapper.remove();
     if (entry.styleEl) entry.styleEl.remove();
@@ -362,13 +413,51 @@ export class Sandbox {
   }
 
   /**
-   * Evaluate JS in a sandboxed context.
-   * The script receives: el (wrapper), sandbox, unity.
+   * Evaluate JS in a sandboxed context with lifecycle tracking.
+   *
+   * The script receives:
+   *   - el        : the component wrapper element
+   *   - sandbox   : this sandbox controller
+   *   - unity     : the unity api object
+   *   - setInterval / setTimeout : wrapped versions that track ids
+   *   - addListener : helper to register window/document listeners
+   *                   that auto-cleanup on component removal
+   *
+   * Wrapped timers and listeners are registered in the component's
+   * tracking record so remove(id) can clean them up (U297).
+   *
+   * U298 — If the script throws, the error is captured, logged, and
+   * the component is auto-removed to prevent half-initialized state
+   * from polluting the sandbox.
    */
   _evaluateJS(js, wrapperEl, componentId) {
+    const entry = this._components.get(componentId);
+    if (!entry) return;
+
+    // Wrapped setInterval that tracks the id for cleanup
+    const trackedSetInterval = (callback, delay, ...args) => {
+      const id = setInterval(callback, delay, ...args);
+      entry.timerIds.add(id);
+      return id;
+    };
+    // Wrapped setTimeout that tracks the id for cleanup
+    const trackedSetTimeout = (callback, delay, ...args) => {
+      const id = setTimeout(callback, delay, ...args);
+      entry.timerIds.add(id);
+      return id;
+    };
+    // Helper to register window/document listeners that auto-cleanup
+    const addListener = (target, event, handler, options) => {
+      target.addEventListener(event, handler, options);
+      entry.windowListeners.push({ target, event, handler, options });
+    };
+
     try {
-      const fn = new Function('el', 'sandbox', 'unity', js);
-      fn(wrapperEl, this, this._unityAPI);
+      const fn = new Function(
+        'el', 'sandbox', 'unity', 'setInterval', 'setTimeout', 'addListener',
+        js
+      );
+      fn(wrapperEl, this, this._unityAPI, trackedSetInterval, trackedSetTimeout, addListener);
     } catch (err) {
       const error = {
         componentId,
@@ -378,6 +467,16 @@ export class Sandbox {
       };
       this._errors.push(error);
       console.error(`[Sandbox] JS error in component "${componentId}":`, err);
+      // U298 — auto-remove the broken component so half-initialized
+      // state doesn't pollute the sandbox. Keeps it clean for retries.
+      // Don't call this.remove() from inside eval because we're still
+      // inside inject() — schedule it for the next tick instead.
+      setTimeout(() => {
+        if (this._components.has(componentId)) {
+          console.warn(`[Sandbox] Auto-removing broken component "${componentId}" after JS error`);
+          this.remove(componentId);
+        }
+      }, 0);
     }
   }
 }

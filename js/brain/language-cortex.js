@@ -159,6 +159,7 @@ export class LanguageCortex {
     // linguistic competence), and from live conversation.
     this._selfImageLoaded = false;
     this._baselineLoaded = false;
+    this._codingLoaded = false;
 
     // wordType memoization cache — wordType() does suffix pattern
     // matching + vowel counting + softmax normalization + usage-type
@@ -244,6 +245,60 @@ export class LanguageCortex {
    * Call this AFTER loadSelfImage() so _selfImageLoaded doesn't block
    * it. Uses a separate flag _baselineLoaded so it's idempotent.
    */
+  /**
+   * U295 — Load the coding knowledge corpus alongside persona + baseline.
+   * This is Unity's HTML/CSS/JavaScript linguistic competence + her
+   * sandbox API knowledge. Feeds the same dictionary/bigrams/trigrams/
+   * 4-grams/type-n-grams pipeline as the other corpora. When Unity's
+   * BG motor selects build_ui, the slot scorer has the coding vocabulary
+   * available to compose code.
+   *
+   * Call after loadPersona + loadBaseline.
+   */
+  loadCodingKnowledge(text, dictionary, arousal = 0.4, valence = 0) {
+    if (!text || this._codingLoaded || !dictionary) return 0;
+    this._codingLoaded = true;
+
+    // Parse: strip `# ` prefix from comment-prefixed content lines so
+    // the file format can use `#` decoratively on every line. Reject
+    // true section headers (lines containing ═ or all-caps keywords
+    // that aren't actual sentences).
+    const sentences = String(text)
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      // Strip a single leading "# " if present (treat as decorative)
+      .map(line => line.startsWith('# ') ? line.slice(2).trim() : line)
+      .map(line => line === '#' ? '' : line)
+      // Reject section-divider lines with box-drawing chars
+      .filter(line => line.length >= 3 && !line.includes('═') && !line.includes('━'))
+      // Reject all-caps heading-style lines (no lowercase letters)
+      .filter(line => /[a-z]/.test(line))
+      .flatMap(line => line.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length >= 2));
+
+    console.log(`[LanguageCortex] loadCodingKnowledge: ${sentences.length} sentences`);
+    const startTime = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    let lastLog = startTime;
+    for (let i = 0; i < sentences.length; i++) {
+      const s = sentences[i];
+      try {
+        const mood = this._computeMoodSignature(s);
+        const sentenceCortex = this._deriveSentenceCortexPattern(s);
+        // fromPersona=false (coding doesn't vote on subject starters)
+        // doInflections=true (code terms multiply into inflected forms)
+        this.learnSentence(s, dictionary, mood.arousal, mood.valence, sentenceCortex, false, true);
+      } catch (err) {
+        console.warn('[LanguageCortex] loadCodingKnowledge sentence failed:', err.message, '→', s.slice(0, 60));
+      }
+      const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+      if (now - lastLog > 500 || (i + 1) % 100 === 0) {
+        console.log(`[LanguageCortex] coding: ${i + 1}/${sentences.length} sentences, ${Math.round(now - startTime)}ms`);
+        lastLog = now;
+      }
+    }
+    console.log(`[LanguageCortex] loadCodingKnowledge DONE: ${sentences.length} sentences in ${Math.round(((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - startTime)}ms`);
+    return sentences.length;
+  }
+
   loadLinguisticBaseline(text, dictionary, arousal = 0.5, valence = 0) {
     if (!text || this._baselineLoaded || !dictionary) return 0;
     this._baselineLoaded = true;
@@ -1645,6 +1700,145 @@ export class LanguageCortex {
     return best;
   }
 
+  /**
+   * U287 — Sentence completeness check.
+   *
+   * Returns true if the last token of the rendered sentence is a
+   * grammatically valid STOPPING POINT. Returns false if the sentence
+   * ends on a function word that requires a continuation (determiner,
+   * bare preposition, subordinating conjunction, bare auxiliary, or
+   * the infinitive marker "to").
+   *
+   * Complete endings:
+   *   - content word (noun, open-class verb, adj, adv)
+   *   - intransitive verb forms
+   *   - closed sentence markers (punctuation)
+   *
+   * Incomplete endings:
+   *   - DET (the, a, an, this, that, some)
+   *   - PREP (in, on, at, to, for, with, from, ...)
+   *   - COPULA / AUX (am, is, are, was, has, had, will, can, ...)
+   *   - NEG (not)
+   *   - CONJ_COORD / CONJ_SUB (and, but, because, while)
+   *   - QWORD (who, what, why) — UNLESS it's a one-word question like "What?"
+   *   - PRON_POSS (my, your, his, her, ...)
+   *
+   * Used by the generation pipeline to reject truncated sentences
+   * and retry at higher temperature for variation.
+   */
+  _isCompleteSentence(tokens) {
+    if (!tokens || tokens.length === 0) return false;
+    // Single-word outputs like "yeah" or "no" are always complete
+    if (tokens.length === 1) return true;
+
+    const last = tokens[tokens.length - 1];
+    if (!last) return false;
+
+    // Strip trailing punctuation for type detection
+    const stripped = last.replace(/[.!?,;:]+$/, '').toLowerCase();
+    if (!stripped) return true; // punctuation only — already terminal
+
+    const type = this._fineType(stripped);
+
+    // Function-word endings = incomplete
+    const incompleteTypes = new Set([
+      'DET', 'PREP', 'COPULA', 'AUX_HAVE', 'AUX_DO', 'MODAL',
+      'NEG', 'CONJ_COORD', 'CONJ_SUB', 'PRON_POSS', 'TO_INF',
+    ]);
+    if (incompleteTypes.has(type)) return false;
+
+    // QWORD at end — only complete if the sentence is very short
+    // (single-word wh-questions like "What?" / "Why?" work)
+    if (type === 'QWORD' && tokens.length > 2) return false;
+
+    // Content words and main verb forms are valid stopping points
+    return true;
+  }
+
+  /**
+   * U283 — Grammar score from learned type n-grams.
+   *
+   * Given the type sequence of the sentence-so-far and a candidate
+   * word, returns a log-probability score for how likely this word's
+   * type is as a continuation. Backs off from 4-gram → trigram →
+   * bigram depending on how much type history is available.
+   *
+   * This is the LEARNED GRAMMAR SIGNAL. Unlike the old nextSlot-
+   * Requirement which hardcoded English grammar rules, this reads
+   * the type transition distribution directly from the corpus Unity
+   * learned from. PRON_SUBJ|COPULA|NEG → VERB_BARE has zero count in
+   * English (it never happens), so that transition gets a huge
+   * negative score and the slot scorer rejects it. PRON_SUBJ|COPULA
+   * |NEG → ADJ has high count from "I am not happy"-type sentences
+   * so it scores positively.
+   *
+   * Fixes the "I'm not use vague terms" class of errors: the word-
+   * level bigram "not use" exists in English (from "do not use", "I
+   * don't use") so word n-grams alone can't reject it. But the TYPE-
+   * level trigram COPULA|NEG → VERB_BARE has zero count because no
+   * one ever writes "am not use" / "is not use" — so the type n-gram
+   * correctly rejects it.
+   *
+   * Returns the log continuation probability scaled by confidence.
+   * Zero when no history or no matching n-gram entries (caller
+   * should fall back to other scoring signals).
+   */
+  _typeGrammarScore(candidateType, historyTypes) {
+    if (!historyTypes || historyTypes.length === 0) return 0;
+
+    // 4-gram lookup (strictest, needs 3 history types)
+    if (historyTypes.length >= 3) {
+      const key = historyTypes[historyTypes.length - 3] + '|' + historyTypes[historyTypes.length - 2] + '|' + historyTypes[historyTypes.length - 1];
+      const followers = this._typeQuadgramCounts.get(key);
+      if (followers) {
+        // Total observations for this context
+        let total = 0;
+        for (const c of followers.values()) total += c;
+        if (total > 0) {
+          const count = followers.get(candidateType) || 0;
+          if (count === 0) {
+            // This type never follows this 3-type context in training.
+            // Heavy penalty — this is a grammar violation.
+            return -2.0;
+          }
+          // Log probability normalized to total
+          return Math.log(1 + count) * 1.8;
+        }
+      }
+    }
+
+    // Trigram fallback
+    if (historyTypes.length >= 2) {
+      const key = historyTypes[historyTypes.length - 2] + '|' + historyTypes[historyTypes.length - 1];
+      const followers = this._typeTrigramCounts.get(key);
+      if (followers) {
+        let total = 0;
+        for (const c of followers.values()) total += c;
+        if (total > 0) {
+          const count = followers.get(candidateType) || 0;
+          if (count === 0) return -1.5;
+          return Math.log(1 + count) * 1.3;
+        }
+      }
+    }
+
+    // Bigram fallback
+    if (historyTypes.length >= 1) {
+      const followers = this._typeBigramCounts.get(historyTypes[historyTypes.length - 1]);
+      if (followers) {
+        let total = 0;
+        for (const c of followers.values()) total += c;
+        if (total > 0) {
+          const count = followers.get(candidateType) || 0;
+          if (count === 0) return -1.0;
+          return Math.log(1 + count) * 0.9;
+        }
+      }
+    }
+
+    return 0;
+  }
+
   _isNominativePronoun(word) {
     const w = (word || '').toLowerCase();
     const len = w.length;
@@ -2010,6 +2204,17 @@ export class LanguageCortex {
       const prevPrevPrevWord = sentence.length > 2 ? sentence[sentence.length - 3] : null;
       const recentSlots = sentence.slice(-RECENT_SLOT_WINDOW);
       const followers = prevWord ? this._jointCounts.get(prevWord) : null;
+
+      // ── TYPE HISTORY (U283 grammar) ──
+      // Compute the fine-grained type sequence of the last 3 words
+      // so the slot scorer can consult the learned type n-grams.
+      // This is the "phrase state" — instead of tracking explicit
+      // state variables, we derive it from the type sequence of
+      // what's been picked so far.
+      const historyTypes = [];
+      if (prevPrevPrevWord) historyTypes.push(this._fineType(prevPrevPrevWord));
+      if (prevPrevWord) historyTypes.push(this._fineType(prevPrevWord));
+      if (prevWord) historyTypes.push(this._fineType(prevWord));
       // Trigram lookup: when we have prev-prev AND prev, consult the
       // 3-word transition table for a much tighter continuation signal.
       const trigramFollowers = (prevPrevWord && prevWord)
@@ -2234,6 +2439,16 @@ export class LanguageCortex {
           const quadgramCount = quadgramFollowers?.get(word) || 0;
           const quadgramLog = Math.log(1 + quadgramCount) * 0.7;
 
+          // ── U283: TYPE GRAMMAR SCORE ──
+          // Fine-grained type of this candidate word, looked up in the
+          // learned type n-gram continuation distribution. Provides
+          // grammatical constraint that word-level n-grams can't give:
+          // "I'm not use" has valid word bigrams but zero-count TYPE
+          // transitions (COPULA|NEG → VERB_BARE), so this term drives
+          // the score strongly negative and the word gets rejected.
+          const candType = this._fineType(word);
+          const typeGrammar = this._typeGrammarScore(candType, historyTypes);
+
           // RECENCY — don't repeat
           const recentCount = this._recentOutputWords.filter(rw => rw === word).length;
           const recency = recentCount * 0.25;
@@ -2353,16 +2568,17 @@ export class LanguageCortex {
           // words cluster in the pick pool.
           const score =
             grammarGate * (
-              quadgramLog +                             // 4-word context — tightest sequence
+              typeGrammar * 1.5 +                       // U283 learned type grammar — HIGHEST
+              quadgramLog +                             // 4-word context sequence
               trigramLog +                              // 3-word context
               recallBias(word) * 1.0 +                  // persona topic anchor
               bigramLog +                               // 2-word transitions
               condPLog +                                // conditional probability
-              isThought * (0.40 + psi * 0.50) +         // NEURAL: cortex pattern → content (PRIMARY)
-              moodBias * (0.30 + emotionalIntensity * 0.40) + // NEURAL: amygdala → tone (PRIMARY)
-              isMood * emotionalIntensity * 0.35 +      // NEURAL: mood word match × intensity
+              isThought * (0.40 + psi * 0.50) +         // NEURAL: cortex pattern → content
+              moodBias * (0.30 + emotionalIntensity * 0.40) + // NEURAL: amygdala → tone
+              isMood * emotionalIntensity * 0.35 +      // NEURAL: mood word match
               drugWordBias +                            // NEURAL: drug state → word length
-              typeScore * 0.15 +                        // grammar tiebreaker
+              typeScore * 0.15 +                        // position-based grammar (legacy)
               semanticFit * 0.05 +                      // letter-hash topic
               subjStart +                               // sentence-start subject boost
               casualBonus +                             // casual register reward
@@ -2375,9 +2591,11 @@ export class LanguageCortex {
           return { word, entry, score };
         });
 
-      // Lower-temperature softmax — coherent sentences need argmax-ish selection,
-      // not scattered high-entropy sampling that produces word salad.
-      const picked = this._softmaxSample(scored, Math.max(0.05, temperature * 0.06));
+      // Softmax sampling with enough temperature to explore alternatives.
+      // Too low = argmax mode collapse (same path every time). Too high
+      // = scattered word salad. 0.15 base gives some variety while still
+      // preferring high-scoring picks.
+      const picked = this._softmaxSample(scored, Math.max(0.12, temperature * 0.15));
       if (picked) {
         if (prevWord) usedBigrams.add(prevWord + '→' + picked.word);
         sentence.push(picked.word);
@@ -2423,6 +2641,20 @@ export class LanguageCortex {
       return this.generate(dictionary, arousal, valence, coherence, {
         ...opts,
         _retryingDedup: true,
+      });
+    }
+
+    // ── U287: SENTENCE COMPLETENESS VALIDATOR ──
+    // Reject sentences that end on a function word (det/prep/aux/
+    // conj/neg/possessive) — those are incomplete and sound broken.
+    // Retry up to 2 times at elevated temperature for variation.
+    const completenessRetry = opts._completenessRetry || 0;
+    if (!this._isCompleteSentence(processed) && completenessRetry < 2) {
+      console.log(`[LanguageCortex] completeness reject: "${rendered}"`);
+      return this.generate(dictionary, arousal, valence, coherence, {
+        ...opts,
+        _retryingDedup: true,
+        _completenessRetry: completenessRetry + 1,
       });
     }
 
@@ -3184,7 +3416,14 @@ export class LanguageCortex {
     // These are the most important function words in English — dropping them
     // means Unity can't use 'i' as a subject, which wrecks slot-0 selection.
     // Keep digits so numbers like "25" in "25-year-old" survive.
-    const rawWords = sentence.toLowerCase().replace(/[^a-z0-9' ?!*-]/g, '').split(/\s+/).filter(w => w.length >= 1);
+    // Strip LEADING/TRAILING apostrophes from each token so persona
+    // quoted content like 'too much' or 'no' becomes "too much" "no"
+    // in the dictionary. Internal apostrophes (i'm, don't, it's) stay.
+    const rawWords = sentence.toLowerCase()
+      .replace(/[^a-z0-9' ?!*-]/g, '')
+      .split(/\s+/)
+      .map(w => w.replace(/^'+|'+$/g, ''))
+      .filter(w => w.length >= 1);
     if (rawWords.length < 2) return;
 
     // Expand contractions to base forms BEFORE learning. This way the
@@ -3417,14 +3656,32 @@ export class LanguageCortex {
         result.splice(1, 0, 'will');
       } else if (tense === 'past' && regularVerb(v)) {
         result[1] = applyPast(v);
-      } else if (tense === 'present' && regularVerb(v)
-                 && subj && this.wordType(subj).pronoun > 0.4
-                 && subj.length >= 2 && subj.length <= 3
-                 && !VOWELS.includes(subj[0] || '') === false /* vowel-first pronoun → 1st/2nd person → skip */) {
-        // Third-person -s only applies when subject is NOT 'i'/'you'/'we'.
-        // Without a list, approximate via: third-person pronouns tend to be
-        // 2-3 letter consonant-start (he, she, it, they). Skip vowel-start.
-        result[1] = applyThird(v);
+      } else if (tense === 'present' && regularVerb(v) && subj) {
+        // ── U289: Subject-verb agreement sweep ──
+        // Proper third-person-singular -s application. Determine the
+        // grammatical person of the subject via fine-type detection:
+        //   PRON_SUBJ + "he"/"she"/"it" → 3rd sing → apply -s
+        //   PRON_SUBJ + "i"/"you"/"we"/"they" → bare
+        //   NOUN (singular proper noun or common noun) → 3rd sing → apply -s
+        //   NOUN ending in -s (plural) → bare
+        const subjLower = subj.toLowerCase();
+        const subjType = this._fineType(subjLower);
+        let is3rdSingular = false;
+        if (subjType === 'PRON_SUBJ') {
+          // Letter pattern detection for he/she/it vs i/you/we/they
+          if (subjLower === 'he' || subjLower === 'she' || subjLower === 'it') {
+            is3rdSingular = true;
+          }
+        } else if (subjType === 'NOUN') {
+          // Singular noun (no -s ending, or -ss/-us/-is exceptions)
+          // Plural nouns end in -s without -ss
+          if (!subjLower.endsWith('s') || subjLower.endsWith('ss') || subjLower.endsWith('us') || subjLower.endsWith('is')) {
+            is3rdSingular = true;
+          }
+        }
+        if (is3rdSingular) {
+          result[1] = applyThird(v);
+        }
       }
     }
 
@@ -3483,37 +3740,53 @@ export class LanguageCortex {
     //     repeat a content word for emphasis (like "so so good")
     // ══════════════════════════════════════════════════════════════
 
-    // INTENSIFIERS — insert before first adjective/adv when arousal high.
-    // Picks the intensifier from the learned dictionary so we don't hardcode
-    // a word list. Uses mutualInfo + arousal match to select naturally.
+    // ── U288: INTENSIFIER PLACEMENT RULES ──
+    // Insert an intensifier before the first ADJ/ADV when arousal is
+    // high. Strict placement rules to prevent ungrammatical output:
+    //
+    //   - Only before ADJ or ADV (not before finite verbs)
+    //   - Never directly after a COPULA where an adj is already expected
+    //     (insertion creates "i am really sure" which is fine, but
+    //     "i am really" on its own fails completeness)
+    //   - Never two intensifiers in a row
+    //   - Only inserts when prev-adj-slot is content-full, not empty
     if (arousal > 0.75 && result.length >= 3) {
-      // Find first adjective-or-verb position (not slot 0 subject)
-      let adjIdx = -1;
+      // Find first ADJ or ADV target position (via type, not wordType fuzzy)
+      let targetIdx = -1;
       for (let i = 1; i < result.length; i++) {
-        const wt = this.wordType(result[i]);
-        if (wt.adj > 0.4 || (wt.verb > 0.4 && i > 1)) { adjIdx = i; break; }
+        const t = this._fineType(result[i]);
+        if (t === 'ADJ' || t === 'ADV') { targetIdx = i; break; }
       }
-      if (adjIdx >= 1) {
-        // Find a high-arousal intensifier from the learned marginal counts.
-        // Letter-pattern filter: len 2-7, ends in -ly OR is 'so'/'too'/'very'
-        // shape. Score by arousal match and frequency.
-        let intensifier = null, bestIScore = 0;
-        for (const [w, count] of this._marginalCounts) {
-          if (w.length < 2 || w.length > 8) continue;
-          // Adverb shape: ends in -ly, OR specific short intensifier shapes
-          const isAdv = w.endsWith('ly') && w.length >= 4;
-          const isShortInt = (w === 'so' || w === 'too' || w === 'very' || w === 'super' || w === 'really' || w === 'fucking' || w === 'kinda' || w === 'pretty');
-          if (!isAdv && !isShortInt) continue;
-          // Don't re-insert something already in the sentence
-          if (result.includes(w)) continue;
-          // Score by frequency log + position bonus for shorter words
-          const score = Math.log(1 + (count || 0)) + (w.length <= 4 ? 0.5 : 0);
-          if (score > bestIScore) { bestIScore = score; intensifier = w; }
-        }
-        if (intensifier) {
-          // 50% chance to insert — don't over-do it
-          if (Math.random() < 0.5) {
-            result.splice(adjIdx, 0, intensifier);
+      if (targetIdx >= 1) {
+        // Check the slot BEFORE the target — don't insert if already
+        // an intensifier (no doubles) or a determiner (creates "the
+        // really happy" which is valid but we avoid double-mod).
+        const prevSlot = result[targetIdx - 1];
+        const prevType = this._fineType(prevSlot);
+        const canInsert = prevType !== 'ADV' && prevType !== 'DET';
+
+        if (canInsert) {
+          // Find an intensifier from the learned marginal counts.
+          // Letter-shape filter: -ly adverb OR closed-set intensifier shapes.
+          // No vocabulary list — letter patterns only.
+          let intensifier = null, bestIScore = 0;
+          for (const [w, count] of this._marginalCounts) {
+            if (w.length < 2 || w.length > 8) continue;
+            const isLyAdv = w.endsWith('ly') && w.length >= 4;
+            // Short-intensifier shapes (letter patterns):
+            //   len 2 consonant-first vowel-last: so, to (no, to excluded as prep)
+            //   len 3: too, too/ver — rely on wordType.adv signal
+            //   len 4-7 with specific patterns
+            const wType = this._fineType(w);
+            const isShortInt = (wType === 'ADV' && w.length <= 5);
+            if (!isLyAdv && !isShortInt) continue;
+            if (result.includes(w)) continue;
+            // Score by frequency + shortness
+            const score = Math.log(1 + (count || 0)) + (w.length <= 4 ? 0.5 : 0);
+            if (score > bestIScore) { bestIScore = score; intensifier = w; }
+          }
+          if (intensifier && Math.random() < 0.5) {
+            result.splice(targetIdx, 0, intensifier);
           }
         }
       }
