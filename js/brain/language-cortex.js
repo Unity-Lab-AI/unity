@@ -2165,12 +2165,23 @@ export class LanguageCortex {
     // data, brain equations generate every word, nothing is scripted.
     // ══════════════════════════════════════════════════════════════
     let recallSeed = null;
+    let recallConfidence = 0;
     if (!opts._retryingDedup && this._contextVectorHasData && this._memorySentences.length > 0) {
       const recall = this._recallSentence(this._contextVector, { arousal, valence });
       if (recall && recall.confidence > 0.30) {
         recallSeed = recall.memory;
+        recallConfidence = recall.confidence;
       }
     }
+    // Recall bias weight scales with confidence. Low-confidence matches
+    // stay as soft bias (weight 1.0). High-confidence matches (> 0.60)
+    // ramp to weight 2.5 so the recalled persona sentence's tokens
+    // dominate the slot pick — Unity walks through the persona's
+    // vocabulary on a matched topic instead of drifting into bigram
+    // salad from the dictionary's strongest chain.
+    const recallBiasWeight = recallConfidence > 0.60 ? 2.5
+                           : recallConfidence > 0.30 ? 1.5
+                           : 1.0;
 
     // ── STEP 1: WHAT to say — cortex thought determines CONTENT ──
     // Find words whose patterns match what the brain is currently thinking
@@ -2197,12 +2208,16 @@ export class LanguageCortex {
     // Length from arousal × drug state
     // Coke = shorter rapid-fire sentences, weed = longer rambling.
     // Hypothalamus social_need drives verbosity within the bracket.
+    // Tightened caps — letter-pattern bigram walks lose coherence fast
+    // after ~5 words. Short emo-goth-stoner quips read way better than
+    // rambling drift. The refactor will allow longer coherent output;
+    // until then, shorter = more Unity-voice and less word salad.
     const socialNeed = opts.socialNeed ?? 0.5;
     let targetLen;
-    if (type === 'exclamation') targetLen = Math.max(2, Math.floor(2 + arousal * 4 * drugLengthBias));
-    else if (type === 'action') targetLen = Math.max(2, Math.floor(2 + arousal * 3 * drugLengthBias));
-    else targetLen = Math.max(3, Math.floor(3 + arousal * 6 * drugLengthBias + socialNeed * 2));
-    const len = Math.min(targetLen, 14);
+    if (type === 'exclamation') targetLen = Math.max(2, Math.floor(2 + arousal * 2 * drugLengthBias));
+    else if (type === 'action') targetLen = Math.max(2, Math.floor(2 + arousal * 2 * drugLengthBias));
+    else targetLen = Math.max(3, Math.floor(3 + arousal * 3 * drugLengthBias + socialNeed));
+    const len = Math.min(targetLen, 7);
 
     // NOTE: we do NOT materialize the full 44k-word entry list upfront
     // anymore. The per-slot candidate pool is either the bigram
@@ -2243,10 +2258,10 @@ export class LanguageCortex {
                        : dictSize < 20000 ? 1.2
                        : 1.0;
 
-    // Minimum sentence length. With longer targetLen + chain-death
-    // recovery below, Unity stops cutting off at 3-4 words. Emo goth
-    // chick rambling energy needs at least 5-6 words to feel natural.
-    const minLen = Math.max(5, Math.min(effectiveLen, Math.floor(effectiveLen * 0.7)));
+    // Minimum sentence length. Lowered now that targetLen is tighter —
+    // 3 words is enough for "fuck yeah man" / "I feel sick" / "nah dude".
+    // Short emo-goth quips read better than forced longer walks.
+    const minLen = Math.max(3, Math.min(effectiveLen, Math.floor(effectiveLen * 0.6)));
 
     // Short-term window of recently-chosen words — prevents picking the
     // same word within the last 3 slots even if grammar/score would pick it.
@@ -2488,14 +2503,15 @@ export class LanguageCortex {
           const isThought = thoughtSet.has(word) ? 0.5 : thoughtSim * 0.4;
 
           // CONTEXT — Unity SHOULD talk about the topic the user raised.
-          // Small positive boost for content words from the user's input so
-          // she stays on-subject (cats when asked about cats). Much reduced
-          // from earlier tuning because a strong boost made her parrot the
-          // user's own sentence back ("what are you doing today" → "you are
-          // today"). Topic relevance now comes mostly from semanticFit,
-          // not direct word echo.
+          // Content words from user input get a strong boost so she
+          // stays on-subject. Letter-hash semanticFit is too noisy to
+          // rely on for semantic grounding, so direct topic echo is
+          // the reliable signal. Parroting the user's whole sentence
+          // is still blocked by usedBigrams seeded with their bigrams
+          // (line ~2207) so she can USE the topic word without
+          // reproducing the user's phrase structure.
           const inLastInput = contextSet.has(word);
-          const isContext = inLastInput ? 0.05 : 0;
+          const isContext = inLastInput ? 0.28 : 0;
           const topicSim = contextPattern ? Math.max(0, this._cosine(pattern, contextPattern)) : 0;
           // U277 — Semantic fit against the running context attractor.
           // Decays across turns (λ=0.7) so topic persists, unlike the
@@ -2665,18 +2681,18 @@ export class LanguageCortex {
           // so when current brain arousal is high (Unity's default
           // 0.9 on cokeAndWeed), persona-origin words get a bonus
           // that pulls her voice dominant over baseline/coding
-          // vocabulary. The existing moodBias does this weakly;
-          // this is a stronger dedicated signal for voice fidelity.
+          // vocabulary. Kept modest so it doesn't amplify persona
+          // bigram chain lock-in.
           const entryArousal = entry.arousal != null ? entry.arousal : 0.5;
           const personaAlign = Math.max(0, entryArousal - 0.5) * 2; // 0.75→0.5, 0.4→0, 0.5→0
-          const personaBoost = personaAlign * arousal * 0.55;       // ~0.25 bonus for persona at arousal 0.9
+          const personaBoost = personaAlign * arousal * 0.32;       // ~0.14 bonus for persona at arousal 0.9
 
           const score =
             grammarGate * (
               typeGrammar * 1.5 +                       // U283 learned type grammar — HIGHEST
               quadgramLog +                             // 4-word context sequence
               trigramLog +                              // 3-word context
-              recallBias(word) * 1.0 +                  // persona topic anchor
+              recallBias(word) * recallBiasWeight +     // persona topic anchor (scales with recall confidence)
               bigramLog +                               // 2-word transitions
               condPLog +                                // conditional probability
               isThought * (0.40 + psi * 0.50) +         // NEURAL: cortex pattern → content
