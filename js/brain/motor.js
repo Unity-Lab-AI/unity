@@ -34,8 +34,12 @@ const ACTION_NAMES = [
   'idle',
 ];
 
-// Minimum firing rate to trigger an action (prevents random noise from acting)
-const CONFIDENCE_THRESHOLD = 0.15;
+// Minimum firing rate to trigger an action (prevents random noise from acting).
+// Lowered from 0.15 → 0.05 because the previous value was above the
+// steady-state EMA of typical BG channel firing (~0.04-0.12 at healthy
+// tonic drive), so the motor NEVER exited idle even when BG was firing
+// normally. At 0.05, any channel firing above background noise triggers.
+const CONFIDENCE_THRESHOLD = 0.05;
 
 // Cooldown between actions (brain steps) — prevents rapid-fire outputs
 const ACTION_COOLDOWN = 50;
@@ -133,9 +137,12 @@ export class MotorOutput {
       for (let n = 0; n < NEURONS_PER_CHANNEL; n++) {
         if (bgSpikes[start + n]) count++;
       }
-      // Exponential moving average of channel rate
+      // Exponential moving average of channel rate. Previous 0.7/0.3
+      // smoothed too aggressively — a brief burst of firing barely
+      // moved the rate. 0.5/0.5 responds within ~3 steps while still
+      // filtering one-frame spike noise.
       const rate = count / NEURONS_PER_CHANNEL;
-      this.channelRates[ch] = this.channelRates[ch] * 0.7 + rate * 0.3;
+      this.channelRates[ch] = this.channelRates[ch] * 0.5 + rate * 0.5;
     }
 
     // Find winning channel

@@ -42,11 +42,19 @@ class EventEmitter {
 
 const TOTAL_NEURONS = 1000;
 const OSCILLATOR_COUNT = 8;
+// Kuramoto coupling base strength. The original 0.5 DOES work — it
+// converges to ~30-40% coherence at steady state, which is the normal
+// range for a resting brain. But the convergence from random initial
+// phases is slow (takes minutes of sim time to reach 35%). Bumped
+// modestly to 2.5 — 5× the original — so coherence reaches steady
+// state within seconds of boot instead of minutes, without forcing
+// over-synchronization (full 100% sync would be pathological).
+// 35% is a healthy target — NOT locked sync.
 const MODULE_SIZE = 32;
 const STEPS_PER_FRAME = 10;
 const DT = 0.001;
 const THOUGHT_INTERVAL = 3000;
-const COUPLING_BASE = 0.5;
+const COUPLING_BASE = 2.5;
 const MEMORY_SALIENCE_THRESHOLD = 0.6; // salience above this stores episodic memory
 const RECALL_ERROR_THRESHOLD = 0.4;    // cortex error above this triggers recall
 
