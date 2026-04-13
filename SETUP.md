@@ -148,9 +148,6 @@ Live at `your-username.github.io/Unity/`. Everything runs client-side — no ser
 ├── compute.html                  GPU compute worker (REQUIRED — brain runs here)
 ├── server/
 │   ├── brain-server.js           Node.js brain server (always-on, WebSocket, GPU exclusive)
-│   ├── parallel-brain.js         Multi-core orchestrator (legacy — disabled in GPU mode)
-│   ├── cluster-worker.js         Per-cluster LIF worker (legacy — disabled in GPU mode)
-│   ├── projection-worker.js      Inter-cluster projection worker (legacy)
 │   └── package.json              Server dependencies (ws, better-sqlite3)
 ├── dashboard.html                Public brain monitor (read-only)
 └── docs/

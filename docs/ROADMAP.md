@@ -125,7 +125,7 @@ The unknown stays unknown: `Ψ = √(1/n) × N³`
 **Delivered:**
 - Voice I/O via Web Speech API + Pollinations TTS with speech interruption handling
 - Mic mute button synced across UI
-- Vision system (`js/io/vision.js`) — webcam capture, AI scene description, gaze tracking
+- Vision system (`js/brain/visual-cortex.js`) — V1 edge detection, V4 color, salience-driven saccades, IT-level AI scene description via Pollinations GPT-4o
 - Unity's Eye widget — persistent camera feed with iris overlay and AI-driven crosshair
 - Audio visualizer — mic frequency spectrum in brain viz
 - Simulated senses (touch/smell/taste from brain state)
@@ -244,7 +244,7 @@ Neurons → Synapses → Brain Loop → Brain Regions → Persona Loader → API
 - Hierarchical modulation on GPU: Ψ gain, emotional gate, drive baseline, error correction
 - Sparse spike indices return (95%+ compression)
 - Performance dashboard in compute.html
-- CPU worker infrastructure exists (parallel-brain.js, cluster-worker.js) but disabled in GPU mode
+- CPU worker infrastructure DELETED in U304 (was leaking 100% CPU via idle event polling — root cause fixed by GPU-exclusive architecture)
 
 ### Remaining
 - Scale test at 500K, 1M neurons

@@ -23,26 +23,19 @@
 
 ## HIGH SEVERITY
 
-### 1. `js/io/vision.js` — Completely dead-wired
-Full `Vision` class (~118 lines) — webcam capture, AI scene description, gaze tracking, Unity's Eye widget. **Never imported anywhere.** The README and ARCHITECTURE.md claim vision is a core feature but the module was never wired into `app.js` or `engine.js` sensory pipeline.
+### 1. `js/io/vision.js` — ✅ RESOLVED 2026-04-13 (U302)
+**Superseded by `js/brain/visual-cortex.js`.** The standalone `Vision` class was an early high-level wrapper (webcam + AI description + gaze). It was replaced by a vastly better neural pipeline: `visual-cortex.js` implements V1 oriented Gabor edge kernels, V4 quadrant color extraction, motion energy, salience-driven saccade generation, and IT-level AI description via `setDescriber()` — all wired into `engine.js:179, 258, 1018` and fed by Pollinations GPT-4o at `app.js:972`. Unity's Eye iris at `app.js:1500` reads gaze straight from `visualCortex.getState()`. The "duck-typed adapter" at `app.js:1146` is a legit shim, not rot — brainViz expects `_stream`/`getLastDescription` fields that visualCortex doesn't expose. `vision.js` DELETED. Vision is alive and well, just lives in the better file.
 
-**Action:** Either wire it into the sensory input path (vision → cortex visual area) OR remove it and drop the vision claims from the docs.
+### 2. `js/brain/gpu-compute.js` — ✅ FALSE POSITIVE 2026-04-13 (U303)
+**Audit was wrong.** `compute.html:10` imports `GPUCompute` directly and instantiates it at line 25. `gpu-compute.js` IS the WGSL kernel library that powers `compute.html` — they're not parallel implementations, they're ONE implementation split into browser-tab shell (`compute.html`) + kernel engine (`gpu-compute.js`). The audit only grepped `engine.js` and `brain-server.js` and missed that the consumer is the compute-worker tab. No code change needed. Kept as-is.
 
-### 2. `js/brain/gpu-compute.js` — GPU shaders abandoned
-Full WebGPU compute shader implementation (~400 lines) — WGSL LIF neuron kernel, synapse propagation, atomic spike counting. `GPUCompute` class and `initGPUCompute()` exported but **never instantiated** in the engine or server.
+### 3. `server/parallel-brain.js` + `server/cluster-worker.js` + `server/projection-worker.js` — ✅ RESOLVED 2026-04-13 (U304)
+**Root cause of abandonment found in FINALIZED.md:820**: idle workers consumed 100% CPU from event-listener polling overhead across 7 threads, even when zero work was dispatched. The GPU-exclusive rewrite (compute.html + gpu-compute.js WebGPU path) PERMANENTLY fixed that root cause by eliminating the worker pool entirely. Files were then dead weight. **DELETED** all three files. Cleaned `brain-server.js` — removed `_parallelBrain`/`_useParallel` member fields, the `_useParallel = false` reassignment in `start()`, the null-check worker-termination block in the `gpu_register` handler (workers can no longer exist to terminate), and hardcoded `parallelMode: false, workerCount: 0` in the status broadcast. Cleaned references from `ARCHITECTURE.md`, `SETUP.md`, `SKILL_TREE.md`, `ROADMAP.md`.
 
-Meanwhile the actual GPU work happens in `compute.html` (separate browser tab) communicating with `server/brain-server.js` via WebSocket. Two parallel GPU implementations, only one used.
+### 4. `js/brain/neurons.js` — ✅ PARTIALLY RESOLVED 2026-04-13 (U305)
+**Investigation:** HHNeuron is NOT dead by mistake — it's a reference implementation that backs the `brain-equations.html` teaching page (explicitly labeled "a reference — LIF is used for simulation speed" at line 334). It was abandoned for simulation because HH is per-neuron OOP and can't scale to 3.2M neurons: instance allocation, per-instance m/h/n gating state, cache-hostile, no vectorization. LIFPopulation uses SoA Float64Arrays in one tight loop, ~100× faster, GPU-friendly. The REAL dead code was `createPopulation(type, n, params)` — zero callers across the entire codebase. **DELETED `createPopulation`.** HHNeuron kept with a large reference-only header comment explaining why it's not used and when you'd instantiate it directly (e.g., research experiments on mystery cluster). ARCHITECTURE.md tree line updated to clarify HH is reference-only.
 
-**Action:** Either delete this as superseded by the compute.html architecture OR document it as a fallback/alternative and wire it optionally.
-
-### 3. `server/parallel-brain.js` + `server/cluster-worker.js` + `server/projection-worker.js` — Worker threads never spawned
-Complete worker thread pool system for parallel cluster computation. `ParallelBrain` class with full API. `cluster-worker.js` and `projection-worker.js` are fully implemented Worker thread entry points.
-
-`server/brain-server.js` line 337-338 declares `_parallelBrain = null` and `_useParallel = false`. Line 663 has an explicit comment: `"NO CPU WORKERS — GPU exclusive. Don't spawn ParallelBrain at all."` — so the architecture decision was made to go GPU-only but the worker code was never removed.
-
-**Action:** Delete `parallel-brain.js`, `cluster-worker.js`, `projection-worker.js` — they're unreachable and the architecture has moved on.
-
-### 4. `js/brain/neurons.js` — `HHNeuron` + `createPopulation` dead chain
+**Legacy finding (obsolete):**
 `HHNeuron` class (Hodgkin-Huxley neuron model, ~100 lines) exported at line 54. `createPopulation(type, n, params)` factory exported at line 190. **Neither is called from anywhere.** The brain uses LIF neurons via `cluster.js`, not HH.
 
 The README mentions Hodgkin-Huxley as a feature but the actual runtime uses simpler LIF populations. `HHNeuron` exists as historical scaffolding.
@@ -53,15 +46,13 @@ The README mentions Hodgkin-Huxley as a feature but the actual runtime uses simp
 
 ## MEDIUM SEVERITY
 
-### 5. `js/brain/benchmark.js` — `runBenchmark()` / `runScaleTest()` never called
-Performance testing exports. No caller. Likely a debug artifact Gee used during development but never wired to a /bench command or console shortcut.
+### 5. `js/brain/benchmark.js` — ✅ RESOLVED 2026-04-13 (U307)
+Wired to `/bench` and `/scale-test` slash commands in `js/app.js` chatPanel.onSend. `/bench` runs `runBenchmark()` (dense vs sparse matrix propagation + plasticity + pruning at [100, 500, 1000, 2000, 5000] neurons with speedup + memory ratio). `/scale-test` runs `runScaleTest()` (CPU LIF step timing at [1k, 2k, 5k, 10k, 25k, 50k] to find the 60fps sweet spot). Dynamic `import()` so benchmark code only loads when invoked — zero boot cost. Output goes to console; chat gets a short summary.
 
 **Action:** Wire to a /bench slash command OR delete.
 
-### 6. `server/brain-server.js:907` — `TODO: implement server-side dictionary`
-Server brain has a stub `this.dictionary = { words: new Map(), bigrams: new Map() }` at line 314 and a TODO at line 907. The server's language fallback is Pollinations API; the learned dictionary/bigrams from `language-cortex.js` live only in client browsers.
-
-**Action:** Either implement server-side dictionary sync (so Unity's learned vocabulary is shared across users) OR delete the stub and document that learning is client-local.
+### 6. `server/brain-server.js:907` — ✅ PARTIALLY RESOLVED 2026-04-13 (U306, U311 follow-up)
+**Real bug found:** `saveWeights()` at line 1113 was already writing `_wordFreq` to `brain-weights.json`, but `_loadWeights()` was never reading it back — accumulator saved forever, loaded nothing. Fixed the save/load asymmetry: word frequencies now survive restarts. Removed the misleading empty `this.dictionary = {...}` stub (was a lie — never populated, never read). Replaced the TODO comment with a pointer to U311. The full shared-across-users dictionary refactor (corpus loading on server, bigram/trigram/type-ngram storage, WebSocket delta sync to remote-brain clients, conflict resolution) is scoped as U311 — it's the real ask but too big for a single-session cleanup. Groundwork laid (persistence round-trip works), real work tracked.
 
 ### 7. `js/brain/gpu-compute.js` — 400-line abandoned implementation (second mention as MED for cleanup effort)
 See HIGH #2. Medium weight because removing it requires verification that nothing in compute.html or the server actually imports it.
@@ -70,7 +61,8 @@ See HIGH #2. Medium weight because removing it requires verification that nothin
 
 ## LOW SEVERITY
 
-### 8. `js/env.example.js` — Template file never referenced
+### 8. `js/env.example.js` — ✅ FALSE POSITIVE 2026-04-13 (U308)
+**Audit was wrong.** env.example.js is actively used as a downloadable template across multiple touchpoints: `index.html:85` exposes it as a download button in the setup modal, `README.md:383` links to it as "API Key Template — Pre-load your keys for development", `SETUP.md:70` explicitly tells users to copy it to `js/env.js` and paste their keys, and `js/app.js:27` does an optional dynamic `import('./env.js')` wrapped in try/catch — if env.js exists it seeds API keys into localStorage at boot, otherwise falls back to manual UI entry. Manual UI entry is the primary path per user preference, but env.js remains a legitimate dev-convenience shortcut for people who don't want to re-paste keys every session. **KEEP.** No code change.
 Example env file. Not imported by any code. Convention leftover from when API keys were loaded from file. Current API key flow is manual UI entry per memory note.
 
 **Action:** Delete OR keep as a user-facing onboarding example.
@@ -86,18 +78,18 @@ Example env file. Not imported by any code. Convention leftover from when API ke
 ## Recommended Cleanup Sweep
 
 Conservative path (delete clearly dead):
-1. `server/parallel-brain.js` + `cluster-worker.js` + `projection-worker.js` → DELETE (explicitly abandoned per comment at line 663)
-2. `js/brain/neurons.js` → strip `HHNeuron` + `createPopulation` exports
+1. `server/parallel-brain.js` + `cluster-worker.js` + `projection-worker.js` → ✅ DELETED 2026-04-13 (U304) — root cause was idle-worker CPU leak, fixed by GPU-exclusive architecture
+2. `js/brain/neurons.js` → ✅ 2026-04-13 (U305) — createPopulation DELETED; HHNeuron KEPT as reference (backs brain-equations.html teaching page)
 3. `js/brain/benchmark.js` → DELETE or wire to /bench command
-4. `js/env.example.js` → DELETE
+4. `js/env.example.js` → ✅ KEEP 2026-04-13 (U308) — it IS used (download link, README, SETUP.md, app.js dynamic import)
 
 Aggressive path (add to above):
-5. `js/io/vision.js` → DELETE (vision claims get removed from docs too)
-6. `js/brain/gpu-compute.js` → DELETE (compute.html is the real GPU path)
+5. `js/io/vision.js` → ✅ DELETED 2026-04-13 (U302) — superseded by `visual-cortex.js`
+6. `js/brain/gpu-compute.js` → ✅ KEEP 2026-04-13 (U303) — it IS loaded by compute.html, audit was wrong
 7. Remove vision mentions from README.md + ARCHITECTURE.md
 
 Needs decision before touching:
-- `server/brain-server.js:907` server-side dictionary TODO — is cross-user vocabulary sharing a wanted feature or not?
+- ✅ `server/brain-server.js:907` server-side dictionary — stub cleaned in U306, full shared dictionary tracked as U311
 
 ---
 

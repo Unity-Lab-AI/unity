@@ -1129,6 +1129,22 @@ Vision: ${state.visionDescription || 'none'}`;
         handleThink(userInput);
         return { response: { text: 'Brain state shown.' }, action: 'think' };
       }
+      // /bench + /scale-test — dense vs sparse perf comparison and LIF scale test (U307)
+      if (text.startsWith('/bench') || text.startsWith('/scale-test')) {
+        const mod = await import('./brain/benchmark.js');
+        const isScale = text.startsWith('/scale-test');
+        showSpeechBubble(isScale ? '/scale-test running — see console' : '/bench running — see console', 4000);
+        try {
+          const results = isScale ? mod.runScaleTest() : mod.runBenchmark();
+          const summary = isScale
+            ? `Scale test complete — ${results.length} sizes tested. Best 60fps×10 sweet spot in console.`
+            : `Benchmark complete — ${results.length} sizes, dense vs sparse. Speedups in console.`;
+          return { response: { text: summary }, action: 'bench' };
+        } catch (err) {
+          console.error('[bench] failed:', err);
+          return { response: { text: `Benchmark failed: ${err.message}` }, action: 'bench' };
+        }
+      }
       setAvatarState('thinking');
       const result = await brain.processAndRespond(text);
       setAvatarState('idle');

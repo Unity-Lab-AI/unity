@@ -4,6 +4,18 @@
 // ============================================================
 // Hodgkin-Huxley — the real deal, 1952 squid axon style
 // Cm * dV/dt = I - gNa*m³h*(V-ENa) - gK*n⁴*(V-EK) - gL*(V-EL)
+//
+// REFERENCE-ONLY IMPLEMENTATION. Not used by the live runtime —
+// cluster.js imports LIFPopulation directly. HHNeuron exists to
+// back the `brain-equations.html` teaching page (equations, gating
+// kinetics, Nobel-prize history). We don't use it for simulation
+// because HH is per-neuron OOP: at 3.2M neurons it's infeasible —
+// 3.2M object instances, per-instance m/h/n state, no vectorization,
+// cache-hostile. LIFPopulation uses a single SoA (Float64Array V,
+// spikes, refracRemaining) in one tight loop — GPU-friendly and
+// ~100× faster. If you ever need true biophysical fidelity for a
+// small group (mystery cluster, research experiments), instantiate
+// HHNeuron directly. Everything else uses LIF.
 // ============================================================
 
 const HH_DEFAULTS = {
@@ -184,48 +196,6 @@ export class LIFPopulation {
   }
 }
 
-// ============================================================
-// factory — because sometimes you want to pick at runtime
-// ============================================================
-
-export function createPopulation(type, n, params = {}) {
-  switch (type) {
-    case 'lif':
-      return new LIFPopulation(n, params);
-
-    case 'hh': {
-      // HH is per-neuron (expensive), so we wrap N of them
-      // in a population-like interface
-      const neurons = Array.from({ length: n }, () => new HHNeuron(params));
-      const spikes = new Uint8Array(n);
-      const voltages = new Float64Array(n);
-
-      return {
-        n,
-        neurons,
-
-        step(dt, currents) {
-          for (let i = 0; i < n; i++) {
-            const I = currents ? currents[i] : 0;
-            neurons[i].step(dt, I);
-            spikes[i] = neurons[i].spiked ? 1 : 0;
-            voltages[i] = neurons[i].V;
-          }
-          return spikes;
-        },
-
-        getVoltages() {
-          for (let i = 0; i < n; i++) voltages[i] = neurons[i].V;
-          return voltages;
-        },
-
-        getSpikes() {
-          return spikes;
-        },
-      };
-    }
-
-    default:
-      throw new Error(`unknown neuron type: "${type}" — try 'lif' or 'hh'`);
-  }
-}
+// createPopulation factory was removed in U305 — it was never called.
+// The runtime imports LIFPopulation directly from cluster.js, and HHNeuron
+// is reference-only. If you need a population, `new LIFPopulation(n, params)`.

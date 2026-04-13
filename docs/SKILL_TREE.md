@@ -174,7 +174,7 @@
 | √(1/n) × N³ mystery module | CompNeuro | Expert | **DONE** — `js/brain/mystery.js` + 50-neuron cluster |
 | Attention mechanism | AI/ML | Advanced | Pending |
 | Anthropic CORS proxy | Backend | Intermediate | **DONE** — `proxy.js` (Node.js, translates OpenAI→Anthropic format) |
-| Camera/vision integration | Vision | Intermediate | **DONE** — `js/io/vision.js` (webcam + AI gaze tracking + Unity's Eye widget) |
+| Camera/vision integration | Vision | Intermediate | **DONE** — `js/brain/visual-cortex.js` (V1 Gabor edge kernels → V4 color → salience saccades → IT AI description via Pollinations GPT-4o) + Eye iris in `app.js:1500` |
 | 3D brain visualizer | Frontend | Expert | **DONE** — `js/ui/brain-3d.js` (WebGL, 20K neurons, MNI positions, fractal connections) |
 | Neural cluster architecture | CompNeuro | Expert | **DONE** — `js/brain/cluster.js` (7 clusters, 20 projections, real white matter tracts) |
 | AI intent classification | AI/ML | Intermediate | **DONE** — removed AI call, embedding-based BG routing in `sensory.js` |
@@ -201,7 +201,7 @@
 | Claude Code CLI proxy | Backend | Intermediate | **DONE** — `claude-proxy.js` (OpenAI-compatible endpoint on :8088, uses logged-in credentials) — from Tolerable PR |
 | GPU exclusive compute | Backend | Advanced | **DONE** — `compute.html` + `gpu-compute.js` (WGSL shaders, all 7 clusters on GPU, zero CPU workers) |
 | GPU compute pipeline | Backend | Expert | **DONE** — `compute.html` + WebSocket dispatch (browser WebGPU → server, 50ms timeout fallback) |
-| Projection workers | Backend | Advanced | **DONE** — `projection-worker.js` (sparse weights, propagate + learn on separate cores) |
+| Projection workers | Backend | Advanced | **REMOVED** — `projection-worker.js` deleted in U304. Superseded by GPU-exclusive compute pipeline (`compute.html` + `gpu-compute.js`). Old worker pool caused 100% CPU from idle event-listener polling. |
 
 ---
 

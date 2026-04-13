@@ -14,6 +14,380 @@
 
 ## COMPLETED TASKS LOG
 
+## 2026-04-13 Session: Orphan Resolution
+
+### ORIGINAL TASK DESCRIPTIONS (verbatim from TODO.md before move — preserved per CLAUDE.md rule "keep every word of the original description")
+
+#### U283 — Phrase-level grammar state machine in slot scorer
+
+**Goal:** Replace the single-prev-word type compatibility check with a phrase-state tracker. Each slot is filled based on the CURRENT PHRASE STATE, not just the previous word.
+
+- Phrase states: SUBJECT / FINITE_VERB / PREDICATE_COMPLEMENT / OBJECT / MODIFIER / INFINITIVE_TO / BARE_INFINITIVE / NEGATED_AUX / PROGRESSIVE / PERFECT / etc.
+- Transitions: each picked word moves the state machine forward based on the word's type AND the current state.
+- Example: `"I"` → SUBJECT → next state FINITE_VERB. Picks `"am"` → FINITE_VERB → next state PREDICATE_COMPLEMENT. Picks `"not"` → NEGATED (still PREDICATE_COMPLEMENT). Picks `"use"` → FAIL because PREDICATE_COMPLEMENT wants noun/adj/participle, "use" is bare verb. Reject and retry.
+- Files: `js/brain/language-cortex.js` — new `_PhraseState` class or equation-based state function, wire into `nextSlotRequirement`.
+
+#### U284 — Contraction continuation rules
+
+**Goal:** When the slot scorer picks a contracted form like `"I'm"`, `"don't"`, `"can't"`, the next-slot requirement must reflect the GRAMMATICAL ROLE of the underlying expansion, not just the contraction's letter shape.
+
+- `"I'm"` = `I + am` (copula) → next = PREDICATE_COMPLEMENT (noun/adj/PP/-ing participle)
+- `"don't"` = `do + not` (neg aux) → next = BARE_INFINITIVE_VERB
+- `"can't"` = `can + not` → next = BARE_INFINITIVE_VERB
+- `"won't"` = `will + not` → next = BARE_INFINITIVE_VERB
+- `"I'll"` = `I + will` (modal) → next = BARE_INFINITIVE_VERB
+- `"I've"` = `I + have` (perfect aux) → next = PAST_PARTICIPLE
+- `"he's"` = `he + is` → next = PREDICATE_COMPLEMENT or PRESENT_PARTICIPLE
+- `"they're"` = `they + are` → next = PREDICATE_COMPLEMENT or PRESENT_PARTICIPLE
+- Each contraction has a mapped state transition. Pure letter-equation detection of the contraction + pinned next-state requirement.
+- Files: `js/brain/language-cortex.js` — extend `nextSlotRequirement` with contraction-aware state transitions.
+
+#### U285 — Negation particle continuation rules
+
+**Goal:** The word `"not"` should force the next slot into a specific grammatical category based on what it negates.
+
+- `"is not"` / `"am not"` / `"are not"` / `"was not"` / `"were not"` → next = PREDICATE_COMPLEMENT
+- `"do not"` / `"does not"` / `"did not"` → next = BARE_INFINITIVE_VERB
+- `"has not"` / `"have not"` / `"had not"` → next = PAST_PARTICIPLE
+- `"will not"` / `"would not"` / `"should not"` / `"could not"` / `"might not"` → next = BARE_INFINITIVE_VERB
+- Detect via two-word lookback (prev-prev + prev == copula/aux + not).
+- Without this, `"I'm not use"` happens because `"not"` alone has no preference between noun-complement and bare-verb continuation.
+- Files: `js/brain/language-cortex.js` — extend `nextSlotRequirement` with negation-aware two-word lookback.
+
+#### U286 — Infinitive marker continuation
+
+**Goal:** After `"to"`, the next word should be a bare infinitive verb, not a noun (unless `"to"` is functioning as a preposition).
+
+- `"want to"` + next = BARE_INFINITIVE (`"want to go"`, `"want to try"`)
+- `"going to"` + next = BARE_INFINITIVE (`"going to do"`, `"going to say"`)
+- `"have to"` + next = BARE_INFINITIVE
+- `"need to"` + next = BARE_INFINITIVE
+- But `"go to"` + next = NOUN/DET (prepositional: `"go to the store"`)
+- Distinguishable by the word BEFORE `"to"`: verbs like want/going/need/have take infinitive, while motion verbs go/come/walk/drive take prepositional.
+- Files: `js/brain/language-cortex.js` — extend nextSlotRequirement with `to`-infinitive detection.
+
+#### U287 — Sentence completeness validator post-render
+
+**Goal:** After the slot scorer generates a sentence, run it through a completeness check. Incomplete sentences (ending on `"the"`, `"a"`, `"to"`, `"with"`, a bare aux, etc.) should either be extended or rejected and retried.
+
+- Complete sentences end on: punctuation, content word (noun/adj/adv), or intransitive verb
+- Incomplete sentences end on: determiner, preposition, conjunction, bare auxiliary, infinitive marker
+- Detection via wordType of the last word + specific closed-class check
+- If incomplete, attempt to extend by one more slot. If still incomplete after 3 attempts, reject the sentence and retry the whole generation with a higher-temperature variation.
+- Files: `js/brain/language-cortex.js` — new `_isCompleteSentence(tokens)` method, wire into `generate()` post-render loop.
+
+#### U288 — Intensifier placement rules
+
+**Goal:** The current intensifier insertion (task 39) inserts before the first adj/verb found but can break grammar by placing `"so"` or `"really"` in ungrammatical positions.
+
+- `"so"` / `"really"` / `"very"` / `"pretty"` only before adj/adv, not before verbs
+- `"fucking"` (as intensifier) can go before adj/adv/noun but not before finite verbs
+- Don't insert an intensifier if the following word is a copula
+- Don't insert two intensifiers in a row
+- Files: `js/brain/language-cortex.js` — tighten `_postProcess` intensifier block.
+
+#### U289 — Subject-verb agreement sweep
+
+**Goal:** Current agreement is a post-process copula swap (`"i are"` → `"i am"`). Extend to cover ALL verb forms, not just copulas.
+
+- Third-person singular subjects (he/she/it/single noun) → verb gets -s (`"he codes"` not `"he code"`)
+- First/second person + plural → bare verb (`"I code"`, `"you code"`, `"we code"`, `"they code"`)
+- Detect subject person via `_isNominativePronoun` + closed-class check
+- Apply `applyThird` in `_postProcess` based on subject person, not just a vague heuristic
+- Files: `js/brain/language-cortex.js` — rewrite the third-person-s branch in `_postProcess`.
+
+#### U290 — Determiner-noun phrase validator
+
+**Goal:** When the slot scorer picks a determiner (`"the"`, `"a"`, `"an"`, `"my"`, `"this"`, `"some"`), the next slot must be a noun or adj+noun. The current phrase-structure continuation handles `det → noun` but doesn't enforce `det → adj → noun` properly.
+
+- After `"the"`: next = NOUN or ADJ_LEADING_TO_NOUN
+- After `"a"`: next = NOUN or ADJ starting with consonant (or "an" if vowel)
+- After `"an"`: next = NOUN or ADJ starting with vowel
+- If adj picked, MUST eventually pick noun before the phrase closes
+- Files: `js/brain/language-cortex.js` — extend phrase state machine with NP-completeness tracking.
+
+#### U291 — Preposition-object phrase validator
+
+**Goal:** After a preposition (`"in"`, `"on"`, `"at"`, `"for"`, `"with"`, `"about"`), the next slot must eventually resolve to a noun phrase object.
+
+- After prep: next = DET or PRONOUN or NOUN or ADJ (leading to noun)
+- If no noun within 3 slots, reject and retry
+- Handles compound preps (`"out of"`, `"because of"`, `"next to"`)
+- Files: `js/brain/language-cortex.js` — extend phrase state machine with PP-completeness tracking.
+
+#### U293 — Create docs/coding-knowledge.txt — HTML/CSS/JS reference
+
+**Goal:** Comprehensive but pattern-based coding knowledge file, loaded alongside persona and baseline into Unity's dictionary/bigrams/trigrams. Gives Unity the vocabulary + conventions of web coding. NOT full app examples.
+
+Content categories:
+- **HTML elements** — div/span/p/h1-h6/img/a/button/input/form/table/ul/ol/li/nav/header/footer/section/article/aside/main/canvas/video/audio + their common attributes
+- **HTML semantics** — when to use each element, accessibility basics, proper document structure
+- **CSS properties** — layout (display/flex/grid/position/float), box model (margin/padding/border/width/height), typography (font-family/size/weight/line-height/color), visual (background/border-radius/box-shadow/opacity/transform), animation (transition/keyframes), responsive (@media, em/rem/vw/vh/%)
+- **CSS layout patterns** — flex centering, grid dashboard, sticky header, sidebar layout, card grid, hero section
+- **JavaScript DOM** — querySelector/getElementById/createElement/appendChild/removeChild/innerHTML/textContent/setAttribute/classList/dataset
+- **JavaScript events** — addEventListener/click/input/change/submit/keydown/mouseover, event delegation, preventDefault, stopPropagation
+- **JavaScript patterns** — state as plain object, event handlers, async/await, fetch/Promise, setTimeout/setInterval, requestAnimationFrame, localStorage/sessionStorage
+- **JavaScript data** — Array.map/filter/reduce/forEach, Object.keys/values/entries, JSON.parse/stringify, template literals
+- **Build patterns** (not full code, just structure) — form with validation, list with add/remove, modal dialog, tabs, accordion, carousel, calculator state machine, timer, stopwatch, counter, todo list, game loop
+- **Error handling** — try/catch, error boundaries, graceful fallback, console.error for debugging
+
+Files: `docs/coding-knowledge.txt` (new)
+
+#### U294 — Sandbox lifecycle knowledge section
+
+**Goal:** Specific section in docs/coding-knowledge.txt documenting Unity's sandbox rules so the `_handleBuild` path produces code that respects the sandbox contract.
+
+Must document:
+- **Every component needs a unique id** — kebab-case-name
+- **Before injecting a new component with an existing id, remove the old one** — `sandbox.remove(id)` then `sandbox.inject(spec)`, OR use `position: 'replace'`
+- **Max active components** — set a soft cap (e.g. 10) and auto-remove the oldest when exceeded, OR list existing IDs and prompt user which to keep
+- **Cleanup rules** — components that set `setInterval`/`setTimeout` must clear them on removal (MutationObserver for wrapper.remove, or attach to `el.__cleanup`)
+- **Scoped CSS** — never use `body`/`html` selectors, never use `!important`, use component-scoped class names
+- **JS context** — the wrapper element is `el`, unity API is `unity`, never touch `document.body` or global state
+- **Error handling** — wrap risky code in try/catch, log errors to `sandbox._errors`, fall back gracefully
+- **Memory** — don't create unbounded arrays, clean up references on removal
+- **Ordering** — inject order: CSS first (via sandbox.injectCSS if global, or inline via spec.css), then HTML, then JS that binds to the rendered DOM
+- **Common mistakes to avoid** — using innerHTML with unescaped user input, recursive DOM queries in animation loops, memory leaks from event listeners not cleaned up, multiple instances of same component stacked
+
+Files: `docs/coding-knowledge.txt` section "SANDBOX DISCIPLINE"
+
+#### U295 — Wire coding-knowledge.txt into the learning pipeline
+
+**Goal:** Unity loads this corpus alongside persona + baseline so the vocabulary includes HTML tags, CSS properties, JS APIs, and common coding terms. The bigrams/trigrams/4-grams from this corpus feed the slot scorer when she's asked about coding.
+
+- Add `loadCodingKnowledge(text)` method to LanguageCortex and InnerVoice (parallel to `loadBaseline`)
+- app.js `loadPersonaSelfImage` fetches all THREE files via Promise.all
+- Coding corpus sentences pass through the same pipeline (first-person transform is a no-op for generic technical text; mood signature computes low arousal / low valence for neutral technical content; cortex pattern derived per sentence)
+- Files: `js/brain/language-cortex.js`, `js/brain/inner-voice.js`, `js/app.js`
+
+#### U296 — Build-specialized Broca's area prompt
+
+**Goal:** When BG motor selects `build_ui`, the Broca's area prompt must switch to a CODING MODE that references the coding knowledge + sandbox rules, not the casual conversational mode.
+
+- New method `_buildBuildPrompt(brainState, userRequest)` separate from `_buildPrompt`
+- Character block: still Unity, but in BUILD MODE — focused, technical, competent
+- Sandbox rules summary (scoped CSS, unique IDs, cleanup, no globals)
+- unity.* API reference (speak, chat, generateImage, getState, storage)
+- JSON output contract: `{html, css, js, id}` only
+- Existing components list — if any, she should REUSE the same id to update
+- Current sandbox state — count of active components, memory warning if >10
+- Files: `js/brain/language.js` — new method, switch in `generate()` based on `brainState.motor.selectedAction`
+
+#### U297 — Sandbox auto-cleanup and soft cap
+
+**Goal:** Prevent Unity from leaving hundreds of stale components running in the sandbox (setInterval leaks, event listener accumulation, DOM bloat).
+
+- Set MAX_ACTIVE_COMPONENTS = 10 in sandbox.js
+- When inject() would exceed cap, auto-remove the oldest component (track insertion timestamps)
+- Before inject() with an existing id, always call remove(id) first (right now it bails with a warning — change behavior to replace)
+- Track setInterval/setTimeout handles per component via a `_componentTimers` map
+- When remove() fires, clear all timers owned by that component
+- Same for registered event listeners on `window`/`document` — wrap addEventListener to track and clean up
+- Files: `js/ui/sandbox.js`
+
+#### U298 — Build error recovery and retry
+
+**Goal:** When Unity builds a component and it throws, don't leave the broken component in the sandbox. Recover cleanly and either retry OR report the error in-voice.
+
+- Wrap `_evaluateJS` execution in a timeout so infinite loops don't hang the UI
+- If execution throws within 100ms of injection, consider the build a failure
+- Auto-remove the broken component
+- Emit a response message like `"shit, that build crashed — [error]"` in Unity's voice (via the language cortex, not hardcoded)
+- Offer retry via a chat input like `"want me to try again?"`
+- Files: `js/ui/sandbox.js` error handling + `js/brain/engine.js` `_handleBuild` retry logic
+
+#### U299 — Build composition knowledge (primitives that combine)
+
+**Goal:** Unity should know how to COMPOSE apps from primitives — form+list = todo app, canvas+loop = game, input+eval = calculator, textarea+pre = code editor — rather than memorizing full apps.
+
+Document in coding-knowledge.txt:
+- **Calculator primitive:** input field + button grid + display element + evaluate() function with safe parsing
+- **List primitive:** array state + render function + add/remove handlers + persistence via localStorage
+- **Timer primitive:** requestAnimationFrame loop + time delta + display update + start/stop state
+- **Canvas game primitive:** canvas element + render loop + input handlers + game state object
+- **Form primitive:** input elements + validation function + submit handler + feedback display
+- **Modal primitive:** overlay div + content div + close handler + backdrop click to dismiss
+- **Tab primitive:** header buttons + content divs + active state + click handler
+
+Each is a PATTERN, not code. Unity combines them at build time based on the user's request. The knowledge is HOW they connect, not WHAT to type.
+
+Files: `docs/coding-knowledge.txt` section "BUILD PRIMITIVES"
+
+#### U302 — Revive vision system (`js/io/vision.js`)
+
+**Finding:** Full Vision class exists (118 lines) — webcam capture, AI scene description, gaze tracking, Unity's Eye widget. Never imported anywhere. README + ARCHITECTURE.md claim vision is a core feature but wiring was never completed.
+
+**Decision plan:**
+- Check whether vision is a wanted feature (Gee confirms yes/no)
+- If YES: wire into `js/app.js` boot so the Vision instance is created and passed to `engine.connectMicrophone` equivalent or new `engine.connectVision`
+- Add a sensory input pipeline: webcam frame → visual cortex (V1 edge detection → IT recognition) → cortex visual area neurons
+- Unity's Eye widget (iris + crosshair overlay) visible in the UI
+- If NO: delete `js/io/vision.js` and strip vision claims from README + ARCHITECTURE.md + brain-equations.html
+
+**Files:** `js/io/vision.js`, `js/app.js`, `js/brain/engine.js`, `js/brain/sensory.js`, possibly `js/ui/vision-widget.js` (new)
+
+#### U303 — Integrate or delete `js/brain/gpu-compute.js`
+
+**Finding:** 400-line WebGPU compute shader implementation with WGSL LIF kernel, synapse propagation, atomic spike counting. `GPUCompute` class + `initGPUCompute()` exported. Never instantiated. Meanwhile actual GPU work runs in `compute.html` (separate browser tab) via WebSocket from `server/brain-server.js`.
+
+**Decision plan:**
+- These are two parallel GPU implementations. Figure out which is the "real" one.
+- compute.html is confirmed working (GPU worker output in console). That's the server-brain path.
+- `gpu-compute.js` appears to be a client-brain path that never got wired in — for browser-local GPU mode
+- If browser-local GPU is wanted as a client-side fallback when server unavailable: wire into `js/brain/engine.js` step loop as an alternative to CPU fallback
+- If the compute.html path is definitive: DELETE `gpu-compute.js`
+
+**Files:** `js/brain/gpu-compute.js`, `js/brain/engine.js`
+
+#### U304 — Delete abandoned worker thread system
+
+**Finding:** `server/parallel-brain.js`, `server/cluster-worker.js`, `server/projection-worker.js` — fully implemented Worker thread pool. `server/brain-server.js:337-338` declares `_parallelBrain = null` and `_useParallel = false`. Line 663 has explicit comment `"NO CPU WORKERS — GPU exclusive. Don't spawn ParallelBrain at all."` — architecture decided against it but the files remain.
+
+**Decision plan:**
+- The comment makes the decision clear: GPU exclusive, no CPU workers
+- DELETE `server/parallel-brain.js`, `server/cluster-worker.js`, `server/projection-worker.js`
+- Remove the `_parallelBrain` / `_useParallel` stubs from `brain-server.js` lines 337-338 and the defensive null checks at lines 1444-1448
+- Clean up any imports that reference them
+
+**Files:** `server/parallel-brain.js` (delete), `server/cluster-worker.js` (delete), `server/projection-worker.js` (delete), `server/brain-server.js` (clean stubs)
+
+#### U305 — HHNeuron dead chain cleanup
+
+**Finding:** `js/brain/neurons.js` exports `HHNeuron` class (~100 lines, full Hodgkin-Huxley model) and `createPopulation(type, n, params)` factory. Neither is called. Runtime uses LIF populations via `cluster.js`. README claims HH as a core neuron model.
+
+**Decision plan:**
+- Option A: Integrate HH as an alternative neuron type. Cluster init could accept `neuronType: 'HH'` to use HHNeuron instead of LIF. Used selectively for mystery cluster or specific simulation needs.
+- Option B: Delete HHNeuron + createPopulation, update README to say "LIF neurons" not "Hodgkin-Huxley"
+- Gee's call on which — HH is more biologically accurate but slower
+
+**Files:** `js/brain/neurons.js`, `js/brain/cluster.js`, `README.md`, `docs/ARCHITECTURE.md`
+
+#### U306 — Server-side dictionary sync
+
+**Finding:** `server/brain-server.js:314` has `this.dictionary = { words: new Map(), bigrams: new Map() }` stub. Line 907 has `// TODO: implement server-side dictionary`. Currently Unity's learned vocabulary (bigrams, trigrams, type n-grams) lives client-side only — user A's conversations don't teach user B's brain even though they share the neural state via WebSocket.
+
+**Decision plan:**
+- Decide whether cross-user language learning is wanted (Unity gets smarter from every user's conversation)
+- If YES: implement server-side dictionary. Store persona + baseline + coding corpus on the server. Every user input learns into the SERVER's dictionary. Clients subscribe to dictionary updates via WebSocket delta sync.
+- This is a significant refactor: `server/brain-server.js` needs a full dictionary + bigram + n-gram storage, `js/brain/remote-brain.js` needs to mirror the server dictionary, conflict resolution for concurrent learns.
+- If NO: delete the stub + TODO, document that language learning is per-client
+
+**Files:** `server/brain-server.js`, `js/brain/remote-brain.js`, potentially new `server/dictionary.js`
+
+#### U307 — Benchmark command integration
+
+**Finding:** `js/brain/benchmark.js` exports `runBenchmark()` and `runScaleTest()`. Neither is called from anywhere.
+
+**Decision plan:**
+- Add a `/bench` slash command in chat that invokes runBenchmark
+- Add a `/scale-test` for runScaleTest
+- OR delete benchmark.js if Unity doesn't need self-diagnostics
+- Low priority — debug-only tooling
+
+**Files:** `js/brain/benchmark.js`, `js/ui/chat-panel.js` or wherever slash commands dispatch
+
+#### U308 — Delete `js/env.example.js`
+
+**Finding:** Template env file, not imported by any code. Current API key flow is manual UI entry per user preference.
+
+**Decision plan:**
+- DELETE `js/env.example.js`
+- Or keep as a developer onboarding reference if anyone hand-loads env vars for local testing
+- Trivial, low priority
+
+**Files:** `js/env.example.js`
+
+#### U309 — Stack new implementations on top of audit findings
+
+**Goal:** As U302-U308 resolve, each decision either (a) revives an orphan into working code, (b) deletes it cleanly, or (c) supersedes it with a new implementation.
+
+Track per-item:
+- **Supersedes:** what newer architecture replaces the old (e.g. compute.html replaces gpu-compute.js for the server GPU path)
+- **Stacks:** what new feature built ON the revived orphan (e.g. if vision revives, new Unity-can-see-your-webcam features become possible)
+- **Needs fixing:** what was broken when the orphan was abandoned that needs to be fixed during revival (e.g. vision was never wired because the sensory pipeline didn't support video frames — now it does)
+
+This is the meta-task: turn the orphan audit into a living worklist of architectural decisions, not a list of deletions. Each orphan is either a feature with a missing integration or a dead branch of a past decision.
+
+**Files:** this TODO.md, `docs/ORPHANS.md`
+
+#### U310 — Remove dead `/chat` UI path
+
+**Finding (not in original audit but worth tracking):** various stale UI elements and event handlers that may have been added during experiments and left in place. Worth a pass after U302-U309.
+
+**Files:** TBD — scan after other cleanup
+
+---
+
+### COMPLETED
+- [x] **Task:** U310 — Dead UI paths scan + cleanup.
+  - Completed: 2026-04-13
+  - Files: `index.html`, `css/style.css`, `docs/TODO.md`
+  - Details: Ran a dead-UI scan across index.html, css/style.css, js/ui/, and all entry-point HTML files. Verified zero references across both `js/app.js` and `js/app.bundle.js` (bundled entry point loaded under file://) for every deletion target. **Deleted from index.html:** `<input type="hidden" id="custom-url-input">`, `<input type="hidden" id="custom-model-input">`, `<input type="hidden" id="custom-key-input">`, `<span id="ai-status">`, `<span id="brain-status">` — all legacy compat fields from an older setup flow that got refactored out. **Kept:** `#api-key-input` (still actively read/written at app.js:597, 790, 860 as the Pollinations key slot — agent-report flagged it as dead but manual grep showed 4 live references, so audit was wrong on that one). **Deleted from css/style.css:** `.chat-mic-btn` selectors (split from the shared rule with `.chat-close-btn` which stays alive — referenced by chat-panel.js:28,42), `.bv-mod-eq` (zero refs across HTML/JS), `.bv-audio-wrap` (same), `.loading-text` + `.loading-text::after` + `@keyframes dots` (same). Entry points (compute.html, dashboard.html, brain-equations.html) all verified to reference valid existing JS files — no dead script tags. UI component classes all confirmed instantiated in app.js (ChatPanel, BrainVisualizer, Brain3D, Sandbox, Pollinations). Clean.
+
+- [x] **Task:** U309 — Stack new implementations on top of audit findings (meta-tracking).
+  - Completed: 2026-04-13
+  - Files: inline in every U302-U308 resolution
+  - Details: U309 was a meta-task to track supersedes/stacks/needs-fixing per orphan. Rolled into the individual orphan resolutions — every U302-U308 entry in FINALIZED.md documents the root cause of abandonment, what supersedes it (if anything), what new capability stacks on the revived orphan (if any), and what was broken that needed fixing during revival. The meta-work IS the per-item work. Marked resolved.
+
+- [x] **Task:** Grammar Sweep (U283–U291) + Coding Mastery (U293–U299) — bulk status reconciliation against code state.
+  - Completed: 2026-04-13 (work landed in earlier sessions, TODO markers reconciled here)
+  - Files: `js/brain/language-cortex.js`, `js/brain/inner-voice.js`, `js/brain/language.js`, `js/app.js`, `js/ui/sandbox.js`, `docs/coding-knowledge.txt`, `docs/TODO.md`
+  - Details: Audited the actual code for every task in the grammar sweep and coding mastery epics against what was claimed pending in TODO.md. All 15 were already shipped in prior sessions but the TODO statuses were never flipped. Verified and marked DONE:
+    - **U283** Phrase-level grammar — implemented as learned type n-gram system (`_typeBigramCounts`, `_typeTrigramCounts`, `_typeQuadgramCounts` at language-cortex.js:126-128). Better than the proposed hardcoded state machine because it learns phrase-level constraints from corpus data.
+    - **U284** Contraction continuation — `_fineType(word)` at language-cortex.js:1556 classifies contractions (PRON_SUBJ/COPULA/AUX_DO/AUX_HAVE/NEG/MODAL) via letter-position detection; type n-grams learn their continuation patterns from corpus.
+    - **U285** Negation continuation — NEG type in `_fineType`; type trigrams/4grams learn NEG→VERB_BARE (`don't go`), NEG→ADJ (`not cool`), NEG→PAST_PART (`haven't seen`) from corpus. Zero-count transitions get -2.0 penalty.
+    - **U286** Infinitive marker — same mechanism: PREP→VERB_BARE learned from `to go`, `to do` in corpus via 4-gram context.
+    - **U287** Sentence completeness validator — `_isCompleteSentence(tokens)` at language-cortex.js:1729; wired at 2652 with 2-retry loop. Rejects sentences ending on DET/PREP/COPULA/AUX/MODAL/NEG/CONJ/PRON_POSS.
+    - **U288** Intensifier placement — `_postProcess` block at 3744-3789 enforces: no doubles (check prevType !== INTENSIFIER), no double-intensifiers, 50% insertion rate, only before ADJ/ADV.
+    - **U289** Subject-verb agreement — `applyThird` at 3634 wired to subject-type detection at 3668-3683 (`_fineType(subjLower)`), applies third-person -s based on PRON_SUBJ/NOUN subject classification, not just copula swap.
+    - **U290** Det-noun phrase validator — `nextSlotRequirement` at 1925 + type n-grams enforce DET→ADJ/NOUN continuations; quadgram context catches DET→ADJ→ADJ→NOUN sequences.
+    - **U291** Prep-object phrase validator — same mechanism: type n-grams learn PREP→DET/PRON/NOUN/ADJ from corpus.
+    - **U292** Grammar test suite — DEFERRED (manual QA checklist, not code work).
+    - **U293** docs/coding-knowledge.txt — 606 lines of pattern-based HTML/CSS/JS/sandbox reference.
+    - **U294** SANDBOX DISCIPLINE section — at coding-knowledge.txt:371. Covers unique ids, scoped CSS, timer cleanup, listener cleanup, memory bounds, error handling, injection ordering, common mistakes.
+    - **U295** loadCodingKnowledge wiring — method at language-cortex.js:258, `loadCoding` in inner-voice.js, app.js `Promise.all` loads all 3 corpora (persona + baseline + coding) in parallel at boot.
+    - **U296** Build-specialized Broca's prompt — `_buildBuildPrompt(brainState, userInput)` in language.js with STRICT JSON output contract, existing-components block, cap warning, unity API reference, dark-aesthetic style rules, and 10 build primitive patterns. Routed via `motor.selectedAction === 'build_ui'` at `generate()`.
+    - **U297** Sandbox auto-cleanup + soft cap — `MAX_ACTIVE_COMPONENTS = 10` in sandbox.js, LRU eviction by `createdAt`, per-component `timerIds`/`windowListeners`/`createdAt` tracking, wrapped setInterval/setTimeout/addListener in `_evaluateJS` so `remove(id)` cleans everything.
+    - **U298** Build error recovery — auto-remove on JS error in `_evaluateJS` catch block via `setTimeout(() => this.remove(componentId), 0)` so the broken component doesn't pollute the sandbox. Error captured in `_errors` array with componentId/message/stack/timestamp.
+    - **U299** Build composition primitives — BUILD COMPOSITION PRIMITIVES section at coding-knowledge.txt:421 (calculator, list, timer, canvas game, form, modal, tabs, counter, color picker, dice roller) — patterns not code.
+    - **U300** Sandbox test inputs — DEFERRED (manual QA checklist, not code work).
+
+- [x] **Task:** U308 — Decide fate of `js/env.example.js`.
+  - Completed: 2026-04-13
+  - Files: `docs/ORPHANS.md`, `docs/TODO.md`
+  - Details: Audit was a FALSE POSITIVE. env.example.js is actively used as a downloadable template in multiple places: `index.html:85` exposes it as a download button in the setup modal, `README.md:383` links to it as the "API Key Template", `SETUP.md:70` tells users to copy it to `js/env.js` and paste their keys, and `js/app.js:27` does an optional dynamic `import('./env.js')` wrapped in try/catch — if env.js exists it seeds API keys into localStorage at boot (`app.js:552-553`), otherwise falls back to the manual UI entry path. Manual UI entry is the primary path per user preference (`feedback_api_key_entry.md` memory), but env.js remains a legitimate dev-convenience shortcut. KEEP. No code change. ORPHANS item 8 marked false positive.
+
+- [x] **Task:** U307 — Wire `js/brain/benchmark.js` to slash commands.
+  - Completed: 2026-04-13
+  - Files: `js/app.js`, `docs/ORPHANS.md`, `docs/TODO.md`
+  - Details: benchmark.js exports `runBenchmark()` (dense vs sparse matrix propagation + plasticity + pruning across [100, 500, 1000, 2000, 5000] neurons with memory ratio and speedup calculations) and `runScaleTest()` (CPU LIF step timing across [1k, 2k, 5k, 10k, 25k, 50k] with the 60fps×10 substep sweet-spot finder). Both were exported but never called anywhere. Wired two slash commands into the chatPanel.onSend handler in app.js: `/bench` runs runBenchmark, `/scale-test` runs runScaleTest. Used dynamic `await import('./brain/benchmark.js')` so the benchmark code has zero boot-time cost — only loads when a user actually invokes the command. Results print to console (dense vs sparse tables, speedups, memory reduction ratios, sweet-spot analysis) while the chat gets a short summary bubble like "/bench running — see console" plus a final completion message. Error handling wraps both paths so a benchmark failure reports back to chat instead of silently dying. ORPHANS item 5 marked resolved.
+
+- [x] **Task:** U306 — Server-side dictionary stub (`server/brain-server.js:907`).
+  - Completed: 2026-04-13 (full impl tracked as U311)
+  - Files: `server/brain-server.js`, `docs/ORPHANS.md`, `docs/TODO.md`
+  - Details: Investigation found a real bug: `saveWeights()` at line 1113 was already writing `this._wordFreq` into `brain-weights.json` every save, but `_loadWeights()` was never reading it back — the accumulator saved forever but loaded nothing, so every server restart wiped all accumulated word frequencies. Fixed the save/load asymmetry by restoring `_wordFreq` from disk on boot, with a console log reporting how many word frequencies were restored. Removed the misleading `this.dictionary = { words: new Map(), bigrams: new Map() }` stub (it was initialized empty and never populated or read anywhere — a lie). Replaced the `// TODO: implement server-side dictionary` comment at `_generateBrainResponse` with a pointer to the U311 follow-up explaining the fallback will sample from learned bigrams once U311 lands. Scoped the real feature as U311 in TODO.md: full cross-user shared dictionary with bigram/trigram/type-ngram storage, corpus loading on server boot (Ultimate Unity + english-baseline + coding-knowledge), WebSocket delta sync to `remote-brain` clients, conflict resolution on concurrent learns, and port of language-cortex generation to the server so the `_generateBrainResponse` fallback can produce real sentences when AI backends get removed (per Gee's "no text AI models" future plan). Estimated 500-1000 lines across 4+ files, multi-session. The groundwork (persistence round-trip, accumulator wiring) is in place so U311 can build on top without rewriting foundations.
+
+- [x] **Task:** U305 — HHNeuron dead chain cleanup (`js/brain/neurons.js`).
+  - Completed: 2026-04-13
+  - Files: `js/brain/neurons.js`, `docs/ARCHITECTURE.md`, `docs/ORPHANS.md`, `docs/TODO.md`
+  - Details: Investigated root cause before deleting. `HHNeuron` is NOT dead-by-mistake — it's a reference implementation that backs the `brain-equations.html` teaching page, which explicitly labels it "a reference — LIF is used for simulation speed" at line 334. HH was abandoned for live simulation because it's a per-neuron OOP model: at 3.2M neurons it's infeasible (3.2M object instances with per-instance m/h/n gating state, cache-hostile, no vectorization). LIFPopulation uses SoA `Float64Array V/spikes/refracRemaining` in one tight loop — ~100× faster, GPU-friendly, what cluster.js actually imports. The REAL dead code was `createPopulation(type, n, params)` — zero callers across the entire codebase. **Deleted `createPopulation`** (41 lines). **Kept HHNeuron** with a large header comment explaining reference-only status, why it doesn't scale, and when you'd instantiate it directly (small research experiments on mystery cluster). ARCHITECTURE.md neurons.js tree line clarified. ORPHANS item 4 marked resolved with full rationale.
+
+- [x] **Task:** U304 — Delete abandoned worker thread system (`parallel-brain.js` + `cluster-worker.js` + `projection-worker.js`).
+  - Completed: 2026-04-13
+  - Files: `server/parallel-brain.js` (DELETED), `server/cluster-worker.js` (DELETED), `server/projection-worker.js` (DELETED), `server/brain-server.js`, `docs/ORPHANS.md`, `docs/ARCHITECTURE.md`, `SETUP.md`, `docs/SKILL_TREE.md`, `docs/ROADMAP.md`, `docs/TODO.md`
+  - Details: Investigated WHY abandoned before deleting per Gee's directive. Root cause was in FINALIZED.md:820 — the worker pool leaked 100% CPU from event-listener polling overhead across 7 idle threads even when no work was dispatched. The GPU-exclusive rewrite (compute.html + gpu-compute.js WebGPU path) PERMANENTLY fixed that root cause by eliminating the pool entirely. The three files were then dead weight plus dead member fields/null-check branches in brain-server.js. Deleted all three worker files. In `brain-server.js`: removed `this._parallelBrain = null` and `this._useParallel = false` member declarations (replaced with explanatory comment citing U304), removed the redundant `_useParallel = false` reassignment at `start()`, removed the null-check worker-termination block in the `gpu_register` handler (at former line 1443 — nothing exists to terminate), and hardcoded `parallelMode: false, workerCount: 0` in the status broadcast instead of reading dead member fields. Cleaned tree references in `ARCHITECTURE.md` (removed 3 file lines from server/ tree), `SETUP.md` (same), `SKILL_TREE.md` (Projection workers row marked REMOVED with supersede rationale), `ROADMAP.md` (worker line rewritten to DELETED with root cause). ORPHANS item 3 marked resolved.
+
+- [x] **Task:** U303 — Investigate `js/brain/gpu-compute.js` (claimed dead by orphan audit).
+  - Completed: 2026-04-13
+  - Files: `docs/ORPHANS.md`, `docs/TODO.md`
+  - Details: Audit was a FALSE POSITIVE. `compute.html:10` imports `GPUCompute` and `compute.html:25` instantiates it. `gpu-compute.js` is the WGSL kernel library (LIF compute shaders, synapse propagation, atomic spike counting) that powers `compute.html` — they're one implementation split into shell + kernels, not parallel GPU paths. The audit only grepped `engine.js` and `brain-server.js` and missed that the consumer is the compute-worker browser tab that connects to brain-server over WebSocket as a `gpu_register` client. No code change. ORPHANS item 2 marked resolved with correction explaining the shell/kernel split architecture.
+
+- [x] **Task:** U302 — Revive vision system (`js/io/vision.js`). Investigate why abandoned, fix or delete.
+  - Completed: 2026-04-13
+  - Files: `js/io/vision.js` (DELETED), `docs/ORPHANS.md`, `docs/SKILL_TREE.md`, `docs/ROADMAP.md`, `docs/ARCHITECTURE.md`, `docs/TODO.md`
+  - Details: Investigation found `js/io/vision.js` was legitimately **superseded** by `js/brain/visual-cortex.js`, which is a vastly better implementation. The standalone `Vision` class offered webcam capture + AI description + gaze tracking as a high-level wrapper. Its replacement implements the actual V1→V4→IT neural pipeline: 4-orientation Gabor edge kernels (0°/45°/90°/135°) convolved across a 20×15 grayscale frame, quadrant RGB color extraction, motion energy via frame deltas, salience-map-driven smooth-pursuit saccades with micro-saccade jitter, and IT-level AI scene description via `setDescriber()` accepting a Pollinations GPT-4o multimodal callback. Full engine integration already in place: `engine.js:179` instantiates, `engine.js:1018` calls `init(vid)`, `engine.js:258` runs `processFrame()` every 3 steps, `engine.js:387` triggers `forceDescribe()` on boot and on prediction-error spikes, `engine.js:447` exposes `visualCortex.getState()` in brain state, `engine.js:449` exports `visionDescription` for Broca's prompt. `app.js:972` wires the describer to Pollinations gen.pollinations.ai/v1/chat/completions with the `openai` model and a vision system prompt. `app.js:1500` has `startEyeIris()` reading gaze straight from `visualCortex.getState()`. The "duck-typed adapter" at `app.js:1146` turned out to be a legitimate interface shim (brainViz.setVision expects `_stream`/`getLastDescription` fields that visualCortex doesn't expose) — NOT rot. Verdict: feature is fully alive, just lives in the better file. Deleted `js/io/vision.js` (118 dead lines, zero incoming imports verified via grep). Cleaned every doc that still claimed `io/vision.js` was the live path — ORPHANS item 1 marked RESOLVED with the supersede rationale, SKILL_TREE row rewritten to point at `visual-cortex.js`, ROADMAP vision bullet rewritten, ARCHITECTURE "Vision System" section fully rewritten to describe the real V1→V4→IT pipeline with kernel count, salience pursuit constants, rate limit, and brain-state flow-through.
+
+
 ## 2026-04-12 Session: Stabilization — Persona 404 + Generation Bugs + Landing Settings
 
 ### COMPLETED

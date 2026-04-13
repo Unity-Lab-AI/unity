@@ -310,8 +310,11 @@ class ServerBrain {
     this.motorConfidence = 0;
     this.motorChannels = new Float64Array(6);
 
-    // Dictionary (loaded from disk)
-    this.dictionary = { words: new Map(), bigrams: new Map() };
+    // Server-side word frequency accumulator (U306). The real
+    // cross-user shared dictionary is scoped as a follow-up — see
+    // docs/TODO.md U311. For now _learnWords() just accumulates
+    // per-word counts into this._wordFreq so nothing is lost when
+    // that refactor lands.
 
     // Emotional history — rolling buffer for charts
     this._emotionHistory = [];
@@ -333,9 +336,11 @@ class ServerBrain {
     this._stepTimeSamples = [];
     this._lastCpuUsage = process.cpuUsage();
 
-    // Parallel brain — worker threads for multi-core
-    this._parallelBrain = null;
-    this._useParallel = false;
+    // GPU-EXCLUSIVE MODE — no CPU workers ever spawned. The old
+    // ParallelBrain worker pool was deleted in U304 after the root
+    // cause ("100% CPU from event listener polling in idle workers")
+    // was permanently fixed by routing all compute through
+    // compute.html's WebGPU path. See brain-weights history.
 
     // Episodic memory — SQLite for persistent storage across sessions
     this._initEpisodicDB();
@@ -660,8 +665,6 @@ class ServerBrain {
     this._lastInputTime = Date.now();
     this._isDreaming = false;
 
-    // NO CPU WORKERS — GPU exclusive. Don't spawn ParallelBrain at all.
-    this._useParallel = false;
     console.log('[Brain] GPU EXCLUSIVE MODE — no CPU workers spawned. Waiting for compute.html...');
 
     // Recursive setTimeout — next tick fires AFTER current step completes
@@ -903,8 +906,9 @@ When asked for an image — respond with [IMAGE] followed by the visual descript
       console.warn(`[Brain] Broca's area failed: ${err.message}`);
     }
 
-    // AI failed — try brain's own dictionary
-    // TODO: implement server-side dictionary
+    // AI failed. When the server-side dictionary (U311 follow-up)
+    // lands, this will sample from the brain's own learned bigrams.
+    // Until then: surface the failure honestly instead of faking text.
     return { text: '...', action: 'respond_text' };
   }
 
@@ -950,8 +954,8 @@ When asked for an image — respond with [IMAGE] followed by the visual descript
       gpuMisses: this._gpuMisses || 0,
       nodeHeapMB: Math.round(mem.heapTotal / 1048576),
       cores: os.cpus().length,
-      parallelMode: this._useParallel,
-      workerCount: this._parallelBrain?.workerCount || 0,
+      parallelMode: false,
+      workerCount: 0,
     });
   }
 
@@ -1151,6 +1155,14 @@ When asked for an image — respond with [IMAGE] followed by the visual descript
         this.psi = data.psi ?? this.psi;
         this.coherence = data.coherence ?? this.coherence;
         this.drugState = data.drugState ?? this.drugState;
+        // U306 — restore word-frequency accumulator so cross-restart
+        // learning isn't lost. Groundwork for the full server-side
+        // dictionary (U311 follow-up).
+        if (data.wordFreq && typeof data.wordFreq === 'object') {
+          this._wordFreq = { ...data.wordFreq };
+          const wordCount = Object.keys(this._wordFreq).length;
+          if (wordCount > 0) console.log(`[Brain] Restored ${wordCount} word frequencies from last save`);
+        }
         console.log(`[Brain] Loaded saved state from ${data.savedAt}`);
       }
     } catch (err) {
@@ -1440,13 +1452,7 @@ wss.on('connection', (ws, req) => {
           brain._gpuInitialized = {};
           brain._gpuHits = 0;
           brain._gpuMisses = 0;
-          // KILL CPU workers — GPU handles everything now
-          if (brain._parallelBrain && brain._useParallel) {
-            brain._parallelBrain.destroy().then(() => {
-              console.log(`[${id}] CPU workers terminated — GPU exclusive mode`);
-            });
-            brain._useParallel = false;
-          }
+          // CPU workers no longer exist (U304) — nothing to terminate
           console.log(`[${id}] GPU compute client registered — brain will use GPU exclusively`);
           break;
 

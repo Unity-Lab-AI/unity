@@ -261,15 +261,17 @@ Each cluster's output modulates other clusters:
 
 ---
 
-## Vision System (SESSION_20260411_4)
+## Vision System
 
-Implemented in `js/io/vision.js`. Provides:
+Implemented in `js/brain/visual-cortex.js` (V1→V4→IT neural pipeline, superseded the original `js/io/vision.js` wrapper which was deleted in U302).
 
-- **Webcam capture**: Grabs frames from user's camera via `getUserMedia`
-- **AI scene description**: Sends captured frames to connected AI provider for scene analysis
-- **Gaze tracking**: AI returns focal coordinates; Unity "looks at" points of interest
-- **Unity's Eye widget**: Persistent camera feed overlay with iris graphic, AI-driven crosshair showing where Unity is focusing
-- **Brain integration**: Vision data routes to Cortex visual area neurons
+- **Frame capture**: `visualCortex.init(videoElement)` attaches to the `getUserMedia` stream passed through `engine.connectCamera()`
+- **V1 — Oriented edge detection**: 4 Gabor-like 3×3 kernels (0°, 45°, 90°, 135°) convolved across a 20×15 grayscale frame. 1200-element `v1Responses` buffer. Produces a salience map (per-pixel max response across orientations).
+- **V4 — Color extraction**: Per-quadrant (TL/TR/BL/BR) RGB averages
+- **Motion energy**: Frame-to-frame brightness delta, drives salience modulation
+- **Gaze / saccades**: Peak of salience map with smooth pursuit (0.1 lerp) + micro-saccade jitter — purely neural, no AI. Unity's Eye iris at `app.js:1500` reads `visualCortex.getState()` for live gaze rendering.
+- **IT — AI scene description**: `setDescriber()` accepts a Pollinations GPT-4o multimodal callback (`app.js:972`). Called once on boot + on demand via `forceDescribe()` when the brain decides to look (engine.js:387). Rate-limited to 10s between forced calls.
+- **Brain integration**: `processFrame()` returns `currents` (100 floats) for the cortex visual area. Runs every 3 engine steps at `engine.js:258`. Description flows into `brainState.visionDescription` for Broca's prompt.
 
 ---
 
@@ -321,7 +323,7 @@ Dream/
 │   ├── brain/
 │   │   ├── engine.js           # UnityBrain — 7-cluster sim loop at 60fps (scales to hardware)
 │   │   ├── cluster.js          # NeuronCluster + ClusterProjection classes (7 clusters, 20 projections)
-│   │   ├── neurons.js          # HHNeuron + LIFPopulation
+│   │   ├── neurons.js          # LIFPopulation (live) + HHNeuron (reference-only, backs brain-equations.html)
 │   │   ├── synapses.js         # NxN weights — Hebbian, STDP, reward-mod
 │   │   ├── modules.js          # 6 brain region equation modules
 │   │   ├── oscillations.js     # 8 Kuramoto oscillators
@@ -357,10 +359,7 @@ Dream/
 │       ├── brain-viz.js        # 2D brain equation visualizer (neuron grid, synapse matrix, oscillations)
 │       └── brain-3d.js         # WebGL 3D brain visualizer (20K render neurons, MNI-coordinate positions, fractal connections)
 ├── server/
-│   ├── brain-server.js         # Node.js brain server (always-on, WebSocket, auto-scale)
-│   ├── parallel-brain.js        # Multi-core orchestrator (legacy — GPU exclusive mode disables workers)
-│   ├── cluster-worker.js       # One cluster's LIF on its own CPU core
-│   ├── projection-worker.js    # Inter-cluster projection on its own core
+│   ├── brain-server.js         # Node.js brain server (always-on, WebSocket, GPU exclusive)
 │   └── package.json            # Server deps (ws, better-sqlite3, node-fetch)
 ├── claude-proxy.js             # Claude Code CLI as local AI (port 8088)
 ├── compute.html                # GPU compute worker (WebGPU shaders via browser)
