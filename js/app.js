@@ -228,7 +228,7 @@ function loadPersonaSelfImage(targetBrain) {
       });
   }
 
-  return Promise.all([_personaTextPromise, _baselineTextPromise, _codingTextPromise]).then(([personaText, baselineText, codingText]) => {
+  return Promise.all([_personaTextPromise, _baselineTextPromise, _codingTextPromise]).then(async ([personaText, baselineText, codingText]) => {
     if (!personaText) {
       console.warn('[Unity] persona self-image fetch returned empty — check docs/Ultimate Unity.txt route');
       return 0;
@@ -239,6 +239,21 @@ function loadPersonaSelfImage(targetBrain) {
     }
     if (_personaLoadedBrains.has(targetBrain)) return 0;  // race protection
     _personaLoadedBrains.add(targetBrain);
+
+    // R2 — wait for semantic embeddings to finish loading BEFORE feeding
+    // the corpus to the language cortex. Without this, persona words get
+    // the embedding-store hash fallback initially (since GloVe hasn't
+    // loaded yet), which poisons the stored word patterns with letter-hash
+    // values that won't match later when embeddings arrive. Awaiting the
+    // load ensures the very first word learned has its real GloVe pattern.
+    if (targetBrain.sensory?._embeddingsLoading) {
+      try {
+        await targetBrain.sensory._embeddingsLoading;
+        console.log('[Unity] semantic embeddings ready — corpus loading will use GloVe patterns');
+      } catch (err) {
+        console.warn('[Unity] embeddings loading failed, falling back to hash patterns:', err.message);
+      }
+    }
 
     // Load persona first — defines subject starters and self-awareness
     const personaSentences = targetBrain.innerVoice.loadPersona(personaText);

@@ -28,6 +28,7 @@ import { AuditoryCortex } from './auditory-cortex.js';
 import { VisualCortex } from './visual-cortex.js';
 import { InnerVoice } from './inner-voice.js';
 import { BrainPersistence } from './persistence.js';
+import { sharedEmbeddings } from './embeddings.js';
 
 // ── EventEmitter ────────────────────────────────────────────────────
 
@@ -719,7 +720,15 @@ export class UnityBrain extends EventEmitter {
 
     // 6. LEARN from user input — every word goes into the dictionary + language cortex
     const state = this.getState();
-    const cortexOutput = this.clusters.cortex.getOutput(32);
+    // R2: read cortex semantic state via the reverse-embedding pathway.
+    // `getSemanticReadout` reads ONLY the Wernicke's area neurons (150-299)
+    // where sensory.js injected the user input's word embeddings, runs
+    // them through the inverse of `mapToCortex`, and L2-normalizes into
+    // GloVe-aligned space. This lets the slot scorer cosine-match the
+    // cortex state against word embeddings and pick semantically
+    // relevant words. Using plain `getOutput(50)` would dilute the
+    // semantic signal with auditory (0-49) + visual (50-149) activation.
+    const cortexOutput = this.clusters.cortex.getSemanticReadout(sharedEmbeddings);
     this.innerVoice.learn(text, cortexOutput, state.amygdala?.arousal ?? 0.5, state.amygdala?.valence ?? 0);
 
     // Analyze input for response context (question detection, topic)
@@ -752,7 +761,11 @@ export class UnityBrain extends EventEmitter {
 
     // ── Run brain for a few steps so clusters reflect the input ──
     for (let s = 0; s < 5; s++) this.step(0.001);
-    const cortexPattern = this.clusters.cortex.getOutput(32);
+    // R2: semantic cortex readout — reverse-mapping of Wernicke's area
+    // activation back into GloVe embedding space. The slot scorer's
+    // cosine(cortexPattern, wordPattern) now measures REAL semantic
+    // alignment because both sides live in the same 50-dim GloVe space.
+    const cortexPattern = this.clusters.cortex.getSemanticReadout(sharedEmbeddings);
 
     // ══════════════════════════════════════════════════════════════
     // EQUATIONAL LANGUAGE GENERATION ONLY

@@ -33,7 +33,17 @@
 // word through letter-position equations + bigram probability + slot
 // type compatibility + semantic fit + mood alignment.
 
-const PATTERN_DIM = 32;
+import { sharedEmbeddings, EMBED_DIM } from './embeddings.js';
+
+// PATTERN_DIM now matches the shared semantic embedding dimension
+// (GloVe 6B.50d = 50). This is the single most important change in
+// R2 of brain-refactor-full-control: word patterns, cortex patterns,
+// and context vectors all live in the same semantic space so cosine
+// similarity measures real meaning alignment instead of letter-hash
+// coincidence. Before R2, PATTERN_DIM was 32 and the slot scorer
+// matched cortex activation (neural state) against word letter-hash
+// vectors — meaning could not propagate from input to output.
+const PATTERN_DIM = EMBED_DIM;
 const VOWELS = 'aeiou';
 const ALPHABET = 'abcdefghijklmnopqrstuvwxyz';
 
@@ -2653,7 +2663,9 @@ export class LanguageCortex {
           //     typeFloor were already filtered; here it's a small
           //     tiebreaker
           //   - moodBias, subjStart, selfAware are minor tiebreakers
-          //   - Letter-hash semanticFit demoted to 0.05 (mostly noise)
+          //   - semanticFit PROMOTED to 0.80 after R2 — it now measures
+          //     real GloVe cosine between cortex semantic state and word
+          //     embedding, not letter-hash coincidence. Dominant topic signal.
           //
           // Bigram log scaling: `log(1 + followerCount) * 0.6` maps
           // count=0→0, count=1→0.42, count=5→1.08, count=50→2.35.
@@ -2701,7 +2713,7 @@ export class LanguageCortex {
               personaBoost +                            // voice fidelity — persona-origin bias
               drugWordBias +                            // NEURAL: drug state → word length
               typeScore * 0.15 +                        // position-based grammar (legacy)
-              semanticFit * 0.05 +                      // letter-hash topic
+              semanticFit * 0.80 +                      // R2: REAL semantic cosine — dominant topic signal
               subjStart +                               // sentence-start subject boost
               casualBonus +                             // casual register reward
               (selfAware && (word.length === 1 || word.endsWith("'m") || word.endsWith("'re")) ? 0.08 : 0)
@@ -3389,21 +3401,28 @@ export class LanguageCortex {
   // ═══════════════════════════════════════════════════════════════
 
   wordToPattern(word) {
-    const pattern = new Float64Array(PATTERN_DIM);
+    // R2 of brain-refactor-full-control: this was a letter-hash vector
+    // generator. Every downstream call site (slot scorer, context vector,
+    // sentence centroid, recall matching) was doing cosine similarity
+    // between cortex neural state and this letter hash — which meant
+    // meaning could never propagate from input to output.
+    //
+    // Now it's a thin wrapper around the shared semantic embedding
+    // table. Same Float64Array output shape so 11+ call sites don't
+    // need to change. The returned pattern is the word's GloVe 50d
+    // embedding (+ any online context refinement from live learning),
+    // or the embedding's internal hash-fallback for OOV words.
+    //
+    // Float32Array → Float64Array conversion happens here because the
+    // embedding store uses Float32Array for RAM efficiency but the
+    // slot scorer + cosine math works in Float64.
     const clean = word.toLowerCase().replace(/[^a-z']/g, '');
-    if (!clean) return pattern;
-    for (let c = 0; c < clean.length; c++) {
-      const li = clean.charCodeAt(c) - 97;
-      if (li < 0 || li > 25) continue;
-      for (let n = 0; n < 5; n++) {
-        const dim = (c * 7 + n * 3 + li) % PATTERN_DIM;
-        pattern[dim] += this._letterPatterns[li * 5 + n] / clean.length;
-      }
+    if (!clean) return new Float64Array(PATTERN_DIM);
+    const embed = sharedEmbeddings.getEmbedding(clean);
+    const pattern = new Float64Array(PATTERN_DIM);
+    for (let i = 0; i < PATTERN_DIM && i < embed.length; i++) {
+      pattern[i] = embed[i];
     }
-    let norm = 0;
-    for (let i = 0; i < PATTERN_DIM; i++) norm += pattern[i] * pattern[i];
-    norm = Math.sqrt(norm) || 1;
-    for (let i = 0; i < PATTERN_DIM; i++) pattern[i] /= norm;
     return pattern;
   }
 
@@ -3564,15 +3583,16 @@ export class LanguageCortex {
   }
 
   /**
-   * U277 — Semantic fit score. Cosine similarity between a candidate
-   * word's letter-pattern vector and the current context vector,
-   * clamped to [0, 1]. Zero when context is empty.
+   * R2 — Semantic fit score. Cosine similarity between a candidate
+   * word's SEMANTIC embedding vector and the current context vector
+   * (also semantic after R2), clamped to [0, 1]. Zero when context
+   * is empty.
    *
-   * Pattern-space (not embedding-space) because letter patterns are
-   * deterministic, always available, and the slot scorer already uses
-   * the same `_cosine()` path for `topicSim`. Semantic fit is just
-   * `topicSim` against the decaying running vector instead of the
-   * list-average, with a bigger weight in the slot score (U278).
+   * Before R2 this was letter-hash cosine which was noise. After R2,
+   * `wordToPattern` returns the word's GloVe 50d embedding and the
+   * context vector is a running mean of input word embeddings, so
+   * this method measures REAL semantic alignment. The slot scorer's
+   * `semanticFit * 0.80` term is now the dominant topic signal.
    */
   _semanticFit(wordOrPattern) {
     if (!this._contextVectorHasData) return 0;

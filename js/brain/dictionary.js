@@ -21,19 +21,29 @@
 // the dictionary now grows only from words actually seen in corpus /
 // live conversation. Real corpus at boot is ~5-8k unique words across
 // all three files. 50k cap leaves plenty of room for organic growth.
+import { sharedEmbeddings, EMBED_DIM } from './embeddings.js';
+
 const MAX_WORDS = 50000;
-const PATTERN_DIM = 32; // cortex output dimensionality
-// Storage key versioned — bump when dictionary population rules change
-// so stale localStorage caches from prior builds get dropped instead of
-// reloaded. v2: 2026-04-13, synthetic morphological inflation disabled
-// + comma-list corpus filter added. Any old cache from v1 carries 40k+
-// junk words ("remedium", "unmedium", etc) and needs to be thrown out.
-const STORAGE_KEY = 'unity_brain_dictionary_v2';
+// Pattern dimensionality MATCHES the shared embeddings dimension so cortex
+// patterns, word patterns, and context vectors all live in the same
+// semantic space. Before R2 this was 32 (arbitrary letter-hash projection);
+// after R2 it's EMBED_DIM (50, GloVe 6B.50d) so cosine similarity between
+// a cortex pattern and a word pattern measures REAL semantic alignment
+// instead of letter-hash coincidence.
+const PATTERN_DIM = EMBED_DIM;
+// Storage key versioned — bump when dictionary population rules or
+// pattern dimension change so stale localStorage caches get dropped.
+// v2: 2026-04-13, synthetic morphological inflation disabled + comma-list
+//     corpus filter added.
+// v3: 2026-04-13 (R2), PATTERN_DIM bumped 32→50 for semantic grounding,
+//     letter-hash word patterns replaced with GloVe embeddings. Old v2
+//     caches have the wrong pattern shape and wrong values — must drop.
+const STORAGE_KEY = 'unity_brain_dictionary_v3';
 
 export class Dictionary {
   constructor() {
     // Word entries: Map<string, WordEntry>
-    // WordEntry = { word, pattern: Float64Array(32), arousal, valence, frequency, contexts: string[] }
+    // WordEntry = { word, pattern: Float64Array(PATTERN_DIM=50 after R2), arousal, valence, frequency }
     this._words = new Map();
 
     // Bigram model for sentence construction: Map<string, Map<string, number>>
@@ -88,18 +98,26 @@ export class Dictionary {
       existing.arousal = existing.arousal * (1 - lr) + arousal * lr;
       existing.valence = existing.valence * (1 - lr) + valence * lr;
     } else {
-      // New word — store it
+      // New word — store it. Pattern comes from the shared semantic
+      // embedding table (R2 of brain-refactor-full-control) so the
+      // stored pattern ACTUALLY means what the word means. Falls back
+      // to the embedding's internal hash-fallback for OOV words, which
+      // then gets refined by online context learning.
+      //
+      // If a cortex pattern is passed in (from live sentence learning),
+      // that takes precedence — the brain's current neural state at the
+      // time of hearing/using the word is a stronger signal than the
+      // GloVe prior for that specific utterance.
       const pattern = new Float64Array(PATTERN_DIM);
       if (cortexPattern) {
         for (let i = 0; i < PATTERN_DIM && i < cortexPattern.length; i++) {
           pattern[i] = cortexPattern[i];
         }
       } else {
-        // Generate pattern from word hash if no cortex pattern available
-        for (let i = 0; i < PATTERN_DIM; i++) {
-          let h = 0;
-          for (let c = 0; c < clean.length; c++) h = ((h << 5) - h + clean.charCodeAt(c) + i) | 0;
-          pattern[i] = (Math.abs(h) % 1000) / 1000;
+        // Semantic embedding from shared GloVe + refinement layer
+        const embed = sharedEmbeddings.getEmbedding(clean);
+        for (let i = 0; i < PATTERN_DIM && i < embed.length; i++) {
+          pattern[i] = embed[i];
         }
       }
       this._words.set(clean, {

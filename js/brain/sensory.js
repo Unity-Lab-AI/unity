@@ -13,7 +13,7 @@
  * No external dependencies. Pure neural current generation.
  */
 
-import { SemanticEmbeddings } from './embeddings.js';
+import { sharedEmbeddings } from './embeddings.js';
 
 const CORTEX_SIZE = 300;
 const AUDITORY_START = 0;
@@ -29,8 +29,12 @@ const VIS_ROWS = 10;
 
 export class SensoryProcessor {
   constructor() {
-    // Semantic embeddings — real word vectors replace character hashing
-    this._embeddings = new SemanticEmbeddings();
+    // Semantic embeddings — shared singleton (R2 of brain-refactor-full-control).
+    // Before R2 sensory had its own instance, language-cortex had none — input
+    // semantic grounding was disconnected from output. Now ALL modules share
+    // one embedding table so online refinements from conversation flow into
+    // generation-time slot scoring.
+    this._embeddings = sharedEmbeddings;
     this._embeddingsLoading = this._embeddings.loadPreTrained().catch(() => 0);
 
     // Pending inputs — brain reads and clears each step

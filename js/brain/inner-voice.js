@@ -210,12 +210,21 @@ export class InnerVoice {
    */
   speak(arousal, valence, coherence, brainState) {
     if (this.dictionary.size === 0) return null;
+    // R2 note: if brainState doesn't provide cortexPattern, pass null —
+    // the slot scorer handles null by falling through to non-cortex-
+    // weighted scoring. Previously this fell back to
+    // `this.currentThought.pattern` which is a 32-dim display-only
+    // downsample from think() — wrong dimension for the 50-dim semantic
+    // space after R2. Caller (engine.processAndRespond) always provides
+    // the proper 50-dim cortexPattern via getSemanticReadout, so this
+    // path never runs in practice, but the fallback is removed to
+    // prevent a latent bug if some future caller forgets.
     const sentence = this.languageCortex.generate(
       this.dictionary, arousal, valence, coherence ?? 0.5, {
         predictionError: brainState?.cortex?.predictionError ?? 0,
         motorConfidence: brainState?.motor?.confidence ?? 0,
         psi: brainState?.psi ?? 0,
-        cortexPattern: brainState?.cortexPattern ?? this.currentThought.pattern,
+        cortexPattern: brainState?.cortexPattern ?? null,
       }
     );
     return sentence || null;

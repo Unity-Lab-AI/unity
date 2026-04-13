@@ -13,7 +13,13 @@
 import { SparseMatrix } from './sparse-matrix.js';
 
 const STORAGE_KEY = 'unity_brain_state';
-const VERSION = 2; // increment when brain structure changes
+// VERSION bumped 2 → 3 as part of R2 brain-refactor-full-control.
+// PATTERN_DIM changed 32 → 50 to match GloVe semantic embedding
+// dimension. Any persisted cortex patterns, context vectors, or
+// memory centroids from v2 have the wrong shape and wrong values
+// (letter-hash vs GloVe). Old v2 state gets rejected on load and
+// the brain boots fresh with semantic patterns from the start.
+const VERSION = 3;
 
 export class BrainPersistence {
 

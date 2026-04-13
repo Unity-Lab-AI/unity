@@ -14,6 +14,74 @@
 
 ## COMPLETED TASKS LOG
 
+## 2026-04-13 Session: Refactor R2 — Semantic Grounding (branch: brain-refactor-full-control)
+
+### COMPLETED
+- [x] **Task:** R2 — Semantic Grounding (THE CORE REFACTOR FIX). Replace letter-hash word patterns with real semantic embeddings so brain state can render into topically coherent language instead of word-salad bigram walks.
+  - Completed: 2026-04-13
+  - Files modified: `js/brain/embeddings.js`, `js/brain/sensory.js`, `js/brain/dictionary.js`, `js/brain/language-cortex.js`, `js/brain/cluster.js`, `js/brain/engine.js`, `js/brain/inner-voice.js`, `js/brain/persistence.js`, `js/app.js` — 9 files, 255 insertions, 46 deletions
+  - Details:
+
+    **The gap being closed:** Unity's input side was already semantic — `sensory.js` loaded GloVe 50d, mapped user word embeddings into cortex Wernicke's area (neurons 150-299) via `mapToCortex`, and ran online context refinement. But the output side used letter-hash word patterns — `wordToPattern(word)` returned a Float64Array derived from `charCodeAt` positions, so the slot scorer's `cosine(cortexPattern, wordPattern)` was measuring letter-shape coincidence, not meaning. Brain state carried semantic info from the user's input but the word selection couldn't read it. Result: bigram walks dressed up in brain-state flavoring, with random topic matching.
+
+    **The comprehensive fix:**
+
+    1. **`js/brain/embeddings.js` — sharedEmbeddings singleton + reverse mapping**
+       - Added module-level `export const sharedEmbeddings = new SemanticEmbeddings()` so ALL brain modules use ONE embedding instance. Before R2, sensory had its own + language had none; now input and output share the same GloVe table + refinement layer.
+       - Exported `EMBED_DIM` (50) so downstream files can align buffer sizes.
+       - Added `cortexToEmbedding(spikes, voltages, cortexSize, langStart)` — the mathematical INVERSE of `mapToCortex`. Reads the cortex language-region neural activation back out into GloVe space by grouping neurons by their embed-dim-index (same groupSize as the write side), averaging spike+voltage values per group, L2-normalizing. This is the read-side of the semantic input/output loop: word → embedding → cortex injection → cortex LIF dynamics + modulators → neural state → `cortexToEmbedding` → 50d semantic vector → cosine against candidate word embeddings → pick semantically-matching word.
+
+    2. **`js/brain/sensory.js` — use shared singleton**
+       - Import changed from `SemanticEmbeddings` class to `sharedEmbeddings` singleton.
+       - Constructor assigns `this._embeddings = sharedEmbeddings` instead of instantiating its own. All the existing semantic injection logic at lines 346-377 automatically uses the shared instance — so when a user input refines a word's context vector, that refinement is visible to the generation path (same instance).
+
+    3. **`js/brain/dictionary.js` — PATTERN_DIM + semantic fallback + storage bump**
+       - Imported `sharedEmbeddings, EMBED_DIM`.
+       - `PATTERN_DIM = EMBED_DIM` (50) — was 32 (arbitrary letter-hash projection). Now word patterns live in the same 50d space as GloVe embeddings so cosine measures real semantic alignment.
+       - `learnWord(word, cortexPattern, arousal, valence)` fallback path rewritten: when no cortex pattern is provided, use `sharedEmbeddings.getEmbedding(clean)` to seed the word's stored pattern. Previously this used a charCodeAt letter-hash loop that produced deterministic but semantically-random vectors. Now the stored pattern IS the word's GloVe 50d embedding (with OOV hash fallback from embeddings.js internal).
+       - `STORAGE_KEY` bumped `unity_brain_dictionary_v2` → `_v3` so stale 32d caches get dropped on next boot.
+       - `MAX_WORDS` comment updated, `Float64Array(32)` comment updated to reflect new dim.
+
+    4. **`js/brain/language-cortex.js` — the core rewrite**
+       - Imported `sharedEmbeddings, EMBED_DIM`.
+       - `PATTERN_DIM = EMBED_DIM` (50) — matches dictionary.
+       - **The key change:** `wordToPattern(word)` body replaced. Was a Float64Array built from charCodeAt hashing + letter-position mixing + L2 normalize. Now it's a thin wrapper: `const embed = sharedEmbeddings.getEmbedding(clean); const pattern = new Float64Array(PATTERN_DIM); for i < embed.length: pattern[i] = embed[i]; return pattern;`. Every downstream call site (11 in language-cortex.js, plus 3 more in analyzeInput/recall/sentence centroid paths) automatically gets semantic vectors because they all delegate to this function. No call-site rewrites needed.
+       - **`semanticFit` slot scoring weight bumped 0.05 → 0.80.** Before R2 this was the weakest signal in the slot score (commented "letter-hash topic — mostly noise"). After R2, semanticFit measures real GloVe cosine between the cortex's semantic state and each candidate word's embedding — it's now the DOMINANT topic signal. `typeGrammar * 1.5` still has higher absolute weight for grammatical constraint, but semanticFit at 0.80 is the primary force pulling candidate words toward topical relevance.
+       - Updated inline `_semanticFit` docstring to reflect the new semantics.
+
+    5. **`js/brain/cluster.js` — getSemanticReadout method**
+       - Added `getSemanticReadout(embeddings, langStart = 150)` on NeuronCluster.
+       - Reads the cluster's spike + voltage state from the language region (neurons 150-299 on cortex) and delegates to `embeddings.cortexToEmbedding(spikes, voltages, size, langStart)`. Returns a 50d L2-normalized semantic pattern.
+       - Only meaningful on the cortex cluster — documented as such.
+       - Kept `getOutput(outputSize=32)` unchanged because equation modules (cortex prediction, hippo attractor, etc.) still use MODULE_SIZE=32 for their own processing — that's a separate downsample path from the language generation readout.
+
+    6. **`js/brain/engine.js` — semantic readout in processAndRespond**
+       - Imported `sharedEmbeddings` as a top-level import.
+       - Replaced `this.clusters.cortex.getOutput(32)` at line 722 (learn path) with `this.clusters.cortex.getSemanticReadout(sharedEmbeddings)`. Reading only Wernicke's area means learned word patterns accurately reflect the brain's semantic state at the time of learning, not a blur of auditory + visual + language activation.
+       - Replaced `this.clusters.cortex.getOutput(32)` at line 755 (generation path) with the same `getSemanticReadout`. The cortex pattern passed to the slot scorer now lives in GloVe-aligned 50d space, so `cosine(cortexPattern, wordPattern)` measures real semantic alignment.
+
+    7. **`js/brain/inner-voice.js` — removed latent-bug fallback**
+       - `speak(arousal, valence, coherence, brainState)` was falling back to `this.currentThought.pattern` (a 32d display-only downsample) when brainState didn't provide a cortexPattern. That was a dimension mismatch waiting to happen after R2. `speak()` isn't called from the main codebase (engine.processAndRespond handles generation directly), so this was latent — but fixed it to fall back to `null` instead, which the slot scorer handles correctly by falling through to non-cortex-weighted scoring.
+
+    8. **`js/brain/persistence.js` — VERSION bump**
+       - `VERSION = 3` (was 2). Any persisted brain state from before R2 has 32d cortex pattern snapshots that are the wrong shape for the new 50d pipeline. Old v2 saves get rejected on load and the brain boots fresh.
+
+    9. **`js/app.js` — await embeddings loading before corpus**
+       - `loadPersonaSelfImage` now `await`s `targetBrain.sensory._embeddingsLoading` before feeding the corpus to `languageCortex.loadSelfImage`. Without this wait, the persona sentences would be indexed while GloVe was still downloading, so their stored patterns would be hash-fallback vectors instead of real GloVe. After the await, the very first word learned has its real semantic pattern from the start.
+
+    **Net result:** The semantic loop is closed. User input → embedding → cortex injection → LIF dynamics + modulators → neural state → reverse-embedding readout → slot scorer cosine against word embeddings → pick semantically-relevant words. Brain state that says "hungry" in semantic space will pull candidate words near "food" / "eat" / "belly" / "starving" / similar instead of bigram-chain drifting to random vocabulary.
+
+    **What R2 does not fix:** Grammar coherence (still type n-grams), sentence length (still the 3-6 word quip cap from `8d33c17`), voice tone (still persona-arousal bias + casual bonus), memory architecture (still hippocampus Hopfield + sentence store). All tonight's tuning from `5d2a57d` / `6bf1b4e` / `4c2fb33` / `8d33c17` stays intact. R2 is specifically the TOPIC RELEVANCE fix documented in SEMANTIC_GAP.md.
+
+    **Verification gates for R2 working correctly (from SEMANTIC_GAP.md test cases):**
+    - `"are you hungry?"` → response should contain food-related vocab (hungry / food / eat / belly / starving / snack / similar)
+    - `"do you like movies?"` → response should contain film-related vocab (movie / watch / show / cinema / flick / similar)
+    - `"tell me about coding"` → response should pull coding-knowledge.txt vocab (code / html / js / function / build / etc)
+    - `"what's your name?"` → hippocampus recall should fire a persona identity sentence via semantic centroid match
+    - Different brain states on the same query should produce different word selection (mood variance)
+
+---
+
 ## 2026-04-13 Session: Refactor R1 Audit + VESTIGIAL Cleanup (branch: brain-refactor-full-control)
 
 ### COMPLETED

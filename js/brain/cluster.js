@@ -225,6 +225,38 @@ export class NeuronCluster {
     return output;
   }
 
+  /**
+   * Read a specific neuron range as semantic embedding-space vector.
+   *
+   * R2 of brain-refactor-full-control — this is the read-side of the
+   * semantic loop. `sensory.js` writes word embeddings into specific
+   * cortex neuron ranges via `embeddings.mapToCortex`, the cortex
+   * integrates those currents through LIF dynamics + hierarchical
+   * modulation (amygdala gate, Ψ, drive baseline, etc), and this
+   * method reads the activation state back as a semantic vector by
+   * calling the inverse mapping.
+   *
+   * Only meaningful on the cortex cluster (which has Wernicke's area
+   * at neurons 150-299). Calling it on amygdala/BG/etc will return
+   * the language-region readout which those clusters don't have —
+   * just don't.
+   *
+   * @param {object} embeddings — the shared SemanticEmbeddings instance
+   *   with `cortexToEmbedding(spikes, voltages, cortexSize, langStart)`
+   * @param {number} langStart — first neuron of the language region
+   *   (default 150 matches sensory.js mapToCortex)
+   * @returns {Float64Array} — 50d L2-normalized semantic pattern
+   */
+  getSemanticReadout(embeddings, langStart = 150) {
+    const voltages = this.neurons.getVoltages();
+    return embeddings.cortexToEmbedding(
+      this.lastSpikes,
+      voltages,
+      this.size,
+      langStart
+    );
+  }
+
   getState() {
     return {
       name: this.name,
