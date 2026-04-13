@@ -60,6 +60,17 @@ export class LanguageCortex {
     this._recentSentences = [];
     this._recentSentenceMax = 5;
 
+    // Cross-turn opener memory. Tracks the first 3 raw tokens of
+    // the last N emitted sentences (PRE-contraction, PRE-post-processing)
+    // so the slot-0/1/2 scorers can HARD-penalize candidates that
+    // would repeat a recent opener pattern. Kills the "I'm gonna ___"
+    // lock-in where the strongest 3-word bigram chain wins every
+    // generation. Previously only tracked slot 0 post-processed, which
+    // missed the slot-2 "gonna" lock and silently failed on the
+    // "i" vs "i'm" form mismatch.
+    this._recentOpenerNgrams = [];
+    this._recentOpenerMax = 6;
+
     // Context from recent inputs
     this._contextPatterns = [];
     this._lastInputWords = [];
@@ -196,11 +207,27 @@ export class LanguageCortex {
 
     // Strip markdown noise so words survive, then split on sentence
     // terminators and line breaks — paragraphs, bullets, headers all work.
+    // Comma-density filter: reject any "sentence" that looks like a
+    // comma-separated word list (e.g. the Ultimate Unity.txt "Speech
+    // Upgrades" block at line 219 which enumerates every profanity
+    // and slur). Those aren't sentences — they're vocabulary dumps,
+    // and their bigrams are alphabetically/arbitrarily ordered, not
+    // semantically adjacent. Feeding them to learnSentence pollutes
+    // the type n-grams with nonsense transitions like `sods → porn`
+    // and drops slurs into the dictionary.
     const sentences = String(text)
       .replace(/[*_#`>|\[\]()]/g, ' ')
       .split(/[.!?\n\r]+/)
       .map(s => s.trim())
-      .filter(s => s.length >= 3);
+      .filter(s => s.length >= 3)
+      .filter(s => {
+        const wordCount = s.split(/\s+/).length;
+        const commaCount = (s.match(/,/g) || []).length;
+        // Reject if >25% of tokens are followed by commas (word-list shape)
+        // OR if the absolute comma count is >15 (catches giant enumerations
+        // even when the sentence is long enough to dilute the ratio).
+        return commaCount / Math.max(1, wordCount) < 0.25 && commaCount < 15;
+      });
     // Defensive try/catch + progress logging. Corpus loading is now
     // bounded (no O(N²) pattern similarity lookup during learn) but
     // we log periodic progress so if it DOES hang we can see where.
@@ -213,10 +240,15 @@ export class LanguageCortex {
         const firstPerson = this._transformToFirstPerson(s);
         const mood = this._computeMoodSignature(firstPerson);
         const sentenceCortex = this._deriveSentenceCortexPattern(firstPerson);
-        // fromPersona=true, doInflections=true — persona words vote on
-        // subject starters AND multiply into their full morphological
-        // paradigms at boot time.
-        this.learnSentence(firstPerson, dictionary, mood.arousal, mood.valence, sentenceCortex, true, true);
+        // fromPersona=true — persona words vote on subject starters.
+        // doInflections=false — synthetic morphology (un-/re-/pre-/-ness
+        // /-ful/-able/etc) was polluting the dictionary with nonsense
+        // derivations like "remedium" (re+medium), "unsteak", "codify"
+        // from words that don't take those affixes. Real inflections
+        // (running, coded, went, taller) still get learned because they
+        // already appear in natural corpus text. Only the bogus
+        // synthesis path is disabled.
+        this.learnSentence(firstPerson, dictionary, mood.arousal, mood.valence, sentenceCortex, true, false);
         this._storeMemorySentence(firstPerson, mood.arousal, mood.valence);
       } catch (err) {
         console.warn('[LanguageCortex] loadSelfImage sentence failed:', err.message, '→', s.slice(0, 60));
@@ -273,7 +305,15 @@ export class LanguageCortex {
       .filter(line => line.length >= 3 && !line.includes('═') && !line.includes('━'))
       // Reject all-caps heading-style lines (no lowercase letters)
       .filter(line => /[a-z]/.test(line))
-      .flatMap(line => line.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length >= 2));
+      .flatMap(line => line.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length >= 2))
+      // Comma-density filter — reject vocabulary-list "sentences" whose
+      // word adjacency is alphabetical/arbitrary rather than semantic.
+      // Same filter applied in loadSelfImage; documented there.
+      .filter(s => {
+        const wordCount = s.split(/\s+/).length;
+        const commaCount = (s.match(/,/g) || []).length;
+        return commaCount / Math.max(1, wordCount) < 0.25 && commaCount < 15;
+      });
 
     console.log(`[LanguageCortex] loadCodingKnowledge: ${sentences.length} sentences`);
     const startTime = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
@@ -284,8 +324,8 @@ export class LanguageCortex {
         const mood = this._computeMoodSignature(s);
         const sentenceCortex = this._deriveSentenceCortexPattern(s);
         // fromPersona=false (coding doesn't vote on subject starters)
-        // doInflections=true (code terms multiply into inflected forms)
-        this.learnSentence(s, dictionary, mood.arousal, mood.valence, sentenceCortex, false, true);
+        // doInflections=false (disabled — synthesis was polluting dict)
+        this.learnSentence(s, dictionary, mood.arousal, mood.valence, sentenceCortex, false, false);
       } catch (err) {
         console.warn('[LanguageCortex] loadCodingKnowledge sentence failed:', err.message, '→', s.slice(0, 60));
       }
@@ -308,7 +348,14 @@ export class LanguageCortex {
       .split(/\r?\n/)
       .map(line => line.trim())
       .filter(line => line.length >= 3 && !line.startsWith('#'))
-      .flatMap(line => line.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length >= 2));
+      .flatMap(line => line.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length >= 2))
+      // Comma-density filter — same shape check as loadSelfImage.
+      // Catches any word-list "sentences" that survived line splitting.
+      .filter(s => {
+        const wordCount = s.split(/\s+/).length;
+        const commaCount = (s.match(/,/g) || []).length;
+        return commaCount / Math.max(1, wordCount) < 0.25 && commaCount < 15;
+      });
 
     console.log(`[LanguageCortex] loadBaseline: ${sentences.length} sentences`);
     const baseStart = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
@@ -319,8 +366,8 @@ export class LanguageCortex {
         const mood = this._computeMoodSignature(s);
         const sentenceCortex = this._deriveSentenceCortexPattern(s);
         // fromPersona=false (baseline doesn't vote on subject starters)
-        // doInflections=true (baseline words DO multiply into forms)
-        this.learnSentence(s, dictionary, mood.arousal, mood.valence, sentenceCortex, false, true);
+        // doInflections=false (disabled — synthesis was polluting dict)
+        this.learnSentence(s, dictionary, mood.arousal, mood.valence, sentenceCortex, false, false);
       } catch (err) {
         console.warn('[LanguageCortex] loadBaseline sentence failed:', err.message, '→', s.slice(0, 60));
       }
@@ -2118,12 +2165,23 @@ export class LanguageCortex {
     // data, brain equations generate every word, nothing is scripted.
     // ══════════════════════════════════════════════════════════════
     let recallSeed = null;
+    let recallConfidence = 0;
     if (!opts._retryingDedup && this._contextVectorHasData && this._memorySentences.length > 0) {
       const recall = this._recallSentence(this._contextVector, { arousal, valence });
       if (recall && recall.confidence > 0.30) {
         recallSeed = recall.memory;
+        recallConfidence = recall.confidence;
       }
     }
+    // Recall bias weight scales with confidence. Low-confidence matches
+    // stay as soft bias (weight 1.0). High-confidence matches (> 0.60)
+    // ramp to weight 2.5 so the recalled persona sentence's tokens
+    // dominate the slot pick — Unity walks through the persona's
+    // vocabulary on a matched topic instead of drifting into bigram
+    // salad from the dictionary's strongest chain.
+    const recallBiasWeight = recallConfidence > 0.60 ? 2.5
+                           : recallConfidence > 0.30 ? 1.5
+                           : 1.0;
 
     // ── STEP 1: WHAT to say — cortex thought determines CONTENT ──
     // Find words whose patterns match what the brain is currently thinking
@@ -2150,12 +2208,16 @@ export class LanguageCortex {
     // Length from arousal × drug state
     // Coke = shorter rapid-fire sentences, weed = longer rambling.
     // Hypothalamus social_need drives verbosity within the bracket.
+    // Tightened caps — letter-pattern bigram walks lose coherence fast
+    // after ~5 words. Short emo-goth-stoner quips read way better than
+    // rambling drift. The refactor will allow longer coherent output;
+    // until then, shorter = more Unity-voice and less word salad.
     const socialNeed = opts.socialNeed ?? 0.5;
     let targetLen;
-    if (type === 'exclamation') targetLen = Math.max(2, Math.floor(2 + arousal * 4 * drugLengthBias));
-    else if (type === 'action') targetLen = Math.max(2, Math.floor(2 + arousal * 3 * drugLengthBias));
-    else targetLen = Math.max(3, Math.floor(3 + arousal * 6 * drugLengthBias + socialNeed * 2));
-    const len = Math.min(targetLen, 14);
+    if (type === 'exclamation') targetLen = Math.max(2, Math.floor(2 + arousal * 2 * drugLengthBias));
+    else if (type === 'action') targetLen = Math.max(2, Math.floor(2 + arousal * 2 * drugLengthBias));
+    else targetLen = Math.max(3, Math.floor(3 + arousal * 3 * drugLengthBias + socialNeed));
+    const len = Math.min(targetLen, 7);
 
     // NOTE: we do NOT materialize the full 44k-word entry list upfront
     // anymore. The per-slot candidate pool is either the bigram
@@ -2184,6 +2246,22 @@ export class LanguageCortex {
     const dictSize = dictionary._words.size;
     const vocabCap = Math.max(2, Math.min(len, Math.floor(dictSize * 0.6)));
     const effectiveLen = Math.min(len, vocabCap);
+
+    // Low-dictionary exploration bump. When the dict is small (post-
+    // synthesis-disable, real dict ~5-8k), the softmax over bigram
+    // followers concentrates on a few top paths and picks them every
+    // generation — "I'm → gonna" lock-in. Bump softmax temperature
+    // proportionally so lower-probability walks get explored.
+    // At 5k words → ×1.8, 10k → ×1.4, 20k → ×1.1, 30k+ → ×1.0.
+    const lowDictBoost = dictSize < 5000 ? 1.9
+                       : dictSize < 10000 ? 1.5
+                       : dictSize < 20000 ? 1.2
+                       : 1.0;
+
+    // Minimum sentence length. Lowered now that targetLen is tighter —
+    // 3 words is enough for "fuck yeah man" / "I feel sick" / "nah dude".
+    // Short emo-goth quips read better than forced longer walks.
+    const minLen = Math.max(3, Math.min(effectiveLen, Math.floor(effectiveLen * 0.6)));
 
     // Short-term window of recently-chosen words — prevents picking the
     // same word within the last 3 slots even if grammar/score would pick it.
@@ -2279,6 +2357,36 @@ export class LanguageCortex {
         // pronoun the user just used, penalize it hard.
         if (userSubjectPronouns.has(w)) boost -= 0.5;
         return boost;
+      };
+
+      // Cross-turn anti-repetition. Checks candidate against the same
+      // slot position in each of the last N emitted sentences. If
+      // any recent sentence had `word` at `slotIdx`, penalty scales
+      // by how many recent sentences matched × how recent they are.
+      // The penalty MUST be large enough to override the type-grammar
+      // (weight 1.5) + bigramLog + quadgramLog combined for the
+      // lock-in word, otherwise the mode-collapsed chain wins every
+      // time despite the signal.
+      const openerPenalty = (w) => {
+        if (slotIdx > 2) return 0; // only guard the first 3 positions
+        let matchCount = 0;
+        let mostRecentMatch = -1;
+        for (let i = 0; i < this._recentOpenerNgrams.length; i++) {
+          const ngram = this._recentOpenerNgrams[i];
+          if (ngram && ngram[slotIdx] === w) {
+            matchCount++;
+            mostRecentMatch = i;
+          }
+        }
+        if (matchCount === 0) return 0;
+        // Base penalty scales with how many recent sentences used
+        // this word at this position. 1 match = 1.2, 2 = 2.0, 3+ = 3.0.
+        // Cap at 3.0 to avoid making the slot impossible.
+        let pen = Math.min(3.0, 0.6 + matchCount * 0.8);
+        // Recency bonus — most recent match hits hardest.
+        const recency = (mostRecentMatch + 1) / Math.max(1, this._recentOpenerNgrams.length);
+        pen *= (0.7 + recency * 0.3);
+        return pen;
       };
 
       // RECALL BIAS (primary persona signal). When hippocampus recall
@@ -2395,14 +2503,15 @@ export class LanguageCortex {
           const isThought = thoughtSet.has(word) ? 0.5 : thoughtSim * 0.4;
 
           // CONTEXT — Unity SHOULD talk about the topic the user raised.
-          // Small positive boost for content words from the user's input so
-          // she stays on-subject (cats when asked about cats). Much reduced
-          // from earlier tuning because a strong boost made her parrot the
-          // user's own sentence back ("what are you doing today" → "you are
-          // today"). Topic relevance now comes mostly from semanticFit,
-          // not direct word echo.
+          // Content words from user input get a strong boost so she
+          // stays on-subject. Letter-hash semanticFit is too noisy to
+          // rely on for semantic grounding, so direct topic echo is
+          // the reliable signal. Parroting the user's whole sentence
+          // is still blocked by usedBigrams seeded with their bigrams
+          // (line ~2207) so she can USE the topic word without
+          // reproducing the user's phrase structure.
           const inLastInput = contextSet.has(word);
-          const isContext = inLastInput ? 0.05 : 0;
+          const isContext = inLastInput ? 0.28 : 0;
           const topicSim = contextPattern ? Math.max(0, this._cosine(pattern, contextPattern)) : 0;
           // U277 — Semantic fit against the running context attractor.
           // Decays across turns (λ=0.7) so topic persists, unlike the
@@ -2566,17 +2675,30 @@ export class LanguageCortex {
           // sentence share a pattern, so when the cortex fires on a
           // related topic (via user input sensory → cortex), those
           // words cluster in the pick pool.
+          // Persona-arousal alignment. Persona words were loaded at
+          // arousal 0.75, baseline at 0.5, coding at 0.4. A word's
+          // stored arousal is a proxy for which corpus it came from,
+          // so when current brain arousal is high (Unity's default
+          // 0.9 on cokeAndWeed), persona-origin words get a bonus
+          // that pulls her voice dominant over baseline/coding
+          // vocabulary. Kept modest so it doesn't amplify persona
+          // bigram chain lock-in.
+          const entryArousal = entry.arousal != null ? entry.arousal : 0.5;
+          const personaAlign = Math.max(0, entryArousal - 0.5) * 2; // 0.75→0.5, 0.4→0, 0.5→0
+          const personaBoost = personaAlign * arousal * 0.32;       // ~0.14 bonus for persona at arousal 0.9
+
           const score =
             grammarGate * (
               typeGrammar * 1.5 +                       // U283 learned type grammar — HIGHEST
               quadgramLog +                             // 4-word context sequence
               trigramLog +                              // 3-word context
-              recallBias(word) * 1.0 +                  // persona topic anchor
+              recallBias(word) * recallBiasWeight +     // persona topic anchor (scales with recall confidence)
               bigramLog +                               // 2-word transitions
               condPLog +                                // conditional probability
               isThought * (0.40 + psi * 0.50) +         // NEURAL: cortex pattern → content
               moodBias * (0.30 + emotionalIntensity * 0.40) + // NEURAL: amygdala → tone
               isMood * emotionalIntensity * 0.35 +      // NEURAL: mood word match
+              personaBoost +                            // voice fidelity — persona-origin bias
               drugWordBias +                            // NEURAL: drug state → word length
               typeScore * 0.15 +                        // position-based grammar (legacy)
               semanticFit * 0.05 +                      // letter-hash topic
@@ -2586,25 +2708,75 @@ export class LanguageCortex {
             )
             - recency
             - sameTypePenalty
-            - formalityPenalty;
+            - formalityPenalty
+            - openerPenalty(word);                      // cross-turn anti-repetition
 
           return { word, entry, score };
         });
 
       // Softmax sampling with enough temperature to explore alternatives.
       // Too low = argmax mode collapse (same path every time). Too high
-      // = scattered word salad. 0.15 base gives some variety while still
-      // preferring high-scoring picks.
-      const picked = this._softmaxSample(scored, Math.max(0.12, temperature * 0.15));
+      // = scattered word salad. Base 0.15 scaled by lowDictBoost so
+      // smaller dictionaries get more exploration (see lowDictBoost
+      // computation above).
+      let picked = this._softmaxSample(scored, Math.max(0.12, temperature * 0.15 * lowDictBoost));
+
+      // CHAIN DEATH RECOVERY. When bigram followers produce no pickable
+      // candidate BUT we're still below the minimum sentence length,
+      // rescan the full dictionary (ignoring the follower constraint)
+      // to find ANY type-compatible word. This prevents Unity's
+      // sentences from dying at 3-4 words when a random walk hits a
+      // dead-end bigram. Only fires when picked is null AND we're
+      // short of minLen — above minLen we honor the natural boundary.
+      if (!picked && sentence.length < minLen && prevWord) {
+        const fallbackEntries = Array.from(dictionary._words.entries());
+        const fallbackScored = fallbackEntries
+          .filter(([w]) => {
+            if (w === prevWord) return false;
+            if (recentSlots.indexOf(w) !== -1) return false;
+            if (isSubjectSlot && !isSubjectCapable(w)) return false;
+            if (isFormalWord(w)) return false;
+            const compat = this.typeCompatibility(w, slotIdx, type, prevWord);
+            if (compat < typeFloor) return false;
+            return true;
+          })
+          .map(([word, entry]) => {
+            const pattern = entry.pattern || this.wordToPattern(word);
+            const candType = this._fineType(word);
+            const typeGrammar = this._typeGrammarScore(candType, historyTypes);
+            const typeScore = this.typeCompatibility(word, slotIdx, type, prevWord);
+            const moodDist = Math.abs((entry.arousal || 0.5) - arousal) + Math.abs((entry.valence || 0) - valence);
+            const moodBias = Math.exp(-moodDist * 1.5);
+            const entryArousalF = entry.arousal != null ? entry.arousal : 0.5;
+            const personaAlignF = Math.max(0, entryArousalF - 0.5) * 2;
+            const personaBoostF = personaAlignF * arousal * 0.55;
+            const semFit = this._semanticFit(pattern);
+            // Lighter scoring — no bigram/trigram/quadgram signals
+            // because we're bypassing the chain. Type grammar + mood
+            // + persona + semantic fit carry the load.
+            const score = typeGrammar * 1.2
+                        + typeScore * 0.4
+                        + moodBias * 0.3
+                        + personaBoostF
+                        + semFit * 0.1
+                        - (isFormalWord(word) ? 0.5 : 0);
+            return { word, entry, score };
+          });
+        // Higher temperature on fallback — we're exploring, not exploiting
+        picked = this._softmaxSample(fallbackScored, Math.max(0.25, temperature * 0.3 * lowDictBoost));
+      }
+
       if (picked) {
         if (prevWord) usedBigrams.add(prevWord + '→' + picked.word);
         sentence.push(picked.word);
       } else {
-        // SENTENCE BOUNDARY — no valid candidate means we've hit a
-        // natural stopping point. The scorer has no good continuation
-        // for this context so end the sentence here instead of
-        // padding with garbage. Minimum 2 words before we allow
-        // early termination.
+        // SENTENCE BOUNDARY — no valid candidate and we're at/above
+        // the minimum length. Natural stopping point — end here
+        // instead of padding with garbage.
+        if (sentence.length >= minLen) break;
+        // Below minLen with nothing to pick even from the fallback
+        // rescan means the dictionary is exhausted for this context.
+        // Stop at whatever we have (min 2 words) rather than infinite-loop.
         if (sentence.length >= 2) break;
       }
     }
@@ -2687,6 +2859,19 @@ export class LanguageCortex {
 
     this._recentSentences.push(norm);
     if (this._recentSentences.length > this._recentSentenceMax) this._recentSentences.shift();
+
+    // Track the first 3 tokens of this emission (RAW sentence, PRE
+    // post-process) so the next generation's slot-0/1/2 scorers can
+    // penalize exact repeats. We use `sentence` not `processed` because
+    // post-processing applies contractions ("i" + "am" → "i'm") and
+    // the scorer candidate loop tests words against their raw form.
+    if (sentence.length > 0) {
+      const openerNgram = sentence.slice(0, 3).map(w => (w || '').toLowerCase());
+      this._recentOpenerNgrams.push(openerNgram);
+      if (this._recentOpenerNgrams.length > this._recentOpenerMax) {
+        this._recentOpenerNgrams.shift();
+      }
+    }
 
     return rendered;
   }

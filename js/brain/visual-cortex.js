@@ -11,10 +11,27 @@
  * AI is only called for IT-level recognition, not for basic vision.
  */
 
-const FRAME_W = 20;
-const FRAME_H = 15;
+// Frame resolution bumped from 20×15 (300 px) to 60×45 (2700 px).
+// The old grid was so coarse that a face at webcam distance was only
+// ~4-8 pixels wide, smaller than most background edges (window frames,
+// door lines, posters, keyboards). Edge detection consistently picked
+// high-contrast background junk over the user's face, so the gaze
+// pointer bugged out off to the side.
+// 60×45 gives face-level detail (~15-25px wide for a typical webcam
+// framing) while staying cheap: 9× the V1 ops still runs <1ms per frame.
+const FRAME_W = 60;
+const FRAME_H = 45;
 const V1_ORIENTATIONS = 4; // 0°, 45°, 90°, 135°
-const V1_COUNT = FRAME_W * FRAME_H; // 300 V1 neurons (one per pixel)
+const V1_COUNT = FRAME_W * FRAME_H; // 2700 V1 neurons (one per pixel)
+
+// Center Gaussian prior — σ controls how tightly gaze favors the
+// frame center. σ = frame_width / 3 means edges at the center are
+// weighted ~2-3× more strongly than edges at the corners. Webcam
+// users are almost always center-framed, so this cheap prior makes
+// the attention system land on them unless a background edge is
+// DRAMATICALLY stronger than anything near center.
+const CENTER_PRIOR_SIGMA_X = FRAME_W / 3;
+const CENTER_PRIOR_SIGMA_Y = FRAME_H / 3;
 
 // Gabor-like kernels for oriented edge detection (3x3)
 const EDGE_KERNELS = [
@@ -64,6 +81,36 @@ export class VisualCortex {
 
     // Motion energy — how much the scene is changing
     this.motionEnergy = 0;
+
+    // Per-pixel motion map (frame-to-frame absolute brightness delta).
+    // Feeds into the effective-salience computation so moving regions
+    // dominate over static background edges. Whoever is actually talking
+    // to Unity is the thing that's moving — she should look at them.
+    this._motionMap = new Float32Array(V1_COUNT);
+
+    // Top-down attention gate driven by brain state (set from the engine
+    // via setAttentionState). When arousal is high AND the user recently
+    // spoke, Unity's gaze clamps toward the center of the frame where the
+    // user is most likely to be. When idle (low arousal, no recent input),
+    // gaze free-roams the salience map.
+    this._attentionLock = 0.0; // 0 = free-roam, 1 = center-locked
+  }
+
+  /**
+   * Called by the engine each step with current brain state so the
+   * visual cortex can apply top-down attention to gaze.
+   *
+   * @param {object} state
+   * @param {number} state.arousal — amygdala arousal (0-1)
+   * @param {number} state.secondsSinceInput — wall-clock seconds since
+   *    the last user input arrived. Under 10s = user is actively
+   *    talking to Unity; above = idle.
+   */
+  setAttentionState({ arousal = 0.5, secondsSinceInput = 9999 } = {}) {
+    // Center-lock scales with arousal × recency. Unity pays attention to
+    // whoever is talking to her. If nobody's around she wanders.
+    const recency = Math.max(0, Math.min(1, 1 - secondsSinceInput / 10));
+    this._attentionLock = Math.max(0, Math.min(1, arousal * 0.8 + recency * 0.6 - 0.3));
   }
 
   /**
@@ -208,42 +255,112 @@ export class VisualCortex {
   }
 
   // ── Motion detection ─────────────────────────────────────────
+  //
+  // Per-pixel motion map + scalar total motion energy. The per-pixel
+  // map feeds _computeGaze so the attention peak is pulled toward
+  // moving regions (the user talking) instead of static background
+  // edges (window frames, posters, the wall behind you).
 
   _computeMotion() {
     let totalDiff = 0;
     for (let i = 0; i < V1_COUNT; i++) {
-      totalDiff += Math.abs(this._currentFrame[i] - this._prevFrame[i]);
+      const delta = Math.abs(this._currentFrame[i] - this._prevFrame[i]);
+      this._motionMap[i] = delta;
+      totalDiff += delta;
     }
     this.motionEnergy = totalDiff / V1_COUNT;
   }
 
   // ── Saccade generation from salience ─────────────────────────
+  //
+  // Gaze lands on the peak of an EFFECTIVE salience map computed as:
+  //
+  //   eff[x,y] = (edge[x,y] × 0.30 + motion[x,y] × 0.70 × motionGain)
+  //              × centerPrior(x, y)
+  //              × attentionLockMask(x, y)
+  //
+  // - Motion dominates static edges when ANY motion is present, so
+  //   the user talking beats static background clutter every time.
+  // - Center Gaussian prior weights frame middle ~2-3× higher, because
+  //   webcam users are almost always center-framed.
+  // - Top-down attention lock (set from engine via setAttentionState)
+  //   tightens the center window when Unity's arousal is high AND the
+  //   user recently spoke. When idle, the lock loosens and gaze
+  //   free-roams the salience map.
 
   _computeGaze() {
-    // Find peak of salience map — that's where we look
-    let maxSal = 0, maxX = FRAME_W / 2, maxY = FRAME_H / 2;
+    const cx = FRAME_W / 2;
+    const cy = FRAME_H / 2;
+    const sigX2 = CENTER_PRIOR_SIGMA_X * CENTER_PRIOR_SIGMA_X;
+    const sigY2 = CENTER_PRIOR_SIGMA_Y * CENTER_PRIOR_SIGMA_Y;
+
+    // Motion gain scales with total motion energy so static scenes
+    // don't amplify noise, but active scenes heavily favor movement.
+    // At motionEnergy=0: gain ~0 (pure edge salience).
+    // At motionEnergy=0.05 (noticeable movement): gain ~5.
+    // At motionEnergy=0.2 (lots of movement): gain ~20.
+    const motionGain = Math.min(25, this.motionEnergy * 100);
+
+    // Attention-lock amplifies the center prior when active. At lock=0,
+    // the center prior is the vanilla Gaussian. At lock=1, the prior
+    // steepens so off-center peaks need ~4× more strength to win.
+    const lockSharpness = 1 + this._attentionLock * 3;
+
+    // Find peak of effective salience
+    let maxSal = 0, maxX = cx, maxY = cy;
     for (let y = 0; y < FRAME_H; y++) {
       for (let x = 0; x < FRAME_W; x++) {
-        const sal = this.salienceMap[y * FRAME_W + x];
-        if (sal > maxSal) {
-          maxSal = sal;
+        const idx = y * FRAME_W + x;
+        const edge = this.salienceMap[idx] || 0;
+        const motion = this._motionMap[idx] || 0;
+
+        // Combine: motion is the primary driver when present
+        let combined = edge * 0.30 + motion * 0.70 * motionGain;
+
+        // Center Gaussian prior (amplified by attention lock)
+        const dx = x - cx;
+        const dy = y - cy;
+        const centerWeight = Math.exp(
+          -((dx * dx) / (2 * sigX2) + (dy * dy) / (2 * sigY2)) * lockSharpness
+        );
+        combined *= centerWeight;
+
+        if (combined > maxSal) {
+          maxSal = combined;
           maxX = x;
           maxY = y;
         }
       }
     }
 
-    // Smooth pursuit toward peak (don't snap instantly)
+    // Target in 0-1 normalized coords
     const targetX = maxX / FRAME_W;
     const targetY = maxY / FRAME_H;
-    this.gazeX += (targetX - this.gazeX) * 0.1;
-    this.gazeY += (targetY - this.gazeY) * 0.1;
 
-    // Micro-saccades
-    this.gazeX += (Math.random() - 0.5) * 0.01;
-    this.gazeY += (Math.random() - 0.5) * 0.01;
-    this.gazeX = Math.max(0, Math.min(1, this.gazeX));
-    this.gazeY = Math.max(0, Math.min(1, this.gazeY));
+    // Smooth pursuit — faster when attention is locked (engaged),
+    // slower when free-roaming (idle wandering).
+    const pursuitRate = 0.12 + this._attentionLock * 0.15;
+    this.gazeX += (targetX - this.gazeX) * pursuitRate;
+    this.gazeY += (targetY - this.gazeY) * pursuitRate;
+
+    // Micro-saccades — smaller when locked (fixation), larger when idle.
+    const saccadeAmp = 0.015 * (1 - this._attentionLock * 0.6);
+    this.gazeX += (Math.random() - 0.5) * saccadeAmp;
+    this.gazeY += (Math.random() - 0.5) * saccadeAmp;
+
+    // When attention is strongly locked, clamp gaze to a tighter
+    // center window so Unity doesn't wander to a random corner
+    // during active conversation.
+    if (this._attentionLock > 0.5) {
+      const window = 0.3 - (this._attentionLock - 0.5) * 0.2; // 0.3 → 0.2
+      const min = 0.5 - window;
+      const max = 0.5 + window;
+      this.gazeX = Math.max(min, Math.min(max, this.gazeX));
+      this.gazeY = Math.max(min, Math.min(max, this.gazeY));
+    } else {
+      this.gazeX = Math.max(0, Math.min(1, this.gazeX));
+      this.gazeY = Math.max(0, Math.min(1, this.gazeY));
+    }
   }
 
   _maxSalience() {

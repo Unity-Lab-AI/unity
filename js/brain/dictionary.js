@@ -17,18 +17,18 @@
  * No hardcoded vocabulary. Everything learned. Everything persistent.
  */
 
-// Dictionary capacity. Grown to fit:
-//   - Persona file + morphological derivations (~22k words)
-//   - English baseline corpus + derivations (~22k words)
-//   - Coding knowledge corpus + derivations (~15k words)
-//   - Continuous learning from live user conversation over time
-// Total corpus load at boot ~50-60k. Cap raised to 100k so there's
-// room for organic growth from user conversations without triggering
-// LRU eviction thrashing (which is O(N) per insert over cap).
-// Memory footprint at full capacity: ~30MB dictionary state.
-const MAX_WORDS = 100000;
+// Dictionary capacity. With synthetic morphological inflation disabled,
+// the dictionary now grows only from words actually seen in corpus /
+// live conversation. Real corpus at boot is ~5-8k unique words across
+// all three files. 50k cap leaves plenty of room for organic growth.
+const MAX_WORDS = 50000;
 const PATTERN_DIM = 32; // cortex output dimensionality
-const STORAGE_KEY = 'unity_brain_dictionary';
+// Storage key versioned — bump when dictionary population rules change
+// so stale localStorage caches from prior builds get dropped instead of
+// reloaded. v2: 2026-04-13, synthetic morphological inflation disabled
+// + comma-list corpus filter added. Any old cache from v1 carries 40k+
+// junk words ("remedium", "unmedium", etc) and needs to be thrown out.
+const STORAGE_KEY = 'unity_brain_dictionary_v2';
 
 export class Dictionary {
   constructor() {

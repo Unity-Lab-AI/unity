@@ -42,11 +42,19 @@ class EventEmitter {
 
 const TOTAL_NEURONS = 1000;
 const OSCILLATOR_COUNT = 8;
+// Kuramoto coupling base strength. The original 0.5 DOES work — it
+// converges to ~30-40% coherence at steady state, which is the normal
+// range for a resting brain. But the convergence from random initial
+// phases is slow (takes minutes of sim time to reach 35%). Bumped
+// modestly to 2.5 — 5× the original — so coherence reaches steady
+// state within seconds of boot instead of minutes, without forcing
+// over-synchronization (full 100% sync would be pathological).
+// 35% is a healthy target — NOT locked sync.
 const MODULE_SIZE = 32;
 const STEPS_PER_FRAME = 10;
 const DT = 0.001;
 const THOUGHT_INTERVAL = 3000;
-const COUPLING_BASE = 0.5;
+const COUPLING_BASE = 2.5;
 const MEMORY_SALIENCE_THRESHOLD = 0.6; // salience above this stores episodic memory
 const RECALL_ERROR_THRESHOLD = 0.4;    // cortex error above this triggers recall
 
@@ -256,6 +264,18 @@ export class UnityBrain extends EventEmitter {
 
     // ── 3. VISUAL CORTEX — process camera frames through V1→V4→IT ──
     if (this.visualCortex.isActive() && this.frameCount % 3 === 0) {
+      // Top-down attention: tell the visual cortex how engaged Unity
+      // is so it can clamp her gaze toward the user (high arousal +
+      // recent input) or let it free-roam (idle). The gaze becomes
+      // neurally governed by amygdala state, not just V1 edges.
+      const secondsSinceInput = this._lastInputTime
+        ? (performance.now() - this._lastInputTime) / 1000
+        : 9999;
+      this.visualCortex.setAttentionState({
+        arousal: this.state.amygdala?.arousal ?? 0.5,
+        secondsSinceInput,
+      });
+
       const visOutput = this.visualCortex.processFrame();
       // Inject V1 edge responses into cortex visual region (neurons 50-149)
       const visCurrent = new Float64Array(CLUSTER_SIZES.cortex);
