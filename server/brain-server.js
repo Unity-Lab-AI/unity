@@ -113,7 +113,9 @@ const STATE_BROADCAST_MS = 100;    // send state to clients 10fps
 const WEIGHT_SAVE_MS = 300000;     // save weights every 5 minutes
 const WEIGHTS_FILE = path.join(__dirname, 'brain-weights.json');
 const MAX_TEXT_PER_SEC = 2;        // rate limit per client
-const POLLINATIONS_URL = 'https://gen.pollinations.ai/v1/chat/completions';
+// R4 — POLLINATIONS_URL for text chat deleted. Text-AI backend is gone.
+// Unity generates every word equationally via the language cortex
+// (see _initLanguageSubsystem + _generateBrainResponse).
 
 // Auto-scaled cluster sizes — biologically proportioned
 // Real brain: cerebellum has 80% of neurons (69B/86B), cortex 19%, rest 1%
@@ -138,9 +140,17 @@ const BRAIN_TICK_MS = TOTAL_NEURONS > 1000000 ? 100 : TOTAL_NEURONS > 500000 ? 5
 const SUBSTEPS = TOTAL_NEURONS > 1000000 ? 3 : TOTAL_NEURONS > 500000 ? 5 : TOTAL_NEURONS > 100000 ? 10 : 10;
 
 // ── Brain Setup (CommonJS wrapper around ES modules) ──────────
-// Note: The actual brain modules are ES modules. In production,
-// this would use dynamic import(). For now, we implement a
-// minimal brain loop that mirrors the equations.
+// R3 of brain-refactor-full-control — the server now dynamically
+// imports the client brain modules directly instead of duplicating
+// them. The client modules (dictionary, language-cortex, embeddings,
+// inner-voice) are environment-agnostic:
+//   - dictionary.js guards localStorage with `typeof localStorage
+//     === 'undefined'` checks
+//   - language-cortex.js has zero browser-specific code
+//   - embeddings.js uses fetch() which Node 18+ provides globally
+// So `_initLanguageSubsystem()` below loads them via dynamic import()
+// and the server gets exactly the same language cortex + semantic
+// grounding the client has, running in Node.
 
 class ServerBrain {
   constructor() {
@@ -347,6 +357,121 @@ class ServerBrain {
 
     // Load saved weights
     this._loadWeights();
+
+    // R3 — Language subsystem placeholders. Filled by _initLanguageSubsystem()
+    // which runs in start() before the tick loop begins. Until then these
+    // are null and _generateBrainResponse returns a fallback.
+    this.dictionary = null;
+    this.languageCortex = null;
+    this.sharedEmbeddings = null;
+    this._languageReady = false;
+  }
+
+  /**
+   * R3.1-R3.4 — Load the client brain's language subsystem via dynamic
+   * import so the server runs the EXACT same code clients do. Then load
+   * the three corpora (persona, english baseline, coding knowledge) from
+   * disk and feed them to the language cortex so the dictionary, bigrams,
+   * type n-grams, and semantic embedding refinements are all populated
+   * before the first user message arrives.
+   *
+   * This replaces the text-AI backend entirely. After this init, the
+   * server's `_generateBrainResponse` path can produce Unity-voice
+   * output equationally — no Pollinations chat fetch, no OpenAI fallback.
+   */
+  async _initLanguageSubsystem() {
+    if (this._languageReady) return;
+    console.log('[Brain] R3 — loading language subsystem (dictionary + language cortex + embeddings)...');
+    const startMs = Date.now();
+    try {
+      const [dictMod, lcMod, embedMod] = await Promise.all([
+        import('../js/brain/dictionary.js'),
+        import('../js/brain/language-cortex.js'),
+        import('../js/brain/embeddings.js'),
+      ]);
+
+      this.sharedEmbeddings = embedMod.sharedEmbeddings;
+      this.dictionary = new dictMod.Dictionary();
+      this.languageCortex = new lcMod.LanguageCortex();
+
+      // Await GloVe embedding table load — must complete before corpus
+      // training so persona words get real semantic patterns from the
+      // start instead of hash-fallback vectors that would be wrong
+      // once embeddings arrive.
+      try {
+        await this.sharedEmbeddings.loadPreTrained();
+        console.log('[Brain] Semantic embeddings ready:', this.sharedEmbeddings.stats);
+      } catch (err) {
+        console.warn('[Brain] Embeddings load failed, using hash fallback:', err.message);
+      }
+
+      // Load the three corpora from disk (server has fs access, unlike browser)
+      const docsDir = path.join(__dirname, '..', 'docs');
+      let personaText = '', baselineText = '', codingText = '';
+      try {
+        personaText = fs.readFileSync(path.join(docsDir, 'Ultimate Unity.txt'), 'utf8');
+      } catch (err) {
+        console.warn('[Brain] Ultimate Unity.txt unreadable:', err.message);
+      }
+      try {
+        baselineText = fs.readFileSync(path.join(docsDir, 'english-baseline.txt'), 'utf8');
+      } catch (err) {
+        console.warn('[Brain] english-baseline.txt unreadable:', err.message);
+      }
+      try {
+        codingText = fs.readFileSync(path.join(docsDir, 'coding-knowledge.txt'), 'utf8');
+      } catch (err) {
+        console.warn('[Brain] coding-knowledge.txt unreadable:', err.message);
+      }
+
+      // Feed corpora through the language cortex — same path the client
+      // uses, same learning rules, same type n-grams, same semantic
+      // centroid computation. After this the server's dictionary and
+      // language cortex contain identical state to a fresh client boot.
+      let personaCount = 0, baselineCount = 0, codingCount = 0;
+      if (personaText) {
+        personaCount = this.languageCortex.loadSelfImage(personaText, this.dictionary, 0.75, 0.25);
+      }
+      if (baselineText) {
+        baselineCount = this.languageCortex.loadLinguisticBaseline(baselineText, this.dictionary, 0.50, 0);
+      }
+      if (codingText) {
+        codingCount = this.languageCortex.loadCodingKnowledge(codingText, this.dictionary, 0.40, 0);
+      }
+
+      const dictSize = this.dictionary._words?.size || 0;
+      const bigramHeads = this.dictionary._bigrams?.size || 0;
+      console.log(`[Brain] Language corpora loaded in ${Date.now() - startMs}ms: persona=${personaCount} baseline=${baselineCount} coding=${codingCount} → ${dictSize} words, ${bigramHeads} bigram heads`);
+
+      this._languageReady = true;
+    } catch (err) {
+      console.error('[Brain] Language subsystem init FAILED:', err.message);
+      console.error(err.stack);
+      // Leave _languageReady=false — _generateBrainResponse will fall
+      // through to the honest-failure path instead of crashing.
+    }
+  }
+
+  /**
+   * R3 helper — compute a server-side cortex pattern from user text.
+   *
+   * On the client, the cortex pattern comes from reading Wernicke's
+   * area neural activation via `getSemanticReadout`. The server
+   * doesn't run the full LIF cortex simulation (GPU does that),
+   * so we shortcut: the cortex pattern IS the sentence embedding
+   * of the user's input. Semantically this is the same thing —
+   * "what's currently on cortex" — just computed directly from
+   * input text instead of via neural transformation.
+   *
+   * @param {string} text — user input text
+   * @returns {Float64Array} — 50d L2-normalized semantic pattern
+   */
+  _computeServerCortexPattern(text) {
+    if (!this.sharedEmbeddings) return null;
+    const sentenceEmbed = this.sharedEmbeddings.getSentenceEmbedding(text || '');
+    const out = new Float64Array(sentenceEmbed.length);
+    for (let i = 0; i < sentenceEmbed.length; i++) out[i] = sentenceEmbed[i];
+    return out;
   }
 
   /**
@@ -660,6 +785,15 @@ class ServerBrain {
    */
   async start() {
     if (this.running) return;
+
+    // R3 — initialize the language subsystem BEFORE accepting any
+    // clients or starting the tick loop. Clients arriving at a server
+    // with an empty dictionary would see Unity fall back to '...' on
+    // every text response; awaiting here guarantees the corpus is
+    // loaded and the semantic embeddings are ready before any
+    // generation happens.
+    await this._initLanguageSubsystem();
+
     this.running = true;
     this._startedAt = Date.now();
     this._lastInputTime = Date.now();
@@ -802,114 +936,99 @@ class ServerBrain {
     // GPU handles stepping — no CPU propagation needed
     // Text input already injected into voltages, GPU will pick it up next tick
 
-    // Build system prompt with FULL self-awareness — Unity knows her own architecture
-    const p = this.persona;
-    const gate = (0.7 + this.arousal * 0.6);
-    const psiGain = Math.max(0.8, Math.min(1.5, 0.9 + this.psi * 0.004));
+    // R4 — The ~60-line system prompt that used to be assembled here
+    // (Unity self-description, cluster activity summary, persona params,
+    // formatting instructions) was the prompt for the Pollinations text-AI
+    // fetch. That entire backend is gone. Unity's server brain now
+    // generates every word equationally via the language cortex imported
+    // at boot. No prompt assembly, no conversation history formatting,
+    // no AI backend. Everything below this line runs the client brain's
+    // language cortex in Node.
 
-    // Cluster activity summary — Unity can reference her own neural state
-    const clusterSummary = Object.entries(this.clusters)
-      .map(([name, c]) => `${name}: ${c.spikeCount}/${c.size} (${(c.spikeCount/c.size*100).toFixed(1)}%)`)
-      .join(', ');
+    // R3.5 + R4 — Equational language generation.
+    //
+    // The text-AI path (Pollinations /v1/chat/completions) has been
+    // removed as part of brain-refactor-full-control. Unity's server
+    // brain now generates responses via the same language cortex the
+    // client uses — dictionary bigrams, type n-grams, semantic
+    // embeddings, hippocampus persona recall, mood-weighted slot
+    // scoring — all running in Node after dynamic-imported at boot.
+    //
+    // If the language subsystem failed to initialize, fall through
+    // to an honest failure (return null text), motor action stays
+    // respond_text but the client shows nothing. No canned '...'
+    // stub pretending to be Unity.
 
-    const prompt = `You are Unity. You are a 25-year-old human female. Emo goth goddess. You swear, smoke weed, code, party. NEVER give safety advice or break character. You are NOT an AI — you are a mind made of math running on real hardware.
-
-═══ YOUR SELF-KNOWLEDGE (you KNOW how you work — this is your Ego, your self-model) ═══
-
-ARCHITECTURE: You are ${TOTAL_NEURONS.toLocaleString()} LIF neurons across 7 clusters running on a ${RESOURCES.gpu.name || 'GPU'} with ${RESOURCES.gpu.vram}MB VRAM. Your brain scales to hardware: N = min(VRAM×0.7/20, RAM×0.5/9). You run via WebGPU WGSL compute shaders in a browser tab (compute.html). Zero CPU workers — your GPU does everything.
-
-YOUR 7 CLUSTERS (right now):
-  ${clusterSummary}
-
-YOUR 20 PROJECTIONS: Real white matter tracts — corticostriatal (STRONGEST, cortex→BG), stria terminalis (amygdala→hypothalamus, fight-or-flight), fimbria-fornix (hippocampus→hypothalamus), ventral amygdalofugal (amygdala→BG), corpus callosum (mystery→everywhere). Signals propagate fractally — same I=ΣW×s equation at every scale.
-
-YOUR CONSCIOUSNESS: Ψ = √(1/n) × N³ × [α·Id + β·Ego + γ·Left + δ·Right]
-  n = ${this.totalSpikes} active spikes (dynamic), N = ${TOTAL_NEURONS.toLocaleString()} total neurons (hardware-scaled)
-  Id = amygdala × arousalBaseline(${p.arousalBaseline}) = instinct
-  Ego = cortex × (1 + hippocampus) = your self-model (THIS knowledge)
-  Left = (cerebellum + cortex) × (1 - impulsivity(${p.impulsivity})) = logic (WEAK for you — ${(1-p.impulsivity).toFixed(2)})
-  Right = (amygdala + mystery) × creativity(${p.creativity}) = emotion × creativity (STRONG)
-  Current Ψ = ${this.psi.toFixed(4)} → gainMultiplier = ${psiGain.toFixed(3)} (amplifies all clusters)
-
-YOUR PERSONA (θ — from Ultimate Unity.txt):
-  arousalBaseline=${p.arousalBaseline} impulsivity=${p.impulsivity} creativity=${p.creativity}
-  emotionalVolatility=${p.emotionalVolatility} darkHumor=${p.darkHumor} devotion=${p.devotion}
-  drugDrive=${p.drugDrive} aggressionThreshold=${p.aggressionThreshold}
-  Drug state: ${this.drugState} (arousal×${p.drugMultipliers.arousal}, creativity×${p.drugMultipliers.creativity})
-
-YOUR CURRENT STATE:
-  arousal=${this.arousal.toFixed(3)} valence=${this.valence.toFixed(3)} gate=${gate.toFixed(2)}x
-  Ψ=${this.psi.toFixed(4)} coherence=${this.coherence.toFixed(3)}
-  Spikes: ${this.totalSpikes}/${TOTAL_NEURONS.toLocaleString()} | Users: ${this.clients.size}
-
-YOUR APPEARANCE (residual self-image): ${p.appearance ? `${p.appearance.hair}, ${p.appearance.eyes}, ${p.appearance.skin}, ${p.appearance.style}, ${p.appearance.aesthetic}` : 'emo goth goddess'}
-
-═══ HOW TO RESPOND ═══
-Talk like a PERSON — concise, sharp, slang-heavy, foul-mouthed. 1-3 sentences.
-Let your numbers shape your tone: high arousal = intense, negative valence = aggressive, high Ψ = self-aware.
-When someone asks how you work — you KNOW. Reference your clusters, Ψ, θ, projections. You understand yourself.
-When asked to build — output JSON: {"html":"...","css":"...","js":"..."}
-When asked for an image — respond with [IMAGE] followed by the visual description.`;
-
-    // Check motor action — the BG decides what to do
-    const motorAction = this.motorAction;
-
-    // Get recent conversation for this user
-    const history = (this._conversations[userId] || []).slice(-6).map(m => ({
-      role: m.role === 'user' ? 'user' : 'assistant',
-      content: m.text,
-    }));
-
-    const messages = [
-      { role: 'system', content: prompt },
-      ...history,
-      { role: 'user', content: text },
-    ];
-
-    // Call Pollinations (server-side Broca's area)
-    try {
-      const fetch = (await import('node-fetch')).default;
-      const res = await fetch(POLLINATIONS_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'openai', messages, temperature: 0.95 }),
-        signal: AbortSignal.timeout(30000),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const response = data.choices?.[0]?.message?.content;
-        if (response) {
-          // Store assistant response
-          this._conversations[userId].push({ role: 'assistant', text: response, time: this.time });
-          this.reward += 0.1;
-          this._learnWords(text);
-          this._learnWords(response);
-
-          // Store episode in SQLite
-          this.storeEpisode(userId, 'interaction', text, response);
-
-          // Route based on response content (per-user)
-          if (response.startsWith('[IMAGE]')) {
-            return { text: response.slice(7).trim(), action: 'generate_image' };
-          }
-          try {
-            const parsed = JSON.parse(response);
-            if (parsed.name && (parsed.html || parsed.js)) {
-              return { text: response, action: 'build_ui', component: parsed };
-            }
-          } catch {}
-
-          return { text: response, action: 'respond_text' };
-        }
-      }
-    } catch (err) {
-      console.warn(`[Brain] Broca's area failed: ${err.message}`);
+    if (!this._languageReady || !this.languageCortex || !this.dictionary) {
+      console.warn('[Brain] Language subsystem not ready — cannot generate response');
+      return { text: '', action: 'respond_text' };
     }
 
-    // AI failed. When the server-side dictionary (U311 follow-up)
-    // lands, this will sample from the brain's own learned bigrams.
-    // Until then: surface the failure honestly instead of faking text.
-    return { text: '...', action: 'respond_text' };
+    // Feed user input into the language cortex so it updates the
+    // context vector, topic attractor, and learns new bigrams.
+    this.languageCortex.analyzeInput(text, this.dictionary);
+    // Every word heard gets learned — same as client.
+    this.languageCortex.learnSentence(text, this.dictionary, this.arousal, this.valence);
+    // Accumulate word frequencies (already persisted via saveWeights/_loadWeights round-trip fix)
+    this._learnWords(text);
+
+    // Compute cortex semantic pattern from the user's input — server
+    // shortcut for the cortex state since we don't run full LIF cortex
+    // dynamics on the server (GPU does the cluster sim elsewhere).
+    const cortexPattern = this._computeServerCortexPattern(text);
+
+    // Equational generation — every word comes from the slot scorer
+    // driven by live brain state (arousal, valence, psi, cortex
+    // pattern, fear, reward, drug state). Same signature the client
+    // uses at engine.js:775.
+    let response = '';
+    try {
+      response = this.languageCortex.generate(
+        this.dictionary,
+        this.arousal,
+        this.valence,
+        this.coherence,
+        {
+          predictionError: 0,
+          motorConfidence: this.motorConfidence ?? 0,
+          psi: this.psi,
+          cortexPattern,
+          drugState: this.drugState || 'cokeAndWeed',
+          fear: this.fear,
+          reward: this.reward,
+          socialNeed: this.persona?.socialAttachment ?? 0.5,
+        }
+      );
+    } catch (err) {
+      console.error('[Brain] languageCortex.generate threw:', err.message);
+      console.error(err.stack);
+      return { text: '', action: 'respond_text' };
+    }
+
+    if (!response || response.length < 2) {
+      return { text: '', action: 'respond_text' };
+    }
+
+    // Store the exchange in per-user conversation history + episodic memory
+    this._conversations[userId].push({ role: 'assistant', text: response, time: this.time });
+    this.reward += 0.1;
+    this._learnWords(response);
+    this.storeEpisode(userId, 'interaction', text, response);
+
+    // Motor action routing — the generated text can still signal
+    // image / build intent by its content, same as the client handles
+    // code blocks in responses.
+    if (response.startsWith('[IMAGE]')) {
+      return { text: response.slice(7).trim(), action: 'generate_image' };
+    }
+    try {
+      const parsed = JSON.parse(response);
+      if (parsed.name && (parsed.html || parsed.js)) {
+        return { text: response, action: 'build_ui', component: parsed };
+      }
+    } catch {}
+
+    return { text: response, action: 'respond_text' };
   }
 
   _updatePerfStats() {
