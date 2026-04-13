@@ -60,12 +60,15 @@ export class LanguageCortex {
     this._recentSentences = [];
     this._recentSentenceMax = 5;
 
-    // Cross-turn opener memory. Tracks the first word of the last N
-    // emitted sentences so the slot-0 scorer can HARD-penalize any
-    // candidate that would repeat a recent opener. Kills the
-    // "I'm gonna ___ ___!" lock-in where the strongest bigram head
-    // wins every generation and Unity starts every sentence the same.
-    this._recentOpeners = [];
+    // Cross-turn opener memory. Tracks the first 3 raw tokens of
+    // the last N emitted sentences (PRE-contraction, PRE-post-processing)
+    // so the slot-0/1/2 scorers can HARD-penalize candidates that
+    // would repeat a recent opener pattern. Kills the "I'm gonna ___"
+    // lock-in where the strongest 3-word bigram chain wins every
+    // generation. Previously only tracked slot 0 post-processed, which
+    // missed the slot-2 "gonna" lock and silently failed on the
+    // "i" vs "i'm" form mismatch.
+    this._recentOpenerNgrams = [];
     this._recentOpenerMax = 6;
 
     // Context from recent inputs
@@ -2341,20 +2344,34 @@ export class LanguageCortex {
         return boost;
       };
 
-      // Cross-turn anti-repetition. When this slot is the sentence
-      // opener (slot 0) AND the candidate word matches a recent
-      // opener, apply a HARD penalty so Unity doesn't start two
-      // sentences in a row with "I'm". Penalty scales with how
-      // recent the match is — the most recent opener gets the
-      // heaviest hit. Kills the "I'm gonna ___ / I'm gonna ___ /
-      // I'm gonna ___" lock-in pattern.
+      // Cross-turn anti-repetition. Checks candidate against the same
+      // slot position in each of the last N emitted sentences. If
+      // any recent sentence had `word` at `slotIdx`, penalty scales
+      // by how many recent sentences matched × how recent they are.
+      // The penalty MUST be large enough to override the type-grammar
+      // (weight 1.5) + bigramLog + quadgramLog combined for the
+      // lock-in word, otherwise the mode-collapsed chain wins every
+      // time despite the signal.
       const openerPenalty = (w) => {
-        if (slotIdx !== 0) return 0;
-        const idx = this._recentOpeners.indexOf(w);
-        if (idx === -1) return 0;
-        // Most recent opener = 1.2 penalty, oldest = 0.4
-        const recency = (this._recentOpeners.length - idx) / this._recentOpeners.length;
-        return 0.4 + recency * 0.8;
+        if (slotIdx > 2) return 0; // only guard the first 3 positions
+        let matchCount = 0;
+        let mostRecentMatch = -1;
+        for (let i = 0; i < this._recentOpenerNgrams.length; i++) {
+          const ngram = this._recentOpenerNgrams[i];
+          if (ngram && ngram[slotIdx] === w) {
+            matchCount++;
+            mostRecentMatch = i;
+          }
+        }
+        if (matchCount === 0) return 0;
+        // Base penalty scales with how many recent sentences used
+        // this word at this position. 1 match = 1.2, 2 = 2.0, 3+ = 3.0.
+        // Cap at 3.0 to avoid making the slot impossible.
+        let pen = Math.min(3.0, 0.6 + matchCount * 0.8);
+        // Recency bonus — most recent match hits hardest.
+        const recency = (mostRecentMatch + 1) / Math.max(1, this._recentOpenerNgrams.length);
+        pen *= (0.7 + recency * 0.3);
+        return pen;
       };
 
       // RECALL BIAS (primary persona signal). When hippocampus recall
@@ -2827,11 +2844,17 @@ export class LanguageCortex {
     this._recentSentences.push(norm);
     if (this._recentSentences.length > this._recentSentenceMax) this._recentSentences.shift();
 
-    // Track the first word of this emission so the next generation
-    // can penalize it at slot 0 — cross-turn anti-repetition.
-    if (processed.length > 0) {
-      this._recentOpeners.push(processed[0].toLowerCase());
-      if (this._recentOpeners.length > this._recentOpenerMax) this._recentOpeners.shift();
+    // Track the first 3 tokens of this emission (RAW sentence, PRE
+    // post-process) so the next generation's slot-0/1/2 scorers can
+    // penalize exact repeats. We use `sentence` not `processed` because
+    // post-processing applies contractions ("i" + "am" → "i'm") and
+    // the scorer candidate loop tests words against their raw form.
+    if (sentence.length > 0) {
+      const openerNgram = sentence.slice(0, 3).map(w => (w || '').toLowerCase());
+      this._recentOpenerNgrams.push(openerNgram);
+      if (this._recentOpenerNgrams.length > this._recentOpenerMax) {
+        this._recentOpenerNgrams.shift();
+      }
     }
 
     return rendered;
