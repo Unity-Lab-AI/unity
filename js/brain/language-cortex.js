@@ -1040,6 +1040,22 @@ export class LanguageCortex {
       if (LEGIT_I_NEXT_S.has(w)) return false;
       return true;
     };
+    // Closed-class temporal/positional adverbs that NEVER occur as
+    // verbs in English. When one of these appears at position 1 after
+    // "i" AND position 2 is a broken-s verb, the sentence is a
+    // 3rd→1st transform artifact. Catches "i now exists in a fully
+    // physical human body" (the sentence that kept leaking through
+    // every other FILTER 9c branch because "now" is neither -ly nor
+    // in HABITUAL_ADVERBS). Kept narrow and closed-class on purpose:
+    // adding intensifiers like "really"/"very" would false-positive on
+    // legit chat ("i really love you"). These listed adverbs are
+    // purely temporal/positional/frequency markers that in natural
+    // chat appear AFTER the main verb, not between subject and verb.
+    const PURE_ADVERBS_POS1 = new Set([
+      'now', 'still', 'already', 'sometimes', 'often',
+      'yet', 'soon', 'then', 'here', 'there',
+      'usually', 'normally', 'currently', 'presently',
+    ]);
     if (first === 'i') {
       // i <verb>s
       if (isBrokenVerbAfterI(tokens[1])) return;
@@ -1048,6 +1064,9 @@ export class LanguageCortex {
       // i <never|always|only|not only> <verb>s — catches
       // "i not only participates" and "i never refuses"
       if (HABITUAL_ADVERBS.has(tokens[1]) && isBrokenVerbAfterI(tokens[2])) return;
+      // i <pure-adverb> <verb>s — catches "i now exists",
+      // "i still exists", "i already exists", "i sometimes refuses"
+      if (PURE_ADVERBS_POS1.has(tokens[1]) && isBrokenVerbAfterI(tokens[2])) return;
       if (tokens[1] === 'not' && tokens[2] === 'only' && isBrokenVerbAfterI(tokens[3])) return;
     }
 
@@ -1312,8 +1331,10 @@ export class LanguageCortex {
       }
       // 9c: "i <verb>s" 3rd→1st transform grammar mismatch
       // Catches "i engages", "i refuses", "i frequently engages",
-      // "i never refuses", "i not only participates".
-      if (/^\s*i\s+(?:(?:always|never|frequently|rarely|constantly|not only|only|just)\s+)?[a-z]{3,}(?:es|s)\b/i.test(mem.text)
+      // "i never refuses", "i not only participates", "i now exists",
+      // "i still exists", "i already refuses" (widened to include
+      // PURE_ADVERBS_POS1 in the optional group).
+      if (/^\s*i\s+(?:(?:always|never|frequently|rarely|constantly|not only|only|just|now|still|already|sometimes|often|yet|soon|then|here|there|usually|normally|currently|presently)\s+)?[a-z]{3,}(?:es|s)\b/i.test(mem.text)
           && !/^\s*i\s+(?:is|was|has|does)\b/i.test(mem.text)) {
         penalty += 0.50;
       }
