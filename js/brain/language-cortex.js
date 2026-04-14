@@ -2494,6 +2494,17 @@ export class LanguageCortex {
     if (type === 'exclamation') targetLen = Math.max(2, Math.floor(2 + arousal * 2 * drugLengthBias));
     else if (type === 'action') targetLen = Math.max(2, Math.floor(2 + arousal * 2 * drugLengthBias));
     else targetLen = Math.max(3, Math.floor(3 + arousal * 3 * drugLengthBias + socialNeed));
+    // T6 — length scaling by recall confidence. Cold-gen salad
+    // compounds per slot: each added word multiplies the chance of
+    // incoherence by whatever the slot scorer's topic fit is. Short
+    // fragments (3-4 tokens) barely have room to drift off-topic,
+    // long ones (6-7 tokens) almost always drift. When recall is
+    // weak, the hippocampus isn't providing an anchor sentence, so
+    // the topic-fit term has less to match against — which is
+    // exactly when we need short output. Hard-cap to 4 tokens when
+    // recallConfidence < 0.30. Uses the `recallConfidence` variable
+    // populated earlier in generate() from the _recallSentence call.
+    if (recallConfidence < 0.30) targetLen = Math.min(targetLen, 4);
     const len = Math.min(targetLen, 7);
 
     // NOTE: we do NOT materialize the full 44k-word entry list upfront
@@ -2983,6 +2994,23 @@ export class LanguageCortex {
           const personaAlign = Math.max(0, entryArousal - 0.5) * 2; // 0.75→0.5, 0.4→0, 0.5→0
           const personaBoost = personaAlign * arousal * 0.32;       // ~0.14 bonus for persona at arousal 0.9
 
+          // T6 — per-slot topic floor. If the candidate's semantic
+          // fit to the locked context vector is below 0.15, it's
+          // structurally off-topic for this sentence. Apply a hard
+          // score penalty so it drops out of the pool entirely. The
+          // existing semanticFit·2.5 term gives topic-aligned words
+          // a big reward, but without a floor there's nothing to
+          // STOP a topic-incoherent word from winning on strong
+          // bigram + typeGrammar alone. This is what was producing
+          // "She cute jamie timeend rings measure" — every adjacent
+          // pair had a known bigram, nothing was checking the
+          // sentence-level topic coherence per slot. The floor runs
+          // only after slot 0 so the opener can be a pronoun/article
+          // (semantically neutral) without being penalized.
+          const topicFloorPenalty = (slotIdx > 0 && this._contextVectorHasData && semanticFit < 0.15)
+            ? 0.50
+            : 0;
+
           // T4.8 — n-gram terms capped to prevent chain lock-in that
           // drowns out semantic fit. Log-scaled counts can hit 3+ for
           // common persona bigrams which was overpowering the 0.80
@@ -3013,6 +3041,7 @@ export class LanguageCortex {
             - recency
             - sameTypePenalty
             - formalityPenalty
+            - topicFloorPenalty                         // T6: hard off-topic reject
             - openerPenalty(word);                      // cross-turn anti-repetition
 
           return { word, entry, score };
@@ -3152,7 +3181,12 @@ export class LanguageCortex {
       if (ccount > 0) {
         for (let i = 0; i < PATTERN_DIM; i++) outCentroid[i] /= ccount;
         const coh = this._cosine(outCentroid, this._contextVector);
-        if (coh < 0.35) {
+        // T6 — tightened from 0.35 to 0.50. The old threshold let
+        // through output whose centroid was only weakly aligned with
+        // the context — i.e. word salad that happened to have one or
+        // two content words overlapping. 0.50 forces the centroid to
+        // meaningfully cluster near the topic before emit.
+        if (coh < 0.50) {
           console.log(`[LanguageCortex] coherence reject (${coh.toFixed(2)}): "${rendered}"`);
           return this.generate(dictionary, arousal, valence, coherence, {
             ...opts,
