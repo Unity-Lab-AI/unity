@@ -81,7 +81,7 @@ But the server brain (`server/brain-server.js`) dynamic-imports the same `js/bra
 
 ---
 
-### T3 — Rewrite `brain-equations.html` §8.11 Broca's Area section
+### T3 — Rewrite `brain-equations.html` §8.11 Broca's Area section  [DONE 2026-04-13 commit `9060e2e` — section retitled "How Unity Picks Every Word Equationally", historical refactor note card explaining the pre-R4 AI-prompt path is gone, new four-tier pipeline equation box with full slot-score formula, new brain-state → slot-score-weights mapping box. Bonus fixes during the same pass: §8.20 duplicate section number renumbered to §8.21 for GPU Compute (Persona keeps 8.20), §8 Data Flow diagram stale "Broca's Area → AI model generates text from brain state prompt" line replaced with the real language cortex equational path, full tooltip audit across ~60 data-tip attributes verified accurate to current state.]
 
 **Source:** explicitly flagged during R10.3 (`brain-equations.html` surgical edits for R2 semantic grounding) as "known residual cleanup, not R10.3 scope, flagged for R12". R12 final cleanup happened but never touched §8.11 because it was a content rewrite task, not a mechanical sweep.
 

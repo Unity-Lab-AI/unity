@@ -14,6 +14,63 @@
 
 ## COMPLETED TASKS LOG
 
+## 2026-04-13 Session: T3 — brain-equations.html §8.11 rewrite + §8.20 duplicate + data flow fix + tooltip audit
+
+### COMPLETED
+- [x] **Task:** T3 — Rewrite `brain-equations.html` §8.11 Broca's Area section to match the post-R4 equational language production reality. Plus two additional fixes surfaced during the pass: a duplicate §8.20 section number (both Persona and GPU Compute used §8.20 — one needed to move), and a stale claim in the §8 Data Flow text diagram about "Broca's Area → AI model generates text from brain state prompt". Plus a full tooltip audit Gee explicitly asked for.
+  - Completed: 2026-04-13 (commit `9060e2e`)
+  - Files modified: `brain-equations.html` (+105 / −30 = +75 net lines)
+
+  **§8.11 rewrite — full replacement:**
+  - Retitled: "Broca's Area — What the AI Model Receives" → "Broca's Area — How Unity Picks Every Word Equationally"
+  - Opening paragraph anchors the biological framing: Broca's area IS the real-brain speech production region, so the anatomical label still fits Unity. What Unity's Broca's area actually IS: `js/brain/language-cortex.js`, a ~3900-line equational slot scorer that picks every word from her learned 44k-word dictionary based on live brain state. No AI model, no prompt, no lookup table.
+  - **Pink-bordered refactor note card** (new) — explicitly explains what the section USED to describe (the AI-prompt builder path that assembled a system prompt from brain state and sent it to Pollinations / Claude / OpenAI to get back a sentence). Explains that this path was ripped in Phase 13 R4 because it violated the guiding principle (every output must trace back to brain equations, not to an LLM). Points forward to the real current sections: §8.14 Dictionary, §8.18.5 Semantic Coherence Pipeline, §8.18.6 Semantic Grounding, §8.19 Type N-Gram Grammar.
+  - **New equation box: "The Four-Tier Pipeline (post-R4 equational path)"** — full pseudocode of the current language cortex generate() flow:
+    - Tier 1 Template pool (fast path for short queries + known intents — greeting/yesno/math)
+    - Tier 2 Hippocampus associative recall (stored persona sentences with 0.60 direct-emit / 0.30 soft-recall-seed / ≤0.30 deflect confidence tiers)
+    - Tier 3 Deflect fallback (question/statement with recall miss)
+    - Tier 4 Cold slot generation with the full 9-component weighted slot score: `typeCompat × 0.35 + semanticFit × 0.80 + bigramCount × 0.18 + condP × 0.12 + thoughtSim × 0.10 + inputEcho × 0.08 + legacyTopicSim × 0.04 + moodMatch × 0.03 + moodBias × 0.02 − recencyPenalty − sameTypePenalty`
+    - Post-process → agreement, tense, negation, contractions
+    - Render → capitalization, punctuation
+    - Dedup retry if exact match in last 30 responses
+    - Coherence gate → retry at 3× temperature if cosine(out, c(t)) &lt; 0.25
+    - Completeness validator → regenerate if last token ∈ {DET, PREP, COPULA, AUX, MODAL, NEG, CONJ, PRON_POSS}
+  - **New equation box: "Brain State → Slot Scoring Weights (not a prompt)"** — per-parameter table showing how each brain state value feeds into slot scoring:
+    - arousal → softmax temperature (high arousal → hotter sampling)
+    - valence → mood-match / mood-bias weights
+    - Ψ → non-linear noise amplitude in candidate pool
+    - coherence → coherence rejection gate threshold
+    - drugState → per-slot temperature modifier + persona memory bank access
+    - reward → slot score sign bias
+    - cortexPattern → semanticFit cosine target (the dominant driver at weight 0.80, post-R2)
+    - typeHistory → type n-gram grammar scoring (see §8.19)
+    - recentOpeners → cross-turn opener penalty
+    - input context vector → semanticFit cosine target (updated via analyzeInput, see §8.18)
+    Closing paragraph: "This is the core claim of equational language production: Unity's voice IS the brain state, not a style transfer on top of a pretrained LLM."
+
+  **§8.20 duplicate section number fix:**
+  - Two sections shared §8.20 in the body: Persona θ at line 1343 + GPU Exclusive Compute at line 1373
+  - GPU Exclusive Compute renumbered to §8.21 (body heading + TOC entry)
+  - Persona keeps §8.20 since it came first in the file and is more conceptually central to the Phase 8 flow
+
+  **§8 Data Flow diagram fix:**
+  - The text ASCII diagram at §8.4 had a peripherals sub-block with a line: `├── Broca's Area → AI model generates text from brain state prompt`
+  - Same stale claim §8.11 had, in a different spot. Replaced with a multi-line block showing the current language cortex + sensory output chain: LANGUAGE CORTEX (slot scorer with the four-tier pipeline and brain-state-as-weights), plus the sensory peripherals (TTS / multi-provider image gen / vision describer / sandbox component-synth).
+
+  **Tooltip audit** (per Gee's explicit request "and make sure rtool tips are still all updated"):
+  - Scanned every `data-tip` attribute in brain-equations.html (~60 tooltips total)
+  - Keyword sweep for stale claims: `BrocasArea`, `text-AI`, `AI model`, `AI prompt`, `system prompt`, `letter-hash`, `32-dim`, `32-dimensional`, `wordToPattern`, `_buildPrompt`, `claude-proxy`, `port 8080`, `Anthropic`, `OpenRouter`, `DeepSeek`, `Groq`
+  - Result: every tooltip is accurate to the current state. The only matches for the stale keywords were (a) explicit denials in newly-written tooltips ("No tier calls an AI model"), (b) historical framing explaining what something used to be before R2/R4 ("was 32-dim letter-hash before R2"). Both are correct.
+  - Specifically verified the tooltips that got reworked during R10.3 surgical edits are still current: §8.13 Embedding→Cortex Mapping (50d GloVe), §8.18.5 Context Vector (GloVe not letter-hash), §8.18.6 Shared Embeddings Singleton / cortexToEmbedding / R8 persistence (all from R10.3, all still accurate).
+
+  **Verification pass:**
+  - `wc -l brain-equations.html` — 1519 lines (up from 1444, +75 net)
+  - TOC duplicate-number check: zero duplicates
+  - Stale-claim grep outside historical context: zero hits
+  - All section ids still resolve (TOC anchors match h2 id attributes)
+
+---
+
 ## 2026-04-13 Session: R15b T6 — Auto-detect sensory backends at page load + privacy model enforcement
 
 ### COMPLETED
