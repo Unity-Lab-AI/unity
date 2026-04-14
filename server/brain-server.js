@@ -1540,28 +1540,35 @@ wss.on('connection', (ws, req) => {
       switch (msg.type) {
         case 'text':
           console.log(`[${id}] Text: "${(msg.text || '').slice(0, 50)}"`);
-          // Process through brain and respond
+          // Process through brain and respond — ROUTED TO THIS CLIENT ONLY.
+          //
+          // 2026-04-13 privacy model: user text is PRIVATE between the
+          // user and Unity. It never gets broadcast to other connected
+          // clients. What IS shared across users is Unity's evolving
+          // brain state — the dictionary, bigrams, embedding refinements
+          // all grow from every conversation and benefit every user who
+          // talks to the same brain instance. But the raw text and
+          // individual responses stay between the one user and Unity.
+          //
+          // The old `conversation` broadcast that used to loop this
+          // message out to every connected WebSocket was DELETED here
+          // (was 12 lines, shipped clipped {userId, text[:200],
+          // response[:500]} to other clients). It violated Gee's rule:
+          // "what i type other people shouldnt be able to read, but
+          // two different people should be able to build her brain
+          // words but not her persona". The brain-words part is
+          // already handled by the shared singleton brain (dictionary
+          // / bigrams / embeddings all update from every conversation),
+          // which is the "one brain of Unity" model. Only the raw text
+          // broadcast needed removal.
           brain.processAndRespond(msg.text || '', id).then(result => {
             if (result.text && ws.readyState === ws.OPEN) {
-              // Route to requesting user only (per-user sandbox)
               if (result.action === 'build_ui' && result.component) {
                 ws.send(JSON.stringify({ type: 'build', component: result.component }));
               } else if (result.action === 'generate_image') {
                 ws.send(JSON.stringify({ type: 'image', prompt: result.text }));
               } else {
                 ws.send(JSON.stringify({ type: 'response', text: result.text, action: result.action }));
-              }
-              // Broadcast conversation to all clients (anonymized)
-              const convMsg = JSON.stringify({
-                type: 'conversation',
-                userId: id,
-                text: (msg.text || '').slice(0, 200),
-                response: (result.text || '').slice(0, 500),
-              });
-              for (const [otherWs] of brain.clients) {
-                if (otherWs.readyState === otherWs.OPEN) {
-                  try { otherWs.send(convMsg); } catch {}
-                }
               }
             }
           }).catch(err => {

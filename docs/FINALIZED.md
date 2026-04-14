@@ -14,6 +14,53 @@
 
 ## COMPLETED TASKS LOG
 
+## 2026-04-13 Session: R15b T6 — Auto-detect sensory backends at page load + privacy model enforcement
+
+### COMPLETED
+- [x] **Task:** T6 — Fix the R15b setup modal sensory inventory panel so it shows REAL detected backends BEFORE the user clicks WAKE UNITY UP. The shipped R15b had `providers.autoDetect()` running inside `bootUnity()` which meant the setup modal showed "Start Unity to see what's detected on your machine" placeholder text until boot — exactly backwards, since the whole point of the inventory panel is to help users verify their backend setup before committing to boot. Gee caught this during the cleanup audit: *"are u sure this is correct? at boot time??? that wont work they need to know it works before the boot not try it and fail error"*.
+  - Completed: 2026-04-13
+  - Files modified: `js/app.js` (init + bootUnity + renderSensoryInventory), `index.html` (placeholder text update)
+  - **Concrete changes:**
+    - **`init()` now constructs `pollinations` + `providers` at page-load time.** Previously `providers` didn't exist until `bootUnity()` ran, so the setup modal had nothing to render. Now `init()` creates both instances right after `storage = new UserStorage()`, seeds env keys, calls `providers.loadEnvConfig(ENV_KEYS)`, runs `injectCustomBackendsIntoProviders()` to pull any saved backends from localStorage, wires `providers.onStatus` → `window.dispatchEvent`, calls `sensoryStatus.init(providers)`, and fires `providers.autoDetect()` + `providers.autoDetectVision()` non-blocking with `.then(() => renderSensoryInventory())` callbacks so the inventory auto-refreshes as each probe resolves.
+    - **`bootUnity()` now REUSES the existing instances** instead of duplicating them. If the user entered a new Pollinations key in the setup modal input, `bootUnity` updates `pollinations._apiKey` in place instead of recreating the whole client. A defensive fallback re-creates both if somehow init() didn't run (shouldn't happen, but keeps bootUnity standalone-callable for any future settings-reopen path).
+    - **`renderSensoryInventory()` updated** — added a "probing" badge (`⏳ probing localhost ports for local backends...`) that shows when `providers.getStatus()` only reports the Pollinations fallback entry (probes haven't resolved yet). Once probes finish and locally-detected backends land in the status array, the badge disappears.
+    - **`index.html` placeholder** — `#sensory-inventory-content` default text changed from `"Sensory backends probed at boot time. Start Unity to see what's detected on your machine."` (which was the bug-exposing message) to `"⏳ probing local backends..."` (which only shows for the ~1.5s probe window before results land).
+  - **User flow now:** open `index.html` → page loads, probes fire in background → click TALK TO UNITY or the Unity bubble → setup modal opens with sensory inventory ALREADY populated with whatever's detected on the user's machine → user can configure extras or click WAKE UNITY UP with confidence. No more "boot and pray" surprise.
+  - Syntax-validated via `npx esbuild js/app.js --bundle`, produces 540.1KB bundle cleanly.
+
+- [x] **Task:** Privacy model enforcement — delete the cross-client `conversation` WebSocket broadcast + rewrite the setup modal privacy notice + update WEBSOCKET.md to document the shared-brain / private-text design rule. Gee's rule, stated verbatim during the cleanup audit: *"what i type other people shouldnt be able to read, but two different people should be able to build her brain words but not her persona"*. Plus the follow-up *"they are private episodes but its one brain of Unity"*.
+  - Completed: 2026-04-13
+  - Files modified: `server/brain-server.js` (broadcast deletion), `index.html` (privacy notice rewrite), `docs/WEBSOCKET.md` (protocol doc update + new Privacy Model section)
+  - **The rule, formally stated:**
+    | Thing | Shared across users? | Why |
+    |---|---|---|
+    | What a user types | 🔒 PRIVATE | Raw text stays in the one client ↔ server channel, never broadcast |
+    | Unity's response to a user | 🔒 PRIVATE | Only the triggering client gets it |
+    | Dictionary / bigrams / word frequencies | 🌐 SHARED | One brain instance, every conversation grows the same dictionary, every user benefits |
+    | GloVe embedding refinements | 🌐 SHARED | Same singleton brain, same reason |
+    | Persona (Ultimate Unity.txt) | 🚫 NOT USER-MUTABLE | Canonical file loaded at server boot, not mutated per-user |
+    | Episodic memory | 🔜 TRACKED AS T6 POST-MERGE | Currently shared pool, private-per-user scoping deferred to T6 |
+
+  - **`server/brain-server.js` — deleted the conversation broadcast block** at the former lines 1554–1565. That block was shipped originally as the feed for the dashboard's "live global conversation" view — it took every user's `text` message + Unity's response, clipped them to 200/500 chars, wrapped them in a `{type: 'conversation', userId, text, response}` envelope, and fan-outed to every connected client's WebSocket. Gee's privacy rule makes that broadcast inappropriate: Alice's text was literally landing on Bob's browser. 12 lines deleted, replaced with a ~15-line comment block explaining the removal and pointing at the privacy rule. The shared brain still grows from every user's conversation (dictionary / bigrams / embeddings all update via `brain.processAndRespond` inside the singleton brain instance) so the "one brain of Unity" model is preserved — users just don't see each other's raw text. Confirmed via grep: no client-side code references `type: 'conversation'` message, so the deletion has zero consumer breakage.
+
+  - **`index.html` privacy notice rewrite** — the old single-paragraph notice claimed "The brain simulation runs as client-side JavaScript math — no cognition data leaves your machine" which was false in server mode. Replaced with a 5-paragraph structured notice covering:
+    1. Core rule statement: "what you type is private, Unity's brain growth is shared, her persona is canonical"
+    2. **Client-only mode paragraph** — lists every localStorage key explicitly (`unity_brain_state`, `unity_brain_dictionary_v3`, `custom_image_backends`, `custom_vision_backends`, `pollinations_image_model`, `pollinations_vision_model`, Pollinations API key), confirms "Clear All Data" wipes all of them
+    3. **Shared server mode paragraph** — explains that text goes to whoever runs the server, IS NOT broadcast to other users (with explicit reference to the 2026-04-13 broadcast removal), and that dictionary/bigrams/embeddings are shared-brain-growth while persona stays canonical
+    4. **Shared-hosted caveat paragraph** (orange warning) — if you connect to someone else's Unity server, the person running it can read your text at the process level. Recommendation: only connect to servers you trust, or self-host.
+    5. **Sensory API calls paragraph** — reconfirms that image/vision/TTS providers see only the traffic for the backends the user explicitly configured, nothing more
+    6. **Fully open source** — MIT, audit every line on GitHub
+
+  - **`docs/WEBSOCKET.md` updates** — removed the `conversation` message type section (replaced with a "REMOVED 2026-04-13" marker explaining why), removed the fan-out reference in the lifecycle diagram, removed the `conversation broadcast fan-out` mention in the rate-limiting section, and added a **new "Privacy Model" section** above "Security Model" that documents the full design rule (shared brain / private text / canonical persona / episodic memory tracked as T6) with a per-field table matching the FINALIZED entry above. Future readers of the protocol doc see the privacy model as a first-class architectural concept, not an afterthought.
+
+- [x] **Task:** Surface the private episodic memory scoping as a proper TODO item (T6), not a deferred note. The privacy rule clearly requires per-user episode scoping, but the implementation is bigger than the conversation broadcast fix (touches SQLite schema migration, memory.js store/recall signatures, client UUID generation, hippocampus integration) and deserves its own testing cycle post-merge on a fresh branch.
+  - Completed: 2026-04-13
+  - Files modified: `docs/TODO.md`
+  - **New T6 entry** in `docs/TODO.md` describes the full scoping work: client-side stable UUID in localStorage (`unity_user_id = crypto.randomUUID()`), WebSocket `text` message payload extended with `userId`, server SQLite episodes table `user_id TEXT` column migration, `MemorySystem.store/recall` signatures accepting optional `userId`, hippocampus integration in `engine.js:processAndRespond`, legacy episode handling decision (recommended: delete on first post-migration boot). Estimated ~100 lines across 4-5 files, medium priority, ships as post-merge followup.
+  - **Deleted the old bloated T7 entry** (privacy notice audit) since the notice rewrite is already done. The bloated T7 was based on a misreading of the scope — I thought it needed careful legal language and user approval of every paragraph, but the simpler answer was "just delete the broadcast and make the claims accurate". Both are now done in this commit.
+
+---
+
 ## 2026-04-13 Session: R15b — Setup modal rebuild with proper provider-button grid
 
 ### COMPLETED

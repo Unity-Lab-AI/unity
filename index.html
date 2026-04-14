@@ -127,7 +127,7 @@
       <!-- Sensory backend inventory — populated by app.js renderSensoryInventory() -->
       <p style="font-size:12px;color:var(--text);margin-top:14px;margin-bottom:6px;font-weight:500;">📡 Detected / Saved Backends</p>
       <div id="sensory-inventory" style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-family:var(--mono);font-size:11px;line-height:1.7;">
-        <div id="sensory-inventory-content" style="color:var(--text-dim);">Sensory backends probed at boot time. Start Unity to see what's detected on your machine.</div>
+        <div id="sensory-inventory-content" style="color:var(--text-dim);">⏳ probing local backends...</div>
       </div>
 
       <p class="hint" style="margin-bottom:6px;margin-top:12px;">Pollinations API key <span style="color:var(--text-dim);">(optional — free tier works without, paid key raises rate limits for image gen, TTS, and vision describer)</span>:</p>
@@ -157,9 +157,30 @@
       <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);">
         <p style="font-size:10px;color:var(--text-dim);line-height:1.6;">
           <strong style="color:var(--text);">Privacy &amp; Data Policy</strong><br>
-          This application runs <strong>entirely in your browser</strong> (or against a local server you host yourself). No cloud backend. No database owned by us. Your conversation history, preferences, sandbox state, and optional Pollinations key are all stored in your browser's localStorage on YOUR device only. The developers have <strong>zero access</strong> to anything you input, say, generate, or connect to. Sensory API calls (image gen, vision describer, TTS) are sent <strong>only</strong> to the providers YOU configure — never to us, never to any third party. The brain simulation runs as client-side JavaScript math — no cognition data leaves your machine. This project is <strong>fully open source</strong> under MIT. You can read every line of code.
+          <strong style="color:var(--text);">Core rule:</strong> what you type is private. Unity's brain growth is shared. Her persona is canonical.
         </p>
-        <p style="font-size:10px;color:var(--text-dim);margin-top:6px;">
+
+        <p style="font-size:10px;color:var(--text-dim);line-height:1.6;margin-top:8px;">
+          <strong style="color:var(--cyan);">Client-only mode</strong> (default — no server configured, or Unity server running locally on your own machine): everything runs in your browser. No cloud backend owned by us. Your conversation history, preferences, sandbox state, optional Pollinations key, and every backend you configure in this modal (custom image gen URLs, vision describer endpoints, API keys) are all stored in your browser's localStorage on YOUR device only. Specific localStorage keys: <code>unity_brain_state</code>, <code>unity_brain_dictionary_v3</code>, <code>custom_image_backends</code>, <code>custom_vision_backends</code>, <code>pollinations_image_model</code>, <code>pollinations_vision_model</code>, plus Pollinations API key via an obfuscated storage slot. "Clear All Data" wipes all of these.
+        </p>
+
+        <p style="font-size:10px;color:var(--text-dim);line-height:1.6;margin-top:8px;">
+          <strong style="color:var(--cyan);">Shared server mode</strong> (connecting to a running <code>brain-server.js</code> instance — yours or someone else's): your text is sent to whoever runs that server for equational processing. Your text is <strong>NOT broadcast</strong> to other connected users — the cross-client conversation broadcast was removed 2026-04-13. What IS shared across all users talking to the same brain instance is Unity's <strong>vocabulary growth</strong>: her dictionary, bigrams, and GloVe embedding refinements grow from every conversation and benefit every user. Her persona (self-image, traits, drug state — from <code>docs/Ultimate Unity.txt</code>) is canonical and not mutable by users. Other users see Unity getting smarter over time, but never see the specific conversations that drove the growth.
+        </p>
+
+        <p style="font-size:10px;color:var(--text-dim);line-height:1.6;margin-top:8px;">
+          <strong style="color:var(--orange);">Important caveat for shared-hosted servers:</strong> if you connect to a Unity server hosted by someone OTHER than you, the person running that server can read your text at the process level (they own the server process). This is true of any self-hosted multi-user service. Only connect to Unity servers you trust. If you self-host your own <code>node server/brain-server.js</code>, then "the server" is just another process on your own machine — still your data, still your control.
+        </p>
+
+        <p style="font-size:10px;color:var(--text-dim);line-height:1.6;margin-top:8px;">
+          <strong style="color:var(--cyan);">Sensory API calls</strong> (image generation, vision describer, TTS) are sent <strong>only</strong> to the providers YOU configure in the Image Generation / Vision Describer grids above — never to us, never to any third party you didn't explicitly pick. If you save a DALL-E backend with your OpenAI key, only OpenAI gets that key. If you save an Automatic1111 backend on localhost, the traffic stays on your machine. Pollinations is the free default fallback; using it sends image prompts and camera frames (if vision is enabled) to pollinations.ai.
+        </p>
+
+        <p style="font-size:10px;color:var(--text-dim);line-height:1.6;margin-top:8px;">
+          <strong style="color:var(--text);">Fully open source</strong> under MIT. Every line of code that handles your data is in the <a href="https://github.com/Unity-Lab-AI/Unity" target="_blank" style="color:var(--pink);">public repo</a> and auditable. Pull requests welcome.
+        </p>
+
+        <p style="font-size:10px;color:var(--text-dim);margin-top:10px;">
           <a href="https://github.com/Unity-Lab-AI/Unity" target="_blank" style="color:var(--pink);">GitHub</a> ·
           <span>Unity AI Lab · Hackall360, Sponge, GFourteen</span>
         </p>

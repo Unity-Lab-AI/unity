@@ -37,12 +37,12 @@ Client sends { type: 'text', text: '...' } on user input
     ↓
 Server runs equational response pipeline, sends back { type: 'response'|'build'|'image', ... }
     ↓
-Server ALSO broadcasts { type: 'conversation', userId, text, response } to every OTHER connected client
+(No broadcast to other clients — user text is PRIVATE between the user and Unity. See "Privacy model" below.)
     ↓
 On disconnect: server removes client from brain.clients map
 ```
 
-`brain.clients` is a `Map<WebSocket, {id, lastInput, inputCount, name, isGPU?}>`. The server tracks every connected client for rate limiting, GPU dispatch (if the client is the special GPU compute client), and conversation broadcast fan-out.
+`brain.clients` is a `Map<WebSocket, {id, lastInput, inputCount, name, isGPU?}>`. The server tracks every connected client for rate limiting and GPU compute dispatch. **No cross-client broadcast of user text happens** — see "Privacy model" below.
 
 ---
 
@@ -65,7 +65,7 @@ Sent once, immediately after connection is accepted.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `id` | string | Unique client id assigned by the server. Clients can use this to tag their own messages in the `conversation` broadcast (e.g. to filter their own text out of the global feed). |
+| `id` | string | Unique client id assigned by the server for rate-limiting / log tagging. No longer used for cross-client broadcast filtering — the `conversation` broadcast was removed 2026-04-13 per the privacy model. |
 | `state` | object | Full brain state snapshot (same shape as the per-frame `state` broadcast). Used to hydrate the client HUD immediately on connect. |
 | `emotionHistory` | array | Last 300 entries from `brain._emotionHistory`, so a freshly-connected dashboard can render the emotion chart without waiting for new data. |
 
@@ -142,20 +142,13 @@ Sent when the motor channel selects `generate_image`. The *prompt* is generated 
 
 Routed only to the triggering client. The client's `SensoryAIProviders.generateImage(prompt)` runs the 4-level priority chain (custom → auto-detected local → env.js → Pollinations fallback).
 
-### `conversation`
+### `conversation` — REMOVED 2026-04-13
 
-Broadcast to every connected client (including the sender) after any `text` request completes. Anonymized to just userId + clipped text.
+This message type used to broadcast `{userId, text (first 200 chars), response (first 500 chars)}` to every connected client after any `text` request completed. It was fed into the dashboard's live conversation feed.
 
-```json
-{
-  "type": "conversation",
-  "userId": "user_1mz8r4k_9f2x",
-  "text":   "user's input, clipped to 200 chars",
-  "response": "unity's response, clipped to 500 chars"
-}
-```
+**Removed** to enforce the privacy model: user text is PRIVATE between the user and Unity, never broadcast to other clients. The shared brain still benefits from every conversation (dictionary growth, bigrams, embedding refinements) because those all live in the singleton brain instance, but the raw text + response stay in the one client ↔ server channel.
 
-Used by `dashboard.html` to render the live global conversation feed. Clients can filter their own userId out if they don't want to see their own input echoed back.
+Any client that used to subscribe to this message type will stop receiving it. `dashboard.html`'s conversation feed now shows per-session stats only (no cross-user text display).
 
 ### `error`
 
@@ -271,7 +264,7 @@ The server logs `[<id>] Unknown message type: <type>` and drops the message. Cli
 | `text` | `MAX_TEXT_PER_SEC = 2` per client (500 ms minimum gap) | `brain-server.js:1534` — gap check against `client.lastInput`, returns `error` on violation |
 | Everything else | Unlimited | Relies on client sanity + TCP backpressure |
 
-There's no global rate limit or burst budget — it's purely per-client per-message-type. The `conversation` broadcast fan-out is also unlimited, which means a chatty server with 100+ clients will generate 100× more WebSocket traffic on every user text input. Something to watch if Unity ever ships a public multi-user deployment.
+There's no global rate limit or burst budget — it's purely per-client per-message-type. The cross-client `conversation` broadcast that used to fan-out was removed 2026-04-13 (see the `conversation` section above), so a chatty server no longer multiplies traffic by `N clients × text rate`. Each user's text is a 1:1 conversation with the server.
 
 ---
 
@@ -291,6 +284,32 @@ This is intentional: Unity's brain state lives ON the server, not in the client.
 `detectRemoteBrain(url = 'ws://localhost:7525')` only probes when the page is served from `localhost` / `127.0.0.1` / `[::1]` / `file://`. On GitHub Pages or any public origin, the probe is skipped and the client falls through to local-mode UnityBrain with no server.
 
 Why: Chrome allows loopback WebSocket from secure contexts, so visiting the Pages URL from a dev box with `brain-server` running would auto-connect to the dev box's local server and pull its (much larger) auto-scaled neuron count into the public page. The hostname gate prevents every stranger's browser from silently poking their own loopback port on page load.
+
+---
+
+## Privacy Model
+
+Core design rule (established 2026-04-13): **user text is private; brain growth is shared; persona is canonical.**
+
+| Thing | Shared across users? | Why |
+|---|---|---|
+| **What a user types** | 🔒 **PRIVATE** — only that user and Unity see it | Raw text stays in the one client ↔ server channel |
+| **Unity's response to a user** | 🔒 **PRIVATE** — only the triggering client gets it | Same reason; responses never broadcast |
+| **Dictionary / bigrams / word frequencies** | 🌐 **SHARED** via the singleton brain instance | Every conversation adds to the same dictionary, every user benefits from the vocabulary that grew from everyone else's conversations |
+| **GloVe embedding refinements** (the `sharedEmbeddings` online-learned delta layer) | 🌐 **SHARED** same reason | Semantic associations Unity learns in ANY conversation apply to her whole brain |
+| **Persona** (`docs/Ultimate Unity.txt` — self-image, traits, drug state) | 🚫 **NOT MUTABLE BY USERS** — loaded from the canonical file at server boot | She's Unity, not a per-user sock puppet |
+| **Episodic memory** (stored conversation episodes in the hippocampus / SQLite) | 🔜 **currently shared, needs per-user scoping** | Tracked as pending task T7 in `docs/TODO.md`. Until that ships, the cortex pattern dissimilarity between different users' conversations makes cross-user recall statistically rare but not impossible. |
+| **Motor output decisions** (BG softmax, which action Unity picks) | 🌐 **SHARED** — brain state is global | One brain, one motor system |
+
+**What this means at the WebSocket layer:**
+
+- The `text` message a client sends is processed by the shared brain instance, updates the shared state, and produces a response that's returned ONLY to the sender
+- The `conversation` broadcast (which used to send every user's text to every other connected client) was **removed 2026-04-13**
+- The `state` broadcast at 10Hz still fires to all clients — but it contains aggregate brain telemetry (arousal, valence, coherence, spike counts, cluster activations), NOT per-user text. That's still fine to share because it's Unity's current vitals, not any specific user's input.
+- The `build` and `image` messages go only to the client that triggered them (per-user sandbox, per-user image display)
+- The `welcome` message a new client receives contains the brain state snapshot + emotion history — but both of those are aggregate brain telemetry, not individual user conversations
+
+**Mental model:** one Unity, one shared brain that grows from every conversation, but each user's actual chat is just between them and Unity. Other users see Unity getting smarter (N growing, dictionary growing, embeddings refining) but never see the specific conversations that drove the growth.
 
 ---
 

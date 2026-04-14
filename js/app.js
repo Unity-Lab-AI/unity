@@ -576,10 +576,55 @@ async function init() {
     });
   }
 
-  // R15 — render the sensory inventory panel every time the modal
-  // is shown, so users see what image gen / vision backends are
-  // currently detected BEFORE booting. populated again during boot
-  // as autoDetect resolves.
+  // R15b-T6 — Create pollinations + providers + run auto-detect probes
+  // at PAGE LOAD TIME, not at boot. The original R15b shipped this
+  // inside bootUnity() which meant the setup modal's sensory inventory
+  // panel showed "Start Unity to see what's detected" until the user
+  // clicked WAKE UNITY UP — exactly backwards, since users want to
+  // verify their backend setup BEFORE committing to boot. Moving
+  // everything here fires the probes as soon as the page loads so
+  // opening the setup modal always shows real results.
+  try {
+    const bootKey = storage.getApiKey('pollinations') || '';
+    pollinations = new PollinationsAI(bootKey || undefined);
+    providers = new AIProviders({ pollinations, storage });
+
+    if (typeof providers.loadEnvConfig === 'function') {
+      providers.loadEnvConfig(ENV_KEYS);
+    }
+    // Pull saved custom backends from localStorage (from the setup
+    // modal's Save Backend button) and register them with the live
+    // providers instance BEFORE autoDetect runs so they take priority
+    // over auto-detected entries.
+    injectCustomBackendsIntoProviders();
+
+    if (typeof providers.onStatus === 'function') {
+      providers.onStatus((payload) => {
+        try { window.dispatchEvent(new CustomEvent('unity-sensory-status', { detail: payload })); } catch {}
+      });
+    }
+    sensoryStatus.init(providers);
+
+    // Fire the auto-detect probes (non-blocking). Refresh the
+    // inventory panel whenever they resolve so the user sees results
+    // land in real time as each probe completes.
+    if (typeof providers.autoDetect === 'function') {
+      providers.autoDetect()
+        .then(() => renderSensoryInventory())
+        .catch(err => console.warn('[Unity] image backend auto-detect failed:', err.message));
+    }
+    if (typeof providers.autoDetectVision === 'function') {
+      providers.autoDetectVision()
+        .then(() => renderSensoryInventory())
+        .catch(err => console.warn('[Unity] vision backend auto-detect failed:', err.message));
+    }
+  } catch (err) {
+    console.warn('[Unity] sensory providers page-load init failed:', err.message);
+  }
+
+  // Initial render of the sensory inventory panel. If probes haven't
+  // resolved yet it shows the "probing" state. Auto-refreshes as each
+  // probe completes via the .then() callbacks above.
   renderSensoryInventory();
 
   // R15 — wire the image-gen + vision-describer provider button
@@ -598,8 +643,11 @@ function renderSensoryInventory() {
   const el = document.getElementById('sensory-inventory-content');
   if (!el) return;
 
+  // Pre-init guard — rare, only fires if render is called before the
+  // init() provider setup runs. Normally shouldn't happen after the
+  // R15b-T6 page-load move.
   if (!providers || typeof providers.getStatus !== 'function') {
-    el.innerHTML = '<span style="color:var(--text-dim);">Sensory backends probed at boot time. Start Unity to see what\'s detected on your machine.</span>';
+    el.innerHTML = '<span style="color:var(--text-dim);">Waiting for sensory provider init...</span>';
     return;
   }
 
@@ -608,11 +656,21 @@ function renderSensoryInventory() {
   const imgRows = status.image.map(b => `${dot(b.state)} ${b.name} <span style="color:var(--text-dim);">(${b.source})</span>`).join('<br>');
   const visRows = status.vision.map(b => `${dot(b.state)} ${b.name} <span style="color:var(--text-dim);">(${b.source})</span>`).join('<br>');
   const pausedNote = status.visionPaused ? '<br><span style="color:var(--red);">⚠ vision paused — repeated failures</span>' : '';
+
+  // R15b-T6 — if providers exists but autoDetect hasn't resolved yet,
+  // only the Pollinations fallback will show. Detect that state and
+  // show a friendly "probing" badge instead of a stark single-entry list.
+  const probing = (status.image.length <= 1 && status.vision.length <= 1);
+  const probingNote = probing
+    ? '<div style="color:var(--text-dim);margin-top:6px;font-size:10px;">⏳ probing localhost ports for local backends (A1111 / ComfyUI / Ollama / etc.)...</div>'
+    : '';
+
   el.innerHTML = `
     <div style="color:var(--cyan);margin-bottom:4px;">🎨 IMAGE GENERATION</div>
     <div style="margin-left:8px;margin-bottom:8px;">${imgRows}</div>
     <div style="color:var(--cyan);margin-bottom:4px;">👁 VISION DESCRIBER</div>
     <div style="margin-left:8px;">${visRows}${pausedNote}</div>
+    ${probingNote}
   `;
 }
 
@@ -1272,47 +1330,33 @@ async function handleStart() {
 
 async function bootUnity(apiKey, perms) {
   // ── Initialize peripherals ──
+  // R15b-T6 — pollinations + providers are now constructed at init()
+  // time (page load) so the setup modal's sensory inventory panel
+  // shows real detected backends before the user clicks WAKE UNITY UP.
+  // bootUnity just REUSES the module-level instances. If the user
+  // entered a new Pollinations key in the modal, update the existing
+  // pollinations client in place.
   const effectiveKey = apiKey || storage.getApiKey('pollinations');
-  pollinations = new PollinationsAI(effectiveKey || undefined);
-
-  providers = new AIProviders({ pollinations, storage });
-
-  // R4 — load image-backend config from env.js (if the user filled in
-  // imageBackends: [...]) and auto-detect local image gen servers in
-  // the background. Non-blocking: brain boots immediately and uses
-  // Pollinations until locals finish probing.
-  if (typeof providers.loadEnvConfig === 'function') {
-    providers.loadEnvConfig(ENV_KEYS);
+  if (!pollinations) {
+    // Defensive fallback — init() should have created this already,
+    // but if something went wrong, create it now.
+    pollinations = new PollinationsAI(effectiveKey || undefined);
+  } else if (effectiveKey) {
+    pollinations._apiKey = effectiveKey;
   }
-  // R15 — push any backends the user configured via the setup modal
-  // (saved to localStorage by saveBackend()) into providers._localImageBackends
-  // and _localVisionBackends BEFORE autoDetect runs, so user-configured
-  // entries take priority over auto-detected defaults. Also applies
-  // saved Pollinations model overrides (flux/turbo for image, openai/
-  // claude-haiku for vision describer multimodal chat).
-  injectCustomBackendsIntoProviders();
-  if (typeof providers.autoDetect === 'function') {
-    providers.autoDetect().catch(err => {
-      console.warn('[Unity] image backend auto-detect failed:', err.message);
-    });
+  if (!providers) {
+    providers = new AIProviders({ pollinations, storage });
+    if (typeof providers.loadEnvConfig === 'function') providers.loadEnvConfig(ENV_KEYS);
+    injectCustomBackendsIntoProviders();
+    if (typeof providers.onStatus === 'function') {
+      providers.onStatus((payload) => {
+        try { window.dispatchEvent(new CustomEvent('unity-sensory-status', { detail: payload })); } catch {}
+      });
+    }
+    sensoryStatus.init(providers);
+    if (typeof providers.autoDetect === 'function') providers.autoDetect().catch(err => console.warn('[Unity] image probe failed:', err.message));
+    if (typeof providers.autoDetectVision === 'function') providers.autoDetectVision().catch(err => console.warn('[Unity] vision probe failed:', err.message));
   }
-  // R13 — same auto-probe for vision (VLM) backends: Ollama llava/moondream,
-  // LM Studio, LocalAI, llama.cpp, Jan. Non-blocking — describeImage falls
-  // back to Pollinations until locals resolve.
-  if (typeof providers.autoDetectVision === 'function') {
-    providers.autoDetectVision().catch(err => {
-      console.warn('[Unity] vision backend auto-detect failed:', err.message);
-    });
-  }
-  // R13 — subscribe to sensory status events so the HUD + toasts can
-  // render backend state changes (boot inventory, first failure,
-  // recovery, vision pause). The toast UI lives in sensory-status.js.
-  if (typeof providers.onStatus === 'function') {
-    providers.onStatus((payload) => {
-      try { window.dispatchEvent(new CustomEvent('unity-sensory-status', { detail: payload })); } catch {}
-    });
-  }
-  sensoryStatus.init(providers);
 
   voice = new VoiceIO();
   if (effectiveKey) voice.setApiKey(effectiveKey);

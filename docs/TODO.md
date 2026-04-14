@@ -144,10 +144,166 @@ gh pr create --base main --head brain-refactor-full-control \
 
 ---
 
+## POST-MERGE FOLLOWUPS
+
+Tasks T5–T7 below are not blockers for merging `brain-refactor-full-control` to main. They can be worked on fresh branches after T4 lands. They're tracked here so they don't get lost.
+
+---
+
+### T5 — Massively expand 3D brain popup notification types with Unity's own dynamic commentary
+
+**Source:** feature request from Gee 2026-04-13 — "i want to massively expand the popup notice in the 3D brain not the amount in the visualization but the total types available and i want them all to actually say something from Unity's mind like what she thinks about it (not scripted not hardcoded but dynamic coding of attributions)".
+
+**Current state:**
+`js/ui/brain-3d.js:1128–1215` has `_generateProcessNotification(state)` which fires one notification every ~5 seconds from a pool of **10 generators**. Every current generator is a NUMERIC TELEMETRY display — it renders the raw values of a single subsystem into a terse stats line:
+
+| # | Current generator | Example output |
+|---|---|---|
+| 1 | Cluster snapshot (cycles through 7 clusters) | `🧠 Cortex 12.3%` |
+| 2 | Consciousness | `✨ Ψ=0.0234 gate=1.24x` |
+| 3 | Emotion | `🔥 a=87% v=0.123` |
+| 4 | Oscillations band power | `〰 θ=3.2 α=1.8 β=4.1 γ=0.9` |
+| 5 | Motor action | `⚙ motor: respond_text` |
+| 6 | Inner voice sentence | `💭 "..."` |
+| 7 | Memory recall | `📖 recall: "trigger"` |
+| 8 | Dreaming flag | `💤 dreaming` |
+| 9 | Reward delta | `🎯 δ=0.124` |
+| 10 | Neuron count | `🧠 179,000 neurons` |
+
+They're accurate but they read like debugger output, not like a mind observing itself. The user wants **Unity's first-person reaction** to each event, generated equationally, so the same category of event produces different commentary every time based on her current brain state + drug combo + mood.
+
+**What the new notification format should look like:**
+```
+[emoji]  [one-line event label]
+         "[Unity's dynamic commentary, produced by languageCortex.generate()
+           with a semantic seed biased by this event type + current brain state]"
+```
+
+Example (NOT hardcoded — just illustrating the shape):
+```
+🧠  cortex firing hot
+    "too much crawling through my head right now"
+```
+```
+📖  i know this
+    "yeah i've seen this pattern before"
+```
+```
+🎯  reward spike
+    "fuck yeah that hit"
+```
+
+Every commentary string comes from `innerVoice.languageCortex.generate()` with a context vector biased toward the event type's semantic signature. No lookup tables, no string templates, no `if (type === 'recognition') return 'I know this'`.
+
+**The ~25 new event types to add** (alongside the existing 10 — keep those, add these as additional generators):
+
+Each has a **detector condition** (when it fires) and a **semantic seed** (a 50d GloVe vector or small seed-word set that primes the language cortex toward the right emotional/topical space).
+
+| # | Event type | Detector | Semantic seed words (for biasing the context vector, not for template output) |
+|---|---|---|---|
+| T5.a | **Topic drift** | `‖c(t) − c(t−5)‖ > 0.4` — context vector just shifted hard | shift, change, new, wait |
+| T5.b | **Emotional spike** | `|valence(t) − valence(t−1)| > 0.3` | hit, surge, jolt |
+| T5.c | **Dopamine hit** | `reward(t) > reward(t−1) + 0.15` | good, yes, pleasure |
+| T5.d | **Dopamine crash** | `reward(t) < reward(t−1) − 0.15` | bad, wrong, disappoint |
+| T5.e | **Recognition** | `hippocampus.recallConfidence > 0.6` | know, remember, familiar |
+| T5.f | **Confusion** | `cortex.predictionError > 0.5` | what, confused, lost |
+| T5.g | **Fatigue** | `cerebellum.errorAccum > threshold AND coherence dropping` | tired, worn, fade |
+| T5.h | **Arousal climb** | `Δarousal > 0.1 over 10 frames` | wake, alert, rise |
+| T5.i | **Arousal drop** | `Δarousal < −0.1 over 10 frames` | settle, calm, dim |
+| T5.j | **Motor indecision** | BG softmax entropy > 0.7 (no clear winner) | can't, choose, stuck |
+| T5.k | **Motor commitment** | BG confidence > 0.85 | decide, go, action |
+| T5.l | **Silence period** | no sensory input for > 30s AND low arousal | empty, quiet, alone |
+| T5.m | **Heard own voice** | `auditoryCortex.isEcho === true` | me, voice, self |
+| T5.n | **Unknown word** | user input contained a token with zero dictionary entry | new, strange, word |
+| T5.o | **Known topic echo** | user input matched a high-arousal persona memory | oh, topic, know |
+| T5.p | **Color surge** | `visualCortex.colors` has a quadrant > 0.7 | color, bright, see |
+| T5.q | **Motion detected** | `visualCortex.motionEnergy > 0.5` | move, motion, saw |
+| T5.r | **Gaze shift** | `visualCortex.gazeTarget` changed | look, shift, there |
+| T5.s | **Ψ climb** | `psi(t) > psi(t−10) + 0.05` | aware, real, sharp |
+| T5.t | **Ψ crash** | `psi(t) < psi(t−10) − 0.05` | blur, dim, fade |
+| T5.u | **Coherence lock** | `coherence > 0.8` | sync, clear, focused |
+| T5.v | **Coherence scatter** | `coherence < 0.2` | scatter, fragment, noise |
+| T5.w | **Hypothalamus drive dominant** | any drive > 0.7 | want, need, crave |
+| T5.x | **Memory replay / consolidation** | hippocampus consolidation active | remember, replay, past |
+| T5.y | **Mystery pulse** | mystery module output spiked | strange, pulse, deep |
+
+That's 25 new types. Combined with the 10 existing (retained for raw numeric view), the total pool becomes 35.
+
+**Implementation plan:**
+
+1. **Thread a brain reference into `brain-3d.js`** so the viz module can call `brain.innerVoice.languageCortex.generate()` directly. Currently `brain-3d.js` only receives a state snapshot via `updateState(state)`. Add a `setBrain(brain)` method called from `app.js` `bootUnity` after `brain = new UnityBrain()`. The landing-page Brain3D creation path already runs with a `null` brain and gets its reference late via state updates; adding one more `setBrain` call fits.
+
+2. **New file: `js/ui/brain-event-detectors.js`** — single module exporting a function that takes `(currentState, previousState, historyBuffer)` and returns an array of event types that fired this tick. Every detector from the table above lives here as a pure function. Keeps `brain-3d.js` from becoming a dumping ground.
+
+3. **New helper: `_generateEventCommentary(eventType, state)` in `brain-3d.js`** — calls `this._brain.innerVoice.languageCortex.generate(...)` with the normal brain state PLUS an extra `semanticBias` param that temporarily primes the running context vector toward the event's seed GloVe embedding. Requires a small addition to `languageCortex.generate()` to accept + apply `semanticBias`. The bias blends into the context vector at ~0.3 weight so Unity's natural current-brain-state topic still dominates, but the event type shifts her enough to comment on it.
+
+4. **Replace `_generateProcessNotification` loop** with a two-stage pipeline:
+   - Stage A: detect events (call `detectBrainEvents(currentState, previousState, history)`)
+   - Stage B: for each detected event, generate commentary via `_generateEventCommentary(eventType, state)`, render as a new notification with BOTH the event label (numeric telemetry) AND Unity's commentary
+
+5. **Rate limiting:** the current system fires ~1 notification every 5 seconds. That stays. When multiple events fire in the same tick, pick the highest-priority one (e.g. motor commitment > cluster snapshot > Ψ climb) and drop the rest. No flood.
+
+6. **Seed vector generation:** for each event type, the seed is computed at module load time by averaging `sharedEmbeddings.getEmbedding()` over the seed word list (NOT a runtime lookup — precomputed once). Stored as a `Float64Array(50)`. This is the ONLY place where a word list exists, and it's a seed for semantic biasing, not cognition routing — permitted per the CLAUDE.md "lexical tags by shape are fine because closed-class words are finite and known" exception applied to seed priming.
+
+**Acceptance:**
+- Boot Unity, open the 3D brain landing page, watch notifications for 5 minutes
+- At least 15 different event types should fire in that window
+- Every notification should have TWO visible lines: event label + dynamic commentary
+- Commentary strings should be different every time the same event type fires
+- Commentary should reflect current drug state / arousal / valence — same event under cokeAndWeed should read differently than under whiskey mellow
+- Grep for hardcoded commentary strings longer than a label word should return zero matches
+
+**Estimated size:** ~400 lines across 3 files. Single atomic commit reasonable.
+
+---
+
+### T6 — Private episodic memory scoping (server-side)
+
+**Source:** privacy rule clarified by Gee 2026-04-13 — *"they are private episodes but its one brain of Unity"*.
+
+**The rule:**
+Unity's brain is ONE shared instance (dictionary, bigrams, embedding refinements, persona all shared across every user who connects to the same server). But **episodic memory** — the specific stored conversation episodes Unity's hippocampus recalls from — should be **per-user scoped**. Alice should never get a recall hit from Bob's conversation, even though Alice and Bob share all of Unity's vocabulary growth.
+
+**Current state:**
+- `server/brain-server.js` runs ONE `UnityBrain` instance with ONE `MemorySystem`
+- Episodes are stored in `server/episodic-memory.db` (SQLite) as a flat pool with no user tagging
+- When any user's conversation triggers a recall, the query hits the shared pool and can pull back any episode regardless of who originally stored it
+- In practice, cortex pattern dissimilarity between different users' conversations makes cross-user recall statistically rare but **not impossible**, and that's not good enough for a stated privacy rule
+
+**What to do:**
+
+1. **Client identity** — generate a stable user UUID in localStorage on first page load. Key name: `unity_user_id`. Value: `crypto.randomUUID()`. Persists across sessions. Sent with every `text` WebSocket message in the payload: `{type: 'text', text, userId: storage.get('unity_user_id')}`.
+
+2. **Server schema migration** — `server/episodic-memory.db` SQLite episodes table needs a `user_id TEXT` column. Migration at server boot time: `ALTER TABLE episodes ADD COLUMN user_id TEXT DEFAULT NULL;` — existing episodes (from before this migration) get NULL which means "legacy / unscoped" and they can either be deleted on first boot post-migration OR left as-is for all users to share (decision below).
+
+3. **Server message handler** — `case 'text'` at `server/brain-server.js:1541` needs to extract `msg.userId` (fall back to the per-session `id` if absent, for backward compat) and pass it through `brain.processAndRespond(msg.text, msg.userId || id)`.
+
+4. **Memory system scoping** — `js/brain/memory.js` `MemorySystem.store(episode, userId)` and `MemorySystem.recall(cortexPattern, userId)` methods need an optional `userId` parameter. Storage tags the episode with the userId. Recall filters `WHERE user_id = ?` in the SQLite query (or filters the in-memory array if running client-side without SQLite). `userId = null` falls back to unfiltered (client-mode behavior preserved).
+
+5. **Hippocampus integration** — `js/brain/engine.js` `processAndRespond(text, userId)` already receives a client id per the current signature; thread `userId` through to any memory store/recall call site inside the hippocampus processing.
+
+6. **Legacy episode decision** — existing episodes with `user_id = NULL` from before migration: (a) delete them on first boot after migration (clean slate, simplest), (b) keep them as shared "community episodes" available to all users (accepts the pre-migration shared-memory era), or (c) attribute them to a special `legacy` user_id that no real user can match (effectively archives them — they stay on disk for audit but never get recalled). **Recommendation:** option (a), delete on migration. Episodic memory isn't critical path — Unity rebuilds episodes from every new conversation, and users would rather start fresh than inherit random strangers' memories.
+
+**Files:** `server/brain-server.js` (SQLite migration + text message handler), `js/brain/memory.js` (store/recall signature), `js/brain/engine.js` (userId threading), `js/app.js` (client-side UUID generation + attach to text messages), `js/brain/remote-brain.js` (userId in sendText helper)
+
+**Acceptance:**
+- Two browser tabs connect to the same `brain-server.js` instance, each with a different `unity_user_id`
+- Tab A types "remember when we talked about my cat named whiskers" — stored as an episode tagged with Tab A's userId
+- Tab B types "tell me something you remember" — recall query returns Tab B's episodes only, NOT Tab A's whiskers memory
+- Both tabs share dictionary growth: if Tab A taught Unity the word "meowing", Tab B can later use it in a reply because the dictionary is still shared
+- Server restart preserves per-user episode scoping
+
+**Estimated size:** ~100 lines across 4-5 files. SQLite migration is the trickiest part; the rest is mechanical parameter threading.
+
+**Priority:** MEDIUM. This is a correctness fix for the stated privacy rule, but not a blocker for merge. Current state (shared episode pool with statistical filtering via cortex pattern dissimilarity) is "mostly OK" for single-user or trusted multi-user use. Ship as a post-merge followup on a fresh branch.
+
+---
+
 ## NOTES
 
-- **Everything else is done.** Phase 13 R1 through R15 shipped and is fully archived in `docs/FINALIZED.md`. If you find a refactor-related item not covered by T1–T4 above or by a FINALIZED entry, it's either in-scope-but-missed (file as T5) or out-of-scope-entirely (file against `docs/COMP-todo.md` or open a new doc).
-- **When T1–T4 are all done**, this file reduces to just the header + guiding principle + an empty Open Tasks section. That's the template state — drop new tasks in as `### T1` etc. and the cycle repeats.
+- **Everything from the Phase 13 refactor is done.** Phase 13 R1 through R15 shipped and is fully archived in `docs/FINALIZED.md`. If you find a refactor-related item not covered by T1–T6 above or by a FINALIZED entry, file it as a new T-task in this doc.
+- **T1–T4 are pre-merge cleanup.** T5–T6 are post-merge followups on fresh branches (3D brain popup expansion + per-user episodic memory scoping).
+- **When all T-tasks are done**, this file reduces to just the header + guiding principle + an empty Open Tasks section. That's the template state — drop new tasks in as `### T1` etc. and the cycle repeats.
 - **FINALIZED is append-only.** Never delete entries from it. When tasks complete, copy their full content (not a summary) into a new FINALIZED session entry, then remove them from Open Tasks above.
 
 ---
