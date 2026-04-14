@@ -531,6 +531,51 @@
 
 ---
 
+## 2026-04-13 Session: R5 + R6 — Client Brain Alignment + Equational Build/Image (backfill entry)
+
+### COMPLETED (backfill — work shipped inside R3/R4/R10.4 commits, formalized here for FINALIZED coverage)
+
+- [x] **Task:** R5 — Client brain alignment (originally planned as "extract shared cores into `js/brain/shared/` and make both client + server thin wrappers").
+  - Completed: 2026-04-13 (approach changed — original plan superseded)
+  - Files: none modified under the original R5 plan. The effective R5 work landed inside R3's commit.
+  - **What the original R5.1–R5.5 plan called for:**
+    - R5.1 `js/brain/dictionary.js` thin wrapper around a shared core
+    - R5.2 `js/brain/language-cortex.js` thin wrapper around a shared core
+    - R5.3 `js/brain/inner-voice.js` verify integration
+    - R5.4 `js/brain/engine.js:processAndRespond` semantic cortex pattern
+    - R5.5 `js/brain/engine.js` motor-action-driven output routing
+  - **What actually happened:** R3 investigation revealed the client brain modules were ALREADY environment-agnostic (dictionary.js guards localStorage with `typeof` checks, language-cortex.js has zero browser-specific code, embeddings.js uses `fetch()` which Node 18+ provides globally). So the planned "extract shared cores" refactor was unnecessary — R3 dynamic-imports the existing client modules directly from `server/brain-server.js` via `import()`, and both sides share ONE implementation without an intermediate "shared core" abstraction.
+    - R5.1 / R5.2 / R5.3 → obsoleted. The client modules ARE the shared core. No wrapper layer needed.
+    - R5.4 → shipped inside R2 semantic grounding. `engine.js:processAndRespond` now passes the GloVe semantic cortex readout (via `cluster.getSemanticReadout(sharedEmbeddings)`) into `languageCortex.generate()` — R2 commit `c491b71`.
+    - R5.5 → shipped inside R4 text-AI kill. `engine.js` motor action routing (`respond_text` / `generate_image` / `build_ui`) now drives output paths equationally without BrocasArea — R4 commit `7e095d0`.
+  - **Net result:** R5 as a standalone epic collapsed into R2 + R3 + R4 work. No code lives under R5's name because the simpler R3 dynamic-import approach achieved the same end state with zero new files. Documented here so the TODO's R5.1–R5.5 subtask descriptions can be retired without losing the rationale.
+
+- [x] **Task:** R6.1 — Equational image prompt generation. When BG motor channel selects `generate_image`, the prompt must be composed by Unity's own language cortex from brain state, not from a hardcoded mood-descriptor template or an AI-rewrite chat call.
+  - Completed: 2026-04-13 (commits `90ce152` + `8f60b75`)
+  - Files modified: `js/brain/engine.js` — `_handleImage` rewritten
+  - Details: Pre-R6.1 the image path was "take user text, hand it to `BrocasArea.generate()` with a 'rewrite this as a vivid scene description' prompt, pass the AI output to Pollinations `generateImage()`". R4 killed BrocasArea so that path stopped working. R6.1 (initial pass in `90ce152`) replaced it with a hardcoded mood-descriptor template composed from persona visualIdentity fields — which Gee immediately rejected: "what the fuck u cant hard code shit like dark, ceinematic lighting.. thats all Unitys decisions". R6.1 final pass (`8f60b75`) rewrote `_handleImage` to call `innerVoice.languageCortex.generate()` with the full brain state (arousal, valence, psi, coherence, drugState, cortexPattern from `getSemanticReadout`) — every word of the image prompt now comes from Unity's own equational slot scoring over her learned dictionary. Zero hardcoded visual vocabulary ("dark", "cinematic lighting", "photorealistic", etc.) anywhere in the code path.
+
+- [x] **Task:** R6.2 — Equational component synthesis. When BG motor channel selects `build_ui`, a UI component must be generated without asking an AI to emit JSON. Replace `BrocasArea._buildBuildPrompt` + the code-detection branch with equational synthesis over a corpus template library.
+  - Completed: 2026-04-13 (commit `6b2deb3`)
+  - Files modified: `docs/component-templates.txt` (NEW, corpus file), `js/brain/component-synth.js` (NEW, ~120 lines), `js/brain/engine.js` (`_handleBuild` rewritten to call `componentSynth.generate()`), `server/brain-server.js` (dynamic-imports `component-synth.js` alongside the other client modules so server-side `build_ui` works the same way)
+  - Details:
+    - **Corpus file** `docs/component-templates.txt` — plain text with 6 starter primitives (counter / timer / list / calculator / dice / color-picker). Each entry has `=== PRIMITIVE: id ===` + `DESCRIPTION:` + `HTML:...END_HTML` + `CSS:...END_CSS` + `JS:...END_JS` blocks. Component-scoped CSS class names, tracked `setInterval` cleanup, no `body`/`html` selectors that would bleed into the host page.
+    - **`ComponentSynth` class** parses the template file via regex on load, computes a 50d GloVe embedding for each primitive's `DESCRIPTION` field at load time, and exposes `generate(userRequest, brainState)` that:
+      1. Computes the user request embedding via `sharedEmbeddings.getSentenceEmbedding(userRequest)`
+      2. Scores `cosine(userEmbedding, primitive.centroid)` for every primitive
+      3. Picks the best match if score ≥ `MIN_MATCH_SCORE = 0.40`, returns null otherwise
+      4. Generates an 8-character suffix from `_suffixFromPattern(cortexPattern)` so the same user request under different brain state produces different component IDs
+      5. Returns `{id, html, css, js}` ready for sandbox injection
+    - **`_handleBuild` rewrite in engine.js** — calls `componentSynth.generate(text, {cortexPattern})`. If no primitive matches above threshold, falls through to `respond_text` so Unity emits a verbal response instead of fabricating a broken component. The old ~100-line `_handleBuild` that prompted BrocasArea for JSON output was deleted outright.
+    - **R6.3 + R6.4 + R6.5 subtasks** all collapsed into this single commit — `_buildBuildPrompt` deletion, `_handleBuild` rewrite, and the new `component-synth.js` module are one atomic unit. Growth path: add more `=== PRIMITIVE:` blocks to the corpus file and Unity gains new build capabilities at load time with zero code changes.
+
+- [x] **Task:** R5 (effective — multi-provider image gen). The TODO-level R5 line item that actually shipped code was the 4-level priority chain for image generation backends.
+  - Completed: 2026-04-13 (commit `7e095d0` as part of R4)
+  - Files modified: `js/brain/peripherals/ai-providers.js`
+  - Details: Full rewrite of the old text-AI-focused `AIProviders` class into `SensoryAIProviders`. Added 4-level priority chain for `generateImage()`: custom-configured backend → auto-detected local (A1111 / SD.Next / Forge / Fooocus / ComfyUI / InvokeAI / LocalAI — 7 backends probed at boot via `autoDetect()` with 1.5s timeout each) → env.js-listed backend → Pollinations fallback. Dead-backend cooldown on auth/payment failures (1 hour). `_customGenerateImage()` helper supports 4 response shapes (OpenAI URL, OpenAI base64, A1111 base64, generic). Full details in the R3+R4 session entry below.
+
+---
+
 ## 2026-04-13 Session: Refactor R3 + R4 — Server Full Control + Kill Text-AI (branch: brain-refactor-full-control)
 
 ### COMPLETED
