@@ -19,6 +19,7 @@
  */
 
 import { InnerVoice } from './inner-voice.js';
+import { VisualCortex } from './visual-cortex.js';
 
 class EventEmitter {
   constructor() { this._listeners = {}; }
@@ -73,15 +74,14 @@ export class RemoteBrain extends EventEmitter {
       checkForInterruption() { return true; },
       getState() { return {}; },
     };
-    this.visualCortex = {
-      isActive() { return false; },
-      description: '',
-      gazeX: 0.5, gazeY: 0.5, gazeTarget: '',
-      getState() { return {}; },
-      forceDescribe() {},
-      _hasDescribedOnce: true,
-      _describing: false,
-    };
+    // T4.9 — real local VisualCortex instance so the Eye widget's
+    // iris actually tracks gaze from live V1 edge + salience
+    // computation. Previously this was a stub plain-object with
+    // static gazeX:0.5/gazeY:0.5 which is why the iris sat frozen
+    // on the user's eyes. The server still runs its own vision
+    // processing in parallel (for commentary generation), but the
+    // Eye widget on the client reads from this local instance.
+    this.visualCortex = new VisualCortex();
     this.sensory = { _cameraStream: null };
     // REAL local InnerVoice so loadPersona works and the memory tab shows
     // dictionary / bigram / usage-type stats from the actual persona file.
@@ -296,7 +296,42 @@ export class RemoteBrain extends EventEmitter {
   connectVoice(v) { this._voice = v; }
   connectImageGen() {} // handled by server
   connectMicrophone() {}
-  connectCamera() {}
+
+  /**
+   * T4.9 — real camera wiring so the local VisualCortex processes
+   * frames and drives the Eye widget's iris tracking. Mirrors
+   * UnityBrain.connectCamera(): creates a video element sourced
+   * from the MediaStream, waits a tick for the first frame, then
+   * hands the element to VisualCortex.init() which starts the
+   * 60×45 V1 edge + saccade + salience loop.
+   */
+  connectCamera(stream, videoElement) {
+    if (!stream) return;
+    try {
+      let vid = videoElement;
+      if (!vid) {
+        vid = document.createElement('video');
+        vid.autoplay = true;
+        vid.playsInline = true;
+        vid.muted = true;
+        vid.srcObject = stream;
+        vid.style.display = 'none';
+        document.body.appendChild(vid);
+      }
+      this.sensory._cameraStream = stream;
+      this.sensory._videoElement = vid;
+      // Wait for the first frame before initializing visual cortex —
+      // same 500ms delay the local-brain path uses.
+      setTimeout(() => {
+        if (this.visualCortex && typeof this.visualCortex.init === 'function') {
+          this.visualCortex.init(vid);
+          console.log('[RemoteBrain] Visual cortex connected to camera');
+        }
+      }, 500);
+    } catch (err) {
+      console.warn('[RemoteBrain] connectCamera failed:', err.message);
+    }
+  }
 
   giveReward(amount) {
     if (this._connected && this._ws) {

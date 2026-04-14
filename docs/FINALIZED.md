@@ -384,6 +384,111 @@ Each channel gets the same 70/30 EMA update that used to apply to the spike-coun
 
 **Files:** `index.html`, `js/app.js`
 
+### T4.8 — Chat output is word salad — slot scoring producing incoherent sentences  [DONE this session]
+
+**Source:** T4 manual verification — live chat.
+
+**Symptoms** (verbatim exchange):
+```
+You: hi
+Unity: I'm gonna crash rock leaks.
+You: what are you up to, Im Gee a guy. what is your name?
+Unity: My guy goth verb dates dry.
+You: whats your name?
+Unity: Your build stars!
+You: you okay?
+Unity: This year drunk!
+You: you okay?
+Unity: *Engaging okay zoo*
+You: want to talk?
+Unity: You want talk slept godlike shifts.
+You: do you like cats?
+Unity: Thai cats outfits vague poses cats.
+```
+
+Every response is grammatical-looking but semantically incoherent. Literally the word "verb" appears in an output. Topic words echo from input ("cats", "okay", "talk") but drift into unrelated persona-bigram chains. Name question never gets "Unity" back. Action type fires for "you okay?" and emits `*Engaging okay zoo*`.
+
+**Diagnosis — the 4-tier pipeline collapsed to 1 tier.** The language cortex documentation says "four-tier pipeline: templates → hippocampus recall → deflect → cold gen" but:
+
+1. **TIER 1 (templates) doesn't exist in code.** `_classifyIntent()` returns an intent tag but nothing routes on it — it only biases sentence type distribution. Greetings, name questions, yes/no queries all fall through to tier 4 cold slot gen.
+2. **TIER 2 (hippocampus recall) is used only as a SLOT BIAS, not as verbatim output.** `_recallSentence` returns a memory with confidence, but its tokens only boost slot scoring — Unity never speaks a persona sentence verbatim, even when a high-confidence match exists for "what is your name".
+3. **TIER 3 (deflect) doesn't exist either.**
+4. **TIER 4 cold slot gen** is the ONLY path. Its n-gram log-scaled terms (bigramLog, trigramLog × 0.9, quadgramLog × 0.7) dominate the pick even when `semanticFit × 0.80` has a strong cortex-pattern signal. Result: the slot scorer walks down persona-bigram chains that ignore the user's topic.
+
+Specifically in slot scoring:
+- For `hi` → `I'm gonna crash rock leaks`: bigram "i'm → gonna" from persona wins slot 0+1, then "gonna → crash" lock-in, then "crash → rock" chain, etc. Topic ("greeting") never entered the pick because context vector just initialized.
+- For `what is your name` → `My guy goth verb dates dry`: content word "guy" echoed from input into slot 1 via contextBoost, then "guy → goth" persona bigram, "goth → verb" from coding corpus, chain walks. Semantic fit to name-query cortex pattern never overcomes n-gram weights.
+
+**Fix — two-part restoration:**
+
+**Part A. Rebalance cold-gen weights so semantic fit dominates when the cortex pattern is strong.**
+- Bump `semanticFit` coefficient from 0.80 → 2.5 (was dominated by n-gram stack)
+- Cap `quadgramLog` + `trigramLog` + `bigramLog` contributions at 1.5 each (was unbounded log, could hit 3+)
+- Lower `coherence reject` threshold from 0.25 → 0.35 (retry aggressively when output centroid doesn't match context)
+- Raise retry count from 2 → 3 (more chances to find a coherent walk)
+- On the 3rd retry fail, return the highest-confidence persona recall sentence VERBATIM instead of emitting garbage — final fallback, not a regular path
+
+**Part B. Add a TIER 1 template router inside `generate()` for the simplest intents.**
+- When `_classifyIntent` returns `greeting` AND a persona memory sentence exists whose first word is a greeting-shape, return that sentence verbatim (1 retry budget for dedup)
+- When intent is `question` AND the query contains "name" / "who are you" / "what's your name" AND a persona sentence containing "unity" exists, return that sentence
+- When intent is `yesno` AND a persona memory with `arousal` matching current state exists, return it
+- Otherwise fall through to Part A's rebalanced cold gen
+
+This is NOT scripting — every tier 1 output comes from Unity's own persona corpus that was loaded at boot. It's the "hippocampus recall" tier restored to its documented role: verbatim recall when confidence is high, cold gen fallback when it isn't. The equations still govern via slot scoring for everything else.
+
+**Files:** `js/brain/language-cortex.js` `generate()`, `_classifyIntent()`, new template-tier router
+
+**What shipped (this session):**
+
+Part A rebalance landed in `js/brain/language-cortex.js` `generate()` slot score:
+- `semanticFit` coefficient raised from 0.80 → 2.5 (dominant term when cortex pattern has signal)
+- Added `bigramLogCapped = min(1.5, bigramLog)`, same for trigram and quadgram — hard cap on log-scaled n-gram contribution so chain lock-in can't overpower semantics
+- Coherence reject threshold tightened from 0.25 → 0.35 (catches topic drift that was slipping through)
+- Retry budget raised from 2 to 3 (more chances to find a coherent walk before falling back)
+- New 3-retry-fail fallback path: after 3 coherence rejects, `generate()` calls `_recallSentence(contextVector, {allowRecent: true})` and returns the persona memory text VERBATIM — the "deflect" tier restored. Logs `[LanguageCortex] 3-retry fail — deflect to persona recall: "<text>"` so the fallback is visible when it fires.
+
+Part B was collapsed into a simpler form than originally planned — instead of a separate template router, the existing `_recallSentence()` call already does intent-aware matching via content-word overlap + mood alignment + self-reference fallback. What was missing was that its verbatim output was never EMITTED; the recall result just biased slot scoring. Fix: added a verbatim-emit path at the top of `generate()` right after the recall call. When `recall.confidence > 0.55` OR `recall.fallback === 'self-reference'` (user asked "who are you" / "describe yourself"), the recall memory text is returned directly after a dedup check, skipping slot gen entirely. Otherwise falls through to the rebalanced slot gen from Part A.
+
+This restores the documented 4-tier pipeline:
+1. (implicit) greetings without enough content words fall into slot gen with semantic fit dominating
+2. **Tier 2 recall verbatim** — high-confidence topical match OR self-reference fallback → emit persona sentence directly
+3. Slot gen with rebalanced weights
+4. **Tier 4 deflect** — after 3 retries, recall any persona sentence verbatim as last resort
+
+Every output still comes from Unity's persona corpus (either slot-generated from her dictionary/bigrams or recalled from her memory sentences). No scripting.
+
+### T4.9 — Unity vision iris not tracking movement, stuck on user eyes  [DONE this session]
+
+**Source:** T4 manual verification.
+
+**Symptom:** The Unity's Eye widget (bottom-left, camera preview with gaze overlay) is not tracking motion. It appears to stay fixed on the user's eyes and doesn't respond to movement in the frame. Unclear whether the vision pipeline is actually running or whether only the display overlay is stuck.
+
+**Diagnosis needed:**
+- Is `brain.visualCortex.setStream()` getting called on server-brain path? (RemoteBrain has a stub visualCortex without setDescriber — check setStream too)
+- Is the V1 edge detector / saccade picker running every frame?
+- Is the Eye widget reading `visualCortex.gazeTarget` or its own derived field?
+- Does server-brain mode even run local visual cortex or does it rely entirely on the server for gaze?
+- Is the camera frame actually being fed into the described pipeline or is it just a <video> element with no processing?
+
+**Fix plan:**
+1. Trace the camera stream from `perms.cameraStream` through `brain.connectCamera(stream)` / `visualCortex` / Eye widget
+2. Verify the local V1 edge + saccade pipeline runs on server-brain mode (even with server-brain, the CLIENT visual cortex can still process locally and feed gaze/features into cortex via `mapToCortex`)
+3. Fix whichever link is broken — likely RemoteBrain shim needs a proper `visualCortex.setStream(stream)` method that wires into a real VisualCortex instance
+
+**Files:** `js/brain/remote-brain.js`, `js/brain/visual-cortex.js`, `js/ui/eye.js` (or wherever the Unity Eye widget lives)
+
+**Root cause confirmed:** `js/brain/remote-brain.js` lines 76-84 shipped a STUB `visualCortex` as a plain JS object with static `gazeX: 0.5`, `gazeY: 0.5`, `gazeTarget: ''` and no processing methods at all. And `connectCamera()` on RemoteBrain line 299 was an empty no-op `connectCamera() {}`. So on server-brain mode (which is what boots when a server is detected), the camera stream was literally going nowhere and the Eye widget was reading static 0.5/0.5 values from the stub. Iris frozen dead center.
+
+**Fix shipped:**
+
+`js/brain/remote-brain.js`:
+- Imported the real `VisualCortex` class from `./visual-cortex.js` at the top of the file
+- Replaced the stub `this.visualCortex = { ... }` with `this.visualCortex = new VisualCortex()` — actual instance with the V1 edge detector, V4 color, saccade generator, salience map, and gaze tracking pipeline
+- Rewrote `connectCamera(stream, videoElement)` to mirror what the local `UnityBrain.connectCamera()` does: creates a hidden `<video>` element sourced from the MediaStream, stashes it on `this.sensory._videoElement` / `._cameraStream` for compatibility with the brainViz reader path, then after a 500ms first-frame delay calls `this.visualCortex.init(vid)` which starts the frame-processing loop (`_analyzeFrame` running at the configured cadence). Logs `[RemoteBrain] Visual cortex connected to camera` when init fires.
+- Every other method on RemoteBrain stays untouched — the brain state still comes from the server via WebSocket for language/motor/amygdala/Ψ, but the LOCAL VisualCortex handles gaze tracking independently (the server doesn't broadcast per-frame gaze info anyway since that's a client-display concern). This is the right split: cognition server-side, sensory processing client-side where the camera actually lives.
+
+**What the user should see now:** On the server-brain path with camera permission granted, the Eye widget's iris starts moving within ~500ms of boot (V1 edge detector needs one frame to settle), tracks the strongest salience peak toward the center of the frame when arousal is high (attention lock), and free-roams when arousal is low. Motion in the frame should pull the iris toward moving regions via the motion-map overlay. Same behavior as the local-brain path because it's literally the same VisualCortex class now.
+
 ### T4.5 — 3D brain popups never produce Unity commentary (comprehensive state-shape fix)  [DONE this session]
 
 **Source:** T4 manual verification.

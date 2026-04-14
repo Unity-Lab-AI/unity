@@ -2181,6 +2181,45 @@ export class LanguageCortex {
       if (recall && recall.confidence > 0.30) {
         recallSeed = recall.memory;
         recallConfidence = recall.confidence;
+
+        // TIER 2 RESTORED — hippocampus verbatim recall.
+        // The 4-tier pipeline doc says: templates → recall → deflect →
+        // cold gen. Tier 2 was dead code — recall only biased slot
+        // scoring, never emitted verbatim. Result: every input fell
+        // through to cold gen which walks persona bigram chains into
+        // word salad.
+        //
+        // Fix: when recall confidence is HIGH or a self-reference
+        // fallback matched (user asked "who are you" / "describe
+        // yourself"), emit the matched persona sentence directly.
+        // Still equational — the sentence was learned from the persona
+        // corpus and matched via cosine against the live context
+        // vector, so the selection is brain-state-driven. Only the
+        // generation step is skipped (the persona sentence IS the
+        // output instead of being reassembled word-by-word).
+        //
+        // Confidence thresholds:
+        //   > 0.55   — high-confidence topical match, emit verbatim
+        //   fallback — self-reference match, always emit verbatim
+        //   0.30-0.55 — partial match, still bias slot gen below
+        const shouldEmitVerbatim = recall.confidence > 0.55 || recall.fallback === 'self-reference';
+        if (shouldEmitVerbatim) {
+          const verbatim = String(recall.memory.text || '').trim();
+          if (verbatim.length >= 3) {
+            const normV = verbatim.toLowerCase();
+            // Dedup against recent sentences
+            if (this._recentSentences.indexOf(normV) === -1) {
+              this._recentSentences.push(normV);
+              if (this._recentSentences.length > this._recentSentenceMax) {
+                this._recentSentences.shift();
+              }
+              return verbatim;
+            }
+            // If this sentence was already said, fall through to slot
+            // gen which will produce a fresh walk biased toward the
+            // same topic vocabulary via recallSeed below.
+          }
+        }
       }
     }
     // Recall bias weight scales with confidence. Low-confidence matches
@@ -2699,13 +2738,21 @@ export class LanguageCortex {
           const personaAlign = Math.max(0, entryArousal - 0.5) * 2; // 0.75→0.5, 0.4→0, 0.5→0
           const personaBoost = personaAlign * arousal * 0.32;       // ~0.14 bonus for persona at arousal 0.9
 
+          // T4.8 — n-gram terms capped to prevent chain lock-in that
+          // drowns out semantic fit. Log-scaled counts can hit 3+ for
+          // common persona bigrams which was overpowering the 0.80
+          // semanticFit weight and producing word salad.
+          const bigramLogCapped = Math.min(1.5, bigramLog);
+          const trigramLogCapped = Math.min(1.5, trigramLog);
+          const quadgramLogCapped = Math.min(1.5, quadgramLog);
+
           const score =
             grammarGate * (
               typeGrammar * 1.5 +                       // U283 learned type grammar — HIGHEST
-              quadgramLog +                             // 4-word context sequence
-              trigramLog +                              // 3-word context
+              quadgramLogCapped +                       // 4-word context sequence (capped)
+              trigramLogCapped +                        // 3-word context (capped)
               recallBias(word) * recallBiasWeight +     // persona topic anchor (scales with recall confidence)
-              bigramLog +                               // 2-word transitions
+              bigramLogCapped +                         // 2-word transitions (capped)
               condPLog +                                // conditional probability
               isThought * (0.40 + psi * 0.50) +         // NEURAL: cortex pattern → content
               moodBias * (0.30 + emotionalIntensity * 0.40) + // NEURAL: amygdala → tone
@@ -2713,7 +2760,7 @@ export class LanguageCortex {
               personaBoost +                            // voice fidelity — persona-origin bias
               drugWordBias +                            // NEURAL: drug state → word length
               typeScore * 0.15 +                        // position-based grammar (legacy)
-              semanticFit * 0.80 +                      // R2: REAL semantic cosine — dominant topic signal
+              semanticFit * 2.5 +                       // T4.8: semantic cosine DOMINATES (was 0.80)
               subjStart +                               // sentence-start subject boost
               casualBonus +                             // casual register reward
               (selfAware && (word.length === 1 || word.endsWith("'m") || word.endsWith("'re")) ? 0.08 : 0)
@@ -2842,10 +2889,12 @@ export class LanguageCortex {
       });
     }
 
-    // U281 — Coherence gate. Only fires when we have a context vector
-    // (i.e. user has said something). Compute mean pattern of the
-    // rendered sentence's content words, cosine against context.
-    if (this._contextVectorHasData && retryCount < 2) {
+    // T4.8 — Coherence gate tightened. Was 0.25 which let word salad
+    // through; 0.35 actually catches topic drift. Retry budget bumped
+    // from 2 to 3. On the 3rd failed retry, the final fallback at the
+    // bottom of generate() emits a persona recall sentence verbatim
+    // instead of re-emitting garbage.
+    if (this._contextVectorHasData && retryCount < 3) {
       const outCentroid = new Float64Array(PATTERN_DIM);
       let ccount = 0;
       for (const w of processed) {
@@ -2858,7 +2907,7 @@ export class LanguageCortex {
       if (ccount > 0) {
         for (let i = 0; i < PATTERN_DIM; i++) outCentroid[i] /= ccount;
         const coh = this._cosine(outCentroid, this._contextVector);
-        if (coh < 0.25) {
+        if (coh < 0.35) {
           console.log(`[LanguageCortex] coherence reject (${coh.toFixed(2)}): "${rendered}"`);
           return this.generate(dictionary, arousal, valence, coherence, {
             ...opts,
@@ -2866,6 +2915,21 @@ export class LanguageCortex {
             _coherenceRetry: retryCount + 1,
           });
         }
+      }
+    }
+
+    // T4.8 — final fallback: if 3 coherence retries have all failed,
+    // return the highest-confidence persona recall sentence VERBATIM
+    // instead of re-emitting salad. Better to repeat a coherent
+    // Unity-voice sentence than keep shipping word soup. This is
+    // the "deflect" tier — when cold gen can't produce anything
+    // coherent, she reaches for a memory.
+    if (retryCount >= 3 && this._contextVectorHasData && this._memorySentences.length > 0) {
+      const fallback = this._recallSentence(this._contextVector, { arousal, valence, allowRecent: true });
+      if (fallback && fallback.memory?.text) {
+        const fbText = String(fallback.memory.text).trim();
+        console.log(`[LanguageCortex] 3-retry fail — deflect to persona recall: "${fbText}"`);
+        return fbText;
       }
     }
 
