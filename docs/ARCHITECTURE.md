@@ -462,18 +462,44 @@ Region offsets are stored on `cluster.regions[name].start` and `.end`. Helper me
 
 ### Cross-region projections (T14.4 substrate, live)
 
-Six named region pairs are wired with sparse cross-projections — both directions per pair, 10% density init, weight range `[-0.5, 0.5]`. The projections ALWAYS propagate every cluster step (no curriculum-complete gate) and get Hebbian-updated on every `cluster.learn()` call so the projections train through normal use during corpus exposure + live chat.
+Seven named region pairs are wired with sparse cross-projections — both directions per pair as independent SparseMatrix instances, 10% density init, weight range `[-0.5, 0.5]`. Each direction is a separate matrix because biological white-matter tracts carry independent ascending and descending fiber populations (Friederici 2017, *Psychon Bull Rev* 24:41-47). The projections ALWAYS propagate every cluster step (no curriculum-complete gate) and get Hebbian-updated on every `cluster.learn()` call, training through normal use during corpus exposure and live chat.
 
-| Pair | Biological role |
-|---|---|
-| `visual ↔ letter` | recognized letter glyphs activate letter input one-hot |
-| `letter ↔ phon` | letter sequences activate phoneme attractor basins |
-| `phon ↔ sem` | phonological pattern ↔ semantic meaning binding |
-| `sem ↔ fineType` | semantic concept ↔ grammatical role binding |
-| `sem ↔ motor` | semantic intent → motor output for emission |
-| `auditory ↔ phon` | spoken phoneme recognition feeds phonological region |
+| Pair | Read direction use | Write direction use |
+|---|---|---|
+| `visual ↔ letter` | visual letter-shape recognition → letter one-hot | efference copy of emitted letter → visual self-monitoring |
+| `letter ↔ phon` | letter sequence → phoneme attractor basins | — |
+| `phon ↔ sem` | phonological pattern → semantic meaning | semantic → phon (efference copy during production) |
+| `sem ↔ fineType` | semantic concept → grammatical role | grammatical structure check during generation |
+| `sem ↔ motor` | — | semantic intent → motor planning |
+| `motor ↔ letter` | — | motor planning → letter emission (closes the writing loop) |
+| `auditory ↔ phon` | T14.11 spoken phoneme recognition → phon region | — |
 
-Implementation in `cluster._propagateCrossRegions()` (called every step) and `cluster._crossRegionHebbian(lr)` (called on every learn). Both methods iterate `cluster.crossProjections` which is a Map of 12 SparseMatrix instances keyed by `'src_to_dst'`.
+14 total SparseMatrix instances. The read path traverses `visual_to_letter` + `letter_to_phon` + `phon_to_sem` + `sem_to_fineType` + `auditory_to_phon`. The write path traverses `sem_to_fineType` + `sem_to_motor` + `motor_to_letter` + `letter_to_visual` + `sem_to_phon` (efference). Both paths share core regions and run through the same substrate — matching the dorsal / ventral dual-stream model of human speech processing (Hickok & Poeppel 2007, *Nat Rev Neurosci* 8:393-402).
+
+Implementation in `cluster._propagateCrossRegions()` (called every step inside `cluster.step()`) and `cluster._crossRegionHebbian(lr)` (called on every `cluster.learn()`). Both methods iterate `cluster.crossProjections` which is a Map of 14 SparseMatrix instances keyed `'src_to_dst'`.
+
+### The generation equation is NOT a slot loop
+
+T14 eliminates the last residue of slot-based emission. The old T13 `generate()` iterated `for slot in 0..maxLen: score candidates, softmax pick, emit`. Even after T14.4 built the sub-region substrate, the early T14.6 draft still implicitly assumed that loop structure — and Gee caught it on 2026-04-14: *"why are we still doing slots i thought we cam up with a better equation for language."* The T14.6 + T14.12 specs in `docs/COMP-todo.md` were rewritten.
+
+The actually-better equation is **cortex tick-driven motor emission**:
+
+```
+cluster.generateSentence(intentSeed):
+  cluster.injectEmbeddingToRegion('sem', intentSeed, strength=0.6)
+  for tick in 0..MAX_TICKS:
+    cluster.step(0.001)                 // brain ticks, cross-projections propagate
+    motorReadout = cluster.regionReadout('motor', LETTER_INVENTORY.size)
+    activeLetter = argmaxLetter(motorReadout)
+    if motor region holds the same argmax for STABLE_TICK_THRESHOLD consecutive ticks:
+      letterBuffer.push(activeLetter)
+    if cortex letter-region transition surprise > WORD_BOUNDARY_THRESHOLD:
+      emit letterBuffer as a word; reset buffer
+    if motor region quiesces (low spike count for END_QUIESCE_TICKS):  break
+    if isSentenceTerminator(lastEmittedLetter):                          break
+```
+
+Zero slot counter. Zero candidate-scoring loop. Zero softmax top-5. The motor region's spike pattern over time IS the output. Words fall out of the tick-driven process via statistical segmentation — the same mechanism infants use to parse continuous speech into words (Saffran, Aslin & Newport 1996, *Science* 274:1926-1928). Stopping is biological quiescence (motor cortex deactivation at end of utterance; Bouchard et al. 2013, *Nature* 495:327-332), not a counter. Peer-reviewed grounding in full at `docs/COMP-todo.md` T14.6.
 
 ### Embedding substrate (T14.0, live)
 

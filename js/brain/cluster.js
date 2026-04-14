@@ -122,11 +122,24 @@ export class NeuronCluster {
         motor:    { start: Math.floor(s * 0.967),      end: s },
       };
 
-      // T14.4 — Six pairs of cross-region projections (12 total — both
+      // T14.4 — Seven pairs of cross-region projections (14 total — both
       // directions per pair). Sparse 10% density init, range [-0.5, 0.5].
       // ALWAYS propagated every step (no curriculum-complete gate).
       // Hebbian-updated on every cluster.learn() call so the projections
       // train through normal use during curriculum + live chat.
+      //
+      // The motor↔letter pair closes the WRITING loop so the cortex can
+      // produce output. Without it, the motor region had no path to the
+      // letter region (the only region that connects out to visual). The
+      // bidirectional language pipeline (T14.12) needs this to work:
+      //
+      //   reading  : visual → letter → phon → sem → fineType
+      //   writing  : sem → motor → letter → visual
+      //
+      // Both directions traverse the SAME substrate in opposite topology,
+      // matching the dorsal/ventral language streams in Hickok & Poeppel
+      // 2004/2007 (dual-stream model) — same neural regions, different
+      // propagation directions for comprehension vs production.
       this.crossProjections = {};
       const pairs = [
         ['visual',   'letter'],
@@ -134,6 +147,7 @@ export class NeuronCluster {
         ['phon',     'sem'],
         ['sem',      'fineType'],
         ['sem',      'motor'],
+        ['motor',    'letter'],
         ['auditory', 'phon'],
       ];
       for (const [a, b] of pairs) {

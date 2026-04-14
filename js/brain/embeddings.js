@@ -25,11 +25,15 @@
  *
  * Pre-T14.0 the dim was 50 (capped, hash fallback only). T14.0 lifted both
  * the dim and the vocabulary cap. The 50d ceiling was the structural limit
- * on Unity's slot-3+ semantic discrimination — 300d removes it.
+ * on fine semantic discrimination between closely-related concepts — 300d
+ * removes it and matches the Stanford GloVe standard vocabulary.
  */
 
 // T14.0 — full 300-dim GloVe. Was 50d in T13. The 50d ceiling was the
-// structural limit on Unity's slot-3+ semantic resolution. 300d gives
+// structural limit on fine semantic resolution — at 50 dimensions, many
+// close semantic neighbors (cat/kitten, sad/sorrowful, run/jog) had cosine
+// similarity too compressed to distinguish reliably. 300d is the standard
+// Stanford GloVe dimension (Pennington, Socher, Manning 2014) and gives
 // roughly 6× the discriminating power between fine semantic neighbors.
 const EMBED_DIM = 300;
 

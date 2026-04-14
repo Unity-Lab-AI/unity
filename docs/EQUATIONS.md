@@ -484,33 +484,104 @@ motor     : 0.967 - 1.000    T14.12 — generation feedback / motor output
 
 At the default client tier (`TOTAL_NEURONS = 6700`, cortex = 30% = 2010 neurons): semantic region 1507-1843 (336 neurons, EMBED_DIM=300, groupSize=1), phonological region 1105-1507 (402 neurons), letter region 1005-1105 (100 neurons). At a server tier with `TOTAL_NEURONS = 200M`, cortex = 60M, semantic ≈ 10M neurons. **Same code, no special cases.**
 
-**Cross-region projection equations.** Six pairs, both directions, sparse 10% density init:
+**Cross-region projection equations.** Seven pairs, both directions as independent SparseMatrix instances, sparse 10% density init:
 
 ```
 projections = {
-  visual_to_letter, letter_to_visual,
-  letter_to_phon,   phon_to_letter,
-  phon_to_sem,      sem_to_phon,
-  sem_to_fineType,  fineType_to_sem,
-  sem_to_motor,     motor_to_sem,
-  auditory_to_phon, phon_to_auditory,
-}
+  visual_to_letter,   letter_to_visual,
+  letter_to_phon,     phon_to_letter,
+  phon_to_sem,        sem_to_phon,
+  sem_to_fineType,    fineType_to_sem,
+  sem_to_motor,       motor_to_sem,
+  motor_to_letter,    letter_to_motor,
+  auditory_to_phon,   phon_to_auditory,
+}                                          // 14 SparseMatrix instances
 
 Each cluster.step():
-  for each (src → dst) projection:
+  for each (src → dst) projection in crossProjections:
     srcSpikes = cluster.regionSpikes(src)
     inputs    = projection.propagate(srcSpikes)
     for i in 0..inputs.length:
       cluster.externalCurrent[dstStart + i] += inputs[i] · 0.35
 
 Each cluster.learn():
-  for each (src → dst) projection:
-    preF  = cluster.regionSpikes(src)    (Float64, binary)
+  for each (src → dst) projection in crossProjections:
+    preF  = cluster.regionSpikes(src)    // Float64 binary
     postF = cluster.regionSpikes(dst)
     projection.hebbianUpdate(preF, postF, lr = cluster.learningRate)
 ```
 
-ALWAYS propagate. ALWAYS Hebbian-update on every learn call. No "wait for curriculum" gate — the projections train through normal use during corpus exposure + live chat. Random-init start is biologically plausible (newborn cortex has weak random cross-region connections that strengthen with experience).
+ALWAYS propagate. ALWAYS Hebbian-update on every learn call. No "wait for curriculum" gate — the projections train through normal use during corpus exposure and live chat. Random-init start is biologically plausible: newborn cortex has weak random cross-region connections that strengthen with experience (Friederici 2017, *Psychon Bull Rev* 24:41-47, neural language network development).
+
+**Read direction** uses: `visual_to_letter`, `letter_to_phon`, `phon_to_sem`, `sem_to_fineType`, `auditory_to_phon`.
+
+**Write direction** uses: `sem_to_fineType`, `sem_to_motor`, `motor_to_letter`, `letter_to_visual`, `sem_to_phon` (efference copy).
+
+Same cluster, same substrate. Direction determines which projections drive the signal flow, matching Hickok & Poeppel's 2007 dual-stream model of speech processing (*Nat Rev Neurosci* 8:393-402) — dorsal stream for production, ventral stream for comprehension, shared core regions.
+
+**The tick-driven motor emission equation (T14.6):**
+
+```
+cluster.generateSentence(intentSeed):
+
+  // Inject intent — single point of input to generation
+  cluster.injectEmbeddingToRegion('sem', intentSeed, strength=0.6)
+
+  letterBuffer = []
+  wordBuffer   = []
+  output       = []
+  lastLetter   = null
+  stableTicks  = 0
+
+  for tick in 0..MAX_TICKS:
+    cluster.step(0.001)
+    // Cross-projections propagate every tick:
+    //   sem_to_fineType   → grammatical structure
+    //   sem_to_motor      → motor planning
+    //   motor_to_letter   → letter emission
+    //   letter_to_visual  → self-monitoring (efference copy)
+    //   sem_to_phon       → phonological efference copy
+
+    // Read motor region → argmax letter over LETTER_INVENTORY
+    motorReadout = cluster.regionReadout('motor', LETTER_INVENTORY.size)
+    activeLetter = argmaxLetter(motorReadout)
+
+    // Temporal stability — emit letter when motor region has held same
+    // argmax for STABLE_TICK_THRESHOLD consecutive ticks. Matches
+    // biological vSMC dwell time per articulator, ~50-100ms (Bouchard
+    // 2013, Nature 495:327).
+    if activeLetter === lastLetter:
+      stableTicks += 1
+    else:
+      stableTicks = 0
+      lastLetter  = activeLetter
+
+    if stableTicks >= STABLE_TICK_THRESHOLD:
+      letterBuffer.push(activeLetter)
+      stableTicks = 0
+
+    // Word boundary via transition surprise (Saffran/Aslin/Newport 1996,
+    // Science 274:1926 — same statistical-learning mechanism T14.2 uses
+    // for syllable boundaries, applied at the letter-to-word scale)
+    surprise = cluster.letterTransitionSurprise()
+    if surprise > cluster.WORD_BOUNDARY_THRESHOLD:
+      if letterBuffer.length > 0:
+        output.push(letterBuffer.join(''))
+        letterBuffer = []
+
+    // Stopping: biological quiescence (Bouchard 2013) OR terminator letter
+    if cluster.motorQuiescent(END_QUIESCE_TICKS): break
+    if isSentenceTerminator(lastLetter):          break
+
+  if letterBuffer.length > 0: output.push(letterBuffer.join(''))
+  return output.join(' ')
+```
+
+**Zero slot counter.** The `for tick in 0..MAX_TICKS` loop is a TIME budget, not an emission slot counter. Letters and words emerge from the motor region's continuous time-varying spike pattern, not from candidate-scoring iterations. Matches the continuous-articulator-output model of biological speech production (Bouchard et al. 2013 *Nature* 495:327; Anumanchipalli, Chartier & Chang 2019 *Nature* 568:493).
+
+**Zero candidate pool.** No dictionary iteration, no per-word cosine, no softmax top-K, no temperature parameter. The brain doesn't pick from a menu — it generates output directly through motor cortex dynamics.
+
+**Zero hardcoded grammatical constraints.** Grammar emerges from the `sem_to_fineType` → `fineType_to_sem` recurrent loop shaping the cortex state during generation. Production respects learned type transitions because those transitions are baked into the cross-projection weights via curriculum Hebbian.
 
 **Region-aware injection and readout.** No hardcoded `langStart=150` literals anywhere. Helper methods on the cluster operate by region name:
 

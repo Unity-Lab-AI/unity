@@ -5,6 +5,117 @@
 
 ---
 
+## 2026-04-14 — T14.4 revision: motor↔letter pair added, T14.6/T14.12 rewritten to kill residual slot-thinking
+
+**Gee's pushback:** *"why are we still doing slots i thought we cam up with a better equation for language"* (2026-04-14).
+
+He caught the residual slot-thinking in the T14 spec. The previous T14.6 draft had a per-candidate scoring loop with softmax top-5 — dressed up as "emission slot" instead of "slot" but mathematically the same iterate-and-pick loop. Real biological speech production doesn't work that way. This commit deletes the slot-thinking entirely, replaces it with cortex-tick-driven motor emission grounded in peer-reviewed neuroscience, and adds the missing `motor↔letter` cross-projection pair that closes the writing loop at the substrate level.
+
+### Code change — T14.4 substrate revision
+
+`js/brain/cluster.js` — the `pairs` list inside the cortex cluster constructor's cross-region-projection setup grew from 6 pairs / 12 matrices to **7 pairs / 14 matrices**:
+
+```
+visual ↔ letter
+letter ↔ phon
+phon ↔ sem
+sem ↔ fineType
+sem ↔ motor
+motor ↔ letter      ← NEW, closes the writing loop
+auditory ↔ phon
+```
+
+Without the `motor ↔ letter` pair, the write path had no way to reach the letter region from the motor region — the motor region could be activated by sem→motor but its spike pattern had no cross-projection target that eventually reached letter/visual output. The new pair provides `motor_to_letter` (for emission) and `letter_to_motor` (for efference-copy learning). Both directions are independent SparseMatrix instances at 10% density, weight range `[-0.5, 0.5]`, matching the existing pair initialization pattern. This change brings the substrate to 14 total cross-projection matrices.
+
+### Code change — historical slot comments scrubbed
+
+`js/brain/embeddings.js` had two comments referring to "slot-3+ semantic discrimination" as the justification for T14.0's EMBED_DIM lift from 50 to 300. Those comments were historically accurate (they described why T13 had word salad past slot 3) but carried slot-thinking framing into the T14 architecture. Rewritten in place to cite Pennington/Socher/Manning 2014 GloVe as the 300d standard reference, framed as "fine semantic resolution between closely-related concepts" without slot language.
+
+Stale slot references inside `js/brain/engine.js` old T13 emission-path methods (`processAndRespond`, `_handleBuild`, `_handleImage`) are left for now — they get rewritten when T14.13 (eliminate LanguageCortex class) and T14.15 (wire all language consumers to the unified pipeline) land later on the branch.
+
+### Spec change — T14.6 rewritten as cortex tick-driven motor emission
+
+`docs/COMP-todo.md` T14.6 section rewritten in place. Previous draft had:
+
+```
+// Previous (slot-thinking in disguise):
+score(w) = cosine(semanticTarget, semanticReadoutFor(w))
+         · cosine(currentPhonState, phonologicalReadoutFor(w))
+         · learnedTypeTransition(prev, cand)
+         · valenceMatch · recencyMul
+picked = softmax-sample top-5 by score
+```
+
+Deleted entirely. Replaced with the actual-brain-driven equation:
+
+```
+// New — cortex tick-driven motor emission:
+cluster.generateSentence(intentSeed):
+  cluster.injectEmbeddingToRegion('sem', intentSeed, strength=0.6)
+  for tick in 0..MAX_TICKS:
+    cluster.step(0.001)
+    motorReadout = cluster.regionReadout('motor', LETTER_INVENTORY.size)
+    activeLetter = argmaxLetter(motorReadout)
+    if activeLetter held stable for STABLE_TICK_THRESHOLD consecutive ticks:
+      letterBuffer.push(activeLetter)
+    if cortex letter-region transitionSurprise > WORD_BOUNDARY_THRESHOLD:
+      emit letterBuffer as a word; reset
+    if motor region quiescent for END_QUIESCE_TICKS:  break
+    if isSentenceTerminator(lastLetter):              break
+  return accumulated words
+```
+
+Zero slot counter. Zero candidate-scoring loop. Zero softmax top-K. The motor region's spike pattern over time IS the output. Words fall out via the same statistical-transition-surprise mechanism T14.2 uses for syllable boundaries. Stopping is biological quiescence.
+
+### Peer-reviewed grounding cited in T14.6
+
+- **Bouchard, Mesgarani, Johnson, Chang (2013)** *"Functional organization of human sensorimotor cortex for speech articulation,"* Nature 495:327-332. High-density ECoG showed vocal sensorimotor cortex has somatotopic articulator representation with continuous time-varying activation patterns — speech is produced as articulator trajectories, not phoneme selection from a candidate pool.
+- **Anumanchipalli, Chartier, Chang (2019)** *"Speech synthesis from neural decoding of spoken sentences,"* Nature 568:493-498. Continuous vSMC neural activity decodes into articulatory kinematic trajectory, then into intelligible speech. THE demonstration that motor cortex output for speech is a continuous stream, not iterated slot selection.
+- **Saffran, Aslin, Newport (1996)** *"Statistical learning by 8-month-old infants,"* Science 274:1926-1928. Word segmentation from continuous speech via transition probability statistics. This is the exact mechanism T14.2 uses for syllables and T14.6 reuses for words.
+- **Browman & Goldstein (1992)** *"Articulatory phonology: an overview,"* Phonetica 49:155-180. Speech is a continuous stream of overlapping articulatory gestures; phonemes are perceptual abstractions over the continuous stream.
+- **Hickok & Poeppel (2007)** *"The cortical organization of speech processing,"* Nat Rev Neurosci 8:393-402. Dual-stream model — dorsal stream for production (Broca → pre-motor → motor → vSMC → articulation), ventral stream for comprehension (auditory → STG → inferior frontal). Same regions, different propagation directions.
+- **Friederici (2017)** *"Evolution of the neural language network,"* Psychon Bull Rev 24:41-47. Bidirectional white-matter connectivity in the language network. Justification for keeping each cross-projection pair as two independent SparseMatrix instances rather than transposing one matrix.
+- **Pennington, Socher, Manning (2014)** *"GloVe: Global Vectors for Word Representation,"* EMNLP 2014. Standard reference for the 300d GloVe vocabulary used in T14.0.
+
+### Spec change — T14.12 rewritten as bidirectional dual-stream pipeline
+
+`docs/COMP-todo.md` T14.12 section rewritten in place. Previous draft mentioned "same projection weights, inverted via `SparseMatrix.transposePropagate`" as the read/write sharing mechanism. New spec corrects this — each cross-projection pair is already TWO independent SparseMatrix instances in T14.4 (letter_to_phon AND phon_to_letter are separate), matching biological white-matter tract topology. No transpose trick needed. The bidirectional pipeline uses different sets of projections for read vs write:
+
+- **Read path** (ventral stream, comprehension): `visual_to_letter` + `letter_to_phon` + `phon_to_sem` + `sem_to_fineType` + `auditory_to_phon`
+- **Write path** (dorsal stream, production): `sem_to_fineType` + `sem_to_motor` + `motor_to_letter` + `letter_to_visual` + `sem_to_phon` (efference copy)
+
+Same cluster, same cross-region substrate, different topology traversal. Matches Hickok & Poeppel 2007.
+
+### Doc updates (all in-place, no addendums)
+
+- **`docs/COMP-todo.md`** — T14.4 pair list updated from 6 pairs to 7 (added motor↔letter). T14.6 section fully rewritten with tick-driven equation and peer-reviewed citations. T14.12 section rewritten with dual-stream description and corrected cross-projection usage
+- **`docs/ARCHITECTURE.md`** — T14 Language Pipeline section's "Cross-region projections" table rewritten in place from 6 pairs to 7, with Read/Write direction usage columns. New section "The generation equation is NOT a slot loop" added immediately after, describing the cortex tick-driven equation with peer-reviewed citations
+- **`docs/EQUATIONS.md`** — Cross-region projection equation block updated from 6 pairs / 12 matrices to 7 pairs / 14 matrices. New "tick-driven motor emission equation (T14.6)" subsection with full pseudocode and per-step citations
+- **`docs/SKILL_TREE.md`** — "Cortex cross-region projections" row updated in place (6 pairs → 7 pairs, motor↔letter added with biological grounding). New row "Cortex tick-driven motor emission" added documenting the T14.6 equation with peer-reviewed citations
+- **`docs/ROADMAP.md`** — Phase 16 T14.0 + T14.4 substrate milestone entry updated in place — cluster.js changes now list 14 SparseMatrix instances with motor↔letter pair included. New T14.6 + T14.12 spec-fix subsection describes Gee's slot-equation pushback and the rewrite response
+
+### Files touched
+
+- `js/brain/cluster.js` — `pairs` list extended to 7 entries with `['motor', 'letter']` inserted
+- `js/brain/embeddings.js` — two header doc comments rewritten to drop "slot-3+" framing, cite Pennington/Socher/Manning 2014
+- `docs/COMP-todo.md` — T14.4, T14.6, T14.12 sections rewritten in place
+- `docs/ARCHITECTURE.md` — cross-projection table + new "NOT a slot loop" section
+- `docs/EQUATIONS.md` — projection equation block + tick-driven emission equation
+- `docs/SKILL_TREE.md` — cross-projection row update + new tick-driven motor emission row
+- `docs/ROADMAP.md` — Phase 16 milestone entry update + T14.6/T14.12 spec-fix subsection
+
+### Verification
+
+- `node -c js/brain/cluster.js` — clean (14-pair substrate parses)
+- `node -c js/brain/embeddings.js` — clean (scrubbed doc comments parse)
+- No runtime testing per `we dont test until all work is done` policy
+
+### What's next on the branch
+
+T14.1 — LEARNED phoneme attractor basins via cortex Hebbian on letter sequences. Builds `js/brain/letter-input.js` with the dynamic `LETTER_INVENTORY` Set + `encodeLetter(letter)` one-hot encoder + `cluster.injectLetter(letter)` integration. Same branch, next commit.
+
+---
+
 ## 2026-04-14 — T14.0 + T14.4 substrate: Foundation lift + cortex sub-regions (first commit on `t14-language-rebuild` branch)
 
 **Context:** Gee accepted T14 (developmental language layers) as the active priority and asked for the work to ship on a new branch with one commit per milestone, masterful in-place doc updates each time, branch never merged to main until T14.17 is complete and verified. This is the first commit on the new `t14-language-rebuild` branch.

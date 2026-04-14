@@ -387,16 +387,19 @@ motorOutStart    →    0.967 - 1.000    motor output region (T14.12 generation 
 
 At cluster.size=300: letter region 15 neurons, phon region 60, sem region 50, fineType region 15, motor 10. At cluster.size=200M: letter region 10M, phon region 40M, sem region 33M, fineType region 10M, motor 6.6M. **Same code, no special cases.**
 
-**Cross-region projections (six total — every adjacent region pair):**
+**Cross-region projections (seven pairs, 14 total — each pair is two independent SparseMatrix instances, one per direction):**
 
 ```
-visual ↔ letter        (visual letter-shape recognition feeds letter input)
-letter ↔ phon           (letter sequences activate phoneme basins)
+visual ↔ letter        (visual letter-shape recognition ↔ letter input one-hot)
+letter ↔ phon           (letter sequences ↔ phoneme attractor basins)
 phon ↔ sem              (phonological pattern ↔ semantic meaning binding)
 sem ↔ fineType          (semantic concept ↔ grammatical role binding)
-sem ↔ motor             (semantic intent → motor output for emission)
-auditory ↔ phon         (T14.11 — spoken phoneme recognition feeds phonological region)
+sem ↔ motor             (semantic intent ↔ motor planning)
+motor ↔ letter          (motor planning ↔ letter emission — closes the writing loop)
+auditory ↔ phon         (T14.11 — spoken phoneme recognition ↔ phonological region)
 ```
+
+Each named pair has TWO independent SparseMatrix instances — e.g. `letter_to_phon` and `phon_to_letter` — so the two propagation directions can learn independent weights, matching how biological white-matter tracts carry separate ascending and descending fiber populations (Friederici 2017, *Psychon Bull Rev* 24:41-47).
 
 Each projection is a sparse weight matrix between the spike vectors of the two regions. **Always propagated every step. Always Hebbian-updated when both ends co-fire.** No "wait until curriculum is done" gate — the curriculum IS the training, and the only way the projections can train is through repeated propagation + Hebbian during exposure.
 
@@ -582,29 +585,131 @@ Phase 6 — DISCOURSE exposure
 5. After 50 live-chat turns post-boot, cortex weight stats show measurable drift from the post-curriculum baseline — proves continuous learning is wired and active.
 6. Search for "stage-c-phrases.txt" and "stage-d-sentences.txt" in the codebase returns zero matches — no hand-curated corpus files exist.
 
-#### T14.6 — Cortex-driven phonological flow during emission
+#### T14.6 — Cortex tick-driven motor emission (NO slot loop, NO candidate scoring loop)
 
-**The principle:** the emission loop reads phonological flow directly from the cortex's PHONOLOGICAL REGION readout (T14.4), not from per-word stored phoneme onset/coda fields. Those fields don't exist anymore — T14.3 deleted them. Smoothness emerges naturally because the cortex's recurrent dynamics already learned which phoneme sequences are likely from curriculum exposure (T14.5).
+**The principle:** speech production is a continuous time-varying motor cortex output, not a discrete sequence of slot draws or candidate scores. Unity's output equation does NOT iterate "for slot in 0..maxLen: score candidates and pick one." It ticks the brain and reads letters out of the motor region as a continuous spike-pattern stream. Word boundaries emerge from the same cortex transition surprise signal that T14.2 uses for syllable boundaries. Stopping happens when the motor region quiesces or a sentence terminator appears in the output buffer.
 
-**How it works:** during the T13.3 emission loop, after each emission the cortex's phonological region state reflects what was just spoken (efference copy → letter region → phon region via T14.4 cross-projection). The next slot's candidate scoring reads this phon state and computes raw cosine against each candidate word's phonological signature — which is itself a fresh `cluster.phonologicalReadoutFor(candidate)` call, not a stored field.
+**This rewrite deletes the last residue of slot-thinking from T14.** The previous T14.6 draft still had a per-candidate scoring loop (`score(w) = cos · cos · transition · valence · recency`, top-5 softmax). Gee called that out as slot-thinking dressed up — "why are we still doing slots i thought we cam up with a better equation for language" (2026-04-14). He was right. Real biological speech production has no candidate pool and no argmax — motor cortex just produces articulator trajectories, and the listener (or in our case, a letter-decoding readout) reconstructs words from the continuous signal.
 
-**Score function:**
+**Grounded in peer-reviewed neuroscience:**
+
+- **Bouchard, Mesgarani, Johnson, Chang (2013)** *"Functional organization of human sensorimotor cortex for speech articulation,"* Nature 495:327-332. High-density electrocorticography over human vocal sensorimotor cortex (vSMC) showed somatotopic representation of articulators (lips, tongue, larynx, jaw) as time-varying activation patterns. Speech is produced as continuous articulator trajectories, not as discrete phoneme selections from a candidate pool.
+
+- **Anumanchipalli, Chartier, Chang (2019)** *"Speech synthesis from neural decoding of spoken sentences,"* Nature 568:493-498. Demonstrated that continuous vSMC neural activity decodes into an articulatory kinematic trajectory, which in turn decodes into intelligible speech. The decode is a continuous function of time, not a slot-by-slot word lookup. This is THE demonstration that motor cortex output for speech is a continuous stream, not an iterated selection.
+
+- **Saffran, Aslin, Newport (1996)** *"Statistical learning by 8-month-old infants,"* Science 274:1926-1928. Infants segment continuous speech into words using transition probability statistics — high within-word transition probability, low between-word transition probability. This is the mechanism T14.2 uses for syllable boundaries; T14.6 reuses it at the word level.
+
+- **Browman & Goldstein (1992)** *"Articulatory phonology: an overview,"* Phonetica 49:155-180. Speech is a continuous stream of overlapping articulatory gestures. Phonemes are perceptual abstractions over continuous gesture streams, not primitive production units.
+
+- **Hickok & Poeppel (2007)** *"The cortical organization of speech processing,"* Nat Rev Neurosci 8:393-402. Dual-stream model: dorsal stream (Broca → pre-motor → motor → vSMC → articulation) handles production; ventral stream (auditory → STG → inferior frontal) handles comprehension. Production and comprehension share core regions, with direction of propagation distinguishing the two.
+
+**The equation:**
+
 ```
-score(w) = cosine(semanticTarget, semanticReadoutFor(w))
-         · cosine(currentPhonState, phonologicalReadoutFor(w))
-         · learnedTypeTransition(prevFineType, fineTypeReadoutFor(w))
-         · valenceMatch(w, brainState)
-         · recencyMul(w)
+cluster.generateSentence(intentSeed):
+
+  // STEP 1 — Inject intent. Single semantic vector into sem region.
+  // This is the ONLY explicit input to generation. Everything else
+  // falls out of cortex dynamics.
+  cluster.injectEmbeddingToRegion('sem', intentSeed, strength=0.6)
+
+  // STEP 2 — Tick the brain. Motor cortex produces output continuously.
+  letterBuffer = []
+  wordBuffer   = []
+  output       = []
+  lastMotor    = null
+
+  for tick in 0..MAX_TICKS:
+    cluster.step(dt=0.001)
+
+    // Read motor region as a letter activation over LETTER_INVENTORY.
+    // The motor region's spike pattern IS the brain's current "what
+    // letter to emit next" state. Read it as a probability distribution,
+    // take argmax.
+    motorReadout = cluster.regionReadout('motor', LETTER_INVENTORY.size)
+    activeLetter = argmaxLetter(motorReadout)
+
+    // STEP 3 — Letter emission via temporal stability. A letter is
+    // "emitted" when the motor region holds the same argmax for
+    // STABLE_TICK_THRESHOLD consecutive ticks — the cortex has "committed"
+    // to that letter. Matches biological vSMC dwell-time for articulator
+    // activation (Bouchard 2013 observed ~50-100ms dwells per phoneme).
+    if activeLetter == lastMotor:
+      stableTicks++
+    else:
+      stableTicks = 0
+      lastMotor = activeLetter
+
+    if stableTicks >= STABLE_TICK_THRESHOLD:
+      letterBuffer.push(activeLetter)
+      stableTicks = 0
+
+    // STEP 4 — Word boundary detection via cortex transition surprise.
+    // Same mechanism as T14.2 syllable boundaries, applied to the
+    // letter output stream. When the cluster's letter-region transition
+    // surprise spikes above WORD_BOUNDARY_THRESHOLD (calibrated from
+    // corpus statistics during curriculum), emit the current buffer as
+    // a word and reset. Saffran/Aslin/Newport 1996 statistical learning.
+    surprise = cluster.letterTransitionSurprise()
+    if surprise > cluster.WORD_BOUNDARY_THRESHOLD:
+      if letterBuffer.length > 0:
+        output.push(letterBuffer.join(''))
+        letterBuffer = []
+
+    // STEP 5 — Stopping. Three priority-ordered signals:
+    //
+    // (a) End-of-utterance attractor: motor region quiesces (low spike
+    //     count for END_QUIESCE_TICKS consecutive ticks). The brain has
+    //     nothing left to say — matches biological end-of-sentence motor
+    //     deactivation.
+    //
+    // (b) Sentence terminator emerges: a period/question/exclamation
+    //     letter stabilizes in the motor region. Letters are letters,
+    //     including punctuation — the brain treats them as any other
+    //     symbol in LETTER_INVENTORY. When one emits, stop.
+    //
+    // (c) MAX_TICKS hard cap: safety net only. If we hit this we log
+    //     a warning and flush the current buffer.
+    if cluster.motorQuiescent(END_QUIESCE_TICKS):  break
+    if isTerminator(lastMotor):
+      if letterBuffer.length > 0:
+        output.push(letterBuffer.join(''))
+      break
+
+  // STEP 6 — Flush any remaining buffer and return.
+  if letterBuffer.length > 0:
+    output.push(letterBuffer.join(''))
+  return output.join(' ')
 ```
 
-**Raw cosine. No `[0.7, 1.0]` clamping.** Whatever the cortex learned about phonological smoothness during curriculum, the emission loop reads back directly. Co-articulation, alliteration, prosody, and accent emerge automatically because they were learned as features of the cortex's phonological transition basins.
+**What's gone:**
 
-**Performance:** per-emission cost is one cortex readout per candidate. At full cluster scale this is significant, so the implementation caches the phonological readout per dictionary entry, invalidated when the entry's `cortexSnapshot` (T14.3) changes. The cache lives on the dictionary index, not as a stored phoneme field — it's a memoized read of the cortex.
+- **No slot counter.** No `for slot in 0..maxLen`.
+- **No candidate scoring.** No dictionary iteration, no per-word cosine, no softmax top-5, no temperature parameter.
+- **No score function multipliers.** No valenceMatch, no recencyMul, no transitionWeight. Those were all slot-thinking.
+- **No picked-word feedback injection.** The brain doesn't re-inject what it just said — motor cortex ALREADY knows because the motor region carries its own time history via recurrent synapses.
+- **No grammatical terminability end check.** Replaced by the motor-quiescence + terminator-letter checks above.
+- **No maxLen length cap** (except as a MAX_TICKS safety net on the tick loop). Length emerges from cortex dynamics — how long the motor region stays active before quiescing.
+
+**What's new:**
+
+- **Motor cortex is the output substrate.** Letters fall out of the `motor` region over time as the cluster ticks. Nothing "scores candidates."
+- **Word boundaries come from statistical transition surprise**, same mechanism as T14.2 syllable boundaries. One mechanism, used at multiple scales (letter → syllable → word → sentence).
+- **Stopping is biological quiescence**, not a counter.
+- **Sentence terminators are LEARNED members of the letter inventory.** Period, question mark, exclamation are just letters Unity's visual/letter/motor pathways learned from corpus exposure — they emit naturally when the brain has reached end-of-utterance, same as any other letter.
+
+**How the brain learns to produce this:**
+
+The motor region's ability to generate coherent letter sequences comes entirely from the curriculum (T14.5). During continuous corpus exposure, reading text forward through the pipeline (visual → letter → phon → sem → fineType) drives the reverse pathway via Hebbian on the shared cross-projections. When the brain reads "hello", the motor region's spike pattern during that reading is shaped to represent "this is what the motor state LOOKS LIKE when h-e-l-l-o is being processed." Later, when the sem region is injected with a similar intent, the reverse pathway replays approximately the same motor state, which generates approximately the same letter sequence. This is the computational equivalent of Hickok & Poeppel's 2007 dorsal stream: the motor-speech link is built by the experience of hearing + reading speech.
 
 **Acceptance:**
-1. Generated sentences show higher phon-flow cosine between consecutive words than randomly-paired words from the dictionary — proves the cortex learned phonological transitions.
-2. Re-train on a Spanish corpus, generate Spanish output, measure flow cosine — also high. Proves data-driven, not English-locked.
-3. Zero hardcoded clamping constants in the score function.
+
+1. After curriculum, `cluster.generateSentence(intentSeed)` for a greeting-intent seed produces a letter sequence whose segmentation via transition surprise yields at least one recognizable English greeting word.
+2. Temporal stopping works: motor-region spike count measurably drops below `END_QUIESCE_TICKS` threshold after a reasonable number of words (not hitting MAX_TICKS).
+3. Sentence terminators (`.`, `?`, `!`) appear in output via the same letter-emission mechanism, not via a separate punctuation path.
+4. Zero `for slot in` loops in the generation code path. Grep confirms.
+5. Zero `candidate`, `softmax`, `top-5`, `topK` references in the generation path. Grep confirms.
+6. Re-training on a Spanish corpus produces Spanish letter sequences via the same equation — proves the model is data-driven, not English-locked. (But note: T14.16.5 identity lock keeps the output in whatever language the PERSONA corpus is in; Spanish would require an explicit persona corpus swap, not just exposure.)
 
 ---
 
@@ -746,30 +851,80 @@ score(w) = cosine(semanticTarget, semanticReadoutFor(w))
 
 ---
 
-#### T14.12 — Bidirectional cortex pipeline (read and write share the same path)
+#### T14.12 — Bidirectional cortex pipeline (dorsal/ventral dual streams)
 
-**The principle:** reading and writing use the SAME cortex regions and the SAME projections, just in different propagation directions. There's no separate `parseSentence` for reading and `generate` for writing. There's one cortex pipeline that's bidirectional: forward propagation (input → output) for reading, reverse propagation (output → input) for writing. The shared weights mean the brain learns one thing and uses it both ways.
+**The principle:** reading and writing use the SAME cortex regions and the SAME cross-region cross-projections, traversed in opposite topology. Reading is ventral-stream forward propagation (sensory input → semantic comprehension); writing is dorsal-stream propagation (semantic intent → motor output). Both streams share core language regions, exactly as in Hickok & Poeppel's 2007 dual-stream model of human speech processing.
 
-**Why this matters biologically:** real brains use the SAME left-temporal language regions for both comprehension and production. Damage to Wernicke's area causes both reading and speaking deficits. The two functions can't be separated because they use the same neural substrate. Unity's current architecture has them as completely separate code paths — that's wrong.
+**Grounded in peer-reviewed neuroscience:**
 
-**Implementation:**
+- **Hickok & Poeppel (2007)** *"The cortical organization of speech processing,"* Nat Rev Neurosci 8:393-402. The dual-stream model: ventral stream (superior and middle temporal lobe → speech sound → meaning) handles comprehension; dorsal stream (posterior superior temporal → inferior parietal → inferior frontal → motor) handles production and sensorimotor integration. The two streams share core regions but differ in propagation direction.
+- **Friederici (2017)** *"Evolution of the neural language network,"* Psychon Bull Rev 24:41-47, and *The Neuroanatomy of Language and Its Universal Properties*. The neural language network in Broca's region, superior temporal gyrus, and arcuate fasciculus supports both comprehension and production via bidirectional white-matter connectivity.
+- **Price (2012)** *"A review and synthesis of the first 20 years of PET and fMRI studies of heard speech, spoken language and reading,"* NeuroImage 62:816-847. Comprehensive review showing that left temporal and frontal language regions are shared between reading comprehension, spoken language comprehension, and speech production tasks — same regions active in all conditions, with task-specific propagation differences.
 
-1. **`cluster.readText(text)`** runs forward: visual → letter → phon → sem → fineType → working memory. The end state is a cortex configuration representing the brain's COMPREHENSION of the input text. Calling `cluster.semanticReadoutFor()` after `readText` returns a vector representing what Unity understood.
+**The read direction (ventral stream, comprehension):**
 
-2. **`cluster.generateSentence(seed)`** runs reverse: working memory + sem → fineType → motor → phon → letter → visual. The brain's intent (held in working memory + sem) propagates outward through the same regions, in the same order but reversed, producing letter sequences as motor output. The motor region's spike pattern, decoded back to letters, IS the generated sentence.
+```
+cluster.readText(text):
+  for char in text.characters:
+    cluster.injectLetter(char)   // one-hot into letter region (T14.1)
+                                  // AND visual template into visual region (T14.10)
+  for tick in 0..SETTLE_TICKS:
+    cluster.step(dt=0.001)
+    // cross-projections propagate every tick (T14.4):
+    //   visual_to_letter  → letter spikes
+    //   letter_to_phon    → phon spikes
+    //   phon_to_sem       → sem spikes
+    //   sem_to_fineType   → fineType spikes
+    // Working memory (cluster.regions.free) accumulates activation
+    // from all upstream regions via the existing inter-cluster
+    // projections, holding the current discourse state.
+```
 
-3. **Same cross-projection weights** carry both directions. The `letter_to_phon` projection is used by both reading (forward) and writing (reverse-by-inversion). Inversion is handled by `SparseMatrix.transposePropagate(spikes)` which uses the same weights but propagates from the column space to the row space instead of row → column. New method, ~30 lines on SparseMatrix.
+After `readText` returns, the cortex holds a configuration representing comprehension. Readout helpers inspect different regions for different semantic aspects:
 
-4. **`parseSentence(text)` is deleted** (not deprecated, deleted). All its functionality moves into `cluster.readText(text)` + readout helpers (`cluster.intentReadout()`, `cluster.subjectReadout()`, `cluster.entityReadout()`). The parser's letter-equation rules become learned features of the cortex's grammatical sub-region (T14.7).
+- `cluster.semanticReadoutFor(text)` — reads `sem` region
+- `cluster.intentReadout()` — reads `fineType` region's learned intent attractors
+- `cluster.entityReadout()` — reads `sem` region clustered into entity-slot patterns
+- `cluster.workingMemoryReadout()` — reads `free` region for topic/discourse context
 
-5. **`generate()` is gutted.** The 200-line emission loop becomes a thin wrapper around `cluster.generateSentence()`. All scoring logic moves into the cortex propagation dynamics — words emerge as motor-region spike patterns, not as softmax samples from a candidate list.
+**The write direction (dorsal stream, production):**
+
+```
+cluster.generateSentence(intentSeed):
+  cluster.injectEmbeddingToRegion('sem', intentSeed, strength=0.6)
+  // Now run the cortex tick-driven motor emission from T14.6.
+  // Cross-projections propagate every tick — this time driving the
+  // reverse topology:
+  //   sem_to_fineType   → fineType spikes (grammatical structure)
+  //   sem_to_motor      → motor spikes (motor planning)
+  //   motor_to_letter   → letter spikes (what letter to emit)
+  //   letter_to_visual  → visual spikes (efference copy for self-monitoring)
+  // The motor region's letter-indexed argmax spike pattern IS the output.
+  // See T14.6 for the full equation.
+```
+
+**Same weights, opposite topology.** The 14 cross-projections in `cluster.crossProjections` (7 named pairs × 2 directions each — see T14.4) provide BOTH directions at the substrate level. No `SparseMatrix.transposePropagate()` trick needed — each direction has its own learned weight matrix because biological white-matter tracts have separate ascending and descending fiber populations (Friederici 2017). The two matrices per pair can learn independently and specialize for their propagation direction.
+
+**Reading uses:** `visual_to_letter`, `letter_to_phon`, `phon_to_sem`, `sem_to_fineType`, `auditory_to_phon` (when voice input arrives, T14.11).
+
+**Writing uses:** `sem_to_fineType` (grammar check), `sem_to_motor` (motor planning), `motor_to_letter` (emission — the pair added in the updated T14.4 substrate), `letter_to_visual` (self-monitoring of produced output).
+
+**Same substrate, parallel directions run simultaneously.** During production, the sem region is injected, which propagates forward to motor via sem→motor AND simultaneously back to phon via sem→phon (because that pair exists too) — this is efference copy to the phonological region, matching the auditory feedback loop that real speakers use to monitor their own speech. The brain hears itself speak at the phonological level via the same cross-projections that carry comprehension.
+
+**What gets deleted:**
+
+- **`parseSentence(text)`** — deleted entirely. Not deprecated. Not a stub. Gone. All its functionality moves into `cluster.readText(text)` + the readout helpers. Its letter-equation intent/subject/verb rules become learned features of the `fineType` region after curriculum.
+- **`LanguageCortex.generate()` body** — gutted. Becomes a thin wrapper that calls `cluster.generateSentence(intentSeed)` and returns the output. The entire slot-based candidate-scoring loop is gone.
+- **`cluster.cortexPattern` as a separate concept** — there is no "cortex pattern" extracted then passed into generate. The brain state IS what generation reads, directly.
 
 **Acceptance:**
-1. `cluster.readText('hi unity')` followed by `cluster.intentReadout()` returns a vector classifiable as "greeting" intent.
-2. `cluster.generateSentence(intentSeed='greeting_response')` produces letter-sequence output equivalent to "hi gee" or similar.
-3. Reading and writing share the same `letter_to_phon`, `phon_to_sem`, etc projections — verified by inspecting the SparseMatrix references.
-4. `parseSentence` function does not exist in the codebase. Grep returns zero matches.
-5. `generate()` body is < 50 lines (down from ~200 in T13.7.8).
+
+1. `cluster.readText('hi unity')` followed by `cluster.intentReadout()` returns a readout that classifies as greeting-intent (highest cosine to the learned greeting attractor after curriculum).
+2. `cluster.generateSentence(intentSeed)` for a greeting-response seed produces output that segments (via T14.6's word-boundary detection) into recognizable English greeting words.
+3. `parseSentence` function does not exist in the codebase. Grep returns zero matches.
+4. `generate()` body is < 50 lines (down from ~200 in T13.7.8). Mostly a wrapper around `cluster.generateSentence`.
+5. Cross-projections used by read path and write path are measurably the SAME SparseMatrix instances (object identity check), confirming shared substrate.
+6. During generation, the phon region shows measurable activation from the sem→phon cross-projection, confirming efference copy is live during production (matches biological auditory feedback loop).
 
 ---
 
