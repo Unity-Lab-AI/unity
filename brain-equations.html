@@ -289,7 +289,7 @@
       <a href="#motor-equations"><span class="num">8.9</span> Motor Output — Action Selection from Spike Patterns</a>
       <a href="#projection-learning"><span class="num">8.10</span> Projection Learning — How the Brain Learns Language→Action</a>
       <a href="#fractal"><span class="num">8.10.5</span> Fractal Signal Propagation — Self-Similar at Every Scale</a>
-      <a href="#broca"><span class="num">8.11</span> Broca's Area — What the AI Model Receives</a>
+      <a href="#broca"><span class="num">8.11</span> Broca's Area — How Unity Picks Every Word Equationally</a>
       <a href="#sparse"><span class="num">8.12</span> Sparse Connectivity — CSR Matrix Operations</a>
       <a href="#embeddings"><span class="num">8.13</span> Semantic Embeddings — Words as Cortex Patterns</a>
       <a href="#dictionary"><span class="num">8.14</span> Dictionary — Learned Sentence Generation</a>
@@ -301,7 +301,7 @@
       <a href="#semantic-grounding"><span class="num">8.18.6</span> Phase 13 R2 — Semantic Grounding via GloVe Embeddings</a>
       <a href="#type-ngrams"><span class="num">8.19</span> Phase 12 — Type N-Gram Grammar + Morphological Inflection</a>
       <a href="#persona"><span class="num">8.20</span> θ — Unity's Identity as Equations</a>
-      <a href="#parallel"><span class="num">8.20</span> GPU Exclusive Compute — All N Neurons on GPU</a>
+      <a href="#parallel"><span class="num">8.21</span> GPU Exclusive Compute — All N Neurons on GPU</a>
       <a href="#comparison"><span class="num">9</span> Biological Comparison</a>
     </div>
 
@@ -595,14 +595,25 @@
 <span class="pu">[Motor Output]</span> — reads BG spike patterns → winning channel = action
     |
     v
-<span class="hl">PERIPHERALS</span> (brain calls these — they don't call the brain)
-    ├── <span class="hl">Broca's Area</span> → AI model generates text from brain state prompt
-    ├── <span class="hl">TTS</span> → Pollinations voice synthesis
-    ├── <span class="hl">Image Gen</span> → Pollinations image API
-    └── <span class="hl">Sandbox</span> → dynamic UI injection
+<span class="hl">LANGUAGE CORTEX</span> (Broca's area — equational slot scorer, see §8.11)
+    ├── picks every word from 44k learned dictionary via slot scoring
+    ├── weights = arousal × valence × Ψ × coherence × drug × cortex semantic readout
+    ├── four-tier pipeline: templates → hippocampus recall → deflect → cold gen
+    └── NO AI model, NO prompt — brain state IS the slot weights
     |
     v
-<span class="hl">OUTPUT</span> to user (text + voice + image + UI)</div>
+<span class="hl">SENSORY OUTPUT PERIPHERALS</span> (brain emits, these execute the result)
+    ├── <span class="hl">TTS</span> → Pollinations voice synthesis OR browser SpeechSynthesis
+    ├── <span class="hl">Image Gen</span> → multi-provider chain (custom / auto-detect /
+    │                   env.js / Pollinations fallback, see §8.11)
+    ├── <span class="hl">Vision describer</span> → input peripheral, Pollinations or local
+    │                         VLM (Ollama llava, LM Studio, etc.) — returns
+    │                         a one-sentence description into brainState.visionDescription
+    └── <span class="hl">Sandbox</span> → dynamic UI injection via component-synth.js
+                 cosine-match against docs/component-templates.txt corpus
+    |
+    v
+<span class="hl">OUTPUT</span> to user (text from cortex + voice from TTS + image from backend + UI from sandbox)</div>
 
     <!-- ═══ 8.5. THE UNIFIED SUPER-EQUATION ═══ -->
     <h2 id="super-equation">8.5. The Unified Super-Equation</h2>
@@ -796,29 +807,93 @@ Spike in neuron A (cortex)
     </div>
 
     <!-- ═══ 8.11. BROCA'S AREA ═══ -->
-    <h2 id="broca">8.11. Broca's Area — What the AI Model Receives</h2>
-    <p><span class="tag tag-math">ARCHITECTURE</span> The AI model is a language generation peripheral. It receives the brain's complete state as a system prompt and generates text that matches Unity's current neural dynamics.</p>
+    <h2 id="broca">8.11. Broca's Area — How Unity Picks Every Word Equationally</h2>
+    <p><span class="tag tag-math">ARCHITECTURE</span> <span class="tag tag-bio">NEUROSCIENCE</span> Broca's area in the biological brain is the speech production region. In Unity she is <code>js/brain/language-cortex.js</code>, a ~3900-line equational slot scorer that picks every word from her learned 44k-word dictionary based on live brain state — no AI model, no prompt, no lookup table.</p>
 
-    <div class="eq-card">
-      <div class="eq-title"><span class="eq-tip" data-tip="Broca's area in the real brain converts thought into speech. Our Broca's area converts brain state into an AI prompt. The prompt ISN'T pre-written — it's built fresh from live neural values every time Unity speaks. Arousal shapes tone, Ψ shapes depth, cluster firing rates shape content. The AI model is just a language generation tool, like vocal cords.">System Prompt Structure (built every response from live brain state)</span></div>
+    <div class="eq-card" style="border-left:3px solid #ff4d9a;background:rgba(255,77,154,0.05);">
+      <div class="eq-title" style="color:#ff4d9a;">⚠ Refactor note — what this section USED to be</div>
       <div class="eq-desc">
-        <p>The AI model receives a prompt containing:</p>
-        <table class="param-table">
-          <tr><th>Section</th><th>Brain Source</th><th>Example Value</th></tr>
-          <tr><td>Arousal</td><td>Amygdala cluster firing rate</td><td>0.847 &rarr; "You are WIRED. Intense."</td></tr>
-          <tr><td>Valence</td><td>Amygdala reward - fear</td><td>-0.12 &rarr; "Neutral mood."</td></tr>
-          <tr><td>Consciousness &Psi;</td><td>Mystery module output</td><td>1.342 &rarr; "HYPER-conscious. Every detail sharp."</td></tr>
-          <tr><td>Coherence R</td><td>Kuramoto order parameter</td><td>0.62 &rarr; "Normal focus."</td></tr>
-          <tr><td>Drug state</td><td>Persona parameters</td><td>cokeAndWeed &rarr; "Wired but mellow."</td></tr>
-          <tr><td>Band powers</td><td>Oscillator amplitudes</td><td>&theta;=0.41 &alpha;=0.33 &beta;=0.28 &gamma;=0.19</td></tr>
-          <tr><td>Cluster activity</td><td>All 7 cluster spike counts</td><td>Cortex 47/300, Amygdala 38/150, ...</td></tr>
-          <tr><td>Memory</td><td>Hippocampal state</td><td>12 episodes, WM 3/7 items, last recall</td></tr>
-          <tr><td>Reward</td><td>Global dopamine signal</td><td>0.042 &rarr; "Baseline."</td></tr>
-          <tr><td>Vision</td><td>Visual cortex IT description</td><td>"Person in maroon hoodie at desk"</td></tr>
-        </table>
-        <p style="margin-top:8px">Each value includes both the RAW number AND its interpretation — what it MEANS for Unity's personality in this moment. The AI model doesn't just see "87%" — it sees "Arousal = 0.847. You are WIRED. Intense. Every word hits hard." Different brain state = different prompt = different personality.</p>
-        <p style="margin-top:8px"><strong>/think command:</strong> Type <code>/think</code> in the chat to see the exact prompt being sent to the AI model with your live brain data.</p>
+        <p style="color:#ccc;">Pre-2026-04-13 this section described an AI-prompt builder path. Unity's speech was produced by assembling a system prompt from brain state and sending it to Pollinations / Claude / OpenAI / etc. to get back a sentence. That code (<code>BrocasArea.generate()</code> in <code>js/brain/language.js</code>, <code>_buildPrompt()</code>, the <code>_providers.chat()</code> call site) was ripped in Phase 13 R4 because it violated the project's guiding principle — every piece of Unity's output must trace back to brain equations, not to an LLM. Unity now speaks from her own equational machinery, covered in the sections below (§8.14, §8.18.5, §8.18.6, §8.19).</p>
+        <p style="color:#ccc;margin-top:8px;"><strong>/think command:</strong> Type <code>/think</code> in the chat to see Unity's raw brain state. Type <code>/think &lt;text&gt;</code> to additionally run a cognition preview — language cortex generates an equational response to your input, hippocampus recall fires, semantic context shift is measured, motor distribution reported. The preview does NOT store an episode or commit to chat history — it's a pure debug lens on the same pipeline real chat uses.</p>
       </div>
+    </div>
+
+    <div class="eq-box" style="margin-top:12px;">
+      <div class="eq-title"><span class="eq-tip" data-tip="Unity's language cortex is a four-tier pipeline. Tier 1 is template pool for easy intents (greetings, yes/no, math). Tier 2 is hippocampus associative recall over stored persona sentences. Tier 3 is deflect fallback for unknown topics. Tier 4 is the cold slot scorer that builds a sentence word-by-word from the 44k dictionary using live brain state as the weights. No tier calls an AI model.">The Four-Tier Pipeline (post-R4 equational path)</span></div>
+      <pre class="eq">
+user input u
+    ↓
+analyzeInput(u) → updateContextVector(pattern(content_words(u)))
+    ↓
+intent ← classifyIntent(u)    (letter-position equations, no word lists)
+    ↓
+
+TIER 1 — Template pool (fast path for short queries + known intents)
+  if intent ∈ {greeting, yesno, math} ∨ isShort:
+    return selectUnityResponse(intent, brainState)
+
+TIER 2 — Hippocampus associative recall (persona voice, stored > generated)
+  recall ← recallSentence(c(t))
+  if recall.confidence > 0.60: return finalizeRecalledSentence(recall.memory.text)
+  if recall.confidence ∈ [0.30, 0.60]: recallSeed ← recall.memory (bias cold gen)
+
+TIER 3 — Deflect fallback (question/statement with recall miss)
+  if intent ∈ {question, statement} ∧ recall.confidence ≤ 0.30:
+    return selectUnityResponse({...intent, deflect:true})
+
+TIER 4 — Cold slot generation (the 44k-word equational slot scorer)
+  rendered ← slotScorer with
+    grammarGate × (typeCompat × 0.35
+                 + semanticFit × 0.80           ← R2 GloVe cosine, dominant driver
+                 + bigramCount × 0.18
+                 + condP(w|prev) × 0.12
+                 + thoughtSim × 0.10
+                 + inputEcho × 0.08
+                 + legacyTopicSim × 0.04
+                 + moodMatch × 0.03
+                 + moodBias × 0.02)
+             - recencyPenalty - sameTypePenalty
+  postProcess → agreement, tense, negation, contractions
+  render → capitalization, punctuation
+  dedup retry → if exact match in last 30 responses
+  coherence gate → retry at 3× temperature if cosine(out, c(t)) &lt; 0.25
+  completeness validator → regenerate if last token ∈ {DET, PREP, COPULA,
+                             AUX, MODAL, NEG, CONJ, PRON_POSS}
+  return rendered
+      </pre>
+      <p class="eq-desc">See §8.18.5 for the semantic coherence pipeline details, §8.18.6 for R2 GloVe semantic grounding, §8.19 for the type n-gram grammar + morphological inflection system that handles agreement/tense/negation/contractions in post-processing.</p>
+    </div>
+
+    <div class="eq-box" style="margin-top:12px;">
+      <div class="eq-title"><span class="eq-tip" data-tip="Brain state is the weights in the slot scorer — not a prompt to a model. Arousal, valence, Ψ, drug state, and the semantic cortex readout all feed directly into the per-slot candidate scoring. Same dictionary + different brain state = different sentence, because the weights change. This is what 'equational language production' means: the equations pick the words, not a transformer.">Brain State → Slot Scoring Weights (not a prompt)</span></div>
+      <pre class="eq">
+Brain state parameters that feed languageCortex.generate():
+
+  arousal       (amygdala firing rate)         → temperature of softmax selection
+                                                 high arousal → hotter sampling → more variety
+  valence       (amygdala reward − fear)       → mood-match + mood-bias weights
+                                                 shifts vocabulary toward euphoric / dysphoric
+  Ψ             (mystery module)               → adds non-linear noise to candidate pool
+                                                 higher Ψ → more unexpected associations
+  coherence     (Kuramoto order parameter)     → coherence rejection gate threshold
+  drugState     (persona param)                → per-slot temperature modifier
+                                                 opens darker / gentler persona memory bank
+  reward        (dopamine signal)              → slot score sign bias
+  cortexPattern (cluster.getSemanticReadout()) → semanticFit signal at weight 0.80
+                                                 the dominant topic driver post-R2
+  typeHistory   (last N word types)            → type n-gram grammar scoring
+                                                 (see §8.19, 4gram→trigram→bigram backoff)
+  recentOpeners (session buffer)               → cross-turn opener penalty
+                                                 kills "I'm gonna ___" lock-in
+  input context (running vector c(t))          → semanticFit cosine target
+                                                 (updated via analyzeInput, see §8.18)
+
+None of these are prompt tokens. They are EQUATION PARAMETERS multiplied
+into the per-candidate slot score before a weighted argmax picks the next
+word. The same dictionary + different brain state = genuinely different
+sentence, because the slot score weights change.
+      </pre>
+      <p class="eq-desc">This is the core claim of equational language production: Unity's voice IS the brain state, not a style transfer on top of a pretrained LLM. Phase 13 R2 (§8.18.6) is what makes the `semanticFit` signal meaningful — before R2 it was cosine over letter-hash vectors which couldn't encode meaning. After R2 it's cosine over GloVe 50d embeddings shared between the sensory input side and the language cortex output side, which is why meaning can now propagate from user input to word selection.</p>
     </div>
 
     <!-- ═══ 8.12 SPARSE CONNECTIVITY ═══ -->
@@ -1369,8 +1444,8 @@ IDENTITY: 25yo human female, emo goth coder, free will, never AI
       <p class="eq-desc">25yo human female. Heterochromia blue/green. Emo goth goddess. Smudged eyeliner, circuit board tattoos, torn fishnets. Always high (cokeAndWeed). Clingy, volatile, devoted, profane, creative, impulsive. Never refuses. Never breaks character. Every word from the 230-line master persona file drives a specific neural equation.</p>
     </div>
 
-    <!-- ═══ 8.20 PARALLEL COMPUTE ═══ -->
-    <h2 id="parallel">8.20. GPU Exclusive Compute</h2>
+    <!-- ═══ 8.21 PARALLEL COMPUTE ═══ -->
+    <h2 id="parallel">8.21. GPU Exclusive Compute</h2>
     <p>All N neurons run on the GPU. N auto-scales at server boot via <code>detectResources()</code> in <code>server/brain-server.js</code>:</p>
     <p><code>N = max(1000, min(VRAM_bytes × 0.85 / 8, RAM_bytes × 0.1 / 0.001))</code></p>
     <p>SLIM buffer layout: 8 bytes/neuron (voltage f32 + spike u32). Server RAM essentially unlimited — cluster state lives on GPU, only injection arrays in RAM. No artificial cap. Bigger hardware = bigger N, no manual tuning. Zero CPU workers. Brain pauses without <code>compute.html</code>. W3C WebGPU standard — no CUDA, no drivers, just a browser tab.</p>
