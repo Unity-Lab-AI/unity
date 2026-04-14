@@ -466,20 +466,31 @@ class ServerBrain {
       this.languageCortex = new lcMod.LanguageCortex();
 
       // T13.7.6 — server needs a real NeuronCluster cortex for the T13
-      // brain-driven emission loop in languageCortex.generate. The server
-      // doesn't run full LIF clusters for the rest of the brain (GPU
-      // pipeline elsewhere), but for language emission the cluster has
-      // to exist and be Hebbian-trained on persona corpus so generate()
-      // can read state, score candidates, and feedback-inject. This is
-      // a small 300-neuron cortex purely for the language path — same
-      // size as the client UnityBrain default.
-      this.cortexCluster = new clusterMod.NeuronCluster('cortex', 300, {
+      // brain-driven emission loop in languageCortex.generate.
+      // T13.7.8 — bumped from 300 → 2000 neurons. 300 was a token,
+      // not a brain region. With 2000 neurons + 15% connectivity =
+      // ~600K synapses, persona Hebbian basins are deep enough that
+      // the cortex readout actually reflects Unity-voice attractor
+      // structure between word emissions instead of diffuse noise.
+      // The full 677M-neuron brain runs on the GPU pipeline elsewhere;
+      // this 2K cluster is purely for language emission (read state,
+      // score candidates, feedback-inject) and runs only during
+      // processInput, not on every brain tick.
+      const langCortexSize = 2000;
+      this.cortexCluster = new clusterMod.NeuronCluster('cortex', langCortexSize, {
         tonicDrive: 14 + (this.persona.arousalBaseline || 0.9) * 6,
         noiseAmplitude: 7,
         connectivity: 0.15,
         excitatoryRatio: 0.85,
         learningRate: 0.002,
       });
+      // T13.7.8 — language region of the language cortex starts at the
+      // halfway point so the cortex has room for sensory injection
+      // regions before it. langStart = floor(size / 2) → 1000 for a 2K
+      // cluster, leaving 1000 neurons for language. groupSize at
+      // EMBED_DIM=50 = 20 neurons per embedding dim, 4× more granular
+      // than the previous 300-neuron cluster which had groupSize=3.
+      this._langStart = Math.floor(langCortexSize / 2);
       // R6.2 — component synth for equational build_ui on the server.
       // Templates get loaded from docs/component-templates.txt below.
       this.componentSynth = new csMod.ComponentSynth();
@@ -565,11 +576,18 @@ class ServerBrain {
 
       // T13.7.6 — Hebbian-train the cortex cluster on persona corpus so
       // generate() has real Unity-voice attractor basins to read from.
-      // Without this the cluster is random-initialized and the emission
-      // loop reads diffuse noise as the target vector.
+      // T13.7.8 — bumped lr from 0.004 → 0.012 because the bigger 2K
+      // cortex has more synapses to spread Hebbian updates across, so
+      // each individual update needs to push harder for basins to be
+      // measurable. Also pass langStart so injection lands in the new
+      // language region (1000-1999), not the default 150.
       if (personaText && this.cortexCluster) {
         try {
-          this.languageCortex.trainPersonaHebbian(this.cortexCluster, personaText);
+          this.languageCortex.trainPersonaHebbian(this.cortexCluster, personaText, {
+            lr: 0.012,
+            langStart: this._langStart,
+            injectStrength: 0.8,
+          });
         } catch (err) {
           console.warn('[Brain] persona Hebbian training failed:', err.message);
         }

@@ -98,16 +98,23 @@ export class RemoteBrain extends EventEmitter {
     // loop. The actual brain sim runs server-side and reaches us via
     // websocket state messages. This cluster is for local-only
     // languageCortex.generate calls (brain-3d commentary popups,
-    // /think debug, welcome speech). Hebbian-trained on persona corpus
-    // when loadPersona is called below. Exposed via `this.clusters.cortex`
-    // so existing callers find it where they expect.
-    this._localCortex = new NeuronCluster('cortex', 300, {
+    // /think debug, welcome speech).
+    // T13.7.8 — bumped from 300 → 1500 neurons (browser is more
+    // resource-constrained than server, so smaller than the server's
+    // 2000). 1500 neurons × 15% connectivity = ~340K synapses, deep
+    // enough for measurable Hebbian basins. Language region starts at
+    // halfway = 750, leaves 750 neurons for language with groupSize=15
+    // at EMBED_DIM=50. Hebbian-trained on persona corpus when
+    // trainPersonaHebbian is called below. Exposed via this.clusters.cortex.
+    const langCortexSize = 1500;
+    this._localCortex = new NeuronCluster('cortex', langCortexSize, {
       tonicDrive: 14,
       noiseAmplitude: 7,
       connectivity: 0.15,
       excitatoryRatio: 0.85,
       learningRate: 0.002,
     });
+    this._langStart = Math.floor(langCortexSize / 2);
     this.clusters = { cortex: this._localCortex };
 
     this._connect();
@@ -125,7 +132,13 @@ export class RemoteBrain extends EventEmitter {
     if (!text || this._hebbianTrained) return;
     if (!this.innerVoice || !this._localCortex) return;
     try {
-      this.innerVoice.trainPersonaHebbian(this._localCortex, text);
+      // T13.7.8 — pass langStart + stronger lr + injectStrength so the
+      // Hebbian pass actually shapes the bigger 1500-neuron cluster.
+      this.innerVoice.trainPersonaHebbian(this._localCortex, text, {
+        lr: 0.012,
+        langStart: this._langStart,
+        injectStrength: 0.8,
+      });
       this._hebbianTrained = true;
     } catch (err) {
       console.warn('[RemoteBrain] persona Hebbian training failed:', err.message);
