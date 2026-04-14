@@ -277,8 +277,18 @@ export class LanguageCortex {
         // (running, coded, went, taller) still get learned because they
         // already appear in natural corpus text. Only the bogus
         // synthesis path is disabled.
-        this.learnSentence(firstPerson, dictionary, mood.arousal, mood.valence, sentenceCortex, true, false);
-        this._storeMemorySentence(firstPerson, mood.arousal, mood.valence);
+        // T9 — bigram-graph gate. Only teach the Markov graph
+        // (bigrams/trigrams/4-grams/dict entries) from sentences that
+        // PASS the structural filter stack. Otherwise rulebook prose
+        // seeds the walk graph even when the sentence gets rejected
+        // from the memory pool — producing cold-gen word salad like
+        // "box-sizing axis silences" no matter how many sentence-level
+        // filters we add. The filter definition lives in one place
+        // (_storeMemorySentence); _sentencePassesFilters just asks it.
+        if (this._sentencePassesFilters(firstPerson, mood.arousal, mood.valence)) {
+          this.learnSentence(firstPerson, dictionary, mood.arousal, mood.valence, sentenceCortex, true, false);
+          this._storeMemorySentence(firstPerson, mood.arousal, mood.valence);
+        }
       } catch (err) {
         console.warn('[LanguageCortex] loadSelfImage sentence failed:', err.message, '→', s.slice(0, 60));
       }
@@ -729,6 +739,36 @@ export class LanguageCortex {
    *      → sentence isn't in Unity's own voice
    *   6. Length 3-25 words — too short = fragment, too long = rambling
    */
+  /**
+   * T9 — Return true if the sentence passes every structural filter.
+   * The persona loader calls this BEFORE learnSentence() so rulebook
+   * prose never seeds the bigram/trigram/4-gram graph. Prior to T9
+   * the filters only gated the memory pool, but learnSentence() still
+   * taught the Markov graph its rulebook transitions, which is why
+   * cold slot-gen produced "box-sizing axis silences" even after a
+   * dozen sentence-level rejections — the word-to-word graph was
+   * poisoned with persona bigrams regardless.
+   *
+   * Returns true if the sentence is structurally admissible as chat
+   * speech. Implementation just calls _storeMemorySentence and checks
+   * whether it actually pushed — that way there's one filter
+   * definition and no drift between the bigram gate and the memory
+   * pool gate.
+   */
+  _sentencePassesFilters(text, arousal, valence) {
+    const before = this._memorySentences.length;
+    this._storeMemorySentence(text, arousal, valence);
+    const after = this._memorySentences.length;
+    if (after > before) {
+      // Rollback — the caller (persona loader) is going to call
+      // _storeMemorySentence again after passing the bigram gate.
+      // Without rollback the sentence would be in memory twice.
+      this._memorySentences.pop();
+      return true;
+    }
+    return false;
+  }
+
   _storeMemorySentence(text, arousal, valence) {
     const clean = String(text).trim();
     if (!clean || clean.length < 3) return;
@@ -896,6 +936,34 @@ export class LanguageCortex {
       //     "when they ask", "when people ask"
       if (a === 'when' && c && (c === 'asks' || c === 'ask')) {
         hasHabitualConditional = true;
+      }
+      // FILTER 10 — widened past-participle conditional. "if <pp>" where
+      // pp is any 3+ char past-participle verb (ends in -ed/-t/-en/-own/
+      // -orn/-ung/-ought/-aught) that isn't a pronoun or adverb. Catches
+      //   "i can scream out in pain if hurt"
+      //   "i never refuse if told"
+      //   "i respond if wanted"
+      // while still passing legit chat "if it was" / "if you want" / "if
+      // i feel like it" because those have pronouns after "if", not
+      // past-participles.
+      if (a === 'if' && b && b.length >= 3) {
+        const SKIP_AFTER_IF = new Set([
+          'i', "i'm", 'im', 'you', 'he', 'she', 'we', 'they', 'it', "it's",
+          'this', 'that', 'these', 'those', 'there', 'here', 'not', 'so',
+          'the', 'a', 'an', 'my', 'your', 'his', 'her', 'their', 'our',
+          'any', 'all', 'some', 'only', 'just', 'really', 'maybe',
+        ]);
+        if (!SKIP_AFTER_IF.has(b)) {
+          // Past-participle shapes
+          const isPp =
+            b.endsWith('ed') ||
+            b === 'hurt' || b === 'told' || b === 'asked' ||
+            b === 'wanted' || b === 'offered' || b === 'given' ||
+            b === 'taken' || b === 'shown' || b === 'known' ||
+            b === 'seen' || b === 'heard' || b === 'touched' ||
+            b.endsWith('en') || b.endsWith('own') || b.endsWith('ought');
+          if (isPp) hasHabitualConditional = true;
+        }
       }
       // (c) "to anyone" / "to everyone" / "to whoever" / "to those"
       if (a === 'to' && (b === 'anyone' || b === 'everyone' || b === 'whoever' || b === 'those')) {

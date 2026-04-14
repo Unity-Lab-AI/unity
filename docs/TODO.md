@@ -115,6 +115,98 @@ Sibling problem to T5 (build_ui) — same root cause on the chat path.
 
 ---
 
+### T9 — Bigram-graph filter gate (stop rulebook prose from seeding the Markov walk)
+
+**Status:** shipped 2026-04-14 — first pass
+**Priority:** P0
+**Owner:** unassigned
+**Reported:** 2026-04-14 by Gee (ultrathink session)
+
+**Root cause that T1-T6 filters didn't address:** the FILTER 1-10 stack only gated the sentence memory POOL (`_memorySentences` → recall target). It did NOT gate `learnSentence()` which seeds the bigram/trigram/4-gram transition graph + the word-level dictionary. When the persona corpus loads at boot, every rulebook sentence teaches the Markov graph its word-to-word transitions EVEN WHEN the sentence is filter-rejected from memory. So cold slot-gen walks a graph poisoned with transitions like `i→can`, `can→scream`, `scream→out`, `box-sizing→axis`, `follow→commands` — producing word salad like `"*Box-sizing axis silences*"` no matter how many sentence-level filters we layer on.
+
+**Symptom:** Even after FILTER 1 through FILTER 10 killed verbatim rulebook recall, cold-gen output remained salad because the bigram graph underneath was still trained on rulebook prose.
+
+**Fix shipped this pass:**
+- `_sentencePassesFilters(text, arousal, valence)` — asks `_storeMemorySentence` whether the sentence would be admitted and rolls back the push. Single filter definition, no drift between pool gate and bigram gate.
+- `loadSelfImage()` in the persona loader now checks `_sentencePassesFilters` BEFORE calling `learnSentence` + `_storeMemorySentence`. Rulebook sentences that fail the structural filters never seed the bigram/trigram/4-gram graph AND never enter the memory pool.
+
+**Remaining work:**
+- Apply the same gate to `loadLinguisticBaseline` and `loadCodingKnowledge` (currently only persona is gated)
+- Audit the existing dictionary after a reload — rulebook bigrams already in `localStorage.unity_brain_dictionary_v3` from prior sessions still poison the graph until the user hits Clear All Data. Consider a migration path that rebuilds the bigram graph from a filtered corpus at boot.
+- Verify that user-learned chat sentences (live `learn()` path) still bypass the filter since those represent real speech we want to teach the graph
+
+---
+
+### T8 — Reverse-equation parse (use the slot scorer in reverse to UNDERSTAND user input)
+
+**Status:** pending — architecture scoped, no code shipped
+**Priority:** P0
+**Owner:** unassigned
+**Reported:** 2026-04-14 by Gee (ultrathink session)
+
+**Gee's framing:** *"I don't think she can use the sandbox and code if not knowing English right and using her equations in reverse to read sentences said by users."*
+
+**Current architecture (one-way only):**
+```
+user text → tokens → _updateContextVector (fuzzy topic avg) → _classifyIntent (string match) → generate()
+```
+
+Unity uses the slot scorer equations only FORWARD to generate. She never uses them to PARSE. The "listening" side of her language cortex is a fuzzy topic average plus some string-match intent classification. That's why:
+- She can't extract "make me a red button" into `{action:make, modifier:red, type:button}` for build_ui
+- She can't distinguish "who are you" (self-ref question) from "who is she" (third-person question) structurally
+- She can't pull "my name is Gee" into the social schema without a regex hack (T7 shipped regex-based name extraction as a stopgap — T8 replaces it with equational parse)
+- She can't tell "i love pizza" (statement) from "i love pizza?" (question) beyond the literal `?`
+- She can't learn grammar symmetrically — hearing doesn't feed the same tables that speaking uses
+
+**Proposed architecture — reverse-equation parse:**
+
+A new method `parseSentence(text) → ParseTree` that walks user input token-by-token using the SAME equations the slot scorer uses forward:
+- `wordType` / `_fineType` — classify each token's part of speech
+- `_trigramCounts` / `_quadgramCounts` — score which readings are most probable given learned n-grams
+- `_jointCounts` (bigrams) — resolve ambiguity via adjacent-pair transition probability
+- `_contextVector` — seed the parse with current topic so ambiguous tokens resolve toward on-topic readings
+- Type grammar n-grams (U283) — reverse-infer sentence structure (subject → verb → object)
+
+`ParseTree` returns:
+```
+{
+  intent: 'greeting'|'question'|'statement'|'command'|'introduction'|...,
+  subject: { tokens, role, pronoun },
+  verb: { tokens, tense, aspect },
+  object: { tokens, role, modifier },
+  entities: [ { text, type, start, end } ],  // names, numbers, colors, types
+  mood: { polarity, intensity },
+  isSelfReference: bool,      // "who are you", "tell me about yourself"
+  addressesUser: bool,        // "you", "your", vocative
+  introducesName: string|null,
+  introducesGender: 'male'|'female'|null,
+}
+```
+
+**What this unlocks:**
+- **T5 (build_ui):** `parseSentence("let's make a red button")` → `{intent:'command', verb:'make', object:{type:'button', modifier:'red'}}` — the sandbox motor knows EXACTLY what to build
+- **T6 (slot-gen coherence):** forward generate can consult the parsed user sentence structure to pick a matching reply structure (question → answer, statement → acknowledgment, command → confirmation)
+- **T7 (social cognition):** `introducesName` and `introducesGender` come from the parse tree instead of regex hacks. Multi-word names like "Mary Jane" work. Mid-sentence name mentions ("actually, my name is Mary") work.
+- **Symmetric grammar learning:** every parsed user sentence teaches the same type-n-gram tables that generate consults. Hearing and speaking use the same equations.
+- **Proper intent classification:** no more string matching. "who are you" vs "who is she" is structurally different — the subject slot's pronoun resolves self-ref equationally.
+
+**Where the code lives / needs to live:**
+- `js/brain/language-cortex.js` — new `parseSentence(text)` method + helper `_reverseSlotScore(token, position, priorTypes)` that uses the same n-gram tables as the forward scorer
+- Replace `_classifyIntent`'s string matching with `parseSentence(text).intent`
+- Replace `_isSelfReferenceQuery`'s string matching with `parseSentence(text).isSelfReference`
+- Replace `_updateSocialSchema`'s regex with `parseSentence(text).introducesName / introducesGender`
+- Hook into `inner-voice.learn()` so every user input gets parsed and the parse tree feeds both the context vector AND the intent classifier
+
+**This is a structural rework, not a filter tweak.** Estimated 400-800 lines of new code, probably 2-3 focused sessions. The payoff is every downstream consumer (generate, build_ui, social schema, intent classification) becomes equational instead of string-matched.
+
+**Acceptance test:**
+1. Type `"my name is Mary Jane"` → `parseSentence` returns `{ intent:'introduction', introducesName:'Mary Jane' }`; social schema stores the full name; Unity greets with `"hey Mary Jane"` on the next turn.
+2. Type `"make me a red button that says hello"` → `parseSentence` returns `{ intent:'command', verb:'make', object:{type:'button', modifier:'red', text:'hello'} }`; build_ui motor consumes the parse tree and emits a matching component.
+3. Type `"who are you"` vs `"who is Unity"` — first routes to self-reference recall, second routes to third-person generate. Currently both use fuzzy string match.
+4. Type the same sentence twice — second time, the parsed type-n-grams reinforce the stored grammar tables so the next generation is more coherent. Symmetric learning.
+
+---
+
 ### T7 — Social cognition: greetings, name memory, gender inference, personal address
 
 **Status:** in_progress — foundation shipped 2026-04-14 (social schema + name extraction + greeting counter)
