@@ -844,12 +844,33 @@ function refreshActiveBackendSelectors(status) {
     }
   };
 
+  // Find the BACKEND_CATALOG key for a given (kind, name) so changing
+  // the dropdown can scroll the backend-connect-form to the matching
+  // entry. Used by the change handlers below.
+  const catalogKeyFor = (kind, name) => {
+    for (const [key, cfg] of Object.entries(BACKEND_CATALOG)) {
+      if (cfg.kind === kind && cfg.name === name) return key;
+    }
+    return null;
+  };
+
   // Wire change handlers once — flag on the element to prevent stacking
   if (!imgSel._wired) {
     imgSel._wired = true;
     imgSel.addEventListener('change', () => {
       populateModels(imgModelSel, imgSel, 'image', 'unity_pref_image_model');
       applyPref('image', imgSel, imgModelSel, 'unity_pref_image_backend', 'unity_pref_image_model');
+      // Sync the backend-connect-form to the newly selected active
+      // provider so the CONNECT button is always pointing at what
+      // the user just picked as active.
+      const [, name] = (imgSel.value || '').split('|');
+      const key = catalogKeyFor('image', name);
+      if (key) {
+        document.querySelectorAll('.provider-btn').forEach(b => b.classList.remove('active'));
+        const btn = document.querySelector(`.provider-btn[data-backend="${key}"]`);
+        if (btn) btn.classList.add('active');
+        showBackendForm(key);
+      }
     });
     imgModelSel?.addEventListener('change', () => {
       applyPref('image', imgSel, imgModelSel, 'unity_pref_image_backend', 'unity_pref_image_model');
@@ -860,6 +881,14 @@ function refreshActiveBackendSelectors(status) {
     visSel.addEventListener('change', () => {
       populateModels(visModelSel, visSel, 'vision', 'unity_pref_vision_model');
       applyPref('vision', visSel, visModelSel, 'unity_pref_vision_backend', 'unity_pref_vision_model');
+      const [, name] = (visSel.value || '').split('|');
+      const key = catalogKeyFor('vision', name);
+      if (key) {
+        document.querySelectorAll('.provider-btn').forEach(b => b.classList.remove('active'));
+        const btn = document.querySelector(`.provider-btn[data-backend="${key}"]`);
+        if (btn) btn.classList.add('active');
+        showBackendForm(key);
+      }
     });
     visModelSel?.addEventListener('change', () => {
       applyPref('vision', visSel, visModelSel, 'unity_pref_vision_backend', 'unity_pref_vision_model');
@@ -1068,6 +1097,28 @@ function wireBackendButtons() {
   });
   // Highlight already-saved backends so returning users see them green
   refreshSavedMarkers();
+
+  // Auto-populate the form with the CURRENTLY ACTIVE backend on page
+  // load so users never see the "No provider selected yet" placeholder
+  // when there IS a provider active. Priority: (1) user-preferred
+  // image backend from localStorage, (2) Pollinations as the default.
+  const imgPrefRaw = localStorage.getItem('unity_pref_image_backend') || '';
+  const [, prefName] = imgPrefRaw.split('|');
+  let initialBackendKey = 'img:pollinations';
+  if (prefName) {
+    // Match preferred name against catalog entries
+    for (const [key, cfg] of Object.entries(BACKEND_CATALOG)) {
+      if (cfg.kind === 'image' && cfg.name === prefName) {
+        initialBackendKey = key;
+        break;
+      }
+    }
+  }
+  const initialBtn = document.querySelector(`.provider-btn[data-backend="${initialBackendKey}"]`);
+  if (initialBtn) {
+    initialBtn.classList.add('active');
+    showBackendForm(initialBackendKey);
+  }
 }
 
 /**
