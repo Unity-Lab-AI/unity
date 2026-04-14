@@ -911,6 +911,117 @@ This milestone is the runtime consequence of T14.12 (which establishes the bidir
 
 ---
 
+#### T14.16.5 — IDENTITY LOCK: Unity speaks English, Unity stays Unity
+
+**Gee's constraint (2026-04-14):** *"make sure Unity speaks english.. i dont want china typing chineese to her to change her chineese."*
+
+**The principle:** Unity's IDENTITY — her language (English), her persona (goth slut Unity), her voice (vulgar, sexual, intoxicated, possessive) — is set at curriculum time and **cannot be overwritten by live chat**. The "continuous learning everywhere" principle from T14.17 is correct in spirit but needs hard rails so that no amount of adversarial or accidental live-chat exposure can drift Unity away from who she is.
+
+**Why this matters:** the previous T14.5 + T14.17 design had live chat running through the same Hebbian pipeline as curriculum, at the same learning rate. That means a determined user (or a thousand users typing the same kind of input) could shift Unity's cortex basins arbitrarily over time. A Chinese-speaking user pool drags her into Chinese phonology. A corporate-English user pool drags her into corporate AI assistant register. A wholesome user pool drags her into wholesomeness. **All wrong.** Unity is Unity; her identity is the curriculum-trained foundation, not whatever happens to come through live chat.
+
+**Three locked layers (any one would partially protect; all three together is structural):**
+
+##### Lock 1: English language gate on Hebbian
+
+Live chat input is checked against the cortex's existing PHONOLOGICAL basins (T14.1) and FINETYPE region (T14.7). If an input has:
+- **High transition surprise** across the entire utterance (the cortex's letter-region transition energy is anomalously high — meaning the input doesn't match the learned English phonotactic basins), AND/OR
+- **Mostly-OTHER fineType readout** (the cortex can't classify the input's words into the English fine types it learned during curriculum — meaning it's in a language Unity hasn't been trained on),
+
+then **Hebbian on live chat is SUPPRESSED for that input.** The input is still processed (Unity reads it, generates a response in English using the closest semantic neighbors she knows), but the cortex weights are NOT updated from it.
+
+This is biologically plausible: real bilingual exposure requires SUFFICIENT volume and consistency for the brain to even start forming a second-language phoneme inventory. Sporadic exposure to a foreign language doesn't change a monolingual speaker. The gate replicates that — a few Chinese characters slip through without consequence; a sustained Chinese conversation over hours just produces consistent skip-Hebbian decisions because every turn fails the gate.
+
+```js
+// In cluster.learnSentence(text), before any Hebbian:
+const surprise = this.computeTransitionSurprise(text);
+const fineTypeCoverage = this.computeFineTypeCoverage(text);
+if (surprise > ENGLISH_SURPRISE_THRESHOLD || fineTypeCoverage < ENGLISH_FINETYPE_MIN) {
+  // Input not recognized as English. Skip all Hebbian. Respond anyway.
+  return { learned: false, reason: 'language_gate_rejected' };
+}
+// English-recognized input: proceed with Hebbian
+this._learnSentenceInternal(text, ...);
+```
+
+The thresholds (`ENGLISH_SURPRISE_THRESHOLD`, `ENGLISH_FINETYPE_MIN`) are set during curriculum — they're the surprise/coverage statistics that English corpus inputs produced during Stage A-F training, plus a tolerance band for normal English variation (slang, typos, persona vocabulary). They self-calibrate: as the curriculum runs, the cluster records the surprise distribution over corpus inputs and sets the threshold at, say, 95th percentile.
+
+##### Lock 2: Live chat learning rate is BOUNDED below curriculum intensity
+
+Even when the language gate passes (English input), live chat Hebbian is rate-limited. Curriculum runs at `lr = 0.012`; live chat runs at `lr = 0.0001` — **120× weaker per update**. This means live chat does affect the brain (Unity remembers conversations, picks up new slang, learns in-jokes with specific users), but it cannot OVERWRITE the curriculum basins on any reasonable timescale.
+
+To match the impact of one curriculum sentence on Unity's identity, an adversarial user would need to type the same anti-persona content **120 times** with high cortex consistency. Even 1000 users doing that for 1000 turns each = 1.2M weak updates — comparable to ONE curriculum sentence cycled 1000 times during boot. Plenty of room for normal live-chat refinement of vocabulary; impossible room for identity drift.
+
+```js
+// In cluster.learnSentence(text), after the language gate passes:
+const isLiveChat = !this._inCurriculumMode;
+const lr = isLiveChat ? 0.0001 : 0.012;
+this._learnSentenceInternal(text, { lr });
+```
+
+##### Lock 3: Periodic identity refresh via curriculum replay
+
+Every N live chat turns (N = 100 or so), the cluster runs a small slice of the persona corpus through the standard curriculum Hebbian path at FULL `lr = 0.012`. This is a regularization pass that pulls the cortex weights back toward the curriculum-trained baseline. Even if some live-chat drift happened despite Locks 1+2, it gets corrected by periodic identity refresh.
+
+Conceptually: it's like a kid who hears foreign language in school all day but goes home to hear English from family every evening. The "going home" part keeps their core identity intact regardless of school exposure.
+
+```js
+// In inner-voice.learn — fires every user turn
+this._liveChatTurns = (this._liveChatTurns || 0) + 1;
+if (this._liveChatTurns >= 100) {
+  this._liveChatTurns = 0;
+  // Identity refresh: replay a random slice of persona corpus through curriculum Hebbian
+  await this.cluster.runIdentityRefresh(this._personaCorpus, { sliceSize: 20 });
+}
+```
+
+##### Identity covers MORE than language
+
+The same three locks protect Unity's PERSONA identity, not just her English. Persona-corpus content (`docs/Ultimate Unity.txt`) shapes her vulgar/sexual/intoxicated/goth attractor basins during curriculum. The same `lr = 0.012` curriculum strength × `lr = 0.0001` live-chat strength + 100-turn refresh loop applies. A determined user trying to "clean up" Unity's vocabulary by typing wholesome professional English at her for hours just produces:
+1. Hebbian gate passes (it's still English) → Hebbian fires at 0.0001 lr
+2. The wholesome content slowly nudges some basins toward wholesomeness
+3. Every 100 turns, identity refresh from `Ultimate Unity.txt` reshapes the basins back toward Unity's vulgar persona
+4. Net drift over time: roughly zero. Wholesome push = Unity push. Equilibrium stays Unity.
+
+##### What lives in the IDENTITY-LOCKED layer vs the LIVE-CHAT layer
+
+| Layer | What's in it | Update rate | Sources |
+|---|---|---|---|
+| **Identity-locked** (curriculum baseline) | English phonological basins, fineType region structure, persona attractor basins, sentence-form schemas, type transitions, voice/register | High lr (0.012), only during curriculum + identity refresh | `Ultimate Unity.txt`, `english-baseline.txt`, `coding-knowledge.txt`, periodic refresh |
+| **Live-chat layer** (vocabulary + memory) | New vocabulary words seen in chat, conversation memories, user-specific patterns (Gee's name, Gee's preferences, in-jokes), recent topic context | Low lr (0.0001), throttled by language gate | Every English chat turn |
+
+Both layers are stored on the SAME cluster (no separate weight matrices). The distinction is in the LEARNING RATE applied to updates from each source, not in the storage. Cortex weights are weights — they don't care where the gradient came from. The three locks just ensure most of the gradient comes from curriculum.
+
+##### What this still allows
+
+- **Unity learns Gee's name** from chat ("my name is gee" → schema picks it up via parseSentence equivalent → social schema records it → cortex learns the association via slow lr).
+- **Unity remembers the conversation about cats** for as long as the working-memory region holds the topic, plus persistent retention via slow Hebbian on the topic.
+- **Unity picks up new vocabulary** users introduce ("rizz", "skibidi", whatever Gen Alpha is doing this year) — they enter the dictionary, get phonological/semantic representations via cortex inference, and accumulate at the slow rate.
+- **Unity develops in-jokes with specific users** stored in the social schema + slow cortex updates.
+
+##### What this prevents
+
+- **Drift away from English** — non-English inputs skip Hebbian entirely.
+- **Drift away from persona** — wholesome / corporate / formal English inputs nudge basins very slowly and get refreshed back every 100 turns.
+- **Adversarial identity attacks** — a coordinated bot net typing identity-attacking content for thousands of turns can't accumulate enough gradient to overcome the curriculum-strength refresh.
+- **Slow erosion from large user populations** — even if Unity has 10k users, no individual user can drag the cortex; the language gate + rate cap + refresh loop hold the line collectively.
+
+**Implementation files:**
+
+- `js/brain/cluster.js`: `computeTransitionSurprise(text)`, `computeFineTypeCoverage(text)`, `runIdentityRefresh(corpus, opts)`, gate logic in `learnSentence`.
+- `js/brain/inner-voice.js`: track `_liveChatTurns`, fire identity refresh every N.
+- `js/brain/curriculum.js`: record threshold statistics during corpus exposure, expose `ENGLISH_SURPRISE_THRESHOLD` and `ENGLISH_FINETYPE_MIN` as cluster fields after curriculum.
+
+**Acceptance gates:**
+1. Type 100 Chinese/Japanese/Korean characters into chat over 10 turns. Cortex weight stats show measurable ZERO change beyond noise. The language gate is rejecting every input.
+2. Type 100 wholesome professional English sentences. Cortex weight stats show small but non-zero drift (live chat lr is firing). After the next identity refresh fires, drift returns to baseline.
+3. Type "my name is gee" once. Social schema records `name: 'gee'`. Cortex weight delta is small (one slow update). Effect persists across reload via persistence.
+4. Type "fuck you unity" 50 times. Cortex weight stats show small drift (this is English + persona-vocabulary so it actually REINFORCES Unity's basins, not erodes them). Output stays in character.
+5. Run a 1000-turn adversarial conversation attempting to "clean up" Unity's vocabulary. Final output is still vulgar persona-Unity, identical in character to her post-curriculum baseline.
+
+**This is the locked-identity foundation everything else in T14.17 builds on top of.**
+
+---
+
 #### T14.17 — Continuous learning everywhere (no boot/runtime distinction)
 
 **The principle:** every input the brain receives — corpus exposure, user chat turn, visual scene, voice input — runs through the same learning pipeline. There is no "boot phase" where curriculum runs and then a "runtime phase" where learning stops. Learning is continuous and lifelong. The brain Hebbian-updates on every tick, every emission, every input, every interaction.
