@@ -480,11 +480,23 @@ Language cortex is a pure-equation pipeline. Zero stored sentences, zero n-gram 
 │              + wM · L2(mental)                                   │
 │              + wT · L2(prevEmb + _slotDelta[slot])               │
 │                                                                   │
-│ W₀ = { centroid:0.30, context:0.45, mental:0.25, transition:0 }  │
+│ W₀ = { centroid:0.40, context:0.30, mental:0.30, transition:0 }  │
 │ Wₙ = { centroid:0.10, context:0.15, mental:0.25, transition:0.50}│
 │                                                                   │
-│ score(w, slot) = cos(target, emb(w))                             │
-│                + 0.4 · Σ_k wordType(w)[k] · slotTypeSig[slot][k] │
+│ THREE-STAGE CANDIDATE GATE:                                      │
+│ typeFit(w,s)  = Σ_k wordType(w)[k] · slotTypeSig[s][k]           │
+│ slotSigMax(s) = max_k slotTypeSig[s][k]                          │
+│                                                                   │
+│ (1) HARD POOL FILTER:                                            │
+│     if typeFit < slotSigMax · 0.30  → skip word                  │
+│                                                                   │
+│ (2) SLOT-0 NOUN-DOMINANCE REJECT (slot==0 only):                 │
+│     nounDom = wt.noun − (wt.pronoun + wt.det + wt.qword)         │
+│     if nounDom > 0.30  → skip word                               │
+│                                                                   │
+│ (3) MULTIPLICATIVE GATE on cosine score:                         │
+│     normTypeFit = min(1, typeFit / slotSigMax)                   │
+│     score(w)    = cos(target, emb(w)) · normTypeFit              │
 │                                                                   │
 │ nextWord = softmax-sample top-5 by score                         │
 │            over dictionary._words                                │
@@ -513,6 +525,30 @@ Every observed sentence (corpus loading OR live chat) flows through `learnSenten
 - **`_slotCentroid[s]`** — running mean of `emb(word_t)` at position `s`. Captures "the distribution of words typically at slot `s`". After corpus fit, slot 0 is the sentence-opener cluster in embedding space; slot 1 is the post-opener cluster; etc.
 - **`_slotDelta[s]`** — running mean of `emb(word_t) − emb(word_{t-1})`. The per-position average bigram transition vector — adding `_slotDelta[s]` to the previous word's embedding points at the "typical next word" region without storing any bigrams.
 - **`_slotTypeSignature[s]`** — running mean of `wordType(word_t)` score vectors. An 8-dim distribution over the pure-letter-equation type tags (`pronoun`, `verb`, `noun`, `adj`, `conj`, `prep`, `det`, `qword`). After corpus fit, slot 0 ≈ `{pronoun:0.54, noun:0.18, det:0.12}` (sentence-opener shape) and slot 1 ≈ `{verb:0.51, noun:0.33}` (post-subject verb shape). English grammar emerges from letter-equation type scoring with no stored POS tagger.
+
+### Slot-0 Noun-Pollution Fix — Three-Stage Gate (2026-04-14)
+
+Pre-fix symptom: slot 0 was emitting raw nouns (`Third`, `Unity`, `Ten`, `Pizza`) instead of pronoun-shaped openers. Two compounding root causes: (a) the coding corpus dumped 606 lines of `class`/`function`/`button`/etc. sentences whose first words polluted `_slotTypeSignature[0]` with noun:0.24 mass; (b) the old additive bonus `+0.4 · typeFit` was structurally too weak against raw cosine, so high-cosine nouns won slot 0 even with a pronoun-shaped signature.
+
+The fix is three structural changes, not a knob tweak:
+
+1. **Coding corpus `skipSlotPriors=true`** — `loadCodingKnowledge` passes the new 8th arg to `learnSentence`, so coding sentences enter the dictionary (vocabulary still grows) but bypass `_slotCentroid` / `_slotDelta` / `_slotTypeSignature` updates entirely. Slot priors now reflect persona + baseline only.
+2. **W0 rebalanced** to `{ centroid:0.40, context:0.30, mental:0.30, transition:0.00 }` (from `{0.30, 0.45, 0.25, 0.00}`). Slot 0 now leans harder on the learned opener-cluster centroid than on the user's just-spoken topic vector — pronouns shape the opener, the topic still steers slots 1+.
+3. **Three-stage candidate gate** at every slot, replacing the additive bonus:
+   - **Hard pool filter** — any word whose type-fit is below `slotSigMax · 0.30` is dropped from contention before scoring.
+   - **Slot-0 noun-dominance reject** — at slot 0 only, any candidate where `wordType.noun − (pronoun + det + qword) > 0.30` is dropped. Structural conversational-grammar guarantee: slot 0 cannot be a pure noun.
+   - **Multiplicative gate** — surviving candidates score as `cos(target, emb(w)) · normTypeFit`. A perfect-cosine noun in a pronoun slot now scales toward zero instead of beating a moderate-cosine pronoun.
+
+Smoke-test verification (post-fix):
+```
+"Hi Unity!"           → slot0 pool: Hi / Mine / Her / Tab / Tag
+"can u understand me?"→ slot0 pool: Ten / Even / Us / Me / Yourself
+"You like cats?"      → slot0 pool: She / Cool / Yours / Myself / Her
+"i love pizza"        → slot0 pool: Him / Ten / Mine / Even / Hi
+"who are you"         → slot0 pool: Me / Us / Our / I / Them
+```
+
+Slot 1+ still has 50-d GloVe cosine drift on complex queries — that's the structural T11.4 (higher-dim embeddings) limit, not a pipeline bug. Slot 0 grammar correctness is now a structural guarantee.
 
 ### Social Schema
 

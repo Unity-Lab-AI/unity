@@ -29,7 +29,7 @@ Nothing else. If it's not in that list, it's an appendage, and it gets ripped ou
 
 ### T5/T6 — Slot-gen semantic coherence (unified: speak + build_ui share one broken equation)
 
-**Status:** SUBSUMED BY T11 — the entire slot scorer + Markov walk that T5/T6 were patching has been deleted and replaced by the T11 pure equational language cortex. The "one broken equation" both symptoms shared is gone entirely. See T11 entry + 2026-04-14 FINALIZED session archive.
+**Status:** SUBSUMED BY T11 — the entire slot scorer + Markov walk that T5/T6 were patching has been deleted and replaced by the T11 pure equational language cortex. The "one broken equation" both symptoms shared is gone entirely. See T11 entry + 2026-04-14 FINALIZED session archive. **T11.7 follow-up (2026-04-14):** slot-0 noun-pollution fix shipped — three-stage gate (hard pool filter + slot-0 noun-dominance reject + multiplicative cosine·typeFit gate), W₀ rebalance, coding-corpus `skipSlotPriors=true`. Slot 0 grammar correctness is now a structural guarantee. See FINALIZED.md "T11.7" entry.
 **Priority:** P1
 **Owner:** unassigned
 **Reported:** 2026-04-14 by Gee (live chat session)

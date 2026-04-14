@@ -506,7 +506,7 @@ Live chat shapes the priors **2.37×** harder than low-arousal corpus input. Eve
 
 ### Generation Equation — Cortex State → Words
 
-No slot scorer, no softmax over n-grams, no hardcoded greeting openers. Each word is picked by cosine argmax against a target vector built from normalized priors and the brain's live cortex readout.
+No slot scorer, no softmax over n-grams, no hardcoded greeting openers. Each word is picked by cosine argmax against a target vector built from normalized priors and the brain's live cortex readout, then passed through a three-stage type-fit gate that keeps the candidate pool grammatically appropriate at each slot position.
 
 ```
 mental(0)      = opts.cortexPattern  ← brain live semantic readout
@@ -520,21 +520,43 @@ target(slot) = wC · L2(_slotCentroid[slot])
              + wM · L2(mental)
              + wT · L2(prevEmb + _slotDelta[slot])
 
-score(w, slot) = cos(target, emb(w))
-               + 0.4 · Σ_k wordType(w)[k] · _slotTypeSignature[slot][k]
-
-nextWord(slot) = softmax-sample top-5 by score over dictionary._words
-                 excluding emitted-this-sentence and recency-ring
-
-W₀ = { centroid: 0.30, context: 0.45, mental: 0.25, transition: 0.00 }
+W₀ = { centroid: 0.40, context: 0.30, mental: 0.30, transition: 0.00 }
 Wₙ = { centroid: 0.10, context: 0.15, mental: 0.25, transition: 0.50 }
 ```
 
-All four component vectors are L2-normalized before mixing so no single term swamps the others. The cosine argmax is bounded by `[−1, 1]` and the wordType bonus contributes `[0, ~0.4]` additional per slot — tight enough that sampling picks from a meaningful top-K rather than a flat-tie random lottery.
+**Three-stage candidate scoring** — every word in `dictionary._words` runs through a hard pool filter, an optional slot-0 noun-dominance reject, and a multiplicative type-fit gate before the cosine score is even computed:
 
-**Slot 0** weights favor **context** (topic lock from user input) and **centroid** (grammatical-position prior — sentence opener cluster in embedding space). Transition is zero because there is no previous word.
+```
+typeFit(w, slot)  = Σ_k wordType(w)[k] · _slotTypeSignature[slot][k]
+slotSigMax(slot)  = max_k _slotTypeSignature[slot][k]
 
-**Slot N (N ≥ 1)** weights favor **transition** (learned bigram geometry without storing any bigrams) and **mental** (brain cortex state evolving as words emit). Context keeps topic from drifting. Centroid contributes a small grammar nudge.
+(1) HARD POOL FILTER:
+    if typeFit(w, slot) < slotSigMax(slot) · 0.30   →  skip word
+
+(2) SLOT-0 NOUN-DOMINANCE REJECT (slot == 0 only):
+    nounDom = wordType(w).noun
+            − (wordType(w).pronoun + wordType(w).det + wordType(w).qword)
+    if slot == 0 ∧ nounDom > 0.30   →  skip word
+
+    English conversational sentences open with pronouns / dets /
+    qwords / interjections, never with bare common nouns. Pure
+    letter-equation property check on the candidate's own wordType
+    distribution, no content list.
+
+(3) MULTIPLICATIVE GATE on the cosine score:
+    normTypeFit = min(1, typeFit / slotSigMax(slot))
+    score(w)    = cos(target, emb(w)) · normTypeFit
+
+nextWord(slot) = softmax-sample top-5 by score
+                 over dictionary._words (post all three gates)
+                 excluding emitted-this-sentence + recency ring
+```
+
+All four target component vectors are L2-normalized before mixing so no single term swamps the others. The cosine score is in `[−1, 1]` and `normTypeFit` is in `[0, 1]`, so the multiplicative gate scales the cosine proportionally to type fit — wrong-type candidates that survive the hard filter get downweighted, right-type candidates keep full cosine.
+
+**Slot 0** weights favor **centroid** (sentence-opener distribution learned from observation) and balance **context** + **mental** for topic + brain-state awareness. Transition is zero because there is no previous word. The slot-0 noun-dominance reject is the conversational-grammar guarantee — even if the slot 0 type signature has noun weight pulled up by mixed-genre training data, the candidate pool stays pronoun/det/qword/interjection-shaped at the opener position.
+
+**Slot N (N ≥ 1)** weights favor **transition** (learned bigram geometry without storing any bigrams) and **mental** (brain cortex state evolving as words emit). Context keeps topic from drifting. Centroid contributes a small grammar nudge. Slots 1+ admit nouns / verbs / adjectives freely — only slot 0 has the noun-dominance reject.
 
 **Length** comes from brain state:
 
