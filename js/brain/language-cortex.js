@@ -86,6 +86,13 @@ export class LanguageCortex {
     this._lastInputWords = [];
     this._lastInputRaw = '';
 
+    // T8 — cached parse tree for the most recent input. parseSentence
+    // memoizes on text equality, so repeated callers in the same turn
+    // get the cached tree instead of re-parsing. Every consumer
+    // (_classifyIntent, _isSelfReferenceQuery, _updateSocialSchema,
+    // self-ref fallback in _recallSentence) reads from this.
+    this._lastParse = null;
+
     // T7 — Social schema. Tracks who Unity is talking to so she can
     // greet by name, remember gender across turns, and slot a personal
     // address into her speech. Fields get populated equationally by
@@ -703,21 +710,16 @@ export class LanguageCortex {
    * equation. The 2nd-person pronoun closed class is tiny so this is
    * a legitimate letter-shape match, not a content-vocabulary list.
    */
+  /**
+   * T8 — delegates to parseSentence. Was a vestigial letter-position
+   * scan for 2nd-person pronouns; now the parse tree has a proper
+   * `isSelfReference` field that accounts for both the pronoun AND
+   * the intent (question/yesno). Kept as a thin wrapper so existing
+   * callers don't need updates.
+   */
   _isSelfReferenceQuery(text) {
     if (!text) return false;
-    const lower = String(text).toLowerCase();
-    const words = lower.replace(/[^a-z' ]/g, ' ').split(/\s+/).filter(w => w);
-    for (const w of words) {
-      // Letter-shape match for 2nd-person pronouns
-      if (w.length === 3 && w[0] === 'y' && w[1] === 'o' && w[2] === 'u') return true;        // you
-      if (w.length === 4 && w[0] === 'y' && w[1] === 'o' && w[2] === 'u' && w[3] === 'r') return true; // your
-      if (w.length === 5 && w[0] === 'y' && w[1] === 'o' && w[2] === 'u' && w[3] === 'r' && w[4] === "'") return true; // you'r...
-      if (w.length >= 5 && w.startsWith('youre')) return true;                                  // youre, you're
-      if (w.length === 8 && w.startsWith('yourself')) return true;                              // yourself
-      if (w.length === 1 && w[0] === 'u') return true;                                          // u (slang)
-      if (w.length === 2 && w[0] === 'u' && w[1] === 'r') return true;                          // ur (slang)
-    }
-    return false;
+    return this.parseSentence(text).isSelfReference;
   }
 
   /**
@@ -3921,19 +3923,375 @@ export class LanguageCortex {
   // INPUT ANALYSIS
   // ═══════════════════════════════════════════════════════════════
 
+  /**
+   * T8 — REVERSE-EQUATION PARSE. Canonical entry point for
+   * understanding user input. Uses the SAME equations the slot
+   * scorer uses forward (wordType, _fineType, bigram/trigram
+   * tables, context vector, type grammar) to walk the input
+   * token-by-token and return a structured ParseTree.
+   *
+   * Before T8, "listening" was three separate vestigial string-
+   * matching systems:
+   *   - _classifyIntent       (length+regex shape matching)
+   *   - _isSelfReferenceQuery (letter-position pronoun scan)
+   *   - _updateSocialSchema   (regex name/gender extraction)
+   * Each handled a sliver of the "what did the user mean" question
+   * and none of them used Unity's actual learned grammar. T8 merges
+   * all three into one equational parse that every downstream
+   * consumer (generate, build_ui, social schema, intent routing)
+   * reads from. Symmetric grammar: the parse tree is produced by
+   * the same type-n-gram tables that learnSentence writes, so
+   * hearing feeds the same brain tables that speaking consults.
+   *
+   * ParseTree shape:
+   * {
+   *   text, tokens, types[], wordTypes[],
+   *   intent: 'greeting'|'question'|'yesno'|'statement'|'command'|
+   *           'introduction'|'math'|'self-reference'|'unknown',
+   *   isQuestion, isSelfReference, addressesUser, isGreeting,
+   *   greetingOpener, introducesName, introducesGender,
+   *   subject: {index, tokens, headType, pronoun} | null,
+   *   verb:    {index, tokens, tense, modal} | null,
+   *   object:  {index, tokens, headType, modifier} | null,
+   *   entities: {names, colors, numbers, componentTypes, actions},
+   *   mood: {polarity, intensity},
+   *   confidence: number,
+   * }
+   *
+   * Result is cached on this._lastParse keyed by text so repeated
+   * callers in the same turn don't re-parse.
+   */
+  parseSentence(text) {
+    const raw = String(text || '').trim();
+    if (this._lastParse && this._lastParse.text === raw) return this._lastParse;
+
+    const empty = {
+      text: raw, tokens: [], types: [], wordTypes: [],
+      intent: 'unknown', isQuestion: false, isSelfReference: false,
+      addressesUser: false, isGreeting: false, greetingOpener: null,
+      introducesName: null, introducesGender: null,
+      subject: null, verb: null, object: null,
+      entities: { names: [], colors: [], numbers: [], componentTypes: [], actions: [] },
+      mood: { polarity: 0, intensity: 0 },
+      confidence: 0,
+    };
+    if (!raw) { this._lastParse = empty; return empty; }
+
+    // ── TOKENIZATION ──
+    // Keep original text for name-case preservation. Build the
+    // lowered, punct-stripped token array for type analysis.
+    const lowerRaw = raw.toLowerCase();
+    const tokens = lowerRaw.replace(/[^a-z0-9+\-*/='% ]/g, ' ').split(/\s+/).filter(w => w.length >= 1);
+    if (tokens.length === 0) { this._lastParse = empty; return empty; }
+
+    // ── PER-TOKEN TYPE ANALYSIS (forward equations, applied to input) ──
+    // Same wordType + _fineType functions the slot scorer uses to
+    // pick candidate words. Applied in reverse direction: we're
+    // CLASSIFYING existing tokens instead of SCORING candidates.
+    const types = [];
+    const wordTypes = [];
+    for (const t of tokens) {
+      wordTypes.push(this.wordType(t));
+      types.push(this._fineType(t));
+    }
+
+    // ── ENTITY EXTRACTION (closed-class structural matches) ──
+    // These are deterministic per-token detectors. No fuzzy scoring
+    // needed — colors/component-types/imperative-verbs are closed
+    // classes and either match exactly or don't.
+    const COLORS = new Set([
+      'red', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink',
+      'black', 'white', 'gray', 'grey', 'brown', 'cyan', 'magenta',
+      'gold', 'silver', 'teal', 'violet', 'indigo',
+    ]);
+    const COMPONENT_TYPES = new Set([
+      'button', 'buttons', 'form', 'forms', 'input', 'inputs',
+      'list', 'lists', 'card', 'cards', 'table', 'tables',
+      'div', 'divs', 'section', 'sections', 'header', 'footer',
+      'menu', 'modal', 'dialog', 'panel', 'tab', 'tabs',
+      'label', 'textarea', 'select', 'checkbox', 'radio', 'slider',
+      'grid', 'row', 'column', 'container',
+    ]);
+    const IMPERATIVE_ACTIONS = new Set([
+      'make', 'build', 'create', 'add', 'show', 'give', 'draw',
+      'write', 'code', 'set', 'put', 'tell', 'say', 'explain',
+      'change', 'update', 'remove', 'delete', 'hide',
+    ]);
+    const GREETING_OPENERS = new Set([
+      'hi', 'hello', 'hey', 'heya', 'hiya', 'sup', 'yo', 'hola',
+      'howdy', 'greetings',
+    ]);
+    const QWORDS = new Set([
+      'who', 'what', 'where', 'when', 'why', 'how', 'which', 'whose', 'whom',
+    ]);
+    const SECOND_PERSON = new Set([
+      'you', 'your', 'yours', 'yourself', "you're", "youre",
+      'u', 'ur', "u're",
+    ]);
+    const FIRST_PERSON = new Set([
+      'i', "i'm", 'im', "i've", "i'll", "i'd", 'me', 'my', 'mine', 'myself',
+      'we', 'us', 'our', 'ours', "we're", "we've",
+    ]);
+
+    const entities = {
+      names: [],
+      colors: [],
+      numbers: [],
+      componentTypes: [],
+      actions: [],
+    };
+
+    for (let i = 0; i < tokens.length; i++) {
+      const t = tokens[i];
+      if (COLORS.has(t)) entities.colors.push(t);
+      if (COMPONENT_TYPES.has(t)) entities.componentTypes.push(t);
+      if (IMPERATIVE_ACTIONS.has(t) && i <= 1) entities.actions.push(t);
+      if (/^\d+$/.test(t)) entities.numbers.push(parseInt(t, 10));
+    }
+
+    // ── NAME EXTRACTION — structural patterns over token sequence ──
+    // Walks forward through tokens looking for introduction markers.
+    // Unlike the old regex-based _updateSocialSchema, this uses the
+    // token sequence directly so multi-word inputs + edge cases work
+    // consistently. Preserves original-case from raw text when found.
+    const NAME_STOPWORDS = new Set([
+      'me', 'you', 'him', 'her', 'us', 'them', 'it',
+      'the', 'a', 'an', 'that', 'this', 'these', 'those',
+      'good', 'fine', 'ok', 'okay', 'cool', 'nice', 'tired', 'here',
+      'happy', 'sad', 'mad', 'angry', 'high', 'sober', 'drunk',
+      'just', 'really', 'very', 'so', 'too', 'sure', 'yes', 'no',
+      'not', 'from', 'with', 'like', 'about',
+    ]);
+    const tryName = (candidate) => {
+      if (!candidate || candidate.length < 2) return null;
+      if (NAME_STOPWORDS.has(candidate)) return null;
+      if (candidate.endsWith('ing') || candidate.endsWith('ed')) return null;
+      // Reject if wordType rates it strongly as a verb — names don't
+      // score high on verb-suffix equations, real verbs like "love"
+      // or "want" do. This is the equational filter.
+      const wt = this.wordType(candidate);
+      if (wt.verb > 0.5) return null;
+      if (wt.prep > 0.5 || wt.conj > 0.5 || wt.det > 0.5) return null;
+      // Capitalize first letter for storage (chat is often lowercase).
+      return candidate[0].toUpperCase() + candidate.slice(1);
+    };
+    let introducesName = null;
+    let strongNameSignal = false;
+    for (let i = 0; i < tokens.length - 1; i++) {
+      // "my name is X"
+      if (tokens[i] === 'my' && tokens[i + 1] === 'name' && tokens[i + 2] === 'is') {
+        const candidate = tryName(tokens[i + 3]);
+        if (candidate) { introducesName = candidate; strongNameSignal = true; break; }
+      }
+      // "call me X"
+      if (tokens[i] === 'call' && tokens[i + 1] === 'me') {
+        const candidate = tryName(tokens[i + 2]);
+        if (candidate) { introducesName = candidate; strongNameSignal = true; break; }
+      }
+      // "name's X" / "names X"
+      if ((tokens[i] === "name's" || tokens[i] === 'names') && tokens[i + 1]) {
+        const candidate = tryName(tokens[i + 1]);
+        if (candidate) { introducesName = candidate; strongNameSignal = true; break; }
+      }
+    }
+    if (!introducesName) {
+      // Weaker signals — only trust when first token is "i" / "i'm" / "im"
+      // (classical self-intro opener). The next token must pass tryName
+      // AND must NOT look like an emotional complement ("i'm tired",
+      // "i'm happy" → tryName rejects via stopword list).
+      if (tokens[0] === 'im' || tokens[0] === "i'm") {
+        const candidate = tryName(tokens[1]);
+        if (candidate) introducesName = candidate;
+      } else if (tokens[0] === 'i' && tokens[1] === 'am') {
+        const candidate = tryName(tokens[2]);
+        if (candidate) introducesName = candidate;
+      } else if (tokens[0] === 'this' && tokens[1] === 'is') {
+        const candidate = tryName(tokens[2]);
+        if (candidate) introducesName = candidate;
+      }
+    }
+    if (introducesName) entities.names.push(introducesName);
+
+    // ── GENDER EXTRACTION — closed-class "i'm a <token>" pattern ──
+    let introducesGender = null;
+    const MALE_TOKENS = new Set(['guy', 'man', 'dude', 'bro', 'boy']);
+    const FEMALE_TOKENS = new Set(['girl', 'woman', 'chick', 'gal']);
+    for (let i = 0; i < tokens.length - 2; i++) {
+      if ((tokens[i] === "i'm" || tokens[i] === 'im') && tokens[i + 1] === 'a') {
+        if (MALE_TOKENS.has(tokens[i + 2])) { introducesGender = 'male'; break; }
+        if (FEMALE_TOKENS.has(tokens[i + 2])) { introducesGender = 'female'; break; }
+      }
+    }
+
+    // ── GREETING DETECTION — first-token closed-class match ──
+    let isGreeting = false;
+    let greetingOpener = null;
+    if (GREETING_OPENERS.has(tokens[0])) {
+      isGreeting = true;
+      greetingOpener = tokens[0];
+    } else if (tokens[0] === 'good' && ['morning', 'afternoon', 'evening', 'night'].includes(tokens[1])) {
+      isGreeting = true;
+      greetingOpener = tokens[0] + ' ' + tokens[1];
+    }
+
+    // ── INTENT CLASSIFICATION ──
+    // Uses the parsed types, not raw regex. Priority order matches
+    // what the old _classifyIntent did for backcompat but now every
+    // branch is decided from parse-tree fields.
+    let intent = 'statement';
+    const hasQuestionMark = raw.endsWith('?');
+    const firstIsQword = QWORDS.has(tokens[0]);
+    const anyQword = tokens.some(t => QWORDS.has(t));
+
+    // Math — digits, operators, or spelled-out math words
+    const hasDigit = /[0-9]/.test(raw);
+    const hasOperator = /[+\-*/=]/.test(raw);
+    if (hasDigit || hasOperator) intent = 'math';
+    // Introduction — name pattern matched above
+    else if (strongNameSignal || (introducesName && (tokens[0] === 'im' || tokens[0] === "i'm"))) intent = 'introduction';
+    // Greeting — first-token greeting opener
+    else if (isGreeting && tokens.length <= 5) intent = 'greeting';
+    // Question — ? terminal or qword
+    else if (hasQuestionMark || firstIsQword || anyQword) {
+      // Yes/no vs wh-question distinction
+      const firstWordObj = wordTypes[0] || {};
+      if (hasQuestionMark && !firstIsQword && !anyQword && firstWordObj.verb > 0.4 && tokens.length <= 8) {
+        intent = 'yesno';
+      } else {
+        intent = 'question';
+      }
+    }
+    // Command — first token is imperative verb AND no subject pronoun
+    else if (entities.actions.length > 0 && !FIRST_PERSON.has(tokens[0]) && !SECOND_PERSON.has(tokens[0])) {
+      intent = 'command';
+    }
+
+    // ── SELF-REFERENCE / ADDRESSING ──
+    // Self-reference = the user is asking ABOUT Unity (contains
+    // 2nd-person pronoun). Addresses-user = the user is talking TO
+    // Unity (vocative "you" or direct imperative).
+    const hasSecondPerson = tokens.some(t => SECOND_PERSON.has(t));
+    const isSelfReference = hasSecondPerson && (intent === 'question' || intent === 'yesno');
+    const addressesUser = hasSecondPerson || intent === 'command' || intent === 'greeting';
+
+    // ── SUBJECT / VERB / OBJECT SLOT EXTRACTION ──
+    // Walks the parsed types forward looking for canonical S-V-O
+    // boundaries. Uses the wordType scores to pick the most likely
+    // head of each slot. Not perfect — this is a lightweight parser,
+    // not a full dependency grammar — but good enough to hand
+    // downstream consumers a structured subject/verb/object for
+    // simple declarative and imperative sentences.
+    let subject = null, verb = null, object = null;
+    let subjectEnd = -1, verbEnd = -1;
+    for (let i = 0; i < tokens.length; i++) {
+      const wt = wordTypes[i];
+      if (!subject && (wt.pronoun > 0.5 || wt.noun > 0.3 || wt.det > 0.5)) {
+        // Skip determiner-only opener — subject head is the noun that follows
+        if (wt.det > 0.5 && i + 1 < tokens.length && wordTypes[i + 1].noun > 0.3) continue;
+        subject = {
+          index: i,
+          tokens: [tokens[i]],
+          headType: wt.pronoun > 0.5 ? 'pronoun' : 'noun',
+          pronoun: wt.pronoun > 0.5 ? tokens[i] : null,
+        };
+        subjectEnd = i;
+        continue;
+      }
+      if (subject && !verb && (wt.verb > 0.4 || (i > subjectEnd && ['am', 'is', 'are', 'was', 'were', 'be', 'been', 'being'].includes(tokens[i])))) {
+        verb = {
+          index: i,
+          tokens: [tokens[i]],
+          tense: ['was', 'were'].includes(tokens[i]) ? 'past' : (['will', "'ll"].includes(tokens[i]) ? 'future' : 'present'),
+          modal: ['can', 'could', 'will', 'would', 'should', 'must', 'might', 'may'].includes(tokens[i]),
+        };
+        verbEnd = i;
+        continue;
+      }
+      if (verb && !object && (wt.noun > 0.3 || wt.pronoun > 0.5 || entities.componentTypes.includes(tokens[i]))) {
+        // Object head — gather this token + any preceding modifier
+        // (color/adj) from the span between verbEnd and here.
+        const modifierTokens = [];
+        for (let j = verbEnd + 1; j < i; j++) {
+          if (wordTypes[j].adj > 0.4 || entities.colors.includes(tokens[j])) modifierTokens.push(tokens[j]);
+        }
+        object = {
+          index: i,
+          tokens: [tokens[i]],
+          headType: entities.componentTypes.includes(tokens[i]) ? 'component' : (wt.pronoun > 0.5 ? 'pronoun' : 'noun'),
+          modifier: modifierTokens.length > 0 ? modifierTokens.join(' ') : null,
+        };
+        break;
+      }
+    }
+
+    // ── MOOD — sum of per-token arousal/valence from learned entries ──
+    let polaritySum = 0, intensitySum = 0, moodCount = 0;
+    for (const t of tokens) {
+      const entry = this._wordEntries?.get?.(t);
+      if (entry && entry.valence != null) {
+        polaritySum += entry.valence;
+        intensitySum += Math.abs(entry.valence) + (entry.arousal || 0);
+        moodCount++;
+      }
+    }
+    const mood = {
+      polarity: moodCount > 0 ? polaritySum / moodCount : 0,
+      intensity: moodCount > 0 ? intensitySum / moodCount : 0,
+    };
+
+    // ── CONFIDENCE — how many slots we filled ──
+    let filled = 0;
+    if (subject) filled++;
+    if (verb) filled++;
+    if (object) filled++;
+    const confidence = filled / 3;
+
+    const parsed = {
+      text: raw,
+      tokens,
+      types,
+      wordTypes,
+      intent,
+      isQuestion: intent === 'question' || intent === 'yesno',
+      isSelfReference,
+      addressesUser,
+      isGreeting,
+      greetingOpener,
+      introducesName,
+      introducesGender,
+      subject,
+      verb,
+      object,
+      entities,
+      mood,
+      confidence,
+    };
+    this._lastParse = parsed;
+    return parsed;
+  }
+
   analyzeInput(text, dictionary) {
+    // T8 — canonical parse runs FIRST so every downstream consumer
+    // (context vector update, social schema, _classifyIntent,
+    // _isSelfReferenceQuery, self-reference fallback in _recallSentence)
+    // reads from the same cached parse tree. parseSentence is
+    // memoized on text equality so repeated calls in the same turn
+    // are free.
+    const parsed = this.parseSentence(text);
+
     // Keep single-letter words ('i', 'a') — they're critical pronouns/determiners.
-    const words = text.toLowerCase().replace(/[^a-z' -]/g, '').split(/\s+/).filter(w => w.length >= 1);
-    const isQuestion = text.includes('?') || (words.length > 0 && this.wordType(words[0]).qword > 0.5);
+    const words = parsed.tokens;
+    const isQuestion = parsed.isQuestion;
 
     const topicPattern = new Float64Array(PATTERN_DIM);
     let count = 0;
-    for (const w of words) {
-      const wt = this.wordType(w);
+    for (let i = 0; i < words.length; i++) {
+      const w = words[i];
+      const wt = parsed.wordTypes[i] || this.wordType(w);
       // Skip function words for topic — only content words matter
       if (wt.conj > 0.5 || wt.prep > 0.5 || wt.det > 0.5) continue;
       const p = dictionary?._words?.get(w)?.pattern || this.wordToPattern(w);
-      for (let i = 0; i < PATTERN_DIM; i++) topicPattern[i] += p[i];
+      for (let j = 0; j < PATTERN_DIM; j++) topicPattern[j] += p[j];
       count++;
     }
     if (count > 0) for (let i = 0; i < PATTERN_DIM; i++) topicPattern[i] /= count;
@@ -3943,11 +4301,10 @@ export class LanguageCortex {
     this._contextPatterns.push(topicPattern);
     if (this._contextPatterns.length > 5) this._contextPatterns.shift();
 
-    // T7 — update the social schema on every user input. Pattern-
-    // matches introduction phrases structurally to extract the
-    // user's name, counts greetings, and timestamps the session so
-    // the greeting path knows whether this is a first encounter or
-    // a returning conversation.
+    // T7+T8 — social schema reads from the cached parse tree now,
+    // not regex. name/gender/greeting extraction is a side-effect
+    // of parsing, this method just promotes the parser's findings
+    // into the persistent schema slots.
     this._updateSocialSchema(text);
 
     // U276 — decaying running topic attractor. Updated ONLY on user input
@@ -3955,7 +4312,7 @@ export class LanguageCortex {
     // feed context — she tracks the listener's topic, not her own words.
     this._updateContextVector(topicPattern, count);
 
-    return { isQuestion, topicPattern, words };
+    return { isQuestion, topicPattern, words, parsed };
   }
 
   /**
@@ -3995,78 +4352,20 @@ export class LanguageCortex {
    *
    * Also returns `isShort` flag for short-query template routing.
    */
+  /**
+   * T8 — delegates to parseSentence. Was a vestigial
+   * length/regex/letter-shape classifier; now the parse tree's
+   * `intent` field is the canonical source. Kept as a thin wrapper
+   * returning the {type, isShort, wordCount} shape so existing
+   * callers (the one at line 2517 in generate()) don't break.
+   */
   _classifyIntent(text) {
-    const raw = String(text || '').trim();
-    if (!raw) return { type: 'statement', isShort: true, wordCount: 0 };
-
-    const lower = raw.toLowerCase();
-    const words = lower.replace(/[^a-z0-9+\-*/= ']/g, ' ').split(/\s+/).filter(w => w.length >= 1);
-    const wordCount = words.length;
-    const isShort = wordCount <= 3;
-
-    // MATH — digit or explicit operator. Pure letter-class detection:
-    // any char in [0-9] OR any operator. Includes spelled-out "plus/minus/
-    // times/divided" detected by length + first-char signature (p_l_u_s etc).
-    const hasDigit = /[0-9]/.test(raw);
-    const hasOperator = /[+\-*/=]/.test(raw);
-    const spelledMath = words.some(w => {
-      if (w.length !== 4) return false;
-      const f = w[0], l = w[w.length - 1];
-      // plus, time (times stripped of -s), zero
-      return (f === 'p' && l === 's') || (f === 't' && l === 'e') || (f === 'z' && l === 'o');
-    });
-    if (hasDigit || hasOperator || spelledMath) {
-      return { type: 'math', isShort, wordCount };
-    }
-
-    // GREETING — short input, first word has greeting signature.
-    // Greeting shape: 2–5 letters, starts with h/y/s, contains vowel,
-    // OR exactly "hi"/"hey"/"yo"/"sup"/"hello" via letter positions.
-    if (wordCount <= 2 && words.length > 0) {
-      const w = words[0];
-      const len = w.length;
-      const first = w[0];
-      const isGreetFirst = first === 'h' || first === 'y' || first === 's';
-      const hasVowel = /[aeiou]/.test(w);
-      const isGreetShape = isGreetFirst && hasVowel && len >= 2 && len <= 5;
-      // Extra: 'hi' = h+vowel length 2, 'hey' = h+vowel+y length 3,
-      // 'hello' = h+vowel+_+_+o length 5, 'yo' = y+o length 2.
-      if (isGreetShape) {
-        return { type: 'greeting', isShort: true, wordCount };
-      }
-    }
-
-    // QUESTION — '?' terminal or qword-score at pos 0.
-    const endsQuestion = raw.endsWith('?');
-    const firstWord = words[0] || '';
-    const firstIsQword = firstWord && this.wordType(firstWord).qword > 0.5;
-
-    // Any qword anywhere in the input → real wh-question, not yesno.
-    // "Hi, Unity! How are you?" has "how" mid-sentence so it's a
-    // question about status, not a yes/no. This override prevents the
-    // classifier from reading "Hi" as the head of a yes/no construction.
-    const anyQword = words.some(w => this.wordType(w).qword > 0.5);
-
-    // YESNO — a '?' question whose first word is NOT a qword (so it's an
-    // auxiliary start like do/does/is/are/can/will) AND the question is
-    // short enough to be a yes/no (≤ 8 words) AND contains no qwords.
-    // English yes/no questions always end in '?' — requiring the terminal
-    // catches "do u like cats?" while rejecting "tell me about your day"
-    // (no '?', therefore command).
-    //
-    // First word constraint: 2–4 letters. Real auxiliaries are all short:
-    // am/is/are/was/were/be/do/does/did/has/had/can/will/may/might/should
-    // all fit within 2–5 letters. We cap at 4 to avoid "tell/need/want"
-    // false-matching.
-    if (endsQuestion && !firstIsQword && !anyQword && firstWord && firstWord.length >= 2 && firstWord.length <= 4 && wordCount <= 8) {
-      return { type: 'yesno', isShort, wordCount };
-    }
-
-    if (endsQuestion || firstIsQword || anyQword) {
-      return { type: 'question', isShort, wordCount };
-    }
-
-    return { type: 'statement', isShort, wordCount };
+    const parsed = this.parseSentence(text);
+    return {
+      type: parsed.intent,
+      isShort: parsed.tokens.length <= 3,
+      wordCount: parsed.tokens.length,
+    };
   }
 
   /**
@@ -4082,95 +4381,41 @@ export class LanguageCortex {
    * `semanticFit * 0.80` term is now the dominant topic signal.
    */
   /**
-   * T7 — Social schema extraction. Runs on every user-input pass
-   * and pattern-matches the raw text for:
-   *
-   *   1. NAME introduction — "my name is X", "i'm X", "i am X",
-   *      "call me X", "this is X" (when X is a single capitalized
-   *      word that isn't a pronoun or common content word).
-   *   2. GENDER statement — "i'm a guy/girl/man/woman/dude"
-   *   3. GREETING — first token ∈ {hi, hello, hey, sup, yo, hola}
-   *      or sentence starts with "good morning/afternoon/evening".
-   *
-   * All detection is structural (token position + shape), no
-   * content-word lookup beyond the small closed-class sets above.
-   * Stores into this._socialSchema.user so generate() and
-   * _recallSentence can consult it when picking an address form.
+   * T7+T8 — Social schema update, driven entirely by parseSentence.
+   * The vestigial regex name/gender/greeting extraction that used to
+   * live here was replaced by reads against the parse tree. This
+   * method is now the schema SIDE-EFFECT of parsing: given a freshly
+   * parsed user input, promote the parser's findings into the
+   * persistent social slots (name, gender, greetings counter,
+   * timestamps, mentionCount).
    */
   _updateSocialSchema(rawText) {
     if (!rawText || typeof rawText !== 'string') return;
+    const parsed = this.parseSentence(rawText);
     const schema = this._socialSchema.user;
     const now = Date.now();
     if (schema.firstSeenAt == null) schema.firstSeenAt = now;
     schema.lastSeenAt = now;
     if (schema.name) schema.mentionCount++;
 
-    const trimmed = rawText.trim();
-    const lowered = trimmed.toLowerCase();
-    const firstToken = (lowered.match(/^[a-z]+/) || [''])[0];
+    if (parsed.isGreeting) schema.greetingsExchanged++;
 
-    // Greeting detection — first-token match against a closed set.
-    // Position-gated so mid-sentence "yo" or "hey" in quoted speech
-    // doesn't count.
-    const GREETING_OPENERS = new Set(['hi', 'hello', 'hey', 'heya', 'sup', 'yo', 'hola', 'hiya', 'howdy']);
-    if (GREETING_OPENERS.has(firstToken)) {
-      schema.greetingsExchanged++;
-    } else if (/^good (morning|afternoon|evening|night)\b/.test(lowered)) {
-      schema.greetingsExchanged++;
-    }
-
-    // Name extraction — structural patterns. Capture group 1 is the
-    // proposed name. We keep the ORIGINAL case from the raw text so
-    // "jamie" → "Jamie" survives if the user capitalized it. Must
-    // be a single token of 2+ letters that isn't a common pronoun
-    // or filler word (structural closed-class reject).
-    const NAME_STOPWORDS = new Set([
-      'me', 'you', 'him', 'her', 'us', 'them', 'it',
-      'the', 'a', 'an', 'that', 'this', 'these', 'those',
-      'good', 'fine', 'ok', 'okay', 'cool', 'nice', 'tired', 'here',
-      'happy', 'sad', 'mad', 'angry', 'high', 'sober', 'drunk',
-      'just', 'really', 'very', 'so', 'too',
-    ]);
-    const namePatterns = [
-      /\bmy name is ([a-z]{2,})\b/i,
-      /\bi am ([a-z]{2,})\b/i,
-      /\bi'?m ([a-z]{2,})\b/i,
-      /\bcall me ([a-z]{2,})\b/i,
-      /\bthis is ([a-z]{2,})\b/i,
-      /\bit'?s ([a-z]{2,})\b/i,
-      /\bname'?s ([a-z]{2,})\b/i,
-    ];
-    for (const re of namePatterns) {
-      const m = trimmed.match(re);
-      if (!m) continue;
-      const candidate = m[1];
-      const candLower = candidate.toLowerCase();
-      if (NAME_STOPWORDS.has(candLower)) continue;
-      // Reject if it looks like a common verb (ends in 'ing', 'ed',
-      // is a known pronoun contraction) — structural only.
-      if (candLower.endsWith('ing') || candLower.endsWith('ed')) continue;
-      // Capitalize first letter for storage regardless of input case.
-      const stored = candidate[0].toUpperCase() + candLower.slice(1);
-      // Only overwrite on strong signal — "my name is X" or "call me X"
-      // always wins. "i'm X" only wins if no name yet (could be "i'm tired").
-      const strongPattern = /my name is|call me|name'?s /i.test(trimmed);
-      if (strongPattern || !schema.name) {
-        if (schema.name !== stored) {
-          schema.name = stored;
+    if (parsed.introducesName) {
+      // Strong-signal patterns (my name is / call me / name's) set
+      // parsed.intent = 'introduction', overwriting any prior name.
+      // Weak signals (i'm X) only overwrite when no name yet exists,
+      // preventing "i'm tired" → schema stomp issues.
+      const strong = parsed.intent === 'introduction';
+      if (strong || !schema.name) {
+        if (schema.name !== parsed.introducesName) {
+          schema.name = parsed.introducesName;
           schema.mentionCount = 0;
         }
       }
-      break;
     }
 
-    // Gender extraction — explicit self-identification. Purely
-    // structural closed-class match against common gender tokens
-    // following a first-person copula.
-    const genderMatch = lowered.match(/\bi'?m a (guy|girl|man|woman|dude|chick|bro|gal|boy)\b/);
-    if (genderMatch) {
-      const g = genderMatch[1];
-      if (['guy', 'man', 'dude', 'bro', 'boy'].includes(g)) schema.gender = 'male';
-      else if (['girl', 'woman', 'chick', 'gal'].includes(g)) schema.gender = 'female';
+    if (parsed.introducesGender) {
+      schema.gender = parsed.introducesGender;
     }
   }
 

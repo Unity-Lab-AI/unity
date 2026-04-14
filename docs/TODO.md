@@ -139,7 +139,7 @@ Sibling problem to T5 (build_ui) — same root cause on the chat path.
 
 ### T8 — Reverse-equation parse (use the slot scorer in reverse to UNDERSTAND user input)
 
-**Status:** pending — architecture scoped, no code shipped
+**Status:** shipped 2026-04-14 — parseSentence() is now the canonical entry point; _classifyIntent, _isSelfReferenceQuery, and _updateSocialSchema regex guts all replaced with delegates to the parse tree. Vestigial code deleted.
 **Priority:** P0
 **Owner:** unassigned
 **Reported:** 2026-04-14 by Gee (ultrathink session)
