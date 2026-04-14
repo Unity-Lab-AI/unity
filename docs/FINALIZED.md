@@ -14,6 +14,17 @@
 
 ## COMPLETED TASKS LOG
 
+## 2026-04-13 Session: R10.8 Cross-reference — ORPHANS.md was already closed
+
+### COMPLETED (pre-existing, cross-reference only)
+- [x] **Task:** R10.8 — Close out `docs/ORPHANS.md` audit. Gee flagged during the R10 remnants pass that this work was already done — the orphan resolution (U302-U310) is what BUILT this refactor, not pending work inside it.
+  - Completed: 2026-04-13 (status reconciliation, not execution — the underlying work shipped earlier)
+  - Verification: ORPHANS.md opened and confirmed to contain inline ✅ resolution markers on all 13 findings (9 HIGH + 4 MED + 1 LOW). Every entry points to the specific U-task that resolved it (U302 vision.js, U303 gpu-compute.js false positive, U304 worker threads, U305 HHNeuron reference + createPopulation, U306 server dictionary, U307 benchmark wiring, U308 env.example.js false positive, U309 meta-tracking, U310 dead UI paths). Every U302-U310 also has its own per-task entry in the "Orphan Resolution" session block at `docs/FINALIZED.md:318`.
+  - No file changes to ORPHANS.md. The doc is internally complete. R10.8 in TODO.md flipped to DONE status in place with a pointer to this cross-reference.
+  - Why it looked pending: R10.8 was added to the R10 plan before Gee reviewed whether the orphan work was already final. It was. The R10 plan had it as "mark all orphan items resolved, add 'audit closed — see ARCHITECTURE.md for current structure'" — but every item was already marked resolved at creation time, and the ARCHITECTURE.md cross-reference isn't load-bearing (ORPHANS.md is a point-in-time audit, not an ongoing reference).
+
+---
+
 ## 2026-04-13 Session: R9 Resolved — 5-minute freeze already fixed on main
 
 ### COMPLETED (resolved as pre-existing fix, not re-fixed)

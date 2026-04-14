@@ -673,7 +673,7 @@ Boot Unity with viz panel open, let it run 10 minutes, take Chrome memory snapsh
 - Image/vision/TTS keys only
 - New diagram
 
-### R10.8 — `docs/ORPHANS.md` — close out the audit
+### R10.8 — `docs/ORPHANS.md` — close out the audit  [DONE 2026-04-13 — pre-existing. Every U302-U310 finding already has ✅ RESOLVED markers inline in ORPHANS.md (13 findings, all 9 HIGH + 4 MED + 1 LOW triaged). Full Orphan Resolution session block already in FINALIZED.md:318 from the earlier phase. No rewrite needed — this work built the refactor, it's not pending work.]
 - Mark all orphan items as resolved (post-R2-R9 some will have been rewritten as part of the shared core)
 - Add "This audit is closed — see ARCHITECTURE.md for current structure"
 
