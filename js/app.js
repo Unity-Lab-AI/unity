@@ -1770,6 +1770,14 @@ Vision: ${state.visionDescription || 'none'}`;
   if (brain3d && typeof brain3d.setBrain === 'function') {
     brain3d.setBrain(brain);
   }
+  // Wire the landing-page Brain3D too so its popups also show Unity's
+  // real commentary once bootUnity has run. Pre-boot, landingBrain3d
+  // has no brain ref and falls back to the legacy telemetry generator
+  // which is correct — the brain doesn't exist yet.
+  if (typeof landingBrain3d !== 'undefined' && landingBrain3d
+      && typeof landingBrain3d.setBrain === 'function') {
+    landingBrain3d.setBrain(brain);
+  }
 
   // ── Wire DOM events ──
   // R15 — unityAvatar click handler was moved to page-load time

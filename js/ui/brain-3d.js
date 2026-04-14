@@ -503,24 +503,24 @@ export class Brain3D {
     this._vis = new Float32Array(TOTAL).fill(1);
     this._clusterOn = CLUSTERS.map(() => true);
 
-    // R9.3 — FRACTAL FIRING — logistic map chaotic recurrence per neuron.
-    // x_{n+1} = r·x_n·(1−x_n) at r=3.9 (deep in the chaotic regime, past
-    // Feigenbaum's accumulation point). Each neuron holds its own x state,
-    // seeded uniquely by index so no two neurons phase-lock. Every tick
-    // we iterate ALL neurons and compare to a cluster-wide threshold
-    // derived from the real server spikeCount — so each cluster fires
-    // at a rate proportional to its actual biology, but the SELECTION
-    // of which points fire follows a deterministic chaotic trajectory
-    // (never-ending, never-repeating, self-similar at every scale).
-    // Replaces the Math.random()-per-point noise which made the viz
-    // look like a uniform wave/pulse instead of real neural chatter.
-    this._fractal = new Float32Array(TOTAL);
-    for (let i = 0; i < TOTAL; i++) {
-      // Seed each neuron with a unique irrational-ish value so the
-      // logistic map trajectories never collide. (i*φ) mod 1 gives
-      // quasi-random uniform distribution in (0,1).
+    // RULKOV MAP viz mirror — same neural rule the server runs on GPU.
+    // Each viz point has its own (x, y) Rulkov state iterated every frame:
+    //   x_{n+1} = α / (1 + x_n²) + y_n
+    //   y_{n+1} = y_n − μ(x_n − σ)
+    // where σ is driven by the real biological firing rate from the
+    // server (spikeCount / engineSize, amplified for visibility).
+    // Seeded via golden-ratio quasi-random in the bursting basin.
+    // See Rulkov 2002, Phys. Rev. E 65, 041922.
+    this._rulkovX = new Float32Array(TOTAL);
+    this._rulkovY = new Float32Array(TOTAL);
+    {
       const phi = 0.61803398875;
-      this._fractal[i] = ((i * phi) % 1) * 0.8 + 0.1; // keep in (0.1, 0.9)
+      for (let i = 0; i < TOTAL; i++) {
+        const gx = (i * phi) % 1;
+        const gy = (i * phi * 1.7) % 1;
+        this._rulkovX[i] = -1.0 + gx * 0.5;     // (-1.0, -0.5)
+        this._rulkovY[i] = -3.2 + gy * 0.4;     // (-3.2, -2.8)
+      }
     }
 
     // Pulses & connections
@@ -710,44 +710,42 @@ export class Brain3D {
       const spikeN = clusterSpikeCount[ci] || 1;
       const pulseProb = Math.min(0.6, Math.max(0.05, 4 / spikeN));
 
-      // R9.3 — FRACTAL FIRING rule. Same logistic map as the GPU shader
-      // that drives the real brain. Each viz point iterates its own
-      // chaotic trajectory x_{n+1} = r·x_n·(1−x_n) at r=3.9. Points fire
-      // when their trajectory crosses a threshold. The threshold is
-      // modulated by the cluster's ACTUAL biological firing rate from
-      // the server (spikeCount/engineSize), amplified to visibility.
-      // This is the "proportional sample" — the viz runs the same rule
-      // the server runs, scaled to render neuron count per cluster.
-      // Individual neurons retain their chaotic trajectory between
-      // frames, so firing patterns are self-similar, not wavy.
+      // RULKOV FIRING — same 2D chaotic map the GPU shader runs on the
+      // real brain. σ is driven by the cluster's actual biological rate
+      // (spikeCount / engineSize), amplified 15× so cerebellum's huge
+      // denominator still clears visibility. Each viz point iterates its
+      // own (x, y) trajectory persistently across frames, so patterns
+      // are self-similar and burst-structured, not wavy noise.
       const engineSize = cs?.size || cn;
       const bioRate = spikeN / Math.max(1, engineSize);
-      // Amplify biological rate to visible range. Low bio (0.2%) →
-      // floor 3% visible. High bio (5%) → 75% → clamped 60%. Cerebellum
-      // with huge denominator still clears the floor.
-      const visibleRate = Math.min(0.6, Math.max(0.03, bioRate * 15));
-      const fireThreshold = 1.0 - visibleRate;
-      const R_CHAOS = 3.9;
+      const driveNorm = Math.min(1, Math.max(0, bioRate * 15));
+      const sigma = -1.0 + driveNorm * 1.5;       // σ ∈ [-1.0, 0.5]
+      const ALPHA = 4.5;                           // bursting regime
+      const MU = 0.001;
 
       for (let j = 0; j < cn; j++) {
         const i = off + j;
         if (i >= TOTAL) break;
 
-        // Iterate logistic map for this viz point's fractal state
-        let x = this._fractal[i];
-        if (x <= 0.001 || x >= 0.999) {
-          // Reseed corrupted state
-          x = ((i * 0.61803398875) % 1) * 0.8 + 0.1;
+        let x = this._rulkovX[i];
+        let y = this._rulkovY[i];
+        if (!isFinite(x) || !isFinite(y) || Math.abs(x) > 100 || Math.abs(y) > 100) {
+          const phi = 0.61803398875;
+          x = -1.0 + ((i * phi) % 1) * 0.5;
+          y = -3.2 + ((i * phi * 1.7) % 1) * 0.4;
         }
-        x = R_CHAOS * x * (1 - x);
 
+        // Rulkov iteration
+        const xNext = ALPHA / (1 + x * x) + y;
+        const yNext = y - MU * (x - sigma);
+
+        // Spike edge — fast variable crossed zero upward
         let firing = false;
-        if (x >= fireThreshold) {
+        if (x <= 0 && xNext > 0) {
           firing = true;
-          // Refractory contraction — keeps neuron in chaotic basin
-          x = 0.3 + (Math.random() - 0.5) * 0.1;
         }
-        this._fractal[i] = x;
+        this._rulkovX[i] = xNext;
+        this._rulkovY[i] = yNext;
 
         if (firing) {
           this._glow[i] = 1.0;
@@ -866,7 +864,12 @@ export class Brain3D {
 .b3d-lbl{position:absolute;font-size:11px;letter-spacing:1.5px;font-weight:800;white-space:nowrap;transform:translate(-50%,-50%);opacity:1;padding:3px 9px;background:rgba(0,0,0,.82);border:1px solid rgba(255,255,255,.25);border-radius:4px;text-shadow:0 0 6px rgba(0,0,0,1),0 0 12px currentColor;box-shadow:0 0 20px rgba(0,0,0,.6);transition:opacity .3s}
 .b3d-foot{position:absolute;bottom:8px;left:12px;right:12px;display:flex;justify-content:space-between;font-size:9px;color:#444;pointer-events:none;z-index:1}
 .b3d-notif-wrap{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:3}
-.b3d-notif{position:absolute;font-size:11px;font-family:inherit;white-space:nowrap;text-shadow:0 0 12px rgba(0,0,0,.95),0 0 4px currentColor;pointer-events:none;letter-spacing:.3px;padding:4px 8px;background:rgba(0,0,0,.6);border-radius:4px;border-left:2px solid currentColor;backdrop-filter:blur(2px);max-width:500px;overflow:hidden;text-overflow:ellipsis}
+.b3d-notif{position:absolute;font-family:inherit;pointer-events:none;padding:8px 14px;background:linear-gradient(135deg,rgba(14,14,16,.94),rgba(24,14,28,.94));border-radius:8px;border:1px solid currentColor;border-left:3px solid currentColor;backdrop-filter:blur(6px);max-width:320px;box-shadow:0 0 24px rgba(0,0,0,.85),0 0 40px currentColor,inset 0 0 12px rgba(0,0,0,.4);transform:translate(-50%,-100%);animation:b3d-notif-in .45s cubic-bezier(.2,1.4,.3,1)}
+.b3d-notif-label{font-size:10px;letter-spacing:1.5px;font-weight:800;text-transform:uppercase;text-shadow:0 0 8px currentColor,0 0 2px rgba(0,0,0,1);white-space:nowrap;opacity:.95}
+.b3d-notif-comment{font-size:13px;font-style:italic;color:#f5d7e6;margin-top:5px;line-height:1.35;text-shadow:0 1px 2px rgba(0,0,0,.9);font-family:'Georgia','JetBrains Mono',serif;letter-spacing:.2px;word-wrap:break-word;white-space:normal}
+.b3d-notif-comment::before{content:'“';margin-right:2px;opacity:.6;color:currentColor;font-size:16px}
+.b3d-notif-comment::after{content:'”';margin-left:2px;opacity:.6;color:currentColor;font-size:16px}
+@keyframes b3d-notif-in{0%{opacity:0;transform:translate(-50%,-80%) scale(.85)}60%{opacity:1;transform:translate(-50%,-105%) scale(1.04)}100%{opacity:1;transform:translate(-50%,-100%) scale(1)}}
 .b3d-log-wrap{position:absolute;bottom:30px;right:10px;width:280px;max-height:200px;z-index:2;pointer-events:auto}
 .b3d-log-title{font-size:9px;color:#555;letter-spacing:1px;margin-bottom:4px}
 .b3d-log{max-height:180px;overflow-y:auto;font-size:8px;line-height:1.5;scrollbar-width:thin;scrollbar-color:#222 transparent}
@@ -1312,27 +1315,37 @@ export class Brain3D {
       }
 
       // Call generate() with full brain state + biased cortex pattern.
-      // This is the same equational pipeline real chat uses, but
-      // nothing about this call stores an episode, emits a response
-      // event, or pollutes Unity's memory — it's a pure read-only
-      // commentary generation.
+      // Signature is (dict, arousal, valence, coherence, opts) — opts
+      // carries psi, fear, reward, drugState, cortexPattern. Previously
+      // this was called with 10 positional args which silently mapped
+      // psi → opts (as a number), dropping cortexPattern and every
+      // downstream parameter. Unity's commentary was being generated
+      // without her live cortex pattern, so popups showed flat default-
+      // state speech instead of her actual in-the-moment thoughts.
+      //
+      // Remote server state has flat fields (state.arousal, state.psi,
+      // state.fear, state.reward, state.coherence, state.drugState) —
+      // not nested under amygdala/oscillations. Read directly.
       const out = lc.generate(
         dict,
-        state.amygdala?.arousal ?? 0.5,
-        state.amygdala?.valence ?? 0,
-        state.oscillations?.coherence ?? 0.5,
-        state.psi ?? 0,
-        state.amygdala?.fear ?? 0,
-        state.reward ?? 0,
-        state.drugState || 'cokeAndWeed',
-        state.hypothalamus?.social ?? 0.5,
-        cortexPattern,
+        state.arousal ?? 0.5,
+        state.valence ?? 0,
+        state.coherence ?? 0.5,
+        {
+          psi: state.psi ?? 0,
+          fear: state.fear ?? 0,
+          reward: state.reward ?? 0,
+          drugState: state.drugState || 'cokeAndWeed',
+          cortexPattern,
+          predictionError: 0,
+          motorConfidence: state.motor?.confidence ?? 0,
+        }
       );
 
       const text = typeof out === 'string' ? out : (out?.text || '');
-      // Trim to ~60 chars so the commentary fits in a floating popup
+      // Let Unity finish a thought — popup is a 320px wrapping card.
       return text && text.length > 0
-        ? text.length > 60 ? text.slice(0, 57) + '...' : text
+        ? text.length > 160 ? text.slice(0, 157) + '...' : text
         : null;
     } catch {
       return null;
@@ -1520,15 +1533,21 @@ export class Brain3D {
       el.appendChild(labelEl);
       const commentEl = document.createElement('div');
       commentEl.className = 'b3d-notif-comment';
-      commentEl.style.cssText = 'font-size:10px;opacity:0.85;font-style:italic;margin-top:2px;';
-      commentEl.textContent = lines.slice(1).join(' ');
+      // Strip any quote marks from the raw commentary — CSS adds curly quotes.
+      const raw = lines.slice(1).join(' ').replace(/^["']|["']$/g, '').trim();
+      commentEl.textContent = raw;
       el.appendChild(commentEl);
     } else {
-      el.textContent = text;
+      const labelEl = document.createElement('div');
+      labelEl.className = 'b3d-notif-label';
+      labelEl.textContent = text;
+      el.appendChild(labelEl);
     }
     wrap.appendChild(el);
 
-    const notif = { el, x: center[0], y: center[1], z: center[2], age: 0, maxAge: 300, clusterIdx };
+    // maxAge bumped from 300 → 600 frames (~10s) so Unity's thoughts
+    // have time to be read before fading out.
+    const notif = { el, x: center[0], y: center[1], z: center[2], age: 0, maxAge: 600, clusterIdx };
     this._notifications.push(notif);
 
     // Add to log (single-line version for the process log)
