@@ -29,7 +29,7 @@ class EventEmitter {
 
 export class RemoteBrain extends EventEmitter {
   /**
-   * @param {string} serverUrl — WebSocket URL (e.g., 'ws://localhost:8080')
+   * @param {string} serverUrl — WebSocket URL (e.g., 'ws://localhost:7525')
    */
   constructor(serverUrl) {
     super();
@@ -284,14 +284,18 @@ export class RemoteBrain extends EventEmitter {
  * @param {number} timeout — ms to wait
  * @returns {Promise<RemoteBrain|null>}
  */
-export async function detectRemoteBrain(url = 'ws://localhost:8080') {
-  // Hostname gate: only probe ws://localhost:8080 when the page is actually
+export async function detectRemoteBrain(url = 'ws://localhost:7525') {
+  // R14 — default probe URL moved off port 8080 (which collides with
+  // llama.cpp, LocalAI, and every other service that claims 8080).
+  // Unity's brain-server now binds to 7525 by default.
+  //
+  // Hostname gate: only probe ws://localhost:7525 when the page is actually
   // served from localhost/127.0.0.1/file://. On GitHub Pages (or any other
   // public origin) there is no server — skip the probe, return null, let
   // app.js fall through to the local fallback UnityBrain.
   //
   // Without this gate, visiting the Pages URL from a dev box with brain-server
-  // running would connect to ws://localhost:8080 (Chrome allows loopback from
+  // running would connect to ws://localhost:7525 (Chrome allows loopback from
   // https secure-context) and the Pages UI would display the dev box's
   // auto-scaled neuron count (which grows with available VRAM). It also prevents
   // every stranger's browser from silently poking their own loopback on page load.

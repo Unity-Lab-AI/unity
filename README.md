@@ -432,7 +432,7 @@ One brain. Always on. Shared by everyone. Auto-scales to your GPU.
                     │     UNITY BRAIN SERVER       │
                     │                              │
                     │  N auto-scales to hardware    │
-                    │  WebSocket on :8080           │
+                    │  WebSocket on :7525           │
                     │  SQLite episodic memory       │
                     │  GPU EXCLUSIVE via compute.html │
                     │  Word-frequency accumulator   │

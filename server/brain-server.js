@@ -108,7 +108,11 @@ const RESOURCES = detectResources();
 
 // ── Configuration ──────────────────────────────────────────────
 
-const PORT = 8080;
+// R14 — moved off 8080 to avoid colliding with llama.cpp / LocalAI /
+// every other service that claims 8080 by default. Unity now binds to
+// 7525 unless PORT is set in the environment. If you need the old
+// behavior for an existing deployment, `PORT=8080 node brain-server.js`.
+const PORT = parseInt(process.env.PORT, 10) || 7525;
 const STATE_BROADCAST_MS = 100;    // send state to clients 10fps
 const WEIGHT_SAVE_MS = 300000;     // save weights every 5 minutes
 const WEIGHTS_FILE = path.join(__dirname, 'brain-weights.json');

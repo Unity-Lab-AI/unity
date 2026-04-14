@@ -5,8 +5,8 @@ echo "    Unity Brain Server"
 echo "  =============================="
 echo ""
 
-# Kill anything on port 8080
-lsof -ti:8080 2>/dev/null | xargs kill -9 2>/dev/null
+# Kill anything on port 7525
+lsof -ti:7525 2>/dev/null | xargs kill -9 2>/dev/null
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 
@@ -38,15 +38,15 @@ sleep 2
 # Open browser + GPU compute page (REQUIRED — brain runs on GPU exclusively)
 echo "  Opening browser..."
 if command -v open &>/dev/null; then
-    open http://localhost:8080
-    open http://localhost:8080/compute.html
+    open http://localhost:7525
+    open http://localhost:7525/compute.html
 elif command -v xdg-open &>/dev/null; then
-    xdg-open http://localhost:8080
-    xdg-open http://localhost:8080/compute.html
+    xdg-open http://localhost:7525
+    xdg-open http://localhost:7525/compute.html
 fi
 
-echo "  Open: http://localhost:8080"
-echo "  GPU compute: http://localhost:8080/compute.html (REQUIRED — brain pauses without it)"
+echo "  Open: http://localhost:7525"
+echo "  GPU compute: http://localhost:7525/compute.html (REQUIRED — brain pauses without it)"
 echo "  Press Ctrl+C to stop."
 echo ""
 

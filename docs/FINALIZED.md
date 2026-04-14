@@ -14,6 +14,58 @@
 
 ## COMPLETED TASKS LOG
 
+## 2026-04-13 Session: Refactor R14 — Move Unity's ports off common defaults
+
+### COMPLETED
+- [x] **Task:** R14 full epic (5 subtasks) — Unity's brain-server was binding to port 8080, which collides with llama.cpp's default, is one of the top-5 most-used ports, and was specifically one of the ports R13 wanted to auto-detect for vision describer backends. Gee flagged the collision during R13 implementation.
+  - Completed: 2026-04-13
+  - Port picked: **7525** (Gee's choice — not in any common-port list, not used by any R13 probe target)
+  - Files modified: `server/brain-server.js`, `js/brain/remote-brain.js`, `dashboard.html`, `compute.html`, `index.html`, `start.sh`, `start.bat`, `SETUP.md`, `README.md`, `docs/TODO.md`
+  - Details:
+    **R14.1 Port selection** — 7525 chosen over my proposed candidates (9823, 47474, 28080, 31415). Not bound by any of the backends Unity probes in R13 (7860 A1111, 7861 SD.Next, 7865 Fooocus, 8080 llama.cpp, 8081 LocalAI, 8188 ComfyUI, 9090 InvokeAI, 11434 Ollama, 1234 LM Studio, 1337 Jan) so Unity will never probe itself.
+    **R14.2 Collision audit** — grepped `LOCAL_IMAGE_BACKENDS` + `LOCAL_VISION_BACKENDS` in `js/brain/peripherals/ai-providers.js`, confirmed 7525 appears in neither list. Unity's own server is invisible to its own auto-detect probes.
+    **R14.3 Env override** — `server/brain-server.js:111` now reads `parseInt(process.env.PORT, 10) || 7525` so anyone needing the old 8080 for an existing deployment can set `PORT=8080 node brain-server.js`. Big R14 comment block above the declaration explains the why.
+    **R14.4 Client default** — `js/brain/remote-brain.js` `detectRemoteBrain(url = 'ws://localhost:7525')` default and the JSDoc example in the RemoteBrain constructor both updated. Hostname-gate comments explaining the localhost-only probe behavior also reference 7525 now.
+    **R14.5 User-facing endpoints + launchers** — updated in this order, each verified individually before moving to the next (per Gee's "dont batch shit quickly" directive):
+    - `server/brain-server.js:111` — source of truth, env-var override
+    - `js/brain/remote-brain.js:32, 287` — client WebSocket default + probe comments
+    - `dashboard.html:128-130` — ws://localhost:7525 + wss://hostname:7525 both tiers
+    - `compute.html:42` — GPU compute client WebSocket
+    - `index.html:343` — Chrome-blocks-local-files error fallback doc string
+    - `start.sh` — 7 replacements: port-kill `lsof`, `open` + `xdg-open` browser launches, echo docs
+    - `start.bat` — 6 replacements: port-kill `netstat|findstr`, `start ""` browser launches, echo docs
+    - `SETUP.md:187-192` — 6 endpoint URLs (ws, health, versions, rollback, episodes, history) with new R14 header explaining the move and the `PORT=xxxx` override
+    - `README.md:435` — architecture diagram "WebSocket on :7525"
+    **What intentionally stayed on 8080:**
+    - `js/env.example.js:63` — comment documenting llama.cpp's real default port
+    - `js/brain/peripherals/ai-providers.js:69` — llama.cpp backend entry in `LOCAL_VISION_BACKENDS` (this is the actual port llama.cpp listens on, Unity wants to find it there)
+    - `docs/TODO.md:768-769` — R13 plan text referencing llama.cpp's port
+    - `docs/FINALIZED.md` historical entries — per CLAUDE.md "NEVER delete from FINALIZED" rule, the frozen record of what was true at commit time stays frozen
+    - `js/app.js:530` — `LOCAL_AI_ENDPOINTS` "Claude Code CLI" entry hardcoding `http://localhost:8080`. This is **dead R4 code** (text-AI detection for the deleted claude-proxy) and should be removed as part of R12.2 dead-import/dead-code sweep, not R14. Flagged for R12.
+
+---
+
+## 2026-04-13 Session: Refactor R13 — Multi-provider vision + user-facing sensory status
+
+### COMPLETED
+- [x] **Task:** R13 full epic (5 subtasks) — Vision describer was single-provider (Pollinations multimodal only, via app.js:1022 inline handler) and failing silently with a `'Camera active, processing...'` string fallback that made IT cortex go dark. Gee flagged it: "vision handling still works even though we dont use pollinations text right... need more than one way for unity vision to work not everyone will have pollinations".
+  - Completed: 2026-04-13 (commit `e782bca`)
+  - Files modified: `js/brain/peripherals/ai-providers.js` (+~250 lines), `js/app.js` (vision describer rewrite + autoDetectVision + onStatus wire-up + sensoryStatus.init), `js/brain/visual-cortex.js` (null-handling in _maybeDescribe), `js/env.example.js` (visionBackends[] section), `js/ui/sensory-status.js` (NEW, ~190 lines)
+  - Details:
+    **R13.1 Multi-provider vision describer** — Added `LOCAL_VISION_BACKENDS` const array with 5 entries (Ollama 11434, LM Studio 1234, LocalAI 8081, llama.cpp 8080, Jan 1337). Added `VISION_MODEL_HINTS` substring list (llava/moondream/bakllava/vision/vl/cogvlm/minicpm-v) for filtering vision-capable models out of `/api/tags` + `/v1/models` responses. New `autoDetectVision(opts)` method parallel-probes all 5 ports with 1.5s timeout each, parses response to pick a vision-capable model id (Ollama's `models[].name` vs OpenAI's `data[].id` shape), and registers successful backends with `detected: true` flag. `loadEnvConfig(envKeys)` extended to also read `envKeys.visionBackends[]` with `{name, url, model, key, kind}` shape mirroring `imageBackends[]`. New `describeImage(dataUrl, opts)` method implements the 4-level priority: env.js visionBackends → auto-detected locals → Pollinations multimodal fallback. Each non-fallback tier runs through `_customDescribeImage(backend, dataUrl, system, userPrompt, timeoutMs)` which supports two wire shapes: `openai-vision` (OpenAI /v1/chat/completions multimodal with `type: image_url` content) across 2 endpoint path fallbacks, and `ollama-vision` (/api/chat with `images: [base64]` array, stripping the `data:image/...,` prefix). `_pollinationsDescribeImage()` centralizes the Pollinations call that used to be inline in app.js. After 3 consecutive TOTAL failures across all tiers, vision pauses for 30 seconds (`_visionPausedUntil`) to stop hammering dead endpoints. `describeImage` returns null immediately during the pause window.
+
+    **R13.2 User-facing sensory status UI** — New `js/ui/sensory-status.js` module with `SensoryStatusUI` class. Toast container bottom-right with 4-level color coding (info blue, success green, warn orange, error red), max 4 concurrent toasts with 6s auto-dismiss + 0.3s fade-in/out transitions. HUD indicator top-right with monospace format `🟢 img 2/4   🟢 vis 1/3` showing alive/total per kind, clickable to pop a full inventory toast with per-backend status dots. Subscribes to the `unity-sensory-status` window CustomEvent that `ai-providers._emitStatus` dispatches. Refreshes HUD every 5s on an interval so dead-backend cooldown recovery shows up in the HUD even without an explicit recovery event. Handles 5 event types: `autodetect-complete` (boot inventory toast, shown once per kind with backend list or "no local backends found — using Pollinations fallback" message), `backend-failed` (warn toast with backend name + reason), `backend-dead` (warn toast with URL + 1h cooldown notice), `paused` (error toast with duration), `all-failed` (error toast for vision specifically telling user to configure local VLM). New `SensoryAIProviders.getStatus()` method returns `{image: [...], vision: [...], visionPaused}` snapshot with per-backend state (alive/dead) and source (configured/env/auto/fallback) so the HUD can render without polling internal state. New `onStatus(fn)` subscription method with unsubscribe return.
+
+    **R13.3 Rip lying fallback string** — `js/app.js:1022` inline describer fully rewritten to call `providers.describeImage(dataUrl)` and return null on total failure (was returning `'Camera active, processing...'` which looked successful to visual cortex and stuck `this.description` with a lying string). `js/brain/visual-cortex.js` `_maybeDescribe()` promise handler now checks for null: on null, resets `_hasDescribedOnce = false` so the frame gets retried on the next scheduled window instead of being stuck forever in "described nothing successfully" state. On non-null, updates `this.description` as before.
+
+    **R13.4 Image gen status event parity** — `_markBackendDead(url)` now emits a `{kind: 'any', event: 'backend-dead', url, cooldownMs}` status event so image gen 401/402/403 dead-backend transitions surface to the toast layer the same way vision failures do.
+
+    **R13.5 env.js documentation** — `js/env.example.js` header comment list extended with `visionBackends[]` entry. New `visionBackends: []` config block with inline comments listing the 5 auto-detected ports, the `ollama pull llava && ollama serve` quick-start instructions, and two commented-out examples (remote Ollama with llava model, OpenAI-compatible vision endpoint with key). Documented that the auto-detect covers most setups so users only need to list backends here for remote/non-standard/keyed endpoints.
+
+    **How to verify manually (R11):** Boot Unity with no Pollinations key and no local VLM — HUD should show `🔴 vis 0/3` and a boot-inventory toast should appear saying "Vision: no local backends found. Using Pollinations fallback. Configure in js/env.js for local control." Start `ollama pull llava && ollama serve`, reload — HUD should flip to `🟢 vis 1/3` with a success toast "Vision: found 1 local backend(s) — Ollama (VLM)". Kill Ollama mid-session — first vision attempt fails, warn toast appears, next 2 attempts still fail, then a red error toast announces the 30s pause. Wait 30s — vision resumes automatically.
+
+---
+
 ## 2026-04-13 Session: Refactor R10 partial — Docs Reflect Reality (5 of 10 subtasks)
 
 ### COMPLETED

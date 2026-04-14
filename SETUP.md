@@ -183,13 +183,13 @@ The server auto-detects hardware (nvidia-smi for VRAM, `os` for RAM) and scales 
 - Cluster sizes are proportional: cerebellum 40%, cortex 25%, hippocampus 10%, amygdala 8%, basal ganglia 8%, hypothalamus 5%, mystery 4%
 - Client (browser-only mode, no server): runs a local CPU LIF fallback brain sized to what the browser JS engine can sustain
 
-**Endpoints:**
-- `ws://localhost:8080` — WebSocket for brain state + chat
-- `http://localhost:8080/health` — Server status JSON
-- `http://localhost:8080/versions` — Brain save versions
-- `http://localhost:8080/rollback/:slot` — Restore previous save
-- `http://localhost:8080/episodes` — Episodic memory query
-- `http://localhost:8080/history` — Emotional history data
+**Endpoints** (R14 — moved off 8080 to 7525 to avoid colliding with llama.cpp / LocalAI / every other service. Override via `PORT=xxxx node brain-server.js` if you need a different port.):
+- `ws://localhost:7525` — WebSocket for brain state + chat
+- `http://localhost:7525/health` — Server status JSON
+- `http://localhost:7525/versions` — Brain save versions
+- `http://localhost:7525/rollback/:slot` — Restore previous save
+- `http://localhost:7525/episodes` — Episodic memory query
+- `http://localhost:7525/history` — Emotional history data
 
 **Dashboard:** Open `dashboard.html` in a browser to watch Unity's brain live.
 

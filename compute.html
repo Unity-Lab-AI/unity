@@ -39,7 +39,8 @@ let totalComputeMs = 0;
 const clusterState = {}; // persists across reconnects
 
 function connectToServer() {
-  ws = new WebSocket('ws://localhost:8080');
+  // R14 — brain-server moved from 8080 to 7525
+  ws = new WebSocket('ws://localhost:7525');
 
   ws.onopen = () => {
     statusEl.textContent = 'GPU + Server connected — registering as compute client...';

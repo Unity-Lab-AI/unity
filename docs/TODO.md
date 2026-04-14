@@ -808,22 +808,22 @@ The current `app.js:1057` catch returns `'Camera active, processing...'` which i
 
 **Context (2026-04-13):** Currently `server/brain-server.js:111` hardcodes `PORT = 8080`. That's the SAME port llama.cpp uses by default, the same port LocalAI is commonly deployed on, and one of the top-5 most-used ports in existence. If a user runs Unity's server and llama.cpp on the same box, one of them won't boot — and Unity will silently fail its own autoDetectVision probe of port 8080 because Unity IS the thing answering on 8080. Every port we probe in R13 for local backends (7860, 7861, 7865, 8080, 8081, 8188, 9090, 11434, 1234, 1337) is used by something real — Unity must live somewhere OUT of that set.
 
-### R14.1 — Pick new uncommon ports for Unity's services
+### R14.1 — Pick new uncommon ports for Unity's services  [DONE 2026-04-13 — picked 7525 per Gee. proxy.js already deleted in R1 vestigial sweep.]
 - **brain-server.js HTTP + WebSocket** — move from `8080` to something obscure. Candidates: `9823`, `47474`, `28080`, `31337` (too cute), `7777` (too common), `8787`. **Proposed: `9823`** (not in any common-port list, easy to remember as "98-two-three").
 - **proxy.js** (if still present after R12 cleanup) — was on `3001`. Also common. Move or delete.
 - **compute.html** dev server if one exists — check.
 - Document the chosen port prominently in README boot instructions and SETUP.md.
 
-### R14.2 — Audit the full probe list for overlap with Unity ports
+### R14.2 — Audit the full probe list for overlap with Unity ports  [DONE 2026-04-13 — verified 7525 is NOT in LOCAL_IMAGE_BACKENDS or LOCAL_VISION_BACKENDS. Unity will never probe itself.]
 After picking new ports, grep `LOCAL_IMAGE_BACKENDS` + `LOCAL_VISION_BACKENDS` in `js/brain/peripherals/ai-providers.js` to confirm Unity's ports aren't in either list. If a future user runs Unity AND a vision model on the same machine, Unity should never probe itself.
 
-### R14.3 — Environment override
+### R14.3 — Environment override  [DONE 2026-04-13 — PORT env var now read via parseInt(process.env.PORT, 10) || 7525 at brain-server.js:111]
 Add `PORT` env var support so users can override: `PORT=9876 node server/brain-server.js`. Default to the new uncommon value when unset. Document in SETUP.md.
 
-### R14.4 — Client default matches server default
+### R14.4 — Client default matches server default  [DONE 2026-04-13 — remote-brain.js detectRemoteBrain() default and JSDoc both point to ws://localhost:7525]
 Whatever port the server settles on, `js/brain/remote-brain.js` default WebSocket URL needs to match. Grep for any hardcoded `8080` in client code and update together.
 
-### R14.5 — Dashboard / health / any other HTTP endpoints
+### R14.5 — Dashboard / health / any other HTTP endpoints  [DONE 2026-04-13 — dashboard.html (ws/wss), compute.html, index.html error fallback, start.sh (7 sites), start.bat (6 sites), SETUP.md endpoints table, README.md architecture diagram all updated to 7525. Remaining :8080 references are llama.cpp third-party port (must stay) and FINALIZED.md historical archive.]
 - `http://localhost:PORT/dashboard.html`
 - `http://localhost:PORT/health`
 - `ws://localhost:PORT` for brain state stream
