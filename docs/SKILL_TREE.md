@@ -1,6 +1,6 @@
 # SKILL TREE — IF ONLY I HAD A BRAIN
 
-> Generated: 2026-04-11 11:30:30 | Session: SESSION_20260411_113030
+> Last updated: 2026-04-14 | Phase 13 brain-refactor-full-control merged to main; all R1-R15 + T1-T6 capabilities live
 > Unity AI Lab
 
 ---
