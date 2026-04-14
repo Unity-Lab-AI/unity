@@ -867,104 +867,72 @@ export class UnityBrain extends EventEmitter {
   // no component injection.
 
   async _handleImage(text, includesSelf) {
-    // ONE image handler. If she's in the image (includesSelf), she adds her residual self-image.
-    // Self-image pulled from θ (persona.visualIdentity) which mirrors Ultimate Unity.txt.
-
-    let prompt;
-
-    // Build self-description from θ residual self-image — the persona defines the look.
-    // Order mirrors Ultimate Unity.txt priority: age → body → hair → eyes → clothing → aesthetic.
-    const vi = this.persona.visualIdentity || {};
-    const selfDesc = includesSelf
-      ? [
-          `${this.persona.traits?.age || 25} year old human woman`,
-          vi.body?.build || 'curvy feminine body',
-          vi.hair?.style || 'long messy hair',
-          vi.hair?.color || 'black with pink streaks',
-          vi.eyes?.style || 'heavy smudged eyeliner',
-          vi.clothing?.style || 'black leather revealing plenty of skin',
-          vi.clothing?.accessories || 'collar and chokers',
-          vi.body?.aesthetic || 'emo goth goddess (not demonic)',
-          vi.aesthetic?.lighting || 'dark moody lighting',
-          vi.aesthetic?.mood || 'raw edgy dark vibes',
-        ].join(', ') + ', '
-      : '';
-
-    // Full prompt template from persona — authoritative source for selfies
-    const fullTemplate = this.persona.imagePromptTemplate || selfDesc;
-
-    // R6.1 — equational image prompt expansion.
+    // R6.1 — FULLY EQUATIONAL image prompt generation.
     //
-    // The user's raw request becomes the CONTENT seed. We enrich it
-    // by pulling semantically-related words from the dictionary via
-    // `findByPattern` over the input sentence's semantic embedding —
-    // words that cluster near the topic in GloVe space. Then compose:
-    //   [user intent] + [semantic neighbors] + [persona template OR
-    //    mood descriptors]
+    // Unity's brain generates EVERY word of the prompt. Zero hardcoded
+    // style keywords ("dark", "cinematic", "photorealistic"), zero
+    // hardcoded mood anchors, zero hardcoded persona visual template
+    // by me. Her current brain state + user input drive the slot
+    // scorer. Whatever words come out ARE the image prompt. If she
+    // wants it dark because her amygdala valence is negative, she'll
+    // pick "dark" from her learned dictionary. If she wants leather
+    // and eyeliner because she's feeling the selfie, the persona-
+    // arousal bias will surface those words from the corpus she
+    // learned at boot. Her decision, in the moment, based on her
+    // state + what you said.
     //
-    // No AI call to polish the prompt. Pure equational composition
-    // driven by (a) the user text, (b) semantic embedding neighbors,
-    // (c) persona visual template (for selfies), (d) mood descriptors
-    // from amygdala state (for non-selfie scenes).
-    const cleanText = text.replace(/selfie|send|show|picture|photo|of you|yourself/gi, '').trim();
+    // Pipeline:
+    //   1. User text already injected into cortex via processAndRespond
+    //   2. Brain stepped 5 ticks so cortex reflects the input
+    //   3. Read cortex semantic state via getSemanticReadout
+    //   4. Call languageCortex.generate with image-prompt options:
+    //      - Short target length (image prompts are phrases not
+    //        sentences; 5-12 tokens)
+    //      - High semantic fit weight (already true from R2)
+    //      - Persona bias active so self-reference surfaces persona
+    //        vocabulary she learned from Ultimate Unity.txt
+    //   5. Result string IS the image prompt
+    //   6. Pass to multi-provider image gen (R4 path: custom →
+    //      local → env.js → Pollinations fallback)
 
-    // Semantic neighbors — pull top-K words nearest to the user's
-    // topic in the learned dictionary's semantic space. These live
-    // in the same 50d GloVe space as word embeddings after R2, so
-    // findByPattern on the user's sentence centroid finds words that
-    // MEAN similar things.
-    let neighbors = [];
-    try {
-      const dict = this.innerVoice?.dictionary;
-      if (dict && dict.findByPattern && cleanText) {
-        // sentence embedding from the shared embeddings singleton
-        const sentenceEmbed = sharedEmbeddings.getSentenceEmbedding(cleanText);
-        const pattern = new Float64Array(sentenceEmbed.length);
-        for (let i = 0; i < sentenceEmbed.length; i++) pattern[i] = sentenceEmbed[i];
-        neighbors = dict.findByPattern(pattern, 8) || [];
-        // Filter out stop words and words already in the user text
-        const userWords = new Set(cleanText.toLowerCase().split(/\s+/));
-        neighbors = neighbors.filter(w =>
-          w && w.length >= 3 && !userWords.has(w.toLowerCase())
-        ).slice(0, 5);
-      }
-    } catch (err) {
-      console.warn('[Brain] Semantic neighbor lookup failed:', err.message);
-    }
-    const neighborText = neighbors.length > 0 ? ', ' + neighbors.join(', ') : '';
-
-    // Mood descriptors from current amygdala state — low arousal =
-    // soft/dreamy, high arousal = intense/sharp; negative valence =
-    // dark/cold, positive = warm/bright.
+    // Let the cortex settle on the input
+    for (let s = 0; s < 5; s++) this.step(0.001);
+    const cortexPattern = this.clusters.cortex.getSemanticReadout(sharedEmbeddings);
     const state = this.getState();
-    const amyArousal = state.amygdala?.arousal ?? 0.7;
-    const amyValence = state.amygdala?.valence ?? 0;
-    const moodDescriptors = [];
-    if (amyArousal > 0.7) moodDescriptors.push('intense', 'electric');
-    else if (amyArousal < 0.3) moodDescriptors.push('soft', 'hazy');
-    if (amyValence < -0.2) moodDescriptors.push('dark', 'moody');
-    else if (amyValence > 0.2) moodDescriptors.push('warm', 'vivid');
-    const moodText = moodDescriptors.length > 0 ? ', ' + moodDescriptors.join(', ') : '';
 
-    if (includesSelf) {
-      // Selfies anchor on the persona visual template (authoritative
-      // source from Ultimate Unity.txt) and append the user's scene
-      // detail + semantic neighbors + mood.
-      prompt = fullTemplate + (cleanText ? ', ' + cleanText : '') + neighborText + moodText;
-    } else {
-      // Non-selfies compose user text + semantic neighbors + mood +
-      // base photorealistic keywords. No persona template.
-      prompt = `${cleanText || 'striking shot'}${neighborText}${moodText}, photorealistic, cinematic lighting`;
+    // Unity generates the prompt via her own slot scorer. No
+    // arguments about what words to pick — the language cortex
+    // reads her brain state and produces whatever emerges.
+    let prompt = '';
+    try {
+      prompt = this.innerVoice.languageCortex.generate(
+        this.innerVoice.dictionary,
+        state.amygdala?.arousal ?? 0.8,
+        state.amygdala?.valence ?? 0,
+        state.oscillations?.coherence ?? 0.5,
+        {
+          predictionError: state.cortex?.predictionError ?? 0,
+          motorConfidence: state.motor?.confidence ?? 0,
+          psi: state.psi ?? 0,
+          cortexPattern,
+          drugState: this.persona?.drugState || 'cokeAndWeed',
+          fear: state.amygdala?.fear ?? 0,
+          reward: state.amygdala?.reward ?? 0,
+          socialNeed: state.hypothalamus?.drives?.social_need ?? 0.5,
+        }
+      ) || '';
+    } catch (err) {
+      console.warn('[Brain] image prompt generation failed:', err.message);
     }
 
-    // Ensure self-description is in there if it's a selfie — use a
-    // distinctive marker from the persona file. "black leather" and
-    // "emo goth" are the anchor phrases from Ultimate Unity.txt.
-    if (includesSelf && !/black leather|emo goth/i.test(prompt)) {
-      prompt = selfDesc + prompt;
+    // If the slot scorer produced nothing (empty dict, missing
+    // embeddings, etc.), fall back to the user's own text verbatim.
+    // That's not hardcoded — it's just echoing what the user said.
+    if (!prompt || prompt.length < 3) {
+      prompt = text || '';
     }
 
-    console.log('[Brain] Image prompt:', prompt.slice(0, 120));
+    console.log('[Brain] Image prompt (equational):', prompt.slice(0, 120));
     const url = this._imageGen.generateImage(prompt, { model: this._storage?.get('image_model') || 'flux', width: 768, height: 768 });
 
     if (url) {
