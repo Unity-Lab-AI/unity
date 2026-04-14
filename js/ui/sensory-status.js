@@ -70,16 +70,21 @@ export class SensoryStatusUI {
     if (!el) {
       el = document.createElement('div');
       el.id = 'sensory-hud';
-      // Bottom-right above the landing action buttons — no collisions
-      // with the top title, cluster-toggle legend, or landing-topbar
-      // stats card. The 3D bottom bar sits at bottom:0 padding:20px so
-      // we anchor this badge above that (bottom:90px) and hug the
-      // right edge.
+      // Bottom-right at 90px above the 3D action bar. Bottom-left
+      // would collide with #unity-eye (bottom:80px left:12px 160×120)
+      // and #hud-modules (bottom:12px left:12px). The chat panel at
+      // bottom:24px right:24px width:380 max-height:520 ALSO sits
+      // here when open, which was the collision Gee flagged as "a
+      // fucking problem" — the HUD's z-index 9998 beat the chat's
+      // 9100 so "img 1/1 vis 1/1" overlaid the top of the chat
+      // messages and truncated them. Fix: hide the HUD entirely
+      // whenever the chat panel is visible. The HUD is a backend-
+      // debug widget; during a chat session it's pure noise.
       el.style.cssText = `
         position: fixed;
         bottom: 90px;
         right: 16px;
-        z-index: 9998;
+        z-index: 9098;
         font-family: monospace;
         font-size: 10px;
         color: #ccc;
@@ -97,6 +102,26 @@ export class SensoryStatusUI {
       el.title = 'Click to see backend details';
       el.addEventListener('click', () => this._showInventoryToast());
       document.body.appendChild(el);
+      // Hide-when-chat-open watcher. Observes #chat-panel's class
+      // attribute and toggles display:none on the sensory HUD the
+      // moment the chat opens. MutationObserver fires synchronously
+      // so there's no visual glitch between chat-open and HUD-hide.
+      const wireChatWatcher = () => {
+        const chatPanel = document.getElementById('chat-panel');
+        if (!chatPanel) {
+          // Chat panel not in DOM yet (landing page). Retry next tick.
+          setTimeout(wireChatWatcher, 500);
+          return;
+        }
+        const syncHud = () => {
+          const chatOpen = !chatPanel.classList.contains('hidden');
+          el.style.display = chatOpen ? 'none' : '';
+        };
+        syncHud();
+        const obs = new MutationObserver(syncHud);
+        obs.observe(chatPanel, { attributes: true, attributeFilter: ['class'] });
+      };
+      wireChatWatcher();
     }
     this._hud = el;
     this._refreshHud();
