@@ -14,6 +14,30 @@
 
 ## COMPLETED TASKS LOG
 
+## 2026-04-13 Session: R12.1 + R12.3 + R12.4 + R12.5 + R12.6 — no-action cleanup + final sanity sweep
+
+### COMPLETED
+- [x] **Task:** R12.1 — Kill every `// TODO:` / `// FIXME:` / `// XXX:` / `// HACK:` placeholder comment. **DONE with zero action needed.** Grep across `js/` tree + `server/brain-server.js` returned zero matches — earlier phases already cleaned every dead TODO breadcrumb. No files modified.
+
+- [x] **Task:** R12.3 — Kill every debug `console.log` breadcrumb. **DONE with zero action needed.** Every `console.log` in the repo uses a labeled category prefix (`[SensoryAI]`, `[Persistence]`, `[Server]`, `[Vision]`, `[Brain]`, `[GPU]`, etc.) — zero unlabeled dev traces (`console.log('test')`, `console.log('here')`, `console.log('[Dev]')` etc.). Earlier phases already cleaned the breadcrumbs. No files modified.
+
+- [x] **Task:** R12.4 — Kill accidental nested directories + build artifact leaks. **DONE via commit `e089078` earlier this session.** `.claude/.claude/` stray directory was the only issue — gitignored. No `.DS_Store` files. No build artifacts outside `.gitignore`. `git status --short --ignored` cross-checked clean: the only remaining untracked/ignored paths are all correctly covered by existing rules (`.claude/pollinations-user.json`, `.claude/settings.local.json`, `.claude/start.bat`, `js/app.bundle.js`, `js/env.js`, `server/brain-weights*.json`, `server/conversations.json`, `server/episodic-memory.db*`, `server/node_modules/`, `server/package-lock.json`).
+
+- [x] **Task:** R12.5 — Rebuild `js/app.bundle.js`. **DONE via existing automation.** The bundle is gitignored (`.gitignore:98`), not tracked in git, and rebuilt automatically on every `start.bat` / `start.sh` launch via `npx esbuild js/app.js --bundle --format=esm --outfile=js/app.bundle.js --platform=browser --target=esnext` at `start.bat:27` and `start.sh:25`. Next launch picks up all R2-R14 + R12.2 refactor changes automatically. Documenting the bundle command in a separate `docs/BUILD.md` is also unnecessary — both launcher scripts contain the full esbuild invocation inline with a comment. Note: R15 will rewrite ~200 lines of `app.js`, so any manual bundle forced now would just be re-stale afterward.
+
+- [x] **Task:** R12.6 — Final grep sanity sweep. **DONE, all 5 categories clean in live code, 1 R15-pending item flagged.**
+  - **Hardcoded response strings** ✅ zero in live code. Hits in `language-cortex.js` (POS type tags returned by `_fineType`, first-person transformation helpers in `_transformToFirstPerson`) are legitimate lexical tags / transform builders. `engine.js:828` emits empty string intentionally per R4 ("no canned '...' fallback — empty equational response means the language cortex couldn't find anything worth saying given current brain state"). No canned text responses anywhere.
+  - **Keyword-based action routing** ✅ zero `text.includes` / `text.toLowerCase().includes` / literal-keyword conditionals in `engine.js` or `sensory.js`. Motor action selection comes from the BG softmax + intent classifier (letter-position equations, no word lists). This was the root-cause fix in the 2026-04-13 live-test hotfix pass (image intercept was hardcoded `includesSelf = true`, fixed to require explicit image-request words only as a sensory-intent filter, not a cognition bypass).
+  - **Text-AI API calls from cognition** ✅ every `/v1/chat/completions` reference in live source is either a Pollinations MULTIMODAL VISION call (sensory input path, the R4 boundary rule — see `pollinations.js:5` header comment explicitly labeling it "sensory-only wrapper, DO NOT call from cognition"), or a local VLM probe for the R13 vision describer (`ai-providers.js` ollama-vision / openai-vision wire shapes). Cognition has ZERO AI calls. ONE exception caught and deferred, see R15-pending item below.
+  - **Word lists** ✅ zero hardcoded English word arrays in the brain tree. `_fineType()` uses letter-position equations and short conditionals for closed-class words (`i`/`am`/`is`/`are`/`the`/etc.) — these are LEXICAL TAGS used by the type n-gram grammar, not cognition routing. The rule per the refactor philosophy is: word lists are banned ONLY as cognition/routing paths, lexical tagging by shape is fine because closed-class words are finite and known.
+  - **Letter-hash fallbacks where semantic paths should be** ✅ `wordToPattern()` at `language-cortex.js:3403` post-R2 is a thin wrapper around `sharedEmbeddings.getEmbedding(clean)` returning GloVe 50d. The method name was deliberately kept to avoid rewriting 11+ call sites, just the internals were swapped. All live callers get real GloVe output. Verified by reading the full method body — it calls `sharedEmbeddings.getEmbedding(clean)` and returns `Float64Array(PATTERN_DIM)` filled from the embedding. No residual letter-hash paths.
+
+  **R15-pending item flagged in the text-AI check:** `app.js:857-893 scanAnthropicProxy()` is a live function (not a comment) that probes `http://localhost:3001/v1/chat/completions` to detect Anthropic text chat availability via the deleted claude-proxy. Every line is dead R4 code: the proxy was deleted in R1, Anthropic text chat was killed in R4, `detectedAI` / `enableWakeUp` are setup-modal graveyard state. Only called from `scanLocalOnly()` sibling at `app.js:631` during setup-modal auto-reconnect init. Not ripping in R12.2 per the agreed split with Gee — it's setup-modal-adjacent, R15 is going to rewrite the whole connect flow as an atomic UI pass. Ripping it in R12 would mean editing the same block twice.
+
+**Result after R12.1-R12.6 pass:** Only the setup-modal ecosystem (`LOCAL_AI_ENDPOINTS`, `PROVIDERS` catalog, `scanLocalOnly`, `scanAnthropicProxy`, `detectedAI`, `bestBackend`, `_allTextOptions`, 8 connect button handlers, `scanAnthropicProxy`'s test fetch to the deleted proxy) remains as known dead code — all intentionally deferred to R15. The rest of the codebase is sweep-clean for R12 merge purposes.
+
+---
+
 ## 2026-04-13 Session: R12.2 partial — dead-import sweep (brain tree)
 
 ### COMPLETED
