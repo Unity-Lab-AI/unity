@@ -328,20 +328,23 @@ User directive: "make sure the brain equations and Unity information guide (some
 
 **Source:** T4 manual verification.
 
-**Symptom:** Amygdala State panel shows Fear `0.000` permanently. User asks "is it even being used?"
+**Symptom:** Amygdala State panel shows Fear `0.000` permanently. User asked "is it even being used?"
 
-**Diagnosis:** `this.fear = 0` was initialized at class construction and broadcast in `getState()` as `fear: this.fear`, but `_updateDerivedState()` never actually computed a new value — the field was dead. Local-brain `js/brain/modules.js` amygdala attractor produces real fear values from the settled energy basin, but the server-brain `_updateDerivedState` skipped this entirely and left fear pinned at 0 forever.
+**Diagnosis:** `this.fear = 0` was initialized at class construction and broadcast in `getState()` as `fear: this.fear`, but `_updateDerivedState()` never actually computed a new value — the field was dead. Local-brain `js/brain/modules.js` `Amygdala` class has the real attractor-based fear equation (symmetric recurrent network, settles via `x ← tanh(Wx + drive)` for 5 iterations, reads fear as `σ(fearProj · x_settled)`) but the server-brain `_updateDerivedState` skipped this entirely and left fear pinned at 0 forever.
 
-**Fix:** Added fear derivation at the bottom of `_updateDerivedState()`:
-```
-const rawFear = amygActivity * p.emotionalVolatility * 6
-              + Math.max(0, -this.valence) * 0.3
-              - (drugState === 'weed' || 'weedAndAcid' ? 0.1 : 0);
-this.fear = clamp(rawFear, 0, 1);
-```
-Fear climbs with amygdala firing × persona emotional volatility (core term), adds a bump proportional to negative valence (fear builds when things go bad), and subtracts a little when Unity is on a weed-based drug state (weed dampens fear response, matches persona behavior). Now produces live non-zero values whenever amygdala is active.
+**Initial fix (rejected — was a hack):** Added a linear-multiply derivation `rawFear = amygActivity * emotionalVolatility * 6 + negValence*0.3 - weedDamp`. User immediately called this out: **"wtf? now fear jump from 0 to 1 so we have a real fear equation in the brain or not?"** — the `×6` term was saturating fear to 1 instantly whenever the Rulkov amygdala cluster fired, which on Unity's cokeAndWeed persona is basically always. Not the canonical equation, not a real attractor readout.
 
-**Files:** `server/brain-server.js` `_updateDerivedState()`
+**Real fix:** Imported the actual `Amygdala` class from `js/brain/modules.js` via the existing dynamic-import path in `_initLanguageSubsystem()` and instantiated a 32-nucleus instance on brain boot (`this.amygdalaModule = new modulesMod.Amygdala(32, { arousalBaseline: persona.arousalBaseline })`). In `_updateDerivedState()`, build a 32-element input vector by sampling the Rulkov amygdala cluster's firing rate with a persona-weighted per-nucleus pattern (low-frequency sine + harmonic cosine so adjacent nuclei get correlated input, matching real amygdala nuclei clustering), call `amygdalaModule.step(input, state)` which runs the canonical settle loop and plasticity update, then read the returned `{fear, reward, valence}` directly.
+
+  - `fear = σ(fearProj · x_settled)` — sigmoid readout from settled attractor state
+  - `reward = σ(rewardProj · x_settled)` — same pattern for the reward nucleus projection
+  - `valence = reward − fear` — canonical derivation
+
+Reward is EMA-blended with the external user-feedback reward signal (`reward = reward*0.9 + amyOut.reward*0.1`) so explicit thumbs-up/down still matter. Valence is EMA-blended too (`valence = valence*0.8 + amyOut.valence*0.2`) so the attractor nudges it without overwriting the persona's baseline mood. Fear is taken directly from the attractor with no blending — it IS the attractor output.
+
+This is the SAME equation the local-brain path has been running in `js/brain/modules.js` since day one. It's not a derived approximation, it's the canonical amygdala compute from the docs, now shared across both paths. Fear no longer snaps to 0 or 1 — it moves smoothly through the sigmoid range as the attractor basin shifts, with the Hebbian plasticity inside `step()` letting the weights carve their own basins over time.
+
+**Files:** `server/brain-server.js` `_initLanguageSubsystem()` + `_updateDerivedState()`
 
 ### T4.4 — Motor channel confidences all zero (respond/image/speak/build/listen/idle all 0.000)  [DONE this session]
 

@@ -452,11 +452,12 @@ class ServerBrain {
     console.log('[Brain] R3 — loading language subsystem (dictionary + language cortex + embeddings + component synth)...');
     const startMs = Date.now();
     try {
-      const [dictMod, lcMod, embedMod, csMod] = await Promise.all([
+      const [dictMod, lcMod, embedMod, csMod, modulesMod] = await Promise.all([
         import('../js/brain/dictionary.js'),
         import('../js/brain/language-cortex.js'),
         import('../js/brain/embeddings.js'),
         import('../js/brain/component-synth.js'),
+        import('../js/brain/modules.js'),
       ]);
 
       this.sharedEmbeddings = embedMod.sharedEmbeddings;
@@ -465,6 +466,14 @@ class ServerBrain {
       // R6.2 — component synth for equational build_ui on the server.
       // Templates get loaded from docs/component-templates.txt below.
       this.componentSynth = new csMod.ComponentSynth();
+
+      // REAL amygdala attractor — 32-neuron recurrent network with
+      // symmetric Hebbian plasticity that settles via x ← tanh(Wx+drive)
+      // and reads fear/reward via sigmoid projection from the settled
+      // state. This replaces the hack derivation that was saturating
+      // fear to 1 whenever the Rulkov amygdala cluster fired. Same
+      // class the local-brain path uses.
+      this.amygdalaModule = new modulesMod.Amygdala(32, { arousalBaseline: this.persona.arousalBaseline });
 
       // Await GloVe embedding table load — must complete before corpus
       // training so persona words get real semantic patterns from the
@@ -780,15 +789,46 @@ class ServerBrain {
     this.time += 1 / 1000;
     this.frameCount++;
 
-    // FEAR — was always 0 because nothing was updating it. Derived
-    // from amygdala activity, emotional volatility, and negative
-    // valence. Aggression threshold scales how fast fear builds —
-    // low threshold = easier to spook. Drug states that dampen fear
-    // (weed) lower the output further via the drug vector.
-    const rawFear = amygActivity * (p.emotionalVolatility || 0.5) * 6
-                  + Math.max(0, -this.valence) * 0.3
-                  - (this.drugState === 'weed' || this.drugState === 'weedAndAcid' ? 0.1 : 0);
-    this.fear = Math.max(0, Math.min(1, rawFear));
+    // FEAR / REWARD / VALENCE via the real amygdala attractor module.
+    // The Rulkov amygdala cluster gives us a scalar firing rate; we
+    // build a 32-element input vector by sampling that rate with
+    // persona-derived per-nucleus weighting (arousalBaseline adds
+    // positive drive to every nucleus, emotionalVolatility scatters
+    // sign across them). Then step() settles the recurrent attractor
+    // for 5 iterations and reads fear = σ(fearProj · x_settled),
+    // reward = σ(rewardProj · x_settled), valence = reward − fear.
+    //
+    // This replaces the earlier hack that linearly multiplied
+    // amygActivity by 6 and saturated fear to 1 the moment the
+    // cluster fired. Now fear is the canonical attractor readout —
+    // same equation js/brain/modules.js Amygdala class runs on the
+    // local-brain path, just driven by cluster-level telemetry
+    // instead of per-neuron spikes.
+    if (this.amygdalaModule) {
+      const amySize = this.amygdalaModule.size;
+      const amyInput = new Float64Array(amySize);
+      // Base drive: cluster activity scaled to the module's input range
+      const baseDrive = Math.min(1, amygActivity * 4);
+      for (let i = 0; i < amySize; i++) {
+        // Persona-weighted per-nucleus pattern — low-freq sine so
+        // adjacent nuclei get correlated input (matches real amygdala
+        // nuclei clustering). Scaled by base drive + valence term.
+        const phase = (i / amySize) * Math.PI * 2;
+        const pattern = Math.sin(phase) * (p.emotionalVolatility || 0.5)
+                      + Math.cos(phase * 2) * 0.3;
+        amyInput[i] = baseDrive * (0.6 + 0.4 * pattern) + this.valence * 0.1;
+      }
+      const amyOut = this.amygdalaModule.step(amyInput, { arousal: this.arousal, valence: this.valence }, 1);
+      this.fear = amyOut.fear;
+      // Reward is the amygdala readout, but the reward field on this
+      // also receives external signals from user feedback — blend.
+      this.reward = this.reward * 0.9 + amyOut.reward * 0.1;
+      // Let the attractor nudge valence too — persona arousal floor
+      // keeps it from swinging too far negative.
+      this.valence = this.valence * 0.8 + amyOut.valence * 0.2;
+    } else {
+      this.fear = 0; // pre-module-init fallback
+    }
 
     // MOTOR — under GPU-exclusive compute the server never sees
     // per-neuron spike bitmasks, only spikeCount per cluster. Can't
