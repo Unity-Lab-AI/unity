@@ -175,6 +175,32 @@ html, body {
   text-decoration: none;
 }
 #backend-connect-form .hint-link:hover { text-decoration: underline; }
+
+/* T4.11 — prominent "Get API Key" / "Install Docs" link button so
+   users can jump straight to the provider's signup or documentation
+   page without having to search. Every backend in BACKEND_CATALOG
+   that has a link field renders one of these. */
+#backend-connect-form .provider-link-btn {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: #ff4d9a;
+  background: rgba(255, 77, 154, 0.08);
+  border: 1px solid rgba(255, 77, 154, 0.4);
+  border-radius: 6px;
+  padding: 8px 14px;
+  margin: 4px 0 12px;
+  text-decoration: none;
+  letter-spacing: 0.3px;
+  transition: all 0.15s;
+}
+#backend-connect-form .provider-link-btn:hover {
+  background: rgba(255, 77, 154, 0.16);
+  border-color: #ff4d9a;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(255, 77, 154, 0.2);
+}
 #backend-connect-form input,
 #backend-connect-form select {
   width: 100%;

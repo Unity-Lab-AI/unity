@@ -971,8 +971,9 @@ const BACKEND_CATALOG = {
     name: 'Pollinations',
     kind: 'image',
     instructions:
-      'Unity\'s default image gen provider — active out of the box, no setup needed for the anonymous tier. Paste your Pollinations API key below to authenticate (raises rate limits and unlocks paid models). Get a key at pollinations.ai/dashboard. You can also pick which Pollinations image model Unity uses (default: flux).',
-    link: 'https://pollinations.ai/dashboard',
+      'Unity\'s default image gen provider — active out of the box, no setup needed for the anonymous tier. Paste your Pollinations API key below to authenticate (raises rate limits and unlocks paid models). You can also pick which Pollinations image model Unity uses (default: flux).',
+    link: 'https://enter.pollinations.ai/',
+    linkLabel: '🔑 Get Pollinations API key',
     needsKey: true,
     keyOptional: true,
     keyStorageKey: 'pollinations',
@@ -991,6 +992,7 @@ Run it with the API enabled:
 
 Unity auto-detects on localhost:7860 — no config needed. Only fill in a URL below if you're running on a remote host or non-standard port.`,
     link: 'https://github.com/AUTOMATIC1111/stable-diffusion-webui',
+    linkLabel: '📦 A1111 install docs',
     autoDetect: true,
     defaultPort: 7860,
     defaultKind: 'a1111',
@@ -1004,6 +1006,7 @@ Run: python main.py
 
 Unity auto-detects on localhost:8188 — no config needed. Only fill in a URL below for remote / non-standard setups.`,
     link: 'https://github.com/comfyanonymous/ComfyUI',
+    linkLabel: '📦 ComfyUI install docs',
     autoDetect: true,
     defaultPort: 8188,
     defaultKind: 'comfy',
@@ -1015,6 +1018,7 @@ Unity auto-detects on localhost:8188 — no config needed. Only fill in a URL be
 `Create a key at platform.openai.com/api-keys (paid account required).
 Paste below. Unity uses dall-e-3 by default — change the model field to dall-e-2 if you prefer the older model.`,
     link: 'https://platform.openai.com/api-keys',
+    linkLabel: '🔑 Get OpenAI API key',
     needsKey: true,
     defaultUrl: 'https://api.openai.com',
     defaultKind: 'openai',
@@ -1028,6 +1032,7 @@ Paste below. Unity uses dall-e-3 by default — change the model field to dall-e
 `Create a key at platform.stability.ai/account/keys.
 Paste below. Default model is stable-diffusion-xl-1024-v1-0 — see platform.stability.ai/docs/api-reference for alternatives.`,
     link: 'https://platform.stability.ai/account/keys',
+    linkLabel: '🔑 Get Stability AI key',
     needsKey: true,
     defaultUrl: 'https://api.stability.ai',
     defaultKind: 'openai',
@@ -1054,8 +1059,9 @@ Pick the right "kind" below based on your backend's request format.`,
     kind: 'vision',
     instructions:
 `Unity's default vision describer — active out of the box, no setup needed for the anonymous tier. Uses Pollinations multimodal chat under the hood.
-Paste your Pollinations API key below to authenticate (raises rate limits and unlocks paid models). Get a key at pollinations.ai/dashboard. You can also swap the multimodal model Unity asks to describe camera frames.`,
-    link: 'https://pollinations.ai/dashboard',
+Paste your Pollinations API key below to authenticate (raises rate limits and unlocks paid models). You can also swap the multimodal model Unity asks to describe camera frames.`,
+    link: 'https://enter.pollinations.ai/',
+    linkLabel: '🔑 Get Pollinations API key',
     needsKey: true,
     keyOptional: true,
     keyStorageKey: 'pollinations',
@@ -1074,6 +1080,7 @@ Start:                ollama serve
 Unity auto-detects on localhost:11434 and filters /api/tags for vision-capable models automatically — no config needed.
 Fill in the URL below only for remote hosts. Model field can force a specific VLM; leave blank to auto-pick.`,
     link: 'https://ollama.com/library/llava',
+    linkLabel: '📦 Ollama VLM model library',
     autoDetect: true,
     defaultPort: 11434,
     defaultKind: 'ollama-vision',
@@ -1091,6 +1098,7 @@ Load it and start the local server (Developer tab → Start Server, default port
 
 Unity auto-detects on localhost:1234. Exposes OpenAI-compatible /v1/chat/completions with multimodal content.`,
     link: 'https://lmstudio.ai',
+    linkLabel: '📦 LM Studio download',
     autoDetect: true,
     defaultPort: 1234,
     defaultKind: 'openai-vision',
@@ -1105,6 +1113,7 @@ Unity auto-detects on localhost:1234. Exposes OpenAI-compatible /v1/chat/complet
 `Create a key at platform.openai.com/api-keys.
 Paste below. Unity uses gpt-4o for vision by default — change to gpt-4o-mini for cheaper / faster.`,
     link: 'https://platform.openai.com/api-keys',
+    linkLabel: '🔑 Get OpenAI API key',
     needsKey: true,
     defaultUrl: 'https://api.openai.com',
     defaultKind: 'openai-vision',
@@ -1205,7 +1214,11 @@ function showBackendForm(backendKey) {
   let html = `<h3>${config.kind === 'image' ? '🎨' : '👁'} ${config.name}</h3>`;
   html += `<p class="hint" style="white-space:pre-wrap;line-height:1.5;">${config.instructions}</p>`;
   if (config.link) {
-    html += `<a href="${config.link}" target="_blank" class="hint-link">${config.link} →</a>`;
+    // T4.11 — render the signup/docs link as a prominent styled
+    // button with a clear action label so users don't have to hunt
+    // a tiny URL or search for the provider's key page on their own.
+    const label = config.linkLabel || '🔗 Open provider site';
+    html += `<a href="${config.link}" target="_blank" class="provider-link-btn">${label} →</a>`;
   }
 
   // URL input — required for custom, optional override for auto-detect
