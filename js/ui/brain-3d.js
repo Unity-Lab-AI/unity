@@ -815,8 +815,8 @@ export class Brain3D {
 .b3d-body{flex:1;position:relative;overflow:hidden}
 .b3d-cv{width:100%;height:100%;display:block;cursor:grab}
 .b3d-cv:active{cursor:grabbing}
-.b3d-tog-wrap{position:absolute;top:10px;left:10px;display:flex;flex-direction:column;gap:3px;z-index:2}
-.b3d-tog{background:rgba(8,8,8,.85);border:1px solid #222;color:#bbb;font-size:9px;font-family:inherit;padding:3px 9px;border-radius:3px;cursor:pointer;display:flex;align-items:center;gap:5px;transition:all .2s;letter-spacing:.4px}
+.b3d-tog-wrap{position:absolute;top:10px;left:10px;display:flex;flex-direction:column;gap:3px;z-index:2;max-width:180px}
+.b3d-tog{background:rgba(8,8,8,.85);border:1px solid #222;color:#bbb;font-size:9px;font-family:inherit;padding:3px 9px;border-radius:3px;cursor:pointer;display:flex;align-items:center;gap:5px;transition:all .2s;letter-spacing:.4px;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .b3d-tog:hover{border-color:#444}
 .b3d-tog.off{opacity:.3}
 .b3d-dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex-shrink:0}
@@ -832,6 +832,16 @@ export class Brain3D {
 .b3d-log::-webkit-scrollbar-thumb{background:#333;border-radius:2px}
 .b3d-log-entry{opacity:.7;padding:1px 0}
 .b3d-expansion{position:absolute;top:40px;right:10px;font-size:9px;color:#555;z-index:2}
+/* Explainer panel — replaces the old .b3d-scale-display floating block.
+   Lives bottom-left in a stable position that can't collide with the
+   cluster toggles legend (top-left) or the landing-topbar (top). Frames
+   the viz as a proportional sample of the real server-side brain
+   processes rather than being the literal full brain. */
+.b3d-explainer{position:absolute;bottom:10px;left:10px;max-width:300px;z-index:2;background:rgba(8,8,8,.85);border:1px solid #222;border-left:2px solid #ff4d9a;border-radius:4px;padding:8px 12px;font-size:9px;line-height:1.5;color:#888;pointer-events:none}
+.b3d-explainer-title{font-size:10px;color:#ff4d9a;font-weight:700;letter-spacing:.8px;margin-bottom:4px;text-transform:uppercase}
+.b3d-explainer-count{font-size:15px;font-weight:700;color:#e0e0e0;display:block;margin:2px 0}
+.b3d-explainer-ratio{font-size:9px;color:#a855f7}
+.b3d-explainer-note{margin-top:6px;color:#666;font-size:9px;line-height:1.5}
 </style>
 <div class="b3d-hdr">
   <div class="b3d-title">3D NEURAL FIELD</div>
@@ -847,10 +857,13 @@ export class Brain3D {
   <div class="b3d-lbl-wrap"></div>
   <div class="b3d-notif-wrap"></div>
   <div class="b3d-expansion">EXPANSION: <b class="b3d-exp-val">1.00x</b></div>
-  <div class="b3d-scale-display" style="position:absolute;top:55px;right:10px;font-size:10px;color:#ff4d9a;z-index:2;text-align:right;line-height:1.4;">
-    <div style="font-size:14px;font-weight:700;" class="b3d-actual-count">—</div>
-    <div style="font-size:9px;color:#555;">actual neurons</div>
-    <div style="font-size:11px;color:#a855f7;" class="b3d-render-ratio">—</div>
+  <div class="b3d-explainer">
+    <div class="b3d-explainer-title">proportional sample</div>
+    <span class="b3d-explainer-count b3d-actual-count">—</span>
+    <span class="b3d-explainer-ratio b3d-render-ratio">—</span>
+    <div class="b3d-explainer-note">
+      This 3D field is <strong>NOT</strong> Unity's full brain — it's a proportional visual sample of her actual neural processes running server-side right now. Every spike you see above is a real cluster firing in real time. Popups are her equational commentary on what her brain just did.
+    </div>
   </div>
   <div class="b3d-log-wrap">
     <div class="b3d-log-title">PROCESS LOG</div>

@@ -77,9 +77,20 @@ let landingBrainSource = null; // RemoteBrain or null
       if (log) log.style.display = 'none';
       const expansion = landingBrain3d._overlay.querySelector('.b3d-expansion');
       if (expansion) expansion.style.display = 'none';
-      // Move cluster toggles down to avoid top stats
+      // Hide the b3d-explainer panel in landing mode — the landing-topbar
+      // subtitle already provides the "proportional sample of the real
+      // brain" framing, and the explainer's bottom-left position would
+      // collide with landing-bottom (TALK TO UNITY button row).
+      const explainer = landingBrain3d._overlay.querySelector('.b3d-explainer');
+      if (explainer) explainer.style.display = 'none';
+      // Move cluster toggles down to avoid top stats, and right-align
+      // them against the left edge with a tight max-width so they can't
+      // visually collide with anything on the right side of the viewport.
       const toggles = landingBrain3d._overlay.querySelector('.b3d-tog-wrap');
-      if (toggles) toggles.style.top = '50px';
+      if (toggles) {
+        toggles.style.top = '50px';
+        toggles.style.maxWidth = '160px';
+      }
     }
     landingBrain3d.open();
     console.log('[Landing] 3D brain initialized and visible');
@@ -493,8 +504,14 @@ function updateLandingStats(state) {
   const users = state.connectedUsers ?? 0;
 
   const el = (id, text) => { const e = $(id); if (e) e.textContent = text; };
-  el('ls-neurons', neurons.toLocaleString() + ' neurons');
-  el('ls-subtitle', neurons.toLocaleString() + '-neuron brain simulation — real equations, alive right now');
+  el('ls-neurons', neurons.toLocaleString() + ' real neurons');
+  // NOTE: ls-subtitle intentionally NOT overwritten here. The HTML copy
+  // is the authoritative framing ("proportional sample view — the field
+  // behind this text is a live render of Unity's actual neural processes
+  // running on the server right now, NOT her full brain"). Overwriting
+  // it per-tick with a neuron count would drop the framing message that
+  // tells users this is a sample, not the full brain. The neuron count
+  // lives in ls-neurons above where it belongs.
   el('ls-psi', 'Ψ = ' + psi.toFixed(4));
   el('ls-users', users + ' online');
   el('ls-arousal', (arousal * 100).toFixed(0) + '%');
