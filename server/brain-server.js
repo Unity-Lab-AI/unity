@@ -701,17 +701,39 @@ class ServerBrain {
       // frequency-weighted exposure. The legacy path only populated the
       // dictionary and type-transition tables — this pass actually shapes
       // the cross-region projections T14.4 wired up.
+      // T14.22 — curriculum.runFromCorpora runs in BACKGROUND, NOT awaited.
+      //
+      // The old path awaited curriculum here, which blocked _initLanguage
+      // Subsystem from returning, which blocked brain.start() from
+      // reaching the tick loop setup, which blocked _gpuStep from ever
+      // sending gpu_init messages to compute.html. compute.html registered
+      // as a GPU worker, then sat frozen at "registering as compute
+      // client..." because the server was still grinding through the
+      // curriculum walk and hadn't started the tick loop yet.
+      //
+      // Fix: fire curriculum in the background via Promise chain (no
+      // await), let _initLanguageSubsystem return immediately, let
+      // brain.start() reach the tick loop, let _gpuStep send gpu_init
+      // messages to compute.html. Curriculum runs concurrently in the
+      // background and shapes the cortex basins gradually — same end
+      // state, but the brain is LIVE and ticking on GPU from second
+      // one instead of waiting for curriculum to finish.
+      //
+      // Curriculum's async yields (setImmediate macrotask, T14.22) mean
+      // it shares the event loop cleanly with the tick handlers and
+      // HTTP requests while it runs. Cortex state changes mid-flight
+      // are fine — the brain is designed to learn continuously, so
+      // watching curriculum shape basins in real time is a feature.
       if (this.curriculum && typeof this.curriculum.runFromCorpora === 'function') {
-        console.log('[Brain] Stage: curriculum.runFromCorpora START');
-        try {
-          await this.curriculum.runFromCorpora(
-            { persona: personaText, baseline: baselineText, coding: codingText },
-            { arousal: 0.8, valence: 0.2 },
-          );
-          console.log('[Brain] Stage: curriculum.runFromCorpora DONE');
-        } catch (err) {
+        console.log('[Brain] Stage: curriculum.runFromCorpora START (BACKGROUND — tick loop proceeds)');
+        this.curriculum.runFromCorpora(
+          { persona: personaText, baseline: baselineText, coding: codingText },
+          { arousal: 0.8, valence: 0.2 },
+        ).then(() => {
+          console.log('[Brain] Stage: curriculum.runFromCorpora DONE (background)');
+        }).catch((err) => {
           console.warn('[Brain] curriculum.runFromCorpora failed:', err?.message || err);
-        }
+        });
       }
 
       const dictSize = this.dictionary._words?.size || 0;
