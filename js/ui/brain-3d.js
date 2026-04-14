@@ -14,7 +14,11 @@
  *   - Mouse drag rotate, scroll zoom, touch support
  *   - WebGL context loss/restore recovery
  *   - Dark (#050505) gothic/cyberpunk aesthetic
+ *   - T5: 22-detector brain event system triggering equational
+ *     commentary popups via Unity's own language cortex
  */
+
+import { detectBrainEvents } from './brain-event-detectors.js';
 
 // ── Constants ───────────────────────────────────────────────────────
 
@@ -526,6 +530,25 @@ export class Brain3D {
     this._notifEls = [];       // DOM elements for notifications
     this._lastNotifTime = 0;
     this._lastState = null;
+
+    // T5 2026-04-13 — brain event detector state
+    // Rolling history buffer for the detectors to compare deltas
+    // across ~30 state snapshots (roughly the last 3 seconds at
+    // 10Hz state broadcast rate)
+    this._stateHistory = [];
+    this._maxHistory = 30;
+    // Dedup tracker so the same event doesn't fire every tick while
+    // its condition stays true (e.g. sustained low coherence)
+    this._recentEventTypes = new Map();  // type → lastFireTime ms
+    this._eventCooldownMs = 8000;  // don't repeat the same event type within 8s
+    // Brain reference set by setBrain() from app.js bootUnity.
+    // Null until boot, during which time the event system degrades
+    // gracefully to the plain numeric-label notifications without
+    // commentary.
+    this._brain = null;
+    // Seed word → GloVe 50d vector cache, populated lazily once
+    // sharedEmbeddings is available via this._brain
+    this._seedVectorCache = new Map();
 
     // Brain expansion — clusters spread as activity increases
     this._expansionFactor = 1.0;  // 1.0 = default, grows with activity
@@ -1125,14 +1148,218 @@ export class Brain3D {
     }
   }
 
+  // ── T5 2026-04-13: Brain Event Detection + Unity Commentary ────
+
+  /**
+   * Wire a brain reference so the event system can call
+   * `brain.innerVoice.languageCortex.generate()` to produce Unity's
+   * equational commentary on detected events. Called from app.js
+   * bootUnity() after `brain = new UnityBrain()`. Safe to call
+   * multiple times — just replaces the reference.
+   *
+   * When the brain reference is null (pre-boot / disconnected /
+   * landing-page view with no brain yet), the event system falls
+   * back to the plain numeric-label notifications without
+   * commentary. So the 3D brain viz keeps working fine during
+   * the landing page → boot transition.
+   */
+  setBrain(brain) {
+    this._brain = brain || null;
+    // Invalidate seed vector cache since the shared embeddings
+    // instance may have changed (different brain, different
+    // pretrained state, etc.)
+    this._seedVectorCache.clear();
+  }
+
+  /**
+   * Compute a 50d GloVe centroid for a seed word list, caching it
+   * so repeat lookups don't re-embed. Used to build the semantic
+   * bias that steers Unity's commentary toward the topic of a
+   * triggered brain event.
+   */
+  _seedCentroid(seedWords) {
+    if (!Array.isArray(seedWords) || seedWords.length === 0) return null;
+    const key = seedWords.join(',');
+    const cached = this._seedVectorCache.get(key);
+    if (cached) return cached;
+
+    const emb = this._brain?.innerVoice?.languageCortex?._sharedEmbeddings
+             || this._brain?._sharedEmbeddings
+             || this._brain?.sensory?._embeddings;
+    if (!emb || typeof emb.getEmbedding !== 'function') return null;
+
+    // Average the GloVe vectors for each seed word (skipping OOV)
+    const dim = 50;
+    const centroid = new Float64Array(dim);
+    let count = 0;
+    for (const word of seedWords) {
+      try {
+        const v = emb.getEmbedding(word.toLowerCase());
+        if (v && v.length >= dim) {
+          for (let i = 0; i < dim; i++) centroid[i] += v[i];
+          count++;
+        }
+      } catch {}
+    }
+    if (count === 0) return null;
+    for (let i = 0; i < dim; i++) centroid[i] /= count;
+
+    // L2 normalize so the bias blends cleanly with a normalized
+    // cortex readout in _generateEventCommentary
+    let norm = 0;
+    for (let i = 0; i < dim; i++) norm += centroid[i] * centroid[i];
+    norm = Math.sqrt(norm) || 1;
+    for (let i = 0; i < dim; i++) centroid[i] /= norm;
+
+    this._seedVectorCache.set(key, centroid);
+    return centroid;
+  }
+
+  /**
+   * Generate Unity's equational commentary on a detected brain event.
+   * Calls `languageCortex.generate()` with a cortex pattern that's
+   * been blended 70% live cortex readout + 30% event seed vector,
+   * so her slot scorer is steered toward words about the event topic
+   * without being forced to use a template.
+   *
+   * Returns a short commentary string (1-8 words typically), or
+   * null if the language cortex isn't available yet.
+   */
+  _generateEventCommentary(event, state) {
+    const brain = this._brain;
+    if (!brain) return null;
+    const iv = brain.innerVoice;
+    const lc = iv?.languageCortex;
+    const dict = iv?.dictionary || brain.dictionary;
+    if (!lc || !dict || typeof lc.generate !== 'function') return null;
+
+    try {
+      // Get the live cortex semantic readout (50d GloVe space)
+      const cortex = brain.clusters?.cortex;
+      const sharedEmb = brain._sharedEmbeddings || iv._sharedEmbeddings;
+      let cortexPattern = null;
+      if (cortex && typeof cortex.getSemanticReadout === 'function' && sharedEmb) {
+        cortexPattern = cortex.getSemanticReadout(sharedEmb);
+      }
+
+      // Blend in the event seed to bias Unity toward commenting on
+      // the triggered event type
+      const seed = this._seedCentroid(event.seedWords);
+      if (cortexPattern && seed && cortexPattern.length === seed.length) {
+        const biased = new Float64Array(cortexPattern.length);
+        for (let i = 0; i < cortexPattern.length; i++) {
+          biased[i] = cortexPattern[i] * 0.7 + seed[i] * 0.3;
+        }
+        cortexPattern = biased;
+      } else if (!cortexPattern && seed) {
+        // No cortex readout available — use the seed alone
+        cortexPattern = seed;
+      }
+
+      // Call generate() with full brain state + biased cortex pattern.
+      // This is the same equational pipeline real chat uses, but
+      // nothing about this call stores an episode, emits a response
+      // event, or pollutes Unity's memory — it's a pure read-only
+      // commentary generation.
+      const out = lc.generate(
+        dict,
+        state.amygdala?.arousal ?? 0.5,
+        state.amygdala?.valence ?? 0,
+        state.oscillations?.coherence ?? 0.5,
+        state.psi ?? 0,
+        state.amygdala?.fear ?? 0,
+        state.reward ?? 0,
+        state.drugState || 'cokeAndWeed',
+        state.hypothalamus?.social ?? 0.5,
+        cortexPattern,
+      );
+
+      const text = typeof out === 'string' ? out : (out?.text || '');
+      // Trim to ~60 chars so the commentary fits in a floating popup
+      return text && text.length > 0
+        ? text.length > 60 ? text.slice(0, 57) + '...' : text
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
   // ── Process Notifications ──────────────────────────────────────
 
   /**
    * Generate ONE rich process notification every ~5 seconds.
    * Translates actual neural signals into human-readable brain activity.
-   * Cycles through different brain systems, showing real computed values.
+   *
+   * T5 2026-04-13 — two-stage pipeline:
+   *   Stage A: run the 22-detector brain event system against the
+   *            current + previous state + history buffer, pick the
+   *            highest-priority firing event
+   *   Stage B: if an event fires and a brain reference is available,
+   *            generate Unity's equational commentary on it via her
+   *            language cortex (biased toward the event seed)
+   *   Fallback: if no event fires OR no brain reference, fall through
+   *             to the legacy numeric-telemetry generator pool so the
+   *             landing page keeps showing popups during the pre-boot
+   *             window
    */
   _generateProcessNotification(state) {
+    if (!state) return;
+
+    // Push current state into the rolling history buffer
+    this._stateHistory.push(state);
+    while (this._stateHistory.length > this._maxHistory) {
+      this._stateHistory.shift();
+    }
+
+    // Stage A — run all 22 detectors, pick the highest-priority event
+    // that hasn't fired too recently (cooldown dedup)
+    const prev = this._stateHistory.length >= 2
+      ? this._stateHistory[this._stateHistory.length - 2]
+      : null;
+    const events = detectBrainEvents(state, prev, this._stateHistory);
+    const now = Date.now();
+    let chosen = null;
+    for (const evt of events) {
+      const lastFire = this._recentEventTypes.get(evt.type) || 0;
+      if (now - lastFire >= this._eventCooldownMs) {
+        chosen = evt;
+        break;
+      }
+    }
+
+    if (chosen && this._brain) {
+      // Stage B — generate Unity's commentary on the event
+      const commentary = this._generateEventCommentary(chosen, state);
+      this._recentEventTypes.set(chosen.type, now);
+      // Prune the cooldown map to prevent unbounded growth
+      if (this._recentEventTypes.size > 50) {
+        const cutoff = now - this._eventCooldownMs * 2;
+        for (const [k, v] of this._recentEventTypes) {
+          if (v < cutoff) this._recentEventTypes.delete(k);
+        }
+      }
+      // Render as a two-line notification: event label + commentary.
+      // If commentary generation failed (pre-embedding-load, broken
+      // language cortex, whatever), just show the event label alone.
+      const text = commentary
+        ? `${chosen.emoji} ${chosen.label}\n"${commentary}"`
+        : `${chosen.emoji} ${chosen.label}`;
+      this._addNotification(text, chosen.cluster);
+      return;
+    }
+
+    // Fallback: no event fired (or no brain ref) → legacy numeric
+    // generator pool. Runs exactly like the pre-T5 system.
+    this._legacyGenerateProcessNotification(state);
+  }
+
+  /**
+   * Legacy numeric-telemetry notification generator — pre-T5 system,
+   * kept as a fallback for the pre-boot landing page window (when
+   * there's no brain reference yet and the event detectors have no
+   * cognition to read) and for ticks where no event fires.
+   */
+  _legacyGenerateProcessNotification(state) {
     if (!state) return;
     const clusters = state.clusters || {};
     const arousal = state.amygdala?.arousal ?? 0;
@@ -1222,14 +1449,35 @@ export class Brain3D {
     const el = document.createElement('div');
     el.className = 'b3d-notif';
     el.style.color = CLUSTERS[clusterIdx]?.hex || '#fff';
-    el.textContent = text;
+
+    // T5 2026-04-13 — two-line rendering for event commentary popups.
+    // Text can contain a '\n' separator produced by
+    // _generateProcessNotification when it formats an event +
+    // commentary pair. First line is the event label (emoji + label),
+    // second line is Unity's equational commentary wrapped in quotes.
+    // Legacy single-line notifications (from _legacyGenerateProcessNotification)
+    // still render fine — they just have no newline.
+    const lines = String(text).split('\n');
+    if (lines.length > 1) {
+      const labelEl = document.createElement('div');
+      labelEl.className = 'b3d-notif-label';
+      labelEl.textContent = lines[0];
+      el.appendChild(labelEl);
+      const commentEl = document.createElement('div');
+      commentEl.className = 'b3d-notif-comment';
+      commentEl.style.cssText = 'font-size:10px;opacity:0.85;font-style:italic;margin-top:2px;';
+      commentEl.textContent = lines.slice(1).join(' ');
+      el.appendChild(commentEl);
+    } else {
+      el.textContent = text;
+    }
     wrap.appendChild(el);
 
     const notif = { el, x: center[0], y: center[1], z: center[2], age: 0, maxAge: 300, clusterIdx };
     this._notifications.push(notif);
 
-    // Add to log
-    this._addToLog(text, CLUSTERS[clusterIdx]?.hex || '#fff');
+    // Add to log (single-line version for the process log)
+    this._addToLog(lines.join(' — '), CLUSTERS[clusterIdx]?.hex || '#fff');
 
     // Limit active notifications — only 3 at a time (one every 5 sec)
     while (this._notifications.length > 3) {

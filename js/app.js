@@ -1741,6 +1741,19 @@ Vision: ${state.visionDescription || 'none'}`;
     try { brain3d = new Brain3D('brain-3d-container'); } catch { brain3d = null; }
   }
 
+  // T5 2026-04-13 — wire the brain reference into the 3D viz so its
+  // event detector system can call languageCortex.generate() to
+  // produce Unity's equational commentary on detected brain events
+  // (arousal climbs, reward spikes, topic drifts, recognition,
+  // confusion, motor commitment, coherence lock, etc.). Without a
+  // brain reference the event system falls back to the legacy
+  // numeric-telemetry generator pool — that's what the landing page
+  // shows pre-boot. Once bootUnity runs, we attach the real brain
+  // and commentary starts appearing in popups.
+  if (brain3d && typeof brain3d.setBrain === 'function') {
+    brain3d.setBrain(brain);
+  }
+
   // ── Wire DOM events ──
   // R15 — unityAvatar click handler was moved to page-load time
   // (inside the initLanding IIFE near the TALK TO UNITY button
