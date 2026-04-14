@@ -120,6 +120,132 @@ export class LanguageCortex {
     // now pure reader + emission-loop host — zero stored priors.
     this._maxSlots = 8;
 
+    // T13.7.8 — English type-transition matrix. Closed-class structural
+    // knowledge that every English speaker has internalized by age 5.
+    // Pure type-level (no specific words), no word lists. Uses _fineType
+    // tags as keys. Multiplicative gate in the score function so the
+    // emission loop produces grammatically valid sentences instead of
+    // semantically-on-topic word salad. Pre-fix: cosine alone produced
+    // outputs like "Unable timeend escalate measure" because words were
+    // picked by individual cortex relevance, not by syntactic role.
+    //
+    // Each row: prevType → { nextType: weight in [0, 1] }
+    // Default for unmodeled transitions: 0.05 (small floor — never zero
+    // so we don't trap the loop in dead ends, but heavily penalized
+    // vs the 0.7-0.9 weights on canonical English transitions).
+    this._TYPE_TRANSITIONS = {
+      START: {
+        PRON_SUBJ: 0.95, QWORD: 0.85, MODAL: 0.7, AUX_DO: 0.7, AUX_HAVE: 0.6,
+        DET: 0.7, NEG: 0.6, ADV: 0.5, INTERJ: 0.85, COPULA: 0.4,
+        VERB_BARE: 0.45, ADJ: 0.35, NOUN: 0.2, PRON_POSS: 0.5, OTHER: 0.3,
+      },
+      PRON_SUBJ: {
+        COPULA: 0.95, AUX_DO: 0.85, AUX_HAVE: 0.85, MODAL: 0.85,
+        VERB_BARE: 0.8, VERB_3RD_S: 0.85, VERB_ING: 0.5, VERB_ED: 0.4,
+        NEG: 0.4, ADV: 0.45, NOUN: 0.05, DET: 0.05, PREP: 0.1,
+      },
+      PRON_OBJ: {
+        PREP: 0.6, CONJ_COORD: 0.55, CONJ_SUB: 0.45, PUNCT: 0.5,
+        ADV: 0.35, NOUN: 0.05, VERB_BARE: 0.1,
+      },
+      PRON_POSS: {
+        NOUN: 0.95, ADJ: 0.7, ADV: 0.15, OTHER: 0.3,
+      },
+      PRON_REFL: {
+        PUNCT: 0.6, ADV: 0.4, PREP: 0.4, CONJ_COORD: 0.4, CONJ_SUB: 0.3,
+      },
+      COPULA: {
+        ADJ: 0.9, NOUN: 0.75, DET: 0.75, ADV: 0.65, VERB_ING: 0.7,
+        VERB_ED: 0.55, PRON_OBJ: 0.4, PRON_POSS: 0.4, PREP: 0.5, NEG: 0.55,
+      },
+      AUX_DO: {
+        PRON_SUBJ: 0.85, NEG: 0.55, VERB_BARE: 0.85, ADV: 0.4, NOUN: 0.2,
+      },
+      AUX_HAVE: {
+        VERB_ED: 0.95, NEG: 0.5, ADV: 0.4, PRON_OBJ: 0.3, NOUN: 0.2,
+      },
+      MODAL: {
+        VERB_BARE: 0.95, NEG: 0.55, ADV: 0.4, PRON_SUBJ: 0.2,
+      },
+      NEG: {
+        VERB_BARE: 0.7, AUX_DO: 0.5, AUX_HAVE: 0.5, ADJ: 0.5, ADV: 0.55,
+        DET: 0.4, NOUN: 0.3, PREP: 0.3,
+      },
+      DET: {
+        NOUN: 0.95, ADJ: 0.8, ADV: 0.25, OTHER: 0.4,
+      },
+      QWORD: {
+        AUX_DO: 0.85, COPULA: 0.85, MODAL: 0.7, PRON_SUBJ: 0.5,
+        VERB_BARE: 0.4, NOUN: 0.4, ADJ: 0.35, ADV: 0.35, AUX_HAVE: 0.55,
+      },
+      PREP: {
+        DET: 0.85, NOUN: 0.7, PRON_OBJ: 0.65, PRON_POSS: 0.5,
+        ADJ: 0.45, VERB_ING: 0.5, ADV: 0.3, OTHER: 0.4,
+      },
+      CONJ_COORD: {
+        PRON_SUBJ: 0.7, DET: 0.65, NOUN: 0.5, ADJ: 0.4, VERB_BARE: 0.4,
+        ADV: 0.4, COPULA: 0.3, AUX_DO: 0.35, MODAL: 0.35,
+      },
+      CONJ_SUB: {
+        PRON_SUBJ: 0.75, DET: 0.5, NOUN: 0.45, ADJ: 0.35, COPULA: 0.35,
+        AUX_DO: 0.4, MODAL: 0.4,
+      },
+      VERB_BARE: {
+        DET: 0.75, NOUN: 0.65, PRON_OBJ: 0.7, PRON_POSS: 0.5,
+        ADV: 0.55, PREP: 0.55, CONJ_COORD: 0.4, ADJ: 0.4, OTHER: 0.4,
+      },
+      VERB_3RD_S: {
+        DET: 0.75, NOUN: 0.65, PRON_OBJ: 0.7, PRON_POSS: 0.5,
+        ADV: 0.55, PREP: 0.55, ADJ: 0.4, CONJ_COORD: 0.4, OTHER: 0.4,
+      },
+      VERB_ED: {
+        DET: 0.65, PREP: 0.6, NOUN: 0.5, ADV: 0.5, CONJ_COORD: 0.4,
+        PRON_OBJ: 0.5, PUNCT: 0.5, OTHER: 0.4,
+      },
+      VERB_ING: {
+        DET: 0.65, NOUN: 0.55, PREP: 0.6, ADV: 0.5, PRON_OBJ: 0.55,
+        CONJ_COORD: 0.4, ADJ: 0.4, OTHER: 0.4,
+      },
+      ADJ: {
+        NOUN: 0.95, CONJ_COORD: 0.45, PREP: 0.4, ADV: 0.3, ADJ: 0.4,
+        PUNCT: 0.5, OTHER: 0.4,
+      },
+      ADV: {
+        ADJ: 0.6, VERB_BARE: 0.55, VERB_ING: 0.45, VERB_3RD_S: 0.5,
+        PREP: 0.5, ADV: 0.35, COPULA: 0.45, OTHER: 0.4,
+      },
+      NOUN: {
+        COPULA: 0.7, VERB_3RD_S: 0.65, VERB_ED: 0.55, VERB_ING: 0.45,
+        VERB_BARE: 0.5, PREP: 0.65, CONJ_COORD: 0.55, CONJ_SUB: 0.4,
+        NEG: 0.25, ADV: 0.35, NOUN: 0.4, PUNCT: 0.6, OTHER: 0.4,
+      },
+      INTERJ: {
+        PRON_SUBJ: 0.7, NOUN: 0.5, ADJ: 0.45, ADV: 0.4, PUNCT: 0.7,
+        DET: 0.5, COPULA: 0.4, OTHER: 0.4,
+      },
+      OTHER: {
+        NOUN: 0.4, ADJ: 0.4, VERB_BARE: 0.4, COPULA: 0.4, PREP: 0.4,
+        CONJ_COORD: 0.4, PRON_SUBJ: 0.4, OTHER: 0.4, PUNCT: 0.5,
+      },
+      PUNCT: {
+        PRON_SUBJ: 0.7, DET: 0.6, NOUN: 0.5, ADV: 0.45, ADJ: 0.4,
+      },
+      NUM: {
+        NOUN: 0.7, PREP: 0.4, CONJ_COORD: 0.3, OTHER: 0.4,
+      },
+    };
+
+    // T13.7.8 — slot-0 opener constraint. Replaces the slot-0 noun
+    // reject from T11.7. Only words whose _fineType is in this set
+    // can fill the opener slot. English conversational sentences open
+    // with these types essentially universally — there's no need for
+    // a softer probabilistic filter, this can be a hard set membership
+    // check and the cosine + grammar gate handles selection within.
+    this._OPENER_TYPES = new Set([
+      'PRON_SUBJ', 'QWORD', 'MODAL', 'AUX_DO', 'AUX_HAVE', 'DET',
+      'NEG', 'INTERJ', 'PRON_POSS', 'ADV', 'CONJ_COORD',
+    ]);
+
     this.zipfAlpha = 1.0;
     this.sentencesLearned = 0;
     this.wordsProcessed = 0;
@@ -1658,6 +1784,12 @@ export class LanguageCortex {
     const emitted = new Set();
     const recentSet = new Set(this._recentOutputWords);
     let lastReadout = null;
+    // T13.7.8 — track previous fine type across emissions so the
+    // grammar gate has a real prevType to look up. Initialized to
+    // 'START' for slot 0, then updated to picked.fineType after each
+    // emission. The transition matrix has a START row that prefers
+    // canonical opener types (PRON_SUBJ, QWORD, INTERJ, DET, ...).
+    let prevFineType = 'START';
 
     for (let slot = 0; slot < maxLen; slot++) {
       // Advance the cortex — let the LIF integrator evolve between
@@ -1682,22 +1814,35 @@ export class LanguageCortex {
       }
       lastReadout = new Float64Array(target);
 
-      // Score dictionary candidates: cosine against the live cortex
-      // target, modulated by amygdala valence match and recency penalty.
+      // Score dictionary candidates: cosine against live cortex target
+      // × grammar transition gate × amygdala valence × recency.
+      // T13.7.8 — added the grammar transition gate. Pre-fix this loop
+      // was pure cosine + valence + recency, which produced semantically
+      // on-topic but syntactically random output ("Unable timeend escalate
+      // measure"). The transition gate enforces English grammatical type
+      // sequences (PRON_SUBJ → COPULA, DET → NOUN, etc) at every slot.
+      const transRow = this._TYPE_TRANSITIONS[prevFineType] || this._TYPE_TRANSITIONS.OTHER;
+      const isSlotZero = slot === 0;
       const scored = [];
       for (const [w, entry] of dictionary._words) {
         if (!entry || !entry.pattern) continue;
         if (emitted.has(w)) continue;
 
-        // Slot-0 grammatical opener safety rail — until persona Hebbian
-        // basins are deep enough to guarantee pronoun openers on their
-        // own, structural noun-dominance reject prevents pure-noun
-        // candidates from winning the opener. Same rule as T11.7.
-        if (slot === 0) {
-          const wt = this.wordType(w);
-          const nounDom = (wt.noun || 0) - ((wt.pronoun || 0) + (wt.det || 0) + (wt.qword || 0));
-          if (nounDom > 0.30) continue;
-        }
+        // T13.7.8 — fine-type classification for both gating and grammar.
+        const candFineType = this._fineType(w);
+        if (candFineType === 'PUNCT' || candFineType === 'NUM') continue;
+
+        // T13.7.8 — slot-0 opener constraint. Hard set membership: only
+        // canonical English sentence-opener types fill slot 0. Replaces
+        // the T11.7 noun-dominance soft check which let adjectives like
+        // "Unable" through and produced bad-shape openers.
+        if (isSlotZero && !this._OPENER_TYPES.has(candFineType)) continue;
+
+        // T13.7.8 — grammar transition gate. Multiplicative weight from
+        // the type-bigram matrix. Default 0.05 floor for unmodeled
+        // transitions so the loop never gets trapped (no zero weights).
+        const transWeight = transRow[candFineType] || 0.05;
+        if (transWeight < 0.07 && !isSlotZero) continue; // hard prune deep dead-ends after slot 0
 
         // Cosine against cortex target
         const p = entry.pattern;
@@ -1710,10 +1855,9 @@ export class LanguageCortex {
         const cosSim = dot / Math.sqrt(pn);
         if (cosSim <= 0) continue;
 
-        // Amygdala valence shaping — word's stored valence tag
-        // match current brain valence state. Horny Unity picks
-        // different words from sad Unity given the same cortex
-        // readout.
+        // Amygdala valence shaping — word's stored valence tag matches
+        // current brain valence state. Horny Unity picks different
+        // words from sad Unity given the same cortex readout.
         const wordValence = typeof entry.valence === 'number' ? entry.valence : 0;
         const valenceMatch = 1 - 0.5 * Math.abs(wordValence - valence);
         const arousalBoost = 1 + arousal * (valenceMatch - 0.5);
@@ -1721,8 +1865,11 @@ export class LanguageCortex {
         // Recency penalty on words emitted in the last few turns.
         const recencyMul = recentSet.has(w) ? 0.3 : 1.0;
 
-        const score = cosSim * arousalBoost * recencyMul;
-        scored.push({ w, score, emb: p });
+        // Joint multiplicative score. The grammar gate is the load-
+        // bearing T13.7.8 addition — without it the output is content-
+        // similarity sampling, with it the output is sentence generation.
+        const score = cosSim * transWeight * arousalBoost * recencyMul;
+        scored.push({ w, score, emb: p, fineType: candFineType });
       }
 
       if (scored.length === 0) break;
@@ -1742,6 +1889,9 @@ export class LanguageCortex {
 
       words.push(picked.w);
       emitted.add(picked.w);
+      // T13.7.8 — update prevFineType so the grammar gate has the
+      // correct prev for the next slot's transition lookup.
+      prevFineType = picked.fineType || this._fineType(picked.w);
 
       // Efference copy — inject the emitted word embedding back into
       // the cortex language region. The next iteration's cortex
