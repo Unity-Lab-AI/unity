@@ -508,74 +508,15 @@ class ServerBrain {
     return out;
   }
 
-  /**
-   * One brain step — LIF dynamics for all clusters.
-   */
-  step() {
-    this.totalSpikes = 0;
-
-    for (const [name, cluster] of Object.entries(this.clusters)) {
-      const V = this.voltages[name];
-      const spikes = cluster.spikes;
-      const tonic = this.tonicDrives[name];
-      const noise = this.noiseAmplitudes[name];
-      let spikeCount = 0;
-
-      for (let i = 0; i < cluster.size; i++) {
-        // LIF: τ·dV/dt = -(V-Vrest) + R·I
-        const I = tonic + (Math.random() - 0.5) * noise;
-        const dV = (-(V[i] - this.vRest) + I) / this.tau;
-        V[i] += this.dt * dV;
-
-        // Spike check
-        spikes[i] = 0;
-        if (V[i] >= this.vThresh) {
-          spikes[i] = 1;
-          V[i] = this.vReset;
-          spikeCount++;
-        }
-      }
-
-      cluster.spikeCount = spikeCount;
-      cluster.firingRate = cluster.firingRate * 0.95 + spikeCount * 0.05;
-      this.totalSpikes += spikeCount;
-    }
-
-    // Update amygdala state
-    this.arousal = 0.85 + (this.clusters.amygdala.firingRate / this.clusters.amygdala.size) * 0.3;
-    this.arousal = Math.min(1, Math.max(0, this.arousal));
-    this.valence = (this.reward > 0 ? 0.1 : this.reward < 0 ? -0.1 : 0) + (Math.random() - 0.5) * 0.02;
-
-    // Ψ — computed in _updateDerivedState (uses full volume equation)
-
-    // Update coherence
-    this.coherence += (Math.random() - 0.5) * 0.02;
-    this.coherence = Math.max(0, Math.min(1, this.coherence));
-
-    // Decay reward
-    this.reward *= 0.99;
-    this.time += this.dt / 1000;
-    this.frameCount++;
-
-    // Motor output — read BG channel rates (scaled)
-    const bg = this.clusters.basalGanglia;
-    const neuronsPerChannel = Math.floor(bg.size / 6);
-    for (let ch = 0; ch < 6; ch++) {
-      let count = 0;
-      const start = ch * neuronsPerChannel;
-      const end = Math.min(start + neuronsPerChannel, bg.size);
-      for (let n = start; n < end; n++) {
-        if (bg.spikes[n]) count++;
-      }
-      this.motorChannels[ch] = this.motorChannels[ch] * 0.7 + (count / neuronsPerChannel) * 0.3;
-    }
-    let maxRate = 0, maxCh = 5;
-    for (let ch = 0; ch < 6; ch++) {
-      if (this.motorChannels[ch] > maxRate) { maxRate = this.motorChannels[ch]; maxCh = ch; }
-    }
-    this.motorAction = ['respond_text', 'generate_image', 'speak', 'build_ui', 'listen', 'idle'][maxCh];
-    this.motorConfidence = maxRate;
-  }
+  // step() — DELETED. Was a CPU LIF fallback that iterated every neuron
+  // in a JS for-loop. At 400K+ cerebellum neurons × 7 clusters × ~60Hz
+  // that's >168M iterations/second — guaranteed CPU cook on the server.
+  // The only neural compute path is now GPU via _gpuStep() → WGSL
+  // FRACTAL shader (logistic map) in gpu-compute.js LIF_SHADER. No
+  // GPU worker = brain paused (main loop already handles that at
+  // line ~895 with a 2s idle). Derived state (arousal/valence/Ψ/
+  // coherence/motor) is computed in _updateDerivedState() from the
+  // GPU's spikeCount results — no duplicate CPU work needed.
 
   /**
    * Get full brain state for broadcasting.

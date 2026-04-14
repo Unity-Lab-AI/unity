@@ -503,6 +503,26 @@ export class Brain3D {
     this._vis = new Float32Array(TOTAL).fill(1);
     this._clusterOn = CLUSTERS.map(() => true);
 
+    // R9.3 — FRACTAL FIRING — logistic map chaotic recurrence per neuron.
+    // x_{n+1} = r·x_n·(1−x_n) at r=3.9 (deep in the chaotic regime, past
+    // Feigenbaum's accumulation point). Each neuron holds its own x state,
+    // seeded uniquely by index so no two neurons phase-lock. Every tick
+    // we iterate ALL neurons and compare to a cluster-wide threshold
+    // derived from the real server spikeCount — so each cluster fires
+    // at a rate proportional to its actual biology, but the SELECTION
+    // of which points fire follows a deterministic chaotic trajectory
+    // (never-ending, never-repeating, self-similar at every scale).
+    // Replaces the Math.random()-per-point noise which made the viz
+    // look like a uniform wave/pulse instead of real neural chatter.
+    this._fractal = new Float32Array(TOTAL);
+    for (let i = 0; i < TOTAL; i++) {
+      // Seed each neuron with a unique irrational-ish value so the
+      // logistic map trajectories never collide. (i*φ) mod 1 gives
+      // quasi-random uniform distribution in (0,1).
+      const phi = 0.61803398875;
+      this._fractal[i] = ((i * phi) % 1) * 0.8 + 0.1; // keep in (0.1, 0.9)
+    }
+
     // Pulses & connections
     this._pulses = [];
     this._connPos = new Float32Array(MAX_CONN * 6);
@@ -686,40 +706,48 @@ export class Brain3D {
     for (let ci = 0; ci < CLUSTERS.length; ci++) {
       const cn = CLUSTERS[ci].n;
       const cs = clusterStates[CLUSTERS[ci].key];
-      const realSpikes = cs?.spikes;
-      const realSize = realSpikes ? realSpikes.length : 0;
-
       // Adaptive pulse probability — target ~4 pulses per cluster per frame
       const spikeN = clusterSpikeCount[ci] || 1;
       const pulseProb = Math.min(0.6, Math.max(0.05, 4 / spikeN));
 
-      // R9.2 — server state broadcast sends {size, spikeCount, firingRate}
-      // per cluster but NOT the raw spikes bitmask (bandwidth). Without a
-      // bitmask every cluster's `firing` stayed false and no activation
-      // rings fired in ANY region. Fix: when realSpikes is absent, derive
-      // a per-tick firing probability from spikeCount/realSize (the
-      // engine's actual firing rate) and roll Math.random() per viz
-      // point. Uses cluster.size (engine size) not cn (viz size) so the
-      // rate matches biology instead of being diluted by extra viz
-      // points. When realSpikes IS present we still read the bitmask.
+      // R9.3 — FRACTAL FIRING rule. Same logistic map as the GPU shader
+      // that drives the real brain. Each viz point iterates its own
+      // chaotic trajectory x_{n+1} = r·x_n·(1−x_n) at r=3.9. Points fire
+      // when their trajectory crosses a threshold. The threshold is
+      // modulated by the cluster's ACTUAL biological firing rate from
+      // the server (spikeCount/engineSize), amplified to visibility.
+      // This is the "proportional sample" — the viz runs the same rule
+      // the server runs, scaled to render neuron count per cluster.
+      // Individual neurons retain their chaotic trajectory between
+      // frames, so firing patterns are self-similar, not wavy.
       const engineSize = cs?.size || cn;
-      const firingRate = realSpikes ? 0 : Math.min(1, spikeN / Math.max(1, engineSize));
+      const bioRate = spikeN / Math.max(1, engineSize);
+      // Amplify biological rate to visible range. Low bio (0.2%) →
+      // floor 3% visible. High bio (5%) → 75% → clamped 60%. Cerebellum
+      // with huge denominator still clears the floor.
+      const visibleRate = Math.min(0.6, Math.max(0.03, bioRate * 15));
+      const fireThreshold = 1.0 - visibleRate;
+      const R_CHAOS = 3.9;
 
       for (let j = 0; j < cn; j++) {
         const i = off + j;
         if (i >= TOTAL) break;
 
-        // Map viz point index j to real spike bitmask index.
-        // If real cluster is SMALLER than viz cluster (common case —
-        // biologically-weighted viz), wrap around so the firing pattern
-        // repeats across extra viz points. If LARGER, truncate.
-        let firing = false;
-        if (realSpikes && realSize > 0) {
-          const realIdx = realSize === cn ? j : Math.floor((j / cn) * realSize);
-          firing = !!realSpikes[realIdx];
-        } else if (firingRate > 0) {
-          firing = Math.random() < firingRate;
+        // Iterate logistic map for this viz point's fractal state
+        let x = this._fractal[i];
+        if (x <= 0.001 || x >= 0.999) {
+          // Reseed corrupted state
+          x = ((i * 0.61803398875) % 1) * 0.8 + 0.1;
         }
+        x = R_CHAOS * x * (1 - x);
+
+        let firing = false;
+        if (x >= fireThreshold) {
+          firing = true;
+          // Refractory contraction — keeps neuron in chaotic basin
+          x = 0.3 + (Math.random() - 0.5) * 0.1;
+        }
+        this._fractal[i] = x;
 
         if (firing) {
           this._glow[i] = 1.0;

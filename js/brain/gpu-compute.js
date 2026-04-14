@@ -21,27 +21,40 @@
 
 // ── WGSL Shaders ────────────────────────────────────────────────
 
+// FRACTAL NEURON — logistic-map chaotic recurrence.
+// x_{n+1} = r · x_n · (1 − x_n)
+//
+// This IS the brain's firing rule. Every neuron in every cluster iterates
+// this one-dimensional chaotic map every tick. At r ≈ 3.9 (deep past
+// Feigenbaum's accumulation point at ≈3.5699) the trajectory is aperiodic,
+// self-similar at every scale, and never repeats — the "2y=x+1 style
+// never-ending fractal algorithm". Each neuron is seeded uniquely by its
+// global index so trajectories never phase-lock into a wave.
+//
+// Biological drive modulates r within the chaotic band:
+//   r = 3.57 + clamp(drive/40, 0, 1) · 0.43
+// Low drive → edge-of-chaos (period-doubling windows), few spikes.
+// High drive → fully developed chaos (r→4), many spikes.
+// This replaces the old leaky-integrate-and-fire voltage dynamics.
+// The voltage buffer now holds the fractal state x ∈ (0,1).
 const LIF_SHADER = /* wgsl */`
-  // SLIM LIF — single voltage buffer, inline current gen, no refractory.
-  // Memory: 4 bytes (voltage f32) + 4 bytes (spike u32) = 8 bytes/neuron
-  // Down from 20 bytes/neuron → 2.5× more neurons fit in VRAM.
   struct Params {
     n: u32,
-    tau: f32,
-    vRest: f32,
-    vThresh: f32,
-    vReset: f32,
-    dt: f32,
-    R: f32,
-    effectiveDrive: f32,  // tonic × drive × emoGate × Ψgain + errCorr
-    noiseAmp: f32,
+    tau: f32,        // unused (was membrane time constant)
+    vRest: f32,      // unused (was rest potential)
+    vThresh: f32,    // unused — shader uses hardcoded 0.75 fire threshold on x
+    vReset: f32,     // unused
+    dt: f32,         // unused
+    R: f32,          // unused
+    effectiveDrive: f32,  // tonic × drive × emoGate × Ψgain + errCorr — modulates chaos r
+    noiseAmp: f32,   // jitter amplitude to prevent trajectory phase-lock
     seed: u32,
     gridX: u32,
     _pad: u32,
   };
 
   @group(0) @binding(0) var<uniform> params: Params;
-  @group(0) @binding(1) var<storage, read_write> voltages: array<f32>;  // in-place update
+  @group(0) @binding(1) var<storage, read_write> voltages: array<f32>;  // fractal state x ∈ (0,1)
   @group(0) @binding(2) var<storage, read_write> spikes: array<u32>;
 
   fn pcg(v: u32) -> u32 {
@@ -60,24 +73,39 @@ const LIF_SHADER = /* wgsl */`
     let i = id.x + id.y * params.gridX * 256u;
     if (i >= params.n) { return; }
 
-    // Generate current inline — no separate currents buffer
-    let noise = (randomFloat(params.seed, i) - 0.5) * params.noiseAmp;
-    let I = params.effectiveDrive + noise;
+    // Load fractal state; reseed from golden-ratio quasi-random if corrupted
+    // (first tick after init may be near Vrest=-65 legacy value).
+    var x = voltages[i];
+    if (x <= 0.0 || x >= 1.0) {
+      let phi = 0.61803398875;
+      x = fract(f32(i) * phi) * 0.8 + 0.1;  // unique seed per neuron
+    }
 
-    // LIF step — read-modify-write on single voltage buffer
-    var v = voltages[i];
-    let dV = (-(v - params.vRest) + params.R * I) / params.tau;
-    v += params.dt * dV;
+    // Drive modulates chaos parameter r across the chaotic band.
+    // tonic drives are ~8-20 for Unity's clusters → driveNorm in (0.2, 0.5).
+    let driveNorm = clamp(params.effectiveDrive / 40.0, 0.0, 1.0);
+    let r = 3.57 + driveNorm * 0.43;  // r ∈ [3.57, 4.0]
 
-    // Spike check
-    if (v >= params.vThresh) {
+    // Iterate logistic map — core fractal dynamic
+    var xNext = r * x * (1.0 - x);
+
+    // Tiny noise injection breaks numerical phase-lock between identical
+    // seeds under FMA rounding, keeps each trajectory independent.
+    let jitter = (randomFloat(params.seed, i) - 0.5) * params.noiseAmp * 0.002;
+    xNext = clamp(xNext + jitter, 0.001, 0.999);
+
+    // Spike = trajectory crossed 0.75 fire threshold this iteration.
+    // On fire, contract state to ~0.3 — keeps neuron inside chaotic basin
+    // instead of settling on a fixed point. Biological analog: refractory
+    // return to a non-equilibrium starting point.
+    if (xNext >= 0.75) {
       spikes[i] = 1u;
-      v = params.vReset;
+      xNext = 0.3 + (randomFloat(params.seed ^ 0xdeadbeefu, i) - 0.5) * 0.1;
     } else {
       spikes[i] = 0u;
     }
 
-    voltages[i] = v;
+    voltages[i] = xNext;
   }
 `;
 
@@ -342,26 +370,21 @@ export class GPUCompute {
 
     const voltagesA = makeBuffer(size * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC);
 
-    // Fill voltagesA with Vrest in chunks — never allocate full-size JS array
-    if (voltages && voltages.length >= size) {
-      // Provided voltages — write in chunks
-      for (let offset = 0; offset < size; offset += CHUNK) {
-        const chunkSize = Math.min(CHUNK, size - offset);
-        const chunk = new Float32Array(chunkSize);
-        for (let i = 0; i < chunkSize; i++) chunk[i] = voltages[offset + i];
-        device.queue.writeBuffer(voltagesA, offset * 4, chunk);
+    // Fill voltages (fractal state x ∈ (0.1, 0.9)) in chunks.
+    // Each neuron seeded uniquely via golden-ratio quasi-random so no
+    // two logistic trajectories phase-lock. This replaces Vrest init —
+    // the buffer now holds fractal state, not membrane voltage. Shader
+    // has a safety reseed path for stale non-fractal values too.
+    const PHI = 0.61803398875;
+    for (let offset = 0; offset < size; offset += CHUNK) {
+      const chunkSize = Math.min(CHUNK, size - offset);
+      const chunk = new Float32Array(chunkSize);
+      for (let i = 0; i < chunkSize; i++) {
+        const gi = offset + i;
+        // Quasi-random in (0.1, 0.9) — golden ratio sequence is uniform
+        chunk[i] = ((gi * PHI) % 1) * 0.8 + 0.1;
       }
-    } else {
-      // Fill with Vrest in chunks
-      const chunk = new Float32Array(Math.min(CHUNK, size)).fill(vRest);
-      for (let offset = 0; offset < size; offset += CHUNK) {
-        const writeSize = Math.min(CHUNK, size - offset);
-        if (writeSize < chunk.length) {
-          device.queue.writeBuffer(voltagesA, offset * 4, chunk.subarray(0, writeSize));
-        } else {
-          device.queue.writeBuffer(voltagesA, offset * 4, chunk);
-        }
-      }
+      device.queue.writeBuffer(voltagesA, offset * 4, chunk);
     }
 
     // SLIM LAYOUT — only 2 storage buffers: voltages + spikes
