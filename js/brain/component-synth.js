@@ -128,12 +128,37 @@ export class ComponentSynth {
     }
     if (!userRequest || typeof userRequest !== 'string') return null;
 
+    // T5 — structural bias from the language cortex's parse tree.
+    // When brainState.parsed is supplied (the engine populates it
+    // from languageCortex.parseSentence(userRequest) before calling
+    // into build_ui), any component type the parser extracted
+    // ("button", "form", "list") becomes a HARD preference: primitives
+    // whose id matches the parsed type get a big score bonus. Purely
+    // structural — parse tree fields are closed-class lexical
+    // extractions, not LLM-guessed intents.
+    const parsed = brainState.parsed || null;
+    const parsedTypes = (parsed?.entities?.componentTypes || [])
+      .map(t => t.replace(/s$/, '')); // strip trailing plural
+
     // Semantic match — which primitive is closest to the user's request
     const userEmbed = sharedEmbeddings.getSentenceEmbedding(userRequest);
     let bestScore = -1;
     let bestPrim = null;
     for (const prim of this._primitives) {
-      const score = sharedEmbeddings.similarity(userEmbed, prim.descEmbed);
+      let score = sharedEmbeddings.similarity(userEmbed, prim.descEmbed);
+      // Structural bonus: if the parser pulled a component-type
+      // token and the primitive id matches it, boost by 0.35 —
+      // big enough to overwhelm most semantic ambiguity but small
+      // enough that a genuinely closer semantic match can still
+      // win if the parser misidentified the type.
+      if (parsedTypes.length > 0) {
+        for (const pt of parsedTypes) {
+          if (prim.id === pt || prim.id.startsWith(pt + '-') || prim.id.endsWith('-' + pt)) {
+            score += 0.35;
+            break;
+          }
+        }
+      }
       if (score > bestScore) {
         bestScore = score;
         bestPrim = prim;
@@ -145,12 +170,9 @@ export class ComponentSynth {
       return null;
     }
 
-    console.log(`[ComponentSynth] Matched "${userRequest.slice(0, 40)}" → ${bestPrim.id} @ ${bestScore.toFixed(2)}`);
+    console.log(`[ComponentSynth] Matched "${userRequest.slice(0, 40)}" → ${bestPrim.id} @ ${bestScore.toFixed(2)}${parsedTypes.length ? ` (parsed: ${parsedTypes.join(',')})` : ''}`);
 
-    // Generate a unique component id. Base is the primitive id;
-    // suffix is a short hash of the cortex pattern (if provided)
-    // so the id reflects Unity's neural state at build time. If
-    // no cortex pattern, suffix is a timestamp tail.
+    // Generate a unique component id.
     const suffix = this._suffixFromPattern(brainState.cortexPattern);
     const id = `${bestPrim.id}-${suffix}`;
 
@@ -161,6 +183,9 @@ export class ComponentSynth {
       js: bestPrim.js,
       _primitive: bestPrim.id,
       _matchScore: bestScore,
+      _parsedTypes: parsedTypes,
+      _parsedColors: parsed?.entities?.colors || [],
+      _parsedActions: parsed?.entities?.actions || [],
     };
   }
 

@@ -2847,6 +2847,34 @@ export class LanguageCortex {
    * `semanticFit * 0.80` term is now the dominant topic signal.
    */
   /**
+   * T7.2 — Visual cortex describer output → gender inference.
+   * Called by the engine wiring whenever visual-cortex emits a new
+   * description. Scans the raw text for closed-class gender tokens
+   * (man/woman/guy/girl/...) and promotes into social schema gender
+   * ONLY if no explicit self-ID has been set (explicit self-ID
+   * always wins over scene inference).
+   *
+   * Closed-class structural match, no lists beyond the gender token
+   * sets themselves which are canonical gender vocabulary in English.
+   */
+  observeVisionDescription(text) {
+    if (!text || typeof text !== 'string') return;
+    const schema = this._socialSchema?.user;
+    if (!schema) return;
+    // Don't overwrite an explicit self-ID. Vision is a weaker signal.
+    if (schema.gender) return;
+    const lower = text.toLowerCase();
+    const MALE_WORDS = /\b(man|guy|dude|boy|male|gentleman|bro|sir)\b/;
+    const FEMALE_WORDS = /\b(woman|lady|girl|female|gal|chick|ma'?am|miss|mrs)\b/;
+    const hasMale = MALE_WORDS.test(lower);
+    const hasFemale = FEMALE_WORDS.test(lower);
+    // Only commit if exactly one gender signal appears — mixed scenes
+    // stay ambiguous. "a man and a woman" → no commit.
+    if (hasMale && !hasFemale) schema.gender = 'male';
+    else if (hasFemale && !hasMale) schema.gender = 'female';
+  }
+
+  /**
    * T7+T8 — Social schema update, driven entirely by parseSentence.
    * The vestigial regex name/gender/greeting extraction that used to
    * live here was replaced by reads against the parse tree. This
@@ -2959,17 +2987,22 @@ export class LanguageCortex {
       if (first) this._subjectStarters.set(first, (this._subjectStarters.get(first) || 0) + 1);
     }
 
-    // T11.2 — pure running-mean observation. For each token at
-    // position t, update two per-slot priors:
-    //   _slotCentroid[t] ← running mean of emb(word_t)
-    //                      (distribution of words at position t)
-    //   _slotDelta[t]   ← running mean of emb(word_t) − emb(word_{t-1})
-    //                      (average position-t transition vector)
+    // T11.2 + T11.6 — running-mean observation with arousal weighting.
+    // For each token at position t, update per-slot priors:
+    //   _slotCentroid[t]       ← weighted mean of emb(word_t)
+    //   _slotDelta[t]          ← weighted mean of (emb_t − emb_{t-1})
+    //   _slotTypeSignature[t]  ← weighted mean of wordType(word_t)
     //
-    // Zero matrix math. Zero ridge regression. Just additive updates
-    // to 50-d vectors. The BRAIN's cortex dynamics provide all the
-    // nonlinearity at generation time — the language cortex just
-    // remembers the grammatical SHAPE of each slot via these priors.
+    // The observation weight scales with arousal so live-chat input
+    // (arousal floor 0.95 from inner-voice.learn) pulls the running
+    // mean harder than corpus-loaded sentences (persona arousal 0.75,
+    // baseline 0.5, coding 0.4). Higher arousal → more influence.
+    // Weighted mean update: mean ← (mean·N + x·w) / (N + w).
+    // This is T11.6 — without it all observations would have equal
+    // weight and thousands of corpus sentences would drown out a
+    // handful of live-chat sentences. With it, live chat shapes the
+    // priors proportionally to how engaged the brain is.
+    const obsWeight = Math.max(0.25, arousal * 2); // 0.4 arousal → 0.8, 0.95 → 1.9
     const PD = PATTERN_DIM;
     for (let t = 0; t < words.length; t++) {
       const w = words[t];
@@ -2985,17 +3018,15 @@ export class LanguageCortex {
         const centroid = this._slotCentroid[t];
         const n = this._slotCentroidCount[t];
         for (let i = 0; i < PD; i++) {
-          centroid[i] = (centroid[i] * n + currEmb[i]) / (n + 1);
+          centroid[i] = (centroid[i] * n + currEmb[i] * obsWeight) / (n + obsWeight);
         }
         // Slot type signature — running mean of wordType scores.
-        // This is the letter-equation grammatical distribution of
-        // words typically seen at position t, learned from observation.
         const sig = this._slotTypeSignature[t];
         const wt = this.wordType(w);
         for (const k of Object.keys(sig)) {
-          sig[k] = (sig[k] * n + (wt[k] || 0)) / (n + 1);
+          sig[k] = (sig[k] * n + (wt[k] || 0) * obsWeight) / (n + obsWeight);
         }
-        this._slotCentroidCount[t] = n + 1;
+        this._slotCentroidCount[t] = n + obsWeight;
       }
 
       // Slot delta update (t >= 1 only — needs a previous word)
@@ -3005,9 +3036,9 @@ export class LanguageCortex {
         const n = this._slotDeltaCount[t];
         for (let i = 0; i < PD; i++) {
           const obs = currEmb[i] - prevEmb[i];
-          delta[i] = (delta[i] * n + obs) / (n + 1);
+          delta[i] = (delta[i] * n + obs * obsWeight) / (n + obsWeight);
         }
-        this._slotDeltaCount[t] = n + 1;
+        this._slotDeltaCount[t] = n + obsWeight;
         this._obsCount++;
       }
 

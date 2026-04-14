@@ -29,7 +29,7 @@ Nothing else. If it's not in that list, it's an appendage, and it gets ripped ou
 
 ### T5/T6 — Slot-gen semantic coherence (unified: speak + build_ui share one broken equation)
 
-**Status:** in_progress — first pass shipped 2026-04-14 (per-slot topic floor + length scaling + tighter coherence gate)
+**Status:** SUBSUMED BY T11 — the entire slot scorer + Markov walk that T5/T6 were patching has been deleted and replaced by the T11 pure equational language cortex. The "one broken equation" both symptoms shared is gone entirely. See T11 entry + 2026-04-14 FINALIZED session archive.
 **Priority:** P1
 **Owner:** unassigned
 **Reported:** 2026-04-14 by Gee (live chat session)
@@ -71,7 +71,7 @@ Nothing else. If it's not in that list, it's an appendage, and it gets ripped ou
 
 ### T6 — Slot-gen salad on cold chat queries (no per-sentence topic anchor)
 
-**Status:** in_progress — first pass shipped 2026-04-14 (see below)
+**Status:** OBSOLETED BY T11 — cold slot-gen with n-gram walks no longer exists. Pure equational generation (T11.2) builds target vectors from normalized centroid + context + mental + transition components, then argmax-samples over the learned dictionary. The "word salad" symptom is now entirely a function of training volume and embedding dimension, not a pipeline bug. Historical entry preserved below for context.
 **Priority:** P1
 **Owner:** unassigned
 **Reported:** 2026-04-14 by Gee (live chat session)
@@ -196,7 +196,7 @@ All four components L2-normalized before mixing so no single contribution swamps
 
 ### T10 — Decouple `Ultimate Unity.txt` from the language corpus (end the whack-a-mole)
 
-**Status:** pending — architecture scoped, no code shipped
+**Status:** OBSOLETED BY T11 — the whole "whack-a-mole" problem T10 was going to solve was the filter stack trying to catch rulebook prose leaking into the Markov graph. T11 deleted the Markov graph entirely. The persona file is still loaded at boot via `loadSelfImage()`, but it now only feeds the T11.2 slot centroid / slot delta / slot type signature running means — which train grammatical SHAPE (position, type, transition) without preserving any rulebook CONTENT. No "decouple" needed because there's no text storage left to leak from.
 **Priority:** P0 — this is the real fix for every persona-leak symptom
 **Owner:** unassigned
 **Reported:** 2026-04-14 by Gee (ultrathink session)
@@ -338,7 +338,7 @@ A new method `parseSentence(text) → ParseTree` that walks user input token-by-
 
 ### T7 — Social cognition: greetings, name memory, gender inference, personal address
 
-**Status:** in_progress — foundation shipped 2026-04-14 (social schema + name extraction + greeting counter)
+**Status:** substantially shipped — foundation + name extraction via `parseSentence` + **vision→gender inference via visual cortex `onDescribe` subscription** (2026-04-14). Greeting response path was shipped then removed as part of T11 purge (template short-circuit deleted in favor of pure equational generation — greetings now emerge from the slot centroid + context vector at slot 0 as learned running means). Personal-address slot injection + gender-aware pronouns + persistent schema + forget-on-contradiction remain as follow-ups — each is a small addition when prioritized.
 **Priority:** P1
 **Owner:** unassigned
 **Reported:** 2026-04-14 by Gee (live chat session)
