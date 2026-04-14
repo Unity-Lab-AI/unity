@@ -188,20 +188,30 @@ class VoiceIO {
 
     const voice = options.voice || this._pollinationsVoice;
 
-    // Try Pollinations TTS — retry once on 5xx errors before falling back
+    // Try Pollinations TTS — retry once on 5xx errors before falling
+    // back. 401/402/403 (handled by _speakPollinations dead-backend
+    // marking) short-circuits silently to the browser fallback after
+    // the first failure so TTS doesn't re-spam the console per
+    // utterance.
     let spoke = false;
     for (let attempt = 0; attempt < 2 && !spoke; attempt++) {
       try {
         await this._speakPollinations(text, voice);
-        console.log(`[VoiceIO] Spoke via Pollinations (voice: ${voice})`);
         spoke = true;
       } catch (err) {
-        if (attempt === 0 && err.message?.includes('5')) {
-          console.warn(`[VoiceIO] Pollinations TTS 5xx — retrying in 1s...`);
+        const msg = err.message || '';
+        // Dead-backend cooldown — skip retry + logging
+        if (msg.includes('dead (cooldown)')) break;
+        // 5xx — brief retry
+        if (attempt === 0 && /HTTP 5\d\d/.test(msg)) {
           await new Promise(r => setTimeout(r, 1000));
-        } else {
-          console.warn(`[VoiceIO] Pollinations TTS failed: ${err.message} — falling back to browser`);
+          continue;
         }
+        // Other errors get a single warn, no retry
+        if (attempt === 0) {
+          console.warn(`[VoiceIO] Pollinations TTS failed: ${msg} — browser fallback`);
+        }
+        break;
       }
     }
 
@@ -242,6 +252,19 @@ class VoiceIO {
   // --- Pollinations TTS ---
 
   async _speakPollinations(text, voice) {
+    // T4.13 — dead-backend short-circuit. Pollinations TTS returns
+    // 401 Unauthorized when anonymous tier isn't allowed. Each
+    // response Unity speaks was previously triggering a fresh fetch
+    // + 401 + console error + retry + 401 + console error + fallback
+    // log + warn log — 4+ console lines per utterance. Now a single
+    // 401 marks the endpoint dead for the cooldown period and every
+    // subsequent call throws a silent "dead" error that falls
+    // straight to the browser SpeechSynthesis fallback with zero
+    // console noise.
+    if (this._pollTtsDead && Date.now() - this._pollTtsDead < 3600000) {
+      throw new Error('Pollinations TTS dead (cooldown)');
+    }
+
     const url = 'https://gen.pollinations.ai/v1/audio/speech';
     const headers = { 'Content-Type': 'application/json' };
     if (this._apiKey) {
@@ -259,6 +282,11 @@ class VoiceIO {
     });
 
     if (!response.ok) {
+      // Auth/payment failures → mark dead for 1 hour cooldown
+      if (response.status === 401 || response.status === 402 || response.status === 403) {
+        this._pollTtsDead = Date.now();
+        console.warn(`[VoiceIO] Pollinations TTS ${response.status} — disabled for 1h, using browser SpeechSynthesis. Paste a Pollinations API key in Settings to re-enable.`);
+      }
       throw new Error(`Pollinations TTS HTTP ${response.status}`);
     }
 

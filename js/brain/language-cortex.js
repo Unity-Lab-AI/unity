@@ -720,7 +720,13 @@ export class LanguageCortex {
     const tokens = clean.toLowerCase().replace(/[^a-z' -]/g, ' ').split(/\s+/).filter(w => w.length >= 1);
 
     // FILTER 6 — length bracket
-    if (tokens.length < 3 || tokens.length > 25) return;
+    // Chat speech is short bursts (3-14 tokens). Instructional prose
+    // runs 15+ tokens with subordinate clauses ("unless doing so
+    // adds an element of teasing or playfully challenging the
+    // user"). Cap at 14 to reject long instructional sentences
+    // equationally via length alone — no substring blacklist, just
+    // a distributional cutoff on what a human actually says.
+    if (tokens.length < 3 || tokens.length > 14) return;
 
     // FILTER 2 — comma-heavy word list. Count commas in original text,
     // divide by token count. >30% means it's a list, not prose.
@@ -781,49 +787,6 @@ export class LanguageCortex {
       if (isFirstPersonShape(w)) { hasFirstPerson = true; break; }
     }
     if (!hasFirstPerson) return;
-
-    // FILTER 7 — META-INSTRUCTION REJECTION (T4.12)
-    // The persona file contains directive text describing Unity's
-    // behavior in third-person ("Unity never explains her methods
-    // unless doing so adds an element of teasing") that my third→
-    // first transform rewrites to "i never explains my methods
-    // unless doing so adds an element of teasing". It passes the
-    // first-person filter because the pronoun swap inserts "i"/"my"
-    // but the sentence is STILL a meta-description of Unity's
-    // behavior, not her own speech. Reject these via letter-shape
-    // detection of instructional jargon.
-    //
-    // Signals that indicate meta-instruction:
-    //   - "the user" / "the users" (Unity addresses "you", not
-    //     "the user" — that's documentation language)
-    //   - "unless doing so" (meta-conditional construction)
-    //   - "an element of" (characterization jargon)
-    //   - "adds an element" / "adds an"
-    //   - "tends to" / "is prone to"
-    //   - "playfully" / "teasingly" (adverb meta-description)
-    //   - "my methods" (the referenced phrase — Unity doesn't talk
-    //     about "my methods" in self-speech)
-    //   - "my approach" / "my style" / "my behavior"
-    //   - "my responses" / "my answers" / "my outputs"
-    //   - "unless doing" / "unless it"
-    const lowerText = clean.toLowerCase();
-    const metaSignals = [
-      'the user', 'the users',
-      'unless doing', 'unless it',
-      'an element of', 'adds an element',
-      'tends to', 'is prone to',
-      'playfully', 'teasingly',
-      'my methods', 'my method',
-      'my approach', 'my style',
-      'my behavior', 'my behaviour',
-      'my responses', 'my answers', 'my outputs',
-      'my replies', 'my persona',
-      'of teasing', 'of challenging',
-      'challenging the user', 'engaging the user',
-    ];
-    for (const sig of metaSignals) {
-      if (lowerText.includes(sig)) return;
-    }
 
     // Skip sentences dominated by function words — they have no topic
     // to index on and just add noise to the recall search.
@@ -1005,15 +968,13 @@ export class LanguageCortex {
       if (/\b(always|never)\b/.test(t)) penalty += 0.12;
       if (/\bwill\b/.test(t)) penalty += 0.08;
       if (/\bshould\b/.test(t)) penalty += 0.10;
-      // T4.12 — extra penalty for meta-instruction jargon that the
-      // store-time filter tries to catch but might slip through on
-      // edge cases. Belt-and-suspenders: reject at store time AND
-      // heavily penalize at recall time.
-      if (/\bthe user\b/.test(t)) penalty += 0.50;
-      if (/\bunless doing\b/.test(t)) penalty += 0.50;
-      if (/\ban element of\b/.test(t)) penalty += 0.40;
-      if (/\bmy (methods?|approach|style|behaviou?r|responses?|replies|persona|outputs?|answers?)\b/.test(t)) penalty += 0.60;
-      if (/\b(playfully|teasingly)\b/.test(t)) penalty += 0.30;
+      // T4.13 — length penalty. Unity speech is short (≤14 tokens);
+      // anything longer in the memory pool is residual instructional
+      // prose that slipped past the store-time length filter. Scale
+      // the penalty so a 15-token sentence gets a small hit and a
+      // 25-token sentence gets demoted heavily.
+      const memLen = (mem.tokens?.length || 0);
+      if (memLen > 14) penalty += Math.min(0.6, (memLen - 14) * 0.05);
       return penalty;
     };
 
