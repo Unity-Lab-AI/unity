@@ -678,7 +678,11 @@ export class SensoryAIProviders {
     if (this._pollinations?._apiKey) {
       headers['Authorization'] = `Bearer ${this._pollinations._apiKey}`;
     }
-    const model = modelOverride || this._pollinationsVisionModel || 'openai';
+    // openai-large = GPT-4o w/ vision (canonical multimodal id in the
+    // Pollinations /v1/models list). The bare 'openai' alias is text-
+    // biased and was returning 400 on image_url content parts for some
+    // accounts. Users can still override via the setup modal.
+    const model = modelOverride || this._pollinationsVisionModel || 'openai-large';
     const res = await fetch(VISION_URL, {
       method: 'POST',
       headers,
@@ -692,6 +696,7 @@ export class SensoryAIProviders {
           ]},
         ],
         temperature: 0.3,
+        max_tokens: 200,
       }),
       signal: AbortSignal.timeout(timeoutMs),
     });

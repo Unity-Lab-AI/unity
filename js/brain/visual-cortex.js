@@ -436,18 +436,15 @@ export class VisualCortex {
     const dataUrl = descCanvas.toDataURL('image/jpeg', 0.6);
 
     this._describer(dataUrl).then(desc => {
-      // R13 — null = describer failed (all backends dead or paused).
-      // Don't overwrite the last good description with empty string;
-      // reset _hasDescribedOnce so we retry cleanly on the next window
-      // instead of getting stuck in "described nothing" forever.
-      if (desc) {
-        this.description = desc;
-      } else {
-        this._hasDescribedOnce = false;
-      }
+      // null = describer failed (backend dead / paused / bad response).
+      // Keep _hasDescribedOnce=true so the 5-min rate limit engages and
+      // we don't retry every frame against a dead backend (the old code
+      // flipped it back to false which caused a 400-flood loop —
+      // dead-backend short-circuited but the describe cycle kept firing
+      // every RAF). Real retries happen after the 5-min window.
+      if (desc) this.description = desc;
       this._describing = false;
     }).catch(() => {
-      this._hasDescribedOnce = false;
       this._describing = false;
     });
   }
