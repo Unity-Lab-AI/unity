@@ -14,6 +14,30 @@
 
 ## COMPLETED TASKS LOG
 
+## 2026-04-13 Session: R10.3 — brain-equations.html surgical edits for R2 semantic grounding
+
+### COMPLETED
+- [x] **Task:** R10.3 — Sync `brain-equations.html` (1379 lines) to the post-R2 semantic grounding reality. Per Gee's instruction: surgical edits, not a full rewrite. Update the letter-hash / 32-dim / `wordToPattern()` references to the new GloVe 50d + `sharedEmbeddings.getEmbedding()` path, add a new section documenting the R2 mechanism, leave every other equation section (LIF / HH / plasticity / Kuramoto / Ψ / amygdala / BG / hippocampus / mystery / type-ngrams) untouched because they're still accurate.
+  - Completed: 2026-04-13
+  - Files modified: `brain-equations.html`
+  - In-place updates (5 sites + 1 tooltip):
+    - **Line 854 (8.13 Embedding→Cortex Mapping tooltip)** — was "Words represented as 32-dimensional neural patterns derived from letter structure — NOT from pre-trained word vectors." Now: "Words represented as 50-dimensional GloVe semantic vectors loaded from CDN at boot. Each embedding dimension drives a group of Wernicke's area neurons... Post-R2 2026-04-13: base GloVe + online context-refinement delta per word (see 8.18.6)."
+    - **Line 961 (slot scorer rebalance description)** — added: "Phase 13 R2 (2026-04-13) raised it again to 0.80 when word patterns switched from 32-dim letter-hash to 50-dim GloVe semantic embeddings. Real meaning is now the dominant signal."
+    - **Line 979 (unified neural language paragraph)** — "ONE combined 32-dim pattern" → "ONE combined 50-dim pattern (post-R2 semantic grounding — was 32-dim letter-hash before 2026-04-13). Dictionary finds the closest word via cosine similarity in GloVe semantic space."
+    - **Line 1034-1044 (context vector block)** — tooltip + equation + description all updated. `pattern(w) ∈ ℝ³² from wordToPattern(w)` → `pattern(w) ∈ ℝ⁵⁰ from sharedEmbeddings.getEmbedding(w)    ← R2: GloVe 50d`. Description explains the cat/kitten vs cat/catastrophe test case.
+    - **Line 1070-1091 (hippocampus sentence recall block)** — tooltip acknowledges cosine signal is now meaningful after R2, index equation updated to `Σ sharedEmbeddings.getEmbedding(w)`, description updated to note movies↔films style hits now succeed.
+    - **Line 1120 (coherence rejection gate)** — `outputCentroid = Σ wordToPattern(w)` → `Σ sharedEmbeddings.getEmbedding(w)   ← R2 GloVe 50d`.
+    - **Line 1156 (Tier 4 pipeline)** — `slotScorer with semanticFit × 0.30` → `slotScorer with semanticFit × 0.80       ← R2 bumped from 0.30`.
+  - New section **8.18.6 — Phase 13 R2 — Semantic Grounding via GloVe Embeddings** inserted between 8.18.5 Semantic Coherence Pipeline and 8.19 Type N-Gram Grammar. Three equation boxes:
+    - **Shared Embeddings Singleton** — shows `js/brain/embeddings.js` exporting `sharedEmbeddings` + `EMBED_DIM = 50`, both `sensory.js` and `language-cortex.js` importing it, dictionary.js PATTERN_DIM = EMBED_DIM and STORAGE_KEY v3 rejecting v2 letter-hash patterns. Explains that perception and production share one semantic space.
+    - **cortexToEmbedding — Neural State → GloVe Space** — full pseudocode of the inverse mapToCortex function (langSize / groupSize / loop through EMBED_DIM dimensions reading spikes or normalized sub-threshold voltages, L2 normalize for cosine). Explains this is what lets the slot scorer compare candidates against Unity's actual current cortex activity instead of the static input vector. Called via `cluster.getSemanticReadout(sharedEmbeddings)`.
+    - **Online Context Refinement + Persistence (R8)** — `embedding(w) = base[w] + delta[w](t)` showing GloVe base is CDN-loaded and delta is online-learned. Documents the R8 save/load round-trip (commit b67aa46): `sharedEmbeddings.serializeRefinements()` on save, `loadRefinements()` on load, so Unity's personal semantic associations persist across tab reloads.
+  - Table of contents updated — added 8.18.5 and 8.18.6 entries (neither was in the TOC before; 8.18.5 had been a silent body section). The new 8.18.6 link jumps to the R2 section so readers can navigate to it from the contents list.
+  - Final verification grep: zero stale `wordToPattern(` / `ℝ³²` / "32-dim" / "32-dimensional" references remain outside the 4 new paragraphs that say "was 32-dim letter-hash before R2" as historical context. All still-accurate equation sections (LIF / HH / plasticity / STDP / Wilson-Cowan / Hopfield / Kuramoto / Friston Free Energy / Drift Diffusion / Bayesian / amygdala / BG / hippocampus / cerebellum / hypothalamus / mystery / type n-grams / morphology / persona θ) unmodified.
+  - Known residual cleanup (not R10.3 scope, flagged for R12): the 8.11 "Broca's Area — What the AI Model Receives" section still exists in the TOC and body. Post-R4 BrocasArea is a 68-line throwing stub and that entire equation box is misleading. Should be either deleted outright or replaced with a "Language cortex equationally generates every word, this section is historical" note during R12 final cleanup. Gee's "surgical edits" directive on R10.3 was specifically about the letter-hash → GloVe transition, so I left 8.11 alone to avoid scope creep.
+
+---
+
 ## 2026-04-13 Session: R10.8 + ORPHANS.md removal
 
 ### COMPLETED

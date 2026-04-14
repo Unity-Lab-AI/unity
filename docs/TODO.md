@@ -643,7 +643,7 @@ Boot Unity with viz panel open, let it run 10 minutes, take Chrome memory snapsh
 - Motor-action-driven output section
 - Semantic embedding training section
 
-### R10.3 — `brain-equations.html` rewrite
+### R10.3 — `brain-equations.html` rewrite  [DONE 2026-04-13 — surgical edits per Gee. Updated 5 letter-hash/32-dim sites in place with R2 notes (slot scorer weight 0.30→0.80, unified neural language dim, context vector, hippocampus recall centroid, coherence gate centroid), corrected the 8.13 Embedding→Cortex tooltip, added new 8.18.6 section with 3 eq-boxes (Shared Embeddings Singleton, cortexToEmbedding neural-state readout, Online Context Refinement + R8 Persistence), wired 8.18.5 + 8.18.6 TOC entries. Unmodified: LIF/HH/plasticity/Kuramoto/Ψ/amygdala/BG/hippocampus/mystery/type-ngrams sections (all still accurate).]
 - Delete the letter-pattern sections
 - Add semantic embedding section (co-occurrence, cosine, refinement)
 - Update dictionary section to show semantic retrieval

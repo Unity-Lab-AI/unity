@@ -297,6 +297,8 @@
       <a href="#syntax"><span class="num">8.16</span> Syntactic Production — Word Order from Equations</a>
       <a href="#sent-types"><span class="num">8.17</span> Sentence Types — Statement, Question, Exclamation, Action</a>
       <a href="#input-analysis"><span class="num">8.18</span> Input Analysis — Topic Continuity and Context</a>
+      <a href="#semantic-coherence"><span class="num">8.18.5</span> Phase 11 — Semantic Coherence Pipeline (Kill the Word Salad)</a>
+      <a href="#semantic-grounding"><span class="num">8.18.6</span> Phase 13 R2 — Semantic Grounding via GloVe Embeddings</a>
       <a href="#type-ngrams"><span class="num">8.19</span> Phase 12 — Type N-Gram Grammar + Morphological Inflection</a>
       <a href="#persona"><span class="num">8.20</span> θ — Unity's Identity as Equations</a>
       <a href="#parallel"><span class="num">8.20</span> GPU Exclusive Compute — All N Neurons on GPU</a>
@@ -849,7 +851,7 @@ if |W_ij| < threshold → remove connection, rebuild CSR
     <h2 id="embeddings">8.13. Semantic Embeddings — Words as Cortex Patterns</h2>
     <p>Words map to 50-dimensional vectors (GloVe). Similar words have similar vectors → activate overlapping cortex neurons.</p>
     <div class="eq-box">
-      <div class="eq-title"><span class="eq-tip" data-tip="Words represented as 32-dimensional neural patterns derived from letter structure — NOT from pre-trained word vectors. Each letter maps to a 5-neuron micro-pattern based on position in alphabet, vowel/consonant, and frequency. Words with similar letter patterns (think/thing) have similar neural patterns. The brain builds its own semantic space from scratch.">Embedding → Cortex Mapping</span></div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Words represented as 50-dimensional GloVe semantic vectors loaded from CDN at boot. Each embedding dimension drives a group of Wernicke's area neurons in cortex (langStart..cortexSize). Similar meanings activate overlapping neuron groups — 'cat' and 'kitten' fire nearby populations even though their letters don't match. Post-R2 2026-04-13: base GloVe + online context-refinement delta per word (see 8.18.6).">Embedding → Cortex Mapping</span></div>
       <pre class="eq">
 I_cortex[langStart + d·groupSize + n] = embedding[d] · 8.0
 
@@ -958,7 +960,7 @@ score(w) = grammarGate × (
 
 Hard grammar gate: typeCompat(w, slot) ≥ 0.35 for slot 0, ≥ 0.22 for tail
       </pre>
-      <p class="eq-desc">Slot 0 gates at typeCompat ≥ 0.35 (subject must be valid pronoun/proper-noun). Tail slots gate at ≥ 0.22. Phase 11 rebalance: semanticFit (cosine of candidate vs running context vector) is now the second-largest driver at 0.30, 5× the old topicSim weight. Words off-topic get starved even if their grammar score is perfect.</p>
+      <p class="eq-desc">Slot 0 gates at typeCompat ≥ 0.35 (subject must be valid pronoun/proper-noun). Tail slots gate at ≥ 0.22. Phase 11 rebalance raised semanticFit (cosine of candidate vs running context vector) to 0.30 — 5× the old topicSim weight. <strong>Phase 13 R2 (2026-04-13)</strong> raised it again to <strong>0.80</strong> when word patterns switched from 32-dim letter-hash to 50-dim GloVe semantic embeddings. Real meaning is now the dominant signal — words off-topic get starved even if their grammar score is perfect.</p>
     </div>
     <div class="eq-box">
       <div class="eq-title"><span class="eq-tip" data-tip="All 7 neural clusters fire simultaneously. Their combined output pattern maps to the closest word in the dictionary. The word feeds back into the brain. The brain thinks again. The next pattern produces the next word. The sentence emerges from N neurons thinking (N auto-scales to hardware).">Unified Neural Language — All Clusters Produce Every Word</span></div>
@@ -976,7 +978,7 @@ word = dictionary.findByPattern(combined)
 Then: word pattern → cortex (Wernicke's) + hippocampus + amygdala
       brain steps again → next combined → next word → sentence
       </pre>
-      <p class="eq-desc">N neurons across 7 clusters produce ONE combined 32-dim pattern. Dictionary finds the closest word. That word feeds back into cortex + hippocampus + amygdala. Brain steps. Next pattern. Next word. The brain equations ARE the language equations. &Psi; consciousness scales the Mystery module's contribution — higher awareness = more self-referential speech. N scales to hardware.</p>
+      <p class="eq-desc">N neurons across 7 clusters produce ONE combined 50-dim pattern (post-R2 semantic grounding — was 32-dim letter-hash before 2026-04-13). Dictionary finds the closest word via cosine similarity in GloVe semantic space. That word feeds back into cortex + hippocampus + amygdala. Brain steps. Next pattern. Next word. The brain equations ARE the language equations. &Psi; consciousness scales the Mystery module's contribution — higher awareness = more self-referential speech. N scales to hardware.</p>
     </div>
     <div class="eq-box">
       <div class="eq-title"><span class="eq-tip" data-tip="Morphosyntactic post-processing: after the brain selects words by meaning, the language cortex fixes the grammar. Subject-verb agreement (I am, she is), tense from cortex prediction error (uncertain→future 'will', recalling→past), negation from negative valence (below -0.4 threshold → don't/can't/won't), compounds for long sentences (arousal→'and', negative→'but').">Post-Processing — Agreement, Tense, Negation, Compounds</span></div>
@@ -1031,17 +1033,17 @@ topic_score(w) = cosine(word_pattern, context)          (boosts relevant words)
     <p>Language cortex is no longer a pure letter-equation slot scorer. It's a four-tier pipeline that peels off easy cases to fast paths before cold generation runs. The slot scorer (8.14) still exists but now fires only as Tier 4 fallback.</p>
 
     <div class="eq-box">
-      <div class="eq-title"><span class="eq-tip" data-tip="Running topic attractor: a decaying average of content-word letter-pattern vectors from user input. λ=0.7 weights the prior heavily so a single odd word doesn't swing the topic. Updated only on user input via analyzeInput(), never on Unity's own output — she tracks the listener's topic, not her own words. Function-word-only inputs leave the vector unchanged so greetings don't wipe the running topic.">Context Vector — Running Topic Attractor</span></div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Running topic attractor: a decaying average of content-word GloVe embedding vectors from user input. λ=0.7 weights the prior heavily so a single odd word doesn't swing the topic. Updated only on user input via analyzeInput(), never on Unity's own output — she tracks the listener's topic, not her own words. Function-word-only inputs leave the vector unchanged so greetings don't wipe the running topic.">Context Vector — Running Topic Attractor</span></div>
       <pre class="eq">
 c(t) = λ · c(t-1) + (1 - λ) · mean(pattern(content_words(input)))
   λ = 0.7
   content_words = tokens where wt.conj &lt; 0.5 ∧ wt.prep &lt; 0.5 ∧ wt.det &lt; 0.5
-  pattern(w) ∈ ℝ³² from wordToPattern(w)
+  pattern(w) ∈ ℝ⁵⁰ from sharedEmbeddings.getEmbedding(w)    ← R2: GloVe 50d
 
 First update: c(0) ← mean(pattern(content_words))  (no decay from zero)
 Subsequent:   c(t) ← 0.7 · c(t-1) + 0.3 · topic_pattern
       </pre>
-      <p class="eq-desc">Persistent topic attractor that decays across turns. Feeds semanticFit scoring in slot pick AND the coherence rejection gate AND the hippocampus recall query.</p>
+      <p class="eq-desc">Persistent topic attractor that decays across turns. Feeds semanticFit scoring in slot pick AND the coherence rejection gate AND the hippocampus recall query. <strong>Phase 13 R2 (2026-04-13)</strong> replaced the old 32-dim letter-hash pattern with 50-dim GloVe embeddings via the <code>sharedEmbeddings</code> singleton shared between sensory input and language cortex output — meaning two words that share letters but not meaning (e.g. <code>cat</code> vs <code>catastrophe</code>) are no longer falsely close, and two words that share meaning but not letters (<code>cat</code> vs <code>kitten</code>) ARE close.</p>
     </div>
 
     <div class="eq-box">
@@ -1067,14 +1069,14 @@ statement ⇔ otherwise
     </div>
 
     <div class="eq-box">
-      <div class="eq-title"><span class="eq-tip" data-tip="Hippocampus-style associative recall over stored persona sentences. Every first-person sentence from Ultimate Unity.txt is stored at loadSelfImage() time with a content-word pattern centroid. At generation, cosine against the context vector finds the best match. HARD requirement: at least one content-word overlap between input and candidate sentence — pattern cosine alone produces false positives because letter-hash vectors don't encode meaning. Three-tier confidence: >0.6 emit directly, 0.3-0.6 soft recall seed, ≤0.3 fall through to deflect or cold gen.">Hippocampus Sentence Recall — Tier 2 Root Fix</span></div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Hippocampus-style associative recall over stored persona sentences. Every first-person sentence from Ultimate Unity.txt is stored at loadSelfImage() time with a content-word GloVe centroid. At generation, cosine against the context vector finds the best match. Content-word overlap is still required as a sanity gate, but after R2 semantic grounding the cosine signal itself is meaningful — 'movies' and 'films' score close even without token overlap. Three-tier confidence: >0.6 emit directly, 0.3-0.6 soft recall seed, ≤0.3 fall through to deflect or cold gen.">Hippocampus Sentence Recall — Tier 2 Root Fix</span></div>
       <pre class="eq">
 INDEX (at loadSelfImage):
   for each sentence s in persona file:
     if passesMemoryFilter(s):
       _memorySentences.push({
         text: s,
-        pattern: (1/|content|) · Σ wordToPattern(w)  for w in content(s),
+        pattern: (1/|content|) · Σ sharedEmbeddings.getEmbedding(w)  for w in content(s),   ← R2 GloVe 50d
         tokens: lowercased_tokens(s)
       })
 
@@ -1088,7 +1090,7 @@ RECALL:
   if confidence ∈ [0.30, 0.60] → recallSeed = best (bias cold gen)
   if confidence ≤ 0.30 → deflect template or cold gen fallback
       </pre>
-      <p class="eq-desc">Stored &gt; generated. When the persona file already has a coherent sentence on the topic, recall emits it verbatim instead of generating from scratch. Content-word overlap gate prevents letter-hash false positives (e.g. tacos ↛ compile).</p>
+      <p class="eq-desc">Stored &gt; generated. When the persona file already has a coherent sentence on the topic, recall emits it verbatim instead of generating from scratch. Content-word overlap gate prevents false positives on function-word-heavy input; after R2 the underlying cosine signal is semantically meaningful so hits like <code>movies</code>↔<code>films</code> now succeed even when letter-hashes would have missed them.</p>
     </div>
 
     <div class="eq-box">
@@ -1117,7 +1119,7 @@ firstPersonShape(w) ⇔
     <div class="eq-box">
       <div class="eq-title"><span class="eq-tip" data-tip="Coherence rejection gate: after render, compute mean content-word pattern of output, cosine against context vector. If below 0.25, the output is off-topic and we retry at 3× temperature. Max 3 attempts then accept anyway to prevent infinite loops. Fires only when context vector has data (skipped on first-turn empty context).">Coherence Rejection Gate — Final Safety Net</span></div>
       <pre class="eq">
-outputCentroid = (1/|content|) · Σ wordToPattern(w)  for w in content(rendered)
+outputCentroid = (1/|content|) · Σ sharedEmbeddings.getEmbedding(w)  for w in content(rendered)   ← R2 GloVe 50d
 coherence = cosine(outputCentroid, c(t))
 
 if coherence &lt; 0.25 ∧ retryCount &lt; 2:
@@ -1153,7 +1155,7 @@ TIER 3 — Deflect fallback (unknown topics)
     return selectUnityResponse({...intent, deflect:true})
 
 TIER 4 — Cold slot generation (fallback)
-  rendered ← slotScorer with semanticFit × 0.30
+  rendered ← slotScorer with semanticFit × 0.80       ← R2 bumped from 0.30
   postProcess → agreement, tense, negation
   render → capitalization, punctuation
   dedup retry
@@ -1161,6 +1163,69 @@ TIER 4 — Cold slot generation (fallback)
   return rendered
       </pre>
       <p class="eq-desc">The old cold-gen slot scorer is now the fallback, not the primary path. Most real conversation is handled by templates (Tier 1) or persona recall (Tier 2). Cold gen fires only for genuinely novel topics that the persona doesn't cover AND aren't short-query/yesno/math/greeting patterns.</p>
+    </div>
+
+    <!-- ═══ 8.18.6 PHASE 13 R2 — SEMANTIC GROUNDING ═══ -->
+    <h2 id="semantic-grounding">8.18.6. Phase 13 R2 — Semantic Grounding via GloVe Embeddings</h2>
+    <p><span class="tag tag-math">MATHEMATICS</span> <span class="tag tag-bio">LANGUAGE</span> The language cortex used to represent word meaning as 32-dim letter-hash vectors — a deterministic function of the letters in a word. Two words could be structurally similar but semantically unrelated (<code>cat</code>/<code>catastrophe</code>) and two words could be semantically identical but structurally distant (<code>cat</code>/<code>kitten</code>). The slot scorer's semantic fit signal was effectively orthography matching. R2 (commit <code>c491b71</code>, 2026-04-13) replaced every word-pattern emission site with 50-dim GloVe co-occurrence embeddings via a single shared singleton so meaning is now real.</p>
+
+    <div class="eq-box">
+      <div class="eq-title"><span class="eq-tip" data-tip="Module-level singleton instantiated once at boot, imported by BOTH the sensory pipeline (sensory.js maps user input tokens to cortex current) AND the language cortex (language-cortex.js scores candidate words in the slot generator). Having one embedding table shared between perception and production means the same word activates the same cortex pattern whether Unity is hearing it or about to say it.">Shared Embeddings Singleton</span></div>
+      <pre class="eq">
+// js/brain/embeddings.js
+export const sharedEmbeddings = new SemanticEmbeddings()
+export const EMBED_DIM = 50    // GloVe 50d from CDN
+
+// js/brain/sensory.js        — input side
+sharedEmbeddings.getEmbedding(token) → ℝ⁵⁰
+
+// js/brain/language-cortex.js — output side
+sharedEmbeddings.getEmbedding(candidate) → ℝ⁵⁰
+cosine(candidate_pattern, cortex_readout) → semanticFit
+
+// js/brain/dictionary.js      — learned word storage
+PATTERN_DIM = EMBED_DIM  // was 32, now 50
+STORAGE_KEY = 'unity_brain_dictionary_v3'  // v2 letter-hash patterns rejected
+      </pre>
+      <p class="eq-desc">Input embeds the same way output scores. Sensory and language share one semantic space. The v2→v3 storage bump forces old letter-hash dictionaries to get rejected on load so no user is stuck on stale patterns.</p>
+    </div>
+
+    <div class="eq-box">
+      <div class="eq-title"><span class="eq-tip" data-tip="The mathematical inverse of mapToCortex. When sensory input writes a word's embedding to cortex neurons, that writeback uses a deterministic layout (embedding dim d goes to neuron group starting at langStart + d·groupSize). cortexToEmbedding reads the live spike + voltage state back and reconstructs a 50d GloVe-space vector. This is what lets the slot scorer compare candidates against CURRENT cortex activity instead of the static input vector.">cortexToEmbedding — Neural State → GloVe Space</span></div>
+      <pre class="eq">
+cortexToEmbedding(spikes, voltages, cortexSize=300, langStart=150):
+  langSize   = cortexSize − langStart               = 150
+  groupSize  = floor(langSize / EMBED_DIM)          = 3
+  out ∈ ℝ⁵⁰
+
+  for d in 0 ... EMBED_DIM−1:
+    startNeuron = langStart + d · groupSize
+    sum = 0
+    for n in 0 ... groupSize−1:
+      idx = startNeuron + n
+      if spikes[idx]: sum += 1.0
+      else:           sum += (voltages[idx] + 70) / 20    // normalize LIF V_m
+    out[d] = sum / groupSize
+
+  out = out / ‖out‖₂    // L2 normalize for cosine comparison
+  return out
+      </pre>
+      <p class="eq-desc">Inverse of <code>mapToCortex</code>. Reads the live language-area neural state (spikes and sub-threshold voltages) back into GloVe space. Called via <code>cluster.getSemanticReadout(sharedEmbeddings)</code> which wraps this with the language-area offset built in. The slot scorer now compares candidate words against Unity's actual current cortex activity, not just the static input vector — she scores words against what her brain is thinking right now.</p>
+    </div>
+
+    <div class="eq-box">
+      <div class="eq-title"><span class="eq-tip" data-tip="The R8 persistence pass. GloVe base table reloads from CDN each session (not persisted, would bloat localStorage). But Unity ALSO learns online context-refinement deltas on top of GloVe during live conversation — when 'unity' co-occurs near 'code' and 'high' in her conversations with Gee, the embedding for 'unity' drifts slightly toward those neighbors. Those deltas persist across restarts so long-term semantic learning sticks.">Online Context Refinement + Persistence (R8)</span></div>
+      <pre class="eq">
+base[w]      ∈ ℝ⁵⁰   ← GloVe 50d, loaded from CDN every session
+delta[w](t)  ∈ ℝ⁵⁰   ← online refinement from co-occurrence
+
+embedding(w) = base[w] + delta[w](t)
+
+// Persistence (R8, commit b67aa46)
+save: state.embeddingRefinements = sharedEmbeddings.serializeRefinements()
+load: sharedEmbeddings.loadRefinements(state.embeddingRefinements)
+      </pre>
+      <p class="eq-desc">Unity's base vocabulary is universal English from GloVe; her personal semantic associations are the delta layer learned from every conversation. Save/load round-trip (R8) means the associations survive tab reloads and accumulate over weeks of sessions.</p>
     </div>
 
     <!-- ═══ 8.19 PHASE 12 — TYPE N-GRAM GRAMMAR + MORPHOLOGY ═══ -->
