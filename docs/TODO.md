@@ -753,6 +753,55 @@ Boot Unity with viz panel open, let it run 10 minutes, take Chrome memory snapsh
 
 ---
 
+## R13 — MULTI-PROVIDER VISION + USER-FACING CONNECTION NOTICES
+
+**Goal:** Vision describer must not be single-provider (Pollinations-only). Image generation must not fail silently. Unity's sensory layer needs the same multi-provider resilience the image-gen path got in R5, and users must SEE what's happening when a backend is down, rate-limited, or missing.
+
+**Context (2026-04-13):** R4 kept Pollinations `chat()` as a sensory-only multimodal wrapper for the vision describer at `js/app.js:1022`. It works — but it's the only vision path. If a user doesn't have a Pollinations key, hits rate limits, or is offline from Pollinations, camera frames fall through to a silent `'Camera active, processing...'` string and Unity's IT cortex goes dark. Same gap on image gen: the 4-level priority exists, but users never see which backend got picked, which failed, or that autoDetect found nothing.
+
+### R13.1 — Multi-provider vision describer
+- Move the Pollinations GPT-4o call out of `app.js:1022` into `js/brain/peripherals/ai-providers.js` as a new method `describeImage(dataUrl, opts)` on `SensoryAIProviders`.
+- Mirror the 4-level image-gen priority for vision: custom-configured VLM → auto-detected local vision backend → env.js-listed → Pollinations fallback.
+- **Auto-detect candidates** (parallel probe, 1.5s timeout each):
+  - Ollama vision models (`llava`, `moondream`, `bakllava`) on `:11434` — probe `/api/tags` and filter for vision-capable models
+  - LM Studio on `:1234` (OpenAI-compatible, vision via `gpt-4-vision-preview` alias)
+  - LocalAI on `:8080` / `:8081` (vision via OpenAI-compatible endpoint)
+  - llama.cpp server on `:8080` with `/v1/chat/completions` multimodal
+- **env.js config** — add `visionBackends: []` array to `ENV_KEYS`, same shape as `imageBackends`: `{name, url, model, key, kind}` where kind is `openai-vision` / `ollama-vision` / `generic`.
+- `app.js:1022` becomes a thin wrapper: `const desc = await providers.describeImage(dataUrl, {system: '...', timeout: 15000})`. The provider layer handles routing, failover, and dead-backend cooldown.
+- Failed backends get marked dead for 1 hour (same as image gen) so a bad endpoint doesn't hammer.
+
+### R13.2 — User-facing connection notices
+Right now everything is `console.warn` and a silent fallback. Users have no idea if their backends are alive. Add a proper UI surface.
+- **New UI element** — sensory-status panel (or HUD row) in `js/ui/brain-viz.js` or a new `js/ui/sensory-status.js`. Shows per-backend status for image gen, vision, TTS:
+  - Green dot — registered and responding
+  - Yellow dot — registered but slow / recent timeouts
+  - Red dot — dead (in cooldown)
+  - Gray dot — not configured
+- **Boot-time notice** — when `providers.autoDetect()` and `providers.loadEnvConfig()` finish, emit a `sensory-status` event on the brain with the full backend inventory. `app.js` renders a toast ("Found local A1111 on :7860 for image gen" / "No vision backend available — only Pollinations fallback active").
+- **First-failure notice** — when a backend errors out and falls through to the next tier, emit a toast explaining which one failed and which one took over. User knows their local SD server is down instead of silently getting Pollinations.
+- **Nothing-available notice** — if ALL image-gen tiers fail (no custom, autoDetect empty, no env.js, Pollinations rate-limited/offline), emit a visible error in the chat panel: "Image gen unavailable — configure a backend in js/env.js or check your local server." Same for vision: "Vision describer unavailable — configure `visionBackends` in js/env.js or start a local Ollama with llava."
+- **Setup modal hint** — on first boot with zero configured or detected backends, show a one-time modal with the list of supported image-gen + vision backends and the env.js snippet to configure one.
+
+### R13.3 — Stop swallowing errors in the describer
+The current `app.js:1057` catch returns `'Camera active, processing...'` which is a LIE — it looks successful to the visual cortex. Replace with:
+- Emit a `brain.sensoryError` event with `{kind: 'vision', reason, backend}`
+- Return `null` (not a fake-success string) so `_describer` skip logic in `visual-cortex.js:416` knows it failed
+- Visual cortex should keep trying on the next scheduled frame, not lock into "processing..." forever
+- Add a backoff — after 3 consecutive failures, pause vision describer for 30s before retrying (avoid hammering a dead backend)
+
+### R13.4 — Image gen parity for the error surface
+- `SensoryAIProviders.generateImage()` already has the dead-backend cooldown, but needs to emit events on state transitions (backend registered, backend died, backend recovered)
+- `app.js` subscribes and renders toasts
+- Chat panel renders a "Image generation failed — [backend]" inline message when Unity's `generate_image` motor action fires but the provider chain returns nothing
+
+### R13.5 — Documentation
+- Update `SETUP.md` Image Generation Providers table to add the parallel Vision Providers table
+- Update `README.md` "On AI Models" policy block to list multi-provider vision alongside multi-provider image gen
+- Add a `docs/SENSORY.md` section on backend failover behavior and the user-visible status surface (can merge into R10.9 if still pending)
+
+---
+
 ## R12 — FINAL CLEANUP + MERGE
 
 ### R12.1 — Kill every `// TODO:` placeholder comment
@@ -800,8 +849,9 @@ The bundled entry point for `file://` mode needs to be rebuilt against the refac
 8. **R8** State persistence audit (can parallel R5/R6)
 9. **R9** UI leak hunt (parallel with anything — touches different files)
 10. **R10** Docs (only after R1-R9 settle)
-11. **R11** Verification (only after R10)
-12. **R12** Merge (only after R11 green)
+11. **R13** Multi-provider vision + user-facing connection notices (can parallel R9/R10 — touches `peripherals/ai-providers.js`, `app.js`, `visual-cortex.js`, new UI status element)
+12. **R11** Verification (only after R10 + R13)
+13. **R12** Merge (only after R11 green)
 
 **Parallel lanes:**
 - Lane 1 (sequential, critical path): R1 → R2 → R3 → R4 → R5 → R6
