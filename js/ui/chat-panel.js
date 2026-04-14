@@ -25,6 +25,8 @@ export class ChatPanel {
       <div class="chat-header">
         <span class="chat-title">Unity</span>
         <div class="chat-header-btns">
+          <button class="chat-mute-btn" title="Mute Unity's voice (she still types responses — just silences TTS in the moment)">🔊</button>
+          <button class="chat-mic-btn" title="Mute your mic (stops her from hearing you)">🎤</button>
           <button class="chat-close-btn" title="Close">&times;</button>
         </div>
       </div>
@@ -40,6 +42,48 @@ export class ChatPanel {
     this._inputEl = this._el.querySelector('#chat-input');
     const sendBtn = this._el.querySelector('.chat-send-btn');
     const closeBtn = this._el.querySelector('.chat-close-btn');
+    const muteBtn = this._el.querySelector('.chat-mute-btn');
+    const micBtn = this._el.querySelector('.chat-mic-btn');
+
+    // In-the-moment mute toggles. These reflect and update
+    // window.unityChannels (the same state the setup-modal checkboxes
+    // write to) so the chat panel's mute button is a live mirror of the
+    // persistent toggle, not a separate ephemeral state. Flipping the
+    // chat mute immediately calls voice.stopSpeaking if she's talking.
+    const syncButtons = () => {
+      const ch = window.unityChannels || { userMic: true, unitySpeech: true };
+      muteBtn.textContent = ch.unitySpeech ? '🔊' : '🔇';
+      muteBtn.style.opacity = ch.unitySpeech ? '1' : '0.5';
+      micBtn.textContent = ch.userMic ? '🎤' : '🚫';
+      micBtn.style.opacity = ch.userMic ? '1' : '0.5';
+    };
+    muteBtn.addEventListener('click', () => {
+      const ch = window.unityChannels = window.unityChannels || { userMic: true, unityVision: true, unitySpeech: true };
+      ch.unitySpeech = !ch.unitySpeech;
+      localStorage.setItem('unity_channel_unity_speech', ch.unitySpeech ? 'true' : 'false');
+      // Update the setup-modal checkbox if it exists so both stay in sync
+      const modalCb = document.getElementById('toggle-unity-speech');
+      if (modalCb) modalCb.checked = ch.unitySpeech;
+      // Live-apply: stop any in-progress TTS, set muted flag
+      if (window.voice) {
+        window.voice._muted = !ch.unitySpeech;
+        if (!ch.unitySpeech) window.voice.stopSpeaking?.();
+      }
+      syncButtons();
+    });
+    micBtn.addEventListener('click', () => {
+      const ch = window.unityChannels = window.unityChannels || { userMic: true, unityVision: true, unitySpeech: true };
+      ch.userMic = !ch.userMic;
+      localStorage.setItem('unity_channel_user_mic', ch.userMic ? 'true' : 'false');
+      const modalCb = document.getElementById('toggle-user-mic');
+      if (modalCb) modalCb.checked = ch.userMic;
+      if (window.voice) {
+        if (ch.userMic) window.voice.startListening?.();
+        else window.voice.stopListening?.();
+      }
+      syncButtons();
+    });
+    syncButtons();
 
     // Send on Enter or button click
     this._inputEl.addEventListener('keydown', (e) => {

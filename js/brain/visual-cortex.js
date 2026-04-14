@@ -114,7 +114,19 @@ export class VisualCortex {
   }
 
   /**
-   * Initialize with camera stream.
+   * R7 — unified sensory peripheral interface.
+   *
+   * All sensory peripherals expose the same contract:
+   *   init(stream, opts)  — attach to raw input stream
+   *   step(dt) / process(dt) / processFrame()
+   *                        — one tick of processing, returns
+   *                          { currents, metadata } for cortex injection
+   *   destroy()           — clean shutdown, free resources
+   *
+   * Visual cortex takes a video element (from getUserMedia stream
+   * already attached to an HTMLVideoElement). It allocates a small
+   * backing canvas for frame capture and sets _active=true so
+   * processFrame() starts producing real readings instead of zeros.
    */
   init(videoElement) {
     this._video = videoElement;
@@ -123,6 +135,20 @@ export class VisualCortex {
     this._canvas.height = FRAME_H;
     this._ctx = this._canvas.getContext('2d', { willReadFrequently: true });
     this._active = true;
+  }
+
+  /**
+   * R7 — unified destroy hook. Releases the canvas context and
+   * drops the video ref so the backing resources can be GC'd.
+   * Safe to call multiple times.
+   */
+  destroy() {
+    this._active = false;
+    this._video = null;
+    this._ctx = null;
+    this._canvas = null;
+    this._describer = null;
+    this._describing = false;
   }
 
   /**
@@ -410,14 +436,40 @@ export class VisualCortex {
     const dataUrl = descCanvas.toDataURL('image/jpeg', 0.6);
 
     this._describer(dataUrl).then(desc => {
-      this.description = desc || '';
+      // R13 — null = describer failed (all backends dead or paused).
+      // Don't overwrite the last good description with empty string;
+      // reset _hasDescribedOnce so we retry cleanly on the next window
+      // instead of getting stuck in "described nothing" forever.
+      if (desc) {
+        this.description = desc;
+      } else {
+        this._hasDescribedOnce = false;
+      }
       this._describing = false;
     }).catch(() => {
+      this._hasDescribedOnce = false;
       this._describing = false;
     });
   }
 
   isActive() { return this._active; }
+
+  /**
+   * T1 2026-04-13 — return the video element this cortex is attached
+   * to, so viz panels can render the live feed without keeping a
+   * separate handle to the raw MediaStream. Single source of truth:
+   * whoever wants to display the camera reads through VisualCortex,
+   * and VisualCortex owns the video element lifecycle.
+   */
+  getVideoElement() { return this._video || null; }
+
+  /**
+   * T1 2026-04-13 — return the raw MediaStream if callers need it
+   * for something the video element doesn't expose (e.g. stopping
+   * individual tracks for mute). Only returns non-null when cortex
+   * is actually attached to a stream.
+   */
+  getStream() { return this._video?.srcObject || null; }
 
   getState() {
     return {

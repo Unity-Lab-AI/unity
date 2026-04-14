@@ -14,7 +14,11 @@
  *   - Mouse drag rotate, scroll zoom, touch support
  *   - WebGL context loss/restore recovery
  *   - Dark (#050505) gothic/cyberpunk aesthetic
+ *   - T5: 22-detector brain event system triggering equational
+ *     commentary popups via Unity's own language cortex
  */
+
+import { detectBrainEvents, CLUSTER_KEYS } from './brain-event-detectors.js';
 
 // ── Constants ───────────────────────────────────────────────────────
 
@@ -499,6 +503,26 @@ export class Brain3D {
     this._vis = new Float32Array(TOTAL).fill(1);
     this._clusterOn = CLUSTERS.map(() => true);
 
+    // RULKOV MAP viz mirror — same neural rule the server runs on GPU.
+    // Each viz point has its own (x, y) Rulkov state iterated every frame:
+    //   x_{n+1} = α / (1 + x_n²) + y_n
+    //   y_{n+1} = y_n − μ(x_n − σ)
+    // where σ is driven by the real biological firing rate from the
+    // server (spikeCount / engineSize, amplified for visibility).
+    // Seeded via golden-ratio quasi-random in the bursting basin.
+    // See Rulkov 2002, Phys. Rev. E 65, 041922.
+    this._rulkovX = new Float32Array(TOTAL);
+    this._rulkovY = new Float32Array(TOTAL);
+    {
+      const phi = 0.61803398875;
+      for (let i = 0; i < TOTAL; i++) {
+        const gx = (i * phi) % 1;
+        const gy = (i * phi * 1.7) % 1;
+        this._rulkovX[i] = -1.0 + gx * 0.5;     // (-1.0, -0.5)
+        this._rulkovY[i] = -3.2 + gy * 0.4;     // (-3.2, -2.8)
+      }
+    }
+
     // Pulses & connections
     this._pulses = [];
     this._connPos = new Float32Array(MAX_CONN * 6);
@@ -526,6 +550,25 @@ export class Brain3D {
     this._notifEls = [];       // DOM elements for notifications
     this._lastNotifTime = 0;
     this._lastState = null;
+
+    // T5 2026-04-13 — brain event detector state
+    // Rolling history buffer for the detectors to compare deltas
+    // across ~30 state snapshots (roughly the last 3 seconds at
+    // 10Hz state broadcast rate)
+    this._stateHistory = [];
+    this._maxHistory = 30;
+    // Dedup tracker so the same event doesn't fire every tick while
+    // its condition stays true (e.g. sustained low coherence)
+    this._recentEventTypes = new Map();  // type → lastFireTime ms
+    this._eventCooldownMs = 8000;  // don't repeat the same event type within 8s
+    // Brain reference set by setBrain() from app.js bootUnity.
+    // Null until boot, during which time the event system degrades
+    // gracefully to the plain numeric-label notifications without
+    // commentary.
+    this._brain = null;
+    // Seed word → GloVe 50d vector cache, populated lazily once
+    // sharedEmbeddings is available via this._brain
+    this._seedVectorCache = new Map();
 
     // Brain expansion — clusters spread as activity increases
     this._expansionFactor = 1.0;  // 1.0 = default, grows with activity
@@ -617,40 +660,95 @@ export class Brain3D {
       if (ratioEl) ratioEl.textContent = `showing 1:${ratio} (${TOTAL.toLocaleString()} of ${serverNeurons.toLocaleString()})`;
     }
 
-    const spk = state.spikes;
-    if (!spk) return;
+    // R9 — per-cluster spike readout.
+    //
+    // Was: read the flat `state.spikes` bitmask using the VIZ's CLUSTERS
+    // array sizes as the offset layout. BUG: the viz uses biologically
+    // weighted proportions (cortex=200, cerebellum=380, mystery=110)
+    // while the engine uses equal-ish proportions (cortex=300, cereb=100,
+    // mystery=50). Mismatch meant every cluster after cortex read the
+    // wrong neurons — cerebellum especially, whose viz range [460-839]
+    // actually covered amyg+BG+cerebellum+hypo in engine space. That's
+    // why cerebellum activation circles never landed on cerebellum
+    // positions.
+    //
+    // Now: iterate clusters and read each cluster's own `state.clusters[
+    // name].spikes` bitmask. Each bitmask has length equal to the REAL
+    // cluster size from engine (e.g. cerebellum = 100), independent of
+    // how many viz positions we allocate for rendering. If the viz has
+    // more points than spike bits, we cycle the bitmask (first
+    // bitmask-length points get direct readout, remaining points sample
+    // from the bitmask proportionally). If the viz has fewer points,
+    // we just read the first N bits.
+    const clusterStates = state.clusters || {};
 
     // Glow update + pulses distributed EQUALLY across ALL clusters
     const pulsesPerCluster = Math.floor(MAX_PULSES / CLUSTERS.length);
     const clusterPulseCount = new Array(CLUSTERS.length).fill(0);
 
-    // Count spikes per cluster FIRST — needed for adaptive pulse probability
-    let off = 0;
+    // Count real spikes per cluster from per-cluster bitmasks
     const clusterSpikeCount = new Array(CLUSTERS.length).fill(0);
     for (let ci = 0; ci < CLUSTERS.length; ci++) {
-      const cn = CLUSTERS[ci].n;
-      for (let j = 0; j < cn; j++) {
-        const i = off + j;
-        if (i < TOTAL && spk[i]) clusterSpikeCount[ci]++;
+      const cs = clusterStates[CLUSTERS[ci].key];
+      if (cs) {
+        // Prefer spikeCount field if provided; otherwise count the bitmask
+        if (typeof cs.spikeCount === 'number') {
+          clusterSpikeCount[ci] = cs.spikeCount;
+        } else if (cs.spikes) {
+          let c = 0;
+          for (let i = 0; i < cs.spikes.length; i++) if (cs.spikes[i]) c++;
+          clusterSpikeCount[ci] = c;
+        }
       }
-      off += cn;
     }
 
-    off = 0;
+    let off = 0;
     for (let ci = 0; ci < CLUSTERS.length; ci++) {
       const cn = CLUSTERS[ci].n;
-      // Adaptive pulse probability — fewer spikes = higher chance per spike
-      // Every cluster gets roughly the same NUMBER of pulses regardless of spike rate
-      // target ~4 pulses per cluster per frame, probability = target / spikeCount
+      const cs = clusterStates[CLUSTERS[ci].key];
+      // Adaptive pulse probability — target ~4 pulses per cluster per frame
       const spikeN = clusterSpikeCount[ci] || 1;
       const pulseProb = Math.min(0.6, Math.max(0.05, 4 / spikeN));
+
+      // RULKOV FIRING — same 2D chaotic map the GPU shader runs on the
+      // real brain. σ is driven by the cluster's actual biological rate
+      // (spikeCount / engineSize), amplified 15× so cerebellum's huge
+      // denominator still clears visibility. Each viz point iterates its
+      // own (x, y) trajectory persistently across frames, so patterns
+      // are self-similar and burst-structured, not wavy noise.
+      const engineSize = cs?.size || cn;
+      const bioRate = spikeN / Math.max(1, engineSize);
+      const driveNorm = Math.min(1, Math.max(0, bioRate * 15));
+      const sigma = -1.0 + driveNorm * 1.5;       // σ ∈ [-1.0, 0.5]
+      const ALPHA = 4.5;                           // bursting regime
+      const MU = 0.001;
 
       for (let j = 0; j < cn; j++) {
         const i = off + j;
         if (i >= TOTAL) break;
-        if (spk[i]) {
+
+        let x = this._rulkovX[i];
+        let y = this._rulkovY[i];
+        if (!isFinite(x) || !isFinite(y) || Math.abs(x) > 100 || Math.abs(y) > 100) {
+          const phi = 0.61803398875;
+          x = -1.0 + ((i * phi) % 1) * 0.5;
+          y = -3.2 + ((i * phi * 1.7) % 1) * 0.4;
+        }
+
+        // Rulkov iteration
+        const xNext = ALPHA / (1 + x * x) + y;
+        const yNext = y - MU * (x - sigma);
+
+        // Spike edge — fast variable crossed zero upward
+        let firing = false;
+        if (x <= 0 && xNext > 0) {
+          firing = true;
+        }
+        this._rulkovX[i] = xNext;
+        this._rulkovY[i] = yNext;
+
+        if (firing) {
           this._glow[i] = 1.0;
-          // Each cluster gets its OWN pulse budget with ADAPTIVE probability
           if (clusterPulseCount[ci] < pulsesPerCluster && this._pulses.length < MAX_PULSES && Math.random() < pulseProb) {
             clusterPulseCount[ci]++;
             this._pulses.push({
@@ -669,13 +767,22 @@ export class Brain3D {
     this._buildConnsFromEquations(state.clusters || {});
     this._spawnTrailsFromEquations(state.clusters || {}, clusterSpikeCount);
 
-    // ── BRAIN EXPANSION — clusters spread with activity ──
-    // Clamp spike ratio so expansion stays sane (max 15% growth)
-    const totalSpikes = state.spikeCount || 0;
-    const spikeRatio = Math.min(1, totalSpikes / Math.max(TOTAL, state.totalNeurons || TOTAL));
-    const targetExpansion = 1.0 + spikeRatio * 0.15; // 0-15% growth max
-    this._expansionFactor += (targetExpansion - this._expansionFactor) * 0.02; // smooth
-    this._applyExpansion();
+    // R9 — BRAIN EXPANSION DISABLED. This used to multiply every
+    // neuron position by a global factor (0-15% based on spike
+    // ratio) and re-upload all positions to the GPU every frame.
+    // The effect was the entire brain visually pulsing in sync
+    // with the global spike count — a "beating heart" look that's
+    // NOT what a real brain does. Each cluster should fire at its
+    // own rate and the viz should show scattered, region-specific
+    // activation via per-neuron glow (which already works via
+    // this._glow[i] above). Individual spikes drive pulse emission
+    // from specific neuron positions, which is accurate. Global
+    // expansion added a synthetic heartbeat on top that obscured
+    // the real per-cluster dynamics.
+    //
+    // _expansionFactor stays at 1.0 — positions are static.
+    // _basePos initialization still runs in _applyExpansion if
+    // you re-enable this in the future (it's idempotent).
 
     // ── PROCESS NOTIFICATIONS — one every ~5 seconds ──
     // Translates real neural activity into readable process descriptions.
@@ -748,8 +855,8 @@ export class Brain3D {
 .b3d-body{flex:1;position:relative;overflow:hidden}
 .b3d-cv{width:100%;height:100%;display:block;cursor:grab}
 .b3d-cv:active{cursor:grabbing}
-.b3d-tog-wrap{position:absolute;top:10px;left:10px;display:flex;flex-direction:column;gap:3px;z-index:2}
-.b3d-tog{background:rgba(8,8,8,.85);border:1px solid #222;color:#bbb;font-size:9px;font-family:inherit;padding:3px 9px;border-radius:3px;cursor:pointer;display:flex;align-items:center;gap:5px;transition:all .2s;letter-spacing:.4px}
+.b3d-tog-wrap{position:absolute;top:10px;left:10px;display:flex;flex-direction:column;gap:3px;z-index:2;max-width:180px}
+.b3d-tog{background:rgba(8,8,8,.85);border:1px solid #222;color:#bbb;font-size:9px;font-family:inherit;padding:3px 9px;border-radius:3px;cursor:pointer;display:flex;align-items:center;gap:5px;transition:all .2s;letter-spacing:.4px;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .b3d-tog:hover{border-color:#444}
 .b3d-tog.off{opacity:.3}
 .b3d-dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex-shrink:0}
@@ -757,7 +864,13 @@ export class Brain3D {
 .b3d-lbl{position:absolute;font-size:11px;letter-spacing:1.5px;font-weight:800;white-space:nowrap;transform:translate(-50%,-50%);opacity:1;padding:3px 9px;background:rgba(0,0,0,.82);border:1px solid rgba(255,255,255,.25);border-radius:4px;text-shadow:0 0 6px rgba(0,0,0,1),0 0 12px currentColor;box-shadow:0 0 20px rgba(0,0,0,.6);transition:opacity .3s}
 .b3d-foot{position:absolute;bottom:8px;left:12px;right:12px;display:flex;justify-content:space-between;font-size:9px;color:#444;pointer-events:none;z-index:1}
 .b3d-notif-wrap{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:3}
-.b3d-notif{position:absolute;font-size:11px;font-family:inherit;white-space:nowrap;text-shadow:0 0 12px rgba(0,0,0,.95),0 0 4px currentColor;pointer-events:none;letter-spacing:.3px;padding:4px 8px;background:rgba(0,0,0,.6);border-radius:4px;border-left:2px solid currentColor;backdrop-filter:blur(2px);max-width:500px;overflow:hidden;text-overflow:ellipsis}
+.b3d-notif{position:absolute;font-family:inherit;pointer-events:none;padding:8px 14px;background:linear-gradient(135deg,rgba(14,14,16,.94),rgba(24,14,28,.94));border-radius:8px;border:1px solid currentColor;border-left:3px solid currentColor;backdrop-filter:blur(6px);max-width:320px;box-shadow:0 0 24px rgba(0,0,0,.85),0 0 40px currentColor,inset 0 0 12px rgba(0,0,0,.4);transform:translate(-50%,-100%);animation:b3d-notif-in .45s cubic-bezier(.2,1.4,.3,1)}
+.b3d-notif-label{font-size:10px;letter-spacing:1.5px;font-weight:800;text-transform:uppercase;text-shadow:0 0 8px currentColor,0 0 2px rgba(0,0,0,1);white-space:nowrap;opacity:.95}
+.b3d-notif-readout{font-size:10px;color:#a0a0b0;margin-top:3px;line-height:1.4;font-family:'JetBrains Mono',monospace;letter-spacing:.3px;text-shadow:0 1px 2px rgba(0,0,0,.9);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.b3d-notif-comment{font-size:13px;font-style:italic;color:#f5d7e6;margin-top:5px;line-height:1.35;text-shadow:0 1px 2px rgba(0,0,0,.9);font-family:'Georgia','JetBrains Mono',serif;letter-spacing:.2px;word-wrap:break-word;white-space:normal}
+.b3d-notif-comment::before{content:'“';margin-right:2px;opacity:.6;color:currentColor;font-size:16px}
+.b3d-notif-comment::after{content:'”';margin-left:2px;opacity:.6;color:currentColor;font-size:16px}
+@keyframes b3d-notif-in{0%{opacity:0;transform:translate(-50%,-80%) scale(.85)}60%{opacity:1;transform:translate(-50%,-105%) scale(1.04)}100%{opacity:1;transform:translate(-50%,-100%) scale(1)}}
 .b3d-log-wrap{position:absolute;bottom:30px;right:10px;width:280px;max-height:200px;z-index:2;pointer-events:auto}
 .b3d-log-title{font-size:9px;color:#555;letter-spacing:1px;margin-bottom:4px}
 .b3d-log{max-height:180px;overflow-y:auto;font-size:8px;line-height:1.5;scrollbar-width:thin;scrollbar-color:#222 transparent}
@@ -765,6 +878,16 @@ export class Brain3D {
 .b3d-log::-webkit-scrollbar-thumb{background:#333;border-radius:2px}
 .b3d-log-entry{opacity:.7;padding:1px 0}
 .b3d-expansion{position:absolute;top:40px;right:10px;font-size:9px;color:#555;z-index:2}
+/* Explainer panel — replaces the old .b3d-scale-display floating block.
+   Lives bottom-left in a stable position that can't collide with the
+   cluster toggles legend (top-left) or the landing-topbar (top). Frames
+   the viz as a proportional sample of the real server-side brain
+   processes rather than being the literal full brain. */
+.b3d-explainer{position:absolute;bottom:10px;left:10px;max-width:300px;z-index:2;background:rgba(8,8,8,.85);border:1px solid #222;border-left:2px solid #ff4d9a;border-radius:4px;padding:8px 12px;font-size:9px;line-height:1.5;color:#888;pointer-events:none}
+.b3d-explainer-title{font-size:10px;color:#ff4d9a;font-weight:700;letter-spacing:.8px;margin-bottom:4px;text-transform:uppercase}
+.b3d-explainer-count{font-size:15px;font-weight:700;color:#e0e0e0;display:block;margin:2px 0}
+.b3d-explainer-ratio{font-size:9px;color:#a855f7}
+.b3d-explainer-note{margin-top:6px;color:#666;font-size:9px;line-height:1.5}
 </style>
 <div class="b3d-hdr">
   <div class="b3d-title">3D NEURAL FIELD</div>
@@ -780,10 +903,13 @@ export class Brain3D {
   <div class="b3d-lbl-wrap"></div>
   <div class="b3d-notif-wrap"></div>
   <div class="b3d-expansion">EXPANSION: <b class="b3d-exp-val">1.00x</b></div>
-  <div class="b3d-scale-display" style="position:absolute;top:55px;right:10px;font-size:10px;color:#ff4d9a;z-index:2;text-align:right;line-height:1.4;">
-    <div style="font-size:14px;font-weight:700;" class="b3d-actual-count">—</div>
-    <div style="font-size:9px;color:#555;">actual neurons</div>
-    <div style="font-size:11px;color:#a855f7;" class="b3d-render-ratio">—</div>
+  <div class="b3d-explainer">
+    <div class="b3d-explainer-title">proportional sample</div>
+    <span class="b3d-explainer-count b3d-actual-count">—</span>
+    <span class="b3d-explainer-ratio b3d-render-ratio">—</span>
+    <div class="b3d-explainer-note">
+      This 3D field is <strong>NOT</strong> Unity's full brain — it's a proportional visual sample of her actual neural processes running server-side right now. Every spike you see above is a real cluster firing in real time. Popups are her equational commentary on what her brain just did.
+    </div>
   </div>
   <div class="b3d-log-wrap">
     <div class="b3d-log-title">PROCESS LOG</div>
@@ -1081,14 +1207,597 @@ export class Brain3D {
     }
   }
 
+  // ── T5 2026-04-13: Brain Event Detection + Unity Commentary ────
+
+  /**
+   * Wire a brain reference so the event system can call
+   * `brain.innerVoice.languageCortex.generate()` to produce Unity's
+   * equational commentary on detected events. Called from app.js
+   * bootUnity() after `brain = new UnityBrain()`. Safe to call
+   * multiple times — just replaces the reference.
+   *
+   * When the brain reference is null (pre-boot / disconnected /
+   * landing-page view with no brain yet), the event system falls
+   * back to the plain numeric-label notifications without
+   * commentary. So the 3D brain viz keeps working fine during
+   * the landing page → boot transition.
+   */
+  setBrain(brain) {
+    this._brain = brain || null;
+    // Invalidate seed vector cache since the shared embeddings
+    // instance may have changed (different brain, different
+    // pretrained state, etc.)
+    this._seedVectorCache.clear();
+  }
+
+  /**
+   * Compute a 50d GloVe centroid for a seed word list, caching it
+   * so repeat lookups don't re-embed. Used to build the semantic
+   * bias that steers Unity's commentary toward the topic of a
+   * triggered brain event.
+   */
+  /**
+   * T4.10 — Equational seed derivation. Given an event's STRUCTURAL
+   * fields (cluster, metric, direction), build a 50d GloVe centroid
+   * by looking up the English embedding of each field name and
+   * blending. No hardcoded word lists — the cluster/metric/direction
+   * names ARE Unity's own self-aware field names, and their GloVe
+   * embeddings naturally cluster near semantically-related content
+   * words ("amygdala" near emotion words, "predictionError" near
+   * confusion words, etc.).
+   *
+   * Direction words: 'up' → 'rising', 'down' → 'falling', 'spike'
+   * → 'surging'. These three Unicode strings are not per-event
+   * labels; they're the three possible values of the structural
+   * `direction` field, looked up once each and cached.
+   */
+  _seedCentroid(event) {
+    if (!event || typeof event !== 'object') return null;
+    const key = `${event.cluster}|${event.metric || ''}|${event.direction || ''}`;
+    const cached = this._seedVectorCache.get(key);
+    if (cached) return cached;
+
+    const emb = this._brain?.innerVoice?.languageCortex?._sharedEmbeddings
+             || this._brain?._sharedEmbeddings
+             || this._brain?.sensory?._embeddings;
+    if (!emb || typeof emb.getEmbedding !== 'function') return null;
+
+    const dim = 50;
+    const centroid = new Float64Array(dim);
+
+    const getVec = (word) => {
+      try {
+        const v = emb.getEmbedding(String(word || '').toLowerCase());
+        return v && v.length >= dim ? v : null;
+      } catch { return null; }
+    };
+    const addVec = (vec, weight) => {
+      if (!vec) return;
+      for (let i = 0; i < dim; i++) centroid[i] += vec[i] * weight;
+    };
+
+    // Primary bias: cluster name (e.g. "amygdala", "cortex", "mystery")
+    const clusterKey = CLUSTER_KEYS[event.cluster] || 'cortex';
+    addVec(getVec(clusterKey), 1.0);
+
+    // Secondary bias: metric field name (e.g. "arousal", "predictionError")
+    // Split camelCase so "predictionError" → "prediction" + "error" and
+    // both lookups contribute. This surfaces compound field names into
+    // their component semantics.
+    if (event.metric) {
+      const parts = String(event.metric).replace(/([A-Z])/g, ' $1').toLowerCase().split(/\s+/).filter(Boolean);
+      for (const part of parts) addVec(getVec(part), 0.5 / parts.length * parts.length); // total weight 0.5
+    }
+
+    // Tertiary bias: direction word mapped from structural direction.
+    // Three strings only — 'rising', 'falling', 'surging' — one per
+    // possible direction value. Not per-event text.
+    const directionWord = event.direction === 'up' ? 'rising'
+                         : event.direction === 'down' ? 'falling'
+                         : 'surging';
+    addVec(getVec(directionWord), 0.3);
+
+    // L2 normalize so the bias blends cleanly with a normalized
+    // cortex readout in _generateEventCommentary
+    let norm = 0;
+    for (let i = 0; i < dim; i++) norm += centroid[i] * centroid[i];
+    norm = Math.sqrt(norm);
+    if (norm < 1e-6) return null;
+    for (let i = 0; i < dim; i++) centroid[i] /= norm;
+
+    this._seedVectorCache.set(key, centroid);
+    return centroid;
+  }
+
+  /**
+   * Generate Unity's equational commentary on a detected brain event.
+   * Calls `languageCortex.generate()` with a cortex pattern that's
+   * been blended 70% live cortex readout + 30% event seed vector,
+   * so her slot scorer is steered toward words about the event topic
+   * without being forced to use a template.
+   *
+   * Returns a short commentary string (1-8 words typically), or
+   * null if the language cortex isn't available yet.
+   */
+  _generateEventCommentary(event, state) {
+    const brain = this._brain;
+    if (!brain) {
+      if (!this._warnedNoBrain) {
+        console.warn('[Brain3D] commentary: no brain ref wired — call brain3d.setBrain(brain) to enable Unity voice in popups');
+        this._warnedNoBrain = true;
+      }
+      return null;
+    }
+    const iv = brain.innerVoice;
+    const lc = iv?.languageCortex;
+    const dict = iv?.dictionary || brain.dictionary;
+    if (!lc || !dict || typeof lc.generate !== 'function') {
+      if (!this._warnedNoLC) {
+        console.warn('[Brain3D] commentary: languageCortex or dictionary missing on brain', { hasInnerVoice: !!iv, hasLC: !!lc, hasDict: !!dict });
+        this._warnedNoLC = true;
+      }
+      return null;
+    }
+    // Dictionary can be empty pre-persona-load on a fresh RemoteBrain.
+    // Skip silently — no warning spam — and retry on the next tick.
+    if (dict.size === 0) return null;
+
+    try {
+      // Get the live cortex semantic readout (50d GloVe space)
+      const cortex = brain.clusters?.cortex;
+      const sharedEmb = brain._sharedEmbeddings || iv._sharedEmbeddings;
+      let cortexPattern = null;
+      if (cortex && typeof cortex.getSemanticReadout === 'function' && sharedEmb) {
+        cortexPattern = cortex.getSemanticReadout(sharedEmb);
+      }
+
+      // T4.10 — derive seed equationally from event structural
+      // fields (cluster + metric + direction) via GloVe lookups.
+      // No hardcoded seedWords array anymore.
+      const seed = this._seedCentroid(event);
+      if (cortexPattern && seed && cortexPattern.length === seed.length) {
+        const biased = new Float64Array(cortexPattern.length);
+        for (let i = 0; i < cortexPattern.length; i++) {
+          biased[i] = cortexPattern[i] * 0.7 + seed[i] * 0.3;
+        }
+        cortexPattern = biased;
+      } else if (!cortexPattern && seed) {
+        // No cortex readout available — use the seed alone
+        cortexPattern = seed;
+      }
+
+      // Call generate() with full brain state + biased cortex pattern.
+      // Signature is (dict, arousal, valence, coherence, opts) — opts
+      // carries psi, fear, reward, drugState, cortexPattern. Previously
+      // this was called with 10 positional args which silently mapped
+      // psi → opts (as a number), dropping cortexPattern and every
+      // downstream parameter. Unity's commentary was being generated
+      // without her live cortex pattern, so popups showed flat default-
+      // state speech instead of her actual in-the-moment thoughts.
+      //
+      // Remote server state has flat fields (state.arousal, state.psi,
+      // state.fear, state.reward, state.coherence, state.drugState) —
+      // not nested under amygdala/oscillations. Read directly.
+      const out = lc.generate(
+        dict,
+        state.arousal ?? 0.5,
+        state.valence ?? 0,
+        state.coherence ?? 0.5,
+        {
+          psi: state.psi ?? 0,
+          fear: state.fear ?? 0,
+          reward: state.reward ?? 0,
+          drugState: state.drugState || 'cokeAndWeed',
+          cortexPattern,
+          predictionError: 0,
+          motorConfidence: state.motor?.confidence ?? 0,
+          // T4.10 — popup is Unity's LIVE internal thought. Skip the
+          // T4.8 recall-verbatim emit path so she never speaks a
+          // pre-written persona sentence in a popup. Slot gen only.
+          // Chat path (engine.js + brain-server.js) leaves this flag
+          // unset so recall-verbatim still fires for user-facing
+          // coherence.
+          _internalThought: true,
+        }
+      );
+
+      const text = typeof out === 'string' ? out : (out?.text || '');
+      if (!text || text.length === 0) {
+        if (!this._warnedEmptyGen) {
+          console.warn('[Brain3D] commentary: languageCortex.generate() returned empty', {
+            dictSize: dict.size,
+            bigramCount: dict.bigramCount,
+            hasCortexPattern: !!cortexPattern,
+            arousal: state.arousal,
+            valence: state.valence,
+            drugState: state.drugState,
+          });
+          this._warnedEmptyGen = true;
+        }
+        return null;
+      }
+      // Let Unity finish a thought — popup is a 320px wrapping card.
+      return text.length > 160 ? text.slice(0, 157) + '...' : text;
+    } catch {
+      return null;
+    }
+  }
+
   // ── Process Notifications ──────────────────────────────────────
+
+  /**
+   * Build the numeric-telemetry readout for a fired event — the
+   * middle line of the three-line popup. Shows the actual scalar
+   * state values that drove THIS event so users see the process
+   * change numerically alongside Unity's commentary.
+   *
+   * Each event type maps to the most relevant readouts for its
+   * category: motor events show channel distributions, arousal
+   * events show arousal deltas, Ψ events show Ψ numbers, etc.
+   */
+  _clusterAct(state, name) {
+    const c = state.clusters?.[name];
+    if (!c || !c.size) return 0;
+    return (c.spikeCount || 0) / c.size;
+  }
+
+  _eventReadout(event, state) {
+    const pct = (v) => (v * 100).toFixed(0) + '%';
+    const f3 = (v) => Number(v || 0).toFixed(3);
+    const f4 = (v) => Number(v || 0).toFixed(4);
+    const t = event.type;
+
+    // Motor events
+    if (t.startsWith('motor_commit_')) {
+      const conf = state.motor?.confidence ?? 0;
+      const action = state.motor?.selectedAction || 'idle';
+      return `action=${action}  conf=${f3(conf)}`;
+    }
+    if (t === 'motor_indecision') {
+      const rates = state.motor?.channelRates || [];
+      const top = rates.map(r => f3(r)).join(' ');
+      return `channels: ${top}`;
+    }
+
+    // Cognitive landmarks
+    if (t === 'recognition') {
+      const recall = state.hippocampus?.recallConfidence ?? 0;
+      return `recall=${f3(recall)}  hippo=${pct(state.hippocampus?.activity || 0)}`;
+    }
+    if (t === 'confusion') {
+      const err = state.cortex?.predictionError ?? 0;
+      return `predErr=${f3(err)}  cereb=${pct(state.cerebellum?.activity || 0)}`;
+    }
+
+    // Emotional spikes
+    if (t === 'valence_climb' || t === 'valence_crash') {
+      const v = state.valence ?? state.amygdala?.valence ?? 0;
+      const a = state.arousal ?? state.amygdala?.arousal ?? 0;
+      return `v=${f3(v)}  a=${pct(a)}  fear=${f3(state.fear || 0)}`;
+    }
+    if (t === 'dopamine_hit' || t === 'dopamine_crash') {
+      const r = state.reward ?? 0;
+      return `δ=${f3(r)}  BG=${pct(this._clusterAct(state,'basalGanglia'))}`;
+    }
+
+    // Ψ events
+    if (t === 'psi_climb' || t === 'psi_crash') {
+      const psi = state.psi ?? 0;
+      return `Ψ=${f4(psi)}  mystery=${pct(this._clusterAct(state,'mystery'))}`;
+    }
+
+    // Arousal
+    if (t === 'arousal_climb' || t === 'arousal_drop') {
+      const a = state.arousal ?? state.amygdala?.arousal ?? 0;
+      return `arousal=${pct(a)}  amyg=${pct(this._clusterAct(state,'amygdala'))}`;
+    }
+
+    // Coherence
+    if (t === 'coherence_lock' || t === 'coherence_scatter') {
+      const c = state.coherence ?? state.oscillations?.coherence ?? 0;
+      const bp = state.bandPower || {};
+      return `coh=${pct(c)}  γ=${f3(bp.gamma || 0)} α=${f3(bp.alpha || 0)}`;
+    }
+
+    // Drives
+    if (t.startsWith('drive_')) {
+      const drives = state.hypothalamus?.drives || {};
+      const parts = Object.entries(drives).map(([k, v]) => `${k}=${f3(v)}`).slice(0, 3);
+      return parts.join('  ');
+    }
+
+    // Topic drift / silence / fatigue
+    if (t === 'topic_drift') {
+      return `cortex=${pct(this._clusterAct(state,'cortex'))}  Ψ=${f4(state.psi || 0)}`;
+    }
+    if (t === 'silence') {
+      return `arousal=${pct(state.arousal || 0)}  spikes=${state.totalSpikes || 0}`;
+    }
+    if (t === 'fatigue') {
+      const err = state.cerebellum?.errorAccum ?? 0;
+      return `errAccum=${f3(err)}  coh=${pct(state.coherence || 0)}`;
+    }
+
+    // Memory / mystery
+    if (t === 'memory_replay') {
+      return `hippo=${pct(this._clusterAct(state,'hippocampus'))}  dreaming=${state.isDreaming ? 'yes' : 'no'}`;
+    }
+    if (t === 'mystery_pulse') {
+      return `mystery=${pct(this._clusterAct(state,'mystery'))}  Ψ=${f4(state.psi || 0)}`;
+    }
+
+    // Visual (won't fire server-side but kept for local-brain mode)
+    if (t.startsWith('color_')) return `cortex=${pct(this._clusterAct(state,'cortex'))}`;
+    if (t === 'motion') return `cortex=${pct(this._clusterAct(state,'cortex'))}`;
+    if (t === 'gaze_shift') return `cortex=${pct(this._clusterAct(state,'cortex'))}`;
+    if (t === 'heard_self') return `cortex=${pct(this._clusterAct(state,'cortex'))}`;
+
+    // Default — show total spike rate + Ψ
+    return `Ψ=${f4(state.psi || 0)}  spikes=${state.totalSpikes || 0}`;
+  }
 
   /**
    * Generate ONE rich process notification every ~5 seconds.
    * Translates actual neural signals into human-readable brain activity.
-   * Cycles through different brain systems, showing real computed values.
+   *
+   * T5 2026-04-13 — two-stage pipeline:
+   *   Stage A: run the 22-detector brain event system against the
+   *            current + previous state + history buffer, pick the
+   *            highest-priority firing event
+   *   Stage B: if an event fires and a brain reference is available,
+   *            generate Unity's equational commentary on it via her
+   *            language cortex (biased toward the event seed)
+   *   Fallback: if no event fires OR no brain reference, fall through
+   *             to the legacy numeric-telemetry generator pool so the
+   *             landing page keeps showing popups during the pre-boot
+   *             window
    */
   _generateProcessNotification(state) {
+    if (!state) return;
+
+    // T4.5 — comprehensive state normalization for the 22-detector
+    // event system. The detectors were written against the local
+    // UnityBrain nested shape (state.amygdala.arousal, state.cortex.
+    // predictionError, state.hypothalamus.drives, state.memory.
+    // lastRecallConfidence, state.innerVoice.contextVector, etc) but
+    // the server broadcasts a FLAT shape (state.arousal, state.psi,
+    // state.fear, state.valence, state.coherence) — so every detector
+    // reading a nested path silently returned null via the default-
+    // value fallback in pick(). Result: almost no events fired at
+    // all, and the few that did (psiClimb, dopamineHit — which read
+    // flat paths) got rate-limited by cooldown and never produced
+    // visible popups.
+    //
+    // Fix: synthesize the nested shape from flat fields AND from
+    // cluster-level activity data (spikeCount / firingRate / size)
+    // for every detector path the server can reasonably derive.
+    // Detectors that read visual/audio fields (colorSurge,
+    // motionDetected, gazeShift, heardOwnVoice) still won't fire on
+    // server-brain mode because the server doesn't run a visual
+    // cortex — that's fine, those 4 detectors are visual-pipeline-
+    // only by design.
+    const clusters = state.clusters || {};
+    const activityOf = (k) => {
+      const c = clusters[k];
+      if (!c || !c.size) return 0;
+      return (c.spikeCount || 0) / c.size;
+    };
+    const cortexAct   = activityOf('cortex');
+    const hippoAct    = activityOf('hippocampus');
+    const cerebAct    = activityOf('cerebellum');
+    const mysteryAct  = activityOf('mystery');
+    const hypoAct     = activityOf('hypothalamus');
+
+    const norm = { ...state };
+
+    // AMYGDALA — flat → nested
+    if (!norm.amygdala) {
+      norm.amygdala = {
+        arousal: state.arousal ?? 0.5,
+        valence: state.valence ?? 0,
+        fear: state.fear ?? 0,
+        reward: state.reward ?? 0,
+      };
+    }
+
+    // OSCILLATIONS — flat → nested, carry bandPower if present
+    if (!norm.oscillations) {
+      norm.oscillations = {
+        coherence: state.coherence ?? 0.5,
+        bandPower: state.bandPower || {},
+      };
+    }
+
+    // CORTEX — synthesize predictionError from cerebellum activity
+    // (cerebellum fires in proportion to error, so high cereb firing
+    // rate relative to its baseline maps to high prediction error).
+    if (!norm.cortex) {
+      const cerebBaseline = 0.03; // Rulkov resting rate
+      const errProxy = Math.max(0, Math.min(1, (cerebAct - cerebBaseline) * 20));
+      norm.cortex = {
+        predictionError: errProxy,
+        activity: cortexAct,
+      };
+    }
+
+    // HIPPOCAMPUS — synthesize recallConfidence from firing rate above
+    // baseline. High hippo activity during an input event = she's
+    // recalling something that matches.
+    if (!norm.hippocampus) {
+      const recallProxy = Math.max(0, Math.min(1, (hippoAct - 0.03) * 15));
+      norm.hippocampus = {
+        recallConfidence: recallProxy,
+        activity: hippoAct,
+      };
+    }
+
+    // MEMORY — alias hippocampus for detectors that read state.memory.
+    if (!norm.memory) {
+      norm.memory = {
+        lastRecallConfidence: norm.hippocampus.recallConfidence,
+        isConsolidating: state.isDreaming === true && hippoAct > 0.05,
+      };
+    }
+
+    // HYPOTHALAMUS — synthesize per-drive dict from cluster activity
+    // so the hypothalamusDrive detector can pick a peak. Uses the
+    // persona drug drive + cluster activity as the base, splits it
+    // across three nominal drives (social_need, drug_craving,
+    // homeostatic) so the picker has something to compare.
+    if (!norm.hypothalamus) {
+      norm.hypothalamus = {
+        drives: {
+          social_need: Math.min(1, hypoAct * 8 + (state.drugState ? 0.2 : 0)),
+          drug_craving: Math.min(1, hypoAct * 10),
+          homeostatic: Math.min(1, hypoAct * 5),
+        },
+        activity: hypoAct,
+      };
+    }
+
+    // INNER VOICE — synthesize a contextVector from the current
+    // cluster-activity profile (7-dim vector). topicDrift detector
+    // compares this across a 10-tick window — even without a real
+    // semantic readout, the cluster-activity fingerprint DOES change
+    // when topics shift, so the detector still catches drift.
+    if (!norm.innerVoice) {
+      norm.innerVoice = {
+        contextVector: [
+          cortexAct, hippoAct,
+          activityOf('amygdala'), activityOf('basalGanglia'),
+          cerebAct, hypoAct, mysteryAct,
+        ],
+      };
+    }
+
+    // MYSTERY — expose output from cluster activity + Ψ
+    if (!norm.mystery) {
+      norm.mystery = {
+        output: mysteryAct + (state.psi ?? 0) * 0.1,
+      };
+    }
+
+    // CEREBELLUM — expose errorAccum proxy for fatigue detector
+    if (!norm.cerebellum) {
+      const errAccum = Math.max(0, Math.min(1, cerebAct * 15));
+      norm.cerebellum = {
+        errorAccum: errAccum,
+        activity: cerebAct,
+      };
+    }
+
+    // MOTOR — convert server's channelRates array into the object
+    // shape motorIndecision reads (channelDist = {action_name: rate}).
+    if (state.motor && !state.motor.channelDist && Array.isArray(state.motor.channelRates)) {
+      const labels = ['respond_text', 'generate_image', 'speak', 'build_ui', 'listen', 'idle'];
+      const dist = {};
+      const total = state.motor.channelRates.reduce((a, b) => a + b, 0);
+      if (total > 0) {
+        state.motor.channelRates.forEach((r, i) => { dist[labels[i]] = r / total; });
+      }
+      norm.motor = { ...state.motor, channelDist: dist };
+    }
+
+    // Flat fields (psi, reward, drugState, isDreaming, time) stay on
+    // the root — detectors that read them as flat paths are correct.
+    state = norm;
+
+    // Push current state into the rolling history buffer
+    this._stateHistory.push(state);
+    while (this._stateHistory.length > this._maxHistory) {
+      this._stateHistory.shift();
+    }
+
+    // Stage A — run all 22 detectors, pick the highest-priority event
+    // that hasn't fired too recently (cooldown dedup)
+    const prev = this._stateHistory.length >= 2
+      ? this._stateHistory[this._stateHistory.length - 2]
+      : null;
+    const events = detectBrainEvents(state, prev, this._stateHistory);
+    const now = Date.now();
+    let chosen = null;
+    for (const evt of events) {
+      const lastFire = this._recentEventTypes.get(evt.type) || 0;
+      if (now - lastFire >= this._eventCooldownMs) {
+        chosen = evt;
+        break;
+      }
+    }
+
+    if (chosen && this._brain) {
+      // Stage B — generate Unity's commentary on the event
+      const commentary = this._generateEventCommentary(chosen, state);
+      // Diagnostic: once per event type, log what fired + what came
+      // back. Flagged so it only fires once per unique event type to
+      // keep the console readable while still proving the pipeline is
+      // alive. Remove this logging after T4.5 is definitively green.
+      if (!this._loggedEventTypes) this._loggedEventTypes = new Set();
+      if (!this._loggedEventTypes.has(chosen.type)) {
+        this._loggedEventTypes.add(chosen.type);
+        console.log('[Brain3D] event fired:', chosen.type, '→', commentary || '(commentary null, falling back to label-only)');
+      }
+      this._recentEventTypes.set(chosen.type, now);
+      // Prune the cooldown map to prevent unbounded growth
+      if (this._recentEventTypes.size > 50) {
+        const cutoff = now - this._eventCooldownMs * 2;
+        for (const [k, v] of this._recentEventTypes) {
+          if (v < cutoff) this._recentEventTypes.delete(k);
+        }
+      }
+      // T4.10 — render all three lines equationally. No hand-written
+      // labels, no per-event emoji map.
+      //
+      //   Line 1 = {emoji} {clusterKey} {metric}{arrow}
+      //     - emoji from _brainEmoji salted with event magnitude so
+      //       different events produce different Unicode even at the
+      //       same global brain state
+      //     - clusterKey / metric / direction arrow all derived from
+      //       event structural fields (zero hand-written text)
+      //   Line 2 = numeric telemetry from _eventReadout(metric, state)
+      //   Line 3 = Unity's slot-gen internal thought (if generated)
+      const clusterKey = CLUSTER_KEYS[chosen.cluster] || 'cortex';
+      const arrow = chosen.direction === 'up' ? '↑'
+                   : chosen.direction === 'down' ? '↓'
+                   : '⇌';
+      const emoji = this._brainEmoji(
+        state.arousal ?? 0.5,
+        state.valence ?? 0,
+        state.psi ?? 0,
+        state.coherence ?? 0.5,
+        state.isDreaming || false,
+        (state.reward ?? 0) + (chosen.magnitude || 0) * 0.1
+      );
+      const tag = `${emoji} ${clusterKey} ${chosen.metric || ''}${arrow}`;
+      const readout = this._eventReadout(chosen, state);
+
+      // Diagnostic — once per event type, log what fired + what came
+      // back. Keeps the commentary pipeline verifiable from the
+      // browser console without spamming.
+      if (!this._loggedEventTypes) this._loggedEventTypes = new Set();
+      if (!this._loggedEventTypes.has(chosen.type)) {
+        this._loggedEventTypes.add(chosen.type);
+        console.log('[Brain3D] event fired:', chosen.type, '→', commentary || '(commentary null)');
+      }
+
+      const lines = [tag];
+      if (readout) lines.push(readout);
+      if (commentary) lines.push(`"${commentary}"`);
+      this._addNotification(lines.join('\n'), chosen.cluster);
+      return;
+    }
+
+    // Fallback: no event fired (or no brain ref) → legacy numeric
+    // generator pool. Runs exactly like the pre-T5 system.
+    this._legacyGenerateProcessNotification(state);
+  }
+
+  /**
+   * Legacy numeric-telemetry notification generator — pre-T5 system,
+   * kept as a fallback for the pre-boot landing page window (when
+   * there's no brain reference yet and the event detectors have no
+   * cognition to read) and for ticks where no event fires.
+   */
+  _legacyGenerateProcessNotification(state) {
     if (!state) return;
     const clusters = state.clusters || {};
     const arousal = state.amygdala?.arousal ?? 0;
@@ -1178,14 +1887,43 @@ export class Brain3D {
     const el = document.createElement('div');
     el.className = 'b3d-notif';
     el.style.color = CLUSTERS[clusterIdx]?.hex || '#fff';
-    el.textContent = text;
+
+    // Three-line notification rendering — event label, numeric
+    // readout (actual state values), and Unity's commentary in
+    // curly quotes. Any line is optional; a single-line legacy
+    // popup just gets the label. A line wrapped in "..." is the
+    // commentary (gets italic quoted styling); other lines are
+    // numeric telemetry (gets monospace readout styling).
+    const lines = String(text).split('\n').filter(Boolean);
+    lines.forEach((line, idx) => {
+      const isCommentary = /^".*"$/.test(line);
+      if (idx === 0) {
+        // First line is always the event label
+        const labelEl = document.createElement('div');
+        labelEl.className = 'b3d-notif-label';
+        labelEl.textContent = line;
+        el.appendChild(labelEl);
+      } else if (isCommentary) {
+        const commentEl = document.createElement('div');
+        commentEl.className = 'b3d-notif-comment';
+        commentEl.textContent = line.replace(/^"|"$/g, '').trim();
+        el.appendChild(commentEl);
+      } else {
+        const readoutEl = document.createElement('div');
+        readoutEl.className = 'b3d-notif-readout';
+        readoutEl.textContent = line;
+        el.appendChild(readoutEl);
+      }
+    });
     wrap.appendChild(el);
 
-    const notif = { el, x: center[0], y: center[1], z: center[2], age: 0, maxAge: 300, clusterIdx };
+    // maxAge bumped from 300 → 600 frames (~10s) so Unity's thoughts
+    // have time to be read before fading out.
+    const notif = { el, x: center[0], y: center[1], z: center[2], age: 0, maxAge: 600, clusterIdx };
     this._notifications.push(notif);
 
-    // Add to log
-    this._addToLog(text, CLUSTERS[clusterIdx]?.hex || '#fff');
+    // Add to log (single-line version for the process log)
+    this._addToLog(lines.join(' — '), CLUSTERS[clusterIdx]?.hex || '#fff');
 
     // Limit active notifications — only 3 at a time (one every 5 sec)
     while (this._notifications.length > 3) {

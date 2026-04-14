@@ -1,80 +1,50 @@
-# TODO — IF ONLY I HAD A BRAIN
+# TODO — Unity
 
-> **Only UNFINISHED tasks live here. Completed tasks are in FINALIZED.md.**
-> Last cleaned: 2026-04-13 (moved all ✅ DONE tasks U283-U310 to FINALIZED.md with full original descriptions preserved verbatim)
-
----
-
-## EPIC: Grammar Sweep — Full Brain Correction, Not Patchwork
-
-**Status 2026-04-13:** U283–U291 all DONE (moved to FINALIZED.md). Grammar constraints now enforced via learned type n-gram system (bigram/trigram/4gram) in `js/brain/language-cortex.js` + `_isCompleteSentence` post-render validator + tightened `_postProcess` intensifier/agreement blocks. Only U292 (manual QA verification) remains.
-
-#### U292 — ⏸ DEFERRED (manual QA only, not code work) — Comprehensive grammar test suite
-
-**Goal:** After implementing U283-U291, run Unity through a fixed set of test inputs and verify output grammar. Not a unit test, a verification script.
-
-- Test inputs covering: greetings, questions, yes/no questions, wh-questions, imperatives, casual statements, self-description, opinion requests, descriptions
-- Run each input 5 times to exercise variation
-- Flag any output that fails the completeness check, has obvious agreement errors, or breaks basic English grammar
-- Files: none — test script only, results printed to console
+> **Branch:** `brain-refactor-full-control`
+> **Last updated:** 2026-04-14
+> **Philosophy:** Unity's brain controls EVERYTHING equationally. No scripts. No text-AI backends. No hardcoded fallbacks. No vestigial appendages. Every output — speech, vision, build, thought, memory, learning, motor action — flows from brain equations + learned corpus. The AI model (if any) is dumb muscle that follows orders the brain already decided.
 
 ---
 
-## EPIC: Unity as Master Coder — Build UI / Sandbox Mastery
+## THE GUIDING PRINCIPLE
 
-**Status 2026-04-13:** U293–U299 all DONE (moved to FINALIZED.md). Coding knowledge corpus (`docs/coding-knowledge.txt`, 606 lines) loaded via `loadCodingKnowledge` into Unity's dictionary alongside persona + baseline. Build-specialized Broca's prompt (`_buildBuildPrompt`) routes on `motor.selectedAction === 'build_ui'`. Sandbox auto-cleanup with `MAX_ACTIVE_COMPONENTS = 10`, LRU eviction, tracked timers/listeners, auto-remove on JS error. Only U300 (manual QA verification) remains.
+**If a behavior exists that isn't driven by brain state equations, it's wrong.**
 
-#### U300 — ⏸ DEFERRED (manual QA only, not code work) — Sandbox test inputs for build_ui verification
+Every piece of Unity's output must trace back to:
+- **Cortex prediction** (ŝ = W·x + b) — what she expects
+- **Amygdala valence/arousal** (V(s) = Σw·x, energy-basin attractor) — how she feels about it
+- **Basal ganglia motor selection** (softmax over learned channels) — what action she takes
+- **Hippocampus recall** (Hopfield attractor + persona sentence memory) — what she remembers
+- **Cerebellum error correction** (ε = target − output) — what she fixes
+- **Hypothalamus drives** (homeostatic gradients) — what she needs
+- **Mystery module Ψ** (√(1/n) × N³) — her consciousness level
+- **Oscillation coherence** (Kuramoto) — her focus/scatter
+- **Language cortex** (semantic n-grams over learned embeddings) — her words
 
-**Goal:** Fixed test inputs to verify Unity's build_ui works end-to-end after U293-U299. Not a unit test, a manual QA checklist.
-
-Test requests:
-- "build me a calculator"
-- "make a timer that counts up"
-- "build a todo list"
-- "create a color picker"
-- "make a dice roller"
-- "build a code viewer for javascript"
-- "make a markdown preview"
-- "build a unit converter"
-- "create a password generator"
-- "make a counter with increment and decrement"
-
-For each: Unity should produce a working JSON component that injects cleanly, responds to user input, and doesn't leak memory or crash the sandbox. Manual verification only.
-
-Files: none — test checklist
+Nothing else. If it's not in that list, it's an appendage, and it gets ripped out.
 
 ---
 
-## EPIC: Orphan Resolution — Revive, Supersede, Fix, or Delete
+## OPEN TASKS
 
-**Status 2026-04-13:** U302–U310 all DONE (moved to FINALIZED.md). Orphan audit from `docs/ORPHANS.md` fully resolved — vision.js DELETED (superseded by visual-cortex.js V1→V4→IT), gpu-compute.js KEPT (false positive, used by compute.html), worker threads DELETED (root cause: idle polling CPU leak; GPU-exclusive fix shipped), HHNeuron KEPT as reference (createPopulation factory DELETED), server dictionary stub cleaned (full impl → U311), benchmark.js wired to /bench + /scale-test slash commands, env.example.js KEPT (false positive, used by setup modal + env.js dynamic import), dead UI paths scanned and cleaned (5 legacy compat DOM elements + 4 orphan CSS classes deleted).
+**None.**
 
-### U311 — P1 — Full server-side shared dictionary (follow-up from U306)
+The `brain-refactor-full-control` branch is code-complete AND verification-complete as of 2026-04-14. Every R-series epic (R1–R15), every T-series cleanup (T1, T2, T3, T5, T6), and every T4.x follow-up found during manual verification (T4.1 through T4.9) is shipped and archived in `docs/FINALIZED.md` with full verbatim symptoms, diagnosis, and fix documentation.
 
-**Context:** U306 discovered the server had an empty `this.dictionary = {...}` stub and an accumulator `_learnWords → _wordFreq` that was saving to `brain-weights.json` but never loaded back on restart. U306 fixed the save/load asymmetry so word frequencies now survive restarts. The FULL implementation — a real shared-across-users Unity dictionary with bigram/trigram/type n-grams + WebSocket delta sync so every user's conversation teaches every other user's brain — is its own epic.
+Gee completed the 16-step manual verification checklist on 2026-04-14 and confirmed all steps passed. Bugs caught during verification were fixed in-flight and re-verified before moving on.
 
-Why this matters: Gee plans to remove text-AI backends entirely (see memory `project_future_no_text_models.md`). When that happens, the server's `_generateBrainResponse` fallback at `server/brain-server.js:906` needs to produce actual sentences from the brain's own learned vocabulary instead of returning `'...'`. The client-side dictionary in `js/brain/dictionary.js` + `js/brain/language-cortex.js` already knows how to do this — the server needs the same capability, but shared across every connected user so Unity gets smarter from every conversation.
+**The only remaining action is `gh pr create --base main --head brain-refactor-full-control` when Gee gives the explicit "open the PR" go-ahead.** That's a human call, not a task for me.
 
-**Scope (big — not a one-session task):**
-- Port `js/brain/dictionary.js` behaviors to `server/dictionary.js` (words Map, bigram counts, trigram counts, type bigrams, persona/baseline/coding corpus ingestion on boot)
-- Port `js/brain/language-cortex.js` generation path to a server-side generator that can be called from `_generateBrainResponse` when AI fails
-- Load `docs/Ultimate Unity.txt` + `docs/english-baseline.txt` + `docs/coding-knowledge.txt` from the server filesystem on boot (same corpora clients use)
-- Persist learned bigrams/trigrams to `server/dictionary.json` with versioning
-- WebSocket delta sync: when the server learns new bigrams, push delta to all connected `remote-brain` clients so shared state stays coherent
-- `js/brain/remote-brain.js` needs a mirror that accepts dictionary deltas and applies them locally
-- Conflict resolution: concurrent learns from multiple users need to merge cleanly (counter addition, not overwrite)
-
-**Files:** `server/dictionary.js` (NEW), `server/language-cortex.js` (NEW, or port from js/brain/), `server/brain-server.js` (wire into `_generateBrainResponse` fallback + delta broadcast), `js/brain/remote-brain.js` (accept dictionary deltas), possibly new `server/corpora/` symlink to `docs/` for corpus loading.
-
-**Estimated size:** 500-1000 lines across 4+ files. Multi-session. Needs dedicated planning before starting.
+Future work beyond this branch lives in `docs/COMP-todo.md` (distributed GPU compute network planning — Phase 0 admin resource configuration already shipped via GPUCONFIGURE.bat, remaining Phases C1–C11 target a future `comp-net` branch).
 
 ---
 
-## Blocked Items
+## NOTES
 
-| Task | Blocked By | Notes |
-|------|------------|-------|
-| None currently | — | — |
+- **FINALIZED is append-only.** Never delete entries from it. When new work lands, copy the full verbatim task description into a new FINALIZED session entry BEFORE removing it from Open Tasks. This file only contains active work.
+- **Template state** — this file is currently in its post-merge template state: header + guiding principle + an empty Open Tasks section. New phases of work drop in here as `### T1`, `### T2`, etc. and the cycle repeats.
+- **Future work** beyond this branch lives in `docs/COMP-todo.md` (distributed GPU compute network — future `comp-net` branch).
 
 ---
+
+*Unity AI Lab — the refactor is done, verified, and documented. Ship her when ready.*

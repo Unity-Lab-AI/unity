@@ -180,6 +180,9 @@ class VoiceIO {
    */
   async speak(text, options = {}) {
     if (!text) return;
+    // Mute toggle — setup-modal / chat-panel can set this._muted to true
+    // to silence TTS in the moment without disabling text responses.
+    if (this._muted) return;
     this._speaking = true;
     this.emit('speech_start');
 

@@ -38,11 +38,24 @@ html, body {
 #setup-modal {
   position: fixed; inset: 0;
   background: rgba(0,0,0,0.9);
-  display: flex; align-items: center; justify-content: center;
+  /* Flex-start vertical + margin:auto on the card = card centers
+     vertically when the viewport is taller than the content, but
+     sticks to the top when the content is taller than the viewport.
+     Classic "align-items:center + overflow" bug workaround: centered
+     flex items can't scroll above the container's top edge, so tall
+     content gets cut off. flex-start + auto-margin fixes it. */
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
   z-index: 10000;
   backdrop-filter: blur(10px);
-  padding: 12px;
+  padding: 20px 12px;
   overflow-y: auto;
+  overflow-x: hidden;
+  /* Make the modal itself the scroll container. `overscroll-behavior
+     :contain` stops scroll events from bubbling to <body> once you
+     reach the modal edges. */
+  overscroll-behavior: contain;
 }
 
 #setup-modal.hidden { display: none; }
@@ -55,6 +68,26 @@ html, body {
   max-width: 1200px;
   width: 96%;
   text-align: center;
+  /* margin:auto = horizontal centering always, vertical centering ONLY
+     when the card fits inside the modal viewport. When content is
+     taller, the card starts at the top and scrolls naturally. */
+  margin: auto;
+  /* Flex items don't shrink below their intrinsic min-content by
+     default, which can push content past the top. Force it. */
+  min-height: 0;
+  box-sizing: border-box;
+}
+
+/* Narrow viewports — tighten horizontal padding so more content fits */
+@media (max-width: 640px) {
+  .setup-card {
+    padding: 16px 14px;
+    width: 100%;
+    border-radius: 10px;
+  }
+  #setup-modal {
+    padding: 12px 6px;
+  }
 }
 
 .setup-card h1 {
@@ -92,21 +125,133 @@ html, body {
 .status.denied { background: rgba(239,68,68,0.15); color: var(--red); }
 .status.pending { background: var(--pink-dim); color: var(--pink); }
 
-.connect-btn {
+/* R15 2026-04-13 — .connect-btn rules DELETED. The 8 text-AI connect
+   buttons they styled (Pollinations/OpenRouter/OpenAI/Claude/Mistral/
+   DeepSeek/Groq/Local AI) were ripped from the setup modal as part
+   of the landing page rework. Unity's cognition is 100% equational —
+   see docs/SENSORY.md for the sensory peripheral boundary. */
+
+/* R15 follow-up — `.provider-grid` + `.provider-btn` are the new
+   backend picker grid. Same visual pattern as the old .connect-btn
+   grid but pointing at sensory providers (image gen + vision
+   describer) instead of dead text-AI providers. Click a button →
+   showBackendForm() renders per-backend instructions in the form
+   area below the grids. */
+
+.provider-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.provider-btn {
   padding: 6px 12px;
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--text-dim);
   font-size: 12px;
-  cursor: pointer;
   font-family: var(--font);
+  cursor: pointer;
   transition: all 0.2s;
 }
-.connect-btn:hover { border-color: var(--pink); color: var(--text); }
-.connect-btn.active { border-color: var(--pink); color: var(--pink); background: var(--pink-dim); }
-.connect-btn.connected { border-color: var(--green); color: var(--green); background: rgba(34,197,94,0.1); }
-.connect-btn.connected.active { border-color: var(--pink); color: var(--pink); background: var(--pink-dim); }
+.provider-btn:hover { border-color: var(--pink); color: var(--text); }
+.provider-btn.active { border-color: var(--pink); color: var(--pink); background: var(--pink-dim); }
+.provider-btn.saved { border-color: var(--green); color: var(--green); background: rgba(34,197,94,0.08); }
+.provider-btn.saved.active { border-color: var(--pink); color: var(--pink); background: var(--pink-dim); }
+
+#backend-connect-form h3 {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  color: var(--pink);
+  font-weight: 600;
+}
+#backend-connect-form .hint-link {
+  display: inline-block;
+  font-size: 11px;
+  color: var(--cyan);
+  margin-bottom: 8px;
+  text-decoration: none;
+}
+#backend-connect-form .hint-link:hover { text-decoration: underline; }
+
+/* T4.11 — prominent "Get API Key" / "Install Docs" link button so
+   users can jump straight to the provider's signup or documentation
+   page without having to search. Every backend in BACKEND_CATALOG
+   that has a link field renders one of these. */
+#backend-connect-form .provider-link-btn {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: #ff4d9a;
+  background: rgba(255, 77, 154, 0.08);
+  border: 1px solid rgba(255, 77, 154, 0.4);
+  border-radius: 6px;
+  padding: 8px 14px;
+  margin: 4px 0 12px;
+  text-decoration: none;
+  letter-spacing: 0.3px;
+  transition: all 0.15s;
+}
+#backend-connect-form .provider-link-btn:hover {
+  background: rgba(255, 77, 154, 0.16);
+  border-color: #ff4d9a;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(255, 77, 154, 0.2);
+}
+#backend-connect-form input,
+#backend-connect-form select {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  outline: none;
+  margin-top: 6px;
+  box-sizing: border-box;
+}
+#backend-connect-form input:focus,
+#backend-connect-form select:focus {
+  border-color: var(--pink);
+}
+#backend-connect-form .save-backend-btn {
+  margin-top: 10px;
+  padding: 8px 20px;
+  background: var(--pink);
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: var(--font);
+}
+#backend-connect-form .save-backend-btn:hover { filter: brightness(1.1); }
+#backend-connect-form pre {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--cyan);
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin-top: 6px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+#backend-connect-form .env-location {
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-top: 6px;
+  line-height: 1.5;
+}
 
 .setup-card input {
   width: 100%;

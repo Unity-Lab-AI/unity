@@ -19,6 +19,7 @@
  */
 
 import { InnerVoice } from './inner-voice.js';
+import { VisualCortex } from './visual-cortex.js';
 
 class EventEmitter {
   constructor() { this._listeners = {}; }
@@ -29,14 +30,24 @@ class EventEmitter {
 
 export class RemoteBrain extends EventEmitter {
   /**
-   * @param {string} serverUrl — WebSocket URL (e.g., 'ws://localhost:8080')
+   * @param {string} serverUrl — WebSocket URL (e.g., 'ws://localhost:7525')
    */
   constructor(serverUrl) {
     super();
     this._serverUrl = serverUrl;
     this._ws = null;
     this._connected = false;
+    // Per-session id assigned by server in the `welcome` message.
+    // Ephemeral — changes every reconnect.
     this._userId = null;
+    // T6 2026-04-13 — stable per-user id that survives reconnects,
+    // persisted in localStorage as `unity_user_id`. Generated lazily
+    // on first text send so a returning user's episodes can be
+    // recalled under the same id next session. This is what scopes
+    // private episodic memory — the server filters the SQLite
+    // episodes table by this id so Alice never gets recall hits
+    // from Bob's conversation.
+    this._stableUserId = null;
     this.running = false;
 
     // Mirror state from server
@@ -63,15 +74,14 @@ export class RemoteBrain extends EventEmitter {
       checkForInterruption() { return true; },
       getState() { return {}; },
     };
-    this.visualCortex = {
-      isActive() { return false; },
-      description: '',
-      gazeX: 0.5, gazeY: 0.5, gazeTarget: '',
-      getState() { return {}; },
-      forceDescribe() {},
-      _hasDescribedOnce: true,
-      _describing: false,
-    };
+    // T4.9 — real local VisualCortex instance so the Eye widget's
+    // iris actually tracks gaze from live V1 edge + salience
+    // computation. Previously this was a stub plain-object with
+    // static gazeX:0.5/gazeY:0.5 which is why the iris sat frozen
+    // on the user's eyes. The server still runs its own vision
+    // processing in parallel (for commentary generation), but the
+    // Eye widget on the client reads from this local instance.
+    this.visualCortex = new VisualCortex();
     this.sensory = { _cameraStream: null };
     // REAL local InnerVoice so loadPersona works and the memory tab shows
     // dictionary / bigram / usage-type stats from the actual persona file.
@@ -239,7 +249,33 @@ export class RemoteBrain extends EventEmitter {
       return { text: 'Brain server disconnected.', action: 'respond_text' };
     }
 
-    this._ws.send(JSON.stringify({ type: 'text', text }));
+    // T6 2026-04-13 — lazy-init the stable userId on first text send.
+    // Persisted in localStorage so returning users keep the same id
+    // across sessions and can recall their own episodes. Server uses
+    // this to filter SQLite episode storage + recall by user, so one
+    // user never gets recall hits from another user's past text.
+    // crypto.randomUUID() is supported in all modern browsers; guard
+    // the ls access for SSR / worker contexts just in case.
+    if (!this._stableUserId) {
+      try {
+        if (typeof localStorage !== 'undefined') {
+          let saved = localStorage.getItem('unity_user_id');
+          if (!saved) {
+            saved = (typeof crypto !== 'undefined' && crypto.randomUUID)
+              ? crypto.randomUUID()
+              : 'user_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+            localStorage.setItem('unity_user_id', saved);
+          }
+          this._stableUserId = saved;
+        }
+      } catch { /* localStorage unavailable — fall through with null */ }
+    }
+
+    this._ws.send(JSON.stringify({
+      type: 'text',
+      text,
+      userId: this._stableUserId || undefined,
+    }));
 
     // Wait for response from server
     return new Promise((resolve) => {
@@ -260,7 +296,42 @@ export class RemoteBrain extends EventEmitter {
   connectVoice(v) { this._voice = v; }
   connectImageGen() {} // handled by server
   connectMicrophone() {}
-  connectCamera() {}
+
+  /**
+   * T4.9 — real camera wiring so the local VisualCortex processes
+   * frames and drives the Eye widget's iris tracking. Mirrors
+   * UnityBrain.connectCamera(): creates a video element sourced
+   * from the MediaStream, waits a tick for the first frame, then
+   * hands the element to VisualCortex.init() which starts the
+   * 60×45 V1 edge + saccade + salience loop.
+   */
+  connectCamera(stream, videoElement) {
+    if (!stream) return;
+    try {
+      let vid = videoElement;
+      if (!vid) {
+        vid = document.createElement('video');
+        vid.autoplay = true;
+        vid.playsInline = true;
+        vid.muted = true;
+        vid.srcObject = stream;
+        vid.style.display = 'none';
+        document.body.appendChild(vid);
+      }
+      this.sensory._cameraStream = stream;
+      this.sensory._videoElement = vid;
+      // Wait for the first frame before initializing visual cortex —
+      // same 500ms delay the local-brain path uses.
+      setTimeout(() => {
+        if (this.visualCortex && typeof this.visualCortex.init === 'function') {
+          this.visualCortex.init(vid);
+          console.log('[RemoteBrain] Visual cortex connected to camera');
+        }
+      }, 500);
+    } catch (err) {
+      console.warn('[RemoteBrain] connectCamera failed:', err.message);
+    }
+  }
 
   giveReward(amount) {
     if (this._connected && this._ws) {
@@ -284,17 +355,21 @@ export class RemoteBrain extends EventEmitter {
  * @param {number} timeout — ms to wait
  * @returns {Promise<RemoteBrain|null>}
  */
-export async function detectRemoteBrain(url = 'ws://localhost:8080') {
-  // Hostname gate: only probe ws://localhost:8080 when the page is actually
+export async function detectRemoteBrain(url = 'ws://localhost:7525') {
+  // R14 — default probe URL moved off port 8080 (which collides with
+  // llama.cpp, LocalAI, and every other service that claims 8080).
+  // Unity's brain-server now binds to 7525 by default.
+  //
+  // Hostname gate: only probe ws://localhost:7525 when the page is actually
   // served from localhost/127.0.0.1/file://. On GitHub Pages (or any other
   // public origin) there is no server — skip the probe, return null, let
-  // app.js fall through to the local 1000-neuron UnityBrain.
+  // app.js fall through to the local fallback UnityBrain.
   //
   // Without this gate, visiting the Pages URL from a dev box with brain-server
-  // running would connect to ws://localhost:8080 (Chrome allows loopback from
+  // running would connect to ws://localhost:7525 (Chrome allows loopback from
   // https secure-context) and the Pages UI would display the dev box's
-  // auto-scaled neuron count (1.8B on a 16GB-VRAM GPU). It also prevents every
-  // stranger's browser from silently poking their own loopback on page load.
+  // auto-scaled neuron count (which grows with available VRAM). It also prevents
+  // every stranger's browser from silently poking their own loopback on page load.
   if (typeof location !== 'undefined') {
     const host = location.hostname;
     const isLocal =

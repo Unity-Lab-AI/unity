@@ -15,11 +15,17 @@
  *   Hypothalamus (50) → homeostatic baseline drive for all clusters
  *   Mystery (50) → consciousness modulation of coupling strength
  *
- * Total: scales to hardware (1000 client, 3.2M server), each cluster with internal NxN sparse synapses
+ * Total: N scales to hardware — client runs a CPU LIF fallback sized to what the
+ *        browser JS engine can sustain, server runs the full auto-scaled N via GPU
+ *        (see `server/brain-server.js:detectResources` — N = max(1000, min(VRAM_bytes×0.85/8, RAM_bytes×0.1/0.001)).
+ *        Each cluster with internal NxN sparse synapses.
  */
 
 import { LIFPopulation } from './neurons.js';
-import { SynapseMatrix } from './synapses.js';
+// R12.2 2026-04-13 — removed stale `import { SynapseMatrix }` here.
+// SparseMatrix (below) is the drop-in replacement used at runtime.
+// synapses.js stays as a reference implementation for brain-equations.html
+// and docs/EQUATIONS.md cross-references — see the header comment there.
 import { SparseMatrix } from './sparse-matrix.js';
 
 export class NeuronCluster {
@@ -220,6 +226,38 @@ export class NeuronCluster {
       output[i] = sum / groupSize;
     }
     return output;
+  }
+
+  /**
+   * Read a specific neuron range as semantic embedding-space vector.
+   *
+   * R2 of brain-refactor-full-control — this is the read-side of the
+   * semantic loop. `sensory.js` writes word embeddings into specific
+   * cortex neuron ranges via `embeddings.mapToCortex`, the cortex
+   * integrates those currents through LIF dynamics + hierarchical
+   * modulation (amygdala gate, Ψ, drive baseline, etc), and this
+   * method reads the activation state back as a semantic vector by
+   * calling the inverse mapping.
+   *
+   * Only meaningful on the cortex cluster (which has Wernicke's area
+   * at neurons 150-299). Calling it on amygdala/BG/etc will return
+   * the language-region readout which those clusters don't have —
+   * just don't.
+   *
+   * @param {object} embeddings — the shared SemanticEmbeddings instance
+   *   with `cortexToEmbedding(spikes, voltages, cortexSize, langStart)`
+   * @param {number} langStart — first neuron of the language region
+   *   (default 150 matches sensory.js mapToCortex)
+   * @returns {Float64Array} — 50d L2-normalized semantic pattern
+   */
+  getSemanticReadout(embeddings, langStart = 150) {
+    const voltages = this.neurons.getVoltages();
+    return embeddings.cortexToEmbedding(
+      this.lastSpikes,
+      voltages,
+      this.size,
+      langStart
+    );
   }
 
   getState() {

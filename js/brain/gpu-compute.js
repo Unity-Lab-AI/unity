@@ -21,32 +21,57 @@
 
 // ── WGSL Shaders ────────────────────────────────────────────────
 
+// RULKOV MAP NEURON — Rulkov 2002, "Modeling of spiking-bursting neural
+// behavior using two-dimensional map", Phys. Rev. E 65, 041922.
+//
+//   x_{n+1} = α / (1 + x_n²) + y_n
+//   y_{n+1} = y_n − μ·(x_n − σ)
+//
+// Two-variable discrete chaotic map that produces real biological
+// spike-burst dynamics — the fast variable x generates sub-millisecond
+// spikes on top of slow variable y driving burst envelopes. Used in
+// large-scale published cortical simulations (Bazhenov, Rulkov,
+// Shilnikov 2005+) and shown to reproduce experimentally observed
+// firing patterns from thalamic relay, cortical pyramidal, and
+// cerebellar Purkinje cells depending on (α, σ) parameterization.
+//
+// Parameters:
+//   α ≈ 4.5  — nonlinearity, fixed near chaotic regime. Higher α =
+//              longer bursts. Range 4.0-6.0 for bursting, 2.0-4.0 for
+//              tonic spiking.
+//   μ ≈ 0.001 — slow timescale. Ratio of slow-to-fast variable update.
+//   σ       — external drive. Biological tonic/synaptic input maps here.
+//              σ ∈ [-1.5, 0.5] is the useful range. Higher σ → more spikes.
+//
+// Spike detection: x crosses zero from below in a single tick. The
+// fast variable jumps from ≈-1 to ≈α+y=+4 when the neuron spikes, so
+// (x_old ≤ 0) ∧ (x_new > 0) is a clean edge detector.
+//
+// State: stored as vec2<f32> per neuron = (x, y). Doubles the buffer
+// from 4 to 8 bytes/neuron — at 400K cerebellum that's 3.2MB, fine.
 const LIF_SHADER = /* wgsl */`
-  // SLIM LIF — single voltage buffer, inline current gen, no refractory.
-  // Memory: 4 bytes (voltage f32) + 4 bytes (spike u32) = 8 bytes/neuron
-  // Down from 20 bytes/neuron → 2.5× more neurons fit in VRAM.
   struct Params {
     n: u32,
-    tau: f32,
-    vRest: f32,
-    vThresh: f32,
-    vReset: f32,
-    dt: f32,
-    R: f32,
-    effectiveDrive: f32,  // tonic × drive × emoGate × Ψgain + errCorr
-    noiseAmp: f32,
+    tau: f32,        // unused — Rulkov has no membrane time constant
+    vRest: f32,      // unused
+    vThresh: f32,    // unused
+    vReset: f32,     // unused
+    dt: f32,         // unused
+    R: f32,          // unused
+    effectiveDrive: f32,  // mapped to Rulkov σ (external drive)
+    noiseAmp: f32,   // y-channel jitter to prevent phase lock
     seed: u32,
     gridX: u32,
     _pad: u32,
   };
 
   @group(0) @binding(0) var<uniform> params: Params;
-  @group(0) @binding(1) var<storage, read_write> voltages: array<f32>;  // in-place update
+  @group(0) @binding(1) var<storage, read_write> state: array<vec2<f32>>;  // (x, y) per neuron
   @group(0) @binding(2) var<storage, read_write> spikes: array<u32>;
 
   fn pcg(v: u32) -> u32 {
-    var state = v * 747796405u + 2891336453u;
-    var word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    var s = v * 747796405u + 2891336453u;
+    var word = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u;
     return (word >> 22u) ^ word;
   }
 
@@ -60,24 +85,41 @@ const LIF_SHADER = /* wgsl */`
     let i = id.x + id.y * params.gridX * 256u;
     if (i >= params.n) { return; }
 
-    // Generate current inline — no separate currents buffer
-    let noise = (randomFloat(params.seed, i) - 0.5) * params.noiseAmp;
-    let I = params.effectiveDrive + noise;
+    // Load 2D state. Guard against uninitialized / NaN by reseeding in
+    // the basin of the bursting attractor.
+    var xy = state[i];
+    var x = xy.x;
+    var y = xy.y;
+    if (x != x || y != y || abs(x) > 100.0 || abs(y) > 100.0) {
+      let phi = 0.61803398875;
+      x = -1.0 + fract(f32(i) * phi) * 0.5;        // (-1.0, -0.5)
+      y = -3.2 + fract(f32(i) * phi * 1.7) * 0.4;  // (-3.2, -2.8) — attractor basin
+    }
 
-    // LIF step — read-modify-write on single voltage buffer
-    var v = voltages[i];
-    let dV = (-(v - params.vRest) + params.R * I) / params.tau;
-    v += params.dt * dV;
+    // Map biological drive to Rulkov σ. Unity's tonic drives run 8-20,
+    // modulated to effectiveDrive ~ 6-40. Normalize to σ ∈ [-1.0, 0.5]:
+    // silent cortex at σ≈-1, bursting cerebellum at σ≈0.3, saturated at 0.5.
+    let driveNorm = clamp(params.effectiveDrive / 40.0, 0.0, 1.0);
+    let sigma = -1.0 + driveNorm * 1.5;
+    let alpha = 4.5;      // fixed nonlinearity — bursting regime
+    let mu = 0.001;       // slow timescale
 
-    // Spike check
-    if (v >= params.vThresh) {
+    // Rulkov map iteration
+    let xNext = alpha / (1.0 + x * x) + y;
+    // y update uses current x, not xNext (per Rulkov 2002)
+    let jitter = (randomFloat(params.seed, i) - 0.5) * params.noiseAmp * 0.0001;
+    let yNext = y - mu * (x - sigma) + jitter;
+
+    // Spike = fast variable crossed zero upward this tick. The Rulkov
+    // spike is a one-step jump from x≈-1 to x≈α+y ≈ +1.5..+3.5, so
+    // this edge detector catches exactly one spike per action potential.
+    if (x <= 0.0 && xNext > 0.0) {
       spikes[i] = 1u;
-      v = params.vReset;
     } else {
       spikes[i] = 0u;
     }
 
-    voltages[i] = v;
+    state[i] = vec2<f32>(xNext, yNext);
   }
 `;
 
@@ -340,28 +382,28 @@ export class GPUCompute {
     const CHUNK = 1000000; // 1M floats at a time = 4MB per chunk
     const makeBuffer = (sz, usage) => device.createBuffer({ size: sz, usage: usage | GPUBufferUsage.COPY_DST });
 
-    const voltagesA = makeBuffer(size * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC);
+    // Rulkov state buffer — vec2<f32> per neuron = 8 bytes.
+    // Doubled from the old 1D voltage buffer. At 400K cerebellum that's
+    // 3.2MB; at full server scale it's still well under GPU limits.
+    const voltagesA = makeBuffer(size * 8, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC);
 
-    // Fill voltagesA with Vrest in chunks — never allocate full-size JS array
-    if (voltages && voltages.length >= size) {
-      // Provided voltages — write in chunks
-      for (let offset = 0; offset < size; offset += CHUNK) {
-        const chunkSize = Math.min(CHUNK, size - offset);
-        const chunk = new Float32Array(chunkSize);
-        for (let i = 0; i < chunkSize; i++) chunk[i] = voltages[offset + i];
-        device.queue.writeBuffer(voltagesA, offset * 4, chunk);
+    // Seed (x, y) pairs uniquely via golden-ratio quasi-random so no
+    // two Rulkov trajectories phase-lock. Starting region is the
+    // bursting attractor basin from Rulkov 2002: x ∈ (-1.0, -0.5),
+    // y ∈ (-3.2, -2.8). Golden-ratio sequence gives low-discrepancy
+    // coverage of the basin without collisions.
+    const PHI = 0.61803398875;
+    for (let offset = 0; offset < size; offset += CHUNK) {
+      const chunkSize = Math.min(CHUNK, size - offset);
+      const chunk = new Float32Array(chunkSize * 2); // interleaved x,y
+      for (let i = 0; i < chunkSize; i++) {
+        const gi = offset + i;
+        const gx = (gi * PHI) % 1;
+        const gy = (gi * PHI * 1.7) % 1;
+        chunk[i * 2]     = -1.0 + gx * 0.5;         // x ∈ (-1.0, -0.5)
+        chunk[i * 2 + 1] = -3.2 + gy * 0.4;         // y ∈ (-3.2, -2.8)
       }
-    } else {
-      // Fill with Vrest in chunks
-      const chunk = new Float32Array(Math.min(CHUNK, size)).fill(vRest);
-      for (let offset = 0; offset < size; offset += CHUNK) {
-        const writeSize = Math.min(CHUNK, size - offset);
-        if (writeSize < chunk.length) {
-          device.queue.writeBuffer(voltagesA, offset * 4, chunk.subarray(0, writeSize));
-        } else {
-          device.queue.writeBuffer(voltagesA, offset * 4, chunk);
-        }
-      }
+      device.queue.writeBuffer(voltagesA, offset * 8, chunk);
     }
 
     // SLIM LAYOUT — only 2 storage buffers: voltages + spikes

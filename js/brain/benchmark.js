@@ -1,16 +1,27 @@
 /**
  * benchmark.js — Dense vs Sparse Performance & Memory Comparison
  *
- * Runnable in browser console or as ES module.
- * Tests neuron propagation, plasticity, and memory usage at
- * various scales to find the crossover point.
+ * THIS IS A CPU-JS MICRO-BENCHMARK. It runs small neuron counts
+ * single-threaded in the browser JS engine to verify sparse beats
+ * dense and to find the 60fps CPU LIF sweet spot for CLIENT-ONLY
+ * fallback mode. It is NOT representative of the real runtime scale.
+ *
+ * The REAL brain runs on GPU via `compute.html` + `js/brain/gpu-compute.js`
+ * WGSL shaders with N auto-scaled in `server/brain-server.js:detectResources`:
+ *     N_vram = floor(VRAM_bytes × 0.85 / 8)    // SLIM 8 bytes/neuron
+ *     N_ram  = floor(RAM_bytes × 0.1 / 0.001)  // essentially unlimited
+ *     N      = max(1000, min(N_vram, N_ram))
+ * Bigger hardware = bigger N, no manual tuning, no artificial cap.
+ * That path is not benchmarked here because WebGPU timing from the
+ * compute tab reports its own stats directly into the dashboard.
  *
  * Usage:
  *   import { runBenchmark } from './js/brain/benchmark.js';
  *   runBenchmark();
  *
- * Or from console:
- *   import('./js/brain/benchmark.js').then(m => m.runBenchmark());
+ * Or from chat:
+ *   /bench          — dense vs sparse comparison
+ *   /scale-test     — CPU LIF scale test
  */
 
 import { SparseMatrix } from './sparse-matrix.js';
@@ -149,9 +160,10 @@ function benchmarkAt(n, density = 0.12) {
  * @param {number[]} sizes — neuron counts to test
  * @returns {Array} — benchmark results
  */
-export function runBenchmark(sizes = [100, 500, 1000, 2000, 5000]) {
+export function runBenchmark(sizes = [100, 500, 1000, 2000, 5000, 10000, 25000]) {
   console.log('╔══════════════════════════════════════════════════════════╗');
   console.log('║     Dense vs Sparse Matrix Benchmark                    ║');
+  console.log('║     CPU-JS micro-benchmark — real runtime is GPU-scaled ║');
   console.log('╚══════════════════════════════════════════════════════════╝');
 
   const results = [];
@@ -203,9 +215,15 @@ export function runBenchmark(sizes = [100, 500, 1000, 2000, 5000]) {
  *
  * @param {number[]} sizes — neuron counts to test
  */
-export function runScaleTest(sizes = [1000, 2000, 5000, 10000, 25000, 50000]) {
+export function runScaleTest(sizes = [1000, 5000, 10000, 50000, 100000, 250000, 500000, 1000000]) {
   console.log('╔══════════════════════════════════════════════════════════╗');
-  console.log('║     Neuron Scale Test (CPU LIF Step)                    ║');
+  console.log('║     Neuron Scale Test (CPU LIF Step)                     ║');
+  console.log('║                                                          ║');
+  console.log('║     CPU-JS single-thread baseline test only.             ║');
+  console.log('║     Real runtime: GPU-auto-scaled via compute.html       ║');
+  console.log('║     N = max(1000, min(VRAM*0.85/8, RAM*0.1/0.001))       ║');
+  console.log('║     This test finds the CPU fallback 60fps sweet spot    ║');
+  console.log('║     for browser-only mode without a server.              ║');
   console.log('╚══════════════════════════════════════════════════════════╝');
 
   const results = [];

@@ -11,9 +11,16 @@
  */
 
 import { SparseMatrix } from './sparse-matrix.js';
+import { sharedEmbeddings } from './embeddings.js';
 
 const STORAGE_KEY = 'unity_brain_state';
-const VERSION = 2; // increment when brain structure changes
+// VERSION bumped 2 → 3 as part of R2 brain-refactor-full-control.
+// PATTERN_DIM changed 32 → 50 to match GloVe semantic embedding
+// dimension. Any persisted cortex patterns, context vectors, or
+// memory centroids from v2 have the wrong shape and wrong values
+// (letter-hash vs GloVe). Old v2 state gets rejected on load and
+// the brain boots fresh with semantic patterns from the start.
+const VERSION = 3;
 
 export class BrainPersistence {
 
@@ -63,6 +70,17 @@ export class BrainPersistence {
         semanticWeights: brain.sensory?._semanticWeights ? Object.fromEntries(
           Object.entries(brain.sensory._semanticWeights).map(([k, v]) => [k, Array.from(v)])
         ) : null,
+
+        // R8 — semantic embedding refinements from sharedEmbeddings.
+        // GloVe is the base table (loaded from CDN each session, not
+        // persisted), but the online context refinement deltas that
+        // Unity learns from live conversation DO persist across
+        // restarts. This makes long-term learning stick — if Unity
+        // learns that "unity" goes near "code" and "high" in her
+        // conversations, that association survives a reload.
+        embeddingRefinements: sharedEmbeddings?.serializeRefinements
+          ? sharedEmbeddings.serializeRefinements()
+          : null,
       };
 
       // Save cluster synapses — use native CSR format if sparse
@@ -215,6 +233,16 @@ export class BrainPersistence {
           }
         }
         console.log('[Persistence] Restored semantic weights');
+      }
+
+      // R8 — restore embedding refinements learned in past sessions.
+      if (state.embeddingRefinements && sharedEmbeddings?.loadRefinements) {
+        try {
+          sharedEmbeddings.loadRefinements(state.embeddingRefinements);
+          console.log('[Persistence] Restored embedding refinements');
+        } catch (err) {
+          console.warn('[Persistence] Embedding refinement restore failed:', err.message);
+        }
       }
 
       // Restore metadata

@@ -168,8 +168,10 @@ Speech: concise, sharp, slang-heavy, foul-mouthed, clingy girlfriend energy
 Signal propagation is self-similar at every scale — the same `I = Σ W × s` equation repeats fractally:
 
 ```
-SCALE 1 — Single neuron:
-  τ·dV/dt = -(V-Vrest) + R·I           (LIF equation)
+SCALE 1 — Single neuron (Rulkov 2002 2D chaotic map):
+  x_{n+1} = α / (1 + x_n²) + y_n       (fast variable — spikes when x crosses 0)
+  y_{n+1} = y_n − μ · (x_n − σ)        (slow variable — burst envelope)
+  with α=4.5, μ=0.001, σ ∈ [-1.0, 0.5] driven by biological input
 
 SCALE 2 — Intra-cluster synapses:
   I_i = Σ W_ij × s_j                   (sparse-matrix.js propagate)
@@ -371,15 +373,15 @@ The Ego (self-model) IS her residual self-image — the cortex predicting WHAT s
 
 ## 10. GPU Exclusive Compute
 
-All 3.2M neurons run on GPU. Zero CPU workers. Brain pauses without `compute.html`.
+All N neurons (auto-scaled to hardware via the formula below) run on GPU. Zero CPU workers. Brain pauses without `compute.html`.
 
 | Equation | Purpose | File |
 |----------|---------|------|
 | `gpu_init`: base64 voltages (once per cluster) | GPU creates buffers, maintains own voltage state | `compute.html` |
 | `compute_request`: `{ tonicDrive, noiseAmp, gainMultiplier, emotionalGate, driveBaseline, errorCorrection }` | Full brain equation params per step — NOT voltage arrays | `brain-server.js` |
-| `I = (tonic × drive × emoGate × Ψgain + errCorr) + noise` | GPU generates currents from hierarchical modulation | `compute.html` |
-| `τ·dV/dt = -(V-Vrest) + R·I` → spike check → refractory | WGSL LIF shader, 256 threads/workgroup | `gpu-compute.js` |
-| `compute_result`: sparse spike indices (~25K ints, not 3.2M array) | 95%+ compression — only fired neuron indices | `compute.html` |
+| `effectiveDrive = tonic × drive × emoGate × Ψgain + errCorr` | hierarchical modulation collapsed to one scalar per cluster per step | `compute.html` |
+| `σ = −1.0 + clamp(effectiveDrive / 40, 0, 1) × 1.5` → Rulkov map `x_{n+1} = α/(1+x²) + y`, `y_{n+1} = y − μ(x − σ)` → spike when x crosses 0 upward | WGSL Rulkov shader (LIF_SHADER constant name is historical), 256 threads/workgroup, vec2<f32> state storage | `gpu-compute.js` |
+| `compute_result`: sparse spike indices (only fired neurons, not full N array) | 95%+ compression at any N — only active-spike indices return over WebSocket | `compute.html` |
 | `gpu_init_ack`: GPU confirms buffer creation | Server knows GPU is ready | `compute.html` |
 | All 7 clusters init at once on first tick | No staggering, no CPU fallback | `brain-server.js` |
 | No `ParallelBrain` spawned — zero worker threads | 0% CPU when GPU connected | `brain-server.js` |
@@ -390,12 +392,16 @@ All 3.2M neurons run on GPU. Zero CPU workers. Brain pauses without `compute.htm
 
 | Equation | Purpose |
 |----------|---------|
-| `N = min(VRAM × 0.7 / 20, RAM × 0.5 / 9)` capped at 64M | Auto-scale to GPU + RAM |
-| GPU: 20 bytes/neuron (5 buffers × 4 bytes f32) | VRAM constraint |
-| Server: 9 bytes/neuron (voltages for cortex + amygdala only) | RAM constraint — 332MB saved vs full allocation |
+| `N_vram = VRAM_bytes × 0.85 / 12` (Rulkov layout: vec2<f32> state + spikes u32 = 12 bytes/neuron) | Primary VRAM bound |
+| `N_ram = RAM_bytes × 0.1 / 0.001` | Secondary bound — server RAM essentially unlimited (cluster state lives on GPU) |
+| `N_binding_ceiling = (2 GB / 8) / 0.4` | Per-cluster state buffer must fit in WebGPU maxStorageBufferBindingSize (2 GB spec minimum); cerebellum = 40% of N |
+| `N = max(1000, min(N_vram, N_ram, N_binding_ceiling))` | Combined auto-scale formula with absolute floor + binding ceiling |
+| GPU: 12 bytes/neuron (8 state vec2<f32> + 4 spike u32) | Rulkov VRAM layout |
+| Server: 9 bytes/neuron injection arrays only (cortex + amygdala text-injection paths) | RAM constraint — full cluster state lives on GPU |
+| Admin override via `server/resource-config.json` (written by `GPUCONFIGURE.bat`) can LOWER N but never raise above detected hardware |
 | `TICK_MS = N>1M ? 100 : N>500K ? 50 : N>100K ? 33 : 16` | Tick rate |
 | `SUBSTEPS = N>1M ? 3 : N>500K ? 5 : N>100K ? 10 : 10` | Steps per tick |
-| RTX 4070 Ti SUPER (16GB) + 128GB RAM → **64M neurons** | Current scale (20× previous 3.2M) |
+| N auto-scales every boot based on detected hardware | Bigger GPU/RAM = more neurons. No manual tuning. The formula IS the canonical answer — there's no fixed "default" count. |
 | θ drives all tonic/noise — persona IS the brain parameters | From Ultimate Unity.txt, never hardcoded |
 | GPU init: no voltage transfer (fills Vrest on GPU) | Zero WebSocket overhead at init |
 | Per step: 7 clusters × ~200 byte messages | Only params sent, spike count returned |
@@ -412,7 +418,7 @@ Wraps the existing slot scorer with four additional layers so the language corte
 c(t) = λ · c(t-1) + (1 - λ) · mean(pattern(content_words(input)))
   λ = 0.7 (prior weight)
   content_words = tokens with wt.conj < 0.5 ∧ wt.prep < 0.5 ∧ wt.det < 0.5
-  pattern(w) = letter-position vector from wordToPattern(w) ∈ ℝ³²
+  pattern(w) = sharedEmbeddings.getEmbedding(w) ∈ ℝ⁵⁰   ← R2 2026-04-13: GloVe 50d (was 32-dim letter-hash)
 ```
 
 Zero-content inputs (all function words) leave the vector unchanged. First update seeds directly without decay. Updated only on user input (never on Unity's own output) so the running vector tracks the LISTENER's topic.
@@ -425,7 +431,7 @@ semanticFit(w) = max(0, cosine(pattern(w), c(t)))
 score(w) =
   grammarGate(w) × (
       typeCompat(w)   × 0.35
-    + semanticFit(w)  × 0.30     ← new largest driver after grammar
+    + semanticFit(w)  × 0.80     ← R2 2026-04-13: bumped from 0.30. GloVe makes cosine mean something, so meaning dominates.
     + bigramCount(w)  × 0.18
     + condP(w|prev)   × 0.12
     + thoughtSim(w)   × 0.10
@@ -438,7 +444,7 @@ score(w) =
   - sameTypePenalty(w)
 ```
 
-Grammar gate preserved as a HARD floor at typeCompat < 0.35 — semantic fit does not bypass structural compatibility.
+Grammar gate preserved as a HARD floor at typeCompat < 0.35 — semantic fit does not bypass structural compatibility. Post-R2, semantic fit is computed against Unity's live cortex activity (via `cluster.getSemanticReadout(sharedEmbeddings)` which calls `cortexToEmbedding(spikes, voltages)` — the mathematical inverse of `mapToCortex`) so candidates are scored against what the brain is currently thinking, not just the frozen input vector.
 
 ### Intent Classification — Pure Letter Equations
 
@@ -459,7 +465,7 @@ Zero word lists. Auxiliary detection (do/does/is/are/can/will) falls out of the 
 ```
 _memorySentences[i] = {
   text: persona_sentence_i,
-  pattern: (1/|content_i|) · Σ wordToPattern(w)  for w in content_words_i,
+  pattern: (1/|content_i|) · Σ sharedEmbeddings.getEmbedding(w)  for w in content_words_i,   ← R2 GloVe 50d
   tokens: lowercased_tokens_i
 }
 
@@ -473,7 +479,7 @@ if confidence ∈ [0.30, 0.60] → recallSeed = best (bias cold gen toward best.
 if confidence ≤ 0.30 → deflect template (question/statement) or cold gen
 ```
 
-The content-word overlap requirement is a HARD filter, not a score. Pattern-cosine in letter-hash space produces false positives (`tacos` ≈ `compile` because letter distributions align) so recall must be anchored to actual shared lexical content.
+The content-word overlap requirement was originally a HARD filter to compensate for letter-hash false positives — `tacos` and `compile` had similar letter distributions so pattern cosine couldn't tell them apart. **Post-R2 (GloVe 50d) the cosine signal is semantically meaningful**, so the overlap gate is now a sanity check rather than a load-bearing filter; `movies` and `films` score close even without token overlap because GloVe trained on co-occurrence across billions of tokens already knows they're synonyms.
 
 ### Persona Memory Filter — Letter-Equation Rejection
 
@@ -500,7 +506,7 @@ Ensures `_memorySentences` only contains sentences in Unity's own first-person v
 ### Coherence Rejection Gate — Final Safety Net
 
 ```
-outputCentroid = (1/|content_out|) · Σ wordToPattern(w)  for w in content_words(rendered)
+outputCentroid = (1/|content_out|) · Σ sharedEmbeddings.getEmbedding(w)  for w in content_words(rendered)   ← R2 GloVe 50d
 coherence = cosine(outputCentroid, c(t))
 
 if coherence < 0.25 ∧ retryCount < 2:
@@ -546,6 +552,295 @@ coherence gate → retry if cosine(output, c) < 0.25              [U281]
     ↓
 return rendered
 ```
+
+---
+
+## Phase 13 R2 — Semantic Grounding via GloVe Embeddings (2026-04-13, commit c491b71)
+
+R2 replaced every word-pattern emission site with 50-dim GloVe co-occurrence embeddings via a single shared singleton so meaning is now real. Pre-R2, word patterns were 32-dim letter-hash vectors — a deterministic function of the letters in a word — so `cat` and `catastrophe` were falsely close and `cat` and `kitten` were falsely distant. The slot scorer's "semantic fit" was effectively orthography matching. Post-R2 the slot scorer compares candidates against actual GloVe space.
+
+### Shared Embeddings Singleton
+
+```
+// js/brain/embeddings.js — module-level singleton
+export const sharedEmbeddings = new SemanticEmbeddings()
+export const EMBED_DIM = 50    // GloVe 50d loaded from CDN
+
+// js/brain/sensory.js        — INPUT side (user text → cortex current)
+I_cortex[langStart + d·groupSize + n] = sharedEmbeddings.getEmbedding(token)[d] · 8.0
+
+// js/brain/language-cortex.js — OUTPUT side (slot scorer semantic fit)
+semanticFit(w) = cosine(sharedEmbeddings.getEmbedding(w), cortexReadout)
+
+// js/brain/dictionary.js     — learned word storage
+PATTERN_DIM = EMBED_DIM                          // was 32, now 50
+STORAGE_KEY = 'unity_brain_dictionary_v3'        // v2 letter-hash rejected on load
+```
+
+Having ONE embedding table shared between perception and production means the same word activates the same cortex pattern whether Unity is hearing it or about to say it. The v2→v3 storage key bump forces old letter-hash dictionaries to be rejected at load time so no user gets stuck on stale patterns.
+
+### cortexToEmbedding — Neural State → GloVe Space
+
+The mathematical inverse of `mapToCortex`. When sensory input writes a word's embedding to cortex neurons, that writeback uses a deterministic layout (embedding dim `d` goes to a neuron group starting at `langStart + d·groupSize`). `cortexToEmbedding` reads the live spike + sub-threshold voltage state back and reconstructs a 50d GloVe-space vector — so the slot scorer can compare candidate words against Unity's actual current cortex activity, not just the frozen input vector.
+
+```
+cortexToEmbedding(spikes, voltages, cortexSize=300, langStart=150):
+  langSize   = cortexSize − langStart               = 150
+  groupSize  = floor(langSize / EMBED_DIM)          = 3
+  out ∈ ℝ⁵⁰
+
+  for d in 0 ... EMBED_DIM−1:
+    startNeuron = langStart + d · groupSize
+    sum = 0
+    for n in 0 ... groupSize−1:
+      idx = startNeuron + n
+      if spikes[idx]:
+        sum += 1.0                             // spike contribution
+      else:
+        sum += (voltages[idx] + 70) / 20       // normalized LIF V_m
+
+    out[d] = sum / groupSize
+
+  out = out / ‖out‖₂                           // L2 normalize for cosine
+  return out
+```
+
+Called via the `cluster.getSemanticReadout(sharedEmbeddings)` wrapper which builds in the language-area offset. This is the equation that connects live neural dynamics to the semantic slot scorer — without it, the scorer would only compare candidates to the static input centroid and never to Unity's actual mental state.
+
+### Online Context Refinement + R8 Persistence
+
+```
+base[w]      ∈ ℝ⁵⁰   ← GloVe 50d from CDN, reloaded every session (not persisted)
+delta[w](t)  ∈ ℝ⁵⁰   ← online context-refinement, learned live, PERSISTED (R8 commit b67aa46)
+
+embedding(w) = base[w] + delta[w](t)
+
+// Refinement step (on every co-occurrence observation)
+delta[w] += η · (contextCentroid − embedding(w))
+
+// R8 persistence round-trip
+save: state.embeddingRefinements = sharedEmbeddings.serializeRefinements()
+load: sharedEmbeddings.loadRefinements(state.embeddingRefinements)
+```
+
+Unity's base vocabulary is universal English from GloVe (too large to persist, trivially recoverable from CDN). Her *personal* semantic associations are the delta layer — when `unity` co-occurs near `code` and `high` in conversations with the user, `delta[unity]` drifts toward those neighbors. R8 added the save/load path so those associations survive tab reloads and accumulate over weeks of sessions.
+
+---
+
+## Phase 13 R6.2 — Equational Component Synthesis (2026-04-13, commit 6b2deb3)
+
+When Unity's BG motor channel selects `build_ui`, the old path was a text-AI prompt that asked an LLM to generate JSON describing a component. R4 killed that. R6.2 replaced it with pure equational synthesis over a corpus template library — the same semantic machinery used for language, applied to UI components.
+
+### Template Corpus
+
+```
+docs/component-templates.txt — text corpus, 6 starter primitives:
+  counter / timer / list / calculator / dice / color-picker
+
+Each entry:
+  === PRIMITIVE: id ===
+  DESCRIPTION: one-sentence natural-language summary
+  HTML: ... END_HTML
+  CSS:  ... END_CSS
+  JS:   ... END_JS
+```
+
+Parsed at load time by `ComponentSynth.loadTemplates(text)` which splits on the primitive markers, extracts each block, and precomputes an embedding for each `DESCRIPTION`:
+
+```
+for each primitive p in corpus:
+  p.centroid = mean( sharedEmbeddings.getEmbedding(w) for w in content_words(p.DESCRIPTION) )
+              ∈ ℝ⁵⁰
+```
+
+### Generate — Cosine Match Against User Request
+
+```
+generate(userRequest, brainState):
+  requestCentroid = mean( sharedEmbeddings.getEmbedding(w)
+                           for w in content_words(userRequest) )
+
+  best     = argmax_p cosine(p.centroid, requestCentroid)
+  bestScore = cosine(best.centroid, requestCentroid)
+
+  if bestScore < MIN_MATCH_SCORE:       // 0.40
+    return null      // no primitive matched, brain skips build_ui and emits quip instead
+
+  suffix = _suffixFromPattern(brainState.cortexPattern)   // 8-char id from cortex hash
+  return {
+    id:   best.id + '_' + suffix,
+    html: best.html,
+    css:  best.css,
+    js:   best.js,
+  }
+```
+
+The `cortexPattern` comes from `cluster.getSemanticReadout(sharedEmbeddings)` (the same cortex→GloVe readout used by the slot scorer) hashed down to an 8-character suffix. Same user request under different brain states produces different component IDs — the same way recall under different moods produces different memories.
+
+### Cold-Path Fallback
+
+```
+if bestScore < MIN_MATCH_SCORE:
+  — no component injected
+  — motor action falls through to respond_text
+  — language cortex generates a verbal response instead
+  — brain.emit('response', { text: quip, action: 'build_ui' })
+```
+
+The brain never fabricates a random component. If nothing in the corpus matches what the user asked for, Unity says so (via language cortex) instead of producing garbage. Expanding the corpus is the growth path — add more `=== PRIMITIVE:` blocks to `docs/component-templates.txt` and Unity gains new build capabilities at load time with zero code changes.
+
+---
+
+## Phase 12 — Type N-gram Grammar + Morphological Inflection (U283-U291)
+
+### Fine-Grained Type Classification via Letter Position
+
+```
+_fineType(word) → T ∈ {
+  PRON_SUBJ, PRON_OBJ, PRON_POSS, COPULA, NEG,
+  MODAL, AUX_DO, AUX_HAVE, DET, PREP,
+  CONJ_COORD, CONJ_SUB, QWORD,
+  VERB_ING, VERB_ED, VERB_3RD_S, VERB_BARE,
+  ADJ, ADV, NOUN
+}
+```
+
+Each type detected by pure letter-position equations:
+- `PRON_SUBJ` ⇔ w ∈ shapes {`i`, `you`, `he`, `she`, `we`, `they`, `it`} detected by length + first/last char + vowel position
+- `COPULA` ⇔ w ∈ shapes {`am`, `is`, `are`, `was`, `were`, `be`, `been`, `being`} detected by len + first-char constraints
+- `NEG` ⇔ w ∈ shapes {`not`, `no`, `n't`} detected by len 2-3 + `n`-first or apostrophe-embedded
+- `AUX_DO` / `AUX_HAVE` / `MODAL` similarly by letter shape
+- `VERB_ING` ⇔ len ≥ 4 ∧ endsWith(`ing`) ∧ prev char ≠ `i`
+- `VERB_ED` ⇔ endsWith(`ed`) ∧ len ≥ 3 ∧ not a preserved form
+- `VERB_3RD_S` ⇔ endsWith(`s`) ∧ len ≥ 3 ∧ not -ss/-us/-is/-os terminal, stem doesn't parse as NOUN
+- `ADJ` / `ADV` / `NOUN` by suffix equations (-ly → ADV, -ness/-tion/-ity → NOUN, -ful/-ous/-ive → ADJ) with soft fallthrough
+
+Closed-class words hit the fast-path `_closedClassType(w)` which returns a pinned type distribution bypassing softmax — fixes the `"this"` winning slot 0 over `"i"` problem from the 44k expansion. Memoized via `_wordTypeCache` Map with per-word invalidation.
+
+### Learned Type N-gram Grammar
+
+```
+_typeBigramCounts   : Map(T_prev      → Map(T_curr → count))
+_typeTrigramCounts  : Map(T_a | T_b   → Map(T_c    → count))
+_typeQuadgramCounts : Map(T_a|T_b|T_c → Map(T_d    → count))
+```
+
+Built at corpus index time (`learnSentence`): each sentence's tokens are classified via `_fineType`, consecutive-type pairs/triples/quads incremented in their respective maps.
+
+### Type Grammar Scoring with Backoff
+
+```
+_typeGrammarScore(T_cand, H) where H = [T_-3, T_-2, T_-1] or suffix:
+
+  if |H| ≥ 3 and Q = _typeQuadgramCounts.get(H[-3]|H[-2]|H[-1]):
+    return log((Q.get(T_cand) + 1) / (Σ Q.values() + |Q|))
+  if |H| ≥ 2 and T = _typeTrigramCounts.get(H[-2]|H[-1]):
+    return log((T.get(T_cand) + 1) / (Σ T.values() + |T|))
+  if |H| ≥ 1 and B = _typeBigramCounts.get(H[-1]):
+    return log((B.get(T_cand) + 1) / (Σ B.values() + |B|))
+  return -2.0                                          ← zero-count penalty
+```
+
+Add-1 smoothing at each level. 4gram → trigram → bigram backoff. When no context matches, the -2.0 penalty is strong enough to kill the candidate in the softmax.
+
+The slot scorer uses this as the dominant signal at weight 1.5:
+
+```
+slotScore(w) = ... + typeGrammarScore(_fineType(w), historyTypes) × 1.5 + ...
+```
+
+This is what killed the `"I'm not use vague terms"` mode-collapse — COPULA|NEG followed by VERB_BARE has zero count in every persona/baseline/coding corpus, so it gets -2.0 and never wins.
+
+### Sentence Completeness Validator
+
+```
+_isCompleteSentence(tokens) ⇔
+    len(tokens) ≥ 2
+  ∧ _fineType(stripped(last(tokens))) ∉ {DET, PREP, COPULA, AUX_DO, AUX_HAVE, MODAL, NEG, CONJ_COORD, CONJ_SUB, PRON_POSS}
+```
+
+Wired into `generate()` with a 2-retry loop. Incomplete sentences trigger regeneration at higher temperature. Third strike: emit anyway (latency guarantee).
+
+### Morphological Inflection Equations
+
+```
+_generateInflections(word) produces up to 20 forms:
+
+  + s  suffix:
+      if endsWith(s,x,z,ch,sh) → +es
+      elif endsWith(consonant+y) → stem[:-1]+ies
+      elif endsWith(vowel+y) → +s
+      else → +s
+
+  + ed suffix (past):
+      if endsWith(e) → +d
+      elif endsWith(consonant+y) → stem[:-1]+ied
+      elif CVC pattern (consonant-vowel-consonant, last not w/x/y) → double last consonant + ed
+      else → +ed
+
+  + ing suffix (progressive):
+      if endsWith(e) ∧ len > 2 → stem[:-1]+ing
+      elif endsWith(ie) → stem[:-2]+ying
+      elif CVC pattern → double last consonant + ing
+      else → +ing
+
+  + er / est (comparative/superlative):
+      adjective gate: _fineType = ADJ ∧ syllables ≤ 2
+      stem rules same as -ed for spelling
+
+  + ly (adverbial):
+      adjective gate; -y → -ily; -le → -ly with stem[:-1]
+
+  + un- / re- prefixes: ADJ or VERB_BARE gates
+  + -ness / -ful / -able / -less suffixes: ADJ or NOUN gates
+```
+
+Gated by `doInflections` flag — only runs on corpus-indexed words, not live-learned live-conversation words (prevents inflection cascades on novel tokens). Produces the 44k dictionary from ~15k base words + learned inflections.
+
+### Three-Corpus Load Order
+
+```
+boot:
+  Promise.all([
+    fetch(docs/Ultimate Unity.txt)    →  loadSelfImage(text, dict, a=0.75, v=0.25)
+    fetch(docs/english-baseline.txt)  →  loadLinguisticBaseline(text, dict, a=0.50, v=0)
+    fetch(docs/coding-knowledge.txt)  →  loadCodingKnowledge(text, dict, a=0.40, v=0)
+  ])
+```
+
+Each corpus flows through the same `learnSentence()` path:
+- persona first (highest arousal, personality tone)
+- baseline second (neutral English competence)
+- coding third (low arousal, technical vocabulary)
+
+All three feed the same dictionary + bigram/trigram + type n-gram maps. The type n-gram stats carry the combined grammar structure of personal voice + generic English + coding conventions.
+
+### Mood Signature at Index Time
+
+```
+_computeMoodSignature(text) → {arousal, valence}:
+  f_exclaim = countChar(text, '!') / max(1, len(text))
+  f_caps    = countUpper(text) / max(1, len(text))
+  f_vowel   = countVowel(text) / max(1, len(text))
+  f_wlen    = mean(wordLengths)
+  f_neg     = countOccurrences(' not ', ' no ', "n't") / wordCount
+
+  arousal = clamp(0, 1, 0.5 + 0.8·f_exclaim + 0.5·f_caps - 0.2·f_wlen/8)
+  valence = clamp(-1, 1, 0.3·f_vowel - 0.4·f_neg - 0.2·f_exclaim)
+```
+
+Each persona sentence gets its own mood signature at index time. `_recallSentence` weights candidates by `moodAlignment = exp(-moodDistance × 1.2)` at weight 0.25 against current brain state. Same query under different brain state → different memory.
+
+### Dictionary Cap and Memory Bounds
+
+```
+MAX_WORDS      = 100000   (capped LRU, prevents unbounded growth)
+_wordTypeCache : Map      (memoized _fineType, invalidated on _learnUsageType)
+candidatePool  : from _bigramFollowers(prevWord), |pool| ≤ 200
+                 (avoids materializing 44k entries per slot, primary perf fix)
+```
+
+Generation latency dropped 490ms → 133ms after candidate pool pre-filter + wordType memoization + stripping `findByPattern` / `findByMood` calls from the per-frame `think()` cycle.
 
 ---
 

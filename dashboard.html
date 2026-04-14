@@ -114,8 +114,13 @@
     </div>
 
     <div class="card" style="margin-top:12px;">
-      <div class="card-title">Conversation Stream</div>
-      <div class="log" id="d-conversations" style="max-height:200px;"></div>
+      <div class="card-title">Conversation Activity (aggregate)</div>
+      <div id="d-conversations" style="padding:8px 12px;font-family:monospace;font-size:11px;color:#aaa;line-height:1.8;">
+        <div style="color:#555;font-size:10px;margin-bottom:6px;">Per-session activity counters only — user text is private and never displayed here. See docs/WEBSOCKET.md "Privacy Model".</div>
+        <div>🗣 Messages this session: <span id="d-conv-count" style="color:#22c55e;">0</span></div>
+        <div>⏱ Last activity: <span id="d-conv-last" style="color:#ff4d9a;">—</span></div>
+        <div>👥 Active users last 60s: <span id="d-conv-active" style="color:#00e5ff;">0</span></div>
+      </div>
     </div>
 
     <div class="card" style="margin-top:12px;">
@@ -125,9 +130,11 @@
   </div>
 
   <script>
+    // R14 — Unity brain-server moved off 8080 to 7525 to avoid
+    // colliding with llama.cpp / LocalAI / every other service.
     const SERVER_URL = location.hostname === 'localhost'
-      ? 'ws://localhost:8080'
-      : `wss://${location.hostname}:8080`;
+      ? 'ws://localhost:7525'
+      : `wss://${location.hostname}:7525`;
 
     let ws;
     function connect() {
@@ -160,9 +167,14 @@
         updateDashboard(msg.state);
         appendEmotionSample(msg.state);
       }
-      if (msg.type === 'conversation') {
-        addConversation(msg.userId, msg.text, msg.response);
-      }
+      // NOTE: 'conversation' message type was removed 2026-04-13 per
+      // the privacy model (user text is PRIVATE, never broadcast to
+      // other clients). Dashboard derives conversation activity from
+      // the aggregate `state` broadcasts instead — see updateDashboard
+      // below, which reads `s.totalMessages` / `s.lastMessageAt` /
+      // `s.activeUsers` fields from the global brain state snapshot.
+      // If the server doesn't expose those fields yet, the counters
+      // stay at their defaults (0 / — / 0) without breaking anything.
     }
 
     function updateDashboard(s) {
@@ -177,6 +189,7 @@
       $('d-coherence').textContent = ((s.coherence ?? 0) * 100).toFixed(0) + '%';
       $('d-coherence-bar').style.width = ((s.coherence ?? 0) * 100) + '%';
       $('d-users').textContent = s.connectedUsers ?? 0;
+      updateConversationStats(s);
       $('d-action').textContent = s.motor?.selectedAction ?? 'idle';
       $('d-drug').textContent = s.drugState ?? '—';
       $('d-uptime').textContent = (s.time ?? 0).toFixed(1) + 's';
@@ -276,27 +289,29 @@
     }
 
     // ── Conversation stream ──
-    function addConversation(userId, text, response) {
-      const el = document.getElementById('d-conversations');
-      const entry = document.createElement('div');
-      entry.className = 'log-entry';
-      const anon = userId ? userId.slice(-4) : '????';
-      entry.innerHTML = `<span style="color:#555;">[${new Date().toLocaleTimeString()}]</span> <span style="color:#22c55e;">user_${anon}:</span> ${escapeHtml(text)}`;
-      el.appendChild(entry);
-      if (response) {
-        const rEntry = document.createElement('div');
-        rEntry.className = 'log-entry';
-        rEntry.innerHTML = `<span style="color:#555;">[${new Date().toLocaleTimeString()}]</span> <span style="color:#ff4d9a;">Unity:</span> ${escapeHtml(response)}`;
-        el.appendChild(rEntry);
+    // Privacy-respecting conversation activity counters — aggregate
+    // only, no per-user text or response content ever rendered.
+    // Fed by updateDashboard() reading state.totalMessages /
+    // state.lastMessageAt / state.activeUsers if the server exposes
+    // them. If those fields aren't present in the state snapshot,
+    // counters stay at default and the panel still renders cleanly.
+    function updateConversationStats(s) {
+      const count = s.totalMessages ?? 0;
+      const lastMs = s.lastMessageAt ?? 0;
+      const active = s.activeUsers ?? s.connectedUsers ?? 0;
+      const countEl = document.getElementById('d-conv-count');
+      const lastEl = document.getElementById('d-conv-last');
+      const activeEl = document.getElementById('d-conv-active');
+      if (countEl) countEl.textContent = count.toLocaleString();
+      if (lastEl) {
+        if (lastMs) {
+          const ago = Math.max(0, (Date.now() - lastMs) / 1000);
+          lastEl.textContent = ago < 2 ? 'just now' : ago < 60 ? `${Math.floor(ago)}s ago` : `${Math.floor(ago/60)}m ago`;
+        } else {
+          lastEl.textContent = '—';
+        }
       }
-      el.scrollTop = el.scrollHeight;
-      while (el.children.length > 100) el.children[0].remove();
-    }
-
-    function escapeHtml(str) {
-      const d = document.createElement('div');
-      d.textContent = str || '';
-      return d.innerHTML;
+      if (activeEl) activeEl.textContent = active;
     }
 
     // ── Emotion history chart ──

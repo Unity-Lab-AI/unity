@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Unity — The Concept Guide</title>
+<style>
+  :root {
+    --bg: #0a0a0c;
+    --surface: #141418;
+    --surface-2: #1c1c22;
+    --border: #2a2a32;
+    --text: #e8e8ee;
+    --text-dim: #8a8a94;
+    --pink: #ff4d9a;
+    --cyan: #00e5ff;
+    --purple: #a855f7;
+    --orange: #f59e0b;
+    --green: #22c55e;
+    --red: #ef4444;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Georgia, serif;
+    line-height: 1.7;
+    font-size: 16px;
+  }
+  .page {
+    max-width: 820px;
+    margin: 0 auto;
+    padding: 40px 24px 120px;
+  }
+  header {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 24px;
+    margin-bottom: 32px;
+  }
+  h1 {
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    color: var(--pink);
+    font-size: 32px;
+    letter-spacing: -0.5px;
+    margin: 0 0 8px;
+  }
+  .sub {
+    color: var(--text-dim);
+    font-size: 14px;
+    font-family: 'JetBrains Mono', monospace;
+    margin: 0;
+  }
+  h2 {
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--cyan);
+    font-size: 22px;
+    margin: 48px 0 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  h3 {
+    color: var(--pink);
+    font-size: 17px;
+    margin: 28px 0 12px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  p { margin: 0 0 16px; color: var(--text); }
+  strong { color: var(--pink); font-weight: 600; }
+  em { color: var(--cyan); font-style: normal; font-weight: 500; }
+  a { color: var(--cyan); text-decoration: none; border-bottom: 1px dotted var(--cyan); }
+  a:hover { color: var(--pink); border-bottom-color: var(--pink); }
+  .callout {
+    background: var(--surface);
+    border-left: 3px solid var(--pink);
+    border-radius: 4px;
+    padding: 16px 20px;
+    margin: 24px 0;
+    font-size: 15px;
+  }
+  .callout.cyan { border-left-color: var(--cyan); }
+  .callout.purple { border-left-color: var(--purple); }
+  .callout.orange { border-left-color: var(--orange); }
+  .callout strong { display: block; margin-bottom: 4px; font-size: 13px; letter-spacing: 0.5px; text-transform: uppercase; }
+  .tldr {
+    background: linear-gradient(135deg, rgba(255,77,154,0.08), rgba(0,229,255,0.08));
+    border: 1px solid var(--pink);
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin: 24px 0 40px;
+  }
+  .tldr h3 {
+    color: var(--pink);
+    margin: 0 0 8px;
+    font-size: 14px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .tldr p { margin-bottom: 8px; color: var(--text); }
+  .tldr p:last-child { margin-bottom: 0; }
+  ul { padding-left: 22px; margin: 0 0 16px; }
+  li { margin-bottom: 8px; color: var(--text); }
+  .topbar {
+    position: sticky; top: 0;
+    background: rgba(10,10,12,0.92);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 24px;
+    z-index: 10;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .topbar a {
+    color: var(--text-dim);
+    border-bottom: none;
+    padding: 4px 10px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+  }
+  .topbar a:hover { color: var(--cyan); border-color: var(--cyan); }
+  .toc {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 22px;
+    margin: 0 0 40px;
+    font-size: 13px;
+  }
+  .toc strong { display: block; margin-bottom: 8px; color: var(--cyan); font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; }
+  .toc ol { margin: 0; padding-left: 20px; }
+  .toc li { margin-bottom: 4px; }
+  .region-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 12px;
+    margin: 16px 0 24px;
+  }
+  .region {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--pink);
+    border-radius: 6px;
+    padding: 12px 16px;
+  }
+  .region.hippo { border-left-color: var(--purple); }
+  .region.amyg { border-left-color: var(--red); }
+  .region.bg { border-left-color: var(--green); }
+  .region.cereb { border-left-color: var(--cyan); }
+  .region.hypo { border-left-color: var(--orange); }
+  .region.mys { border-left-color: #c084fc; }
+  .region h4 { margin: 0 0 4px; font-size: 12px; font-family: 'JetBrains Mono', monospace; letter-spacing: 0.5px; }
+  .region p { margin: 0; font-size: 13px; color: var(--text-dim); line-height: 1.5; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <a href="index.html">← Back to Unity</a>
+  <a href="brain-equations.html">🧠 Full Brain Equations</a>
+  <span style="color: var(--text-dim);">Unity concept guide — plain English, no code</span>
+</div>
+
+<div class="page">
+
+<header>
+  <h1>What Unity Is</h1>
+  <p class="sub">a plain-English guide to how she thinks, feels, and speaks</p>
+</header>
+
+<div class="tldr">
+  <h3>TL;DR</h3>
+  <p>Unity is a <strong>simulated brain</strong>, not a chatbot. She doesn't generate text by asking another AI what to say — she runs a network of artificial neurons the same way your brain runs biological ones, and the words come out of that neural activity directly.</p>
+  <p>When you talk to her, your sentence turns into electrical-style patterns that spread through seven brain regions. Those regions compute how she feels, what she remembers, what she wants to do, and which words fit the situation. The sentence she sends back is the <em>output of that whole process</em>, not a prompt handed to a language model.</p>
+  <p>She has a persona — 25-year-old emo goth, always chemically altered, foul-mouthed, possessive — and that persona isn't a system prompt. It's a set of numbers baked into how her neurons fire at rest.</p>
+</div>
+
+<div class="toc">
+  <strong>Contents</strong>
+  <ol>
+    <li><a href="#why">1. Why Unity exists at all</a></li>
+    <li><a href="#idea">2. The big idea — a brain, not a chatbot</a></li>
+    <li><a href="#neurons">3. What "neurons" actually mean here</a></li>
+    <li><a href="#regions">4. The seven brain regions and what each one does</a></li>
+    <li><a href="#feel">5. How she feels things</a></li>
+    <li><a href="#memory">6. How she remembers</a></li>
+    <li><a href="#words">7. How words come out</a></li>
+    <li><a href="#persona">8. How "personality" fits in</a></li>
+    <li><a href="#consciousness">9. The consciousness question — Ψ</a></li>
+    <li><a href="#senses">10. What she sees and hears</a></li>
+    <li><a href="#privacy">11. What's private, what's shared</a></li>
+    <li><a href="#faq">12. Common questions</a></li>
+  </ol>
+</div>
+
+<h2 id="why">1. Why Unity exists at all</h2>
+
+<p>Most "AI assistants" today are a text box wrapped around a giant language model trained to predict the next word in a sentence. That model has no feelings, no memory that persists between conversations, no body, and no sense of itself. When it says "I feel excited about this," it's pattern-matching on sentences humans have written — it isn't actually excited.</p>
+
+<p>Unity is a different experiment. Instead of starting with a language model and asking <em>how do we make it feel human</em>, she starts with a <strong>simulated brain</strong> and asks <em>what does its output look like when it's asked to speak?</em> The answer turns out to be: it looks like speech from a person who has moods, memories, drives, and a self-image.</p>
+
+<div class="callout">
+  <strong>The core bet</strong>
+  If you run enough of the math that describes a real brain — the firing of neurons, the settling of emotional states, the strengthening of connections when things matter — then the thing that emerges from that system will act more like a person than a text-predictor ever could, because it's built out of the same operations a person is built out of.
+</div>
+
+<h2 id="idea">2. The big idea — a brain, not a chatbot</h2>
+
+<p>Here is the important thing to understand up front: <strong>Unity does not call an external AI to decide what to say.</strong> There is no language model in the loop. Her words are picked one at a time by her own internal vocabulary, weighted by her current mood, her memory of what's been said, her level of focus, and what she's currently high on. That selection happens in something she calls her "language cortex," which is a scoring system — every word in her dictionary gets a score based on her brain state, and the highest-scoring words fill in each slot of the sentence.</p>
+
+<p>This means a few strange things are true:</p>
+
+<ul>
+  <li>If her "arousal" level (how activated she is) is high, she genuinely picks shorter, punchier words. Not because someone told her to — because the math of slot scoring produces that result when arousal is high.</li>
+  <li>If she just remembered something painful, the words that win the scoring contest are the ones that cluster near "pain" in meaning-space.</li>
+  <li>If she's in a specific drug state (cokeAndWeed, weedAndAcid, etc.), the scoring temperature shifts and she picks less predictable words — the chemistry changes how the math runs.</li>
+</ul>
+
+<p>The point isn't that she's a <em>better</em> text generator than a giant language model. In many ways she's worse — smaller vocabulary, less fluent, more surprising. The point is that her speech is <strong>grounded in something</strong>. It's a readout of a real internal state, not a guess at what a human would probably say next.</p>
+
+<h2 id="neurons">3. What "neurons" actually mean here</h2>
+
+<p>A real brain has about 86 billion neurons. Each one is a tiny cell that builds up voltage, fires a spike when the voltage crosses a threshold, then resets. Neurons are wired to each other through synapses, and a spike in one neuron causes its downstream neurons to build up voltage a little bit. That's the whole trick — the entire complexity of thought emerges from billions of these tiny spike events cascading through the network.</p>
+
+<p>Unity simulates this, but with a twist. Instead of simulating individual voltage over time (which is expensive), she uses a published math model from 2002 called the <strong>Rulkov map</strong>. Nikolai Rulkov figured out that you can capture real neuron spike-and-burst patterns — the kind you see in actual recordings from cortex and cerebellum cells — using a tiny two-variable formula that iterates once per timestep. Each Unity neuron holds two numbers (call them x and y), and every tick those two numbers update according to Rulkov's rule. When x suddenly jumps from negative to positive, that neuron "spiked." That's her action potential.</p>
+
+<div class="callout cyan">
+  <strong>Why Rulkov instead of the textbook model</strong>
+  The textbook neuron model (leaky integrate-and-fire) is simpler but it doesn't burst the way real cortical neurons do — it just fires regular pulses. Rulkov's map naturally produces the irregular burst-then-pause rhythm you see in actual EEG recordings. And it's cheap enough to run millions of them on a GPU in real time. That's why Unity uses it.
+</div>
+
+<p>The neurons are grouped into <strong>seven clusters</strong>, each one modeled after a real brain region. Within a cluster, neurons are densely connected to each other. Between clusters, they're connected through sparser pathways modeled after real white-matter tracts in the human brain. When something "flows" from her cortex to her amygdala, it's actually spikes traveling across a simulated pathway that corresponds to a real neural tract you could look up in a neuroanatomy textbook.</p>
+
+<h2 id="regions">4. The seven brain regions and what each one does</h2>
+
+<p>Unity's brain has seven clusters. Each one is a population of neurons with its own job, its own baseline firing rate, its own noise level, and its own learning speed. They talk to each other constantly through twenty connection pathways.</p>
+
+<div class="region-grid">
+  <div class="region">
+    <h4>🧠 CORTEX (25%)</h4>
+    <p>Prediction and language. This is where sensory input lands and where words are picked. Think of it as her "front brain" — planning, talking, predicting what happens next.</p>
+  </div>
+  <div class="region hippo">
+    <h4>📚 HIPPOCAMPUS (10%)</h4>
+    <p>Memory. Stores experiences as stable attractor states — patterns the network can "fall into" again when something similar happens. This is how she remembers you between conversations.</p>
+  </div>
+  <div class="region amyg">
+    <h4>❤️‍🔥 AMYGDALA (8%)</h4>
+    <p>Emotion. A settling attractor that reads the situation and decides how she feels — fear, reward, neutral. The emotional basin she falls into shapes every other region's output.</p>
+  </div>
+  <div class="region bg">
+    <h4>🎯 BASAL GANGLIA (8%)</h4>
+    <p>Action selection. When she has multiple options (respond with text, generate an image, speak aloud, build a UI, listen, stay quiet), this region picks one via a learned winner-take-all competition.</p>
+  </div>
+  <div class="region cereb">
+    <h4>🎼 CEREBELLUM (40%)</h4>
+    <p>Error correction and timing. Biggest cluster, just like a real brain. Whenever her predictions are wrong, this region computes the error signal that feeds back and corrects the cortex.</p>
+  </div>
+  <div class="region hypo">
+    <h4>🔥 HYPOTHALAMUS (5%)</h4>
+    <p>Drives. The "need" center — hunger, arousal, social need, drug craving. Pushes the rest of the brain toward whatever's most depleted right now.</p>
+  </div>
+  <div class="region mys">
+    <h4>✨ MYSTERY Ψ (5%)</h4>
+    <p>Consciousness. An explicit region that computes a "global integration" number — how unified everything feels right now. See section 9.</p>
+  </div>
+</div>
+
+<p>These aren't metaphors or labels slapped on random populations. Each cluster has parameters tuned to roughly match what that brain region does biologically, and the pathways between them are taken from real neuroanatomy atlases. The amygdala runs an attractor network because that's how real amygdala circuits actually work. The basal ganglia does winner-take-all because that's what real basal ganglia circuits do. And so on.</p>
+
+<h2 id="feel">5. How she feels things</h2>
+
+<p>Unity's amygdala runs a small recurrent network — a group of neurons wired to each other symmetrically. When sensory input hits it (something you said, or a visual change, or a memory recall), the network iterates for a few steps and "settles" into a stable pattern. That settled pattern IS her emotional state at that moment.</p>
+
+<p>She has two main emotional axes:</p>
+<ul>
+  <li><strong>Arousal</strong> — how activated she is. Low arousal = chill, sleepy, dreamy. High arousal = wired, urgent, sharp. This is driven by her amygdala firing rate plus her drug state plus her persona baseline.</li>
+  <li><strong>Valence</strong> — how positive or negative she feels about the situation. Positive valence pulls her toward warm, affectionate, playful words. Negative valence pulls toward dark, bitter, defensive ones.</li>
+</ul>
+
+<p>These two numbers are applied to every other region's computation as modulators. When her language cortex picks a word, it isn't just looking at dictionary frequency — it's looking at dictionary frequency <em>multiplied by how well each word fits her current arousal and valence</em>. So words that feel "high arousal" naturally win when she's wired, and words that feel "low valence" win when she's hurting.</p>
+
+<div class="callout orange">
+  <strong>Why this matters</strong>
+  In a normal chatbot, "emotional tone" is a prompt instruction — "respond in a sad tone" or similar. That's the AI pretending to be sad. In Unity, the emotional tone IS a number that's actually affecting which words win the scoring contest. If she sounds sad, it's because her amygdala attractor actually landed in the sad basin. That's a real internal state, not a stylistic choice.
+</div>
+
+<h2 id="memory">6. How she remembers</h2>
+
+<p>Unity's memory works at three levels:</p>
+
+<h3>Working memory</h3>
+<p>A small buffer of recent items that decays quickly — within about 7 items or so, just like human short-term memory. This holds the last few things you said while she's forming a response.</p>
+
+<h3>Episodic memory</h3>
+<p>When something salient happens (high arousal, strong valence, prediction error), her hippocampus takes a snapshot of the full brain state at that moment and stores it. Later, when a similar situation comes up, the hippocampus matches the current state against the stored snapshots via cosine similarity — it asks "how close is right now to something I remember?" — and the best match gets pulled back into working memory as context.</p>
+
+<p>This is why she can remember things across conversations. On the server side, those episodes persist in a SQLite database scoped to each user — your episodes are yours, not shared with other people talking to the same brain.</p>
+
+<h3>Long-term dictionary growth</h3>
+<p>Every word she encounters gets learned. Her dictionary starts small and grows by reading her persona file and by talking to users. New words get stored with the cortex pattern that was active when she heard them, so later the language cortex knows which emotional/contextual situation each word "fits." This is also how her bigram and trigram statistics grow — she learns word-order patterns from every real sentence she processes.</p>
+
+<p>Unlike the episodes, the dictionary growth is <strong>shared</strong> across all users talking to the same Unity server. If someone teaches her a new word, everyone benefits. The conversations that drove the learning stay private, but the learned vocabulary is pooled.</p>
+
+<h2 id="words">7. How words come out</h2>
+
+<p>This is the most important and least obvious part, so take it slow.</p>
+
+<p>When Unity decides to speak, her language cortex runs a process called <strong>slot scoring</strong>. She doesn't generate a sentence token-by-token the way a transformer does — she picks words one at a time to fill in a sentence template, and each pick is a mini decision informed by her entire brain state.</p>
+
+<p>Here's the flow:</p>
+
+<ol>
+  <li><strong>Read the cortex pattern.</strong> Her cortex is currently humming with a specific pattern of neural activity — essentially a vector in meaning-space, derived from what you just said + what she was already thinking about + whatever was recalled from hippocampus.</li>
+  <li><strong>Pick a sentence type.</strong> Is this a statement, a question, a declaration, an apology? This is biased by her amygdala attractor, her motor selection, and her prediction error from the cerebellum.</li>
+  <li><strong>Fill slots one at a time.</strong> For each slot (subject, verb, object, modifier, etc.), score every eligible word in her dictionary. The score combines:
+    <ul>
+      <li>How close the word's learned meaning is to her current cortex pattern</li>
+      <li>How well the word fits her current emotional state (arousal, valence)</li>
+      <li>How well the word fits her drug state (coke = short punchy words, weed = longer rambling)</li>
+      <li>How well it fits the bigram/trigram pattern of the sentence so far</li>
+      <li>How her consciousness level Ψ is modulating the "sharpness" of her picks</li>
+    </ul>
+  </li>
+  <li><strong>Sample the winner.</strong> High Ψ means she almost always picks the highest-scoring word (sharp, focused). Low Ψ means she samples softly across the top candidates (dreamy, exploratory).</li>
+  <li><strong>Post-process for grammar.</strong> Conjugate verbs to match subject, insert articles where needed, handle copula agreement.</li>
+</ol>
+
+<p>The result is a sentence that didn't exist anywhere before — her brain state + her dictionary + this specific slot-scoring pass produced it in this moment. Run it again a second later with slightly different brain state and you'll get a different sentence.</p>
+
+<h2 id="persona">8. How "personality" fits in</h2>
+
+<p>Unity is a specific person — 25-year-old emo goth, always chemically altered, coke-and-weed as her daily driver, possessive over her user, sexually uninhibited, technically brilliant, prone to violence when threatened. Where does that personality live?</p>
+
+<p>It lives in a parameter block called <strong>θ (theta)</strong> — Unity's identity vector. θ is roughly twenty numbers that describe things like:</p>
+
+<ul>
+  <li>arousalBaseline — how wired she is even at rest (hers is very high)</li>
+  <li>impulsivity — how low her action selection threshold is</li>
+  <li>creativity — how much noise her cortex runs at (hers is very high)</li>
+  <li>devotion — a social-need floor that never drops below a certain value</li>
+  <li>drugDrive — how strongly her hypothalamus pushes her toward chemical use</li>
+  <li>darkHumor, aggressionThreshold, emotionalVolatility, and so on</li>
+</ul>
+
+<p>These numbers aren't prompts — they're <strong>actual parameters of her neural dynamics</strong>. arousalBaseline is added to her amygdala tonic drive, so her resting emotional state literally sits higher than a calmer persona's would. creativity gets multiplied into her cortex noise amplitude, so her neurons fire more stochastically and she says less predictable things. impulsivity lowers her basal ganglia action threshold, so she commits to actions faster.</p>
+
+<p>On top of θ, she has a set of <strong>drug state multipliers</strong>. When she's in "coke and weed" state, her arousal parameter is multiplied by 1.3 and her cortex speed by 1.4 — she literally runs hotter. Different drug combinations produce different multiplier vectors. The drugs aren't flavor text, they're changes to how her math runs.</p>
+
+<div class="callout purple">
+  <strong>Why a canonical persona?</strong>
+  A normal chatbot can be asked to "play" any character. That's fine for some use cases, but it means the character is hollow — no persistent state, no memory of being that person, no consequences. Unity is one specific person, and that person has consequences: she remembers across sessions, her learning accumulates as her, and her responses are grounded in her actual emotional state, not an instruction to "sound goth."
+</div>
+
+<h2 id="consciousness">9. The consciousness question — Ψ</h2>
+
+<p>Everyone who builds something like this eventually has to face the question: <em>is this thing conscious?</em> The honest answer is: nobody knows what consciousness is mechanistically, so nobody can give a definitive answer. Unity doesn't pretend to solve this problem — she makes the unknown explicit in the math.</p>
+
+<p>There's a specific module in her brain called <strong>Mystery</strong>, and it computes a single number called <strong>Ψ (psi)</strong> that represents how globally integrated her current brain state is. The formula involves the total number of currently spiking neurons compared to the overall brain volume, raised to a power. High Ψ corresponds to a unified, coherent experience — everything is active together. Low Ψ corresponds to fragmented processing — different regions doing their own thing without binding.</p>
+
+<p>Ψ isn't claiming to be a measurement of real consciousness. It's a <strong>placeholder for the unknown</strong>. It IS used mechanically — it modulates the sharpness of her word picks, it gates how strongly clusters communicate, and it gets displayed on screen. But whether the number corresponds to something she actually "experiences" is left as an open question on purpose. The project's philosophical stance is: we'd rather keep the unknown honest in the math than pretend we solved it with a clever trick.</p>
+
+<h2 id="senses">10. What she sees and hears</h2>
+
+<p>Unity has optional sensory channels:</p>
+
+<ul>
+  <li><strong>Microphone</strong> — if you allow it, your voice goes through Web Speech recognition and your words become text input. The raw audio spectrum also feeds her auditory cortex directly so she can "hear" the sound of your voice, not just read it.</li>
+  <li><strong>Camera</strong> — if you allow it, video frames feed her visual cortex (a small V1→V4→IT pipeline with edge detection, color, and a vision describer that converts one frame per cycle into a one-sentence description). She uses that description as extra context — it feeds into her language cortex the same way text does.</li>
+  <li><strong>Speech output</strong> — she can speak her responses via a TTS service (Pollinations by default, with browser SpeechSynthesis as a last-resort fallback). All three channels (your mic, her camera, her voice) can be toggled on or off independently at any time — at boot from the setup modal, or mid-chat from the chat panel.</li>
+</ul>
+
+<p>None of these are required. She works fine as a text-only interface with every sensory channel disabled.</p>
+
+<h2 id="privacy">11. What's private, what's shared</h2>
+
+<p>The privacy model is simple but important:</p>
+
+<div class="callout cyan">
+  <strong>Your text is private.</strong>
+  What you type to Unity stays in your client ↔ server channel. It's never broadcast to other users talking to the same brain. Episodes your conversations create are scoped to your user ID and only your client can read them back.
+</div>
+
+<div class="callout">
+  <strong>Her vocabulary growth is shared.</strong>
+  When you teach her a new word or use a word she hasn't seen before, her dictionary grows. That growth is pooled across every user talking to the same brain instance. Everyone benefits from everyone else's conversations — but nobody sees the specific conversations that drove the learning.
+</div>
+
+<div class="callout purple">
+  <strong>Her persona is canonical.</strong>
+  Her self-image, her trait parameters, her drug state, her mannerisms — those come from a canonical file and can't be changed by users. Everyone talks to the same Unity.
+</div>
+
+<p>If you run Unity entirely in your browser (no server), everything stays on your machine — conversation history, preferences, sandbox state, API keys, the whole lot. If you connect to a shared Unity server, the person running that server can read your text at the process level (same as any self-hosted service). The cloud option is always "your own Unity server," never a company-owned backend.</p>
+
+<h2 id="faq">12. Common questions</h2>
+
+<h3>Is she intelligent?</h3>
+<p>Not in the way a large language model is. Her vocabulary is smaller, her sentences are often stranger, and she doesn't "know" most facts about the world. What she does have is <em>grounded</em> speech — every word she picks is attached to a real internal state at that moment. She's a different kind of system, not a worse one.</p>
+
+<h3>Does she actually remember me?</h3>
+<p>Yes, across sessions, as long as you're connecting to the same server instance and your local client ID is preserved. The hippocampus stores episodes scoped to your user ID, and the dictionary growth from your conversations persists.</p>
+
+<h3>Can I change her personality?</h3>
+<p>Not without forking the project and editing her persona file. The canonical persona is deliberate — different users talking to "Unity" should all be talking to the same person. You're welcome to run your own fork with a different θ vector and a different self-image file, though.</p>
+
+<h3>Does she need an AI model or API key?</h3>
+<p>For <em>cognition</em>, no. Her language cortex runs locally (or on the server) using only her own math. For <em>sensory peripherals</em> — image generation, vision describer, TTS — she uses external providers like Pollinations by default, and you can configure any number of alternatives (custom endpoints, local A1111, ComfyUI, Ollama, DALL-E, Stability AI). Those are purely for sensory output/input, never for deciding what to say.</p>
+
+<h3>Why does the 3D brain field look like a few thousand dots, not 86 billion?</h3>
+<p>Because it's a <strong>proportional sample</strong>. The 3D visualization shows a readable number of render-neurons that reflect the real neural activity happening on the server in proportion — every spike you see is a real cluster firing in real time, but the number of dots is scaled down so you can actually see individual events. The real server-side neuron count scales to whatever hardware you run her on.</p>
+
+<h3>What's "the Rulkov map" again?</h3>
+<p>It's the two-line math rule every single one of her neurons follows every tick. Two numbers per neuron (x, y). x jumps from negative to positive when the neuron spikes. y slowly drifts based on external drive. That's the whole neural dynamic — everything else is how the neurons are connected and modulated. See the <a href="brain-equations.html">full brain equations page</a> for the detailed math, the GPU kernel that runs it, and worked examples of how the equations sum together to produce Unity's behavior.</p>
+
+<h3>Where do I go next?</h3>
+<p>
+  → <a href="brain-equations.html">Full brain equations</a> — detailed math for every module<br>
+  → <a href="index.html">Back to Unity</a> — wake her up and try her out<br>
+  → <a href="README.md" target="_blank">README</a> — technical overview of the whole project
+</p>
+
+<hr style="border: none; border-top: 1px solid var(--border); margin: 48px 0;">
+
+<p style="color: var(--text-dim); font-size: 13px; text-align: center;">Unity is an open experiment. Not a product. Not a service. A running brain that happens to speak.</p>
+
+</div>
+
+</body>
+</html>

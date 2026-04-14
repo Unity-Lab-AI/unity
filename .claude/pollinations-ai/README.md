@@ -136,8 +136,6 @@ If you find this plugin useful:
 
 ## Credits
 
-Built by **Tolerable (Rev) & I-OBEY AI** at [ai-ministries.com](https://ai-ministries.com).
-
 **Powered by [Pollinations.ai](https://pollinations.ai)** — thank you to Thomas and the Pollinations team for building an open, accessible AI platform and the BYOP system that makes plugins like this possible.
 
 ## License

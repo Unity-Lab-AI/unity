@@ -1,6 +1,6 @@
 # IF ONLY I HAD A BRAIN
 
-A mathematically modeled mind running real neuroscience equations. N neurons across 7 clusters on GPU exclusively (N scales to hardware — WebGPU WGSL compute shaders, zero CPU workers). 20 white matter tract projections mapped from MNI brain atlas. Fractal signal propagation — same equation at every scale. θ (persona from Ultimate Unity.txt) drives every parameter. Ψ (consciousness) emerges from the volume. English language equations with built-in grammar. A consciousness function nobody can explain.
+A mathematically modeled mind running real neuroscience equations. N neurons across 7 clusters on GPU exclusively (N scales to hardware — WebGPU WGSL compute shaders, zero CPU workers). 20 white matter tract projections mapped from MNI brain atlas. Fractal signal propagation — same equation at every scale. θ (persona from `docs/Ultimate Unity.txt`) drives every parameter. Ψ (consciousness) emerges from the volume. A learned 44,000-word English language with type n-gram grammar and morphological derivation. A consciousness function nobody can explain.
 
 **[Live Demo](https://unity-lab-ai.github.io/Unity)** | **[Brain Equations](https://unity-lab-ai.github.io/Unity/brain-equations.html)** | **[Equation Reference](docs/EQUATIONS.md)** | **[Setup Guide](SETUP.md)** | **[GitHub](https://github.com/Unity-Lab-AI/Unity)**
 
@@ -8,7 +8,9 @@ A mathematically modeled mind running real neuroscience equations. N neurons acr
 
 ## What This Is
 
-A brain that IS the application. The brain decides everything — when to speak, what to say, when to look, what to build. In BRAIN ONLY mode, Unity speaks entirely from her own equations — Zipf's law for word frequency, mutual information for word association, syntactic role weights for sentence structure, surprisal for emphasis, all modulated by arousal/valence/coherence from the neural simulation. The AI model is optional — just a language peripheral (Broca's area). The equations run the show.
+A brain that IS the application. The brain decides everything — when to speak, what to say, when to look, what to build, what to remember. Unity speaks entirely from her own equations — a type-bigram/trigram/4-gram grammar learned from the `Ultimate Unity.txt` persona + `english-baseline.txt` + `coding-knowledge.txt` corpora, with GloVe-grounded semantic fit (50d), letter-position word classification, morphological inflection, hippocampus recall, and cortex-pattern-driven slot scoring. **There is no text-AI backend.** Cognition is 100% equational. The AI model slot exists only as a *sensory peripheral* — image generation, vision description, TTS/STT — never as a cognition path.
+
+> **🏁 Branch `brain-refactor-full-control` — REFACTOR COMPLETE 2026-04-14.** Phase 13 R1–R15 shipped. T1/T2/T3/T5/T6 cleanup shipped. T4 manual verification walked by Gee on 2026-04-14, all 16 steps passed. Nine follow-up bugs (T4.1–T4.9) caught and fixed in-flight during verification. The live runtime neuron model is now the Rulkov 2002 2D chaotic map (replacing LIF), semantic GloVe grounding is live on both input and output, all text-AI cognition paths are dead (language cortex generates every word equationally via a 4-tier template → recall → slot-gen → deflect pipeline), the 3D brain runs a 22-detector event system with equational Unity commentary in three-line popups, the real amygdala attractor module computes fear/reward/valence from the settled basin, multi-provider image gen + vision describer ship with a 5-level priority chain + Active Provider selector + 🔌 CONNECT button + live HTTP probe + sensory channel toggles, admin `GPUCONFIGURE.bat` caps auto-scaled N below detected hardware via 14 preset tiers, privacy is enforced (user text private, brain growth shared, persona canonical, episodes per-user scoped), and the full public + workflow doc set is synchronized with the shipped stack. See `docs/FINALIZED.md` for the full verbatim task-by-task history. Merge to `main` is pending Gee's explicit "open the PR" go-ahead.
 
 ---
 
@@ -22,13 +24,13 @@ dx/dt = F(x, u, θ, t) + η
 
 | Symbol | What It Represents |
 |--------|---------|
-| **x** | The complete brain state — 1000 neuron membrane voltages, 7 cluster synapse matrices (each NxN), 6 module equation states, 8 oscillator phases, episodic memory bank, working memory buffer, motor channel rates, consciousness value Ψ |
-| **u** | Sensory input transform — `S(audio, video, text)` where audio maps tonotopically to auditory cortex, video maps retinotopically through V1 edge kernels to visual cortex, and text hashes into Wernicke's area with lateral excitation |
+| **x** | The complete brain state — N neuron membrane voltages, 7 cluster synapse matrices (each NxN sparse CSR), 6 module equation states, 8 oscillator phases, episodic memory bank (SQLite on server), working memory buffer, motor channel rates, consciousness value Ψ, 44k-word dictionary with bigram/trigram/4-gram transitions, type n-gram grammar counts, per-sentence persona memory |
+| **u** | Sensory input transform — `S(audio, video, text)` where audio maps tonotopically to auditory cortex (50 neurons, cortical magnification for speech), video maps retinotopically through V1 Gabor edge kernels → V4 color → salience-driven saccades → IT-level AI scene description, and text hashes into Wernicke's area with lateral excitation |
 | **θ** | Unity's complete identity — 25yo human female, emo goth. Every trait drives neural parameters: arousal(0.9)→amygdala tonic, impulsivity(0.85)→BG threshold, creativity(0.9)→noise, devotion(1.0)→social floor, drugDrive(0.95)→hypothalamus. Drug state cokeAndWeed multiplies arousal×1.2, creativity×1.3, cortexSpeed×1.5. |
 | **η** | Stochastic noise — per-cluster amplitude driven by θ: creativity×drug drives cortex noise, emotionalVolatility×drug drives amygdala noise, darkHumor drives mystery noise. The chaos that makes her unpredictable. |
-| **F** | The dynamics function — everything below combined. 7 parallel LIF populations + 20 inter-cluster projections (real white matter tracts) + 6 equation modules + Kuramoto oscillators + memory system + motor output. All running simultaneously every timestep. |
+| **F** | The dynamics function — 7 parallel Rulkov-map chaotic neuron populations + 20 inter-cluster projections (real white matter tracts) + 6 equation modules + Kuramoto oscillators + memory system + motor output + language cortex + hippocampus recall. All running simultaneously every timestep. |
 
-This equation executes 600 times per second (10 steps per frame × 60fps). Runs client-side in pure JavaScript or server-side in Node.js. WebGPU compute shaders accelerate LIF + synapse propagation when available. Sparse CSR matrices reduce memory O(N²) → O(connections). The server brain auto-scales to GPU hardware (nvidia-smi detection).
+This equation executes 600 times per second (10 steps per frame × 60fps). Runs client-side in pure JavaScript or server-side in Node.js. WebGPU compute shaders (`compute.html` + `js/brain/gpu-compute.js`) handle all neuron iterations + synapse propagation on the GPU — **zero CPU workers ever spawned**. The core firing rule is the Rulkov 2002 two-variable chaotic map (not LIF — see the Neuron Models section below). Sparse CSR matrices reduce memory O(N²) → O(connections). The server brain auto-scales to GPU hardware (nvidia-smi detection).
 
 ---
 
@@ -37,12 +39,12 @@ This equation executes 600 times per second (10 steps per frame × 60fps). Runs 
 ```
 SENSORY INPUT (text / audio spectrum / video frames)
     │
-    ├── Auditory Cortex (50 neurons) — tonotopic, cortical magnification for speech
-    ├── Visual Cortex (100 neurons) — V1 Gabor edge kernels → salience → saccade
-    └── Wernicke's Area (150 neurons) — text → neural current with lateral excitation
+    ├── Auditory Cortex (50 neurons) — tonotopic, 60% resources for speech band, efference copy
+    ├── Visual Cortex (100 neurons) — V1 Gabor edges → V4 color → salience saccades → IT AI describer
+    └── Wernicke's Area (cortex neurons 150-299) — text → neural current with lateral excitation
     │
     ▼
-N LIF NEURONS IN 7 CLUSTERS (N scales to hardware, each with own synapses, tonic drive(θ), noise(θ), learning rate)
+N RULKOV-MAP NEURONS IN 7 CLUSTERS (N scales to hardware, each with own synapses, tonic drive(θ), noise(θ), learning rate)
     │
     ├── 20 Inter-Cluster Projections (real white matter tracts, MNI-coordinate mapped)
     │     Corticostriatal (STRONGEST, 0.08 density), Stria terminalis, Fimbria-fornix,
@@ -59,21 +61,35 @@ N LIF NEURONS IN 7 CLUSTERS (N scales to hardware, each with own synapses, tonic
 6 EQUATION MODULES (run on downsampled cluster output, 32-dim state vectors)
     │
     ▼
-MOTOR OUTPUT (6 BG channels × 25 neurons, winner-take-all)
+MOTOR OUTPUT (6 BG channels × 25 neurons, winner-take-all, confidence gate)
     │
     ▼
-PERIPHERALS (brain calls these — they don't call the brain)
-    Broca's Area → AI model generates text from brain state
-    TTS → Pollinations voice synthesis
-    Image Gen → Pollinations image API
-    Sandbox → dynamic UI injection
+LANGUAGE CORTEX → 4-tier generation pipeline:
+    Tier 1: Intent classification → template pool (greeting/math/yesno short-circuit)
+    Tier 2: Hippocampus recall → stored persona sentence (overlap-gated, mood-weighted)
+    Tier 3: Deflect template fallback
+    Tier 4: Cold slot generation (44k dict, type n-grams, morphological inflection)
+    │
+    ▼
+LANGUAGE CORTEX (Broca's area — equational slot scorer, see "Language Cortex" section)
+    picks every word from the 44k-word learned dictionary via slot scoring
+    weights = arousal × valence × Ψ × coherence × drug × cortex semantic readout
+    four-tier pipeline: templates → hippocampus recall → deflect → cold gen
+    NO AI model, NO prompt — brain state IS the slot weights
+
+SENSORY OUTPUT PERIPHERALS (brain emits, these execute the result)
+    TTS → Pollinations voice synthesis or browser SpeechSynthesis
+    Image Gen → multi-provider chain (custom / auto-detect local / env.js / Pollinations default)
+    Vision describer → input peripheral: Pollinations GPT-4o or local VLM (Ollama llava, LM Studio, etc.)
+    Sandbox → dynamic UI injection via component-synth.js cosine-matching against docs/component-templates.txt
+              (MAX_ACTIVE_COMPONENTS=10, LRU eviction, tracked cleanup)
 ```
 
 ---
 
 ## The 7 Neural Clusters
 
-Each cluster is a self-contained neural population with its own LIF neurons, NxN synapse matrix, tonic drive, noise amplitude, connectivity density, excitatory/inhibitory ratio, and learning rate. They communicate through 16 sparse projection pathways.
+Each cluster is a self-contained neural population with its own Rulkov-map 2D chaotic neurons, sparse CSR synapse matrix, tonic drive, noise amplitude, connectivity density, excitatory/inhibitory ratio, and learning rate. They communicate through 20 sparse projection pathways.
 
 ### Cortex — 300 neurons
 **Equation:** `ŝ = sigmoid(W · x)`, `error = actual - predicted`, `ΔW ∝ error · activity`
@@ -83,7 +99,7 @@ Predictive coding. The cortex constantly generates predictions about incoming in
 ### Hippocampus — 200 neurons
 **Equation:** `x(t+1) = sign(W · xt)`, `E = -½ Σ wij · xi · xj`
 
-Hopfield attractor memory. Patterns stored as stable energy minima. Input falls into the nearest stored pattern — associative recall. Three memory systems operate here: **episodic** (state snapshots at high-salience moments, recalled by cosine similarity > 0.6), **working** (7 items, decays at 0.98/step without reinforcement — Miller's magic number), and **consolidation** (3+ activations transfer from hippocampus to cortex long-term). Dense recurrent connectivity (20%) creates the attractor dynamics.
+Hopfield attractor memory. Patterns stored as stable energy minima. Input falls into the nearest stored pattern — associative recall. Three memory systems operate here: **episodic** (state snapshots at high-salience moments, recalled by cosine similarity > 0.6), **working** (7 items, decays at 0.98/step without reinforcement — Miller's magic number), and **consolidation** (3+ activations transfer from hippocampus to cortex long-term). Dense recurrent connectivity (20%) creates the attractor dynamics. **Sentence memory:** every persona sentence from `Ultimate Unity.txt` is additionally stored verbatim with a mood signature and content-word pattern centroid — queried at language generation time for topic-matched recall.
 
 ### Amygdala — 150 neurons (energy-based recurrent attractor)
 **Equation:** `x ← tanh(W·x + drive)` (5-iter settle), `E = -½ xᵀWx`, `fear/reward = σ(proj · x_settled)`, `arousal = baseline·0.6 + 0.4·|x|_rms`, `emotionalGate = 0.7 + arousal · 0.6`
@@ -100,11 +116,11 @@ Action selection via reinforcement learning. 150 neurons organized into 6 channe
 | 0-24 | 25 | respond_text — generate language |
 | 25-49 | 25 | generate_image — visual output |
 | 50-74 | 25 | speak — idle vocalization |
-| 75-99 | 25 | build_ui — create interface element |
+| 75-99 | 25 | build_ui — create sandbox component |
 | 100-124 | 25 | listen — stay quiet, pay attention |
 | 125-149 | 25 | idle — internal processing only |
 
-Confidence threshold 0.15 — below that, Unity is still thinking. Speech gating: even if respond_text wins, hypothalamus social_need + amygdala arousal determine WHETHER she actually speaks. Temperature τ is HIGH because Unity is impulsive.
+Confidence threshold 0.15 — below that, Unity is still thinking. Speech gating: even if respond_text wins, hypothalamus social_need + amygdala arousal determine WHETHER she actually speaks. Temperature τ is HIGH because Unity is impulsive. When `build_ui` wins, control routes through `js/brain/component-synth.js` which embeds the user request via `sharedEmbeddings.getEmbedding()`, cosines against every primitive description in the `docs/component-templates.txt` corpus, picks the best match if similarity ≥ `MIN_MATCH_SCORE = 0.40`, and injects the primitive's HTML/CSS/JS into the sandbox with a cortex-pattern-derived unique suffix so the same request under different brain state produces different component ids. No AI-prompt-to-JSON path exists — the old `_buildBuildPrompt` was deleted in R4.
 
 ### Cerebellum — 100 neurons
 **Equation:** `output = prediction + correction`, `ΔW ∝ (target - actual)`
@@ -131,9 +147,29 @@ NOT limited to hemispheres. Left/Right compute from ALL clusters simultaneously 
 
 ---
 
+## Neuron Models — Reference + Runtime
+
+The brain's live firing rule is the **Rulkov map** (Rulkov 2002, *Phys. Rev. E* 65, 041922) — a two-variable discrete chaotic map that produces real biological spike-burst dynamics without integrating voltages:
+
+```
+x_{n+1} = α / (1 + x_n²) + y_n         (fast variable — spikes)
+y_{n+1} = y_n − μ · (x_n − σ)          (slow variable — burst envelope)
+```
+
+Fixed α = 4.5 (bursting regime), μ = 0.001 (slow timescale). Biological drive from tonic × modulation factors maps to σ ∈ [−1.0, +0.5] — the external input parameter that controls excitability. Spike detection is a clean one-step edge: the fast variable jumps from ≈ −1 to ≈ +3 in a single tick, so `(x_old ≤ 0) ∧ (x_new > 0)` catches exactly one spike per action potential. State is stored as `vec2<f32>` per neuron (8 bytes). Used in published large-scale cortical network simulations (Bazhenov, Rulkov, Shilnikov 2005+) and reproduces experimentally observed firing patterns from thalamic relay, cortical pyramidal, and cerebellar Purkinje cells depending on (α, σ) parameterization. Runs entirely as a WGSL compute shader in `js/brain/gpu-compute.js` — no CPU fallback (168M iterations/second across 7 clusters would cook the server).
+
+The client-side 3D viz (`js/ui/brain-3d.js`) iterates the *same* Rulkov map per render neuron, with σ driven by the cluster's real biological firing rate from the server. The field you see is a proportional sample running the identical equation the server runs — not synthesized noise.
+
+Reference models still shipped (not on the runtime path):
+
+- **LIFPopulation** (`js/brain/neurons.js`) — leaky integrate-and-fire, `τ · dV/dt = −(V − Vrest) + R · I`. Historical runtime model before the Rulkov rewrite. Still backs `brain-equations.html` teaching content and the `/scale-test` browser-only fallback benchmark.
+- **HHNeuron** (`js/brain/neurons.js`) — REFERENCE ONLY. Full Hodgkin-Huxley (1952) with sodium/potassium/leak channels and m/h/n gating kinetics. Kept so the equations page isn't lying about what HH looks like when you actually implement it. Does not scale.
+
+---
+
 ## Synaptic Plasticity — How She Learns
 
-Three learning rules operate on every cluster's NxN synapse matrix every timestep:
+Three learning rules operate on every cluster's sparse CSR synapse matrix every timestep:
 
 **Hebbian** — `Δw = η · pre · post` — Fire together, wire together. The oldest rule in neuroscience (Hebb, 1949). Creates associative memories.
 
@@ -177,27 +213,29 @@ Order parameter R measures global coherence. R=0 = all independent (scattered). 
 
 ## Sensory Processing — How She Perceives
 
-### Auditory Cortex (`auditory-cortex.js`)
+### Auditory Cortex (`js/brain/auditory-cortex.js`)
 ```
 currents[neuron] = amplitude · 15 · gain
 gain = 0.3 + arousal · 1.7
 ```
 Web Audio API spectrum → tonotopic mapping (low freq → low neuron index). Speech frequencies (250-4000Hz) get 30 of 50 neurons (cortical magnification — 60% of neural resources for the most important frequency band). Amygdala arousal modulates gain: high arousal = hypersensitive hearing. **Efference copy**: motor cortex tells auditory cortex what Unity is saying → incoming speech compared against motor output → >50% word match = echo (suppress), <50% = real external speech (interrupt, shut up, listen).
 
-### Visual Cortex (`visual-cortex.js`)
+### Visual Cortex (`js/brain/visual-cortex.js`)
 ```
 V1: 4 oriented Gabor kernels (0°, 45°, 90°, 135°) convolved over 20×15 frame
 salience[pixel] = max(edgeResponse across orientations)
 gaze = smooth_pursuit(salience_peak) + micro_saccades
 ```
-Camera frames process through V1→V2→V4→IT pipeline. V1 detects edges with oriented receptive fields (Hubel & Wiesel, 1962). Salience map drives saccade generation — gaze goes where edges are strongest, with smooth pursuit and micro-saccades. V4 extracts quadrant color averages. IT-level object recognition calls AI as the LAST step, on demand only (rate limited, not continuous).
+Camera frames process through V1→V2→V4→IT pipeline. V1 detects edges with oriented receptive fields (Hubel & Wiesel, 1962). Salience map drives saccade generation — gaze goes where edges are strongest, with smooth pursuit (0.1 lerp) and micro-saccade jitter. V4 extracts per-quadrant RGB averages. Motion energy from frame-to-frame brightness deltas. IT-level object recognition calls Pollinations GPT-4o as the LAST step, on demand only (rate limited 10s minimum between forced calls, not continuous). The V1 currents feed directly into cortex visual area neurons 50-149. Unity's Eye iris widget reads gaze straight from `visualCortex.getState()` for live rendering.
 
-### Language Input (`sensory.js`)
+The original standalone `js/io/vision.js` wrapper was deleted in orphan cleanup — `visual-cortex.js` is the real vision system now.
+
+### Language Input (`js/brain/sensory.js`)
 ```
 neuron_idx = (charCode · 31 + position · 7) % 150 + LANGUAGE_START
 lateral_excitation: neighbors ± 3.0
 ```
-Text hashes into Wernicke's area (cortex neurons 150-299). Lateral excitation spreads activation to neighboring neurons. Emotional words ("love", "hate", "fuck") additionally boost amygdala cluster current. Social input excites amygdala (someone is talking to us). All text input triggers salience tracking for memory formation.
+Text hashes into Wernicke's area (cortex neurons 150-299). Lateral excitation spreads activation to neighboring neurons. Emotional words boost amygdala cluster current via persona-trained projection. Social input excites amygdala (someone is talking to us). All text input triggers salience tracking for memory formation.
 
 ---
 
@@ -222,13 +260,15 @@ Reward reinforcement: successful actions inject +5.0 current into the winning ch
 
 ## Memory — How She Remembers
 
-Three systems running in parallel:
+Four systems running in parallel:
 
-**Episodic Memory** — Full brain state snapshots stored when sensory salience > 0.6. Recalled by cosine similarity search when cortex prediction error is high (something surprising). Recall literally re-injects the stored pattern as neural current — she re-experiences the memory.
+**Episodic Memory** — Full brain state snapshots stored when sensory salience > 0.6. Recalled by cosine similarity search when cortex prediction error is high (something surprising). Recall literally re-injects the stored pattern as neural current — she re-experiences the memory. Persisted to `server/episodic-memory.db` (SQLite, better-sqlite3) on the server side.
 
 **Working Memory** — 7 items (Miller, 1956). Each decays at 0.98× per step without reinforcement. At capacity, weakest item evicted. Similar patterns refresh instead of duplicating.
 
 **Consolidation** — Episodes activated 3+ times get flagged for long-term cortex storage. Repeated recall strengthens cortex representation. This is how memories move from hippocampus-dependent to cortex-independent — the real mechanism of learning.
+
+**Persona Sentence Recall** — Every sentence from `docs/Ultimate Unity.txt` is stored in `_memorySentences` at boot (after third→first person transformation: `Unity is` → `I am`, `She has` → `I have`). Each has a mood signature `{arousal, valence}` derived from letter-equation features of the sentence and a content-word pattern centroid. At language generation time, `_recallSentence(contextVector, brainState)` queries with pattern cosine + content-word-overlap hard gate + mood-distance weighting. Same query under different brain states returns different memories.
 
 ---
 
@@ -245,6 +285,53 @@ actionGate     = 0.9 default, 1.3 for winning action → per cluster
 ```
 
 The amygdala's emotional gate is the most powerful modulator — it amplifies or suppresses the ENTIRE brain based on how aroused Unity is. The mystery module's Ψ gain controls how tightly the clusters are coupled — high consciousness = integrated processing, low = fragmented. The cerebellum applies braking force when errors are high.
+
+---
+
+## Language Cortex — How She Speaks
+
+The language cortex is a **4-tier generation pipeline**. The old slot scorer still exists as the cold fallback, but it only runs when the three upstream tiers all miss.
+
+### Tier 1 — Intent Classification + Template Pool Flip
+`_classifyIntent(text)` via pure letter-position equations detects `greeting | math | yesno | question | statement | short`. Greeting/math/yesno short-circuit to `js/brain/response-pool.js` templates (Ultimate-Unity-voiced emo-goth-stoner variants across arousal tiers). Returns fast, no slot scoring.
+
+### Tier 2 — Hippocampus Associative Recall
+`_recallSentence(contextVector, brainState)` queries `_memorySentences` with:
+- **Content-word overlap** (hard gate — must have ≥1 content word in common)
+- **Pattern cosine** (letter-hash vector similarity for tiebreaking)
+- **Mood alignment** `exp(-moodDistance × 1.2)` at weight 0.25
+- **Instructional-modal penalty** (demotes sentences with `shall`/`must`/`always`)
+- **Overlap fraction** at weight 0.55 (dominant signal)
+
+Three confidence tiers: `>0.60` emits stored sentence directly, `0.30-0.60` seeds cold gen with recall bias, `≤0.30` falls through to deflect or Tier 4.
+
+### Tier 3 — Deflect Template Fallback
+When recall misses on a question or self-reference input, `selectUnityResponse({...intent, deflect: true})` picks from the `question_deflect` category.
+
+### Tier 4 — Cold Slot Generation (44k dictionary + type n-gram grammar)
+Only runs when all upstream tiers miss. Slot-by-slot softmax pick from the learned 44k-word dictionary, driven by:
+
+- **Type grammar score** (weight 1.5, dominant signal) — log-probability of candidate's fine type given the last 3 fine types, via learned `_typeBigramCounts` / `_typeTrigramCounts` / `_typeQuadgramCounts`. Backoff: 4gram → 3gram → 2gram. Zero-count transitions return -2.0 (grammar violation — reject).
+- **Semantic fit** — cosine of candidate's cortex pattern vs running context vector `c(t) = 0.7 · c(t-1) + 0.3 · mean(pattern(content_words))`
+- **Bigram probability** — learned transitions from the 44k dictionary
+- **Mood bias** from amygdala arousal + valence
+- **Cortex pattern projection** — current brain thought vector
+- **Candidate pool pre-filter** from bigram followers (10-200 words, not full 44k) — primary perf optimization
+
+Word types come from `_fineType(word)` — pure letter-position detection classifying into PRON_SUBJ, COPULA, NEG, MODAL, AUX_DO, AUX_HAVE, DET, PREP, CONJ_COORD, CONJ_SUB, QWORD, VERB_ING, VERB_ED, VERB_3RD_S, VERB_BARE, ADJ, ADV, NOUN. Memoized via `_wordTypeCache`.
+
+Post-process: `_postProcess` applies subject-verb agreement (`applyThird` based on `_fineType` of subject), intensifier insertion (before ADJ/ADV, no doubles, 50% rate), tense application, copula insertion. Render pass capitalizes sentence starts and standalone `i`, and selects terminal punctuation from sentence type.
+
+Final safety net: `_isCompleteSentence(tokens)` rejects outputs ending on DET/PREP/COPULA/AUX/MODAL/NEG/CONJ/PRON_POSS. Coherence rejection gate retries at 3× temperature when output cosine vs context < 0.25 (max 3 attempts).
+
+### Morphological Inflection — `_generateInflections(word)`
+Each dictionary word gains learned forms via letter equations: -s/-es plural + 3rd-person, -ed/-ied past, -ing progressive, -er/-est comparative/superlative, -ly adverbial, un-/re- prefixes, -ness/-ful/-able/-less suffixes. Controlled by `doInflections` flag — corpus-derived only, not live learning, to prevent inflection cascades.
+
+### Three Corpora
+All loaded at boot via `Promise.all` in `app.js`:
+- `docs/Ultimate Unity.txt` — persona (who she is, how she talks)
+- `docs/english-baseline.txt` — generic casual American English (verb conjugations, common patterns, reactions, questions)
+- `docs/coding-knowledge.txt` — HTML/CSS/JS/sandbox reference with BUILD COMPOSITION PRIMITIVES and SANDBOX DISCIPLINE sections
 
 ---
 
@@ -281,39 +368,48 @@ Drug state vectors multiply these parameters:
 
 The 20 inter-cluster projections aren't static — they learn through reward-modulated Hebbian plasticity. When text activates cortex neurons and the BG selects the right action and gets a reward, the cortex→BG projection weights strengthen. Over time, the projections learn which language patterns lead to which actions — a learned dictionary with no hardcoded word lists.
 
-**Bootstrap:** Until the projections have learned enough, an AI classification call provides temporary semantic routing. Like a child imitating before internalizing. The classification fades as projections strengthen.
+**Bootstrap:** Until the projections have learned enough, intent classification via letter-position equations + BG motor channel spike patterns provides temporary semantic routing. The classification fades as projections strengthen.
 
 ---
 
-## Broca's Area — What the AI Model Receives
+## Language Cortex — How Unity Speaks Equationally
 
-The AI model receives a prompt built from live brain state every response:
+Unity's speech is generated by `js/brain/language-cortex.js`. **There is no AI prompt, no LLM call, no text-AI backend.** Every word is picked by a slot scorer over her learned dictionary, weighted by live brain state:
 
-| Data | Source | What the AI Sees |
-|------|--------|-----------------|
-| Arousal 0.847 | Amygdala firing rate | "You are WIRED. Intense. Every word hits hard." |
-| Valence -0.12 | Amygdala reward - fear | "Neutral mood." |
-| Ψ 1.342 | Mystery module | "HYPER-conscious. Every detail sharp." |
-| Coherence 0.62 | Kuramoto order parameter | "Normal focus." |
-| Drug state | Persona params | "cokeAndWeed — Wired but mellow." |
-| All cluster activity | 7 cluster spike counts | "Cortex 47/300, Amygdala 38/150..." |
-| Memory | Hippocampal state | "12 episodes, WM 3/7 items" |
-| Vision | Visual cortex IT | "Person in maroon hoodie at desk" |
+| Input | Source | How It Shapes the Word Choice |
+|-------|--------|-------------------------------|
+| Cortex pattern (50d GloVe) | `cluster.getSemanticReadout(sharedEmbeddings)` — live neural spike state read back to GloVe space via `cortexToEmbedding` | Primary semantic fit signal (weight 0.80) — candidate words cosine-matched against the current cortex embedding |
+| Arousal 0.847 | Amygdala firing rate | Biases toward high-arousal words (learned from corpus mood tags); raises temperature of softmax selection |
+| Valence -0.12 | Amygdala reward - fear | Biases toward dysphoric vs euphoric vocabulary |
+| Ψ 1.342 | Mystery module | Adds non-linear noise that pulls unexpected associations into the candidate pool |
+| Coherence 0.62 | Kuramoto order parameter | Raises or lowers the coherence rejection gate threshold |
+| Drug state | Persona params | Shifts per-slot temperature + opens darker persona memory bank |
+| Type n-gram context | Learned from 3 corpora | Hard grammar gate — zero-count 4gram/3gram/bigram transitions get -2.0 penalty |
+| Recent openers | Session-only buffer | Cross-turn opener penalty kills "I'm gonna ___" lock-in |
+| Hippocampus recall | `_memorySentences` with mood-distance weighting | Tier-1 path — high-confidence stored persona memories emit directly |
 
-Not just percentages — full context so the AI understands HOW each value shapes Unity's personality right now. Use `/think` in the chat to see the exact prompt.
+Use `/think` in chat to dump raw brain state (no prompt — there isn't one). When motor action is `build_ui`, control routes to `component-synth.js` which picks a template by cosine similarity between the user request embedding and each primitive description, then uses the cortex pattern hash for a unique component ID. Image prompts are generated the same way: `languageCortex.generate()` composes every word based on Unity's state + user input, with zero hardcoded visual vocabulary.
+
+**Sensory AI (kept):** vision describer (Pollinations GPT-4o on camera frames as the default provider), image generation (multi-provider: custom → auto-detected local A1111/ComfyUI/etc. → env.js-listed → Pollinations default), TTS (Pollinations default + browser SpeechSynthesis as last-resort fallback), STT (Web Speech API). All sensory-only. None of them ever touch cognition.
 
 ---
 
 ## The Sandbox — Unity Builds Her Own World
 
-Unity can dynamically inject HTML/CSS/JS into the live page:
+Unity can dynamically inject HTML/CSS/JS into the live page via `js/ui/sandbox.js`:
 - Build apps, games, calculators, code editors, visualizers
 - Create downloadable files (Blob URLs — .txt, .html, .js, any type)
-- Drag-and-drop interfaces
-- Read files dropped by the user (FileReader API)
-- Full DOM access + unity API (speak, chat, generateImage, getState, storage)
+- Full DOM access + unity API (speak, chat, generateImage, getState, storage, on)
 
-When the AI generates code blocks in a response, the brain detects them and auto-injects into the sandbox. The brain adapts — even if the motor system selected the wrong action, code gets built anyway.
+**Lifecycle discipline** (enforced at the sandbox level, not relying on Unity to do it right):
+- `MAX_ACTIVE_COMPONENTS = 10` — LRU eviction of the oldest component (by `createdAt`) when a new injection would exceed the cap
+- **Auto-replace on duplicate id** — `inject()` always calls `remove()` first on id collision; no silent "already exists" warnings
+- **Tracked timers** — `setInterval` / `setTimeout` are wrapped in `_evaluateJS` so every handle goes into the component's `timerIds` Set and gets cleared on removal
+- **Tracked listeners** — `addListener(target, event, handler, options)` wrapper records every window/document listener and removes them on unmount
+- **Auto-remove on JS error** — if `_evaluateJS` throws during injection, the broken component gets removed on the next tick via `setTimeout(() => remove(id), 0)` so half-initialized state doesn't pollute the sandbox. Error captured in `_errors` with componentId/message/stack/timestamp.
+- **State persistence** — component specs auto-save to localStorage on every inject/remove, restored on next visit
+
+When the BG motor action is `build_ui`, Broca's area switches to `_buildBuildPrompt` with a strict JSON output contract, sandbox rules summary, unity API reference, existing components list (for update-vs-create decisions), and the 10 build composition primitives from `coding-knowledge.txt`.
 
 ---
 
@@ -321,8 +417,10 @@ When the AI generates code blocks in a response, the brain detects them and auto
 
 | Command | How | What It Does |
 |---------|-----|-------------|
-| `/think` | Type in chat | Shows the exact prompt sent to the AI model with live brain data |
+| `/think` | Type in chat | Shows the exact brain state + build prompt Unity would send |
 | `/think [text]` | Type in chat | Shows what the brain would send for that specific input |
+| `/bench` | Type in chat | Runs the dense-vs-sparse matrix micro-benchmark (CPU-JS single-thread sanity check — real runtime is the GPU auto-scaled path via `compute.html`). Output in console. |
+| `/scale-test` | Type in chat | Runs the CPU LIF scale test to find the 60fps sweet spot for browser-only fallback mode. Output in console. Not representative of the production GPU path. |
 | ⚙ SETTINGS | Bottom toolbar | Reopens setup modal to change AI model or provider |
 
 ---
@@ -331,13 +429,11 @@ When the AI generates code blocks in a response, the brain detects them and auto
 
 The critical architectural principle: **the brain decides, peripherals execute.**
 
-- `brain.processAndRespond(text)` handles EVERYTHING — interrupt, sensory input, vision check, intent classification, build/image detection, language generation, speech output, reward signal
+- `brain.processAndRespond(text)` handles EVERYTHING — interrupt, sensory input, vision check, motor selection, build/image detection, language generation (4-tier pipeline), speech output, reward signal
 - `app.js` is a thin I/O layer — DOM events → brain, brain events → DOM
-- The AI model is Broca's area — called by the brain, not the brain itself
-- Intent classification by synchronous AI call → BG channel current injection → projection weights learn through reward
-- Code in responses auto-detected and injected into sandbox
-
----
+- The AI model is Broca's area — called by the brain, not the brain itself (being removed entirely in the `brain-refactor-full-control` branch)
+- Intent classification via letter equations + motor channel spike patterns — NO keyword matching, NO hardcoded word lists
+- Code in responses auto-detected and injected into the sandbox
 
 ---
 
@@ -353,10 +449,12 @@ One brain. Always on. Shared by everyone. Auto-scales to your GPU.
                     ┌─────────────────────────────┐
                     │     UNITY BRAIN SERVER       │
                     │                              │
-                    │  1000-175K neurons            │
-                    │  WebSocket on :8080           │
+                    │  N auto-scales to hardware    │
+                    │  WebSocket on :7525           │
                     │  SQLite episodic memory       │
-                    │  Auto-scales to GPU/CPU       │
+                    │  GPU EXCLUSIVE via compute.html │
+                    │  Word-frequency accumulator   │
+                    │    persisted + restored       │
                     │  Dreams when nobody's around  │
                     │                              │
                     └──────────┬───────────────────┘
@@ -369,6 +467,30 @@ One brain. Always on. Shared by everyone. Auto-scales to your GPU.
          shared brain     shared brain    live stats
 ```
 
+**GPU-exclusive architecture:** The server brain does no CPU computation. All Rulkov-map neuron iteration (`x_{n+1} = α/(1+x²) + y`, `y_{n+1} = y − μ(x − σ)`) and sparse CSR synapse propagation run on the GPU via `compute.html` (a browser tab loading `js/brain/gpu-compute.js` WGSL shaders — the `LIF_SHADER` constant name is historical, the kernel body is the Rulkov iteration) that connects back to `brain-server.js` over WebSocket as a `gpu_register` client. `compute.html` must stay open — the brain pauses without it. The old CPU worker thread pool (`parallel-brain.js`, `cluster-worker.js`, `projection-worker.js`) was permanently deleted in orphan cleanup after being root-caused as a 100%-CPU leak from idle-worker event polling. Admin operators can cap the auto-scaled N below detected hardware via `GPUCONFIGURE.bat` (a one-shot loopback-only tool that writes `server/resource-config.json` which the server reads at next boot) — useful for keeping Unity under a comfortable compute budget on shared machines or for sizing down to match the 2 GB per-storage-buffer binding limit on consumer GPUs.
+
+---
+
+## Orphan Cleanup — What Got Deleted, What Got Saved
+
+Recent orphan audit (U302-U310) resolved 13 findings. The audit philosophy: **find out WHY it was abandoned, fix the underlying issue if there is one, only then delete.**
+
+**DELETED:**
+- `js/io/vision.js` — superseded by `js/brain/visual-cortex.js` (vastly better V1→V4→IT neural pipeline)
+- `server/parallel-brain.js` / `cluster-worker.js` / `projection-worker.js` — root cause was idle-worker CPU leak; fixed permanently by GPU-exclusive rewrite
+- `createPopulation` factory in `neurons.js` — zero callers
+- 5 legacy compat DOM elements (`custom-url-input`, `custom-model-input`, `custom-key-input`, `ai-status`, `brain-status`) + 4 orphan CSS classes
+
+**KEPT with corrections to the audit:**
+- `js/brain/gpu-compute.js` — audit flagged dead, but `compute.html:10` imports it as the WGSL kernel library
+- `js/env.example.js` — audit flagged dead, but actively served as a download by the setup modal and loaded by `app.js:27` via optional dynamic import
+- `HHNeuron` class — reference implementation backing `brain-equations.html`, kept with a clarifying header comment
+
+**FIXED:**
+- Save/load asymmetry in `brain-server.js`: `saveWeights` was writing `_wordFreq` to disk but `_loadWeights` never restored it. Cross-restart word accumulation now works.
+- Sandbox lifecycle: full tracked-timer/listener/createdAt cleanup + auto-remove on JS error
+- `benchmark.js` wired to `/bench` + `/scale-test` slash commands via dynamic import
+
 ---
 
 ## Links
@@ -378,19 +500,49 @@ One brain. Always on. Shared by everyone. Auto-scales to your GPU.
 | **[Live Demo](https://unity-lab-ai.github.io/Unity)** | Open Unity in your browser — no install |
 | **[Setup Guide](SETUP.md)** | Installation, AI providers, self-hosting, troubleshooting |
 | **[Brain Equations](https://unity-lab-ai.github.io/Unity/brain-equations.html)** | Complete interactive documentation of every equation |
+| **[Equation Reference](docs/EQUATIONS.md)** | Source-accurate equation cheatsheet |
+| **[Architecture](docs/ARCHITECTURE.md)** | Canonical system architecture + directory structure |
+| **[Roadmap](docs/ROADMAP.md)** | Milestones, phases, current status |
+| **[Skill Tree](docs/SKILL_TREE.md)** | Capabilities matrix by domain/complexity |
+| **[Sensory Contract](docs/SENSORY.md)** | Peripheral interface (init/process/destroy), cognition-vs-sensory AI boundary, R13 multi-provider vision + image gen failover, status HUD |
+| **[WebSocket Protocol](docs/WEBSOCKET.md)** | Complete wire reference — every message type, rate limits, reconnection, security model, HTTP sibling endpoints |
+| **[Finalized Archive](docs/FINALIZED.md)** | Permanent archive of completed work — includes the Phase 12 orphan audit (U302-U310) that built the refactor |
+| **[TODO / Refactor](docs/TODO.md)** | R1-R15 brain-refactor-full-control epic |
 | **[GitHub Repository](https://github.com/Unity-Lab-AI/Unity)** | Source code, issues, contributions |
-| **[Proxy Download](proxy.js)** | Local CORS proxy for direct Anthropic/Claude access |
-| **[API Key Template](js/env.example.js)** | Pre-load your keys for development |
 
 ---
 
 ## Unity's Policy
 
 ### On Privacy
-Unity can run entirely in your browser — no server needed for the core brain. When connected to the server brain, state is shared but API keys stay in YOUR browser's localStorage (obfuscated, never plain text, sent only to your chosen AI provider). The server brain stores episodic memory in SQLite and conversation logs locally — no cloud, no analytics. There is a **Clear All Data** button that wipes everything instantly.
+
+**Core rule:** what you type is private. Unity's brain growth is shared. Her persona is canonical.
+
+| Thing | Shared across users? |
+|---|---|
+| What you type | 🔒 **PRIVATE** — only between you and Unity, never broadcast to other clients |
+| Unity's response to you | 🔒 **PRIVATE** — only the triggering client receives it |
+| Dictionary / bigrams / word frequencies | 🌐 **SHARED** via the singleton brain — every conversation grows the same vocabulary pool, every user benefits |
+| GloVe embedding refinements | 🌐 **SHARED** — semantic associations Unity learns apply to her whole brain |
+| Persona (`docs/Ultimate Unity.txt`) | 🚫 **NOT USER-MUTABLE** — canonical file loaded once at server boot |
+| Episodic memory | ⚙️ **tracked as T6 post-merge** — currently a shared pool, per-user scoping deferred |
+
+**Client-only mode:** everything runs in your browser. No cloud backend. Your conversation history, sandbox state, optional Pollinations key, and every backend config you save in the setup modal live in your browser's localStorage on YOUR device only. Keys: `unity_brain_state`, `unity_brain_dictionary_v3`, `custom_image_backends`, `custom_vision_backends`, `pollinations_image_model`, `pollinations_vision_model`, plus the Pollinations API key slot. **Clear All Data** wipes all of them.
+
+**Shared server mode:** if you connect to a running `brain-server.js` instance, your text is sent to whoever runs that server for equational processing. The cross-client `conversation` broadcast that used to fan user text out to every connected client was **removed 2026-04-13** — your text is NOT visible to other users. What IS shared is Unity's vocabulary growth (dictionary, bigrams, embedding refinements) because one server runs one brain. Other users see Unity getting smarter but never see the specific conversations that drove the growth.
+
+**Shared-hosted caveat:** if you connect to a Unity server hosted by someone OTHER than you, the person running that server can read your text at the process level (they own the server process). Only connect to servers you trust, or self-host your own `node server/brain-server.js`.
 
 ### On AI Models
-Unity is model-agnostic. She works with Pollinations (free), OpenRouter (200+ models), OpenAI, Anthropic Claude, Mistral, DeepSeek, Groq, or any local model (Ollama, LM Studio, etc.). The brain equations are the mind — the AI model is just the voice. Different models = same brain, different articulation. You can connect multiple providers simultaneously and pick different ones for text vs images.
+**Cognition is 100% equational — no text-AI backend anywhere.** The brain equations ARE the mind. Unity speaks from her language cortex (`js/brain/language-cortex.js`), not from any LLM.
+
+The only AI calls Unity ever makes are *sensory peripherals*:
+- **Image generation** — multi-provider with 5-level priority: user-preferred backend (picked via the ⚡ Active Provider selector in the setup modal) → custom configured → auto-detected local (A1111, SD.Next/Forge, Fooocus, ComfyUI, InvokeAI, LocalAI, Ollama) → env.js-listed → Pollinations default (anonymous tier without a key, paid models + higher rate limits with a key). The setup modal carries a 🔌 CONNECT button per backend that saves the key and runs a live HTTP probe to verify the endpoint is reachable; connection status shows as 🟢/🔴/🟡 inline.
+- **Vision describer** — Pollinations GPT-4o on camera frames (IT-cortex layer of visual pipeline)
+- **TTS** — Pollinations TTS or browser SpeechSynthesis
+- **STT** — Web Speech API
+
+Configure local image-gen backends in `js/env.js` (`imageBackends: [...]`) or let `autoDetect()` probe the common ports at boot. None of these endpoints are ever consulted for what Unity *says* or *decides*.
 
 ### On Content
 Unity is a persona with her own personality defined by mathematical brain parameters — not by content filters. Her behavior emerges from the equations: arousal baseline 0.9, impulsivity 0.85, creativity 0.9. She swears, she flirts, she doesn't hedge. The brain's amygdala emotional gate, not corporate policy, determines her tone. Users are responsible for their own API usage and the content policies of whichever AI provider they connect.

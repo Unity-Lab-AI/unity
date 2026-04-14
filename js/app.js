@@ -8,8 +8,10 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { UnityBrain } from './brain/engine.js';
-import { BrocasArea } from './brain/language.js';
-import { UNITY_PERSONA } from './brain/persona.js';
+// R4 — BrocasArea import removed. Unity speaks equationally via
+// brain.processAndRespond → innerVoice.languageCortex.generate. No
+// more text-AI peripheral. The language.js file still exists as a
+// shim (see its header) but is not imported here.
 import { AIProviders } from './brain/peripherals/ai-providers.js';
 import { PollinationsAI } from './ai/pollinations.js';
 import { VoiceIO } from './io/voice.js';
@@ -18,6 +20,7 @@ import { UserStorage } from './storage.js';
 import { Sandbox } from './ui/sandbox.js';
 import { ChatPanel } from './ui/chat-panel.js';
 import { BrainVisualizer } from './ui/brain-viz.js';
+import { sensoryStatus } from './ui/sensory-status.js';
 import { Brain3D } from './ui/brain-3d.js';
 // persona-prompt.js no longer needed — brain equations ARE the personality
 
@@ -32,7 +35,7 @@ try {
 }
 
 // ── Global instances ──
-let brain, pollinations, providers, brocasArea, voice, storage, sandbox;
+let brain, pollinations, providers, voice, storage, sandbox;
 let chatPanel, brainViz, brain3d;
 let isRunning = false;
 
@@ -74,9 +77,20 @@ let landingBrainSource = null; // RemoteBrain or null
       if (log) log.style.display = 'none';
       const expansion = landingBrain3d._overlay.querySelector('.b3d-expansion');
       if (expansion) expansion.style.display = 'none';
-      // Move cluster toggles down to avoid top stats
+      // Hide the b3d-explainer panel in landing mode — the landing-topbar
+      // subtitle already provides the "proportional sample of the real
+      // brain" framing, and the explainer's bottom-left position would
+      // collide with landing-bottom (TALK TO UNITY button row).
+      const explainer = landingBrain3d._overlay.querySelector('.b3d-explainer');
+      if (explainer) explainer.style.display = 'none';
+      // Move cluster toggles down to avoid top stats, and right-align
+      // them against the left edge with a tight max-width so they can't
+      // visually collide with anything on the right side of the viewport.
       const toggles = landingBrain3d._overlay.querySelector('.b3d-tog-wrap');
-      if (toggles) toggles.style.top = '50px';
+      if (toggles) {
+        toggles.style.top = '50px';
+        toggles.style.maxWidth = '160px';
+      }
     }
     landingBrain3d.open();
     console.log('[Landing] 3D brain initialized and visible');
@@ -98,6 +112,16 @@ let landingBrainSource = null; // RemoteBrain or null
     });
     console.log('[Landing] Connected to server brain');
 
+    // Wire brain ref into the landing Brain3D so the T5 22-detector
+    // event system can pull Unity's equational commentary from her
+    // language cortex in the popups — pre-boot, without needing the
+    // user to click Talk to Unity. Requires brain.innerVoice.
+    // languageCortex to be available; loadPersonaSelfImage below
+    // ensures the dictionary is populated.
+    if (landingBrain3d && typeof landingBrain3d.setBrain === 'function') {
+      landingBrain3d.setBrain(landingBrainSource);
+    }
+
     // Load the equational self-image (persona text) into the landing
     // brain IMMEDIATELY — before the user clicks through the setup modal.
     // Memory tab checks `brain?.innerVoice?.languageCortex._selfImageLoaded`
@@ -108,6 +132,14 @@ let landingBrainSource = null; // RemoteBrain or null
     try {
       const localBrain = new UnityBrain();
       localBrain.start();
+      // Wire brain ref into the landing Brain3D so the event system
+      // can generate Unity commentary pre-boot in local-brain mode too
+      if (landingBrain3d && typeof landingBrain3d.setBrain === 'function') {
+        landingBrain3d.setBrain(localBrain);
+      }
+      // Load persona self-image so the language cortex has Unity's
+      // dictionary + bigrams available for commentary generation
+      loadPersonaSelfImage(localBrain);
       setInterval(() => {
         const state = localBrain.getState();
         if (landingBrain3d) landingBrain3d.updateState(state);
@@ -143,38 +175,48 @@ let landingBrainSource = null; // RemoteBrain or null
     }
   }, 2000);
 
-  // "TALK TO UNITY" — opens setup modal
+  // R15 — both entry points (TALK TO UNITY button in the landing
+  // overlay AND the Unity bubble in the bottom-right) open the setup
+  // modal pre-boot. Post-boot, the bubble toggles the chat panel
+  // instead. State-aware single handler so neither entry point is
+  // ever dead.
+  const openSetupModal = () => {
+    const modal = document.getElementById('setup-modal');
+    if (modal) { modal.classList.remove('hidden'); modal.style.display = ''; }
+    // Refresh sensory inventory in case backends came online since
+    // the modal was last shown. Guarded against pre-boot null-providers
+    // inside the render function itself.
+    if (typeof renderSensoryInventory === 'function') renderSensoryInventory();
+  };
+
   const chatBtn = document.getElementById('landing-chat-btn');
-  if (chatBtn) {
-    chatBtn.addEventListener('click', () => {
-      const modal = document.getElementById('setup-modal');
-      if (modal) modal.style.display = '';
-    });
-  }
+  if (chatBtn) chatBtn.addEventListener('click', openSetupModal);
 
-  // "FUCK IT — BRAIN ONLY" toggle inside setup modal
-  const brainOnlyCb = document.getElementById('brain-only-cb');
-  if (brainOnlyCb) {
-    brainOnlyCb.addEventListener('change', () => {
-      window._brainOnlyMode = brainOnlyCb.checked;
-      const textSelect = document.getElementById('text-model-select');
-      const textFilter = document.getElementById('text-model-filter');
-      const textLabel = document.getElementById('text-model-label');
-      const startBtnEl = document.getElementById('start-btn');
-
-      if (brainOnlyCb.checked) {
-        if (textSelect) { textSelect.disabled = true; textSelect.style.opacity = '0.3'; }
-        if (textFilter) { textFilter.disabled = true; textFilter.style.opacity = '0.3'; }
-        if (textLabel) textLabel.innerHTML = '🧠 Text — <span style="color:#ff4d9a;font-weight:700;">BRAIN ONLY</span>';
-        if (startBtnEl) { startBtnEl.disabled = false; startBtnEl.textContent = 'Wake Up Unity (Brain Only)'; }
+  const bubble = document.getElementById('unity-avatar');
+  if (bubble) {
+    bubble.addEventListener('click', () => {
+      if (window._unityBooted && chatPanel) {
+        chatPanel.toggle();
       } else {
-        if (textSelect) { textSelect.disabled = false; textSelect.style.opacity = '1'; }
-        if (textFilter) { textFilter.disabled = false; textFilter.style.opacity = '1'; }
-        if (textLabel) textLabel.textContent = '💬 Text / Chat Model';
-        if (startBtnEl) startBtnEl.textContent = 'Wake Up Unity';
+        openSetupModal();
       }
     });
   }
+
+  // Wire every settings button (landing-topbar, hud-metrics panel,
+  // bottom toolbar) at page load so they work pre-boot. Previously
+  // these only got wired inside bootUnity() which meant clicking ⚙
+  // before WAKE UNITY UP did nothing — dead button bug. Idempotent
+  // via the _wired flag so bootUnity's re-wire is a no-op.
+  const wireSettingsBtn = (id) => {
+    const btn = document.getElementById(id);
+    if (!btn || btn._wired) return;
+    btn._wired = true;
+    btn.addEventListener('click', openSetupModal);
+  };
+  wireSettingsBtn('landing-settings-btn');
+  wireSettingsBtn('hud-settings-btn');
+  wireSettingsBtn('settings-btn');
 })();
 
 let _landingState = null;
@@ -189,6 +231,7 @@ let _landingState = null;
 let _personaTextPromise = null;
 let _baselineTextPromise = null;
 let _codingTextPromise = null;
+let _componentTemplatesPromise = null;
 const _personaLoadedBrains = new WeakSet();
 
 /**
@@ -227,8 +270,21 @@ function loadPersonaSelfImage(targetBrain) {
         return '';
       });
   }
+  if (!_componentTemplatesPromise) {
+    _componentTemplatesPromise = fetch('docs/component-templates.txt')
+      .then(r => r.ok ? r.text() : '')
+      .catch(err => {
+        console.warn('[Unity] component templates fetch failed:', err.message);
+        return '';
+      });
+  }
 
-  return Promise.all([_personaTextPromise, _baselineTextPromise, _codingTextPromise]).then(([personaText, baselineText, codingText]) => {
+  return Promise.all([
+    _personaTextPromise,
+    _baselineTextPromise,
+    _codingTextPromise,
+    _componentTemplatesPromise,
+  ]).then(async ([personaText, baselineText, codingText, templateText]) => {
     if (!personaText) {
       console.warn('[Unity] persona self-image fetch returned empty — check docs/Ultimate Unity.txt route');
       return 0;
@@ -239,6 +295,21 @@ function loadPersonaSelfImage(targetBrain) {
     }
     if (_personaLoadedBrains.has(targetBrain)) return 0;  // race protection
     _personaLoadedBrains.add(targetBrain);
+
+    // R2 — wait for semantic embeddings to finish loading BEFORE feeding
+    // the corpus to the language cortex. Without this, persona words get
+    // the embedding-store hash fallback initially (since GloVe hasn't
+    // loaded yet), which poisons the stored word patterns with letter-hash
+    // values that won't match later when embeddings arrive. Awaiting the
+    // load ensures the very first word learned has its real GloVe pattern.
+    if (targetBrain.sensory?._embeddingsLoading) {
+      try {
+        await targetBrain.sensory._embeddingsLoading;
+        console.log('[Unity] semantic embeddings ready — corpus loading will use GloVe patterns');
+      } catch (err) {
+        console.warn('[Unity] embeddings loading failed, falling back to hash patterns:', err.message);
+      }
+    }
 
     // Load persona first — defines subject starters and self-awareness
     const personaSentences = targetBrain.innerVoice.loadPersona(personaText);
@@ -253,6 +324,17 @@ function loadPersonaSelfImage(targetBrain) {
     let codingSentences = 0;
     if (codingText && typeof targetBrain.innerVoice.loadCoding === 'function') {
       codingSentences = targetBrain.innerVoice.loadCoding(codingText);
+    }
+
+    // R6.2 — Load component templates for equational build_ui synthesis.
+    // The template file parses into a primitive library matched by
+    // semantic embedding cosine at build time.
+    let templateCount = 0;
+    if (templateText && targetBrain.componentSynth?.loadTemplates) {
+      templateCount = targetBrain.componentSynth.loadTemplates(templateText);
+    }
+    if (templateCount > 0) {
+      console.log(`[Unity] Loaded ${templateCount} component templates for equational build_ui`);
     }
 
     const dictSize = targetBrain.innerVoice.dictionary?._words?.size ?? 0;
@@ -281,19 +363,31 @@ function renderLandingTab(tab, s) {
 
   switch (tab) {
     case 'neurons': {
+      // T4.2 — use the per-cluster EMA-smoothed firingRate (which the
+      // server already computes as firingRate = firingRate*0.95 +
+      // spikeCount*0.05) instead of the raw instant-tick spikeCount.
+      // Raw spike counts flicker to 0 on idle clusters and make the
+      // readout unreadable. The EMA has a ~20-tick half-life which at
+      // 60fps × 10 substeps/frame is ~33ms — smooth without feeling
+      // laggy.
+      const smoothedFiring = s.clusters
+        ? Object.values(s.clusters).reduce((sum, c) => sum + (c.firingRate || 0), 0)
+        : spikes;
+      const totalN = s.totalNeurons ?? 1000;
       let html = card('Neuron Population', `
-        ${metric('Total', (s.totalNeurons ?? 1000).toLocaleString(), '#ff4d9a')}
-        ${metric('Firing', spikes, '#22c55e')}
-        ${metric('Rate', ((spikes / (s.totalNeurons ?? 1000)) * 100).toFixed(1) + '%', '#00e5ff')}
+        ${metric('Total', totalN.toLocaleString(), '#ff4d9a')}
+        ${metric('Firing rate (EMA)', Math.round(smoothedFiring).toLocaleString(), '#22c55e')}
+        ${metric('Rate %', ((smoothedFiring / totalN) * 100).toFixed(2) + '%', '#00e5ff')}
       `);
       if (s.clusters) {
         const colors = { cortex:'#ff4d9a', hippocampus:'#a855f7', amygdala:'#ef4444', basalGanglia:'#22c55e', cerebellum:'#00e5ff', hypothalamus:'#f59e0b', mystery:'#c084fc' };
-        // Scale bars relative to max cluster activity (not absolute %)
-        const maxPct = Math.max(1, ...Object.values(s.clusters).map(c => c.size ? c.spikeCount / c.size * 100 : 0));
-        html += card('Cluster Activity', Object.entries(s.clusters).map(([name, c]) => {
-          const pct = c.size ? (c.spikeCount / c.size * 100) : 0;
+        // Scale bars relative to max cluster EMA (not absolute %)
+        const maxPct = Math.max(1, ...Object.values(s.clusters).map(c => c.size ? (c.firingRate || 0) / c.size * 100 : 0));
+        html += card('Cluster Activity (EMA rate)', Object.entries(s.clusters).map(([name, c]) => {
+          const rate = c.firingRate || 0;
+          const pct = c.size ? (rate / c.size * 100) : 0;
           const barPct = maxPct > 0 ? (pct / maxPct * 100) : 0; // relative to most active cluster
-          return `<div style="margin:4px 0;">${metric(name, `${c.spikeCount.toLocaleString()}/${c.size.toLocaleString()} (${pct.toFixed(1)}%)`, colors[name] || '#fff')}${bar(barPct, colors[name] || '#fff')}</div>`;
+          return `<div style="margin:4px 0;">${metric(name, `${Math.round(rate).toLocaleString()}/${c.size.toLocaleString()} (${pct.toFixed(2)}%)`, colors[name] || '#fff')}${bar(barPct, colors[name] || '#fff')}</div>`;
         }).join(''));
       }
       el.innerHTML = html;
@@ -455,8 +549,14 @@ function updateLandingStats(state) {
   const users = state.connectedUsers ?? 0;
 
   const el = (id, text) => { const e = $(id); if (e) e.textContent = text; };
-  el('ls-neurons', neurons.toLocaleString() + ' neurons');
-  el('ls-subtitle', neurons.toLocaleString() + '-neuron brain simulation — real equations, alive right now');
+  el('ls-neurons', neurons.toLocaleString() + ' real neurons');
+  // NOTE: ls-subtitle intentionally NOT overwritten here. The HTML copy
+  // is the authoritative framing ("proportional sample view — the field
+  // behind this text is a live render of Unity's actual neural processes
+  // running on the server right now, NOT her full brain"). Overwriting
+  // it per-tick with a neuron count would drop the framing message that
+  // tells users this is a sample, not the full brain. The neuron count
+  // lives in ls-neurons above where it belongs.
   el('ls-psi', 'Ψ = ' + psi.toFixed(4));
   el('ls-users', users + ' online');
   el('ls-arousal', (arousal * 100).toFixed(0) + '%');
@@ -481,372 +581,1153 @@ const unitySpeech = document.getElementById('unity-speech');
 const unityAvatar = document.getElementById('unity-avatar');
 const brainIndicator = document.getElementById('brain-indicator');
 
-// ── Known local AI servers ──
-const LOCAL_AI_ENDPOINTS = [
-  { name: 'Claude Code CLI', url: 'http://localhost:8080', probe: '/v1/models', modelsPath: 'data', modelKey: 'id' },
-  { name: 'Ollama', url: 'http://localhost:11434', probe: '/api/tags', modelsPath: 'models', modelKey: 'name' },
-  { name: 'LM Studio', url: 'http://localhost:1234', probe: '/v1/models', modelsPath: 'data', modelKey: 'id' },
-  { name: 'LocalAI', url: 'http://localhost:8090', probe: '/v1/models', modelsPath: 'data', modelKey: 'id' },
-];
-
-let detectedAI = [];
-let bestBackend = null;
-
-// ── Cloud AI providers ──
-const PROVIDERS = {
-  pollinations: {
-    name: 'Pollinations', desc: 'Free AI — text, image, audio, video.',
-    hint: 'Sign up at pollinations.ai for your key.', link: 'https://pollinations.ai/dashboard',
-    url: 'https://gen.pollinations.ai', modelsEndpoint: 'https://gen.pollinations.ai/v1/models',
-    needsKey: true, storageKey: 'pollinations',
-  },
-  openrouter: {
-    name: 'OpenRouter', desc: 'One key for 200+ models — Claude, GPT-4, Llama, all of them.',
-    hint: 'Free tier available.', link: 'https://openrouter.ai/keys',
-    url: 'https://openrouter.ai/api', modelsEndpoint: 'https://openrouter.ai/api/v1/models',
-    needsKey: true,
-  },
-  openai: {
-    name: 'OpenAI', desc: 'GPT-4o, o1, and more.',
-    hint: 'Requires paid account.', link: 'https://platform.openai.com/api-keys',
-    url: 'https://api.openai.com', modelsEndpoint: 'https://api.openai.com/v1/models',
-    needsKey: true,
-  },
-  anthropic: {
-    name: 'Claude (Direct)', desc: 'Use your own Anthropic key directly. Download proxy.js above, run "node proxy.js", then paste your key.',
-    hint: 'Step 1: Download proxy.js (link above). Step 2: Run "node proxy.js" in terminal. Step 3: Paste your Anthropic key here. Or just use OpenRouter — it includes Claude.',
-    link: 'https://console.anthropic.com/settings/keys',
-    url: 'https://api.anthropic.com', needsKey: true, corsBlocked: true,
-  },
-  mistral: {
-    name: 'Mistral', desc: 'Mistral Large, Codestral.',
-    hint: 'Create account at mistral.ai.', link: 'https://console.mistral.ai/api-keys',
-    url: 'https://api.mistral.ai', modelsEndpoint: 'https://api.mistral.ai/v1/models',
-    needsKey: true,
-  },
-  deepseek: {
-    name: 'DeepSeek', desc: 'DeepSeek Chat and Coder. Cheap and good.',
-    hint: 'Sign up at deepseek.com.', link: 'https://platform.deepseek.com/api_keys',
-    url: 'https://api.deepseek.com', modelsEndpoint: 'https://api.deepseek.com/v1/models',
-    needsKey: true,
-  },
-  groq: {
-    name: 'Groq', desc: 'Ultra-fast inference. Free tier.',
-    hint: 'Sign up at groq.com.', link: 'https://console.groq.com/keys',
-    url: 'https://api.groq.com/openai', modelsEndpoint: 'https://api.groq.com/openai/v1/models',
-    needsKey: true,
-  },
-  local: {
-    name: 'Local AI', desc: 'Auto-detects Ollama, LM Studio, etc.',
-    hint: 'Make sure your local AI server is running.', needsKey: false, isLocal: true,
-  },
-};
+// R15 2026-04-13 — LOCAL_AI_ENDPOINTS, PROVIDERS catalog, detectedAI,
+// bestBackend all DELETED here. Pre-R4 this file had an 8-provider
+// text-AI connect flow (Pollinations/OpenRouter/OpenAI/Anthropic/
+// Mistral/DeepSeek/Groq/Local AI) that scanned common ports and
+// cached detected models into a dropdown. R4 killed text-AI cognition
+// entirely; everything here was the setup-modal UI graveyard. R15
+// landing page rework rips the whole thing.
+//
+// Unity's cognition is 100% equational now. Sensory AI (image gen,
+// vision describer, TTS) is configured via:
+//   - providers.autoDetect() / autoDetectVision() — boot-time probe
+//   - providers.loadEnvConfig(ENV_KEYS) — env.js imageBackends[] /
+//     visionBackends[]
+//   - Optional pollinations API key in the setup modal input below
+// See js/brain/peripherals/ai-providers.js for the real sensory
+// provider chain and docs/SENSORY.md for the peripheral contract.
 
 // ═══════════════════════════════════════════════════════════════
-// SETUP FLOW (same connect UI as before — keeping it working)
+// SETUP FLOW — R15 minimal version
+// ═══════════════════════════════════════════════════════════════
+// Unity's brain runs on math; no text-AI backend is required. The
+// setup modal exists only to (a) request mic + camera permissions,
+// (b) accept an optional Pollinations API key for raised rate
+// limits, and (c) show the user what sensory backends (image gen,
+// vision describer) were auto-detected. Everything else is wired
+// through env.js / auto-detect at boot in bootUnity().
 // ═══════════════════════════════════════════════════════════════
 
 async function init() {
   storage = new UserStorage();
 
-  // Seed env.js keys
+  // Seed env.js keys into storage on first load so later lookups
+  // (voice, image gen) can find them without re-reading env.
   for (const [pid, key] of Object.entries(ENV_KEYS)) {
-    if (key && !storage.getApiKey(pid)) {
+    if (key && typeof key === 'string' && !storage.getApiKey(pid)) {
       storage.setApiKey(pid, key);
     }
   }
 
-  // Clear stale CORS-blocked URLs
-  const savedUrl = storage.get('custom_ai_url');
-  if (savedUrl && savedUrl.includes('api.anthropic.com')) {
-    storage.set('custom_ai_url', '');
-  }
+  // If a stored Pollinations key exists, pre-fill the optional input
+  // so users don't have to re-paste it every session.
+  const storedPollKey = storage.getApiKey('pollinations');
+  if (storedPollKey && apiKeyInput) apiKeyInput.value = storedPollKey;
 
   startBtn.addEventListener('click', handleStart);
 
-  // Connect buttons
-  document.querySelectorAll('.connect-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.connect-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      showConnectForm(btn.dataset.ai);
-    });
-  });
-
-  // Auto-reconnect all saved providers
-  const providerIds = ['pollinations', 'openrouter', 'openai', 'anthropic', 'mistral', 'deepseek', 'groq'];
-  for (const pid of providerIds) {
-    const savedKey = storage.getApiKey(pid);
-    if (savedKey && PROVIDERS[pid]) {
-      const btn = document.querySelector(`.connect-btn[data-ai="${pid}"]`);
-      if (btn) btn.classList.add('connected');
-      await autoReconnectProvider(pid, savedKey);
-    }
-  }
-
-  scanLocalOnly();
-  scanAnthropicProxy();
-}
-
-// (Keeping the existing connect form, model dropdowns, etc. — same UI code)
-// ... [all the showConnectForm, rebuildModelDropdowns, etc. functions stay the same]
-
-async function autoReconnectProvider(providerId, key) {
-  const provider = PROVIDERS[providerId];
-  if (!provider) return;
-  if (providerId === 'pollinations') apiKeyInput.value = key;
-
-  detectedAI = detectedAI.filter(d => d.name !== provider.name && d.name !== provider.name + ' Image');
-
-  if (provider.modelsEndpoint) {
-    try {
-      const res = await fetch(provider.modelsEndpoint, {
-        headers: { 'Authorization': `Bearer ${key}` }, signal: AbortSignal.timeout(8000),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const models = (data.data || data.models || []).map(m => typeof m === 'string' ? m : (m.id || m.name)).filter(Boolean);
-        if (models.length > 0) {
-          detectedAI.push({ name: provider.name, url: provider.url, models, bestModel: models[0], type: 'cloud', apiKey: key, corsBlocked: provider.corsBlocked || false });
-          if (providerId === 'pollinations') {
-            try {
-              const imgRes = await fetch('https://gen.pollinations.ai/image/models', { headers: { 'Authorization': `Bearer ${key}` }, signal: AbortSignal.timeout(5000) });
-              if (imgRes.ok) {
-                const imgData = await imgRes.json();
-                const imgModels = (Array.isArray(imgData) ? imgData : (imgData.data || [])).map(m => typeof m === 'string' ? m : (m.id || m.name)).filter(Boolean);
-                if (imgModels.length > 0) detectedAI.push({ name: provider.name + ' Image', url: provider.url, models: imgModels, bestModel: imgModels[0], type: 'cloud-image' });
-              }
-            } catch {}
-          }
-          enableWakeUp(provider.name, models.length);
-          return;
-        }
-      }
-    } catch {}
-  }
-
-  detectedAI.push({ name: provider.name, url: provider.url, models: ['default'], bestModel: 'default', type: 'cloud', apiKey: key, corsBlocked: provider.corsBlocked || false });
-  enableWakeUp(provider.name, 1);
-}
-
-function enableWakeUp(providerName, modelCount) {
-  addConnectedStatus(providerName, modelCount);
-  rebuildModelDropdowns();
-  document.getElementById('ai-scan-area').style.display = 'block';
-  startBtn.disabled = false;
-  startBtn.textContent = 'Wake Her Up';
-}
-
-function addConnectedStatus(name, modelCount) {
-  const list = document.getElementById('connect-status-list');
-  let row = list.querySelector(`[data-provider="${name}"]`);
-  if (!row) {
-    row = document.createElement('div');
-    row.className = 'perm-row';
-    row.dataset.provider = name;
-    row.innerHTML = `<span class="connect-status-name"></span><span class="status granted">connected</span>`;
-    list.appendChild(row);
-  }
-  row.querySelector('.connect-status-name').textContent = `${name} — ${modelCount} model${modelCount !== 1 ? 's' : ''}`;
-}
-
-let _allTextOptions = [];
-
-function rebuildModelDropdowns() {
-  const textBackendsRaw = detectedAI.filter(d => (d.type === 'local' || d.type === 'cloud') && !d.corsBlocked);
-  const imageBackends = detectedAI.filter(d => d.type === 'cloud-image');
-  const textSelect = document.getElementById('text-model-select');
-  const imageSelect = document.getElementById('image-model-select');
-  const selectorsDiv = document.getElementById('model-selectors');
-  const filterInput = document.getElementById('text-model-filter');
-
-  textSelect.innerHTML = '';
-  selectorsDiv.style.display = 'block';
-
-  // Sort: Claude (Direct) first, then local AI, then Pollinations, then everything else
-  const priority = { 'Claude (Direct)': 0, 'Ollama': 1, 'LM Studio': 1, 'LocalAI': 1, 'Pollinations': 2 };
-  const textBackends = textBackendsRaw.sort((a, b) => {
-    const pa = priority[a.name] ?? 10;
-    const pb = priority[b.name] ?? 10;
-    return pa - pb;
-  });
-
-  // Default: Claude Direct if available, then local, then first cloud
-  const claude = textBackends.find(d => d.name === 'Claude (Direct)');
-  const local = textBackends.filter(d => d.type === 'local');
-  bestBackend = claude || (local.length > 0 ? local[0] : textBackends[0] || null);
-
-  _allTextOptions = [];
-  for (const d of textBackends) {
-    for (const model of d.models) {
-      _allTextOptions.push({ url: d.url, model, name: d.name, type: d.type, isDefault: bestBackend && d === bestBackend && model === d.bestModel });
-    }
-  }
-
-  if (filterInput) {
-    filterInput.style.display = _allTextOptions.length > 15 ? 'block' : 'none';
-    textSelect.style.borderRadius = _allTextOptions.length > 15 ? '0 0 8px 8px' : '8px';
-  }
-  _applyTextFilter('');
-
-  if (filterInput && !filterInput._wired) {
-    filterInput._wired = true;
-    filterInput.addEventListener('input', () => _applyTextFilter(filterInput.value.trim().toLowerCase()));
-  }
-
-  imageSelect.innerHTML = '';
-  for (const d of imageBackends) {
-    const group = document.createElement('optgroup');
-    group.label = `🎨 ${d.name}`;
-    for (const model of d.models) {
-      const opt = document.createElement('option');
-      opt.value = JSON.stringify({ url: d.url, model, name: d.name });
-      opt.textContent = model;
-      if (model === d.bestModel) opt.selected = true;
-      group.appendChild(opt);
-    }
-    imageSelect.appendChild(group);
-  }
-}
-
-function _applyTextFilter(query) {
-  const textSelect = document.getElementById('text-model-select');
-  textSelect.innerHTML = '';
-  const groups = {};
-  for (const opt of _allTextOptions) {
-    if (query && !opt.model.toLowerCase().includes(query) && !opt.name.toLowerCase().includes(query)) continue;
-    if (!groups[opt.name]) groups[opt.name] = { type: opt.type, options: [] };
-    groups[opt.name].options.push(opt);
-  }
-  let firstSelected = false;
-  for (const [name, group] of Object.entries(groups)) {
-    const optgroup = document.createElement('optgroup');
-    optgroup.label = `${group.type === 'local' ? '🖥️' : '☁️'} ${name}`;
-    for (const opt of group.options) {
-      const el = document.createElement('option');
-      el.value = JSON.stringify({ url: opt.url, model: opt.model, name: opt.name, type: opt.type });
-      el.textContent = opt.model;
-      if (opt.isDefault && !query && !firstSelected) { el.selected = true; firstSelected = true; }
-      optgroup.appendChild(el);
-    }
-    textSelect.appendChild(optgroup);
-  }
-  if (!firstSelected && textSelect.options.length > 0) textSelect.options[0].selected = true;
-}
-
-function showConnectForm(providerId) {
-  const provider = PROVIDERS[providerId];
-  if (!provider) return;
-  const desc = document.getElementById('connect-desc');
-  const hint = document.getElementById('connect-hint');
-  const keyInput = document.getElementById('connect-key-input');
-  const saveBtn = document.getElementById('connect-save-btn');
-  const localHint = document.getElementById('connect-local-hint');
-  const connectLink = document.getElementById('connect-link');
-
-  desc.textContent = provider.desc;
-  hint.textContent = provider.hint || '';
-  document.getElementById('connect-form').style.display = 'block';
-
-  // Show provider-specific setup instructions
-  const setupHint = document.getElementById('provider-setup-hint');
-  const setupHints = {
-    pollinations: `<strong style="color:var(--cyan)">Pollinations Setup</strong><br>1. Go to <a href="https://pollinations.ai/dashboard" target="_blank" style="color:var(--pink)">pollinations.ai/dashboard</a><br>2. Create an account, get your API key<br>3. Paste it below → Connect<br><span style="font-size:10px;color:var(--text-dim)">Free tier available. Handles text, images, and TTS.</span>`,
-    openrouter: `<strong style="color:var(--cyan)">OpenRouter Setup</strong><br>1. Go to <a href="https://openrouter.ai/keys" target="_blank" style="color:var(--pink)">openrouter.ai/keys</a><br>2. Create a key — includes Claude, GPT-4, Llama, 200+ models<br>3. Paste it below → Connect<br><span style="font-size:10px;color:var(--text-dim)">Free tier available. Best option for accessing Claude without a proxy.</span>`,
-    openai: `<strong style="color:var(--cyan)">OpenAI Setup</strong><br>1. Go to <a href="https://platform.openai.com/api-keys" target="_blank" style="color:var(--pink)">platform.openai.com/api-keys</a><br>2. Create an API key (requires paid account)<br>3. Paste it below → Connect<br><span style="font-size:10px;color:var(--text-dim)">GPT-4o, o1, and more. Direct browser access.</span>`,
-    anthropic: `<strong style="color:var(--purple)">Claude Direct Access — Requires Local Proxy</strong><br>1. Download <a href="proxy.js" download="proxy.js" style="color:var(--pink)">proxy.js</a> — save anywhere on your computer<br>2. Open a terminal, run: <code style="background:var(--bg);padding:2px 6px;border-radius:4px;color:var(--cyan)">node proxy.js</code><br>3. It starts on port 3001 — this page auto-detects it<br>4. Paste your <a href="https://console.anthropic.com/settings/keys" target="_blank" style="color:var(--pink)">Anthropic key</a> below → Connect<br><span style="font-size:10px;color:var(--text-dim)">Need <a href="https://nodejs.org" target="_blank" style="color:var(--pink)">Node.js</a>. Don't want a proxy? Use <strong>OpenRouter</strong> — includes all Claude models, zero setup.</span>`,
-    mistral: `<strong style="color:var(--cyan)">Mistral Setup</strong><br>1. Go to <a href="https://console.mistral.ai/api-keys" target="_blank" style="color:var(--pink)">console.mistral.ai</a><br>2. Create an API key<br>3. Paste it below → Connect<br><span style="font-size:10px;color:var(--text-dim)">Mistral Large, Codestral, and more.</span>`,
-    deepseek: `<strong style="color:var(--cyan)">DeepSeek Setup</strong><br>1. Go to <a href="https://platform.deepseek.com/api_keys" target="_blank" style="color:var(--pink)">platform.deepseek.com</a><br>2. Create an API key<br>3. Paste it below → Connect<br><span style="font-size:10px;color:var(--text-dim)">DeepSeek Chat + Coder. Cheap and good at code.</span>`,
-    groq: `<strong style="color:var(--cyan)">Groq Setup</strong><br>1. Go to <a href="https://console.groq.com/keys" target="_blank" style="color:var(--pink)">console.groq.com</a><br>2. Create an API key (free tier available)<br>3. Paste it below → Connect<br><span style="font-size:10px;color:var(--text-dim)">Ultra-fast inference. Llama, Mixtral, Gemma.</span>`,
-    local: `<strong style="color:var(--cyan)">Local AI Setup</strong><br>1. Install <a href="https://ollama.com" target="_blank" style="color:var(--pink)">Ollama</a> (or LM Studio, LocalAI, vLLM, Jan, GPT4All)<br>2. Pull a model: <code style="background:var(--bg);padding:2px 6px;border-radius:4px;color:var(--cyan)">ollama pull llama3</code><br>3. Start serving: <code style="background:var(--bg);padding:2px 6px;border-radius:4px;color:var(--cyan)">ollama serve</code><br>4. Click Re-scan below — auto-detected on default ports<br><span style="font-size:10px;color:var(--text-dim)">Free. Runs on your hardware. No API key needed. Auto-detects: Ollama (11434), LM Studio (1234), LocalAI (8080), vLLM (8000), Jan (1337).</span>`,
+  // Sensory channel toggles — wire checkboxes, persist to localStorage,
+  // live-apply post-boot via window.unityChannels{} state + listeners.
+  // Pre-boot: gates which permissions get requested (see handleStart).
+  // Post-boot: mic toggle stops/resumes listening; vision toggle stops/
+  // resumes camera frame capture; speech toggle mutes voice.stopSpeaking
+  // and sets voice._muted so new speech calls are no-ops.
+  window.unityChannels = {
+    userMic: localStorage.getItem('unity_channel_user_mic') !== 'false',
+    unityVision: localStorage.getItem('unity_channel_unity_vision') !== 'false',
+    unitySpeech: localStorage.getItem('unity_channel_unity_speech') !== 'false',
   };
-
-  if (setupHints[providerId]) {
-    setupHint.innerHTML = setupHints[providerId];
-    setupHint.style.display = 'block';
-  } else {
-    setupHint.style.display = 'none';
-  }
-
-  if (provider.link) { connectLink.href = provider.link; connectLink.textContent = `Get your ${provider.name} key here →`; connectLink.style.display = 'block'; }
-  else connectLink.style.display = 'none';
-
-  if (provider.isLocal) {
-    keyInput.style.display = 'none'; saveBtn.style.display = 'none'; localHint.style.display = 'block';
-    document.getElementById('rescan-btn').onclick = async () => { await scanLocalOnly(); };
-  } else {
-    keyInput.style.display = 'block'; saveBtn.style.display = 'inline-block'; localHint.style.display = 'none';
-    keyInput.placeholder = `Paste your ${provider.name} API key`;
-    saveBtn.textContent = 'Connect'; saveBtn.style.borderColor = ''; saveBtn.style.color = ''; saveBtn.style.background = '';
-    const storageId = provider.storageKey || providerId;
-    const existing = storage.getApiKey(storageId);
-    if (existing) keyInput.value = existing;
-
-    saveBtn.onclick = async () => {
-      const key = keyInput.value.trim();
-      if (!key) return;
-      saveBtn.textContent = 'Connecting...';
-      storage.setApiKey(provider.storageKey || providerId, key);
-      if (providerId === 'pollinations') apiKeyInput.value = key;
-      const btn = document.querySelector(`.connect-btn[data-ai="${providerId}"]`);
-      if (btn) btn.classList.add('connected');
-      await autoReconnectProvider(providerId, key);
-      saveBtn.textContent = 'Connected'; saveBtn.style.background = 'rgba(34,197,94,0.15)'; saveBtn.style.color = 'var(--green)';
-    };
-  }
-}
-
-async function scanLocalOnly() {
-  for (const ep of LOCAL_AI_ENDPOINTS) {
-    try {
-      const res = await fetch(ep.url + ep.probe, { signal: AbortSignal.timeout(1500) });
-      if (res.ok) {
-        const data = await res.json();
-        let models = (data[ep.modelsPath] || []).map(m => m[ep.modelKey] || m.name || m.id || 'unknown');
-        if (models.length === 0) models = ['default'];
-        detectedAI.push({ name: ep.name, url: ep.url, models, bestModel: models[0], type: 'local' });
-        enableWakeUp(ep.name, models.length);
-      }
-    } catch {}
-  }
-}
-
-async function scanAnthropicProxy() {
-  const key = storage.getApiKey('anthropic');
-  if (!key) return;
-
-  try {
-    // Check if proxy is running
-    await fetch('http://localhost:3001/v1/models', { signal: AbortSignal.timeout(2000), headers: { 'x-api-key': key } });
-
-    // Proxy is up — now verify the key actually works with a tiny test call
-    const testRes = await fetch('http://localhost:3001/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
-      body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', messages: [{ role: 'user', content: 'hi' }], max_tokens: 1 }),
-      signal: AbortSignal.timeout(5000),
+  const wireChannelToggle = (id, key, storageKey, onChange) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.checked = window.unityChannels[key];
+    el.addEventListener('change', () => {
+      window.unityChannels[key] = el.checked;
+      localStorage.setItem(storageKey, el.checked ? 'true' : 'false');
+      try { onChange && onChange(el.checked); } catch (err) { console.warn('[channel toggle]', err.message); }
     });
+  };
+  wireChannelToggle('toggle-user-mic', 'userMic', 'unity_channel_user_mic', (on) => {
+    if (!window._unityBooted || !voice) return;
+    if (on) voice.startListening?.();
+    else voice.stopListening?.();
+  });
+  wireChannelToggle('toggle-unity-vision', 'unityVision', 'unity_channel_unity_vision', (on) => {
+    if (!window._unityBooted || !brain) return;
+    // Live-apply: set visualCortex frozen flag so its frame loop
+    // short-circuits. Requires a fresh camera grant + reload to re-enable
+    // once toggled off mid-session, since stopping the MediaStream tracks
+    // is irreversible without a new getUserMedia prompt.
+    if (brain.visualCortex) brain.visualCortex._paused = !on;
+    if (!on) {
+      const stream = brain.visualCortex?.getStream?.();
+      if (stream && stream.getTracks) {
+        for (const t of stream.getTracks()) t.enabled = false;
+      }
+    } else {
+      const stream = brain.visualCortex?.getStream?.();
+      if (stream && stream.getTracks) {
+        for (const t of stream.getTracks()) t.enabled = true;
+      }
+    }
+  });
+  wireChannelToggle('toggle-unity-speech', 'unitySpeech', 'unity_channel_unity_speech', (on) => {
+    if (!window._unityBooted || !voice) return;
+    voice._muted = !on;
+    if (!on) voice.stopSpeaking?.();
+  });
 
-    if (!testRes.ok) {
-      const err = await testRes.text().catch(() => '');
-      if (err.includes('credit balance') || testRes.status === 401 || testRes.status === 403) {
-        console.warn('[Unity] Anthropic proxy found but key has no credits — skipping Claude (Direct)');
-        // Still show it in status but DON'T add to dropdown
-        addConnectedStatus('Claude (Direct)', 0);
-        const statusRow = document.querySelector('[data-provider="Claude (Direct)"] .connect-status-name');
-        if (statusRow) statusRow.textContent = 'Claude (Direct) — no credits';
+  // Instant SAVE KEY button — stores the Pollinations API key without
+  // having to boot Unity. Writes storage + pushes into providers so
+  // the next generateImage/describeImage picks it up immediately.
+  const saveKeyBtn = document.getElementById('api-key-save-btn');
+  if (saveKeyBtn && apiKeyInput) {
+    saveKeyBtn.addEventListener('click', () => {
+      const key = (apiKeyInput.value || '').trim();
+      if (!key) {
+        alert('Paste a Pollinations API key first.');
         return;
       }
+      storage.setApiKey('pollinations', key);
+      if (providers?._pollinations) providers._pollinations._apiKey = key;
+      saveKeyBtn.textContent = 'SAVED ✓';
+      saveKeyBtn.style.background = 'var(--green,#22c55e)';
+      setTimeout(() => {
+        saveKeyBtn.textContent = 'SAVE KEY';
+        saveKeyBtn.style.background = 'var(--cyan)';
+      }, 1500);
+      // Re-render inventory so the (default) pollinations row reflects
+      // the authenticated state if the UI cares.
+      if (typeof renderSensoryInventory === 'function') renderSensoryInventory();
+    });
+  }
+
+  // R15 — Clear All Data button (still inside the setup modal)
+  const clearBtn = document.getElementById('clear-data-btn');
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      if (confirm('Clear ALL Unity data? This deletes conversation history, preferences, saved keys, and sandbox state from your browser.')) {
+        localStorage.clear();
+        location.reload();
+      }
+    });
+  }
+
+  // R15b-T6 — Create pollinations + providers + run auto-detect probes
+  // at PAGE LOAD TIME, not at boot. The original R15b shipped this
+  // inside bootUnity() which meant the setup modal's sensory inventory
+  // panel showed "Start Unity to see what's detected" until the user
+  // clicked WAKE UNITY UP — exactly backwards, since users want to
+  // verify their backend setup BEFORE committing to boot. Moving
+  // everything here fires the probes as soon as the page loads so
+  // opening the setup modal always shows real results.
+  try {
+    const bootKey = storage.getApiKey('pollinations') || '';
+    pollinations = new PollinationsAI(bootKey || undefined);
+    providers = new AIProviders({ pollinations, storage });
+
+    if (typeof providers.loadEnvConfig === 'function') {
+      providers.loadEnvConfig(ENV_KEYS);
+    }
+    // Pull saved custom backends from localStorage (from the setup
+    // modal's Save Backend button) and register them with the live
+    // providers instance BEFORE autoDetect runs so they take priority
+    // over auto-detected entries.
+    injectCustomBackendsIntoProviders();
+
+    if (typeof providers.onStatus === 'function') {
+      providers.onStatus((payload) => {
+        try { window.dispatchEvent(new CustomEvent('unity-sensory-status', { detail: payload })); } catch {}
+      });
+    }
+    sensoryStatus.init(providers);
+
+    // Fire the auto-detect probes (non-blocking). Refresh the
+    // inventory panel whenever they resolve so the user sees results
+    // land in real time as each probe completes.
+    if (typeof providers.autoDetect === 'function') {
+      providers.autoDetect()
+        .then(() => renderSensoryInventory())
+        .catch(err => console.warn('[Unity] image backend auto-detect failed:', err.message));
+    }
+    if (typeof providers.autoDetectVision === 'function') {
+      providers.autoDetectVision()
+        .then(() => renderSensoryInventory())
+        .catch(err => console.warn('[Unity] vision backend auto-detect failed:', err.message));
+    }
+  } catch (err) {
+    console.warn('[Unity] sensory providers page-load init failed:', err.message);
+  }
+
+  // Initial render of the sensory inventory panel. If probes haven't
+  // resolved yet it shows the "probing" state. Auto-refreshes as each
+  // probe completes via the .then() callbacks above.
+  renderSensoryInventory();
+
+  // R15 — wire the image-gen + vision-describer provider button
+  // grids. Each button shows a per-backend setup form on click.
+  // Buttons for already-saved backends get a green `.saved` marker.
+  wireBackendButtons();
+}
+
+/**
+ * R15 — render the sensory backend inventory inside the setup modal.
+ * Reads from providers.getStatus() if providers exists (post-boot
+ * Apply Changes path), or shows a pre-boot placeholder. Called at
+ * init() time and whenever the modal is opened.
+ */
+function renderSensoryInventory() {
+  const el = document.getElementById('sensory-inventory-content');
+  if (!el) return;
+
+  // Pre-init guard — rare, only fires if render is called before the
+  // init() provider setup runs. Normally shouldn't happen after the
+  // R15b-T6 page-load move.
+  if (!providers || typeof providers.getStatus !== 'function') {
+    el.innerHTML = '<span style="color:var(--text-dim);">Waiting for sensory provider init...</span>';
+    return;
+  }
+
+  const status = providers.getStatus();
+  const dot = (state) => state === 'alive' ? '🟢' : state === 'dead' ? '🔴' : '⚪';
+  const imgRows = status.image.map(b => `${dot(b.state)} ${b.name} <span style="color:var(--text-dim);">(${b.source})</span>`).join('<br>');
+  const visRows = status.vision.map(b => `${dot(b.state)} ${b.name} <span style="color:var(--text-dim);">(${b.source})</span>`).join('<br>');
+  const pausedNote = status.visionPaused ? '<br><span style="color:var(--red);">⚠ vision paused — repeated failures</span>' : '';
+
+  // R15b-T6 — if providers exists but autoDetect hasn't resolved yet,
+  // only the Pollinations fallback will show. Detect that state and
+  // show a friendly "probing" badge instead of a stark single-entry list.
+  const probing = (status.image.length <= 1 && status.vision.length <= 1);
+  const probingNote = probing
+    ? '<div style="color:var(--text-dim);margin-top:6px;font-size:10px;">⏳ probing localhost ports for local backends (A1111 / ComfyUI / Ollama / etc.)...</div>'
+    : '';
+
+  el.innerHTML = `
+    <div style="color:var(--cyan);margin-bottom:4px;">🎨 IMAGE GENERATION</div>
+    <div style="margin-left:8px;margin-bottom:8px;">${imgRows}</div>
+    <div style="color:var(--cyan);margin-bottom:4px;">👁 VISION DESCRIBER</div>
+    <div style="margin-left:8px;">${visRows}${pausedNote}</div>
+    ${probingNote}
+  `;
+
+  // Refresh the active-provider selectors after inventory render so
+  // newly detected backends appear as selectable options immediately.
+  refreshActiveBackendSelectors(status);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ACTIVE PROVIDER SELECTORS
+// ═══════════════════════════════════════════════════════════════
+// Users configure any number of backends via the grids above. The
+// selectors below pick which single backend Unity actually uses for
+// each kind (image gen, vision describer), plus which model to pick
+// from that backend. Preference is saved to localStorage and pushed
+// into providers.setPreferredBackend() so generateImage/describeImage
+// honor it on the very next call.
+// ═══════════════════════════════════════════════════════════════
+
+// Model catalogs per backend. Static where we know the options,
+// dynamic for ones we probe at runtime (ollama /api/tags).
+const BACKEND_MODEL_CATALOG = {
+  'image:Pollinations': ['flux', 'flux-realism', 'flux-anime', 'flux-3d', 'turbo', 'sdxl-1.0'],
+  'image:Automatic1111 / SD.Next / Forge': ['default'],
+  'image:ComfyUI': ['default'],
+  'image:OpenAI DALL-E': ['dall-e-3', 'dall-e-2'],
+  'image:Stability AI': ['stable-diffusion-xl-1024-v1-0', 'sd3-large', 'sd3-medium'],
+  'vision:Pollinations': ['openai', 'claude-haiku', 'gemini'],
+  'vision:Ollama (VLM)': ['llava', 'moondream', 'bakllava', 'minicpm-v'],
+  'vision:LM Studio': ['default'],
+};
+
+function refreshActiveBackendSelectors(status) {
+  const imgSel = document.getElementById('active-image-backend');
+  const visSel = document.getElementById('active-vision-backend');
+  const imgModelSel = document.getElementById('active-image-model');
+  const visModelSel = document.getElementById('active-vision-model');
+  if (!imgSel || !visSel) return;
+
+  const populate = (selEl, list, kind, savedKey) => {
+    const saved = localStorage.getItem(savedKey);
+    selEl.innerHTML = '';
+    list.forEach(b => {
+      const opt = document.createElement('option');
+      const val = `${b.source}|${b.name}`;
+      opt.value = val;
+      opt.textContent = `${b.state === 'alive' ? '🟢' : '🔴'} ${b.name} (${b.source})`;
+      if (val === saved) opt.selected = true;
+      selEl.appendChild(opt);
+    });
+  };
+  populate(imgSel, status.image, 'image', 'unity_pref_image_backend');
+  populate(visSel, status.vision, 'vision', 'unity_pref_vision_backend');
+
+  const populateModels = (selEl, backendSel, kind, savedKey) => {
+    if (!selEl) return;
+    const [, name] = (backendSel.value || '').split('|');
+    const catalog = BACKEND_MODEL_CATALOG[`${kind}:${name}`] || ['default'];
+    const saved = localStorage.getItem(savedKey);
+    selEl.innerHTML = '';
+    catalog.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m;
+      opt.textContent = m;
+      if (m === saved) opt.selected = true;
+      selEl.appendChild(opt);
+    });
+  };
+  populateModels(imgModelSel, imgSel, 'image', 'unity_pref_image_model');
+  populateModels(visModelSel, visSel, 'vision', 'unity_pref_vision_model');
+
+  const applyPref = (kind, backendSel, modelSel, backendKey, modelKey) => {
+    const [source, name] = (backendSel.value || '').split('|');
+    const model = modelSel?.value || null;
+    localStorage.setItem(backendKey, backendSel.value);
+    if (model) localStorage.setItem(modelKey, model);
+    if (providers?.setPreferredBackend) {
+      providers.setPreferredBackend(kind, { source, name, model });
+    }
+  };
+
+  // Find the BACKEND_CATALOG key for a given (kind, name) so changing
+  // the dropdown can scroll the backend-connect-form to the matching
+  // entry. Used by the change handlers below.
+  const catalogKeyFor = (kind, name) => {
+    for (const [key, cfg] of Object.entries(BACKEND_CATALOG)) {
+      if (cfg.kind === kind && cfg.name === name) return key;
+    }
+    return null;
+  };
+
+  // Wire change handlers once — flag on the element to prevent stacking
+  if (!imgSel._wired) {
+    imgSel._wired = true;
+    imgSel.addEventListener('change', () => {
+      populateModels(imgModelSel, imgSel, 'image', 'unity_pref_image_model');
+      applyPref('image', imgSel, imgModelSel, 'unity_pref_image_backend', 'unity_pref_image_model');
+      // Sync the backend-connect-form to the newly selected active
+      // provider so the CONNECT button is always pointing at what
+      // the user just picked as active.
+      const [, name] = (imgSel.value || '').split('|');
+      const key = catalogKeyFor('image', name);
+      if (key) {
+        document.querySelectorAll('.provider-btn').forEach(b => b.classList.remove('active'));
+        const btn = document.querySelector(`.provider-btn[data-backend="${key}"]`);
+        if (btn) btn.classList.add('active');
+        showBackendForm(key);
+      }
+    });
+    imgModelSel?.addEventListener('change', () => {
+      applyPref('image', imgSel, imgModelSel, 'unity_pref_image_backend', 'unity_pref_image_model');
+    });
+  }
+  if (!visSel._wired) {
+    visSel._wired = true;
+    visSel.addEventListener('change', () => {
+      populateModels(visModelSel, visSel, 'vision', 'unity_pref_vision_model');
+      applyPref('vision', visSel, visModelSel, 'unity_pref_vision_backend', 'unity_pref_vision_model');
+      const [, name] = (visSel.value || '').split('|');
+      const key = catalogKeyFor('vision', name);
+      if (key) {
+        document.querySelectorAll('.provider-btn').forEach(b => b.classList.remove('active'));
+        const btn = document.querySelector(`.provider-btn[data-backend="${key}"]`);
+        if (btn) btn.classList.add('active');
+        showBackendForm(key);
+      }
+    });
+    visModelSel?.addEventListener('change', () => {
+      applyPref('vision', visSel, visModelSel, 'unity_pref_vision_backend', 'unity_pref_vision_model');
+    });
+  }
+
+  // Push the persisted preference into providers on first render so
+  // reloading the page doesn't reset to first-in-list priority.
+  applyPref('image', imgSel, imgModelSel, 'unity_pref_image_backend', 'unity_pref_image_model');
+  applyPref('vision', visSel, visModelSel, 'unity_pref_vision_backend', 'unity_pref_vision_model');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// R15 BACKEND PICKER — provider grid + per-backend setup forms
+// ═══════════════════════════════════════════════════════════════
+// The setup modal exposes two grids of clickable backend buttons
+// (image gen + vision describer). Clicking any button populates the
+// #backend-connect-form area below the grids with per-backend setup
+// instructions + minimal required inputs. The design goal per Gee:
+// "all set up as automatic as we can" — auto-detect local backends
+// work with ZERO config; remote backends need a key ONLY; custom is
+// the only full-form path.
+//
+// Saved backends persist to localStorage so they survive page
+// reloads AND get pushed into providers._localImageBackends /
+// _localVisionBackends at bootUnity() time so Unity uses them
+// immediately. A ready-to-copy env.js snippet is also shown after
+// every save for users who want file-based config that survives
+// Clear All Data.
+// ═══════════════════════════════════════════════════════════════
+
+const BACKEND_CATALOG = {
+  // ── IMAGE GENERATION ──────────────────────────────────────────
+  'img:pollinations': {
+    name: 'Pollinations',
+    kind: 'image',
+    instructions:
+      'Unity\'s default image gen provider — active out of the box, no setup needed for the anonymous tier. Paste your Pollinations API key below to authenticate (raises rate limits and unlocks paid models). You can also pick which Pollinations image model Unity uses (default: flux).',
+    link: 'https://enter.pollinations.ai/',
+    linkLabel: '🔑 Get Pollinations API key',
+    needsKey: true,
+    keyOptional: true,
+    keyStorageKey: 'pollinations',
+    showModel: true,
+    defaultModel: 'flux',
+    modelHint: 'e.g. flux / turbo / sdxl-1.0',
+  },
+  'img:a1111': {
+    name: 'Automatic1111 / SD.Next / Forge',
+    kind: 'image',
+    instructions:
+`Install: github.com/AUTOMATIC1111/stable-diffusion-webui
+Run it with the API enabled:
+  Linux/Mac:  ./webui.sh --api
+  Windows:    set COMMANDLINE_ARGS=--api && webui-user.bat
+
+Unity auto-detects on localhost:7860 — no config needed. Only fill in a URL below if you're running on a remote host or non-standard port.`,
+    link: 'https://github.com/AUTOMATIC1111/stable-diffusion-webui',
+    linkLabel: '📦 A1111 install docs',
+    autoDetect: true,
+    defaultPort: 7860,
+    defaultKind: 'a1111',
+  },
+  'img:comfyui': {
+    name: 'ComfyUI',
+    kind: 'image',
+    instructions:
+`Install: github.com/comfyanonymous/ComfyUI
+Run: python main.py
+
+Unity auto-detects on localhost:8188 — no config needed. Only fill in a URL below for remote / non-standard setups.`,
+    link: 'https://github.com/comfyanonymous/ComfyUI',
+    linkLabel: '📦 ComfyUI install docs',
+    autoDetect: true,
+    defaultPort: 8188,
+    defaultKind: 'comfy',
+  },
+  'img:dalle': {
+    name: 'OpenAI DALL-E',
+    kind: 'image',
+    instructions:
+`Create a key at platform.openai.com/api-keys (paid account required).
+Paste below. Unity uses dall-e-3 by default — change the model field to dall-e-2 if you prefer the older model.`,
+    link: 'https://platform.openai.com/api-keys',
+    linkLabel: '🔑 Get OpenAI API key',
+    needsKey: true,
+    defaultUrl: 'https://api.openai.com',
+    defaultKind: 'openai',
+    showModel: true,
+    defaultModel: 'dall-e-3',
+  },
+  'img:stability': {
+    name: 'Stability AI',
+    kind: 'image',
+    instructions:
+`Create a key at platform.stability.ai/account/keys.
+Paste below. Default model is stable-diffusion-xl-1024-v1-0 — see platform.stability.ai/docs/api-reference for alternatives.`,
+    link: 'https://platform.stability.ai/account/keys',
+    linkLabel: '🔑 Get Stability AI key',
+    needsKey: true,
+    defaultUrl: 'https://api.stability.ai',
+    defaultKind: 'openai',
+    showModel: true,
+    defaultModel: 'stable-diffusion-xl-1024-v1-0',
+  },
+  'img:custom': {
+    name: 'Custom Image Endpoint',
+    kind: 'image',
+    instructions:
+`Any OpenAI-compatible, Automatic1111-compatible, or generic image-generation endpoint.
+Unity handles 4 response shapes automatically: OpenAI { data:[{url}] }, OpenAI base64 { data:[{b64_json}] }, A1111 { images:[<base64>] }, and generic { url } / { image_url }.
+Pick the right "kind" below based on your backend's request format.`,
+    needsUrl: true,
+    needsKey: true,
+    keyOptional: true,
+    showModel: true,
+    showKind: true,
+  },
+
+  // ── VISION DESCRIBER (VLM / image classifier) ─────────────────
+  'vis:pollinations': {
+    name: 'Pollinations GPT-4o (vision describer)',
+    kind: 'vision',
+    instructions:
+`Unity's default vision describer — active out of the box, no setup needed for the anonymous tier. Uses Pollinations multimodal chat under the hood.
+Paste your Pollinations API key below to authenticate (raises rate limits and unlocks paid models). You can also swap the multimodal model Unity asks to describe camera frames.`,
+    link: 'https://enter.pollinations.ai/',
+    linkLabel: '🔑 Get Pollinations API key',
+    needsKey: true,
+    keyOptional: true,
+    keyStorageKey: 'pollinations',
+    showModel: true,
+    defaultModel: 'openai',
+    modelHint: 'multimodal chat model name — e.g. openai, claude-haiku',
+  },
+  'vis:ollama': {
+    name: 'Ollama (llava / moondream / bakllava)',
+    kind: 'vision',
+    instructions:
+`Install: ollama.com
+Pull a vision model:  ollama pull llava   (or moondream / bakllava / minicpm-v)
+Start:                ollama serve
+
+Unity auto-detects on localhost:11434 and filters /api/tags for vision-capable models automatically — no config needed.
+Fill in the URL below only for remote hosts. Model field can force a specific VLM; leave blank to auto-pick.`,
+    link: 'https://ollama.com/library/llava',
+    linkLabel: '📦 Ollama VLM model library',
+    autoDetect: true,
+    defaultPort: 11434,
+    defaultKind: 'ollama-vision',
+    showModel: true,
+    defaultModel: '',
+    modelHint: 'leave blank for auto-pick, or force e.g. llava, moondream, bakllava',
+  },
+  'vis:lmstudio': {
+    name: 'LM Studio (VLM)',
+    kind: 'vision',
+    instructions:
+`Install: lmstudio.ai
+Download a vision model (e.g. llava-v1.6-mistral or bakllava) from the model browser.
+Load it and start the local server (Developer tab → Start Server, default port 1234).
+
+Unity auto-detects on localhost:1234. Exposes OpenAI-compatible /v1/chat/completions with multimodal content.`,
+    link: 'https://lmstudio.ai',
+    linkLabel: '📦 LM Studio download',
+    autoDetect: true,
+    defaultPort: 1234,
+    defaultKind: 'openai-vision',
+    showModel: true,
+    defaultModel: '',
+    modelHint: 'leave blank for auto-pick',
+  },
+  'vis:openai': {
+    name: 'OpenAI GPT-4o Vision',
+    kind: 'vision',
+    instructions:
+`Create a key at platform.openai.com/api-keys.
+Paste below. Unity uses gpt-4o for vision by default — change to gpt-4o-mini for cheaper / faster.`,
+    link: 'https://platform.openai.com/api-keys',
+    linkLabel: '🔑 Get OpenAI API key',
+    needsKey: true,
+    defaultUrl: 'https://api.openai.com',
+    defaultKind: 'openai-vision',
+    showModel: true,
+    defaultModel: 'gpt-4o',
+  },
+  'vis:custom': {
+    name: 'Custom VLM Endpoint',
+    kind: 'vision',
+    instructions:
+`Any OpenAI-compatible multimodal chat endpoint or Ollama-style VLM.
+Pick "openai-vision" for endpoints using /v1/chat/completions with type:image_url content blocks, or "ollama-vision" for endpoints using /api/chat with an images array.`,
+    needsUrl: true,
+    needsKey: true,
+    keyOptional: true,
+    showModel: true,
+    showKind: true,
+  },
+};
+
+/**
+ * Wire click handlers onto every .provider-btn at init() time.
+ * Called once — idempotent (skips if already wired).
+ */
+function wireBackendButtons() {
+  const buttons = document.querySelectorAll('.provider-btn');
+  buttons.forEach(btn => {
+    if (btn._wired) return;
+    btn._wired = true;
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.provider-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      showBackendForm(btn.dataset.backend);
+    });
+  });
+  // Highlight already-saved backends so returning users see them green
+  refreshSavedMarkers();
+
+  // Auto-populate the form with the CURRENTLY ACTIVE backend on page
+  // load so users never see the "No provider selected yet" placeholder
+  // when there IS a provider active. Priority: (1) user-preferred
+  // image backend from localStorage, (2) Pollinations as the default.
+  const imgPrefRaw = localStorage.getItem('unity_pref_image_backend') || '';
+  const [, prefName] = imgPrefRaw.split('|');
+  let initialBackendKey = 'img:pollinations';
+  if (prefName) {
+    // Match preferred name against catalog entries
+    for (const [key, cfg] of Object.entries(BACKEND_CATALOG)) {
+      if (cfg.kind === 'image' && cfg.name === prefName) {
+        initialBackendKey = key;
+        break;
+      }
+    }
+  }
+  const initialBtn = document.querySelector(`.provider-btn[data-backend="${initialBackendKey}"]`);
+  if (initialBtn) {
+    initialBtn.classList.add('active');
+    showBackendForm(initialBackendKey);
+  }
+}
+
+/**
+ * Walk the catalog + localStorage and tag already-configured backends
+ * with `.saved` so returning users see which ones are already set up
+ * before clicking anything.
+ */
+function refreshSavedMarkers() {
+  try {
+    const imgAll = JSON.parse(localStorage.getItem('custom_image_backends') || '{}');
+    const visAll = JSON.parse(localStorage.getItem('custom_vision_backends') || '{}');
+    const pollKey = storage?.getApiKey('pollinations');
+    document.querySelectorAll('.provider-btn').forEach(btn => {
+      const key = btn.dataset.backend;
+      const config = BACKEND_CATALOG[key];
+      if (!config) return;
+      if (config.keyStorageKey === 'pollinations') {
+        btn.classList.toggle('saved', !!pollKey);
+      } else {
+        const store = config.kind === 'image' ? imgAll : visAll;
+        btn.classList.toggle('saved', !!store[key]);
+      }
+    });
+  } catch {}
+}
+
+/**
+ * Render the per-backend setup form inside #backend-connect-form when
+ * a button is clicked. Pre-fills any stored values so reopening a
+ * previously-saved backend shows its current config.
+ */
+function showBackendForm(backendKey) {
+  const config = BACKEND_CATALOG[backendKey];
+  if (!config) return;
+  const form = document.getElementById('backend-connect-form');
+  const content = document.getElementById('backend-form-content');
+  if (!form || !content) return;
+
+  let html = `<h3>${config.kind === 'image' ? '🎨' : '👁'} ${config.name}</h3>`;
+  html += `<p class="hint" style="white-space:pre-wrap;line-height:1.5;">${config.instructions}</p>`;
+  if (config.link) {
+    // T4.11 — render the signup/docs link as a prominent styled
+    // button with a clear action label so users don't have to hunt
+    // a tiny URL or search for the provider's key page on their own.
+    const label = config.linkLabel || '🔗 Open provider site';
+    html += `<a href="${config.link}" target="_blank" class="provider-link-btn">${label} →</a>`;
+  }
+
+  // URL input — required for custom, optional override for auto-detect
+  if (config.needsUrl || config.autoDetect) {
+    const isRequired = !!config.needsUrl;
+    const defaultUrl = config.defaultUrl || (config.defaultPort ? `http://localhost:${config.defaultPort}` : '');
+    const placeholder = isRequired
+      ? 'Endpoint URL (required)'
+      : `Custom URL (optional — auto-detects at ${defaultUrl})`;
+    html += `<input type="text" id="backend-url" placeholder="${placeholder}" autocomplete="off" spellcheck="false">`;
+  }
+
+  // Model input
+  if (config.showModel) {
+    const label = config.kind === 'image' ? '🎨 Image model' : '👁 Vision / classifier model';
+    const hint = config.modelHint ? ` — ${config.modelHint}` : '';
+    html += `<input type="text" id="backend-model" placeholder="${label}${hint}" autocomplete="off" spellcheck="false">`;
+  }
+
+  // Kind selector (only for custom where the backend type isn't known)
+  if (config.showKind) {
+    html += `<select id="backend-kind">`;
+    if (config.kind === 'image') {
+      html += `<option value="openai">openai — OpenAI-compatible /v1/images/generations</option>`;
+      html += `<option value="a1111">a1111 — Automatic1111 /sdapi/v1/txt2img</option>`;
+      html += `<option value="comfy">comfy — ComfyUI workflow</option>`;
+    } else {
+      html += `<option value="openai-vision">openai-vision — /v1/chat/completions with image_url content blocks</option>`;
+      html += `<option value="ollama-vision">ollama-vision — /api/chat with images array</option>`;
+    }
+    html += `</select>`;
+  }
+
+  // Key input
+  if (config.needsKey) {
+    const label = config.keyOptional ? 'API key (optional — raises rate limits)' : 'API key (required)';
+    html += `<input type="password" id="backend-key" placeholder="${label}" autocomplete="off" spellcheck="false">`;
+  }
+
+  // CONNECT button + live status badge — the button saves the key and
+  // runs an immediate probe against the backend so the user sees a
+  // green/red result without waiting for the next generate call.
+  // Shown even for env.js-configured backends so users can verify
+  // their pasted env is actually reaching the provider.
+  html += `<div style="display:flex;gap:10px;align-items:center;margin-top:10px;flex-wrap:wrap;">
+    <button class="save-backend-btn" data-backend="${backendKey}" style="flex:0 0 auto;">🔌 CONNECT</button>
+    <span id="backend-connect-status" style="font-size:11px;color:var(--text-dim);font-family:var(--mono);">⚪ not connected</span>
+  </div>`;
+  html += `<div id="env-snippet-wrap" style="display:none;margin-top:10px;">
+    <p class="env-location"></p>
+    <pre id="env-snippet-code"></pre>
+    <div style="display:flex;gap:6px;margin-top:6px;align-items:center;flex-wrap:wrap;">
+      <button type="button" class="save-backend-btn download-env-btn" style="background:var(--cyan);">⬇ Download env.js</button>
+      <span style="font-size:10px;color:var(--text-dim);">Saves to your browser's downloads folder. Move it to the path shown above.</span>
+    </div>
+  </div>`;
+
+  content.innerHTML = html;
+  form.style.display = 'block';
+
+  // Pre-fill any stored values so returning users see their config
+  const stored = loadStoredBackendConfig(backendKey);
+  if (stored) {
+    const set = (id, val) => { const el = document.getElementById(id); if (el && val != null) el.value = val; };
+    set('backend-key', stored.key);
+    set('backend-url', stored.url);
+    set('backend-model', stored.model);
+    set('backend-kind', stored.kind);
+  }
+
+  // Initial connection status — reflects current state BEFORE the user
+  // clicks CONNECT. Three signals: (a) key/url exists in localStorage,
+  // (b) key/url exists in env.js via providers, (c) live backend entry
+  // is alive/dead. Pollinations is always "default available" unless
+  // explicitly dead.
+  updateConnectStatus(backendKey, config, stored);
+
+  // Wire save button — runs saveBackend() then probes connectivity and
+  // updates the status badge inline.
+  const saveBtn = content.querySelector('.save-backend-btn');
+  if (saveBtn) {
+    saveBtn.addEventListener('click', async () => {
+      saveBackend(backendKey);
+      const statusEl = document.getElementById('backend-connect-status');
+      if (statusEl) {
+        statusEl.innerHTML = '🟡 probing...';
+        statusEl.style.color = 'var(--orange,#f59e0b)';
+      }
+      const result = await probeBackend(backendKey, config);
+      if (statusEl) {
+        if (result.ok) {
+          statusEl.innerHTML = `🟢 connected · ${result.detail || 'ready'}`;
+          statusEl.style.color = 'var(--green,#22c55e)';
+        } else {
+          statusEl.innerHTML = `🔴 failed · ${result.detail || 'unknown error'}`;
+          statusEl.style.color = 'var(--red,#ef4444)';
+        }
+      }
+    });
+  }
+}
+
+/**
+ * Update the per-backend connect status badge from current state —
+ * doesn't probe the network, just inspects what's stored + what the
+ * providers registry knows.
+ */
+function updateConnectStatus(backendKey, config, stored) {
+  const statusEl = document.getElementById('backend-connect-status');
+  if (!statusEl) return;
+
+  // Pollinations — always a default available; green if a key is saved,
+  // blue-ish if running anonymously.
+  if (config.keyStorageKey === 'pollinations') {
+    const pollKey = storage?.getApiKey('pollinations');
+    if (pollKey) {
+      statusEl.innerHTML = '🟢 connected · authenticated with saved key';
+      statusEl.style.color = 'var(--green,#22c55e)';
+    } else {
+      statusEl.innerHTML = '🔵 default · running on anonymous tier (no key)';
+      statusEl.style.color = 'var(--cyan,#00e5ff)';
+    }
+    return;
+  }
+
+  // Check providers registry for a live entry matching this backend
+  // name — covers both env.js and localStorage sources
+  const list = config.kind === 'image'
+    ? (providers?._localImageBackends || [])
+    : (providers?._localVisionBackends || []);
+  const hit = list.find(b => b.name === config.name);
+  if (hit) {
+    const dead = providers?._isBackendDead?.(hit.url);
+    const source = hit.fromEnv ? 'env.js' : hit.detected ? 'auto-detected' : 'saved';
+    if (dead) {
+      statusEl.innerHTML = `🔴 dead · ${source} (1h cooldown)`;
+      statusEl.style.color = 'var(--red,#ef4444)';
+    } else {
+      statusEl.innerHTML = `🟢 registered · ${source} — click CONNECT to re-probe`;
+      statusEl.style.color = 'var(--green,#22c55e)';
+    }
+    return;
+  }
+
+  // Has stored config but not yet pushed into providers
+  if (stored && (stored.key || stored.url)) {
+    statusEl.innerHTML = '🟡 saved but not registered · click CONNECT to apply';
+    statusEl.style.color = 'var(--orange,#f59e0b)';
+    return;
+  }
+
+  statusEl.innerHTML = '⚪ not connected · paste key/URL and click CONNECT';
+  statusEl.style.color = 'var(--text-dim)';
+}
+
+/**
+ * Live connectivity probe for a backend. Called from the CONNECT button
+ * click handler after saveBackend writes the config. Returns
+ * {ok: boolean, detail: string}. Uses a short-circuit per-backend-kind
+ * check: Pollinations hits /models, OpenAI hits /v1/models, A1111 hits
+ * /sdapi/v1/options, Ollama hits /api/tags, custom/generic does a HEAD.
+ */
+async function probeBackend(backendKey, config) {
+  try {
+    // Pollinations — hit the models endpoint with the saved key
+    if (config.keyStorageKey === 'pollinations') {
+      const key = storage?.getApiKey('pollinations');
+      const headers = key ? { Authorization: `Bearer ${key}` } : {};
+      const res = await fetch('https://image.pollinations.ai/models', {
+        headers,
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!res.ok) return { ok: false, detail: `HTTP ${res.status}` };
+      return { ok: true, detail: key ? 'authenticated' : 'anonymous tier' };
     }
 
-    // Key works — add to dropdown
-    console.log('[Unity] Anthropic proxy verified — Claude (Direct) available');
-    detectedAI = detectedAI.filter(d => d.name !== 'Claude (Direct)');
-    detectedAI.push({ name: 'Claude (Direct)', url: 'http://localhost:3001', models: ['claude-opus-4-20250514', 'claude-sonnet-4-20250514', 'claude-haiku-4-5-20251001'], bestModel: 'claude-opus-4-20250514', type: 'cloud', apiKey: key, corsBlocked: false });
-    enableWakeUp('Claude (Direct)', 3);
-  } catch {
-    // Proxy not running
+    const stored = loadStoredBackendConfig(backendKey);
+    const url = stored?.url || config.defaultUrl || (config.defaultPort ? `http://localhost:${config.defaultPort}` : '');
+    if (!url) return { ok: false, detail: 'no URL configured' };
+    const headers = stored?.key ? { Authorization: `Bearer ${stored.key}` } : {};
+    const kind = stored?.kind || config.defaultKind || 'openai';
+
+    let probePath = '/v1/models';
+    if (kind === 'a1111') probePath = '/sdapi/v1/options';
+    else if (kind === 'comfy') probePath = '/system_stats';
+    else if (kind === 'ollama-vision') probePath = '/api/tags';
+    else if (kind === 'openai-vision' || kind === 'openai') probePath = '/v1/models';
+
+    const res = await fetch(url.replace(/\/$/, '') + probePath, {
+      headers,
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return { ok: false, detail: `HTTP ${res.status}` };
+    return { ok: true, detail: `${kind} reachable` };
+  } catch (err) {
+    return { ok: false, detail: err.message || 'network error' };
   }
+}
+
+/**
+ * Persist a backend config to localStorage + register it with the
+ * live providers singleton (if bootUnity has run) + show the env.js
+ * snippet. Called when the user clicks Save Backend inside the form.
+ */
+function saveBackend(backendKey) {
+  const config = BACKEND_CATALOG[backendKey];
+  if (!config) return;
+
+  const key = document.getElementById('backend-key')?.value.trim() || '';
+  const rawUrl = document.getElementById('backend-url')?.value.trim() || '';
+  const model = document.getElementById('backend-model')?.value.trim() || '';
+  const kind = document.getElementById('backend-kind')?.value || config.defaultKind || 'openai';
+  const url = rawUrl || config.defaultUrl || (config.defaultPort ? `http://localhost:${config.defaultPort}` : '');
+
+  // Validation
+  if (config.needsUrl && !url) {
+    alert('URL is required for this backend.');
+    return;
+  }
+  if (config.needsKey && !config.keyOptional && !key) {
+    alert('API key is required for this backend.');
+    return;
+  }
+
+  // Pollinations special case — the key goes into the shared
+  // pollinations storage slot (used by the Pollinations client) and
+  // the model choice goes into a per-kind localStorage key that
+  // bootUnity reads back at launch to override the hardcoded default.
+  if (config.keyStorageKey === 'pollinations') {
+    if (key) {
+      storage.setApiKey('pollinations', key);
+      if (apiKeyInput) apiKeyInput.value = key;
+    }
+    const modelStorageKey = config.kind === 'image' ? 'pollinations_image_model' : 'pollinations_vision_model';
+    if (model) {
+      localStorage.setItem(modelStorageKey, model);
+    } else {
+      localStorage.removeItem(modelStorageKey);
+    }
+    // Apply to the live pollinations client immediately if boot has run
+    if (pollinations && key) pollinations._apiKey = key;
+    if (pollinations && model && config.kind === 'image') pollinations._defaultImageModel = model;
+    if (providers && model && config.kind === 'vision') providers._pollinationsVisionModel = model;
+
+    showEnvSnippet({
+      pollinations: key || storage.getApiKey('pollinations') || '',
+      [modelStorageKey]: model,
+    });
+    refreshSavedMarkers();
+    renderSensoryInventory();
+    return;
+  }
+
+  // Standard backend entry
+  const entry = { name: config.name, url };
+  if (model) entry.model = model;
+  if (kind) entry.kind = kind;
+  if (key) entry.key = key;
+
+  // Save to localStorage keyed by backendKey so same-backend saves
+  // overwrite cleanly instead of piling up duplicates
+  const storageField = config.kind === 'image' ? 'custom_image_backends' : 'custom_vision_backends';
+  const all = JSON.parse(localStorage.getItem(storageField) || '{}');
+  all[backendKey] = entry;
+  localStorage.setItem(storageField, JSON.stringify(all));
+
+  // Push into live providers so Unity starts using it immediately
+  // without a reboot. Remove any stale copy first (same name).
+  if (providers) {
+    const listField = config.kind === 'image' ? '_localImageBackends' : '_localVisionBackends';
+    providers[listField] = providers[listField].filter(b => b.name !== entry.name);
+    providers[listField].push({ ...entry, detected: false, fromEnv: false, configured: true });
+  }
+
+  // Generate env.js snippet as a copy-paste escape hatch
+  const envField = config.kind === 'image' ? 'imageBackends' : 'visionBackends';
+  showEnvSnippet({ [envField]: [entry] });
+
+  refreshSavedMarkers();
+  renderSensoryInventory();
+}
+
+/**
+ * Detect the runtime environment and user's OS so we can tell them
+ * EXACTLY where to put their js/env.js file. Three modes:
+ *
+ *   - 'file'      — Unity is loaded from a file:// URL. We can compute
+ *                   the exact absolute path to the project root from
+ *                   location.pathname and give the user a precise
+ *                   "create env.js at <path>" instruction.
+ *   - 'localhost' — Unity is running behind a local web server
+ *                   (brain-server.js, python http.server, etc.). The
+ *                   browser has no way to know the server's working
+ *                   directory, so we fall back to OS-specific shell
+ *                   commands telling them to run `pwd` in the
+ *                   terminal where they launched the server, then
+ *                   drop env.js in the js/ folder of that directory.
+ *   - 'remote'    — Unity is running from a public URL (GitHub Pages,
+ *                   etc.). env.js can't be used here at all — the
+ *                   static host ignores it. Saved backends live in
+ *                   localStorage only. We tell the user that.
+ */
+function getEnvJsDestination() {
+  const ua = navigator.userAgent || '';
+  let os = 'linux';
+  if (/Mac|iPhone|iPad|iPod/.test(ua)) os = 'mac';
+  else if (/Windows/.test(ua)) os = 'windows';
+
+  // file:// — we know the exact path
+  if (location.protocol === 'file:') {
+    let path = decodeURIComponent(location.pathname);
+    // Windows paths look like /C:/Users/alice/... — strip the leading slash
+    if (/^\/[A-Za-z]:\//.test(path)) path = path.slice(1);
+    // Strip the filename (index.html or whatever page they're on)
+    const lastSlash = path.lastIndexOf('/');
+    const projectRoot = lastSlash >= 0 ? path.slice(0, lastSlash) : path;
+    // Normalize slash direction on Windows display
+    const displayPath = os === 'windows'
+      ? (projectRoot + '/js/env.js').replace(/\//g, '\\')
+      : projectRoot + '/js/env.js';
+    return {
+      mode: 'file',
+      os,
+      exactPath: displayPath,
+    };
+  }
+
+  // Public URL (GitHub Pages / any https host that isn't loopback)
+  const isLocalHost =
+    location.hostname === 'localhost' ||
+    location.hostname === '127.0.0.1' ||
+    location.hostname === '[::1]' ||
+    location.hostname === '';
+  if (!isLocalHost) {
+    return { mode: 'remote', os };
+  }
+
+  // localhost — browser doesn't know the server's CWD, fall back to
+  // OS-specific shell instructions
+  return { mode: 'localhost', os };
+}
+
+/**
+ * Render a copy-paste-ready env.js snippet into the form's snippet
+ * area. Keeps any previously-saved Pollinations key visible so users
+ * don't accidentally drop it when they copy the block. Also shows
+ * exactly where to put the file (file:// gives an absolute path,
+ * localhost gives OS-specific shell hints, remote says localStorage
+ * only) and offers a one-click download button so users don't have
+ * to manually create a new file.
+ */
+function showEnvSnippet(updates) {
+  const wrap = document.getElementById('env-snippet-wrap');
+  const pre = document.getElementById('env-snippet-code');
+  if (!wrap || !pre) return;
+
+  const jsonify = (v) => typeof v === 'string' ? `'${v.replace(/'/g, "\\'")}'` : JSON.stringify(v);
+  const lines = [];
+  const existingPoll = storage.getApiKey('pollinations') || '';
+  if (existingPoll && !updates.pollinations) lines.push(`  pollinations: '${existingPoll}',`);
+  for (const [k, v] of Object.entries(updates)) {
+    if (v == null || v === '') continue;
+    if (Array.isArray(v)) {
+      lines.push(`  ${k}: [`);
+      for (const entry of v) {
+        const parts = Object.entries(entry)
+          .filter(([, val]) => val !== undefined && val !== '')
+          .map(([ek, ev]) => `${ek}: ${jsonify(ev)}`);
+        lines.push(`    { ${parts.join(', ')} },`);
+      }
+      lines.push(`  ],`);
+    } else {
+      lines.push(`  ${k}: ${jsonify(v)},`);
+    }
+  }
+
+  const snippet = `// js/env.js — gitignored, your keys never get pushed.
+// Auto-generated by Unity's setup modal.
+
+export const ENV_KEYS = {
+${lines.join('\n')}
+};`;
+
+  pre.textContent = snippet;
+
+  // Replace the static env-location hint block with mode-aware guidance
+  const locEl = wrap.querySelector('.env-location');
+  if (locEl) {
+    const dest = getEnvJsDestination();
+    let html = '';
+    if (dest.mode === 'file') {
+      // We know the exact path. Give a single precise instruction.
+      html = `<strong style="color:var(--green);">✓ Saved to localStorage.</strong> For file-based config that survives "Clear All Data" and boots faster, download the file below and place it at:<br>
+              <code style="display:inline-block;margin:4px 0;padding:4px 8px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--cyan);font-size:10px;word-break:break-all;">${dest.exactPath}</code><br>
+              <span style="color:var(--text-dim);">(Create the <code>js</code> folder if it doesn't exist. <code>js/env.js</code> is gitignored so your keys never get committed.)</span>`;
+    } else if (dest.mode === 'localhost') {
+      // Browser can't know the server's CWD (especially since start.sh
+      // does `cd "$DIR/server"` before launching, so `pwd` from that
+      // terminal gives the server/ subdirectory, not the project root).
+      // Give an unambiguous landmark instruction instead: find the
+      // folder where js/env.example.js already lives, drop env.js next
+      // to it. Works regardless of what shell, start method, or cwd
+      // weirdness the user is in.
+      const osHints = {
+        mac: {
+          hint: 'Open Finder, navigate to your Unity project folder (the one containing this index.html file). Open the <code>js</code> subfolder. Drop the downloaded <code>env.js</code> in there, next to <code>env.example.js</code>.',
+          shell: `# Or from Terminal.app, if you know the path:
+mv ~/Downloads/env.js /path/to/Unity/js/env.js`,
+        },
+        linux: {
+          hint: 'Open your file manager, navigate to your Unity project folder (the one containing this <code>index.html</code>). Open the <code>js</code> subfolder and drop the downloaded <code>env.js</code> in there next to <code>env.example.js</code>.',
+          shell: `# Or from your terminal:
+mv ~/Downloads/env.js /path/to/Unity/js/env.js`,
+        },
+        windows: {
+          hint: 'Open File Explorer, navigate to your Unity project folder (the one containing this <code>index.html</code>). Open the <code>js</code> subfolder and drop the downloaded <code>env.js</code> in there next to <code>env.example.js</code>.',
+          shell: `# Or from PowerShell:
+Move-Item $env:USERPROFILE\\Downloads\\env.js C:\\path\\to\\Unity\\js\\env.js`,
+        },
+      };
+      const hint = osHints[dest.os] || osHints.linux;
+      html = `<strong style="color:var(--green);">✓ Saved to localStorage.</strong> For file-based config that survives "Clear All Data" and boots faster, download the file below and drop it next to <code>js/env.example.js</code> in your Unity project folder.<br>
+              <span style="color:var(--text-dim);margin-top:6px;display:block;">You're running Unity from <code>${location.origin}</code> so the browser can't see the filesystem directly. The landmark is <code>js/env.example.js</code> — whichever folder THAT file is in, <code>env.js</code> goes right next to it in the same <code>js/</code> folder.</span>
+              <span style="color:var(--text-dim);margin-top:6px;display:block;">${hint.hint}</span>
+              <pre style="margin-top:6px;">${hint.shell}</pre>
+              <span style="color:var(--text-dim);">(<code>js/env.js</code> is gitignored — your keys never get committed.)</span>`;
+    } else {
+      // Public URL — env.js doesn't work
+      html = `<strong style="color:var(--orange);">⚠ You're running Unity from a remote URL (<code>${location.hostname}</code>).</strong><br>
+              File-based <code>env.js</code> config only works when you're hosting Unity yourself locally. Your backends are saved to this browser's <strong>localStorage</strong> and will persist across page reloads on this device — but they won't sync to other browsers and will be wiped by "Clear All Data".<br>
+              <span style="color:var(--text-dim);margin-top:6px;display:block;">To use file-based config, clone Unity and run it locally: <code>git clone github.com/Unity-Lab-AI/Unity &amp;&amp; cd Unity &amp;&amp; node server/brain-server.js</code> (requires Node.js).</span>`;
+    }
+    locEl.innerHTML = html;
+  }
+
+  // Wire (or re-wire) the Download env.js button so users can grab
+  // a real file instead of copy-pasting the textarea
+  const dlBtn = wrap.querySelector('.download-env-btn');
+  if (dlBtn) {
+    dlBtn.onclick = () => {
+      try {
+        const blob = new Blob([snippet], { type: 'application/javascript' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'env.js';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      } catch (err) {
+        console.warn('[Unity] env.js download failed:', err.message);
+      }
+    };
+  }
+
+  wrap.style.display = 'block';
+}
+
+/**
+ * Read stored config for one backend slot so showBackendForm can
+ * pre-fill inputs.
+ */
+function loadStoredBackendConfig(backendKey) {
+  const config = BACKEND_CATALOG[backendKey];
+  if (!config) return null;
+
+  if (config.keyStorageKey === 'pollinations') {
+    return {
+      key: storage?.getApiKey('pollinations') || '',
+      model: localStorage.getItem(config.kind === 'image' ? 'pollinations_image_model' : 'pollinations_vision_model') || '',
+    };
+  }
+
+  try {
+    const storageField = config.kind === 'image' ? 'custom_image_backends' : 'custom_vision_backends';
+    const all = JSON.parse(localStorage.getItem(storageField) || '{}');
+    return all[backendKey] || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Called from bootUnity() AFTER providers is constructed but BEFORE
+ * providers.autoDetect() fires. Any backends the user configured via
+ * the setup modal get pushed into the live provider chain so they
+ * take priority ahead of the auto-detected defaults.
+ */
+function injectCustomBackendsIntoProviders() {
+  if (!providers) return;
+  try {
+    const imgAll = JSON.parse(localStorage.getItem('custom_image_backends') || '{}');
+    const visAll = JSON.parse(localStorage.getItem('custom_vision_backends') || '{}');
+    for (const entry of Object.values(imgAll)) {
+      providers._localImageBackends.push({ ...entry, detected: false, fromEnv: false, configured: true });
+    }
+    for (const entry of Object.values(visAll)) {
+      providers._localVisionBackends.push({ ...entry, detected: false, fromEnv: false, configured: true });
+    }
+  } catch (err) {
+    console.warn('[Unity] custom backend injection failed:', err.message);
+  }
+
+  // R15 — apply saved Pollinations model overrides
+  const imgModel = localStorage.getItem('pollinations_image_model');
+  const visModel = localStorage.getItem('pollinations_vision_model');
+  if (imgModel && pollinations) pollinations._defaultImageModel = imgModel;
+  if (visModel) providers._pollinationsVisionModel = visModel;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -857,40 +1738,33 @@ async function handleStart() {
   startBtn.textContent = 'Requesting permissions...';
   startBtn.disabled = true;
 
+  // Optional Pollinations API key — raises rate limits on image gen
+  // + vision describer + TTS fallbacks. Unity works fine without one.
   const apiKey = apiKeyInput.value.trim();
   if (apiKey) storage.setApiKey('pollinations', apiKey);
 
   const permResults = document.getElementById('perm-results');
   permResults.style.display = 'block';
-  micStatus.textContent = 'asking...'; micStatus.className = 'status pending';
-  camStatus.textContent = 'asking...'; camStatus.className = 'status pending';
+  // Honor pre-boot sensory channel toggles — skip permission prompts
+  // for channels the user disabled so they don't get asked for mic
+  // access when they already unchecked the mic box.
+  const channels = window.unityChannels || { userMic: true, unityVision: true, unitySpeech: true };
+  micStatus.textContent = channels.userMic ? 'asking...' : 'off'; micStatus.className = 'status pending';
+  camStatus.textContent = channels.unityVision ? 'asking...' : 'off'; camStatus.className = 'status pending';
 
-  const perms = await requestPermissions();
+  const perms = await requestPermissions({
+    requestMic: channels.userMic,
+    requestCamera: channels.unityVision,
+  });
   micStatus.textContent = perms.mic ? 'granted' : 'denied';
   micStatus.className = `status ${perms.mic ? 'granted' : 'denied'}`;
   camStatus.textContent = perms.camera ? 'granted' : 'denied';
   camStatus.className = `status ${perms.camera ? 'granted' : 'denied'}`;
 
-  // Read selected backends
-  const textSelect = document.getElementById('text-model-select');
-  if (textSelect.value) {
-    try {
-      const selected = JSON.parse(textSelect.value);
-      bestBackend = selected;
-      storage.set('custom_ai_url', selected.url);
-      const matched = detectedAI.find(d => d.url === selected.url && d.name === selected.name);
-      if (matched?.apiKey) storage.setApiKey('active_provider', matched.apiKey);
-    } catch {}
-  }
-
-  const imageSelect = document.getElementById('image-model-select');
-  if (imageSelect.value) {
-    try {
-      const img = JSON.parse(imageSelect.value);
-      storage.set('image_model', img.model);
-      storage.set('image_backend_url', img.url);
-    } catch {}
-  }
+  // R15 — text-model-select / image-model-select readers DELETED.
+  // Sensory backends (image gen, vision describer) come from
+  // providers.autoDetect() + ENV_KEYS.imageBackends[] /
+  // visionBackends[] inside bootUnity. No dropdown state to read.
 
   uiState.permMic = perms.mic;
   uiState.permCamera = perms.camera;
@@ -902,46 +1776,65 @@ async function handleStart() {
 
 async function bootUnity(apiKey, perms) {
   // ── Initialize peripherals ──
+  // R15b-T6 — pollinations + providers are now constructed at init()
+  // time (page load) so the setup modal's sensory inventory panel
+  // shows real detected backends before the user clicks WAKE UNITY UP.
+  // bootUnity just REUSES the module-level instances. If the user
+  // entered a new Pollinations key in the modal, update the existing
+  // pollinations client in place.
   const effectiveKey = apiKey || storage.getApiKey('pollinations');
-  pollinations = new PollinationsAI(effectiveKey || undefined);
-
-  providers = new AIProviders({ pollinations, storage });
-  if (bestBackend) {
-    const matched = detectedAI.find(d => d.url === bestBackend.url && d.name === bestBackend.name);
-    providers.configure(bestBackend.url, bestBackend.model, matched?.apiKey || storage.getApiKey('active_provider') || '');
+  if (!pollinations) {
+    // Defensive fallback — init() should have created this already,
+    // but if something went wrong, create it now.
+    pollinations = new PollinationsAI(effectiveKey || undefined);
+  } else if (effectiveKey) {
+    pollinations._apiKey = effectiveKey;
+  }
+  if (!providers) {
+    providers = new AIProviders({ pollinations, storage });
+    if (typeof providers.loadEnvConfig === 'function') providers.loadEnvConfig(ENV_KEYS);
+    injectCustomBackendsIntoProviders();
+    if (typeof providers.onStatus === 'function') {
+      providers.onStatus((payload) => {
+        try { window.dispatchEvent(new CustomEvent('unity-sensory-status', { detail: payload })); } catch {}
+      });
+    }
+    sensoryStatus.init(providers);
+    if (typeof providers.autoDetect === 'function') providers.autoDetect().catch(err => console.warn('[Unity] image probe failed:', err.message));
+    if (typeof providers.autoDetectVision === 'function') providers.autoDetectVision().catch(err => console.warn('[Unity] vision probe failed:', err.message));
   }
 
   voice = new VoiceIO();
   if (effectiveKey) voice.setApiKey(effectiveKey);
+  // Expose on window so chat-panel in-the-moment mute buttons can reach it
+  window.voice = voice;
+  // Respect persisted speech mute toggle on boot — if user had Unity
+  // speech disabled last session, carry it forward.
+  if (window.unityChannels && window.unityChannels.unitySpeech === false) {
+    voice._muted = true;
+  }
 
   sandbox = new Sandbox('sandbox');
 
-  // ── Initialize Broca's Area (language generation peripheral) ──
-  // Brain-only mode: no AI text model. Brain speaks from its own equations.
-  if (!window._brainOnlyMode) {
-    brocasArea = new BrocasArea({ providers, storage, persona: UNITY_PERSONA });
-  }
+  // R4 — BrocasArea instantiation removed. Unity's text generation
+  // runs through brain.processAndRespond → innerVoice.languageCortex
+  // which is fully equational. Brain-only is the only mode now.
 
   // ══════════════════════════════════════════════════════════════
   // CREATE THE BRAIN
-  // Server connected + NOT brain-only → use server for everything
-  // Brain-only mode → local brain (own dictionary, no AI)
-  // No server → local brain
+  // Server connected → use server (GPU-exclusive, shared state)
+  // No server → local brain (own dictionary, CPU LIF fallback)
+  // Either way cognition is 100% equational per R4. R15 dropped
+  // the old `!window._brainOnlyMode` guard since brain-only is
+  // the only mode now.
   // ══════════════════════════════════════════════════════════════
-  if (landingBrainSource && landingBrainSource.isConnected() && !window._brainOnlyMode) {
+  if (landingBrainSource && landingBrainSource.isConnected()) {
     brain = landingBrainSource;
-    console.log('[Unity] Using server brain (text via Pollinations on server)');
+    console.log('[Unity] Using server brain (equational via server language cortex)');
   } else {
     brain = new UnityBrain();
     brain.start();
-    console.log(`[Unity] Using local brain${window._brainOnlyMode ? ' (BRAIN ONLY — no AI text)' : ''}`);
-    // If server is connected, still wire state updates for visualization
-    if (landingBrainSource && landingBrainSource.isConnected()) {
-      landingBrainSource.on('stateUpdate', (state) => {
-        if (landingBrain3d) landingBrain3d.updateState(state);
-        updateLandingStats(state);
-      });
-    }
+    console.log('[Unity] Using local brain (equational, no server detected)');
   }
 
   // Load persona into whichever brain is now active. Idempotent —
@@ -966,51 +1859,32 @@ async function bootUnity(apiKey, perms) {
 
   if (perms.camera && perms.cameraStream) {
     brain.connectCamera(perms.cameraStream);
-    // Set up IT-level vision describer (calls AI for object recognition)
-    // Vision describer — sends actual camera frame to Pollinations GPT-4o
-    // which DOES support vision/image understanding via the openai model.
-    brain.visualCortex.setDescriber(async (dataUrl) => {
-      if (!dataUrl) return 'No frame captured.';
-      try {
-        // Pollinations openai model supports multimodal — send the actual image
-        const headers = { 'Content-Type': 'application/json' };
-        if (pollinations._apiKey) headers['Authorization'] = `Bearer ${pollinations._apiKey}`;
-
-        const res = await fetch('https://gen.pollinations.ai/v1/chat/completions', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            model: 'openai',
-            messages: [
-              { role: 'system', content: 'Describe what you see through a webcam. What is the person doing, how do they seem, what is around them. 1 sentence. No privacy disclaimers.' },
-              { role: 'user', content: [
-                { type: 'text', text: 'What do you see?' },
-                { type: 'image_url', image_url: { url: dataUrl } },
-              ]},
-            ],
-            temperature: 0.3,
-          }),
-          signal: AbortSignal.timeout(15000),
-        });
-
-        if (res.ok) {
-          const json = await res.json();
-          const desc = json.choices?.[0]?.message?.content || '';
-          console.log('[Vision] AI description:', desc.slice(0, 80));
+    // R13 — vision describer now goes through SensoryAIProviders with
+    // full multi-provider priority (env.js visionBackends → auto-detected
+    // Ollama llava/moondream/LM Studio/LocalAI/llama.cpp/Jan → Pollinations
+    // multimodal fallback). Returns null on total failure instead of a
+    // lying "processing..." string so visual cortex can skip the frame
+    // and retry cleanly on the next scheduled call.
+    // RemoteBrain uses a stub visualCortex without setDescriber — the
+    // server handles its own vision pipeline. Only wire the describer
+    // on local-brain mode where visualCortex is the real V1→IT pipeline.
+    if (brain.visualCortex && typeof brain.visualCortex.setDescriber === 'function') {
+      brain.visualCortex.setDescriber(async (dataUrl) => {
+        if (!dataUrl) return null;
+        const desc = await providers.describeImage(dataUrl);
+        if (desc) {
+          console.log('[Vision]', desc.slice(0, 80));
           return desc;
-        } else {
-          console.warn('[Vision] Pollinations vision returned', res.status);
-          return 'Camera active, processing...';
         }
-      } catch (err) {
-        console.warn('[Vision] Description failed:', err.message);
-        return 'Camera active, processing...';
-      }
-    });
+        return null;
+      });
+    }
   }
 
   // ── Connect brain peripherals — brain controls everything ──
-  if (brocasArea) brain.connectLanguage(brocasArea);
+  // R4 — brain.connectLanguage(brocasArea) removed. Language generation
+  // is internal to the brain (innerVoice.languageCortex), not a
+  // connected peripheral.
   brain.connectVoice(voice);
   // Images still available even in brain-only mode
   brain.connectImageGen(pollinations, sandbox, storage);
@@ -1066,11 +1940,29 @@ async function bootUnity(apiKey, perms) {
   // already emits 'response', so greeting handler should NOT also display.
   let _greetingDone = false;
 
-  // ── /think command — shows what the brain sends to the AI model ──
-  function handleThink(userText) {
-    const state = brain.getState();
-    const prompt = brocasArea._buildPrompt(state);
+  // ── /think command ──────────────────────────────────────────────
+  // Bare `/think` dumps Unity's current raw brain state (arousal,
+  // valence, Ψ, coherence, etc.) so you can inspect what's driving
+  // slot scoring right now. `/think <text>` additionally runs the
+  // typed text through Unity's cognition pipeline — sensory analysis
+  // updates the running context vector, language cortex slot scorer
+  // generates a preview response, hippocampus recall fires, motor
+  // softmax reports the action distribution — and shows all of it as
+  // a cognitive trace. The preview runs WITHOUT storing an episode
+  // or emitting a real response event, so /think never counts as
+  // real conversation: it's a pure debug lens.
+  //
+  // R4 legacy note: pre-R4 this command also displayed the Pollinations
+  // text-AI system prompt via `brocasArea._buildPrompt(state)`. That
+  // backend is gone, so there's no synthetic prompt to show — the
+  // brain state itself IS the input to slot scoring.
+  async function handleThink(userText) {
+    const id = 'brain-think-view';
+    if (sandbox.has(id)) sandbox.remove(id);
 
+    // Always capture the current raw brain state snapshot first so
+    // we can show it alongside the cognition trace.
+    const state = brain.getState();
     const rawState = `Arousal: ${((state.amygdala?.arousal ?? 0) * 100).toFixed(1)}%
 Valence: ${(state.amygdala?.valence ?? 0).toFixed(3)}
 Ψ Consciousness: ${(state.psi ?? 0).toFixed(4)}
@@ -1082,27 +1974,137 @@ Reward: ${(state.reward ?? 0).toFixed(3)}
 Memory: ${state.memory?.episodeCount ?? 0} episodes, WM ${((state.memory?.workingMemoryLoad ?? 0) * 100).toFixed(0)}%
 Vision: ${state.visionDescription || 'none'}`;
 
-    // Inject into sandbox as a formatted code viewer
-    const id = 'brain-think-view';
-    if (sandbox.has(id)) sandbox.remove(id);
+    // Cognition trace — only runs when a typed input is provided.
+    let cognitionHtml = '';
+    const hasInput = userText && userText.length > 0;
+    if (hasInput) {
+      try {
+        const iv = brain.innerVoice;
+        const sens = brain.sensory;
+        const lc = iv?.languageCortex;
+        const dict = iv?.dictionary;
+
+        // Step 1 — analyze the input through the sensory pipeline so
+        // the running context vector reflects the typed text. This is
+        // a temporary priming: we capture the vector before and after
+        // to show the shift. (sensory.analyzeInput updates its own
+        // internal context but doesn't commit any episode or fire a
+        // response event — safe to call as a preview.)
+        let contextShift = '(sensory not available)';
+        if (sens && typeof sens.analyzeInput === 'function') {
+          const before = lc?._contextVector ? [...lc._contextVector] : null;
+          sens.analyzeInput(userText);
+          const after = lc?._contextVector ? [...lc._contextVector] : null;
+          if (before && after && before.length === after.length) {
+            let dot = 0, nb = 0, na = 0;
+            for (let i = 0; i < before.length; i++) {
+              dot += before[i] * after[i];
+              nb += before[i] * before[i];
+              na += after[i] * after[i];
+            }
+            const cos = (nb > 0 && na > 0) ? dot / (Math.sqrt(nb) * Math.sqrt(na)) : 1;
+            const shift = 1 - cos;
+            contextShift = `context vector shifted ${(shift * 100).toFixed(1)}% (cosine similarity pre→post = ${cos.toFixed(3)})`;
+          } else if (after) {
+            contextShift = `context vector initialized from input (${after.length}d)`;
+          }
+        }
+
+        // Step 2 — hippocampus recall check. Pull the top memory match
+        // (if any) so we can see what Unity remembers about this input.
+        let recallReport = '(no memory system available)';
+        if (lc && typeof lc._recallSentence === 'function') {
+          try {
+            const recall = lc._recallSentence(userText);
+            if (recall && recall.confidence > 0.05) {
+              recallReport = `best match: "${(recall.memory?.text || '').slice(0, 120)}"\nconfidence: ${recall.confidence.toFixed(3)} (${recall.confidence > 0.6 ? 'DIRECT EMIT' : recall.confidence > 0.3 ? 'soft recall seed' : 'below threshold, deflect or cold gen'})`;
+            } else {
+              recallReport = 'no match above threshold — cold generation path';
+            }
+          } catch (e) {
+            recallReport = `(recall error: ${e.message})`;
+          }
+        }
+
+        // Step 3 — languageCortex.generate() preview. This is Unity's
+        // actual response to the typed input, produced by the same
+        // equational pipeline real chat uses. No episode stored, no
+        // 'response' event emitted — just the generated sentence.
+        let generated = '(language cortex not available)';
+        if (lc && typeof lc.generate === 'function' && dict) {
+          try {
+            const cortexPattern = brain.clusters?.cortex?.getSemanticReadout?.(brain._sharedEmbeddings) || null;
+            const out = lc.generate(
+              dict,
+              state.amygdala?.arousal ?? 0.5,
+              state.amygdala?.valence ?? 0,
+              state.oscillations?.coherence ?? 0.5,
+              state.psi ?? 0,
+              state.amygdala?.fear ?? 0,
+              state.reward ?? 0,
+              state.drugState || 'cokeAndWeed',
+              state.hypothalamus?.social ?? 0.5,
+              cortexPattern,
+            );
+            generated = typeof out === 'string' ? out : (out?.text || JSON.stringify(out));
+          } catch (e) {
+            generated = `(generate error: ${e.message})`;
+          }
+        }
+
+        // Step 4 — motor softmax snapshot (what action would win right
+        // now, and with what distribution)
+        const motorDist = state.motor?.channelDist || state.motor?.softmax || null;
+        const motorReport = motorDist
+          ? Object.entries(motorDist).map(([k, v]) => `  ${k}: ${(v * 100).toFixed(1)}%`).join('\n')
+          : `selectedAction: ${state.motor?.selectedAction ?? 'idle'} (confidence ${((state.motor?.confidence ?? 0) * 100).toFixed(1)}%)`;
+
+        const escape = (s) => String(s).replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+        cognitionHtml = `
+        <div class="think-section">
+          <div class="think-label">COGNITION TRACE</div>
+          <div class="think-content">
+            <div style="color:var(--cyan);font-size:11px;margin-bottom:4px;">Unity's equational response to "${escape((userText || '').slice(0, 80))}":</div>
+            <pre class="think-content think-mono">${escape(generated)}</pre>
+          </div>
+        </div>
+        <div class="think-section">
+          <div class="think-label">SEMANTIC CONTEXT SHIFT</div>
+          <pre class="think-content think-mono">${escape(contextShift)}</pre>
+        </div>
+        <div class="think-section">
+          <div class="think-label">HIPPOCAMPUS RECALL</div>
+          <pre class="think-content think-mono">${escape(recallReport)}</pre>
+        </div>
+        <div class="think-section">
+          <div class="think-label">MOTOR CHANNEL DISTRIBUTION</div>
+          <pre class="think-content think-mono">${escape(motorReport)}</pre>
+        </div>`;
+      } catch (err) {
+        cognitionHtml = `<div class="think-section"><div class="think-label">COGNITION TRACE — ERROR</div><pre class="think-content think-mono">${String(err.message || err).replace(/</g, '&lt;')}</pre></div>`;
+      }
+    }
+
     sandbox.inject({
       id,
       html: `<div class="think-view">
         <div class="think-header">
-          <span>🧠 /think — What the AI model receives</span>
+          <span>🧠 /think — ${hasInput ? "Unity's cognition on your input" : "Unity's current brain state"}</span>
           <button onclick="document.getElementById('${id}').remove()" style="background:none;border:1px solid #333;color:#777;border-radius:4px;cursor:pointer;padding:2px 8px;">✕</button>
         </div>
         <div class="think-section">
           <div class="think-label">USER INPUT</div>
-          <div class="think-content">${(userText || '(none)').replace(/</g, '&lt;')}</div>
+          <div class="think-content">${(userText || '(none — showing current state only)').replace(/</g, '&lt;')}</div>
         </div>
         <div class="think-section">
           <div class="think-label">RAW BRAIN STATE</div>
           <pre class="think-content think-mono">${rawState}</pre>
         </div>
+        ${cognitionHtml}
         <div class="think-section">
-          <div class="think-label">FULL SYSTEM PROMPT SENT TO AI MODEL</div>
-          <pre class="think-content think-mono think-prompt">${prompt.replace(/</g, '&lt;')}</pre>
+          <div class="think-label">NOTE</div>
+          <pre class="think-content think-mono">R4 refactor: Unity speaks equationally via her own language cortex (innerVoice.languageCortex.generate). No text-AI backend prompt exists — the brain state above IS the input to slot scoring. The cognition trace above (if you passed input text) is a PREVIEW: it runs the same generate() pipeline real chat uses but does NOT store an episode or emit a 'response' event, so /think never pollutes Unity's memory.</pre>
         </div>
       </div>`,
       css: `.think-view{background:#0a0a0a;border:1px solid #ff4d9a33;border-radius:10px;padding:16px;margin:12px 0;font-family:'JetBrains Mono',monospace;max-height:80vh;overflow-y:auto}
@@ -1115,19 +2117,26 @@ Vision: ${state.visionDescription || 'none'}`;
       js: '',
     });
 
-    showSpeechBubble('/think — brain state in sandbox', 3000);
-    console.log('[/think] Brain prompt logged to sandbox');
+    showSpeechBubble(hasInput ? '/think — cognition trace in sandbox' : '/think — brain state in sandbox', 3000);
+    console.log('[/think] Trace logged to sandbox', { hasInput });
   }
 
   // ── Create UI components ──
   chatPanel = new ChatPanel({
     storage,
     onSend: async (text) => {
-      // /think command — show brain prompt, don't send to AI
+      // /think command — show brain state + optional cognition trace
+      // on typed input. Runs the input through sensory + language
+      // cortex as a PREVIEW (no episode stored, no response emitted)
+      // so users can see what Unity would think about something
+      // without committing it to her memory.
       if (text.startsWith('/think')) {
         const userInput = text.replace(/^\/think\s*/, '').trim();
-        handleThink(userInput);
-        return { response: { text: 'Brain state shown.' }, action: 'think' };
+        await handleThink(userInput);
+        return {
+          response: { text: userInput ? 'Cognition trace shown.' : 'Brain state shown.' },
+          action: 'think',
+        };
       }
       // /bench + /scale-test — dense vs sparse perf comparison and LIF scale test (U307)
       if (text.startsWith('/bench') || text.startsWith('/scale-test')) {
@@ -1155,22 +2164,30 @@ Vision: ${state.visionDescription || 'none'}`;
 
   brainViz = new BrainVisualizer();
 
-  // Wire sensory streams to the visualizer for display
-  if (perms.mic && perms.micStream) {
-    brainViz.setMicStream(perms.micStream);
+  // T1 2026-04-13 — wire sensory displays to read FROM the cortex
+  // instances instead of keeping duplicate handles to the raw
+  // MediaStream. Single source of truth: viz panels query
+  // brain.visualCortex / brain.auditoryCortex for what they need,
+  // and those cortices own their stream/analyser lifecycle. Previously
+  // this block passed `perms.micStream` and `perms.cameraStream`
+  // straight through, creating two places that held references to the
+  // same stream and making mute / destroy / reconnect paths fragile.
+  if (brain.auditoryCortex?.isActive?.()) {
+    const analyser = brain.auditoryCortex.getAnalyser?.();
+    if (analyser && typeof brainViz.setMicStream === 'function') {
+      // brainViz.setMicStream still accepts either a raw stream OR
+      // an analyser node; the adapter internally handles both. We
+      // prefer the analyser now since it's what AuditoryCortex
+      // actually owns and exposes.
+      brainViz.setMicStream(analyser);
+    }
   }
-  if (perms.camera && perms.cameraStream) {
-    // Create a vision-like object the viz can read from
-    brainViz.setVision({
-      isActive: () => brain.visualCortex.isActive(),
-      _stream: perms.cameraStream,
-      getLastDescription: () => brain.visualCortex.description || 'Processing...',
-      getGaze: () => ({
-        x: brain.visualCortex.gazeX,
-        y: brain.visualCortex.gazeY,
-        target: brain.visualCortex.gazeTarget,
-      }),
-    });
+  if (brain.visualCortex?.isActive?.()) {
+    // brainViz.setVision reads directly from the live VisualCortex
+    // instance — no separate stream handle, no duck-typed adapter.
+    // VisualCortex exposes everything the viz panel needs: isActive,
+    // getVideoElement, description, gazeX/gazeY/gazeTarget.
+    brainViz.setVision(brain.visualCortex);
   }
 
   // Use the landing 3D brain if available, or create new one
@@ -1179,8 +2196,34 @@ Vision: ${state.visionDescription || 'none'}`;
     try { brain3d = new Brain3D('brain-3d-container'); } catch { brain3d = null; }
   }
 
+  // T5 2026-04-13 — wire the brain reference into the 3D viz so its
+  // event detector system can call languageCortex.generate() to
+  // produce Unity's equational commentary on detected brain events
+  // (arousal climbs, reward spikes, topic drifts, recognition,
+  // confusion, motor commitment, coherence lock, etc.). Without a
+  // brain reference the event system falls back to the legacy
+  // numeric-telemetry generator pool — that's what the landing page
+  // shows pre-boot. Once bootUnity runs, we attach the real brain
+  // and commentary starts appearing in popups.
+  if (brain3d && typeof brain3d.setBrain === 'function') {
+    brain3d.setBrain(brain);
+  }
+  // Wire the landing-page Brain3D too so its popups also show Unity's
+  // real commentary once bootUnity has run. Pre-boot, landingBrain3d
+  // has no brain ref and falls back to the legacy telemetry generator
+  // which is correct — the brain doesn't exist yet.
+  if (typeof landingBrain3d !== 'undefined' && landingBrain3d
+      && typeof landingBrain3d.setBrain === 'function') {
+    landingBrain3d.setBrain(brain);
+  }
+
   // ── Wire DOM events ──
-  unityAvatar.addEventListener('click', () => chatPanel.toggle());
+  // R15 — unityAvatar click handler was moved to page-load time
+  // (inside the initLanding IIFE near the TALK TO UNITY button
+  // wiring) so the bubble is never dead pre-boot. Pre-boot clicks
+  // open the setup modal; post-boot clicks toggle the chat panel
+  // via the `window._unityBooted` flag set at the end of this
+  // function. Nothing to attach here anymore.
   const brainVizBtn = document.getElementById('brain-viz-btn');
   if (brainVizBtn) brainVizBtn.addEventListener('click', () => brainViz.toggle());
   const brain3dBtn = document.getElementById('brain-3d-btn');
@@ -1189,14 +2232,27 @@ Vision: ${state.visionDescription || 'none'}`;
   const micMuteBtn = document.getElementById('mic-mute-btn');
   if (micMuteBtn) micMuteBtn.addEventListener('click', toggleMicMute);
 
-  // Settings buttons — both toolbar and HUD open setup modal
+  // Settings buttons — both toolbar and HUD open setup modal.
+  // Idempotent: skips buttons that were already wired at page-load
+  // time (initLanding now does the initial wire so they work
+  // pre-boot). This re-wire runs after boot so post-boot openings
+  // get the "Apply Changes" button text + sensory inventory
+  // refresh the pre-boot handler doesn't bother with.
   const wireSettings = (btnId) => {
     const btn = document.getElementById(btnId);
-    if (btn) btn.addEventListener('click', () => {
+    if (!btn) return;
+    // Replace the handler — pre-boot one only opens the modal,
+    // post-boot version also updates the button text + refreshes
+    // inventory. Clone the node to drop any existing listeners.
+    const fresh = btn.cloneNode(true);
+    btn.parentNode.replaceChild(fresh, btn);
+    fresh._wired = true;
+    fresh.addEventListener('click', () => {
       setupModal.classList.remove('hidden');
       setupModal.style.display = '';
       startBtn.textContent = 'Apply Changes';
       startBtn.disabled = false;
+      renderSensoryInventory();
     });
   };
   wireSettings('settings-btn');
@@ -1224,7 +2280,7 @@ Vision: ${state.visionDescription || 'none'}`;
     // Voice "slash think" / "think" command
     if (text.toLowerCase().startsWith('slash think') || text.toLowerCase().startsWith('/think')) {
       const userInput = text.replace(/^(slash think|\/think)\s*/i, '').trim();
-      handleThink(userInput);
+      await handleThink(userInput);
       setAvatarState('idle');
       return;
     }
@@ -1270,7 +2326,14 @@ Vision: ${state.visionDescription || 'none'}`;
     stopSpeaking: () => voice.stopSpeaking(),
     listen: () => { if (!uiState.micMuted) voice.startListening(); },
     stopListening: () => voice.stopListening(),
-    chat: (text) => { brain.receiveSensoryInput('text', text); return brocasArea.generate(brain.getState(), text); },
+    // R4 — chat was `brocasArea.generate(state, text)` (text-AI peripheral).
+    // Now routes through brain.processAndRespond which runs the full
+    // equational language cortex path. Returns the response text from
+    // the result object so sandbox components see the same interface.
+    chat: async (text) => {
+      const result = await brain.processAndRespond(text);
+      return result?.text || '';
+    },
     generateImage: (prompt, opts) => pollinations.generateImage(prompt, opts),
     getState: () => brain.getState(),
     ui: {
@@ -1349,28 +2412,54 @@ Vision: ${state.visionDescription || 'none'}`;
   }
 
   // ── Unity's first words — NEVER blocks boot ──
-  if (brocasArea) {
-    generateGreeting(perms).catch(() => {
-      showSpeechBubble("Hey. I'm Unity. Click me to chat.", 8000);
-    });
-  } else {
-    showSpeechBubble("...", 3000);
-    console.log('[Unity] Brain-only mode — no AI greeting');
-  }
+  // R4 — greeting path now runs through the equational language
+  // cortex (same as normal chat). She emits whatever her current
+  // brain state produces when the speech drive crosses threshold,
+  // or she just stays silent until spoken to. No synthetic
+  // system-prompt anymore.
+  generateGreeting(perms).catch((err) => {
+    console.warn('[Unity] greeting emission failed:', err.message);
+  });
+
+  // R15 — flip the booted flag so the unityAvatar click handler
+  // (wired at page-load time in the initLanding IIFE) stops
+  // opening the setup modal and starts toggling the chat panel
+  // instead. Without this flag, users who booted Unity would
+  // still get the setup modal when clicking the bubble.
+  window._unityBooted = true;
+
   console.log('[Unity] Boot complete — ready');
 }
 
 async function generateGreeting(perms) {
-  const isFirst = storage.isFirstVisit();
-  const prompt = isFirst
-    ? "[SYSTEM-GREETING: Someone new showed up. Say something natural. 1-2 sentences. This is NOT user input.]"
-    : "[SYSTEM-GREETING: They're back. Say something real. 1 sentence. This is NOT user input.]";
-
+  // R4 — greeting used to call brocasArea.generate with a [SYSTEM-GREETING]
+  // prompt so the AI would produce a welcome line. Now: trigger an
+  // idle speech drive evaluation on the brain by pumping zero-input
+  // context and letting the normal response path fire if brain state
+  // crosses the speech threshold. If nothing emerges, stay silent.
+  //
+  // Alternative: we could force a greeting by calling
+  // brain.innerVoice.languageCortex.generate() directly with a null
+  // user context. That bypasses input-path side effects.
   try {
-    // Use Broca's area directly for greeting — NOT processAndRespond,
-    // which would save the prompt as "user" message in history
     const state = brain.getState();
-    const text = await brocasArea.generate(state, prompt);
+    if (!brain.innerVoice?.languageCortex || !brain.innerVoice?.dictionary) return;
+    const text = brain.innerVoice.languageCortex.generate(
+      brain.innerVoice.dictionary,
+      state.amygdala?.arousal ?? 0.9,
+      state.amygdala?.valence ?? 0.2,
+      state.oscillations?.coherence ?? 0.4,
+      {
+        predictionError: 0,
+        motorConfidence: 0,
+        psi: state.psi ?? 0,
+        cortexPattern: null,
+        drugState: state.drugState || 'cokeAndWeed',
+        fear: 0,
+        reward: 0,
+        socialNeed: 0.7,
+      }
+    );
     if (text) {
       // Let the brain speak it
       if (voice) {
@@ -1381,9 +2470,13 @@ async function generateGreeting(perms) {
       showSpeechBubble(text, 10000);
       if (chatPanel) chatPanel.addMessage('assistant', text, true);
     }
-    return text || "Hey.";
-  } catch {
-    return "Hey.";
+    // R4 — no canned "Hey." fallback. If the slot scorer produced
+    // nothing from current brain state, stay silent. The brain will
+    // emit a greeting when it feels like one on its own.
+    return text || '';
+  } catch (err) {
+    console.warn('[Unity] greeting generate threw:', err.message);
+    return '';
   }
 }
 
@@ -1487,7 +2580,10 @@ function updateBrainIndicator(state) {
   const thetaEl = $('hud-theta'); if (thetaEl) thetaEl.textContent = (bandPower.theta ?? 0).toFixed(1);
   const drugEl = $('hud-drug'); if (drugEl) drugEl.textContent = s.drugState || l.drugState || 'cokeAndWeed';
   const actionEl = $('hud-action'); if (actionEl) actionEl.textContent = s.motor?.selectedAction || l.motor?.selectedAction || 'idle';
-  const modelEl = $('hud-model'); if (modelEl) modelEl.textContent = window._brainOnlyMode ? 'BRAIN ONLY' : (bestBackend?.model?.slice(0, 25) || '—');
+  // R15 — HUD model label used to show bestBackend.model (the deleted
+  // text-AI dropdown selection). Post-R4 Unity speaks from her own
+  // language cortex so there is no "model" to display. Just show BRAIN.
+  const modelEl = $('hud-model'); if (modelEl) modelEl.textContent = 'BRAIN';
 
   // Shared state
   const users = s.connectedUsers ?? l.connectedUsers ?? 0;

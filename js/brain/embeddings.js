@@ -196,6 +196,71 @@ export class SemanticEmbeddings {
   }
 
   /**
+   * REVERSE MAPPING — read semantic state back OUT of cortex neural activation.
+   *
+   * This is the mathematical inverse of `mapToCortex`. It's the read-side
+   * of the semantic input/output loop:
+   *
+   *   word → getEmbedding → mapToCortex → inject as neural currents
+   *        → cortex LIF dynamics + modulators (emotional gate, Ψ, etc)
+   *        → lastSpikes / voltages
+   *        → cortexToEmbedding                             ← THIS METHOD
+   *        → 50-dim semantic vector representing "what Unity's cortex
+   *          currently holds in Wernicke's area" in GloVe space
+   *        → cosine against candidate word embeddings
+   *        → pick the word that semantically matches the cortex state
+   *
+   * The read uses the SAME group-per-dimension layout as the write, so
+   * the round-trip preserves the semantic structure (after neural
+   * transformation through LIF integration + modulators). Each group of
+   * groupSize neurons averages to ONE embedding dimension value.
+   *
+   * Output is L2-normalized so cosine similarity against word embeddings
+   * (which are all L2-normalized by GloVe loader) produces values in
+   * [-1, 1] that reflect semantic alignment.
+   *
+   * @param {Float64Array|Uint8Array} spikes — cluster.lastSpikes
+   * @param {Float64Array} voltages — cluster voltages (for sub-threshold info)
+   * @param {number} cortexSize — total cortex neuron count (default 300)
+   * @param {number} langStart — first neuron of the language region (default 150)
+   * @returns {Float64Array} — 50d L2-normalized semantic pattern
+   */
+  cortexToEmbedding(spikes, voltages, cortexSize = 300, langStart = 150) {
+    const langSize = cortexSize - langStart;
+    const groupSize = Math.max(1, Math.floor(langSize / EMBED_DIM));
+    const out = new Float64Array(EMBED_DIM);
+
+    for (let d = 0; d < EMBED_DIM; d++) {
+      const startNeuron = langStart + d * groupSize;
+      let sum = 0;
+      let count = 0;
+      for (let n = 0; n < groupSize; n++) {
+        const idx = startNeuron + n;
+        if (idx >= cortexSize) break;
+        // Spike-dominant readout — a firing neuron contributes 1.0,
+        // a subthreshold neuron contributes its normalized voltage.
+        // This mirrors the write-side scaling (value * 8) so the
+        // round-trip signal preserves sign and relative magnitude.
+        if (spikes && spikes[idx]) {
+          sum += 1.0;
+        } else if (voltages) {
+          sum += (voltages[idx] + 70) / 20; // LIF voltage norm, same as cluster.getOutput
+        }
+        count++;
+      }
+      out[d] = count > 0 ? sum / count : 0;
+    }
+
+    // L2 normalize so cosine against GloVe vectors works
+    let norm = 0;
+    for (let i = 0; i < EMBED_DIM; i++) norm += out[i] * out[i];
+    norm = Math.sqrt(norm) || 1;
+    for (let i = 0; i < EMBED_DIM; i++) out[i] /= norm;
+
+    return out;
+  }
+
+  /**
    * Cosine similarity between two embeddings.
    * @returns {number} — -1 to 1
    */
@@ -324,3 +389,30 @@ export class SemanticEmbeddings {
     };
   }
 }
+
+// ── SHARED SINGLETON ────────────────────────────────────────────
+//
+// R2 of brain-refactor-full-control — before this shared singleton,
+// sensory.js created its own SemanticEmbeddings instance and did
+// semantic cortex injection on INPUT, while language-cortex.js had
+// no reference to embeddings at all and used letter-hash patterns
+// on OUTPUT. The cortex state carried semantic info from input but
+// the slot scorer couldn't read it because it was matching letter
+// hashes against neural activation.
+//
+// One shared instance bridges both sides — input semantic mapping
+// refines the SAME embedding table that output semantic scoring
+// reads from. Online refinements from live conversation visible
+// to the generation path.
+//
+// Import:
+//   import { sharedEmbeddings } from './embeddings.js';
+//
+// Any module that wants semantic word vectors uses this. The
+// instance's `loadPreTrained()` should be called once at boot from
+// app.js (or the first importer) and `await`ed before corpus loading.
+export const sharedEmbeddings = new SemanticEmbeddings();
+
+// Export the dimension constant so downstream files can align buffer
+// sizes (e.g. PATTERN_DIM in dictionary.js / language-cortex.js).
+export { EMBED_DIM };

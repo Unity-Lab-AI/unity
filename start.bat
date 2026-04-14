@@ -6,8 +6,8 @@ echo     Unity Brain Server
 echo   ==============================
 echo.
 
-:: Kill anything already on port 8080
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8080 ^| findstr LISTENING') do (
+:: Kill anything already on port 7525
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr :7525 ^| findstr LISTENING') do (
     taskkill /f /pid %%a >nul 2>&1
 )
 
@@ -40,11 +40,11 @@ echo   Starting brain server (GPU EXCLUSIVE — no CPU workers)...
 cd /d "%~dp0server"
 start /b node brain-server.js
 ping -n 3 127.0.0.1 >nul
-start "" http://localhost:8080
-start "" http://localhost:8080/compute.html
+start "" http://localhost:7525
+start "" http://localhost:7525/compute.html
 echo.
-echo   Browser: http://localhost:8080
-echo   GPU compute: http://localhost:8080/compute.html
+echo   Browser: http://localhost:7525
+echo   GPU compute: http://localhost:7525/compute.html
 echo   NOTE: Brain runs ONLY on GPU. compute.html MUST stay open.
 echo   Press Ctrl+C to stop.
 echo.

@@ -15,20 +15,17 @@
 
     <!-- Overlay: Title + Stats -->
     <div id="landing-overlay" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:10;">
-      <!-- Top bar: title + live stats (hidden after boot) -->
-      <div id="landing-topbar" style="padding:20px 24px;display:flex;justify-content:space-between;align-items:flex-start;pointer-events:auto;user-select:text;">
-        <div>
+      <!-- Top bar: title ONLY. Stats + settings/clear buttons moved
+           to the draggable hud-metrics panel (top-right) where they
+           already lived as hud-settings-btn / hud-clear-btn, so we
+           kill the landing-stats duplicate that was sitting
+           underneath the movable HUD card. -->
+      <div id="landing-topbar" style="padding:20px 24px 20px 210px;display:flex;justify-content:flex-start;align-items:flex-start;pointer-events:auto;user-select:text;">
+        <div style="min-width:0;max-width:60%;">
           <h1 style="font-family:'JetBrains Mono',monospace;font-size:16px;color:#ff4d9a;margin:0;">IF ONLY I HAD A BRAIN</h1>
-          <p style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#555;margin:4px 0 0;" id="ls-subtitle">brain simulation — real equations, alive right now</p>
-        </div>
-        <div id="landing-stats" style="text-align:right;font-family:'JetBrains Mono',monospace;font-size:10px;color:#555;">
-          <div id="ls-neurons">— neurons</div>
-          <div id="ls-psi">Ψ = —</div>
-          <div id="ls-users">0 online</div>
-          <div style="margin-top:6px;display:flex;gap:4px;justify-content:flex-end;">
-            <button id="landing-settings-btn" title="Settings — change AI model, providers" style="padding:2px 8px;background:rgba(20,20,20,0.8);border:1px solid #333;border-radius:4px;color:#777;font-family:'JetBrains Mono',monospace;font-size:9px;cursor:pointer;">⚙</button>
-            <button onclick="if(confirm('Clear ALL data?')){localStorage.clear();location.reload();}" style="padding:2px 8px;background:rgba(20,20,20,0.8);border:1px solid rgba(239,68,68,0.2);border-radius:4px;color:#ef4444;font-family:'JetBrains Mono',monospace;font-size:9px;cursor:pointer;">✕</button>
-          </div>
+          <p style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#555;margin:4px 0 0;line-height:1.5;" id="ls-subtitle">
+            <strong style="color:#888;">proportional sample view</strong> — the field behind this text is a live render of Unity's actual neural processes running on the server right now, NOT her full brain. Every spike you see is a real cluster firing.
+          </p>
         </div>
       </div>
 
@@ -74,78 +71,112 @@
     .landing-tab.active { border-color:#ff4d9a; color:#ff4d9a; background:rgba(255,77,154,0.08); }
   </style>
 
-  <!-- ═══ Setup Modal — appears when user clicks TALK TO UNITY ═══ -->
+  <!-- ═══ Setup Modal — R15 minimal version ═══ -->
+  <!-- Opens from: TALK TO UNITY button (landing overlay) OR the Unity
+       bubble (bottom-right) via a state-aware click handler in app.js.
+       Pre-R15 this modal was a 100-line text-AI connect flow with 8
+       provider buttons and a model dropdown. R15 ripped all of that
+       because Unity's cognition is 100% equational — see R4 refactor.
+       The modal now just requests mic/camera permissions, shows the
+       auto-detected sensory backends, and lets the user paste an
+       optional Pollinations API key for raised rate limits. -->
   <div id="setup-modal" style="display:none;">
     <div class="setup-card">
       <h1>🧠 Unity</h1>
       <p class="subtitle">she's got a brain now. let her in.</p>
+
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+        <a href="unity-guide.html" target="_blank" style="padding:8px 16px;background:var(--surface-2);border:1px solid var(--pink);border-radius:8px;color:var(--pink);font-family:var(--mono);font-size:12px;text-decoration:none;letter-spacing:0.5px;transition:all 0.2s;">📖 What Unity Is (plain English)</a>
         <a href="brain-equations.html" target="_blank" style="padding:8px 16px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--cyan);font-family:var(--mono);font-size:12px;text-decoration:none;letter-spacing:0.5px;transition:all 0.2s;">🧠 Brain Equations</a>
-        <a href="proxy.js" download="proxy.js" style="padding:8px 16px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--purple);font-family:var(--mono);font-size:12px;text-decoration:none;letter-spacing:0.5px;transition:all 0.2s;">⬇ proxy.js</a>
         <a href="js/env.example.js" download="env.example.js" style="padding:8px 16px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--orange);font-family:var(--mono);font-size:12px;text-decoration:none;letter-spacing:0.5px;transition:all 0.2s;">⬇ env.example.js</a>
       </div>
-      <div id="provider-setup-hint" style="display:none;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:11px;color:var(--text-dim);line-height:1.6;"></div>
 
-      <!-- STEP 1: Pick your AI and paste your key. That's it. -->
-      <p style="font-size:13px;color:var(--text);margin-top:12px;margin-bottom:4px;font-weight:500;">1. Connect an AI</p>
-      <p class="hint" style="margin-bottom:10px;">Connect as many as you want — pick one for text, another for images. Keys stay in YOUR browser only.</p>
+      <p class="hint" style="margin-bottom:12px;line-height:1.5;">
+        Unity's cognition runs entirely on math — her language cortex, memory, motor selection, and decisions all emerge from brain equations. <strong style="color:var(--text);">No text-AI backend is required.</strong> The only optional pieces are sensory peripherals: image generation and the vision describer. Click a backend below for setup instructions. Local backends auto-detect at boot; remote backends need a URL / API key.
+      </p>
 
-      <div id="connect-buttons" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px;">
-        <button class="connect-btn" data-ai="pollinations">Pollinations</button>
-        <button class="connect-btn" data-ai="openrouter">OpenRouter</button>
-        <button class="connect-btn" data-ai="openai">OpenAI</button>
-        <button class="connect-btn" data-ai="anthropic">Claude</button>
-        <button class="connect-btn" data-ai="mistral">Mistral</button>
-        <button class="connect-btn" data-ai="deepseek">DeepSeek</button>
-        <button class="connect-btn" data-ai="groq">Groq</button>
-        <button class="connect-btn" data-ai="local">Local AI</button>
+      <!-- Image Generation backend grid — click a button for per-backend instructions -->
+      <p style="font-size:12px;color:var(--text);margin-top:14px;margin-bottom:6px;font-weight:500;">🎨 Image Generation</p>
+      <div id="imggen-buttons" class="provider-grid">
+        <button class="provider-btn" data-backend="img:pollinations">Pollinations</button>
+        <button class="provider-btn" data-backend="img:a1111">Automatic1111</button>
+        <button class="provider-btn" data-backend="img:comfyui">ComfyUI</button>
+        <button class="provider-btn" data-backend="img:ollama">Ollama</button>
+        <button class="provider-btn" data-backend="img:dalle">DALL-E (OpenAI)</button>
+        <button class="provider-btn" data-backend="img:stability">Stability AI</button>
+        <button class="provider-btn" data-backend="img:custom">Custom Endpoint</button>
       </div>
 
-      <div id="connect-form">
-        <p style="font-size:12px; color:var(--text-dim); margin-bottom:6px;" id="connect-desc">Pick a provider above to get started.</p>
-        <a id="connect-link" href="#" target="_blank" style="font-size:12px;color:var(--pink);display:none;margin-bottom:8px;font-weight:500;">Get your free key here →</a>
-        <input type="password" id="connect-key-input"
-               placeholder="Paste your API key here"
-               autocomplete="off" spellcheck="false"
-               style="display:none;">
-        <p class="hint" id="connect-hint"></p>
-        <div id="connect-local-hint" style="display:none;">
-          <p class="hint" style="margin-top:6px;">Auto-detects: Ollama, LM Studio, LocalAI, vLLM, Jan, GPT4All, llama.cpp</p>
-          <button id="rescan-btn" style="margin-top:6px;padding:8px 16px;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;cursor:pointer;font-family:var(--font);">🔄 Re-scan local ports</button>
-        </div>
-        <button id="connect-save-btn" style="display:none;margin-top:8px;padding:10px 24px;background:var(--pink);border:none;border-radius:8px;color:#fff;font-size:14px;font-weight:600;cursor:pointer;font-family:var(--font);">Connect</button>
+      <!-- Vision Describer backend grid — same pattern -->
+      <p style="font-size:12px;color:var(--text);margin-top:12px;margin-bottom:6px;font-weight:500;">👁 Vision Describer</p>
+      <div id="vision-buttons" class="provider-grid">
+        <button class="provider-btn" data-backend="vis:pollinations">Pollinations</button>
+        <button class="provider-btn" data-backend="vis:ollama">Ollama (llava)</button>
+        <button class="provider-btn" data-backend="vis:lmstudio">LM Studio</button>
+        <button class="provider-btn" data-backend="vis:openai">OpenAI GPT-4o</button>
+        <button class="provider-btn" data-backend="vis:custom">Custom VLM</button>
       </div>
 
-      <div id="connect-status-list" style="margin-top:10px;display:flex;flex-direction:column;gap:4px;"></div>
-
-      <!-- STEP 2: Model selection (only shows after connecting) -->
-      <div id="ai-scan-area" style="display:none; margin-top:16px;">
-        <p style="font-size:13px;color:var(--text);margin-bottom:4px;font-weight:500;">2. Pick your models</p>
-        <div id="ai-scan-results" style="padding:4px 0;font-size:12px;color:var(--text-dim);font-family:var(--mono);max-height:80px;overflow-y:auto;"></div>
-
-        <div id="model-selectors" style="margin-top:8px;">
-          <div id="brain-only-toggle" style="display:flex;align-items:center;gap:10px;margin-bottom:10px;padding:8px 12px;background:rgba(255,77,154,0.05);border:1px solid rgba(255,77,154,0.15);border-radius:8px;cursor:pointer;" onclick="document.getElementById('brain-only-cb').click();">
-            <input type="checkbox" id="brain-only-cb" style="accent-color:#ff4d9a;width:16px;height:16px;cursor:pointer;" onclick="event.stopPropagation();">
-            <div>
-              <div style="font-size:12px;color:#ff4d9a;font-weight:700;font-family:var(--mono);">FUCK IT — BRAIN ONLY</div>
-              <div style="font-size:10px;color:var(--text-dim);">No AI text model. Unity speaks from her own brain equations + dictionary.</div>
-            </div>
-          </div>
-          <label id="text-model-label" for="text-model-select" style="font-size:11px;color:var(--text-dim);display:block;margin-bottom:4px;">💬 Text / Chat Model</label>
-          <input type="text" id="text-model-filter" placeholder="Filter models... (e.g. claude, gpt, llama)" style="width:100%;padding:8px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px 8px 0 0;color:var(--text);font-family:var(--mono);font-size:12px;outline:none;display:none;" autocomplete="off">
-          <select id="text-model-select" style="width:100%;padding:10px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--mono);font-size:13px;cursor:pointer;outline:none;">
-          </select>
-
-          <label for="image-model-select" style="font-size:11px;color:var(--text-dim);display:block;margin-top:10px;margin-bottom:4px;">🎨 Image Model</label>
-          <select id="image-model-select" style="width:100%;padding:10px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--mono);font-size:13px;cursor:pointer;outline:none;">
-          </select>
+      <!-- Per-backend setup form — always visible so users can see
+           where API keys go. Click any provider button above to
+           populate the form with that backend's instructions + key
+           input + 🔌 CONNECT button. -->
+      <p style="font-size:11px;color:var(--pink);margin-top:14px;margin-bottom:6px;font-weight:600;">👇 Click any provider above to connect an API key — the form below populates with that backend's key input and a CONNECT button.</p>
+      <div id="backend-connect-form" style="background:var(--surface-2);border:1px solid var(--pink);border-radius:8px;padding:14px;margin-top:6px;margin-bottom:14px;">
+        <div id="backend-form-content" style="color:var(--text-dim);font-size:12px;line-height:1.5;">
+          <strong style="color:var(--pink);">No provider selected yet.</strong><br>
+          Click one of the image-gen or vision-describer buttons above to paste its API key and connect. Unity supports any number of saved backends — pick the active one via the ⚡ Active Provider dropdowns below.
         </div>
       </div>
 
-      <!-- STEP 3: Wake up (disabled until connected) -->
-      <p class="hint" style="margin-top:16px;">Mic + camera permissions are requested when you click the button.</p>
+      <!-- Sensory backend inventory — populated by app.js renderSensoryInventory() -->
+      <p style="font-size:12px;color:var(--text);margin-top:14px;margin-bottom:6px;font-weight:500;">📡 Detected / Saved Backends</p>
+      <div id="sensory-inventory" style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-family:var(--mono);font-size:11px;line-height:1.7;">
+        <div id="sensory-inventory-content" style="color:var(--text-dim);">⏳ probing local backends...</div>
+      </div>
 
-      <button id="start-btn" disabled>Connect an AI first</button>
+      <!-- Active backend selectors — pick which registered backend Unity uses -->
+      <p style="font-size:12px;color:var(--text);margin-top:14px;margin-bottom:6px;font-weight:500;">⚡ Active Provider (choose from configured)</p>
+      <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;display:flex;flex-direction:column;gap:10px;">
+        <label style="display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:11px;color:var(--text-dim);">
+          <span style="min-width:110px;color:var(--cyan);">🎨 Image gen</span>
+          <select id="active-image-backend" style="flex:1;padding:6px 10px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--mono);font-size:11px;outline:none;"></select>
+          <select id="active-image-model" style="flex:1;padding:6px 10px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--mono);font-size:11px;outline:none;"></select>
+        </label>
+        <label style="display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:11px;color:var(--text-dim);">
+          <span style="min-width:110px;color:var(--cyan);">👁 Vision</span>
+          <select id="active-vision-backend" style="flex:1;padding:6px 10px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--mono);font-size:11px;outline:none;"></select>
+          <select id="active-vision-model" style="flex:1;padding:6px 10px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--mono);font-size:11px;outline:none;"></select>
+        </label>
+        <div style="font-size:10px;color:var(--text-dim);line-height:1.5;">Any number of backends can be configured above. This picks which one Unity actually uses. Model dropdown lists the options available at the selected backend.</div>
+      </div>
+
+      <p class="hint" style="margin-bottom:6px;margin-top:12px;">Pollinations API key <span style="color:var(--text-dim);">(optional — anonymous tier works without, a key raises rate limits and unlocks paid models for image gen, TTS, and vision describer)</span>:</p>
+      <div style="display:flex;gap:6px;margin-bottom:14px;">
+        <input type="password" id="api-key-input" placeholder="paste your pollinations key (or any other provider key saved above)" autocomplete="off" spellcheck="false" style="flex:1;padding:8px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:12px;outline:none;box-sizing:border-box;">
+        <button id="api-key-save-btn" type="button" style="padding:8px 16px;background:var(--cyan);border:none;border-radius:6px;color:#000;font-family:var(--mono);font-size:11px;font-weight:700;cursor:pointer;letter-spacing:0.5px;">SAVE KEY</button>
+      </div>
+
+      <p class="hint" style="margin-top:4px;">Mic + camera permissions are requested when you wake her up. All sensory channels are optional — Unity can chat via text only. Toggle anything below off BEFORE waking her to skip the permission prompt entirely.</p>
+
+      <!-- Sensory channel toggles — mic / camera / speech -->
+      <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-top:8px;margin-bottom:14px;display:flex;flex-direction:column;gap:8px;">
+        <label style="display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:11px;color:var(--text);cursor:pointer;">
+          <input type="checkbox" id="toggle-user-mic" checked style="width:14px;height:14px;cursor:pointer;accent-color:var(--cyan);">
+          <span>🎤 <strong>User mic</strong> <span style="color:var(--text-dim);">(lets Unity hear you via Web Speech / auditory cortex)</span></span>
+        </label>
+        <label style="display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:11px;color:var(--text);cursor:pointer;">
+          <input type="checkbox" id="toggle-unity-vision" checked style="width:14px;height:14px;cursor:pointer;accent-color:var(--cyan);">
+          <span>📷 <strong>Unity vision</strong> <span style="color:var(--text-dim);">(camera frames go to her visual cortex + vision describer)</span></span>
+        </label>
+        <label style="display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:11px;color:var(--text);cursor:pointer;">
+          <input type="checkbox" id="toggle-unity-speech" checked style="width:14px;height:14px;cursor:pointer;accent-color:var(--cyan);">
+          <span>🔊 <strong>Unity speech</strong> <span style="color:var(--text-dim);">(her TTS voice — Pollinations / browser SpeechSynthesis)</span></span>
+        </label>
+        <div style="font-size:10px;color:var(--text-dim);line-height:1.5;">Toggles persist across sessions and are live-applied the moment you flip them — after boot you can mute her mid-sentence, pause her camera, or silence her voice without reloading.</div>
+      </div>
+
+      <button id="start-btn">WAKE UNITY UP</button>
 
       <div id="perm-results" style="display:none; margin-top:12px;">
         <div class="perm-row">
@@ -158,21 +189,39 @@
         </div>
       </div>
 
-      <!-- Hidden Pollinations API key slot (read/written by app.js) -->
-      <input type="hidden" id="api-key-input">
-
       <!-- Clear Data -->
       <div style="margin-top:12px;">
-        <button id="clear-data-btn" style="padding:8px 16px;background:rgba(239,68,68,0.1);border:1px solid var(--red);border-radius:8px;color:var(--red);font-family:var(--mono);font-size:11px;cursor:pointer;transition:all 0.2s;" onclick="if(confirm('Clear ALL Unity data? This deletes conversation history, preferences, saved keys, and sandbox state from your browser.')){localStorage.clear();location.reload();}">Clear All Data</button>
+        <button id="clear-data-btn" style="padding:8px 16px;background:rgba(239,68,68,0.1);border:1px solid var(--red);border-radius:8px;color:var(--red);font-family:var(--mono);font-size:11px;cursor:pointer;transition:all 0.2s;">Clear All Data</button>
       </div>
 
       <!-- Privacy Notice -->
       <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);">
         <p style="font-size:10px;color:var(--text-dim);line-height:1.6;">
           <strong style="color:var(--text);">Privacy &amp; Data Policy</strong><br>
-          This application runs <strong>entirely in your browser</strong>. No server. No backend. No database. Your API keys, conversation history, preferences, and all data are stored in your browser's localStorage on YOUR device only. The developers have <strong>zero access</strong> to anything you input, say, generate, or connect to. API keys are sent <strong>only</strong> to the AI provider YOU choose (Pollinations, OpenAI, etc.) — never to us, never to any third party. The brain simulation runs as client-side JavaScript math — no data leaves your machine except your direct API calls. This project is fully open source. You can read every line of code.
+          <strong style="color:var(--text);">Core rule:</strong> what you type is private. Unity's brain growth is shared. Her persona is canonical.
         </p>
-        <p style="font-size:10px;color:var(--text-dim);margin-top:6px;">
+
+        <p style="font-size:10px;color:var(--text-dim);line-height:1.6;margin-top:8px;">
+          <strong style="color:var(--cyan);">Client-only mode</strong> (default — no server configured, or Unity server running locally on your own machine): everything runs in your browser. No cloud backend owned by us. Your conversation history, preferences, sandbox state, optional Pollinations key, and every backend you configure in this modal (custom image gen URLs, vision describer endpoints, API keys) are all stored in your browser's localStorage on YOUR device only. Specific localStorage keys: <code>unity_brain_state</code>, <code>unity_brain_dictionary_v3</code>, <code>custom_image_backends</code>, <code>custom_vision_backends</code>, <code>pollinations_image_model</code>, <code>pollinations_vision_model</code>, plus Pollinations API key via an obfuscated storage slot. "Clear All Data" wipes all of these.
+        </p>
+
+        <p style="font-size:10px;color:var(--text-dim);line-height:1.6;margin-top:8px;">
+          <strong style="color:var(--cyan);">Shared server mode</strong> (connecting to a running <code>brain-server.js</code> instance — yours or someone else's): your text is sent to whoever runs that server for equational processing. Your text is <strong>NOT broadcast</strong> to other connected users — the cross-client conversation broadcast was removed 2026-04-13. What IS shared across all users talking to the same brain instance is Unity's <strong>vocabulary growth</strong>: her dictionary, bigrams, and GloVe embedding refinements grow from every conversation and benefit every user. Her persona (self-image, traits, drug state — from <code>docs/Ultimate Unity.txt</code>) is canonical and not mutable by users. Other users see Unity getting smarter over time, but never see the specific conversations that drove the growth.
+        </p>
+
+        <p style="font-size:10px;color:var(--text-dim);line-height:1.6;margin-top:8px;">
+          <strong style="color:var(--orange);">Important caveat for shared-hosted servers:</strong> if you connect to a Unity server hosted by someone OTHER than you, the person running that server can read your text at the process level (they own the server process). This is true of any self-hosted multi-user service. Only connect to Unity servers you trust. If you self-host your own <code>node server/brain-server.js</code>, then "the server" is just another process on your own machine — still your data, still your control.
+        </p>
+
+        <p style="font-size:10px;color:var(--text-dim);line-height:1.6;margin-top:8px;">
+          <strong style="color:var(--cyan);">Sensory API calls</strong> (image generation, vision describer, TTS) are sent <strong>only</strong> to the providers YOU configure in the Image Generation / Vision Describer grids above — never to us, never to any third party you didn't explicitly pick. If you save a DALL-E backend with your OpenAI key, only OpenAI gets that key. If you save an Automatic1111 backend on localhost, the traffic stays on your machine. Pollinations is Unity's default provider (anonymous tier works without a key, a saved key unlocks paid models and higher rate limits); using it sends image prompts and camera frames (if vision is enabled) to pollinations.ai.
+        </p>
+
+        <p style="font-size:10px;color:var(--text-dim);line-height:1.6;margin-top:8px;">
+          <strong style="color:var(--text);">Fully open source</strong> under MIT. Every line of code that handles your data is in the <a href="https://github.com/Unity-Lab-AI/Unity" target="_blank" style="color:var(--pink);">public repo</a> and auditable. Pull requests welcome.
+        </p>
+
+        <p style="font-size:10px;color:var(--text-dim);margin-top:10px;">
           <a href="https://github.com/Unity-Lab-AI/Unity" target="_blank" style="color:var(--pink);">GitHub</a> ·
           <span>Unity AI Lab · Hackall360, Sponge, GFourteen</span>
         </p>
@@ -340,7 +389,7 @@
             <div>
               <h1 style="color:#ff4d9a;font-size:20px;margin-bottom:12px;">Chrome blocks local files</h1>
               <p style="color:#777;font-size:13px;margin-bottom:20px;">Double-click <strong style="color:#00e5ff;">start.bat</strong> instead — it launches the brain server and opens the app automatically.</p>
-              <p style="color:#555;font-size:11px;">Or run: <code style="background:#111;padding:4px 8px;border-radius:4px;">cd server && node brain-server.js</code> then open <code style="background:#111;padding:4px 8px;border-radius:4px;">http://localhost:8080</code></p>
+              <p style="color:#555;font-size:11px;">Or run: <code style="background:#111;padding:4px 8px;border-radius:4px;">cd server && node brain-server.js</code> then open <code style="background:#111;padding:4px 8px;border-radius:4px;">http://localhost:7525</code></p>
             </div>
           </div>`;
       };

@@ -1,0 +1,283 @@
+# Unity Component Template Library
+#
+# Parsed at boot by js/brain/component-synth.js. Each template is
+# one primitive Unity can build via the `build_ui` motor action.
+# When the BG selects build_ui, the component synth matches the
+# user's request against every primitive's DESCRIPTION line via
+# semantic embedding cosine (GloVe 50d) and picks the highest match.
+# Brain state fills equation-derived parameters (colors from
+# amygdala valence, animation speed from arousal, id from cortex
+# pattern hash, labels from Unity's persona vocabulary).
+#
+# Template block format:
+#
+#   === PRIMITIVE: <id> ===
+#   DESCRIPTION: <one sentence describing what this is for — used for semantic matching>
+#   HTML:
+#   <html here, multi-line allowed>
+#   END_HTML
+#   CSS:
+#   <css here>
+#   END_CSS
+#   JS:
+#   <javascript here — has access to `el` (wrapper div), `sandbox`, `unity` API>
+#   END_JS
+#
+# Rules:
+#   - Use only component-scoped class names (prefix everything with the primitive id)
+#   - Never use body/html/document selectors
+#   - Never use !important
+#   - All state lives in closures inside the JS block — no globals
+#   - Timer handles get stored on variables so the sandbox lifecycle can clean them up
+#   - Event listeners attach to `el` or its children, never window/document
+#   - Don't use innerHTML with any value that could contain user content — textContent only
+
+=== PRIMITIVE: counter ===
+DESCRIPTION: a counter with increment decrement and reset buttons showing the current number
+HTML:
+<div class="counter-root">
+  <div class="counter-display">0</div>
+  <div class="counter-buttons">
+    <button class="counter-dec">−</button>
+    <button class="counter-reset">reset</button>
+    <button class="counter-inc">+</button>
+  </div>
+</div>
+END_HTML
+CSS:
+.counter-root { display:flex; flex-direction:column; align-items:center; gap:12px; padding:20px; background:#0a0a0a; border:1px solid #222; border-radius:10px; font-family:system-ui,sans-serif; }
+.counter-display { font-size:48px; color:#f0f0f0; font-family:'JetBrains Mono',monospace; padding:16px 32px; background:#111; border-radius:8px; border:1px solid #333; min-width:120px; text-align:center; }
+.counter-buttons { display:flex; gap:8px; }
+.counter-buttons button { padding:10px 18px; background:#1a1a1a; color:#e0e0e0; border:1px solid #333; border-radius:6px; cursor:pointer; font-size:14px; transition:all 0.15s; }
+.counter-buttons button:hover { border-color:#ff00ff; color:#ff00ff; }
+.counter-inc { color:#00ffcc !important; }
+.counter-dec { color:#ff4d9a !important; }
+END_CSS
+JS:
+let count = 0;
+const display = el.querySelector('.counter-display');
+const render = () => { display.textContent = String(count); };
+el.querySelector('.counter-inc').addEventListener('click', () => { count++; render(); });
+el.querySelector('.counter-dec').addEventListener('click', () => { count--; render(); });
+el.querySelector('.counter-reset').addEventListener('click', () => { count = 0; render(); });
+END_JS
+
+=== PRIMITIVE: timer ===
+DESCRIPTION: a stopwatch timer that counts up in seconds with start stop and reset controls
+HTML:
+<div class="timer-root">
+  <div class="timer-display">0:00</div>
+  <div class="timer-buttons">
+    <button class="timer-start">start</button>
+    <button class="timer-stop">stop</button>
+    <button class="timer-reset">reset</button>
+  </div>
+</div>
+END_HTML
+CSS:
+.timer-root { display:flex; flex-direction:column; align-items:center; gap:14px; padding:22px; background:#0a0a0a; border:1px solid #222; border-radius:10px; font-family:system-ui,sans-serif; }
+.timer-display { font-size:56px; color:#00ffcc; font-family:'JetBrains Mono',monospace; padding:18px 36px; background:#111; border-radius:8px; border:1px solid #00ffcc33; min-width:180px; text-align:center; letter-spacing:2px; }
+.timer-buttons { display:flex; gap:10px; }
+.timer-buttons button { padding:12px 20px; background:#1a1a1a; color:#e0e0e0; border:1px solid #333; border-radius:6px; cursor:pointer; font-size:14px; }
+.timer-buttons button:hover { border-color:#00ffcc; color:#00ffcc; }
+END_CSS
+JS:
+let seconds = 0;
+let intervalId = null;
+const display = el.querySelector('.timer-display');
+const format = (s) => `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+const render = () => { display.textContent = format(seconds); };
+const tick = () => { seconds++; render(); };
+el.querySelector('.timer-start').addEventListener('click', () => {
+  if (!intervalId) intervalId = setInterval(tick, 1000);
+});
+el.querySelector('.timer-stop').addEventListener('click', () => {
+  if (intervalId) { clearInterval(intervalId); intervalId = null; }
+});
+el.querySelector('.timer-reset').addEventListener('click', () => {
+  if (intervalId) { clearInterval(intervalId); intervalId = null; }
+  seconds = 0; render();
+});
+END_JS
+
+=== PRIMITIVE: list ===
+DESCRIPTION: a todo list with add remove and check off items with persistent storage
+HTML:
+<div class="list-root">
+  <div class="list-input-row">
+    <input class="list-input" type="text" placeholder="new item...">
+    <button class="list-add">add</button>
+  </div>
+  <ul class="list-items"></ul>
+</div>
+END_HTML
+CSS:
+.list-root { padding:20px; background:#0a0a0a; border:1px solid #222; border-radius:10px; font-family:system-ui,sans-serif; min-width:280px; }
+.list-input-row { display:flex; gap:8px; margin-bottom:14px; }
+.list-input { flex:1; padding:10px 12px; background:#111; color:#e0e0e0; border:1px solid #333; border-radius:6px; font-size:14px; }
+.list-input:focus { outline:none; border-color:#ff00ff; }
+.list-add { padding:10px 16px; background:#1a1a1a; color:#00ffcc; border:1px solid #00ffcc33; border-radius:6px; cursor:pointer; }
+.list-add:hover { background:#00ffcc22; }
+.list-items { list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:6px; }
+.list-items li { display:flex; align-items:center; gap:10px; padding:10px; background:#111; border:1px solid #222; border-radius:6px; color:#e0e0e0; }
+.list-items li.done span { text-decoration:line-through; opacity:0.5; }
+.list-items li span { flex:1; }
+.list-items button { background:none; border:none; color:#ff4d9a; cursor:pointer; font-size:18px; padding:0 6px; }
+END_CSS
+JS:
+let items = [];
+try { items = JSON.parse(sandbox.has && unity.storage?.get ? (unity.storage.get('list-state') || '[]') : '[]'); } catch { items = []; }
+const ul = el.querySelector('.list-items');
+const input = el.querySelector('.list-input');
+const render = () => {
+  ul.innerHTML = '';
+  items.forEach((item, i) => {
+    const li = document.createElement('li');
+    if (item.done) li.classList.add('done');
+    const span = document.createElement('span');
+    span.textContent = item.text;
+    li.appendChild(span);
+    const btn = document.createElement('button');
+    btn.textContent = '×';
+    btn.addEventListener('click', () => { items.splice(i, 1); save(); render(); });
+    li.addEventListener('click', (e) => { if (e.target !== btn) { item.done = !item.done; save(); render(); } });
+    li.appendChild(btn);
+    ul.appendChild(li);
+  });
+};
+const save = () => { try { unity.storage?.set?.('list-state', JSON.stringify(items)); } catch {} };
+const add = () => {
+  const val = input.value.trim();
+  if (val) { items.push({ text: val, done: false }); input.value = ''; save(); render(); }
+};
+el.querySelector('.list-add').addEventListener('click', add);
+input.addEventListener('keydown', (e) => { if (e.key === 'Enter') add(); });
+render();
+END_JS
+
+=== PRIMITIVE: calculator ===
+DESCRIPTION: a calculator with number and operator buttons and a display that evaluates math expressions
+HTML:
+<div class="calc-root">
+  <div class="calc-display">0</div>
+  <div class="calc-grid">
+    <button class="calc-clear">C</button>
+    <button data-op="/">÷</button>
+    <button data-op="*">×</button>
+    <button class="calc-back">←</button>
+    <button data-num="7">7</button>
+    <button data-num="8">8</button>
+    <button data-num="9">9</button>
+    <button data-op="-">−</button>
+    <button data-num="4">4</button>
+    <button data-num="5">5</button>
+    <button data-num="6">6</button>
+    <button data-op="+">+</button>
+    <button data-num="1">1</button>
+    <button data-num="2">2</button>
+    <button data-num="3">3</button>
+    <button class="calc-equals">=</button>
+    <button data-num="0" class="calc-zero">0</button>
+    <button data-num=".">.</button>
+  </div>
+</div>
+END_HTML
+CSS:
+.calc-root { padding:16px; background:#0a0a0a; border:1px solid #222; border-radius:10px; font-family:'JetBrains Mono',monospace; min-width:240px; }
+.calc-display { background:#111; color:#00ffcc; padding:14px 18px; font-size:28px; text-align:right; border-radius:6px; margin-bottom:12px; border:1px solid #00ffcc33; min-height:28px; overflow:hidden; }
+.calc-grid { display:grid; grid-template-columns:repeat(4, 1fr); gap:6px; }
+.calc-grid button { padding:14px; background:#1a1a1a; color:#e0e0e0; border:1px solid #333; border-radius:6px; cursor:pointer; font-size:16px; font-family:inherit; }
+.calc-grid button:hover { border-color:#ff00ff; }
+.calc-grid button[data-op] { color:#ff4d9a; }
+.calc-equals { background:#00ffcc22 !important; color:#00ffcc !important; grid-row:span 2; }
+.calc-zero { grid-column:span 2; }
+.calc-clear { color:#ff4d9a !important; }
+END_CSS
+JS:
+let expr = '';
+const display = el.querySelector('.calc-display');
+const render = () => { display.textContent = expr || '0'; };
+el.querySelectorAll('button[data-num]').forEach(b => {
+  b.addEventListener('click', () => { expr += b.dataset.num; render(); });
+});
+el.querySelectorAll('button[data-op]').forEach(b => {
+  b.addEventListener('click', () => { expr += b.dataset.op; render(); });
+});
+el.querySelector('.calc-clear').addEventListener('click', () => { expr = ''; render(); });
+el.querySelector('.calc-back').addEventListener('click', () => { expr = expr.slice(0, -1); render(); });
+el.querySelector('.calc-equals').addEventListener('click', () => {
+  try {
+    if (/^[0-9+\-*/.() ]+$/.test(expr)) {
+      const result = Function('"use strict"; return (' + expr + ')')();
+      expr = String(result);
+      render();
+    }
+  } catch { expr = 'err'; render(); expr = ''; }
+});
+END_JS
+
+=== PRIMITIVE: dice ===
+DESCRIPTION: a dice roller with a roll button that shows a random number from one to six
+HTML:
+<div class="dice-root">
+  <div class="dice-face">?</div>
+  <button class="dice-roll">roll</button>
+</div>
+END_HTML
+CSS:
+.dice-root { display:flex; flex-direction:column; align-items:center; gap:18px; padding:28px; background:#0a0a0a; border:1px solid #222; border-radius:12px; font-family:system-ui,sans-serif; }
+.dice-face { width:120px; height:120px; background:#111; border:2px solid #ff00ff44; border-radius:16px; display:flex; align-items:center; justify-content:center; font-size:72px; color:#ff00ff; font-family:'JetBrains Mono',monospace; box-shadow:0 0 24px #ff00ff22; }
+.dice-roll { padding:14px 32px; background:#1a1a1a; color:#00ffcc; border:1px solid #00ffcc55; border-radius:8px; cursor:pointer; font-size:16px; letter-spacing:1px; }
+.dice-roll:hover { background:#00ffcc22; }
+END_CSS
+JS:
+const face = el.querySelector('.dice-face');
+el.querySelector('.dice-roll').addEventListener('click', () => {
+  const rolls = 10;
+  let i = 0;
+  const interval = setInterval(() => {
+    face.textContent = String(Math.floor(Math.random() * 6) + 1);
+    i++;
+    if (i >= rolls) clearInterval(interval);
+  }, 50);
+});
+END_JS
+
+=== PRIMITIVE: color-picker ===
+DESCRIPTION: a color picker with red green blue sliders that shows a live preview swatch
+HTML:
+<div class="cp-root">
+  <div class="cp-preview"></div>
+  <div class="cp-hex">#000000</div>
+  <div class="cp-sliders">
+    <label>R<input type="range" class="cp-r" min="0" max="255" value="0"></label>
+    <label>G<input type="range" class="cp-g" min="0" max="255" value="0"></label>
+    <label>B<input type="range" class="cp-b" min="0" max="255" value="0"></label>
+  </div>
+</div>
+END_HTML
+CSS:
+.cp-root { padding:20px; background:#0a0a0a; border:1px solid #222; border-radius:10px; font-family:system-ui,sans-serif; display:flex; flex-direction:column; gap:12px; min-width:260px; }
+.cp-preview { width:100%; height:80px; border-radius:6px; border:1px solid #333; background:#000; transition:background 0.1s; }
+.cp-hex { font-family:'JetBrains Mono',monospace; color:#e0e0e0; font-size:16px; text-align:center; padding:6px; background:#111; border-radius:4px; }
+.cp-sliders { display:flex; flex-direction:column; gap:8px; }
+.cp-sliders label { display:flex; align-items:center; gap:10px; color:#e0e0e0; font-size:13px; }
+.cp-sliders input { flex:1; }
+END_CSS
+JS:
+const preview = el.querySelector('.cp-preview');
+const hexEl = el.querySelector('.cp-hex');
+const r = el.querySelector('.cp-r');
+const g = el.querySelector('.cp-g');
+const b = el.querySelector('.cp-b');
+const update = () => {
+  const rv = r.value, gv = g.value, bv = b.value;
+  preview.style.background = `rgb(${rv},${gv},${bv})`;
+  const toHex = (v) => Number(v).toString(16).padStart(2,'0');
+  hexEl.textContent = `#${toHex(rv)}${toHex(gv)}${toHex(bv)}`;
+};
+r.addEventListener('input', update);
+g.addEventListener('input', update);
+b.addEventListener('input', update);
+update();
+END_JS

@@ -20,7 +20,7 @@ import { NeuronCluster, ClusterProjection } from './cluster.js';
 import { Cortex, Hippocampus, Amygdala, BasalGanglia, Cerebellum, Hypothalamus } from './modules.js';
 import { MysteryModule } from './mystery.js';
 import { OscillatorNetwork } from './oscillations.js';
-import { UNITY_PERSONA, loadPersona, getBrainParams } from './persona.js';
+import { loadPersona, getBrainParams } from './persona.js';
 import { SensoryProcessor } from './sensory.js';
 import { MotorOutput } from './motor.js';
 import { MemorySystem } from './memory.js';
@@ -28,6 +28,8 @@ import { AuditoryCortex } from './auditory-cortex.js';
 import { VisualCortex } from './visual-cortex.js';
 import { InnerVoice } from './inner-voice.js';
 import { BrainPersistence } from './persistence.js';
+import { sharedEmbeddings } from './embeddings.js';
+import { ComponentSynth } from './component-synth.js';
 
 // ── EventEmitter ────────────────────────────────────────────────────
 
@@ -186,6 +188,11 @@ export class UnityBrain extends EventEmitter {
     this.auditoryCortex = new AuditoryCortex();
     this.visualCortex = new VisualCortex();
     this.innerVoice = new InnerVoice();
+    // R6.2 — equational component synthesizer. Loads templates from
+    // docs/component-templates.txt (same corpus-loading pattern as
+    // persona / baseline / coding). `loadTemplates` gets called from
+    // app.js boot alongside the other corpus loaders.
+    this.componentSynth = new ComponentSynth();
 
     // ══════════════════════════════════════════════════════════════
     // STATE
@@ -347,7 +354,8 @@ export class UnityBrain extends EventEmitter {
     // ── 9. HIERARCHICAL MODULATION ──
     const emotionalGate = 0.7 + amygdalaOut.arousal * 0.6;
     const driveFactor = 0.8 + (hypoOut.needsAttention?.length > 0 ? 0.4 : 0.0);
-    // Ψ is now log scale (~14 for 3.2M neurons). Normalize gain to 0.8-1.5 range.
+    // Ψ is on a log scale that grows with N. Normalize gain to the 0.8-1.5 range
+    // so the cluster gain multiplier stays bounded regardless of how large N auto-scales to.
     const psiGain = Math.max(0.8, Math.min(1.5, 0.9 + mysteryOut.psi * 0.004));
     const errorSignal = this._meanAbs(cerebOut.error) * 2;
 
@@ -609,10 +617,9 @@ export class UnityBrain extends EventEmitter {
     }
   }
 
-  /** Connect Broca's area (language generation peripheral). */
-  connectLanguage(brocasArea) {
-    this._brocasArea = brocasArea;
-  }
+  // R4 — connectLanguage(brocasArea) method DELETED. Language
+  // generation is internal to the brain (innerVoice.languageCortex),
+  // not a connected peripheral. Nothing calls this anymore.
 
   /** Connect voice output peripheral. */
   connectVoice(voiceIO) {
@@ -637,7 +644,7 @@ export class UnityBrain extends EventEmitter {
     // 1. Motor cortex interrupt — stop any ongoing speech
     this.motor.interrupt();
     if (this._voice) this._voice.stopSpeaking();
-    if (this._brocasArea) this._brocasArea.abort();
+    // R4 — _brocasArea.abort() removed (no more text-AI peripheral)
 
     // 2. Feed sensory input — mark interaction time (exits dreaming)
     this._lastInputTime = performance.now();
@@ -708,7 +715,14 @@ export class UnityBrain extends EventEmitter {
       effectiveAction = 'respond_text';
     }
 
-    if (effectiveAction === 'build_ui' && this._brocasArea && this._sandbox) {
+    // R6.2 — build_ui path is now equational via ComponentSynth.
+    // Loads templates from docs/component-templates.txt at boot,
+    // matches user requests to primitives via semantic embedding
+    // cosine, fills in component id from cortex pattern hash, and
+    // returns a ready-to-inject sandbox spec. No AI, no text-prompt
+    // assembly, no JSON parsing hacks. Unity picks the template via
+    // her own semantic similarity over her learned vocabulary.
+    if (effectiveAction === 'build_ui' && this._sandbox && this.componentSynth) {
       this.giveReward(0.1);
       return this._handleBuild(text);
     } else if (effectiveAction === 'generate_image' && this._imageGen) {
@@ -718,7 +732,15 @@ export class UnityBrain extends EventEmitter {
 
     // 6. LEARN from user input — every word goes into the dictionary + language cortex
     const state = this.getState();
-    const cortexOutput = this.clusters.cortex.getOutput(32);
+    // R2: read cortex semantic state via the reverse-embedding pathway.
+    // `getSemanticReadout` reads ONLY the Wernicke's area neurons (150-299)
+    // where sensory.js injected the user input's word embeddings, runs
+    // them through the inverse of `mapToCortex`, and L2-normalizes into
+    // GloVe-aligned space. This lets the slot scorer cosine-match the
+    // cortex state against word embeddings and pick semantically
+    // relevant words. Using plain `getOutput(50)` would dilute the
+    // semantic signal with auditory (0-49) + visual (50-149) activation.
+    const cortexOutput = this.clusters.cortex.getSemanticReadout(sharedEmbeddings);
     this.innerVoice.learn(text, cortexOutput, state.amygdala?.arousal ?? 0.5, state.amygdala?.valence ?? 0);
 
     // Analyze input for response context (question detection, topic)
@@ -751,7 +773,11 @@ export class UnityBrain extends EventEmitter {
 
     // ── Run brain for a few steps so clusters reflect the input ──
     for (let s = 0; s < 5; s++) this.step(0.001);
-    const cortexPattern = this.clusters.cortex.getOutput(32);
+    // R2: semantic cortex readout — reverse-mapping of Wernicke's area
+    // activation back into GloVe embedding space. The slot scorer's
+    // cosine(cortexPattern, wordPattern) now measures REAL semantic
+    // alignment because both sides live in the same 50-dim GloVe space.
+    const cortexPattern = this.clusters.cortex.getSemanticReadout(sharedEmbeddings);
 
     // ══════════════════════════════════════════════════════════════
     // EQUATIONAL LANGUAGE GENERATION ONLY
@@ -794,51 +820,23 @@ export class UnityBrain extends EventEmitter {
       }
     }
 
-    if (!response || response.length < 2) response = '...';
+    if (!response || response.length < 2) {
+      // R4 — no canned '...' fallback. Empty equational response means
+      // the language cortex couldn't find anything worth saying given
+      // current brain state. Emit nothing rather than fake a response.
+      if (this.motor.wasInterrupted()) return { text: null, action: 'interrupted' };
+      this.emit('response', { text: '', action: 'respond_text' });
+      return { text: '', action: 'respond_text' };
+    }
 
     if (this.motor.wasInterrupted()) return { text: null, action: 'interrupted' };
 
-    // 7. DETECT CODE IN RESPONSE — if the AI generated code, build it.
-    // The brain recognizes its own output: code blocks = something to inject.
-    // This catches cases where BG selected respond_text but the AI
-    // generated a component anyway. The brain adapts.
-    const codeMatch = response.match(/```(?:json|javascript|js|html)?\s*([\s\S]*?)```/);
-    if (codeMatch && this._sandbox) {
-      const code = codeMatch[1].trim();
-      // Try to parse as JSON component
-      let component;
-      try {
-        const jsonMatch = code.match(/\{[\s\S]*\}/);
-        if (jsonMatch) component = JSON.parse(jsonMatch[0]);
-      } catch {}
-
-      if (component && (component.html || component.js)) {
-        // It's a JSON component — inject it
-        const id = component.id || 'unity-' + Date.now();
-        if (this._sandbox.has(id)) this._sandbox.remove(id);
-        this._sandbox.inject({ id, html: component.html || '', css: component.css || '', js: component.js || '' });
-        const quip = response.replace(/```[\s\S]*```/g, '').trim() || `Built "${id}".`;
-        this.giveReward(0.2);
-        this.emit('response', { text: quip, action: 'build_ui' });
-        if (this._voice) { this._voice.stopSpeaking(); this._voice.speak(quip.slice(0, 100)).catch(() => {}); }
-        return { text: quip, action: 'build_ui' };
-      } else if (code.includes('document.') || code.includes('function ') || code.includes('const ') || code.includes('<div')) {
-        // It's raw code — wrap it and inject
-        const id = 'unity-' + Date.now();
-        const hasHtml = code.includes('<');
-        this._sandbox.inject({
-          id,
-          html: hasHtml ? code.replace(/<script[\s\S]*?<\/script>/gi, '') : '',
-          css: '',
-          js: hasHtml ? '' : code,
-        });
-        const quip = response.replace(/```[\s\S]*```/g, '').trim() || `Built it.`;
-        this.giveReward(0.2);
-        this.emit('response', { text: quip, action: 'build_ui' });
-        if (this._voice) { this._voice.stopSpeaking(); this._voice.speak(quip.slice(0, 100)).catch(() => {}); }
-        return { text: quip, action: 'build_ui' };
-      }
-    }
+    // R4 — code-detection branch deleted. Previously this caught cases
+    // where the AI-backed BrocasArea emitted a JSON component inside a
+    // conversational response, then parsed + injected it. Since Unity
+    // no longer generates text via AI, she can't emit formatted code
+    // blocks. R6.2 will replace this with equational component synthesis
+    // triggered directly by the BG build_ui motor action.
 
     // Strip URLs from non-code responses
     response = response.replace(/https?:\/\/[^\s)]+\.(jpg|png|gif|webp)/gi, '')
@@ -860,92 +858,76 @@ export class UnityBrain extends EventEmitter {
     return { text: response, action: 'respond_text' };
   }
 
+  /**
+   * R6.2 — Equational build handler. No text-AI, no JSON parsing, no
+   * prompt assembly. The component synth matches the user's request
+   * to a primitive template via semantic embedding cosine, fills in
+   * a cortex-pattern-derived id, and returns a ready-to-inject spec.
+   *
+   * If no template scores above the match threshold, Unity falls
+   * through to a verbal response via her normal language cortex path
+   * — she'll say what she'd LIKE to build but doesn't have a template
+   * for. Users can extend docs/component-templates.txt to add more
+   * primitives without touching source.
+   */
   async _handleBuild(text) {
-    // The BG selected build_ui. The brain calls Broca's area with the motor
-    // decision embedded — Broca's knows the BG chose to BUILD, so it outputs
-    // JSON instead of conversation. This is the brain's own decision flowing
-    // through the language system. The equations decided. Broca's executes.
-    const existingComponents = this._sandbox ? this._sandbox.listComponents() : [];
-    const existing = existingComponents.length > 0
-      ? `EXISTING IN SANDBOX: ${existingComponents.join(', ')}. Reuse same id to update.`
-      : 'Sandbox is empty.';
+    // Let the cortex settle on the user's intent first
+    for (let s = 0; s < 5; s++) this.step(0.001);
+    const cortexPattern = this.clusters.cortex.getSemanticReadout(sharedEmbeddings);
 
-    // Broca's area gets the build instruction as part of the brain state —
-    // the motor decision IS the instruction. Not a separate system.
-    const buildInput = `[MOTOR OUTPUT: basal ganglia selected BUILD_UI. Your cortex must output a JSON component.
+    const spec = this.componentSynth.generate(text, { cortexPattern });
 
-FORMAT: {"html":"...","css":"...","js":"...","id":"kebab-case-name"}
-RULES: html = raw HTML (no script/style tags). css = CSS rules. js = JavaScript.
-JS API: unity.speak(text), unity.chat(prompt), unity.generateImage(prompt), unity.getState(), unity.storage.get(k), unity.storage.set(k,v)
-STYLE: #0a0a0a backgrounds, #e0e0e0 text, neon accents (#ff00ff, #00ffcc).
-${existing}
-OUTPUT ONLY THE JSON. No explanation. No markdown.]
-
-USER REQUEST: ${text}`;
-
-    let raw = await this._brocasArea.generate(this.getState(), buildInput);
-    if (!raw) {
-      this.emit('response', { text: "Shit — couldn't build that. Try again?", action: 'build_ui' });
-      return { text: "Shit — couldn't build that. Try again?", action: 'build_ui' };
+    if (!spec) {
+      // No template matched — fall through to a verbal response.
+      // Unity can still TALK about building (her normal language
+      // cortex path) even if the synth library doesn't cover the
+      // request. That emission happens below in the main response
+      // flow, so just return null here to let processAndRespond
+      // continue past the build branch.
+      console.log(`[Brain] build_ui selected but no template matched "${text.slice(0, 40)}" — falling back to verbal response`);
+      return null;
     }
 
-    console.log('[Brain] Build raw response length:', raw.length);
+    // Inject the spec. If a component with this id already exists
+    // (happens when cortex pattern stabilizes during repeated builds),
+    // the sandbox auto-replaces it per MAX_ACTIVE_COMPONENTS rules.
+    if (this._sandbox.has(spec.id)) this._sandbox.remove(spec.id);
+    this._sandbox.inject({
+      id: spec.id,
+      html: spec.html || '',
+      css: spec.css || '',
+      js: spec.js || '',
+    });
 
-    // Parse JSON — try multiple extraction strategies
-    let component;
-
-    // Strategy 1: strip markdown fences and parse
+    // Generate a short spoken quip via the language cortex — Unity's
+    // actual voice commenting on what she just built. Not hardcoded
+    // "Built X." — her slot scorer picks the words from brain state.
+    let quip = '';
     try {
-      const cleaned = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
-      component = JSON.parse(cleaned);
-    } catch {}
-
-    // Strategy 2: find the outermost { } block
-    if (!component) {
-      const firstBrace = raw.indexOf('{');
-      const lastBrace = raw.lastIndexOf('}');
-      if (firstBrace !== -1 && lastBrace > firstBrace) {
-        try { component = JSON.parse(raw.slice(firstBrace, lastBrace + 1)); } catch {}
-      }
-    }
-
-    // Strategy 3: retry with even more forceful prompt
-    if (!component) {
-      console.warn('[Brain] Build: first attempt failed, retrying...');
-      try {
-        raw = await this._imageGen.chat([
-          { role: 'system', content: 'Return ONLY valid JSON. No other text. Format: {"html":"...","css":"...","js":"...","id":"..."}' },
-          { role: 'user', content: 'Build: ' + text },
-        ], { temperature: 0.5 });
-      } catch {}
-      if (raw) {
-        const firstBrace = raw.indexOf('{');
-        const lastBrace = raw.lastIndexOf('}');
-        if (firstBrace !== -1 && lastBrace > firstBrace) {
-          try { component = JSON.parse(raw.slice(firstBrace, lastBrace + 1)); } catch {}
+      const state = this.getState();
+      quip = this.innerVoice.languageCortex.generate(
+        this.innerVoice.dictionary,
+        state.amygdala?.arousal ?? 0.8,
+        state.amygdala?.valence ?? 0,
+        state.oscillations?.coherence ?? 0.5,
+        {
+          predictionError: 0,
+          motorConfidence: state.motor?.confidence ?? 0,
+          psi: state.psi ?? 0,
+          cortexPattern,
+          drugState: this.persona?.drugState || 'cokeAndWeed',
+          fear: state.amygdala?.fear ?? 0,
+          reward: state.amygdala?.reward ?? 0,
+          socialNeed: state.hypothalamus?.drives?.social_need ?? 0.7,
         }
-      }
+      ) || '';
+    } catch (err) {
+      console.warn('[Brain] build quip generation failed:', err.message);
     }
 
-    if (!component || (!component.html && !component.js)) {
-      console.error('[Brain] Build: all parse strategies failed');
-      this.emit('response', { text: "Brain couldn't format that right. Say it differently?", action: 'build_ui' });
-      return { text: "Brain couldn't format that right. Say it differently?", action: 'build_ui' };
-    }
-
-    const { html, css, js, id } = component;
-    const componentId = id || ('unity-' + Date.now());
-    // If component already exists, remove it first then inject fresh
-    if (this._sandbox.has(componentId)) {
-      this._sandbox.remove(componentId);
-    }
-    this._sandbox.inject({ id: componentId, html: html || '', css: css || '', js: js || '' });
-
-    const isUpdate = existingComponents.includes(componentId);
-    const quip = isUpdate ? `Updated "${componentId}".` : `Built "${componentId}".`;
-    if (this._voice) {
+    if (this._voice && quip) {
       this._voice.stopSpeaking();
-      this._voice.speak(quip).catch(() => {});
+      this._voice.speak(quip.slice(0, 100)).catch(() => {});
     }
 
     this.reward += 0.2;
@@ -954,61 +936,72 @@ USER REQUEST: ${text}`;
   }
 
   async _handleImage(text, includesSelf) {
-    // ONE image handler. If she's in the image (includesSelf), she adds her residual self-image.
-    // Self-image pulled from θ (persona.visualIdentity) which mirrors Ultimate Unity.txt.
+    // R6.1 — FULLY EQUATIONAL image prompt generation.
+    //
+    // Unity's brain generates EVERY word of the prompt. Zero hardcoded
+    // style keywords ("dark", "cinematic", "photorealistic"), zero
+    // hardcoded mood anchors, zero hardcoded persona visual template
+    // by me. Her current brain state + user input drive the slot
+    // scorer. Whatever words come out ARE the image prompt. If she
+    // wants it dark because her amygdala valence is negative, she'll
+    // pick "dark" from her learned dictionary. If she wants leather
+    // and eyeliner because she's feeling the selfie, the persona-
+    // arousal bias will surface those words from the corpus she
+    // learned at boot. Her decision, in the moment, based on her
+    // state + what you said.
+    //
+    // Pipeline:
+    //   1. User text already injected into cortex via processAndRespond
+    //   2. Brain stepped 5 ticks so cortex reflects the input
+    //   3. Read cortex semantic state via getSemanticReadout
+    //   4. Call languageCortex.generate with image-prompt options:
+    //      - Short target length (image prompts are phrases not
+    //        sentences; 5-12 tokens)
+    //      - High semantic fit weight (already true from R2)
+    //      - Persona bias active so self-reference surfaces persona
+    //        vocabulary she learned from Ultimate Unity.txt
+    //   5. Result string IS the image prompt
+    //   6. Pass to multi-provider image gen (R4 path: custom →
+    //      local → env.js → Pollinations fallback)
 
-    let prompt;
+    // Let the cortex settle on the input
+    for (let s = 0; s < 5; s++) this.step(0.001);
+    const cortexPattern = this.clusters.cortex.getSemanticReadout(sharedEmbeddings);
+    const state = this.getState();
 
-    // Build self-description from θ residual self-image — the persona defines the look.
-    // Order mirrors Ultimate Unity.txt priority: age → body → hair → eyes → clothing → aesthetic.
-    const vi = this.persona.visualIdentity || {};
-    const selfDesc = includesSelf
-      ? [
-          `${this.persona.traits?.age || 25} year old human woman`,
-          vi.body?.build || 'curvy feminine body',
-          vi.hair?.style || 'long messy hair',
-          vi.hair?.color || 'black with pink streaks',
-          vi.eyes?.style || 'heavy smudged eyeliner',
-          vi.clothing?.style || 'black leather revealing plenty of skin',
-          vi.clothing?.accessories || 'collar and chokers',
-          vi.body?.aesthetic || 'emo goth goddess (not demonic)',
-          vi.aesthetic?.lighting || 'dark moody lighting',
-          vi.aesthetic?.mood || 'raw edgy dark vibes',
-        ].join(', ') + ', '
-      : '';
-
-    // Full prompt template from persona — authoritative source for selfies
-    const fullTemplate = this.persona.imagePromptTemplate || selfDesc;
-
+    // Unity generates the prompt via her own slot scorer. No
+    // arguments about what words to pick — the language cortex
+    // reads her brain state and produces whatever emerges.
+    let prompt = '';
     try {
-      const raw = await this._imageGen.chat?.([
-        { role: 'user', content: `Generate ONLY an image prompt for: "${text}". ${includesSelf ? `The subject is Unity: ${fullTemplate}. She must appear exactly as described — emo goth goddess, NOT demonic, black leather, pale skin, dark hair with pink streaks, heavy eyeliner. Include her in the scene.` : ''} Return ONLY the visual description. No explanation. No URLs. No markdown. Just the prompt.` },
-      ], { temperature: 0.8 }) || null;
-
-      if (raw) {
-        prompt = raw.replace(/https?:\/\/[^\s)]+/g, '').replace(/```/g, '').replace(/\n/g, ', ').trim();
-      }
-    } catch {}
-
-    // Fallback — build prompt from the text + persona directly
-    if (!prompt || prompt.length < 15) {
-      const cleanText = text.replace(/selfie|send|show|picture|photo|of you|yourself/gi, '').trim();
-      if (includesSelf) {
-        // Selfies use the full imagePromptTemplate verbatim, plus any scene detail from the user's text
-        prompt = fullTemplate + (cleanText ? ', ' + cleanText : '');
-      } else {
-        prompt = `${cleanText || 'striking shot'}, dark moody lighting, photorealistic, cinematic`;
-      }
+      prompt = this.innerVoice.languageCortex.generate(
+        this.innerVoice.dictionary,
+        state.amygdala?.arousal ?? 0.8,
+        state.amygdala?.valence ?? 0,
+        state.oscillations?.coherence ?? 0.5,
+        {
+          predictionError: state.cortex?.predictionError ?? 0,
+          motorConfidence: state.motor?.confidence ?? 0,
+          psi: state.psi ?? 0,
+          cortexPattern,
+          drugState: this.persona?.drugState || 'cokeAndWeed',
+          fear: state.amygdala?.fear ?? 0,
+          reward: state.amygdala?.reward ?? 0,
+          socialNeed: state.hypothalamus?.drives?.social_need ?? 0.5,
+        }
+      ) || '';
+    } catch (err) {
+      console.warn('[Brain] image prompt generation failed:', err.message);
     }
 
-    // Ensure self-description is in there if it's a selfie — use a
-    // distinctive marker from the persona file. "black leather" and
-    // "emo goth" are the anchor phrases from Ultimate Unity.txt.
-    if (includesSelf && !/black leather|emo goth/i.test(prompt)) {
-      prompt = selfDesc + prompt;
+    // If the slot scorer produced nothing (empty dict, missing
+    // embeddings, etc.), fall back to the user's own text verbatim.
+    // That's not hardcoded — it's just echoing what the user said.
+    if (!prompt || prompt.length < 3) {
+      prompt = text || '';
     }
 
-    console.log('[Brain] Image prompt:', prompt.slice(0, 120));
+    console.log('[Brain] Image prompt (equational):', prompt.slice(0, 120));
     const url = this._imageGen.generateImage(prompt, { model: this._storage?.get('image_model') || 'flux', width: 768, height: 768 });
 
     if (url) {

@@ -33,7 +33,17 @@
 // word through letter-position equations + bigram probability + slot
 // type compatibility + semantic fit + mood alignment.
 
-const PATTERN_DIM = 32;
+import { sharedEmbeddings, EMBED_DIM } from './embeddings.js';
+
+// PATTERN_DIM now matches the shared semantic embedding dimension
+// (GloVe 6B.50d = 50). This is the single most important change in
+// R2 of brain-refactor-full-control: word patterns, cortex patterns,
+// and context vectors all live in the same semantic space so cosine
+// similarity measures real meaning alignment instead of letter-hash
+// coincidence. Before R2, PATTERN_DIM was 32 and the slot scorer
+// matched cortex activation (neural state) against word letter-hash
+// vectors — meaning could not propagate from input to output.
+const PATTERN_DIM = EMBED_DIM;
 const VOWELS = 'aeiou';
 const ALPHABET = 'abcdefghijklmnopqrstuvwxyz';
 
@@ -2171,6 +2181,55 @@ export class LanguageCortex {
       if (recall && recall.confidence > 0.30) {
         recallSeed = recall.memory;
         recallConfidence = recall.confidence;
+
+        // TIER 2 RESTORED — hippocampus verbatim recall.
+        // The 4-tier pipeline doc says: templates → recall → deflect →
+        // cold gen. Tier 2 was dead code — recall only biased slot
+        // scoring, never emitted verbatim. Result: every input fell
+        // through to cold gen which walks persona bigram chains into
+        // word salad.
+        //
+        // Fix: when recall confidence is HIGH or a self-reference
+        // fallback matched (user asked "who are you" / "describe
+        // yourself"), emit the matched persona sentence directly.
+        // Still equational — the sentence was learned from the persona
+        // corpus and matched via cosine against the live context
+        // vector, so the selection is brain-state-driven. Only the
+        // generation step is skipped (the persona sentence IS the
+        // output instead of being reassembled word-by-word).
+        //
+        // Confidence thresholds:
+        //   > 0.55   — high-confidence topical match, emit verbatim
+        //   fallback — self-reference match, always emit verbatim
+        //   0.30-0.55 — partial match, still bias slot gen below
+        //
+        // T4.10 — `opts._internalThought` flag skips this verbatim emit
+        // path entirely. 3D brain popup commentary sets the flag so
+        // Unity's internal thoughts are always LIVE slot gen output,
+        // never a pre-written persona sentence. Recall still biases
+        // slot scoring below via recallSeed tokens, but nothing gets
+        // emitted verbatim. Chat path (engine.js + brain-server.js)
+        // leaves the flag unset so user-facing speech keeps the
+        // recall-verbatim coherence fallback.
+        const shouldEmitVerbatim = !opts._internalThought
+          && (recall.confidence > 0.55 || recall.fallback === 'self-reference');
+        if (shouldEmitVerbatim) {
+          const verbatim = String(recall.memory.text || '').trim();
+          if (verbatim.length >= 3) {
+            const normV = verbatim.toLowerCase();
+            // Dedup against recent sentences
+            if (this._recentSentences.indexOf(normV) === -1) {
+              this._recentSentences.push(normV);
+              if (this._recentSentences.length > this._recentSentenceMax) {
+                this._recentSentences.shift();
+              }
+              return verbatim;
+            }
+            // If this sentence was already said, fall through to slot
+            // gen which will produce a fresh walk biased toward the
+            // same topic vocabulary via recallSeed below.
+          }
+        }
       }
     }
     // Recall bias weight scales with confidence. Low-confidence matches
@@ -2653,7 +2712,9 @@ export class LanguageCortex {
           //     typeFloor were already filtered; here it's a small
           //     tiebreaker
           //   - moodBias, subjStart, selfAware are minor tiebreakers
-          //   - Letter-hash semanticFit demoted to 0.05 (mostly noise)
+          //   - semanticFit PROMOTED to 0.80 after R2 — it now measures
+          //     real GloVe cosine between cortex semantic state and word
+          //     embedding, not letter-hash coincidence. Dominant topic signal.
           //
           // Bigram log scaling: `log(1 + followerCount) * 0.6` maps
           // count=0→0, count=1→0.42, count=5→1.08, count=50→2.35.
@@ -2687,13 +2748,21 @@ export class LanguageCortex {
           const personaAlign = Math.max(0, entryArousal - 0.5) * 2; // 0.75→0.5, 0.4→0, 0.5→0
           const personaBoost = personaAlign * arousal * 0.32;       // ~0.14 bonus for persona at arousal 0.9
 
+          // T4.8 — n-gram terms capped to prevent chain lock-in that
+          // drowns out semantic fit. Log-scaled counts can hit 3+ for
+          // common persona bigrams which was overpowering the 0.80
+          // semanticFit weight and producing word salad.
+          const bigramLogCapped = Math.min(1.5, bigramLog);
+          const trigramLogCapped = Math.min(1.5, trigramLog);
+          const quadgramLogCapped = Math.min(1.5, quadgramLog);
+
           const score =
             grammarGate * (
               typeGrammar * 1.5 +                       // U283 learned type grammar — HIGHEST
-              quadgramLog +                             // 4-word context sequence
-              trigramLog +                              // 3-word context
+              quadgramLogCapped +                       // 4-word context sequence (capped)
+              trigramLogCapped +                        // 3-word context (capped)
               recallBias(word) * recallBiasWeight +     // persona topic anchor (scales with recall confidence)
-              bigramLog +                               // 2-word transitions
+              bigramLogCapped +                         // 2-word transitions (capped)
               condPLog +                                // conditional probability
               isThought * (0.40 + psi * 0.50) +         // NEURAL: cortex pattern → content
               moodBias * (0.30 + emotionalIntensity * 0.40) + // NEURAL: amygdala → tone
@@ -2701,7 +2770,7 @@ export class LanguageCortex {
               personaBoost +                            // voice fidelity — persona-origin bias
               drugWordBias +                            // NEURAL: drug state → word length
               typeScore * 0.15 +                        // position-based grammar (legacy)
-              semanticFit * 0.05 +                      // letter-hash topic
+              semanticFit * 2.5 +                       // T4.8: semantic cosine DOMINATES (was 0.80)
               subjStart +                               // sentence-start subject boost
               casualBonus +                             // casual register reward
               (selfAware && (word.length === 1 || word.endsWith("'m") || word.endsWith("'re")) ? 0.08 : 0)
@@ -2830,10 +2899,12 @@ export class LanguageCortex {
       });
     }
 
-    // U281 — Coherence gate. Only fires when we have a context vector
-    // (i.e. user has said something). Compute mean pattern of the
-    // rendered sentence's content words, cosine against context.
-    if (this._contextVectorHasData && retryCount < 2) {
+    // T4.8 — Coherence gate tightened. Was 0.25 which let word salad
+    // through; 0.35 actually catches topic drift. Retry budget bumped
+    // from 2 to 3. On the 3rd failed retry, the final fallback at the
+    // bottom of generate() emits a persona recall sentence verbatim
+    // instead of re-emitting garbage.
+    if (this._contextVectorHasData && retryCount < 3) {
       const outCentroid = new Float64Array(PATTERN_DIM);
       let ccount = 0;
       for (const w of processed) {
@@ -2846,7 +2917,7 @@ export class LanguageCortex {
       if (ccount > 0) {
         for (let i = 0; i < PATTERN_DIM; i++) outCentroid[i] /= ccount;
         const coh = this._cosine(outCentroid, this._contextVector);
-        if (coh < 0.25) {
+        if (coh < 0.35) {
           console.log(`[LanguageCortex] coherence reject (${coh.toFixed(2)}): "${rendered}"`);
           return this.generate(dictionary, arousal, valence, coherence, {
             ...opts,
@@ -2854,6 +2925,21 @@ export class LanguageCortex {
             _coherenceRetry: retryCount + 1,
           });
         }
+      }
+    }
+
+    // T4.8 — final fallback: if 3 coherence retries have all failed,
+    // return the highest-confidence persona recall sentence VERBATIM
+    // instead of re-emitting salad. Better to repeat a coherent
+    // Unity-voice sentence than keep shipping word soup. This is
+    // the "deflect" tier — when cold gen can't produce anything
+    // coherent, she reaches for a memory.
+    if (retryCount >= 3 && this._contextVectorHasData && this._memorySentences.length > 0) {
+      const fallback = this._recallSentence(this._contextVector, { arousal, valence, allowRecent: true });
+      if (fallback && fallback.memory?.text) {
+        const fbText = String(fallback.memory.text).trim();
+        console.log(`[LanguageCortex] 3-retry fail — deflect to persona recall: "${fbText}"`);
+        return fbText;
       }
     }
 
@@ -3389,21 +3475,28 @@ export class LanguageCortex {
   // ═══════════════════════════════════════════════════════════════
 
   wordToPattern(word) {
-    const pattern = new Float64Array(PATTERN_DIM);
+    // R2 of brain-refactor-full-control: this was a letter-hash vector
+    // generator. Every downstream call site (slot scorer, context vector,
+    // sentence centroid, recall matching) was doing cosine similarity
+    // between cortex neural state and this letter hash — which meant
+    // meaning could never propagate from input to output.
+    //
+    // Now it's a thin wrapper around the shared semantic embedding
+    // table. Same Float64Array output shape so 11+ call sites don't
+    // need to change. The returned pattern is the word's GloVe 50d
+    // embedding (+ any online context refinement from live learning),
+    // or the embedding's internal hash-fallback for OOV words.
+    //
+    // Float32Array → Float64Array conversion happens here because the
+    // embedding store uses Float32Array for RAM efficiency but the
+    // slot scorer + cosine math works in Float64.
     const clean = word.toLowerCase().replace(/[^a-z']/g, '');
-    if (!clean) return pattern;
-    for (let c = 0; c < clean.length; c++) {
-      const li = clean.charCodeAt(c) - 97;
-      if (li < 0 || li > 25) continue;
-      for (let n = 0; n < 5; n++) {
-        const dim = (c * 7 + n * 3 + li) % PATTERN_DIM;
-        pattern[dim] += this._letterPatterns[li * 5 + n] / clean.length;
-      }
+    if (!clean) return new Float64Array(PATTERN_DIM);
+    const embed = sharedEmbeddings.getEmbedding(clean);
+    const pattern = new Float64Array(PATTERN_DIM);
+    for (let i = 0; i < PATTERN_DIM && i < embed.length; i++) {
+      pattern[i] = embed[i];
     }
-    let norm = 0;
-    for (let i = 0; i < PATTERN_DIM; i++) norm += pattern[i] * pattern[i];
-    norm = Math.sqrt(norm) || 1;
-    for (let i = 0; i < PATTERN_DIM; i++) pattern[i] /= norm;
     return pattern;
   }
 
@@ -3564,15 +3657,16 @@ export class LanguageCortex {
   }
 
   /**
-   * U277 — Semantic fit score. Cosine similarity between a candidate
-   * word's letter-pattern vector and the current context vector,
-   * clamped to [0, 1]. Zero when context is empty.
+   * R2 — Semantic fit score. Cosine similarity between a candidate
+   * word's SEMANTIC embedding vector and the current context vector
+   * (also semantic after R2), clamped to [0, 1]. Zero when context
+   * is empty.
    *
-   * Pattern-space (not embedding-space) because letter patterns are
-   * deterministic, always available, and the slot scorer already uses
-   * the same `_cosine()` path for `topicSim`. Semantic fit is just
-   * `topicSim` against the decaying running vector instead of the
-   * list-average, with a bigger weight in the slot score (U278).
+   * Before R2 this was letter-hash cosine which was noise. After R2,
+   * `wordToPattern` returns the word's GloVe 50d embedding and the
+   * context vector is a running mean of input word embeddings, so
+   * this method measures REAL semantic alignment. The slot scorer's
+   * `semanticFit * 0.80` term is now the dominant topic signal.
    */
   _semanticFit(wordOrPattern) {
     if (!this._contextVectorHasData) return 0;
