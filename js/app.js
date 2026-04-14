@@ -1149,7 +1149,15 @@ function showBackendForm(backendKey) {
     html += `<input type="password" id="backend-key" placeholder="${label}" autocomplete="off" spellcheck="false">`;
   }
 
-  html += `<button class="save-backend-btn" data-backend="${backendKey}">Save Backend</button>`;
+  // CONNECT button + live status badge — the button saves the key and
+  // runs an immediate probe against the backend so the user sees a
+  // green/red result without waiting for the next generate call.
+  // Shown even for env.js-configured backends so users can verify
+  // their pasted env is actually reaching the provider.
+  html += `<div style="display:flex;gap:10px;align-items:center;margin-top:10px;flex-wrap:wrap;">
+    <button class="save-backend-btn" data-backend="${backendKey}" style="flex:0 0 auto;">🔌 CONNECT</button>
+    <span id="backend-connect-status" style="font-size:11px;color:var(--text-dim);font-family:var(--mono);">⚪ not connected</span>
+  </div>`;
   html += `<div id="env-snippet-wrap" style="display:none;margin-top:10px;">
     <p class="env-location"></p>
     <pre id="env-snippet-code"></pre>
@@ -1172,9 +1180,133 @@ function showBackendForm(backendKey) {
     set('backend-kind', stored.kind);
   }
 
-  // Wire save button
+  // Initial connection status — reflects current state BEFORE the user
+  // clicks CONNECT. Three signals: (a) key/url exists in localStorage,
+  // (b) key/url exists in env.js via providers, (c) live backend entry
+  // is alive/dead. Pollinations is always "default available" unless
+  // explicitly dead.
+  updateConnectStatus(backendKey, config, stored);
+
+  // Wire save button — runs saveBackend() then probes connectivity and
+  // updates the status badge inline.
   const saveBtn = content.querySelector('.save-backend-btn');
-  if (saveBtn) saveBtn.addEventListener('click', () => saveBackend(backendKey));
+  if (saveBtn) {
+    saveBtn.addEventListener('click', async () => {
+      saveBackend(backendKey);
+      const statusEl = document.getElementById('backend-connect-status');
+      if (statusEl) {
+        statusEl.innerHTML = '🟡 probing...';
+        statusEl.style.color = 'var(--orange,#f59e0b)';
+      }
+      const result = await probeBackend(backendKey, config);
+      if (statusEl) {
+        if (result.ok) {
+          statusEl.innerHTML = `🟢 connected · ${result.detail || 'ready'}`;
+          statusEl.style.color = 'var(--green,#22c55e)';
+        } else {
+          statusEl.innerHTML = `🔴 failed · ${result.detail || 'unknown error'}`;
+          statusEl.style.color = 'var(--red,#ef4444)';
+        }
+      }
+    });
+  }
+}
+
+/**
+ * Update the per-backend connect status badge from current state —
+ * doesn't probe the network, just inspects what's stored + what the
+ * providers registry knows.
+ */
+function updateConnectStatus(backendKey, config, stored) {
+  const statusEl = document.getElementById('backend-connect-status');
+  if (!statusEl) return;
+
+  // Pollinations — always a default available; green if a key is saved,
+  // blue-ish if running anonymously.
+  if (config.keyStorageKey === 'pollinations') {
+    const pollKey = storage?.getApiKey('pollinations');
+    if (pollKey) {
+      statusEl.innerHTML = '🟢 connected · authenticated with saved key';
+      statusEl.style.color = 'var(--green,#22c55e)';
+    } else {
+      statusEl.innerHTML = '🔵 default · running on anonymous tier (no key)';
+      statusEl.style.color = 'var(--cyan,#00e5ff)';
+    }
+    return;
+  }
+
+  // Check providers registry for a live entry matching this backend
+  // name — covers both env.js and localStorage sources
+  const list = config.kind === 'image'
+    ? (providers?._localImageBackends || [])
+    : (providers?._localVisionBackends || []);
+  const hit = list.find(b => b.name === config.name);
+  if (hit) {
+    const dead = providers?._isBackendDead?.(hit.url);
+    const source = hit.fromEnv ? 'env.js' : hit.detected ? 'auto-detected' : 'saved';
+    if (dead) {
+      statusEl.innerHTML = `🔴 dead · ${source} (1h cooldown)`;
+      statusEl.style.color = 'var(--red,#ef4444)';
+    } else {
+      statusEl.innerHTML = `🟢 registered · ${source} — click CONNECT to re-probe`;
+      statusEl.style.color = 'var(--green,#22c55e)';
+    }
+    return;
+  }
+
+  // Has stored config but not yet pushed into providers
+  if (stored && (stored.key || stored.url)) {
+    statusEl.innerHTML = '🟡 saved but not registered · click CONNECT to apply';
+    statusEl.style.color = 'var(--orange,#f59e0b)';
+    return;
+  }
+
+  statusEl.innerHTML = '⚪ not connected · paste key/URL and click CONNECT';
+  statusEl.style.color = 'var(--text-dim)';
+}
+
+/**
+ * Live connectivity probe for a backend. Called from the CONNECT button
+ * click handler after saveBackend writes the config. Returns
+ * {ok: boolean, detail: string}. Uses a short-circuit per-backend-kind
+ * check: Pollinations hits /models, OpenAI hits /v1/models, A1111 hits
+ * /sdapi/v1/options, Ollama hits /api/tags, custom/generic does a HEAD.
+ */
+async function probeBackend(backendKey, config) {
+  try {
+    // Pollinations — hit the models endpoint with the saved key
+    if (config.keyStorageKey === 'pollinations') {
+      const key = storage?.getApiKey('pollinations');
+      const headers = key ? { Authorization: `Bearer ${key}` } : {};
+      const res = await fetch('https://image.pollinations.ai/models', {
+        headers,
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!res.ok) return { ok: false, detail: `HTTP ${res.status}` };
+      return { ok: true, detail: key ? 'authenticated' : 'anonymous tier' };
+    }
+
+    const stored = loadStoredBackendConfig(backendKey);
+    const url = stored?.url || config.defaultUrl || (config.defaultPort ? `http://localhost:${config.defaultPort}` : '');
+    if (!url) return { ok: false, detail: 'no URL configured' };
+    const headers = stored?.key ? { Authorization: `Bearer ${stored.key}` } : {};
+    const kind = stored?.kind || config.defaultKind || 'openai';
+
+    let probePath = '/v1/models';
+    if (kind === 'a1111') probePath = '/sdapi/v1/options';
+    else if (kind === 'comfy') probePath = '/system_stats';
+    else if (kind === 'ollama-vision') probePath = '/api/tags';
+    else if (kind === 'openai-vision' || kind === 'openai') probePath = '/v1/models';
+
+    const res = await fetch(url.replace(/\/$/, '') + probePath, {
+      headers,
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return { ok: false, detail: `HTTP ${res.status}` };
+    return { ok: true, detail: `${kind} reachable` };
+  } catch (err) {
+    return { ok: false, detail: err.message || 'network error' };
+  }
 }
 
 /**

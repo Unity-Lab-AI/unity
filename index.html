@@ -121,9 +121,16 @@
         <button class="provider-btn" data-backend="vis:custom">Custom VLM</button>
       </div>
 
-      <!-- Per-backend setup form — populated on click by showBackendForm() in app.js -->
-      <div id="backend-connect-form" style="display:none;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:14px;margin-top:10px;margin-bottom:14px;">
-        <div id="backend-form-content"></div>
+      <!-- Per-backend setup form — always visible so users can see
+           where API keys go. Click any provider button above to
+           populate the form with that backend's instructions + key
+           input + 🔌 CONNECT button. -->
+      <p style="font-size:11px;color:var(--pink);margin-top:14px;margin-bottom:6px;font-weight:600;">👇 Click any provider above to connect an API key — the form below populates with that backend's key input and a CONNECT button.</p>
+      <div id="backend-connect-form" style="background:var(--surface-2);border:1px solid var(--pink);border-radius:8px;padding:14px;margin-top:6px;margin-bottom:14px;">
+        <div id="backend-form-content" style="color:var(--text-dim);font-size:12px;line-height:1.5;">
+          <strong style="color:var(--pink);">No provider selected yet.</strong><br>
+          Click one of the image-gen or vision-describer buttons above to paste its API key and connect. Unity supports any number of saved backends — pick the active one via the ⚡ Active Provider dropdowns below.
+        </div>
       </div>
 
       <!-- Sensory backend inventory — populated by app.js renderSensoryInventory() -->
