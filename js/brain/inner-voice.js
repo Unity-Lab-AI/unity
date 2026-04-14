@@ -222,6 +222,30 @@ export class InnerVoice {
   }
 
   learn(text, cortexPattern, arousal, valence) {
+    // T14.16.5 — Lock 1 + Lock 2 identity-locked learning entry point.
+    // Live-chat input gets split into clauses and gated against cortex
+    // phonotactic basins + fineType coverage before any Hebbian fires.
+    // Curriculum path bypasses this and calls cluster.learn directly
+    // under `_inCurriculumMode = true`.
+    const cortex = this._curriculum?.cluster;
+    if (cortex && typeof cortex.learnClause === 'function') {
+      const gate = cortex.learnClause(text);
+      if (gate.rejected > 0) {
+        console.log(`[IDENTITY] gate rejected ${gate.rejected} clause(s), accepted ${gate.accepted}`);
+      }
+    }
+    // T14.16.5 Lock 3 — periodic identity refresh every 100 live-chat
+    // turns, mode-collapse audit every 500 turns.
+    this._liveChatTurns = (this._liveChatTurns || 0) + 1;
+    if (cortex) {
+      if (this._liveChatTurns % 100 === 0 && typeof cortex.runIdentityRefresh === 'function') {
+        try { cortex.runIdentityRefresh(); } catch (err) { /* non-fatal */ }
+      }
+      if (this._liveChatTurns % 500 === 0 && typeof cortex._modeCollapseAudit === 'function') {
+        try { cortex._modeCollapseAudit(this.languageCortex?._recentSentences || []); } catch (err) { /* non-fatal */ }
+      }
+    }
+
     this.dictionary.learnSentence(text, cortexPattern, arousal, valence);
     // T14.5 — continuous developmental learning hook. Every user turn
     // goes through the same inject+tick+Hebbian path the boot sentence

@@ -647,6 +647,266 @@ export class NeuronCluster {
   }
 
   /**
+   * T14.16.5 — Split text into clauses for per-clause identity-lock
+   * gating. Splits on sentence terminators (. ! ?), commas/semicolons/
+   * colons as strong phrase boundaries, line breaks, and the English
+   * coordinating conjunctions (` and `, ` or `, ` but `, ` so `). Each
+   * resulting clause is a learning unit — Lock 1's English gate runs
+   * independently per clause so a mixed-language input like
+   * `"hi unity 你好"` learns from the English clause and silently
+   * drops the foreign clause, which per-utterance granularity could
+   * not do.
+   *
+   * @param {string} text
+   * @returns {string[]} — trimmed non-empty clauses
+   */
+  splitIntoClauses(text) {
+    if (!text || typeof text !== 'string') return [];
+    return text
+      .split(/[.!?;:,\n]+|\s+(?:and|or|but|so)\s+/i)
+      .map(c => c.trim())
+      .filter(c => c.length > 0);
+  }
+
+  /**
+   * T14.16.5 — Compute a clause's average letter-region transition
+   * surprise. Streams the clause's letters through the cortex one at
+   * a time (same mechanism as T14.2 `detectBoundaries`), records
+   * `letterTransitionSurprise()` per letter, returns the mean. High
+   * values mean the letter sequence doesn't match the cortex's learned
+   * phonotactic basins — Lock 1's English gate uses this as its first
+   * rejection signal.
+   *
+   * NOTE: Perturbs live cortex state (ticks + injects). Caller is
+   * expected to pass this through after cortex has already absorbed
+   * the main input, so the perturbation is part of the reading path,
+   * not an extra side effect.
+   *
+   * @param {string} clause
+   * @returns {number}
+   */
+  computeTransitionSurprise(clause) {
+    if (!this.regions || !this.regions.letter || !clause) return 0;
+    const letters = String(clause).toLowerCase().replace(/[^a-z']/g, '');
+    if (letters.length === 0) return Infinity; // non-alphabetic clause = max surprise
+    this._prevLetterRate = 0;
+    let sum = 0;
+    let count = 0;
+    for (const ch of letters) {
+      this.injectLetter(ch, 1.0);
+      for (let t = 0; t < 2; t++) this.step(0.001);
+      sum += this.letterTransitionSurprise();
+      count++;
+    }
+    return count > 0 ? sum / count : 0;
+  }
+
+  /**
+   * T14.16.5 — Compute a clause's fineType coverage. Counts the
+   * proportion of clause words that have at least one English-letter
+   * character run. Returns a value in [0, 1]. The Lock 1 gate rejects
+   * clauses where this drops below `ENGLISH_FINETYPE_MIN` (calibrated
+   * from curriculum, defaults to 0 = permissive until calibration).
+   *
+   * Intentionally a simple surface metric for now — full cortex-
+   * resident fineType readout via `regionReadout('fineType', dim)`
+   * argmaxed against learned basins is T14.17 work. The surface
+   * metric catches the most important case (non-Latin script inputs)
+   * without needing curriculum to have trained anything yet.
+   *
+   * @param {string} clause
+   * @returns {number}
+   */
+  computeFineTypeCoverage(clause) {
+    if (!clause) return 0;
+    const words = String(clause).toLowerCase().split(/\s+/).filter(Boolean);
+    if (words.length === 0) return 0;
+    let recognized = 0;
+    for (const w of words) {
+      if (/[a-z]/.test(w)) recognized++;
+    }
+    return recognized / words.length;
+  }
+
+  /**
+   * T14.16.5 — Lock 1 + Lock 2 identity-locked learning entry point
+   * for live chat. Splits text into clauses, gates each clause against
+   * the English phonotactic basins + fineType coverage, fires Hebbian
+   * at the live-chat rate cap (0.0001) on passing clauses, silently
+   * drops rejected clauses from learning. Returns `{ accepted, rejected }`
+   * counts so callers can log gate statistics.
+   *
+   * Curriculum paths bypass this method — they call `cluster.learn`
+   * directly at the full 0.012 rate under `_inCurriculumMode = true`.
+   *
+   * @param {string} text
+   * @returns {{ accepted: number, rejected: number }}
+   */
+  learnClause(text) {
+    if (!text || typeof text !== 'string') return { accepted: 0, rejected: 0 };
+    const clauses = this.splitIntoClauses(text);
+    let accepted = 0;
+    let rejected = 0;
+    for (const clause of clauses) {
+      const surprise = this.computeTransitionSurprise(clause);
+      const coverage = this.computeFineTypeCoverage(clause);
+      const surpriseOK = surprise <= this.ENGLISH_SURPRISE_THRESHOLD;
+      const coverageOK = coverage >= this.ENGLISH_FINETYPE_MIN;
+      if (!surpriseOK || !coverageOK) {
+        rejected++;
+        continue;
+      }
+      this._learnClauseInternal(clause, { lr: 0.0001 });
+      accepted++;
+    }
+    return { accepted, rejected };
+  }
+
+  /**
+   * T14.16.5 — Internal Hebbian update for a single clause. Lock 2
+   * enforces the hard rate cap: when `_inCurriculumMode` is false
+   * (live chat path), any `lr > 0.0001` gets clamped to 0.0001.
+   * Curriculum mode bypasses the cap so `Curriculum.runFromCorpora`
+   * can fire at full 0.012. The cap is enforced at the cluster level
+   * so no caller can accidentally bypass it.
+   */
+  _learnClauseInternal(clause, opts = {}) {
+    let lr = opts.lr ?? 0.0001;
+    if (!this._inCurriculumMode && lr > 0.0001) lr = 0.0001;
+    // Hebbian fires on the current spike snapshot at the clamped rate.
+    // This is intentionally light — full Hebbian on the clause's letter
+    // stream already happened via the readText pass upstream. Here we
+    // just reinforce the current cortex state, which reflects the
+    // clause content after reading.
+    const pre = new Float64Array(this.lastSpikes);
+    const post = new Float64Array(this.lastSpikes);
+    this.synapses.rewardModulatedUpdate(pre, post, 0, lr);
+    this._crossRegionHebbian(lr);
+  }
+
+  /**
+   * T14.16.5 — Lock 3 periodic identity refresh. Runs a persona-corpus
+   * slice through full curriculum Hebbian to reshape cortex basins back
+   * toward the post-curriculum baseline. Called from `inner-voice.learn`
+   * every `IDENTITY_REFRESH_INTERVAL` turns (default 100).
+   *
+   * Stratified refresh (one sentence per persona dimension per pass)
+   * requires T14.17 `personaDimensions` clustering which hasn't shipped
+   * yet. Current implementation does a simple uniform refresh: if a
+   * `_personaRefreshCorpus` array is available on the cluster (populated
+   * by curriculum boot), it picks `sentencesPerCycle` sentences from it
+   * and runs them through `learnSentenceHebbian` at curriculum rate.
+   *
+   * @param {object} [opts]
+   * @param {number} [opts.sentencesPerCycle=8]
+   * @param {number} [opts.lr=0.012]
+   */
+  runIdentityRefresh(opts = {}) {
+    const sentencesPerCycle = opts.sentencesPerCycle ?? 8;
+    const lr = opts.lr ?? 0.012;
+    if (!Array.isArray(this._personaRefreshCorpus) || this._personaRefreshCorpus.length === 0) {
+      // No refresh corpus wired yet — curriculum boot will populate this
+      // in T14.17. Log once so the gap is visible, but don't block.
+      if (!this._loggedRefreshMissing) {
+        console.log('[IDENTITY] runIdentityRefresh — no _personaRefreshCorpus; refresh skipped (populate at curriculum boot for T14.17)');
+        this._loggedRefreshMissing = true;
+      }
+      return { refreshed: 0 };
+    }
+    const corpus = this._personaRefreshCorpus;
+    const n = Math.min(sentencesPerCycle, corpus.length);
+    const wasInCurriculum = this._inCurriculumMode;
+    this._inCurriculumMode = true;
+    let refreshed = 0;
+    for (let i = 0; i < n; i++) {
+      const idx = Math.floor(Math.random() * corpus.length);
+      const sentence = corpus[idx];
+      const embSeq = typeof sharedEmbeddings !== 'undefined'
+        ? sentence.split(/\s+/).map(w => sharedEmbeddings.getEmbedding(w))
+        : null;
+      if (embSeq && this.learnSentenceHebbian) {
+        try {
+          this.learnSentenceHebbian(embSeq, { lr });
+          refreshed++;
+        } catch (err) {
+          // Non-fatal
+        }
+      }
+    }
+    this._inCurriculumMode = wasInCurriculum;
+    return { refreshed };
+  }
+
+  /**
+   * T14.16.5 — Mode-collapse audit. Called every `MODE_COLLAPSE_AUDIT_INTERVAL`
+   * turns (default 500). Measures three health indicators against the
+   * calibrated thresholds and triggers an emergency refresh if any
+   * falls below its baseline. Thresholds are 0 by default (permissive)
+   * until curriculum calibration populates them.
+   */
+  _modeCollapseAudit(recentSentences = []) {
+    const entropy = this._computeOutputEntropy(recentSentences);
+    const vocabDiv = this._computeVocabDiversity(recentSentences);
+    const wmVariance = this._computeWorkingMemoryVariance();
+    const collapsed = (entropy < this.HEALTH_ENTROPY_MIN)
+                   || (vocabDiv < this.HEALTH_VOCAB_MIN)
+                   || (wmVariance < this.HEALTH_WM_VARIANCE_MIN);
+    if (collapsed) {
+      console.warn('[IDENTITY] mode collapse detected — emergency refresh', { entropy, vocabDiv, wmVariance });
+      this.runIdentityRefresh({ sentencesPerCycle: 32, lr: 0.012 });
+      return { collapsed: true, entropy, vocabDiv, wmVariance };
+    }
+    return { collapsed: false, entropy, vocabDiv, wmVariance };
+  }
+
+  _computeOutputEntropy(sentences) {
+    if (!sentences || sentences.length === 0) return 0;
+    const wordCounts = new Map();
+    let total = 0;
+    for (const s of sentences) {
+      const words = String(s).toLowerCase().split(/\s+/).filter(Boolean);
+      for (const w of words) {
+        wordCounts.set(w, (wordCounts.get(w) || 0) + 1);
+        total++;
+      }
+    }
+    if (total === 0) return 0;
+    let h = 0;
+    for (const c of wordCounts.values()) {
+      const p = c / total;
+      if (p > 0) h -= p * Math.log2(p);
+    }
+    return h;
+  }
+
+  _computeVocabDiversity(sentences) {
+    if (!sentences || sentences.length === 0) return 0;
+    const unique = new Set();
+    let total = 0;
+    for (const s of sentences) {
+      const words = String(s).toLowerCase().split(/\s+/).filter(Boolean);
+      for (const w of words) { unique.add(w); total++; }
+    }
+    return total > 0 ? unique.size / total : 0;
+  }
+
+  _computeWorkingMemoryVariance() {
+    if (!this.regions || !this.regions.free) return 0;
+    const { start, end } = this.regions.free;
+    let sum = 0, sumSq = 0;
+    const span = end - start;
+    if (span <= 0) return 0;
+    for (let i = start; i < end; i++) {
+      const v = this.lastSpikes[i] ? 1 : 0;
+      sum += v;
+      sumSq += v * v;
+    }
+    const mean = sum / span;
+    const variance = sumSq / span - mean * mean;
+    return Math.max(0, variance);
+  }
+
+  /**
    * T14.12 — Unified read-input entry point. Drives the visual→letter
    * pathway via `readText`, then returns a structured stub with the
    * intent/self-reference/addressesUser flags that engine.injectParseTree

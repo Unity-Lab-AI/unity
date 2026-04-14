@@ -129,13 +129,17 @@ export class ComponentSynth {
     if (!userRequest || typeof userRequest !== 'string') return null;
 
     // T5 — structural bias from the language cortex's parse tree.
-    // When brainState.parsed is supplied (the engine populates it
-    // from languageCortex.parseSentence(userRequest) before calling
-    // into build_ui), any component type the parser extracted
-    // ("button", "form", "list") becomes a HARD preference: primitives
-    // whose id matches the parsed type get a big score bonus. Purely
-    // structural — parse tree fields are closed-class lexical
-    // extractions, not LLM-guessed intents.
+    // T14.15 (2026-04-14) — parseSentence was deleted in T14.12, so
+    // brainState.parsed is now the stub returned by cluster.readInput
+    // which does NOT populate `entities.componentTypes`. The
+    // `parsedTypes` array below will be empty for most calls until
+    // T14.17 wires `cluster.entityReadout()` to return learned entity-
+    // slot clusters from the sem region, at which point this block
+    // reads from that instead. Keeping the optional-chain reads
+    // against brainState.parsed means the code handles both pre- and
+    // post-T14.17 payload shapes without branching — when entities
+    // are present they boost, when they're not the semantic cosine
+    // match alone decides the primitive.
     const parsed = brainState.parsed || null;
     const parsedTypes = (parsed?.entities?.componentTypes || [])
       .map(t => t.replace(/s$/, '')); // strip trailing plural
