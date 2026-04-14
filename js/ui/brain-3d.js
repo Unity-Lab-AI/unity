@@ -1,3 +1,11 @@
+// T13.7.5 — direct import of the sharedEmbeddings module singleton.
+// Pre-fix this file tried `brain._sharedEmbeddings` which never existed,
+// so cortexPattern in _generateEventCommentary was always null. After the
+// T13.7 deletion of slot-prior fallback in language-cortex.generate, that
+// null cortex path made every commentary call return empty string —
+// silencing all of Unity's brain event popups.
+import { sharedEmbeddings as __sharedEmbeddings } from '../brain/embeddings.js';
+
 /**
  * brain-3d.js — WebGL 3D brain visualizer
  *
@@ -1390,12 +1398,17 @@ export class Brain3D {
     if (dict.size === 0) return null;
 
     try {
-      // Get the live cortex semantic readout (50d GloVe space)
+      // Get the live cortex semantic readout (50d GloVe space).
+      // T13.7.5 — use the directly-imported sharedEmbeddings singleton, not
+      // a fictitious `brain._sharedEmbeddings` field. Also grab the cortex
+      // cluster reference so we can hand it into generate() opts below —
+      // T13.7 deleted the slot-prior fallback, so every generate() call
+      // needs opts.cortexCluster or it returns '' with a warning.
       const cortex = brain.clusters?.cortex;
-      const sharedEmb = brain._sharedEmbeddings || iv._sharedEmbeddings;
       let cortexPattern = null;
-      if (cortex && typeof cortex.getSemanticReadout === 'function' && sharedEmb) {
-        cortexPattern = cortex.getSemanticReadout(sharedEmb);
+      if (cortex && typeof cortex.getSemanticReadout === 'function') {
+        try { cortexPattern = cortex.getSemanticReadout(__sharedEmbeddings); }
+        catch { cortexPattern = null; }
       }
 
       // T4.10 — derive seed equationally from event structural
@@ -1436,14 +1449,13 @@ export class Brain3D {
           reward: state.reward ?? 0,
           drugState: state.drugState || 'cokeAndWeed',
           cortexPattern,
+          // T13.7.5 — generate() now requires a live cortex cluster
+          // reference for the brain-driven emission loop. Without
+          // this, the call returns '' and warns once. The cortex var
+          // is resolved above from brain.clusters.cortex.
+          cortexCluster: cortex,
           predictionError: 0,
           motorConfidence: state.motor?.confidence ?? 0,
-          // T4.10 — popup is Unity's LIVE internal thought. Skip the
-          // T4.8 recall-verbatim emit path so she never speaks a
-          // pre-written persona sentence in a popup. Slot gen only.
-          // Chat path (engine.js + brain-server.js) leaves this flag
-          // unset so recall-verbatim still fires for user-facing
-          // coherence.
           _internalThought: true,
         }
       );
