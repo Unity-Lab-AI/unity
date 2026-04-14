@@ -341,40 +341,48 @@ const TIERS = [
     neurons: 600000000,
     vramMB: 6144,
   },
+  // T14.20.1 — vramMB values reduced from round GB multiples to
+  // leave ~1GB headroom below the nominal card size. Real 10GB cards
+  // report ~10200MB, 16GB cards report ~16376MB, 24GB cards report
+  // ~24564MB etc, because the driver reserves some VRAM at boot. A
+  // preset at 16384 (16 * 1024) gets rejected by detectResources's
+  // validation on an actual 16GB card because detected VRAM (16376)
+  // is less than the preset's requested cap. Shaving 1GB off each
+  // preset lets the tier fit any card marketed as that size.
   {
     id: 'enthusiast-gpu',
     name: 'Enthusiast GPU 10GB — RTX 3070 / 4070',
     desc: '10GB VRAM, modern Ampere/Ada architecture. Capped at 671M by per-buffer binding ceiling.',
     neurons: 671000000,
-    vramMB: 10240,
+    vramMB: 9216,   // 9 GB — fits any real 10GB card's detected VRAM
   },
   {
     id: 'enthusiast-12gb',
     name: 'Enthusiast GPU 12GB — RTX 3060 12GB / RTX 4070 / RTX 5070',
     desc: '12GB VRAM. Headroom for bigger projections + weights than 10GB tier. Capped at 671M by binding ceiling.',
     neurons: 671000000,
-    vramMB: 12288,
+    vramMB: 11264,  // 11 GB — fits any real 12GB card
   },
   {
     id: 'enthusiast-16gb',
     name: 'Enthusiast GPU 16GB — RTX 4060 Ti 16GB / 4070 Ti SUPER / 4080 SUPER / RTX 5080',
     desc: '16GB VRAM. Sits between enthusiast-12 and high-end-24. Capped at 671M by binding ceiling.',
     neurons: 671000000,
-    vramMB: 16384,
+    vramMB: 15360,  // 15 GB — fits any real 16GB card (reported ~16376)
   },
   {
     id: 'high-end',
     name: 'High-End 24GB — RTX 3090 / 4090 / 5090',
     desc: '24GB VRAM, top-tier gaming cards. Maximum single-GPU headroom. Capped at 671M by binding ceiling.',
     neurons: 671000000,
-    vramMB: 24576,
+    vramMB: 23552,  // 23 GB — fits any real 24GB card (reported ~24564)
   },
   {
     id: 'prosumer',
     name: 'Prosumer — RTX 6000 Ada / Radeon Pro W7900',
     desc: '48GB VRAM workstation cards. Capped at 671M by binding ceiling; headroom for larger projection fanouts.',
     neurons: 671000000,
-    vramMB: 49152,
+    vramMB: 48128,  // 47 GB — fits any real 48GB card
   },
   {
     id: 'datacenter',
@@ -395,14 +403,14 @@ const TIERS = [
     name: 'Multi-GPU — 4× H100 SXM5 node',
     desc: '4-way NVLink, 320GB aggregate HBM3. Treated as one pooled resource.',
     neurons: 100000000,
-    vramMB: 327680,
+    vramMB: 325632,  // 318 GB — 4× 80GB with per-card driver reservation
   },
   {
     id: 'hgx-pod',
     name: 'HGX Pod — 8× H100 SXM5 node',
     desc: 'Full DGX H100 class, 640GB HBM3, NVSwitch fabric.',
     neurons: 200000000,
-    vramMB: 655360,
+    vramMB: 651264,  // 636 GB — 8× 80GB with per-card driver reservation
   },
   {
     id: 'supercluster',
