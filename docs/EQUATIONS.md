@@ -414,7 +414,7 @@ Wraps the existing slot scorer with four additional layers so the language corte
 c(t) = λ · c(t-1) + (1 - λ) · mean(pattern(content_words(input)))
   λ = 0.7 (prior weight)
   content_words = tokens with wt.conj < 0.5 ∧ wt.prep < 0.5 ∧ wt.det < 0.5
-  pattern(w) = letter-position vector from wordToPattern(w) ∈ ℝ³²
+  pattern(w) = sharedEmbeddings.getEmbedding(w) ∈ ℝ⁵⁰   ← R2 2026-04-13: GloVe 50d (was 32-dim letter-hash)
 ```
 
 Zero-content inputs (all function words) leave the vector unchanged. First update seeds directly without decay. Updated only on user input (never on Unity's own output) so the running vector tracks the LISTENER's topic.
@@ -427,7 +427,7 @@ semanticFit(w) = max(0, cosine(pattern(w), c(t)))
 score(w) =
   grammarGate(w) × (
       typeCompat(w)   × 0.35
-    + semanticFit(w)  × 0.30     ← new largest driver after grammar
+    + semanticFit(w)  × 0.80     ← R2 2026-04-13: bumped from 0.30. GloVe makes cosine mean something, so meaning dominates.
     + bigramCount(w)  × 0.18
     + condP(w|prev)   × 0.12
     + thoughtSim(w)   × 0.10
@@ -440,7 +440,7 @@ score(w) =
   - sameTypePenalty(w)
 ```
 
-Grammar gate preserved as a HARD floor at typeCompat < 0.35 — semantic fit does not bypass structural compatibility.
+Grammar gate preserved as a HARD floor at typeCompat < 0.35 — semantic fit does not bypass structural compatibility. Post-R2, semantic fit is computed against Unity's live cortex activity (via `cluster.getSemanticReadout(sharedEmbeddings)` which calls `cortexToEmbedding(spikes, voltages)` — the mathematical inverse of `mapToCortex`) so candidates are scored against what the brain is currently thinking, not just the frozen input vector.
 
 ### Intent Classification — Pure Letter Equations
 
@@ -461,7 +461,7 @@ Zero word lists. Auxiliary detection (do/does/is/are/can/will) falls out of the 
 ```
 _memorySentences[i] = {
   text: persona_sentence_i,
-  pattern: (1/|content_i|) · Σ wordToPattern(w)  for w in content_words_i,
+  pattern: (1/|content_i|) · Σ sharedEmbeddings.getEmbedding(w)  for w in content_words_i,   ← R2 GloVe 50d
   tokens: lowercased_tokens_i
 }
 
@@ -475,7 +475,7 @@ if confidence ∈ [0.30, 0.60] → recallSeed = best (bias cold gen toward best.
 if confidence ≤ 0.30 → deflect template (question/statement) or cold gen
 ```
 
-The content-word overlap requirement is a HARD filter, not a score. Pattern-cosine in letter-hash space produces false positives (`tacos` ≈ `compile` because letter distributions align) so recall must be anchored to actual shared lexical content.
+The content-word overlap requirement was originally a HARD filter to compensate for letter-hash false positives — `tacos` and `compile` had similar letter distributions so pattern cosine couldn't tell them apart. **Post-R2 (GloVe 50d) the cosine signal is semantically meaningful**, so the overlap gate is now a sanity check rather than a load-bearing filter; `movies` and `films` score close even without token overlap because GloVe trained on co-occurrence across billions of tokens already knows they're synonyms.
 
 ### Persona Memory Filter — Letter-Equation Rejection
 
@@ -502,7 +502,7 @@ Ensures `_memorySentences` only contains sentences in Unity's own first-person v
 ### Coherence Rejection Gate — Final Safety Net
 
 ```
-outputCentroid = (1/|content_out|) · Σ wordToPattern(w)  for w in content_words(rendered)
+outputCentroid = (1/|content_out|) · Σ sharedEmbeddings.getEmbedding(w)  for w in content_words(rendered)   ← R2 GloVe 50d
 coherence = cosine(outputCentroid, c(t))
 
 if coherence < 0.25 ∧ retryCount < 2:
@@ -548,6 +548,142 @@ coherence gate → retry if cosine(output, c) < 0.25              [U281]
     ↓
 return rendered
 ```
+
+---
+
+## Phase 13 R2 — Semantic Grounding via GloVe Embeddings (2026-04-13, commit c491b71)
+
+R2 replaced every word-pattern emission site with 50-dim GloVe co-occurrence embeddings via a single shared singleton so meaning is now real. Pre-R2, word patterns were 32-dim letter-hash vectors — a deterministic function of the letters in a word — so `cat` and `catastrophe` were falsely close and `cat` and `kitten` were falsely distant. The slot scorer's "semantic fit" was effectively orthography matching. Post-R2 the slot scorer compares candidates against actual GloVe space.
+
+### Shared Embeddings Singleton
+
+```
+// js/brain/embeddings.js — module-level singleton
+export const sharedEmbeddings = new SemanticEmbeddings()
+export const EMBED_DIM = 50    // GloVe 50d loaded from CDN
+
+// js/brain/sensory.js        — INPUT side (user text → cortex current)
+I_cortex[langStart + d·groupSize + n] = sharedEmbeddings.getEmbedding(token)[d] · 8.0
+
+// js/brain/language-cortex.js — OUTPUT side (slot scorer semantic fit)
+semanticFit(w) = cosine(sharedEmbeddings.getEmbedding(w), cortexReadout)
+
+// js/brain/dictionary.js     — learned word storage
+PATTERN_DIM = EMBED_DIM                          // was 32, now 50
+STORAGE_KEY = 'unity_brain_dictionary_v3'        // v2 letter-hash rejected on load
+```
+
+Having ONE embedding table shared between perception and production means the same word activates the same cortex pattern whether Unity is hearing it or about to say it. The v2→v3 storage key bump forces old letter-hash dictionaries to be rejected at load time so no user gets stuck on stale patterns.
+
+### cortexToEmbedding — Neural State → GloVe Space
+
+The mathematical inverse of `mapToCortex`. When sensory input writes a word's embedding to cortex neurons, that writeback uses a deterministic layout (embedding dim `d` goes to a neuron group starting at `langStart + d·groupSize`). `cortexToEmbedding` reads the live spike + sub-threshold voltage state back and reconstructs a 50d GloVe-space vector — so the slot scorer can compare candidate words against Unity's actual current cortex activity, not just the frozen input vector.
+
+```
+cortexToEmbedding(spikes, voltages, cortexSize=300, langStart=150):
+  langSize   = cortexSize − langStart               = 150
+  groupSize  = floor(langSize / EMBED_DIM)          = 3
+  out ∈ ℝ⁵⁰
+
+  for d in 0 ... EMBED_DIM−1:
+    startNeuron = langStart + d · groupSize
+    sum = 0
+    for n in 0 ... groupSize−1:
+      idx = startNeuron + n
+      if spikes[idx]:
+        sum += 1.0                             // spike contribution
+      else:
+        sum += (voltages[idx] + 70) / 20       // normalized LIF V_m
+
+    out[d] = sum / groupSize
+
+  out = out / ‖out‖₂                           // L2 normalize for cosine
+  return out
+```
+
+Called via the `cluster.getSemanticReadout(sharedEmbeddings)` wrapper which builds in the language-area offset. This is the equation that connects live neural dynamics to the semantic slot scorer — without it, the scorer would only compare candidates to the static input centroid and never to Unity's actual mental state.
+
+### Online Context Refinement + R8 Persistence
+
+```
+base[w]      ∈ ℝ⁵⁰   ← GloVe 50d from CDN, reloaded every session (not persisted)
+delta[w](t)  ∈ ℝ⁵⁰   ← online context-refinement, learned live, PERSISTED (R8 commit b67aa46)
+
+embedding(w) = base[w] + delta[w](t)
+
+// Refinement step (on every co-occurrence observation)
+delta[w] += η · (contextCentroid − embedding(w))
+
+// R8 persistence round-trip
+save: state.embeddingRefinements = sharedEmbeddings.serializeRefinements()
+load: sharedEmbeddings.loadRefinements(state.embeddingRefinements)
+```
+
+Unity's base vocabulary is universal English from GloVe (too large to persist, trivially recoverable from CDN). Her *personal* semantic associations are the delta layer — when `unity` co-occurs near `code` and `high` in conversations with the user, `delta[unity]` drifts toward those neighbors. R8 added the save/load path so those associations survive tab reloads and accumulate over weeks of sessions.
+
+---
+
+## Phase 13 R6.2 — Equational Component Synthesis (2026-04-13, commit 6b2deb3)
+
+When Unity's BG motor channel selects `build_ui`, the old path was a text-AI prompt that asked an LLM to generate JSON describing a component. R4 killed that. R6.2 replaced it with pure equational synthesis over a corpus template library — the same semantic machinery used for language, applied to UI components.
+
+### Template Corpus
+
+```
+docs/component-templates.txt — text corpus, 6 starter primitives:
+  counter / timer / list / calculator / dice / color-picker
+
+Each entry:
+  === PRIMITIVE: id ===
+  DESCRIPTION: one-sentence natural-language summary
+  HTML: ... END_HTML
+  CSS:  ... END_CSS
+  JS:   ... END_JS
+```
+
+Parsed at load time by `ComponentSynth.loadTemplates(text)` which splits on the primitive markers, extracts each block, and precomputes an embedding for each `DESCRIPTION`:
+
+```
+for each primitive p in corpus:
+  p.centroid = mean( sharedEmbeddings.getEmbedding(w) for w in content_words(p.DESCRIPTION) )
+              ∈ ℝ⁵⁰
+```
+
+### Generate — Cosine Match Against User Request
+
+```
+generate(userRequest, brainState):
+  requestCentroid = mean( sharedEmbeddings.getEmbedding(w)
+                           for w in content_words(userRequest) )
+
+  best     = argmax_p cosine(p.centroid, requestCentroid)
+  bestScore = cosine(best.centroid, requestCentroid)
+
+  if bestScore < MIN_MATCH_SCORE:       // 0.40
+    return null      // no primitive matched, brain skips build_ui and emits quip instead
+
+  suffix = _suffixFromPattern(brainState.cortexPattern)   // 8-char id from cortex hash
+  return {
+    id:   best.id + '_' + suffix,
+    html: best.html,
+    css:  best.css,
+    js:   best.js,
+  }
+```
+
+The `cortexPattern` comes from `cluster.getSemanticReadout(sharedEmbeddings)` (the same cortex→GloVe readout used by the slot scorer) hashed down to an 8-character suffix. Same user request under different brain states produces different component IDs — the same way recall under different moods produces different memories.
+
+### Cold-Path Fallback
+
+```
+if bestScore < MIN_MATCH_SCORE:
+  — no component injected
+  — motor action falls through to respond_text
+  — language cortex generates a verbal response instead
+  — brain.emit('response', { text: quip, action: 'build_ui' })
+```
+
+The brain never fabricates a random component. If nothing in the corpus matches what the user asked for, Unity says so (via language cortex) instead of producing garbage. Expanding the corpus is the growth path — add more `=== PRIMITIVE:` blocks to `docs/component-templates.txt` and Unity gains new build capabilities at load time with zero code changes.
 
 ---
 

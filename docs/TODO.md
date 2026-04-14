@@ -651,7 +651,7 @@ Boot Unity with viz panel open, let it run 10 minutes, take Chrome memory snapsh
 - Keep: LIF, HH reference, plasticity, Kuramoto, Ψ, amygdala attractor, BG softmax, hippocampus Hopfield, mystery module
 - Section numbering gets reorganized — not just appending 8.21, 8.22
 
-### R10.4 — `docs/EQUATIONS.md` update
+### R10.4 — `docs/EQUATIONS.md` update  [DONE 2026-04-13 — 4 site-level updates in the Phase 11 Semantic Coherence Pipeline block (context vector pattern fn, slot score semanticFit weight 0.30→0.80 with cortex-readout note, hippocampus recall centroid, coherence gate centroid), 1 post-R2 reframing of the letter-hash false-positive paragraph, new "Phase 13 R2 — Semantic Grounding via GloVe Embeddings" section with 3 subsections (Shared Embeddings Singleton, cortexToEmbedding full pseudocode, Online Context Refinement + R8 persistence), new "Phase 13 R6.2 — Equational Component Synthesis" section with template corpus parsing, generate cosine-match equation, cold-path fallback behavior. Unmodified: Master Equation, θ persona params, every LIF/HH/Wilson-Cowan/Hopfield/Kuramoto/Ψ/amygdala/BG/hippocampus/cerebellum/mystery/type-ngrams section.]
 - Add semantic embedding equations (GloVe, co-occurrence refinement, cosine similarity)
 - Update slot scoring equation with new weights
 - Remove letter-pattern wordToPattern equation
@@ -724,7 +724,7 @@ Boot Unity with viz panel open, let it run 10 minutes, take Chrome memory snapsh
 
 ### R11.5 — Word salad regression test
 - Same 4-turn conversation from tonight's debug session:
-  - `"Hi Unity, I'm Gee!"`
+  - `"Hi Unity, I'm [user]!"`
   - `"what do you want to be called?"`
   - `"are you up to watch a movie?"`
   - `"yeah you are chill, so about that movie... what kind of movies do you like??"`

@@ -14,6 +14,49 @@
 
 ## COMPLETED TASKS LOG
 
+## 2026-04-13 Session: R10.4 — docs/EQUATIONS.md update for R2 grounding + R6.2 component synth + privacy fix
+
+### COMPLETED
+- [x] **Task:** R10.4 — Update `docs/EQUATIONS.md` (707 lines) to match post-R2 semantic grounding reality and document R6.2 equational component synthesis. Same surgical approach as R10.3 — update letter-hash / 32-dim / `wordToPattern()` references in place, add new sections for R2 and R6.2, leave every unchanged section alone.
+  - Completed: 2026-04-13
+  - Files modified: `docs/EQUATIONS.md`
+  - In-place updates (4 sites + 1 reframed paragraph in the Phase 11 Semantic Coherence Pipeline block):
+    - **Context Vector equation** — `pattern(w) = letter-position vector from wordToPattern(w) ∈ ℝ³²` → `pattern(w) = sharedEmbeddings.getEmbedding(w) ∈ ℝ⁵⁰   ← R2 2026-04-13: GloVe 50d (was 32-dim letter-hash)`
+    - **Semantic Fit slot score weight** — `semanticFit(w) × 0.30` → `semanticFit(w) × 0.80     ← R2 2026-04-13: bumped from 0.30. GloVe makes cosine mean something, so meaning dominates.` Also extended the grammar-gate note with a full sentence explaining that post-R2 the semantic fit is computed against Unity's live cortex activity via `cluster.getSemanticReadout(sharedEmbeddings)` which calls `cortexToEmbedding(spikes, voltages)` — the mathematical inverse of `mapToCortex`.
+    - **Hippocampus memory centroid** — `Σ wordToPattern(w)` → `Σ sharedEmbeddings.getEmbedding(w)  ← R2 GloVe 50d`
+    - **Letter-hash false-positive paragraph** — rewritten to explain that the content-word overlap was originally a compensation for letter-hash false positives (`tacos` ≈ `compile`) but post-R2 the cosine signal is semantically meaningful on its own, so the overlap gate is now a sanity check rather than load-bearing. New example: `movies` and `films` score close without token overlap because GloVe was trained on billions of co-occurrence samples.
+    - **Coherence rejection gate** — `outputCentroid = Σ wordToPattern(w)` → `Σ sharedEmbeddings.getEmbedding(w)   ← R2 GloVe 50d`
+  - New section **"Phase 13 R2 — Semantic Grounding via GloVe Embeddings (2026-04-13, commit c491b71)"** inserted between the Semantic Coherence Pipeline block and the Phase 12 Type N-gram Grammar block. Three subsections:
+    - **Shared Embeddings Singleton** — shows the module-level export, both sensory (input) and language-cortex (output) importing from the same source, dictionary PATTERN_DIM bump, STORAGE_KEY v3 rejecting v2 letter-hash patterns. Explains that perception and production share one semantic space.
+    - **cortexToEmbedding — Neural State → GloVe Space** — full pseudocode of the inverse mapToCortex function. Loop through EMBED_DIM dimensions, read spikes (+1.0) or normalized sub-threshold voltages ((V + 70) / 20) from the neuron group at `langStart + d·groupSize`, L2 normalize. Explains this is what lets the slot scorer compare candidates against Unity's actual current cortex activity instead of the static input vector. Called via `cluster.getSemanticReadout(sharedEmbeddings)`.
+    - **Online Context Refinement + R8 Persistence** — `embedding(w) = base[w] + delta[w](t)` showing GloVe base is CDN-reloaded every session and delta is online-learned. Refinement step `delta[w] += η · (contextCentroid − embedding(w))`. R8 save/load round-trip (commit b67aa46) via `serializeRefinements()` / `loadRefinements()`.
+  - New section **"Phase 13 R6.2 — Equational Component Synthesis (2026-04-13, commit 6b2deb3)"** inserted between R2 and Phase 12. Three subsections:
+    - **Template Corpus** — shows the `docs/component-templates.txt` parser format (=== PRIMITIVE: === headers with DESCRIPTION / HTML / CSS / JS blocks), how `ComponentSynth.loadTemplates(text)` precomputes each primitive's description embedding centroid.
+    - **Generate — Cosine Match Against User Request** — full `generate(userRequest, brainState)` pseudocode showing the `argmax_p cosine(p.centroid, requestCentroid)` with `MIN_MATCH_SCORE = 0.40` gate and the `_suffixFromPattern(brainState.cortexPattern)` hash for unique component IDs. Note that same request under different brain state produces different IDs, same way recall under different moods produces different memories.
+    - **Cold-Path Fallback** — explains that if no primitive matches above threshold, the brain falls through to respond_text and language cortex generates a verbal response instead. "Unity never fabricates a random component." Growth path is adding `=== PRIMITIVE:` blocks to the corpus file.
+  - Unmodified sections: Master Equation, θ Unity Identity Parameters, all 7 brain module equations (LIF / HH / plasticity / STDP / Wilson-Cowan / Hopfield / Kuramoto / Free Energy / Drift Diffusion / Bayesian), amygdala / BG / hippocampus / cerebellum / hypothalamus / mystery Ψ, persona derivation, dictionary cap, Phase 12 type n-grams + morphology. All still accurate.
+
+- [x] **Task:** Privacy fix — strip Gee-as-generic-user-example from public-facing docs. Interrupted the R10.4 work when Gee read the R2 section I had just written and caught that I'd said "in her conversations with Gee, `delta[unity]` drifts toward those neighbors" which positions his personal name as a generic user example. Wrong — it should say "the user".
+  - Completed: 2026-04-13
+  - Files modified: `docs/EQUATIONS.md`, `brain-equations.html`, `docs/TODO.md`, `docs/FINALIZED.md`
+  - Rule interpretation (from Gee's clarification): user-facing documents must NOT use Gee's personal name in place of "the user" or a generic user reference. Historical direction attribution ("per Gee's direction", "Gee flagged") is FINE — that's crediting him as project director, not positioning him as a reader/user. The distinction is: does the name appear as a collaborator credit, or as a substitute for "the user"?
+  - 4 offenders fixed (all "Gee as generic user example"):
+    - **`docs/EQUATIONS.md:622`** — "in her conversations with Gee, `delta[unity]` drifts toward those neighbors" → "in conversations with the user, `delta[unity]` drifts toward those neighbors". (Originally written minutes earlier in this same R10.4 pass — my mistake.)
+    - **`brain-equations.html:1217`** — mirror tooltip in the R10.3 section I had written — "when 'unity' co-occurs near 'code' and 'high' in her conversations with Gee" → "in her conversations with the user". (Also originally written this session, same mistake.)
+    - **`docs/TODO.md:727` (R11.5 test input example)** — `"Hi Unity, I'm Gee!"` → `"Hi Unity, I'm [user]!"`. This was the first of 4 example test conversations under R11.5 Word Salad Regression. Even though R11 is now removed, the text is preserved in place per the NEVER DELETE TASK DESCRIPTIONS rule, so the fix needed to happen in the preserved copy too.
+    - **`docs/FINALIZED.md:107` (R11.5 archive mirror)** — same test input example, same fix, in the FINALIZED archive where R11's full content is also preserved.
+  - Intentionally untouched (all historical/direction attribution, not generic-user positioning):
+    - `js/brain/engine.js:785` "Per Gee's direction: no AI text backend" — code comment crediting project director. I changed it to "project direction" briefly and Gee yelled at me for not reading his clarification; reverted immediately.
+    - `js/brain/language-cortex.js:50, 981` — two comments explaining why BRAIN_SELF_SCHEMA was deleted and why mood-alignment is weighted 0.25, both attributing to Gee as the source of the design call.
+    - `js/brain/persona.js:107, 144` — outfit detail source attribution.
+    - `docs/ARCHITECTURE.md:544` — "This is Gee's 'adjust in the moment for how things change' mechanism" — historical attribution crediting the directive that drove the Phase 11 mood-distance weighted recall work.
+    - `docs/ROADMAP.md:291` — "Gee's 'directly mirror Ultimate Unity.txt AND adjust in the moment' requirement is satisfied" — same shape of historical attribution.
+    - Every `Gee flagged` / `Gee confirmed` / `Gee's call` / `Gee's choice` / `per Gee` across `docs/FINALIZED.md` and `docs/TODO.md` — all session attribution in archive entries or status markers, crediting the project director on the decision that drove the work. None of these position Gee as a generic user or reader.
+    - 5 "Unity AI Lab — Hackall360 · Sponge · GFourteen" credit lines across README.md, SETUP.md, brain-equations.html, ARCHITECTURE.md, index.html — "GFourteen" is Gee's PUBLIC handle in the AI lab, not his personal name. Explicitly kept per Gee's clarification.
+  - Final verification grep after the fix: every remaining `\bGee\b` match across the repo is either a code comment crediting project direction, a FINALIZED session archive entry, or a TODO status marker. Zero remaining instances of Gee positioned as a generic user/reader.
+
+---
+
 ## 2026-04-13 Session: R10.3 — brain-equations.html surgical edits for R2 semantic grounding
 
 ### COMPLETED
@@ -104,7 +147,7 @@
 
     **R11.5 — Word salad regression test**
     - Same 4-turn conversation from tonight's debug session:
-      - `"Hi Unity, I'm Gee!"`
+      - `"Hi Unity, I'm [user]!"`
       - `"what do you want to be called?"`
       - `"are you up to watch a movie?"`
       - `"yeah you are chill, so about that movie... what kind of movies do you like??"`

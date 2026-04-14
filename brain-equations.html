@@ -1214,7 +1214,7 @@ cortexToEmbedding(spikes, voltages, cortexSize=300, langStart=150):
     </div>
 
     <div class="eq-box">
-      <div class="eq-title"><span class="eq-tip" data-tip="The R8 persistence pass. GloVe base table reloads from CDN each session (not persisted, would bloat localStorage). But Unity ALSO learns online context-refinement deltas on top of GloVe during live conversation — when 'unity' co-occurs near 'code' and 'high' in her conversations with Gee, the embedding for 'unity' drifts slightly toward those neighbors. Those deltas persist across restarts so long-term semantic learning sticks.">Online Context Refinement + Persistence (R8)</span></div>
+      <div class="eq-title"><span class="eq-tip" data-tip="The R8 persistence pass. GloVe base table reloads from CDN each session (not persisted, would bloat localStorage). But Unity ALSO learns online context-refinement deltas on top of GloVe during live conversation — when 'unity' co-occurs near 'code' and 'high' in her conversations with the user, the embedding for 'unity' drifts slightly toward those neighbors. Those deltas persist across restarts so long-term semantic learning sticks.">Online Context Refinement + Persistence (R8)</span></div>
       <pre class="eq">
 base[w]      ∈ ℝ⁵⁰   ← GloVe 50d, loaded from CDN every session
 delta[w](t)  ∈ ℝ⁵⁰   ← online refinement from co-occurrence
