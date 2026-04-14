@@ -1709,22 +1709,30 @@ Vision: ${state.visionDescription || 'none'}`;
 
   brainViz = new BrainVisualizer();
 
-  // Wire sensory streams to the visualizer for display
-  if (perms.mic && perms.micStream) {
-    brainViz.setMicStream(perms.micStream);
+  // T1 2026-04-13 — wire sensory displays to read FROM the cortex
+  // instances instead of keeping duplicate handles to the raw
+  // MediaStream. Single source of truth: viz panels query
+  // brain.visualCortex / brain.auditoryCortex for what they need,
+  // and those cortices own their stream/analyser lifecycle. Previously
+  // this block passed `perms.micStream` and `perms.cameraStream`
+  // straight through, creating two places that held references to the
+  // same stream and making mute / destroy / reconnect paths fragile.
+  if (brain.auditoryCortex?.isActive?.()) {
+    const analyser = brain.auditoryCortex.getAnalyser?.();
+    if (analyser && typeof brainViz.setMicStream === 'function') {
+      // brainViz.setMicStream still accepts either a raw stream OR
+      // an analyser node; the adapter internally handles both. We
+      // prefer the analyser now since it's what AuditoryCortex
+      // actually owns and exposes.
+      brainViz.setMicStream(analyser);
+    }
   }
-  if (perms.camera && perms.cameraStream) {
-    // Create a vision-like object the viz can read from
-    brainViz.setVision({
-      isActive: () => brain.visualCortex.isActive(),
-      _stream: perms.cameraStream,
-      getLastDescription: () => brain.visualCortex.description || 'Processing...',
-      getGaze: () => ({
-        x: brain.visualCortex.gazeX,
-        y: brain.visualCortex.gazeY,
-        target: brain.visualCortex.gazeTarget,
-      }),
-    });
+  if (brain.visualCortex?.isActive?.()) {
+    // brainViz.setVision reads directly from the live VisualCortex
+    // instance — no separate stream handle, no duck-typed adapter.
+    // VisualCortex exposes everything the viz panel needs: isActive,
+    // getVideoElement, description, gazeX/gazeY/gazeTarget.
+    brainViz.setVision(brain.visualCortex);
   }
 
   // Use the landing 3D brain if available, or create new one

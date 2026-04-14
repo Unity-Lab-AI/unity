@@ -214,29 +214,61 @@ export class BrainVisualizer {
   }
 
   /**
-   * Connect a Vision instance so we can show the camera feed and descriptions.
+   * Connect a Vision source so we can show the camera feed and
+   * descriptions in the viz panel.
+   *
+   * T1 2026-04-13 — accepts a `VisualCortex` instance directly
+   * (the new single-source-of-truth path, which exposes `getStream()`
+   * / `isActive()` / `description` / `gazeX` / `gazeY` / `gazeTarget`),
+   * and also still accepts the legacy duck-typed `{isActive, _stream,
+   * getLastDescription, getGaze}` adapter shape for backward compat
+   * with any lingering call site that wasn't migrated.
    */
   setVision(visionInstance) {
     this._visionRef = visionInstance;
-    if (visionInstance?.isActive() && visionInstance._stream) {
-      this._eyeVideo.srcObject = visionInstance._stream;
+    if (!visionInstance?.isActive?.()) return;
+
+    // Prefer the new VisualCortex.getStream() entry point
+    const stream = typeof visionInstance.getStream === 'function'
+      ? visionInstance.getStream()
+      : visionInstance._stream;  // legacy fallback
+
+    if (stream && this._eyeVideo) {
+      this._eyeVideo.srcObject = stream;
       this._eyeVideo.play().catch(() => {});
     }
   }
 
   /**
-   * Connect a microphone stream for audio waveform visualization.
+   * Connect an audio source for frequency visualization.
+   *
+   * T1 2026-04-13 — accepts EITHER an AnalyserNode (the new single-
+   * source-of-truth path, reading directly from
+   * `AuditoryCortex.getAnalyser()` so we don't duplicate the analyser
+   * graph) OR a raw MediaStream (legacy fallback — builds its own
+   * analyser like before). Detects which one via the presence of
+   * `getByteFrequencyData`.
    */
-  setMicStream(micStream) {
-    if (!micStream) return;
+  setMicStream(source) {
+    if (!source) return;
+
+    // AnalyserNode path — reuse the cortex's existing analyser
+    if (typeof source.getByteFrequencyData === 'function') {
+      this._audioAnalyser = source;
+      this._audioData = new Uint8Array(source.frequencyBinCount);
+      console.log('[BrainViz] Audio analyser connected (reused from AuditoryCortex)');
+      return;
+    }
+
+    // Legacy MediaStream path — build our own analyser graph
     try {
       const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      const source = audioCtx.createMediaStreamSource(micStream);
+      const src = audioCtx.createMediaStreamSource(source);
       this._audioAnalyser = audioCtx.createAnalyser();
       this._audioAnalyser.fftSize = 256;
-      source.connect(this._audioAnalyser);
+      src.connect(this._audioAnalyser);
       this._audioData = new Uint8Array(this._audioAnalyser.frequencyBinCount);
-      console.log('[BrainViz] Audio analyser connected');
+      console.log('[BrainViz] Audio analyser connected (built from MediaStream)');
     } catch (err) {
       console.warn('[BrainViz] Audio analyser failed:', err.message);
     }
@@ -724,10 +756,16 @@ export class BrainVisualizer {
     ctx.stroke();
 
     // Update description text
+    // T1 2026-04-13 — read directly from the VisualCortex `description`
+    // field (which the cortex updates asynchronously via its IT-layer
+    // describer) instead of calling a getLastDescription() method that
+    // the old duck-typed adapter exposed. Still falls back to the
+    // adapter shape for any legacy call site that hasn't migrated.
     if (this._frameCount % 60 === 0) {
       const descEl = this._el.querySelector('#bv-eye-desc');
       if (descEl && this._visionRef) {
-        const desc = this._visionRef.getLastDescription();
+        const desc = this._visionRef.description
+          ?? (typeof this._visionRef.getLastDescription === 'function' ? this._visionRef.getLastDescription() : null);
         descEl.textContent = desc || 'Analyzing...';
       }
     }

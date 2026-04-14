@@ -206,6 +206,16 @@ export class AuditoryCortex {
 
   isActive() { return this._active; }
 
+  /**
+   * T1 2026-04-13 — return the Web Audio AnalyserNode this cortex
+   * is attached to, so viz panels can read frequency data without
+   * keeping a separate handle to the raw MediaStream + running
+   * their own analyser graph. Single source of truth: whoever
+   * wants to render the frequency spectrum reads through
+   * AuditoryCortex.
+   */
+  getAnalyser() { return this._analyser || null; }
+
   getState() {
     return {
       totalEnergy: this.totalEnergy,

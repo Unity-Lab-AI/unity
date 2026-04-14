@@ -413,6 +413,24 @@ class ServerBrain {
         console.warn('[Brain] Embeddings load failed, using hash fallback:', err.message);
       }
 
+      // T2 2026-04-13 — apply any embedding refinement deltas that
+      // _loadWeights() stashed on this._pendingEmbeddingRefinements at
+      // server boot. These are the online GloVe refinements from every
+      // user's prior conversations — accumulated in sharedEmbeddings'
+      // delta layer, serialized to brain-weights.json on save, now
+      // being replayed back onto the freshly-loaded base GloVe table.
+      // Client-side symmetry already exists via persistence.js (R8).
+      if (this._pendingEmbeddingRefinements && typeof this.sharedEmbeddings.loadRefinements === 'function') {
+        try {
+          this.sharedEmbeddings.loadRefinements(this._pendingEmbeddingRefinements);
+          const refinementCount = Object.keys(this._pendingEmbeddingRefinements || {}).length || '?';
+          console.log(`[Brain] Restored ${refinementCount} embedding refinement delta(s) from last save`);
+        } catch (err) {
+          console.warn('[Brain] Embedding refinement restore failed:', err.message);
+        }
+        this._pendingEmbeddingRefinements = null;
+      }
+
       // Load the four corpora from disk (server has fs access, unlike browser)
       const docsDir = path.join(__dirname, '..', 'docs');
       let personaText = '', baselineText = '', codingText = '', templateText = '';
@@ -1235,6 +1253,23 @@ class ServerBrain {
     try {
       // Versioned save — keep last 5 versions for rollback
       this._saveVersion = (this._saveVersion || 0) + 1;
+
+      // T2 2026-04-13 — serialize the online GloVe refinement deltas
+      // that `sharedEmbeddings` has accumulated from every user's
+      // conversation. R8 added this round-trip on the CLIENT via
+      // persistence.js; T2 adds the symmetric server-side persistence
+      // so server restarts don't wipe the accumulated shared semantic
+      // learning. GloVe base table reloads from CDN each session;
+      // only the refinement delta layer needs to persist.
+      let embeddingRefinements = null;
+      if (this.sharedEmbeddings && typeof this.sharedEmbeddings.serializeRefinements === 'function') {
+        try {
+          embeddingRefinements = this.sharedEmbeddings.serializeRefinements();
+        } catch (err) {
+          console.warn('[Brain] Embedding refinement serialize failed:', err.message);
+        }
+      }
+
       const data = {
         version: this._saveVersion,
         arousal: this.arousal,
@@ -1248,6 +1283,8 @@ class ServerBrain {
         wordFreq: this._wordFreq || {},
         totalInteractions: Object.values(this._conversations || {}).reduce((sum, c) => sum + c.length, 0),
         sharedMood: this._getSharedMood(),
+        // T2 — online semantic learning that survives server restarts
+        embeddingRefinements,
       };
       fs.writeFileSync(WEIGHTS_FILE, JSON.stringify(data, null, 2));
 
@@ -1298,6 +1335,17 @@ class ServerBrain {
           const wordCount = Object.keys(this._wordFreq).length;
           if (wordCount > 0) console.log(`[Brain] Restored ${wordCount} word frequencies from last save`);
         }
+
+        // T2 2026-04-13 — stash the saved embedding refinements so
+        // _initLanguageSubsystem() can apply them to sharedEmbeddings
+        // once it's finished the dynamic import + base GloVe load.
+        // The refinements can't be applied yet at _loadWeights() time
+        // because sharedEmbeddings doesn't exist until the async
+        // language subsystem init runs. Stored on `this` for pickup.
+        if (data.embeddingRefinements) {
+          this._pendingEmbeddingRefinements = data.embeddingRefinements;
+        }
+
         console.log(`[Brain] Loaded saved state from ${data.savedAt}`);
       }
     } catch (err) {

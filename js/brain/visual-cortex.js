@@ -454,6 +454,23 @@ export class VisualCortex {
 
   isActive() { return this._active; }
 
+  /**
+   * T1 2026-04-13 — return the video element this cortex is attached
+   * to, so viz panels can render the live feed without keeping a
+   * separate handle to the raw MediaStream. Single source of truth:
+   * whoever wants to display the camera reads through VisualCortex,
+   * and VisualCortex owns the video element lifecycle.
+   */
+  getVideoElement() { return this._video || null; }
+
+  /**
+   * T1 2026-04-13 — return the raw MediaStream if callers need it
+   * for something the video element doesn't expose (e.g. stopping
+   * individual tracks for mute). Only returns non-null when cortex
+   * is actually attached to a stream.
+   */
+  getStream() { return this._video?.srcObject || null; }
+
   getState() {
     return {
       gazeX: this.gazeX,
