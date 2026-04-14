@@ -114,7 +114,19 @@ export class VisualCortex {
   }
 
   /**
-   * Initialize with camera stream.
+   * R7 — unified sensory peripheral interface.
+   *
+   * All sensory peripherals expose the same contract:
+   *   init(stream, opts)  — attach to raw input stream
+   *   step(dt) / process(dt) / processFrame()
+   *                        — one tick of processing, returns
+   *                          { currents, metadata } for cortex injection
+   *   destroy()           — clean shutdown, free resources
+   *
+   * Visual cortex takes a video element (from getUserMedia stream
+   * already attached to an HTMLVideoElement). It allocates a small
+   * backing canvas for frame capture and sets _active=true so
+   * processFrame() starts producing real readings instead of zeros.
    */
   init(videoElement) {
     this._video = videoElement;
@@ -123,6 +135,20 @@ export class VisualCortex {
     this._canvas.height = FRAME_H;
     this._ctx = this._canvas.getContext('2d', { willReadFrequently: true });
     this._active = true;
+  }
+
+  /**
+   * R7 — unified destroy hook. Releases the canvas context and
+   * drops the video ref so the backing resources can be GC'd.
+   * Safe to call multiple times.
+   */
+  destroy() {
+    this._active = false;
+    this._video = null;
+    this._ctx = null;
+    this._canvas = null;
+    this._describer = null;
+    this._describing = false;
   }
 
   /**

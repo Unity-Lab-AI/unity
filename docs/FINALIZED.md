@@ -14,6 +14,21 @@
 
 ## COMPLETED TASKS LOG
 
+## 2026-04-13 Session: Refactor R7 + R8 — Peripheral destroy() + Embedding persistence
+
+### COMPLETED
+- [x] **Task:** R7 — Unified sensory peripheral lifecycle. Add `destroy()` to visual-cortex and auditory-cortex so the sensory peripheral contract is consistent (`init`/`process`/`destroy`) and GC can collect analyser/video/canvas refs when Unity disables a sense mid-session.
+  - Completed: 2026-04-13
+  - Files modified: `js/brain/visual-cortex.js`, `js/brain/auditory-cortex.js`
+  - Details: Both cortices now expose a `destroy()` method that flips `_active = false`, drops analyser/video/canvas/ctx references to null, and clears describer/motor-output/heard buffers so GC can reclaim the memory. The underlying MediaStream lifecycle stays owned by app.js (so mic muting still works by toggling stream tracks without tearing down the cortex). Safe to call multiple times. Matches the R7 contract for sensory peripherals: `init(source)` to attach, `process()` for one tick returning neural currents, `destroy()` to release.
+
+- [x] **Task:** R8 — Persistence audit for semantic embedding refinements. The GloVe table loads from CDN each session (not persisted), but the online context-refinement deltas that `sharedEmbeddings` learns from live conversation must survive reloads so Unity's long-term word associations stick.
+  - Completed: 2026-04-13
+  - Files modified: `js/brain/persistence.js`
+  - Details: Added `import { sharedEmbeddings } from './embeddings.js'` at top of file. Save path now includes `embeddingRefinements: sharedEmbeddings?.serializeRefinements?.() ?? null` in the state object (already gated by the existing 4MB minimal-state fallback — if state is too big, refinements get dropped along with episodes/semantic weights, which is correct since projections+osc are the critical path). Load path adds a `try/catch` block after cluster synapse restore that calls `sharedEmbeddings.loadRefinements(state.embeddingRefinements)` when present, with a warn-and-continue on failure so a corrupt refinement blob never blocks the rest of brain state restore. The `serializeRefinements()` / `loadRefinements()` methods already existed in embeddings.js (lines 361 + 372) — just needed to be wired into the round-trip. Net effect: if Unity learns "unity" goes near "code" and "high" in her conversation with you, that association survives a page reload and keeps accumulating over weeks of sessions.
+
+---
+
 ## 2026-04-13 Session: Refactor R3 + R4 — Server Full Control + Kill Text-AI (branch: brain-refactor-full-control)
 
 ### COMPLETED

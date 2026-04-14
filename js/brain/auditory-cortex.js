@@ -98,12 +98,36 @@ export class AuditoryCortex {
   }
 
   /**
-   * Connect Web Audio API analyser node.
+   * R7 — unified sensory peripheral interface.
+   *
+   * Auditory cortex follows the same contract as visual cortex:
+   *   init(stream)  — attach to an AnalyserNode from Web Audio API
+   *   process(dt)   — one tick, returns Float64Array of cortex currents
+   *   destroy()     — release analyser reference for GC
+   *
+   * The Web Audio API analyser node is created in app.js from the
+   * mic MediaStream. The cortex only needs the analyser handle to
+   * sample frequency bins; lifecycle of the MediaStream is owned by
+   * the caller (app.js).
    */
   init(analyser) {
     this._analyser = analyser;
     this._audioData = new Uint8Array(analyser.frequencyBinCount);
     this._active = true;
+  }
+
+  /**
+   * R7 — unified destroy hook. Drops the analyser reference and
+   * clears the frequency buffer. Safe to call multiple times.
+   * The MediaStream that backed the analyser is owned by app.js
+   * and stays alive for the mic muting path.
+   */
+  destroy() {
+    this._active = false;
+    this._analyser = null;
+    this._audioData = null;
+    this._motorOutput = null;
+    this._heardBuffer = [];
   }
 
   /**

@@ -507,7 +507,7 @@ Owns the primitive-library approach from R6.2:
 
 **Goal:** Unify all sensory peripherals under one interface contract. Every input stream (camera, mic, user text) and every output stream (speech, image, build) follows the same shape.
 
-### R7.1 — Unified peripheral interface
+### R7.1 — Unified peripheral interface  [DONE 2026-04-13 — see FINALIZED.md]
 All peripherals expose:
 ```js
 interface SensoryPeripheral {
@@ -543,7 +543,7 @@ New file. Documents:
 
 **Goal:** Every piece of persistent state Unity carries must save AND load without asymmetry (U306 found one — `_wordFreq` was saved but never restored). Cover every persisted field.
 
-### R8.1 — Client `persistence.js` round-trip audit
+### R8.1 — Client `persistence.js` round-trip audit  [DONE 2026-04-13 — embeddingRefinements now round-trips, see FINALIZED.md]
 Read `js/brain/persistence.js` (279 lines) and verify every `save()` field has a matching `load()` path. Known persisted state:
 - Cluster synapse matrices (internal NxN sparse)
 - Inter-cluster projection weights (20 projections)
