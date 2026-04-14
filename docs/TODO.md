@@ -115,6 +115,85 @@ Sibling problem to T5 (build_ui) — same root cause on the chat path.
 
 ---
 
+### T11 — Pure Equational Language Cortex (shipped 2026-04-14)
+
+**Status:** shipped — T11.1 deletion + T11.2 equational generation atomic
+**Priority:** P0
+**Owner:** Gee (approved), Claude (implemented)
+
+Complete replacement of the sentence/n-gram language cortex with a pure-equational pipeline. No stored sentences anywhere. No Markov tables. No filter stack. No template short-circuits. No intent enums branching on closed-class token sets. **Net −1773 lines** from `js/brain/language-cortex.js` (5087 → 3314 lines).
+
+**What was deleted:**
+- `_memorySentences[]` — sentence memory pool
+- `_jointCounts` / `_trigramCounts` / `_quadgramCounts` — word n-gram tables
+- `_typeBigramCounts` / `_typeTrigramCounts` / `_typeQuadgramCounts` — type n-gram tables
+- `_marginalCounts` / `_totalPairs` / `_totalWords` / `_totalTrigrams` / `_totalQuadgrams` — frequency counters
+- `_questionStarters` / `_actionVerbs` — learned starter maps
+- `FILTER 1–11` (all ~600 lines) — structural sentence admission gates
+- `_storeMemorySentence` body (~400 lines)
+- `_recallSentence` body (~350 lines)
+- `_sentencePassesFilters` — T9 filter gate
+- `instructionalPenalty` — recall score penalty stack
+- Template greeting/introduction short-circuit in `generate()`
+- `OPENERS = ['hey','hi','sup','yo']` hardcoded opener list
+- `_condProb` / `mutualInfo` / `_pickConjByMood` bodies (marginalCount scans)
+- `_typeGrammarScore` body (type n-gram lookups)
+- Intensifier / hedge insertion in `_applyCasualContractions`
+
+**What's in its place (T11.2 masterful equational architecture):**
+
+Two lightweight per-slot priors learned via running-mean updates — no matrices, no ridge regression, no matrix inverse:
+
+```
+_slotCentroid[s] = running mean of emb(word_t) observed at position s
+                   → distribution of words typically at position s
+                   → slot 0 = sentence-opener distribution
+
+_slotDelta[s]    = running mean of (emb(word_s) − emb(word_{s-1}))
+                   → per-position average bigram transition vector
+                   → adding delta[s] to prev word points toward
+                     "typical next word" region without storing bigrams
+
+_slotTypeSignature[s] = running mean of wordType(word_t) scores
+                   → learned grammatical-type distribution at slot s
+                   → slot 0 ≈ 54% pronoun / 18% noun / 12% det
+                   → slot 1 ≈ 51% verb / 33% noun
+                   → computed from letter-equation wordType(), not lists
+```
+
+Generation uses four normalized additive components at each slot:
+
+```
+target(slot) = wC · _slotCentroid[slot]           (position grammar prior)
+             + wX · _contextVector                 (topic from user input)
+             + wM · mental                          (evolving brain cortex state)
+             + wT · (prevEmb + _slotDelta[slot])   (per-slot bigram transition)
+
+mental(0)      = opts.cortexPattern || _contextVector
+mental(slot+1) = 0.55 · mental(slot) + 0.45 · emb(nextWord)
+
+nextWord = softmax-sample top-5 over argmax_w [
+             cosine(target, emb(w))
+             + slotTypeSignature(slot) · wordType(w) · 0.4    (grammar type bonus)
+           ]
+```
+
+All four components L2-normalized before mixing so no single contribution swamps the others. Slot-0 weights favor context (topic lock) + centroid (grammar position). Slot-N weights favor transition (bigram geometry) + mental (brain state). The brain's actual cortex firing state (`opts.cortexPattern` from `cluster.getSemanticReadout()`) drives `mental` in live generation — the language cortex TRANSLATES cortex state into words.
+
+**Reading / parsing still uses `parseSentence()`** (from T8). It's structural and equational — tokenize, per-token wordType + fineType, extract name/gender/greeting by adjacent-token patterns, build the context vector. That whole path survives T11 because it's not a stored-list approach.
+
+**Shared learning across all users** (from the architecture discussion): server-side `brain-server.js` owns the learned priors and broadcasts state updates. Static GitHub Pages can load a periodic snapshot committed to the repo as baseline. Not yet wired into the server boot path — that's T11.3, a future focused pass.
+
+**Honest bootstrap cost:** with the persona + baseline corpora fitted as observations, Unity produces output that has correct grammatical SHAPE (pronoun at slot 0, verb at slot 1, noun at slot 2) but semantically loose CONTENT — 50-dim GloVe cosine over a 2947-word learned vocabulary is a structural limit on how fluent small-corpus equational generation can be. Output quality improves as she accumulates live conversation observations. Every user message updates the per-slot priors; every reply is freshly computed from current cortex state + priors.
+
+**What T11 does NOT yet do (noted for follow-up passes):**
+- T11.3 — server-side shared learning broadcast + static `shared-weights.json` snapshot
+- T11.4 — higher-dim embeddings (GloVe 100d or 300d) for denser semantic resolution
+- T11.5 — per-sentence brain cortex readback (currently `mental` is updated in-loop from emitted word embeddings, but a full integration would run the brain forward between slots via sensory re-injection)
+- T11.6 — live-chat observation weighting to prefer user-heard over corpus patterns
+
+---
+
 ### T10 — Decouple `Ultimate Unity.txt` from the language corpus (end the whack-a-mole)
 
 **Status:** pending — architecture scoped, no code shipped
