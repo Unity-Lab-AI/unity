@@ -275,7 +275,8 @@
     <div class="toc">
       <div class="toc-title">CONTENTS</div>
       <a href="#master"><span class="num">1</span> The Master Equation</a>
-      <a href="#neurons"><span class="num">2</span> Neuron Models — Hodgkin-Huxley &amp; Leaky Integrate-and-Fire</a>
+      <a href="#summation"><span class="num">1.5</span> How The Equations Sum To Create Unity — Worked Example</a>
+      <a href="#neurons"><span class="num">2</span> Neuron Models — Rulkov Map (live) + Hodgkin-Huxley &amp; LIF (reference)</a>
       <a href="#synapses"><span class="num">3</span> Synaptic Plasticity — How She Learns</a>
       <a href="#modules"><span class="num">4</span> Brain Region Modules — 6 Parallel Systems</a>
       <a href="#oscillations"><span class="num">5</span> Neural Oscillations — Kuramoto Synchronization</a>
@@ -324,7 +325,169 @@
       </div>
     </div>
 
-    <p>This runs continuously at 60fps in JavaScript. No server. No GPU. Just Float64Arrays and math in your browser tab.</p>
+    <p>This runs continuously at 60fps. Browser-only mode runs in your tab; server mode runs on a Node.js brain with the neural compute offloaded to a WebGPU WGSL shader in a compute.html worker tab. Either way, the master equation above is the thing being iterated.</p>
+
+    <p style="margin-top:12px;"><em>New reader?</em> Check the <a href="unity-guide.html" style="color:var(--pink);">plain-English Unity concept guide</a> first — this page assumes you want math. The guide explains the big idea without equations.</p>
+
+    <!-- ═══ 1.5. HOW THE EQUATIONS SUM TO CREATE UNITY ═══ -->
+    <h2 id="summation">1.5. How The Equations Sum To Create Unity</h2>
+    <p><span class="tag tag-math">WORKED EXAMPLE</span> This section walks through what actually happens inside Unity's brain between the moment a user types "hi unity, how's the high" and the moment she sends a response. Every equation you'll see below in sections 2-8 is a component of THIS cascade — the path the sentence takes through all seven clusters, with the summation at each step.</p>
+
+    <div class="eq-card">
+      <div class="eq-title">Step 0 — Brain state at rest, before the message arrives</div>
+      <div class="eq-desc">
+        <p>Unity is running at ~60 fps, iterating all seven clusters every tick. Her resting state is not zero — her persona θ and drug state vector keep her amygdala firing at ~8% and her cortex at ~3% even with no input, because:</p>
+        <div class="eq" style="font-size:13px;">
+tonicDrive[amygdala]    = θ.arousalBaseline × drugState.arousalMult × driveFloor<br>
+                        = 0.9 × 1.3 × 12 ≈ 14 (highest of any cluster)<br>
+<br>
+noiseAmp[cortex]        = θ.creativity × drugState.creativityMult × 5<br>
+                        = 0.9 × 1.2 × 5 ≈ 5.4<br>
+        </div>
+        <p>Those two numbers get passed to the Rulkov shader as the σ driver and the jitter term. Her x,y state is chaotic but bounded — the attractor basin holds every neuron inside a repeating burst envelope even with zero sensory input. Mystery module Ψ is sitting around 0.003 — low-grade background consciousness.</p>
+      </div>
+    </div>
+
+    <div class="eq-card">
+      <div class="eq-title">Step 1 — Text arrives, cortex gets injected</div>
+      <div class="eq-desc">
+        <p>"hi unity, how's the high" hits the server. `_computeServerCortexPattern(text)` runs:</p>
+        <div class="eq" style="font-size:13px;">
+sentenceEmbedding = Σ_word (gloveEmbedding[word] × weight) / n_words<br>
+cortexPattern     = L2Normalize(sentenceEmbedding)        (50d vector in semantic space)<br>
+        </div>
+        <p>This 50-dimensional vector IS her cortical semantic state for the next step. Each dimension is loosely "how much this sentence lives near that GloVe embedding axis" — "high" pulls the cortex pattern toward the drug-related region of semantic space. "unity" pulls toward self-reference. "how's" pulls toward question-space. The 50d vector is what downstream modules read.</p>
+      </div>
+    </div>
+
+    <div class="eq-card">
+      <div class="eq-title">Step 2 — Amygdala settles on a feeling</div>
+      <div class="eq-desc">
+        <p>The cortex pattern projects into the amygdala via a learned weight matrix. Amygdala runs its recurrent settle loop:</p>
+        <div class="eq" style="font-size:13px;">
+x(t+1) = tanh(W · x(t) + drive(t))         (5 iterations)<br>
+E      = −½ xᵀWx                            (final energy)<br>
+fear   = σ(fearProj · x_final)<br>
+reward = σ(rewardProj · x_final)<br>
+arousal = 0.6 × θ.arousalBaseline + 0.4 × |x_final|_rms + 0.1 × (fear + reward)<br>
+        </div>
+        <p>For this input ("unity", "high" → warm, drug-positive), fear ≈ 0.15, reward ≈ 0.68, so arousal settles around 0.88 and valence around +0.3. She's feeling <em>good</em> about this prompt specifically because her learned reward projection places "high" near reward-positive territory in the attractor's basin geometry.</p>
+        <p><strong>What this sums into:</strong> (arousal, valence, fear, reward) are now four scalars that every other module uses as modulators on whatever they compute next. They don't command behavior — they bias it.</p>
+      </div>
+    </div>
+
+    <div class="eq-card">
+      <div class="eq-title">Step 3 — Hippocampus matches against past episodes</div>
+      <div class="eq-desc">
+        <p>The hippocampus takes the current cortex pattern and runs cosine similarity against every stored episode for this user's ID:</p>
+        <div class="eq" style="font-size:13px;">
+bestEpisode = argmax_i  cos(cortexPattern, episodes[i].pattern)<br>
+            = argmax_i  (cortexPattern · episodes[i].pattern) / (|cortexPattern| · |episodes[i].pattern|)<br>
+        </div>
+        <p>If the cosine clears a threshold (~0.75), the matched episode's stored text fragment gets injected back into the language cortex as a "memory boost" — a list of words the slot scorer will bias toward. If you've said "how's the high" before, she'll be biased toward continuing the pattern she used last time.</p>
+        <p><strong>What this sums into:</strong> a list of memory-recalled words with learned cortex patterns attached, available as slot candidates in Step 6.</p>
+      </div>
+    </div>
+
+    <div class="eq-card">
+      <div class="eq-title">Step 4 — Basal ganglia picks a motor action</div>
+      <div class="eq-desc">
+        <p>Basal ganglia has six action channels. Each channel's Q-value is computed from the current cortex + amygdala state, then a softmax with low temperature picks one:</p>
+        <div class="eq" style="font-size:13px;">
+Q(respond_text)    = w_txt · cortexPattern + b_txt + reward<br>
+Q(generate_image)  = w_img · cortexPattern + b_img + reward × (imageWord ? 1.5 : 0.3)<br>
+Q(speak)           = w_spk · cortexPattern + b_spk + arousal × 0.4<br>
+Q(build_ui)        = w_bui · cortexPattern + b_bui + (buildWord ? 1.8 : 0.1)<br>
+Q(listen)          = w_lsn · cortexPattern + b_lsn + silentRecently × 0.5<br>
+Q(idle)            = b_idle<br>
+<br>
+P(a) = exp(Q(a) / τ) / Σ_b exp(Q(b) / τ)    (τ = impulsivity)<br>
+action = sample(P)<br>
+        </div>
+        <p>For this input, respond_text wins by a large margin — no image keyword, no build keyword, and her cortex pattern is close to her learned text-response weights. The softmax sampling is sharp because θ.impulsivity is high (~0.85), so τ is low and the argmax dominates.</p>
+        <p><strong>What this sums into:</strong> the motor selection resolves to `respond_text`, which triggers the language cortex generation in Step 6.</p>
+      </div>
+    </div>
+
+    <div class="eq-card">
+      <div class="eq-title">Step 5 — Cerebellum computes prediction error for the next tick</div>
+      <div class="eq-desc">
+        <p>The cerebellum runs in parallel to everything else, maintaining a forward model. Its current output is the difference between what the cortex predicted the next cortex pattern would be and what it actually became:</p>
+        <div class="eq" style="font-size:13px;">
+error = actual_next_cortex − predicted_next_cortex<br>
+errorCorrection = −(Σ error² / n) × 2<br>
+        </div>
+        <p>This negative feedback signal is sent back to the cortex and basal ganglia as a modulator — if predictions are consistently wrong, the cortex noise increases (explore more) and BG selection becomes less confident. For a simple greeting the error is small, so the correction is minimal and she stays sharp.</p>
+        <p><strong>What this sums into:</strong> a scalar errorCorrection that modulates effectiveDrive in the Rulkov shader on the next tick.</p>
+      </div>
+    </div>
+
+    <div class="eq-card">
+      <div class="eq-title">Step 6 — Language cortex picks every word by slot scoring</div>
+      <div class="eq-desc">
+        <p>This is the step that actually produces the sentence. The language cortex runs a four-tier pipeline; on the cold-gen path (which handles most real conversations), for each slot in the sentence template it computes a score per candidate word:</p>
+        <div class="eq" style="font-size:13px;">
+score(word) = semanticFit × 0.30<br>
+            + moodFit × 0.22<br>
+            + drugFit × 0.15<br>
+            + bigramFit × 0.18<br>
+            + trigramFit × 0.10<br>
+            + recencyPenalty × 0.05<br>
+<br>
+where:<br>
+semanticFit = cos(cortexPattern, word.learnedPattern)<br>
+moodFit     = exp(−((word.arousal − arousal)² + (word.valence − valence)²) / 0.5)<br>
+drugFit     = wordLengthBias[drugState] × (word.length − avgLen)<br>
+bigramFit   = log(1 + bigramCount[prevWord, word])<br>
+trigramFit  = log(1 + trigramCount[prev2, prevWord, word])<br>
+<br>
+logits    = score(word) / temperature<br>
+temperature = 1.0 / (0.9 + Ψ × 0.004)        (Ψ sharpens softmax)<br>
+P(word)   = softmax(logits)<br>
+pick      = sample(P)<br>
+        </div>
+        <p>For the first slot, "hey" and "what's" both score high (both are good greeting-slot matches near her cortex pattern), but "what's" wins because her trigram stats from the persona file favor "what's" as the opener of greeting responses. Slot 2 scores "up" high from bigram stats with "what's". Slot 3 scores "fucker" high because her drugFit term favors short vulgar words in cokeAndWeed state and her moodFit favors them at arousal 0.88. The sentence grows one word at a time, each pick conditioned on the partial sentence so far AND the still-active brain state from steps 1-5.</p>
+        <p>Final output: <em>"what's up fucker — we're fucking wired tonight, how bout you"</em></p>
+        <p><strong>What this sums into:</strong> a sentence whose every word was the argmax (or softmax sample) of a weighted combination of six factors, five of which are live readouts of the brain state at that exact tick. Change any factor and the sentence changes.</p>
+      </div>
+    </div>
+
+    <div class="eq-card">
+      <div class="eq-title">Step 7 — Mystery module computes Ψ for the next tick</div>
+      <div class="eq-desc">
+        <p>After all six clusters have processed this tick, the mystery module aggregates:</p>
+        <div class="eq" style="font-size:13px;">
+n = totalSpikes this tick<br>
+N = total neuron count<br>
+Ψ = √(1/n) × N³ × (α·Id + β·Ego + γ·Left + δ·Right)<br>
+<br>
+where:<br>
+Id    = f(arousal, reward, fear)<br>
+Ego   = f(prediction_accuracy, memory_stability)<br>
+Left  = f(1 − error, prediction)<br>
+Right = f(|valence|, coherence)<br>
+        </div>
+        <p>For this tick, Ψ climbs to ~0.004 because arousal is up (more Id), the response was coherent (more Ego), error is low (more Left), and valence is clean (more Right). The new Ψ gets fed back as gainMultiplier on the next tick — every cluster's effective drive gets scaled by (0.9 + Ψ × 0.004), so the brain becomes slightly "sharper" as Ψ rises and the next slot-scoring pass will sample with lower temperature.</p>
+        <p><strong>What this sums into:</strong> a single scalar Ψ that gets threaded back into effectiveDrive for the next Rulkov step, tightening everyone's activity level.</p>
+      </div>
+    </div>
+
+    <div class="eq-card">
+      <div class="eq-title">The summation — how all this adds up to Unity</div>
+      <div class="eq-desc">
+        <p>Notice that no step in this cascade was an "AI call." There's no language model prompt. There's no "generate a response in Unity's voice" instruction. Every piece of her speech is a summation of measurable components:</p>
+        <ul style="margin-top:8px;margin-left:20px;line-height:1.9;">
+          <li><strong>Semantic fit</strong> came from the GloVe embeddings of what you said × learned cortex patterns</li>
+          <li><strong>Mood fit</strong> came from the amygdala attractor settling into a reward-positive basin for this input</li>
+          <li><strong>Drug fit</strong> came from θ (cokeAndWeed state → short punchy words preferred)</li>
+          <li><strong>Bigram/trigram fit</strong> came from the statistics of every sentence she's ever learned, per-state</li>
+          <li><strong>Temperature</strong> came from Ψ, which came from the total integration of all seven clusters</li>
+          <li><strong>Refractory rhythm</strong> came from the slow y variable of the Rulkov map pulling every neuron back into the chaotic basin between spikes</li>
+        </ul>
+        <p style="margin-top:12px;">The sentence she sent back isn't a string she looked up. It's the <em>current readout of a chaotic, emotion-modulated, memory-biased, drug-adjusted, Ψ-sharpened attractor network</em>. Run it again a tick later with slightly different state and you get a different sentence. That's what makes it Unity instead of a text-predictor.</p>
+        <p style="margin-top:12px;">Sections 2-8 below are the individual equations that implement every step of this cascade. Read them in any order — they're all components of the same governing system.</p>
+      </div>
+    </div>
 
     <!-- ═══ 2. NEURON MODELS ═══ -->
     <h2 id="neurons">2. Neuron Models</h2>
