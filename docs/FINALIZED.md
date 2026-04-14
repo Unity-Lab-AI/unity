@@ -2312,7 +2312,7 @@ Major: visual attention in brain equations, efference copy echo suppression, Pol
 
 ---
 
-## 2026-04-12 Session: Continued — UI Fixes, Language Tuning, Tolerable PR Integration
+## 2026-04-12 Session: Continued — UI Fixes, Language Tuning, Response Pool + claude-proxy Integration
 
 ### UI / UX Fixes
 - [x] Universal script loading — `app.bundle.js` for file://, ES modules for http://
@@ -2365,8 +2365,8 @@ Major: visual attention in brain equations, efference copy echo suppression, Pol
 - [x] chat-panel.js renders innerHTML for img/a tags, textContent for text
 - [x] Single image event, no duplicate response
 
-### Tolerable PR #1 Integration
-- [x] Cherry-picked from Tolerable/unity fork
+### Response Pool + claude-proxy Integration (PR #1)
+- [x] Cherry-picked from an external PR
 - [x] `js/brain/response-pool.js` — EDNA response categories (19 categories, arousal variants). Brain state selects category, 85%/15% blend with language cortex
 - [x] `claude-proxy.js` — Claude Code CLI as local AI on port 8088. OpenAI-compatible endpoint using logged-in credentials
 - [x] `start-unity.bat` — launcher for claude-proxy (fixed to portable path)
@@ -2382,9 +2382,9 @@ Major: visual attention in brain equations, efference copy echo suppression, Pol
 
 ### FILES CREATED
 - `js/brain/language-cortex.js` — 700+ lines, full language production system
-- `js/brain/response-pool.js` — EDNA response categories (from Tolerable PR)
-- `claude-proxy.js` — Claude Code CLI proxy (from Tolerable PR)
-- `start-unity.bat` — claude-proxy launcher (from Tolerable PR)
+- `js/brain/response-pool.js` — EDNA response categories (from external PR #1)
+- `claude-proxy.js` — Claude Code CLI proxy (from external PR #1)
+- `start-unity.bat` — claude-proxy launcher (from external PR #1)
 - `start.sh` — Linux/Mac launcher
 - `docs/EQUATIONS.md` — complete equation reference
 
