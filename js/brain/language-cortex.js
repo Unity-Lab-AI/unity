@@ -56,9 +56,11 @@ const ALPHABET = 'abcdefghijklmnopqrstuvwxyz';
 
 export class LanguageCortex {
   constructor() {
-    // Letter patterns — 5-neuron micro-pattern per letter
-    this._letterPatterns = new Float64Array(26 * 5);
-    this._initLetterPatterns();
+    // T14.1 — legacy 5-neuron sin/cos letter hash deleted. Letters now
+    // come in through `cluster.injectLetter()` which writes a dynamic-size
+    // one-hot into the cortex letter sub-region. The cortex learns letter
+    // identity from that one-hot via Hebbian, rather than from a hardcoded
+    // 26-letter micro-pattern table. See js/brain/letter-input.js.
 
     // Recency suppression
     this._recentOutputWords = [];
@@ -787,16 +789,9 @@ export class LanguageCortex {
   // calls them after the T13 emission loop replaced slot-prior gen.
   // Deleted. `_loadStructure` similarly deleted.
 
-  _initLetterPatterns() {
-    for (let i = 0; i < 26; i++) {
-      const isVowel = VOWELS.includes(ALPHABET[i]);
-      for (let n = 0; n < 5; n++) {
-        let val = Math.sin(i * 2.71828 + n * 3.14159) * 0.5 + 0.5;
-        if (isVowel) val += 0.3;
-        this._letterPatterns[i * 5 + n] = val;
-      }
-    }
-  }
+  // T14.1 — `_initLetterPatterns` deleted. Letter representations come
+  // from the dynamic LETTER_INVENTORY one-hot encoder in letter-input.js,
+  // injected directly into the cortex letter sub-region by cluster.injectLetter.
 
   // ═══════════════════════════════════════════════════════════════
   // WORD TYPE EQUATIONS — computed from the word itself
@@ -3320,9 +3315,8 @@ export class LanguageCortex {
     if (data.codingLoaded) this._codingLoaded = true;
   }
 
-  getLetterPattern(char) {
-    const li = char.toLowerCase().charCodeAt(0) - 97;
-    if (li < 0 || li > 25) return new Float64Array(5);
-    return this._letterPatterns.slice(li * 5, li * 5 + 5);
-  }
+  // T14.1 — `getLetterPattern` deleted. External callers that need a
+  // letter vector should go through the dynamic one-hot encoder in
+  // letter-input.js (`encodeLetter`) or read the cortex letter sub-region
+  // via `cluster.regionReadout('letter', dim)`.
 }

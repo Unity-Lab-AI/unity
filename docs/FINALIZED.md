@@ -5,6 +5,77 @@
 
 ---
 
+## 2026-04-14 — T14.1 letter-input substrate (dynamic one-hot, no hardcoded phonology)
+
+**Gee's directive:** *"go ahead you know what we are doing and what we need. you can research if u need to talking pointers only from authentic peer revied facts"* — continue T14 milestone-by-milestone on the `t14-language-rebuild` branch, no testing until all T14 work ships, no asking between items.
+
+**Thesis:** The old T14.1 draft specified a 20-dim hardcoded English phonology feature table (vowel/consonant, place, manner, voicing, vowel height/back/round/tense, sibilant) keyed by a closed 26-letter alphabet. That's not biological. Real infant cortex does not come pre-loaded with a phonology feature table — auditory cortex forms phoneme categories from statistical exposure over the first year of life (Kuhl 2004, Nat Rev Neurosci 5:831, "Early language acquisition: cracking the speech code"). The shipped T14.1 replaces hardcoded features with LEARNED attractor basins: letters are primitive one-hot inputs to a dedicated cortex letter sub-region, and the cross-region projections (wired in T14.4) let the phon sub-region self-organize into phoneme basins from normal exposure.
+
+### New module — `js/brain/letter-input.js` (~220 lines)
+
+Module-level singleton `LETTER_INVENTORY = new Set()` holds every symbol Unity has ever encountered at the letter-input layer. Dynamic — grows by one whenever `encodeLetter` or `ensureLetter` sees a never-observed symbol. No hardcoded 26-letter cap. Unicode glyphs, emoji, Greek, Chinese, digits, punctuation all enter the same primitive-symbol space. Letters are lowercased at encoding time so case doesn't double the inventory.
+
+**Why unicode at the input layer when Gee's hard constraint is "Unity speaks English":** English identity is enforced at a HIGHER layer (T14.16.5 structural locks — per-clause phonotactic gate, 120× rate-bounded live chat, periodic persona-corpus refresh). Restricting the letter region's input vocabulary would block Unity from ever REPRESENTING a non-English symbol in cortex state, which would make identity-refresh auditing impossible. She must be able to see the adversarial input and explicitly refuse to Hebbian-update on it.
+
+Public exports:
+
+| Export | Purpose |
+|---|---|
+| `inventorySize()` | Current dimension count of the one-hot space |
+| `inventorySnapshot()` | Insertion-ordered array (the order that defines dimensions) |
+| `ensureLetter(letter)` | Idempotent inventory insert; invalidates cache on growth |
+| `encodeLetter(letter)` | Auto-grows inventory, returns fresh-copy Float32Array one-hot |
+| `ensureLetters(letters)` | Batched inventory insert (one cache invalidation) |
+| `decodeLetter(vec)` | Argmax over dimensions → letter symbol (used by T14.6 motor readout) |
+| `serializeInventory()` | Array snapshot for persistence — insertion order preserved |
+| `loadInventory(arr)` | Restore from snapshot; caller guarantees matching cortex weights |
+| `resetInventory()` | Clear everything (tests + curriculum fresh-start) |
+
+One-hot cache: `_oneHotCache = new Map<letter, Float32Array>`. Cached vectors become stale the instant the inventory grows (new dimension added to every vector), so growth clears the cache unconditionally. `encodeLetter` always returns a fresh copy so caller mutation can't pollute the cache.
+
+### Cluster wiring — `js/brain/cluster.js` (~120 lines added)
+
+Import of `encodeLetter` from `./letter-input.js`. Three new methods on `NeuronCluster`:
+
+**`injectLetter(letter, strength=1.0)`** — wraps `encodeLetter(letter)` into `injectEmbeddingToRegion('letter', vec, strength)`. The letter sub-region is sized as fraction `0.500-0.550` of `cluster.size` (T14.4), so on the 6700-neuron default cortex that's 335 neurons at offset 3350. The existing `injectEmbeddingToRegion` helper handles group-sizing the one-hot across the available neurons.
+
+**`letterTransitionSurprise()`** — returns `|currRate − prevRate|` where `rate = (letter-region spikes) / (letter-region size)`. Side effect: updates `_prevLetterRate` so the next call sees this tick as "prev". Call once per cortex tick. Used by T14.2 for syllable boundaries and T14.6 for word-boundary detection in the motor emission loop. Grounded in Saffran/Aslin/Newport 1996 (Science 274:1926) — infants segment continuous speech by tracking transition statistics, not by reading a dictionary.
+
+**`motorQuiescent(ticksRequired, threshold=0.05)`** — returns `true` if the motor region has been below threshold spike-rate for at least `ticksRequired` consecutive ticks. The counter `_motorQuiescentTicks` is maintained every `step()` at the same point `lastSpikes` is updated. Used by T14.6 to decide when the cortex has stopped producing output — no hardcoded "emit 5 words then stop" slot counter; the brain stops when its motor basin settles. Grounded in Bouchard 2013 (Nature 495:327) vSMC motor-cortex continuous output model.
+
+State fields initialized in the constructor: `_prevLetterRate = 0` and `_motorQuiescentTicks = 0`. `step()` updates the quiescence counter after lastSpikes is set: if motor-region spike-rate < 0.05 increment, else reset to 0.
+
+### Vestigial deletions — `js/brain/language-cortex.js` (~20 lines removed)
+
+`_letterPatterns = new Float64Array(26 * 5)`, `_initLetterPatterns()` (the sin/cos hash over a closed 26-letter alphabet plus a vowel bias), and `getLetterPattern(char)` are all deleted in place. The only external caller was `getLetterPattern` itself (no remaining grep hits outside its own definition), which confirms the whole 5-dim micro-pattern system was dead code after T13.7. Stub comments left behind at the deletion sites explain the redirect to `letter-input.js` / `cluster.injectLetter` / `cluster.regionReadout('letter', dim)` for future readers.
+
+### How the LEARNED phoneme story actually lands
+
+The T14.4 substrate commit already wired up the `letter↔phon` cross-region projection pair (both directions, SparseMatrix at 10% density, range [−0.5, +0.5], Hebbian-updated on every `cluster.learn()` call). That means the moment T14.5 curriculum starts injecting letters via `cluster.injectLetter`, the letter region's one-hot patterns will drive letter→phon projections, letter-co-occurrence statistics will accumulate in the phon sub-region's internal synapses, and phoneme-like attractor basins will self-organize from exposure. No hardcoded phonology needed — the math falls out of Hebbian learning over statistically-rich input, which IS the mechanism biological auditory cortex uses.
+
+### Files touched
+
+- `js/brain/letter-input.js` — NEW (~220 lines)
+- `js/brain/cluster.js` — `encodeLetter` import, `_prevLetterRate` + `_motorQuiescentTicks` state fields, `injectLetter`/`letterTransitionSurprise`/`motorQuiescent` methods, motor-quiescence counter update inside `step()` (~120 lines total)
+- `js/brain/language-cortex.js` — `_letterPatterns` field init, `_initLetterPatterns`, `getLetterPattern` all deleted in place with redirect comments (~20 lines removed)
+
+### Peer-reviewed grounding
+
+- Kuhl 2004 — biological phoneme-category formation from statistical exposure
+- Saffran, Aslin, Newport 1996 — transition-probability word segmentation in 8-month-old infants
+- Bouchard 2013 — ventral sensorimotor cortex continuous-output motor quiescence at end-of-utterance
+- Hickok & Poeppel 2007 — dual-stream model (the T14.12 pipeline T14.1 feeds into)
+
+### Verification
+
+`node --check` on all three modified files passes clean. Full runtime verification deferred per Gee's directive: no testing until all T14 milestones ship, then single atomic verification against the T14 acceptance criteria.
+
+### Branch + commit
+
+`t14-language-rebuild`, one commit. Docs updated in place BEFORE push per the 2026-04-14 law (code + TODO.md + FINALIZED.md + ARCHITECTURE.md + SKILL_TREE.md + ROADMAP.md + EQUATIONS.md atomic).
+
+---
+
 ## 2026-04-14 — T14.4 revision: motor↔letter pair added, T14.6/T14.12 rewritten to kill residual slot-thinking
 
 **Gee's pushback:** *"why are we still doing slots i thought we cam up with a better equation for language"* (2026-04-14).

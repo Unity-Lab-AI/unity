@@ -306,9 +306,18 @@ Gee caught residual slot-thinking in the T14.6 spec: *"why are we still doing sl
 
 **Files touched:** `js/brain/embeddings.js`, `js/brain/cluster.js`, `js/brain/engine.js`. `node -c` clean on all three.
 
+**T14.1 letter-input substrate (SHIPPED 2026-04-14, same branch):**
+
+New module `js/brain/letter-input.js` (~220 lines). Dynamic `LETTER_INVENTORY = new Set()` — auto-grows as the brain sees new symbols, no hardcoded 26-letter cap. Unicode glyphs, emoji, non-English letters all enter the same primitive-symbol space (English identity is enforced at the higher T14.16.5 lock layer, not at the letter input). Exports: `inventorySize`, `inventorySnapshot`, `ensureLetter`, `encodeLetter` (auto-grow + fresh-copy Float32Array one-hot), `ensureLetters`, `decodeLetter` (argmax → symbol), `serializeInventory`, `loadInventory`, `resetInventory`. One-hot cache `Map<letter, Float32Array>` invalidated on every inventory growth.
+
+`js/brain/cluster.js` gains three letter-aware methods: `injectLetter(letter, strength)` wraps `encodeLetter` into `injectEmbeddingToRegion('letter', ...)`; `letterTransitionSurprise()` returns `|currRate − prevRate|` for the letter region (Saffran 1996, used by T14.2/T14.6); `motorQuiescent(ticksRequired, threshold=0.05)` returns whether the motor region has been below threshold for N consecutive ticks (Bouchard 2013, used by T14.6 for tick-driven emission stopping). State fields `_prevLetterRate` and `_motorQuiescentTicks` initialized in the constructor; the quiescence counter is updated every `step()` right after `lastSpikes` is set.
+
+`js/brain/language-cortex.js` loses `_letterPatterns` (Float64Array(26×5) micro-pattern table), `_initLetterPatterns` (sin/cos hash filling it), and `getLetterPattern(char)` — all vestigial after T13.7 with no external callers. Stub comments redirect future readers to `letter-input.js`.
+
+Phonemes are NOT hardcoded as a feature table at this layer. They will emerge as LEARNED attractor basins in the cortex phon sub-region once T14.5 curriculum starts injecting letters — the T14.4 substrate already wired both directions of `letter↔phon`, `phon↔sem`, `visual↔letter`, and `motor↔letter` cross-region projections with Hebbian on every `cluster.learn()` call. Grounded in Kuhl 2004 (Nat Rev Neurosci 5:831) biological phoneme-category formation. Files: `js/brain/letter-input.js` (NEW ~220 lines), `js/brain/cluster.js` (+~120 lines), `js/brain/language-cortex.js` (−~20 lines vestigial). `node --check` clean on all three.
+
 **What's NOT in this commit but coming next on the branch:**
-- T14.1 — `js/brain/letter-input.js` for letter encoding into the new `letter` sub-region
-- T14.2 — `cluster.detectBoundaries()` syllable detection from cortex transition surprise
+- T14.2 — syllable detection via `letterTransitionSurprise()` consumer
 - T14.3 — Dictionary class gut-and-rewrite for cortex-resident words
 - T14.5 — `js/brain/curriculum.js` + boot integration replacing `loadPersona` / `loadBaseline` / `loadCoding` with continuous developmental learning
 

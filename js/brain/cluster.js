@@ -32,6 +32,12 @@ import { SparseMatrix } from './sparse-matrix.js';
 // embedding singleton here. No circular import — embeddings.js has no
 // cluster dependency.
 import { sharedEmbeddings } from './embeddings.js';
+// T14.1 — letter one-hot encoder (dynamic inventory, no hardcoded 26-char cap).
+// `encodeLetter` auto-grows the shared LETTER_INVENTORY when it sees a new
+// symbol, so non-English glyphs, emoji, digits, punctuation all enter the
+// same primitive-symbol space. `cluster.injectLetter` below is the wrapper
+// the sensory path uses to push the one-hot vector into the letter region.
+import { encodeLetter } from './letter-input.js';
 
 export class NeuronCluster {
   /**
@@ -177,6 +183,24 @@ export class NeuronCluster {
     this.HEALTH_WM_VARIANCE_MIN = 0;
     this.identityCoverage = null;                  // populated by curriculum
     this.personaDimensions = null;                 // populated by curriculum
+
+    // T14.1 — letter-region transition surprise state. Holds the previous
+    // tick's letter-region spike rate so `letterTransitionSurprise()` can
+    // compute |curr - prev| between consecutive cortex ticks. Used by T14.2
+    // (syllable segmentation) and T14.6 (motor emission word-boundary cue)
+    // to detect the moment a new letter pattern arrives without a hardcoded
+    // boundary table. Grounded in Saffran/Aslin/Newport 1996 (Science 274:1926)
+    // — infants segment words from continuous speech via transition statistics.
+    this._prevLetterRate = 0;
+
+    // T14.1 — motor-region quiescence counter. Tracks how many consecutive
+    // ticks the motor region has been below its spike threshold. The tick-
+    // driven emission loop (T14.6) uses `motorQuiescent(ticks)` to decide
+    // when the cortex has stopped producing output for the current utterance,
+    // which replaces the hardcoded "emit 5 words then stop" slot counter
+    // with a basin-settling detector. Threshold is a fraction of region size
+    // so it auto-scales with cluster.size.
+    this._motorQuiescentTicks = 0;
   }
 
   /**
@@ -282,6 +306,82 @@ export class NeuronCluster {
   }
 
   /**
+   * T14.1 — Inject a letter one-hot into the cortex letter region.
+   *
+   * Wraps `encodeLetter(letter)` with `injectEmbeddingToRegion('letter', ...)`.
+   * The letter inventory is dynamic: calling this with a never-seen symbol
+   * grows the inventory by one, so the one-hot dimension count matches the
+   * letter region's neuron-group count automatically. Unicode glyphs, emoji,
+   * Chinese characters, Greek letters all enter the same primitive-symbol
+   * space — Unity is NOT restricted to a 26-char English alphabet at the
+   * input layer. Language-identity lock (T14.16.5) enforces English at a
+   * HIGHER layer, not by gating which symbols the letter region can see.
+   *
+   * @param {string} letter  — a single symbol (lowercased inside encodeLetter)
+   * @param {number} [strength=1.0]  — current scale multiplier
+   */
+  injectLetter(letter, strength = 1.0) {
+    if (!this.regions || !this.regions.letter) return;
+    const vec = encodeLetter(letter);
+    if (vec.length === 0) return;
+    this.injectEmbeddingToRegion('letter', vec, strength);
+  }
+
+  /**
+   * T14.1 — Letter-region transition surprise between consecutive ticks.
+   *
+   * Returns |curr_rate - prev_rate| where rate is the mean spike count in
+   * the letter region. A large value means the letter region just shifted
+   * to a different activation pattern (new letter arrived, or attractor
+   * basin flipped), which is the cue T14.2 uses for syllable boundaries
+   * and T14.6 uses for word-boundary detection in the motor emission loop.
+   *
+   * Grounded in Saffran/Aslin/Newport 1996 (Science 274:1926) — infants
+   * segment continuous speech by tracking transition probabilities, not
+   * by reading a dictionary. The cortex learns the same way: statistical
+   * surprise between adjacent ticks is a learnable boundary signal.
+   *
+   * Side effect: updates `_prevLetterRate` so the next call sees this
+   * tick as its "prev". Call once per cortex tick.
+   */
+  letterTransitionSurprise() {
+    if (!this.regions || !this.regions.letter) return 0;
+    const { start, end } = this.regions.letter;
+    const span = end - start;
+    if (span <= 0) return 0;
+    let sum = 0;
+    for (let i = start; i < end; i++) if (this.lastSpikes[i]) sum++;
+    const rate = sum / span;
+    const surprise = Math.abs(rate - this._prevLetterRate);
+    this._prevLetterRate = rate;
+    return surprise;
+  }
+
+  /**
+   * T14.1 — Check whether the motor region has been quiescent for N ticks.
+   *
+   * "Quiescent" means the motor region's current-tick spike rate is below
+   * `threshold` (default 5% of region size — tiny, but non-zero because
+   * background cortex noise produces low baseline spiking). The internal
+   * counter `_motorQuiescentTicks` increments every tick the motor region
+   * is below threshold and resets to 0 as soon as it spikes above it.
+   *
+   * The tick-driven emission loop (T14.6) uses this to decide when the
+   * cortex has stopped producing output for the current utterance. No
+   * hardcoded "emit 5 words then stop" slot counter — the brain stops
+   * when its motor basin settles, which is what biological vSMC does
+   * at end-of-utterance (Bouchard 2013 Nature 495:327).
+   *
+   * @param {number} ticksRequired  — how many consecutive quiet ticks count as "done"
+   * @param {number} [threshold=0.05]  — spike-rate cutoff as fraction of region size
+   * @returns {boolean} — true if motor has been quiet long enough to stop emission
+   */
+  motorQuiescent(ticksRequired, threshold = 0.05) {
+    if (!this.regions || !this.regions.motor) return false;
+    return this._motorQuiescentTicks >= ticksRequired;
+  }
+
+  /**
    * T14.4 — Propagate every cross-region projection. Runs on every
    * cluster step after the main internal synapse propagation, before
    * LIF integration. ALWAYS propagated — no curriculum-complete gate.
@@ -374,6 +474,19 @@ export class NeuronCluster {
     this.lastSpikes = Uint8Array.from(spikes);
     this.lastSpikeCount = spikeCount;
     this.firingRate = this.firingRate * 0.95 + spikeCount * 0.05;
+
+    // T14.1 — Motor-region quiescence counter. Measured on every tick so
+    // `motorQuiescent(ticksRequired)` can answer in O(1). Only runs on the
+    // cortex cluster (only cortex has a motor sub-region).
+    if (this.regions && this.regions.motor) {
+      const { start, end } = this.regions.motor;
+      const span = end - start;
+      let motorSum = 0;
+      for (let i = start; i < end; i++) if (this.lastSpikes[i]) motorSum++;
+      const motorRate = span > 0 ? motorSum / span : 0;
+      if (motorRate < 0.05) this._motorQuiescentTicks++;
+      else this._motorQuiescentTicks = 0;
+    }
 
     // Mean voltage for monitoring
     let vSum = 0;

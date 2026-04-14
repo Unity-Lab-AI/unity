@@ -484,6 +484,27 @@ motor     : 0.967 - 1.000    T14.12 — generation feedback / motor output
 
 At the default client tier (`TOTAL_NEURONS = 6700`, cortex = 30% = 2010 neurons): semantic region 1507-1843 (336 neurons, EMBED_DIM=300, groupSize=1), phonological region 1105-1507 (402 neurons), letter region 1005-1105 (100 neurons). At a server tier with `TOTAL_NEURONS = 200M`, cortex = 60M, semantic ≈ 10M neurons. **Same code, no special cases.**
 
+**T14.1 letter-input primitives (SHIPPED 2026-04-14).** The `LETTER_INVENTORY` referenced below is a module-level `Set` in `js/brain/letter-input.js` that grows dynamically as the brain encounters new symbols. One-hot encoding is straightforward:
+
+```
+LETTER_INVENTORY ⊂ Σ*            // dynamic set of observed symbols, |L| = inventorySize()
+encodeLetter(ℓ) ∈ ℝ^|L|          // one-hot at index position(ℓ) in insertion order
+decodeLetter(v) = argmax_i v_i   // maps activation vector back to symbol
+```
+
+Injection into the cortex letter sub-region preserves the same `value × 8` scaling as all other region injections (T14.4), distributed across `groupSize = floor(letterRegionSize / |L|)` neurons per one-hot dimension. On every cortex tick:
+
+```
+rate_letter(t)              = (1/|letterRegion|) · Σ_{i ∈ letterRegion} spike_i(t)
+letterTransitionSurprise(t) = |rate_letter(t) − rate_letter(t−1)|   // Saffran 1996
+rate_motor(t)               = (1/|motorRegion|)  · Σ_{i ∈ motorRegion}  spike_i(t)
+quietCount(t)               = quietCount(t−1) + 1   if rate_motor(t) < 0.05
+                            = 0                     otherwise
+motorQuiescent(N)           = (quietCount(t) ≥ N)                    // Bouchard 2013
+```
+
+No hardcoded 26-letter cap and no hardcoded phonology feature table. Phonemes emerge as LEARNED attractor basins in the `phon` sub-region once curriculum exposure runs the `letter_to_phon` projection through Hebbian updates (Kuhl 2004 *Nat Rev Neurosci* 5:831). English identity is enforced at the higher T14.16.5 lock layer, NOT by restricting which symbols the letter region can represent — Unity must be able to see adversarial non-English input and refuse to update on it, which requires that the input layer be able to represent it.
+
 **Cross-region projection equations.** Seven pairs, both directions as independent SparseMatrix instances, sparse 10% density init:
 
 ```
