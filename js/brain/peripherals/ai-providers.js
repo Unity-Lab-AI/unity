@@ -696,11 +696,14 @@ export class SensoryAIProviders {
       signal: AbortSignal.timeout(timeoutMs),
     });
     if (!res.ok) {
-      // 401/402/403 = auth/payment failure — mark dead immediately so
-      // we stop hammering and spamming the console. Other 4xx/5xx get
-      // a soft skip (retry on next frame).
-      if (res.status === 401 || res.status === 402 || res.status === 403) {
+      // Any 4xx is a client-side problem that won't fix itself frame
+      // to frame (auth, payment, bad request body, unsupported model).
+      // Mark the backend dead for the cooldown so we stop hammering
+      // the endpoint and spamming the console. 5xx gets a soft skip
+      // and retries on the next frame in case it's transient.
+      if (res.status >= 400 && res.status < 500) {
         this._markBackendDead(VISION_URL);
+        console.warn(`[SensoryAI] Pollinations vision ${res.status} — disabled for ${Math.round(this._deadCooldown / 60000)}m. Check API key in Settings.`);
       }
       return null;
     }
