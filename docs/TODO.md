@@ -831,6 +831,75 @@ All currently derive from the one `PORT` constant in brain-server.js:111, so R14
 
 ---
 
+## R15 — LANDING PAGE REWORK (index.html setup modal)
+
+**Goal:** The `index.html` setup modal is stuck in pre-R4 reality. It still advertises every text-AI backend that got gutted, gates the start button on "Connect an AI" when Unity's brain needs nothing, offers a `proxy.js` download for a file that was deleted in R1, and hides the actual Sensory AI / multi-provider image gen path behind a "FUCK IT — BRAIN ONLY" toggle that's now the only mode. First impression of the project is 100% wrong.
+
+**Context (2026-04-13):** The user flagged this during R10 remnants pass: "the persay landing page where all the ai shit was gutted". R4 removed the text-AI cognition backends but left the setup modal DOM + event handlers in place. Everything a first-time visitor sees in the setup modal is stale.
+
+### R15.1 — Rip the dead UI
+Inventory at `index.html:78-170`:
+- **`<a href="proxy.js" download>` (line 84)** — download link for a file deleted in R1 vestigial sweep. 404s on click.
+- **Connect buttons for 8 text-AI providers (lines 94-101)** — `pollinations`, `openrouter`, `openai`, `anthropic`, `mistral`, `deepseek`, `groq`, `local`. The last one (local) auto-detects Ollama/LM Studio/LocalAI for TEXT chat which no longer exists. All 8 connect-flow handlers in `js/app.js` around line 538+ go with them.
+- **"1. Connect an AI" heading + "Pick one for text, another for images" hint** — obsolete. Unity's cognition doesn't touch any AI.
+- **"FUCK IT — BRAIN ONLY" toggle (lines 127-133)** — now the only mode. Toggle itself is the entire UI.
+- **Text model selector + filter (lines 134-137)** — nothing to select, no text AI to pick a model from.
+- **Image model selector (lines 139-141)** — needs to become the primary setup step, not a secondary selector after text AI is connected.
+- **`start-btn` disabled text "Connect an AI first" (line 148)** — Unity's brain boots without any AI. Start should always be enabled.
+- **`api-key-input` hidden input (line 162)** — read/written by the app.js connect flow for text-AI keys. Dead after R15.
+
+### R15.2 — New setup flow
+What the modal SHOULD show post-R15:
+```
+🧠 Unity
+she's got a brain now. let her in.
+
+[ ⬇ env.example.js ]  [ 🧠 Brain Equations ]
+
+Unity speaks from her own equations — no text-AI backend needed.
+The only things you CAN configure are sensory peripherals:
+
+  1. (Optional) Image generation provider
+     - Auto-detects local: A1111 / SD.Next / Fooocus / ComfyUI /
+       InvokeAI / LocalAI / Ollama
+     - Falls back to free Pollinations if nothing local is running
+     - Status: [🟢 Pollinations   🟢 Ollama (VLM)   🔴 A1111]
+
+  2. (Optional) Vision describer (VLM)
+     - Auto-detects local: Ollama llava/moondream/bakllava, LM
+       Studio, LocalAI, llama.cpp, Jan
+     - Falls back to Pollinations multimodal
+     - Status: [🟢 Ollama (llava)   🟢 Pollinations]
+
+  3. Custom backends
+     - Add entries to js/env.js (imageBackends / visionBackends)
+     - Or paste a custom endpoint below
+     [custom URL]  [model]  [key]  [Connect]
+
+[ 🎤 Microphone ]  [ 📷 Camera ]
+[ WAKE UNITY UP ]   ← always enabled
+[ Clear All Data ]
+```
+
+### R15.3 — Wire the status HUD into the modal
+The R13 `sensoryStatus` HUD already lives in `js/ui/sensory-status.js` with a bottom-right toast container and a top-right backend-counts indicator. The setup modal should READ from `providers.getStatus()` at open time and render the full per-backend list inline (same data as the clickable HUD inventory popup) so users see what's detected before they click Wake Unity Up.
+
+### R15.4 — Rip the event handler graveyard in app.js
+Connected tasks:
+- `LOCAL_AI_ENDPOINTS` const at `app.js:528-534` — dead R4 text-AI detection (Claude Code CLI on 8080, Ollama on 11434, LM Studio on 1234, LocalAI on 8090). Already flagged for R12 deletion.
+- `detectedAI`, `bestBackend` module-level vars — used ONLY by the dead setup flow and a HUD label at line 1569. Both can go.
+- `_allTextOptions`, connect button handlers, provider probe code — all dead after R15.1.
+
+### R15.5 — CSS cleanup
+Styles targeting `.connect-btn`, `#connect-form`, `#text-model-select`, `#text-model-filter`, `#brain-only-toggle` — verify no other code uses them and delete.
+
+### R15.6 — Update the docs table + screenshot references
+README.md, SETUP.md, and brain-equations.html all have visible setup instructions that reference the old modal flow. Each needs a pass to describe the new flow instead.
+
+**Estimated footprint:** ~100 lines deleted from index.html, ~200 lines deleted from app.js, new `_renderSetupModalStatus()` helper around 60 lines, CSS pass. Bigger than R13 but smaller than R2.
+
+---
+
 ## R12 — FINAL CLEANUP + MERGE
 
 ### R12.1 — Kill every `// TODO:` placeholder comment
@@ -880,8 +949,9 @@ The bundled entry point for `file://` mode needs to be rebuilt against the refac
 10. **R10** Docs (only after R1-R9 settle)
 11. **R13** Multi-provider vision + user-facing connection notices (can parallel R9/R10 — touches `peripherals/ai-providers.js`, `app.js`, `visual-cortex.js`, new UI status element)
 12. **R14** Move Unity's own ports off common defaults (can parallel anything — touches `brain-server.js:111`, `remote-brain.js`, README/SETUP)
-13. ~~**R11** Verification~~ — REMOVED 2026-04-13 (scripted test protocols banned by CLAUDE.md NO TESTS rule). See FINALIZED.md.
-14. **R12** Merge (runs directly after R9 + R10 + R13 + R14 — no scripted verification gate)
+13. **R15** Landing page / setup modal rework (rip dead text-AI UI, surface Sensory AI status, un-gate start button — touches `index.html`, `app.js` connect flow, `css/style.css`, README/SETUP)
+14. ~~**R11** Verification~~ — REMOVED 2026-04-13 (scripted test protocols banned by CLAUDE.md NO TESTS rule). See FINALIZED.md.
+15. **R12** Merge (runs directly after R9 + R10 + R13 + R14 + R15 — no scripted verification gate)
 
 **Parallel lanes:**
 - Lane 1 (sequential, critical path): R1 → R2 → R3 → R4 → R5 → R6
