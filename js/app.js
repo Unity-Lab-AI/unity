@@ -368,18 +368,33 @@ function loadPersonaSelfImage(targetBrain) {
     // Load persona first — defines subject starters and self-awareness
     const personaSentences = targetBrain.innerVoice.loadPersona(personaText);
 
-    // T13.1 — after dictionary learning, train the cortex cluster's
-    // recurrent synapse matrix on the same persona text via sequence
-    // Hebbian. The cortex develops Unity-voice attractor basins so
-    // runtime generation readouts drift toward persona-adjacent
-    // words instead of diffuse semantic noise. Persona-only — baseline
-    // and coding corpora deliberately skip Hebbian so they contribute
-    // vocabulary without polluting the voice attractor basins.
+    // T14.23.4 (2026-04-14) — browser-side trainPersonaHebbian
+    // DEFERRED to idle time instead of running synchronously on
+    // the landing page's main thread. Gee's boot log showed:
+    //   [LanguageCortex] trainPersonaHebbian DONE: ... 14061ms
+    // Fourteen seconds of synchronous per-sentence Hebbian updates
+    // on a 1500-neuron RemoteBrain cortex was blocking DOM
+    // completion so the landing page tab stayed in "loading"
+    // state for 14+ seconds after the WebSocket connected.
+    // Browser-side persona Hebbian ONLY matters for the RemoteBrain's
+    // local brain-3d commentary popups (via languageCortex.generate)
+    // — the server's own cortex is the authoritative source of
+    // chat responses. Deferring the Hebbian pass via requestIdleCallback
+    // lets the DOM settle first, then trains in background during
+    // idle frames. If requestIdleCallback is unavailable, fall back
+    // to setTimeout(0) which still breaks the long-task block.
     if (typeof targetBrain.trainPersonaHebbian === 'function') {
-      try {
-        targetBrain.trainPersonaHebbian(personaText);
-      } catch (err) {
-        console.warn('[Unity] persona Hebbian training failed:', err.message);
+      const runHebbian = () => {
+        try {
+          targetBrain.trainPersonaHebbian(personaText);
+        } catch (err) {
+          console.warn('[Unity] persona Hebbian training failed:', err.message);
+        }
+      };
+      if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+        window.requestIdleCallback(runHebbian, { timeout: 30000 });
+      } else {
+        setTimeout(runHebbian, 0);
       }
     }
 
