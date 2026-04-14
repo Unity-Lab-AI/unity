@@ -24,6 +24,13 @@ server/resource-config.json
 # === Workflow docs — tracked for project documentation ===
 # (Previously ignored as "generated at runtime" but these are real docs now)
 
+# === Archived docs — local-only history, not tracked ===
+# Phase 13 pre-refactor audits (KILL_LIST, VESTIGIAL, SEMANTIC_GAP) +
+# stale session snapshots (NOW.md) moved here when the work they
+# tracked got absorbed into FINALIZED.md. Kept on disk so Gee can
+# grep the history locally, but not pushed.
+docs/archive/
+
 # === Pollinations output ===
 pollinations-output/
 
