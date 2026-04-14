@@ -14,6 +14,15 @@
 
 ## COMPLETED TASKS LOG
 
+## 2026-04-13 Session: R9 Resolved — 5-minute freeze already fixed on main
+
+### COMPLETED (resolved as pre-existing fix, not re-fixed)
+- [x] **Task:** R9 — UI leak hunt (the 5-minute freeze). Live testing earlier in the project history surfaced that brain-viz panels would freeze after ~5 minutes of runtime. R9 was planned as an audit pass across `brain-viz.js` (canvases/RAF/listeners/unbounded arrays/intervals), `brain-3d.js` (WebGL/Three.js disposal, animation loop when hidden, spike trail buffers), `app.js` (window listeners registered once vs per-call), and a memory-profile verification lap.
+  - Completed: 2026-04-13 (resolved, not re-fixed)
+  - Resolution: **Already fixed long ago on `main`.** Gee confirmed the freeze was an old bug that was already addressed in main before the `brain-refactor-full-control` branch was cut, so the refactor branch inherited the fix automatically. No action needed in R9's scope. The R9.1-R9.4 subtasks remain preserved in place in `docs/TODO.md` per the NEVER DELETE TASK DESCRIPTIONS rule, flagged as RESOLVED, so future auditors can see the original plan if a similar leak ever resurfaces.
+
+---
+
 ## 2026-04-13 Session: R11 Removal — scripted verification protocols banned by NO TESTS rule
 
 ### REMOVED (not completed, intentionally archived)

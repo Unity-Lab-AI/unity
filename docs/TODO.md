@@ -586,7 +586,7 @@ When R2 changes the dictionary schema (new semantic pattern field), bump the sto
 
 ---
 
-## R9 — UI LEAK HUNT (THE 5-MINUTE FREEZE)
+## R9 — UI LEAK HUNT (THE 5-MINUTE FREEZE)  [RESOLVED 2026-04-13 — Gee confirmed this was fixed long ago on `main`. The R1-R14 refactor branch inherited the fix when it was cut from main. No action needed here. All subtasks below preserved in place per the NEVER DELETE TASK DESCRIPTIONS rule.]
 
 **Goal:** Live testing found the brain-viz panels freeze after ~5 minutes of runtime. Pre-existing leak, not caused by refactor commits. Must find and fix before merging back to main.
 
@@ -876,7 +876,7 @@ The bundled entry point for `file://` mode needs to be rebuilt against the refac
 6. **R6** Equational build + image (depends on R2 semantic embeddings)
 7. **R7** Sensory peripheral cleanup (can parallel R5/R6)
 8. **R8** State persistence audit (can parallel R5/R6)
-9. **R9** UI leak hunt (parallel with anything — touches different files)
+9. ~~**R9** UI leak hunt~~ — RESOLVED 2026-04-13 (fixed long ago on main, inherited when refactor branch was cut). See FINALIZED.md.
 10. **R10** Docs (only after R1-R9 settle)
 11. **R13** Multi-provider vision + user-facing connection notices (can parallel R9/R10 — touches `peripherals/ai-providers.js`, `app.js`, `visual-cortex.js`, new UI status element)
 12. **R14** Move Unity's own ports off common defaults (can parallel anything — touches `brain-server.js:111`, `remote-brain.js`, README/SETUP)
@@ -887,7 +887,7 @@ The bundled entry point for `file://` mode needs to be rebuilt against the refac
 - Lane 1 (sequential, critical path): R1 → R2 → R3 → R4 → R5 → R6
 - Lane 2 (parallel after R2): R7 (peripherals) — touches `visual-cortex.js`, `auditory-cortex.js`, `voice.js`, new files
 - Lane 3 (parallel anytime): R8 (persistence) — touches `persistence.js`, `brain-server.js` save paths
-- Lane 4 (parallel anytime): R9 (leak hunt) — touches `brain-viz.js`, `brain-3d.js`, `app.js`
+- Lane 4 (parallel anytime): ~~R9 (leak hunt)~~ — RESOLVED 2026-04-13, already fixed on main
 - Lane 5 (after R1-R9): R10 (docs)
 - Lane 6 (after R10): ~~R11 (verification)~~ — REMOVED 2026-04-13, NO TESTS rule
 - Lane 7 (after R10): R12 (merge — no longer gated on R11)
