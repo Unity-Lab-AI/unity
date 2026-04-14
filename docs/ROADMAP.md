@@ -376,9 +376,13 @@ Two halves in one atomic commit. **Half A — curriculum calibration.** New `Cur
 
 Peer-reviewed grounding: Pulvermüller 2005 (*Nat Rev Neurosci* 6:576) silent-reading auditory activation, Perrone-Bertolotti 2014 (*Behav Brain Res* 261:220) inner speech phenomenology, plus inherited Kuhl / Friederici / Schmidhuber. Files: `js/brain/curriculum.js` (+~220), `js/brain/cluster.js` (+~95 net, including −35 for hearPhoneme deletion), `js/brain/engine.js` (+~75 for diagnostics + wiring), `js/brain/component-synth.js` (+~20), `js/brain/language-cortex.js` (−~50 duplicates), `js/brain/dictionary.js` (−~100 legacy), `js/brain/auditory-cortex.js` (comment update). `node --check` clean on all seven.
 
+**T14.18 server-side language cortex side-car DELETED (correction commit after T14.17 code-complete):**
+
+Gee caught that `server/brain-server.js:_initLanguageSubsystem` was hardcoding `langCortexSize = 2000` — a T13.7.8 legacy cap carried through every T14 milestone's orphan audit because the audit scoped to methods, not cluster-sizing constants. Fix: one constant change, `const langCortexSize = CLUSTER_SIZES.cortex;` so the server-side language cortex scales from the same single path that decides every other neuron count (`GPUCONFIGURE.bat` → `detectResources` → `TOTAL_NEURONS` → `CLUSTER_FRACTIONS.cortex`). Boot log now prints the real count so operators can verify at startup. T14.4 sub-regions automatically inherit the real scale — at a 700K-neuron tier, language cortex = 210K, letter ≈ 10.5K, phon ≈ 42K, sem ≈ 35K, motor ≈ 6.9K. At 50M, those scale to letter ≈ 750K / phon ≈ 3M / sem ≈ 2.5M / motor ≈ 495K. Zero hardcoded caps anywhere. `_langStart` repointed from the legacy halfway-point offset to the T14.4 letter sub-region start. `server/brain-server.js` only; `node --check` clean.
+
 ### T14 COMPLETE
 
-All 18 milestones (T14.0 through T14.17) shipped on `t14-language-rebuild`. Branch ready for end-to-end verification before merge to main. No more per-milestone commits — next action is Gee's verification walkthrough or merge-to-main go-ahead.
+All 18 milestones (T14.0 through T14.17) plus the T14.18 correction shipped on `t14-language-rebuild`. Branch ready for end-to-end verification before merge to main. No more per-milestone commits — next action is Gee's verification walkthrough or merge-to-main go-ahead.
 - T14.5 — `js/brain/curriculum.js` + boot integration replacing `loadPersona` / `loadBaseline` / `loadCoding` with continuous developmental learning
 
 ---

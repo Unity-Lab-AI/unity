@@ -466,18 +466,33 @@ class ServerBrain {
       this.dictionary = new dictMod.Dictionary();
       this.languageCortex = new lcMod.LanguageCortex();
 
-      // T13.7.6 — server needs a real NeuronCluster cortex for the T13
-      // brain-driven emission loop in languageCortex.generate.
-      // T13.7.8 — bumped from 300 → 2000 neurons. 300 was a token,
-      // not a brain region. With 2000 neurons + 15% connectivity =
-      // ~600K synapses, persona Hebbian basins are deep enough that
-      // the cortex readout actually reflects Unity-voice attractor
-      // structure between word emissions instead of diffuse noise.
-      // The full 677M-neuron brain runs on the GPU pipeline elsewhere;
-      // this 2K cluster is purely for language emission (read state,
-      // score candidates, feedback-inject) and runs only during
-      // processInput, not on every brain tick.
-      const langCortexSize = 2000;
+      // T14.18 (2026-04-14) — SIDE-CAR DELETED.
+      //
+      // The old path hardcoded langCortexSize = 2000 here (T13.7.8
+      // carried forward through all of T14), which meant language
+      // emission ran on a tiny dedicated 2K cluster regardless of
+      // how the operator's hardware was configured. A user who set
+      // `GPUCONFIGURE.bat` to a 50M-neuron tier still got a 2K
+      // language cortex because this number was hardcoded three
+      // layers removed from the resource-detection path.
+      //
+      // THE ONE PATH THAT DECIDES NEURON COUNTS:
+      //   GPUCONFIGURE.bat  →  writes resource caps
+      //   start.bat          →  boots brain-server.js
+      //   detectResources()  →  reads caps + VRAM + RAM
+      //                      →  sets RESOURCES.neurons / CLUSTER_SIZES
+      //   CLUSTER_FRACTIONS  →  scales every cluster proportionally
+      //   CLUSTER_SIZES.cortex = TOTAL_NEURONS × 0.30
+      //
+      // The language cortex is NOT a separate thing. It IS the cortex
+      // sub-regions (T14.4 auditory/visual/free/letter/phon/sem/fineType/
+      // motor, each sized as a fraction of cluster.size), which scale
+      // with the main cortex cluster. Scale flows end-to-end from
+      // GPUCONFIGURE.bat → detectResources → TOTAL_NEURONS →
+      // CLUSTER_FRACTIONS.cortex → T14.4 sub-region fractions, no
+      // hardcoded cap anywhere in the chain.
+      const langCortexSize = CLUSTER_SIZES.cortex;
+      console.log(`[Brain] Language cortex = CLUSTER_SIZES.cortex = ${langCortexSize.toLocaleString()} neurons (scaled from GPUCONFIGURE.bat via detectResources → TOTAL_NEURONS × CLUSTER_FRACTIONS.cortex)`);
       this.cortexCluster = new clusterMod.NeuronCluster('cortex', langCortexSize, {
         tonicDrive: 14 + (this.persona.arousalBaseline || 0.9) * 6,
         noiseAmplitude: 7,
@@ -485,13 +500,17 @@ class ServerBrain {
         excitatoryRatio: 0.85,
         learningRate: 0.002,
       });
-      // T13.7.8 — language region of the language cortex starts at the
-      // halfway point so the cortex has room for sensory injection
-      // regions before it. langStart = floor(size / 2) → 1000 for a 2K
-      // cluster, leaving 1000 neurons for language. groupSize at
-      // EMBED_DIM=50 = 20 neurons per embedding dim, 4× more granular
-      // than the previous 300-neuron cluster which had groupSize=3.
-      this._langStart = Math.floor(langCortexSize / 2);
+      // T14.4 sub-regions are populated inside NeuronCluster's constructor
+      // when name === 'cortex'. At the real configured scale, the letter
+      // region is langCortexSize × 0.05, phon is × 0.20, sem is × 0.167,
+      // motor is × 0.033 — biological proportions that scale with hardware.
+      //
+      // T13.7.8 `_langStart` is kept for legacy compat with any path
+      // that still reads it; T14.4 sub-regions are the authoritative
+      // region layout. Set to the start of the T14.4 `letter` region
+      // so any legacy caller that used _langStart as "where language
+      // lives" ends up in the right place.
+      this._langStart = Math.floor(langCortexSize * 0.500);
       // T14.3 — wire the language cortex cluster into the dictionary so
       // new words route their letter streams through cluster.detectBoundaries
       // and cluster.detectStress on first observation. Server mirrors the

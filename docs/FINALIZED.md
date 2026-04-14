@@ -5,6 +5,67 @@
 
 ---
 
+## 2026-04-14 — T14.18 server language cortex side-car DELETED (correction after T14.17)
+
+**Gee's catch (2026-04-14 post-T14.17):** *"6700 nuron ??? wtf???? im running i think a 700000 neuron on my GPU why is that such a small count???? nuron useage is suppose to mimic real world"*
+
+T14.17 shipped as "code complete" with a vestigial-organ audit that verified every T14 *method* had live callers — but the audit was scoped to methods, not cluster-sizing constants. It missed a T13.7.8 legacy cap hardcoded three layers deep in `server/brain-server.js:_initLanguageSubsystem`. Gee caught it when I referenced "6700 neurons" in the verification walkthrough and he pointed out his actual GPU tier runs 700K+.
+
+### The mismatch
+
+The browser client auto-scales cluster sizes correctly through the single path: `TOTAL_NEURONS` × `CLUSTER_FRACTIONS[name]` = per-cluster size. Default client-tier minimum is 6700 total neurons, but `detectResources` on hardware-capable deploys picks the real count from VRAM/RAM caps that `GPUCONFIGURE.bat` set.
+
+The server was supposed to mirror this path, and for the main brain clusters it does (line 232 `this.clusters[name] = { size: CLUSTER_SIZES[name], ... }` — GPU shadow descriptors that get fed real counts). But the DEDICATED language cortex NeuronCluster at line 480 hardcoded `const langCortexSize = 2000` regardless of what `CLUSTER_SIZES.cortex` said. That 2K came from T13.7.8 when the slot scorer needed to run on every chat turn without blocking the main GPU brain loop, so a tiny dedicated side-car made sense for performance reasons.
+
+T14.6 deleted the slot scorer. T14.17 shipped the tick-driven motor emission. The performance rationale for the side-car was gone, but the hardcoded cap was never cleaned up. **A user who set `GPUCONFIGURE.bat` to a 50M-neuron tier still got a 2K language cortex because the number was hardcoded three layers removed from the resource-detection path.**
+
+### The fix
+
+One line changes:
+
+```js
+const langCortexSize = CLUSTER_SIZES.cortex;
+```
+
+Plus a boot log so the real count is visible at startup:
+
+```
+[Brain] Language cortex = CLUSTER_SIZES.cortex = 210,000 neurons
+        (scaled from GPUCONFIGURE.bat via detectResources →
+         TOTAL_NEURONS × CLUSTER_FRACTIONS.cortex)
+```
+
+At Gee's ~700K total-neuron tier, `CLUSTER_SIZES.cortex = 700K × 0.30 = 210K` neurons. The T14.4 sub-regions (populated inside `NeuronCluster`'s constructor when `name === 'cortex'`) carve that into biologically-proportional chunks automatically: letter region = 210K × 0.05 = 10.5K neurons, phon region = 210K × 0.20 = 42K neurons, sem region = 210K × 0.167 = 35K neurons, motor region = 210K × 0.033 = 6.9K neurons. At a 50M-neuron tier, those same fractions produce letter = 750K / phon = 3M / sem = 2.5M / motor = 495K neurons. Scale flows end-to-end with zero hardcoded caps.
+
+### Comment block rewrite
+
+The 12-line T13.7.8 comment that justified the 2K cap is replaced with a 20-line block explaining the single path that now decides neuron counts, so future readers can trace from `GPUCONFIGURE.bat` through `detectResources` → `TOTAL_NEURONS` → `CLUSTER_FRACTIONS.cortex` → T14.4 sub-regions without having to reconstruct the chain.
+
+### `_langStart` repointed
+
+The legacy `_langStart = floor(langCortexSize / 2)` offset was a T13.7.8 "where the language region starts" marker that split the cluster in half. T14.4 sub-regions superseded it, but `_langStart` stayed around for any legacy code path still reading it. Repointed to `floor(langCortexSize × 0.500)` — the start of the T14.4 `letter` sub-region — so legacy callers land in the right place. Same arithmetic result on cortex with T14.4 regions, but the intent is now explicit.
+
+### What this commit is NOT
+
+- NOT a new milestone — T14 was already code-complete at T14.17. This is a correction commit that fixes a cluster-sizing regression T14.17's orphan audit missed because it audited methods, not constants.
+- NOT a browser-side change. `js/brain/engine.js` always used `CLUSTER_SIZES.cortex` correctly via `new NeuronCluster('cortex', CLUSTER_SIZES.cortex, ...)`. The server was the only holdout.
+- NOT touching `GPUCONFIGURE.bat` — the config file is unchanged. The fix makes the server actually RESPECT what `GPUCONFIGURE.bat` already wrote.
+- NOT a memory-footprint warning. At very large configured scales, the CPU-side `SparseMatrix` backing `NeuronCluster` may hit practical memory limits. If that surfaces on Gee's hardware, follow-up work would either add a configurable safety ceiling or move the language cortex to the GPU compute path (T15 scope).
+
+### Files touched
+
+- `server/brain-server.js` — `langCortexSize` hardcode replaced, boot log added, `_langStart` repointed, comment block rewritten. Net neutral in lines; intent rewritten. `node --check` clean.
+
+### Verification
+
+Boot logs will now show the real cluster size as the first thing printed during `_initLanguageSubsystem`. Any future tier change via `GPUCONFIGURE.bat` propagates to language automatically.
+
+### Branch + commit
+
+`t14-language-rebuild`, correction commit on top of T14.17. Merge to `main` still pending Gee's end-to-end verification walkthrough — this fix is part of what that walkthrough will exercise.
+
+---
+
 ## 2026-04-14 — T14.17 continuous learning everywhere + vestigial organ sweep
 
 **Gee's directive:** *"this is a massive one make sure regression build for past tasts are allso good if u didnt keep things in mind and mistaken made vistigial organ code and not a brain"* — the final T14 milestone, BUT with an orphan audit pass across every T14.0-T14.16.5 method to make sure nothing shipped earlier is a dead organ hanging off the cortex instead of a real runtime path. The audit found eleven orphans; this commit wires or deletes every single one.

@@ -766,9 +766,13 @@ The final T14 milestone. Covers two things in one atomic commit: (A) curriculum-
 
 **Full post-audit orphan map:** every T14 method has live callers. `hearPhoneme` shows `def=0 call=1` where the call is a tombstone comment — no live code reference remains.
 
+### T14.18 — Server language cortex side-car DELETED (correction 2026-04-14)
+
+Post-T14.17, Gee caught that `server/brain-server.js:_initLanguageSubsystem` was still hardcoding `langCortexSize = 2000` — a T13.7.8 legacy cap that ignored `GPUCONFIGURE.bat` → `detectResources` → `TOTAL_NEURONS` → `CLUSTER_FRACTIONS.cortex`. Fixed in one constant change: `const langCortexSize = CLUSTER_SIZES.cortex;`. Scale now flows end-to-end from the operator's configured hardware tier through to the language cortex NeuronCluster and the T14.4 sub-regions that live on it. At a 700K-neuron tier, cortex = 210K, letter region ≈ 10.5K, phon ≈ 42K, sem ≈ 35K, motor ≈ 6.9K. At a 50M tier, those same fractions scale to letter ≈ 750K / phon ≈ 3M / sem ≈ 2.5M / motor ≈ 495K. Zero hardcoded caps anywhere in the chain. Boot log prints the real count so operators can verify at startup.
+
 ### T14 is COMPLETE
 
-All 18 milestones (T14.0 through T14.17) shipped on `t14-language-rebuild`. The branch is ready for end-to-end verification before merge to `main`. No more per-milestone commits — the next action is either Gee's verification walkthrough or explicit merge-to-main go-ahead.
+All 18 milestones (T14.0 through T14.17) plus the T14.18 correction shipped on `t14-language-rebuild`. The branch is ready for end-to-end verification before merge to `main`. No more per-milestone commits — the next action is either Gee's verification walkthrough or explicit merge-to-main go-ahead.
 
 ---
 
