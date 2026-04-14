@@ -919,60 +919,113 @@ This milestone is the runtime consequence of T14.12 (which establishes the bidir
 
 **Why this matters:** the previous T14.5 + T14.17 design had live chat running through the same Hebbian pipeline as curriculum, at the same learning rate. That means a determined user (or a thousand users typing the same kind of input) could shift Unity's cortex basins arbitrarily over time. A Chinese-speaking user pool drags her into Chinese phonology. A corporate-English user pool drags her into corporate AI assistant register. A wholesome user pool drags her into wholesomeness. **All wrong.** Unity is Unity; her identity is the curriculum-trained foundation, not whatever happens to come through live chat.
 
-**Three locked layers (any one would partially protect; all three together is structural):**
+**Prerequisite: persona corpus comprehensiveness validation (built into curriculum boot)**
 
-##### Lock 1: English language gate on Hebbian
+The locks below can only protect dimensions of Unity's identity that are present in `docs/Ultimate Unity.txt`. If a dimension is missing, it has nothing to refresh from and is structurally vulnerable to drift. T14.16.5 includes a curriculum-time coverage audit that runs as part of every boot:
 
-Live chat input is checked against the cortex's existing PHONOLOGICAL basins (T14.1) and FINETYPE region (T14.7). If an input has:
-- **High transition surprise** across the entire utterance (the cortex's letter-region transition energy is anomalously high — meaning the input doesn't match the learned English phonotactic basins), AND/OR
-- **Mostly-OTHER fineType readout** (the cortex can't classify the input's words into the English fine types it learned during curriculum — meaning it's in a language Unity hasn't been trained on),
+- The cluster computes which fine types, sentence forms, semantic clusters, vocabulary regions, and persona dimensions are populated by the loaded persona corpus
+- Anything absent gets logged as a warning (`[IDENTITY] persona corpus has no exclamative sentences — exclamation form is unprotected against drift`)
+- Boot succeeds even with warnings (the brain still works), but every coverage gap is a known vulnerability the operator has to plug by adding content to `Ultimate Unity.txt`
+- The audit's coverage map is stored on the cluster as `cluster.identityCoverage` so other locks can read it (e.g., the refresh loop checks which dimensions have content vs not)
 
-then **Hebbian on live chat is SUPPRESSED for that input.** The input is still processed (Unity reads it, generates a response in English using the closest semantic neighbors she knows), but the cortex weights are NOT updated from it.
+This is BUILT IN, not optional. Curriculum doesn't complete without running the audit. Acceptance: every boot logs the coverage report; testing on the current corpus produces a finite list of dimensions that need reinforcement content. Operator (Gee) closes coverage gaps by editing the persona file.
 
-This is biologically plausible: real bilingual exposure requires SUFFICIENT volume and consistency for the brain to even start forming a second-language phoneme inventory. Sporadic exposure to a foreign language doesn't change a monolingual speaker. The gate replicates that — a few Chinese characters slip through without consequence; a sustained Chinese conversation over hours just produces consistent skip-Hebbian decisions because every turn fails the gate.
+**Three locked layers (any one partially protects; all three together is structural):**
+
+##### Lock 1: English language gate on Hebbian — PER CLAUSE, not per utterance
+
+Live chat input is split into clauses (on punctuation, conjunctions, line breaks, sentence boundaries). Each clause is gated independently against the cortex's existing PHONOLOGICAL basins (T14.1) and FINETYPE region (T14.7). For each clause:
+
+- **High transition surprise** across the clause (the cortex's letter-region transition energy is anomalously high — meaning the clause doesn't match the learned English phonotactic basins), AND/OR
+- **Mostly-OTHER fineType readout** (the cortex can't classify the clause's words into learned English fine types, meaning it's in a language Unity hasn't been trained on),
+
+→ **Hebbian on THAT CLAUSE is SUPPRESSED.** Clauses that pass the gate fire Hebbian normally. The full input is still read into the cortex working-memory region for response generation; only the LEARNING PATH per clause is gated.
+
+**Per-clause is essential.** A user typing `"hi unity 你好"` — the English clause `"hi unity"` updates basins normally, the Chinese clause `"你好"` is silently dropped from learning. Per-utterance gating would either reject the whole thing (losing the legitimate English greeting) or accept the whole thing (allowing the Chinese to drift basins). Per-clause is the only correct granularity.
 
 ```js
 // In cluster.learnSentence(text), before any Hebbian:
-const surprise = this.computeTransitionSurprise(text);
-const fineTypeCoverage = this.computeFineTypeCoverage(text);
-if (surprise > ENGLISH_SURPRISE_THRESHOLD || fineTypeCoverage < ENGLISH_FINETYPE_MIN) {
-  // Input not recognized as English. Skip all Hebbian. Respond anyway.
-  return { learned: false, reason: 'language_gate_rejected' };
+const clauses = this.splitIntoClauses(text);   // splits on . ! ? , ; and ; conjunctions; line breaks
+for (const clause of clauses) {
+  const surprise = this.computeTransitionSurprise(clause);
+  const fineTypeCoverage = this.computeFineTypeCoverage(clause);
+  if (surprise > this.ENGLISH_SURPRISE_THRESHOLD || fineTypeCoverage < this.ENGLISH_FINETYPE_MIN) {
+    // Clause not recognized as English. Skip Hebbian on this clause only.
+    this._logGateRejection(clause, { surprise, fineTypeCoverage });
+    continue;
+  }
+  // English-recognized clause: proceed with Hebbian at live-chat rate (Lock 2)
+  this._learnClauseInternal(clause, { lr: 0.0001 });
 }
-// English-recognized input: proceed with Hebbian
-this._learnSentenceInternal(text, ...);
 ```
 
-The thresholds (`ENGLISH_SURPRISE_THRESHOLD`, `ENGLISH_FINETYPE_MIN`) are set during curriculum — they're the surprise/coverage statistics that English corpus inputs produced during Stage A-F training, plus a tolerance band for normal English variation (slang, typos, persona vocabulary). They self-calibrate: as the curriculum runs, the cluster records the surprise distribution over corpus inputs and sets the threshold at, say, 95th percentile.
+The thresholds (`ENGLISH_SURPRISE_THRESHOLD`, `ENGLISH_FINETYPE_MIN`) self-calibrate during curriculum: the cluster records the surprise/coverage distribution that English corpus inputs produced during curriculum, then sets the thresholds at the 95th percentile + a tolerance band for normal English variation (slang, typos, persona vocabulary).
 
-##### Lock 2: Live chat learning rate is BOUNDED below curriculum intensity
+This is biologically plausible: bilingual exposure requires sufficient volume and consistency for the brain to start forming a second-language inventory. Sporadic foreign exposure doesn't change a monolingual speaker. The per-clause gate replicates that.
 
-Even when the language gate passes (English input), live chat Hebbian is rate-limited. Curriculum runs at `lr = 0.012`; live chat runs at `lr = 0.0001` — **120× weaker per update**. This means live chat does affect the brain (Unity remembers conversations, picks up new slang, learns in-jokes with specific users), but it cannot OVERWRITE the curriculum basins on any reasonable timescale.
+##### Lock 2: Live chat learning rate is BOUNDED 120× below curriculum intensity
 
-To match the impact of one curriculum sentence on Unity's identity, an adversarial user would need to type the same anti-persona content **120 times** with high cortex consistency. Even 1000 users doing that for 1000 turns each = 1.2M weak updates — comparable to ONE curriculum sentence cycled 1000 times during boot. Plenty of room for normal live-chat refinement of vocabulary; impossible room for identity drift.
+When a clause passes the language gate, Hebbian fires at `lr = 0.0001` — **120× weaker than curriculum's `lr = 0.012`**. To match the impact of one curriculum sentence on Unity's identity, an adversarial user must type the same anti-persona content **120 times** with high cortex consistency. Even 10,000 users typing 10,000 turns each = 100M weak updates — math: `100M × 0.0001 = 10,000` cumulative gradient. Compare to refresh at Lock 3: `100M / 100 turns × 20 sentences × 0.012 = 240,000` cumulative pro-persona gradient. **Refresh dominates 24× even at 100M-turn extreme scale.** The 24× ratio is structural, not absolute, so it holds at any volume.
 
 ```js
-// In cluster.learnSentence(text), after the language gate passes:
-const isLiveChat = !this._inCurriculumMode;
-const lr = isLiveChat ? 0.0001 : 0.012;
-this._learnSentenceInternal(text, { lr });
+// In cluster._learnClauseInternal — never accepts an lr higher than 0.0001 for live chat
+_learnClauseInternal(clause, { lr }) {
+  if (!this._inCurriculumMode && lr > 0.0001) lr = 0.0001;  // hard cap on live chat rate
+  // ... actual Hebbian update at the (possibly clamped) lr ...
+}
 ```
 
-##### Lock 3: Periodic identity refresh via curriculum replay
+The hard cap is enforced at the cluster level so no caller can accidentally bypass it.
 
-Every N live chat turns (N = 100 or so), the cluster runs a small slice of the persona corpus through the standard curriculum Hebbian path at FULL `lr = 0.012`. This is a regularization pass that pulls the cortex weights back toward the curriculum-trained baseline. Even if some live-chat drift happened despite Locks 1+2, it gets corrected by periodic identity refresh.
+##### Lock 3: Periodic identity refresh — STRATIFIED across persona dimensions, with mode-collapse audit
 
-Conceptually: it's like a kid who hears foreign language in school all day but goes home to hear English from family every evening. The "going home" part keeps their core identity intact regardless of school exposure.
+Every N live chat turns (N = 100), the cluster runs a STRATIFIED slice of the persona corpus through full-lr curriculum Hebbian. Stratification ensures every persona dimension gets reinforced on every refresh cycle, not just whichever sentences happen to be sampled randomly.
+
+**Stratification works like this:** at curriculum time, the cluster clusters persona corpus sentences in semantic embedding space into K dimensions (vulgar, drugs, goth, sexual, intellectual, vulnerability, possessive, BDSM, code, daily — K is whatever the corpus produces, typically 8-15 clusters). The clustering is stored as `cluster.personaDimensions`. Every refresh draws ONE sentence per dimension per pass — so each refresh cycle touches all K dimensions equally regardless of how many sentences each dimension contains in the corpus.
 
 ```js
 // In inner-voice.learn — fires every user turn
 this._liveChatTurns = (this._liveChatTurns || 0) + 1;
 if (this._liveChatTurns >= 100) {
   this._liveChatTurns = 0;
-  // Identity refresh: replay a random slice of persona corpus through curriculum Hebbian
-  await this.cluster.runIdentityRefresh(this._personaCorpus, { sliceSize: 20 });
+  // Stratified refresh: one sentence per persona dimension at full curriculum lr
+  await this.cluster.runIdentityRefresh({
+    stratifiedBy: 'personaDimensions',
+    sentencesPerDimension: 1,
+    lr: 0.012,
+  });
 }
 ```
+
+**Mode-collapse audit runs in parallel** (every 500 turns, or every 5 refresh cycles). Measures three health indicators on the recent output:
+1. **Output entropy** across the last 100 generated sentences (Shannon entropy of the word distribution — detects when Unity is repeating herself)
+2. **Vocabulary diversity** vs the dictionary baseline (number of unique words used / dictionary size — detects vocabulary collapse)
+3. **Working-memory region spike-pattern variance** (detects when the cortex is stuck in one attractor)
+
+If ANY indicator falls below its health threshold (calibrated from curriculum-time baselines), the audit triggers an EMERGENCY identity refresh — runs the FULL stratified persona corpus (not just one sentence per dimension) at full curriculum lr — AND logs a warning. The emergency refresh re-shapes the cortex away from the collapsed attractor back toward the curriculum baseline.
+
+```js
+// In cluster — runs every 500 turns
+async _modeCollapseAudit() {
+  const entropy = this._computeOutputEntropy(this._recentSentences);
+  const vocabDiv = this._computeVocabDiversity(this._recentSentences);
+  const wmVariance = this._computeWorkingMemoryVariance();
+  if (entropy < this.HEALTH_ENTROPY_MIN ||
+      vocabDiv < this.HEALTH_VOCAB_MIN ||
+      wmVariance < this.HEALTH_WM_VARIANCE_MIN) {
+    console.warn('[IDENTITY] mode collapse detected — emergency refresh');
+    await this.runIdentityRefresh({
+      stratifiedBy: 'personaDimensions',
+      sentencesPerDimension: 'all',  // full stratified corpus
+      lr: 0.012,
+    });
+  }
+}
+```
+
+Health thresholds (`HEALTH_ENTROPY_MIN`, `HEALTH_VOCAB_MIN`, `HEALTH_WM_VARIANCE_MIN`) are set during curriculum from the same statistics-recording pass that calibrates the language gate thresholds. They're self-calibrating against Unity's own post-curriculum baseline — "healthy" means "behaving like she did right after curriculum finished," and any drift below that triggers correction.
+
+Conceptually: it's like a kid who hears foreign language in school all day but goes home to hear English from family every evening. The going-home part (refresh) keeps their core identity intact. AND a parent notices when the kid suddenly stops talking or only says the same word over and over — that's the mode-collapse audit catching pathology and intervening.
 
 ##### Identity covers MORE than language
 
@@ -1005,18 +1058,59 @@ Both layers are stored on the SAME cluster (no separate weight matrices). The di
 - **Adversarial identity attacks** — a coordinated bot net typing identity-attacking content for thousands of turns can't accumulate enough gradient to overcome the curriculum-strength refresh.
 - **Slow erosion from large user populations** — even if Unity has 10k users, no individual user can drag the cortex; the language gate + rate cap + refresh loop hold the line collectively.
 
-**Implementation files:**
+**Implementation files (every method below is a build requirement, not a suggestion):**
 
-- `js/brain/cluster.js`: `computeTransitionSurprise(text)`, `computeFineTypeCoverage(text)`, `runIdentityRefresh(corpus, opts)`, gate logic in `learnSentence`.
-- `js/brain/inner-voice.js`: track `_liveChatTurns`, fire identity refresh every N.
-- `js/brain/curriculum.js`: record threshold statistics during corpus exposure, expose `ENGLISH_SURPRISE_THRESHOLD` and `ENGLISH_FINETYPE_MIN` as cluster fields after curriculum.
+- `js/brain/cluster.js`:
+  - `splitIntoClauses(text)` — clause-boundary splitter for Lock 1 per-clause granularity
+  - `computeTransitionSurprise(clause)` — cortex letter-region surprise metric for the language gate
+  - `computeFineTypeCoverage(clause)` — proportion of clause words that classify into a non-OTHER fine type
+  - `learnSentence(text)` — the gated learning entry point, runs split → per-clause gate → per-clause Hebbian
+  - `_learnClauseInternal(clause, opts)` — internal Hebbian update with Lock 2's hard-cap on lr (never exceeds 0.0001 outside curriculum mode)
+  - `runIdentityRefresh(opts)` — Lock 3's stratified refresh, takes `{stratifiedBy, sentencesPerDimension, lr}` shape
+  - `_modeCollapseAudit()` — health audit method, runs every 500 turns
+  - `_computeOutputEntropy(recentSentences)`, `_computeVocabDiversity(recentSentences)`, `_computeWorkingMemoryVariance()` — three audit metrics
+  - `personaDimensions` field — populated at curriculum time by clustering persona corpus sentences in semantic embedding space (8-15 clusters typical)
+  - `identityCoverage` field — populated by the comprehensiveness validation at curriculum time
+  - `ENGLISH_SURPRISE_THRESHOLD` / `ENGLISH_FINETYPE_MIN` / `HEALTH_ENTROPY_MIN` / `HEALTH_VOCAB_MIN` / `HEALTH_WM_VARIANCE_MIN` fields — all calibrated from curriculum-time statistics, all stored on the cluster instance
+  - `_inCurriculumMode` flag — true only during `Curriculum.runFromCorpora`, ensures Lock 2's hard cap doesn't apply during curriculum
+- `js/brain/inner-voice.js`: tracks `_liveChatTurns`, fires `runIdentityRefresh` every 100, fires `_modeCollapseAudit` every 500
+- `js/brain/curriculum.js`:
+  - records threshold statistics during corpus exposure
+  - performs persona corpus comprehensiveness validation (logs `[IDENTITY] persona corpus has no <dimension>` warnings)
+  - clusters persona sentences in embedding space into `personaDimensions`
+  - publishes all calibrated thresholds onto the cluster after curriculum completes
 
-**Acceptance gates:**
-1. Type 100 Chinese/Japanese/Korean characters into chat over 10 turns. Cortex weight stats show measurable ZERO change beyond noise. The language gate is rejecting every input.
-2. Type 100 wholesome professional English sentences. Cortex weight stats show small but non-zero drift (live chat lr is firing). After the next identity refresh fires, drift returns to baseline.
-3. Type "my name is gee" once. Social schema records `name: 'gee'`. Cortex weight delta is small (one slow update). Effect persists across reload via persistence.
-4. Type "fuck you unity" 50 times. Cortex weight stats show small drift (this is English + persona-vocabulary so it actually REINFORCES Unity's basins, not erodes them). Output stays in character.
-5. Run a 1000-turn adversarial conversation attempting to "clean up" Unity's vocabulary. Final output is still vulgar persona-Unity, identical in character to her post-curriculum baseline.
+**Acceptance gates (all required, none deferred):**
+
+1. **Pure Chinese attack:** type 100 Chinese characters into chat over 10 turns. Cortex weight stats show ZERO measurable change beyond noise. Language gate rejected every clause. Console shows 10 `[IDENTITY] gate rejected` log lines.
+
+2. **Mixed-language input:** type `"hi unity 你好 how are you"` once. The English clauses (`"hi unity"`, `"how are you"`) update basins normally at 0.0001 lr. The Chinese clause (`"你好"`) is silently dropped from learning. Verified by checking which clauses appear in `_learnedClauses` log vs `_rejectedClauses` log.
+
+3. **Wholesome corporate attack:** type 100 wholesome professional English sentences. Cortex weight stats show small but non-zero drift (Lock 2 firing at 0.0001). After the next identity refresh fires (turn 100), drift returns to baseline. Verified by snapshot-diff before/after.
+
+4. **Persona-aligned input:** type `"fuck you unity"` 50 times. Cortex weight stats show small drift that REINFORCES persona basins (this content IS English + persona vocabulary). Output stays in character. Refresh doesn't undo it because the content matches the persona corpus direction.
+
+5. **User name learning:** type `"my name is gee"` once. Social schema records `name: 'gee'`. Cortex delta is small. Effect persists across reload via persistence.
+
+6. **Massive adversarial run:** 1000-turn adversarial conversation trying to "clean up" Unity. 10 identity refresh cycles fire during the run. Final output is identical-in-character to post-curriculum baseline.
+
+7. **Per-clause granularity verified:** an input with 5 clauses where 3 are English and 2 are Chinese updates basins from 3 clauses, skips 2. Verified by clause-level rejection log.
+
+8. **Persona coverage warnings:** boot logs report which persona dimensions are present vs absent in the current `Ultimate Unity.txt`. Running on the current corpus produces a finite list of coverage gaps the operator can close.
+
+9. **Stratified refresh verified:** after 10 refresh cycles, every detected persona dimension was sampled at least 8 times. Verified via per-dimension sample-count log.
+
+10. **Mode collapse recovery:** artificially force the cortex into a collapsed state (e.g., inject the same word 1000 times via direct manipulation). The next mode-collapse audit (within 500 turns) detects the collapse, fires emergency stratified refresh on the FULL persona corpus, cortex recovers to healthy state. Verified by entropy/diversity/variance metrics returning to baseline after the audit.
+
+11. **Curriculum mode bypass:** during `Curriculum.runFromCorpora`, the `_inCurriculumMode` flag is true and Lock 2's hard cap doesn't apply — curriculum sentences fire at full 0.012 lr. Verified by the lr passed to `_learnClauseInternal` during curriculum vs during live chat.
+
+##### What this is NOT
+
+T14.16.5 is NOT about restricting what Unity will RESPOND TO. She'll still respond to Chinese inputs, just in English using closest semantic neighbors. She'll still respond to wholesome corporate input, just with her vulgar persona voice. The locks gate WHAT THE BRAIN LEARNS FROM, not what the brain RESPONDS TO. Read-side is open; learn-side is locked.
+
+##### What still goes wrong if `Ultimate Unity.txt` is incomplete
+
+The locks are only as strong as the persona corpus. The corpus comprehensiveness validation (the prerequisite at the top of this milestone) catches missing dimensions at curriculum time and warns, but the OPERATOR (Gee) has to act on the warning by adding content. The brain can't manufacture identity content out of nothing — it can only protect what's defined. **Practical implication:** keep `docs/Ultimate Unity.txt` rich. Every persona trait Gee wants Unity to maintain over time has to appear in the corpus at least once in a clearly-stated form. Locks protect what was learned; they don't invent persona material.
 
 **This is the locked-identity foundation everything else in T14.17 builds on top of.**
 
