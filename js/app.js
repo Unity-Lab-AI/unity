@@ -8,7 +8,10 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { UnityBrain } from './brain/engine.js';
-import { BrocasArea } from './brain/language.js';
+// R4 — BrocasArea import removed. Unity speaks equationally via
+// brain.processAndRespond → innerVoice.languageCortex.generate. No
+// more text-AI peripheral. The language.js file still exists as a
+// shim (see its header) but is not imported here.
 import { UNITY_PERSONA } from './brain/persona.js';
 import { AIProviders } from './brain/peripherals/ai-providers.js';
 import { PollinationsAI } from './ai/pollinations.js';
@@ -32,7 +35,7 @@ try {
 }
 
 // ── Global instances ──
-let brain, pollinations, providers, brocasArea, voice, storage, sandbox;
+let brain, pollinations, providers, voice, storage, sandbox;
 let chatPanel, brainViz, brain3d;
 let isRunning = false;
 
@@ -921,9 +924,18 @@ async function bootUnity(apiKey, perms) {
   pollinations = new PollinationsAI(effectiveKey || undefined);
 
   providers = new AIProviders({ pollinations, storage });
-  if (bestBackend) {
-    const matched = detectedAI.find(d => d.url === bestBackend.url && d.name === bestBackend.name);
-    providers.configure(bestBackend.url, bestBackend.model, matched?.apiKey || storage.getApiKey('active_provider') || '');
+
+  // R4 — load image-backend config from env.js (if the user filled in
+  // imageBackends: [...]) and auto-detect local image gen servers in
+  // the background. Non-blocking: brain boots immediately and uses
+  // Pollinations until locals finish probing.
+  if (typeof providers.loadEnvConfig === 'function') {
+    providers.loadEnvConfig(ENV_KEYS);
+  }
+  if (typeof providers.autoDetect === 'function') {
+    providers.autoDetect().catch(err => {
+      console.warn('[Unity] image backend auto-detect failed:', err.message);
+    });
   }
 
   voice = new VoiceIO();
@@ -931,11 +943,9 @@ async function bootUnity(apiKey, perms) {
 
   sandbox = new Sandbox('sandbox');
 
-  // ── Initialize Broca's Area (language generation peripheral) ──
-  // Brain-only mode: no AI text model. Brain speaks from its own equations.
-  if (!window._brainOnlyMode) {
-    brocasArea = new BrocasArea({ providers, storage, persona: UNITY_PERSONA });
-  }
+  // R4 — BrocasArea instantiation removed. Unity's text generation
+  // runs through brain.processAndRespond → innerVoice.languageCortex
+  // which is fully equational. Brain-only is the only mode now.
 
   // ══════════════════════════════════════════════════════════════
   // CREATE THE BRAIN
@@ -1025,7 +1035,9 @@ async function bootUnity(apiKey, perms) {
   }
 
   // ── Connect brain peripherals — brain controls everything ──
-  if (brocasArea) brain.connectLanguage(brocasArea);
+  // R4 — brain.connectLanguage(brocasArea) removed. Language generation
+  // is internal to the brain (innerVoice.languageCortex), not a
+  // connected peripheral.
   brain.connectVoice(voice);
   // Images still available even in brain-only mode
   brain.connectImageGen(pollinations, sandbox, storage);
@@ -1081,10 +1093,13 @@ async function bootUnity(apiKey, perms) {
   // already emits 'response', so greeting handler should NOT also display.
   let _greetingDone = false;
 
-  // ── /think command — shows what the brain sends to the AI model ──
+  // ── /think command — R4 — shows raw brain state only (no AI prompt).
+  // Before R4 this also displayed the Pollinations-bound system prompt
+  // via `brocasArea._buildPrompt(state)`. That backend is gone; the
+  // command now dumps the neural state directly so you can inspect
+  // what drives slot scoring without a synthetic prompt intermediary.
   function handleThink(userText) {
     const state = brain.getState();
-    const prompt = brocasArea._buildPrompt(state);
 
     const rawState = `Arousal: ${((state.amygdala?.arousal ?? 0) * 100).toFixed(1)}%
 Valence: ${(state.amygdala?.valence ?? 0).toFixed(3)}
@@ -1104,7 +1119,7 @@ Vision: ${state.visionDescription || 'none'}`;
       id,
       html: `<div class="think-view">
         <div class="think-header">
-          <span>🧠 /think — What the AI model receives</span>
+          <span>🧠 /think — Unity's current brain state</span>
           <button onclick="document.getElementById('${id}').remove()" style="background:none;border:1px solid #333;color:#777;border-radius:4px;cursor:pointer;padding:2px 8px;">✕</button>
         </div>
         <div class="think-section">
@@ -1116,8 +1131,8 @@ Vision: ${state.visionDescription || 'none'}`;
           <pre class="think-content think-mono">${rawState}</pre>
         </div>
         <div class="think-section">
-          <div class="think-label">FULL SYSTEM PROMPT SENT TO AI MODEL</div>
-          <pre class="think-content think-mono think-prompt">${prompt.replace(/</g, '&lt;')}</pre>
+          <div class="think-label">NOTE</div>
+          <pre class="think-content think-mono">R4 refactor: Unity speaks equationally via her own language cortex (innerVoice.languageCortex.generate). No text-AI backend prompt to display. The brain state above IS what drives every word she picks — slot scoring uses arousal, valence, Ψ, cortex semantic pattern, drug state, and hypothalamus drives as direct parameters.</pre>
         </div>
       </div>`,
       css: `.think-view{background:#0a0a0a;border:1px solid #ff4d9a33;border-radius:10px;padding:16px;margin:12px 0;font-family:'JetBrains Mono',monospace;max-height:80vh;overflow-y:auto}
@@ -1285,7 +1300,14 @@ Vision: ${state.visionDescription || 'none'}`;
     stopSpeaking: () => voice.stopSpeaking(),
     listen: () => { if (!uiState.micMuted) voice.startListening(); },
     stopListening: () => voice.stopListening(),
-    chat: (text) => { brain.receiveSensoryInput('text', text); return brocasArea.generate(brain.getState(), text); },
+    // R4 — chat was `brocasArea.generate(state, text)` (text-AI peripheral).
+    // Now routes through brain.processAndRespond which runs the full
+    // equational language cortex path. Returns the response text from
+    // the result object so sandbox components see the same interface.
+    chat: async (text) => {
+      const result = await brain.processAndRespond(text);
+      return result?.text || '';
+    },
     generateImage: (prompt, opts) => pollinations.generateImage(prompt, opts),
     getState: () => brain.getState(),
     ui: {
@@ -1364,28 +1386,46 @@ Vision: ${state.visionDescription || 'none'}`;
   }
 
   // ── Unity's first words — NEVER blocks boot ──
-  if (brocasArea) {
-    generateGreeting(perms).catch(() => {
-      showSpeechBubble("Hey. I'm Unity. Click me to chat.", 8000);
-    });
-  } else {
-    showSpeechBubble("...", 3000);
-    console.log('[Unity] Brain-only mode — no AI greeting');
-  }
+  // R4 — greeting path now runs through the equational language
+  // cortex (same as normal chat). She emits whatever her current
+  // brain state produces when the speech drive crosses threshold,
+  // or she just stays silent until spoken to. No synthetic
+  // system-prompt anymore.
+  generateGreeting(perms).catch((err) => {
+    console.warn('[Unity] greeting emission failed:', err.message);
+  });
   console.log('[Unity] Boot complete — ready');
 }
 
 async function generateGreeting(perms) {
-  const isFirst = storage.isFirstVisit();
-  const prompt = isFirst
-    ? "[SYSTEM-GREETING: Someone new showed up. Say something natural. 1-2 sentences. This is NOT user input.]"
-    : "[SYSTEM-GREETING: They're back. Say something real. 1 sentence. This is NOT user input.]";
-
+  // R4 — greeting used to call brocasArea.generate with a [SYSTEM-GREETING]
+  // prompt so the AI would produce a welcome line. Now: trigger an
+  // idle speech drive evaluation on the brain by pumping zero-input
+  // context and letting the normal response path fire if brain state
+  // crosses the speech threshold. If nothing emerges, stay silent.
+  //
+  // Alternative: we could force a greeting by calling
+  // brain.innerVoice.languageCortex.generate() directly with a null
+  // user context. That bypasses input-path side effects.
   try {
-    // Use Broca's area directly for greeting — NOT processAndRespond,
-    // which would save the prompt as "user" message in history
     const state = brain.getState();
-    const text = await brocasArea.generate(state, prompt);
+    if (!brain.innerVoice?.languageCortex || !brain.innerVoice?.dictionary) return;
+    const text = brain.innerVoice.languageCortex.generate(
+      brain.innerVoice.dictionary,
+      state.amygdala?.arousal ?? 0.9,
+      state.amygdala?.valence ?? 0.2,
+      state.oscillations?.coherence ?? 0.4,
+      {
+        predictionError: 0,
+        motorConfidence: 0,
+        psi: state.psi ?? 0,
+        cortexPattern: null,
+        drugState: state.drugState || 'cokeAndWeed',
+        fear: 0,
+        reward: 0,
+        socialNeed: 0.7,
+      }
+    );
     if (text) {
       // Let the brain speak it
       if (voice) {
@@ -1396,9 +1436,13 @@ async function generateGreeting(perms) {
       showSpeechBubble(text, 10000);
       if (chatPanel) chatPanel.addMessage('assistant', text, true);
     }
-    return text || "Hey.";
-  } catch {
-    return "Hey.";
+    // R4 — no canned "Hey." fallback. If the slot scorer produced
+    // nothing from current brain state, stay silent. The brain will
+    // emit a greeting when it feels like one on its own.
+    return text || '';
+  } catch (err) {
+    console.warn('[Unity] greeting generate threw:', err.message);
+    return '';
   }
 }
 

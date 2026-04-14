@@ -48,25 +48,39 @@ export class PollinationsAI {
      * @param {number} [options.temperature=0.9]
      * @returns {Promise<string|null>} response text or null on failure
      */
+    /**
+     * R4 — chat() method kept as a multimodal wrapper so the vision
+     * describer at app.js:996 can still send image frames to
+     * Pollinations GPT-4o for scene description. That's a SENSORY
+     * call (vision input → text description), not cognition, so it
+     * stays under the refactor's "sensory AI allowed" rule.
+     *
+     * The old text-generation chat path (user talks to Unity via AI
+     * completion) is gone — Unity's cognition runs equationally via
+     * innerVoice.languageCortex.generate(), nothing routes through
+     * here for speech anymore.
+     *
+     * If you're tempted to call this from the brain/cognition path,
+     * DON'T. Use the language cortex. This method exists ONLY for
+     * the vision describer and any future sensory peripherals that
+     * need OpenAI-compatible multimodal.
+     */
     async chat(messages, options = {}) {
         const model = options.model || 'openai';
         const temperature = options.temperature ?? 0.9;
         const body = JSON.stringify({ messages, model, temperature });
         const headers = this._headers();
 
-        // Primary: gen.pollinations.ai/v1/chat/completions (OpenAI-compatible)
         try {
-            console.log('[PollinationsAI] Sending chat request...');
             const res = await fetch(`${GEN_URL}/v1/chat/completions`, {
                 method: 'POST',
                 headers,
                 body,
-                signal: AbortSignal.timeout(30000),
+                signal: options.signal || AbortSignal.timeout(30000),
             });
             if (res.ok) {
                 const json = await res.json();
                 if (json.choices?.[0]?.message?.content) {
-                    console.log('[PollinationsAI] Response received:', json.choices[0].message.content.slice(0, 50) + '...');
                     return json.choices[0].message.content;
                 }
             } else {
@@ -75,23 +89,6 @@ export class PollinationsAI {
         } catch (err) {
             console.error('[PollinationsAI] v1/chat/completions failed:', err.message);
         }
-
-        // Fallback: GET gen.pollinations.ai/{prompt} with model param
-        try {
-            const lastUserMsg = [...messages].reverse().find(m => m.role === 'user');
-            if (lastUserMsg) {
-                const prompt = encodeURIComponent(lastUserMsg.content);
-                const url = `${GEN_URL}/${prompt}?model=${encodeURIComponent(model)}`;
-                const res = await fetch(url);
-                if (res.ok) {
-                    return await res.text();
-                }
-            }
-        } catch (err) {
-            console.error('[PollinationsAI] GET fallback failed:', err.message);
-        }
-
-        console.error('[PollinationsAI] All chat endpoints failed.');
         return null;
     }
 

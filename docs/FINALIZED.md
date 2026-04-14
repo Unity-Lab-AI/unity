@@ -14,6 +14,41 @@
 
 ## COMPLETED TASKS LOG
 
+## 2026-04-13 Session: Refactor R3 + R4 — Server Full Control + Kill Text-AI (branch: brain-refactor-full-control)
+
+### COMPLETED
+- [x] **Task:** R3 — Server brain full equational control. Port the client language cortex to the server via dynamic import, load three corpora from disk on boot, rewrite `_generateBrainResponse` to use equational generation instead of Pollinations fetch, kill the server-side text-AI backend entirely.
+  - Completed: 2026-04-13 (commit `7e77638`)
+  - Files modified: `server/brain-server.js` (+225, −106)
+  - Details: The client brain modules are environment-agnostic (dictionary.js guards localStorage with typeof checks, language-cortex.js has zero browser-specific code, embeddings.js uses fetch() which Node 18+ provides globally), so the planned R3.1 "shared cores" refactor collapsed to "import the existing client modules directly via dynamic import()". Added async `_initLanguageSubsystem()` that dynamic-imports dictionary/language-cortex/embeddings, awaits GloVe load, reads docs/Ultimate Unity.txt + docs/english-baseline.txt + docs/coding-knowledge.txt from disk via fs.readFileSync, and feeds them through loadSelfImage/loadLinguisticBaseline/loadCodingKnowledge. Added `_computeServerCortexPattern(text)` that uses sentence embedding directly as cortex pattern (server doesn't run full LIF cortex dynamics — GPU does that). Rewrote `_generateBrainResponse` to call `languageCortex.generate()` with full brain state (arousal, valence, coherence, psi, fear, reward, drugState, socialNeed, cortexPattern) matching the client engine.js:775 signature. Deleted ~60 lines of Pollinations system prompt assembly + deleted the Pollinations /v1/chat/completions fetch + deleted POLLINATIONS_URL constant. Server boot now awaits language subsystem init before accepting WebSocket connections so clients never see an empty dictionary. Kept image-path detection ([IMAGE] prefix) and build-path detection (JSON component parse) since those are response parsing, not generation.
+
+- [x] **Task:** R4 — Kill client-side text-AI backends. Gut BrocasArea, rip text-chat from ai-providers + pollinations, remove all BrocasArea consumers from engine.js and app.js, add multi-provider image gen with auto-detection and env.js config.
+  - Completed: 2026-04-13 (commit in progress)
+  - Files modified: `js/brain/language.js` (−297 +68 = shrunk from 333 to 68 lines), `js/brain/peripherals/ai-providers.js` (full rewrite to SensoryAIProviders with multi-backend image gen), `js/ai/pollinations.js` (chat method trimmed to sensory-only multimodal), `js/brain/engine.js` (_handleBuild deleted, _handleImage's text-AI chat call removed, code-detection branch deleted, connectLanguage method deleted, _brocasArea references removed), `js/app.js` (BrocasArea import removed, brocasArea variable removed, instantiation removed, /think rewritten to pure brain-state dump, sandbox chat routes through processAndRespond, greeting path uses languageCortex.generate directly), `js/env.example.js` (new imageBackends config section, legacy text-AI keys commented out).
+  - Details:
+    **language.js BrocasArea gutted** — was 333 lines of text-AI prompt assembly + `_providers.chat()` calls. Now 68 lines: stub class with `generate()` that throws a loud error if anyone accidentally calls it (to catch stragglers during migration), `abort()` is a real no-op, `regenerate()` returns the previous response unchanged. Entire file will be deleted once the last caller is confirmed gone.
+
+    **ai-providers.js full rewrite** — renamed class `AIProviders → SensoryAIProviders` (with a backward-compat alias export). DELETED: `chat()` method, `_customChat()` helper, all text-AI backend endpoint probing, dead-backend cooldown tracking for text. KEPT + EXPANDED: `generateImage()` with 4-level priority (custom configured → auto-detected local → env.js-listed → Pollinations fallback), `speak()` for TTS. NEW: `autoDetect()` method that probes 7 common local image gen ports (Automatic1111:7860, SD.Next/Forge:7861, Fooocus:7865, ComfyUI:8188, InvokeAI:9090, LocalAI:8081, Ollama:11434) in parallel with 1.5s timeout and registers any that respond. NEW: `loadEnvConfig(envKeys)` that reads `ENV_KEYS.imageBackends[]` for persistent per-user custom backends (OpenAI-compatible, A1111, ComfyUI, or generic URL+key). NEW: `_customGenerateImage(url, model, key, prompt, opts)` that supports 4 response shapes — OpenAI `{data:[{url}]}`, OpenAI b64 `{data:[{b64_json}]}`, A1111 `{images:['<base64>']}`, and generic `{url}` / `{image_url}` — so you can plug in practically any SD-alike backend and it just works.
+
+    **env.example.js rewritten** — new `imageBackends: []` array with inline examples showing self-hosted SD, OpenAI-compatible remote endpoint, and ComfyUI workflow. Legacy text-AI keys (anthropic, openrouter, openai, mistral, deepseek, groq) commented out with an explicit note that they're no longer read by the brain after R4.
+
+    **pollinations.js chat() trimmed** — kept as a sensory-only multimodal wrapper for the vision describer (app.js:996 sends camera frames to Pollinations GPT-4o for scene descriptions). Deleted the GET `{prompt}?model=` fallback path (was for text-only chat). Added a big comment warning that this method is sensory-only — DO NOT call it from cognition.
+
+    **engine.js cleanup** — `_handleBuild` method DELETED (~100 lines that forced JSON output from BrocasArea for build_ui motor action). Code-detection branch DELETED (was catching AI-generated JSON components in normal text responses). `_handleImage`'s text-AI call to `_imageGen.chat()` DELETED (was having AI rewrite image prompts); now the prompt is composed directly from persona template + user text, image gen itself still goes through `_imageGen.generateImage()` → Pollinations or user's local backend. `connectLanguage` method DELETED. `_brocasArea.abort()` call in processAndRespond DELETED. Build_ui motor action now falls through to the normal equational respond_text path (Unity emits a verbal response when BG picks build, R6.2 will add proper equational component synthesis later). Empty response handling no longer falls back to `'...'` — emits empty string instead.
+
+    **app.js cleanup** — BrocasArea import deleted. `brocasArea` variable removed from module-level decls. `brocasArea = new BrocasArea(...)` instantiation deleted. `connectLanguage` call deleted. `/think` command rewritten to dump raw brain state only (no AI prompt to show — none exists). Sandbox unity API `chat(text)` rewritten to route through `brain.processAndRespond(text)` returning the response text. Greeting path rewritten to call `brain.innerVoice.languageCortex.generate()` directly with brain state — if it returns empty, Unity stays silent instead of falling back to "Hey." canned string. `providers.configure(bestBackend.url, ...)` call deleted (was wiring text-AI backend); replaced with `providers.loadEnvConfig(ENV_KEYS)` + `providers.autoDetect().catch(...)` so image backends get configured from env.js and auto-detected from local ports at boot.
+
+    **Multi-provider image gen details:**
+    - Default: Pollinations (free, no config needed)
+    - Auto-detected: any of 7 supported local servers running on localhost at known ports get registered automatically at boot with 1.5s probe timeout per port
+    - Configured: users add custom entries to `ENV_KEYS.imageBackends` in js/env.js with `{name, url, model, key, kind}` format
+    - Priority order: custom-configured → auto-detected → env.js-listed → Pollinations
+    - Backend-specific failures (auth/payment errors) mark dead for 1 hour so bad endpoints don't get hammered
+    - Uses `_customGenerateImage(url, model, key, prompt, opts)` with 4 endpoint shape fallbacks + 4 response format parsers
+    - Works with: A1111 / SD.Next / Forge, Fooocus, ComfyUI, InvokeAI, LocalAI, Ollama, any OpenAI-compatible image endpoint, any custom URL that returns `{url}` or `{image_url}` or base64
+
+---
+
 ## 2026-04-13 Session: Refactor R2 — Semantic Grounding (branch: brain-refactor-full-control)
 
 ### COMPLETED

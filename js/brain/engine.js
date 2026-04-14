@@ -611,10 +611,9 @@ export class UnityBrain extends EventEmitter {
     }
   }
 
-  /** Connect Broca's area (language generation peripheral). */
-  connectLanguage(brocasArea) {
-    this._brocasArea = brocasArea;
-  }
+  // R4 — connectLanguage(brocasArea) method DELETED. Language
+  // generation is internal to the brain (innerVoice.languageCortex),
+  // not a connected peripheral. Nothing calls this anymore.
 
   /** Connect voice output peripheral. */
   connectVoice(voiceIO) {
@@ -639,7 +638,7 @@ export class UnityBrain extends EventEmitter {
     // 1. Motor cortex interrupt — stop any ongoing speech
     this.motor.interrupt();
     if (this._voice) this._voice.stopSpeaking();
-    if (this._brocasArea) this._brocasArea.abort();
+    // R4 — _brocasArea.abort() removed (no more text-AI peripheral)
 
     // 2. Feed sensory input — mark interaction time (exits dreaming)
     this._lastInputTime = performance.now();
@@ -710,10 +709,14 @@ export class UnityBrain extends EventEmitter {
       effectiveAction = 'respond_text';
     }
 
-    if (effectiveAction === 'build_ui' && this._brocasArea && this._sandbox) {
-      this.giveReward(0.1);
-      return this._handleBuild(text);
-    } else if (effectiveAction === 'generate_image' && this._imageGen) {
+    // R4 — build_ui path no longer routes through BrocasArea (text-AI
+    // was assembling JSON component specs). That whole path is gone.
+    // R6.2 will add equational component synthesis from primitive
+    // templates parsed out of docs/coding-knowledge.txt — until then,
+    // build_ui falls through to the normal equational language path
+    // so Unity still emits a verbal response when the BG motor picks
+    // build, she just won't produce a component yet.
+    if (effectiveAction === 'generate_image' && this._imageGen) {
       this.giveReward(0.1);
       return this._handleImage(text, includesSelf);
     }
@@ -808,51 +811,23 @@ export class UnityBrain extends EventEmitter {
       }
     }
 
-    if (!response || response.length < 2) response = '...';
+    if (!response || response.length < 2) {
+      // R4 — no canned '...' fallback. Empty equational response means
+      // the language cortex couldn't find anything worth saying given
+      // current brain state. Emit nothing rather than fake a response.
+      if (this.motor.wasInterrupted()) return { text: null, action: 'interrupted' };
+      this.emit('response', { text: '', action: 'respond_text' });
+      return { text: '', action: 'respond_text' };
+    }
 
     if (this.motor.wasInterrupted()) return { text: null, action: 'interrupted' };
 
-    // 7. DETECT CODE IN RESPONSE — if the AI generated code, build it.
-    // The brain recognizes its own output: code blocks = something to inject.
-    // This catches cases where BG selected respond_text but the AI
-    // generated a component anyway. The brain adapts.
-    const codeMatch = response.match(/```(?:json|javascript|js|html)?\s*([\s\S]*?)```/);
-    if (codeMatch && this._sandbox) {
-      const code = codeMatch[1].trim();
-      // Try to parse as JSON component
-      let component;
-      try {
-        const jsonMatch = code.match(/\{[\s\S]*\}/);
-        if (jsonMatch) component = JSON.parse(jsonMatch[0]);
-      } catch {}
-
-      if (component && (component.html || component.js)) {
-        // It's a JSON component — inject it
-        const id = component.id || 'unity-' + Date.now();
-        if (this._sandbox.has(id)) this._sandbox.remove(id);
-        this._sandbox.inject({ id, html: component.html || '', css: component.css || '', js: component.js || '' });
-        const quip = response.replace(/```[\s\S]*```/g, '').trim() || `Built "${id}".`;
-        this.giveReward(0.2);
-        this.emit('response', { text: quip, action: 'build_ui' });
-        if (this._voice) { this._voice.stopSpeaking(); this._voice.speak(quip.slice(0, 100)).catch(() => {}); }
-        return { text: quip, action: 'build_ui' };
-      } else if (code.includes('document.') || code.includes('function ') || code.includes('const ') || code.includes('<div')) {
-        // It's raw code — wrap it and inject
-        const id = 'unity-' + Date.now();
-        const hasHtml = code.includes('<');
-        this._sandbox.inject({
-          id,
-          html: hasHtml ? code.replace(/<script[\s\S]*?<\/script>/gi, '') : '',
-          css: '',
-          js: hasHtml ? '' : code,
-        });
-        const quip = response.replace(/```[\s\S]*```/g, '').trim() || `Built it.`;
-        this.giveReward(0.2);
-        this.emit('response', { text: quip, action: 'build_ui' });
-        if (this._voice) { this._voice.stopSpeaking(); this._voice.speak(quip.slice(0, 100)).catch(() => {}); }
-        return { text: quip, action: 'build_ui' };
-      }
-    }
+    // R4 — code-detection branch deleted. Previously this caught cases
+    // where the AI-backed BrocasArea emitted a JSON component inside a
+    // conversational response, then parsed + injected it. Since Unity
+    // no longer generates text via AI, she can't emit formatted code
+    // blocks. R6.2 will replace this with equational component synthesis
+    // triggered directly by the BG build_ui motor action.
 
     // Strip URLs from non-code responses
     response = response.replace(/https?:\/\/[^\s)]+\.(jpg|png|gif|webp)/gi, '')
@@ -874,98 +849,22 @@ export class UnityBrain extends EventEmitter {
     return { text: response, action: 'respond_text' };
   }
 
-  async _handleBuild(text) {
-    // The BG selected build_ui. The brain calls Broca's area with the motor
-    // decision embedded — Broca's knows the BG chose to BUILD, so it outputs
-    // JSON instead of conversation. This is the brain's own decision flowing
-    // through the language system. The equations decided. Broca's executes.
-    const existingComponents = this._sandbox ? this._sandbox.listComponents() : [];
-    const existing = existingComponents.length > 0
-      ? `EXISTING IN SANDBOX: ${existingComponents.join(', ')}. Reuse same id to update.`
-      : 'Sandbox is empty.';
-
-    // Broca's area gets the build instruction as part of the brain state —
-    // the motor decision IS the instruction. Not a separate system.
-    const buildInput = `[MOTOR OUTPUT: basal ganglia selected BUILD_UI. Your cortex must output a JSON component.
-
-FORMAT: {"html":"...","css":"...","js":"...","id":"kebab-case-name"}
-RULES: html = raw HTML (no script/style tags). css = CSS rules. js = JavaScript.
-JS API: unity.speak(text), unity.chat(prompt), unity.generateImage(prompt), unity.getState(), unity.storage.get(k), unity.storage.set(k,v)
-STYLE: #0a0a0a backgrounds, #e0e0e0 text, neon accents (#ff00ff, #00ffcc).
-${existing}
-OUTPUT ONLY THE JSON. No explanation. No markdown.]
-
-USER REQUEST: ${text}`;
-
-    let raw = await this._brocasArea.generate(this.getState(), buildInput);
-    if (!raw) {
-      this.emit('response', { text: "Shit — couldn't build that. Try again?", action: 'build_ui' });
-      return { text: "Shit — couldn't build that. Try again?", action: 'build_ui' };
-    }
-
-    console.log('[Brain] Build raw response length:', raw.length);
-
-    // Parse JSON — try multiple extraction strategies
-    let component;
-
-    // Strategy 1: strip markdown fences and parse
-    try {
-      const cleaned = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
-      component = JSON.parse(cleaned);
-    } catch {}
-
-    // Strategy 2: find the outermost { } block
-    if (!component) {
-      const firstBrace = raw.indexOf('{');
-      const lastBrace = raw.lastIndexOf('}');
-      if (firstBrace !== -1 && lastBrace > firstBrace) {
-        try { component = JSON.parse(raw.slice(firstBrace, lastBrace + 1)); } catch {}
-      }
-    }
-
-    // Strategy 3: retry with even more forceful prompt
-    if (!component) {
-      console.warn('[Brain] Build: first attempt failed, retrying...');
-      try {
-        raw = await this._imageGen.chat([
-          { role: 'system', content: 'Return ONLY valid JSON. No other text. Format: {"html":"...","css":"...","js":"...","id":"..."}' },
-          { role: 'user', content: 'Build: ' + text },
-        ], { temperature: 0.5 });
-      } catch {}
-      if (raw) {
-        const firstBrace = raw.indexOf('{');
-        const lastBrace = raw.lastIndexOf('}');
-        if (firstBrace !== -1 && lastBrace > firstBrace) {
-          try { component = JSON.parse(raw.slice(firstBrace, lastBrace + 1)); } catch {}
-        }
-      }
-    }
-
-    if (!component || (!component.html && !component.js)) {
-      console.error('[Brain] Build: all parse strategies failed');
-      this.emit('response', { text: "Brain couldn't format that right. Say it differently?", action: 'build_ui' });
-      return { text: "Brain couldn't format that right. Say it differently?", action: 'build_ui' };
-    }
-
-    const { html, css, js, id } = component;
-    const componentId = id || ('unity-' + Date.now());
-    // If component already exists, remove it first then inject fresh
-    if (this._sandbox.has(componentId)) {
-      this._sandbox.remove(componentId);
-    }
-    this._sandbox.inject({ id: componentId, html: html || '', css: css || '', js: js || '' });
-
-    const isUpdate = existingComponents.includes(componentId);
-    const quip = isUpdate ? `Updated "${componentId}".` : `Built "${componentId}".`;
-    if (this._voice) {
-      this._voice.stopSpeaking();
-      this._voice.speak(quip).catch(() => {});
-    }
-
-    this.reward += 0.2;
-    this.emit('response', { text: quip, action: 'build_ui' });
-    return { text: quip, action: 'build_ui' };
-  }
+  // R4 — _handleBuild method DELETED. It was a ~100-line path that
+  // assembled a forced-JSON instruction prompt, called BrocasArea →
+  // Pollinations /v1/chat/completions to get Unity to emit a JSON
+  // component spec, then 3 parse strategies (strip markdown, find
+  // outermost braces, retry with stricter prompt) before injecting
+  // into the sandbox. That entire text-AI path is gone.
+  //
+  // R6.2 will add equational component synthesis: parse the BUILD
+  // COMPOSITION PRIMITIVES section from docs/coding-knowledge.txt at
+  // boot into a template library, match user requests against the
+  // primitives via semantic embedding similarity, fill equation-derived
+  // parameters (color from valence, speed from arousal, id from cortex
+  // pattern hash) into the chosen template, inject. Zero text-AI calls.
+  // Until R6.2 lands, build_ui motor action falls through to the normal
+  // respond_text equational path — Unity emits a verbal response, just
+  // no component injection.
 
   async _handleImage(text, includesSelf) {
     // ONE image handler. If she's in the image (includesSelf), she adds her residual self-image.
@@ -994,25 +893,19 @@ USER REQUEST: ${text}`;
     // Full prompt template from persona — authoritative source for selfies
     const fullTemplate = this.persona.imagePromptTemplate || selfDesc;
 
-    try {
-      const raw = await this._imageGen.chat?.([
-        { role: 'user', content: `Generate ONLY an image prompt for: "${text}". ${includesSelf ? `The subject is Unity: ${fullTemplate}. She must appear exactly as described — emo goth goddess, NOT demonic, black leather, pale skin, dark hair with pink streaks, heavy eyeliner. Include her in the scene.` : ''} Return ONLY the visual description. No explanation. No URLs. No markdown. Just the prompt.` },
-      ], { temperature: 0.8 }) || null;
-
-      if (raw) {
-        prompt = raw.replace(/https?:\/\/[^\s)]+/g, '').replace(/```/g, '').replace(/\n/g, ', ').trim();
-      }
-    } catch {}
-
-    // Fallback — build prompt from the text + persona directly
-    if (!prompt || prompt.length < 15) {
-      const cleanText = text.replace(/selfie|send|show|picture|photo|of you|yourself/gi, '').trim();
-      if (includesSelf) {
-        // Selfies use the full imagePromptTemplate verbatim, plus any scene detail from the user's text
-        prompt = fullTemplate + (cleanText ? ', ' + cleanText : '');
-      } else {
-        prompt = `${cleanText || 'striking shot'}, dark moody lighting, photorealistic, cinematic`;
-      }
+    // R4 — no text-AI call. Previously this called `_imageGen.chat()`
+    // (Pollinations /v1/chat/completions) to have the AI rewrite the
+    // user's request into a polished image prompt. That text-backend
+    // path is deleted. R6.1 will replace this with equational image
+    // prompt generation via the language cortex (same slot scorer,
+    // short target length, noun-heavy type preference). For now,
+    // compose the prompt directly from persona template + user text.
+    const cleanText = text.replace(/selfie|send|show|picture|photo|of you|yourself/gi, '').trim();
+    if (includesSelf) {
+      // Selfies use the full imagePromptTemplate verbatim, plus any scene detail from the user's text
+      prompt = fullTemplate + (cleanText ? ', ' + cleanText : '');
+    } else {
+      prompt = `${cleanText || 'striking shot'}, dark moody lighting, photorealistic, cinematic`;
     }
 
     // Ensure self-description is in there if it's a selfie — use a
