@@ -36,7 +36,17 @@ export class RemoteBrain extends EventEmitter {
     this._serverUrl = serverUrl;
     this._ws = null;
     this._connected = false;
+    // Per-session id assigned by server in the `welcome` message.
+    // Ephemeral — changes every reconnect.
     this._userId = null;
+    // T6 2026-04-13 — stable per-user id that survives reconnects,
+    // persisted in localStorage as `unity_user_id`. Generated lazily
+    // on first text send so a returning user's episodes can be
+    // recalled under the same id next session. This is what scopes
+    // private episodic memory — the server filters the SQLite
+    // episodes table by this id so Alice never gets recall hits
+    // from Bob's conversation.
+    this._stableUserId = null;
     this.running = false;
 
     // Mirror state from server
@@ -239,7 +249,33 @@ export class RemoteBrain extends EventEmitter {
       return { text: 'Brain server disconnected.', action: 'respond_text' };
     }
 
-    this._ws.send(JSON.stringify({ type: 'text', text }));
+    // T6 2026-04-13 — lazy-init the stable userId on first text send.
+    // Persisted in localStorage so returning users keep the same id
+    // across sessions and can recall their own episodes. Server uses
+    // this to filter SQLite episode storage + recall by user, so one
+    // user never gets recall hits from another user's past text.
+    // crypto.randomUUID() is supported in all modern browsers; guard
+    // the ls access for SSR / worker contexts just in case.
+    if (!this._stableUserId) {
+      try {
+        if (typeof localStorage !== 'undefined') {
+          let saved = localStorage.getItem('unity_user_id');
+          if (!saved) {
+            saved = (typeof crypto !== 'undefined' && crypto.randomUUID)
+              ? crypto.randomUUID()
+              : 'user_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+            localStorage.setItem('unity_user_id', saved);
+          }
+          this._stableUserId = saved;
+        }
+      } catch { /* localStorage unavailable — fall through with null */ }
+    }
+
+    this._ws.send(JSON.stringify({
+      type: 'text',
+      text,
+      userId: this._stableUserId || undefined,
+    }));
 
     // Wait for response from server
     return new Promise((resolve) => {

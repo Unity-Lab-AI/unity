@@ -1177,6 +1177,11 @@ class ServerBrain {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
+    // T6 2026-04-13 — the old global `_stmtRecentEpisodes` that
+    // returned everyone's recent episodes without a user filter is
+    // kept only as an admin-debug path (not exposed over HTTP
+    // anymore, see /episodes handler below). Cognition and recall
+    // queries use the user-scoped variants.
     this._stmtRecentEpisodes = this._db.prepare(`
       SELECT * FROM episodes ORDER BY id DESC LIMIT ?
     `);
@@ -1185,10 +1190,22 @@ class ServerBrain {
       SELECT * FROM episodes WHERE user_id = ? ORDER BY id DESC LIMIT ?
     `);
 
+    // T6 — recall by mood now REQUIRES a userId filter so cross-user
+    // leakage is impossible. Callers that want "recall my episodes
+    // with similar arousal/valence" get that; there's no mood-only
+    // global query anymore.
     this._stmtRecallByMood = this._db.prepare(`
       SELECT * FROM episodes
-      WHERE ABS(arousal - ?) < 0.2 AND ABS(valence - ?) < 0.3
+      WHERE user_id = ?
+        AND ABS(arousal - ?) < 0.2
+        AND ABS(valence - ?) < 0.3
       ORDER BY id DESC LIMIT ?
+    `);
+
+    // T6 — recent episodes scoped to one user (used by the /episodes
+    // HTTP endpoint when a ?user=<id> query param is provided).
+    this._stmtRecentEpisodesByUser = this._db.prepare(`
+      SELECT * FROM episodes WHERE user_id = ? ORDER BY id DESC LIMIT ?
     `);
 
     this._stmtEpisodeCount = this._db.prepare('SELECT COUNT(*) as count FROM episodes');
@@ -1227,10 +1244,17 @@ class ServerBrain {
   }
 
   /**
-   * Recall episodes by mood similarity (cosine on arousal/valence).
+   * Recall episodes by mood similarity, scoped to ONE user.
+   *
+   * T6 2026-04-13 — userId is now REQUIRED. The old signature
+   * `recallByMood(arousal, valence, limit)` without a user filter
+   * could pull episodes from any user, violating the private-episode
+   * rule. Any cognition code that wants mood-similarity recall must
+   * pass the triggering user's stable id.
    */
-  recallByMood(arousal, valence, limit = 5) {
-    return this._stmtRecallByMood.all(arousal, valence, limit);
+  recallByMood(userId, arousal, valence, limit = 5) {
+    if (!userId) return []; // privacy gate — no global mood recall
+    return this._stmtRecallByMood.all(userId, arousal, valence, limit);
   }
 
   /**
@@ -1429,10 +1453,33 @@ const httpServer = http.createServer((req, res) => {
   }
 
   // Episodic memory query
-  if (req.url === '/episodes') {
+  //
+  // T6 2026-04-13 — this endpoint used to return the last 20 episodes
+  // across ALL users without any filter, which was a direct leak of
+  // user text content (episodes store `input_text` and `response_text`
+  // fields). Now it REQUIRES a `?user=<stable-id>` query param and
+  // filters by it. Without the param it returns aggregate counts only,
+  // never content. Matches Gee's privacy rule: "what i type other
+  // people shouldnt be able to read".
+  if (req.url && req.url.startsWith('/episodes')) {
+    const url = new URL(req.url, `http://localhost:${PORT}`);
+    const user = url.searchParams.get('user');
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    const recent = brain._stmtRecentEpisodes.all(20);
-    res.end(JSON.stringify({ count: brain.getEpisodeCount(), recent }));
+    if (user && typeof user === 'string' && user.length > 0) {
+      // User-scoped query — return that user's recent episodes only
+      const recent = brain._stmtRecentEpisodesByUser.all(user, 20);
+      res.end(JSON.stringify({
+        userId: user,
+        count: recent.length,
+        recent,
+      }));
+    } else {
+      // No user param — aggregate counts only, NO content
+      res.end(JSON.stringify({
+        totalCount: brain.getEpisodeCount(),
+        note: 'pass ?user=<stable-id> to see your own episodes. Cross-user episode content is private and not served from this endpoint.',
+      }));
+    }
     return;
   }
 
@@ -1586,8 +1633,19 @@ wss.on('connection', (ws, req) => {
       client.lastInput = now;
 
       switch (msg.type) {
-        case 'text':
-          console.log(`[${id}] Text: "${(msg.text || '').slice(0, 50)}"`);
+        case 'text': {
+          // T6 2026-04-13 — prefer the client's STABLE userId over
+          // the per-session `id`. The session id changes every
+          // reconnect; the stable id persists across sessions via
+          // localStorage on the client. This is what scopes episodic
+          // memory per user — episodes store + recall filter by this
+          // id, so Alice never gets recall hits from Bob's past text.
+          // Falls back to session id for legacy clients that haven't
+          // migrated to the stable-id path.
+          const stableId = (msg.userId && typeof msg.userId === 'string' && msg.userId.length > 0)
+            ? msg.userId
+            : id;
+          console.log(`[${id}] Text: "${(msg.text || '').slice(0, 50)}" (stable=${stableId.slice(-8)})`);
           // Process through brain and respond — ROUTED TO THIS CLIENT ONLY.
           //
           // 2026-04-13 privacy model: user text is PRIVATE between the
@@ -1609,7 +1667,7 @@ wss.on('connection', (ws, req) => {
           // / bigrams / embeddings all update from every conversation),
           // which is the "one brain of Unity" model. Only the raw text
           // broadcast needed removal.
-          brain.processAndRespond(msg.text || '', id).then(result => {
+          brain.processAndRespond(msg.text || '', stableId).then(result => {
             if (result.text && ws.readyState === ws.OPEN) {
               if (result.action === 'build_ui' && result.component) {
                 ws.send(JSON.stringify({ type: 'build', component: result.component }));
@@ -1623,6 +1681,7 @@ wss.on('connection', (ws, req) => {
             console.warn(`[${id}] Response failed:`, err.message);
           });
           break;
+        }
 
         case 'reward':
           brain.reward += msg.amount || 0;
