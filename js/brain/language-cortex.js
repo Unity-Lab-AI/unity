@@ -1381,7 +1381,7 @@ export class LanguageCortex {
    * Zero when no history or no matching n-gram entries (caller
    * should fall back to other scoring signals).
    */
-  /**
+
   // T13.7 — `_typeGrammarScore` stub deleted.
 
   _isNominativePronoun(word) {
