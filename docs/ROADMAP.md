@@ -313,7 +313,30 @@ Called in `app.js` right after `innerVoice.loadPersona(text)` so the dictionary 
 - Hebbian only updates EXISTING connections (O(nnz)) — if two neurons that co-activate during persona training don't have a synapse, nothing happens. At 15% connectivity on 300 neurons this is ~13.5k connections, so most co-activating pairs have at least one direction wired. Synaptogenesis via `SparseMatrix.grow()` could be added later to form new connections during training but wasn't wired for T13.1 first pass.
 - T13.1 alone doesn't fix the word-salad output — it's the FOUNDATION. The emission loop that actually reads the trained cortex (T13.3) is the next milestone. Until T13.3 ships, `generate()` still walks slot priors; the trained cortex basins aren't consulted during output.
 
-### Milestones T13.2–T13.9: remaining plan in `docs/TODO.md`
+### Milestone T13.2: Parse-tree injection to brain clusters — COMPLETE (2026-04-14)
+
+`UnityBrain.injectParseTree(text)` routes parsed content → cortex language region (neurons 150-299), intent → basal ganglia, self-reference → hippocampus. Mirrors the `SensoryProcessor.process()` pattern — regions = clusters, not intra-cortex sub-regions. Called from `processAndRespond` before the 20-tick settle loop so injections propagate through the 20 inter-cluster projections during integration.
+
+### Milestone T13.3: Brain-driven emission loop — COMPLETE (2026-04-14)
+
+`LanguageCortex.generate()` rewritten as a brain-driven emission loop. Reads live cortex semantic state as the target vector, scores dictionary candidates by `cosSim · arousalBoost · recencyMul`, softmax-samples top-5 at coherence-driven temperature, injects emitted word back into cortex at `strength=0.35` as efference copy, ticks the LIF integrator 3 steps between emissions. Old `generate()` body renamed to `_generateSlotPrior` for rollback — `generate()` now dispatches to it when no `cortexCluster` is supplied. All three engine call sites updated to pass `cortexCluster: this.clusters.cortex` through opts.
+
+### Milestone T13.4: Feedback injection — COMPLETE (cerebellum deferred)
+
+Efference copy lives in the T13.3 emission loop: `sharedEmbeddings.mapToCortex(emb, 300, 150) · 0.35` → `cortex.injectCurrent` after each word. The cortex HEARS itself speak at the embedding level and the next word reacts. Cerebellum transition predictor deferred — existing module is target-correction not transition-prediction.
+
+### Milestone T13.5: Amygdala valence shaping — COMPLETE (motor channel filter deferred)
+
+`score(w) = cosSim · (1 + arousal · (valenceMatch − 0.5)) · recencyMul` where `valenceMatch = 1 − 0.5 · |word.valence − brainValence|`. Horny/angry/sad Unity picks different words from the same cortex target. Motor-channel dictionary filter deferred — `build_ui` still routes separately via `componentSynth.generate`.
+
+### Milestone T13.6: Natural stopping criterion — COMPLETE
+
+Three stopping signals in the T13.3 loop:
+1. **Drift quiescence** — `||target − lastReadout||₂ < 0.08` after 2+ emissions.
+2. **Grammatical terminability** — last word not in `{DET, PREP, COPULA, AUX_DO, AUX_HAVE, MODAL, NEG, CONJ_COORD, CONJ_SUB, PRON_POSS}` AND word count ≥ max(3, maxLen−1).
+3. **Hard length cap** — `maxLen = floor(3 + arousal · 3 · drugLengthBias)`, capped at `_maxSlots=8`.
+
+### Milestones T13.7–T13.9: remaining plan in `docs/TODO.md`
 
 See `docs/TODO.md` T13 section for T13.2 (parse-tree injection to brain regions = clusters), T13.3 (continuous emission loop), T13.4 (feedback + cerebellum transition prediction), T13.5 (motor channel + amygdala scoring), T13.6 (drift-threshold stopping), T13.7 (slot prior deletion), T13.8 (wire-up), T13.9 (docs + atomic push).
 

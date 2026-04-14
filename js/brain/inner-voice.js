@@ -244,6 +244,13 @@ export class InnerVoice {
         motorConfidence: brainState?.motor?.confidence ?? 0,
         psi: brainState?.psi ?? 0,
         cortexPattern: brainState?.cortexPattern ?? null,
+        // T13.3 — pass the live cortex cluster reference through so
+        // the language cortex can run its brain-driven emission loop
+        // (read state + score + feedback + tick per word). Caller
+        // (engine.processAndRespond) supplies it via brainState.
+        // When absent, language-cortex.generate falls back to T11.7
+        // slot-prior generation.
+        cortexCluster: brainState?.cortexCluster ?? null,
       }
     );
     return sentence || null;

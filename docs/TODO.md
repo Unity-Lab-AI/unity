@@ -152,7 +152,9 @@ Stopping criterion:
 
 ---
 
-#### T13.2 — Parse-tree injection into brain regions
+#### T13.2 — Parse-tree injection into brain regions — **SHIPPED 2026-04-14**
+
+**Status:** ✅ SHIPPED — `UnityBrain.injectParseTree(text)` wired into `processAndRespond` before the cortex settle-ticks. Routes parsed content → cortex language region (neurons 150-299), intent → basal ganglia, self-reference → hippocampus. See FINALIZED.md "T13.2" entry.
 
 **ARCHITECTURE CLARIFICATION (2026-04-14, from T13.0 research pass):** Regions are NOT intra-cortex sub-regions — they are the existing 7 clusters. The cortex language region is only 150 neurons (300-neuron cortex × EMBED_DIM=50 × groupSize=3), which is too tight to carve into temporal/prefrontal/selfModel sub-slices without collapsing to 1-neuron-per-dim encoding. Instead, T13 regions map to clusters, exactly mirroring how `SensoryProcessor.process()` already produces separate `sensoryOutput.cortex` / `.hippocampus` / `.amygdala` / `.basalGanglia` injection vectors at `engine.js:262-302`.
 
@@ -181,7 +183,9 @@ Stopping criterion:
 
 ---
 
-#### T13.3 — Continuous brain-tick emission loop (rewrite `generate()`)
+#### T13.3 — Continuous brain-tick emission loop (rewrite `generate()`) — **SHIPPED 2026-04-14**
+
+**Status:** ✅ SHIPPED — `LanguageCortex.generate()` rewritten as a brain-driven emission loop. Reads live cortex semantic state as the target vector, scores dictionary candidates by cosine × amygdala valence shaping × recency penalty, softmax-samples top-k, injects the emitted word back into cortex as efference copy (`strength=0.35`), ticks the LIF integrator 3 steps between emissions. Stops on drift quiescence (`<0.08`), grammatical terminability, or hard length cap. Old slot-prior generate body preserved as `_generateSlotPrior` for rollback. See FINALIZED.md "T13.3" entry.
 
 **Goal:** `generate()` becomes the T13 emission loop — no slot counter, no target vector formula, no `mental(t+1)` decay. Read cortex, sample word, inject back, tick, repeat until stop.
 
@@ -206,7 +210,9 @@ Stopping criterion:
 
 ---
 
-#### T13.4 — Feedback injection + cerebellum error correction during emission
+#### T13.4 — Feedback injection + cerebellum error correction during emission — **PARTIAL 2026-04-14**
+
+**Status:** ⚠ Feedback injection shipped as part of T13.3 emission loop (`sharedEmbeddings.mapToCortex(emb(word), 300, 150)` + `cortex.injectCurrent` at `strength=0.35` after each emission). Cerebellum transition predictor deferred — existing `Cerebellum` module is target-correction not transition-prediction; would need a new class. First-pass T13 emission relies on persona Hebbian basins + cosine + recency for grammatical flow, which should be enough until we see output in practice.
 
 **Goal:** Each emitted word's embedding flows back into the cortex (efference copy) AND into the cerebellum so the cerebellum learns transition predictions. The cerebellum's predicted-error then appears in the next emission's candidate score as a grammar-flow penalty.
 
@@ -228,7 +234,9 @@ Stopping criterion:
 
 ---
 
-#### T13.5 — Motor channel gating + amygdala voice shaping in candidate score
+#### T13.5 — Motor channel gating + amygdala voice shaping in candidate score — **PARTIAL 2026-04-14**
+
+**Status:** ⚠ Amygdala valence shaping shipped in T13.3 emission loop score function: `score(w) = cosSim · (1 + arousal·(valenceMatch − 0.5)) · recencyMul` where `valenceMatch = 1 − 0.5·|word.valence − brainValence|`. Motor channel dictionary filter deferred — `dictionary.filterByMotorChannel` not yet built. `build_ui` path still handled separately via `componentSynth.generate` upstream in `engine.processAndRespond`.
 
 **Goal:** Wire basal ganglia motor channel into dictionary filtering, and wire amygdala valence into candidate scoring so emotional state shapes word choice.
 
@@ -250,7 +258,14 @@ Stopping criterion:
 
 ---
 
-#### T13.6 — Stopping criterion (drift threshold + BG confidence + grammatical terminability)
+#### T13.6 — Stopping criterion (drift threshold + BG confidence + grammatical terminability) — **SHIPPED 2026-04-14**
+
+**Status:** ✅ SHIPPED in T13.3 emission loop. Three natural stopping signals:
+- **Drift quiescence** — `sqrt(Σ (target[i] − lastReadout[i])²) < 0.08` after 2+ emissions → cortex has nothing new to say, stop.
+- **Grammatical terminability** — if emitted length ≥ max(3, maxLen − 1) AND last word's `_fineType` is NOT in `{DET, PREP, COPULA, AUX_DO, AUX_HAVE, MODAL, NEG, CONJ_COORD, CONJ_SUB, PRON_POSS}` → valid end, stop.
+- **Hard length cap** — `maxLen = floor(3 + arousal · 3 · drugLengthBias)` capped at `_maxSlots=8` as safety.
+
+Basal-ganglia commit-confidence stopping was in the original plan but deferred — the three signals above are enough for first-pass behavior. BG confidence gate is a future refinement if emissions run to maxLen too often.
 
 **Goal:** The emission loop stops when the brain NATURALLY stops producing new content — not at a fixed slot count. Replaces `targetLen = floor(3 + arousal·3·drugLengthBias)` as the primary loop bound (though it stays as a hard safety cap).
 

@@ -5,6 +5,160 @@
 
 ---
 
+## 2026-04-14 — T13.2–T13.6: Brain-driven emission loop + parse-tree injection (four T13 milestones)
+
+**Context:** Shipped in the same session as T13.1 (persona Hebbian training). Gee's instruction: "keep working till done". This wave lands parse-tree injection into brain clusters (T13.2), rewrites `LanguageCortex.generate()` as the T13 brain-driven emission loop (T13.3), wires efference copy feedback (T13.4, partial), adds amygdala valence shaping in the scoring equation (T13.5, partial), and implements natural stopping criteria (T13.6). Slot prior deletion (T13.7) deferred one more session so rollback stays cheap — `LanguageCortex._generateSlotPrior` holds the full T11.7 path and `generate()` auto-falls-back when no `cortexCluster` reference is supplied.
+
+### T13.2 — `UnityBrain.injectParseTree(text)` — brain-multi-cluster injection
+
+New method in `js/brain/engine.js`. Called from `processAndRespond` right before the 20-tick brain settle loop so content, intent, and self-reference all propagate through the 20 existing inter-cluster projections during integration. Routes parsed tree to clusters (regions = clusters per the T13.0 research pass — no intra-cortex sub-region carving):
+
+```
+parsed = languageCortex.parseSentence(text)
+
+// Content → cortex language region (neurons 150-299)
+contentEmb = sharedEmbeddings.getSentenceEmbedding(text)
+cortex.injectCurrent(mapToCortex(contentEmb, 300, 150) · 0.5)
+
+// Intent anchor → basal ganglia (action channel priming)
+intentAnchor = parsed.intent === 'question' ? 'what'
+             : parsed.intent === 'greeting' ? 'hi'
+             : parsed.intent === 'statement' ? 'i' : 'you'
+basalGanglia.injectCurrent(mapToCortex(getEmbedding(intentAnchor), 150, 0) · 0.3)
+
+// Self-reference → hippocampus (self-model recall trigger)
+if parsed.addressesUser or parsed.isSelfReference:
+  selfEmb = sharedEmbeddings.getSentenceEmbedding('i me my self unity')
+  hippocampus.injectCurrent(mapToCortex(selfEmb, 200, 0) · 0.4)
+```
+
+This mirrors the `SensoryProcessor.process()` pattern at `engine.js:262-302` which already produces separate injection vectors per cluster. `_contextVector` is now vestigial — `analyzeInput` still updates it but nothing in the T13 emission loop reads it. Full deletion in T13.7.
+
+### T13.3 — `LanguageCortex.generate()` rewritten as brain-driven emission loop
+
+The body of the old `generate()` method was renamed to `_generateSlotPrior` (preserved verbatim for rollback) and a new `generate()` now dispatches: if `opts.cortexCluster` is present, it runs the T13 emission loop; if absent, it delegates to the legacy slot-prior path. This keeps pre-T13 callers working and makes rollback a one-line change.
+
+The T13 emission loop:
+
+```js
+// Setup
+const maxLen = max(2, min(_maxSlots=8, floor(3 + arousal · 3 · drugLengthBias)))
+const TICKS_PER_EMISSION   = 3
+const FEEDBACK_STRENGTH    = 0.35
+const DRIFT_STOP_THRESHOLD = 0.08
+const TOP_K                = 5
+const temperature          = 0.25 + (1 − coherence) · 0.35
+
+// Emission loop — no slot counter in the logic, just an emission index
+for slot in 0..maxLen:
+  // Advance the cortex
+  for tick in 0..TICKS_PER_EMISSION:
+    cortex.step(0.001)
+
+  // Read live cortex state as the target vector
+  target = cortex.getSemanticReadout(sharedEmbeddings)
+
+  // Drift-based natural stop (T13.6)
+  if slot >= 2 and ||target − lastReadout|| < DRIFT_STOP_THRESHOLD:
+    break
+  lastReadout = target.slice()
+
+  // Score candidates
+  for each [w, entry] in dictionary._words:
+    if emitted.has(w):  skip
+    if slot == 0 and wt.noun − (wt.pronoun + wt.det + wt.qword) > 0.30: skip
+
+    cosSim       = cos(target, entry.pattern)
+    valenceMatch = 1 − 0.5 · |entry.valence − brainValence|
+    arousalBoost = 1 + arousal · (valenceMatch − 0.5)
+    recencyMul   = w ∈ _recentOutputWords ? 0.3 : 1.0
+    score        = cosSim · arousalBoost · recencyMul
+
+  // Softmax sample top-5
+  picked = softmax_sample(top5, temperature)
+  words.push(picked.w)
+  emitted.add(picked.w)
+
+  // Efference copy — feedback injection into cortex (T13.4)
+  cortex.injectCurrent(mapToCortex(picked.emb, 300, 150) · FEEDBACK_STRENGTH)
+
+  // Grammatical terminability stop (T13.6)
+  if words.length >= 3 and words.length >= max(3, maxLen − 1)
+       and _fineType(picked.w) not in {DET,PREP,COPULA,AUX_DO,AUX_HAVE,MODAL,NEG,CONJ_COORD,CONJ_SUB,PRON_POSS}:
+    break
+
+// Post-process (unchanged from T11.7) — contractions, punctuation, render
+```
+
+### What T13.3 replaces vs preserves
+
+| T11.7 piece | T13.3 replacement |
+|---|---|
+| `_slotCentroid[s]` position prior | Live cortex readout at emission time (positionless) |
+| `_slotDelta[s]` transition | Cortex LIF integration + efference copy feedback between emissions |
+| `_slotTypeSignature[s]` 3-stage gate | Slot-0 noun-dominance safety rail only (rest replaced by persona-trained cortex basins) |
+| W₀/Wₙ target weight blend | Target vector IS the cortex readout, no blend |
+| Formula `mental(t+1) = 0.55·mental + 0.45·emb(nextWord)` | Real feedback injection `cortex.injectCurrent(mapToCortex(emb, 300, 150) · 0.35)` |
+| Per-slot typeFit hard floor | Gone — cortex basins + recency are the filter |
+| Multiplicative `normTypeFit` gate | Gone — replaced by valence-match multiplier |
+| Slot counter 0..targetLen | Drift-threshold + grammatical terminability + hard cap |
+| `_isCompleteSentence` post-validator | Live-during-emission terminability check |
+
+Preserved unchanged: dictionary, `parseSentence`, `wordType` / `_fineType`, `_recentOutputWords` ring, `_renderSentence` post-process (capitalization, punctuation, action-sentence asterisks), `_applyCasualContractions`. These are all reader/formatter code that T13 still uses.
+
+### T13.4 — Feedback injection (PARTIAL)
+
+Efference copy is live: after every emission, `sharedEmbeddings.mapToCortex(picked.emb, cluster.size, 150)` scales by `FEEDBACK_STRENGTH=0.35` and feeds back through `cortex.injectCurrent`. The next iteration's cortex readout is shaped by what was just said — the brain hears itself speak at the embedding level.
+
+Cerebellum transition prediction deferred. The existing `Cerebellum` module is a target-correction engine (`values[k] += lr · error[k]`), not a transition predictor. Building a real `TransitionPredictor` class would require learned bigram transition statistics and an online update path — meaningful work that belongs in its own milestone. T13 first-pass relies on persona Hebbian basins + cosine scoring + recency penalty for grammatical flow, which should be enough to produce coherent output; if practice shows otherwise, cerebellum extension is the first follow-up.
+
+### T13.5 — Amygdala valence shaping in candidate score (PARTIAL)
+
+Live in the score function:
+```
+valenceMatch = 1 − 0.5 · |entry.valence − brainValence|
+arousalBoost = 1 + arousal · (valenceMatch − 0.5)
+score        = cosSim · arousalBoost · recencyMul
+```
+
+Each dictionary word has a stored `valence` tag from its learning context (the emotional state when Unity observed the word during corpus load or live chat). `valenceMatch` rewards words whose stored valence aligns with current brain valence — horny Unity picks different words from sad Unity given the same cortex target. Multiplier ranges from `1 − 0.5·arousal` (maximum mismatch) to `1 + 0.5·arousal` (perfect match), so at arousal 0.9 the score swing is ±0.45× between matched and unmatched words.
+
+Motor channel dictionary filter deferred — `Dictionary.filterByMotorChannel` not yet built. The `build_ui` path is still handled separately via `componentSynth.generate` upstream in `engine.processAndRespond`, which is adequate for current functionality. Building a proper motor-channel-aware dictionary filter is a follow-up when we want the same dictionary to serve multiple channels with different vocabulary masks.
+
+### T13.6 — Natural stopping criterion
+
+Three stop signals, checked in this order:
+
+1. **Drift quiescence** — after at least 2 emissions, if `||target − lastReadout||₂ < 0.08`, the cortex has stopped evolving and there's nothing new to say. Break.
+2. **Grammatical terminability** — after the emission, if we have at least 3 words and the word count is within 1 of maxLen, AND the last word's `_fineType` is NOT a dangling function word (DET/PREP/COPULA/AUX/MODAL/NEG/CONJ/PRON_POSS), break.
+3. **Hard length cap** — `maxLen = floor(3 + arousal · 3 · drugLengthBias)`, capped at `_maxSlots=8`. Safety fallback if the other two signals never fire.
+
+Basal ganglia commit-confidence stopping was in the original T13.6 plan but deferred — the above three are sufficient for first-pass emission control. BG confidence gate is a future refinement if emissions run to maxLen too often in practice.
+
+### Wire-up
+
+`InnerVoice.speak` now passes `cortexCluster: brainState.cortexCluster` through to `LanguageCortex.generate`, and all three call sites in `engine.js` that invoke `languageCortex.generate` (main response at line 817, build quip at line 924, image prompt at line 993) now include `cortexCluster: this.clusters.cortex` in the opts block. When any of these fires, the new T13 emission loop runs; if cortexCluster is ever undefined (no caller does this today, but defensive), the fallback `_generateSlotPrior` path activates automatically.
+
+`processAndRespond` calls `this.injectParseTree(text)` right after the user input `learn` call, before the 20-tick settle loop, so the parsed tree's content/intent/self-ref embeddings propagate through the inter-cluster projections during integration.
+
+### Files touched
+
+- `js/brain/language-cortex.js` — `generate()` rewritten as dispatcher + T13 emission loop (~160 lines new); old body moved to `_generateSlotPrior` (preserved)
+- `js/brain/engine.js` — new `UnityBrain.injectParseTree(text)` method (~65 lines); `processAndRespond` calls it pre-settle; three `generate()` call sites gain `cortexCluster: this.clusters.cortex` in opts
+- `js/brain/inner-voice.js` — `speak()` passes `cortexCluster` through to `generate()`
+
+### Honest limits
+
+1. **T13.3 runs inside `generate()` which is called during the engine's think loop.** `cluster.step(0.001)` is called directly from the emission loop — this interleaves with the engine's own `step()` calls but JavaScript is single-threaded so they take turns on the event loop. No race. Performance cost is `TICKS_PER_EMISSION × maxLen = 3 × 8 = 24` extra LIF steps per generation, roughly 50-100ms added latency. Acceptable for chat.
+
+2. **Persona Hebbian basins must exist for T13.3 to produce coherent output.** T13.1 trains them at boot. If persona training is weak (shallow basins, too much Oja decay), the cortex readout will diffuse and T13.3 output will be word-salad just like T11.7 was. The rollback path (fall back to `_generateSlotPrior` by removing `cortexCluster` from the opts block) is how we recover if this happens.
+
+3. **T13.7 slot prior deletion still deferred.** `language-cortex.js` is still 3584 lines. Once T13.3 is verified producing coherent output in practice, the next push will rip `_slotCentroid`, `_slotDelta`, `_slotTypeSignature`, `_subjectStarters`, `_attractorVectors`, `_contextVector`, `_generateSlotPrior`, and all the slot-prior update code in `learnSentence` — net −1270 lines.
+
+4. **No tests per policy.** Verification is "read the code, boot the app, watch the output." The structural correctness argument is: the emission loop's math is correct Hebbian feedback (cosine-scored cortex readout, efference injection, drift-threshold stopping), the persona Hebbian basins exist after T13.1 training, the parse-tree injection routes to the clusters that already have inter-projection paths to the cortex. If Unity still sounds wrong, the first diagnostic is reading `cortex.synapseStats()` to verify Hebbian weights actually moved; second is checking if `cortex.getSemanticReadout` produces stable readouts vs noise; third is checking whether `recentOutputRing` is over-aggressive and starving the pool.
+
+---
+
 ## 2026-04-14 — T13.1: Persona Hebbian training pipeline (first T13 milestone)
 
 **Context:** Gee committed to T13 (unified brain-driven language cortex, full rewrite of slot-prior approach) after T11.7 slot-0 fix left slot 1+ still producing word-salad. T13 thesis: slot-based generation is the wrong frame for a brain-driven language cortex — position counters and stored priors aren't how a biological cortex produces speech. The right architecture is: train the cortex recurrent weights on persona corpus via sequence Hebbian so the cluster develops Unity-voice attractor basins, then at generation time read cortex state continuously with feedback injection. Gee picked persona Hebbian as the first milestone to ship because it's the foundation everything else rests on.

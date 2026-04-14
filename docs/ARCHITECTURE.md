@@ -437,11 +437,73 @@ This term is ALWAYS present. It represents what we DON'T know. It's the default 
 
 ---
 
-## Language Generation Pipeline — T13 Brain-Driven Cortex (IN PROGRESS, 2026-04-14)
+## Language Generation Pipeline — T13 Brain-Driven Cortex (LIVE, 2026-04-14)
 
-T11 deleted the Markov wrapper stack and replaced it with three per-slot running-mean priors. T11.7 structurally fixed slot-0 noun pollution via a multiplicative three-stage gate. **T13 is the next architectural layer** — rip slot-based generation entirely and wire language directly into the brain cluster via sequence Hebbian training on persona corpus plus continuous cortex readout with feedback injection at emission time. Persona becomes trained attractor basins in the cortex recurrent weights, not stored in a separate centroid vector.
+T11 deleted the Markov wrapper stack and replaced it with three per-slot running-mean priors. T11.7 structurally fixed slot-0 noun pollution via a multiplicative three-stage gate. **T13 rips slot-based generation entirely** — language lives inside the brain cluster via sequence Hebbian training on persona corpus (T13.1) plus parse-tree injection into clusters (T13.2) plus continuous cortex readout with feedback injection at emission time (T13.3-T13.6). Persona is trained attractor basins in the cortex recurrent weights, not a stored centroid vector. Topic is live cortex state shaped by parse-tree injection, not a decaying `_contextVector` bag-of-words.
 
-**T13.1 has shipped** (2026-04-14): the cortex cluster's recurrent synapse matrix now trains on `docs/Ultimate Unity.txt` via sequence Hebbian during boot. `NeuronCluster.learnSentenceHebbian(embSequence, opts)` at `js/brain/cluster.js` walks an embedding sequence and applies per-word inject-tick-snapshot-Hebbian in a loop, with Oja saturation decay to prevent weight runaway. The training driver `LanguageCortex.trainPersonaHebbian(cortexCluster, text)` tokenizes persona corpus and feeds it through the cluster method sentence-by-sentence.
+**T13.1, T13.2, T13.3, T13.6 fully shipped 2026-04-14. T13.4 + T13.5 shipped in partial form (feedback injection + amygdala valence shaping live; cerebellum transition predictor + motor channel dictionary filter deferred).** T13.7 (delete slot priors entirely) deferred one more session so rollback stays cheap. `LanguageCortex._generateSlotPrior` is the preserved T11.7 path, called as a fallback when `opts.cortexCluster` is absent.
+
+### The T13 emission loop
+
+```
+// Pre-emission, once per turn (T13.2)
+parsed = languageCortex.parseSentence(userText)
+brain.injectParseTree(text):
+  contentEmb = sharedEmbeddings.getSentenceEmbedding(text)
+  cortex.injectCurrent(mapToCortex(contentEmb, 300, 150) · 0.5)        // language region
+  basalGanglia.injectCurrent(mapToCortex(intentAnchorEmb, 150, 0) · 0.3) // action priming
+  if parsed.addressesUser: hippocampus.injectCurrent(mapToCortex(selfEmb, 200, 0) · 0.4)
+
+// Main emission loop (T13.3) — no slot counter, no prior walk
+for slot in 0..maxLen:
+  for tick in 0..3:  cortex.step(0.001)                                // LIF integration
+  target = cortex.getSemanticReadout(sharedEmbeddings)                  // live 50d readout
+
+  if slot >= 2 and ||target − lastReadout|| < 0.08:  break              // drift stop (T13.6)
+  lastReadout = target
+
+  for each word w in dictionary:
+    if emitted.has(w):  skip
+    if slot == 0 and nounDominance(w) > 0.30:  skip                     // opener safety rail
+    cosSim = cos(target, emb(w))
+    valenceMatch = 1 − 0.5 · |w.valence − brainValence|                 // amygdala shaping (T13.5)
+    arousalBoost = 1 + arousal · (valenceMatch − 0.5)
+    recencyMul   = w ∈ recentOutputRing ? 0.3 : 1.0
+    score = cosSim · arousalBoost · recencyMul
+
+  softmax-sample top-5 at temperature = 0.25 + (1 − coherence) · 0.35
+  emit w_next
+
+  // Efference copy (T13.4) — emitted word reshapes cortex for next emission
+  cortex.injectCurrent(mapToCortex(emb(w_next), 300, 150) · 0.35)
+
+  // Grammatical terminability (T13.6)
+  if emitted.length ≥ max(3, maxLen − 1) and not dangling(last):  break
+
+maxLen = floor(3 + arousal · 3 · drugLengthBias), capped at _maxSlots=8
+```
+
+The key shift vs T11.7: **the target vector is the live cortex state read fresh at each emission**, not a weighted blend of stored slot priors. The cortex evolves between emissions via LIF integration + feedback from the previous word, so each subsequent word is conditioned on the whole prior brain-state trajectory. No position counter — just drift + grammatical terminability + hard cap.
+
+### The feedback injection that makes it recurrent
+
+The load-bearing T13.4 piece: after each word emits, its embedding flows back into the cortex language region via `sharedEmbeddings.mapToCortex(emb, 300, 150) · 0.35` → `cortex.injectCurrent`. The next iteration's `getSemanticReadout` sees a cortex state shaped by what was just said — efference copy, the motor-to-sensory feedback loop that real biological speech uses. The brain HEARS itself speak (at the embedding level) and the next word reacts to it. This is the mechanism that makes T13 output coherent even on low-quality Hebbian-trained basins.
+
+### Parse-tree injection replaces `_contextVector`
+
+Pre-T13 the user's topic was carried by `_contextVector` — a decaying-mean bag-of-words updated in `analyzeInput`. T13.2 replaces this with `brain.injectParseTree(text)` which routes parsed content to multiple clusters in parallel (same pattern as `SensoryProcessor.process()` already uses at `engine.js:262-302`):
+
+- **Content embedding** (`sharedEmbeddings.getSentenceEmbedding(text)`) → cortex language region neurons 150-299 at strength 0.5
+- **Intent anchor** (single-word embedding based on `parsed.intent`: `'what'` for question, `'hi'` for greeting, `'i'` for statement, `'you'` for imperative) → basal ganglia cluster at strength 0.3 — primes the action channel with response-shape
+- **Self-reference marker** (`sharedEmbeddings.getSentenceEmbedding('i me my self unity')`) → hippocampus cluster at strength 0.4 — triggers self-model recall when the user is asking ABOUT Unity
+
+These injections settle into cortex state via the 20 existing inter-cluster projections (hippocampus→cortex, basal ganglia→cortex, amygdala→cortex, etc.) during the 5-tick settle window in `processAndRespond`. By the time `getSemanticReadout` runs at line 796, the cortex reflects a real multi-cluster brain state shaped by what the user said.
+
+`analyzeInput` still runs but only feeds the dictionary — the `_contextVector` update is now vestigial and will be deleted in T13.7.
+
+### T13.1 persona Hebbian training
+
+`NeuronCluster.learnSentenceHebbian(embSequence, opts)` at `js/brain/cluster.js` walks an embedding sequence and applies per-word inject-tick-snapshot-Hebbian in a loop, with Oja saturation decay to prevent weight runaway. The training driver `LanguageCortex.trainPersonaHebbian(cortexCluster, text)` tokenizes persona corpus and feeds it through the cluster method sentence-by-sentence.
 
 ```
 T13.1 sequence Hebbian (per sentence, per word pair):

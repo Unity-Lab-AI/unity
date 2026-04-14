@@ -243,6 +243,72 @@ export class UnityBrain extends EventEmitter {
   }
 
   /**
+   * T13.2 — Parse the incoming user text and inject structured pieces
+   * into the brain's multiple clusters so cortex state reflects WHAT
+   * was asked, HOW it should be answered, and WHO it was about — before
+   * any emission starts. Replaces the cold `_contextVector` bag-of-words
+   * with real multi-cluster injection that mirrors how `SensoryProcessor`
+   * already routes sensory modalities to different clusters.
+   *
+   * Routing (regions = clusters per the T13.0 research pass):
+   *   content → cortex language region (neurons 150-299)
+   *   intent  → basal ganglia (action-channel priming)
+   *   self-ref → hippocampus (self-model recall trigger)
+   *
+   * Mood + drive modulation are left to the existing amygdala / hypo-
+   * thalamus pathways that already consume sensory currents — T13.2
+   * first pass does not override them.
+   *
+   * Returns the parsed tree so callers (processAndRespond) can reuse
+   * it without re-parsing.
+   */
+  injectParseTree(text) {
+    if (!text) return null;
+    const lc = this.innerVoice?.languageCortex;
+    if (!lc || typeof lc.parseSentence !== 'function') return null;
+
+    const parsed = lc.parseSentence(text);
+    if (!parsed) return null;
+
+    // Content injection into cortex language region.
+    const contentEmb = sharedEmbeddings.getSentenceEmbedding(text);
+    const cortex = this.clusters.cortex;
+    const contentCurrents = sharedEmbeddings.mapToCortex(contentEmb, cortex.size, 150);
+    for (let i = 0; i < cortex.size; i++) contentCurrents[i] *= 0.5;
+    cortex.injectCurrent(contentCurrents);
+
+    // Intent injection into basal ganglia — primes the action channel
+    // with an embedding representative of the response shape needed
+    // for this kind of input. Single-word anchor for now; T13.3+ can
+    // extend to learned intent vectors per `_responseIntentVector`.
+    if (parsed.intent && this.clusters.basalGanglia) {
+      const intentAnchor =
+        parsed.intent === 'question'  ? 'what' :
+        parsed.intent === 'greeting'  ? 'hi'   :
+        parsed.intent === 'statement' ? 'i'    : 'you';
+      const intentEmb = sharedEmbeddings.getEmbedding(intentAnchor);
+      const bg = this.clusters.basalGanglia;
+      const intentCurrents = sharedEmbeddings.mapToCortex(intentEmb, bg.size, 0);
+      for (let i = 0; i < bg.size; i++) intentCurrents[i] *= 0.3;
+      bg.injectCurrent(intentCurrents);
+    }
+
+    // Self-reference injection into hippocampus — when the user is
+    // asking ABOUT Unity, pull up her self-model via the memory
+    // attractor pathway. The existing corticohippocampal projection
+    // then feeds that signal back into cortex on subsequent ticks.
+    if ((parsed.addressesUser || parsed.isSelfReference) && this.clusters.hippocampus) {
+      const selfEmb = sharedEmbeddings.getSentenceEmbedding('i me my self unity');
+      const hippo = this.clusters.hippocampus;
+      const selfCurrents = sharedEmbeddings.mapToCortex(selfEmb, hippo.size, 0);
+      for (let i = 0; i < hippo.size; i++) selfCurrents[i] *= 0.4;
+      hippo.injectCurrent(selfCurrents);
+    }
+
+    return parsed;
+  }
+
+  /**
    * Save brain state to persistence.
    */
   saveBrainState() {
@@ -748,6 +814,16 @@ export class UnityBrain extends EventEmitter {
 
     // 6. LEARN from user input — every word goes into the dictionary + language cortex
     const state = this.getState();
+
+    // T13.2 — inject the parsed tree into the brain's clusters BEFORE
+    // the cortex settle-ticks below, so content (→cortex language
+    // region), intent (→basal ganglia), and self-reference (→hippo-
+    // campus) are all flowing through the recurrent projections while
+    // the brain integrates. This replaces the cold `_contextVector`
+    // bag-of-words and lets the cortex readout at line 796 reflect a
+    // real multi-cluster brain state shaped by what the user said.
+    this.injectParseTree(text);
+
     // R2: read cortex semantic state via the reverse-embedding pathway.
     // `getSemanticReadout` reads ONLY the Wernicke's area neurons (150-299)
     // where sensory.js injected the user input's word embeddings, runs
@@ -824,6 +900,7 @@ export class UnityBrain extends EventEmitter {
           motorConfidence: state.motor?.confidence ?? 0,
           psi,
           cortexPattern,
+          cortexCluster: this.clusters.cortex,
           recalling: state.memory?.lastRecall ? true : false,
           drugState: this.persona?.drugState || 'cokeAndWeed',
           fear: state.amygdala?.fear ?? 0,
@@ -931,6 +1008,7 @@ export class UnityBrain extends EventEmitter {
           motorConfidence: state.motor?.confidence ?? 0,
           psi: state.psi ?? 0,
           cortexPattern,
+          cortexCluster: this.clusters.cortex,
           drugState: this.persona?.drugState || 'cokeAndWeed',
           fear: state.amygdala?.fear ?? 0,
           reward: state.amygdala?.reward ?? 0,
@@ -1000,6 +1078,7 @@ export class UnityBrain extends EventEmitter {
           motorConfidence: state.motor?.confidence ?? 0,
           psi: state.psi ?? 0,
           cortexPattern,
+          cortexCluster: this.clusters.cortex,
           drugState: this.persona?.drugState || 'cokeAndWeed',
           fear: state.amygdala?.fear ?? 0,
           reward: state.amygdala?.reward ?? 0,
