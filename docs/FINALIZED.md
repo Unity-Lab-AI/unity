@@ -5,6 +5,85 @@
 
 ---
 
+## 2026-04-14 — T14.8 sentence-form schemas + learned intent-pair routing
+
+**Gee's directive:** continue T14 on the rebuild branch milestone-by-milestone, don't ask between items.
+
+**Thesis.** Real grammar has structure at every slot, not just 0-3. A declarative sentence has constraints on slot 0 (subject), slot 1 (verb), slot 2 (object), AND slot N-1 (modifier), AND slot N (terminator). Capping schemas at slot 3 throws away half the structural information the corpus contains. The old T14.8 draft also hardcoded the intent enum at four values (declarative / interrogative / imperative / exclamative), which is English-and-Hollywood-screenwriting-ish — real language has emotive exclamations, conditionals, reported speech, embedded questions, fragments. T14.8 shipped drops both caps: schemas span every slot the corpus has sentences long enough to reach, and intent labels come dynamically from whatever `parseSentence(text).intent` emits.
+
+### New fields on `LanguageCortex`
+
+Three Maps initialized empty at constructor:
+
+```
+_sentenceFormSchemas : Map<intent, Map<slot, Map<fineType, count>>>
+_sentenceFormTotals  : Map<intent, Map<slot, total>>
+_intentResponseMap   : Map<userIntent, Map<responseIntent, count>>
+```
+
+`_sentenceFormSchemas` is the per-intent per-slot fineType distribution. No upper slot cap — a 30-word sentence records all 30 positions. Intent labels are strings coming from the `parseSentence` output (currently `greeting`/`question`/`yesno`/`statement`/`command`/`emotion`/`unknown`); any future parser that emits a new label gets its own bucket automatically. `_sentenceFormTotals` caches running totals per slot so `schemaScore` stays O(1) at read time without summing children. `_intentResponseMap` is the learned replacement for the pre-T14.8 hardcoded `question → declarative_answer` / `greeting → declarative_greeting_back` routing table the engine used to carry — gets populated from live chat via `recordIntentPair(userIntent, responseIntent)` calls, not from curriculum (curriculum text doesn't have pair structure).
+
+### `learnSentence` observation hook
+
+Rewritten to fold the T14.8 observations into the existing word walk. Flow:
+
+1. **Parse once up-front.** `this.parseSentence(sentence)` — reads the cached tree if `sentence === this._lastInputText`, otherwise re-parses. Intent is `parsed.intent || 'unknown'`. Wrapped in try/catch so parse failure falls through to `'unknown'` rather than blocking the observation.
+2. **Ensure per-intent buckets exist.** Lazy-insert `intentSchema = _sentenceFormSchemas.get(intent) || new Map()` and `intentTotals = _sentenceFormTotals.get(intent) || new Map()`. Avoids pre-allocating empty Maps for intents that never show up.
+3. **Walk the words.** `prevFineType` starts at `'START'` so the `START` row of `_typeTransitionLearned` accumulates whatever opens sentences in the observed corpora — that replaces the deleted `_OPENER_TYPES` Set with a learned property. At each position:
+   - Existing side effects run first (`dictionary.learnWord`, `_learnUsageType`, optional `_generateInflections`).
+   - `currFineType = this._fineType(w)`.
+   - Per-slot observation: lazy-insert `slotBucket = intentSchema.get(t) || new Map()`, bump `slotBucket[currFineType]`, bump `intentTotals[t]`.
+   - Per-bigram observation: lazy-insert `transRow = _typeTransitionLearned.get(prevFineType) || new Map()`, bump `transRow[currFineType]`.
+   - `prevFineType = currFineType` for the next iteration.
+4. **Close with a `prevFineType → END` transition** so corpus termination patterns (what fineTypes typically end sentences) are learnable from `_typeTransitionLearned` too. This is the mirror of the `START` row and makes the transition table symmetric about utterance boundaries.
+
+Now every sentence `learnSentence` sees contributes to three statistics simultaneously: dictionary vocabulary (existing), fineType bigrams (T14.7's empty Map now has a writer), and per-intent per-slot schema (T14.8 new).
+
+### Four new reader methods
+
+**`schemaScore(slot, fineType, intent = 'unknown')`** — returns Laplace-smoothed per-slot probability. Formula:
+
+```
+score = (count(slot, fineType, intent) + 1) / (total(slot, intent) + max(1, |types_seen at slot|))
+```
+
+Where `|types_seen at slot|` is `slotBucket.size` — the number of distinct fineTypes the cortex has actually observed at that slot for that intent, NOT a hardcoded Laplace constant of 20. When no observations exist for the slot/intent pair, returns a small positive floor of `1/2` so generation-time consumers never get zero weight. The `max(1, uniqueTypes)` in the denominator guards against divide-by-zero on the first-ever observation.
+
+**`typeTransitionWeight(prevType, nextType)`** — same smoothing formula applied to `_typeTransitionLearned[prevType]`. Replaces every deleted `_TYPE_TRANSITIONS[prev][next]` hardcoded lookup. Sums the row once per call (O(|types seen after prev|)); if that becomes a bottleneck later, a per-row cached total can be added. Returns the `1/2` floor when the row doesn't exist or is empty.
+
+**`recordIntentPair(userIntent, responseIntent)`** — writer for the live chat path to call once Unity has both the parsed user intent AND the emitted response intent. Not wired from curriculum because curriculum text doesn't have turn-pair structure; gets populated purely from live conversation observation. Early-returns on missing/empty arguments so a call site that doesn't know the response intent yet doesn't poison the table with empty keys.
+
+**`responseIntentFor(userIntent)`** — argmax reader. Returns the most-likely response intent for `userIntent` from the learned pair counts, or `null` if no pairs have been observed yet. Callers are expected to fall back to the user intent itself or to `'statement'` on null. No hardcoded intent-routing table anywhere.
+
+### Smoothing philosophy
+
+Spec explicitly says: "No clamping into a `[0.5, 1.5]` range. Raw probability multiplied directly into the score function. If a type has 0% probability at a slot, its score is heavily penalized but not zero (Laplace smoothing handles this)." The implementation honors this — no range clamp, raw smoothed probability returned, zero-probability types get the smoothed minimum `1 / (total + uniqueTypes)` which is small but non-zero.
+
+### What's NOT in this commit
+
+- No generation-time consumer. T14.6 cortex tick-driven motor emission doesn't consult type transitions or sentence-form schemas (letter sequences fall out of the motor region directly). T14.12 will decide whether the reader methods get wired into a new cortex-driven path or stay as pure statistics the T14.16.5 identity lock consults for mode-collapse auditing.
+- No `recordIntentPair` call sites. Wiring it into `engine.processAndRespond` happens alongside T14.12's path rewiring.
+- No schema-driven generation method. Generation goes through `cluster.generateSentence` which doesn't have an `intent` parameter yet. Adding one is scope for T14.12 when the app-level intent routing gets gutted.
+- No persistence updates. The three new Maps will persist alongside the rest of LanguageCortex state via the existing serialize/deserialize path, but the extension to handle nested Map serialization is T14.16's job.
+
+### Files touched
+
+- `js/brain/language-cortex.js` — three new fields in constructor with full header comments explaining the shape and lifecycle (~35 lines), `learnSentence` observation hook integrating the three statistics updates into the existing word walk (~55 lines), four new public reader/writer methods with JSDoc (~75 lines). Net +~164 lines (3100 → 3264).
+
+### Peer-reviewed grounding
+
+Inherits T14.5, T14.6, T14.7 citations via delegation. The statistical-exposure basin formation mechanism that shaped phoneme attractors at the letter scale applies at the syntax scale too — Friederici 2017 (*Psychon Bull Rev* 24:41) neural language network development explicitly describes how cross-region cortex projections strengthen from corpus observation to represent constituent structure. That's what `_sentenceFormSchemas` captures numerically alongside the cortex substrate's analog representation.
+
+### Verification
+
+`node --check js/brain/language-cortex.js` passes clean. End-to-end verification deferred per the no-testing-until-all-T14-done directive — T14.8 becomes meaningful once T14.12 wires the consumer side of the schemas into the cortex-driven generation path.
+
+### Branch + commit
+
+`t14-language-rebuild`, one atomic commit per the 2026-04-14 docs-before-push law. All six docs updated in place.
+
+---
+
 ## 2026-04-14 — T14.7 hardcoded English type-transition deletion
 
 **Gee's directive:** continue T14 on the rebuild branch milestone-by-milestone, don't ask between items. T14.7 is the companion deletion pass to T14.6 — now that the slot scorer is gone, the closed-class English priors it used become unreferenced dead code, and the rebuild branch's "no ends left open" rule demands they go.

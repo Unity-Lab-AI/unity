@@ -662,9 +662,32 @@ T14.6's tick-driven motor emission loop already made the hardcoded table obsolet
 
 Tombstone comment left at the deletion site explains WHY both were removed so future readers don't have to dig through git history. Files: `js/brain/language-cortex.js` (−105 net, 3205 → 3100 lines). Grep confirms zero remaining references outside the tombstone.
 
+### T14.8 — Sentence-form schemas + learned intent-pair routing (SHIPPED 2026-04-14)
+
+Three new fields on `LanguageCortex`, all initialized empty at constructor:
+
+| Field | Shape | Purpose |
+|---|---|---|
+| `_sentenceFormSchemas` | `Map<intent, Map<slot, Map<fineType, count>>>` | Per-intent per-slot fineType distributions, spans every slot with no cap |
+| `_sentenceFormTotals` | `Map<intent, Map<slot, total>>` | Cached running totals for O(1) Laplace smoothing |
+| `_intentResponseMap` | `Map<userIntent, Map<responseIntent, count>>` | Learned replacement for hardcoded `question → declarative_answer` routing |
+
+Intent labels come dynamically from `parseSentence(text).intent` — no hardcoded intent enum. Whatever the parser emits (currently `greeting`/`question`/`yesno`/`statement`/`command`/`emotion`/`unknown`, future parsers can emit any string) gets its own schema bucket. `_sentenceFormSchemas` spans the full sentence with no upper slot cap — a 30-word sentence records all 30 positions.
+
+**`learnSentence` observation hook** folds three statistics updates into the existing word walk: (1) dictionary vocabulary (existing), (2) fineType bigrams into `_typeTransitionLearned` (T14.7's empty Map now has a writer), (3) per-intent per-slot fineType into `_sentenceFormSchemas` + `_sentenceFormTotals`. Parses the sentence once up-front to get the intent label, then walks words with `prevFineType='START'` initially, bumping both the schema slot bucket and the transition bigram row at each position. Closes with a `prevFineType → END` transition so corpus termination patterns are learnable too.
+
+**Four reader/writer methods:**
+
+- `schemaScore(slot, fineType, intent)` — Laplace-smoothed per-slot probability. Formula `(count + 1) / (total + max(1, uniqueTypes))`. No hardcoded Laplace constant — `uniqueTypes` is whatever the cortex has actually observed at that slot. Returns a `1/2` floor for unobserved slots so consumers never get zero weight.
+- `typeTransitionWeight(prevType, nextType)` — same smoothing on `_typeTransitionLearned`. Replaces every deleted `_TYPE_TRANSITIONS[prev][next]` lookup.
+- `recordIntentPair(userIntent, responseIntent)` — writer for the live chat path to call once both intents are known.
+- `responseIntentFor(userIntent)` — argmax reader returning the most-likely response intent, or `null` when no pairs observed yet.
+
+**Consumer wiring deferred.** T14.6 cortex tick-driven motor emission doesn't consult type transitions or sentence-form schemas (letter sequences fall out of the motor region directly), so the reader methods are currently statistics-only. T14.12 will decide whether they get wired into a new cortex-driven path or stay as pure statistics the T14.16.5 identity-lock mode-collapse audit consults.
+
 ### What's next on the rebuild branch
 
-T14.8 — Sentence-form schemas: per-intent type distributions for slots learned from curriculum corpus exposure. Consumer-side wiring for `_typeTransitionLearned`. Each subsequent T14.x milestone ships as its own commit on this branch with full in-place doc updates. Branch merges to `main` only after T14.17 is complete and verified.
+T14.9 — Unbounded discourse memory + cortex-resident topic state. Tracks paragraph-level cohesion patterns, pronoun anaphora, conversation thread continuity. Each subsequent T14.x milestone ships as its own commit on this branch with full in-place doc updates. Branch merges to `main` only after T14.17 is complete and verified.
 
 ---
 

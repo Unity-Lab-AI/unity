@@ -141,7 +141,41 @@ export class LanguageCortex {
     // `(count + 1) / (total + |types_seen|)` — no hardcoded 20-type cap,
     // no seed pseudo-counts. New fineTypes can emerge from exposure the
     // same way the T14.1 letter inventory grows dynamically.
+    // Shape: Map<prevType, Map<nextType, count>>
     this._typeTransitionLearned = new Map();
+
+    // T14.8 (2026-04-14) — sentence-form schemas. Per-intent per-slot
+    // fineType distributions learned from every observed sentence during
+    // curriculum walk and live chat. Spans ALL slots with NO upper cap —
+    // if a sentence has 30 words, all 30 slot positions get recorded.
+    // The schema is continuously refined forever.
+    //
+    // Shape: Map<intent, Map<slot, Map<fineType, count>>>
+    //
+    // Intent labels come dynamically from `parseSentence(text).intent` —
+    // no hardcoded intent enum. Whatever the parser classifies as a
+    // distinct intent gets its own schema bucket. Currently that's
+    // 'greeting'|'question'|'yesno'|'statement'|'command'|'emotion'|
+    // 'unknown', but the Map will accept any string the parser emits
+    // as new parsers land.
+    this._sentenceFormSchemas = new Map();
+
+    // T14.8 — learned intent→response pairing. Every observed user-turn
+    // → Unity-turn conversational pair contributes a count to this
+    // table via `recordIntentPair(userIntent, responseIntent)` (wired
+    // from the live chat path). After enough exposure, the table
+    // reflects which response intents typically follow which user
+    // intents in real conversation — replaces the pre-T14.8 hardcoded
+    // `question → declarative_answer`, `greeting → declarative_greeting
+    // _back` mapping the engine used to carry.
+    //
+    // Shape: Map<userIntent, Map<responseIntent, count>>
+    this._intentResponseMap = new Map();
+
+    // T14.8 — cached running total for schema Laplace smoothing. Keeps
+    // `schemaScore` O(1) without having to sum per-call. Shape matches
+    // `_sentenceFormSchemas` one level shallower: Map<intent, Map<slot, total>>.
+    this._sentenceFormTotals = new Map();
 
     this.zipfAlpha = 1.0;
     this.sentencesLearned = 0;
@@ -2848,6 +2882,33 @@ export class LanguageCortex {
     // at boot (T13.1), not per-slot priors here. `skipSlotPriors` arg
     // is retained as a no-op for backcompat with the `loadCodingKnowledge`
     // caller until that call site is cleaned up.
+    //
+    // T14.8 (2026-04-14) — learned-structure observation added. Computes
+    // the sentence's intent via parseSentence ONCE up-front, then
+    // updates `_typeTransitionLearned` on every consecutive fineType
+    // pair AND `_sentenceFormSchemas[intent][t][fineType]` at every
+    // slot position. Schema spans the full sentence — no slot cap.
+    let sentenceIntent = 'unknown';
+    try {
+      const parsed = this.parseSentence(sentence);
+      if (parsed && typeof parsed.intent === 'string') sentenceIntent = parsed.intent;
+    } catch (err) {
+      // Parse failure is non-fatal — schema update just uses 'unknown'
+    }
+
+    // Ensure the per-intent schema bucket exists
+    let intentSchema = this._sentenceFormSchemas.get(sentenceIntent);
+    if (!intentSchema) {
+      intentSchema = new Map();
+      this._sentenceFormSchemas.set(sentenceIntent, intentSchema);
+    }
+    let intentTotals = this._sentenceFormTotals.get(sentenceIntent);
+    if (!intentTotals) {
+      intentTotals = new Map();
+      this._sentenceFormTotals.set(sentenceIntent, intentTotals);
+    }
+
+    let prevFineType = 'START';
     for (let t = 0; t < words.length; t++) {
       const w = words[t];
       const pattern = cortexPattern || this.wordToPattern(w);
@@ -2859,9 +2920,112 @@ export class LanguageCortex {
         const inflections = this._generateInflections(w);
         for (const inf of inflections) dictionary?.learnWord?.(inf, pattern, arousal, valence);
       }
+
+      // T14.8 — Per-slot fineType observation into the sentence-form
+      // schema for this sentence's intent.
+      const currFineType = this._fineType(w);
+      let slotBucket = intentSchema.get(t);
+      if (!slotBucket) {
+        slotBucket = new Map();
+        intentSchema.set(t, slotBucket);
+      }
+      slotBucket.set(currFineType, (slotBucket.get(currFineType) || 0) + 1);
+      intentTotals.set(t, (intentTotals.get(t) || 0) + 1);
+
+      // T14.7 + T14.8 — Type-bigram observation. `prevFineType = 'START'`
+      // for t=0 so the START row accumulates whatever opens sentences
+      // in the observed corpora; no hardcoded opener Set required.
+      let transRow = this._typeTransitionLearned.get(prevFineType);
+      if (!transRow) {
+        transRow = new Map();
+        this._typeTransitionLearned.set(prevFineType, transRow);
+      }
+      transRow.set(currFineType, (transRow.get(currFineType) || 0) + 1);
+      prevFineType = currFineType;
     }
+    // Close the final transition into END so termination patterns are
+    // learnable from the corpus too.
+    let endRow = this._typeTransitionLearned.get(prevFineType);
+    if (!endRow) {
+      endRow = new Map();
+      this._typeTransitionLearned.set(prevFineType, endRow);
+    }
+    endRow.set('END', (endRow.get('END') || 0) + 1);
 
     this.sentencesLearned++;
+  }
+
+  /**
+   * T14.8 — Sentence-form schema score. Returns the Laplace-smoothed
+   * probability of seeing `fineType` at slot `slot` in a sentence with
+   * intent `intent`. Smoothing is `(count + 1) / (total + |types_seen|)`
+   * where `|types_seen|` is the number of unique fineTypes observed at
+   * that slot — no hardcoded 20-type cap. Returns a small positive
+   * floor (1 / (total + 1)) when no observations exist for the slot
+   * yet, so generation-time consumers never get zero weight.
+   */
+  schemaScore(slot, fineType, intent = 'unknown') {
+    const intentSchema = this._sentenceFormSchemas.get(intent);
+    if (!intentSchema) return 1 / 2;
+    const slotBucket = intentSchema.get(slot);
+    if (!slotBucket) return 1 / 2;
+    const total = this._sentenceFormTotals.get(intent)?.get(slot) || 0;
+    if (total === 0) return 1 / 2;
+    const count = slotBucket.get(fineType) || 0;
+    const uniqueTypes = slotBucket.size;
+    return (count + 1) / (total + Math.max(1, uniqueTypes));
+  }
+
+  /**
+   * T14.7 + T14.8 — Type transition weight reader. Returns the
+   * Laplace-smoothed probability of `nextType` following `prevType`
+   * based on observed corpus + chat statistics. Replaces every
+   * hardcoded `_TYPE_TRANSITIONS[prevType][nextType]` lookup that
+   * the deleted slot scorer used.
+   */
+  typeTransitionWeight(prevType, nextType) {
+    const row = this._typeTransitionLearned.get(prevType);
+    if (!row) return 1 / 2;
+    let total = 0;
+    for (const v of row.values()) total += v;
+    if (total === 0) return 1 / 2;
+    const count = row.get(nextType) || 0;
+    const uniqueTypes = row.size;
+    return (count + 1) / (total + Math.max(1, uniqueTypes));
+  }
+
+  /**
+   * T14.8 — Record an observed user-turn → Unity-turn intent pair. Called
+   * from the live chat path in engine.processAndRespond once both intents
+   * are known (user input parsed, Unity response emitted). After enough
+   * observations, `responseIntentFor(userIntent)` returns the most-likely
+   * response intent via argmax over the learned pair counts.
+   */
+  recordIntentPair(userIntent, responseIntent) {
+    if (!userIntent || !responseIntent) return;
+    let row = this._intentResponseMap.get(userIntent);
+    if (!row) {
+      row = new Map();
+      this._intentResponseMap.set(userIntent, row);
+    }
+    row.set(responseIntent, (row.get(responseIntent) || 0) + 1);
+  }
+
+  /**
+   * T14.8 — Argmax-pick the most likely response intent for a given
+   * user intent, from learned conversational pairs. Returns null if
+   * no pairs have been observed yet — callers should fall back to the
+   * user intent itself or to 'statement' in that case.
+   */
+  responseIntentFor(userIntent) {
+    const row = this._intentResponseMap.get(userIntent);
+    if (!row || row.size === 0) return null;
+    let best = null;
+    let bestCount = -1;
+    for (const [resp, count] of row) {
+      if (count > bestCount) { best = resp; bestCount = count; }
+    }
+    return best;
   }
 
   // ═══════════════════════════════════════════════════════════════
