@@ -113,6 +113,49 @@ export class SensoryAIProviders {
     this._abortController = null;
     this._deadBackends = new Map(); // url → timestamp when marked dead
     this._deadCooldown = 3600000;   // 1 hour — if a backend is dead, leave it
+
+    // User-selected preferred backends. When set, generateImage and
+    // describeImage try these FIRST before walking the priority chain.
+    // Stored as { name, source, model? } — name+source uniquely pick a
+    // single entry from getStatus().image / .vision. Persisted to
+    // localStorage via app.js; loaded back on boot.
+    this._preferredImage = null;
+    this._preferredVision = null;
+  }
+
+  /**
+   * Pick the active backend the user wants for one of the two kinds.
+   * Called from app.js when the setup modal selector changes.
+   * @param {'image'|'vision'} kind
+   * @param {{name: string, source: string, model?: string}|null} pref
+   */
+  setPreferredBackend(kind, pref) {
+    if (kind === 'image') this._preferredImage = pref;
+    else if (kind === 'vision') this._preferredVision = pref;
+  }
+
+  /**
+   * Look up a registered backend by (source, name) so the preferred
+   * chooser can route to the right _customGenerateImage / _customDescribeImage
+   * path without re-implementing each backend's dispatcher.
+   */
+  _findBackend(kind, source, name) {
+    if (source === 'default' || name === 'Pollinations') {
+      return { pollinations: true };
+    }
+    const list = kind === 'image' ? this._localImageBackends : this._localVisionBackends;
+    for (const b of list) {
+      if (b.name === name) return b;
+    }
+    if (kind === 'image' && source === 'configured' && this._customImageUrl) {
+      return {
+        name: 'custom',
+        url: this._customImageUrl,
+        model: this._customImageModel,
+        key: this._customImageKey,
+      };
+    }
+    return null;
   }
 
   /**
@@ -156,7 +199,7 @@ export class SensoryAIProviders {
         state: this._isBackendDead(b.url) ? 'dead' : 'alive',
       });
     }
-    imageBackends.push({ name: 'Pollinations', url: 'pollinations', source: 'fallback', state: 'alive' });
+    imageBackends.push({ name: 'Pollinations', url: 'pollinations', source: 'default', state: 'alive' });
 
     const visionBackends = [];
     for (const b of this._localVisionBackends) {
@@ -168,7 +211,7 @@ export class SensoryAIProviders {
         state: this._isBackendDead(b.url) ? 'dead' : 'alive',
       });
     }
-    visionBackends.push({ name: 'Pollinations', url: 'pollinations', source: 'fallback', state: 'alive' });
+    visionBackends.push({ name: 'Pollinations', url: 'pollinations', source: 'default', state: 'alive' });
 
     return {
       image: imageBackends,
@@ -369,6 +412,28 @@ export class SensoryAIProviders {
    * @returns {string|Promise<string>} — image URL (or promise of one)
    */
   async generateImage(prompt, opts = {}) {
+    // 0. User-preferred backend (if set via setPreferredBackend). This
+    // wins over auto-priority so when the user picks "Stability AI" in
+    // the setup modal dropdown, every image call routes there first —
+    // regardless of local auto-detection. Falls through on failure.
+    if (this._preferredImage) {
+      const pref = this._preferredImage;
+      const target = this._findBackend('image', pref.source, pref.name);
+      if (target?.pollinations) {
+        const url = await this._pollinations.generateImage(prompt, { ...opts, model: pref.model || opts.model });
+        if (url) return url;
+      } else if (target && !this._isBackendDead(target.url)) {
+        const url = await this._customGenerateImage(
+          target.url,
+          pref.model || target.model || opts.model || 'default',
+          target.key || null,
+          prompt,
+          opts,
+        );
+        if (url) return url;
+      }
+    }
+
     // 1. Custom backend first if configured and alive
     if (this._customImageUrl && !this._isBackendDead(this._customImageUrl)) {
       const url = await this._customGenerateImage(
@@ -425,6 +490,28 @@ export class SensoryAIProviders {
     const system = opts.system || 'Describe what you see through a webcam. What is the person doing, how do they seem, what is around them. 1 sentence. No privacy disclaimers.';
     const userPrompt = opts.userPrompt || 'What do you see?';
     const timeout = opts.timeout || 15000;
+
+    // 0. User-preferred vision backend — honored first if set
+    if (this._preferredVision) {
+      const pref = this._preferredVision;
+      const target = this._findBackend('vision', pref.source, pref.name);
+      if (target?.pollinations) {
+        try {
+          const desc = await this._pollinationsDescribeImage(dataUrl, system, userPrompt, timeout, pref.model);
+          if (desc) return desc;
+        } catch (err) {
+          console.warn('[SensoryAI] preferred Pollinations vision failed:', err.message);
+        }
+      } else if (target && !this._isBackendDead(target.url)) {
+        try {
+          const b = { ...target, model: pref.model || target.model };
+          const desc = await this._customDescribeImage(b, dataUrl, system, userPrompt, timeout);
+          if (desc) return desc;
+        } catch (err) {
+          console.warn('[SensoryAI] preferred vision backend failed:', err.message);
+        }
+      }
+    }
 
     // 1. + 2. Try every registered local vision backend in order
     for (const backend of this._localVisionBackends) {
@@ -575,12 +662,12 @@ export class SensoryAIProviders {
    * user saves the Pollinations vision backend in the setup modal).
    * Defaults to `'openai'` (Pollinations' GPT-4o multimodal endpoint).
    */
-  async _pollinationsDescribeImage(dataUrl, system, userPrompt, timeoutMs) {
+  async _pollinationsDescribeImage(dataUrl, system, userPrompt, timeoutMs, modelOverride) {
     const headers = { 'Content-Type': 'application/json' };
     if (this._pollinations?._apiKey) {
       headers['Authorization'] = `Bearer ${this._pollinations._apiKey}`;
     }
-    const model = this._pollinationsVisionModel || 'openai';
+    const model = modelOverride || this._pollinationsVisionModel || 'openai';
     const res = await fetch('https://gen.pollinations.ai/v1/chat/completions', {
       method: 'POST',
       headers,

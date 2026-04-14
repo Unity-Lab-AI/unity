@@ -582,6 +582,31 @@ async function init() {
 
   startBtn.addEventListener('click', handleStart);
 
+  // Instant SAVE KEY button — stores the Pollinations API key without
+  // having to boot Unity. Writes storage + pushes into providers so
+  // the next generateImage/describeImage picks it up immediately.
+  const saveKeyBtn = document.getElementById('api-key-save-btn');
+  if (saveKeyBtn && apiKeyInput) {
+    saveKeyBtn.addEventListener('click', () => {
+      const key = (apiKeyInput.value || '').trim();
+      if (!key) {
+        alert('Paste a Pollinations API key first.');
+        return;
+      }
+      storage.setApiKey('pollinations', key);
+      if (providers?._pollinations) providers._pollinations._apiKey = key;
+      saveKeyBtn.textContent = 'SAVED ✓';
+      saveKeyBtn.style.background = 'var(--green,#22c55e)';
+      setTimeout(() => {
+        saveKeyBtn.textContent = 'SAVE KEY';
+        saveKeyBtn.style.background = 'var(--cyan)';
+      }, 1500);
+      // Re-render inventory so the (default) pollinations row reflects
+      // the authenticated state if the UI cares.
+      if (typeof renderSensoryInventory === 'function') renderSensoryInventory();
+    });
+  }
+
   // R15 — Clear All Data button (still inside the setup modal)
   const clearBtn = document.getElementById('clear-data-btn');
   if (clearBtn) {
@@ -689,6 +714,111 @@ function renderSensoryInventory() {
     <div style="margin-left:8px;">${visRows}${pausedNote}</div>
     ${probingNote}
   `;
+
+  // Refresh the active-provider selectors after inventory render so
+  // newly detected backends appear as selectable options immediately.
+  refreshActiveBackendSelectors(status);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ACTIVE PROVIDER SELECTORS
+// ═══════════════════════════════════════════════════════════════
+// Users configure any number of backends via the grids above. The
+// selectors below pick which single backend Unity actually uses for
+// each kind (image gen, vision describer), plus which model to pick
+// from that backend. Preference is saved to localStorage and pushed
+// into providers.setPreferredBackend() so generateImage/describeImage
+// honor it on the very next call.
+// ═══════════════════════════════════════════════════════════════
+
+// Model catalogs per backend. Static where we know the options,
+// dynamic for ones we probe at runtime (ollama /api/tags).
+const BACKEND_MODEL_CATALOG = {
+  'image:Pollinations': ['flux', 'flux-realism', 'flux-anime', 'flux-3d', 'turbo', 'sdxl-1.0'],
+  'image:Automatic1111 / SD.Next / Forge': ['default'],
+  'image:ComfyUI': ['default'],
+  'image:OpenAI DALL-E': ['dall-e-3', 'dall-e-2'],
+  'image:Stability AI': ['stable-diffusion-xl-1024-v1-0', 'sd3-large', 'sd3-medium'],
+  'vision:Pollinations': ['openai', 'claude-haiku', 'gemini'],
+  'vision:Ollama (VLM)': ['llava', 'moondream', 'bakllava', 'minicpm-v'],
+  'vision:LM Studio': ['default'],
+};
+
+function refreshActiveBackendSelectors(status) {
+  const imgSel = document.getElementById('active-image-backend');
+  const visSel = document.getElementById('active-vision-backend');
+  const imgModelSel = document.getElementById('active-image-model');
+  const visModelSel = document.getElementById('active-vision-model');
+  if (!imgSel || !visSel) return;
+
+  const populate = (selEl, list, kind, savedKey) => {
+    const saved = localStorage.getItem(savedKey);
+    selEl.innerHTML = '';
+    list.forEach(b => {
+      const opt = document.createElement('option');
+      const val = `${b.source}|${b.name}`;
+      opt.value = val;
+      opt.textContent = `${b.state === 'alive' ? '🟢' : '🔴'} ${b.name} (${b.source})`;
+      if (val === saved) opt.selected = true;
+      selEl.appendChild(opt);
+    });
+  };
+  populate(imgSel, status.image, 'image', 'unity_pref_image_backend');
+  populate(visSel, status.vision, 'vision', 'unity_pref_vision_backend');
+
+  const populateModels = (selEl, backendSel, kind, savedKey) => {
+    if (!selEl) return;
+    const [, name] = (backendSel.value || '').split('|');
+    const catalog = BACKEND_MODEL_CATALOG[`${kind}:${name}`] || ['default'];
+    const saved = localStorage.getItem(savedKey);
+    selEl.innerHTML = '';
+    catalog.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m;
+      opt.textContent = m;
+      if (m === saved) opt.selected = true;
+      selEl.appendChild(opt);
+    });
+  };
+  populateModels(imgModelSel, imgSel, 'image', 'unity_pref_image_model');
+  populateModels(visModelSel, visSel, 'vision', 'unity_pref_vision_model');
+
+  const applyPref = (kind, backendSel, modelSel, backendKey, modelKey) => {
+    const [source, name] = (backendSel.value || '').split('|');
+    const model = modelSel?.value || null;
+    localStorage.setItem(backendKey, backendSel.value);
+    if (model) localStorage.setItem(modelKey, model);
+    if (providers?.setPreferredBackend) {
+      providers.setPreferredBackend(kind, { source, name, model });
+    }
+  };
+
+  // Wire change handlers once — flag on the element to prevent stacking
+  if (!imgSel._wired) {
+    imgSel._wired = true;
+    imgSel.addEventListener('change', () => {
+      populateModels(imgModelSel, imgSel, 'image', 'unity_pref_image_model');
+      applyPref('image', imgSel, imgModelSel, 'unity_pref_image_backend', 'unity_pref_image_model');
+    });
+    imgModelSel?.addEventListener('change', () => {
+      applyPref('image', imgSel, imgModelSel, 'unity_pref_image_backend', 'unity_pref_image_model');
+    });
+  }
+  if (!visSel._wired) {
+    visSel._wired = true;
+    visSel.addEventListener('change', () => {
+      populateModels(visModelSel, visSel, 'vision', 'unity_pref_vision_model');
+      applyPref('vision', visSel, visModelSel, 'unity_pref_vision_backend', 'unity_pref_vision_model');
+    });
+    visModelSel?.addEventListener('change', () => {
+      applyPref('vision', visSel, visModelSel, 'unity_pref_vision_backend', 'unity_pref_vision_model');
+    });
+  }
+
+  // Push the persisted preference into providers on first render so
+  // reloading the page doesn't reset to first-in-list priority.
+  applyPref('image', imgSel, imgModelSel, 'unity_pref_image_backend', 'unity_pref_image_model');
+  applyPref('vision', visSel, visModelSel, 'unity_pref_vision_backend', 'unity_pref_vision_model');
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -716,7 +846,7 @@ const BACKEND_CATALOG = {
     name: 'Pollinations',
     kind: 'image',
     instructions:
-      'Free default — already active as Unity\'s image gen fallback, no setup needed. Paste a Pollinations key below for higher rate limits. You can also pick which Pollinations image model Unity uses (default: flux).',
+      'Unity\'s default image gen provider — active out of the box, no setup needed for the anonymous tier. Paste your Pollinations API key below to authenticate (raises rate limits and unlocks paid models). Get a key at pollinations.ai/dashboard. You can also pick which Pollinations image model Unity uses (default: flux).',
     link: 'https://pollinations.ai/dashboard',
     needsKey: true,
     keyOptional: true,
@@ -798,8 +928,8 @@ Pick the right "kind" below based on your backend's request format.`,
     name: 'Pollinations GPT-4o (vision describer)',
     kind: 'vision',
     instructions:
-`Free default — already active as Unity's vision describer fallback, no setup needed. Uses Pollinations multimodal chat under the hood.
-Paste a Pollinations key below for higher rate limits. You can also swap the multimodal model Unity asks to describe camera frames.`,
+`Unity's default vision describer — active out of the box, no setup needed for the anonymous tier. Uses Pollinations multimodal chat under the hood.
+Paste your Pollinations API key below to authenticate (raises rate limits and unlocks paid models). Get a key at pollinations.ai/dashboard. You can also swap the multimodal model Unity asks to describe camera frames.`,
     link: 'https://pollinations.ai/dashboard',
     needsKey: true,
     keyOptional: true,

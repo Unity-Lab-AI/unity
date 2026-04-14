@@ -116,7 +116,7 @@ export class SensoryStatusUI {
       if (!this._bootInventoryShown[kind]) {
         this._bootInventoryShown[kind] = true;
         if (backends.length === 0) {
-          this._toast(`${label}: no local backends found. Using Pollinations fallback. Configure in js/env.js for local control.`, 'info');
+          this._toast(`${label}: no local backends found. Using Pollinations default provider. Add an API key in the setup modal or configure a local backend in js/env.js.`, 'info');
         } else {
           const names = backends.map(b => b.name).join(', ');
           this._toast(`${label}: found ${backends.length} local backend(s) — ${names}`, 'success');

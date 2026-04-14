@@ -132,8 +132,27 @@
         <div id="sensory-inventory-content" style="color:var(--text-dim);">⏳ probing local backends...</div>
       </div>
 
-      <p class="hint" style="margin-bottom:6px;margin-top:12px;">Pollinations API key <span style="color:var(--text-dim);">(optional — free tier works without, paid key raises rate limits for image gen, TTS, and vision describer)</span>:</p>
-      <input type="password" id="api-key-input" placeholder="sk_..." autocomplete="off" spellcheck="false" style="width:100%;padding:8px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:12px;outline:none;margin-bottom:14px;box-sizing:border-box;">
+      <!-- Active backend selectors — pick which registered backend Unity uses -->
+      <p style="font-size:12px;color:var(--text);margin-top:14px;margin-bottom:6px;font-weight:500;">⚡ Active Provider (choose from configured)</p>
+      <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;display:flex;flex-direction:column;gap:10px;">
+        <label style="display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:11px;color:var(--text-dim);">
+          <span style="min-width:110px;color:var(--cyan);">🎨 Image gen</span>
+          <select id="active-image-backend" style="flex:1;padding:6px 10px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--mono);font-size:11px;outline:none;"></select>
+          <select id="active-image-model" style="flex:1;padding:6px 10px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--mono);font-size:11px;outline:none;"></select>
+        </label>
+        <label style="display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:11px;color:var(--text-dim);">
+          <span style="min-width:110px;color:var(--cyan);">👁 Vision</span>
+          <select id="active-vision-backend" style="flex:1;padding:6px 10px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--mono);font-size:11px;outline:none;"></select>
+          <select id="active-vision-model" style="flex:1;padding:6px 10px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--mono);font-size:11px;outline:none;"></select>
+        </label>
+        <div style="font-size:10px;color:var(--text-dim);line-height:1.5;">Any number of backends can be configured above. This picks which one Unity actually uses. Model dropdown lists the options available at the selected backend.</div>
+      </div>
+
+      <p class="hint" style="margin-bottom:6px;margin-top:12px;">Pollinations API key <span style="color:var(--text-dim);">(optional — anonymous tier works without, a key raises rate limits and unlocks paid models for image gen, TTS, and vision describer)</span>:</p>
+      <div style="display:flex;gap:6px;margin-bottom:14px;">
+        <input type="password" id="api-key-input" placeholder="paste your pollinations key (or any other provider key saved above)" autocomplete="off" spellcheck="false" style="flex:1;padding:8px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:12px;outline:none;box-sizing:border-box;">
+        <button id="api-key-save-btn" type="button" style="padding:8px 16px;background:var(--cyan);border:none;border-radius:6px;color:#000;font-family:var(--mono);font-size:11px;font-weight:700;cursor:pointer;letter-spacing:0.5px;">SAVE KEY</button>
+      </div>
 
       <p class="hint" style="margin-top:4px;">Mic + camera permissions are requested when you wake her up. Both are optional — Unity can chat via text only.</p>
 
