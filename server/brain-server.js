@@ -89,16 +89,31 @@ function detectResources() {
 
   if (gpu.vram > 0) {
     // GPU EXCLUSIVE — scale to VRAM
-    // SLIM buffer layout: voltages (4 bytes f32) + spikes (4 bytes u32) = 8 bytes/neuron
-    // Was 20 bytes (voltagesA + voltagesB + spikes + currents + refracTimers)
-    // 2.5× more neurons per GB of VRAM
+    // Rulkov layout: vec2<f32> state (8 bytes) + spikes u32 (4 bytes) = 12 bytes/neuron
     const usableVRAM = gpu.vram * 0.85; // use 85% of VRAM
-    const vramNeurons = Math.floor(usableVRAM * 1048576 / 8);
+    const vramNeurons = Math.floor(usableVRAM * 1048576 / 12);
     // Server RAM: tiny — only injection arrays, not full cluster state
     const usableRAM = freeRAM * 0.1;
     const ramNeurons = Math.floor(usableRAM / 0.001); // essentially unlimited
     maxNeurons = Math.min(vramNeurons, ramNeurons);
-    scaleSource = `GPU: ${gpu.name} (${gpu.vram}MB VRAM, ${Math.round(freeRAM/1024/1024/1024)}GB RAM, SLIM 8bytes/neuron)`;
+
+    // PER-CLUSTER BUFFER CAP — WebGPU's maxStorageBufferBindingSize is
+    // typically 2 GB (hard spec minimum). Some desktop GPUs raise it to
+    // ~4 GB but we can't assume that. The Rulkov state buffer for a
+    // single cluster is size × 8 bytes (vec2<f32>). If a cluster's
+    // state buffer would exceed 2 GB it binds to zero and that cluster
+    // silently never fires — exactly what was happening to cortex +
+    // cerebellum at 1.8 B-neuron scale. Cap total N so the LARGEST
+    // cluster (cerebellum, 40% of total) stays under 2 GB.
+    const PER_BUFFER_CEILING = 2 * 1024 * 1024 * 1024; // 2 GB in bytes
+    const maxPerClusterNeurons = Math.floor(PER_BUFFER_CEILING / 8);
+    const maxTotalForBinding = Math.floor(maxPerClusterNeurons / 0.4); // cerebellum = 40%
+    if (maxNeurons > maxTotalForBinding) {
+      maxNeurons = maxTotalForBinding;
+      scaleSource = `GPU: ${gpu.name} (${gpu.vram}MB VRAM, capped to ${(maxTotalForBinding/1e6).toFixed(0)}M to keep per-cluster state < 2GB binding ceiling — admin override via GPUCONFIGURE.bat can raise this)`;
+    } else {
+      scaleSource = `GPU: ${gpu.name} (${gpu.vram}MB VRAM, ${Math.round(freeRAM/1024/1024/1024)}GB RAM, Rulkov 12bytes/neuron)`;
+    }
   } else {
     // CPU only — limited by cores
     const usableRAM = freeRAM * 0.3;
@@ -765,17 +780,41 @@ class ServerBrain {
     this.time += 1 / 1000;
     this.frameCount++;
 
-    // Motor from BG
-    const bg = this.clusters.basalGanglia;
-    if (bg.spikes) {
-      const neuronsPerCh = Math.floor(CLUSTER_SIZES.basalGanglia / 6);
-      for (let ch = 0; ch < 6; ch++) {
-        let count = 0;
-        for (let nn = ch * neuronsPerCh; nn < Math.min((ch + 1) * neuronsPerCh, bg.spikes.length); nn++) {
-          if (bg.spikes[nn]) count++;
-        }
-        this.motorChannels[ch] = this.motorChannels[ch] * 0.7 + (count / neuronsPerCh) * 0.3;
-      }
+    // FEAR — was always 0 because nothing was updating it. Derived
+    // from amygdala activity, emotional volatility, and negative
+    // valence. Aggression threshold scales how fast fear builds —
+    // low threshold = easier to spook. Drug states that dampen fear
+    // (weed) lower the output further via the drug vector.
+    const rawFear = amygActivity * (p.emotionalVolatility || 0.5) * 6
+                  + Math.max(0, -this.valence) * 0.3
+                  - (this.drugState === 'weed' || this.drugState === 'weedAndAcid' ? 0.1 : 0);
+    this.fear = Math.max(0, Math.min(1, rawFear));
+
+    // MOTOR — under GPU-exclusive compute the server never sees
+    // per-neuron spike bitmasks, only spikeCount per cluster. Can't
+    // partition BG neurons into 6 channels directly. Instead derive
+    // per-channel Q-values from the combined brain-state readouts
+    // that would drive each action in a local cluster model:
+    //
+    //   respond_text: cortex predicts + BG gates + hippo recalls
+    //   generate_image: amygdala feels + mystery imagines + cortex verbs
+    //   speak: high arousal + BG activation + persona speech drive
+    //   build_ui: cortex predicts + cerebellum corrects (pure logic)
+    //   listen: inverse of total activity (quiet = attentive)
+    //   idle: persona baseline (Unity is rarely idle on cokeAndWeed)
+    //
+    // Channels get an EMA update so they don't flicker frame-to-frame.
+    const totalActivity = cortexActivity + amygActivity + bgActivity + hippoActivity + cerebActivity + mysteryActivity;
+    const channelQ = [
+      cortexActivity * 0.6 + bgActivity * 0.3 + hippoActivity * 0.1,          // respond_text
+      amygActivity * 0.4 + mysteryActivity * 0.35 + cortexActivity * 0.25,    // generate_image
+      this.arousal * 0.5 + bgActivity * 0.3 + hippoActivity * 0.2,            // speak
+      cortexActivity * 0.7 + cerebActivity * 0.3,                             // build_ui
+      Math.max(0, 0.3 - totalActivity),                                        // listen
+      Math.max(0.05, 0.2 - this.arousal * 0.15),                               // idle
+    ];
+    for (let ch = 0; ch < 6; ch++) {
+      this.motorChannels[ch] = this.motorChannels[ch] * 0.7 + channelQ[ch] * 0.3;
     }
     let maxRate = 0, maxCh = 5;
     for (let ch = 0; ch < 6; ch++) {

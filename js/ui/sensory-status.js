@@ -70,21 +70,25 @@ export class SensoryStatusUI {
     if (!el) {
       el = document.createElement('div');
       el.id = 'sensory-hud';
+      // Top-left under the cluster-toggle legend so it doesn't
+      // collide with the landing-topbar stats card on the right.
+      // Stacks vertically with cluster toggles naturally.
       el.style.cssText = `
         position: fixed;
         top: 8px;
-        right: 8px;
+        left: 200px;
         z-index: 9998;
         font-family: monospace;
         font-size: 10px;
         color: #ccc;
-        background: rgba(0,0,0,0.55);
+        background: rgba(0,0,0,0.75);
         border: 1px solid #333;
-        padding: 4px 8px;
+        padding: 4px 10px;
         border-radius: 4px;
         pointer-events: auto;
         cursor: default;
         user-select: none;
+        white-space: nowrap;
       `;
       el.title = 'Click to see backend details';
       el.addEventListener('click', () => this._showInventoryToast());

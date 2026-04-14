@@ -312,6 +312,67 @@ User directive: "make sure the brain equations and Unity information guide (some
 - Ends with a summation card listing every component that fed into the final example sentence and emphasizes none were AI calls
 - TOC updated with the new §1.5 entry; Master Equation §1 paragraph gained a pointer to the plain-English guide
 
+### T4.1 — Cortex + Cerebellum show 0 firing at 1.8B-neuron scale  [DONE this session]
+
+**Source:** T4 manual verification.
+
+**Symptom:** At a 1,842,713,690-neuron brain (large user GPU), the Cluster Activity display shows cortex `0/456M (0.0%)` and cerebellum `0/729M (0.0%)` while hippocampus/amygdala/basalGanglia/hypothalamus/mystery all fire 12-16%. Total says ~91M firing.
+
+**Diagnosis:** The two affected clusters are the two largest. At 729M cerebellum neurons, the Rulkov state buffer is `vec2<f32>` = 8 bytes/neuron = **5.83 GB** per cluster. At 456M cortex = 3.65 GB. Both blow past the typical WebGPU `maxStorageBufferBindingSize` (~2 GB on most adapters, up to 4 GB on enthusiast cards). Buffer binding either fails silently or gets truncated, so the Rulkov iteration never runs on those cluster ranges and `spikeCount` returns 0.
+
+**Fix:** Capped auto-scaled `maxNeurons` so the LARGEST cluster (cerebellum, 40% of N) fits within a 2 GB per-buffer ceiling. Compute: `maxPerClusterBytes = 2 * 1024^3`; `maxClusterNeurons = maxPerClusterBytes / 8`; `maxTotalForBinding = maxClusterNeurons / 0.4`. That gives an upper bound of ~670M total neurons, well below the user's 1.84B. Also corrected the VRAM→neurons divisor from the old SLIM 8 bytes/neuron to the Rulkov 12 bytes/neuron (vec2 state + spikes u32). `scaleSource` now reports the cap with a pointer to GPUCONFIGURE.bat admin override for users whose cards support a larger binding limit.
+
+**Files:** `server/brain-server.js` `detectResources()`
+
+### T4.3 — Fear is always zero (amygdala fear readout not producing values)  [DONE this session]
+
+**Source:** T4 manual verification.
+
+**Symptom:** Amygdala State panel shows Fear `0.000` permanently. User asks "is it even being used?"
+
+**Diagnosis:** `this.fear = 0` was initialized at class construction and broadcast in `getState()` as `fear: this.fear`, but `_updateDerivedState()` never actually computed a new value — the field was dead. Local-brain `js/brain/modules.js` amygdala attractor produces real fear values from the settled energy basin, but the server-brain `_updateDerivedState` skipped this entirely and left fear pinned at 0 forever.
+
+**Fix:** Added fear derivation at the bottom of `_updateDerivedState()`:
+```
+const rawFear = amygActivity * p.emotionalVolatility * 6
+              + Math.max(0, -this.valence) * 0.3
+              - (drugState === 'weed' || 'weedAndAcid' ? 0.1 : 0);
+this.fear = clamp(rawFear, 0, 1);
+```
+Fear climbs with amygdala firing × persona emotional volatility (core term), adds a bump proportional to negative valence (fear builds when things go bad), and subtracts a little when Unity is on a weed-based drug state (weed dampens fear response, matches persona behavior). Now produces live non-zero values whenever amygdala is active.
+
+**Files:** `server/brain-server.js` `_updateDerivedState()`
+
+### T4.4 — Motor channel confidences all zero (respond/image/speak/build/listen/idle all 0.000)  [DONE this session]
+
+**Source:** T4 manual verification.
+
+**Symptom:** BG Motor Output shows action `idle`, confidence `0.000`, and all six channel readouts `0.000`. The basal ganglia cluster IS firing (13.2% in cluster activity), but the motor readout on the wire is zeros.
+
+**Diagnosis:** `_updateDerivedState()` motor block iterated `bg.spikes` as a Uint8Array bitmask, partitioning 6 channel ranges across the cluster. But under GPU-exclusive compute mode the server NEVER writes per-neuron spikes to `bg.spikes` — it only gets the aggregate `spikeCount` back from the compute worker. `bg.spikes` stays all zeros forever, so every channel's count was 0, every motorChannels value stayed 0, and the max picker defaulted to `idle` with confidence 0.
+
+**Fix:** Replaced the bitmask-scanning motor readout with per-channel Q-values derived from the cluster-level activity readouts that would drive each action in a local cluster model:
+- `respond_text`: cortex × 0.6 + bg × 0.3 + hippo × 0.1 (predict + gate + recall)
+- `generate_image`: amygdala × 0.4 + mystery × 0.35 + cortex × 0.25 (feel + imagine + verb)
+- `speak`: arousal × 0.5 + bg × 0.3 + hippo × 0.2
+- `build_ui`: cortex × 0.7 + cerebellum × 0.3 (pure logic)
+- `listen`: `max(0, 0.3 - totalActivity)` (quiet = attentive)
+- `idle`: `max(0.05, 0.2 - arousal × 0.15)` (Unity rarely idle on cokeAndWeed)
+
+Each channel gets the same 70/30 EMA update that used to apply to the spike-count partitioning, so motor selection doesn't flicker frame-to-frame. `motorAction` picks the argmax channel, `motorConfidence` reports that channel's value. All six channels now produce meaningful non-zero numbers reflecting actual brain activity.
+
+**Files:** `server/brain-server.js` `_updateDerivedState()` motor block
+
+### T4.6 — Sensory HUD badge overlapping landing-topbar stats card  [DONE this session]
+
+**Source:** T4 manual verification.
+
+**Symptom:** The `🟢 img 1/1  🟢 vis 1/1` badge (`#sensory-hud`) sat at `top:8px right:8px` and got cut off / obscured by the top-right landing-topbar stats card (neurons / Ψ / users / settings buttons). User reported: "the img 1/1 vis 1/1 is truncated and on top of my right top panel card so i cant see it fully or use its grab and drag feature".
+
+**Fix:** Moved `#sensory-hud` from top-right (`right:8px`) to top-left under the cluster-toggle legend column (`left:200px; top:8px`) where the space is free. Tightened padding from `4px 8px` → `4px 10px`, solidified background from `rgba(0,0,0,0.55)` → `rgba(0,0,0,0.75)` so it reads cleanly against the 3D brain field, and added `white-space: nowrap` to keep the badge on one line on narrow viewports. Click handler still active for the detail toast.
+
+**Files:** `js/ui/sensory-status.js` `_createHud()`
+
 ### 12. Boot crash: visualCortex.setDescriber TypeError on RemoteBrain  [DONE commit `5116fca`]
 
 **First T4 bug found.** User hit "WAKE UNITY UP" connected to the server brain and boot crashed at "Booting brain..." with:
