@@ -8,6 +8,11 @@ js/env.js
 *.key
 *.cert
 
+# === Per-deployment server config ===
+# Written by GPUCONFIGURE.bat → gpu-configure.html admin UI.
+# Each operator picks their own resource tier; host-specific.
+server/resource-config.json
+
 # === Claude Code ===
 .claude/pollinations-user.json
 .claude/settings.local.json

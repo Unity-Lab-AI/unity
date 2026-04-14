@@ -12,10 +12,138 @@
 > Doubling the pool of volunteers does NOT double her — it makes her 8×
 > more conscious. The first few donors matter less; the curve ramps fast.
 >
-> Status: **PLAN ONLY**. Nothing here is implemented yet. This document
-> exists to capture the design so the brain-refactor-full-control branch
-> can merge cleanly to main without blocking on distributed compute
-> decisions. Actual implementation lives on a future `comp-net` branch.
+> Status: **PLAN ONLY** except for the server-admin resource cap tool
+> (see "Phase 0 — Admin Resource Configuration" below), which shipped
+> on the `brain-refactor-full-control` branch as the foundation this
+> whole plan is built on. Everything after Phase 0 lives on a future
+> `comp-net` branch.
+
+---
+
+## PHASE 0 — ADMIN RESOURCE CONFIGURATION  [DONE — brain-refactor-full-control]
+
+**Shipped.** This is the foundation the distributed compute plan below
+builds on. Before you can orchestrate multiple GPU nodes, you need each
+individual node to declare what it's willing to contribute — and you
+need a way for an admin to cap a node below its detected ceiling
+without editing source code.
+
+### What shipped
+
+- **`GPUCONFIGURE.bat`** — one-shot launcher that opens an admin UI
+  at `http://127.0.0.1:7526`, runs hardware detection, lets the admin
+  pick a resource tier, writes `server/resource-config.json`, and
+  exits. Never touches the running brain-server — it's a pure config
+  tool for the next boot.
+
+- **`server/configure.js`** — standalone Node.js one-shot config
+  server. Binds ONLY on 127.0.0.1 (never reachable from another
+  machine). No auth needed — if you can reach 127.0.0.1 you're the
+  local user. Endpoints: `GET /detect` returns detected hardware +
+  current saved config, `POST /save` validates and writes
+  `resource-config.json`, `POST /clear` deletes it (revert to pure
+  auto-detect), `POST /exit` shuts down the tool cleanly.
+
+- **`gpu-configure.html`** — the admin UI. 14 tier presets from
+  "Minimum — any machine" (1K neurons) through the full supercomputer
+  / speculative-quantum research tiers:
+
+  | Tier | Example hardware | Neuron cap |
+  |------|------------------|------------|
+  | Minimum | any laptop, integrated GPU | 1 K |
+  | Budget Laptop | Iris Xe, Apple M1/M2 | 50 K |
+  | Entry GPU | GTX 1050 / RX 560 | 200 K |
+  | Mid GPU | GTX 1060 / RTX 3050 | 750 K |
+  | Enthusiast GPU | RTX 3070 / 4070 | 1.5 M |
+  | High-End | RTX 3090 / 4080 / 4090 | 5 M |
+  | Prosumer | RTX 6000 Ada / W7900 | 15 M |
+  | Datacenter | A100 40 GB | 12.5 M |
+  | Datacenter Large | A100 80 GB / H100 80 GB | 26 M |
+  | Multi-GPU | 4× H100 SXM5 | 100 M |
+  | HGX Pod | 8× H100 DGX | 200 M |
+  | Supercluster | 8-node DGX SuperPOD | 1.6 B |
+  | Exascale | Frontier / El Capitan | 50 B |
+  | Quantum-Assist | speculative Ψ co-processor | 100 B |
+
+  Tiers that exceed the admin's detected hardware are greyed out and
+  unclickable. A manual-override section lets power users type exact
+  neuron / VRAM caps, gated behind an "I know what I'm doing"
+  checkbox.
+
+- **`server/brain-server.js` `loadResourceOverride()` + modified
+  `detectResources()`** — at boot, reads `resource-config.json` if it
+  exists. The override can ONLY lower the cap, never raise it. Every
+  value is clamped to the detected ceiling before it's applied, so a
+  corrupt config can never brick the brain — silently falls back to
+  auto-detect on any parse / range error. `SCALE` and `CLUSTER_SIZES`
+  pick up the capped neuron count automatically on next boot.
+
+- **`start.bat`** does NOT need any changes. It just runs
+  `node server/brain-server.js`, which already calls
+  `detectResources()` which now respects the override file.
+
+### Why this is Phase 0 and not Phase C (orchestration)
+
+Distributed compute requires each participating node to declare its
+contribution budget. Without a per-node cap mechanism, a volunteer's
+machine either runs at full tilt (bad — hurts their other workloads)
+or doesn't participate at all (bad — loses the donation). The
+resource-config.json file is the *per-node declaration*. Phase C
+coordinator code below will read the same file to know how much
+neuron headroom a node is offering to the shared pool.
+
+### How this changes Phases C1-C11
+
+- **C1 Sync protocol** — the `shard_offer` message from a worker to
+  the coordinator now carries `resource_config.neuronCapOverride`
+  directly. Worker doesn't advertise its raw hardware ceiling to the
+  coordinator — it advertises the admin-chosen cap. Protects
+  volunteers from accidentally over-committing.
+
+- **C2 Worker client (compute.html)** — reads `resource-config.json`
+  (or its URL equivalent when hosted) at boot so the worker
+  self-limits before ever reaching the coordinator. A machine
+  configured as "Minimum — 1K neurons" will offer 1K to the pool,
+  regardless of what its GPU could theoretically do.
+
+- **C3 Coordinator shard assignment** — sums per-node caps to
+  compute total `N = Σ (node_i.neuronCap)`. The shard sizer uses
+  each node's cap directly; no guessing, no hardware probing from
+  the coordinator side.
+
+- **C4 Dynamic re-sharding** — when a worker updates its config
+  (re-runs GPUCONFIGURE.bat), it sends a `shard_update` with the
+  new cap. Coordinator rebalances the next epoch.
+
+- **C6 Opt-in UI** — the tier picker in `gpu-configure.html` IS the
+  opt-in UI for single-machine mode. The multi-machine opt-in UI in
+  Phase C6 will reuse the same tier presets so a volunteer's mental
+  model is "pick your tier, either for yourself or for the pool."
+
+- **C7 Contribution dashboard** — rank volunteers by
+  `resource_config.neuronCapOverride × uptime_hours`, not by raw
+  hardware. A volunteer running a conservative cap on a 4090 is a
+  well-behaved donor, not a cheapskate — the dashboard reflects that.
+
+- **New tier: Quantum-Assist (speculative)** — added to the ladder
+  as a research-only tier. When a quantum co-processor (IBM Qiskit,
+  Rigetti Forest, AWS Braket) becomes reachable, Phase E could route
+  the Ψ = √(1/n) × N³ sampling to a quantum sampler instead of a
+  classical PRNG. This is pure speculation; there's no working
+  quantum-Ψ implementation today. The tier exists so the ladder
+  doesn't artificially cap at classical hardware.
+
+### Files added
+- `GPUCONFIGURE.bat` — launcher (repo root)
+- `gpu-configure.html` — admin UI (repo root — lives here so the
+  one-shot server can read it from the checkout without path hacks)
+- `server/configure.js` — 127.0.0.1-only config server
+- `server/resource-config.json` — written at Save time, gitignored
+  per-deployment (goes in `.gitignore`)
+
+### Files modified
+- `server/brain-server.js` `detectResources()` + new
+  `loadResourceOverride()` helper
 
 ---
 

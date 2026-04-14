@@ -29,11 +29,32 @@ const { performance } = require('perf_hooks');
 
 // ── Auto-Scale: Detect Hardware → Set Neuron Count ─────────────
 
+// Optional admin override — server/resource-config.json is written by
+// the GPUCONFIGURE.bat → gpu-configure.html admin UI and lets a server
+// operator cap resource usage BELOW the detected hardware ceiling.
+// Cannot raise usage above what the hardware reports — idiot-proof.
+// Schema: {tier, vramCapMB, ramCapFraction, neuronCapOverride, notes}
+// Any field missing = fall through to pure auto-detect.
+function loadResourceOverride() {
+  try {
+    const cfgPath = path.join(__dirname, 'resource-config.json');
+    if (!fs.existsSync(cfgPath)) return null;
+    const raw = fs.readFileSync(cfgPath, 'utf8');
+    const cfg = JSON.parse(raw);
+    if (typeof cfg !== 'object' || !cfg) return null;
+    return cfg;
+  } catch (err) {
+    console.warn('[Brain] resource-config.json load failed:', err.message, '— falling back to auto-detect');
+    return null;
+  }
+}
+
 function detectResources() {
   const totalRAM = os.totalmem();
   const freeRAM = os.freemem();
   const cpuCount = os.cpus().length;
   const cpuModel = os.cpus()[0]?.model || 'unknown';
+  const override = loadResourceOverride();
 
   // Detect GPU
   let gpu = { name: 'none', vram: 0 };
@@ -89,6 +110,33 @@ function detectResources() {
   // No artificial cap — hardware decides. VRAM and RAM are the only limits.
   maxNeurons = Math.max(1000, maxNeurons);
 
+  // Apply admin override from resource-config.json. Override can only
+  // LOWER the cap, never raise it above detected hardware. Validates
+  // and silently clamps out-of-range values — corrupt config never
+  // corrupts the running brain.
+  let appliedOverride = null;
+  if (override) {
+    appliedOverride = { tier: override.tier || 'custom', source: 'admin-override' };
+    if (typeof override.neuronCapOverride === 'number' && override.neuronCapOverride >= 1000) {
+      const requested = Math.floor(override.neuronCapOverride);
+      if (requested <= maxNeurons) {
+        maxNeurons = requested;
+        appliedOverride.neuronCap = requested;
+      } else {
+        appliedOverride.rejected = `requested ${requested} exceeds detected ceiling ${maxNeurons}`;
+      }
+    }
+    if (typeof override.vramCapMB === 'number' && override.vramCapMB >= 256 && gpu.vram > 0) {
+      const cap = Math.min(override.vramCapMB, gpu.vram);
+      const capNeurons = Math.floor(cap * 1048576 / 8);
+      if (capNeurons < maxNeurons) {
+        maxNeurons = capNeurons;
+        appliedOverride.vramCapMB = cap;
+      }
+    }
+    scaleSource = `[admin:${appliedOverride.tier}] ` + scaleSource;
+  }
+
   // Round to nice cluster sizes (must divide into 7 clusters)
   const clusterScale = Math.floor(maxNeurons / 1000);
 
@@ -101,6 +149,7 @@ function detectResources() {
     maxNeurons,
     clusterScale,
     scaleSource,
+    override: appliedOverride,
   };
 }
 

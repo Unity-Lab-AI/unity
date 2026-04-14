@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Unity Brain Server — Resource Configuration</title>
+<style>
+  :root {
+    --bg: #0a0a0c;
+    --surface: #141418;
+    --surface-2: #1c1c22;
+    --border: #2a2a32;
+    --text: #e8e8ee;
+    --text-dim: #8a8a94;
+    --pink: #ff4d9a;
+    --cyan: #00e5ff;
+    --purple: #a855f7;
+    --orange: #f59e0b;
+    --green: #22c55e;
+    --red: #ef4444;
+    --mono: 'JetBrains Mono', 'Courier New', monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  .page {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 32px 24px 120px;
+  }
+  header {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 20px;
+    margin-bottom: 28px;
+  }
+  h1 {
+    color: var(--pink);
+    font-size: 22px;
+    margin: 0 0 6px;
+    letter-spacing: -0.3px;
+  }
+  .sub { color: var(--text-dim); font-size: 12px; margin: 0; }
+
+  section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin-bottom: 20px;
+  }
+  section h2 {
+    color: var(--cyan);
+    font-size: 13px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin: 0 0 14px;
+  }
+  .hw-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 20px;
+    font-size: 12px;
+  }
+  .hw-grid dt { color: var(--text-dim); }
+  .hw-grid dd { margin: 0; color: var(--text); }
+
+  .tier-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .tier {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 16px;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+  }
+  .tier:hover { border-color: var(--cyan); }
+  .tier.selected {
+    border-color: var(--pink);
+    border-left-color: var(--pink);
+    background: rgba(255,77,154,0.08);
+  }
+  .tier.disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    border-left-color: var(--red);
+  }
+  .tier.disabled:hover { border-color: var(--border); }
+  .tier-name {
+    font-weight: 700;
+    color: var(--text);
+    font-size: 13px;
+  }
+  .tier-desc {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+  .tier-neurons {
+    font-family: var(--mono);
+    color: var(--cyan);
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .manual {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--orange);
+    border-radius: 6px;
+    padding: 16px 20px;
+    margin-top: 16px;
+  }
+  .manual-lock {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+    color: var(--orange);
+    margin-bottom: 12px;
+    cursor: pointer;
+  }
+  .manual-lock input { cursor: pointer; accent-color: var(--orange); }
+  .manual-fields {
+    display: none;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .manual-fields.unlocked { display: flex; }
+  .field-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+  }
+  .field-row label {
+    min-width: 140px;
+    color: var(--text-dim);
+  }
+  .field-row input[type="number"],
+  .field-row input[type="text"] {
+    flex: 1;
+    padding: 6px 10px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    outline: none;
+  }
+  .field-row input:focus { border-color: var(--cyan); }
+  .hint { font-size: 10px; color: var(--text-dim); line-height: 1.5; margin-top: 4px; }
+
+  .actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+    flex-wrap: wrap;
+  }
+  button {
+    padding: 10px 22px;
+    border: none;
+    border-radius: 6px;
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    letter-spacing: 0.5px;
+    transition: all 0.15s;
+  }
+  .btn-save { background: var(--green); color: #000; }
+  .btn-save:hover { filter: brightness(1.15); }
+  .btn-save:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-reset { background: var(--orange); color: #000; }
+  .btn-reset:hover { filter: brightness(1.15); }
+  .btn-exit { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+  .btn-exit:hover { border-color: var(--red); color: var(--red); }
+
+  #status {
+    margin-top: 16px;
+    padding: 12px 16px;
+    border-radius: 6px;
+    font-size: 12px;
+    line-height: 1.5;
+    display: none;
+  }
+  #status.ok { display: block; background: rgba(34,197,94,0.12); border: 1px solid var(--green); color: var(--green); }
+  #status.err { display: block; background: rgba(239,68,68,0.12); border: 1px solid var(--red); color: var(--red); }
+  #status.info { display: block; background: rgba(0,229,255,0.12); border: 1px solid var(--cyan); color: var(--cyan); }
+
+  .current-cfg {
+    background: var(--surface-2);
+    border: 1px dashed var(--border);
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin-top: 12px;
+    font-size: 11px;
+    color: var(--text-dim);
+    font-family: var(--mono);
+    white-space: pre-wrap;
+  }
+
+  a { color: var(--cyan); }
+</style>
+</head>
+<body>
+
+<div class="page">
+
+<header>
+  <h1>🧠 Unity Brain Server — Resource Configuration</h1>
+  <p class="sub">admin tool · binds on 127.0.0.1 only · writes server/resource-config.json</p>
+</header>
+
+<section>
+  <h2>📡 Detected Hardware</h2>
+  <dl id="hw" class="hw-grid">
+    <dt>Status</dt><dd>⏳ probing...</dd>
+  </dl>
+  <div id="current-cfg" class="current-cfg" style="display:none;"></div>
+</section>
+
+<section>
+  <h2>🎚 Resource Tier — pick a preset</h2>
+  <p style="font-size: 12px; color: var(--text-dim); margin: 0 0 14px;">
+    Tiers that exceed your detected hardware are greyed out and can't be selected. Pick the highest tier that fits. Each tier maps to a known-good neuron count. Click save when you're ready — config takes effect on the next <code>start.bat</code> / <code>node server/brain-server.js</code>.
+  </p>
+  <div id="tiers" class="tier-list"></div>
+
+  <div class="manual">
+    <label class="manual-lock">
+      <input type="checkbox" id="manual-unlock">
+      <span>🔓 I know what I'm doing — let me override manually</span>
+    </label>
+    <div id="manual-fields" class="manual-fields">
+      <div class="field-row">
+        <label for="manual-neurons">Neuron cap</label>
+        <input type="number" id="manual-neurons" min="1000" step="1000" placeholder="e.g. 5000000">
+      </div>
+      <div class="field-row">
+        <label for="manual-vram">VRAM cap (MB)</label>
+        <input type="number" id="manual-vram" min="256" step="256" placeholder="e.g. 8192">
+      </div>
+      <div class="field-row">
+        <label for="manual-notes">Notes</label>
+        <input type="text" id="manual-notes" placeholder="optional — what this config is for">
+      </div>
+      <p class="hint">Manual values are clamped server-side — you CANNOT exceed detected hardware. The server rejects invalid writes and keeps the old config. Minimum is 1000 neurons / 256 MB VRAM.</p>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="btn-save" id="btn-save">💾 SAVE CONFIG</button>
+    <button class="btn-reset" id="btn-reset">🗑 CLEAR (revert to auto-detect)</button>
+    <button class="btn-exit" id="btn-exit">✕ EXIT</button>
+  </div>
+  <div id="status"></div>
+</section>
+
+<section>
+  <h2>ℹ What happens when you save</h2>
+  <ol style="margin: 0; padding-left: 22px; font-size: 12px; color: var(--text-dim); line-height: 1.8;">
+    <li>Your config is validated — any value above the detected hardware ceiling is rejected.</li>
+    <li>Validated config is written atomically to <code>server/resource-config.json</code>.</li>
+    <li>On the next <code>start.bat</code> (or direct <code>node server/brain-server.js</code>), the brain server reads this file and caps its neuron count accordingly.</li>
+    <li>You can re-run <code>GPUCONFIGURE.bat</code> any time to change the tier or clear the override entirely (click CLEAR to revert to pure auto-detect).</li>
+    <li>If the config file is missing, corrupt, or out of range, the server silently falls back to auto-detect — you can never brick it.</li>
+  </ol>
+</section>
+
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════════
+// Tier presets — from minimum to supercomputer / quantum-assist
+//
+// Each tier has a conservative neuron count that fits comfortably
+// within the class of hardware it's named after. Tiers that exceed
+// the admin's actual detected hardware are auto-disabled.
+// ══════════════════════════════════════════════════════════════
+const TIERS = [
+  {
+    id: 'minimum',
+    name: 'Minimum — any machine',
+    desc: 'Any laptop, integrated GPU or CPU-only. Runs Unity at ~1K neurons total.',
+    neurons: 1000,
+    vramMB: 256,
+  },
+  {
+    id: 'budget-laptop',
+    name: 'Budget Laptop — integrated GPU',
+    desc: 'Intel Iris Xe, Apple M1/M2 integrated, 4-8GB shared memory.',
+    neurons: 50000,
+    vramMB: 1024,
+  },
+  {
+    id: 'entry-gpu',
+    name: 'Entry GPU — GTX 1050 / RX 560 class',
+    desc: '2-4GB VRAM, ~2048 CUDA cores.',
+    neurons: 200000,
+    vramMB: 2048,
+  },
+  {
+    id: 'mid-gpu',
+    name: 'Mid GPU — GTX 1060 / RX 580 / RTX 3050',
+    desc: '6-8GB VRAM, ~2048-4096 shader units.',
+    neurons: 750000,
+    vramMB: 6144,
+  },
+  {
+    id: 'enthusiast-gpu',
+    name: 'Enthusiast GPU — RTX 3070 / 4070',
+    desc: '8-12GB VRAM, modern Ampere/Ada architecture.',
+    neurons: 1500000,
+    vramMB: 10240,
+  },
+  {
+    id: 'high-end',
+    name: 'High-End — RTX 3090 / 4080 / 4090',
+    desc: '16-24GB VRAM, top-tier gaming cards.',
+    neurons: 5000000,
+    vramMB: 22528,
+  },
+  {
+    id: 'prosumer',
+    name: 'Prosumer — RTX 6000 Ada / Radeon Pro W7900',
+    desc: '48GB VRAM workstation cards.',
+    neurons: 15000000,
+    vramMB: 46080,
+  },
+  {
+    id: 'datacenter',
+    name: 'Datacenter — A100 40GB',
+    desc: 'NVIDIA A100 40GB PCIe or SXM4, HBM2e.',
+    neurons: 12500000,
+    vramMB: 38912,
+  },
+  {
+    id: 'datacenter-large',
+    name: 'Datacenter Large — A100 80GB / H100 80GB',
+    desc: 'Single SXM5 accelerator, HBM3.',
+    neurons: 26000000,
+    vramMB: 78848,
+  },
+  {
+    id: 'multi-gpu',
+    name: 'Multi-GPU — 4× H100 SXM5 node',
+    desc: '4-way NVLink, 320GB aggregate HBM3. Treated as one pooled resource.',
+    neurons: 100000000,
+    vramMB: 327680,
+  },
+  {
+    id: 'hgx-pod',
+    name: 'HGX Pod — 8× H100 SXM5 node',
+    desc: 'Full DGX H100 class, 640GB HBM3, NVSwitch fabric.',
+    neurons: 200000000,
+    vramMB: 655360,
+  },
+  {
+    id: 'supercluster',
+    name: 'Supercluster — 8-node DGX SuperPOD',
+    desc: '64 × H100, ~5TB aggregate HBM. Requires distributed-compute branch (COMP-todo Phase C).',
+    neurons: 1600000000,
+    vramMB: 5242880,
+  },
+  {
+    id: 'exascale',
+    name: 'Exascale — Frontier / El Capitan class',
+    desc: 'Multi-exabyte aggregate memory across thousands of nodes. Requires distributed-compute branch (COMP-todo Phase D).',
+    neurons: 50000000000,
+    vramMB: 50 * 1024 * 1024,
+  },
+  {
+    id: 'quantum-assist',
+    name: 'Quantum-Assist — speculative research tier',
+    desc: 'Uses quantum co-processor for Ψ (mystery module) sampling. Research-only, speculative, see COMP-todo Phase E.',
+    neurons: 100000000000,
+    vramMB: 100 * 1024 * 1024,
+  },
+];
+
+let HARDWARE = null;
+let selectedTier = null;
+
+async function init() {
+  try {
+    const res = await fetch('/detect');
+    const data = await res.json();
+    HARDWARE = data.hardware;
+    renderHardware(HARDWARE, data.current);
+    renderTiers(HARDWARE, data.current);
+  } catch (err) {
+    const hw = document.getElementById('hw');
+    hw.innerHTML = '<dt>Error</dt><dd style="color:var(--red);">' + err.message + '</dd>';
+  }
+}
+
+function formatBytes(b) {
+  const gb = b / 1024 / 1024 / 1024;
+  return gb.toFixed(1) + ' GB';
+}
+function formatNeurons(n) {
+  if (n >= 1e9) return (n / 1e9).toFixed(1) + ' B';
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + ' M';
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + ' K';
+  return String(n);
+}
+
+function renderHardware(hw, current) {
+  const hwEl = document.getElementById('hw');
+  hwEl.innerHTML = `
+    <dt>GPU</dt><dd>${hw.gpu.name} (${hw.gpu.vram > 0 ? hw.gpu.vram + ' MB VRAM' : 'no NVIDIA GPU detected'})</dd>
+    <dt>CPU</dt><dd>${hw.cpuModel} (${hw.cpuCount} cores)</dd>
+    <dt>Total RAM</dt><dd>${formatBytes(hw.totalRAMBytes)}</dd>
+    <dt>Free RAM</dt><dd>${formatBytes(hw.freeRAMBytes)}</dd>
+    <dt>Hardware ceiling</dt><dd style="color:var(--cyan);"><strong>${formatNeurons(hw.ceilingNeurons)}</strong> neurons (auto-detected)</dd>
+  `;
+
+  const cfgEl = document.getElementById('current-cfg');
+  if (current) {
+    cfgEl.style.display = 'block';
+    cfgEl.textContent = 'Current saved config:\n' + JSON.stringify(current, null, 2);
+  }
+}
+
+function renderTiers(hw, current) {
+  const list = document.getElementById('tiers');
+  list.innerHTML = '';
+  TIERS.forEach(tier => {
+    const row = document.createElement('div');
+    row.className = 'tier';
+    const fits = tier.neurons <= hw.ceilingNeurons;
+    if (!fits) row.classList.add('disabled');
+    if (current && current.tier === tier.id) row.classList.add('selected');
+
+    row.innerHTML = `
+      <div>
+        <div class="tier-name">${tier.name}</div>
+        <div class="tier-desc">${tier.desc}</div>
+      </div>
+      <div class="tier-neurons">${formatNeurons(tier.neurons)}<br><span style="font-size:10px;color:var(--text-dim);font-weight:400;">${(tier.vramMB/1024).toFixed(0)} GB VRAM</span></div>
+    `;
+
+    if (fits) {
+      row.addEventListener('click', () => selectTier(tier, row));
+    }
+    list.appendChild(row);
+  });
+
+  // Pre-select the highest tier that fits + matches current config
+  if (current && current.tier) {
+    const match = TIERS.find(t => t.id === current.tier);
+    if (match && match.neurons <= hw.ceilingNeurons) {
+      selectedTier = match;
+    }
+  }
+}
+
+function selectTier(tier, row) {
+  selectedTier = tier;
+  document.querySelectorAll('.tier').forEach(r => r.classList.remove('selected'));
+  row.classList.add('selected');
+  // Clear manual fields
+  document.getElementById('manual-unlock').checked = false;
+  document.getElementById('manual-fields').classList.remove('unlocked');
+}
+
+document.getElementById('manual-unlock').addEventListener('change', (e) => {
+  const fields = document.getElementById('manual-fields');
+  if (e.target.checked) {
+    fields.classList.add('unlocked');
+    // When manual is unlocked, deselect any tier so the save uses manual values
+    document.querySelectorAll('.tier').forEach(r => r.classList.remove('selected'));
+    selectedTier = null;
+  } else {
+    fields.classList.remove('unlocked');
+  }
+});
+
+document.getElementById('btn-save').addEventListener('click', async () => {
+  const statusEl = document.getElementById('status');
+  statusEl.className = '';
+  statusEl.textContent = '';
+
+  let payload = {};
+  const manualUnlocked = document.getElementById('manual-unlock').checked;
+
+  if (manualUnlocked) {
+    const n = parseInt(document.getElementById('manual-neurons').value, 10);
+    const v = parseInt(document.getElementById('manual-vram').value, 10);
+    const notes = document.getElementById('manual-notes').value || '';
+    if (!n || n < 1000) {
+      statusEl.className = 'err';
+      statusEl.textContent = 'Manual neuron count must be at least 1000.';
+      return;
+    }
+    payload = { tier: 'custom', neuronCapOverride: n, notes };
+    if (v && v >= 256) payload.vramCapMB = v;
+  } else {
+    if (!selectedTier) {
+      statusEl.className = 'err';
+      statusEl.textContent = 'Pick a tier first (or unlock manual override).';
+      return;
+    }
+    payload = {
+      tier: selectedTier.id,
+      neuronCapOverride: selectedTier.neurons,
+      vramCapMB: selectedTier.vramMB,
+      notes: selectedTier.name,
+    };
+  }
+
+  try {
+    const res = await fetch('/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      statusEl.className = 'ok';
+      statusEl.innerHTML = `✓ Config saved to <code>server/resource-config.json</code>.<br>Takes effect on the next <code>start.bat</code> / <code>node server/brain-server.js</code> run.`;
+      // Refresh the current-config panel
+      setTimeout(init, 200);
+    } else {
+      statusEl.className = 'err';
+      statusEl.innerHTML = '✗ Save rejected:<br>' + (data.errors || ['unknown error']).join('<br>');
+    }
+  } catch (err) {
+    statusEl.className = 'err';
+    statusEl.textContent = '✗ Network error: ' + err.message;
+  }
+});
+
+document.getElementById('btn-reset').addEventListener('click', async () => {
+  if (!confirm('Clear the saved config and revert to pure auto-detect?')) return;
+  try {
+    const res = await fetch('/clear', { method: 'POST' });
+    const data = await res.json();
+    const statusEl = document.getElementById('status');
+    if (data.ok) {
+      statusEl.className = 'ok';
+      statusEl.textContent = '✓ Config cleared. Server reverts to auto-detect on next boot.';
+      selectedTier = null;
+      setTimeout(init, 200);
+    } else {
+      statusEl.className = 'err';
+      statusEl.textContent = '✗ Clear failed: ' + (data.errors || []).join(', ');
+    }
+  } catch (err) {
+    const statusEl = document.getElementById('status');
+    statusEl.className = 'err';
+    statusEl.textContent = '✗ ' + err.message;
+  }
+});
+
+document.getElementById('btn-exit').addEventListener('click', async () => {
+  if (!confirm('Exit the configuration tool? Unsaved changes will be lost.')) return;
+  try {
+    await fetch('/exit', { method: 'POST' });
+  } catch {}
+  document.body.innerHTML = '<div style="text-align:center;padding:80px 20px;font-family:var(--mono);color:var(--text-dim);">Configuration tool exited. You can close this tab.</div>';
+});
+
+init();
+</script>
+</body>
+</html>
