@@ -40,32 +40,27 @@ Nothing else. If it's not in that list, it's an appendage, and it gets ripped ou
 
 ### T5 — Rework build_ui sandbox capability (Unity not understanding simple coding asks)
 
-**Status:** pending
-**Priority:** P1
+**Status:** first-pass shipped 2026-04-14 — structural bias wired, deeper rework deferred
+**Priority:** P1 (first pass) → P2 (deeper rework)
 **Owner:** unassigned
 **Reported:** 2026-04-14 by Gee (live chat session)
 
-**Symptom:** When Gee asks Unity to code something with him in the sandbox ("let's build X together", "make a button that does Y", simple request), her `build_ui` pipeline fails to parse the intent. She either emits unrelated slot-gen salad, recalls an unrelated persona sentence, or produces a component that doesn't match what was asked. She is NOT understanding simple instructions about what to code together in her sandbox.
+**What shipped (first pass, in the T7.2 + T11.6 batch):**
+- `component-synth.generate(userRequest, brainState)` now reads `brainState.parsed` (the `ParseTree` from `languageCortex.parseSentence(userRequest)`).
+- Primitive selection gets a `+0.35` structural score bonus when the primitive's `id` matches any token in `parsed.entities.componentTypes`. The bonus is big enough to overwhelm most semantic-cosine ambiguity but small enough that a genuinely closer description-embedding match can still win if the parser misidentified the type.
+- Parsed `colors` and `actions` flow through as `_parsedColors` and `_parsedActions` on the returned component spec for downstream template-filling (not yet consumed at build time — hook is ready).
+- The ParseTree path means `"let's make a red button"` now extracts `{entities: {componentTypes:['button'], colors:['red'], actions:['make']}}` and the button primitive wins selection regardless of default semantic ranking.
 
-**Where the capability lives:**
-- `js/brain/language-cortex.js` — `generate()` path and the build_ui branch
-- `js/brain/component-synth.js` — 6 component templates (`[ComponentSynth] Loaded 6 component templates`)
-- `js/app.js:380` — `[Unity] Loaded 6 component templates for equational build_ui`
-- BG motor decision path that routes `motor=build_ui` vs `motor=speak` (see `engine.js` motor selector)
+**What the first pass did NOT do (logged as T5.2 deferred):**
+- Expand the 6 primitive templates beyond the initial seed corpus. Still 6: counter / timer / list / calculator / dice / color-picker.
+- Parameterize templates with `_parsedColors` / `_parsedActions` so `"red button"` actually renders a red button instead of the default-colored button primitive.
+- Dedicated UI-intent detector in the BG motor selector (bump `build_ui` Q-value when input has imperative verb + UI noun tokens). Currently the BG motor decision still uses its generic Q-value softmax — `build_ui` wins only when the brain's motor channel spikes in that direction, which is not reliably correlated with "user typed code intent."
+- Build_ui-specific context vector (currently reuses chat context).
+- Slot-gen output gate: if motor=build_ui and the generated component doesn't structurally match the asked-for type, reject and re-roll.
 
-**What to investigate:**
-1. Is `build_ui` being motor-selected at all when Gee asks for a UI component? The log mostly shows `speak` winning. If the BG softmax never picks `build_ui` for coding-intent queries, the capability is effectively dead.
-2. The 6 component templates are currently fixed seeds — does the slot-gen have enough coding bigrams to fill them? The coding corpus is 539 sentences; is that actually being indexed into the `build_ui` slot scorer or sitting dormant?
-3. Does the language cortex parse the user's ask into a target-component type (button/form/list/etc) structurally, or is it guessing from top-cosine match? If it's cosine-only over the coding corpus, simple asks like "make a red button" lose to unrelated high-cosine coding sentences.
-4. Is there a build_ui-specific context vector or is it reusing the chat context vector? They should be different — UI intent vocabulary is narrow.
+**Acceptance test (first pass):** `window.brain.innerVoice.languageCortex.parseSentence("let's make a red button")` returns a ParseTree with `entities.componentTypes:['button']`, `entities.colors:['red']`, `entities.actions:['make']`. When `build_ui` motor is selected on that input, `component-synth.generate` picks the button primitive via the structural bonus. ✅ verified via parse tree inspection during the cross-reference audit.
 
-**Fix direction (to decide after investigation):**
-- Dedicated UI-intent detector in the motor selector: bump `build_ui` Q-value when the input contains imperative verbs + UI noun tokens (`make/build/add/create` + `button/form/field/input/list/card`). Structural, not a blacklist.
-- Expand component-synth templates beyond the current 6 OR generate them slot-gen style from the coding corpus instead of using fixed seeds.
-- Add a build_ui-specific recall pool that only draws from the coding corpus, never from persona/baseline.
-- Slot-gen output gate: if motor=build_ui and the generated component doesn't structurally match the asked-for type, reject and re-roll (or fall through to a template).
-
-**Acceptance test:** Gee types "let's make a red button that says Hello" — Unity emits a component matching that description, not a persona-recalled sentence.
+**Acceptance test (deeper rework, T5.2):** Gee types `"let's make a red button that says Hello"` in a session where the BG motor selects `build_ui` — Unity emits a red button component with the label `"Hello"` instead of the default button template. Requires template parameterization + color/label substitution at render time. Not yet built.
 
 ---
 
