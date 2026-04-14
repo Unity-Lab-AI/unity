@@ -27,6 +27,70 @@ Nothing else. If it's not in that list, it's an appendage, and it gets ripped ou
 
 ## OPEN TASKS
 
+### T14 — Developmental Language Layers (ACTIVE PRIORITY 2026-04-14)
+
+**Status:** ACCEPTED 2026-04-14 by Gee — COMP-todo Part 2 (distributed compute) is ON HOLD; T14 is THE active priority. Full implementation plan with exact specs lives in `docs/COMP-todo.md` Part 0.5.
+**Priority:** P0 — supersedes everything except critical bug fixes
+**Owner:** Unity
+**Reported:** 2026-04-14 by Gee — "we are making a biological brain simulation so just like how a human learns letters then sounds then syllables then words then sentences structures of all the kinds and them paragraphs"
+
+**Thesis:** Unity's current language stack is non-biological. She has GloVe pre-trained 50d semantic embeddings on top, algorithmic POS classifiers (`wordType`/`_fineType`) in the middle, and 5-dim sin/cos hash patterns per letter at the bottom. Nothing below the word level was ever LEARNED by Unity. She has no phoneme knowledge, no syllable structure, no spelling-to-sound mapping, no articulatory features. Letters exist only as suffix-detection helpers. She skipped Stages 1-7 of biological language acquisition and went straight to Stage 8 (text I/O over pre-trained embeddings).
+
+T14 rebuilds the language stack from primitives upward, the way a real brain develops. Letters → phoneme features → syllables → words → sentence patterns → discourse. Each layer is teachable and grounded.
+
+**Sub-milestones (full specs in `docs/COMP-todo.md` Part 0.5):**
+
+- **T14.0** — Foundation lift: bump `EMBED_DIM` 50 → 300, re-enable GloVe loader with top-20k word cap, bump `CLUSTER_SIZES.cortex` 300 → 6000, carve cortex into auditory/visual/free/semantic/phonological sub-regions. Absorbed P1.3 from the old plan. Hard prereq for everything T14.1+. Files touched: `js/brain/embeddings.js`, `js/brain/engine.js`, `server/brain-server.js`, `js/brain/remote-brain.js`, `js/brain/cluster.js`, `js/brain/language-cortex.js`. ~300 lines.
+
+- **T14.1** — Phoneme features: replace `_letterPatterns` 5-dim hash with a real 20-dim phonetic feature vector per letter. Hardcoded English phonology (vowel/consonant, place, manner, voicing, vowel height/back/round/tense, sibilant). Closed-class — no learning at this layer (this is what evolution + early development pre-wire). New file `js/brain/phonemes.js` with the 26-letter feature table. ~250 lines.
+
+- **T14.2** — Syllable detector: maximum-onset-principle algorithm over letter sequences. CV/CVC/CCV/CCCVC patterns. Stress assignment (single-syllable PRIMARY, two-syllable PRIMARY-SECONDARY, three+ antepenult-PRIMARY default). New file `js/brain/syllables.js`. ~200 lines.
+
+- **T14.3** — Phonological dictionary: every Dictionary entry gains `letters`, `syllables`, `syllableShapes`, `syllableCount`, `stressPattern`, `phonemeFeatures`, `phonemeMean`, `phonemeOnset`, `phonemeCoda` alongside its existing semantic embedding. `learnWord()` extended to compute these via T14.1+T14.2 helpers on first observation. Persistence handled via graceful upgrade in `deserialize`. ~150 lines extending `js/brain/dictionary.js`.
+
+- **T14.4** — Phonological cortex sub-region: cluster gains a phonological language sub-region (neurons 4500-5999 in the 6000-neuron server cortex) alongside the existing semantic region (3000-4499). Two cross-region projections (`semPhonProjection`, `phonSemProjection`) connect them, propagated each step and Hebbian-updated during curriculum learning. New helpers `mapPhonemesToCortex` and `cortexToPhonemes` in `js/brain/embeddings.js`. ~280 lines extending `cluster.js` + `embeddings.js`.
+
+- **T14.5** — ⭐ **CURRICULUM LEARNING — THE CORE DEVELOPMENTAL WIN.** Replace single-shot corpus loading with staged exposure that mirrors how children learn:
+  - **Stage A** — alphabet × 50 reps each (~13s wall clock, builds intra-cluster phoneme attractor basins)
+  - **Stage B** — 50 hand-picked seed words × 20 reps each (~10s, binds phoneme→semantic via cross-region Hebbian)
+  - **Stage C** — 200 simple two/three-word phrases (~4s, builds temporal bigram structure)
+  - **Stage D** — 500 simple SVO sentences (~12s, grammar emerges, type-transition table learned from observed bigrams)
+  - **Stage E** — persona corpus Hebbian (~8s, Unity voice layered on top)
+  - **Stage F** — baseline + coding (dictionary only, no Hebbian, ~5s vocabulary enrichment)
+  - **Total ~52s first boot. Subsequent boots load cluster weights from persistence and skip — instant.** New file `js/brain/curriculum.js` (~400 lines) + new corpus seed files `docs/curriculum/stage-c-phrases.txt` (200 phrases hand-curated) and `docs/curriculum/stage-d-sentences.txt` (500 sentences hand-curated).
+
+- **T14.6** — Phonological-aware emission: `generate()` score function gains a `phonFlow(prevWord, candWord)` term that rewards smooth phoneme transitions between adjacent emitted words via cosine of `prev.phonemeCoda` vs `cand.phonemeOnset`. Allows alliteration, prosody, smooth co-articulation. ~80 lines extending `language-cortex.js`.
+
+- **T14.7** — LEARNED type transitions (supersedes P1.4 and replaces T13.7.8 hardcoded table): every `learnSentence` call updates a `_typeTransitionLearned` Map<prevType, Map<currType, count>>. `generate()` reads with Laplace add-1 smoothing. The hardcoded T13.7.8 table becomes seed initialization (loaded as pseudo-counts at module startup, then refined by experience). ~100 lines extending `language-cortex.js`.
+
+- **T14.8** — Sentence-form schemas: per-intent type distributions for slots 0-3 learned from Stage D curriculum. `engine.processAndRespond` parses user input intent, maps to response intent, passes via `opts.responseIntent`; `generate()` reads the schema for that intent and biases slot 0-2 type selection. Question responses look different from declarative responses look different from imperative responses, structurally. ~150 lines extending `language-cortex.js`.
+
+- **T14.9** — Discourse modeling: `_discourseState` ring buffer of last 6 turns + topic vector (exponentially weighted mean of recent content embeddings). `generate()` blends the discourse topic into the cortex target for slots 0-2 so emission continues established conversation thread. Includes pronoun anaphora resolution and cohesion-marker biasing. ~200 lines extending `language-cortex.js`.
+
+**Order of operations (3 passes):**
+1. **Pass 1 — Foundation (~1 week):** T14.0 + T14.1 + T14.2 + T14.3 ship as one push. Sets up bigger embeddings, phoneme features, syllable detection, phonological dictionary entries.
+2. **Pass 2 — Curriculum (~1.5 weeks):** T14.4 + T14.5 ship as one push. The cross-region projection + curriculum learning are coupled — T14.5 trains the projections from T14.4. THIS IS THE PASS THAT MAKES UNITY DEVELOPMENTAL.
+3. **Pass 3 — Emission/Discourse (~1 week):** T14.6 + T14.7 + T14.8 + T14.9 ship sub-milestone by sub-milestone. Each is independently testable.
+
+**Total T14 scope:** ~1810 lines added across ~9 files + 2 new corpus seed files (~700 lines of hand-curated text). Estimated 3-4 weeks of focused work.
+
+**Acceptance criteria (the test that proves T14 worked):**
+- Fresh boot runs Stages A-F in < 60 seconds and produces console output showing each stage's progress.
+- After curriculum, the LEARNED type transition table covers ≥80% of canonical English transitions with weights that correlate r > 0.7 with the hardcoded T13.7.8 prior.
+- Generate `"hi unity"` 20 times — at least 15 responses pass BOTH: (a) first word is in OPENER_TYPES, (b) at least one persona-vocabulary word in slots 1-3.
+- Conversation continuity: 5 sequential turns about cats — Unity's responses each reference cat-adjacent content (cosine to "cat" embedding > 0.3 in at least one emitted word per turn).
+- Pronoun anaphora: "I like cats. Are they cute?" → response references cat-related content.
+- All output is grammatically well-formed English (every consecutive word pair has a learned type transition with weight > 0.05).
+
+**Dependencies:**
+- Builds on T13.1-T13.7.8 (all shipped).
+- Replaces P1.3 (absorbed into T14.0), P1.4 (superseded by T14.7), P1.7 (folded into T14 doc updates).
+- Standalone parallel items P1.1, P1.2, P1.5 can ship in parallel without dependency.
+
+**On hold during T14:** COMP-todo Part 2 (distributed compute network C0-C11) is parked indefinitely. Do not start C work without explicit unhold from Gee.
+
+---
+
 ### T13 — Unified Brain-Driven Language Cortex (full rewrite)
 
 **Status:** ACCEPTED 2026-04-14 by Gee — commit to T13 (brain-driven), full rewrite (Option 1, no T11 fallback layer), persona Hebbian training ships first
