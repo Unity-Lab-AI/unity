@@ -7,6 +7,23 @@
 // No decisions here. No routing. No classification.
 // ═══════════════════════════════════════════════════════════════
 
+// LOUD VERSION MARKER — if your browser console doesn't show this,
+// you're on a cached/stale bundle and need to hard-reload
+// (Ctrl+Shift+R / Cmd+Shift+R). This log fires at module-load time,
+// before anything else runs, so its absence in the console means
+// the NEW app.js never reached the browser.
+console.log('%c[Unity] app.js v20260414-T4.12 module loaded', 'color:#ff4d9a;font-weight:bold');
+// Catch uncaught errors (from RAF callbacks, async handlers, etc.)
+// so they can't silently kill the app.
+if (typeof window !== 'undefined') {
+  window.addEventListener('error', (e) => {
+    console.error('[Unity] window.onerror:', e.message, e.filename + ':' + e.lineno, e.error?.stack || '');
+  });
+  window.addEventListener('unhandledrejection', (e) => {
+    console.error('[Unity] unhandled promise rejection:', e.reason?.message || e.reason, e.reason?.stack || '');
+  });
+}
+
 import { UnityBrain } from './brain/engine.js';
 // R4 — BrocasArea import removed. Unity speaks equationally via
 // brain.processAndRespond → innerVoice.languageCortex.generate. No
