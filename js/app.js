@@ -2639,8 +2639,14 @@ function updateBrainIndicator(state) {
   // language cortex so there is no "model" to display. Just show BRAIN.
   const modelEl = $('hud-model'); if (modelEl) modelEl.textContent = 'BRAIN';
 
-  // Shared state
-  const users = s.connectedUsers ?? l.connectedUsers ?? 0;
+  // Shared state. connectedUsers only exists when there's a brain
+  // server broadcasting shared-mood state; on the deployed static
+  // GitHub Pages build there's no server, so this field is always
+  // undefined. Defaulting to 0 was misleading — if you're reading
+  // the HUD you are by definition at least one user talking to her.
+  // Default to 1 when no server value is available; server-connected
+  // sessions still use the server count.
+  const users = s.connectedUsers ?? l.connectedUsers ?? 1;
   const usersEl = $('hud-users'); if (usersEl) usersEl.textContent = users;
   const gateVal = s.sharedMood?.gate ?? l.sharedMood?.gate ?? (0.7 + arousal * 0.6);
   const gateEl = $('hud-gate'); if (gateEl) gateEl.textContent = gateVal.toFixed(2) + 'x';
