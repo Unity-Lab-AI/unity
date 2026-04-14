@@ -2082,10 +2082,23 @@ Vision: ${state.visionDescription || 'none'}`;
         // preview reports cortex readout drift pre vs. post injection
         // instead of the old bag-of-words shift.
         let contextShift = '(cortex not available)';
-        if (brain.clusters?.cortex && sens && typeof sens.analyzeInput === 'function') {
+        // T14.22.5 — `sens.analyzeInput` was a deleted T14.12 language-
+        // cortex method that used to live on the sensory processor's
+        // delegate path. Removed entirely here. The /think preview now
+        // measures cortex readout drift from the sensory input flow
+        // itself (cortex.readInput is already called upstream), not
+        // from a dedicated analyzeInput side-effect that no longer
+        // exists. No TypeError at runtime because the `typeof` guard
+        // always returned false, but it was a dead branch that every
+        // /think call hit.
+        if (brain.clusters?.cortex) {
           const sharedEmb = brain._sharedEmbeddings;
           const before = sharedEmb ? [...brain.clusters.cortex.getSemanticReadout(sharedEmb)] : null;
-          sens.analyzeInput(userText);
+          // Drive the cortex state through readInput if available so
+          // the "after" measurement reflects the input flow.
+          if (typeof brain.clusters.cortex.readInput === 'function') {
+            try { brain.clusters.cortex.readInput(userText); } catch { /* non-fatal */ }
+          }
           const after = sharedEmb ? [...brain.clusters.cortex.getSemanticReadout(sharedEmb)] : null;
           if (before && after && before.length === after.length) {
             let dot = 0, nb = 0, na = 0;

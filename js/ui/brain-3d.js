@@ -679,8 +679,36 @@ export class Brain3D {
         // Use sqrt of cluster size for visual proportions — compresses the range
         const sqrtSizes = CLUSTERS.map(cl => Math.sqrt((serverClusters[cl.key]?.size || 0)));
         const sqrtTotal = sqrtSizes.reduce((s, v) => s + v, 0) || 1;
-        // Minimum 6% of total render budget per cluster (guarantees visibility)
-        const minFloor = Math.max(200, Math.round(TOTAL * 0.06));
+        // T14.22.5 — NaN short-circuit. If sqrtTotal ≤ 0 (every cluster
+        // has zero size in state.clusters, which happens during the
+        // first tick before the tick loop populates cluster sizes),
+        // the proportional math below divides by near-zero and every
+        // cl.n becomes NaN. NaN propagates through the subsequent
+        // Math.max clamp silently (NaN > anything is false, so
+        // Math.max(minFloor, NaN) returns NaN), breaking the entire
+        // 3D render. Bail to an even split so the scene is still
+        // visible until real cluster sizes arrive.
+        if (!Number.isFinite(sqrtTotal) || sqrtTotal <= 0) {
+          const evenShare = Math.floor(TOTAL / CLUSTERS.length);
+          for (let i = 0; i < CLUSTERS.length; i++) CLUSTERS[i].n = evenShare;
+          CLUSTERS[0].n += TOTAL - evenShare * CLUSTERS.length;
+          console.log(`[Brain3D] Scaled (NaN fallback): ${CLUSTERS.map(c => `${c.key}=${c.n}`).join(', ')}`);
+          this._genPositions();
+          if (this._gl) this._uploadStatic();
+          return;
+        }
+        // T14.22.4 — minFloor scales with TOTAL so the sum of per-cluster
+        // minimums never exceeds the render budget. Old code hardcoded
+        // minFloor=200 which overshoots at low TOTAL (browser fallback
+        // path scales TOTAL to ~1000 for a 6.7K local brain, 7 × 200 =
+        // 1400 > 1000 → negative adjust drove cerebellum to -234 points
+        // → no cerebellum rendered → 3D brain looked broken).
+        //
+        // New formula: cap each cluster's floor at TOTAL/14 so the
+        // 7-cluster minimum sum stays at TOTAL/2, leaving half the budget
+        // for proportional scaling. 50-point absolute minimum so very-
+        // small renders still have a visible speck per cluster.
+        const minFloor = Math.max(50, Math.floor(TOTAL / 14));
         for (let i = 0; i < CLUSTERS.length; i++) {
           const cl = CLUSTERS[i];
           const serverCluster = serverClusters[cl.key];
@@ -689,17 +717,45 @@ export class Brain3D {
             cl.n = Math.max(minFloor, proportional);
           }
         }
-        // Adjust to exactly TOTAL — trim biggest cluster to match
+        // Adjust to exactly TOTAL — trim biggest cluster to match.
+        // T14.22.4 — clamp the adjustment so no cluster drops below
+        // minFloor. If the overshoot can't be absorbed by the biggest
+        // cluster alone, distribute the trim across all clusters
+        // proportionally.
         let renderSum = CLUSTERS.reduce((s, c) => s + c.n, 0);
         if (renderSum !== TOTAL) {
-          // Find biggest cluster and adjust
+          const delta = TOTAL - renderSum;
+          // Find biggest cluster
           let maxIdx = 0;
           for (let i = 1; i < CLUSTERS.length; i++) {
             if (CLUSTERS[i].n > CLUSTERS[maxIdx].n) maxIdx = i;
           }
-          CLUSTERS[maxIdx].n += (TOTAL - renderSum);
+          // If adjusting the biggest cluster alone wouldn't drive it
+          // below minFloor, do the single-cluster adjust. Otherwise
+          // scale all clusters proportionally to fit TOTAL.
+          if (CLUSTERS[maxIdx].n + delta >= minFloor) {
+            CLUSTERS[maxIdx].n += delta;
+          } else {
+            // Proportional re-normalization. Compute the ratio, then
+            // re-clamp each cluster to minFloor. Final pass absorbs
+            // any remaining rounding error into the biggest cluster.
+            const ratio = TOTAL / renderSum;
+            for (let i = 0; i < CLUSTERS.length; i++) {
+              CLUSTERS[i].n = Math.max(minFloor, Math.round(CLUSTERS[i].n * ratio));
+            }
+            // Second-pass rounding correction
+            renderSum = CLUSTERS.reduce((s, c) => s + c.n, 0);
+            const delta2 = TOTAL - renderSum;
+            let maxIdx2 = 0;
+            for (let i = 1; i < CLUSTERS.length; i++) {
+              if (CLUSTERS[i].n > CLUSTERS[maxIdx2].n) maxIdx2 = i;
+            }
+            if (CLUSTERS[maxIdx2].n + delta2 >= minFloor) {
+              CLUSTERS[maxIdx2].n += delta2;
+            }
+          }
         }
-        console.log(`[Brain3D] Scaled: ${CLUSTERS.map(c => `${c.key}=${c.n}`).join(', ')} = ${TOTAL}`);
+        console.log(`[Brain3D] Scaled: ${CLUSTERS.map(c => `${c.key}=${c.n}`).join(', ')} = ${CLUSTERS.reduce((s, c) => s + c.n, 0)} (target ${TOTAL}, minFloor ${minFloor})`);
       } else {
         // No cluster data — scale from base proportions
         const clusterScale = TOTAL / 1000;

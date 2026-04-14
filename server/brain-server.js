@@ -919,14 +919,35 @@ class ServerBrain {
       reward: this.reward,               // for future plasticity
     }));
 
+    // T14.22.5 — GPU timeout raised 800ms → 10000ms.
+    //
+    // At Gee's 677M-neuron scale, a single GPU fullStep takes ~40ms
+    // for small clusters and can exceed 300ms for cerebellum (268M
+    // neurons × compute.html's serialized Promise queue from T14.22.3
+    // = 7 clusters × ~50ms each = ~350ms per substep average). With
+    // multiple clusters queued behind one another, individual
+    // compute_results can land 500-2000ms after the request was sent.
+    //
+    // The old 800ms cap was silently killing every compute_result that
+    // arrived late, resolving the pending promise to null, causing the
+    // tick loop to record spikeCount=0 for that cluster, and the UI
+    // cards + 3D brain visualization to stay at zero even though the
+    // GPU was actually computing real spike counts. This is one of
+    // the two remaining reasons the UI looked dead at biological scale.
+    //
+    // Raised to 10 seconds — plenty of headroom even at the largest
+    // single-GPU tier. If a compute_result takes more than 10 seconds,
+    // something is genuinely broken (GPU hang, dropped WebSocket) and
+    // the tick loop should skip that cluster and log.
     return new Promise((resolve) => {
       this._gpuPending[clusterName] = resolve;
       setTimeout(() => {
         if (this._gpuPending[clusterName] === resolve) {
           delete this._gpuPending[clusterName];
+          console.warn(`[Brain] GPU compute_result for ${clusterName} timed out after 10s — GPU may be hung`);
           resolve(null);
         }
-      }, 800);
+      }, 10000);
     });
   }
 

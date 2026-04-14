@@ -330,18 +330,25 @@ export class RemoteBrain extends EventEmitter {
       userId: this._stableUserId || undefined,
     }));
 
-    // Wait for response from server
+    // T14.22.5 — attach handler BEFORE awaiting the Promise resolve
+    // so a fast server response that races the ws.send can't fire
+    // its 'response' event before the listener is registered.
     return new Promise((resolve) => {
-      const timeout = setTimeout(() => {
-        resolve({ text: 'Brain is thinking...', action: 'respond_text' });
-      }, 30000);
-
+      let resolved = false;
       const handler = ({ text, action }) => {
+        if (resolved) return;
+        resolved = true;
         clearTimeout(timeout);
         this.off('response', handler);
         resolve({ text, action });
       };
       this.on('response', handler);
+      const timeout = setTimeout(() => {
+        if (resolved) return;
+        resolved = true;
+        this.off('response', handler);
+        resolve({ text: 'Brain is thinking...', action: 'respond_text' });
+      }, 30000);
     });
   }
 
@@ -435,11 +442,21 @@ export async function detectRemoteBrain(url = 'ws://localhost:7525') {
   }
   return new Promise((resolve) => {
     try {
+      // T14.22.4 — timeout raised 3s → 10s. Server-side boot can take
+      // longer than 3 seconds at biological scale because the brain
+      // constructor allocates Float64Array spike buffers proportional
+      // to TOTAL_NEURONS (at Gee's 677M scale, 7 spike arrays totalling
+      // ~678 MB of zero-fill). Those allocations plus the module-level
+      // import chain (dynamic imports for dictionary/language-cortex/
+      // embeddings/cluster/curriculum) can push past 3 seconds even
+      // on fast hardware. Bumping to 10s so the landing page actually
+      // connects to the server instead of falling back to the tiny
+      // 6700-neuron local brain.
       const ws = new WebSocket(url);
       const timer = setTimeout(() => {
         ws.close();
         resolve(null);
-      }, 3000);
+      }, 10000);
 
       ws.onopen = () => {
         clearTimeout(timer);

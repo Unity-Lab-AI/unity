@@ -65,6 +65,15 @@ const clusterState = {}; // persists across reconnects
 // queue regardless) but the JS-side mapAsync / unmap lifecycle
 // stays single-threaded and safe.
 let computeQueue = Promise.resolve();
+let computeQueueDepth = 0;
+// T14.22.5 — queue depth cap so the Promise chain doesn't grow
+// unbounded across long sessions. Each chained .then() adds a link
+// to the V8 microtask graph. Under steady state the tail settles
+// each tick, but pathological load spikes or a stuck fullStep could
+// let the chain grow without bound. Resetting to Promise.resolve()
+// when depth hits the cap drops the tail so new requests attach to
+// a fresh chain. In-flight work completes normally.
+const COMPUTE_QUEUE_MAX = 200;
 
 function connectToServer() {
   // R14 — brain-server moved from 8080 to 7525
@@ -111,8 +120,17 @@ function connectToServer() {
     if (msg.type === 'compute_request' && gpuReady) {
       // T14.22.3 — chain onto the serialization queue so concurrent
       // compute_request messages don't overlap inside fullStep.
+      // T14.22.5 — reset the chain at COMPUTE_QUEUE_MAX so the
+      // Promise graph doesn't grow unbounded over long sessions.
+      if (computeQueueDepth >= COMPUTE_QUEUE_MAX) {
+        computeQueue = Promise.resolve();
+        computeQueueDepth = 0;
+      }
+      computeQueueDepth++;
       computeQueue = computeQueue.then(() => handleComputeRequest(msg)).catch(err => {
         console.warn('[GPU Compute] queued request failed:', err && err.message ? err.message : err);
+      }).finally(() => {
+        computeQueueDepth--;
       });
       return;
     }
