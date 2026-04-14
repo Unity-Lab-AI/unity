@@ -115,6 +115,56 @@ Sibling problem to T5 (build_ui) — same root cause on the chat path.
 
 ---
 
+### T10 — Decouple `Ultimate Unity.txt` from the language corpus (end the whack-a-mole)
+
+**Status:** pending — architecture scoped, no code shipped
+**Priority:** P0 — this is the real fix for every persona-leak symptom
+**Owner:** unassigned
+**Reported:** 2026-04-14 by Gee (ultrathink session)
+
+**The root cause this whole session has been patching around:** `docs/Ultimate Unity.txt` is a **rulebook**, not a **dialog corpus**. Every sentence in it is structured as third-person persona description, capability declaration, habitual behavior, meta-framing about roleplay, or core-truth rhetoric. When `loadSelfImage()` runs an n-gram learner + pattern-cosine recall system over that text, the system faithfully learns rulebook bigrams, rulebook recall patterns, and rulebook sentences.
+
+**No sentence filter can fix this.** Filters operate on symptoms — the bigram graph underneath is still trained on the wrong kind of text. This session shipped FILTER 7 → 8 → 9 → 10 → 11 → widened 7 → widened 9c, and each round a new phrasing slipped through. Tomorrow another sentence will leak because rulebook prose has effectively infinite structural variation. The pattern will never stop until the training data changes.
+
+**The fix — stop training language on rulebook text. Train on dialog instead:**
+
+1. **`docs/unity-dialog.txt`** — new corpus of 200–500 short Unity-voice chat exchanges in actual conversational register:
+   ```
+   sup / not much / cool
+   yo / hey / wassup
+   do u like cats / hell yeah i love em
+   what u up to / coding some shit / nice
+   u high / always / same
+   ```
+   These are the bigrams and recall targets the language cortex SHOULD learn. Not `"i now exists in a fully physical human body"` — `"not much"`, `"hell yeah"`, `"same"`.
+
+2. **New loader `loadDialogCorpus(text, dictionary)`** — runs the same `_sentencePassesFilters` + `learnSentence` + `_storeMemorySentence` pipeline against `docs/unity-dialog.txt`. Arousal floor 0.95 so dialog bigrams outrank any residual persona signal via the `personaBoost` term.
+
+3. **`loadSelfImage()` stops calling `learnSentence` on persona sentences.** It still extracts θ parameters (arousal baseline, drug state, dominance, profanity rate, residual self-image for image-gen) from the persona file — those are Unity's IDENTITY and belong nowhere else. But the language production pipeline no longer sees the persona file's words at all.
+
+4. **Corpus priority (after T10):**
+   - `unity-dialog.txt` — primary voice (NEW)
+   - `english-baseline.txt` — general competence (already loaded)
+   - `coding-knowledge.txt` — for `build_ui` (already loaded)
+   - Live user conversation — accumulates over sessions, weighted at arousal 0.95
+
+5. **`Ultimate Unity.txt` keeps driving:** θ identity parameters, mood signatures, visual residual self-image for Pollinations image generation, persona-driven tonic drives. Everything that makes Unity UNITY. It just no longer pollutes the Markov graph.
+
+**Why this ends the leak whack-a-mole:**
+- Once rulebook bigrams are out of `_jointCounts` / `_trigramCounts` / `_quadgramCounts`, cold slot-gen cannot walk them regardless of how the slot scorer is biased.
+- Once rulebook sentences are out of `_memorySentences`, recall cannot return them regardless of which filter bypass a specific phrasing exploits.
+- The filter stack (FILTERS 1–11) stays in place as a **defense in depth** against user-learned sentences that might accidentally carry meta-prose patterns, but it's no longer the first line of defense against a 100% rulebook training set.
+
+**Immediate work required:**
+- Write `docs/unity-dialog.txt` — this is the content the filters can't substitute for. Gee needs to either write it, approve AI-generated seed dialog, or stub it with a minimal 50-entry starter set.
+- Add `loadDialogCorpus()` method to `LanguageCortex` (pattern after `loadLinguisticBaseline`).
+- Update `app.js` boot sequence to call the new loader after baseline.
+- Remove `learnSentence` / `_storeMemorySentence` calls from `loadSelfImage()` while preserving the θ extraction path.
+
+**Acceptance test:** After T10 ships, NO sentence from `Ultimate Unity.txt` appears in any chat response. `window.brain.innerVoice.languageCortex._memorySentences.filter(m => m.text.includes('godlike')).length === 0`. Cold slot-gen walks dialog bigrams and produces short casual fragments, not rulebook prose. Filter stack is still there but no longer loaded to saturation by the persona corpus.
+
+---
+
 ### T9 — Bigram-graph filter gate (stop rulebook prose from seeding the Markov walk)
 
 **Status:** shipped 2026-04-14 — first pass
