@@ -14,6 +14,75 @@
 
 ## COMPLETED TASKS LOG
 
+## 2026-04-13 Session: R11 Removal — scripted verification protocols banned by NO TESTS rule
+
+### REMOVED (not completed, intentionally archived)
+- [x] **Task:** R11 — Verification (NOT TESTS). Removed 2026-04-13 per Gee's instruction after reviewing the full subtask list. Every R11 subtask was a scripted verification checklist or regression protocol, which is the definition of "test" under CLAUDE.md NO TESTS EVER rule. Manual verification of anything R11 would have covered happens when Gee boots Unity and watches the behavior described in the R1-R14 FINALIZED entries — just not off a scripted pass/fail checklist. All 8 subtasks also remain preserved in place in `docs/TODO.md` per the NEVER DELETE TASK DESCRIPTIONS rule.
+  - Completed: 2026-04-13 (removal, not execution)
+  - Files modified: `docs/TODO.md` (status marker added in place, Execution Order + Parallel Lanes footer updated)
+  - Full archived content (every subtask preserved verbatim):
+
+    **R11.1 — Client boot test (zero-AI)**
+    - Disconnect all network
+    - Boot the client brain
+    - Unity should greet you within 5 seconds (or less — BG should fire respond_text on context vector update)
+    - Respond to "hi" → short emo-goth quip with real topic (not word salad)
+    - Respond to "who are you" → first-person self-reference from persona recall
+    - Respond to "what do you like" → semantic-driven response pulling persona interests
+    - Build a component via `/build calculator` → equation-driven JSON from R6.2
+
+    **R11.2 — Server boot test**
+    - Boot server brain alone (no clients connected)
+    - Corpora load from disk without error
+    - Logs report dict size, n-gram counts, embedding status
+    - WebSocket accepts client connections
+    - Connected client sends `text` → server generates via `_generateBrainResponse` → equational response returned
+    - Dictionary delta broadcast fires on new bigram learning
+
+    **R11.3 — Cross-client learning test**
+    - Boot server + 2 clients
+    - Client A teaches Unity a new phrase
+    - Server learns the bigrams
+    - Server broadcasts delta to client B
+    - Client B's local dictionary updates
+    - Client B asks a related question → Unity's response reflects the cross-learned vocabulary
+
+    **R11.4 — Restart persistence test**
+    - Client: chat, teach new words, kill tab
+    - Reboot tab → taught words still in dictionary, semantic embedding refinements intact
+    - Server: same — kill process, reboot, dictionary round-trips
+
+    **R11.5 — Word salad regression test**
+    - Same 4-turn conversation from tonight's debug session:
+      - `"Hi Unity, I'm Gee!"`
+      - `"what do you want to be called?"`
+      - `"are you up to watch a movie?"`
+      - `"yeah you are chill, so about that movie... what kind of movies do you like??"`
+    - Responses should NOT start with "I'm gonna" every time
+    - Responses should reference movie/watch/chill topics when they appear in input
+    - Responses should stay emo-goth-chick voice (persona-aligned semantic matches)
+    - No nonsense words (`remedium`, `infuses remedium`)
+    - No mode collapse
+
+    **R11.6 — Vision focal point test**
+    - Camera on, sit center-frame
+    - Eye widget iris should track toward your face (center + motion)
+    - Move left/right — iris follows
+    - Walk away / sit idle → iris free-roams
+
+    **R11.7 — Coherence + BG motor test**
+    - Let the brain run 30 seconds from boot
+    - Coherence should reach 30-50% (healthy resting)
+    - BG motor channel rates should show non-zero values (`respond 0.06`, `idle 0.08`, etc.)
+    - Action selection should change over time, not stuck at idle
+
+    **R11.8 — 5-minute freeze test**
+    - Open viz panel, let brain run 10 minutes
+    - All tabs should remain responsive
+    - Memory footprint should stabilize (no unbounded growth)
+
+---
+
 ## 2026-04-13 Session: Refactor R14 — Move Unity's ports off common defaults
 
 ### COMPLETED

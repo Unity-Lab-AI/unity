@@ -688,7 +688,7 @@ Boot Unity with viz panel open, let it run 10 minutes, take Chrome memory snapsh
 
 ---
 
-## R11 — VERIFICATION (NOT TESTS)
+## R11 — VERIFICATION (NOT TESTS)  [REMOVED 2026-04-13 per Gee. Every subtask below is a scripted test protocol, which the CLAUDE.md NO TESTS rule bans. All 8 subtasks preserved IN PLACE per the "NEVER delete task descriptions" rule, and also archived to docs/FINALIZED.md under the R11 removal entry. Manual verification still happens when Gee boots Unity and watches — just not off a scripted checklist.]
 
 **Per CLAUDE.md NO TESTS rule — we verify by running the thing, not by writing test files.**
 
@@ -880,8 +880,8 @@ The bundled entry point for `file://` mode needs to be rebuilt against the refac
 10. **R10** Docs (only after R1-R9 settle)
 11. **R13** Multi-provider vision + user-facing connection notices (can parallel R9/R10 — touches `peripherals/ai-providers.js`, `app.js`, `visual-cortex.js`, new UI status element)
 12. **R14** Move Unity's own ports off common defaults (can parallel anything — touches `brain-server.js:111`, `remote-brain.js`, README/SETUP)
-13. **R11** Verification (only after R10 + R13 + R14)
-14. **R12** Merge (only after R11 green)
+13. ~~**R11** Verification~~ — REMOVED 2026-04-13 (scripted test protocols banned by CLAUDE.md NO TESTS rule). See FINALIZED.md.
+14. **R12** Merge (runs directly after R9 + R10 + R13 + R14 — no scripted verification gate)
 
 **Parallel lanes:**
 - Lane 1 (sequential, critical path): R1 → R2 → R3 → R4 → R5 → R6
@@ -889,8 +889,8 @@ The bundled entry point for `file://` mode needs to be rebuilt against the refac
 - Lane 3 (parallel anytime): R8 (persistence) — touches `persistence.js`, `brain-server.js` save paths
 - Lane 4 (parallel anytime): R9 (leak hunt) — touches `brain-viz.js`, `brain-3d.js`, `app.js`
 - Lane 5 (after R1-R9): R10 (docs)
-- Lane 6 (after R10): R11 (verification)
-- Lane 7 (after R11): R12 (merge)
+- Lane 6 (after R10): ~~R11 (verification)~~ — REMOVED 2026-04-13, NO TESTS rule
+- Lane 7 (after R10): R12 (merge — no longer gated on R11)
 
 ---
 
