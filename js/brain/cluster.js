@@ -68,7 +68,37 @@ export class NeuronCluster {
     // Regulation parameters — each cluster has its own
     this.tonicDrive = opts.tonicDrive ?? 15;
     this.noiseAmplitude = opts.noiseAmplitude ?? 8;
-    this.connectivity = opts.connectivity ?? 0.12;
+    // T14.19 (2026-04-14) — connectivity auto-scales with size so the
+    // CPU-side SparseMatrix allocation stays bounded at biological
+    // scale. At small clusters (e.g. the old 2K language side-car)
+    // the default `opts.connectivity ?? 0.12` was fine because 2K × 2K
+    // × 0.12 = 480K entries, tiny. At real biological scale (the T14.18
+    // fix that sizes the language cortex at `CLUSTER_SIZES.cortex` which
+    // is 375K on Gee's 1.5M-neuron GPU tier) 0.12 density blows up to
+    // 16.9 BILLION entries and OOMs the process.
+    //
+    // The biologically-correct answer is NOT "use a small cluster" —
+    // real cortex neurons connect to ~1000-10000 others (Braitenberg &
+    // Schüz 1991, *Cortex: Statistics and Geometry of Neuronal
+    // Connectivity*). That's 0.001% of a 10⁹-neuron cortex, not 12%.
+    // The 12% was a small-cluster compromise that happened to work only
+    // because 12% of a tiny number is still a tiny number.
+    //
+    // Scale-aware formula: pick a TARGET synapse count per neuron
+    // (`targetFanout`, biologically-motivated at 1000) and derive
+    // connectivity as `targetFanout / size`. Floor at a reasonable
+    // minimum so very-small clusters retain the rich recurrence they
+    // depend on. At 2K neurons → target 1000 / 2000 = 0.5 density,
+    // clamped to the 0.12 default. At 20K → 0.05. At 375K → 0.0027
+    // (i.e. ~1000 synapses per neuron, same fanout as at 2K but
+    // spread across a 187× larger population). Total entries stay
+    // ≈ size × 1000 = O(size) instead of O(size²).
+    const targetFanout = opts.targetFanout ?? 1000;
+    const autoConnectivity = Math.min(
+      opts.connectivity ?? 0.12,
+      targetFanout / Math.max(1, size),
+    );
+    this.connectivity = autoConnectivity;
     this.excitatoryRatio = opts.excitatoryRatio ?? 0.8;
     this.learningRate = opts.learningRate ?? 0.001;
 
@@ -166,16 +196,31 @@ export class NeuronCluster {
         ['motor',    'letter'],
         ['auditory', 'phon'],
       ];
+      // T14.19 — cross-projection density also scales inversely with
+      // the projection's source region size, same biological-fanout
+      // rationale as the intra-cluster synapse matrix. Hardcoded 0.10
+      // was fine at a 2K cluster (sub-regions were 100-700 neurons so
+      // 10% of a source region was 10-70 connections per target) but
+      // at 375K cortex the phon sub-region is 75K neurons and 10%
+      // density on a phon→sem projection is 940M entries per direction.
+      // Target ~300 pre-synaptic connections per post-synaptic neuron,
+      // derive density from that.
+      const crossTargetFanout = 300;
       for (const [a, b] of pairs) {
         const aSize = this.regions[a].end - this.regions[a].start;
         const bSize = this.regions[b].end - this.regions[b].start;
+        // Density from source region size — post-synaptic neuron in the
+        // target region ends up with ≈ crossTargetFanout pre-synaptic
+        // connections regardless of how big the source is.
+        const abDensity = Math.min(0.10, crossTargetFanout / Math.max(1, aSize));
+        const baDensity = Math.min(0.10, crossTargetFanout / Math.max(1, bSize));
         // a → b projection (post=b, pre=a)
         const ab = new SparseMatrix(bSize, aSize, { wMin: -0.5, wMax: 0.5 });
-        ab.initRandom(0.10, 0.7, 0.2);
+        ab.initRandom(abDensity, 0.7, 0.2);
         this.crossProjections[`${a}_to_${b}`] = ab;
         // b → a projection (post=a, pre=b)
         const ba = new SparseMatrix(aSize, bSize, { wMin: -0.5, wMax: 0.5 });
-        ba.initRandom(0.10, 0.7, 0.2);
+        ba.initRandom(baDensity, 0.7, 0.2);
         this.crossProjections[`${b}_to_${a}`] = ba;
       }
     } else {
