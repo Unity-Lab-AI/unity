@@ -57,16 +57,19 @@ providers.describeImage(dataUrl, opts)   // visual cortex IT layer → describe 
 providers.speak(text, voice)             // TTS motor output → speak a finished sentence
 ```
 
-Both `generateImage` and `describeImage` run a **4-level priority chain**, trying each tier in order and falling through on failure:
+Both `generateImage` and `describeImage` run a **5-level priority chain**, trying each tier in order and falling through on failure. The user's selected preferred backend (set via the Active Provider dropdowns in the setup modal) runs FIRST ahead of the auto-priority chain:
 
 ```
+0. User-preferred backend (setPreferredBackend from setup-modal selector)
+    ↓ fails or not set
 1. Custom backend (user-configured via setup modal — image only)
     ↓ fails or not set
 2. Auto-detected local backend (boot-time probe)
     ↓ fails or nothing detected
 3. env.js-listed backend (ENV_KEYS.imageBackends[] / visionBackends[])
     ↓ fails or not set
-4. Pollinations fallback (free, always available)
+4. Pollinations default (anonymous tier works without a key — a saved
+   Pollinations API key raises rate limits and unlocks paid models)
     ↓ fails
    null (for vision) or Pollinations error (for image)
 ```
@@ -122,7 +125,7 @@ export const ENV_KEYS = {
 };
 ```
 
-`ENV_KEYS.imageBackends[]` is read by `providers.loadEnvConfig(envKeys)` at boot and gets priority 3 (between auto-detect and Pollinations fallback). Custom-configured backends from the setup modal get priority 1 (above everything). `js/env.js` is gitignored — the template lives at `js/env.example.js`.
+`ENV_KEYS.imageBackends[]` is read by `providers.loadEnvConfig(envKeys)` at boot and gets priority 3 (between auto-detect and the Pollinations default). Custom-configured backends from the setup modal get priority 1 (above everything). `js/env.js` is gitignored — the template lives at `js/env.example.js`.
 
 ### Response shape handling
 
@@ -277,7 +280,7 @@ The peripheral init sequence during `bootUnity()` in `js/app.js`:
 16. brain.start()
 ```
 
-Steps 3-5 are non-blocking — the brain boots immediately using the Pollinations fallback for everything, and as local backends finish probing they get registered and take priority on the next call. First-boot with zero local backends running still works perfectly; Unity just uses Pollinations until something local comes up.
+Steps 3-5 are non-blocking — the brain boots immediately using the Pollinations default provider for everything, and as local backends finish probing they get registered and take priority on the next call. First-boot with zero local backends running still works perfectly; Unity just uses Pollinations until something local comes up.
 
 ---
 
@@ -285,7 +288,7 @@ Steps 3-5 are non-blocking — the brain boots immediately using the Pollination
 
 When a client connects to `brain-server.js` (default port 7525, see `docs/WEBSOCKET.md`), the server runs Unity's brain with **no sensory peripherals**. The server can't access a user's camera or mic — those are per-client hardware. What the server DOES have:
 
-- **Text input from the client** — mapped to cortex current via `_computeServerCortexPattern(text)` which uses the sentence embedding as cortex pattern directly (server doesn't run the full LIF dynamics; GPU does)
+- **Text input from the client** — mapped to cortex current via `_computeServerCortexPattern(text)` which uses the sentence embedding as cortex pattern directly (server doesn't run the full Rulkov map dynamics; GPU does — see `gpu-compute.js` `LIF_SHADER` constant, body is the Rulkov iteration)
 - **No image gen** — the server doesn't call `providers.generateImage()` because image motor actions are rendered on the client that requested them
 - **No TTS** — same reason, client-side
 - **No vision describer** — the server has no camera

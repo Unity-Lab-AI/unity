@@ -38,8 +38,9 @@ The unknown stays unknown: `Ψ = √(1/n) × N³`
 | Core Brain Engine — Neuron Models | **COMPLETE** | 100% |
 
 **Delivered:**
-- `js/brain/neurons.js` with HH and LIF models (browser JS, Float64Arrays)
-- 1000 neurons fire spikes across 7 clusters
+- `js/brain/neurons.js` with HH (reference) and LIF (browser-only fallback) models (Float64Arrays)
+- `js/brain/gpu-compute.js` WGSL `LIF_SHADER` — live runtime rule is the Rulkov 2002 2D chaotic map (`x_{n+1} = α/(1+x²) + y`, `y_{n+1} = y − μ(x − σ)`) running on GPU. Shader constant name is historical
+- N neurons fire spikes across 7 clusters (N auto-scales to GPU hardware)
 - Tonic drive + noise ensures spontaneous activity
 
 ### Milestone 1.2: Synapses Learn -- COMPLETE
@@ -66,7 +67,7 @@ The unknown stays unknown: `Ψ = √(1/n) × N³`
 
 **Delivered:**
 - All 7 modules: Cortex (300n), Hippocampus (200n), Amygdala (150n), Basal Ganglia (150n), Cerebellum (100n), Hypothalamus (50n), Mystery (50n)
-- Each cluster has own LIF population, synapse matrix, tonic drive, noise, connectivity, learning rate
+- Each cluster has its own Rulkov-map population, synapse matrix, tonic drive, noise amplitude, connectivity density, learning rate (LIFPopulation is still shipped for the browser-only fallback path in `cluster.js`)
 - Hierarchical modulation across clusters
 - Persona params hardcoded in `js/brain/persona.js` with 4 drug combo vectors
 
@@ -199,7 +200,7 @@ Neurons → Synapses → Brain Loop → Brain Regions → Persona Loader → API
 ### Delivered:
 - **Server Brain** (`server/brain-server.js`) — always-on Node.js brain, WebSocket API, auto-scaling to GPU/CPU
 - **Sparse Connectivity** (`js/brain/sparse-matrix.js`) — CSR format, O(connections) propagation, pruning + synaptogenesis
-- **WebGPU Compute** (`js/brain/gpu-compute.js`) — WGSL shaders for LIF, synapse propagation, plasticity
+- **WebGPU Compute** (`js/brain/gpu-compute.js`) — WGSL shaders for the Rulkov 2D chaotic map neuron model (`LIF_SHADER` constant name is historical; the kernel body is the Rulkov iteration), synapse propagation, plasticity
 - **Semantic Embeddings** (`js/brain/embeddings.js`) — GloVe 50d, cortex mapping, online context learning
 - **Dictionary** (`js/brain/dictionary.js`) — learned vocabulary with cortex patterns + bigram sentences
 - **Inner Voice** (`js/brain/inner-voice.js`) — pre-verbal thought system, speech threshold from equations
@@ -363,7 +364,7 @@ Source: `docs/TODO.md` (pending items) + `docs/FINALIZED.md` (shipped archive). 
 - **R2** Semantic grounding — SHIPPED (commit `c491b71`). Replaced 32-dim letter-hash `wordToPattern` with 50-dim GloVe semantic embeddings via `sharedEmbeddings` singleton shared between sensory (input) and language-cortex (output). New `cortexToEmbedding(spikes, voltages)` in `embeddings.js` is the mathematical inverse of `mapToCortex`. Slot scorer `semanticFit` weight bumped 0.05 → 0.80.
 - **R3** Server full equational control — SHIPPED (commit `7e77638`). `server/brain-server.js` dynamic-imports client brain modules (dictionary, language-cortex, embeddings, component-synth). Loads all 3 corpora from disk on boot. `_generateBrainResponse` rewritten to call `languageCortex.generate()` directly with full brain state.
 - **R4** Kill text-AI backends — SHIPPED (commit `7e095d0`). `language.js` BrocasArea shrunk 333 → 68 lines (throwing stub only). Text-chat paths deleted from `ai-providers.js`. `engine.js` `_handleBuild`/`_handleImage` rewritten equationally.
-- **R5** Multi-provider image generation — SHIPPED. `SensoryAIProviders.generateImage()` has 4-level priority: custom → auto-detected local → env.js → Pollinations fallback. Auto-probes 7 common local ports at boot.
+- **R5** Multi-provider image generation — SHIPPED. `SensoryAIProviders.generateImage()` has 5-level priority: user-preferred (setPreferredBackend from setup-modal selector) → custom → auto-detected local → env.js → Pollinations default. Auto-probes 7 common local ports at boot.
 - **R6.1** Equational image prompts — SHIPPED (commit `8f60b75`). `_handleImage` composes prompts fully through `languageCortex.generate()`. Zero hardcoded visual vocabulary.
 - **R6.2** Equational component synthesis — SHIPPED (commit `6b2deb3`). New `js/brain/component-synth.js` + `docs/component-templates.txt` corpus. `build_ui` motor action picks a template via cosine similarity with `MIN_MATCH_SCORE = 0.40`.
 - **R7** Sensory peripheral `destroy()` — SHIPPED (commit `b67aa46`). Unified `init`/`process`/`destroy` contract on `visual-cortex.js` + `auditory-cortex.js`.

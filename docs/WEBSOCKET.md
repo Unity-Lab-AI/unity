@@ -140,7 +140,7 @@ Sent when the motor channel selects `generate_image`. The *prompt* is generated 
 }
 ```
 
-Routed only to the triggering client. The client's `SensoryAIProviders.generateImage(prompt)` runs the 4-level priority chain (custom → auto-detected local → env.js → Pollinations fallback).
+Routed only to the triggering client. The client's `SensoryAIProviders.generateImage(prompt)` runs the 5-level priority chain (user-preferred via setPreferredBackend → custom → auto-detected local → env.js → Pollinations default).
 
 ### `conversation` — REMOVED 2026-04-13
 
@@ -166,16 +166,16 @@ Reserved. `js/brain/remote-brain.js` has a handler for this type (so clients are
 
 ### GPU compute messages
 
-`brain-server.js` offloads all LIF neuron updates and synapse propagation to a browser GPU compute client running `compute.html`. The server talks to the GPU client via three WebSocket message types on the same connection:
+`brain-server.js` offloads all Rulkov-map neuron iteration and synapse propagation to a browser GPU compute client running `compute.html`. The live neural rule is the Rulkov 2002 2D chaotic map (`x_{n+1} = α/(1+x²) + y`, `y_{n+1} = y − μ(x − σ)`) running as a WGSL compute shader in `js/brain/gpu-compute.js` — the `LIF_SHADER` constant name is historical, the kernel body is the Rulkov iteration. Server talks to the GPU client via three WebSocket message types on the same connection:
 
 | Direction | Type | Payload | Meaning |
 |---|---|---|---|
-| Server → GPU | `gpu_init` | `{clusterName, size, tonicDrive, noiseAmp, voltages, ...}` | Send initial cluster state to GPU (one-time per cluster on boot) |
-| Server → GPU | `compute_request` | `{clusterName, tonicDrive, noiseAmp}` | Request one LIF step — only two scalars since voltages + spikes live on GPU |
+| Server → GPU | `gpu_init` | `{clusterName, size, tonicDrive, noiseAmp, lifParams, ...}` | Create GPU buffers for a cluster (one-time per cluster on boot). Neuron state is seeded on the GPU via golden-ratio quasi-random (x, y) pairs inside the Rulkov bursting attractor basin — no voltage array transferred from the server |
+| Server → GPU | `compute_request` | `{clusterName, tonicDrive, noiseAmp, gainMultiplier, emotionalGate, driveBaseline, errorCorrection}` | Request one Rulkov step. GPU collapses the modulation scalars to `effectiveDrive` then `σ = −1 + clamp(effectiveDrive/40, 0, 1)·1.5` and iterates the map |
 | GPU → Server | `gpu_init_ack` | `{clusterName, size}` | GPU confirms cluster is initialized |
-| GPU → Server | `compute_result` | `{clusterName, spikeCount}` | GPU returns sparse spike count after running one LIF step |
+| GPU → Server | `compute_result` | `{clusterName, spikeCount}` | GPU returns atomic-counted spike count after running one Rulkov step. Spike edge = (x_n ≤ 0) ∧ (x_{n+1} > 0) — one spike per action potential |
 
-Why this architecture: sending full 300-neuron voltage arrays every step at 60 Hz × 10 substeps × 7 clusters would be ~10 MB/step. Keeping voltages + spikes resident on the GPU and sending only `{tonicDrive, noiseAmp}` in and `{spikeCount}` out cuts traffic to ~100 KB/step. The GPU client is a regular WebSocket client from the server's perspective, just marked with `isGPU: true` in the client record after it sends `gpu_register`.
+Why this architecture: state is `vec2<f32>` per neuron (12 bytes/neuron total including spikes u32) and stays resident on the GPU after init. Sending full state arrays every step at 60 Hz × 10 substeps × 7 clusters would be prohibitive at the auto-scaled N. Keeping state + spikes on the GPU and sending only scalar modulation inputs + a single `spikeCount` readback per step keeps WebSocket traffic under 100 KB/step regardless of cluster size. The GPU client is a regular WebSocket client from the server's perspective, just marked with `isGPU: true` in the client record after it sends `gpu_register`.
 
 ---
 
@@ -221,7 +221,7 @@ Sent by `compute.html` on WebSocket open to mark itself as the GPU compute clien
 { "type": "gpu_register" }
 ```
 
-The server marks `brain._gpuClient = ws` and `brain._gpuConnected = true`, then all subsequent LIF step requests get routed to this client via `compute_request` / `compute_result` round trips. The brain waits (blocks step dispatching) until a GPU client connects, with a log message every few seconds announcing `[GPU] Waiting for compute client`. Only one GPU client is supported at a time — a second `gpu_register` replaces the first.
+The server marks `brain._gpuClient = ws` and `brain._gpuConnected = true`, then all subsequent Rulkov step requests get routed to this client via `compute_request` / `compute_result` round trips. The brain waits (blocks step dispatching) until a GPU client connects, with a log message every few seconds announcing `[GPU] Waiting for compute client`. Only one GPU client is supported at a time — a second `gpu_register` replaces the first. No CPU fallback exists — at 400K+ cerebellum neurons × 7 clusters × 60 Hz the iteration cost would cook any CPU.
 
 ### `compute_result`
 
