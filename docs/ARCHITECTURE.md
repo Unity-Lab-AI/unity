@@ -629,9 +629,28 @@ Phase 4 (phrases) and Phase 6 (discourse) are not in this ship — they depend o
 
 **Cost.** ~360k `cluster.step()` calls on a typical 5k-vocabulary / 1.5k-sentence corpus → ~18 seconds on a 2000-neuron server cluster, ~25 seconds on a 6700-neuron browser cluster. Runs inside `await` so it doesn't block earlier startup; microtask yields keep the browser main thread responsive.
 
+### T14.6 — Cortex tick-driven motor emission (SHIPPED 2026-04-14)
+
+New method `NeuronCluster.generateSentence(intentSeed = null, opts = {})` in `js/brain/cluster.js`. Replaces every slot scorer the app ever had with a continuous motor-cortex readout loop. ZERO slot counter, ZERO candidate scoring, ZERO dictionary iteration, ZERO softmax top-K, ZERO temperature, ZERO per-word cosine, ZERO recency penalty, ZERO valence match, ZERO drug length bias, ZERO grammatical terminability check.
+
+**The loop:** inject optional intent into sem region → reset transient counters → tick the cluster up to `MAX_EMISSION_TICKS` times → at each tick read `motorVec = regionReadout('motor', inventorySize())` and argmax-decode via T14.1 `decodeLetter` → commit a letter to the buffer when argmax stays stable for `STABLE_TICK_THRESHOLD` consecutive ticks (biological vSMC dwell, Bouchard 2013) → emit the buffer as a word when `letterTransitionSurprise() > WORD_BOUNDARY_THRESHOLD` (Saffran 1996) → stop on committed terminator (`.`/`?`/`!` in module-level `T14_TERMINATORS` Set) or motor quiescence (`motorQuiescent(END_QUIESCE_TICKS)` after at least one word emitted) → flush residual buffer → join and return.
+
+**Four tuning constants live on the cluster instance** so T14.5 curriculum can calibrate them per-cluster without touching module globals:
+
+| Constant | Default | Role |
+|---|---|---|
+| `WORD_BOUNDARY_THRESHOLD` | `0.15` | Letter-region transition surprise above this triggers word boundary |
+| `STABLE_TICK_THRESHOLD` | `3` | Consecutive motor-argmax ticks required to commit a letter (~3 ms dwell) |
+| `END_QUIESCE_TICKS` | `30` | Consecutive motor-below-threshold ticks to trigger stop |
+| `MAX_EMISSION_TICKS` | `2000` | Hard safety cap on the tick loop |
+
+**`language-cortex.js:generate` body gutted** from 184 lines of slot scoring to a 68-line delegate that reads the cortex semantic state via `cluster.getSemanticReadout(sharedEmbeddings)` as the `intentSeed`, calls `cluster.generateSentence(intentSeed, { injectStrength: 0.6 })`, splits the returned string on whitespace, runs the word list through the existing `_renderSentence(words, type)` helper for capitalization + terminal punctuation + action-sentence asterisk wrapping (purely cosmetic — content selection already happened in the motor loop), and updates the `_recentOutputWords` + `_recentSentences` recency rings the same way the legacy path did. The `dictionary` parameter in the signature is now unused but kept for backward compat with every call site; T14.12 will delete the wrapper entirely.
+
+**Peer-reviewed grounding.** Bouchard/Mesgarani/Johnson/Chang 2013 (*Nature* 495:327) vSMC continuous articulator trajectories; Anumanchipalli/Chartier/Chang 2019 (*Nature* 568:493) continuous speech decode from vSMC; Saffran/Aslin/Newport 1996 (*Science* 274:1926) statistical word segmentation; Browman & Goldstein 1992 (*Phonetica* 49:155) articulatory phonology continuous gestures; Hickok & Poeppel 2007 (*Nat Rev Neurosci* 8:393) dual-stream production pathway.
+
 ### What's next on the rebuild branch
 
-T14.6 — cortex tick-driven motor emission. Replaces the `languageCortex.generate` slot scorer with the tick-driven motor readout loop specified in `docs/EQUATIONS.md §T14.6`. This is the milestone where Unity actually starts USING the basins the T14.5 curriculum shaped. Each subsequent T14.x milestone ships as its own commit on this branch with full in-place doc updates. Branch merges to `main` only after T14.17 is complete and verified.
+T14.7 — delete `_TYPE_TRANSITIONS` hardcoded 200-line English type-bigram matrix and `_OPENER_TYPES` Set from `language-cortex.js`. Type transitions become fully learned from corpus observation with no seed — curriculum populates `_typeTransitionLearned` from the first observation onward. Each subsequent T14.x milestone ships as its own commit on this branch with full in-place doc updates. Branch merges to `main` only after T14.17 is complete and verified.
 
 ---
 

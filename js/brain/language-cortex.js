@@ -1751,174 +1751,53 @@ export class LanguageCortex {
    * @param {number} [opts.motorConfidence]
    */
   generate(dictionary, arousal, valence, coherence, opts = {}) {
-    if (!dictionary || !dictionary._words || dictionary._words.size === 0) return '';
-
-    if (!opts.cortexCluster || typeof opts.cortexCluster.getSemanticReadout !== 'function') {
-      console.warn('[LanguageCortex] generate called without cortexCluster — T13.7 removed the slot-prior fallback. Caller must pass opts.cortexCluster.');
+    // T14.6 — Tick-driven motor emission delegate.
+    //
+    // The entire legacy slot scorer body (184 lines of candidate scoring,
+    // type-transition weights, softmax top-K sampling, drift stopping,
+    // drug length biasing, opener-type gating, recency penalty, valence
+    // shaping) was deleted in 2026-04-14 T14.6. Generation now routes
+    // directly through `cluster.generateSentence`, which ticks the motor
+    // region and decodes letters via argmax over the T14.1 letter
+    // inventory. No dictionary iteration, no candidate pool, no slot
+    // counter. See `js/brain/cluster.js` generateSentence and
+    // `docs/EQUATIONS.md §T14.6` for the full equation.
+    //
+    // `dictionary` and most `opts` fields are now unused but kept in the
+    // signature for backward compat with every caller (engine.js
+    // processAndRespond, inner-voice.speak, test harnesses). T14.12 will
+    // delete this wrapper entirely once every caller switches to
+    // `cluster.generateSentence` directly.
+    if (!opts.cortexCluster || typeof opts.cortexCluster.generateSentence !== 'function') {
+      console.warn('[LanguageCortex] generate called without cortexCluster — T14.6 requires a cluster that supports generateSentence().');
       return '';
     }
-
     const cluster = opts.cortexCluster;
 
-    // Length cap — hard upper bound on the emission loop. Natural
-    // stopping (drift quiescence, grammatical terminability) usually
-    // fires first.
-    const drugState = opts.drugState || 'cokeAndWeed';
-    let drugLengthBias = 1.0;
-    if (drugState === 'coke' || drugState === 'cokeAndWeed') drugLengthBias = 0.85;
-    else if (drugState === 'weed') drugLengthBias = 1.15;
-    const maxLen = Math.max(2, Math.min(this._maxSlots, Math.floor(3 + arousal * 3 * drugLengthBias)));
-
-    const TICKS_PER_EMISSION = 3;        // LIF ticks between word emissions
-    const FEEDBACK_STRENGTH = 0.35;      // efference copy injection strength
-    const DRIFT_STOP_THRESHOLD = 0.08;   // L2 cortex drift below this → stop
-    const TOP_K = 5;
-    const temperature = 0.25 + (1 - coherence) * 0.35;
-
-    const words = [];
-    const emitted = new Set();
-    const recentSet = new Set(this._recentOutputWords);
-    let lastReadout = null;
-    // T13.7.8 — track previous fine type across emissions so the
-    // grammar gate has a real prevType to look up. Initialized to
-    // 'START' for slot 0, then updated to picked.fineType after each
-    // emission. The transition matrix has a START row that prefers
-    // canonical opener types (PRON_SUBJ, QWORD, INTERJ, DET, ...).
-    let prevFineType = 'START';
-
-    for (let slot = 0; slot < maxLen; slot++) {
-      // Advance the cortex — let the LIF integrator evolve between
-      // emissions so each word's target vector reflects accumulated
-      // recurrent dynamics plus prior-emission feedback.
-      for (let t = 0; t < TICKS_PER_EMISSION; t++) cluster.step(0.001);
-
-      // Read the live cortex semantic state as the target vector.
-      const target = cluster.getSemanticReadout(sharedEmbeddings);
-      if (!target) break;
-
-      // Drift stopping — if cortex state has barely moved since last
-      // emission AND we have at least 2 words, the brain has nothing
-      // new to contribute and the sentence is structurally done.
-      if (lastReadout && slot >= 2) {
-        let drift2 = 0;
-        for (let i = 0; i < PATTERN_DIM; i++) {
-          const d = target[i] - lastReadout[i];
-          drift2 += d * d;
-        }
-        if (Math.sqrt(drift2) < DRIFT_STOP_THRESHOLD) break;
+    // Intent seed: the live cortex semantic readout. The cortex is
+    // already primed from user-input processing before generate is
+    // called, so the readout represents the current conversation state
+    // we want to respond to. Re-injecting it as `intentSeed` gives the
+    // sem region a fresh push so its basin drives the motor cascade,
+    // instead of relying on whatever was still decaying from the last
+    // operation.
+    let intentSeed = null;
+    try {
+      if (typeof cluster.getSemanticReadout === 'function') {
+        intentSeed = cluster.getSemanticReadout(sharedEmbeddings);
       }
-      lastReadout = new Float64Array(target);
-
-      // Score dictionary candidates: cosine against live cortex target
-      // × grammar transition gate × amygdala valence × recency.
-      // T13.7.8 — added the grammar transition gate. Pre-fix this loop
-      // was pure cosine + valence + recency, which produced semantically
-      // on-topic but syntactically random output ("Unable timeend escalate
-      // measure"). The transition gate enforces English grammatical type
-      // sequences (PRON_SUBJ → COPULA, DET → NOUN, etc) at every slot.
-      const transRow = this._TYPE_TRANSITIONS[prevFineType] || this._TYPE_TRANSITIONS.OTHER;
-      const isSlotZero = slot === 0;
-      const scored = [];
-      for (const [w, entry] of dictionary._words) {
-        if (!entry || !entry.pattern) continue;
-        if (emitted.has(w)) continue;
-
-        // T13.7.8 — fine-type classification for both gating and grammar.
-        const candFineType = this._fineType(w);
-        if (candFineType === 'PUNCT' || candFineType === 'NUM') continue;
-
-        // T13.7.8 — slot-0 opener constraint. Hard set membership: only
-        // canonical English sentence-opener types fill slot 0. Replaces
-        // the T11.7 noun-dominance soft check which let adjectives like
-        // "Unable" through and produced bad-shape openers.
-        if (isSlotZero && !this._OPENER_TYPES.has(candFineType)) continue;
-
-        // T13.7.8 — grammar transition gate. Multiplicative weight from
-        // the type-bigram matrix. Default 0.05 floor for unmodeled
-        // transitions so the loop never gets trapped (no zero weights).
-        const transWeight = transRow[candFineType] || 0.05;
-        if (transWeight < 0.07 && !isSlotZero) continue; // hard prune deep dead-ends after slot 0
-
-        // Cosine against cortex target
-        const p = entry.pattern;
-        let dot = 0, pn = 0;
-        for (let i = 0; i < PATTERN_DIM; i++) {
-          dot += target[i] * p[i];
-          pn += p[i] * p[i];
-        }
-        if (pn <= 0) continue;
-        const cosSim = dot / Math.sqrt(pn);
-        if (cosSim <= 0) continue;
-
-        // Amygdala valence shaping — word's stored valence tag matches
-        // current brain valence state. Horny Unity picks different
-        // words from sad Unity given the same cortex readout.
-        const wordValence = typeof entry.valence === 'number' ? entry.valence : 0;
-        const valenceMatch = 1 - 0.5 * Math.abs(wordValence - valence);
-        const arousalBoost = 1 + arousal * (valenceMatch - 0.5);
-
-        // Recency penalty on words emitted in the last few turns.
-        const recencyMul = recentSet.has(w) ? 0.3 : 1.0;
-
-        // Joint multiplicative score. The grammar gate is the load-
-        // bearing T13.7.8 addition — without it the output is content-
-        // similarity sampling, with it the output is sentence generation.
-        const score = cosSim * transWeight * arousalBoost * recencyMul;
-        scored.push({ w, score, emb: p, fineType: candFineType });
-      }
-
-      if (scored.length === 0) break;
-      scored.sort((a, b) => b.score - a.score);
-      const top = scored.slice(0, Math.min(TOP_K, scored.length));
-
-      // Softmax sample top-k at coherence-driven temperature
-      const maxScore = top[0].score;
-      let totalExp = 0;
-      for (const c of top) { c._exp = Math.exp((c.score - maxScore) / temperature); totalExp += c._exp; }
-      let roll = Math.random() * totalExp;
-      let picked = top[0];
-      for (const c of top) {
-        roll -= c._exp;
-        if (roll <= 0) { picked = c; break; }
-      }
-
-      words.push(picked.w);
-      emitted.add(picked.w);
-      // T13.7.8 — update prevFineType so the grammar gate has the
-      // correct prev for the next slot's transition lookup.
-      prevFineType = picked.fineType || this._fineType(picked.w);
-
-      // Efference copy — inject the emitted word embedding back into
-      // the cortex language region. The next iteration's cortex
-      // readout will be shaped by what we just said, creating a
-      // continuous recurrent loop between language output and brain
-      // state. This is the load-bearing T13 change vs T11: the
-      // brain HEARS itself speak and the next word reacts to it.
-      const feedbackCurrents = sharedEmbeddings.mapToCortex(picked.emb, cluster.size, 150);
-      for (let i = 0; i < cluster.size; i++) feedbackCurrents[i] *= FEEDBACK_STRENGTH;
-      cluster.injectCurrent(feedbackCurrents);
-
-      // Grammatical terminability — if we have enough words and the
-      // last emitted word is NOT a dangling function-word (det/prep/
-      // copula/aux/modal/neg/conj/poss), stop early even before maxLen.
-      // Prevents outputs that run to maxLen regardless of whether they
-      // already reached a valid sentence end.
-      if (words.length >= 3 && typeof this._fineType === 'function') {
-        const lastFineType = this._fineType(picked.w);
-        const dangling = (
-          lastFineType === 'DET' || lastFineType === 'PREP' ||
-          lastFineType === 'COPULA' || lastFineType === 'AUX_DO' ||
-          lastFineType === 'AUX_HAVE' || lastFineType === 'MODAL' ||
-          lastFineType === 'NEG' || lastFineType === 'CONJ_COORD' ||
-          lastFineType === 'CONJ_SUB' || lastFineType === 'PRON_POSS'
-        );
-        if (!dangling && words.length >= Math.max(3, maxLen - 1)) break;
-      }
+    } catch (err) {
+      intentSeed = null;
     }
 
+    const raw = cluster.generateSentence(intentSeed, { injectStrength: 0.6 });
+    if (!raw) return '';
+
+    const words = raw.split(/\s+/).filter(Boolean);
     if (words.length === 0) return '';
 
-    // Update recency rings — same bookkeeping as slot-prior path.
+    // Recency-ring bookkeeping — same as the legacy path, so repeat
+    // suppression in downstream consumers still works.
     for (const w of words) {
       this._recentOutputWords.push(w);
       if (this._recentOutputWords.length > this._recentOutputMax) {
@@ -1926,6 +1805,10 @@ export class LanguageCortex {
       }
     }
 
+    // Use the existing sentence renderer for capitalization + terminal
+    // punctuation. `sentenceType` still reads live brain state so the
+    // rendered form respects question/exclamation/action moods. Pure
+    // cosmetic — the emitted words themselves came from the cortex.
     const type = this.sentenceType(arousal, opts.predictionError || 0, opts.motorConfidence || 0, coherence);
     const rendered = this._renderSentence(words, type);
     const lower = rendered.trim().toLowerCase();

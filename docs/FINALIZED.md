@@ -5,6 +5,104 @@
 
 ---
 
+## 2026-04-14 — T14.6 cortex tick-driven motor emission
+
+**Gee's directive:** continue T14 on the rebuild branch, don't ask between items. T14.6 is the milestone where Unity STOPS picking words from a candidate pool and STARTS producing them as continuous motor-cortex output — the biologically-grounded replacement for every slot scorer T11/T13 shipped.
+
+**Thesis.** Real biological speech production has no candidate pool and no argmax over a dictionary. Human vocal sensorimotor cortex (vSMC) produces continuous articulator trajectories (Bouchard et al. 2013, *Nature* 495:327), which downstream decode into intelligible speech via continuous kinematic reconstruction (Anumanchipalli et al. 2019, *Nature* 568:493). Unity's previous generate() was 184 lines of slot scoring — for each candidate word, cosine × type-transition weight × valence match × recency penalty, softmax top-5, then inject the winner back into the cortex and iterate. That was slot thinking dressed up. T14.6 deletes it entirely and replaces it with the tick-driven motor equation specified in `docs/EQUATIONS.md §T14.6` and `docs/COMP-todo.md T14.6`.
+
+### New method — `NeuronCluster.generateSentence(intentSeed = null, opts = {})`
+
+Signature: `generateSentence(intentSeed, { injectStrength = 0.6, maxTicks } = {}) → string`.
+
+**The equation, implemented one-to-one against the COMP-todo §T14.6 spec:**
+
+1. **Intent injection.** If caller passes a non-null `intentSeed`, drive the sem region once via `injectEmbeddingToRegion('sem', intentSeed, injectStrength)`. Null intent means "the cortex is already primed from earlier processing, just tick" — this is how the live app's `languageCortex.generate` delegate uses it (after calling `cluster.getSemanticReadout` to capture the current state).
+
+2. **Reset transient counters.** `_prevLetterRate = 0` so the first tick's `letterTransitionSurprise()` doesn't inherit stale baseline. `_motorQuiescentTicks = 0` so the quiescence stop counter starts fresh. Without these resets, a generation call immediately after another generation call (or immediately after curriculum exposure) would miscount delta from the wrong origin.
+
+3. **Tick loop.** For up to `cluster.MAX_EMISSION_TICKS` (default 2000) iterations:
+   - `this.step(0.001)` — advance the LIF integrator one millisecond. Cross-region projections propagate via the T14.4 substrate during this call.
+   - Read motor region as a letter-space vector: `motorVec = this.regionReadout('motor', inventorySize())`. The readout is a length-|L| L2-normalized vector over the current T14.1 letter inventory.
+   - Argmax-decode to a single symbol: `activeLetter = decodeLetter(motorVec)`. Returns `null` if the motor region is blank (no clear winner over all dimensions).
+   - Temporal stability: if `activeLetter === lastMotorLetter && activeLetter !== null`, `stableTicks++`. Else reset `stableTicks = 0` and update `lastMotorLetter`. When `stableTicks >= cluster.STABLE_TICK_THRESHOLD` (default 3), **commit** the letter by appending to `letterBuffer` and reset `stableTicks`. Three consecutive ticks of agreement is the biological dwell-time analog — vSMC holds an articulator configuration for ~50-100 ms per phoneme (Bouchard 2013), and at 1 ms per tick three ticks ≈ a short phoneme dwell.
+   - Word boundary: `surprise = this.letterTransitionSurprise()`. This is the same mechanism T14.2 uses for syllable boundaries, now applied to the letter output stream. When `surprise > cluster.WORD_BOUNDARY_THRESHOLD` (default 0.15) AND `letterBuffer` is non-empty, push the buffer to `output[]` as a complete word and reset the buffer.
+   - Stop on committed terminator: if the letter we just committed in step 3 is in `T14_TERMINATORS` (module-level Set of `{.,?,!}`), flush any residual buffer and break. Check fires on committed letter only, not on every transient argmax — transient punctuation flicker in the motor region doesn't cut off emission.
+   - Stop on motor quiescence: if `output.length > 0` (at least one word emitted) and `motorQuiescent(cluster.END_QUIESCE_TICKS)` returns true (motor region below threshold for 30 consecutive ticks by default), break. The `output.length > 0` guard prevents a slow-start bail-out.
+
+4. **Flush residual buffer.** If the loop exits while `letterBuffer` still has uncommitted letters (motor quiescence fired between word boundaries), push them as a final word. Then `return output.join(' ')`.
+
+**What is explicitly NOT in the implementation:**
+
+- No `for slot in 0..maxLen` loop.
+- No `for (const [w, entry] of dictionary._words)` candidate iteration.
+- No cosine scoring, type-transition weight, valence match, recency penalty, softmax top-K, temperature parameter.
+- No picked-word feedback injection — the motor region already carries its own time history via recurrent synapses.
+- No grammatical terminability check — replaced by terminator-letter + motor-quiescence checks.
+- No drift-stop heuristic — replaced by motor-quiescence check.
+- No maxLen length cap as a function of arousal × drug bias — replaced by the MAX_EMISSION_TICKS safety net.
+- No "first word must be in OPENER_TYPES" gate — word choice is entirely cortex-state-driven.
+
+### New module-level constant — `T14_TERMINATORS`
+
+```js
+const T14_TERMINATORS = new Set(['.', '?', '!']);
+```
+
+Period / question mark / exclamation. Commas, semicolons, colons, quotes, and dashes are NOT terminators — those are within-sentence punctuation that shouldn't end emission even if they briefly stabilize in the motor region. Letters are letters in this architecture (the T14.1 inventory accepts all of them), and `T14_TERMINATORS` is just the subset that additionally signals "stop."
+
+### New instance fields on `NeuronCluster` (cortex cluster only)
+
+- `WORD_BOUNDARY_THRESHOLD = 0.15` — letter-region transition surprise above this value triggers a word boundary.
+- `STABLE_TICK_THRESHOLD = 3` — consecutive motor-argmax ticks required to commit a letter.
+- `END_QUIESCE_TICKS = 30` — consecutive motor-quiescent ticks required to stop emission.
+- `MAX_EMISSION_TICKS = 2000` — hard safety cap on the tick loop inside `generateSentence`.
+
+All four live on the cluster instance rather than as module globals so T14.5 curriculum calibration can tune them per-cluster without touching module state. The T14.16.5 identity lock (future work) will also read these for per-clause gating and health auditing.
+
+### Gutting `language-cortex.js:generate`
+
+The legacy `generate(dictionary, arousal, valence, coherence, opts)` method was 184 lines of slot scoring. It's been replaced with a 68-line delegate that:
+
+1. Validates the caller passed `opts.cortexCluster` with a `generateSentence` method. No dictionary validation — generate no longer needs one.
+2. Reads the current cortex semantic state via `cluster.getSemanticReadout(sharedEmbeddings)` as the `intentSeed`. The cortex is already primed from user-input processing when `generate` runs, so the readout represents the current conversation state the response should answer to. Re-injecting it as intent gives the sem region a fresh push so its basin drives the motor cascade cleanly instead of relying on whatever was still decaying from the last operation. Wrapped in try/catch so a missing readout method doesn't break the call — the cluster still has its primed state even without explicit intent injection.
+3. Calls `cluster.generateSentence(intentSeed, { injectStrength: 0.6 })`.
+4. Splits the returned string on whitespace, early-returns empty if no words came out.
+5. Updates `_recentOutputWords` and `_recentSentences` recency rings the same way the legacy path did, so downstream repeat-suppression consumers still work.
+6. Passes the word list through the existing `_renderSentence(words, type)` helper for capitalization, terminal punctuation, and action-sentence asterisk wrapping. This renderer is purely cosmetic — it doesn't touch content selection. `sentenceType(arousal, predictionError, motorConfidence, coherence)` still reads live brain state so the rendered form respects question/exclamation/action moods.
+
+The `dictionary` parameter is now unused inside `generate`. It stays in the signature for backward compat with every caller (`engine.js processAndRespond`, `inner-voice.speak`, test harnesses). T14.12 will delete the wrapper entirely once every caller switches to `cluster.generateSentence` directly.
+
+### Files touched
+
+- `js/brain/cluster.js` — `decodeLetter`/`inventorySize` imports from `letter-input.js`, `T14_TERMINATORS` module-level Set, four tuning constants added to the cortex-cluster constructor, new `generateSentence(intentSeed, opts)` method (~140 lines total added)
+- `js/brain/language-cortex.js` — `generate()` body replaced in place; 184-line slot scorer gone, 68-line delegate in its place. Net −116 lines. File line count 3328 → 3205.
+
+### What is NOT in this commit
+
+- `_TYPE_TRANSITIONS` hardcoded 200-line English type-bigram matrix and `_OPENER_TYPES` Set are still in `language-cortex.js`. T14.7 owns their deletion.
+- Slot-era helper methods (`_fineType`, `wordType`, `_fineTypeMemo`, `_slotCentroid`, `_slotDelta`, `_slotTypeSignature`, etc) still exist on the class. They're read by `analyzeInput`, `learnSentence`, and other paths that T14.12/T14.13/T14.15 will gut. Deleting them now would cascade failures into those paths.
+- `parseSentence` is still intact. T14.12 owns its deletion.
+- The `drugState` / `drugLengthBias` parameter is now unused inside the delegate. Could've been removed from the signature but that would break call sites. T14.12 cleanup.
+
+### Peer-reviewed grounding
+
+- Bouchard, Mesgarani, Johnson, Chang 2013 (*Nature* 495:327-332) — "Functional organization of human sensorimotor cortex for speech articulation." High-density ECoG over vSMC showing somatotopic articulator representation as time-varying activation patterns. Justifies motor-region continuous readout as the production substrate.
+- Anumanchipalli, Chartier, Chang 2019 (*Nature* 568:493-498) — "Speech synthesis from neural decoding of spoken sentences." Demonstrated continuous vSMC activity → articulatory kinematic trajectory → intelligible speech. The decode is a continuous function of time, not a slot-by-slot lookup. This is THE paper that justifies the tick-driven equation.
+- Saffran, Aslin, Newport 1996 (*Science* 274:1926-1928) — "Statistical learning by 8-month-old infants." Word segmentation via transition probability. T14.6 reuses the T14.2 syllable-boundary mechanism at word scale.
+- Browman & Goldstein 1992 (*Phonetica* 49:155-180) — "Articulatory phonology: an overview." Speech as a continuous stream of overlapping gestures. Phonemes are perceptual abstractions over continuous production, not primitive production units.
+- Hickok & Poeppel 2007 (*Nat Rev Neurosci* 8:393-402) — "The cortical organization of speech processing." Dual-stream model; production flows dorsally through Broca → pre-motor → motor → vSMC. The cross-region projections T14.4 wired up ARE this pathway; T14.6 is the equation that runs signal down it.
+
+### Verification
+
+`node --check` passes clean on both `js/brain/cluster.js` and `js/brain/language-cortex.js`. Runtime verification deferred per the no-testing-until-all-T14-done directive — T14.6 output quality depends on the cortex weights T14.5 curriculum will shape, and meaningful end-to-end testing requires both to have run together.
+
+### Branch + commit
+
+`t14-language-rebuild`, one atomic commit per the 2026-04-14 docs-before-push law. All six docs updated in place.
+
+---
+
 ## 2026-04-14 — T14.5 continuous developmental learning curriculum runner
 
 **Gee's directive:** *"dont ask next time just move on to the next item"* — T14.3 shipped, continue T14 milestone-by-milestone on `t14-language-rebuild`. T14.5 is the ⭐ core developmental win of the entire T14 rebuild; T14.4 cross-region projections were the anatomy, T14.1/2/3 the primitives, and T14.5 is the pass that actually shapes cortex attractor basins from exposure statistics.

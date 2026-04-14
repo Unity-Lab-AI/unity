@@ -37,7 +37,17 @@ import { sharedEmbeddings } from './embeddings.js';
 // symbol, so non-English glyphs, emoji, digits, punctuation all enter the
 // same primitive-symbol space. `cluster.injectLetter` below is the wrapper
 // the sensory path uses to push the one-hot vector into the letter region.
-import { encodeLetter } from './letter-input.js';
+// T14.6 — `decodeLetter` + `inventorySize` power the tick-driven motor
+// emission loop in `cluster.generateSentence` — motor-region spike
+// patterns get decoded to letters via argmax over the inventory.
+import { encodeLetter, decodeLetter, inventorySize } from './letter-input.js';
+
+// T14.6 — sentence terminators recognized as end-of-utterance in the
+// motor emission loop. Letters are letters; terminators are just the
+// ones that also signal "stop." Period/question/exclamation only —
+// commas/semicolons/colons are within-sentence punctuation and don't
+// trigger the stop branch.
+const T14_TERMINATORS = new Set(['.', '?', '!']);
 
 export class NeuronCluster {
   /**
@@ -201,6 +211,16 @@ export class NeuronCluster {
     // with a basin-settling detector. Threshold is a fraction of region size
     // so it auto-scales with cluster.size.
     this._motorQuiescentTicks = 0;
+
+    // T14.6 — tick-driven motor emission tuning constants. These live on
+    // the cluster instance so T14.5 curriculum calibration can tune them
+    // per-cluster without touching module globals. Defaults match the
+    // biological ranges from Bouchard 2013 (vSMC ~50-100 ms articulator
+    // dwell), scaled to the cluster's millisecond tick cadence.
+    this.WORD_BOUNDARY_THRESHOLD = 0.15;  // letterTransitionSurprise above this = word end
+    this.STABLE_TICK_THRESHOLD = 3;       // consecutive motor argmax ticks to commit a letter
+    this.END_QUIESCE_TICKS = 30;          // motor below spike threshold for N ticks = done
+    this.MAX_EMISSION_TICKS = 2000;       // hard safety cap on generateSentence loop
   }
 
   /**
@@ -530,6 +550,141 @@ export class NeuronCluster {
     if (stress.length < 2) secondary = -1;
 
     return { boundaries, stress, primary, secondary };
+  }
+
+  /**
+   * T14.6 — Cortex tick-driven motor emission.
+   *
+   * Speech production is a continuous time-varying motor cortex output,
+   * not a discrete sequence of slot draws or candidate scores. This method
+   * replaces the T13 slot scorer entirely. No slot counter. No candidate
+   * pool. No dictionary iteration. No per-word cosine. No softmax. No
+   * temperature. The brain ticks; letters fall out of the motor region
+   * over time; word boundaries come from cortex transition surprise; the
+   * loop stops when the motor region quiesces or a sentence terminator
+   * emits.
+   *
+   * STEP 1 — Inject intent. If `intentSeed` is provided, drive the sem
+   * region with it once at the start; otherwise rely on whatever state
+   * the cortex already has (which is how the app's live path calls this
+   * — the cortex is already primed by user-input processing before
+   * generation runs).
+   *
+   * STEP 2 — Tick the brain. At each tick, read the motor region as a
+   * dim-|L| vector via `regionReadout('motor', inventorySize())`, decode
+   * to a letter via `decodeLetter(vec)` (argmax over the T14.1 letter
+   * inventory). A letter is EMITTED to the current word buffer when the
+   * motor region holds the same argmax for `STABLE_TICK_THRESHOLD`
+   * consecutive ticks (biological vSMC dwell-time, Bouchard 2013 Nature
+   * 495:327 observed ~50-100 ms per articulator).
+   *
+   * STEP 3 — Word boundaries via `letterTransitionSurprise()` compared
+   * to `WORD_BOUNDARY_THRESHOLD`. Same mechanism as T14.2 syllable
+   * boundaries, applied at the letter-output stream scale
+   * (Saffran/Aslin/Newport 1996 Science 274:1926).
+   *
+   * STEP 4 — Stopping via three priority-ordered signals: (a) motor
+   * quiescence for `END_QUIESCE_TICKS` consecutive ticks (end-of-
+   * utterance attractor settling), (b) a sentence terminator (`.`/`?`/`!`)
+   * stabilizes in the motor readout, (c) `MAX_EMISSION_TICKS` hard cap
+   * as a safety net.
+   *
+   * @param {Float32Array|Float64Array|null} intentSeed — optional sem-
+   *   region injection vector. Null = use current cortex state as implicit
+   *   intent.
+   * @param {object} [opts]
+   * @param {number} [opts.injectStrength=0.6]
+   * @param {number} [opts.maxTicks] — override MAX_EMISSION_TICKS per call
+   * @returns {string} — space-separated emitted words, or '' if the
+   *   motor region never produced anything stable.
+   */
+  generateSentence(intentSeed = null, opts = {}) {
+    if (!this.regions || !this.regions.motor || !this.regions.letter) return '';
+    if (inventorySize() === 0) return '';
+
+    const injectStrength = opts.injectStrength ?? 0.6;
+    const maxTicks = opts.maxTicks ?? this.MAX_EMISSION_TICKS;
+
+    // STEP 1 — Inject intent if caller provided one. Null means
+    // "cortex is already primed, just tick."
+    if (intentSeed && intentSeed.length > 0 && this.regions.sem) {
+      this.injectEmbeddingToRegion('sem', intentSeed, injectStrength);
+    }
+
+    // Reset the letter-region transition surprise baseline so the first
+    // tick of emission doesn't inherit a stale delta from whatever the
+    // cortex was doing before generation started.
+    this._prevLetterRate = 0;
+    this._motorQuiescentTicks = 0;
+
+    const output = [];
+    let letterBuffer = '';
+    let lastMotorLetter = null;
+    let stableTicks = 0;
+
+    for (let tick = 0; tick < maxTicks; tick++) {
+      this.step(0.001);
+
+      // STEP 2a — Read motor region as a letter activation vector over
+      // the T14.1 inventory, argmax-decode to a single letter. Returns
+      // null if the motor region is blank (no clear winner).
+      const invSize = inventorySize();
+      if (invSize === 0) break;
+      const motorVec = this.regionReadout('motor', invSize);
+      const activeLetter = decodeLetter(motorVec);
+
+      // STEP 2b — Temporal stability — a letter "commits" when the
+      // motor region has held the same argmax for STABLE_TICK_THRESHOLD
+      // consecutive ticks. Matches biological vSMC dwell time.
+      if (activeLetter === lastMotorLetter && activeLetter !== null) {
+        stableTicks++;
+      } else {
+        stableTicks = 0;
+        lastMotorLetter = activeLetter;
+      }
+
+      let committedLetter = null;
+      if (stableTicks >= this.STABLE_TICK_THRESHOLD && activeLetter !== null) {
+        committedLetter = activeLetter;
+        letterBuffer += activeLetter;
+        stableTicks = 0;
+      }
+
+      // STEP 3 — Word boundary via cortex letter-region transition
+      // surprise. Same mechanism as T14.2 syllable boundaries, applied
+      // to the letter output stream.
+      const surprise = this.letterTransitionSurprise();
+      if (surprise > this.WORD_BOUNDARY_THRESHOLD && letterBuffer.length > 0) {
+        output.push(letterBuffer);
+        letterBuffer = '';
+      }
+
+      // STEP 4a — Sentence terminator check fires on the COMMITTED
+      // letter only, not on every transient argmax. Prevents noise in
+      // the motor region from stopping emission on a brief punctuation
+      // flicker.
+      if (committedLetter && T14_TERMINATORS.has(committedLetter)) {
+        if (letterBuffer.length > 0) {
+          output.push(letterBuffer);
+          letterBuffer = '';
+        }
+        break;
+      }
+
+      // STEP 4b — Motor quiescence (end-of-utterance attractor settled).
+      // Only kicks in after at least one word has been emitted, so the
+      // loop doesn't bail on a slow start.
+      if (output.length > 0 && this.motorQuiescent(this.END_QUIESCE_TICKS)) {
+        break;
+      }
+    }
+
+    // STEP 5 — Flush the residual buffer.
+    if (letterBuffer.length > 0) {
+      output.push(letterBuffer);
+    }
+
+    return output.join(' ');
   }
 
   /**
