@@ -581,6 +581,11 @@ async function init() {
   // currently detected BEFORE booting. populated again during boot
   // as autoDetect resolves.
   renderSensoryInventory();
+
+  // R15 — wire the image-gen + vision-describer provider button
+  // grids. Each button shows a per-backend setup form on click.
+  // Buttons for already-saved backends get a green `.saved` marker.
+  wireBackendButtons();
 }
 
 /**
@@ -609,6 +614,483 @@ function renderSensoryInventory() {
     <div style="color:var(--cyan);margin-bottom:4px;">👁 VISION DESCRIBER</div>
     <div style="margin-left:8px;">${visRows}${pausedNote}</div>
   `;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// R15 BACKEND PICKER — provider grid + per-backend setup forms
+// ═══════════════════════════════════════════════════════════════
+// The setup modal exposes two grids of clickable backend buttons
+// (image gen + vision describer). Clicking any button populates the
+// #backend-connect-form area below the grids with per-backend setup
+// instructions + minimal required inputs. The design goal per Gee:
+// "all set up as automatic as we can" — auto-detect local backends
+// work with ZERO config; remote backends need a key ONLY; custom is
+// the only full-form path.
+//
+// Saved backends persist to localStorage so they survive page
+// reloads AND get pushed into providers._localImageBackends /
+// _localVisionBackends at bootUnity() time so Unity uses them
+// immediately. A ready-to-copy env.js snippet is also shown after
+// every save for users who want file-based config that survives
+// Clear All Data.
+// ═══════════════════════════════════════════════════════════════
+
+const BACKEND_CATALOG = {
+  // ── IMAGE GENERATION ──────────────────────────────────────────
+  'img:pollinations': {
+    name: 'Pollinations',
+    kind: 'image',
+    instructions:
+      'Free default — already active as Unity\'s image gen fallback, no setup needed. Paste a Pollinations key below for higher rate limits. You can also pick which Pollinations image model Unity uses (default: flux).',
+    link: 'https://pollinations.ai/dashboard',
+    needsKey: true,
+    keyOptional: true,
+    keyStorageKey: 'pollinations',
+    showModel: true,
+    defaultModel: 'flux',
+    modelHint: 'e.g. flux / turbo / sdxl-1.0',
+  },
+  'img:a1111': {
+    name: 'Automatic1111 / SD.Next / Forge',
+    kind: 'image',
+    instructions:
+`Install: github.com/AUTOMATIC1111/stable-diffusion-webui
+Run it with the API enabled:
+  Linux/Mac:  ./webui.sh --api
+  Windows:    set COMMANDLINE_ARGS=--api && webui-user.bat
+
+Unity auto-detects on localhost:7860 — no config needed. Only fill in a URL below if you're running on a remote host or non-standard port.`,
+    link: 'https://github.com/AUTOMATIC1111/stable-diffusion-webui',
+    autoDetect: true,
+    defaultPort: 7860,
+    defaultKind: 'a1111',
+  },
+  'img:comfyui': {
+    name: 'ComfyUI',
+    kind: 'image',
+    instructions:
+`Install: github.com/comfyanonymous/ComfyUI
+Run: python main.py
+
+Unity auto-detects on localhost:8188 — no config needed. Only fill in a URL below for remote / non-standard setups.`,
+    link: 'https://github.com/comfyanonymous/ComfyUI',
+    autoDetect: true,
+    defaultPort: 8188,
+    defaultKind: 'comfy',
+  },
+  'img:dalle': {
+    name: 'OpenAI DALL-E',
+    kind: 'image',
+    instructions:
+`Create a key at platform.openai.com/api-keys (paid account required).
+Paste below. Unity uses dall-e-3 by default — change the model field to dall-e-2 if you prefer the older model.`,
+    link: 'https://platform.openai.com/api-keys',
+    needsKey: true,
+    defaultUrl: 'https://api.openai.com',
+    defaultKind: 'openai',
+    showModel: true,
+    defaultModel: 'dall-e-3',
+  },
+  'img:stability': {
+    name: 'Stability AI',
+    kind: 'image',
+    instructions:
+`Create a key at platform.stability.ai/account/keys.
+Paste below. Default model is stable-diffusion-xl-1024-v1-0 — see platform.stability.ai/docs/api-reference for alternatives.`,
+    link: 'https://platform.stability.ai/account/keys',
+    needsKey: true,
+    defaultUrl: 'https://api.stability.ai',
+    defaultKind: 'openai',
+    showModel: true,
+    defaultModel: 'stable-diffusion-xl-1024-v1-0',
+  },
+  'img:custom': {
+    name: 'Custom Image Endpoint',
+    kind: 'image',
+    instructions:
+`Any OpenAI-compatible, Automatic1111-compatible, or generic image-generation endpoint.
+Unity handles 4 response shapes automatically: OpenAI { data:[{url}] }, OpenAI base64 { data:[{b64_json}] }, A1111 { images:[<base64>] }, and generic { url } / { image_url }.
+Pick the right "kind" below based on your backend's request format.`,
+    needsUrl: true,
+    needsKey: true,
+    keyOptional: true,
+    showModel: true,
+    showKind: true,
+  },
+
+  // ── VISION DESCRIBER (VLM / image classifier) ─────────────────
+  'vis:pollinations': {
+    name: 'Pollinations GPT-4o (vision describer)',
+    kind: 'vision',
+    instructions:
+`Free default — already active as Unity's vision describer fallback, no setup needed. Uses Pollinations multimodal chat under the hood.
+Paste a Pollinations key below for higher rate limits. You can also swap the multimodal model Unity asks to describe camera frames.`,
+    link: 'https://pollinations.ai/dashboard',
+    needsKey: true,
+    keyOptional: true,
+    keyStorageKey: 'pollinations',
+    showModel: true,
+    defaultModel: 'openai',
+    modelHint: 'multimodal chat model name — e.g. openai, claude-haiku',
+  },
+  'vis:ollama': {
+    name: 'Ollama (llava / moondream / bakllava)',
+    kind: 'vision',
+    instructions:
+`Install: ollama.com
+Pull a vision model:  ollama pull llava   (or moondream / bakllava / minicpm-v)
+Start:                ollama serve
+
+Unity auto-detects on localhost:11434 and filters /api/tags for vision-capable models automatically — no config needed.
+Fill in the URL below only for remote hosts. Model field can force a specific VLM; leave blank to auto-pick.`,
+    link: 'https://ollama.com/library/llava',
+    autoDetect: true,
+    defaultPort: 11434,
+    defaultKind: 'ollama-vision',
+    showModel: true,
+    defaultModel: '',
+    modelHint: 'leave blank for auto-pick, or force e.g. llava, moondream, bakllava',
+  },
+  'vis:lmstudio': {
+    name: 'LM Studio (VLM)',
+    kind: 'vision',
+    instructions:
+`Install: lmstudio.ai
+Download a vision model (e.g. llava-v1.6-mistral or bakllava) from the model browser.
+Load it and start the local server (Developer tab → Start Server, default port 1234).
+
+Unity auto-detects on localhost:1234. Exposes OpenAI-compatible /v1/chat/completions with multimodal content.`,
+    link: 'https://lmstudio.ai',
+    autoDetect: true,
+    defaultPort: 1234,
+    defaultKind: 'openai-vision',
+    showModel: true,
+    defaultModel: '',
+    modelHint: 'leave blank for auto-pick',
+  },
+  'vis:openai': {
+    name: 'OpenAI GPT-4o Vision',
+    kind: 'vision',
+    instructions:
+`Create a key at platform.openai.com/api-keys.
+Paste below. Unity uses gpt-4o for vision by default — change to gpt-4o-mini for cheaper / faster.`,
+    link: 'https://platform.openai.com/api-keys',
+    needsKey: true,
+    defaultUrl: 'https://api.openai.com',
+    defaultKind: 'openai-vision',
+    showModel: true,
+    defaultModel: 'gpt-4o',
+  },
+  'vis:custom': {
+    name: 'Custom VLM Endpoint',
+    kind: 'vision',
+    instructions:
+`Any OpenAI-compatible multimodal chat endpoint or Ollama-style VLM.
+Pick "openai-vision" for endpoints using /v1/chat/completions with type:image_url content blocks, or "ollama-vision" for endpoints using /api/chat with an images array.`,
+    needsUrl: true,
+    needsKey: true,
+    keyOptional: true,
+    showModel: true,
+    showKind: true,
+  },
+};
+
+/**
+ * Wire click handlers onto every .provider-btn at init() time.
+ * Called once — idempotent (skips if already wired).
+ */
+function wireBackendButtons() {
+  const buttons = document.querySelectorAll('.provider-btn');
+  buttons.forEach(btn => {
+    if (btn._wired) return;
+    btn._wired = true;
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.provider-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      showBackendForm(btn.dataset.backend);
+    });
+  });
+  // Highlight already-saved backends so returning users see them green
+  refreshSavedMarkers();
+}
+
+/**
+ * Walk the catalog + localStorage and tag already-configured backends
+ * with `.saved` so returning users see which ones are already set up
+ * before clicking anything.
+ */
+function refreshSavedMarkers() {
+  try {
+    const imgAll = JSON.parse(localStorage.getItem('custom_image_backends') || '{}');
+    const visAll = JSON.parse(localStorage.getItem('custom_vision_backends') || '{}');
+    const pollKey = storage?.getApiKey('pollinations');
+    document.querySelectorAll('.provider-btn').forEach(btn => {
+      const key = btn.dataset.backend;
+      const config = BACKEND_CATALOG[key];
+      if (!config) return;
+      if (config.keyStorageKey === 'pollinations') {
+        btn.classList.toggle('saved', !!pollKey);
+      } else {
+        const store = config.kind === 'image' ? imgAll : visAll;
+        btn.classList.toggle('saved', !!store[key]);
+      }
+    });
+  } catch {}
+}
+
+/**
+ * Render the per-backend setup form inside #backend-connect-form when
+ * a button is clicked. Pre-fills any stored values so reopening a
+ * previously-saved backend shows its current config.
+ */
+function showBackendForm(backendKey) {
+  const config = BACKEND_CATALOG[backendKey];
+  if (!config) return;
+  const form = document.getElementById('backend-connect-form');
+  const content = document.getElementById('backend-form-content');
+  if (!form || !content) return;
+
+  let html = `<h3>${config.kind === 'image' ? '🎨' : '👁'} ${config.name}</h3>`;
+  html += `<p class="hint" style="white-space:pre-wrap;line-height:1.5;">${config.instructions}</p>`;
+  if (config.link) {
+    html += `<a href="${config.link}" target="_blank" class="hint-link">${config.link} →</a>`;
+  }
+
+  // URL input — required for custom, optional override for auto-detect
+  if (config.needsUrl || config.autoDetect) {
+    const isRequired = !!config.needsUrl;
+    const defaultUrl = config.defaultUrl || (config.defaultPort ? `http://localhost:${config.defaultPort}` : '');
+    const placeholder = isRequired
+      ? 'Endpoint URL (required)'
+      : `Custom URL (optional — auto-detects at ${defaultUrl})`;
+    html += `<input type="text" id="backend-url" placeholder="${placeholder}" autocomplete="off" spellcheck="false">`;
+  }
+
+  // Model input
+  if (config.showModel) {
+    const label = config.kind === 'image' ? '🎨 Image model' : '👁 Vision / classifier model';
+    const hint = config.modelHint ? ` — ${config.modelHint}` : '';
+    html += `<input type="text" id="backend-model" placeholder="${label}${hint}" autocomplete="off" spellcheck="false">`;
+  }
+
+  // Kind selector (only for custom where the backend type isn't known)
+  if (config.showKind) {
+    html += `<select id="backend-kind">`;
+    if (config.kind === 'image') {
+      html += `<option value="openai">openai — OpenAI-compatible /v1/images/generations</option>`;
+      html += `<option value="a1111">a1111 — Automatic1111 /sdapi/v1/txt2img</option>`;
+      html += `<option value="comfy">comfy — ComfyUI workflow</option>`;
+    } else {
+      html += `<option value="openai-vision">openai-vision — /v1/chat/completions with image_url content blocks</option>`;
+      html += `<option value="ollama-vision">ollama-vision — /api/chat with images array</option>`;
+    }
+    html += `</select>`;
+  }
+
+  // Key input
+  if (config.needsKey) {
+    const label = config.keyOptional ? 'API key (optional — raises rate limits)' : 'API key (required)';
+    html += `<input type="password" id="backend-key" placeholder="${label}" autocomplete="off" spellcheck="false">`;
+  }
+
+  html += `<button class="save-backend-btn" data-backend="${backendKey}">Save Backend</button>`;
+  html += `<div id="env-snippet-wrap" style="display:none;margin-top:10px;">
+    <p class="env-location">✓ Saved to localStorage. For file-based config that survives "Clear All Data", copy this block into <code>js/env.js</code> — create that file in the <code>js/</code> folder (next to <code>js/env.example.js</code>, gitignored so your keys never get pushed):</p>
+    <pre id="env-snippet-code"></pre>
+  </div>`;
+
+  content.innerHTML = html;
+  form.style.display = 'block';
+
+  // Pre-fill any stored values so returning users see their config
+  const stored = loadStoredBackendConfig(backendKey);
+  if (stored) {
+    const set = (id, val) => { const el = document.getElementById(id); if (el && val != null) el.value = val; };
+    set('backend-key', stored.key);
+    set('backend-url', stored.url);
+    set('backend-model', stored.model);
+    set('backend-kind', stored.kind);
+  }
+
+  // Wire save button
+  const saveBtn = content.querySelector('.save-backend-btn');
+  if (saveBtn) saveBtn.addEventListener('click', () => saveBackend(backendKey));
+}
+
+/**
+ * Persist a backend config to localStorage + register it with the
+ * live providers singleton (if bootUnity has run) + show the env.js
+ * snippet. Called when the user clicks Save Backend inside the form.
+ */
+function saveBackend(backendKey) {
+  const config = BACKEND_CATALOG[backendKey];
+  if (!config) return;
+
+  const key = document.getElementById('backend-key')?.value.trim() || '';
+  const rawUrl = document.getElementById('backend-url')?.value.trim() || '';
+  const model = document.getElementById('backend-model')?.value.trim() || '';
+  const kind = document.getElementById('backend-kind')?.value || config.defaultKind || 'openai';
+  const url = rawUrl || config.defaultUrl || (config.defaultPort ? `http://localhost:${config.defaultPort}` : '');
+
+  // Validation
+  if (config.needsUrl && !url) {
+    alert('URL is required for this backend.');
+    return;
+  }
+  if (config.needsKey && !config.keyOptional && !key) {
+    alert('API key is required for this backend.');
+    return;
+  }
+
+  // Pollinations special case — the key goes into the shared
+  // pollinations storage slot (used by the Pollinations client) and
+  // the model choice goes into a per-kind localStorage key that
+  // bootUnity reads back at launch to override the hardcoded default.
+  if (config.keyStorageKey === 'pollinations') {
+    if (key) {
+      storage.setApiKey('pollinations', key);
+      if (apiKeyInput) apiKeyInput.value = key;
+    }
+    const modelStorageKey = config.kind === 'image' ? 'pollinations_image_model' : 'pollinations_vision_model';
+    if (model) {
+      localStorage.setItem(modelStorageKey, model);
+    } else {
+      localStorage.removeItem(modelStorageKey);
+    }
+    // Apply to the live pollinations client immediately if boot has run
+    if (pollinations && key) pollinations._apiKey = key;
+    if (pollinations && model && config.kind === 'image') pollinations._defaultImageModel = model;
+    if (providers && model && config.kind === 'vision') providers._pollinationsVisionModel = model;
+
+    showEnvSnippet({
+      pollinations: key || storage.getApiKey('pollinations') || '',
+      [modelStorageKey]: model,
+    });
+    refreshSavedMarkers();
+    renderSensoryInventory();
+    return;
+  }
+
+  // Standard backend entry
+  const entry = { name: config.name, url };
+  if (model) entry.model = model;
+  if (kind) entry.kind = kind;
+  if (key) entry.key = key;
+
+  // Save to localStorage keyed by backendKey so same-backend saves
+  // overwrite cleanly instead of piling up duplicates
+  const storageField = config.kind === 'image' ? 'custom_image_backends' : 'custom_vision_backends';
+  const all = JSON.parse(localStorage.getItem(storageField) || '{}');
+  all[backendKey] = entry;
+  localStorage.setItem(storageField, JSON.stringify(all));
+
+  // Push into live providers so Unity starts using it immediately
+  // without a reboot. Remove any stale copy first (same name).
+  if (providers) {
+    const listField = config.kind === 'image' ? '_localImageBackends' : '_localVisionBackends';
+    providers[listField] = providers[listField].filter(b => b.name !== entry.name);
+    providers[listField].push({ ...entry, detected: false, fromEnv: false, configured: true });
+  }
+
+  // Generate env.js snippet as a copy-paste escape hatch
+  const envField = config.kind === 'image' ? 'imageBackends' : 'visionBackends';
+  showEnvSnippet({ [envField]: [entry] });
+
+  refreshSavedMarkers();
+  renderSensoryInventory();
+}
+
+/**
+ * Render a copy-paste-ready env.js snippet into the form's snippet
+ * area. Keeps any previously-saved Pollinations key visible so users
+ * don't accidentally drop it when they copy the block.
+ */
+function showEnvSnippet(updates) {
+  const wrap = document.getElementById('env-snippet-wrap');
+  const pre = document.getElementById('env-snippet-code');
+  if (!wrap || !pre) return;
+
+  const jsonify = (v) => typeof v === 'string' ? `'${v.replace(/'/g, "\\'")}'` : JSON.stringify(v);
+  const lines = [];
+  const existingPoll = storage.getApiKey('pollinations') || '';
+  if (existingPoll && !updates.pollinations) lines.push(`  pollinations: '${existingPoll}',`);
+  for (const [k, v] of Object.entries(updates)) {
+    if (v == null || v === '') continue;
+    if (Array.isArray(v)) {
+      lines.push(`  ${k}: [`);
+      for (const entry of v) {
+        const parts = Object.entries(entry)
+          .filter(([, val]) => val !== undefined && val !== '')
+          .map(([ek, ev]) => `${ek}: ${jsonify(ev)}`);
+        lines.push(`    { ${parts.join(', ')} },`);
+      }
+      lines.push(`  ],`);
+    } else {
+      lines.push(`  ${k}: ${jsonify(v)},`);
+    }
+  }
+
+  const snippet = `// Copy into js/env.js (create the file next to js/env.example.js).
+// js/env.js is gitignored — your keys never get pushed.
+
+export const ENV_KEYS = {
+${lines.join('\n')}
+};`;
+
+  pre.textContent = snippet;
+  wrap.style.display = 'block';
+}
+
+/**
+ * Read stored config for one backend slot so showBackendForm can
+ * pre-fill inputs.
+ */
+function loadStoredBackendConfig(backendKey) {
+  const config = BACKEND_CATALOG[backendKey];
+  if (!config) return null;
+
+  if (config.keyStorageKey === 'pollinations') {
+    return {
+      key: storage?.getApiKey('pollinations') || '',
+      model: localStorage.getItem(config.kind === 'image' ? 'pollinations_image_model' : 'pollinations_vision_model') || '',
+    };
+  }
+
+  try {
+    const storageField = config.kind === 'image' ? 'custom_image_backends' : 'custom_vision_backends';
+    const all = JSON.parse(localStorage.getItem(storageField) || '{}');
+    return all[backendKey] || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Called from bootUnity() AFTER providers is constructed but BEFORE
+ * providers.autoDetect() fires. Any backends the user configured via
+ * the setup modal get pushed into the live provider chain so they
+ * take priority ahead of the auto-detected defaults.
+ */
+function injectCustomBackendsIntoProviders() {
+  if (!providers) return;
+  try {
+    const imgAll = JSON.parse(localStorage.getItem('custom_image_backends') || '{}');
+    const visAll = JSON.parse(localStorage.getItem('custom_vision_backends') || '{}');
+    for (const entry of Object.values(imgAll)) {
+      providers._localImageBackends.push({ ...entry, detected: false, fromEnv: false, configured: true });
+    }
+    for (const entry of Object.values(visAll)) {
+      providers._localVisionBackends.push({ ...entry, detected: false, fromEnv: false, configured: true });
+    }
+  } catch (err) {
+    console.warn('[Unity] custom backend injection failed:', err.message);
+  }
+
+  // R15 — apply saved Pollinations model overrides
+  const imgModel = localStorage.getItem('pollinations_image_model');
+  const visModel = localStorage.getItem('pollinations_vision_model');
+  if (imgModel && pollinations) pollinations._defaultImageModel = imgModel;
+  if (visModel) providers._pollinationsVisionModel = visModel;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -662,6 +1144,13 @@ async function bootUnity(apiKey, perms) {
   if (typeof providers.loadEnvConfig === 'function') {
     providers.loadEnvConfig(ENV_KEYS);
   }
+  // R15 — push any backends the user configured via the setup modal
+  // (saved to localStorage by saveBackend()) into providers._localImageBackends
+  // and _localVisionBackends BEFORE autoDetect runs, so user-configured
+  // entries take priority over auto-detected defaults. Also applies
+  // saved Pollinations model overrides (flux/turbo for image, openai/
+  // claude-haiku for vision describer multimodal chat).
+  injectCustomBackendsIntoProviders();
   if (typeof providers.autoDetect === 'function') {
     providers.autoDetect().catch(err => {
       console.warn('[Unity] image backend auto-detect failed:', err.message);

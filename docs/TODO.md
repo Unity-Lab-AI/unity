@@ -831,7 +831,7 @@ All currently derive from the one `PORT` constant in brain-server.js:111, so R14
 
 ---
 
-## R15 — LANDING PAGE REWORK (index.html setup modal)  [DONE 2026-04-13 — all 6 subtasks complete + bubble click fix. Commit touched index.html, js/app.js, css/style.css. Net -331 lines. See FINALIZED.md for the full teardown.]
+## R15 — LANDING PAGE REWORK (index.html setup modal)  [DONE 2026-04-13 — shipped initially as over-aggressive delete in commit `cbc1bd2` (killed the provider connect buttons entirely), then rebuilt properly in commit R15b: brought back the clickable provider grid pattern but retargeted at image gen + vision describer backends with per-backend setup forms, auto-detect instructions for local backends, key-only forms for remote backends, localStorage persistence + env.js snippet output, Pollinations image/vision model overrides wired through pollinations.js generateImage() and ai-providers.js _pollinationsDescribeImage(). Also bubble click fix + stale Ollama (SD) auto-detect entry removed. See FINALIZED.md for the full teardown of both passes.]
 
 **Goal:** The `index.html` setup modal is stuck in pre-R4 reality. It still advertises every text-AI backend that got gutted, gates the start button on "Connect an AI" when Unity's brain needs nothing, offers a `proxy.js` download for a file that was deleted in R1, and hides the actual Sensory AI / multi-provider image gen path behind a "FUCK IT — BRAIN ONLY" toggle that's now the only mode. First impression of the project is 100% wrong.
 

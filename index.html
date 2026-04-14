@@ -94,10 +94,38 @@
       </div>
 
       <p class="hint" style="margin-bottom:12px;line-height:1.5;">
-        Unity's cognition runs entirely on math — her language cortex, memory, motor selection, and decisions all emerge from brain equations. <strong style="color:var(--text);">No text-AI backend is required.</strong> The only optional pieces are sensory peripherals: image generation, the vision describer (VLM), and TTS. They're auto-detected at boot time from anything running locally, and fall back to free Pollinations otherwise.
+        Unity's cognition runs entirely on math — her language cortex, memory, motor selection, and decisions all emerge from brain equations. <strong style="color:var(--text);">No text-AI backend is required.</strong> The only optional pieces are sensory peripherals: image generation and the vision describer. Click a backend below for setup instructions. Local backends auto-detect at boot; remote backends need a URL / API key.
       </p>
 
+      <!-- Image Generation backend grid — click a button for per-backend instructions -->
+      <p style="font-size:12px;color:var(--text);margin-top:14px;margin-bottom:6px;font-weight:500;">🎨 Image Generation</p>
+      <div id="imggen-buttons" class="provider-grid">
+        <button class="provider-btn" data-backend="img:pollinations">Pollinations</button>
+        <button class="provider-btn" data-backend="img:a1111">Automatic1111</button>
+        <button class="provider-btn" data-backend="img:comfyui">ComfyUI</button>
+        <button class="provider-btn" data-backend="img:ollama">Ollama</button>
+        <button class="provider-btn" data-backend="img:dalle">DALL-E (OpenAI)</button>
+        <button class="provider-btn" data-backend="img:stability">Stability AI</button>
+        <button class="provider-btn" data-backend="img:custom">Custom Endpoint</button>
+      </div>
+
+      <!-- Vision Describer backend grid — same pattern -->
+      <p style="font-size:12px;color:var(--text);margin-top:12px;margin-bottom:6px;font-weight:500;">👁 Vision Describer</p>
+      <div id="vision-buttons" class="provider-grid">
+        <button class="provider-btn" data-backend="vis:pollinations">Pollinations</button>
+        <button class="provider-btn" data-backend="vis:ollama">Ollama (llava)</button>
+        <button class="provider-btn" data-backend="vis:lmstudio">LM Studio</button>
+        <button class="provider-btn" data-backend="vis:openai">OpenAI GPT-4o</button>
+        <button class="provider-btn" data-backend="vis:custom">Custom VLM</button>
+      </div>
+
+      <!-- Per-backend setup form — populated on click by showBackendForm() in app.js -->
+      <div id="backend-connect-form" style="display:none;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:14px;margin-top:10px;margin-bottom:14px;">
+        <div id="backend-form-content"></div>
+      </div>
+
       <!-- Sensory backend inventory — populated by app.js renderSensoryInventory() -->
+      <p style="font-size:12px;color:var(--text);margin-top:14px;margin-bottom:6px;font-weight:500;">📡 Detected / Saved Backends</p>
       <div id="sensory-inventory" style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-family:var(--mono);font-size:11px;line-height:1.7;">
         <div id="sensory-inventory-content" style="color:var(--text-dim);">Sensory backends probed at boot time. Start Unity to see what's detected on your machine.</div>
       </div>

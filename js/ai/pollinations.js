@@ -118,7 +118,12 @@ export class PollinationsAI {
      */
     generateImage(prompt, options = {}) {
         try {
-            const model = options.model || 'flux';
+            // R15 — options.model wins, then a user-saved default
+            // from the setup modal (stored on `this._defaultImageModel`
+            // by app.js injectCustomBackendsIntoProviders() from
+            // localStorage.pollinations_image_model), then 'flux' as
+            // the built-in fallback.
+            const model = options.model || this._defaultImageModel || 'flux';
             const width = options.width || 512;
             const height = options.height || 512;
 

@@ -14,6 +14,50 @@
 
 ## COMPLETED TASKS LOG
 
+## 2026-04-13 Session: R15b — Setup modal rebuild with proper provider-button grid
+
+### COMPLETED
+- [x] **Task:** R15b — Rebuild the setup modal's backend picker. The initial R15 pass (commit `cbc1bd2`) over-rotated: I deleted the old 8-provider text-AI connect grid wholesale and replaced it with a single read-only sensory-status viewer. Gee's reaction: "WTF!!!! i dont see the connect key option there ... where the fuck are my image gen options and instruction for the one i click one". He wanted the same clickable-button-with-per-backend-instructions pattern that the old text-AI grid had, but retargeted at image gen + vision describer providers. I had ripped too much. This commit brings back the pattern properly.
+  - Completed: 2026-04-13
+  - Files modified: `index.html` (two new provider grids + form area), `css/style.css` (new `.provider-grid` / `.provider-btn` styles + form styling), `js/app.js` (BACKEND_CATALOG + full picker logic, ~490 lines added), `js/brain/peripherals/ai-providers.js` (removed stale Ollama SD entry + wired vision model override), `js/ai/pollinations.js` (wired image model override). Net **+633 lines / -4 lines** — almost pure additions because this is feature-building, not cleanup.
+  - Design rule from Gee: "all set up as automatic as we can". Translation: auto-detect local backends work with ZERO config (clicking their button shows install instructions + an OPTIONAL URL override for remote/non-standard setups); remote backends (DALL-E, Stability, OpenAI vision) need a KEY ONLY — everything else pre-filled with sensible defaults; custom is the only full-form path.
+  - Image gen provider buttons (7 total):
+    - **Pollinations** — free default, form just has optional key + optional model override (default 'flux'). Key goes to `storage.pollinations`, model goes to `localStorage.pollinations_image_model` which is applied to `pollinations._defaultImageModel` at boot.
+    - **Automatic1111 / SD.Next / Forge** — auto-detects on localhost:7860. Form shows install/run instructions (`./webui.sh --api` or `webui-user.bat --api`) + an optional custom URL field for remote hosts. No key needed.
+    - **ComfyUI** — auto-detects on localhost:8188. Same pattern: install/run instructions + optional URL.
+    - **DALL-E (OpenAI)** — remote, needs key. Pre-filled URL + model='dall-e-3', user pastes a key.
+    - **Stability AI** — remote, needs key. Pre-filled URL + model='stable-diffusion-xl-1024-v1-0'.
+    - **Custom Endpoint** — full form: URL + model + kind (openai / a1111 / comfy) + optional key.
+  - Vision describer provider buttons (5 total):
+    - **Pollinations GPT-4o** — free default, form just has optional key + optional multimodal model override (default 'openai'). Key shared with image Pollinations; model goes to `localStorage.pollinations_vision_model` which is applied to `providers._pollinationsVisionModel` at boot.
+    - **Ollama (llava / moondream / bakllava)** — auto-detects on localhost:11434 with VISION_MODEL_HINTS substring filter. Form shows `ollama pull llava && ollama serve` instructions + optional URL + optional forced-model override.
+    - **LM Studio** — auto-detects on localhost:1234. Instructions + optional URL + optional model.
+    - **OpenAI GPT-4o Vision** — remote, needs key. Pre-filled URL + model='gpt-4o'.
+    - **Custom VLM** — full form: URL + model + kind (openai-vision / ollama-vision) + optional key.
+  - New functions in `js/app.js`:
+    - `const BACKEND_CATALOG = { ... }` — 12-entry catalog (7 image + 5 vision) with per-backend instructions, setup link, default URL/model/kind, field visibility flags (showModel / showKind / needsUrl / needsKey / keyOptional / autoDetect / defaultPort).
+    - `wireBackendButtons()` — attaches one-time click handlers to every `.provider-btn`, called from `init()`. Idempotent via a `btn._wired` flag.
+    - `refreshSavedMarkers()` — walks the catalog + localStorage, marks already-saved backend buttons with `.saved` (green border) so returning users see their config state at a glance.
+    - `showBackendForm(backendKey)` — renders the per-backend instruction + form into `#backend-connect-form`. Pre-fills any stored values via `loadStoredBackendConfig()`.
+    - `saveBackend(backendKey)` — persists to localStorage keyed by backendKey (so same-backend saves overwrite cleanly), registers the new entry with the live providers singleton if bootUnity has already run (no reboot needed to start using it), and generates a copy-paste env.js snippet for file-based config.
+    - `showEnvSnippet(updates)` — builds a ready-to-paste `ENV_KEYS = { ... }` block showing the current saved state, with instructions telling the user to create `js/env.js` next to `js/env.example.js` (gitignored).
+    - `loadStoredBackendConfig(backendKey)` — reverse lookup for form pre-fill.
+    - `injectCustomBackendsIntoProviders()` — called from `bootUnity()` after providers is constructed but BEFORE `providers.autoDetect()` fires, so user-configured entries take priority over auto-detected defaults. Also applies the saved Pollinations image/vision model overrides.
+  - Persistence keys in localStorage:
+    - `custom_image_backends` — JSON object, keyed by backendKey (`img:a1111`, etc.), values are `{name, url, model?, kind?, key?}` entries ready to push into `providers._localImageBackends`
+    - `custom_vision_backends` — same shape for vision
+    - `pollinations_image_model` — Pollinations image model override string (applied to `pollinations._defaultImageModel`)
+    - `pollinations_vision_model` — Pollinations vision model override string (applied to `providers._pollinationsVisionModel`)
+  - Model override wiring:
+    - `js/ai/pollinations.js generateImage()` — now reads `this._defaultImageModel` as a second-tier fallback between explicit `options.model` and the hardcoded `'flux'`. Gets set at boot time by `injectCustomBackendsIntoProviders()` from `localStorage.pollinations_image_model`.
+    - `js/brain/peripherals/ai-providers.js _pollinationsDescribeImage()` — now reads `this._pollinationsVisionModel` instead of the hardcoded `'openai'` literal. Gets set at boot time same way from `localStorage.pollinations_vision_model`.
+  - Bonus cleanup: removed the stale `Ollama (SD)` entry from `LOCAL_IMAGE_BACKENDS` in `ai-providers.js`. Ollama doesn't actually serve Stable Diffusion — that was a copy-paste error from an earlier commit. Ollama correctly lives on the VISION side only (`LOCAL_VISION_BACKENDS`) where llava/moondream/bakllava actually run.
+  - New CSS classes in `css/style.css`: `.provider-grid` (flex container), `.provider-btn` (+ :hover / .active / .saved states), `#backend-connect-form` styling (h3 / .hint-link / inputs / selects / .save-backend-btn / pre for env.js snippet / .env-location for the copy-paste instructions).
+  - **UX flow:** user clicks TALK TO UNITY or the bottom-right bubble → setup modal opens → scrolls past the description → sees two clearly-labeled provider grids → clicks (e.g.) "Automatic1111" → sees `./webui.sh --api` install instructions + a link to the A1111 GitHub + an optional URL field pre-filled with "auto-detects at localhost:7860" placeholder → clicks Save Backend (or leaves it blank for pure auto-detect) → button turns green, env.js snippet appears showing the exact block to copy into `js/env.js` for file-based config → clicks more backends, configures them, or just clicks WAKE UNITY UP to boot with whatever's already saved.
+  - Returning users see all their previously-saved backends marked green before clicking anything. Clicking a saved backend button repopulates the form with its stored values so they can tweak model/key/URL without re-entering everything.
+
+---
+
 ## 2026-04-13 Session: R15 — Landing page / setup modal rework (atomic rewrite)
 
 ### COMPLETED

@@ -47,7 +47,11 @@ const LOCAL_IMAGE_BACKENDS = [
   { name: 'ComfyUI',        url: 'http://localhost:8188',  probe: '/system_stats',             kind: 'comfy' },
   { name: 'InvokeAI',       url: 'http://localhost:9090',  probe: '/api/v1/app/version',       kind: 'invokeai' },
   { name: 'LocalAI',        url: 'http://localhost:8081',  probe: '/v1/models',                kind: 'openai' },
-  { name: 'Ollama (SD)',    url: 'http://localhost:11434', probe: '/api/tags',                 kind: 'openai' },
+  // R15 — removed stale `Ollama (SD)` entry on :11434 here. Ollama
+  // doesn't actually serve Stable Diffusion; that was a copy-paste
+  // error from an earlier commit. Ollama lives on the VISION side
+  // (LOCAL_VISION_BACKENDS below) where llava/moondream/bakllava
+  // actually run.
 ];
 
 // ── Local VLM (vision-language model) backends for the describer ──
@@ -564,17 +568,24 @@ export class SensoryAIProviders {
   /**
    * R13 — Pollinations multimodal fallback. Same call the old
    * app.js:1022 inline handler used, now centralized.
+   *
+   * R15 — the Pollinations multimodal model is now overridable via
+   * `this._pollinationsVisionModel`, which app.js sets at boot time
+   * from `localStorage.pollinations_vision_model` (written when the
+   * user saves the Pollinations vision backend in the setup modal).
+   * Defaults to `'openai'` (Pollinations' GPT-4o multimodal endpoint).
    */
   async _pollinationsDescribeImage(dataUrl, system, userPrompt, timeoutMs) {
     const headers = { 'Content-Type': 'application/json' };
     if (this._pollinations?._apiKey) {
       headers['Authorization'] = `Bearer ${this._pollinations._apiKey}`;
     }
+    const model = this._pollinationsVisionModel || 'openai';
     const res = await fetch('https://gen.pollinations.ai/v1/chat/completions', {
       method: 'POST',
       headers,
       body: JSON.stringify({
-        model: 'openai',
+        model,
         messages: [
           { role: 'system', content: system },
           { role: 'user', content: [
