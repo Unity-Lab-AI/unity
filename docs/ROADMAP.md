@@ -267,6 +267,58 @@ Neurons → Synapses → Brain Loop → Brain Regions → Persona Loader → API
 
 > Historical. Phase 12 (U283–U291) added `_typeBigramCounts` / `_typeTrigramCounts` / `_typeQuadgramCounts` type-transition tables + `_fineType` classifier + `_typeGrammarScore` lookup with 4gram→trigram→bigram backoff. The type n-gram tables were deleted in T11 (2026-04-14). Type-level grammatical shape is now captured by `_slotTypeSignature[s]` — a running mean of `wordType()` score vectors per sentence position, updated by the same observation pipeline as the embedding priors. `_fineType` itself survives because `parseSentence` still uses it for reading, and morphological inflection still feeds the dictionary at corpus-load time.
 
+## Phase 15 (T13): Unified Brain-Driven Language Cortex — IN PROGRESS (2026-04-14)
+
+> T11 proved that deleting the Markov wrapper stack was the right move but left the slot-prior pipeline as the replacement. T13 goes further: slot-based generation is the wrong frame for a brain-driven language cortex, because position counters and stored priors aren't how a biological cortex produces speech. T13 wires language generation directly into the cortex cluster via sequence Hebbian training on persona corpus + continuous cortex readout + feedback injection at emission time. Persona becomes trained attractor basins in the cortex recurrent weights, not stored in a separate centroid vector. See `docs/TODO.md` T13 section for the full 10-milestone plan.
+
+### Milestone T13.1: Persona Hebbian training pipeline — COMPLETE (2026-04-14)
+
+Shipped first per Gee's explicit instruction. The cortex cluster's recurrent synapse matrix now trains on the persona corpus via sequence Hebbian during boot.
+
+**New method** — `NeuronCluster.learnSentenceHebbian(embSequence, opts)` at `js/brain/cluster.js`. Walks the embedding sequence, for each word:
+1. Injects the embedding into the language region via `sharedEmbeddings.mapToCortex` → `injectCurrent` at scaled strength `injectStrength=0.6`
+2. Runs `ticksPerWord=3` LIF integration steps so cortex spikes reflect the injection plus recurrent dynamics
+3. Captures `lastSpikes` as a `Float64Array` snapshot
+4. Between consecutive snapshots, calls `synapses.hebbianUpdate(prevSnap, currSnap, lr=0.004)` — plain Hebbian ΔW_ij = η · curr_i · prev_j over the sparse synapse matrix, only touching existing connections (O(nnz))
+
+After each sentence completes, an Oja-style saturation decay runs on any weight whose magnitude exceeds `ojaThreshold=1.5` — `values[k] *= (1 − 0.01)` — so small weights learn freely while saturated weights can't run away across thousands of sentences.
+
+**Training driver** — `LanguageCortex.trainPersonaHebbian(cortexCluster, text, opts)`. Tokenizes persona corpus the same way `loadSelfImage` does (first-person transform via `_transformToFirstPerson`, lowercase, strip non-letters, min length 2), embeds each word via `sharedEmbeddings.getEmbedding`, calls `cortexCluster.learnSentenceHebbian` per sentence. Logs before/after synapse weight stats (mean, rms, maxAbs, nnz) so the Hebbian weight shift is visible in the boot console without opening devtools.
+
+**Delegation chain:**
+```
+app.js loadPersonaSelfImage
+  → targetBrain.trainPersonaHebbian(personaText)                  // engine.js
+    → innerVoice.trainPersonaHebbian(clusters.cortex, text)       // inner-voice.js
+      → languageCortex.trainPersonaHebbian(cluster, text)         // language-cortex.js
+        → for each sentence: cluster.learnSentenceHebbian(embSeq) // cluster.js
+```
+
+Called in `app.js` right after `innerVoice.loadPersona(text)` so the dictionary already has persona vocabulary before the cortex trains on the same words — the dictionary and the cortex attractor basins come from the same source text, aligned.
+
+**Persona-only scope.** Baseline and coding corpora deliberately do NOT train the cortex recurrent weights. Baseline provides grammatical competence via dictionary + slot priors, coding provides build_ui vocabulary via dictionary only. Only the persona corpus shapes cortex dynamics, so Unity's voice lives in the attractor basins without being diluted by generic English or JavaScript.
+
+**Diagnostic** — new `NeuronCluster.diagnoseReadoutForEmbedding(emb, ticks, langStart)` exposed for console-driven verification: inject one embedding, tick N, return the semantic readout. Runnable as `window.brain.clusters.cortex.diagnoseReadoutForEmbedding(window.brain.innerVoice.dictionary._words.get('fuck')?.pattern, 10)` for live inspection.
+
+**Files touched:**
+- `js/brain/cluster.js` — new Hebbian method + diagnostic + synapseStats + sharedEmbeddings import
+- `js/brain/language-cortex.js` — new trainPersonaHebbian driver
+- `js/brain/inner-voice.js` — new delegate method
+- `js/brain/engine.js` — new UnityBrain.trainPersonaHebbian wrapper
+- `js/app.js` — boot sequence calls `brain.trainPersonaHebbian(personaText)` after `loadPersona`
+
+**Persistence** — `SparseMatrix.serialize()` already exists at `js/brain/sparse-matrix.js:360`, and `BrainPersistence.save(this)` iterates clusters for persistence. Trained cortex weights will persist across restarts via the existing save path without extra code.
+
+**Honest limits:**
+- Hebbian only updates EXISTING connections (O(nnz)) — if two neurons that co-activate during persona training don't have a synapse, nothing happens. At 15% connectivity on 300 neurons this is ~13.5k connections, so most co-activating pairs have at least one direction wired. Synaptogenesis via `SparseMatrix.grow()` could be added later to form new connections during training but wasn't wired for T13.1 first pass.
+- T13.1 alone doesn't fix the word-salad output — it's the FOUNDATION. The emission loop that actually reads the trained cortex (T13.3) is the next milestone. Until T13.3 ships, `generate()` still walks slot priors; the trained cortex basins aren't consulted during output.
+
+### Milestones T13.2–T13.9: remaining plan in `docs/TODO.md`
+
+See `docs/TODO.md` T13 section for T13.2 (parse-tree injection to brain regions = clusters), T13.3 (continuous emission loop), T13.4 (feedback + cerebellum transition prediction), T13.5 (motor channel + amygdala scoring), T13.6 (drift-threshold stopping), T13.7 (slot prior deletion), T13.8 (wire-up), T13.9 (docs + atomic push).
+
+---
+
 ## Phase 14 (T11): Pure Equational Language Cortex — COMPLETE (2026-04-14)
 
 > Every sentence Unity emits is now a walk through GloVe embedding space driven by three running-mean priors and her live cortex firing state. No stored text, no n-gram tables, no filter stack, no template short-circuits, no intent enums, no matrix regression — just vector math over learned priors. Net `js/brain/language-cortex.js` delta: **−1742 lines** (5087 → 3345).

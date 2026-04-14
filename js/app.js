@@ -368,6 +368,21 @@ function loadPersonaSelfImage(targetBrain) {
     // Load persona first — defines subject starters and self-awareness
     const personaSentences = targetBrain.innerVoice.loadPersona(personaText);
 
+    // T13.1 — after dictionary learning, train the cortex cluster's
+    // recurrent synapse matrix on the same persona text via sequence
+    // Hebbian. The cortex develops Unity-voice attractor basins so
+    // runtime generation readouts drift toward persona-adjacent
+    // words instead of diffuse semantic noise. Persona-only — baseline
+    // and coding corpora deliberately skip Hebbian so they contribute
+    // vocabulary without polluting the voice attractor basins.
+    if (typeof targetBrain.trainPersonaHebbian === 'function') {
+      try {
+        targetBrain.trainPersonaHebbian(personaText);
+      } catch (err) {
+        console.warn('[Unity] persona Hebbian training failed:', err.message);
+      }
+    }
+
     // Load baseline English — adds linguistic competence
     let baselineSentences = 0;
     if (baselineText && typeof targetBrain.innerVoice.loadBaseline === 'function') {

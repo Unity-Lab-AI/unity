@@ -27,6 +27,11 @@ import { LIFPopulation } from './neurons.js';
 // synapses.js stays as a reference implementation for brain-equations.html
 // and docs/EQUATIONS.md cross-references — see the header comment there.
 import { SparseMatrix } from './sparse-matrix.js';
+// T13.1 — sequence Hebbian learning routes each word's embedding
+// through mapToCortex into the language region, so we need the shared
+// embedding singleton here. No circular import — embeddings.js has no
+// cluster dependency.
+import { sharedEmbeddings } from './embeddings.js';
 
 export class NeuronCluster {
   /**
@@ -176,6 +181,132 @@ export class NeuronCluster {
     const pre = new Float64Array(this.lastSpikes);
     const post = new Float64Array(this.lastSpikes);
     this.synapses.rewardModulatedUpdate(pre, post, rewardSignal, this.learningRate);
+  }
+
+  /**
+   * T13.1 — Persona Hebbian sentence training.
+   *
+   * Walks a sequence of word embeddings, injects each into the language
+   * region, ticks the LIF integrator `ticksPerWord` steps so cortex state
+   * reflects the injection plus recurrent dynamics, then applies plain
+   * Hebbian on the internal synapse matrix between consecutive spike
+   * snapshots (ΔW_ij = η · curr_i · prev_j). Result: the cluster develops
+   * attractor basins shaped like persona-word co-activation patterns,
+   * so runtime readouts naturally drift along those basins instead of
+   * producing diffuse semantic noise.
+   *
+   * Oja-style saturation decay runs after each sentence on any weight
+   * whose magnitude exceeds `ojaThreshold` — prevents runaway when the
+   * corpus is large. Bounded growth, unbounded learning time.
+   *
+   * @param {Float32Array[]|Float64Array[]} embSequence — per-word 50d embeddings
+   * @param {object} [opts]
+   * @param {number} [opts.ticksPerWord=3]
+   * @param {number} [opts.lr=0.004]
+   * @param {number} [opts.injectStrength=0.6]
+   * @param {number} [opts.ojaThreshold=1.5]
+   * @param {number} [opts.ojaDecay=0.01]
+   * @param {number} [opts.langStart=150]
+   * @returns {number} — Hebbian update count (one per consecutive word pair)
+   */
+  learnSentenceHebbian(embSequence, opts = {}) {
+    const {
+      ticksPerWord = 3,
+      lr = 0.004,
+      injectStrength = 0.6,
+      ojaThreshold = 1.5,
+      ojaDecay = 0.01,
+      langStart = 150,
+    } = opts;
+
+    if (!embSequence || embSequence.length < 2) return 0;
+
+    const prevSnap = new Float64Array(this.size);
+    const currSnap = new Float64Array(this.size);
+    let haveSnap = false;
+    let updates = 0;
+
+    for (const emb of embSequence) {
+      if (!emb) continue;
+
+      // Inject word embedding into language region via the standard
+      // current-injection path so cortex dynamics see it identically
+      // to how sensory words arrive during normal operation.
+      const currents = sharedEmbeddings.mapToCortex(emb, this.size, langStart);
+      if (injectStrength !== 1) {
+        for (let i = 0; i < this.size; i++) currents[i] *= injectStrength;
+      }
+      this.injectCurrent(currents);
+
+      // Let cortex integrate the injection plus recurrent spikes.
+      for (let t = 0; t < ticksPerWord; t++) this.step(0.001);
+
+      // Sequence Hebbian: pre = earlier word's spikes, post = this word's
+      // spikes. Strengthens synapses that contributed to the observed
+      // word-to-word transition during persona corpus playback.
+      if (haveSnap) {
+        for (let i = 0; i < this.size; i++) currSnap[i] = this.lastSpikes[i] ? 1 : 0;
+        this.synapses.hebbianUpdate(prevSnap, currSnap, lr);
+        updates++;
+      }
+
+      // Snapshot this word's spikes as the next iteration's pre vector.
+      for (let i = 0; i < this.size; i++) prevSnap[i] = this.lastSpikes[i] ? 1 : 0;
+      haveSnap = true;
+    }
+
+    // Oja-style saturation decay — prevents weight runaway across
+    // long corpora. Only touches weights that have already grown past
+    // `ojaThreshold`, so small weights learn freely.
+    if (updates > 0 && ojaDecay > 0) {
+      const values = this.synapses.values;
+      const nnz = this.synapses.nnz;
+      const keepFraction = 1 - ojaDecay;
+      for (let k = 0; k < nnz; k++) {
+        if (Math.abs(values[k]) > ojaThreshold) values[k] *= keepFraction;
+      }
+    }
+
+    return updates;
+  }
+
+  /**
+   * T13.1 diagnostic — inject one embedding, tick N steps, return the
+   * semantic readout. Used for convergence verification (e.g. after
+   * persona Hebbian training, check that `emb('fuck')` produces a
+   * readout cosine-adjacent to other persona-cluster words).
+   *
+   * Disturbs live brain state, so only call from console diagnostics
+   * or boot-time verification — not inside the think loop.
+   */
+  diagnoseReadoutForEmbedding(emb, ticks = 10, langStart = 150) {
+    const currents = sharedEmbeddings.mapToCortex(emb, this.size, langStart);
+    this.injectCurrent(currents);
+    for (let t = 0; t < ticks; t++) this.step(0.001);
+    return this.getSemanticReadout(sharedEmbeddings, langStart);
+  }
+
+  /**
+   * Cluster synapse weight stats — used for T13.1 before/after training
+   * verification. Returns mean, RMS, max magnitude over active (non-zero)
+   * weights, plus the non-zero count.
+   */
+  synapseStats() {
+    const { values, nnz } = this.synapses;
+    let sum = 0, sumSq = 0, maxAbs = 0;
+    for (let k = 0; k < nnz; k++) {
+      const a = Math.abs(values[k]);
+      sum += a;
+      sumSq += values[k] * values[k];
+      if (a > maxAbs) maxAbs = a;
+    }
+    const count = nnz || 1;
+    return {
+      mean: sum / count,
+      rms: Math.sqrt(sumSq / count),
+      maxAbs,
+      nnz,
+    };
   }
 
   /**

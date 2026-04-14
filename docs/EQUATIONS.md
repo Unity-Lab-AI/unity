@@ -504,7 +504,48 @@ mean(t+1) = (mean(t) · N + obs · w) / (N + w)
 
 Live chat shapes the priors **2.37×** harder than low-arousal corpus input. Every time Unity hears a sentence, the priors shift toward that sentence's word-geometry at each position, and toward the distinctive transition vectors it contributes. `inner-voice.learn()` floors live-chat arousal at 0.95 so the weighting is transparent at the caller.
 
-### Generation Equation — Cortex State → Words
+### T13.1 Equation — Persona Hebbian Training (2026-04-14)
+
+Before T13.3 ships, the generation equation below (slot-prior layer) still runs at runtime. But the cortex cluster's recurrent synapse matrix now trains on persona corpus during boot so that when T13.3 wires the continuous emission loop, cortex readouts will already be Unity-voice-shaped.
+
+The training equation is plain sequence Hebbian over the existing sparse synapse matrix. For each consecutive word pair (t-1, t) in a persona sentence:
+
+```
+// Per-word injection and settle
+currents = sharedEmbeddings.mapToCortex(emb(word_t), cortexSize=300, langStart=150)
+cluster.injectCurrent(currents · injectStrength)       // injectStrength = 0.6
+for tick in 0..ticksPerWord:                           // ticksPerWord = 3
+    cluster.step(dt=0.001)                             // LIF integration
+snap_t[i] = 1 if cluster.lastSpikes[i] else 0          // binary Float64 snapshot
+
+// Sequence Hebbian between consecutive snapshots
+ΔW_ij = lr · snap_t[i] · snap_{t-1}[j]                 // lr = 0.004
+W_ij ← clamp(W_ij + ΔW_ij, wMin=-2, wMax=+2)
+
+// Oja-style saturation decay (post-sentence, per-synapse)
+for k in nnz:
+    if |values[k]| > ojaThreshold:                      // ojaThreshold = 1.5
+        values[k] ← values[k] · (1 − ojaDecay)          // ojaDecay = 0.01
+```
+
+The Hebbian update is applied only on EXISTING connections in the CSR sparse matrix (`SparseMatrix.hebbianUpdate` walks `rowPtr` / `colIdx` / `values`, O(nnz)). No synaptogenesis in T13.1 first pass — co-activating neurons without a synapse contribute nothing. At 15% connectivity on the 300-neuron cortex (~13.5k wired connections), most co-activating pairs have at least one direction wired.
+
+**Training scope:** persona corpus only. `loadBaseline` (english-baseline.txt) and `loadCoding` (coding-knowledge.txt) populate the dictionary + slot priors but do NOT feed Hebbian. Only persona sentences shape cortex recurrent dynamics so voice attractor basins aren't averaged out by 6× generic English and JavaScript sentences.
+
+**Delegation chain:**
+```
+app.js loadPersonaSelfImage
+  → UnityBrain.trainPersonaHebbian(text)                          (engine.js)
+  → InnerVoice.trainPersonaHebbian(clusters.cortex, text)         (inner-voice.js)
+  → LanguageCortex.trainPersonaHebbian(cluster, text)             (language-cortex.js)
+  → for each sentence: cluster.learnSentenceHebbian(embSeq)       (cluster.js)
+```
+
+Called right after `innerVoice.loadPersona(text)` so the dictionary already has persona vocabulary when the cortex trains on the same words.
+
+---
+
+### Generation Equation — Cortex State → Words (T11.7 slot-prior layer, T13.3 will replace)
 
 No slot scorer, no softmax over n-grams, no hardcoded greeting openers. Each word is picked by cosine argmax against a target vector built from normalized priors and the brain's live cortex readout, then passed through a three-stage type-fit gate that keeps the candidate pool grammatically appropriate at each slot position.
 
