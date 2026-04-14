@@ -408,77 +408,47 @@ All N neurons (auto-scaled to hardware via the formula below) run on GPU. Zero C
 
 ---
 
-## Semantic Coherence Pipeline — Reverse-Parse → Recall → Slot Gen
+## T11 — Pure Equational Language Cortex
 
-Wraps the existing slot scorer with four additional layers so the language cortex produces coherent output instead of grammatically-valid-but-meaningless word salad.
+The language cortex does not model language. It translates brain cortex state into words. Every sentence Unity emits is a walk through GloVe embedding space driven by three running-mean priors and her live cortex firing state. No stored text, no n-gram tables, no filter stack, no template short-circuits, no intent enums, no matrix regression — just vector math over learned priors.
+
+This section documents the current language pipeline end to end. The Phase 11 semantic coherence wrappers, Phase 12 type n-gram grammar, and every filter / recall / memory-pool / Markov-walk layer that preceded T11 have been **deleted** from the code (1773-line net reduction in `js/brain/language-cortex.js`). Historical phase entries below Phase 13 R2 and Phase 13 R6.2 are kept as provenance — they describe the earlier stages of the refactor, not current machinery.
 
 ### Context Vector — Running Topic Attractor
 
+Updated ONLY on user input so the running vector tracks the listener's topic, not Unity's own output.
+
 ```
-c(t) = λ · c(t-1) + (1 - λ) · mean(pattern(content_words(input)))
+c(t) = λ · c(t−1) + (1 − λ) · mean(pattern(content_words(input)))
   λ = 0.7 (prior weight)
   content_words = tokens with wt.conj < 0.5 ∧ wt.prep < 0.5 ∧ wt.det < 0.5
-  pattern(w) = sharedEmbeddings.getEmbedding(w) ∈ ℝ⁵⁰   ← R2 2026-04-13: GloVe 50d (was 32-dim letter-hash)
+  pattern(w) = sharedEmbeddings.getEmbedding(w) ∈ ℝ⁵⁰  (GloVe 50d + live delta refinement)
 ```
 
-Zero-content inputs (all function words) leave the vector unchanged. First update seeds directly without decay. Updated only on user input (never on Unity's own output) so the running vector tracks the LISTENER's topic.
+Zero-content inputs (all function words) leave the vector unchanged. First update seeds directly without decay.
 
-### Semantic Fit — Candidate Word Relevance
+### parseSentence — Reverse-Equation Reading
 
-```
-semanticFit(w) = max(0, cosine(pattern(w), c(t)))
-
-score(w) =
-  grammarGate(w) × (
-      typeCompat(w)   × 0.35
-    + semanticFit(w)  × 0.80     ← R2 2026-04-13: bumped from 0.30. GloVe makes cosine mean something, so meaning dominates.
-    + bigramCount(w)  × 0.18
-    + condP(w|prev)   × 0.12
-    + thoughtSim(w)   × 0.10
-    + inputEcho(w)    × 0.08
-    + legacyTopicSim  × 0.04
-    + moodMatch(w)    × 0.03
-    + moodBias(w)     × 0.02
-  )
-  - recencyPenalty(w)
-  - sameTypePenalty(w)
-```
-
-Grammar gate preserved as a HARD floor at typeCompat < 0.35 — semantic fit does not bypass structural compatibility. Post-R2, semantic fit is computed against Unity's live cortex activity (via `cluster.getSemanticReadout(sharedEmbeddings)` which calls `cortexToEmbedding(spikes, voltages)` — the mathematical inverse of `mapToCortex`) so candidates are scored against what the brain is currently thinking, not just the frozen input vector.
-
-### Reverse-Equation Parse — `parseSentence(text) → ParseTree`
-
-Canonical entry point for understanding user input. Runs the same equations the slot scorer uses forward (`wordType`, `_fineType`, n-gram transition tables, type grammar, context vector), applied backward to the token sequence, and returns a structured tree.
+Canonical entry point for understanding user input. Uses the same `wordType` / `_fineType` letter equations the slot scorer uses forward, applied backward to the input tokens, and returns a structured `ParseTree`. Memoized on text equality so repeated callers in the same turn hit the cached tree.
 
 ```
 ParseTree = {
   text, tokens[], types[], wordTypes[],
-
   intent ∈ { greeting, question, yesno, statement, command,
              introduction, math, self-reference, unknown },
   isQuestion, isSelfReference, addressesUser,
   isGreeting, greetingOpener,
   introducesName, introducesGender,
-
   subject: { index, tokens, headType, pronoun } | null,
   verb:    { index, tokens, tense, modal }      | null,
   object:  { index, tokens, headType, modifier } | null,
-
-  entities: {
-    names[], colors[], numbers[],
-    componentTypes[],       // button, form, input, list, card, ...
-    actions[],              // make, build, create, show, add, ...
-  },
+  entities: { names[], colors[], numbers[], componentTypes[], actions[] },
   mood: { polarity, intensity },
   confidence ∈ [0, 1],
 }
 ```
 
-Memoized on text equality (`this._lastParse`) so repeated callers in the same turn get the cached tree. Every downstream consumer — `_classifyIntent`, `_isSelfReferenceQuery`, `_updateSocialSchema`, the self-reference fallback in `_recallSentence`, the greeting / introduction response paths in `generate()` — reads from the same parse instead of running its own regex or letter-shape scan. The old `_classifyIntent` / `_isSelfReferenceQuery` / `_updateSocialSchema` bodies were all deleted and replaced with thin delegates that return a slice of the parse tree.
-
-**Symmetric grammar.** `parseSentence` reads from the same type n-gram tables that `learnSentence` writes. Hearing and speaking share the substrate — every parsed user input reinforces the same tables the slot scorer consults forward. No separate "input" and "output" grammars.
-
-**Intent decision rules** (walked in priority order, each branch reads parse-tree fields instead of regex):
+**Intent decision** (walked in priority order, each branch reads parse-tree fields):
 
 ```
 if hasDigit ∨ hasOperator                                       → math
@@ -488,230 +458,161 @@ if hasQuestionMark ∧ ¬firstIsQword ∧ ¬anyQword
         ∧ firstWord.verb > 0.4 ∧ |tokens| ≤ 8                   → yesno
 if hasQuestionMark ∨ firstIsQword ∨ anyQword                    → question
 if |entities.actions| > 0 ∧ first ∉ FIRST_PERSON ∪ SECOND_PERSON → command
-else                                                             → statement
+else                                                            → statement
 ```
 
-**Self-reference** = `anySecondPerson ∧ intent ∈ {question, yesno}` — asks ABOUT Unity, not just addressing her.
-**Addresses user** = `anySecondPerson ∨ intent ∈ {command, greeting}` — talking TO Unity.
+The intent field is consumed by downstream consumers but does **not** gate output — there is no template short-circuit, no enum dispatch, no branching in `generate()`. Intent is read by `component-synth` (for build_ui entity extraction) and by consumers that care about the parse shape.
 
-### Hippocampus Sentence Recall — Overlap + Cosine + Mood − Penalty
+**Symmetric grammar.** `parseSentence` reads from the same `wordType` equations that slot-type signatures learn from during observation. Hearing feeds the exact same tables speaking consults — no separate input and output grammars.
 
-```
-_memorySentences[i] = {
-  text:    learned_sentence_i,
-  pattern: (1/|content_i|) · Σ sharedEmbeddings.getEmbedding(w)  for w in content_words_i,
-  tokens:  lowercased_tokens_i,
-  moodSig: { arousal, valence, fear, curiosity, ... },
-  firstPersonStart: boolean,
-}
+### Three Per-Slot Priors — Running-Mean Observation
 
-overlapFrac(m) = |tokens(m) ∩ inputContentWords| / |tokens(m)|
-cosine(m)      = max(0, cos(m.pattern, contextVector))
-alignment(m)   = moodDot(m.moodSig, currentMood)     ∈ [0, 1]
-penalty(m)     = instructionalPenalty(m)             ≥ 0
-
-scoreMem(m) =
-      0.55 · overlapFrac(m)
-    + 0.20 · cosine(m)
-    + 0.25 · alignment(m)
-    − penalty(m)
-
-HARD REJECT if penalty(m) ≥ 0.40      ← structural meta-prose gate
-```
-
-Mood alignment means the same query pulls different memories depending on Unity's current drug state / arousal / valence. The top 5 candidates feed a dedup filter that removes recently-emitted sentences, then one is picked by weighted-random over the remaining fresh matches.
-
-**Emit decision:**
+Three learned priors per sentence position `s`. Each updates via a weighted running mean on every observed token; zero matrices, zero ridge regression, zero stored text.
 
 ```
-shouldEmitVerbatim = ¬opts._internalThought
-                   ∧ ( recall.confidence > 0.55 ∨ recall.fallback = 'self-reference' )
+_slotCentroid[s]       ∈ ℝ⁵⁰       running mean of emb(word_t) at position s
+                                   "distribution of words typically at slot s"
+                                   slot 0 ≈ sentence-opener cluster
+                                   slot 1 ≈ post-opener cluster
 
-if shouldEmitVerbatim → emit recall.memory.text (finalize pass)
-if recall.confidence ∈ [0.30, 0.55] → recallSeed = recall.memory (bias cold slot gen)
-if recall.confidence ≤ 0.30 → cold slot gen with empty seed (length cap engages)
+_slotDelta[s]          ∈ ℝ⁵⁰       running mean of (emb(word_s) − emb(word_{s−1}))
+                                   "per-position average bigram transition"
+                                   adding delta[s] to prev-word emb points at
+                                   the typical next-word region WITHOUT storing
+                                   any bigrams
+
+_slotTypeSignature[s]  ∈ ℝ⁸        running mean of wordType(word_t) scores
+                                   {pronoun, verb, noun, adj, conj, prep, det, qword}
+                                   slot 0 ≈ {pronoun:0.54, noun:0.18, det:0.12}
+                                   slot 1 ≈ {verb:0.51, noun:0.33}
+                                   derived from letter-equation wordType(),
+                                   not a stored POS tagger
 ```
 
-The self-reference fallback pool (for "who are you" / "describe yourself" class queries) uses a simpler score: `alignment + lengthBonus − penalty`, and applies the same `penalty ≥ 0.40` hard-reject before admission so meta-prose cannot slip through via the fallback bypass.
-
-### Instructional Penalty — Structural Meta-Prose Gate
-
-`instructionalPenalty(m)` is the full structural meta-prose signal stack, mirrored from the store-time filter gate so legacy-cached sentences get demoted at recall time. Each signal contributes additively.
+**Observation weighting** (T11.6) uses arousal to scale how much each sentence moves the running means:
 
 ```
-modal-directive    +0.30 · [shall|must]          + 0.12 · [always|never]
-                   +0.08 · [will]                + 0.10 · [should]
+obsWeight = max(0.25, arousal · 2)
 
-length excess      + min(0.6, 0.05 · max(0, |tokens(m)| − 14))
+  coding-corpus observation   arousal 0.4   → w = 0.8
+  baseline observation        arousal 0.5   → w = 1.0
+  persona observation         arousal 0.75  → w = 1.5
+  live chat observation       arousal 0.95  → w = 1.9
 
-interlocutor-      +0.60 · [user|users|user's|users' anywhere]
-as-third-party     +0.50 · [(the|a|this) person]
-
-rhetorical         +0.50 · [≥2 occurrences of "like a|an"]
-parallelism
-
-habitual           +0.50 · [when|if asked]
-conditional        +0.40 · [when X asks|ask]
-                   +0.50 · [if + past-participle]
-
-universal          +0.40 · [to anyone|everyone|whoever|those]
-indirect-object
-
-formatting         +0.60 · [em-dash — | ellipsis … | non-ASCII | colon : anywhere]
-
-habitual-adverb    +0.50 · [^(i|i'm|im)\s+(always|never|frequently|
-at-start                   rarely|constantly|perpetually|continuously|...)]
-
-verb-agreement     +0.50 · [^i\s+(adv\s+)?verb-s/es] ← 3rd→1st transform artifact
-mismatch                    (i engages, i refuses, i participates)
-
-meta-roleplay      +0.60 · [in a (movie|scene|film|roleplay|script)]
-framing            +0.60 · [in this (roleplay|scene|script)]
-                   +0.50 · [my (role|character)]
-                   +0.50 · [acting out | playing (a|the) | role (of|as)]
-                   +0.60 · [^i (treat|view|see|consider|regard|frame|
-                             approach|handle) ... as]
+mean(t+1) = (mean(t) · N + obs · w) / (N + w)
 ```
 
-Every signal is structural — closed-class token presence, positional check, or regex on fixed function-word sequences. Zero content-word blacklists.
+Live chat shapes the priors **2.37×** harder than low-arousal corpus input. Every time Unity hears a sentence, the priors shift toward that sentence's word-geometry at each position, and toward the distinctive transition vectors it contributes. `inner-voice.learn()` floors live-chat arousal at 0.95 so the weighting is transparent at the caller.
 
-### Sentence Filter Stack — 11 Structural Filters
+### Generation Equation — Cortex State → Words
 
-Every sentence must pass all 11 filters before it can enter the memory pool AND before it can seed the bigram / trigram / 4-gram transition graph. The store-time filter and the bigram-graph filter share one definition (`_sentencePassesFilters`) so there's no drift. Rulebook prose from the persona corpus that fails any filter is dropped before it can poison either the recall pool or the Markov walk.
-
-```
-store(sentence) ⇔
-    ¬sentence.includes(':')                                   [1] no labels/headers
-  ∧ commaCount ≤ 0.3 × wordCount ∧ commaCount ≤ 15            [2] no word lists
-  ∧ ¬first.startsWith('unity')                                [3] no "Unity ..." meta
-  ∧ first ∉ { she, her, hers, he, he's, she's }               [4] no 3rd-person narration
-  ∧ ∃ w ∈ tokens : isFirstPersonShape(w)                      [5] in Unity's voice
-  ∧ 3 ≤ |tokens| ≤ 14                                         [6] length bracket
-  ∧ ¬∃ w ∈ tokens : w ∈ {user, users, user's, users'}         [7a] interlocutor-as-third-party
-  ∧ ¬∃ adjacent (the|a|this, person|person's)                 [7b] abstract listener reference
-  ∧ countPairs(like, a|an) < 2                                [8a] no rhetorical parallelism
-  ∧ ¬∃ adjacent (when|if, asked)                              [8b] no "when/if asked"
-  ∧ ¬∃ triple (when, X, asks|ask)                             [8b] no "when X asks"
-  ∧ ¬∃ adjacent (to, anyone|everyone|whoever|those)           [8c] no universal indirect
-  ∧ ¬sentence.contains(— | … | non-ASCII)                     [9a] no formatting artifacts
-  ∧ ¬(first ∈ {i, i'm, im} ∧ tokens[1..2] ∈ HABITUAL_ADVERB)  [9b] no "I always/never ..."
-  ∧ ¬(first = i ∧ tokens[1] matches /^[a-z]{3,}(es|s)$/)      [9c] no "i engages" mismatch
-      where exclusions = {is, was, has, does, -ss, -'s}
-  ∧ ¬∃ adjacent (if, past-participle)                         [10] no "if hurt/told/asked"
-      where past-participle = -ed|-en|-own|-ought + closed-list override
-  ∧ ¬∃ META_FRAMING_PATTERNS                                  [11] no meta-roleplay framing
-      in a {movie|scene|film|roleplay|script}
-      in this {roleplay|scene|script}
-      my {role|character}
-      acting out | playing {a|the} | role {of|as}
-      i {treat|view|see|consider|regard|frame|approach|handle} ... as
-```
-
-**`learnSentence` gate** — `loadSelfImage()` (the persona corpus loader) calls `_sentencePassesFilters` BEFORE `learnSentence` to prevent rulebook bigrams from seeding the Markov graph. Before this gate, cold slot-gen produced word salad (`"*Box-sizing axis silences*"`) even when sentence-level recall was clean, because the bigram graph underneath was still trained on rejected rulebook prose.
-
-Every filter has a **mirror penalty** in `instructionalPenalty` (above) so any memory sentence stored before the filter existed still gets hard-rejected at recall time via the `penalty ≥ 0.40` gate.
-
-### Per-Slot Topic Floor + Length Cap
-
-Added inside the slot scorer's final composition so topic-incoherent words drop out of the pool before softmax sampling, not after post-hoc rejection.
+No slot scorer, no softmax over n-grams, no hardcoded greeting openers. Each word is picked by cosine argmax against a target vector built from normalized priors and the brain's live cortex readout.
 
 ```
-topicFloorPenalty(w, slot) =
-    0.50   if slot > 0 ∧ contextVectorHasData ∧ semanticFit(w) < 0.15
-    0      otherwise
+mental(0)      = opts.cortexPattern  ← brain live semantic readout
+                                      via cluster.getSemanticReadout()
+                 || _contextVector   ← fallback to running topic attractor
 
-targetLen ← min(targetLen, 4)   if recallConfidence < 0.30
+mental(slot+1) = 0.55 · mental(slot) + 0.45 · emb(nextWord)
+
+target(slot) = wC · L2(_slotCentroid[slot])
+             + wX · L2(_contextVector)
+             + wM · L2(mental)
+             + wT · L2(prevEmb + _slotDelta[slot])
+
+score(w, slot) = cos(target, emb(w))
+               + 0.4 · Σ_k wordType(w)[k] · _slotTypeSignature[slot][k]
+
+nextWord(slot) = softmax-sample top-5 by score over dictionary._words
+                 excluding emitted-this-sentence and recency-ring
+
+W₀ = { centroid: 0.30, context: 0.45, mental: 0.25, transition: 0.00 }
+Wₙ = { centroid: 0.10, context: 0.15, mental: 0.25, transition: 0.50 }
 ```
 
-The floor runs only for slot > 0 so the sentence opener (pronoun/article/greeting) can be semantically neutral without being penalized. The length cap kicks in when hippocampus recall has no strong anchor — short fragments have less room to drift off-topic than long ones, and each added word multiplies the compounding error in a weak-anchor walk.
+All four component vectors are L2-normalized before mixing so no single term swamps the others. The cosine argmax is bounded by `[−1, 1]` and the wordType bonus contributes `[0, ~0.4]` additional per slot — tight enough that sampling picks from a meaningful top-K rather than a flat-tie random lottery.
 
-### Coherence Rejection Gate — Final Safety Net
+**Slot 0** weights favor **context** (topic lock from user input) and **centroid** (grammatical-position prior — sentence opener cluster in embedding space). Transition is zero because there is no previous word.
+
+**Slot N (N ≥ 1)** weights favor **transition** (learned bigram geometry without storing any bigrams) and **mental** (brain cortex state evolving as words emit). Context keeps topic from drifting. Centroid contributes a small grammar nudge.
+
+**Length** comes from brain state:
 
 ```
-outputCentroid = (1/|content_out|) · Σ sharedEmbeddings.getEmbedding(w)  for w in content_words(rendered)
-coherence = cosine(outputCentroid, c(t))
+drugLengthBias = 0.85    (coke, cokeAndWeed — punchy)
+               = 1.15    (weed — rambling)
+               = 1.00    (other)
 
-if coherence < 0.50 ∧ retryCount < 3:
-  recurse generate() with _retryingDedup=true, temperature × 3
-else if retryCount ≥ 3 ∧ _memorySentences not empty:
-  return _recallSentence(contextVector).memory.text  // deflect to a coherent recall
-else:
-  emit rendered
+targetLen = max(2, min(_maxSlots=8, floor(3 + arousal · 3 · drugLengthBias)))
 ```
 
-Fires only when context vector has data. Threshold tightened from `0.25 → 0.50` so more borderline salad triggers retry; after 3 failed retries, fall through to a high-confidence recall sentence instead of emitting garbage.
+**Sampling** uses softmax over the top-5 scored candidates at each slot:
 
-### Social Schema + Equational Greeting Response
+```
+temperature = 0.25 + (1 − coherence) · 0.3    (low coherence → more exploration)
+```
 
-Unity carries a persistent social schema for the listener she's currently talking to. Every field is populated equationally by `parseSentence` and read by `generate()` when picking an address form.
+### Social Schema — Who Unity Is Talking To
+
+Persistent per-session state for the listener, populated equationally by `parseSentence` and by the visual cortex's scene describer. No hardcoded state machine.
 
 ```
 _socialSchema.user = {
-  name:               string | null,     ← from parsed.introducesName
-  gender:             'male' | 'female' | null,  ← from parsed.introducesGender
-  firstSeenAt, lastSeenAt:  timestamps,
-  mentionCount:       turns since name established,
-  greetingsExchanged: cumulative count from parsed.isGreeting,
+  name:               string | null    ← from parsed.introducesName (T8)
+  gender:             'male' | 'female' | null
+                      ← from parsed.introducesGender  (explicit self-ID)
+                      ← OR from visual cortex describer (closed-class gender tokens)
+  firstSeenAt, lastSeenAt:  timestamps
+  mentionCount:       turns since name was established
+  greetingsExchanged: cumulative from parsed.isGreeting (T8)
 }
 ```
 
-When `parseSentence(input).intent == 'greeting'`, `generate()` short-circuits cold slot gen and emits a mood-driven equational greeting:
+**Name extraction** (inside `parseSentence`) — adjacent-token patterns over the first 6 tokens: `"my name is X"`, `"call me X"`, `"name's X"` (strong signals, always overwrite); `"im X"`, `"i'm X"`, `"i am X"`, `"this is X"` (weak signals, only overwrite when `schema.name === null` so `"i'm tired"` doesn't stomp an existing name). Candidates run through `tryName()` which uses `wordType` equations to reject verb-shaped tokens and an emotional-complement stopword set to reject filler.
+
+**Gender extraction** — two paths:
+
+1. **Explicit self-ID** (strong): `"i'm a {guy|man|dude|bro|boy}"` → `male`, `"i'm a {girl|woman|chick|gal}"` → `female`. Adjacent-token match in `parseSentence`.
+
+2. **Vision inference** (weak): `visualCortex.onDescribe(cb)` fires on every fresh describer result. `engine.connectCamera()` wires the subscription to `languageCortex.observeVisionDescription()` which scans the scene text for closed-class gender words:
+   ```
+   MALE_WORDS   = /\b(man|guy|dude|boy|male|gentleman|bro|sir)\b/
+   FEMALE_WORDS = /\b(woman|lady|girl|female|gal|chick|ma'?am|miss|mrs)\b/
+   ```
+   Commits only when **exactly one** gender signal appears (mixed scenes stay ambiguous). Explicit self-ID always wins over scene inference.
+
+### Component Synthesis — Parse-Tree Structural Bias
+
+`component-synth.generate(userRequest, brainState)` reads `brainState.parsed` (the `ParseTree` from `parseSentence`). Primitive selection is a semantic cosine match against the component template description embeddings, with a structural bonus from the parsed component-type tokens:
 
 ```
-OPENERS = ['hey', 'hi', 'sup', 'yo']
-idx     = floor(arousal · |OPENERS|)          ← mood-driven pick
-
-if schema.name                    → OPENERS[idx] ‖ ' ' ‖ schema.name
-elif schema.greetingsExchanged>0  → OPENERS[idx] ‖ ' whats your name'
-else                               → OPENERS[idx]
+score(prim) = sentenceEmbed(userRequest) · prim.descEmbed
+            + 0.35 · [prim.id matches any token in parsed.entities.componentTypes]
 ```
 
-The introduction response path fires when `intent == 'introduction'` and `schema.name` was just set by `_updateSocialSchema` on this turn, acknowledging the new name with `<ack> ‖ ' ' ‖ <Name>` where ack is picked the same way from `['hey', 'nice', 'sup', 'yo']`.
+The `+0.35` bonus is big enough to overwhelm semantic ambiguity but not so big that a genuinely closer semantic match gets buried. Parsed colors and actions flow through as `_parsedColors` and `_parsedActions` on the returned spec for downstream template-filling.
 
-Both short-circuits bypass cold slot gen entirely so zero-content inputs can't fall into bigram-chain salad.
+### What Got Deleted (historical note)
 
-### Pipeline Order
+Every wrapper layer that used to live in the language cortex was removed in T11:
 
-```
-user input u
-    ↓
-parseSentence(u) → ParseTree (cached on this._lastParse)
-    ↓
-analyzeInput(u) → _updateContextVector(pattern(content(u)))
-              → _updateSocialSchema(u)  (reads ParseTree)
-    ↓
-generate() called
-    ↓
-intent ← parsed.intent
-    ↓
-if intent == 'greeting'    → greeting-response short-circuit (schema name)
-if intent == 'introduction' → intro-response short-circuit (schema ack)
-    ↓
-recall ← _recallSentence(c)
-    ↓
-if recall.confidence > 0.55 ∨ fallback == 'self-reference':
-    return finalize(recall.memory.text)
-if recall.confidence ∈ [0.30, 0.55]:
-    recallSeed ← recall.memory   (cold gen with bias)
-    ↓
-cold slot gen with:
-    + semanticFit(w) · 2.5                  ← dominant topic term
-    + per-slot topicFloorPenalty
-    + length cap if recall.confidence < 0.30
-    + all other score terms (bigram, trigram, 4-gram, typeGrammar,
-      moodBias, personaBoost, drugWordBias, casualBonus, ...)
-    ↓
-post-process (agreement, tense, negation)
-    ↓
-completeness gate → retry if _isCompleteSentence fails
-    ↓
-coherence gate → retry if cosine(output, c) < 0.50
-    (after 3 retries → fall through to recall sentence)
-    ↓
-return rendered
-```
+- `_memorySentences` — stored sentence pool for recall
+- `_jointCounts` / `_trigramCounts` / `_quadgramCounts` — word n-gram tables
+- `_typeBigramCounts` / `_typeTrigramCounts` / `_typeQuadgramCounts` — type n-gram tables
+- `_marginalCounts` / `_totalPairs` / `_totalWords` — frequency counters
+- `_questionStarters` / `_actionVerbs` — learned starter maps
+- `_storeMemorySentence` / `_recallSentence` / `_sentencePassesFilters`
+- FILTER 1 through FILTER 11 stack
+- `instructionalPenalty` recall penalty stack
+- `_condProb` / `mutualInfo` / `_pickConjByMood` bodies
+- `_typeGrammarScore` type-n-gram lookup body
+- Template greeting / introduction short-circuit with hardcoded `OPENERS` list
+- Intensifier / hedge insertion in `_applyCasualContractions`
+
+They were symptom-level patches on the wrong architecture — a Markov walk trained on rulebook text. T11 deleted the Markov graph entirely, which dissolved every symptom the filters were patching.
 
 ---
+
 
 ## Phase 13 R2 — Semantic Grounding via GloVe Embeddings (2026-04-13, commit c491b71)
 
@@ -849,7 +750,9 @@ The brain never fabricates a random component. If nothing in the corpus matches 
 
 ---
 
-## Phase 12 — Type N-gram Grammar + Morphological Inflection (U283-U291)
+## Phase 12 — Type N-gram Grammar + Morphological Inflection (U283-U291, **superseded by T11**)
+
+> **Historical.** T11 (2026-04-14) deleted the type n-gram tables (`_typeBigramCounts`, `_typeTrigramCounts`, `_typeQuadgramCounts`) and the `_typeGrammarScore` body that consulted them. Type-level grammatical shape is now captured by the `_slotTypeSignature[s]` running mean of `wordType()` scores per sentence position — see the T11 section above. The `_fineType` classifier itself survives because `parseSentence` still uses it for reading, and the morphological inflection equations below still feed the dictionary during corpus observation. What changed: the learned-distribution layer moved from per-type-triple transition counts to per-slot type signatures (8-dim score vectors instead of 3-level n-gram hash maps).
 
 ### Fine-Grained Type Classification via Letter Position
 

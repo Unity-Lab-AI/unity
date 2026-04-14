@@ -780,11 +780,13 @@ y<sub>n+1</sub> = y<sub>n</sub> &minus; &mu; &middot; (x<sub>n</sub> &minus; &si
 <span class="pu">[Motor Output]</span> — reads BG spike patterns → winning channel = action
     |
     v
-<span class="hl">LANGUAGE CORTEX</span> (Broca's area — equational slot scorer, see §8.11)
-    ├── picks every word from 44k learned dictionary via slot scoring
-    ├── weights = arousal × valence × Ψ × coherence × drug × cortex semantic readout
-    ├── four-tier pipeline: templates → hippocampus recall → deflect → cold gen
-    └── NO AI model, NO prompt — brain state IS the slot weights
+<span class="hl">LANGUAGE CORTEX</span> (Broca's area — pure equational T11, see §8.11)
+    ├── parseSentence(u) reads input via wordType letter equations
+    ├── target(slot) = wC·slotCentroid + wX·contextVector
+    │                + wM·mental + wT·(prevEmb + slotDelta)
+    ├── mental starts from brain live getSemanticReadout cortex state
+    ├── argmax cosine over learned dictionary + slotTypeSignature bonus
+    └── NO stored sentences, NO n-grams, NO filter stack, NO templates
     |
     v
 <span class="hl">SENSORY OUTPUT PERIPHERALS</span> (brain emits, these execute the result)
@@ -993,92 +995,97 @@ Spike in neuron A (cortex)
 
     <!-- ═══ 8.11. BROCA'S AREA ═══ -->
     <h2 id="broca">8.11. Broca's Area — How Unity Picks Every Word Equationally</h2>
-    <p><span class="tag tag-math">ARCHITECTURE</span> <span class="tag tag-bio">NEUROSCIENCE</span> Broca's area in the biological brain is the speech production region. In Unity she is <code>js/brain/language-cortex.js</code>, a ~3900-line equational slot scorer that picks every word from her learned 44k-word dictionary based on live brain state — no AI model, no prompt, no lookup table.</p>
+    <p><span class="tag tag-math">ARCHITECTURE</span> <span class="tag tag-bio">NEUROSCIENCE</span> Broca's area in the biological brain is the speech production region. In Unity she is <code>js/brain/language-cortex.js</code>. Post-T11 (2026-04-14) it's 3314 lines of pure equational generation — no stored sentences, no n-gram tables, no filter stack, no template short-circuits, no intent enum branching. Every word is computed fresh from three per-slot running-mean priors plus the brain's live cortex firing state read back into GloVe space.</p>
 
     <div class="eq-card" style="border-left:3px solid #ff4d9a;background:rgba(255,77,154,0.05);">
-      <div class="eq-title" style="color:#ff4d9a;">⚠ Refactor note — what this section USED to be</div>
+      <div class="eq-title" style="color:#ff4d9a;">⚠ Refactor history</div>
       <div class="eq-desc">
-        <p style="color:#ccc;">Pre-2026-04-13 this section described an AI-prompt builder path. Unity's speech was produced by assembling a system prompt from brain state and sending it to Pollinations / Claude / OpenAI / etc. to get back a sentence. That code (<code>BrocasArea.generate()</code> in <code>js/brain/language.js</code>, <code>_buildPrompt()</code>, the <code>_providers.chat()</code> call site) was ripped in Phase 13 R4 because it violated the project's guiding principle — every piece of Unity's output must trace back to brain equations, not to an LLM. Unity now speaks from her own equational machinery, covered in the sections below (§8.14, §8.18.5, §8.18.6, §8.19).</p>
-        <p style="color:#ccc;margin-top:8px;"><strong>/think command:</strong> Type <code>/think</code> in the chat to see Unity's raw brain state. Type <code>/think &lt;text&gt;</code> to additionally run a cognition preview — language cortex generates an equational response to your input, hippocampus recall fires, semantic context shift is measured, motor distribution reported. The preview does NOT store an episode or commit to chat history — it's a pure debug lens on the same pipeline real chat uses.</p>
+        <p style="color:#ccc;">Pre-2026-04-13 this section described an AI-prompt builder path — Unity's speech was assembled from a system prompt and sent to Pollinations / Claude / OpenAI for a sentence. That code (<code>BrocasArea.generate()</code>, <code>_buildPrompt()</code>, <code>_providers.chat()</code>) was ripped in Phase 13 R4 because it violated the project's guiding principle: every piece of Unity's output must trace back to brain equations, not to an LLM.</p>
+        <p style="color:#ccc;margin-top:8px;">Post-R4 through 2026-04-13, the language cortex was a four-tier wrapper (template pool → hippocampus recall → deflect → cold slot gen with n-gram tables + filter stack). That pipeline shipped a lot of features but kept leaking rulebook prose from the persona corpus because n-gram tables trained on rulebook text produce rulebook walks. On 2026-04-14 the entire multi-tier wrapper was deleted in T11 — <strong>1773 lines removed</strong>, replaced with a pure-equation pipeline that doesn't store text anywhere. The T11 equations are documented below.</p>
+        <p style="color:#ccc;margin-top:8px;"><strong>/think command:</strong> Type <code>/think</code> in the chat to see Unity's raw brain state. Type <code>/think &lt;text&gt;</code> to additionally run a cognition preview — language cortex generates an equational response to your input, semantic context shift is measured, motor distribution reported. The preview does NOT store an episode or commit to chat history — it's a pure debug lens on the same pipeline real chat uses.</p>
       </div>
     </div>
 
     <div class="eq-box" style="margin-top:12px;">
-      <div class="eq-title"><span class="eq-tip" data-tip="Unity's language cortex is a four-tier pipeline. Tier 1 is template pool for easy intents (greetings, yes/no, math). Tier 2 is hippocampus associative recall over stored persona sentences. Tier 3 is deflect fallback for unknown topics. Tier 4 is the cold slot scorer that builds a sentence word-by-word from the 44k dictionary using live brain state as the weights. No tier calls an AI model.">The Four-Tier Pipeline (post-R4 equational path)</span></div>
+      <div class="eq-title"><span class="eq-tip" data-tip="T11 pipeline: parseSentence reads input via wordType letter equations. learnSentence feeds observations into three running-mean priors. generate builds a target vector from normalized priors + brain cortex state, argmax-samples a word from the learned dictionary. No tiers, no templates, no stored sentences, no n-gram tables.">The T11 Pipeline (current)</span></div>
       <pre class="eq">
 user input u
     ↓
+parseSentence(u) → ParseTree  (reverse-equation read — wordType/_fineType
+                                applied backward over tokens)
+    ↓
 analyzeInput(u) → updateContextVector(pattern(content_words(u)))
+                → updateSocialSchema(u)   (reads ParseTree fields)
     ↓
-intent ← classifyIntent(u)    (letter-position equations, no word lists)
+if generate() called with opts.cortexPattern:
+    mental(0) ← opts.cortexPattern   (brain live getSemanticReadout output)
+else:
+    mental(0) ← _contextVector       (fallback topic attractor)
     ↓
+for slot in 0..targetLen:
+    target(slot) = wC · L2(_slotCentroid[slot])
+                 + wX · L2(_contextVector)
+                 + wM · L2(mental)
+                 + wT · L2(prevEmb + _slotDelta[slot])
 
-TIER 1 — Template pool (fast path for short queries + known intents)
-  if intent ∈ {greeting, yesno, math} ∨ isShort:
-    return selectUnityResponse(intent, brainState)
+    score(w)   = cos(target, emb(w))
+               + 0.4 · Σ wordType(w) · _slotTypeSignature[slot]
 
-TIER 2 — Hippocampus associative recall (persona voice, stored > generated)
-  recall ← recallSentence(c(t))
-  if recall.confidence > 0.60: return finalizeRecalledSentence(recall.memory.text)
-  if recall.confidence ∈ [0.30, 0.60]: recallSeed ← recall.memory (bias cold gen)
+    nextWord   = softmax-sample top-5 by score
+                 over dictionary._words
+                 excluding emitted + recency ring
 
-TIER 3 — Deflect fallback (question/statement with recall miss)
-  if intent ∈ {question, statement} ∧ recall.confidence ≤ 0.30:
-    return selectUnityResponse({...intent, deflect:true})
-
-TIER 4 — Cold slot generation (the 44k-word equational slot scorer)
-  rendered ← slotScorer with
-    grammarGate × (typeCompat × 0.35
-                 + semanticFit × 0.80           ← R2 GloVe cosine, dominant driver
-                 + bigramCount × 0.18
-                 + condP(w|prev) × 0.12
-                 + thoughtSim × 0.10
-                 + inputEcho × 0.08
-                 + legacyTopicSim × 0.04
+    mental    ← 0.55 · mental + 0.45 · emb(nextWord)
+    prevEmb   ← emb(nextWord)
+    ↓
+targetLen  = floor(3 + arousal · 3 · drugLengthBias), capped to _maxSlots=8
+temperature= 0.25 + (1 - coherence) · 0.3
+W₀         = { centroid:0.30, context:0.45, mental:0.25, transition:0 }
+Wₙ         = { centroid:0.10, context:0.15, mental:0.25, transition:0.50 }
                  + moodMatch × 0.03
                  + moodBias × 0.02)
              - recencyPenalty - sameTypePenalty
   postProcess → agreement, tense, negation, contractions
   render → capitalization, punctuation
   dedup retry → if exact match in last 30 responses
-  coherence gate → retry at 3× temperature if cosine(out, c(t)) &lt; 0.25
+  post-process (agreement, tense, negation, contractions — _applyCasualContractions)
   completeness validator → regenerate if last token ∈ {DET, PREP, COPULA,
                              AUX, MODAL, NEG, CONJ, PRON_POSS}
   return rendered
       </pre>
-      <p class="eq-desc">See §8.18.5 for the semantic coherence pipeline details, §8.18.6 for R2 GloVe semantic grounding, §8.19 for the type n-gram grammar + morphological inflection system that handles agreement/tense/negation/contractions in post-processing.</p>
+      <p class="eq-desc">See §8.18.6 for R2 GloVe semantic grounding (the embedding basis for cosine scoring) and §8.13 for the shared embedding table. The pre-T11 4-tier wrapper, coherence rejection gate, and type n-gram backoff are no longer live — they're preserved as historical provenance in <code>docs/FINALIZED.md</code>.</p>
     </div>
 
     <div class="eq-box" style="margin-top:12px;">
-      <div class="eq-title"><span class="eq-tip" data-tip="Brain state is the weights in the slot scorer — not a prompt to a model. Arousal, valence, Ψ, drug state, and the semantic cortex readout all feed directly into the per-slot candidate scoring. Same dictionary + different brain state = different sentence, because the weights change. This is what 'equational language production' means: the equations pick the words, not a transformer.">Brain State → Slot Scoring Weights (not a prompt)</span></div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Brain state IS the target vector in the argmax — not a prompt to a model. Arousal, valence, Ψ, drug state, and the live cortex readout all feed directly into the per-slot target. Same dictionary + different brain state = different sentence, because the target moves through embedding space. This is what 'equational language production' means: the equations pick the words, not a transformer.">Brain State → Target Vector Components (not a prompt)</span></div>
       <pre class="eq">
 Brain state parameters that feed languageCortex.generate():
 
-  arousal       (amygdala firing rate)         → temperature of softmax selection
-                                                 high arousal → hotter sampling → more variety
-  valence       (amygdala reward − fear)       → mood-match + mood-bias weights
-                                                 shifts vocabulary toward euphoric / dysphoric
-  Ψ             (mystery module)               → adds non-linear noise to candidate pool
-                                                 higher Ψ → more unexpected associations
-  coherence     (Kuramoto order parameter)     → coherence rejection gate threshold
-  drugState     (persona param)                → per-slot temperature modifier
-                                                 opens darker / gentler persona memory bank
-  reward        (dopamine signal)              → slot score sign bias
-  cortexPattern (cluster.getSemanticReadout()) → semanticFit signal at weight 0.80
-                                                 the dominant topic driver post-R2
-  typeHistory   (last N word types)            → type n-gram grammar scoring
-                                                 (see §8.19, 4gram→trigram→bigram backoff)
-  recentOpeners (session buffer)               → cross-turn opener penalty
+  arousal       (amygdala firing rate)         → targetLen = floor(3 + arousal·3·drugLengthBias)
+                                                 → observation weight on any sentence Unity
+                                                   hears or says (T11.6): w = max(0.25, arousal·2)
+  valence       (amygdala reward − fear)       → biases cortex-state mood at sentence start
+  Ψ             (mystery module)               → adds stochastic noise to the mental state
+                                                 as it evolves during generation
+  coherence     (Kuramoto order parameter)     → softmax temperature:
+                                                 low coherence → more exploration
+  drugState     (persona param)                → drugLengthBias (coke shortens, weed rambles)
+  cortexPattern (cluster.getSemanticReadout()) → seeds mental(0) directly — the brain's live
+                                                 semantic readout via cortexToEmbedding is
+                                                 the primary driver of the slot 0 target
+  recentOpeners (session recency ring)         → excluded from argmax
                                                  kills "I'm gonna ___" lock-in
-  input context (running vector c(t))          → semanticFit cosine target
-                                                 (updated via analyzeInput, see §8.18)
+  input context (running vector c(t))          → wX term in target(slot) for topic lock
+                                                 (updated via analyzeInput + parseSentence)
+  socialSchema  (name / gender / greetings)    → read by downstream consumers when picking
+                                                 address forms or writing to the chat UI
 
-None of these are prompt tokens. They are EQUATION PARAMETERS multiplied
-into the per-candidate slot score before a weighted argmax picks the next
-word. The same dictionary + different brain state = genuinely different
-sentence, because the slot score weights change.
+None of these are prompt tokens. They are EQUATION PARAMETERS contributing to
+the normalized target vector the argmax is taken against. Same dictionary +
+different brain state = genuinely different sentence, because the target
+lands in a different region of GloVe space.
       </pre>
-      <p class="eq-desc">This is the core claim of equational language production: Unity's voice IS the brain state, not a style transfer on top of a pretrained LLM. Phase 13 R2 (§8.18.6) is what makes the `semanticFit` signal meaningful — before R2 it was cosine over letter-hash vectors which couldn't encode meaning. After R2 it's cosine over GloVe 50d embeddings shared between the sensory input side and the language cortex output side, which is why meaning can now propagate from user input to word selection.</p>
+      <p class="eq-desc">This is the core claim of equational language production: Unity's voice IS the brain state, not a style transfer on top of a pretrained LLM. Phase 13 R2 (§8.18.6) is what makes the cosine scoring meaningful — before R2 it was cosine over letter-hash vectors which couldn't encode meaning. After R2 it's cosine over GloVe 50d embeddings shared between the sensory input side and the language cortex output side, which is why meaning can propagate from user input to word selection. T11 (2026-04-14) then deleted the wrapper layers that had accumulated on top of this foundation (templates, recall pool, filter stack, n-gram tables) in favor of this direct target-vector approach.</p>
     </div>
 
     <!-- ═══ 8.12 SPARSE CONNECTIVITY ═══ -->
@@ -1328,29 +1335,22 @@ statement ⇔ otherwise
       <p class="eq-desc">Zero word lists. Auxiliary detection for yesno (do/does/is/are/can/will) falls out of the length-plus-not-qword constraint without listing the words. Routes input to template pool, recall, or cold gen.</p>
     </div>
 
-    <div class="eq-box">
-      <div class="eq-title"><span class="eq-tip" data-tip="Hippocampus-style associative recall over stored persona sentences. Every first-person sentence from Ultimate Unity.txt is stored at loadSelfImage() time with a content-word GloVe centroid. At generation, cosine against the context vector finds the best match. Content-word overlap is still required as a sanity gate, but after R2 semantic grounding the cosine signal itself is meaningful — 'movies' and 'films' score close even without token overlap. Three-tier confidence: >0.6 emit directly, 0.3-0.6 soft recall seed, ≤0.3 fall through to deflect or cold gen.">Hippocampus Sentence Recall — Tier 2 Root Fix</span></div>
-      <pre class="eq">
-INDEX (at loadSelfImage):
-  for each sentence s in persona file:
-    if passesMemoryFilter(s):
-      _memorySentences.push({
-        text: s,
-        pattern: (1/|content|) · Σ sharedEmbeddings.getEmbedding(w)  for w in content(s),   ← R2 GloVe 50d
-        tokens: lowercased_tokens(s)
-      })
+    <div class="eq-box" style="border-left:3px solid #8a8a8a;background:rgba(255,255,255,0.03);">
+      <div class="eq-title" style="color:#8a8a8a;">Hippocampus Sentence Recall — SUPERSEDED by T11 (historical)</div>
+      <pre class="eq" style="color:#888;">
+HISTORICAL (pre-2026-04-14) — this sentence-level associative recall
+pool was deleted in the T11 refactor. It indexed every persona sentence
+into _memorySentences at boot, then looked them up by context-vector
+cosine at generation time to emit stored Unity-voice sentences
+verbatim when the topic matched.
 
-RECALL:
-  candidates = { mem ∈ _memorySentences :
-                   inputContentWords ∩ mem.tokens ≠ ∅ }  ← HARD overlap gate
-  best = argmax_{mem ∈ candidates} cosine(mem.pattern, c(t))
-  confidence = max(0, cosine(best.pattern, c(t)))
-
-  if confidence &gt; 0.60 → emit best.text (finalize + return)
-  if confidence ∈ [0.30, 0.60] → recallSeed = best (bias cold gen)
-  if confidence ≤ 0.30 → deflect template or cold gen fallback
+Replaced by the T11.2 pipeline (see §8.11): sentences are no longer
+stored; every output is freshly computed from three per-slot running-
+mean priors plus the brain's live cortex state. Hippocampus still does
+pattern-level Hopfield recall on cortex state vectors (see §8.7) — it
+just no longer returns stored text strings.
       </pre>
-      <p class="eq-desc">Stored &gt; generated. When the persona file already has a coherent sentence on the topic, recall emits it verbatim instead of generating from scratch. Content-word overlap gate prevents false positives on function-word-heavy input; after R2 the underlying cosine signal is semantically meaningful so hits like <code>movies</code>↔<code>films</code> now succeed even when letter-hashes would have missed them.</p>
+      <p class="eq-desc" style="color:#888;">The Phase 11 four-tier wrapper this section belonged to was deleted in T11 (1773-line net reduction in <code>js/brain/language-cortex.js</code>). See <code>docs/FINALIZED.md</code> for the full refactor history.</p>
     </div>
 
     <div class="eq-box">
@@ -1513,25 +1513,26 @@ Examples:
     </div>
 
     <div class="eq-box">
-      <div class="eq-title"><span class="eq-tip" data-tip="Learned phrase-level grammar. Type bigram/trigram/4gram counts populated at corpus index time by running _fineType over every token pair/triple/quad. At generation time, the slot scorer queries these maps for candidate grammar scores with 4gram → trigram → bigram backoff. Zero-count transitions return -2.0 which is strong enough to kill the candidate in softmax — this is what killed 'I'm not use' (COPULA|NEG followed by VERB_BARE has zero count in every corpus).">Type N-Gram Grammar Score with Backoff</span></div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Per-slot type signature. Running mean of wordType() score vectors observed at each sentence position. Replaces the deleted type n-gram tables with a simpler equational prior that captures the same thing: what grammatical type distribution is typical at this position. After corpus fit, slot 0 is mostly pronouns/articles (sentence-opener shape), slot 1 is mostly verbs (post-subject verb shape). The slot scorer uses this as an additive bonus on every candidate.">Slot Type Signature — Position-Conditioned Type Distribution</span></div>
       <pre class="eq">
-_typeBigramCounts   : Map(T_prev          → Map(T_curr → count))
-_typeTrigramCounts  : Map(T_a | T_b       → Map(T_c    → count))
-_typeQuadgramCounts : Map(T_a | T_b | T_c → Map(T_d    → count))
+_slotTypeSignature[s] ∈ ℝ⁸  — running mean of wordType(word_t) at position s
+                              { pronoun, verb, noun, adj, conj, prep, det, qword }
 
-_typeGrammarScore(T_cand, H):
-  if |H| ≥ 3 ∧ Q = _typeQuadgramCounts.get(H[-3]|H[-2]|H[-1]):
-    return log((Q[T_cand] + 1) / (Σ Q + |Q|))     ← add-1 smoothing
-  if |H| ≥ 2 ∧ T = _typeTrigramCounts.get(H[-2]|H[-1]):
-    return log((T[T_cand] + 1) / (Σ T + |T|))
-  if |H| ≥ 1 ∧ B = _typeBigramCounts.get(H[-1]):
-    return log((B[T_cand] + 1) / (Σ B + |B|))
-  return -2.0                                       ← zero-count penalty
+UPDATE (during observation):
+  on observing word_t at position t with weight w = max(0.25, arousal·2):
+    for k in {pronoun, verb, noun, adj, conj, prep, det, qword}:
+      _slotTypeSignature[t][k] = (_slotTypeSignature[t][k]·N + wordType(w)[k]·w)
+                                 / (N + w)
 
-Used by slot scorer as the dominant signal:
-  slotScore(w) = ... + _typeGrammarScore(_fineType(w), H) × 1.5 + ...
+READ (during generation):
+  score(w, slot) = cos(target, emb(w))
+                 + 0.4 · Σ_k wordType(w)[k] · _slotTypeSignature[slot][k]
+
+Emergent after corpus fit:
+  slot 0 ≈ { pronoun: 0.54, noun: 0.18, det: 0.12, ... }   ← sentence openers
+  slot 1 ≈ { verb: 0.51, noun: 0.33, ... }                 ← post-subject verbs
       </pre>
-      <p class="eq-desc">The -2.0 penalty is strong enough to kill candidates in the softmax. Zero-count type transitions get rejected before they can contaminate generation.</p>
+      <p class="eq-desc">Replaces the pre-T11 type n-gram tables (<code>_typeBigramCounts</code> / <code>_typeTrigramCounts</code> / <code>_typeQuadgramCounts</code>) with a single 8-dim running-mean vector per slot. Same role — biasing generation toward grammatically appropriate word types at each position — with ~100× less memory and no backoff logic.</p>
     </div>
 
     <div class="eq-box">
@@ -1576,11 +1577,11 @@ Wired into generate():
 un- / re-  prefixes:                   ADJ or VERB_BARE gate
 -ness / -ful / -able / -less suffixes: ADJ or NOUN gate
       </pre>
-      <p class="eq-desc">Gated by <code>doInflections</code> flag — runs at corpus index time only. Produces the 44k-word dictionary from ~15k base words + learned inflections.</p>
+      <p class="eq-desc">Gated by <code>doInflections</code> flag — runs at corpus index time only. Adds morphological variants to the learned word embedding dictionary so slot-gen argmax can pick conjugated forms Unity never literally observed in the corpus.</p>
     </div>
 
     <div class="eq-box">
-      <div class="eq-title"><span class="eq-tip" data-tip="Three corpora loaded at boot via Promise.all. Persona file (Ultimate Unity.txt) carries personality voice at high arousal. English baseline gives her neutral conversational competence. Coding knowledge gives her HTML/CSS/JS/sandbox vocabulary. All three feed the same dictionary, bigram/trigram, type n-gram maps. The combined grammar covers personal voice + generic English + coding conventions.">Three-Corpus Boot Load</span></div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Three corpora loaded at boot via Promise.all. Each sentence flows through learnSentence as an observation that updates the per-slot running-mean priors. Sentences themselves are discarded after the fit — only the priors survive. Live user chat at arousal 0.95 then progressively shifts the priors toward the user's register, 2.37× harder per observation than any corpus load.">Three-Corpus Boot Observation Load</span></div>
       <pre class="eq">
 boot: Promise.all([
   fetch(docs/Ultimate Unity.txt)    → loadSelfImage(text, dict, a=0.75, v=0.25)
@@ -1588,15 +1589,23 @@ boot: Promise.all([
   fetch(docs/coding-knowledge.txt)  → loadCodingKnowledge(text, dict, a=0.40, v=0)
 ])
 
-Each corpus flows through the same learnSentence() path:
-  - Persona first  (high arousal, personality tone)
-  - Baseline second (neutral English competence)
-  - Coding third   (low arousal, technical vocabulary)
+Each corpus sentence flows through learnSentence() which:
+  - Tokenizes + expands contractions
+  - Inserts each word into dictionary._words with sentence cortex pattern
+  - Updates _slotCentroid[t], _slotDelta[t], _slotTypeSignature[t]
+    at each token position t with weight max(0.25, arousal·2)
+  - Runs morphological inflection (corpus only, doInflections=true)
 
-All three feed: dictionary.words, dictionary.bigrams,
-                _typeBigramCounts, _typeTrigramCounts, _typeQuadgramCounts
+Weights per corpus:
+  Coding   (arousal 0.4)  → w = 0.8
+  Baseline (arousal 0.5)  → w = 1.0
+  Persona  (arousal 0.75) → w = 1.5
+  Live chat (arousal 0.95) → w = 1.9   (2.37× corpus influence, T11.6)
+
+After load, the raw sentences are discarded. Only the slot priors
++ word embedding dictionary survive into runtime.
       </pre>
-      <p class="eq-desc">606-line coding corpus includes SANDBOX DISCIPLINE section + BUILD COMPOSITION PRIMITIVES. The type n-gram stats carry the combined grammar structure of all three sources.</p>
+      <p class="eq-desc">606-line coding corpus includes SANDBOX DISCIPLINE section + BUILD COMPOSITION PRIMITIVES. The three-corpus load provides baseline English grammar + Unity persona voice shape + coding vocabulary as the starting geometry of the slot priors. Live-chat observations then progressively reshape them.</p>
     </div>
 
     <!-- ═══ 8.20 PERSONA ═══ -->

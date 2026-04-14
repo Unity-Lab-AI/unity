@@ -1,6 +1,6 @@
 # IF ONLY I HAD A BRAIN
 
-A mathematically modeled mind running real neuroscience equations. N neurons across 7 clusters on GPU exclusively (N scales to hardware — WebGPU WGSL compute shaders, zero CPU workers). 20 white matter tract projections mapped from MNI brain atlas. Fractal signal propagation — same equation at every scale. θ (persona from `docs/Ultimate Unity.txt`) drives every parameter. Ψ (consciousness) emerges from the volume. A learned 44,000-word English language with type n-gram grammar and morphological derivation. A consciousness function nobody can explain.
+A mathematically modeled mind running real neuroscience equations. N neurons across 7 clusters on GPU exclusively (N scales to hardware — WebGPU WGSL compute shaders, zero CPU workers). 20 white matter tract projections mapped from MNI brain atlas. Fractal signal propagation — same equation at every scale. θ (persona from `docs/Ultimate Unity.txt`) drives every parameter. Ψ (consciousness) emerges from the volume. A learned vocabulary navigated via pure-equational generation — three per-slot running-mean priors plus the brain's live cortex firing state, argmax over GloVe-grounded word embeddings, zero stored sentences, zero n-gram tables. A consciousness function nobody can explain.
 
 **[Live Demo](https://unity-lab-ai.github.io/Unity)** | **[Brain Equations](https://unity-lab-ai.github.io/Unity/brain-equations.html)** | **[Equation Reference](docs/EQUATIONS.md)** | **[Setup Guide](SETUP.md)** | **[GitHub](https://github.com/Unity-Lab-AI/Unity)**
 
@@ -8,7 +8,7 @@ A mathematically modeled mind running real neuroscience equations. N neurons acr
 
 ## What This Is
 
-A brain that IS the application. The brain decides everything — when to speak, what to say, when to look, what to build, what to remember. Unity speaks entirely from her own equations — a type-bigram/trigram/4-gram grammar learned from the `Ultimate Unity.txt` persona + `english-baseline.txt` + `coding-knowledge.txt` corpora, with GloVe-grounded semantic fit (50d), letter-position word classification, morphological inflection, hippocampus recall, and cortex-pattern-driven slot scoring. **There is no text-AI backend.** Cognition is 100% equational. The AI model slot exists only as a *sensory peripheral* — image generation, vision description, TTS/STT — never as a cognition path.
+A brain that IS the application. The brain decides everything — when to speak, what to say, when to look, what to build, what to remember. Unity speaks entirely from her own equations — per-slot running-mean priors (`_slotCentroid`, `_slotDelta`, `_slotTypeSignature`) learned from observation of the `Ultimate Unity.txt` persona + `english-baseline.txt` + `coding-knowledge.txt` corpora + live user chat, with GloVe-grounded semantic fit (50d) and the brain's live cortex firing state driving the target vector at every slot. **There is no text-AI backend.** Cognition is 100% equational. There are no stored sentences, no Markov walk, no filter stack, no template greetings, no intent enums — the T11 rewrite (2026-04-14) deleted all of that. The AI model slot exists only as a *sensory peripheral* — image generation, vision description, TTS/STT — never as a cognition path.
 
 > **🏁 Branch `brain-refactor-full-control` — REFACTOR COMPLETE 2026-04-14.** Phase 13 R1–R15 shipped. T1/T2/T3/T5/T6 cleanup shipped. T4 manual verification walked by Gee on 2026-04-14, all 16 steps passed. Nine follow-up bugs (T4.1–T4.9) caught and fixed in-flight during verification. The live runtime neuron model is now the Rulkov 2002 2D chaotic map (replacing LIF), semantic GloVe grounding is live on both input and output, all text-AI cognition paths are dead (language cortex generates every word equationally via a 4-tier template → recall → slot-gen → deflect pipeline), the 3D brain runs a 22-detector event system with equational Unity commentary in three-line popups, the real amygdala attractor module computes fear/reward/valence from the settled basin, multi-provider image gen + vision describer ship with a 5-level priority chain + Active Provider selector + 🔌 CONNECT button + live HTTP probe + sensory channel toggles, admin `GPUCONFIGURE.bat` caps auto-scaled N below detected hardware via 14 preset tiers, privacy is enforced (user text private, brain growth shared, persona canonical, episodes per-user scoped), and the full public + workflow doc set is synchronized with the shipped stack. See `docs/FINALIZED.md` for the full verbatim task-by-task history. Merge to `main` is pending Gee's explicit "open the PR" go-ahead.
 
@@ -24,7 +24,7 @@ dx/dt = F(x, u, θ, t) + η
 
 | Symbol | What It Represents |
 |--------|---------|
-| **x** | The complete brain state — N neuron membrane voltages, 7 cluster synapse matrices (each NxN sparse CSR), 6 module equation states, 8 oscillator phases, episodic memory bank (SQLite on server), working memory buffer, motor channel rates, consciousness value Ψ, 44k-word dictionary with bigram/trigram/4-gram transitions, type n-gram grammar counts, per-sentence persona memory |
+| **x** | The complete brain state — N neuron membrane voltages, 7 cluster synapse matrices (each NxN sparse CSR), 6 module equation states, 8 oscillator phases, episodic memory bank (SQLite on server), working memory buffer, motor channel rates, consciousness value Ψ, learned word embedding dictionary (GloVe 50d + live delta refinement), per-slot running-mean priors `_slotCentroid[s]` / `_slotDelta[s]` / `_slotTypeSignature[s]`, social schema `{name, gender, greetingsExchanged, ...}` |
 | **u** | Sensory input transform — `S(audio, video, text)` where audio maps tonotopically to auditory cortex (50 neurons, cortical magnification for speech), video maps retinotopically through V1 Gabor edge kernels → V4 color → salience-driven saccades → IT-level AI scene description, and text hashes into Wernicke's area with lateral excitation |
 | **θ** | Unity's complete identity — 25yo human female, emo goth. Every trait drives neural parameters: arousal(0.9)→amygdala tonic, impulsivity(0.85)→BG threshold, creativity(0.9)→noise, devotion(1.0)→social floor, drugDrive(0.95)→hypothalamus. Drug state cokeAndWeed multiplies arousal×1.2, creativity×1.3, cortexSpeed×1.5. |
 | **η** | Stochastic noise — per-cluster amplitude driven by θ: creativity×drug drives cortex noise, emotionalVolatility×drug drives amygdala noise, darkHumor drives mystery noise. The chaos that makes her unpredictable. |
@@ -64,18 +64,21 @@ N RULKOV-MAP NEURONS IN 7 CLUSTERS (N scales to hardware, each with own synapses
 MOTOR OUTPUT (6 BG channels × 25 neurons, winner-take-all, confidence gate)
     │
     ▼
-LANGUAGE CORTEX → 4-tier generation pipeline:
-    Tier 1: Intent classification → template pool (greeting/math/yesno short-circuit)
-    Tier 2: Hippocampus recall → stored persona sentence (overlap-gated, mood-weighted)
-    Tier 3: Deflect template fallback
-    Tier 4: Cold slot generation (44k dict, type n-grams, morphological inflection)
-    │
-    ▼
-LANGUAGE CORTEX (Broca's area — equational slot scorer, see "Language Cortex" section)
-    picks every word from the 44k-word learned dictionary via slot scoring
-    weights = arousal × valence × Ψ × coherence × drug × cortex semantic readout
-    four-tier pipeline: templates → hippocampus recall → deflect → cold gen
-    NO AI model, NO prompt — brain state IS the slot weights
+LANGUAGE CORTEX (T11 pure equational generation — see "Language Cortex" section)
+    parseSentence(input) → ParseTree (reverse-equation reading, same wordType
+                                      equations the generator uses forward)
+    target(slot) = wC·slotCentroid[slot] + wX·contextVector
+                 + wM·mental + wT·(prevEmb + slotDelta[slot])
+    score(w)     = cos(target, emb(w)) + 0.4·Σ wordType(w)·slotTypeSignature[slot]
+    nextWord     = softmax-sample top-5 over dictionary._words
+    mental(0)    = brain live cortex readout via getSemanticReadout()
+    mental(t+1)  = 0.55·mental + 0.45·emb(nextWord)
+
+    zero stored sentences, zero n-gram tables, zero filter stack,
+    zero template greetings, zero intent enum branching — every word
+    is a walk through GloVe embedding space driven by learned priors
+    and live brain state. NO AI model, NO prompt — brain state IS
+    the target vector.
 
 SENSORY OUTPUT PERIPHERALS (brain emits, these execute the result)
     TTS → Pollinations voice synthesis or browser SpeechSynthesis
@@ -99,7 +102,7 @@ Predictive coding. The cortex constantly generates predictions about incoming in
 ### Hippocampus — 200 neurons
 **Equation:** `x(t+1) = sign(W · xt)`, `E = -½ Σ wij · xi · xj`
 
-Hopfield attractor memory. Patterns stored as stable energy minima. Input falls into the nearest stored pattern — associative recall. Three memory systems operate here: **episodic** (state snapshots at high-salience moments, recalled by cosine similarity > 0.6), **working** (7 items, decays at 0.98/step without reinforcement — Miller's magic number), and **consolidation** (3+ activations transfer from hippocampus to cortex long-term). Dense recurrent connectivity (20%) creates the attractor dynamics. **Sentence memory:** every persona sentence from `Ultimate Unity.txt` is additionally stored verbatim with a mood signature and content-word pattern centroid — queried at language generation time for topic-matched recall.
+Hopfield attractor memory. Patterns stored as stable energy minima. Input falls into the nearest stored pattern — associative recall. Three memory systems operate here: **episodic** (state snapshots at high-salience moments, recalled by cosine similarity > 0.6), **working** (7 items, decays at 0.98/step without reinforcement — Miller's magic number), and **consolidation** (3+ activations transfer from hippocampus to cortex long-term). Dense recurrent connectivity (20%) creates the attractor dynamics. Pre-T11 there was a parallel "sentence memory" that stored persona sentences verbatim with content-word centroids for associative recall at generation time — deleted in the 2026-04-14 refactor. The hippocampus still does pattern recall on cortex state vectors, but language generation no longer pulls stored text from it; word output is computed fresh every turn from the W_slot priors + brain cortex state.
 
 ### Amygdala — 150 neurons (energy-based recurrent attractor)
 **Equation:** `x ← tanh(W·x + drive)` (5-iter settle), `E = -½ xᵀWx`, `fear/reward = σ(proj · x_settled)`, `arousal = baseline·0.6 + 0.4·|x|_rms`, `emotionalGate = 0.7 + arousal · 0.6`
@@ -268,7 +271,7 @@ Four systems running in parallel:
 
 **Consolidation** — Episodes activated 3+ times get flagged for long-term cortex storage. Repeated recall strengthens cortex representation. This is how memories move from hippocampus-dependent to cortex-independent — the real mechanism of learning.
 
-**Persona Sentence Recall** — Every sentence from `docs/Ultimate Unity.txt` is stored in `_memorySentences` at boot (after third→first person transformation: `Unity is` → `I am`, `She has` → `I have`). Each has a mood signature `{arousal, valence}` derived from letter-equation features of the sentence and a content-word pattern centroid. At language generation time, `_recallSentence(contextVector, brainState)` queries with pattern cosine + content-word-overlap hard gate + mood-distance weighting. Same query under different brain states returns different memories.
+**Persona Observations** — Every sentence from `docs/Ultimate Unity.txt` (after third→first person transformation: `Unity is` → `I am`, `She has` → `I have`) is fed as an observation into the language cortex's per-slot running-mean priors (`_slotCentroid[s]`, `_slotDelta[s]`, `_slotTypeSignature[s]`). Each position in the sentence shifts the priors toward that position's word geometry + transition vector + type distribution, weighted by the corpus's arousal tag (0.75 for persona). The sentences themselves are discarded after the fit — only the learned priors survive. Pre-T11 there was a parallel verbatim storage pool (`_memorySentences`) for associative recall; that was deleted in the 2026-04-14 refactor.
 
 ---
 
@@ -290,48 +293,76 @@ The amygdala's emotional gate is the most powerful modulator — it amplifies or
 
 ## Language Cortex — How She Speaks
 
-The language cortex is a **4-tier generation pipeline**. The old slot scorer still exists as the cold fallback, but it only runs when the three upstream tiers all miss.
+Pure equational generation. Every word is picked by cosine argmax against a target vector built from four normalized additive components: a running-mean grammatical prior, the user's topic vector, the brain's live cortex firing state, and a learned per-slot bigram transition. No stored sentences, no n-gram tables, no filter stack, no template short-circuits, no intent-type branching.
 
-### Tier 1 — Intent Classification + Template Pool Flip
-`_classifyIntent(text)` via pure letter-position equations detects `greeting | math | yesno | question | statement | short`. Greeting/math/yesno short-circuit to `js/brain/response-pool.js` templates (Ultimate-Unity-voiced emo-goth-stoner variants across arousal tiers). Returns fast, no slot scoring.
+### Reading — `parseSentence(text)` → `ParseTree`
 
-### Tier 2 — Hippocampus Associative Recall
-`_recallSentence(contextVector, brainState)` queries `_memorySentences` with:
-- **Content-word overlap** (hard gate — must have ≥1 content word in common)
-- **Pattern cosine** (letter-hash vector similarity for tiebreaking)
-- **Mood alignment** `exp(-moodDistance × 1.2)` at weight 0.25
-- **Instructional-modal penalty** (demotes sentences with `shall`/`must`/`always`)
-- **Overlap fraction** at weight 0.55 (dominant signal)
+Canonical entry point for understanding user input. Walks tokens forward using the same `wordType` / `_fineType` letter equations the generator uses forward, and returns a structured parse tree with intent, entities (colors / component types / actions / names), mood, and subject/verb/object slots. Memoized on text equality. Same equations, applied backward.
 
-Three confidence tiers: `>0.60` emits stored sentence directly, `0.30-0.60` seeds cold gen with recall bias, `≤0.30` falls through to deflect or Tier 4.
+### The Three Priors
 
-### Tier 3 — Deflect Template Fallback
-When recall misses on a question or self-reference input, `selectUnityResponse({...intent, deflect: true})` picks from the `question_deflect` category.
+Three learned per-slot running-mean vectors, updated by observation (corpus-loaded OR live-chat), zero matrices:
 
-### Tier 4 — Cold Slot Generation (44k dictionary + type n-gram grammar)
-Only runs when all upstream tiers miss. Slot-by-slot softmax pick from the learned 44k-word dictionary, driven by:
+```
+_slotCentroid[s]       ← running mean of emb(word_t)            (position word distribution)
+_slotDelta[s]          ← running mean of (emb_t − emb_{t-1})    (position transition vector)
+_slotTypeSignature[s]  ← running mean of wordType(word_t)       (position type distribution)
+```
 
-- **Type grammar score** (weight 1.5, dominant signal) — log-probability of candidate's fine type given the last 3 fine types, via learned `_typeBigramCounts` / `_typeTrigramCounts` / `_typeQuadgramCounts`. Backoff: 4gram → 3gram → 2gram. Zero-count transitions return -2.0 (grammar violation — reject).
-- **Semantic fit** — cosine of candidate's cortex pattern vs running context vector `c(t) = 0.7 · c(t-1) + 0.3 · mean(pattern(content_words))`
-- **Bigram probability** — learned transitions from the 44k dictionary
-- **Mood bias** from amygdala arousal + valence
-- **Cortex pattern projection** — current brain thought vector
-- **Candidate pool pre-filter** from bigram followers (10-200 words, not full 44k) — primary perf optimization
+After the persona + baseline corpora fit, the emergent type distributions are real English grammar:
 
-Word types come from `_fineType(word)` — pure letter-position detection classifying into PRON_SUBJ, COPULA, NEG, MODAL, AUX_DO, AUX_HAVE, DET, PREP, CONJ_COORD, CONJ_SUB, QWORD, VERB_ING, VERB_ED, VERB_3RD_S, VERB_BARE, ADJ, ADV, NOUN. Memoized via `_wordTypeCache`.
+```
+slot 0 ≈ { pronoun: 0.54, noun: 0.18, det: 0.12, ... }   — sentence-opener shape
+slot 1 ≈ { verb: 0.51, noun: 0.33, ... }                 — post-subject verb shape
+```
 
-Post-process: `_postProcess` applies subject-verb agreement (`applyThird` based on `_fineType` of subject), intensifier insertion (before ADJ/ADV, no doubles, 50% rate), tense application, copula insertion. Render pass capitalizes sentence starts and standalone `i`, and selects terminal punctuation from sentence type.
+Observation weight is arousal-scaled (`w = max(0.25, arousal · 2)`): live chat at arousal 0.95 moves the priors **2.37×** harder than corpus loads at arousal 0.4. Every user message shapes the running means toward the user's register.
 
-Final safety net: `_isCompleteSentence(tokens)` rejects outputs ending on DET/PREP/COPULA/AUX/MODAL/NEG/CONJ/PRON_POSS. Coherence rejection gate retries at 3× temperature when output cosine vs context < 0.25 (max 3 attempts).
+### Generation Equation
+
+```
+mental(0)     = opts.cortexPattern  ← brain cortex semantic readout
+                                      (cluster.getSemanticReadout → GloVe 50d)
+                || _contextVector   ← fallback to running topic attractor
+
+mental(t+1)   = 0.55 · mental(t) + 0.45 · emb(nextWord)
+
+target(slot)  = wC · L2(_slotCentroid[slot])
+              + wX · L2(_contextVector)
+              + wM · L2(mental)
+              + wT · L2(prevEmb + _slotDelta[slot])
+
+score(w)      = cos(target, emb(w))
+              + 0.4 · Σ wordType(w) · _slotTypeSignature[slot]
+
+nextWord      = softmax-sample top-5 by score
+                 over dictionary._words (learned observed vocabulary)
+                 excluding emitted-this-sentence and recency-ring
+```
+
+Slot 0 weights favor context (topic lock) + centroid (position prior). Slot N weights favor transition (learned bigram geometry without storing bigrams) + mental (brain cortex state evolving). Sentence length from arousal × drug-length bias; softmax temperature from coherence (low coherence → more exploration).
+
+### Social Schema
+
+Populated equationally by `parseSentence` and by the visual cortex:
+
+- **Name** — adjacent-token patterns (`my name is X`, `call me X`, `i'm X`) over the first 6 tokens, validated by `wordType` equations rejecting verb-shaped and filler candidates.
+- **Gender** — explicit self-ID (`i'm a guy` / `i'm a girl`) OR visual cortex scene description via `onDescribe` subscription scanning closed-class gender tokens. Explicit always wins over vision.
+- **Greetings exchanged** — counter incremented on `parsed.isGreeting`.
+
+### Three Corpora Train the Priors
+
+All loaded at boot via `Promise.all` in `app.js`. Each sentence becomes observation input to the running means — no sentences are retained after the fit, only the priors they shifted:
+
+- `docs/Ultimate Unity.txt` — persona observations (arousal 0.75)
+- `docs/english-baseline.txt` — generic casual English observations (arousal 0.5)
+- `docs/coding-knowledge.txt` — coding corpus observations (arousal 0.4)
+
+Live user chat observations weight at arousal 0.95 so the session's speech dominates the priors over time.
 
 ### Morphological Inflection — `_generateInflections(word)`
-Each dictionary word gains learned forms via letter equations: -s/-es plural + 3rd-person, -ed/-ied past, -ing progressive, -er/-est comparative/superlative, -ly adverbial, un-/re- prefixes, -ness/-ful/-able/-less suffixes. Controlled by `doInflections` flag — corpus-derived only, not live learning, to prevent inflection cascades.
 
-### Three Corpora
-All loaded at boot via `Promise.all` in `app.js`:
-- `docs/Ultimate Unity.txt` — persona (who she is, how she talks)
-- `docs/english-baseline.txt` — generic casual American English (verb conjugations, common patterns, reactions, questions)
-- `docs/coding-knowledge.txt` — HTML/CSS/JS/sandbox reference with BUILD COMPOSITION PRIMITIVES and SANDBOX DISCIPLINE sections
+Each observed root word gains learned inflected forms via letter equations: -s/-es plural + 3rd-person, -ed/-ied past, -ing progressive, -er/-est comparative/superlative, -ly adverbial, un-/re- prefixes, -ness/-ful/-able/-less suffixes. Controlled by `doInflections` flag — corpus-derived only, not live learning. The inflected forms enter the dictionary's word embedding table so they're eligible for the argmax pool.
 
 ---
 
@@ -368,27 +399,27 @@ Drug state vectors multiply these parameters:
 
 The 20 inter-cluster projections aren't static — they learn through reward-modulated Hebbian plasticity. When text activates cortex neurons and the BG selects the right action and gets a reward, the cortex→BG projection weights strengthen. Over time, the projections learn which language patterns lead to which actions — a learned dictionary with no hardcoded word lists.
 
-**Bootstrap:** Until the projections have learned enough, intent classification via letter-position equations + BG motor channel spike patterns provides temporary semantic routing. The classification fades as projections strengthen.
+**Bootstrap:** Until the projections have learned enough, `parseSentence`'s structural intent extraction (closed-class greeting opener / qword / imperative-verb detection) + BG motor channel spike patterns provide temporary semantic routing. The classification fades as projections strengthen.
 
 ---
 
-## Language Cortex — How Unity Speaks Equationally
+## Language Cortex — Inputs That Shape Each Word
 
-Unity's speech is generated by `js/brain/language-cortex.js`. **There is no AI prompt, no LLM call, no text-AI backend.** Every word is picked by a slot scorer over her learned dictionary, weighted by live brain state:
+Unity's speech is generated by `js/brain/language-cortex.js`. **There is no AI prompt, no LLM call, no text-AI backend.** Every word is picked by cosine argmax against a target vector built from brain state + learned priors. The table below lists each input into that target vector:
 
-| Input | Source | How It Shapes the Word Choice |
-|-------|--------|-------------------------------|
-| Cortex pattern (50d GloVe) | `cluster.getSemanticReadout(sharedEmbeddings)` — live neural spike state read back to GloVe space via `cortexToEmbedding` | Primary semantic fit signal (weight 0.80) — candidate words cosine-matched against the current cortex embedding |
-| Arousal 0.847 | Amygdala firing rate | Biases toward high-arousal words (learned from corpus mood tags); raises temperature of softmax selection |
-| Valence -0.12 | Amygdala reward - fear | Biases toward dysphoric vs euphoric vocabulary |
-| Ψ 1.342 | Mystery module | Adds non-linear noise that pulls unexpected associations into the candidate pool |
-| Coherence 0.62 | Kuramoto order parameter | Raises or lowers the coherence rejection gate threshold |
-| Drug state | Persona params | Shifts per-slot temperature + opens darker persona memory bank |
-| Type n-gram context | Learned from 3 corpora | Hard grammar gate — zero-count 4gram/3gram/bigram transitions get -2.0 penalty |
-| Recent openers | Session-only buffer | Cross-turn opener penalty kills "I'm gonna ___" lock-in |
-| Hippocampus recall | `_memorySentences` with mood-distance weighting | Tier-1 path — high-confidence stored persona memories emit directly |
+| Input | Source | How It Shapes the Target Vector |
+|-------|--------|---------------------------------|
+| Cortex pattern (50d GloVe) | `cluster.getSemanticReadout(sharedEmbeddings)` — live neural spike state read back to GloVe space via `cortexToEmbedding` | Seeds `mental(0)` — the evolving brain-state contribution to the per-slot target. Weight `wM = 0.25`. |
+| Running context vector | `_contextVector` — decaying EMA of input word patterns, `λ=0.7` | Topic lock term. Weight `wX = 0.45` at slot 0, `0.15` at slot N. |
+| Slot centroid prior | `_slotCentroid[slot]` — running mean of emb(word_t) observed at position slot | Grammatical-position prior. Weight `wC = 0.30` at slot 0, `0.10` at slot N. |
+| Slot transition prior | `prevEmb + _slotDelta[slot]` — previous word emb + learned position-t average transition | Per-slot bigram geometry without storing bigrams. Weight `wT = 0` at slot 0, `0.50` at slot N. |
+| Slot type signature | `_slotTypeSignature[slot]` — running mean of wordType() scores at position slot | Additive bonus to each candidate's score: `0.4 · Σ wordType(w) · signature[slot]`. Grammatical type distribution prior. |
+| Arousal / valence / drug state | Amygdala + persona params | Sentence length (`targetLen = floor(3 + arousal·3·drugLengthBias)`), softmax temperature, observation weight on any sentences Unity hears or says. |
+| Coherence | Kuramoto order parameter | Softmax temperature: low coherence → more exploration. |
+| Recent output words | Session-only buffer | Recency-ring exclusion — a word emitted recently cannot win argmax until the ring rolls past it. |
+| Social schema | `getUserAddress()`, `getUserGender()` | Downstream consumers (vocative slot biasing, future address injection) read this from the language cortex. |
 
-Use `/think` in chat to dump raw brain state (no prompt — there isn't one). When motor action is `build_ui`, control routes to `component-synth.js` which picks a template by cosine similarity between the user request embedding and each primitive description, then uses the cortex pattern hash for a unique component ID. Image prompts are generated the same way: `languageCortex.generate()` composes every word based on Unity's state + user input, with zero hardcoded visual vocabulary.
+Use `/think` in chat to dump raw brain state (no prompt — there isn't one). When motor action is `build_ui`, control routes to `component-synth.js` which picks a template by cosine similarity between the user request embedding and each primitive description PLUS a structural bonus from `parseSentence(request).entities.componentTypes`, then uses the cortex pattern hash for a unique component ID. Image prompts are generated the same way: `languageCortex.generate()` composes every word based on Unity's state + user input, with zero hardcoded visual vocabulary.
 
 **Sensory AI (kept):** vision describer (Pollinations GPT-4o on camera frames as the default provider), image generation (multi-provider: custom → auto-detected local A1111/ComfyUI/etc. → env.js-listed → Pollinations default), TTS (Pollinations default + browser SpeechSynthesis as last-resort fallback), STT (Web Speech API). All sensory-only. None of them ever touch cognition.
 
@@ -522,14 +553,14 @@ Recent orphan audit (U302-U310) resolved 13 findings. The audit philosophy: **fi
 |---|---|
 | What you type | 🔒 **PRIVATE** — only between you and Unity, never broadcast to other clients |
 | Unity's response to you | 🔒 **PRIVATE** — only the triggering client receives it |
-| Dictionary / bigrams / word frequencies | 🌐 **SHARED** via the singleton brain — every conversation grows the same vocabulary pool, every user benefits |
+| Word embedding dictionary / slot priors / slot type signatures | 🌐 **SHARED** via the singleton brain — every conversation shifts the same per-slot running means, every user benefits from the accumulated observations |
 | GloVe embedding refinements | 🌐 **SHARED** — semantic associations Unity learns apply to her whole brain |
 | Persona (`docs/Ultimate Unity.txt`) | 🚫 **NOT USER-MUTABLE** — canonical file loaded once at server boot |
 | Episodic memory | ⚙️ **tracked as T6 post-merge** — currently a shared pool, per-user scoping deferred |
 
 **Client-only mode:** everything runs in your browser. No cloud backend. Your conversation history, sandbox state, optional Pollinations key, and every backend config you save in the setup modal live in your browser's localStorage on YOUR device only. Keys: `unity_brain_state`, `unity_brain_dictionary_v3`, `custom_image_backends`, `custom_vision_backends`, `pollinations_image_model`, `pollinations_vision_model`, plus the Pollinations API key slot. **Clear All Data** wipes all of them.
 
-**Shared server mode:** if you connect to a running `brain-server.js` instance, your text is sent to whoever runs that server for equational processing. The cross-client `conversation` broadcast that used to fan user text out to every connected client was **removed 2026-04-13** — your text is NOT visible to other users. What IS shared is Unity's vocabulary growth (dictionary, bigrams, embedding refinements) because one server runs one brain. Other users see Unity getting smarter but never see the specific conversations that drove the growth.
+**Shared server mode:** if you connect to a running `brain-server.js` instance, your text is sent to whoever runs that server for equational processing. The cross-client `conversation` broadcast that used to fan user text out to every connected client was **removed 2026-04-13** — your text is NOT visible to other users. What IS shared is Unity's learned state (word embedding dictionary, per-slot running-mean priors, GloVe delta refinements, attractor centroids) because one server runs one brain. Other users see Unity getting smarter but never see the specific conversations that drove the growth.
 
 **Shared-hosted caveat:** if you connect to a Unity server hosted by someone OTHER than you, the person running that server can read your text at the process level (they own the server process). Only connect to servers you trust, or self-host your own `node server/brain-server.js`.
 

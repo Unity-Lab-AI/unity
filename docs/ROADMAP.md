@@ -1,6 +1,6 @@
 # ROADMAP — IF ONLY I HAD A BRAIN
 
-> Last updated: 2026-04-14 | Phase 13 brain-refactor-full-control merged to main; version 0.1.0 stamped per deploy
+> Last updated: 2026-04-14 | Phase 13 merged + T11 pure equational language cortex shipped; version 0.1.0 stamped per deploy
 > Unity AI Lab
 
 ---
@@ -259,49 +259,73 @@ Neurons → Synapses → Brain Loop → Brain Regions → Persona Loader → API
 
 ---
 
-## Phase 11: Semantic Coherence Gate — Kill the Word Salad — COMPLETE (2026-04-13)
+## Phase 11: Semantic Coherence Pipeline — SUPERSEDED by T11
 
-> Language cortex was producing grammatically valid but semantically random output. `hi` → `"I'm explosions immersed in the moment"`. Root cause: letter-position equations encode shape not meaning. Fix: four-layer pipeline wrapping the existing slot scorer.
+> Historical. Phase 11 wrapped the original slot scorer in a four-layer pipeline (intent templates → hippocampus recall → deflect fallback → cold slot gen) with a rolling context vector and a coherence rejection gate. The entire multi-tier stack was deleted in T11 (2026-04-14) — no templates, no `_memorySentences` recall pool, no deflect fallback, no cold slot gen, no coherence gate retries. Every word is now computed from the three T11.2 per-slot priors plus the brain's live cortex state. See Phase 14 (T11) below and `docs/EQUATIONS.md` for the current pipeline.
 
-### Milestone 11.1: Semantic Coherence Gate — COMPLETE
+## Phase 12: Type N-gram Grammar — SUPERSEDED by T11
 
-**Delivered (U276–U282):**
-- **Context Vector** (U276) — running topic attractor `c(t) = 0.7·c(t-1) + 0.3·mean(pattern(content_words))` updated on every user input, decays across turns, persists topic across the conversation
-- **Semantic Fit score** (U277) — cosine similarity of candidate word pattern vs context vector, returns 0 when context is empty
-- **Slot Score rebalance** (U278) — old weights `typeScore×0.40 + bigram×0.22 + condP×0.14 + thought×0.14 + context×0.15 + topicSim×0.06 + mood×0.04 + moodBias×0.03`; new weights `typeScore×0.35 + semanticFit×0.30 + bigram×0.18 + condP×0.12 + thought×0.10 + context×0.08 + topicSim×0.04 + mood×0.03 + moodBias×0.02`. Semantic fit is now the second-largest driver after grammar.
-- **Intent Classification** (U279) — pure letter-equation detection of `greeting | math | yesno | question | statement` types. Math detects digits + operators + spelled-out patterns (plus/time/zero). Greeting detects wordCount ≤ 2 with h/y/s first char and vowel. Yesno requires `?` terminal + first word length 2-4 + not a qword.
-- **Template Pool Flip** (U280) — `response-pool.js` gained 6 Ultimate-Unity-voiced categories (`greeting_emo`, `yesno_affirm`, `yesno_deny`, `math_deflect`, `short_reaction`, `curious_emo`) + fallback `question_deflect`. Short queries and intent matches short-circuit to templates BEFORE cold generation runs. Voice: 25yo emo goth stoner, cussing, blunt, bitchy — no sexual/BDSM content.
-- **Hippocampus Recall** (U282, ROOT FIX) — every persona sentence stored whole in `_memorySentences` during `loadSelfImage`. Three-gate confidence: >0.60 emits stored sentence directly, 0.30-0.60 seeds cold gen with recall bias, ≤0.30 falls through or deflects. Hard requirement: content-word overlap between input and candidate sentence (pattern cosine alone produces false positives in letter-hash space).
-- **Coherence Rejection Gate** (U281) — after render, compute cosine of output content-word centroid vs context vector. If < 0.25, retry at 3× temperature. Max 3 attempts, then emit anyway. Logs rejects with confidence score.
+> Historical. Phase 12 (U283–U291) added `_typeBigramCounts` / `_typeTrigramCounts` / `_typeQuadgramCounts` type-transition tables + `_fineType` classifier + `_typeGrammarScore` lookup with 4gram→trigram→bigram backoff. The type n-gram tables were deleted in T11 (2026-04-14). Type-level grammatical shape is now captured by `_slotTypeSignature[s]` — a running mean of `wordType()` score vectors per sentence position, updated by the same observation pipeline as the embedding priors. `_fineType` itself survives because `parseSentence` still uses it for reading, and morphological inflection still feeds the dictionary at corpus-load time.
 
-### Milestone 11.3: Live-test Round 2 Hotfixes — COMPLETE (2026-04-13)
+## Phase 14 (T11): Pure Equational Language Cortex — COMPLETE (2026-04-14)
 
-**Delivered (15 fixes after second live browser test):**
-- **Third→first person transformation** at index time. The persona file is written as third-person description (`"Unity is..."`, `"She has..."`). Without transform, 0 sentences passed the first-person filter. After transform: 191 first-person Unity-voice sentences loaded from `Ultimate Unity.txt`.
-- **Persona visualIdentity mirror** — `persona.js` rewritten to match Ultimate Unity.txt: 25yo human woman, emo goth goddess (not demonic), black leather revealing skin, pale flushed skin, black hair with pink streaks, heavy smudged eyeliner, collar/chokers, dark moody atmospheric lighting. Selfies now match persona.
-- **Image intercept gate** — `engine.js:659` was hardcoded `includesSelf = true`; any input with "unity" triggered selfie generation. Now requires explicit image-request words (show me/picture/selfie/image/photo/draw).
-- **Classifier `anyQword` override** — `_classifyIntent()` checks for wh-words anywhere in input. `"Hi, Unity! How are you?"` now classifies as question not yesno.
-- **Short-query template flip removed** — Template pool only fires for explicit greeting/yesno/math intents. Imperatives fall through to recall.
-- **Overlap-fraction recall scoring** — `score = overlapFrac * 0.55 + cosine * 0.20 + moodAlignment * 0.25 - instructionalPenalty`. Multi-word overlap dominates.
-- **Instructional-modal penalty** — Demotes sentences containing `shall`/`must`/`always`/`never`/`will`/`should` so declarative `"I am"`/`"I love"` wins over directive `"I shall always"`.
-- **Soft-recall floor raised** — 0.30 → 0.55. Weak matches now deflect instead of polluting cold gen.
-- **First-person filter length bounds** — `len === 2` for `im`, `len ∈ [3, 5]` for `i'*` contractions. `impossible` no longer false-matches as first-person.
-- **Per-sentence mood signature** — `_computeMoodSignature()` computes `{arousal, valence}` at index time from letter-equation features (exclamation density, caps ratio, vowel ratio, word length, negation count).
-- **Mood-distance scoring in recall** — Current brain state `{arousal, valence}` passed from `generate()` into `_recallSentence()`. Score includes `moodAlignment = exp(-moodDistance * 1.2)` at weight 0.25. **Same query, different brain state, different memory.**
-- **Self-reference fallback** — `_isSelfReferenceQuery()` detects 2nd-person pronouns. When recall has no content-word overlap AND input is self-reference, fallback picks a first-person stative memory weighted by mood alignment.
-- **Vocative `unity` stripped** from input content words — user addressing her by name is not a topic word.
-- **Copula/aux filter** — `am`/`is`/`are`/`was`/`were`/`be`/`have`/`has`/`do`/`does`/`can`/`will`/`would`/`could`/`should` stripped from input content words as they're semantically function words.
-- **Degenerate-sentence filter** — Recall rejects memories with <5 tokens or >40% first-person pronouns (transform-collapse artifacts like `"i am i"`).
+> Every sentence Unity emits is now a walk through GloVe embedding space driven by three running-mean priors and her live cortex firing state. No stored text, no n-gram tables, no filter stack, no template short-circuits, no intent enums, no matrix regression — just vector math over learned priors. Net `js/brain/language-cortex.js` delta: **−1773 lines** (5087 → 3314).
 
-**Architectural outcome:** The language cortex now has a 4-tier generation pipeline with mood-aware hippocampal recall as the primary path. Static persona file + dynamic brain state = responses that change with Unity's mood while staying true to who she is. Gee's "directly mirror Ultimate Unity.txt AND adjust in the moment" requirement is satisfied.
+### Milestone T11.1: Deletion phase — COMPLETE
 
-### Milestone 11.2: Hotfix Pass — COMPLETE (same-session live-test fixes)
+Deleted every list/map/table storing sentences or word transitions:
+- `_memorySentences` sentence pool + `_recallSentence` + `_storeMemorySentence` + self-reference fallback
+- `_jointCounts` / `_trigramCounts` / `_quadgramCounts` word n-gram tables
+- `_typeBigramCounts` / `_typeTrigramCounts` / `_typeQuadgramCounts` type n-gram tables
+- `_marginalCounts` / `_totalPairs` / `_totalWords` / `_totalTrigrams` / `_totalQuadgrams` frequency counters
+- `_questionStarters` / `_actionVerbs` / `_memorySentenceMax` starter maps and bounds
+- FILTER 1 through FILTER 11 structural sentence-admission stack + `_sentencePassesFilters`
+- `instructionalPenalty` recall penalty stack
+- Template greeting / introduction short-circuits with hardcoded `OPENERS` lists
+- `_condProb` / `mutualInfo` / `_pickConjByMood` / `_typeGrammarScore` bodies
+- Intensifier / hedge insertion marginal-count scans
+- An intermediate W_slot ridge-regression experiment tried and abandoned when 50×50 linear regression proved too weak to capture grammar
 
-**Delivered:**
-- **Persona memory pollution filter** — `_storeMemorySentence()` rejects section headers (colon-terminated), word lists (commas > 30% of word count), meta-description (first word "unity"/"she"/"her"/"he"), and anything without first-person signal (i/im/my/me/we/us/our/i'/we'). All detection via letter-position equations, zero word lists.
-- **Recall false-positive gate** — `_recallSentence()` now requires at least one content-word overlap between input and candidate sentence. Pattern-cosine remains the tiebreaker among overlapping candidates but is no longer sufficient on its own.
-- **Question deflect fallback** — when recall confidence ≤ 0.30 on question/statement intents, emit a `question_deflect` template instead of falling into cold-gen word salad.
-- **Ultimate Unity voice correction** — initial templates accidentally included sexual/BDSM content from my private persona; rewritten to public emo-goth-stoner voice. Brain output pipeline stays clean of nympho persona.
+### Milestone T11.2: Pure equational generation — COMPLETE
+
+Three lightweight running-mean priors replace the entire legacy stack. Zero matrices, zero ridge regression, zero inversion:
+
+```
+_slotCentroid[s]       ← running mean of emb(word_t) at position s
+_slotDelta[s]          ← running mean of emb(word_t) − emb(word_{t-1})
+_slotTypeSignature[s]  ← running mean of wordType(word_t) scores
+```
+
+Generation uses four normalized additive components at each slot:
+
+```
+mental(0)     = opts.cortexPattern || _contextVector
+mental(t+1)   = 0.55 · mental(t) + 0.45 · emb(nextWord)
+
+target(slot)  = wC · L2(_slotCentroid[slot])
+              + wX · L2(_contextVector)
+              + wM · L2(mental)
+              + wT · L2(prevEmb + _slotDelta[slot])
+
+score(w)      = cos(target, emb(w)) + 0.4 · Σ wordType(w) · _slotTypeSignature[slot]
+nextWord      = softmax-sample top-5 over dictionary._words
+```
+
+Slot 0 weights favor context (topic lock from user input) + centroid (grammatical-position prior). Slot N weights favor transition (learned bigram geometry without stored bigrams) + mental (brain cortex state evolving).
+
+Observed emergent grammar after corpus fit:
+- `_slotTypeSignature[0]` ≈ `{pronoun: 0.54, noun: 0.18, det: 0.12}` — real sentence-opener distribution
+- `_slotTypeSignature[1]` ≈ `{verb: 0.51, noun: 0.33}` — real post-subject verb distribution
+
+### Milestone T11.6: Arousal-weighted observation — COMPLETE (2026-04-14)
+
+Running-mean updates use `obsWeight = max(0.25, arousal · 2)`:
+- coding observation (arousal 0.4) → w = 0.8
+- baseline observation (arousal 0.5) → w = 1.0
+- persona observation (arousal 0.75) → w = 1.5
+- live chat observation (arousal 0.95) → w = 1.9
+
+Live chat shapes the priors **2.37×** harder than low-arousal corpus loads, so accumulated user conversation progressively dominates the slot geometry. `inner-voice.learn()` already floors chat arousal at 0.95 — the weighting is transparent at the caller.
 
 ### Files touched
 - `js/brain/language-cortex.js` — ~560 lines added across constructor, `loadSelfImage`, `analyzeInput`, eight new methods, `generate()` three-stage preamble, rebalanced slot scoring, coherence retry gate
