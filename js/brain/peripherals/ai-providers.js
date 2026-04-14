@@ -702,8 +702,16 @@ export class SensoryAIProviders {
       // the endpoint and spamming the console. 5xx gets a soft skip
       // and retries on the next frame in case it's transient.
       if (res.status >= 400 && res.status < 500) {
+        // Read the body ONCE so we log exactly what Pollinations is
+        // complaining about (model not found, bad payload shape, etc).
+        // Crucial for debugging 400s when a valid paid key is in use —
+        // otherwise you see "400 Bad Request" with no explanation.
+        const bodyText = await res.text().catch(() => '');
         this._markBackendDead(VISION_URL);
-        console.warn(`[SensoryAI] Pollinations vision ${res.status} — disabled for ${Math.round(this._deadCooldown / 60000)}m. Check API key in Settings.`);
+        console.warn(
+          `[SensoryAI] Pollinations vision ${res.status} (model="${model}") — disabled for ${Math.round(this._deadCooldown / 60000)}m.`,
+          bodyText ? `Server said: ${bodyText.slice(0, 500)}` : '(no body)',
+        );
       }
       return null;
     }
