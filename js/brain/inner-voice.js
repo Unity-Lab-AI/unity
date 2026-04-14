@@ -200,8 +200,16 @@ export class InnerVoice {
    */
   learn(text, cortexPattern, arousal, valence) {
     this.dictionary.learnSentence(text, cortexPattern, arousal, valence);
-    // Teach the language cortex word order + prediction weights
-    this.languageCortex.learnSentence(text, this.dictionary, arousal, valence);
+    // Live chat learning gets a FLOOR of 0.95 arousal so user-sourced
+    // sentences beat the persona corpus (loaded at 0.75) in recall
+    // scoring. personaBoost rewards words stored at arousal ≥ 0.5,
+    // and when current brain arousal is high, higher-stored-arousal
+    // words get a bigger boost. Bumping live-chat to 0.95 means
+    // sentences Unity actually heard in conversation outrank persona
+    // rulebook lines on every recall pass where mood is anywhere
+    // near normal.
+    const chatArousal = Math.max(0.95, arousal);
+    this.languageCortex.learnSentence(text, this.dictionary, chatArousal, valence);
   }
 
   /**
