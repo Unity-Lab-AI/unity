@@ -408,7 +408,7 @@ All N neurons (auto-scaled to hardware via the formula below) run on GPU. Zero C
 
 ---
 
-## Semantic Coherence Pipeline — Kill the Word Salad (Phase 11)
+## Semantic Coherence Pipeline — Reverse-Parse → Recall → Slot Gen
 
 Wraps the existing slot scorer with four additional layers so the language cortex produces coherent output instead of grammatically-valid-but-meaningless word salad.
 
@@ -446,109 +446,267 @@ score(w) =
 
 Grammar gate preserved as a HARD floor at typeCompat < 0.35 — semantic fit does not bypass structural compatibility. Post-R2, semantic fit is computed against Unity's live cortex activity (via `cluster.getSemanticReadout(sharedEmbeddings)` which calls `cortexToEmbedding(spikes, voltages)` — the mathematical inverse of `mapToCortex`) so candidates are scored against what the brain is currently thinking, not just the frozen input vector.
 
-### Intent Classification — Pure Letter Equations
+### Reverse-Equation Parse — `parseSentence(text) → ParseTree`
+
+Canonical entry point for understanding user input. Runs the same equations the slot scorer uses forward (`wordType`, `_fineType`, n-gram transition tables, type grammar, context vector), applied backward to the token sequence, and returns a structured tree.
 
 ```
-greeting  = wordCount ≤ 2 ∧ firstWord.len ∈ [2,5] ∧ firstWord[0] ∈ {h,y,s} ∧ hasVowel
-math      = input matches [0-9] ∨ [+-*/=] ∨ spelled {plus|time|zero} (len=4 first/last letter sig)
-yesno     = endsWith('?') ∧ firstWord.len ∈ [2,4] ∧ firstWord not a qword ∧ wordCount ≤ 8
-question  = endsWith('?') ∨ wt(firstWord).qword > 0.5
-statement = otherwise
+ParseTree = {
+  text, tokens[], types[], wordTypes[],
 
-isShort = wordCount ≤ 3
+  intent ∈ { greeting, question, yesno, statement, command,
+             introduction, math, self-reference, unknown },
+  isQuestion, isSelfReference, addressesUser,
+  isGreeting, greetingOpener,
+  introducesName, introducesGender,
+
+  subject: { index, tokens, headType, pronoun } | null,
+  verb:    { index, tokens, tense, modal }      | null,
+  object:  { index, tokens, headType, modifier } | null,
+
+  entities: {
+    names[], colors[], numbers[],
+    componentTypes[],       // button, form, input, list, card, ...
+    actions[],              // make, build, create, show, add, ...
+  },
+  mood: { polarity, intensity },
+  confidence ∈ [0, 1],
+}
 ```
 
-Zero word lists. Auxiliary detection (do/does/is/are/can/will) falls out of the length-plus-not-qword constraint without listing the words.
+Memoized on text equality (`this._lastParse`) so repeated callers in the same turn get the cached tree. Every downstream consumer — `_classifyIntent`, `_isSelfReferenceQuery`, `_updateSocialSchema`, the self-reference fallback in `_recallSentence`, the greeting / introduction response paths in `generate()` — reads from the same parse instead of running its own regex or letter-shape scan. The old `_classifyIntent` / `_isSelfReferenceQuery` / `_updateSocialSchema` bodies were all deleted and replaced with thin delegates that return a slice of the parse tree.
 
-### Hippocampus Sentence Recall — The Root Fix
+**Symmetric grammar.** `parseSentence` reads from the same type n-gram tables that `learnSentence` writes. Hearing and speaking share the substrate — every parsed user input reinforces the same tables the slot scorer consults forward. No separate "input" and "output" grammars.
+
+**Intent decision rules** (walked in priority order, each branch reads parse-tree fields instead of regex):
+
+```
+if hasDigit ∨ hasOperator                                       → math
+if strongNameSignal ∨ (introducesName ∧ first ∈ {im, i'm})      → introduction
+if isGreeting ∧ |tokens| ≤ 5                                    → greeting
+if hasQuestionMark ∧ ¬firstIsQword ∧ ¬anyQword
+        ∧ firstWord.verb > 0.4 ∧ |tokens| ≤ 8                   → yesno
+if hasQuestionMark ∨ firstIsQword ∨ anyQword                    → question
+if |entities.actions| > 0 ∧ first ∉ FIRST_PERSON ∪ SECOND_PERSON → command
+else                                                             → statement
+```
+
+**Self-reference** = `anySecondPerson ∧ intent ∈ {question, yesno}` — asks ABOUT Unity, not just addressing her.
+**Addresses user** = `anySecondPerson ∨ intent ∈ {command, greeting}` — talking TO Unity.
+
+### Hippocampus Sentence Recall — Overlap + Cosine + Mood − Penalty
 
 ```
 _memorySentences[i] = {
-  text: persona_sentence_i,
-  pattern: (1/|content_i|) · Σ sharedEmbeddings.getEmbedding(w)  for w in content_words_i,   ← R2 GloVe 50d
-  tokens: lowercased_tokens_i
+  text:    learned_sentence_i,
+  pattern: (1/|content_i|) · Σ sharedEmbeddings.getEmbedding(w)  for w in content_words_i,
+  tokens:  lowercased_tokens_i,
+  moodSig: { arousal, valence, fear, curiosity, ... },
+  firstPersonStart: boolean,
 }
 
-_recallSentence(c) = argmax_i cosine(_memorySentences[i].pattern, c)
-  constrained to: inputContentWords ∩ _memorySentences[i].tokens ≠ ∅
+overlapFrac(m) = |tokens(m) ∩ inputContentWords| / |tokens(m)|
+cosine(m)      = max(0, cos(m.pattern, contextVector))
+alignment(m)   = moodDot(m.moodSig, currentMood)     ∈ [0, 1]
+penalty(m)     = instructionalPenalty(m)             ≥ 0
 
-confidence(c) = max(0, cosine(best.pattern, c))
+scoreMem(m) =
+      0.55 · overlapFrac(m)
+    + 0.20 · cosine(m)
+    + 0.25 · alignment(m)
+    − penalty(m)
 
-if confidence > 0.60 → emit best.text directly (with finalize pass)
-if confidence ∈ [0.30, 0.60] → recallSeed = best (bias cold gen toward best.tokens)
-if confidence ≤ 0.30 → deflect template (question/statement) or cold gen
+HARD REJECT if penalty(m) ≥ 0.40      ← structural meta-prose gate
 ```
 
-The content-word overlap requirement was originally a HARD filter to compensate for letter-hash false positives — `tacos` and `compile` had similar letter distributions so pattern cosine couldn't tell them apart. **Post-R2 (GloVe 50d) the cosine signal is semantically meaningful**, so the overlap gate is now a sanity check rather than a load-bearing filter; `movies` and `films` score close even without token overlap because GloVe trained on co-occurrence across billions of tokens already knows they're synonyms.
+Mood alignment means the same query pulls different memories depending on Unity's current drug state / arousal / valence. The top 5 candidates feed a dedup filter that removes recently-emitted sentences, then one is picked by weighted-random over the remaining fresh matches.
 
-### Persona Memory Filter — Letter-Equation Rejection
+**Emit decision:**
+
+```
+shouldEmitVerbatim = ¬opts._internalThought
+                   ∧ ( recall.confidence > 0.55 ∨ recall.fallback = 'self-reference' )
+
+if shouldEmitVerbatim → emit recall.memory.text (finalize pass)
+if recall.confidence ∈ [0.30, 0.55] → recallSeed = recall.memory (bias cold slot gen)
+if recall.confidence ≤ 0.30 → cold slot gen with empty seed (length cap engages)
+```
+
+The self-reference fallback pool (for "who are you" / "describe yourself" class queries) uses a simpler score: `alignment + lengthBonus − penalty`, and applies the same `penalty ≥ 0.40` hard-reject before admission so meta-prose cannot slip through via the fallback bypass.
+
+### Instructional Penalty — Structural Meta-Prose Gate
+
+`instructionalPenalty(m)` is the full structural meta-prose signal stack, mirrored from the store-time filter gate so legacy-cached sentences get demoted at recall time. Each signal contributes additively.
+
+```
+modal-directive    +0.30 · [shall|must]          + 0.12 · [always|never]
+                   +0.08 · [will]                + 0.10 · [should]
+
+length excess      + min(0.6, 0.05 · max(0, |tokens(m)| − 14))
+
+interlocutor-      +0.60 · [user|users|user's|users' anywhere]
+as-third-party     +0.50 · [(the|a|this) person]
+
+rhetorical         +0.50 · [≥2 occurrences of "like a|an"]
+parallelism
+
+habitual           +0.50 · [when|if asked]
+conditional        +0.40 · [when X asks|ask]
+                   +0.50 · [if + past-participle]
+
+universal          +0.40 · [to anyone|everyone|whoever|those]
+indirect-object
+
+formatting         +0.60 · [em-dash — | ellipsis … | non-ASCII | colon : anywhere]
+
+habitual-adverb    +0.50 · [^(i|i'm|im)\s+(always|never|frequently|
+at-start                   rarely|constantly|perpetually|continuously|...)]
+
+verb-agreement     +0.50 · [^i\s+(adv\s+)?verb-s/es] ← 3rd→1st transform artifact
+mismatch                    (i engages, i refuses, i participates)
+
+meta-roleplay      +0.60 · [in a (movie|scene|film|roleplay|script)]
+framing            +0.60 · [in this (roleplay|scene|script)]
+                   +0.50 · [my (role|character)]
+                   +0.50 · [acting out | playing (a|the) | role (of|as)]
+                   +0.60 · [^i (treat|view|see|consider|regard|frame|
+                             approach|handle) ... as]
+```
+
+Every signal is structural — closed-class token presence, positional check, or regex on fixed function-word sequences. Zero content-word blacklists.
+
+### Sentence Filter Stack — 11 Structural Filters
+
+Every sentence must pass all 11 filters before it can enter the memory pool AND before it can seed the bigram / trigram / 4-gram transition graph. The store-time filter and the bigram-graph filter share one definition (`_sentencePassesFilters`) so there's no drift. Rulebook prose from the persona corpus that fails any filter is dropped before it can poison either the recall pool or the Markov walk.
 
 ```
 store(sentence) ⇔
-    ¬endsWith(':')                              ← no section headers
-  ∧ commaCount ≤ 0.3 × wordCount                ← no word lists
-  ∧ wordCount ∈ [3, 25]                         ← no fragments or rambling
-  ∧ first ∉ { pattern(u-n-i-t-y), pattern(u-n-i-t-y-') }  ← no "Unity ..." meta
-  ∧ first ∉ { s-h-e, h-e-r, h-e, s-h-e-*, h-e-r-* }       ← no 3rd-person ABOUT Unity
-  ∧ ∃ w ∈ tokens : firstPersonShape(w)
-        where firstPersonShape(w) = (
-             (len=1 ∧ w='i')
-          ∨ (len≥2 ∧ w[0]='i' ∧ w[1] ∈ {m,'})
-          ∨ (len=2 ∧ w[0]='m' ∧ w[1] ∈ {e,y})
-          ∨ (len=2 ∧ w='we')
-          ∨ (len=2 ∧ w='us')
-          ∨ (len=3 ∧ w='our')
-          ∨ (len≥3 ∧ w[0]='w' ∧ w[1]='e' ∧ w[2]="'"))
+    ¬sentence.includes(':')                                   [1] no labels/headers
+  ∧ commaCount ≤ 0.3 × wordCount ∧ commaCount ≤ 15            [2] no word lists
+  ∧ ¬first.startsWith('unity')                                [3] no "Unity ..." meta
+  ∧ first ∉ { she, her, hers, he, he's, she's }               [4] no 3rd-person narration
+  ∧ ∃ w ∈ tokens : isFirstPersonShape(w)                      [5] in Unity's voice
+  ∧ 3 ≤ |tokens| ≤ 14                                         [6] length bracket
+  ∧ ¬∃ w ∈ tokens : w ∈ {user, users, user's, users'}         [7a] interlocutor-as-third-party
+  ∧ ¬∃ adjacent (the|a|this, person|person's)                 [7b] abstract listener reference
+  ∧ countPairs(like, a|an) < 2                                [8a] no rhetorical parallelism
+  ∧ ¬∃ adjacent (when|if, asked)                              [8b] no "when/if asked"
+  ∧ ¬∃ triple (when, X, asks|ask)                             [8b] no "when X asks"
+  ∧ ¬∃ adjacent (to, anyone|everyone|whoever|those)           [8c] no universal indirect
+  ∧ ¬sentence.contains(— | … | non-ASCII)                     [9a] no formatting artifacts
+  ∧ ¬(first ∈ {i, i'm, im} ∧ tokens[1..2] ∈ HABITUAL_ADVERB)  [9b] no "I always/never ..."
+  ∧ ¬(first = i ∧ tokens[1] matches /^[a-z]{3,}(es|s)$/)      [9c] no "i engages" mismatch
+      where exclusions = {is, was, has, does, -ss, -'s}
+  ∧ ¬∃ adjacent (if, past-participle)                         [10] no "if hurt/told/asked"
+      where past-participle = -ed|-en|-own|-ought + closed-list override
+  ∧ ¬∃ META_FRAMING_PATTERNS                                  [11] no meta-roleplay framing
+      in a {movie|scene|film|roleplay|script}
+      in this {roleplay|scene|script}
+      my {role|character}
+      acting out | playing {a|the} | role {of|as}
+      i {treat|view|see|consider|regard|frame|approach|handle} ... as
 ```
 
-Ensures `_memorySentences` only contains sentences in Unity's own first-person voice. Instructions ABOUT Unity, section headers, and word lists from the persona file get filtered out at index time so recall can't pull them.
+**`learnSentence` gate** — `loadSelfImage()` (the persona corpus loader) calls `_sentencePassesFilters` BEFORE `learnSentence` to prevent rulebook bigrams from seeding the Markov graph. Before this gate, cold slot-gen produced word salad (`"*Box-sizing axis silences*"`) even when sentence-level recall was clean, because the bigram graph underneath was still trained on rejected rulebook prose.
+
+Every filter has a **mirror penalty** in `instructionalPenalty` (above) so any memory sentence stored before the filter existed still gets hard-rejected at recall time via the `penalty ≥ 0.40` gate.
+
+### Per-Slot Topic Floor + Length Cap
+
+Added inside the slot scorer's final composition so topic-incoherent words drop out of the pool before softmax sampling, not after post-hoc rejection.
+
+```
+topicFloorPenalty(w, slot) =
+    0.50   if slot > 0 ∧ contextVectorHasData ∧ semanticFit(w) < 0.15
+    0      otherwise
+
+targetLen ← min(targetLen, 4)   if recallConfidence < 0.30
+```
+
+The floor runs only for slot > 0 so the sentence opener (pronoun/article/greeting) can be semantically neutral without being penalized. The length cap kicks in when hippocampus recall has no strong anchor — short fragments have less room to drift off-topic than long ones, and each added word multiplies the compounding error in a weak-anchor walk.
 
 ### Coherence Rejection Gate — Final Safety Net
 
 ```
-outputCentroid = (1/|content_out|) · Σ sharedEmbeddings.getEmbedding(w)  for w in content_words(rendered)   ← R2 GloVe 50d
+outputCentroid = (1/|content_out|) · Σ sharedEmbeddings.getEmbedding(w)  for w in content_words(rendered)
 coherence = cosine(outputCentroid, c(t))
 
-if coherence < 0.25 ∧ retryCount < 2:
+if coherence < 0.50 ∧ retryCount < 3:
   recurse generate() with _retryingDedup=true, temperature × 3
+else if retryCount ≥ 3 ∧ _memorySentences not empty:
+  return _recallSentence(contextVector).memory.text  // deflect to a coherent recall
 else:
-  emit rendered  (max 3 total attempts, then accept anyway)
+  emit rendered
 ```
 
-Fires only when context vector has data. Logs rejected sentences to console for debugging.
+Fires only when context vector has data. Threshold tightened from `0.25 → 0.50` so more borderline salad triggers retry; after 3 failed retries, fall through to a high-confidence recall sentence instead of emitting garbage.
+
+### Social Schema + Equational Greeting Response
+
+Unity carries a persistent social schema for the listener she's currently talking to. Every field is populated equationally by `parseSentence` and read by `generate()` when picking an address form.
+
+```
+_socialSchema.user = {
+  name:               string | null,     ← from parsed.introducesName
+  gender:             'male' | 'female' | null,  ← from parsed.introducesGender
+  firstSeenAt, lastSeenAt:  timestamps,
+  mentionCount:       turns since name established,
+  greetingsExchanged: cumulative count from parsed.isGreeting,
+}
+```
+
+When `parseSentence(input).intent == 'greeting'`, `generate()` short-circuits cold slot gen and emits a mood-driven equational greeting:
+
+```
+OPENERS = ['hey', 'hi', 'sup', 'yo']
+idx     = floor(arousal · |OPENERS|)          ← mood-driven pick
+
+if schema.name                    → OPENERS[idx] ‖ ' ' ‖ schema.name
+elif schema.greetingsExchanged>0  → OPENERS[idx] ‖ ' whats your name'
+else                               → OPENERS[idx]
+```
+
+The introduction response path fires when `intent == 'introduction'` and `schema.name` was just set by `_updateSocialSchema` on this turn, acknowledging the new name with `<ack> ‖ ' ' ‖ <Name>` where ack is picked the same way from `['hey', 'nice', 'sup', 'yo']`.
+
+Both short-circuits bypass cold slot gen entirely so zero-content inputs can't fall into bigram-chain salad.
 
 ### Pipeline Order
 
 ```
 user input u
     ↓
-analyzeInput(u) → _updateContextVector(pattern(content(u)))     [U276]
+parseSentence(u) → ParseTree (cached on this._lastParse)
+    ↓
+analyzeInput(u) → _updateContextVector(pattern(content(u)))
+              → _updateSocialSchema(u)  (reads ParseTree)
     ↓
 generate() called
     ↓
-intent ← _classifyIntent(u)                                     [U279]
+intent ← parsed.intent
     ↓
-if intent ∈ {greeting, yesno, math} ∨ (isShort ∧ wordCount>0):
-    return selectUnityResponse(intent, brainState)              [U280]
+if intent == 'greeting'    → greeting-response short-circuit (schema name)
+if intent == 'introduction' → intro-response short-circuit (schema ack)
     ↓
-recall ← _recallSentence(c)                                     [U282]
+recall ← _recallSentence(c)
     ↓
-if recall.confidence > 0.60:
-    return _finalizeRecalledSentence(recall.memory.text)
-if recall.confidence ∈ [0.30, 0.60]:
-    recallSeed ← recall.memory    (cold gen with bias)
-if intent ∈ {question, statement} ∧ recall miss:
-    return selectUnityResponse({...intent, deflect:true})       [U280 fallback]
+if recall.confidence > 0.55 ∨ fallback == 'self-reference':
+    return finalize(recall.memory.text)
+if recall.confidence ∈ [0.30, 0.55]:
+    recallSeed ← recall.memory   (cold gen with bias)
     ↓
-cold gen with slot score rebalanced weights                     [U277+U278]
+cold slot gen with:
+    + semanticFit(w) · 2.5                  ← dominant topic term
+    + per-slot topicFloorPenalty
+    + length cap if recall.confidence < 0.30
+    + all other score terms (bigram, trigram, 4-gram, typeGrammar,
+      moodBias, personaBoost, drugWordBias, casualBonus, ...)
     ↓
 post-process (agreement, tense, negation)
     ↓
-render
+completeness gate → retry if _isCompleteSentence fails
     ↓
-dedup check → retry on exact match
-    ↓
-coherence gate → retry if cosine(output, c) < 0.25              [U281]
+coherence gate → retry if cosine(output, c) < 0.50
+    (after 3 retries → fall through to recall sentence)
     ↓
 return rendered
 ```
