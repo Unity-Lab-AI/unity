@@ -293,97 +293,16 @@ export class Dictionary {
     }
   }
 
-  /**
-   * Find words that match the current brain state.
-   * Returns words whose learned emotional associations are closest
-   * to the current arousal/valence. The thesaurus IS the proximity.
-   *
-   * @param {number} arousal — current amygdala arousal
-   * @param {number} valence — current amygdala valence
-   * @param {number} count — how many words to return
-   * @returns {string[]} — words sorted by emotional proximity
-   */
-  findByMood(arousal, valence, count = 20) {
-    const scored = [];
-    for (const [word, entry] of this._words) {
-      // Emotional distance — closer = better match
-      const dist = Math.sqrt(
-        (entry.arousal - arousal) ** 2 +
-        (entry.valence - valence) ** 2
-      );
-      // Prefer frequent words
-      const score = dist - Math.log(entry.frequency + 1) * 0.1;
-      scored.push({ word, score, entry });
-    }
-    scored.sort((a, b) => a.score - b.score);
-    return scored.slice(0, count).map(s => s.word);
-  }
-
-  /**
-   * Find words whose cortex pattern is closest to the given pattern.
-   * This IS the thesaurus — similar meanings have similar patterns.
-   *
-   * @param {Float64Array} pattern — cortex activation pattern
-   * @param {number} count
-   * @returns {string[]}
-   */
-  findByPattern(pattern, count = 10) {
-    const scored = [];
-    for (const [word, entry] of this._words) {
-      const sim = this._cosine(pattern, entry.pattern);
-      scored.push({ word, sim });
-    }
-    scored.sort((a, b) => b.sim - a.sim);
-    return scored.slice(0, count).map(s => s.word);
-  }
-
-  /**
-   * Generate a sentence from brain state using bigram chain.
-   * Starts with a word matching the mood, then follows bigram
-   * probabilities to construct a natural sequence.
-   *
-   * @param {number} arousal
-   * @param {number} valence
-   * @param {number} maxWords
-   * @returns {string} — generated sentence
-   */
-  generateSentence(arousal, valence, maxWords = 12) {
-    if (this._words.size === 0) return '';
-
-    // Start with a mood-matching word
-    const candidates = this.findByMood(arousal, valence, 20);
-    if (candidates.length === 0) return '';
-
-    // Length driven by arousal — high arousal = more words
-    const targetLen = Math.max(2, Math.floor(3 + arousal * 8));
-    const sentence = [candidates[Math.floor(Math.random() * Math.min(5, candidates.length))]];
-
-    for (let i = 0; i < Math.min(targetLen, maxWords) - 1; i++) {
-      const current = sentence[sentence.length - 1];
-      const followers = this._bigrams.get(current);
-
-      if (followers && followers.size > 0) {
-        // Follow learned bigram chain
-        const entries = Array.from(followers.entries());
-        const total = entries.reduce((sum, [, count]) => sum + count, 0);
-        let rand = Math.random() * total;
-        let picked = entries[0][0];
-        for (const [word, count] of entries) {
-          rand -= count;
-          if (rand <= 0) { picked = word; break; }
-        }
-        sentence.push(picked);
-      } else {
-        // No bigram — use a mood-matched word (never dead-end)
-        const pool = candidates.filter(w => !sentence.includes(w));
-        if (pool.length > 0) {
-          sentence.push(pool[Math.floor(Math.random() * pool.length)]);
-        }
-      }
-    }
-
-    return sentence.join(' ');
-  }
+  // T14.17 (2026-04-14) — findByMood, findByPattern, generateSentence
+  // DELETED as vestigial organs. findByMood / findByPattern were
+  // pre-T14 thesaurus helpers that nothing has called since the T11
+  // slot-prior deletion. generateSentence was a bigram-chain walker
+  // that nothing has called since the T14.6 tick-driven motor emission
+  // replaced it. None of these are consumed by runtime code — grep
+  // confirmed zero external callers. The _bigrams Map + learnBigram
+  // writer + bigramCount getter stay because display stats (app.js,
+  // brain-3d, brain-viz, inner-voice, brain-server) still show the
+  // bigram count as a dashboard metric.
 
   /**
    * Get vocabulary size.
@@ -469,17 +388,7 @@ export class Dictionary {
     }
   }
 
-  // ── Math ──────────────────────────────────────────────────────
-
-  _cosine(a, b) {
-    let dot = 0, na = 0, nb = 0;
-    const len = Math.min(a.length, b.length);
-    for (let i = 0; i < len; i++) {
-      dot += a[i] * b[i];
-      na += a[i] * a[i];
-      nb += b[i] * b[i];
-    }
-    const denom = Math.sqrt(na) * Math.sqrt(nb);
-    return denom > 0 ? dot / denom : 0;
-  }
+  // T14.17 (2026-04-14) — `_cosine` helper deleted along with its
+  // only callers (findByPattern et al.). `sharedEmbeddings.similarity`
+  // is the canonical cosine used everywhere else in the codebase.
 }

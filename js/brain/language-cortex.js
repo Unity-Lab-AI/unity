@@ -2454,69 +2454,19 @@ export class LanguageCortex {
    * floor (1 / (total + 1)) when no observations exist for the slot
    * yet, so generation-time consumers never get zero weight.
    */
-  schemaScore(slot, fineType, intent = 'unknown') {
-    const intentSchema = this._sentenceFormSchemas.get(intent);
-    if (!intentSchema) return 1 / 2;
-    const slotBucket = intentSchema.get(slot);
-    if (!slotBucket) return 1 / 2;
-    const total = this._sentenceFormTotals.get(intent)?.get(slot) || 0;
-    if (total === 0) return 1 / 2;
-    const count = slotBucket.get(fineType) || 0;
-    const uniqueTypes = slotBucket.size;
-    return (count + 1) / (total + Math.max(1, uniqueTypes));
-  }
-
-  /**
-   * T14.7 + T14.8 — Type transition weight reader. Returns the
-   * Laplace-smoothed probability of `nextType` following `prevType`
-   * based on observed corpus + chat statistics. Replaces every
-   * hardcoded `_TYPE_TRANSITIONS[prevType][nextType]` lookup that
-   * the deleted slot scorer used.
-   */
-  typeTransitionWeight(prevType, nextType) {
-    const row = this._typeTransitionLearned.get(prevType);
-    if (!row) return 1 / 2;
-    let total = 0;
-    for (const v of row.values()) total += v;
-    if (total === 0) return 1 / 2;
-    const count = row.get(nextType) || 0;
-    const uniqueTypes = row.size;
-    return (count + 1) / (total + Math.max(1, uniqueTypes));
-  }
-
-  /**
-   * T14.8 — Record an observed user-turn → Unity-turn intent pair. Called
-   * from the live chat path in engine.processAndRespond once both intents
-   * are known (user input parsed, Unity response emitted). After enough
-   * observations, `responseIntentFor(userIntent)` returns the most-likely
-   * response intent via argmax over the learned pair counts.
-   */
-  recordIntentPair(userIntent, responseIntent) {
-    if (!userIntent || !responseIntent) return;
-    let row = this._intentResponseMap.get(userIntent);
-    if (!row) {
-      row = new Map();
-      this._intentResponseMap.set(userIntent, row);
-    }
-    row.set(responseIntent, (row.get(responseIntent) || 0) + 1);
-  }
-
-  /**
-   * T14.8 — Argmax-pick the most likely response intent for a given
-   * user intent, from learned conversational pairs. Returns null if
-   * no pairs have been observed yet — callers should fall back to the
-   * user intent itself or to 'statement' in that case.
-   */
-  responseIntentFor(userIntent) {
-    const row = this._intentResponseMap.get(userIntent);
-    if (!row || row.size === 0) return null;
-    let best = null;
-    let bestCount = -1;
-    for (const [resp, count] of row) {
-      if (count > bestCount) { best = resp; bestCount = count; }
-    }
-    return best;
-  }
+  // T14.17 (2026-04-14) — `schemaScore` and `typeTransitionWeight`
+  // were DUPLICATES of the cluster-resident versions. T14.13 migrated
+  // the underlying Maps to the cluster, and these wrappers read the
+  // exact same state via T14.13 setCluster identity-bind. Deleted here
+  // to eliminate the dead organ. Callers go through
+  // `cluster.schemaScore` / `cluster.typeTransitionWeight` directly.
+  //
+  // T14.17 (2026-04-14) — `recordIntentPair` and `responseIntentFor`
+  // were DUPLICATES of the cluster-resident versions (T14.13 migrated
+  // the state to the cluster, T14.14 migrated the consumer wiring).
+  // Deleted here to eliminate the dead organ. Callers go through
+  // `cluster.recordIntentPair` / `cluster.responseIntentFor` which
+  // write/read the same `intentResponseMap` via T14.13 identity-bind.
 
   /**
    * T14.13 (2026-04-14) — Migrate learned language statistics onto a

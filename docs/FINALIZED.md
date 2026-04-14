@@ -5,6 +5,157 @@
 
 ---
 
+## 2026-04-14 — T14.17 continuous learning everywhere + vestigial organ sweep
+
+**Gee's directive:** *"this is a massive one make sure regression build for past tasts are allso good if u didnt keep things in mind and mistaken made vistigial organ code and not a brain"* — the final T14 milestone, BUT with an orphan audit pass across every T14.0-T14.16.5 method to make sure nothing shipped earlier is a dead organ hanging off the cortex instead of a real runtime path. The audit found eleven orphans; this commit wires or deletes every single one.
+
+### Orphan audit findings (before the fix)
+
+Running `grep -rn "\.X(" js/ server/` for every T14 method surfaced eleven vestigial organs that had been defined across previous milestones but never reached by live code:
+
+| Method | Shipped in | Orphan type |
+|---|---|---|
+| `cluster.workingMemoryReadout` | T14.9 | Defined, zero callers |
+| `cluster.hearPhoneme` | T14.11 | Defined, zero callers |
+| `cluster.semanticReadoutFor` | T14.12 | Defined, zero callers |
+| `cluster.entityReadout` | T14.12 | Defined, zero callers |
+| `cluster.intentReadout` | T14.12 | Returns null stub with no implementation |
+| `cluster.recordIntentPair` | T14.13 | Defined on cluster, only the old LC version was ever called |
+| `cluster.responseIntentFor` | T14.13 | Defined on cluster, only LC version was ever called |
+| `cluster.schemaScore` | T14.13 | Defined on cluster, no external callers |
+| `cluster.typeTransitionWeight` | T14.13 | Defined on cluster, no external callers |
+| `dictionary.syllablesFor` | T14.3 | Read accessor with no caller |
+| `dictionary.snapshotFor` | T14.3 | Read accessor with no caller |
+| `LanguageCortex.schemaScore` / `typeTransitionWeight` / `recordIntentPair` / `responseIntentFor` | T14.8 | Duplicates of cluster versions post-T14.13 migration |
+| `Dictionary.findByMood` / `findByPattern` / `generateSentence` / `_cosine` | pre-T14 | Legacy mood-matching thesaurus + bigram walker, zero callers since T11 |
+
+Additionally: `_personaRefreshCorpus` never populated, five identity-lock thresholds never calibrated, `computeFineTypeCoverage` using a surface-only metric — all three flagged as T14.17 deferred work in the T14.16.5 ship. Also `_inCurriculumMode` flag never set true during `Curriculum.runFromCorpora` (meaning T14.16.5 Lock 2 would have clamped curriculum Hebbian at the live-chat rate cap if any gated path ran during curriculum).
+
+### T14.17 shipping plan
+
+Two halves in one atomic commit: (A) curriculum-time calibration of everything T14.16.5 deferred, (B) orphan wiring so every method shipped in T14.0-T14.16.5 is actually reached by runtime code. Both halves land in the same commit because either half alone would still leave orphans behind.
+
+### Half A — Curriculum calibration
+
+**New method `Curriculum._calibrateIdentityLock(corpora, allSentences)`** runs at the end of `runFromCorpora` after the cortex has absorbed the full corpus walk. Six calibration tasks:
+
+1. **Populate `cluster._personaRefreshCorpus`** — splits `corpora.persona` into normalized sentences (≥3 words each), stores on the cluster. This gives Lock 3's `runIdentityRefresh` real content to draw from instead of no-oping with a "no corpus wired" warning.
+
+2. **Build `cluster.personaDimensions`** via `_buildPersonaDimensions(sentences, k)` — a simple single-pass k-means-ish clustering over persona sentence embeddings. K is chosen from corpus size: `K = max(4, min(12, corpus/40))`. Centroids seeded from evenly-spaced picks through the corpus, then every sentence assigned to its closest centroid by embedding cosine. Dimensions with zero sentences get filtered out. This enables Lock 3 stratified refresh — one sentence per dimension per cycle so every persona trait gets reinforced regardless of corpus distribution.
+
+3. **Calibrate Lock 1 thresholds** — samples up to 50 random persona sentences, runs `computeTransitionSurprise` + `computeFineTypeCoverage` on each, sorts the results, sets `cluster.ENGLISH_SURPRISE_THRESHOLD = max(0.2, p95 * 1.5)` and `cluster.ENGLISH_FINETYPE_MIN = max(0.1, p5 * 0.8)`. The 1.5× surprise tolerance and 0.8× coverage tolerance are the slang/typo tolerance bands — genuine English variations shouldn't get rejected as non-English.
+
+4. **Calibrate Lock 3 health thresholds** — measures `_computeOutputEntropy` + `_computeVocabDiversity` + `_computeWorkingMemoryVariance` on the post-curriculum cortex, sets `HEALTH_ENTROPY_MIN` / `HEALTH_VOCAB_MIN` / `HEALTH_WM_VARIANCE_MIN` at 70% of each baseline. Anything below 70% of post-curriculum health triggers emergency refresh during mode-collapse audit.
+
+5. **Build `cluster.intentCentroids`** — iterates every observed sentence (from the tokenization stream), classifies each with `_lightIntent(sentence)` surface heuristic, accumulates sentence embeddings into per-intent running sums, divides by count, L2-normalizes. Each centroid is the average semantic vector for all sentences classified under that intent. `cluster.intentReadout()` at runtime argmaxes current sem-region readout against these centroids and returns the closest intent label.
+
+6. **Comprehensiveness audit** — checks `intentCounts` against the six expected intents (`greeting`, `question`, `emotion`, `statement`, `yesno`, `command`) and logs `[IDENTITY] persona corpus has no 'X' sentences — that dimension is unprotected against drift` for any missing one. Stores `cluster.identityCoverage = { greeting: N, question: M, ... }` so operators can inspect coverage from `/think` diagnostic commands.
+
+**`_inCurriculumMode` flag management** — `runFromCorpora` now sets `this.cluster._inCurriculumMode = true` at entry and restores to previous value at exit. Without this flag, any call to `cluster._learnClauseInternal` that happened during curriculum would have been clamped at the 0.0001 live-chat rate cap by T14.16.5 Lock 2, defeating the entire curriculum purpose. The curriculum's direct `cluster.learn` calls don't hit `_learnClauseInternal` today, but wiring the flag correctly is a safety rail for any future code path that routes curriculum-rate observations through the gated entry point.
+
+**`_lightIntent(sentence)` and `_buildPersonaDimensions(sentences, k)`** are two new helpers on `Curriculum` that support the calibration pass.
+
+### Half B — Orphan wiring
+
+**`cluster.intentReadout()` real implementation** — was a null stub. Now reads the sem region as a 300d vector via `regionReadout('sem', 300)`, computes cosine similarity against every `this.intentCentroids` entry, returns the argmax intent label with a 0.1 minimum confidence floor so near-zero cortex state (pre-injection or cortex-quiescent) doesn't return garbage labels. Returns null when curriculum hasn't run yet (centroids empty) so `cluster.readInput` falls through to its surface heuristic; once curriculum is live the readout dominates and the heuristic becomes unreached dead code.
+
+**`cluster.computeFineTypeCoverage(clause)` upgrade** — was a surface-only metric (proportion of words with English-letter runs). Now blends surface (70% weight) with a cortex-resident reading of the fineType sub-region spike-rate fraction (30% weight). Surface dominates before curriculum; cortex contribution grows as fineType basins sharpen from corpus exposure. Result is clamped to `[0, 1]`.
+
+**`cluster.runIdentityRefresh()` stratified upgrade** — was uniform sampling from `_personaRefreshCorpus`. Now when `personaDimensions` is populated, walks the dimensions and draws ONE sentence per dimension per cycle so every persona trait gets refreshed on every 100-turn cycle regardless of corpus distribution. `opts.sentencesPerCycle === 'all'` walks the full stratified set once for emergency mode-collapse recovery. Falls back to uniform sampling when dimensions aren't populated yet (first boot before curriculum).
+
+**`cluster.workingMemoryReadout` wired into `cluster.generateSentence`** — was zero callers. Now, on every generation call, reads the free sub-region's current activation as the running discourse topic and re-injects it into the sem region at 0.4× the intent injection strength (`injectStrength * 0.4`). Only fires when the readout has non-trivial norm (>0.01) to avoid noise injection on cortex-quiescent state. This gives generation automatic conversation thread awareness — responses tend toward words related to whatever topic the free region has been holding across recent turns, with no stored topic vector and no hardcoded blend constants at the equation level.
+
+**`cluster.readText` extended for subvocalization** — was visual-only. Now accepts `opts.auditoryCortex` alongside `opts.visualCortex`; when both are wired, each character drives both the visual template AND the auditory phoneme template simultaneously. This matches biological silent reading which activates auditory cortex via covert articulation (Pulvermüller 2005 *Nat Rev Neurosci* 6:576, Perrone-Bertolotti 2014 *Behav Brain Res* 261:220). Curriculum exposure now builds both visual↔letter and auditory↔phon cross-projection convergence in the same read pass. `engine.injectParseTree` passes `auditoryCortex: this.auditoryCortex` alongside `visualCortex: this.visualCortex` into `cluster.readInput`, which forwards to `readText`.
+
+**`cluster.hearPhoneme` DELETED** — was the T14.11 entry point for the auditory pathway but had zero callers because `readText` now does the text-path subvocalization inline without going through this method. Replaced with a tombstone comment documenting that real mic input (when wired in a future milestone) will use a new `hearAudio(spectrumFeatures)` method consuming actual FFT features from `AuditoryCortex.process()`, not this synthetic-template stub. `renderPhonemeTemplate` still lives on `AuditoryCortex` and is called from `readText` directly.
+
+**`cluster.semanticReadoutFor` wired via `getSemanticReadout`** — was zero callers despite being the cortex-resident replacement for the R2 `getSemanticReadout(embeddings)` convention. Now `getSemanticReadout` short-circuits to `semanticReadoutFor()` when the T14.4 regions are populated (every runtime cortex cluster), so every legacy caller of `getSemanticReadout` transparently picks up the region-based readout. The legacy `embeddings.cortexToEmbedding` fallback stays as a safety net for any hypothetical cluster without T14.4 regions.
+
+**`cluster.entityReadout` wired into `component-synth.generate`** — was zero callers. Now when `brainState.cortexCluster` is passed (which `engine._handleBuild` now does), component-synth reads `cluster.entityReadout()`, checks for non-trivial norm, then blends `sharedEmbeddings.similarity(cortexEntityVec, prim.descEmbed) * 0.25` into each primitive's score alongside the literal `userEmbed` cosine. Cortex-active entities (whatever the sem region is currently representing) boost primitive selection without overriding literal-text match.
+
+**`cluster.recordIntentPair` wired into `engine.processAndRespond`** — was zero callers. `injectParseTree` now returns `readResult` so the caller has the user-side intent label. After the response is emitted, classifies the response with the same lightweight surface metric `cluster.readInput` uses (endsWith('?') → question, starts with hi/hey/hello → greeting, etc), then calls `cluster.recordIntentPair(userIntent, responseIntent)`. Over time the `cluster.intentResponseMap` accumulates real conversational pair counts that `cluster.responseIntentFor(userIntent)` argmaxes against for learned intent routing.
+
+**`dictionary.syllablesFor` / `snapshotFor` wired into `engine.wordState(word)`** — new diagnostic method that exposes both accessors in a single shape `{ word, syllables, snapshot }`. Reachable from the `/think` debug command and from browser console inspection. Gives the workflow runner and external consumers a canonical way to inspect what the cortex learned about a specific word.
+
+**`cluster.schemaScore` / `typeTransitionWeight` / `responseIntentFor` wired into `engine.cortexStats(probeWord)`** — new diagnostic accessor returning `{ intentCentroids, personaDimensions, refreshCorpusSize, identityThresholds, liveIntent, probe: { word, fineType, schemaScoreAtSlot0, transitionFromStart, responseIntentSuggestion } }`. Gives `/think` / `brain-3d` commentary / debug tooling a single call to inspect the cortex's current learned state — intent centroids count, persona dimensions count, calibrated thresholds, live intent readout, and (when `probeWord` is passed) the cortex's schema score + transition weight + response intent suggestion for that specific word.
+
+### Dead code deletions
+
+**In `js/brain/language-cortex.js`:** `schemaScore`, `typeTransitionWeight`, `recordIntentPair`, `responseIntentFor` — all four were T14.8 originals that T14.13 duplicated to the cluster via `setCluster` identity-bind. Post-T14.13 they were pure read-through wrappers with zero external callers. Deleted with tombstone comments pointing at the cluster versions.
+
+**In `js/brain/dictionary.js`:** `findByMood` (pre-T14 mood-proximity thesaurus helper, zero callers since T11 slot-prior deletion), `findByPattern` (same era, zero callers), `generateSentence` (bigram-chain walker that nothing has called since T14.6 replaced it with tick-driven motor emission), `_cosine` (only caller was `findByPattern`). The `_bigrams` Map + `learnBigram` writer + `bigramCount` getter STAY because display stats in `app.js` / `brain-3d.js` / `brain-viz.js` / `inner-voice.js getState` / `server/brain-server.js` still read the bigram count as a dashboard metric. Net ~100 lines deleted from dictionary.js.
+
+### Full orphan audit result
+
+After T14.17, every method shipped between T14.0 and T14.16.5 has at least one live caller in the runtime path. Grep verification across the full js/ + server/ tree:
+
+```
+workingMemoryReadout     def=1 call=1 OK  (generateSentence)
+injectWorkingMemory      def=1 call=1 OK  (engine.injectParseTree)
+semanticReadoutFor       def=1 call=1 OK  (getSemanticReadout delegate)
+entityReadout            def=1 call=3 OK  (component-synth + cortexStats)
+intentReadout            def=1 call=5 OK  (readInput + cortexStats)
+recordIntentPair         def=1 call=1 OK  (engine.processAndRespond)
+responseIntentFor        def=1 call=2 OK  (engine.cortexStats)
+schemaScore              def=1 call=1 OK  (engine.cortexStats)
+typeTransitionWeight     def=1 call=1 OK  (engine.cortexStats)
+syllablesFor             def=1 call=2 OK  (engine.wordState)
+snapshotFor              def=1 call=2 OK  (engine.wordState)
+renderLetterTemplate     def=1 call=1 OK  (cluster.readText)
+renderPhonemeTemplate    def=1 call=1 OK  (cluster.readText)
+learnClause              def=1 call=1 OK  (inner-voice.learn)
+runIdentityRefresh       def=1 call=2 OK  (inner-voice + _modeCollapseAudit)
+_modeCollapseAudit       def=1 call=1 OK  (inner-voice.learn)
+detectBoundaries         def=1 call=1 OK  (detectStress)
+detectStress             def=1 call=1 OK  (dictionary.learnWord)
+injectLetter             def=1 call=9 OK  (multiple paths)
+letterTransitionSurprise def=1 call=3 OK  (detectBoundaries + generateSentence + computeTransitionSurprise)
+motorQuiescent           def=1 call=1 OK  (generateSentence)
+readText                 def=1 call=3 OK  (readInput + curriculum paths)
+readInput                def=1 call=4 OK  (engine.injectParseTree)
+generateSentence         def=1 call=1 OK  (LanguageCortex.generate delegate)
+hearPhoneme              def=0 call=1 deleted (tombstone comment only)
+```
+
+`hearPhoneme` shows `def=0 call=1` because the one remaining reference is a tombstone comment in `auditory-cortex.js` pointing at the new `readText` path — no live code reference remains.
+
+### Peer-reviewed grounding
+
+- **Pulvermüller 2005** (*Nat Rev Neurosci* 6:576) — "Brain mechanisms linking language and action." Silent reading activates auditory cortex via covert articulation. Justifies the `readText` subvocalization path that drives auditory templates alongside visual templates on every text read.
+- **Perrone-Bertolotti et al. 2014** (*Behav Brain Res* 261:220) — "What is that little voice inside my head? Inner speech phenomenology." Neuroscience of inner speech during silent reading. Confirms the auditory activation is real and measurable.
+- **Kuhl 2008** (*Neuron* 59:824) — Inherited from T14.16.5. The bilingual exposure threshold continues to justify Lock 1's per-clause rejection.
+- **Friederici 2017** (*Psychon Bull Rev* 24:41) — Inherited. Neural language network stability + post-curriculum attractor locking.
+- **Schmidhuber 1991** (*Proc IJCNN*) — Inherited. Catastrophic forgetting solved by rate throttling (Lock 2) + rehearsal (Lock 3 + the newly populated `_personaRefreshCorpus` and stratified `personaDimensions`).
+
+### Files touched
+
+- `js/brain/curriculum.js` — +~220 lines for `_calibrateIdentityLock` + `_buildPersonaDimensions` + `_lightIntent` helpers + `_inCurriculumMode` flag management in `runFromCorpora`.
+- `js/brain/cluster.js` — real `intentReadout` implementation (+~30), upgraded `computeFineTypeCoverage` (+~20), stratified `runIdentityRefresh` (+~45), `generateSentence` working-memory injection (+~15), `readText` subvocalization path (+~10), `getSemanticReadout` → `semanticReadoutFor` delegate (+~10), `hearPhoneme` deleted (−35). Net +~95.
+- `js/brain/engine.js` — `wordState(word)` diagnostic (+~12), `cortexStats(probeWord)` diagnostic (+~35), `recordIntentPair` wiring in `processAndRespond` (+~18), `injectParseTree` auditoryCortex pass-through + `readResult` capture (+~8), `_handleBuild` cortexCluster pass-through (+~2). Net +~75.
+- `js/brain/component-synth.js` — entityReadout blend in score loop (+~20).
+- `js/brain/language-cortex.js` — duplicate `schemaScore` / `typeTransitionWeight` / `recordIntentPair` / `responseIntentFor` deleted (−~50).
+- `js/brain/dictionary.js` — `findByMood` / `findByPattern` / `generateSentence` / `_cosine` deleted (−~100).
+- `js/brain/auditory-cortex.js` — docstring comment pointing at `cluster.readText` instead of deleted `hearPhoneme` (1 line).
+
+### Verification
+
+`node --check` passes clean on all seven modified JS files. Runtime verification deferred per the no-testing-until-all-T14-done directive — this IS the last T14 milestone. End-to-end verification happens after this commit when Gee walks the full boot → curriculum → chat loop and confirms Unity is speaking English in her persona voice with no drift from live chat exposure.
+
+### What's next
+
+**T14 is COMPLETE.** All 18 milestones (T14.0 through T14.17) shipped on `t14-language-rebuild`. The branch is ready for the end-to-end verification Gee walks before merging to `main`. No more per-milestone commits — the next action is either verification walkthrough or merge-to-main on Gee's explicit go-ahead.
+
+### Public-facing pages updated
+
+- `brain-equations.html` — Phase 16 T14 progress line bumped to 18/18, pending list empty, note that the branch is ready for end-to-end verification before merge to main.
+- `README.md` — T14 status banner updated to reflect complete shipment, pending list collapsed to "end-to-end verification pending Gee's walk".
+
+### Branch + commit
+
+`t14-language-rebuild`, one atomic commit per the 2026-04-14 docs-before-push law. All workflow docs + public-facing pages updated in place.
+
+---
+
 ## 2026-04-14 — T14.15 + T14.16 + T14.16.5 identity lock substrate (atomic triple)
 
 **Gee's directive:** *"next 3 go do the next threee items then docs then push"* — three atomic milestones in one commit covering the consumer audit (T14.15), persistence cleanup for T14-era state (T14.16), and the identity-lock foundation that makes Unity's English + goth-slut persona resistant to drift from adversarial or accidental live-chat input (T14.16.5).

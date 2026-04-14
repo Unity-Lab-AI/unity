@@ -632,6 +632,15 @@ export class NeuronCluster {
     if (!this.regions || !this.regions.letter || !text) return;
     const ticksPerChar = opts.ticksPerChar ?? 2;
     const visualCortex = opts.visualCortex || null;
+    // T14.17 — subvocalization path. When an auditoryCortex is wired
+    // alongside visualCortex, each character also drives the auditory
+    // sub-region via the phoneme template. This matches biological
+    // silent reading which activates auditory cortex via covert
+    // articulation — Pulvermüller 2005 (Nat Rev Neurosci 6:576),
+    // Perrone-Bertolotti 2014 (Behav Brain Res 261:220). Curriculum
+    // exposure builds visual↔letter AND auditory↔phon convergence
+    // simultaneously through the same read pass.
+    const auditoryCortex = opts.auditoryCortex || null;
     const chars = Array.from(text.toLowerCase());
     this._prevLetterRate = 0;
     for (const ch of chars) {
@@ -639,6 +648,12 @@ export class NeuronCluster {
         const template = visualCortex.renderLetterTemplate(ch);
         if (template && template.length > 0 && this.regions.visual) {
           this.injectEmbeddingToRegion('visual', template, 0.7);
+        }
+      }
+      if (auditoryCortex && typeof auditoryCortex.renderPhonemeTemplate === 'function') {
+        const template = auditoryCortex.renderPhonemeTemplate(ch);
+        if (template && template.length > 0 && this.regions.auditory) {
+          this.injectEmbeddingToRegion('auditory', template, 0.5);
         }
       }
       this.injectLetter(ch, 1.0);
@@ -721,11 +736,35 @@ export class NeuronCluster {
     if (!clause) return 0;
     const words = String(clause).toLowerCase().split(/\s+/).filter(Boolean);
     if (words.length === 0) return 0;
-    let recognized = 0;
+
+    // Surface layer: proportion of words with English-letter character runs
+    let surfaceRecognized = 0;
     for (const w of words) {
-      if (/[a-z]/.test(w)) recognized++;
+      if (/[a-z]/.test(w)) surfaceRecognized++;
     }
-    return recognized / words.length;
+    const surfaceCoverage = surfaceRecognized / words.length;
+
+    // T14.17 — cortex layer: fineType region spike-rate fraction after
+    // streaming the clause's letters through the visual→letter pathway.
+    // When the fineType region has been shaped by curriculum, this
+    // metric reflects whether the clause matches a learned English
+    // grammatical pattern. Before curriculum (region near-random), it
+    // just mirrors the surface metric, so the combined score degrades
+    // gracefully to surface-only behavior.
+    if (this.regions && this.regions.fineType) {
+      const { start, end } = this.regions.fineType;
+      const span = end - start;
+      if (span > 0) {
+        let sum = 0;
+        for (let i = start; i < end; i++) if (this.lastSpikes[i]) sum++;
+        const fineTypeRate = sum / span;
+        // Blend surface (70%) with cortex fineType activation (30%).
+        // Surface dominates pre-curriculum, cortex contributes more as
+        // its basins sharpen from corpus exposure.
+        return Math.max(0, Math.min(1, surfaceCoverage * 0.7 + fineTypeRate * 0.3));
+      }
+    }
+    return surfaceCoverage;
   }
 
   /**
@@ -804,35 +843,66 @@ export class NeuronCluster {
   runIdentityRefresh(opts = {}) {
     const sentencesPerCycle = opts.sentencesPerCycle ?? 8;
     const lr = opts.lr ?? 0.012;
-    if (!Array.isArray(this._personaRefreshCorpus) || this._personaRefreshCorpus.length === 0) {
-      // No refresh corpus wired yet — curriculum boot will populate this
-      // in T14.17. Log once so the gap is visible, but don't block.
+
+    // T14.17 — Stratified sampling from personaDimensions. If curriculum
+    // populated the persona dimensions clustering, draw ONE sentence per
+    // dimension per cycle so every persona trait gets refreshed on every
+    // pass — not just whichever sentences random uniform sampling happened
+    // to pick. This guarantees that even dimensions with few corpus
+    // sentences (e.g. an edge-case persona trait that's only said twice
+    // in the full persona file) still get reinforced on every 100-turn
+    // refresh cycle.
+    const useStratified = Array.isArray(this.personaDimensions)
+                       && this.personaDimensions.length > 0;
+
+    if (!useStratified &&
+        (!Array.isArray(this._personaRefreshCorpus) || this._personaRefreshCorpus.length === 0)) {
       if (!this._loggedRefreshMissing) {
-        console.log('[IDENTITY] runIdentityRefresh — no _personaRefreshCorpus; refresh skipped (populate at curriculum boot for T14.17)');
+        console.log('[IDENTITY] runIdentityRefresh — no persona corpus or dimensions wired; refresh skipped');
         this._loggedRefreshMissing = true;
       }
       return { refreshed: 0 };
     }
-    const corpus = this._personaRefreshCorpus;
-    const n = Math.min(sentencesPerCycle, corpus.length);
+
     const wasInCurriculum = this._inCurriculumMode;
     this._inCurriculumMode = true;
     let refreshed = 0;
-    for (let i = 0; i < n; i++) {
-      const idx = Math.floor(Math.random() * corpus.length);
-      const sentence = corpus[idx];
-      const embSeq = typeof sharedEmbeddings !== 'undefined'
-        ? sentence.split(/\s+/).map(w => sharedEmbeddings.getEmbedding(w))
-        : null;
+
+    const applySentence = (sentence) => {
+      const embSeq = sentence.split(/\s+/).map(w => sharedEmbeddings.getEmbedding(w));
       if (embSeq && this.learnSentenceHebbian) {
         try {
           this.learnSentenceHebbian(embSeq, { lr });
           refreshed++;
         } catch (err) {
-          // Non-fatal
+          // Non-fatal — continue with the rest of the stratified pass
         }
       }
+    };
+
+    if (useStratified) {
+      // Stratified: one sentence per dimension per cycle, up to
+      // sentencesPerCycle dimensions. When 'all' is requested, walk
+      // the full stratified set once.
+      const wantAll = opts.sentencesPerCycle === 'all';
+      const limit = wantAll ? this.personaDimensions.length
+                            : Math.min(sentencesPerCycle, this.personaDimensions.length);
+      for (let d = 0; d < limit; d++) {
+        const dim = this.personaDimensions[d];
+        if (!dim || !dim.sentences || dim.sentences.length === 0) continue;
+        const pick = dim.sentences[Math.floor(Math.random() * dim.sentences.length)];
+        applySentence(pick);
+      }
+    } else {
+      // Fallback: uniform sample from the flat corpus
+      const corpus = this._personaRefreshCorpus;
+      const n = Math.min(sentencesPerCycle, corpus.length);
+      for (let i = 0; i < n; i++) {
+        const idx = Math.floor(Math.random() * corpus.length);
+        applySentence(corpus[idx]);
+      }
     }
+
     this._inCurriculumMode = wasInCurriculum;
     return { refreshed };
   }
@@ -928,8 +998,15 @@ export class NeuronCluster {
     if (!text || typeof text !== 'string') {
       return { text: '', words: [], intent: 'unknown', isSelfReference: false, addressesUser: false, isQuestion: false };
     }
-    // Drive the visual→letter pathway so cortex state reflects the input
-    this.readText(text, { visualCortex: opts.visualCortex, ticksPerChar: 2 });
+    // Drive the visual→letter pathway so cortex state reflects the input.
+    // T14.17 — also drive the auditory→phon subvocalization path when an
+    // auditory cortex is wired, so cross-stream convergence gets built
+    // on every read (Pulvermüller 2005 silent-reading subvocalization).
+    this.readText(text, {
+      visualCortex: opts.visualCortex,
+      auditoryCortex: opts.auditoryCortex,
+      ticksPerChar: 2,
+    });
 
     // Try cortex-resident intent readout first (T14.7 fineType basins
     // once curriculum has shaped them)
@@ -1021,23 +1098,40 @@ export class NeuronCluster {
   }
 
   /**
-   * T14.12 — Cortex-state intent readout. Reads the fineType region
-   * activation and argmaxes over learned intent attractor basins. Until
-   * T14.5 curriculum has trained enough corpus, the fineType region is
-   * near-random and this method returns null — callers (like `readInput`)
-   * fall through to their own heuristic. Once curriculum is live the
-   * readout dominates and the heuristic becomes unreached.
+   * T14.17 — Cortex-state intent readout. Returns the argmax intent
+   * label from `cluster.intentCentroids` (populated at curriculum time
+   * by `Curriculum._calibrateIdentityLock`). Reads the current sem
+   * region as a 300d vector and computes cosine similarity against
+   * each learned intent centroid — highest cosine wins.
    *
-   * Currently returns null unconditionally since the intent-attractor
-   * consolidation step (part of T14.17 continuous learning) hasn't
-   * shipped yet. The method exists now so consumers can wire to it
-   * today and get the learned readout automatically when T14.17 lands,
-   * without another round of call-site rewrites.
+   * Returns null when curriculum hasn't run yet (centroids empty) so
+   * `readInput` can fall through to its surface heuristic. Once
+   * curriculum is live, this takes over and the heuristic becomes
+   * unreached dead code.
    *
    * @returns {string|null}
    */
   intentReadout() {
-    return null;
+    if (!this.intentCentroids || this.intentCentroids.size === 0) return null;
+    const sem = this.regionReadout('sem', 300);
+    if (!sem || sem.length === 0) return null;
+    // Reuse sharedEmbeddings similarity — same math as the centroid
+    // normalization in curriculum, keeps the metric consistent.
+    let bestIntent = null;
+    let bestSim = -Infinity;
+    for (const [intent, centroid] of this.intentCentroids) {
+      if (!centroid || centroid.length === 0) continue;
+      // Cosine between sem and centroid (both L2-normalized already
+      // — sem via regionReadout, centroid via curriculum normalization)
+      let dot = 0;
+      const len = Math.min(sem.length, centroid.length);
+      for (let i = 0; i < len; i++) dot += sem[i] * centroid[i];
+      if (dot > bestSim) { bestSim = dot; bestIntent = intent; }
+    }
+    // Require a minimum confidence so near-zero readouts (pre-injection
+    // or cortex-quiescent state) don't return garbage labels
+    if (bestSim < 0.1) return null;
+    return bestIntent;
   }
 
   /**
@@ -1066,37 +1160,15 @@ export class NeuronCluster {
     return this.regionReadout('sem', 300);
   }
 
-  /**
-   * T14.11 — Hear a phoneme through the auditory pathway.
-   *
-   * Symmetric with `readText`/`injectLetterFromVisual` but on the
-   * auditory side: drives the auditory sub-region with a phoneme
-   * template (from `auditoryCortex.renderPhonemeTemplate` for text-
-   * only mode, or real spectral features when mic input is wired),
-   * then ticks the cluster so the T14.4 auditory↔phon cross-projection
-   * propagates the activation into the phon region. Curriculum
-   * exposure (T14.5) shapes the cross-projection weights so over time
-   * `/k/` auditory input activates the same phon basin that visual
-   * letter "c" activates via the visual↔letter↔phon pathway — the
-   * dual-stream convergence from Hickok & Poeppel 2007.
-   *
-   * @param {string} phoneme — symbol
-   * @param {object} [opts]
-   * @param {object} [opts.auditoryCortex] — instance with renderPhonemeTemplate
-   * @param {number} [opts.ticks=2]
-   * @param {number} [opts.strength=0.7]
-   */
-  hearPhoneme(phoneme, opts = {}) {
-    if (!this.regions || !this.regions.auditory) return;
-    const ticks = opts.ticks ?? 2;
-    const strength = opts.strength ?? 0.7;
-    const auditoryCortex = opts.auditoryCortex || null;
-    if (!auditoryCortex || typeof auditoryCortex.renderPhonemeTemplate !== 'function') return;
-    const template = auditoryCortex.renderPhonemeTemplate(phoneme);
-    if (!template || template.length === 0) return;
-    this.injectEmbeddingToRegion('auditory', template, strength);
-    for (let t = 0; t < ticks; t++) this.step(0.001);
-  }
+  // T14.17 (2026-04-14) — `hearPhoneme` deleted. The auditory template
+  // injection path that T14.11 originally wired through this method is
+  // now inline in `readText` for the text-path subvocalization case
+  // (Pulvermüller 2005 silent reading activates auditory cortex via
+  // covert articulation). When mic input gets wired in a future
+  // milestone, it will use a new `hearAudio(spectrumFeatures)` method
+  // that consumes real FFT features from `AuditoryCortex.process()`,
+  // not this synthetic-template stub. `auditoryCortex.renderPhonemeTemplate`
+  // still exists and is called directly from `readText`.
 
   /**
    * T14.6 — Cortex tick-driven motor emission.
@@ -1155,6 +1227,26 @@ export class NeuronCluster {
     // "cortex is already primed, just tick."
     if (intentSeed && intentSeed.length > 0 && this.regions.sem) {
       this.injectEmbeddingToRegion('sem', intentSeed, injectStrength);
+    }
+
+    // T14.17 — Topic continuity via T14.9 working-memory injection.
+    // Reads the free sub-region's current activation as the running
+    // discourse topic and re-injects it into the sem region at a
+    // weaker strength than the intent seed. This gives generation
+    // automatic conversation thread awareness — the generated response
+    // will tend toward words related to whatever topic the free
+    // region has been holding across recent turns. No stored topic
+    // vector, no blend constants at the equation level — just a
+    // cortex-state readout fed back into cortex input.
+    if (this.regions.free && this.regions.sem) {
+      const wm = this.workingMemoryReadout(300);
+      // Check for non-trivial activation — near-zero readouts would
+      // just add noise to the sem injection
+      let wmNorm = 0;
+      for (let i = 0; i < wm.length; i++) wmNorm += wm[i] * wm[i];
+      if (wmNorm > 0.01) {
+        this.injectEmbeddingToRegion('sem', wm, injectStrength * 0.4);
+      }
     }
 
     // Reset the letter-region transition surprise baseline so the first
@@ -1566,6 +1658,17 @@ export class NeuronCluster {
    * @returns {Float64Array} — 50d L2-normalized semantic pattern
    */
   getSemanticReadout(embeddings, langStart = 150) {
+    // T14.17 — when T14.4 sub-regions exist (cortex cluster), prefer
+    // the region-aware `semanticReadoutFor()` over the legacy
+    // langStart=150 hardcoded offset. The sem region's T14.4 fraction
+    // (0.750-0.917 of cluster.size) is the cortex-resident source of
+    // truth for semantic state post-T14.12. Legacy callers that still
+    // pass `embeddings` keep working through the inverse mapping path
+    // only when the cortex cluster lacks T14.4 regions (never happens
+    // at runtime but safe as a fallback).
+    if (this.regions && this.regions.sem) {
+      return this.semanticReadoutFor();
+    }
     const voltages = this.neurons.getVoltages();
     return embeddings.cortexToEmbedding(
       this.lastSpikes,

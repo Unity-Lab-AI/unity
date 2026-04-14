@@ -144,12 +144,38 @@ export class ComponentSynth {
     const parsedTypes = (parsed?.entities?.componentTypes || [])
       .map(t => t.replace(/s$/, '')); // strip trailing plural
 
+    // T14.17 — cortex entity readout. When the engine passes the cortex
+    // cluster via `brainState.cortexCluster`, read the sem region as a
+    // semantic activation vector and find primitives whose descEmbed
+    // is closest to it. This is a SECOND semantic match (on top of the
+    // userEmbed cosine below) that reflects what the cortex is actively
+    // representing RIGHT NOW, not just what the user literally typed.
+    // The two signals get combined so primitives matching either a
+    // literal phrase or the cortex's current semantic activation get
+    // the structural bonus.
+    const cortex = brainState.cortexCluster || null;
+    let cortexEntityVec = null;
+    if (cortex && typeof cortex.entityReadout === 'function') {
+      const readout = cortex.entityReadout();
+      if (readout && readout.length > 0) {
+        let norm = 0;
+        for (let i = 0; i < readout.length; i++) norm += readout[i] * readout[i];
+        if (norm > 0.01) cortexEntityVec = readout;
+      }
+    }
+
     // Semantic match — which primitive is closest to the user's request
     const userEmbed = sharedEmbeddings.getSentenceEmbedding(userRequest);
     let bestScore = -1;
     let bestPrim = null;
     for (const prim of this._primitives) {
       let score = sharedEmbeddings.similarity(userEmbed, prim.descEmbed);
+      // T14.17 — blend in cortex entity readout similarity when
+      // available. Weight 0.25 on the cortex cosine so it nudges the
+      // ranking without overriding the literal-text userEmbed match.
+      if (cortexEntityVec) {
+        score += sharedEmbeddings.similarity(cortexEntityVec, prim.descEmbed) * 0.25;
+      }
       // Structural bonus: if the parser pulled a component-type
       // token and the primitive id matches it, boost by 0.35 —
       // big enough to overwhelm most semantic ambiguity but small

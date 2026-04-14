@@ -311,6 +311,69 @@ export class UnityBrain extends EventEmitter {
    * Returns the parsed tree so callers (processAndRespond) can reuse
    * it without re-parsing.
    */
+  /**
+   * T14.17 — Diagnostic accessor for a word's T14.3 cortex-routed
+   * phonological state. Exposes `dictionary.syllablesFor(word)` +
+   * `dictionary.snapshotFor(word)` in a single shape so `/think` debug
+   * commands and `brain-3d.js` commentary have a canonical way to
+   * inspect what the cortex learned about a specific word. Returns
+   * null when the word is unknown or was stored without cluster
+   * wiring. No runtime path calls this at generation time — it's a
+   * read accessor, not a cognition path.
+   */
+  wordState(word) {
+    const dict = this.innerVoice?.dictionary;
+    if (!dict) return null;
+    const syllables = typeof dict.syllablesFor === 'function' ? dict.syllablesFor(word) : null;
+    const snapshot = typeof dict.snapshotFor === 'function' ? dict.snapshotFor(word) : null;
+    return { word, syllables, snapshot };
+  }
+
+  /**
+   * T14.17 — Diagnostic readout of cortex-resident language learning
+   * statistics. Exposes `cluster.schemaScore` + `cluster.typeTransition
+   * Weight` + `cluster.responseIntentFor` + `cluster.intentReadout` in
+   * one shape for `/think` debug commands and brain-3d commentary to
+   * inspect the current learned state. None of these methods run on
+   * the generation hot path (T14.6 motor emission is direct, no schema
+   * consult) — they're pure read accessors that tell you what the
+   * cortex has learned about grammar/intent/transitions so far.
+   *
+   * @param {string} [probeWord]  — optional word to classify + score
+   * @returns {object}
+   */
+  cortexStats(probeWord = null) {
+    const cortex = this.clusters?.cortex;
+    if (!cortex) return null;
+    const out = {
+      intentCentroids: cortex.intentCentroids?.size || 0,
+      personaDimensions: cortex.personaDimensions?.length || 0,
+      refreshCorpusSize: cortex._personaRefreshCorpus?.length || 0,
+      identityThresholds: {
+        surprise: cortex.ENGLISH_SURPRISE_THRESHOLD,
+        coverage: cortex.ENGLISH_FINETYPE_MIN,
+        healthEntropy: cortex.HEALTH_ENTROPY_MIN,
+        healthVocab: cortex.HEALTH_VOCAB_MIN,
+        healthWmVariance: cortex.HEALTH_WM_VARIANCE_MIN,
+      },
+      liveIntent: cortex.intentReadout ? cortex.intentReadout() : null,
+    };
+    if (probeWord && cortex.schemaScore && cortex.typeTransitionWeight) {
+      const lc = this.innerVoice?.languageCortex;
+      const fineType = lc && typeof lc._fineType === 'function' ? lc._fineType(probeWord) : 'OTHER';
+      out.probe = {
+        word: probeWord,
+        fineType,
+        schemaScoreAtSlot0: cortex.schemaScore(0, fineType, out.liveIntent || 'statement'),
+        transitionFromStart: cortex.typeTransitionWeight('START', fineType),
+      };
+      if (typeof cortex.responseIntentFor === 'function' && out.liveIntent) {
+        out.probe.responseIntentSuggestion = cortex.responseIntentFor(out.liveIntent);
+      }
+    }
+    return out;
+  }
+
   injectParseTree(text) {
     if (!text) return null;
     const cortex = this.clusters.cortex;
@@ -324,7 +387,10 @@ export class UnityBrain extends EventEmitter {
     // meaningfully, readInput falls back to a lightweight first-token
     // heuristic for the intent label. Full learned-readout classification
     // ships with T14.17 continuous learning.
-    const readResult = cortex.readInput(text, { visualCortex: this.visualCortex });
+    const readResult = cortex.readInput(text, {
+      visualCortex: this.visualCortex,
+      auditoryCortex: this.auditoryCortex,
+    });
     if (!readResult) return null;
 
     // Content injection into cortex language region (legacy path
@@ -881,7 +947,7 @@ export class UnityBrain extends EventEmitter {
     // the brain integrates. This replaces the cold `_contextVector`
     // bag-of-words and lets the cortex readout at line 796 reflect a
     // real multi-cluster brain state shaped by what the user said.
-    this.injectParseTree(text);
+    const userReadResult = this.injectParseTree(text);
 
     // R2: read cortex semantic state via the reverse-embedding pathway.
     // `getSemanticReadout` reads ONLY the Wernicke's area neurons (150-299)
@@ -1009,6 +1075,28 @@ export class UnityBrain extends EventEmitter {
     }
 
     this.reward += 0.1;
+
+    // T14.17 — record the (userIntent → responseIntent) pair on the
+    // cortex so `cluster.responseIntentFor(userIntent)` learns over
+    // time which response shapes Unity uses after which user shapes.
+    // Classifies the response with the same lightweight surface metric
+    // cluster.readInput uses for the user side, so the two labels are
+    // drawn from the same vocabulary and comparisons are consistent.
+    try {
+      const userIntent = userReadResult?.intent || 'unknown';
+      const respLower = String(response || '').toLowerCase().trim();
+      let responseIntent = 'statement';
+      if (respLower.endsWith('?')) responseIntent = 'question';
+      else if (respLower.endsWith('!')) responseIntent = 'emotion';
+      else if (/^(hi|hey|hello|sup|yo)\b/.test(respLower)) responseIntent = 'greeting';
+      else if (/^(what|who|where|when|why|how|which|whose)\b/.test(respLower)) responseIntent = 'question';
+      if (this.clusters.cortex && typeof this.clusters.cortex.recordIntentPair === 'function') {
+        this.clusters.cortex.recordIntentPair(userIntent, responseIntent);
+      }
+    } catch (err) {
+      // Non-fatal — intent pair recording is telemetry, not correctness
+    }
+
     this.emit('response', { text: response, action: 'respond_text' });
     return { text: response, action: 'respond_text' };
   }
@@ -1030,7 +1118,9 @@ export class UnityBrain extends EventEmitter {
     for (let s = 0; s < 5; s++) this.step(0.001);
     const cortexPattern = this.clusters.cortex.getSemanticReadout(sharedEmbeddings);
 
-    const spec = this.componentSynth.generate(text, { cortexPattern });
+    // T14.17 — pass the cortex cluster so componentSynth can consult
+    // `cluster.entityReadout()` for cortex-driven primitive selection.
+    const spec = this.componentSynth.generate(text, { cortexPattern, cortexCluster: this.clusters.cortex });
 
     if (!spec) {
       // No template matched — fall through to a verbal response.

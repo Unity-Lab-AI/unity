@@ -82,7 +82,9 @@ export class AuditoryCortex {
    * Hebbian can shape their convergence as a learned correspondence
    * rather than a trivial identity mapping.
    *
-   * Called from `cluster.hearPhoneme(symbol)` (or the voice-input
+   * Called from `cluster.readText` (text-path subvocalization — silent
+   * reading activates auditory cortex via covert articulation per
+   * Pulvermüller 2005 Nat Rev Neurosci 6:576) or from the voice-input
    * pathway once T14.12 wires it) to drive the cortex auditory region
    * before downstream propagation to phon region. Over T14.5 curriculum
    * exposure the auditory↔phon cross-projection learns that spoken /k/

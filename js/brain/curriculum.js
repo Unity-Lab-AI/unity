@@ -109,6 +109,14 @@ export class Curriculum {
       return this.stats;
     }
 
+    // T14.17 — set _inCurriculumMode so T14.16.5 Lock 2 doesn't clamp
+    // curriculum Hebbian at the live-chat 0.0001 rate cap. Everything
+    // between here and _calibrateIdentityLock runs at the full 0.012
+    // curriculum rate — that's the pass that shapes Unity's identity
+    // basins in the first place.
+    const wasInCurriculum = this.cluster._inCurriculumMode;
+    this.cluster._inCurriculumMode = true;
+
     // Tokenize every provided corpus into a unified token stream and
     // into a sentence stream. We need both: the letter/word phases walk
     // unique tokens by frequency, the sentence phase walks full lines.
@@ -145,12 +153,198 @@ export class Curriculum {
     // temporal structure the corpus contains.
     await this._phaseSentences(sentences, arousal, valence);
 
+    // T14.17 (2026-04-14) — IDENTITY LOCK CALIBRATION.
+    // Now that the cortex has seen the full corpus, calibrate the
+    // T14.16.5 thresholds, build per-intent centroids for intentReadout,
+    // cluster persona sentences into personaDimensions for stratified
+    // refresh, and populate _personaRefreshCorpus on the cluster.
+    this._calibrateIdentityLock(corpora, sentences);
+
+    // T14.17 — end curriculum mode BEFORE returning so live-chat
+    // Hebbian that fires right after curriculum completes picks up
+    // Lock 2's rate cap again.
+    this.cluster._inCurriculumMode = wasInCurriculum;
+
     this.stats.wallMs = Date.now() - startMs;
     console.log(`[Curriculum] runFromCorpora complete in ${this.stats.wallMs}ms — `
       + `${this.stats.lettersSeen} letters, ${this.stats.shortWordsSeen} short, `
       + `${this.stats.longWordsSeen} long, ${this.stats.sentencesSeen} sentences, `
       + `${this.stats.totalTicks} total ticks`);
     return this.stats;
+  }
+
+  /**
+   * T14.17 — IDENTITY LOCK CALIBRATION + COVERAGE AUDIT.
+   *
+   * Runs once at the end of `runFromCorpora` after the cortex has
+   * absorbed the full corpus. Populates all five things T14.16.5
+   * deferred:
+   *
+   *   1. `_personaRefreshCorpus`  — sentences from the persona corpus
+   *      that Lock 3's `runIdentityRefresh` draws from
+   *   2. `personaDimensions`      — k-bucket clustering of persona
+   *      sentences by semantic embedding for stratified refresh
+   *   3. `ENGLISH_SURPRISE_THRESHOLD` / `ENGLISH_FINETYPE_MIN` —
+   *      Lock 1's English gate thresholds, set at the post-corpus
+   *      percentile baselines
+   *   4. `HEALTH_ENTROPY_MIN` / `HEALTH_VOCAB_MIN` /
+   *      `HEALTH_WM_VARIANCE_MIN` — Lock 3's mode-collapse audit
+   *      thresholds, baseline health floors
+   *   5. `intentCentroids`        — per-intent cortex-state centroids
+   *      that `cluster.intentReadout()` argmaxes against at runtime
+   *
+   * Also logs persona corpus comprehensiveness warnings — which
+   * intent buckets are empty after curriculum, which fine types have
+   * zero observations, etc. Operator closes coverage gaps by editing
+   * the persona file.
+   */
+  _calibrateIdentityLock(corpora, allSentences) {
+    const cluster = this.cluster;
+    if (!cluster) return;
+
+    // ── Populate _personaRefreshCorpus from the persona corpus ──
+    // Splits the persona corpus into normalized sentences and stores
+    // the array on the cluster for Lock 3 refresh sampling.
+    const personaText = corpora?.persona || '';
+    const personaSentences = [];
+    if (typeof personaText === 'string' && personaText.length > 0) {
+      const raw = personaText.split(/(?<=[.!?])\s+|\n\s*\n/);
+      for (const r of raw) {
+        const clean = this._normalizeSentence(r);
+        if (clean && clean.split(/\s+/).length >= 3) personaSentences.push(clean);
+      }
+    }
+    cluster._personaRefreshCorpus = personaSentences;
+    console.log(`[Curriculum] Lock 3 refresh corpus populated: ${personaSentences.length} persona sentences`);
+
+    // ── Build personaDimensions via simple embedding clustering ──
+    // K buckets chosen from the corpus size — more persona sentences
+    // = more dimensions. Uses k-means-ish assignment via embedding
+    // cosine against randomly-seeded centroids, single pass. Good
+    // enough for stratified refresh sampling; refinement is possible
+    // but not required for Lock 3 to dominate Lock 2 at scale.
+    const K = Math.max(4, Math.min(12, Math.floor(personaSentences.length / 40) || 4));
+    cluster.personaDimensions = this._buildPersonaDimensions(personaSentences, K);
+    console.log(`[Curriculum] personaDimensions: ${cluster.personaDimensions.length} clusters`);
+
+    // ── Calibrate Lock 1 thresholds from post-curriculum baselines ──
+    // Sample a handful of persona sentences, compute surprise + coverage
+    // on each, set thresholds at the 95th percentile of surprise and
+    // the 5th percentile of coverage (permissive tail inclusion for
+    // slang/typos).
+    const surpriseSamples = [];
+    const coverageSamples = [];
+    const sampleCount = Math.min(50, personaSentences.length);
+    for (let i = 0; i < sampleCount; i++) {
+      const s = personaSentences[Math.floor(Math.random() * personaSentences.length)];
+      surpriseSamples.push(cluster.computeTransitionSurprise(s));
+      coverageSamples.push(cluster.computeFineTypeCoverage(s));
+    }
+    if (surpriseSamples.length > 0) {
+      surpriseSamples.sort((a, b) => a - b);
+      coverageSamples.sort((a, b) => a - b);
+      const p95 = surpriseSamples[Math.floor(surpriseSamples.length * 0.95)];
+      const p5 = coverageSamples[Math.floor(coverageSamples.length * 0.05)];
+      // Apply a 1.5x tolerance band on surprise and a 0.8x tolerance
+      // on coverage so genuine English slang/typos don't get rejected.
+      cluster.ENGLISH_SURPRISE_THRESHOLD = Math.max(0.2, (p95 || 0.3) * 1.5);
+      cluster.ENGLISH_FINETYPE_MIN = Math.max(0.1, (p5 || 0.5) * 0.8);
+      console.log(`[Curriculum] Lock 1 calibrated: surprise<=${cluster.ENGLISH_SURPRISE_THRESHOLD.toFixed(3)}, coverage>=${cluster.ENGLISH_FINETYPE_MIN.toFixed(3)}`);
+    }
+
+    // ── Calibrate Lock 3 health thresholds ──
+    // Read the cortex's post-curriculum baseline for the three health
+    // indicators and set the floors at 70% of baseline. Anything below
+    // 70% of post-curriculum health triggers emergency refresh.
+    const baselineEntropy = cluster._computeOutputEntropy(personaSentences.slice(0, 100));
+    const baselineVocab = cluster._computeVocabDiversity(personaSentences.slice(0, 100));
+    const baselineWmVariance = cluster._computeWorkingMemoryVariance();
+    cluster.HEALTH_ENTROPY_MIN = baselineEntropy * 0.7;
+    cluster.HEALTH_VOCAB_MIN = baselineVocab * 0.7;
+    cluster.HEALTH_WM_VARIANCE_MIN = baselineWmVariance * 0.7;
+    console.log(`[Curriculum] Lock 3 health floors: entropy>=${cluster.HEALTH_ENTROPY_MIN.toFixed(3)}, vocab>=${cluster.HEALTH_VOCAB_MIN.toFixed(3)}, wmVar>=${cluster.HEALTH_WM_VARIANCE_MIN.toFixed(4)}`);
+
+    // ── Build per-intent centroids for cluster.intentReadout ──
+    // For each sentence the cortex has learned, compute its lightweight
+    // surface-heuristic intent and accumulate its semantic embedding
+    // into that intent's centroid. After the pass, each centroid is
+    // the L2-normalized mean of all sentences classified under its
+    // intent. cluster.intentReadout() at runtime computes cosine
+    // between the current sem readout and each centroid and returns
+    // the argmax intent name.
+    const intentCentroids = new Map();
+    const intentCounts = new Map();
+    for (const sentence of allSentences) {
+      const intent = this._lightIntent(sentence);
+      const emb = sharedEmbeddings.getSentenceEmbedding(sentence);
+      if (!emb || emb.length === 0) continue;
+      if (!intentCentroids.has(intent)) {
+        intentCentroids.set(intent, new Float64Array(emb.length));
+        intentCounts.set(intent, 0);
+      }
+      const c = intentCentroids.get(intent);
+      for (let i = 0; i < emb.length; i++) c[i] += emb[i];
+      intentCounts.set(intent, intentCounts.get(intent) + 1);
+    }
+    // Normalize each centroid
+    for (const [intent, c] of intentCentroids) {
+      const n = intentCounts.get(intent) || 1;
+      for (let i = 0; i < c.length; i++) c[i] /= n;
+      let norm = 0;
+      for (let i = 0; i < c.length; i++) norm += c[i] * c[i];
+      norm = Math.sqrt(norm) || 1;
+      for (let i = 0; i < c.length; i++) c[i] /= norm;
+    }
+    cluster.intentCentroids = intentCentroids;
+    console.log(`[Curriculum] intentCentroids built: ${intentCentroids.size} intents (${Array.from(intentCounts.entries()).map(([k, v]) => `${k}:${v}`).join(', ')})`);
+
+    // ── Persona corpus comprehensiveness audit ──
+    // Log warnings for any intent bucket that didn't get populated.
+    // Operator closes coverage gaps by editing docs/Ultimate Unity.txt.
+    const expectedIntents = ['greeting', 'question', 'emotion', 'statement', 'yesno', 'command'];
+    const coverage = {};
+    for (const intent of expectedIntents) {
+      coverage[intent] = intentCounts.get(intent) || 0;
+      if (coverage[intent] === 0) {
+        console.warn(`[IDENTITY] persona corpus has no '${intent}' sentences — that dimension is unprotected against drift`);
+      }
+    }
+    cluster.identityCoverage = coverage;
+  }
+
+  _buildPersonaDimensions(sentences, k) {
+    if (!sentences || sentences.length === 0 || k <= 0) return [];
+    // Seed centroids from evenly-spaced picks through the corpus
+    const centroids = [];
+    const step = Math.max(1, Math.floor(sentences.length / k));
+    for (let i = 0; i < k && i * step < sentences.length; i++) {
+      const emb = sharedEmbeddings.getSentenceEmbedding(sentences[i * step]);
+      if (emb && emb.length > 0) centroids.push({ vec: Array.from(emb), sentences: [] });
+    }
+    if (centroids.length === 0) return [];
+    // Assign each sentence to its closest centroid by cosine
+    for (const s of sentences) {
+      const emb = sharedEmbeddings.getSentenceEmbedding(s);
+      if (!emb || emb.length === 0) continue;
+      let best = 0, bestSim = -Infinity;
+      for (let i = 0; i < centroids.length; i++) {
+        const sim = sharedEmbeddings.similarity(emb, centroids[i].vec);
+        if (sim > bestSim) { bestSim = sim; best = i; }
+      }
+      centroids[best].sentences.push(s);
+    }
+    return centroids.filter(c => c.sentences.length > 0);
+  }
+
+  _lightIntent(sentence) {
+    const lower = String(sentence || '').toLowerCase().trim();
+    if (lower.endsWith('?')) return 'question';
+    if (lower.endsWith('!')) return 'emotion';
+    if (/^(hi|hey|hello|sup|yo|good (morning|evening|afternoon))\b/.test(lower)) return 'greeting';
+    if (/^(what|who|where|when|why|how|which|whose)\b/.test(lower)) return 'question';
+    if (/^(is|are|was|were|do|does|did|can|could|will|would|should|has|have|had|am)\b/.test(lower)) return 'yesno';
+    if (/^(go|come|take|give|stop|start|do|make|get|put|tell|show|run|open|close|fuck|shut|move)\b/.test(lower)) return 'command';
+    return 'statement';
   }
 
   /**

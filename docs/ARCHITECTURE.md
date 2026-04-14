@@ -733,9 +733,42 @@ Three atomic milestones in one commit. T14.15 audits the remaining non-chat cons
 
 **What's deferred to T14.17.** Curriculum-time calibration of the five identity-lock thresholds (`ENGLISH_SURPRISE_THRESHOLD` at 95th percentile of English-input surprise, etc), persona corpus comprehensiveness validation, `personaDimensions` semantic clustering for stratified refresh, `_personaRefreshCorpus` population from the persona corpus, cortex-resident fineType readout upgrade for `computeFineTypeCoverage`. The substrate shipped here is complete enough that T14.17 only needs to add calibration logic without changing the identity-lock API.
 
-### What's next on the rebuild branch
+### T14.17 — Continuous learning everywhere + vestigial organ sweep (SHIPPED 2026-04-14)
 
-T14.17 — Continuous learning everywhere. Calibrates the T14.16.5 thresholds at curriculum time, populates the persona refresh corpus, implements `personaDimensions` semantic clustering for stratified refresh, upgrades `computeFineTypeCoverage` to read the cortex fineType region, wires the learned `cluster.intentReadout()` from the fineType region's argmax over learned intent attractor basins. This is the final T14 milestone. After T14.17 ships, the rebuild branch merges to `main`.
+The final T14 milestone. Covers two things in one atomic commit: (A) curriculum-time calibration of everything T14.16.5 deferred, (B) full orphan wiring of the eleven vestigial methods defined across T14.0-T14.16.5 that never had live callers.
+
+**Half A — Curriculum calibration.** New `Curriculum._calibrateIdentityLock(corpora, allSentences)` runs at the end of `runFromCorpora`:
+
+1. Populates `cluster._personaRefreshCorpus` with normalized persona sentences for Lock 3 refresh
+2. Builds `cluster.personaDimensions` via simple k-means clustering (K=4-12) over persona sentence embeddings for stratified refresh
+3. Calibrates `ENGLISH_SURPRISE_THRESHOLD` at p95 × 1.5 and `ENGLISH_FINETYPE_MIN` at p5 × 0.8 from persona sample stats
+4. Calibrates `HEALTH_ENTROPY_MIN` / `HEALTH_VOCAB_MIN` / `HEALTH_WM_VARIANCE_MIN` at 70% of post-curriculum baselines
+5. Builds `cluster.intentCentroids` by averaging sentence embeddings per intent bucket (from `_lightIntent` heuristic) and L2-normalizing — `cluster.intentReadout()` argmaxes against these at runtime
+6. Logs persona corpus comprehensiveness warnings: `[IDENTITY] persona corpus has no 'X' sentences`
+
+`runFromCorpora` now sets `cluster._inCurriculumMode = true` for the duration so T14.16.5 Lock 2 doesn't clamp curriculum Hebbian at the live-chat rate cap.
+
+**Half B — Orphan wiring.** Every method shipped between T14.0 and T14.16.5 now has at least one live runtime caller:
+
+- `cluster.intentReadout()` — was null stub. Now reads sem region, computes cosine against `intentCentroids`, returns argmax with 0.1 confidence floor.
+- `cluster.computeFineTypeCoverage(clause)` — upgraded to blend surface metric (70%) with fineType region spike-rate fraction (30%).
+- `cluster.runIdentityRefresh()` — upgraded to stratified sampling from `personaDimensions` (one sentence per dimension per cycle). `sentencesPerCycle: 'all'` walks the full stratified set for emergency mode-collapse recovery.
+- `cluster.workingMemoryReadout` — wired into `cluster.generateSentence` for topic continuity. Reads free sub-region and injects into sem at 0.4× intent strength when activation is non-trivial.
+- `cluster.readText` — extended with `opts.auditoryCortex` for subvocalization. Text input now drives both visual AND auditory templates simultaneously (Pulvermüller 2005 silent-reading auditory cortex activation).
+- `cluster.hearPhoneme` — DELETED. The auditory template injection path lives inline in `readText` now. Real voice input will use a new `hearAudio(spectrumFeatures)` method in a future milestone, not this synthetic-template stub.
+- `cluster.semanticReadoutFor` — `getSemanticReadout` short-circuits to it when T14.4 regions exist. Every legacy caller transparently picks up the region-based readout.
+- `cluster.entityReadout` — wired into `component-synth.generate` with a 0.25 cosine weight blend alongside literal `userEmbed` match.
+- `cluster.recordIntentPair` — wired into `engine.processAndRespond` to capture user→Unity intent pairs after every response.
+- `dictionary.syllablesFor` / `snapshotFor` — wired into new `engine.wordState(word)` diagnostic accessor.
+- `cluster.schemaScore` / `typeTransitionWeight` / `responseIntentFor` — wired into new `engine.cortexStats(probeWord)` diagnostic accessor.
+
+**Dead code deletions.** `LanguageCortex.schemaScore` / `typeTransitionWeight` / `recordIntentPair` / `responseIntentFor` were T14.8 duplicates that T14.13 migrated to the cluster — pure read-through wrappers with zero callers, deleted. `Dictionary.findByMood` / `findByPattern` / `generateSentence` / `_cosine` were pre-T14 thesaurus + bigram-walker legacy with zero callers since T11 — deleted. `_bigrams` + `learnBigram` + `bigramCount` kept because display stats in `app.js` / `brain-3d.js` / `brain-viz.js` / `inner-voice.js` still show bigram count.
+
+**Full post-audit orphan map:** every T14 method has live callers. `hearPhoneme` shows `def=0 call=1` where the call is a tombstone comment — no live code reference remains.
+
+### T14 is COMPLETE
+
+All 18 milestones (T14.0 through T14.17) shipped on `t14-language-rebuild`. The branch is ready for end-to-end verification before merge to `main`. No more per-milestone commits — the next action is either Gee's verification walkthrough or explicit merge-to-main go-ahead.
 
 ---
 
