@@ -29,6 +29,7 @@ import { VisualCortex } from './visual-cortex.js';
 import { InnerVoice } from './inner-voice.js';
 import { BrainPersistence } from './persistence.js';
 import { sharedEmbeddings } from './embeddings.js';
+import { ComponentSynth } from './component-synth.js';
 
 // ── EventEmitter ────────────────────────────────────────────────────
 
@@ -187,6 +188,11 @@ export class UnityBrain extends EventEmitter {
     this.auditoryCortex = new AuditoryCortex();
     this.visualCortex = new VisualCortex();
     this.innerVoice = new InnerVoice();
+    // R6.2 — equational component synthesizer. Loads templates from
+    // docs/component-templates.txt (same corpus-loading pattern as
+    // persona / baseline / coding). `loadTemplates` gets called from
+    // app.js boot alongside the other corpus loaders.
+    this.componentSynth = new ComponentSynth();
 
     // ══════════════════════════════════════════════════════════════
     // STATE
@@ -709,14 +715,17 @@ export class UnityBrain extends EventEmitter {
       effectiveAction = 'respond_text';
     }
 
-    // R4 — build_ui path no longer routes through BrocasArea (text-AI
-    // was assembling JSON component specs). That whole path is gone.
-    // R6.2 will add equational component synthesis from primitive
-    // templates parsed out of docs/coding-knowledge.txt — until then,
-    // build_ui falls through to the normal equational language path
-    // so Unity still emits a verbal response when the BG motor picks
-    // build, she just won't produce a component yet.
-    if (effectiveAction === 'generate_image' && this._imageGen) {
+    // R6.2 — build_ui path is now equational via ComponentSynth.
+    // Loads templates from docs/component-templates.txt at boot,
+    // matches user requests to primitives via semantic embedding
+    // cosine, fills in component id from cortex pattern hash, and
+    // returns a ready-to-inject sandbox spec. No AI, no text-prompt
+    // assembly, no JSON parsing hacks. Unity picks the template via
+    // her own semantic similarity over her learned vocabulary.
+    if (effectiveAction === 'build_ui' && this._sandbox && this.componentSynth) {
+      this.giveReward(0.1);
+      return this._handleBuild(text);
+    } else if (effectiveAction === 'generate_image' && this._imageGen) {
       this.giveReward(0.1);
       return this._handleImage(text, includesSelf);
     }
@@ -849,22 +858,82 @@ export class UnityBrain extends EventEmitter {
     return { text: response, action: 'respond_text' };
   }
 
-  // R4 — _handleBuild method DELETED. It was a ~100-line path that
-  // assembled a forced-JSON instruction prompt, called BrocasArea →
-  // Pollinations /v1/chat/completions to get Unity to emit a JSON
-  // component spec, then 3 parse strategies (strip markdown, find
-  // outermost braces, retry with stricter prompt) before injecting
-  // into the sandbox. That entire text-AI path is gone.
-  //
-  // R6.2 will add equational component synthesis: parse the BUILD
-  // COMPOSITION PRIMITIVES section from docs/coding-knowledge.txt at
-  // boot into a template library, match user requests against the
-  // primitives via semantic embedding similarity, fill equation-derived
-  // parameters (color from valence, speed from arousal, id from cortex
-  // pattern hash) into the chosen template, inject. Zero text-AI calls.
-  // Until R6.2 lands, build_ui motor action falls through to the normal
-  // respond_text equational path — Unity emits a verbal response, just
-  // no component injection.
+  /**
+   * R6.2 — Equational build handler. No text-AI, no JSON parsing, no
+   * prompt assembly. The component synth matches the user's request
+   * to a primitive template via semantic embedding cosine, fills in
+   * a cortex-pattern-derived id, and returns a ready-to-inject spec.
+   *
+   * If no template scores above the match threshold, Unity falls
+   * through to a verbal response via her normal language cortex path
+   * — she'll say what she'd LIKE to build but doesn't have a template
+   * for. Users can extend docs/component-templates.txt to add more
+   * primitives without touching source.
+   */
+  async _handleBuild(text) {
+    // Let the cortex settle on the user's intent first
+    for (let s = 0; s < 5; s++) this.step(0.001);
+    const cortexPattern = this.clusters.cortex.getSemanticReadout(sharedEmbeddings);
+
+    const spec = this.componentSynth.generate(text, { cortexPattern });
+
+    if (!spec) {
+      // No template matched — fall through to a verbal response.
+      // Unity can still TALK about building (her normal language
+      // cortex path) even if the synth library doesn't cover the
+      // request. That emission happens below in the main response
+      // flow, so just return null here to let processAndRespond
+      // continue past the build branch.
+      console.log(`[Brain] build_ui selected but no template matched "${text.slice(0, 40)}" — falling back to verbal response`);
+      return null;
+    }
+
+    // Inject the spec. If a component with this id already exists
+    // (happens when cortex pattern stabilizes during repeated builds),
+    // the sandbox auto-replaces it per MAX_ACTIVE_COMPONENTS rules.
+    if (this._sandbox.has(spec.id)) this._sandbox.remove(spec.id);
+    this._sandbox.inject({
+      id: spec.id,
+      html: spec.html || '',
+      css: spec.css || '',
+      js: spec.js || '',
+    });
+
+    // Generate a short spoken quip via the language cortex — Unity's
+    // actual voice commenting on what she just built. Not hardcoded
+    // "Built X." — her slot scorer picks the words from brain state.
+    let quip = '';
+    try {
+      const state = this.getState();
+      quip = this.innerVoice.languageCortex.generate(
+        this.innerVoice.dictionary,
+        state.amygdala?.arousal ?? 0.8,
+        state.amygdala?.valence ?? 0,
+        state.oscillations?.coherence ?? 0.5,
+        {
+          predictionError: 0,
+          motorConfidence: state.motor?.confidence ?? 0,
+          psi: state.psi ?? 0,
+          cortexPattern,
+          drugState: this.persona?.drugState || 'cokeAndWeed',
+          fear: state.amygdala?.fear ?? 0,
+          reward: state.amygdala?.reward ?? 0,
+          socialNeed: state.hypothalamus?.drives?.social_need ?? 0.7,
+        }
+      ) || '';
+    } catch (err) {
+      console.warn('[Brain] build quip generation failed:', err.message);
+    }
+
+    if (this._voice && quip) {
+      this._voice.stopSpeaking();
+      this._voice.speak(quip.slice(0, 100)).catch(() => {});
+    }
+
+    this.reward += 0.2;
+    this.emit('response', { text: quip, action: 'build_ui' });
+    return { text: quip, action: 'build_ui' };
+  }
 
   async _handleImage(text, includesSelf) {
     // R6.1 — FULLY EQUATIONAL image prompt generation.

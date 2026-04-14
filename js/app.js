@@ -192,6 +192,7 @@ let _landingState = null;
 let _personaTextPromise = null;
 let _baselineTextPromise = null;
 let _codingTextPromise = null;
+let _componentTemplatesPromise = null;
 const _personaLoadedBrains = new WeakSet();
 
 /**
@@ -230,8 +231,21 @@ function loadPersonaSelfImage(targetBrain) {
         return '';
       });
   }
+  if (!_componentTemplatesPromise) {
+    _componentTemplatesPromise = fetch('docs/component-templates.txt')
+      .then(r => r.ok ? r.text() : '')
+      .catch(err => {
+        console.warn('[Unity] component templates fetch failed:', err.message);
+        return '';
+      });
+  }
 
-  return Promise.all([_personaTextPromise, _baselineTextPromise, _codingTextPromise]).then(async ([personaText, baselineText, codingText]) => {
+  return Promise.all([
+    _personaTextPromise,
+    _baselineTextPromise,
+    _codingTextPromise,
+    _componentTemplatesPromise,
+  ]).then(async ([personaText, baselineText, codingText, templateText]) => {
     if (!personaText) {
       console.warn('[Unity] persona self-image fetch returned empty — check docs/Ultimate Unity.txt route');
       return 0;
@@ -271,6 +285,17 @@ function loadPersonaSelfImage(targetBrain) {
     let codingSentences = 0;
     if (codingText && typeof targetBrain.innerVoice.loadCoding === 'function') {
       codingSentences = targetBrain.innerVoice.loadCoding(codingText);
+    }
+
+    // R6.2 — Load component templates for equational build_ui synthesis.
+    // The template file parses into a primitive library matched by
+    // semantic embedding cosine at build time.
+    let templateCount = 0;
+    if (templateText && targetBrain.componentSynth?.loadTemplates) {
+      templateCount = targetBrain.componentSynth.loadTemplates(templateText);
+    }
+    if (templateCount > 0) {
+      console.log(`[Unity] Loaded ${templateCount} component templates for equational build_ui`);
     }
 
     const dictSize = targetBrain.innerVoice.dictionary?._words?.size ?? 0;

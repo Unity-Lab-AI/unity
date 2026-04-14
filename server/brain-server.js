@@ -381,18 +381,22 @@ class ServerBrain {
    */
   async _initLanguageSubsystem() {
     if (this._languageReady) return;
-    console.log('[Brain] R3 — loading language subsystem (dictionary + language cortex + embeddings)...');
+    console.log('[Brain] R3 — loading language subsystem (dictionary + language cortex + embeddings + component synth)...');
     const startMs = Date.now();
     try {
-      const [dictMod, lcMod, embedMod] = await Promise.all([
+      const [dictMod, lcMod, embedMod, csMod] = await Promise.all([
         import('../js/brain/dictionary.js'),
         import('../js/brain/language-cortex.js'),
         import('../js/brain/embeddings.js'),
+        import('../js/brain/component-synth.js'),
       ]);
 
       this.sharedEmbeddings = embedMod.sharedEmbeddings;
       this.dictionary = new dictMod.Dictionary();
       this.languageCortex = new lcMod.LanguageCortex();
+      // R6.2 — component synth for equational build_ui on the server.
+      // Templates get loaded from docs/component-templates.txt below.
+      this.componentSynth = new csMod.ComponentSynth();
 
       // Await GloVe embedding table load — must complete before corpus
       // training so persona words get real semantic patterns from the
@@ -405,9 +409,9 @@ class ServerBrain {
         console.warn('[Brain] Embeddings load failed, using hash fallback:', err.message);
       }
 
-      // Load the three corpora from disk (server has fs access, unlike browser)
+      // Load the four corpora from disk (server has fs access, unlike browser)
       const docsDir = path.join(__dirname, '..', 'docs');
-      let personaText = '', baselineText = '', codingText = '';
+      let personaText = '', baselineText = '', codingText = '', templateText = '';
       try {
         personaText = fs.readFileSync(path.join(docsDir, 'Ultimate Unity.txt'), 'utf8');
       } catch (err) {
@@ -423,12 +427,17 @@ class ServerBrain {
       } catch (err) {
         console.warn('[Brain] coding-knowledge.txt unreadable:', err.message);
       }
+      try {
+        templateText = fs.readFileSync(path.join(docsDir, 'component-templates.txt'), 'utf8');
+      } catch (err) {
+        console.warn('[Brain] component-templates.txt unreadable:', err.message);
+      }
 
       // Feed corpora through the language cortex — same path the client
       // uses, same learning rules, same type n-grams, same semantic
       // centroid computation. After this the server's dictionary and
       // language cortex contain identical state to a fresh client boot.
-      let personaCount = 0, baselineCount = 0, codingCount = 0;
+      let personaCount = 0, baselineCount = 0, codingCount = 0, templateCount = 0;
       if (personaText) {
         personaCount = this.languageCortex.loadSelfImage(personaText, this.dictionary, 0.75, 0.25);
       }
@@ -438,10 +447,13 @@ class ServerBrain {
       if (codingText) {
         codingCount = this.languageCortex.loadCodingKnowledge(codingText, this.dictionary, 0.40, 0);
       }
+      if (templateText) {
+        templateCount = this.componentSynth.loadTemplates(templateText);
+      }
 
       const dictSize = this.dictionary._words?.size || 0;
       const bigramHeads = this.dictionary._bigrams?.size || 0;
-      console.log(`[Brain] Language corpora loaded in ${Date.now() - startMs}ms: persona=${personaCount} baseline=${baselineCount} coding=${codingCount} → ${dictSize} words, ${bigramHeads} bigram heads`);
+      console.log(`[Brain] Language corpora loaded in ${Date.now() - startMs}ms: persona=${personaCount} baseline=${baselineCount} coding=${codingCount} templates=${templateCount} → ${dictSize} words, ${bigramHeads} bigram heads`);
 
       this._languageReady = true;
     } catch (err) {
