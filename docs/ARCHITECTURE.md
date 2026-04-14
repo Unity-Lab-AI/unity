@@ -697,9 +697,29 @@ Three atomic milestones shipped in one commit covering discourse memory, visual 
 
 **Why separate templates from hash coincidence.** If both visual and auditory templates for "c" were generated from the same hash, they'd be identical at initialization and the auditory↔phon convergence would be trivial instead of learned. By using different primes we force the cortex to discover the correspondence via exposure statistics — which is the entire point of having a LEARNED dual-stream substrate rather than a hardcoded one.
 
+### T14.12 + T14.13 + T14.14 — Unified cortex pipeline (SHIPPED 2026-04-14)
+
+Three atomic milestones in one commit covering the full deletion of the legacy parse path, migration of learned language statistics from LanguageCortex to the cluster, and rewiring of every input-side consumer to the unified cortex pipeline.
+
+**T14.12 — parseSentence DELETED.** 521 lines removed from `js/brain/language-cortex.js` (3264 → 2798): `parseSentence` (315), `analyzeInput` (69), `_classifyIntent` (32), `observeVisionDescription` (26), `_updateSocialSchema` (36), `getUserAddress` / `getUserGender` / `getSocialSchema` accessors, `_isSelfReferenceQuery`, `_socialSchema` field. Tombstone comments at every deletion site.
+
+Replaced by `NeuronCluster.readInput(text, { visualCortex }) → { text, words, intent, isSelfReference, addressesUser, isQuestion }`. Drives the visual→letter pathway via `readText`, then builds the classification stub. Intent comes from `cluster.intentReadout()` first (returns null until T14.17 trains the fineType basins), falls through to a lightweight text-surface heuristic during the bootstrap: `endsWith('?')` → question, `endsWith('!')` → emotion, starts with `hi/hey/hello/sup/yo/good morning` → greeting, starts with `what/who/where/when/why/how/which/whose` → question, non-empty default → statement. `isSelfReference` and `addressesUser` come from word-set membership tests.
+
+Three companion readout placeholders on cluster: `intentReadout()`, `semanticReadoutFor(text)`, `entityReadout()`. `semanticReadoutFor` is the cortex-resident replacement for the R2 `getSemanticReadout(embeddings)` convention — reads `regionReadout('sem', 300)`. The other two return null / sem readout placeholders until T14.17 curriculum consolidation ships the learned attractor readouts.
+
+`engine.injectParseTree` rewired to call `cortex.readInput` instead of `lc.parseSentence`, adds T14.9 `cortex.injectWorkingMemory(contentEmb, 0.6)` for discourse state. `engine.processAndRespond` + `server/brain-server.js:processText` analyzeInput calls deleted. `engine.wireVisualCortex` `observeVisionDescription` wiring deleted. Grep confirms zero live `parseSentence` code references.
+
+**T14.13 — Learned language statistics migrated to cluster (partial elimination).** Four new Maps on `NeuronCluster`: `fineTypeTransitions`, `sentenceFormSchemas`, `sentenceFormTotals`, `intentResponseMap` — all initialized empty at constructor. Four new reader methods: `schemaScore(slot, fineType, intent)`, `typeTransitionWeight(prevType, nextType)`, `recordIntentPair(userIntent, responseIntent)`, `responseIntentFor(userIntent)` — exact mirrors of the T14.8 versions, now reading from cluster state.
+
+`LanguageCortex.setCluster(cluster)` method bridges the old class to the cluster: merges any pre-existing observations from the local Maps into the cluster's Maps via a recursive `mergeMap` helper, then re-points `this._typeTransitionLearned` / `this._sentenceFormSchemas` / `this._sentenceFormTotals` / `this._intentResponseMap` at the cluster's Maps by identity. Called from `engine.js` + `server/brain-server.js` right after `dictionary.setCluster`. After the call, every subsequent `learnSentence` observation write from the LanguageCortex path lands in cluster state directly.
+
+**Full LanguageCortex class elimination (file <250 lines, `class LanguageCortex` declaration deleted) deferred to a future cleanup pass.** The class has ~400 external references across `engine.js`, `inner-voice.js`, `brain-3d.js`, `brain-equations.html` — doing the full deletion in one atomic commit would risk breaking runtime paths the remaining T14 milestones still need. Shipping the STATE migration now gets the important half done; the class wrapper stays alive as a method surface until a later cleanup pass finishes the job.
+
+**T14.14 — Bidirectional reading wired.** Every consumer call site that used `languageCortex.parseSentence` now uses `cluster.readInput` instead. Anaphora resolution falls out for free via T14.9 working-memory injection. Intent classification placeholder returns null until T14.17 wires the learned cortex readout; fallback heuristic in `readInput` provides sensible labels during bootstrap. Social schema tracking (name, gender, mention count, greetings) is gone for this commit and returns in T14.17 as a cortex-resident self-model sub-region readout.
+
 ### What's next on the rebuild branch
 
-T14.12 — Bidirectional cortex pipeline. Unified read/write flow via `cluster.readText` + `cluster.generateSentence`. Deletes `parseSentence` and the remaining slot-era helpers from `LanguageCortex`. Wires `engine.processAndRespond` to route text through the visual pathway and voice through the auditory pathway. Each subsequent T14.x milestone ships as its own commit on this branch with full in-place doc updates. Branch merges to `main` only after T14.17 is complete and verified.
+T14.15 — Wire ALL remaining language consumers to the unified pipeline. Targets include `brain-3d.js` commentary, `component-synth.js` parse references, and any `innerVoice.languageCortex.X` call sites outside the chat/boot paths covered by T14.14. Each subsequent T14.x milestone ships as its own commit on this branch with full in-place doc updates. Branch merges to `main` only after T14.17 is complete and verified.
 
 ---
 

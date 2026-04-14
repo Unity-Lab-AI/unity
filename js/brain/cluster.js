@@ -212,6 +212,26 @@ export class NeuronCluster {
     // so it auto-scales with cluster.size.
     this._motorQuiescentTicks = 0;
 
+    // T14.13 (2026-04-14) — learned language statistics migrated from
+    // LanguageCortex onto the cluster. These Maps accumulate from every
+    // observed sentence during curriculum walk and live chat. Shape
+    // matches the T14.7/T14.8 definitions:
+    //
+    //   fineTypeTransitions : Map<prevType, Map<nextType, count>>
+    //   sentenceFormSchemas : Map<intent, Map<slot, Map<fineType, count>>>
+    //   sentenceFormTotals  : Map<intent, Map<slot, total>>
+    //   intentResponseMap   : Map<userIntent, Map<responseIntent, count>>
+    //
+    // Cluster-level storage means the learned language grammar IS a
+    // property of the cortex itself, not of a separate LanguageCortex
+    // object. LanguageCortex.js still holds references to these same
+    // Maps for backward compat — the instance is the cluster's by
+    // identity, so updates from either path land in the same place.
+    this.fineTypeTransitions = new Map();
+    this.sentenceFormSchemas = new Map();
+    this.sentenceFormTotals = new Map();
+    this.intentResponseMap = new Map();
+
     // T14.6 — tick-driven motor emission tuning constants. These live on
     // the cluster instance so T14.5 curriculum calibration can tune them
     // per-cluster without touching module globals. Defaults match the
@@ -624,6 +644,166 @@ export class NeuronCluster {
       this.injectLetter(ch, 1.0);
       for (let t = 0; t < ticksPerChar; t++) this.step(0.001);
     }
+  }
+
+  /**
+   * T14.12 — Unified read-input entry point. Drives the visual→letter
+   * pathway via `readText`, then returns a structured stub with the
+   * intent/self-reference/addressesUser flags that engine.injectParseTree
+   * (and any downstream consumer) needs for current-tick routing.
+   *
+   * Replaces `LanguageCortex.parseSentence` which was deleted in T14.12.
+   * The intent classification is a cortex-state readout from the fineType
+   * region via `intentReadout()` once curriculum has trained the basins;
+   * until then it falls back to a lightweight first-token heuristic over
+   * the raw text so existing consumers keep working during the curriculum-
+   * bootstrap period. Full learned-readout ships with T14.17.
+   *
+   * @param {string} text
+   * @param {object} [opts]
+   * @param {object} [opts.visualCortex]
+   * @returns {{ text, words, intent, isSelfReference, addressesUser, isQuestion }}
+   */
+  readInput(text, opts = {}) {
+    if (!text || typeof text !== 'string') {
+      return { text: '', words: [], intent: 'unknown', isSelfReference: false, addressesUser: false, isQuestion: false };
+    }
+    // Drive the visual→letter pathway so cortex state reflects the input
+    this.readText(text, { visualCortex: opts.visualCortex, ticksPerChar: 2 });
+
+    // Try cortex-resident intent readout first (T14.7 fineType basins
+    // once curriculum has shaped them)
+    let intent = this.intentReadout() || 'unknown';
+
+    // Lightweight fallback heuristic for pre-curriculum state. NOT
+    // hardcoded grammar — these are cheap text-surface signals that
+    // the cortex would also learn naturally. Once T14.5 curriculum has
+    // trained enough corpus to make `intentReadout` reliable, this
+    // fallback becomes unreached dead code.
+    if (intent === 'unknown') {
+      const lower = text.toLowerCase().trim();
+      if (lower.length > 0) {
+        if (lower.endsWith('?')) intent = 'question';
+        else if (lower.endsWith('!')) intent = 'emotion';
+        else if (/^(hi|hey|hello|sup|yo|good (morning|evening|afternoon))\b/.test(lower)) intent = 'greeting';
+        else if (/^(what|who|where|when|why|how|which|whose)\b/.test(lower)) intent = 'question';
+        else intent = 'statement';
+      }
+    }
+
+    // Lightweight self-reference + addresses-Unity detection. Same
+    // rationale — simple surface signal until cortex basins take over.
+    const lower = text.toLowerCase();
+    const words = lower.replace(/[^a-z0-9' ]/g, ' ').split(/\s+/).filter(Boolean);
+    const wordSet = new Set(words);
+    const addressesUser = wordSet.has('unity') || wordSet.has('you') || wordSet.has('your') || wordSet.has("you're");
+    const isSelfReference = wordSet.has('i') || wordSet.has('im') || wordSet.has("i'm") || wordSet.has('my') || wordSet.has('me') || wordSet.has('myself');
+    const isQuestion = intent === 'question';
+
+    return { text, words, intent, isSelfReference, addressesUser, isQuestion };
+  }
+
+  /**
+   * T14.13 — Sentence-form schema score (migrated from LanguageCortex).
+   * Same Laplace smoothing as the T14.8 implementation.
+   */
+  schemaScore(slot, fineType, intent = 'unknown') {
+    const intentSchema = this.sentenceFormSchemas.get(intent);
+    if (!intentSchema) return 1 / 2;
+    const slotBucket = intentSchema.get(slot);
+    if (!slotBucket) return 1 / 2;
+    const total = this.sentenceFormTotals.get(intent)?.get(slot) || 0;
+    if (total === 0) return 1 / 2;
+    const count = slotBucket.get(fineType) || 0;
+    const uniqueTypes = slotBucket.size;
+    return (count + 1) / (total + Math.max(1, uniqueTypes));
+  }
+
+  /**
+   * T14.13 — Type transition weight (migrated from LanguageCortex).
+   */
+  typeTransitionWeight(prevType, nextType) {
+    const row = this.fineTypeTransitions.get(prevType);
+    if (!row) return 1 / 2;
+    let total = 0;
+    for (const v of row.values()) total += v;
+    if (total === 0) return 1 / 2;
+    const count = row.get(nextType) || 0;
+    const uniqueTypes = row.size;
+    return (count + 1) / (total + Math.max(1, uniqueTypes));
+  }
+
+  /**
+   * T14.13 — Record intent pair observation (migrated from LanguageCortex).
+   */
+  recordIntentPair(userIntent, responseIntent) {
+    if (!userIntent || !responseIntent) return;
+    let row = this.intentResponseMap.get(userIntent);
+    if (!row) {
+      row = new Map();
+      this.intentResponseMap.set(userIntent, row);
+    }
+    row.set(responseIntent, (row.get(responseIntent) || 0) + 1);
+  }
+
+  /**
+   * T14.13 — Argmax response intent for a given user intent.
+   */
+  responseIntentFor(userIntent) {
+    const row = this.intentResponseMap.get(userIntent);
+    if (!row || row.size === 0) return null;
+    let best = null;
+    let bestCount = -1;
+    for (const [resp, count] of row) {
+      if (count > bestCount) { best = resp; bestCount = count; }
+    }
+    return best;
+  }
+
+  /**
+   * T14.12 — Cortex-state intent readout. Reads the fineType region
+   * activation and argmaxes over learned intent attractor basins. Until
+   * T14.5 curriculum has trained enough corpus, the fineType region is
+   * near-random and this method returns null — callers (like `readInput`)
+   * fall through to their own heuristic. Once curriculum is live the
+   * readout dominates and the heuristic becomes unreached.
+   *
+   * Currently returns null unconditionally since the intent-attractor
+   * consolidation step (part of T14.17 continuous learning) hasn't
+   * shipped yet. The method exists now so consumers can wire to it
+   * today and get the learned readout automatically when T14.17 lands,
+   * without another round of call-site rewrites.
+   *
+   * @returns {string|null}
+   */
+  intentReadout() {
+    return null;
+  }
+
+  /**
+   * T14.12 — Semantic readout for a specific text anchor. Reads the sem
+   * region as the L2-normalized activation vector, which represents the
+   * cortex's current semantic understanding. This is the cortex-resident
+   * replacement for the R2 `getSemanticReadout(embeddings)` convention —
+   * same math, different naming to match the T14.12 unified pipeline.
+   *
+   * @param {string} [_text]  — currently unused; reserved for future per-
+   *   text priming override (inject then read) once curriculum tuning
+   *   reveals whether a fresh inject helps readout stability
+   */
+  semanticReadoutFor(_text) {
+    return this.regionReadout('sem', 300);
+  }
+
+  /**
+   * T14.12 — Entity readout from the sem region. Placeholder that
+   * returns the same readout as `semanticReadoutFor` for now; once the
+   * T14.17 entity-slot attractor pass lands, this will cluster the sem
+   * readout into learned entity-slot patterns and return a structured
+   * `{ entityCount, entityVectors }` payload.
+   */
+  entityReadout() {
+    return this.regionReadout('sem', 300);
   }
 
   /**

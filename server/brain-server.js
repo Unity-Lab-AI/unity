@@ -497,6 +497,11 @@ class ServerBrain {
       // and cluster.detectStress on first observation. Server mirrors the
       // browser's wiring from engine.js.
       this.dictionary.setCluster(this.cortexCluster);
+      // T14.13 — migrate LanguageCortex learned statistics onto the
+      // language cortex cluster so observations land in cluster state.
+      if (typeof this.languageCortex?.setCluster === 'function') {
+        this.languageCortex.setCluster(this.cortexCluster);
+      }
       // T14.5 — continuous developmental learning curriculum runner for
       // the server-side language cortex. runFromCorpora is invoked after
       // the legacy persona/baseline/coding loaders below so the complexity-
@@ -1166,10 +1171,12 @@ class ServerBrain {
       return { text: '', action: 'respond_text' };
     }
 
-    // Feed user input into the language cortex so it updates the
-    // context vector, topic attractor, and learns new bigrams.
-    this.languageCortex.analyzeInput(text, this.dictionary);
-    // Every word heard gets learned — same as client.
+    // T14.12 (2026-04-14) — analyzeInput deleted. The learnSentence call
+    // below still fires which updates T14.8's sentence-form schemas and
+    // T14.7's learned type-transition table via the same observation
+    // walk. Intent/self-reference classification moves to cortex-state
+    // readouts via cluster.intentReadout() once curriculum shapes the
+    // fineType region.
     this.languageCortex.learnSentence(text, this.dictionary, this.arousal, this.valence);
     // Accumulate word frequencies (already persisted via saveWeights/_loadWeights round-trip fix)
     this._learnWords(text);

@@ -216,6 +216,14 @@ export class UnityBrain extends EventEmitter {
     // alongside the semantic pattern. Existing (pre-wire) words keep
     // their current state until they're observed again.
     this.innerVoice.dictionary.setCluster(this.clusters.cortex);
+    // T14.13 — migrate LanguageCortex learned statistics onto the cortex
+    // cluster. After this call `innerVoice.languageCortex.{_typeTransitionLearned,
+    // _sentenceFormSchemas, _sentenceFormTotals, _intentResponseMap}` all
+    // point at `this.clusters.cortex.{fineTypeTransitions, sentenceForm
+    // Schemas, sentenceFormTotals, intentResponseMap}` by identity.
+    if (typeof this.innerVoice.languageCortex?.setCluster === 'function') {
+      this.innerVoice.languageCortex.setCluster(this.clusters.cortex);
+    }
     // T14.5 — construct the continuous-developmental-learning curriculum
     // runner and wire it into innerVoice so every live chat turn routes
     // through the same inject+tick+Hebbian path the boot corpus walk uses.
@@ -305,28 +313,39 @@ export class UnityBrain extends EventEmitter {
    */
   injectParseTree(text) {
     if (!text) return null;
-    const lc = this.innerVoice?.languageCortex;
-    if (!lc || typeof lc.parseSentence !== 'function') return null;
-
-    const parsed = lc.parseSentence(text);
-    if (!parsed) return null;
-
-    // Content injection into cortex language region.
-    const contentEmb = sharedEmbeddings.getSentenceEmbedding(text);
     const cortex = this.clusters.cortex;
+    if (!cortex) return null;
+
+    // T14.12 (2026-04-14) — parseSentence deleted. Input routing now
+    // flows through cluster.readInput which drives the visual→letter
+    // pathway (T14.10) + returns a cortex-derived stub with intent and
+    // self-reference flags. Until T14.5 curriculum has shaped the
+    // fineType basins enough for cluster.intentReadout to classify
+    // meaningfully, readInput falls back to a lightweight first-token
+    // heuristic for the intent label. Full learned-readout classification
+    // ships with T14.17 continuous learning.
+    const readResult = cortex.readInput(text, { visualCortex: this.visualCortex });
+    if (!readResult) return null;
+
+    // Content injection into cortex language region (legacy path
+    // preserved alongside the T14.10 readText visual pathway — both
+    // routes converge on letter/phon/sem regions via cross-projections).
+    const contentEmb = sharedEmbeddings.getSentenceEmbedding(text);
     const contentCurrents = sharedEmbeddings.mapToCortex(contentEmb, cortex.size, 150);
     for (let i = 0; i < cortex.size; i++) contentCurrents[i] *= 0.5;
     cortex.injectCurrent(contentCurrents);
 
+    // T14.9 — working-memory injection for cortex-resident discourse state
+    cortex.injectWorkingMemory(contentEmb, 0.6);
+
     // Intent injection into basal ganglia — primes the action channel
     // with an embedding representative of the response shape needed
-    // for this kind of input. Single-word anchor for now; T13.3+ can
-    // extend to learned intent vectors per `_responseIntentVector`.
-    if (parsed.intent && this.clusters.basalGanglia) {
+    // for this kind of input.
+    if (readResult.intent && this.clusters.basalGanglia) {
       const intentAnchor =
-        parsed.intent === 'question'  ? 'what' :
-        parsed.intent === 'greeting'  ? 'hi'   :
-        parsed.intent === 'statement' ? 'i'    : 'you';
+        readResult.intent === 'question'  ? 'what' :
+        readResult.intent === 'greeting'  ? 'hi'   :
+        readResult.intent === 'statement' ? 'i'    : 'you';
       const intentEmb = sharedEmbeddings.getEmbedding(intentAnchor);
       const bg = this.clusters.basalGanglia;
       const intentCurrents = sharedEmbeddings.mapToCortex(intentEmb, bg.size, 0);
@@ -336,9 +355,8 @@ export class UnityBrain extends EventEmitter {
 
     // Self-reference injection into hippocampus — when the user is
     // asking ABOUT Unity, pull up her self-model via the memory
-    // attractor pathway. The existing corticohippocampal projection
-    // then feeds that signal back into cortex on subsequent ticks.
-    if ((parsed.addressesUser || parsed.isSelfReference) && this.clusters.hippocampus) {
+    // attractor pathway.
+    if ((readResult.addressesUser || readResult.isSelfReference) && this.clusters.hippocampus) {
       const selfEmb = sharedEmbeddings.getSentenceEmbedding('i me my self unity');
       const hippo = this.clusters.hippocampus;
       const selfCurrents = sharedEmbeddings.mapToCortex(selfEmb, hippo.size, 0);
@@ -346,7 +364,7 @@ export class UnityBrain extends EventEmitter {
       hippo.injectCurrent(selfCurrents);
     }
 
-    return parsed;
+    return readResult;
   }
 
   /**
@@ -876,8 +894,11 @@ export class UnityBrain extends EventEmitter {
     const cortexOutput = this.clusters.cortex.getSemanticReadout(sharedEmbeddings);
     this.innerVoice.learn(text, cortexOutput, state.amygdala?.arousal ?? 0.5, state.amygdala?.valence ?? 0);
 
-    // Analyze input for response context (question detection, topic)
-    this.innerVoice.languageCortex.analyzeInput(text, this.innerVoice.dictionary);
+    // T14.12 (2026-04-14) — analyzeInput deleted alongside parseSentence
+    // and _updateSocialSchema. Input analysis now flows through
+    // cluster.readInput(text) which drives the visual→letter pathway and
+    // returns the cortex-derived intent/self-reference stub. The readInput
+    // call already happened via `injectParseTree` earlier in this flow.
 
     // ══════════════════════════════════════════════════════════════
     // 7. UNIFIED LANGUAGE — ALL brain equations produce speech
@@ -1166,17 +1187,13 @@ export class UnityBrain extends EventEmitter {
       if (vid) {
         this.visualCortex.init(vid);
         console.log('[Brain] Visual cortex connected to camera');
-        // T7.2 — wire describer output into the social schema's
-        // gender inference. Every fresh scene description flows into
-        // languageCortex.observeVisionDescription where closed-class
-        // gender tokens get promoted to schema.user.gender (but only
-        // when no explicit self-ID exists). This is the "use her
-        // vision to see if the user is male or female" requirement.
-        const lc = this.innerVoice?.languageCortex;
-        if (lc && typeof lc.observeVisionDescription === 'function') {
-          this.visualCortex.onDescribe((desc) => lc.observeVisionDescription(desc));
-          console.log('[Brain] Vision → social schema gender inference wired');
-        }
+        // T14.12 (2026-04-14) — `observeVisionDescription` deleted
+        // alongside `_socialSchema` and `_updateSocialSchema`. Gender
+        // inference from vision will be re-added in T14.17 as a
+        // cortex-resident readout from the self-model sub-region once
+        // curriculum shapes its basins. Until then, the describer
+        // output flows into the dictionary via the normal word-
+        // observation path during live chat.
       } else {
         console.warn('[Brain] No video element available for visual cortex');
       }

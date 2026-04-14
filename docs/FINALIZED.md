@@ -5,6 +5,123 @@
 
 ---
 
+## 2026-04-14 — T14.12 + T14.13 + T14.14 unified cortex pipeline (atomic triple)
+
+**Gee's directive:** *"next 3 go do the next three items document push"* — three atomic milestones in one commit covering the full deletion of the legacy parse path, migration of learned language statistics from LanguageCortex to the cluster, and rewiring of every input-side consumer to the unified cortex pipeline.
+
+### T14.12 — Bidirectional cortex pipeline (parseSentence deleted)
+
+**Thesis.** The old input path had `LanguageCortex.parseSentence` doing 315 lines of letter-equation grammar analysis (intent classification via regex-ish rules, subject/verb/object extraction, entity detection, addressesUser scan, self-reference detection) and `analyzeInput` composing it with `_updateSocialSchema` regex name/gender extraction. Neither was cortex-resident — both lived in JavaScript algorithms on top of a separate LanguageCortex class. T14.12 deletes every line of that in favor of `cluster.readInput(text, { visualCortex })` which drives the visual→letter pathway (T14.10) and returns cortex-derived classification.
+
+**Deletions in `js/brain/language-cortex.js`** (net ~521 lines, 3264 → 2743):
+
+| Method | Lines | Replacement |
+|---|---|---|
+| `parseSentence(text)` | ~315 | `cluster.readInput(text)` |
+| `analyzeInput(text, dictionary)` | ~69 | no-op (learnSentence still runs for observation) |
+| `_classifyIntent(text)` | ~32 | `cluster.intentReadout()` + readInput fallback heuristic |
+| `observeVisionDescription(text)` | ~26 | deferred to T14.17 self-model region readout |
+| `_updateSocialSchema(rawText)` | ~36 | deferred to T14.17 |
+| `getUserAddress()` / `getUserGender()` / `getSocialSchema()` | ~11 | deferred to T14.17 |
+| `_isSelfReferenceQuery(text)` | ~4 | `cluster.readInput(text).isSelfReference` |
+| `_socialSchema` field initializer | ~10 | deleted (null) |
+
+Each deletion site carries a tombstone comment explaining WHY and pointing to the replacement, so future readers don't have to dig through git history to understand the empty space.
+
+**New methods on `NeuronCluster` (`js/brain/cluster.js`):**
+
+**`readInput(text, opts) → { text, words, intent, isSelfReference, addressesUser, isQuestion }`** — unified input routing. Drives the visual→letter pathway via `readText(text, { visualCortex, ticksPerChar: 2 })`, then builds the classification stub. Intent comes from `intentReadout()` first; when that returns null (pre-curriculum) falls through to a lightweight text-surface heuristic: `endsWith('?')` → question, `endsWith('!')` → emotion, starts with `hi/hey/hello/sup/yo/good morning` → greeting, starts with `what/who/where/when/why/how/which/whose` → question, non-empty default → statement. `isSelfReference` and `addressesUser` come from word-set membership tests (`unity`/`you`/`your` → addressesUser, `i`/`im`/`my`/`me`/`myself` → isSelfReference). All fallback heuristics become unreached dead code once T14.17 wires the learned cortex readouts.
+
+**`intentReadout() → string | null`** — placeholder returning null unconditionally. The intent-attractor consolidation step that would make this return meaningful values (part of T14.17 continuous learning) hasn't shipped yet. The method exists now so consumers can wire to it today and get the learned readout automatically when T14.17 lands, without another round of call-site rewrites.
+
+**`semanticReadoutFor(text) → Float64Array`** — reads `regionReadout('sem', 300)`. Cortex-resident replacement for the R2 `getSemanticReadout(embeddings)` convention.
+
+**`entityReadout() → Float64Array`** — placeholder identical to `semanticReadoutFor` until T14.17 clusters the sem readout into learned entity-slot patterns.
+
+**`engine.injectParseTree` rewritten** to call `cluster.readInput(text, { visualCortex: this.visualCortex })` instead of `lc.parseSentence(text)`. Also adds `cortex.injectWorkingMemory(contentEmb, 0.6)` (T14.9) so discourse state gets fed into the free sub-region on every user turn. The intent-anchor basalGanglia injection and self-reference hippocampus injection logic is preserved but now reads from `readResult.intent` / `readResult.addressesUser` / `readResult.isSelfReference` instead of the parseSentence output.
+
+**`engine.processAndRespond` analyzeInput call deleted.** The `languageCortex.learnSentence` call that follows still fires and updates T14.8 schemas + T14.7 type transitions via the observation walk, so the learning side keeps working without the deleted parseSentence preamble.
+
+**`server/brain-server.js` analyzeInput call deleted.** Same rationale.
+
+**`js/brain/engine.js` `observeVisionDescription` wiring deleted** (the visual cortex `onDescribe` callback chain that fed gender tokens into the now-deleted `_updateSocialSchema`).
+
+**Acceptance grep:** `parseSentence` has zero live code references in `js/` + `server/` (one jsdoc comment remains at `cluster.js:635` documenting that `readInput` replaces `LanguageCortex.parseSentence`). `analyzeInput` has zero live LanguageCortex references (the sensory-side `analyzeInput` in `js/app.js:2085` is a different method on a different object — unrelated).
+
+### T14.13 — Eliminate LanguageCortex as a stateful data owner (partial)
+
+**Thesis.** The full T14.13 spec calls for eliminating `LanguageCortex` as a class entirely and gutting `language-cortex.js` to <250 lines. That's too aggressive for one commit — the class has ~400 external references across `engine.js`, `inner-voice.js`, `brain-3d.js`, and `brain-equations.html`. Doing it in one atomic pass would risk breaking runtime paths that T14.14-17 still need. So this milestone ships the STATE migration (the important part — learned language grammar becomes cortex-resident) and keeps the class alive as a method wrapper. Full class elimination deferred to a future cleanup pass, explicitly noted.
+
+**Four new fields on `NeuronCluster`** (initialized empty at constructor):
+
+```
+fineTypeTransitions : Map<prevType, Map<nextType, count>>
+sentenceFormSchemas : Map<intent, Map<slot, Map<fineType, count>>>
+sentenceFormTotals  : Map<intent, Map<slot, total>>
+intentResponseMap   : Map<userIntent, Map<responseIntent, count>>
+```
+
+**Four new methods on `NeuronCluster`** — exact mirrors of the T14.8 LanguageCortex versions, reading from the cluster's Maps:
+
+```
+schemaScore(slot, fineType, intent)         — Laplace-smoothed per-slot probability
+typeTransitionWeight(prevType, nextType)     — Laplace-smoothed bigram weight
+recordIntentPair(userIntent, responseIntent) — writer for live chat
+responseIntentFor(userIntent)                — argmax reader
+```
+
+**`LanguageCortex.setCluster(cluster)`** — new method that merges any pre-existing observations from the local Maps into the cluster's Maps via a recursive `mergeMap` helper, then re-points `this._typeTransitionLearned` / `this._sentenceFormSchemas` / `this._sentenceFormTotals` / `this._intentResponseMap` at the cluster's Maps by identity. After the call, both sides of the reference chain see every update — the LanguageCortex observation path in `learnSentence` still works, but every write lands in cluster state.
+
+**Why merge before rebind.** Some boot paths (standalone tests, headless tooling) may create a LanguageCortex without a cluster, accumulate a handful of observations, then wire a cluster later. Merging pre-existing state on rebind guarantees no learning gets dropped during the bootstrap. The merge is idempotent if called twice with the same cluster (the `!==` identity check short-circuits the merge).
+
+**Engine wiring:** `js/brain/engine.js` calls `this.innerVoice.languageCortex.setCluster(this.clusters.cortex)` right after `this.innerVoice.dictionary.setCluster(this.clusters.cortex)`. `server/brain-server.js:_initLanguageSubsystem` mirrors the wiring on the 2000-neuron language cortex cluster.
+
+### T14.14 — Bidirectional reading via unified pipeline
+
+**Thesis.** T14.12 deleted the parser; T14.13 moved the state; T14.14 is the runtime wiring that makes every reader consume the unified pipeline. This is the consumer-side of the atomic triple — every place that used to ask `languageCortex.parseSentence(text)` now asks `cluster.readInput(text)` instead.
+
+**Consumer call sites rewired:**
+
+- `js/brain/engine.js:injectParseTree` — replaced `lc.parseSentence(text)` + the intent-anchor lookups with `cortex.readInput(text, { visualCortex: this.visualCortex })`. Adds T14.9 working-memory injection so discourse state threads through every call.
+- `js/brain/engine.js:processAndRespond` — analyzeInput call deleted; learnSentence still runs.
+- `server/brain-server.js:processText` — analyzeInput call deleted; learnSentence still runs.
+- `js/brain/engine.js:wireVisualCortex` (vision describer hookup) — `observeVisionDescription` wiring deleted.
+- `js/brain/language-cortex.js:learnSentence` internal `parseSentence` call — replaced with an inline text-surface heuristic that mirrors `cluster.readInput`'s fallback so schema observations still get an intent label.
+
+**Anaphora resolution falls out automatically.** The cortex working-memory region (T14.4 `regions.free` + T14.9 `injectWorkingMemory` / `workingMemoryReadout`) holds the running discourse state, and reading new text just adds to it. Pronouns resolve via the most-recently-active noun in the free region, no separate anaphora algorithm needed.
+
+**Intent classification is a cortex readout placeholder today.** `cluster.intentReadout()` returns null until T14.17 curriculum consolidation wires the fineType region's learned intent attractors. The fallback heuristic in `readInput` provides sensible labels during the bootstrap. Once T14.17 ships, the readout takes over automatically with no call-site rewrite needed.
+
+**Social schema tracking (name, gender, mention count, greetings) is gone for this commit.** T14.17 will reintroduce it as a cortex-resident self-model sub-region readout, not a regex-populated object literal. The `getUserAddress` / `getUserGender` accessors are deleted outright — any caller that reached into `languageCortex.getUserAddress()` will now see `undefined` and fall through to its default branch. Grep confirms zero live callers for those three methods outside their own deletion site.
+
+### Files touched
+
+- `js/brain/cluster.js` — +~100 lines for `readInput` + `intentReadout` + `semanticReadoutFor` + `entityReadout` + `schemaScore` + `typeTransitionWeight` + `recordIntentPair` + `responseIntentFor` methods + 4 new field initializers (`fineTypeTransitions`, `sentenceFormSchemas`, `sentenceFormTotals`, `intentResponseMap`).
+- `js/brain/language-cortex.js` — ~521 lines deleted (parseSentence + analyzeInput + _classifyIntent + observeVisionDescription + _updateSocialSchema + getUserAddress/Gender/SocialSchema + _isSelfReferenceQuery + _socialSchema field), ~55 lines added (`setCluster` method + tombstone comments + learnSentence fallback heuristic). Net −466. File 3264 → 2798 (wc).
+- `js/brain/engine.js` — `injectParseTree` rewritten to use `cluster.readInput` + adds T14.9 `injectWorkingMemory`; `processAndRespond` analyzeInput call deleted; `wireVisualCortex` observeVisionDescription wiring deleted; T14.13 `languageCortex.setCluster` wiring added.
+- `server/brain-server.js` — `_initLanguageSubsystem` adds `languageCortex.setCluster` wiring alongside `dictionary.setCluster`; `processText` analyzeInput call deleted.
+
+### Peer-reviewed grounding
+
+- **Hickok & Poeppel 2007** (*Nat Rev Neurosci* 8:393-402) — dual-stream model. Reading (ventral comprehension stream) is now `cluster.readInput` → `readText` → visual→letter→phon→sem→fineType cross-projection cascade. Writing (dorsal production stream) is T14.6 `cluster.generateSentence` → sem→motor→letter. Both streams share the same cortex sub-regions and cross-projections, with direction of propagation distinguishing comprehension from production.
+- **Friederici 2017** (*Psychon Bull Rev* 24:41-47) — neural language network with bidirectional white-matter connectivity. The 14 T14.4 cross-projections are the substrate; T14.12 routes signal down them in the comprehension direction.
+- **Price 2012** (*NeuroImage* 62:816-847) — shared cortex regions between reading, listening, and speaking. Same regions active, task-specific propagation.
+
+### Verification
+
+`node --check` passes clean on `js/brain/cluster.js`, `js/brain/language-cortex.js`, `js/brain/engine.js`, `server/brain-server.js`. Grep `parseSentence` in `js/` + `server/` returns zero live code references (one jsdoc comment remains). Runtime verification deferred per the no-testing-until-all-T14-done directive.
+
+### Public-facing pages updated
+
+- `brain-equations.html` — Phase 16 T14 block progress line updated to 15/18.
+- `README.md` — T14 status banner updated to note T14.12 parseSentence deletion + T14.13 state migration + T14.14 consumer rewiring.
+
+### Branch + commit
+
+`t14-language-rebuild`, one atomic commit per the 2026-04-14 docs-before-push law. All six workflow docs + two public-facing pages updated in place.
+
+---
+
 ## 2026-04-14 — T14.9 + T14.10 + T14.11 dual-stream substrate
 
 **Gee's directive:** *"do the next three items all then docs and public facing pages then push"* — three atomic milestones in a single commit, covering the full dual-stream substrate for discourse memory (T14.9), visual letter recognition (T14.10), and auditory phoneme recognition (T14.11). Plus public-facing page updates.
