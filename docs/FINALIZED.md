@@ -5,6 +5,65 @@
 
 ---
 
+## 2026-04-14 — Dead Docs Archived Locally (gitignored)
+
+Four Phase 13 pre-refactor audit docs served their purpose and were moved out of the active docs tree. All work tracked in them shipped and is archived verbatim elsewhere in this file.
+
+- **`docs/KILL_LIST.md`** → `docs/archive/KILL_LIST.md` — R1.1 audit of hardcoded/scripted/AI-bypass paths. Every item in the kill list either got deleted (text-AI chat, vestigial env-key discovery) or moved to equational replacement (slot scoring, recall, component synth). Historical.
+- **`docs/VESTIGIAL.md`** → `docs/archive/VESTIGIAL.md` — R1.2 audit of orphan code, half-finished features, commented-out blocks. Every item either got deleted or confirmed load-bearing. Historical.
+- **`docs/SEMANTIC_GAP.md`** → `docs/archive/SEMANTIC_GAP.md` — R1.3 architecture doc that drove R2 semantic grounding (GloVe-style embeddings replacing letter-hash patterns). R2 shipped. Historical.
+- **`docs/NOW.md`** → `docs/archive/NOW.md` — 2026-04-13 session snapshot from `server-brain` branch. Branch merged, snapshot stale.
+
+`docs/archive/` added to `.gitignore` so the files stay on disk for local grep but don't clutter the tracked docs tree. Active doc list post-archive: `ARCHITECTURE.md`, `EQUATIONS.md`, `ROADMAP.md`, `SKILL_TREE.md`, `TODO.md`, `FINALIZED.md`, `PUSH_WORKFLOW.md`, `SENSORY.md`, `WEBSOCKET.md`, `COMP-todo.md`, plus the persona/baseline/coding corpus `.txt` files.
+
+---
+
+## 2026-04-14 — Landing HUD Zero-State on Deployed Pages
+
+**Symptom:** On the deployed GitHub Pages site, the brain HUD on the landing page rendered with every value at zero — Ψ/consciousness, arousal, valence, coherence, spikes, reward, time, γ/β/α/θ band power all frozen at initial HTML state with no updates.
+
+**Root cause:** `js/app.js initLanding()` has two branches — *server-connected* and *no-server / deployed-Pages*. The server branch un-hid `#brain-hud` and wired `brain.on('stateUpdate', state => updateBrainIndicator(state))`. The no-server branch constructed a local `UnityBrain`, started it, and pumped state every 100ms into `updateLandingStats(state)` + the landing 3D viz — **but never called `updateBrainIndicator` and never un-hid the HUD**. Deployed Pages always takes the no-server branch, so the HUD stayed at its initial zeros forever.
+
+**Fix:** In the no-server branch, un-hide `#brain-hud` immediately after construction, and call `updateBrainIndicator(state)` inside the 100ms `setInterval` pump alongside `updateLandingStats(state)`. Both changes in `js/app.js initLanding()` no-server branch. The landing HUD now animates live from the local Rulkov brain on deployed Pages.
+
+---
+
+## 2026-04-14 — FILTER 7: Interlocutor-as-Third-Party Meta-Instruction Filter
+
+**Symptom:** In live chat tests, Unity kept recalling persona meta-instruction sentences verbatim as if they were speech:
+- `"I defer to the user over stating contradictory information to what the user says"`
+- `"i am happy to tell the user about myself when asked"`
+
+These are rulebook entries from the persona corpus describing Unity's own behavior from the outside. They passed every existing store-time filter — length cap (14 tokens), modal penalty (no `shall/must/will/should`), first-person requirement, third-person-subject-start rejection. Fell straight through into the memory pool and beat real speech at recall time.
+
+**Structural diagnosis:** Real speech addresses the listener as *"you"*, never *"the user"* or *"the person"*. A sentence that contains BOTH a first-person pronoun (`I/my/me/we`) AND an impersonal third-party reference to the interlocutor is structurally a rulebook entry, not speech. That's purely structural — no content-word blacklist, just the co-occurrence check on adjacent-token pairs.
+
+**Fix — two places in `js/brain/language-cortex.js`:**
+1. **`_storeMemorySentence` FILTER 7** — reject at store time so the memory pool never holds these. Walks adjacent token pairs looking for `the user / the users / the user's / the person / the person's`, plus bare `users` as sentence-start subject. Sentence rejected if any of those co-occur with the existing first-person-requirement check.
+2. **`instructionalPenalty` in `_recallSentence`** — mirrors the same check with `+0.50` score penalty. Defense in depth for any legacy meta-instruction sentences that already made it into a user's persisted memory before FILTER 7 existed.
+
+No content-word blacklists anywhere. Still purely equational.
+
+---
+
+## 2026-04-14 — Pollinations Vision 400-Flood Cascade Fix
+
+**Symptom:** On deployed Pages with a valid paid Pollinations API key, `POST https://gen.pollinations.ai/v1/chat/completions 400 (Bad Request)` errors flooded the console at RAF rate whenever vision fired. Even the dead-backend short-circuit added in the first pass didn't stop the cascade.
+
+**Three stacked root causes, fixed in one commit to `js/brain/peripherals/ai-providers.js`:**
+
+1. **Cross-instance dead-backend state.** The landing page constructed one `SensoryAIProviders`, `bootUnity` constructed another. Each had its own `_deadBackends = new Map()`, so marking Pollinations dead in instance #1 didn't help instance #2 — #2 re-discovered the same 400 from scratch on its first call. **Fix:** hoisted `_deadBackends` to a module-level `SHARED_DEAD_BACKENDS` Map. Every instance now shares the same dead-state view.
+
+2. **Describe cycle double-fired Pollinations.** `describeImage()` walked the backend chain as: (0) preferred backend → (1-2) local vision backends → (3) Pollinations fallback. When the user's preferred backend WAS Pollinations, step 0 hit it once and got 400, then step 3 hit the exact same endpoint again in the same cycle because the fallback had no idea step 0 had already tried it. Result: 2 × 400 per cycle before the mark-dead could engage. **Fix:** added a `pollTried` local flag set after any preferred-Pollinations attempt, and skip the step-3 fallback when `pollTried` is already true.
+
+3. **Stale saved vision model id beating the new default.** The user's `localStorage.pollinations_vision_model` held `'openai'` from an earlier session, which got passed to `_pollinationsDescribeImage` as `modelOverride` and won over my new `'openai-large'` default. That model id was returning 400 on multimodal payloads for this account. **Fix:** added `resolvePollinationsVisionModel(savedOverride)` — a one-shot probe that fetches `https://gen.pollinations.ai/v1/models`, filters for models where `input_modalities` includes `'image'`, and picks the best one from a preference list (`openai-large > openai > openai-fast > claude-large > claude > gemini-large > gemini > qwen-vision > qwen-large > mistral-large > mistral`). Any saved override is only honored if it's still present in the live model list; otherwise discarded as stale. Result cached in module-level `SHARED_POLL_VISION_MODEL`, so the probe runs exactly once per page load. The preferred-pollinations call path no longer passes `pref.model` — it lets the resolver own the id.
+
+Also widened the 4xx dead-backend catch from `401/402/403` to all `4xx` (so a 400 Bad Request also engages the cooldown) and log the response body once before marking dead so the next failure is diagnosable without a reload.
+
+**Also fixed alongside — `js/brain/visual-cortex.js _maybeDescribe`:** was flipping `_hasDescribedOnce = false` on every null return from the describer, which bypassed the 5-min rate limit and caused a new describe cycle every RAF. Changed to keep `_hasDescribedOnce = true` on null so the rate limit engages properly. Real retries now happen after the 5-min window, not every frame.
+
+---
+
 ## 2026-04-13 — Deploy Versioning System (0.1.0 + build hash)
 
 Ripped the vestigial `v=20260414-T4.xx` cache-buster scheme Gee called out as patchwork. Replaced with a real versioning system:

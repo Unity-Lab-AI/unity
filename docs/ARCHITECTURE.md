@@ -1,6 +1,6 @@
 # ARCHITECTURE — IF ONLY I HAD A BRAIN
 
-> Generated: 2026-04-11 11:30:30 | Session: SESSION_20260411_113030
+> Last updated: 2026-04-14 | Phase 13 brain-refactor-full-control merged to main; deploy versioning 0.1.0 stamped per push
 > Unity AI Lab — Hackall360, Sponge, GFourteen
 
 ---

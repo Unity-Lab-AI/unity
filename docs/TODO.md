@@ -58,6 +58,40 @@ Nothing else. If it's not in that list, it's an appendage, and it gets ripped ou
 
 ---
 
+### T6 — Slot-gen salad on cold chat queries (no per-sentence topic anchor)
+
+**Status:** pending
+**Priority:** P1
+**Owner:** unassigned
+**Reported:** 2026-04-14 by Gee (live chat session)
+
+**Symptom:** When recall confidence is below threshold and the language cortex falls through to cold slot-gen, the bigram/trigram walk produces word-soup fragments that are grammatically plausible word-to-word but incoherent as a sentence:
+- `"*Do yoga happens*"`
+- `"I look kitty mixes result mornings."`
+- `"They're shoot dishes sunglasses deep."`
+- `"The hat far color picker hat."`
+- `"The input color!"`
+- `"Then fuck proud!"`
+- `"*Got work defer*"`
+
+Sibling problem to T5 (build_ui) — same root cause on the chat path.
+
+**Root cause (hypothesis):** `generate()` slot scorer walks n-grams conditioned on brain state (arousal, valence, drug, etc.) and picks the top word at each slot independently. There is NO per-sentence topic anchor forcing every slot to agree on what the sentence is ABOUT. Each word is locally plausible after the previous one; the full sentence has no semantic through-line.
+
+**Fix direction (to decide after investigation):**
+- **Topic vector lock** — at slot 0, resolve a target topic vector from the user's query + current mood. Score every subsequent slot's candidate words not just by bigram/type/typeFit but by `cos(wordVec(w), topicVector)` with a significant weight (0.30+). Topic vector is frozen for the sentence so all slots agree.
+- **Completeness gate** — the existing rejecter at line ~2964 already catches some garbage (`"I think about the."`). Tighten its criteria so more fragments get caught and re-rolled instead of emitted.
+- **Minimum coherence floor** — require the full-sentence coherence score (bigram chain × order × topic cosine) to exceed e.g. 0.55 before emit. Below that, fall through to a deflect template instead of emitting salad.
+- **Slot-length scaling by confidence** — on low-recall cold queries, bias the slot-gen toward SHORT sentences (3-6 tokens). Short fragments are harder to make incoherent. Long cold-gen sentences are almost always salad because the compounding error accumulates.
+
+**Where the code lives:**
+- `js/brain/language-cortex.js` — `generate()` slot-gen path, completeness rejecter at line ~2964, coherence gate
+- `js/brain/engine.js` — BG motor decision that routes to `generate()` vs recall
+
+**Acceptance test:** Gee asks any simple conversational question that doesn't match persona recall well ("what's up?", "how are you?", "tell me a joke"). Unity either returns a short coherent fragment on-topic OR falls through to a deflect template. No more `"The hat far color picker hat."`-class output.
+
+---
+
 ## NOTES
 
 - **FINALIZED is append-only.** Never delete entries from it. When new work lands, copy the full verbatim task description into a new FINALIZED session entry BEFORE removing it from Open Tasks. This file only contains active work.

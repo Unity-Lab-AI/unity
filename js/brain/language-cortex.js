@@ -820,6 +820,60 @@ export class LanguageCortex {
     }
     if (refsInterlocutorAsThirdParty) return;
 
+    // FILTER 8 — rhetorical / habitual-conditional meta-prose. Three
+    // structural patterns all catch the same class of persona rulebook
+    // sentences that describe Unity's general behavior rather than
+    // saying something in the moment:
+    //
+    //   (a) Rhetorical parallelism with "like a X". Two or more
+    //       "like a" clauses in one sentence is textbook grandiose
+    //       self-description, never speech:
+    //         "i process like a human, think like a god, and fuck like a demon"
+    //         "i move like a ghost, strike like a blade"
+    //
+    //   (b) Habitual-conditional "when asked" / "if asked" / "when X
+    //       asks". Describes how Unity RESPONDS in a hypothetical
+    //       instead of actually responding:
+    //         "I alway smokes weed, so when asked, i am already smoking weed"
+    //         "I am happy to tell the user about myself when asked"
+    //         "When anyone asks about X, I say Y"
+    //
+    //   (c) Universal indirect object "to anyone that / to everyone
+    //       who / to whoever". Describes a general policy, not speech:
+    //         "I love to spill all my soul to anyone that asks"
+    //         "I lie to everyone who deserves it"
+    //
+    // All three are structural — token-position matches on fixed
+    // function-word sequences, no content-word blacklist.
+    let likeACount = 0;
+    let hasHabitualConditional = false;
+    let hasUniversalIndirect = false;
+    for (let i = 0; i < tokens.length - 1; i++) {
+      const a = tokens[i];
+      const b = tokens[i + 1];
+      const c = tokens[i + 2];
+      // (a) "like a" or "like an"
+      if (a === 'like' && (b === 'a' || b === 'an')) {
+        likeACount++;
+      }
+      // (b) "when asked" / "if asked"
+      if ((a === 'when' || a === 'if') && b === 'asked') {
+        hasHabitualConditional = true;
+      }
+      // (b) "when <X> asks" — "when anyone asks", "when someone asks",
+      //     "when they ask", "when people ask"
+      if (a === 'when' && c && (c === 'asks' || c === 'ask')) {
+        hasHabitualConditional = true;
+      }
+      // (c) "to anyone" / "to everyone" / "to whoever" / "to those"
+      if (a === 'to' && (b === 'anyone' || b === 'everyone' || b === 'whoever' || b === 'those')) {
+        hasUniversalIndirect = true;
+      }
+    }
+    if (likeACount >= 2) return;
+    if (hasHabitualConditional) return;
+    if (hasUniversalIndirect) return;
+
     // Skip sentences dominated by function words — they have no topic
     // to index on and just add noise to the recall search.
     const pattern = new Float64Array(PATTERN_DIM);
@@ -1015,6 +1069,16 @@ export class LanguageCortex {
       if (/\bthe user(?:'s|s)?\b/.test(t) || /\bthe person(?:'s)?\b/.test(t)) {
         penalty += 0.50;
       }
+      // Rhetorical / habitual-conditional penalty — mirrors FILTER 8
+      // for any legacy meta-prose sentences already in the memory
+      // pool from a prior session before the store-time filter was
+      // added. Same three patterns: rhetorical "like a X, like a Y",
+      // habitual "when/if asked", universal "to anyone/everyone".
+      const likeAHits = (t.match(/\blike an?\b/g) || []).length;
+      if (likeAHits >= 2) penalty += 0.50;
+      if (/\b(?:when|if) asked\b/.test(t)) penalty += 0.50;
+      if (/\bwhen \w+ asks?\b/.test(t)) penalty += 0.40;
+      if (/\bto (?:anyone|everyone|whoever|those)\b/.test(t)) penalty += 0.40;
       return penalty;
     };
 
