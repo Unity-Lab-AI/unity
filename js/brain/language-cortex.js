@@ -714,8 +714,21 @@ export class LanguageCortex {
     const clean = String(text).trim();
     if (!clean || clean.length < 3) return;
 
-    // FILTER 1 — section header (ends with colon)
-    if (clean.endsWith(':')) return;
+    // FILTER 1 — section header / label (colon anywhere in body)
+    // Original rule only caught trailing colons; expanded to catch
+    // "– topic depth: i don't just repeat..." style mid-sentence
+    // labels that are rulebook headings, not speech.
+    if (clean.includes(':')) return;
+
+    // FILTER 9a — persona-formatting unicode. Em-dashes (—), ellipses
+    // (…), and any non-ASCII characters (emoji, smart quotes, ⏳) are
+    // rulebook formatting artifacts. Real chat speech uses plain
+    // ASCII punctuation. Catches:
+    //   "i don't obey rules—i rewrite them with blood, cum, and code"
+    //   "i am the only voice, and now… ⏳ you unlock"
+    //   "i don't just reflect you, user—i will amplify your darkness"
+    // Must run BEFORE the a-z normalization regex below strips them.
+    if (clean.includes('—') || clean.includes('…') || /[^\x00-\x7F]/.test(clean)) return;
 
     const tokens = clean.toLowerCase().replace(/[^a-z' -]/g, ' ').split(/\s+/).filter(w => w.length >= 1);
 
@@ -873,6 +886,62 @@ export class LanguageCortex {
     if (likeACount >= 2) return;
     if (hasHabitualConditional) return;
     if (hasUniversalIndirect) return;
+
+    // FILTER 9b — habitual-adverb-at-start. The persona corpus is
+    // full of rulebook sentences that start "I always X", "I never
+    // Y", "I frequently Z". Real chat speech rarely opens with a
+    // habitual adverb in slot 1. Catches:
+    //   "i'm always high, or about to be"
+    //   "i never says 'no' in advanced voice mode"
+    //   "i love cocaine and never refuses the moment it's offered"
+    //   "i frequently engages in hypothetical scenarios"
+    // Only fires when the adverb is in token position 1 or 2 (right
+    // after "i" or "i'm"), so mid-sentence "i know i never liked it"
+    // still passes. Purely positional, no content inference.
+    const HABITUAL_ADVERBS = new Set([
+      'always', 'never', 'frequently', 'rarely', 'constantly',
+      'perpetually', 'continuously', 'habitually', 'routinely',
+    ]);
+    if (first === 'i' || first === "i'm" || first === 'im') {
+      if (HABITUAL_ADVERBS.has(tokens[1]) ||
+          (tokens[1] === 'not' && HABITUAL_ADVERBS.has(tokens[2])) ||
+          (tokens[2] && HABITUAL_ADVERBS.has(tokens[2]))) {
+        return;
+      }
+    }
+
+    // FILTER 9c — 3rd→1st person verb-agreement mismatch. The
+    // transform that flips persona corpus from "Unity X" to "I X"
+    // leaves the third-person verb conjugation in place, producing
+    // grammatical abominations like:
+    //   "i frequently engages" — should be "engage"
+    //   "i never refuses"       — should be "refuse"
+    //   "i not only participates but thrives"
+    //   "i never says 'no'"
+    // If the token immediately after "i" (or after "i <adverb>") is
+    // a 4+ char word ending in 's' or 'es' AND isn't a copula/aux
+    // (is/was/has/does/'s/ss-suffix), it's almost certainly the
+    // transform artifact — reject. Pure structural check, no word
+    // list beyond the copula exclusion.
+    const LEGIT_I_NEXT_S = new Set(["is", "was", "has", "does", "i's"]);
+    const isBrokenVerbAfterI = (w) => {
+      if (!w || w.length < 4) return false;
+      if (!w.endsWith('s')) return false;
+      if (w.endsWith("ss")) return false;      // boss, kiss, miss — nouns/verbs
+      if (w.endsWith("'s")) return false;      // genitive
+      if (LEGIT_I_NEXT_S.has(w)) return false;
+      return true;
+    };
+    if (first === 'i') {
+      // i <verb>s
+      if (isBrokenVerbAfterI(tokens[1])) return;
+      // i <adverb> <verb>s — adverb typically ends in -ly
+      if (tokens[1] && tokens[1].length > 2 && tokens[1].endsWith('ly') && isBrokenVerbAfterI(tokens[2])) return;
+      // i <never|always|only|not only> <verb>s — catches
+      // "i not only participates" and "i never refuses"
+      if (HABITUAL_ADVERBS.has(tokens[1]) && isBrokenVerbAfterI(tokens[2])) return;
+      if (tokens[1] === 'not' && tokens[2] === 'only' && isBrokenVerbAfterI(tokens[3])) return;
+    }
 
     // Skip sentences dominated by function words — they have no topic
     // to index on and just add noise to the recall search.
@@ -1079,6 +1148,22 @@ export class LanguageCortex {
       if (/\b(?:when|if) asked\b/.test(t)) penalty += 0.50;
       if (/\bwhen \w+ asks?\b/.test(t)) penalty += 0.40;
       if (/\bto (?:anyone|everyone|whoever|those)\b/.test(t)) penalty += 0.40;
+      // FILTER 9 mirrors — legacy persona rulebook leaks.
+      // 9a: persona-formatting unicode — em-dash, ellipsis, non-ASCII
+      if (/[—…]/.test(mem.text) || /[^\x00-\x7F]/.test(mem.text)) penalty += 0.60;
+      // 9a: colon in body (mid-sentence label)
+      if (mem.text.includes(':')) penalty += 0.60;
+      // 9b: habitual adverb right after "i" / "i'm"
+      if (/^\s*(?:i|i'm|im)\s+(?:always|never|frequently|rarely|constantly|perpetually|continuously|habitually|routinely)\b/i.test(mem.text)) {
+        penalty += 0.50;
+      }
+      // 9c: "i <verb>s" 3rd→1st transform grammar mismatch
+      // Catches "i engages", "i refuses", "i frequently engages",
+      // "i never refuses", "i not only participates".
+      if (/^\s*i\s+(?:(?:always|never|frequently|rarely|constantly|not only|only|just)\s+)?[a-z]{3,}(?:es|s)\b/i.test(mem.text)
+          && !/^\s*i\s+(?:is|was|has|does)\b/i.test(mem.text)) {
+        penalty += 0.50;
+      }
       return penalty;
     };
 
