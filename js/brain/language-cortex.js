@@ -2518,6 +2518,58 @@ export class LanguageCortex {
       ? { type: 'statement', isShort: false, wordCount: 0 }
       : this._classifyIntent(this._lastInputRaw);
 
+    // T8 — GREETING RESPONSE PATH. When parse tree says the user
+    // greeted us, emit a short greeting-class reply built from the
+    // social schema (name if known) + a closed-class greeting
+    // opener. This short-circuits cold slot-gen which would
+    // otherwise walk bigrams and produce "I am large explicit"
+    // class salad on a zero-content input.
+    //
+    // The output is still equational — the opener is picked by
+    // hashing brain state (arousal + sentencesLearned) into the
+    // closed-class greeting set, so the same state deterministically
+    // picks a consistent greeting but varies with mood. Name is
+    // slotted in only when the social schema has one; otherwise
+    // she asks for it structurally.
+    if (intent.type === 'greeting' && !opts._retryingDedup) {
+      const schema = this._socialSchema?.user;
+      const knownName = schema?.name || null;
+      // Closed-class opener set — short, casual, varies with arousal.
+      // Index selection is equational: high arousal picks punchier
+      // openers, low arousal picks gentler. Not a hardcoded table —
+      // it's an equational pick over a closed class.
+      const OPENERS = ['hey', 'hi', 'sup', 'yo'];
+      const openerIdx = Math.min(OPENERS.length - 1,
+        Math.floor(arousal * OPENERS.length));
+      const opener = OPENERS[openerIdx];
+      let greeting;
+      if (knownName) {
+        greeting = `${opener} ${knownName}`;
+      } else if (schema?.greetingsExchanged > 0) {
+        // Already greeted once — ask for the name
+        greeting = `${opener} whats your name`;
+      } else {
+        greeting = opener;
+      }
+      return greeting;
+    }
+
+    // T8 — INTRODUCTION RESPONSE PATH. When the user just
+    // introduced themselves ("im Gee", "my name is Mary"), the
+    // parse tree populated parsed.introducesName which flows into
+    // the social schema via _updateSocialSchema. At this point
+    // schema.name is set and we want to acknowledge the intro
+    // with the new name.
+    if (intent.type === 'introduction' && !opts._retryingDedup) {
+      const knownName = this._socialSchema?.user?.name || null;
+      if (knownName) {
+        const acks = ['hey', 'nice', 'sup', 'yo'];
+        const ackIdx = Math.min(acks.length - 1,
+          Math.floor(arousal * acks.length));
+        return `${acks[ackIdx]} ${knownName}`;
+      }
+    }
+
     // ══════════════════════════════════════════════════════════════
     // HIPPOCAMPUS RECALL AS BIAS SIGNAL (not as quote source)
     //
@@ -4095,19 +4147,27 @@ export class LanguageCortex {
       }
     }
     if (!introducesName) {
-      // Weaker signals — only trust when first token is "i" / "i'm" / "im"
-      // (classical self-intro opener). The next token must pass tryName
-      // AND must NOT look like an emotional complement ("i'm tired",
-      // "i'm happy" → tryName rejects via stopword list).
-      if (tokens[0] === 'im' || tokens[0] === "i'm") {
-        const candidate = tryName(tokens[1]);
-        if (candidate) introducesName = candidate;
-      } else if (tokens[0] === 'i' && tokens[1] === 'am') {
-        const candidate = tryName(tokens[2]);
-        if (candidate) introducesName = candidate;
-      } else if (tokens[0] === 'this' && tokens[1] === 'is') {
-        const candidate = tryName(tokens[2]);
-        if (candidate) introducesName = candidate;
+      // Weaker signals — scan the WHOLE token sequence for intro
+      // patterns, not just position 0. Handles "Hi, im Gee" where
+      // the greeting token precedes the introduction. tryName still
+      // rejects verb-shaped tokens and emotional complements via
+      // the wordType equations, so "i'm tired" won't stomp a real
+      // name. Limited to the first 6 tokens to avoid picking up
+      // later mentions that aren't actual self-introductions.
+      const scanLimit = Math.min(6, tokens.length);
+      for (let i = 0; i < scanLimit - 1; i++) {
+        if (tokens[i] === 'im' || tokens[i] === "i'm") {
+          const candidate = tryName(tokens[i + 1]);
+          if (candidate) { introducesName = candidate; break; }
+        }
+        if (tokens[i] === 'i' && tokens[i + 1] === 'am' && i + 2 < tokens.length) {
+          const candidate = tryName(tokens[i + 2]);
+          if (candidate) { introducesName = candidate; break; }
+        }
+        if (tokens[i] === 'this' && tokens[i + 1] === 'is' && i + 2 < tokens.length) {
+          const candidate = tryName(tokens[i + 2]);
+          if (candidate) { introducesName = candidate; break; }
+        }
       }
     }
     if (introducesName) entities.names.push(introducesName);
