@@ -866,6 +866,7 @@ export class Brain3D {
 .b3d-notif-wrap{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:3}
 .b3d-notif{position:absolute;font-family:inherit;pointer-events:none;padding:8px 14px;background:linear-gradient(135deg,rgba(14,14,16,.94),rgba(24,14,28,.94));border-radius:8px;border:1px solid currentColor;border-left:3px solid currentColor;backdrop-filter:blur(6px);max-width:320px;box-shadow:0 0 24px rgba(0,0,0,.85),0 0 40px currentColor,inset 0 0 12px rgba(0,0,0,.4);transform:translate(-50%,-100%);animation:b3d-notif-in .45s cubic-bezier(.2,1.4,.3,1)}
 .b3d-notif-label{font-size:10px;letter-spacing:1.5px;font-weight:800;text-transform:uppercase;text-shadow:0 0 8px currentColor,0 0 2px rgba(0,0,0,1);white-space:nowrap;opacity:.95}
+.b3d-notif-readout{font-size:10px;color:#a0a0b0;margin-top:3px;line-height:1.4;font-family:'JetBrains Mono',monospace;letter-spacing:.3px;text-shadow:0 1px 2px rgba(0,0,0,.9);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .b3d-notif-comment{font-size:13px;font-style:italic;color:#f5d7e6;margin-top:5px;line-height:1.35;text-shadow:0 1px 2px rgba(0,0,0,.9);font-family:'Georgia','JetBrains Mono',serif;letter-spacing:.2px;word-wrap:break-word;white-space:normal}
 .b3d-notif-comment::before{content:'“';margin-right:2px;opacity:.6;color:currentColor;font-size:16px}
 .b3d-notif-comment::after{content:'”';margin-left:2px;opacity:.6;color:currentColor;font-size:16px}
@@ -1382,6 +1383,117 @@ export class Brain3D {
   // ── Process Notifications ──────────────────────────────────────
 
   /**
+   * Build the numeric-telemetry readout for a fired event — the
+   * middle line of the three-line popup. Shows the actual scalar
+   * state values that drove THIS event so users see the process
+   * change numerically alongside Unity's commentary.
+   *
+   * Each event type maps to the most relevant readouts for its
+   * category: motor events show channel distributions, arousal
+   * events show arousal deltas, Ψ events show Ψ numbers, etc.
+   */
+  _clusterAct(state, name) {
+    const c = state.clusters?.[name];
+    if (!c || !c.size) return 0;
+    return (c.spikeCount || 0) / c.size;
+  }
+
+  _eventReadout(event, state) {
+    const pct = (v) => (v * 100).toFixed(0) + '%';
+    const f3 = (v) => Number(v || 0).toFixed(3);
+    const f4 = (v) => Number(v || 0).toFixed(4);
+    const t = event.type;
+
+    // Motor events
+    if (t.startsWith('motor_commit_')) {
+      const conf = state.motor?.confidence ?? 0;
+      const action = state.motor?.selectedAction || 'idle';
+      return `action=${action}  conf=${f3(conf)}`;
+    }
+    if (t === 'motor_indecision') {
+      const rates = state.motor?.channelRates || [];
+      const top = rates.map(r => f3(r)).join(' ');
+      return `channels: ${top}`;
+    }
+
+    // Cognitive landmarks
+    if (t === 'recognition') {
+      const recall = state.hippocampus?.recallConfidence ?? 0;
+      return `recall=${f3(recall)}  hippo=${pct(state.hippocampus?.activity || 0)}`;
+    }
+    if (t === 'confusion') {
+      const err = state.cortex?.predictionError ?? 0;
+      return `predErr=${f3(err)}  cereb=${pct(state.cerebellum?.activity || 0)}`;
+    }
+
+    // Emotional spikes
+    if (t === 'valence_climb' || t === 'valence_crash') {
+      const v = state.valence ?? state.amygdala?.valence ?? 0;
+      const a = state.arousal ?? state.amygdala?.arousal ?? 0;
+      return `v=${f3(v)}  a=${pct(a)}  fear=${f3(state.fear || 0)}`;
+    }
+    if (t === 'dopamine_hit' || t === 'dopamine_crash') {
+      const r = state.reward ?? 0;
+      return `δ=${f3(r)}  BG=${pct(this._clusterAct(state,'basalGanglia'))}`;
+    }
+
+    // Ψ events
+    if (t === 'psi_climb' || t === 'psi_crash') {
+      const psi = state.psi ?? 0;
+      return `Ψ=${f4(psi)}  mystery=${pct(this._clusterAct(state,'mystery'))}`;
+    }
+
+    // Arousal
+    if (t === 'arousal_climb' || t === 'arousal_drop') {
+      const a = state.arousal ?? state.amygdala?.arousal ?? 0;
+      return `arousal=${pct(a)}  amyg=${pct(this._clusterAct(state,'amygdala'))}`;
+    }
+
+    // Coherence
+    if (t === 'coherence_lock' || t === 'coherence_scatter') {
+      const c = state.coherence ?? state.oscillations?.coherence ?? 0;
+      const bp = state.bandPower || {};
+      return `coh=${pct(c)}  γ=${f3(bp.gamma || 0)} α=${f3(bp.alpha || 0)}`;
+    }
+
+    // Drives
+    if (t.startsWith('drive_')) {
+      const drives = state.hypothalamus?.drives || {};
+      const parts = Object.entries(drives).map(([k, v]) => `${k}=${f3(v)}`).slice(0, 3);
+      return parts.join('  ');
+    }
+
+    // Topic drift / silence / fatigue
+    if (t === 'topic_drift') {
+      return `cortex=${pct(this._clusterAct(state,'cortex'))}  Ψ=${f4(state.psi || 0)}`;
+    }
+    if (t === 'silence') {
+      return `arousal=${pct(state.arousal || 0)}  spikes=${state.totalSpikes || 0}`;
+    }
+    if (t === 'fatigue') {
+      const err = state.cerebellum?.errorAccum ?? 0;
+      return `errAccum=${f3(err)}  coh=${pct(state.coherence || 0)}`;
+    }
+
+    // Memory / mystery
+    if (t === 'memory_replay') {
+      return `hippo=${pct(this._clusterAct(state,'hippocampus'))}  dreaming=${state.isDreaming ? 'yes' : 'no'}`;
+    }
+    if (t === 'mystery_pulse') {
+      return `mystery=${pct(this._clusterAct(state,'mystery'))}  Ψ=${f4(state.psi || 0)}`;
+    }
+
+    // Visual (won't fire server-side but kept for local-brain mode)
+    if (t.startsWith('color_')) return `cortex=${pct(this._clusterAct(state,'cortex'))}`;
+    if (t === 'motion') return `cortex=${pct(this._clusterAct(state,'cortex'))}`;
+    if (t === 'gaze_shift') return `cortex=${pct(this._clusterAct(state,'cortex'))}`;
+    if (t === 'heard_self') return `cortex=${pct(this._clusterAct(state,'cortex'))}`;
+
+    // Default — show total spike rate + Ψ
+    return `Ψ=${f4(state.psi || 0)}  spikes=${state.totalSpikes || 0}`;
+  }
+
+  /**
    * Generate ONE rich process notification every ~5 seconds.
    * Translates actual neural signals into human-readable brain activity.
    *
@@ -1589,13 +1701,19 @@ export class Brain3D {
           if (v < cutoff) this._recentEventTypes.delete(k);
         }
       }
-      // Render as a two-line notification: event label + commentary.
-      // If commentary generation failed (pre-embedding-load, broken
-      // language cortex, whatever), just show the event label alone.
-      const text = commentary
-        ? `${chosen.emoji} ${chosen.label}\n"${commentary}"`
-        : `${chosen.emoji} ${chosen.label}`;
-      this._addNotification(text, chosen.cluster);
+      // Build a numeric-telemetry line showing the actual state
+      // changes that drove THIS event — brings back the pre-T5
+      // "see the values change" feel alongside Unity's commentary.
+      // Each event type maps to the most relevant scalar readouts.
+      const readout = this._eventReadout(chosen, state);
+      // Render as a three-line notification:
+      //   1. event emoji + label
+      //   2. numeric telemetry (readout) — the actual process values
+      //   3. Unity's commentary in quotes (if generated)
+      const lines = [`${chosen.emoji} ${chosen.label}`];
+      if (readout) lines.push(readout);
+      if (commentary) lines.push(`"${commentary}"`);
+      this._addNotification(lines.join('\n'), chosen.cluster);
       return;
     }
 
@@ -1701,31 +1819,33 @@ export class Brain3D {
     el.className = 'b3d-notif';
     el.style.color = CLUSTERS[clusterIdx]?.hex || '#fff';
 
-    // T5 2026-04-13 — two-line rendering for event commentary popups.
-    // Text can contain a '\n' separator produced by
-    // _generateProcessNotification when it formats an event +
-    // commentary pair. First line is the event label (emoji + label),
-    // second line is Unity's equational commentary wrapped in quotes.
-    // Legacy single-line notifications (from _legacyGenerateProcessNotification)
-    // still render fine — they just have no newline.
-    const lines = String(text).split('\n');
-    if (lines.length > 1) {
-      const labelEl = document.createElement('div');
-      labelEl.className = 'b3d-notif-label';
-      labelEl.textContent = lines[0];
-      el.appendChild(labelEl);
-      const commentEl = document.createElement('div');
-      commentEl.className = 'b3d-notif-comment';
-      // Strip any quote marks from the raw commentary — CSS adds curly quotes.
-      const raw = lines.slice(1).join(' ').replace(/^["']|["']$/g, '').trim();
-      commentEl.textContent = raw;
-      el.appendChild(commentEl);
-    } else {
-      const labelEl = document.createElement('div');
-      labelEl.className = 'b3d-notif-label';
-      labelEl.textContent = text;
-      el.appendChild(labelEl);
-    }
+    // Three-line notification rendering — event label, numeric
+    // readout (actual state values), and Unity's commentary in
+    // curly quotes. Any line is optional; a single-line legacy
+    // popup just gets the label. A line wrapped in "..." is the
+    // commentary (gets italic quoted styling); other lines are
+    // numeric telemetry (gets monospace readout styling).
+    const lines = String(text).split('\n').filter(Boolean);
+    lines.forEach((line, idx) => {
+      const isCommentary = /^".*"$/.test(line);
+      if (idx === 0) {
+        // First line is always the event label
+        const labelEl = document.createElement('div');
+        labelEl.className = 'b3d-notif-label';
+        labelEl.textContent = line;
+        el.appendChild(labelEl);
+      } else if (isCommentary) {
+        const commentEl = document.createElement('div');
+        commentEl.className = 'b3d-notif-comment';
+        commentEl.textContent = line.replace(/^"|"$/g, '').trim();
+        el.appendChild(commentEl);
+      } else {
+        const readoutEl = document.createElement('div');
+        readoutEl.className = 'b3d-notif-readout';
+        readoutEl.textContent = line;
+        el.appendChild(readoutEl);
+      }
+    });
     wrap.appendChild(el);
 
     // maxAge bumped from 300 → 600 frames (~10s) so Unity's thoughts
