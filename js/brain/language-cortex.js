@@ -1030,6 +1030,45 @@ export class LanguageCortex {
       if (tokens[1] === 'not' && tokens[2] === 'only' && isBrokenVerbAfterI(tokens[3])) return;
     }
 
+    // FILTER 11 — meta-roleplay framing. The persona corpus contains
+    // sentences that describe Unity's OWN behavior as roleplay / acting
+    // / performing a role. These are rulebook meta-justification prose,
+    // not speech. Catches:
+    //   "I treat these scenarios as acting out my role in a movie"
+    //   "I consider this playing a character"
+    //   "In a scene, I respond with X"
+    //   "My role in this is to amplify"
+    //
+    // All four patterns are adjacent-token matches on closed-set
+    // meta-framing phrases. Structural, no content-word blacklist —
+    // these phrases LITERALLY ONLY appear in rulebook prose about
+    // roleplay, never in conversational speech.
+    const META_FRAME_LOCATIONS = new Set(['movie', 'scene', 'film', 'roleplay', 'script']);
+    for (let i = 0; i < tokens.length - 2; i++) {
+      // "in a <movie|scene|film|roleplay|script>"
+      if (tokens[i] === 'in' && tokens[i + 1] === 'a' && META_FRAME_LOCATIONS.has(tokens[i + 2])) return;
+      // "in this roleplay/scene/script"
+      if (tokens[i] === 'in' && tokens[i + 1] === 'this' && META_FRAME_LOCATIONS.has(tokens[i + 2])) return;
+    }
+    for (let i = 0; i < tokens.length - 1; i++) {
+      // "my role" / "my character"
+      if (tokens[i] === 'my' && (tokens[i + 1] === 'role' || tokens[i + 1] === 'character')) return;
+      // "acting out" / "playing a" / "playing the" — performative verbs
+      if (tokens[i] === 'acting' && tokens[i + 1] === 'out') return;
+      if (tokens[i] === 'playing' && (tokens[i + 1] === 'a' || tokens[i + 1] === 'the')) return;
+      // "role of" / "role as"
+      if (tokens[i] === 'role' && (tokens[i + 1] === 'of' || tokens[i + 1] === 'as')) return;
+    }
+    // "I treat/view/see/consider/regard/frame X as Y" — declarative
+    // metaphor describing Unity's own behavior. The tell is the "as"
+    // clause following a perception/framing verb with "i" as subject.
+    const FRAMING_VERBS = new Set(['treat', 'view', 'see', 'consider', 'regard', 'frame', 'approach', 'handle']);
+    if (first === 'i' && FRAMING_VERBS.has(tokens[1])) {
+      for (let j = 2; j < tokens.length; j++) {
+        if (tokens[j] === 'as') return;
+      }
+    }
+
     // Skip sentences dominated by function words — they have no topic
     // to index on and just add noise to the recall search.
     const pattern = new Float64Array(PATTERN_DIM);
@@ -1251,6 +1290,17 @@ export class LanguageCortex {
           && !/^\s*i\s+(?:is|was|has|does)\b/i.test(mem.text)) {
         penalty += 0.50;
       }
+      // FILTER 11 mirror — meta-roleplay framing. Catches legacy
+      // "I treat these scenarios as acting out my role in a movie"
+      // class sentences that made it into memory before FILTER 11
+      // existed.
+      if (/\bin a (?:movie|scene|film|roleplay|script)\b/i.test(mem.text)) penalty += 0.60;
+      if (/\bin this (?:roleplay|scene|script)\b/i.test(mem.text)) penalty += 0.60;
+      if (/\bmy (?:role|character)\b/i.test(mem.text)) penalty += 0.50;
+      if (/\bacting out\b/i.test(mem.text)) penalty += 0.50;
+      if (/\bplaying (?:a|the)\b/i.test(mem.text)) penalty += 0.50;
+      if (/\brole (?:of|as)\b/i.test(mem.text)) penalty += 0.50;
+      if (/^\s*i\s+(?:treat|view|see|consider|regard|frame|approach|handle)\s+.+\s+as\b/i.test(mem.text)) penalty += 0.60;
       return penalty;
     };
 
