@@ -677,19 +677,36 @@ html, body {
   font-weight: 600;
   color: var(--pink);
 }
-.chat-header-btns { display: flex; gap: 6px; }
-.chat-close-btn {
-  background: none;
+.chat-header-btns { display: flex; gap: 6px; align-items: center; }
+.chat-close-btn,
+.chat-mute-btn,
+.chat-mic-btn {
+  background: rgba(20, 20, 22, 0.6);
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--text-dim);
   font-size: 14px;
   width: 30px; height: 30px;
+  padding: 0;
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
-  transition: all 0.2s;
+  transition: all 0.15s;
+  font-family: var(--font);
+  line-height: 1;
 }
-.chat-close-btn:hover { border-color: var(--pink); color: var(--text); }
+.chat-close-btn:hover { border-color: var(--pink); color: var(--text); background: rgba(255, 77, 154, 0.08); }
+.chat-mute-btn:hover,
+.chat-mic-btn:hover { border-color: var(--cyan); color: var(--text); background: rgba(0, 229, 255, 0.08); }
+/* Muted state — dimmed + red-border so the off state is visually
+   distinct from the on state without needing a toggled emoji swap
+   alone to carry the signal. */
+.chat-mute-btn[data-muted="true"],
+.chat-mic-btn[data-muted="true"] {
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.08);
+  opacity: 0.8;
+}
 
 .chat-messages {
   flex: 1;

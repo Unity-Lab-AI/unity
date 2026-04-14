@@ -663,12 +663,23 @@ export class SensoryAIProviders {
    * Defaults to `'openai'` (Pollinations' GPT-4o multimodal endpoint).
    */
   async _pollinationsDescribeImage(dataUrl, system, userPrompt, timeoutMs, modelOverride) {
+    // T4.13 — short-circuit if Pollinations vision endpoint has been
+    // marked dead (401 / auth failure). Previously each frame hit the
+    // endpoint, got 401, and logged a new error to the console — at
+    // 3-frame-per-second vision rate that's ~180 console errors per
+    // minute spamming the developer tools. Now a single 401 marks the
+    // endpoint dead for the cooldown period and subsequent calls
+    // return null silently until the cooldown expires OR the user
+    // pastes an API key.
+    const VISION_URL = 'https://gen.pollinations.ai/v1/chat/completions';
+    if (this._isBackendDead(VISION_URL)) return null;
+
     const headers = { 'Content-Type': 'application/json' };
     if (this._pollinations?._apiKey) {
       headers['Authorization'] = `Bearer ${this._pollinations._apiKey}`;
     }
     const model = modelOverride || this._pollinationsVisionModel || 'openai';
-    const res = await fetch('https://gen.pollinations.ai/v1/chat/completions', {
+    const res = await fetch(VISION_URL, {
       method: 'POST',
       headers,
       body: JSON.stringify({
@@ -684,7 +695,15 @@ export class SensoryAIProviders {
       }),
       signal: AbortSignal.timeout(timeoutMs),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      // 401/402/403 = auth/payment failure — mark dead immediately so
+      // we stop hammering and spamming the console. Other 4xx/5xx get
+      // a soft skip (retry on next frame).
+      if (res.status === 401 || res.status === 402 || res.status === 403) {
+        this._markBackendDead(VISION_URL);
+      }
+      return null;
+    }
     const data = await res.json().catch(() => null);
     return data?.choices?.[0]?.message?.content || null;
   }

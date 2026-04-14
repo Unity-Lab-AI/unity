@@ -50,12 +50,17 @@ export class ChatPanel {
     // write to) so the chat panel's mute button is a live mirror of the
     // persistent toggle, not a separate ephemeral state. Flipping the
     // chat mute immediately calls voice.stopSpeaking if she's talking.
+    // T4.13 — rely on CSS .chat-mute-btn / .chat-mic-btn rules to
+    // carry the off-state styling (red tint + dim) via data-muted
+    // attribute. Removed the inline .style.opacity override that was
+    // competing with the CSS theme and producing the white default-
+    // browser button background Gee called out.
     const syncButtons = () => {
       const ch = window.unityChannels || { userMic: true, unitySpeech: true };
       muteBtn.textContent = ch.unitySpeech ? '🔊' : '🔇';
-      muteBtn.style.opacity = ch.unitySpeech ? '1' : '0.5';
+      muteBtn.dataset.muted = ch.unitySpeech ? 'false' : 'true';
       micBtn.textContent = ch.userMic ? '🎤' : '🚫';
-      micBtn.style.opacity = ch.userMic ? '1' : '0.5';
+      micBtn.dataset.muted = ch.userMic ? 'false' : 'true';
     };
     muteBtn.addEventListener('click', () => {
       const ch = window.unityChannels = window.unityChannels || { userMic: true, unityVision: true, unitySpeech: true };
