@@ -1007,65 +1007,52 @@ Spike in neuron A (cortex)
     </div>
 
     <div class="eq-box" style="margin-top:12px;">
-      <div class="eq-title"><span class="eq-tip" data-tip="T11 pipeline: parseSentence reads input via wordType letter equations. learnSentence feeds observations into three running-mean priors. generate builds a target vector from normalized priors + brain cortex state, argmax-samples a word from the learned dictionary. No tiers, no templates, no stored sentences, no n-gram tables.">The T11 Pipeline (current)</span></div>
+      <div class="eq-title"><span class="eq-tip" data-tip="T13 pipeline: parseSentence reads input. brain.injectParseTree routes content/intent/self-ref to clusters. generate() is a brain-driven emission loop — reads live cortex state per word, softmax-samples scored candidates, feeds emitted word back into cortex. No slot priors, no stored n-grams, no context vector bag-of-words. Persona voice lives in cortex recurrent weights trained via sequence Hebbian at boot.">The T13 Brain-Driven Pipeline (current)</span></div>
       <pre class="eq">
-user input u
-    ↓
-parseSentence(u) → ParseTree  (reverse-equation read — wordType/_fineType
-                                applied backward over tokens)
-    ↓
-analyzeInput(u) → updateContextVector(pattern(content_words(u)))
-                → updateSocialSchema(u)   (reads ParseTree fields)
-    ↓
-if generate() called with opts.cortexPattern:
-    mental(0) ← opts.cortexPattern   (brain live getSemanticReadout output)
-else:
-    mental(0) ← _contextVector       (fallback topic attractor)
-    ↓
-for slot in 0..targetLen:
-    target(slot) = wC · L2(_slotCentroid[slot])
-                 + wX · L2(_contextVector)
-                 + wM · L2(mental)
-                 + wT · L2(prevEmb + _slotDelta[slot])
+BOOT (once):
+  loadPersona(text) → dictionary learns persona vocabulary
+  brain.trainPersonaHebbian(text) → cortex cluster recurrent synapses
+    shape into Unity-voice attractor basins via T13.1 sequence Hebbian
 
-    THREE-STAGE CANDIDATE GATE (per word w in dictionary):
-      typeFit(w,s)  = Σ_k wordType(w)[k] · _slotTypeSignature[s][k]
-      slotSigMax(s) = max_k _slotTypeSignature[s][k]
+USER INPUT (per turn):
+  parseSentence(u) → ParseTree   (wordType/_fineType letter equations)
+  brain.injectParseTree(u):
+    content  → cortex.injectCurrent(mapToCortex(contentEmb, 300, 150) · 0.5)
+    intent   → basalGanglia.injectCurrent(mapToCortex(intentEmb, 150, 0) · 0.3)
+    if addressesUser:
+      hippocampus.injectCurrent(mapToCortex(selfEmb, 200, 0) · 0.4)
+  analyzeInput(u) → updateSocialSchema(u), refine dictionary embeddings
+  brain.step() × 20  (cortex settles, inter-cluster projections propagate)
 
-      (1) HARD POOL FILTER:
-          if typeFit < slotSigMax · 0.30  → skip word
+GENERATION (T13.3 emission loop — no slot counter in the logic):
+  maxLen  = floor(3 + arousal · 3 · drugLengthBias)  (hard cap only)
+  for emission in 0..maxLen:
+    for tick in 0..3:  cortex.step(0.001)
+    target = cortex.getSemanticReadout(sharedEmbeddings)
+    if drift(target, lastReadout) < 0.08 and emitted ≥ 2:  break
 
-      (2) SLOT-0 NOUN-DOMINANCE REJECT (slot==0 only):
-          nounDom = wt.noun − (wt.pronoun + wt.det + wt.qword)
-          if nounDom > 0.30  → skip word
+    for each w in dictionary._words:
+      if slot==0 and nounDom(w) > 0.30:  skip     (opener safety rail)
+      cosSim       = cos(target, entry.pattern)
+      valenceMatch = 1 − 0.5 · |entry.valence − brainValence|
+      arousalBoost = 1 + arousal · (valenceMatch − 0.5)
+      recencyMul   = w ∈ recentOutputRing ? 0.3 : 1.0
+      score(w)     = cosSim · arousalBoost · recencyMul
 
-      (3) MULTIPLICATIVE GATE:
-          normTypeFit = min(1, typeFit / slotSigMax)
-          score(w)    = cos(target, emb(w)) · normTypeFit
+    temperature = 0.25 + (1 − coherence) · 0.35
+    picked      = softmax-sample top-5 at temperature
+    emit picked
 
-    nextWord   = softmax-sample top-5 by score
-                 over dictionary._words
-                 excluding emitted + recency ring
+    // Efference copy — emitted word reshapes cortex for next emission
+    cortex.injectCurrent(mapToCortex(picked.emb, 300, 150) · 0.35)
 
-    mental    ← 0.55 · mental + 0.45 · emb(nextWord)
-    prevEmb   ← emb(nextWord)
-    ↓
-targetLen  = floor(3 + arousal · 3 · drugLengthBias), capped to _maxSlots=8
-temperature= 0.25 + (1 - coherence) · 0.3
-W₀         = { centroid:0.40, context:0.30, mental:0.30, transition:0 }   ← T11.7 rebalance
-Wₙ         = { centroid:0.10, context:0.15, mental:0.25, transition:0.50 }
-                 + moodMatch × 0.03
-                 + moodBias × 0.02)
-             - recencyPenalty - sameTypePenalty
-  postProcess → agreement, tense, negation, contractions
-  render → capitalization, punctuation
-  dedup retry → if exact match in last 30 responses
-  post-process (agreement, tense, negation, contractions — _applyCasualContractions)
-  completeness validator → regenerate if last token ∈ {DET, PREP, COPULA,
-                             AUX, MODAL, NEG, CONJ, PRON_POSS}
+    // Grammatical terminability natural stop
+    if emitted ≥ max(3, maxLen−1) and last word not dangling:  break
+
+  post-process → contractions, capitalization, punctuation
   return rendered
       </pre>
-      <p class="eq-desc">See §8.18.6 for R2 GloVe semantic grounding (the embedding basis for cosine scoring) and §8.13 for the shared embedding table. The pre-T11 4-tier wrapper, coherence rejection gate, and type n-gram backoff are no longer live — they're preserved as historical provenance in <code>docs/FINALIZED.md</code>.</p>
+      <p class="eq-desc">See §8.18.6 for R2 GloVe semantic grounding (the embedding basis for cosine scoring) and §8.13 for the shared embedding table. T13.7 (2026-04-14) deleted the T11 slot-prior machinery entirely — `_slotCentroid`, `_slotDelta`, `_slotTypeSignature`, `_contextVector`, attractor vectors, `_subjectStarters`, plus `_generateSlotPrior` fallback and all dead T11 stubs. Net −406 lines on <code>js/brain/language-cortex.js</code>. Pre-T13 path preserved in <code>docs/FINALIZED.md</code>.</p>
     </div>
 
     <div class="eq-box" style="margin-top:12px;">
@@ -1440,38 +1427,21 @@ else:
     </div>
 
     <div class="eq-box">
-      <div class="eq-title"><span class="eq-tip" data-tip="Phase 11 pipeline order: intent classification routes short queries and yes/no/math/greeting to template pool (Tier 1). Hippocampus recall queries stored persona sentences (Tier 2). Question/statement with recall miss → deflect template (Tier 3). Everything else → rebalanced slot scorer with semanticFit weight 0.30 (Tier 4). Coherence gate wraps all paths as final safety net.">Four-Tier Pipeline Order</span></div>
+      <div class="eq-title"><span class="eq-tip" data-tip="T13.7 deleted the four-tier pipeline along with the rest of the slot-prior stack. This block is preserved as historical provenance showing the evolution from Phase 11 (four tiers) → T11 (slot priors) → T13 (brain-driven emission loop).">[T13.7 HISTORICAL] Four-Tier Pipeline Order (Phase 11, superseded)</span></div>
       <pre class="eq">
-user input u
-    ↓
-analyzeInput(u) → _updateContextVector()       ← Context vector update
-    ↓
-intent ← _classifyIntent(u)
-
-TIER 1 — Template pool (fast path)
-  if intent ∈ {greeting, yesno, math} ∨ isShort:
-    return selectUnityResponse(intent, brainState)
-
-TIER 2 — Hippocampus recall (persona voice)
-  recall ← _recallSentence(c(t))
-  if recall.confidence &gt; 0.60:
-    return _finalizeRecalledSentence(recall.memory.text)
-  if recall.confidence ∈ [0.30, 0.60]:
-    recallSeed ← recall.memory    (cold gen with bias)
-
-TIER 3 — Deflect fallback (unknown topics)
-  if intent ∈ {question, statement} ∧ recall.confidence ≤ 0.30:
-    return selectUnityResponse({...intent, deflect:true})
-
-TIER 4 — Cold slot generation (fallback)
-  rendered ← slotScorer with semanticFit × 0.80       ← R2 bumped from 0.30
-  postProcess → agreement, tense, negation
-  render → capitalization, punctuation
-  dedup retry
-  coherence gate → retry if cosine(out, c) &lt; 0.25
-  return rendered
+// T13.7 (2026-04-14) — HISTORICAL. The four-tier pipeline was deleted in T11
+// (2026-04-14) and the slot-prior replacement was deleted in T13.7. Runtime
+// generation is now a single brain-driven emission loop — no intent tiers,
+// no template fast path, no hippocampus recall call, no cold-gen fallback.
+// See the top of this section for the current T13 pipeline.
+//
+// Pre-T11 four-tier path (kept for reference only):
+//   Tier 1 — Template pool for greeting/yesno/math/short queries
+//   Tier 2 — Hippocampus recall over stored persona sentences
+//   Tier 3 — Deflect fallback for question/statement on unknown topics
+//   Tier 4 — Cold slot scoring with semanticFit weight 0.80
       </pre>
-      <p class="eq-desc">The old cold-gen slot scorer is now the fallback, not the primary path. Most real conversation is handled by templates (Tier 1) or persona recall (Tier 2). Cold gen fires only for genuinely novel topics that the persona doesn't cover AND aren't short-query/yesno/math/greeting patterns.</p>
+      <p class="eq-desc">Deleted. Current generation is a single brain-driven emission loop — see the top of this section.</p>
     </div>
 
     <!-- ═══ 8.18.6 PHASE 13 R2 — SEMANTIC GROUNDING ═══ -->
@@ -1562,31 +1532,21 @@ Examples:
     </div>
 
     <div class="eq-box">
-      <div class="eq-title"><span class="eq-tip" data-tip="Per-slot type signature. Running mean of wordType() score vectors observed at each sentence position. Replaces the deleted type n-gram tables with a simpler equational prior that captures the same thing: what grammatical type distribution is typical at this position. After corpus fit, slot 0 is mostly pronouns/articles (sentence-opener shape), slot 1 is mostly verbs (post-subject verb shape). The slot scorer uses this as an additive bonus on every candidate.">Slot Type Signature — Position-Conditioned Type Distribution</span></div>
+      <div class="eq-title"><span class="eq-tip" data-tip="T13.7 removed _slotTypeSignature along with the rest of the slot-prior stack. Type-shape grammar now emerges implicitly from the cortex recurrent weights trained via persona Hebbian (T13.1). This block is preserved as historical provenance.">[T13.7 HISTORICAL] Slot Type Signature — Position-Conditioned Type Distribution</span></div>
       <pre class="eq">
-_slotTypeSignature[s] ∈ ℝ⁸  — running mean of wordType(word_t) at position s
-                              { pronoun, verb, noun, adj, conj, prep, det, qword }
-
-UPDATE (during observation):
-  on observing word_t at position t with weight w = max(0.25, arousal·2):
-    for k in {pronoun, verb, noun, adj, conj, prep, det, qword}:
-      _slotTypeSignature[t][k] = (_slotTypeSignature[t][k]·N + wordType(w)[k]·w)
-                                 / (N + w)
-
-READ (during generation, T11.7 three-stage gate):
-  typeFit(w,s)  = Σ_k wordType(w)[k] · _slotTypeSignature[s][k]
-  slotSigMax(s) = max_k _slotTypeSignature[s][k]
-
-  (1) HARD POOL FILTER  : skip word if typeFit < slotSigMax · 0.30
-  (2) SLOT-0 NOUN REJECT: skip word if slot==0 ∧ (wt.noun − (wt.pronoun + wt.det + wt.qword)) > 0.30
-  (3) MULTIPLICATIVE    : score(w, slot) = cos(target, emb(w)) · min(1, typeFit / slotSigMax)
-
-Emergent after corpus fit (persona + baseline only — coding corpus
-bypasses prior updates via skipSlotPriors=true):
-  slot 0 ≈ { pronoun: 0.54, noun: 0.18, det: 0.12, ... }   ← sentence openers
-  slot 1 ≈ { verb: 0.51, noun: 0.33, ... }                 ← post-subject verbs
+// T13.7 (2026-04-14) — this equation block is HISTORICAL. _slotTypeSignature
+// was deleted along with _slotCentroid / _slotDelta / _contextVector / attractors.
+// The slot-prior update pass in learnSentence is gone. The T13.3 emission loop
+// reads live cortex state as the target vector; grammatical type shape emerges
+// from the cortex recurrent weights trained on persona corpus via T13.1
+// sequence Hebbian, not from stored per-slot running means.
+//
+// Pre-T13.7 equation (kept for reference):
+//   _slotTypeSignature[s] ∈ ℝ⁸  — running mean of wordType(word_t) at position s
+//                                 { pronoun, verb, noun, adj, conj, prep, det, qword }
+//   three-stage gate: hard pool filter + slot-0 noun reject + multiplicative score
       </pre>
-      <p class="eq-desc">Replaces the pre-T11 type n-gram tables (<code>_typeBigramCounts</code> / <code>_typeTrigramCounts</code> / <code>_typeQuadgramCounts</code>) with a single 8-dim running-mean vector per slot. Same role — biasing generation toward grammatically appropriate word types at each position — with ~100× less memory and no backoff logic.</p>
+      <p class="eq-desc">T13.7 (2026-04-14) deleted this structure. Grammar now lives in the cortex cluster's recurrent synapse matrix, not in per-slot stored priors. Preserved above as historical provenance — see <code>docs/FINALIZED.md</code> T13.7 entry for the full deletion breakdown.</p>
     </div>
 
     <div class="eq-box">
@@ -1646,18 +1606,17 @@ boot: Promise.all([
 Each corpus sentence flows through learnSentence() which:
   - Tokenizes + expands contractions
   - Inserts each word into dictionary._words with sentence cortex pattern
-  - Updates _slotCentroid[t], _slotDelta[t], _slotTypeSignature[t]
-    at each token position t with weight max(0.25, arousal·2)
+  - Runs usage-type learning (_learnUsageType)
   - Runs morphological inflection (corpus only, doInflections=true)
 
-Weights per corpus:
-  Coding   (arousal 0.4)  → w = 0.8
-  Baseline (arousal 0.5)  → w = 1.0
-  Persona  (arousal 0.75) → w = 1.5
-  Live chat (arousal 0.95) → w = 1.9   (2.37× corpus influence, T11.6)
+T13.7 (2026-04-14): the per-slot running-mean update block was deleted.
+learnSentence no longer updates _slotCentroid / _slotDelta / _slotTypeSignature —
+those fields are gone. Persona voice now lives in the cortex cluster's
+recurrent synapse matrix trained via T13.1 sequence Hebbian during boot
+(a separate pass through the persona corpus, see brain.trainPersonaHebbian).
 
-After load, the raw sentences are discarded. Only the slot priors
-+ word embedding dictionary survive into runtime.
+After load, the raw sentences are discarded. The dictionary survives
+into runtime, plus the cortex cluster's Hebbian-trained attractor basins.
       </pre>
       <p class="eq-desc">606-line coding corpus includes SANDBOX DISCIPLINE section + BUILD COMPOSITION PRIMITIVES. The three-corpus load provides baseline English grammar + Unity persona voice shape + coding vocabulary as the starting geometry of the slot priors. Live-chat observations then progressively reshape them.</p>
     </div>

@@ -112,95 +112,13 @@ export class LanguageCortex {
       },
     };
 
-    // U276 — Running topic attractor. Decaying running average of input
-    // word patterns. Persists across turns so "what are cats" followed by
-    // "do you like them" keeps cats in the context bucket. λ=0.7 weights
-    // the prior heavily so a single odd word doesn't swing the topic.
-    //   c(t) = λ·c(t-1) + (1-λ)·mean(pattern(input_words))
-    this._contextVector = new Float64Array(PATTERN_DIM);
-    this._contextVectorLambda = 0.7;
-    this._contextVectorHasData = false;
-
-    // ═══════════════════════════════════════════════════════════════
-    // T11 — Pure Equational Language Cortex
-    //
-    // Language flows directly from Unity's brain cortex state. There
-    // is no model of language at all — no n-gram tables, no sentence
-    // memory, no matrix regression, no stored text. The brain IS the
-    // language model: its cortex firing state (read out as a GloVe-
-    // space vector via cortexToEmbedding) is the target that word
-    // emission argmax matches against. The language cortex's only
-    // job is to translate brain state into words.
-    //
-    // Two lightweight learned priors shape position and transition
-    // geometry so output has grammatical shape even at small training
-    // set sizes:
-    //
-    //   _slotCentroid[s]  — running mean of emb(word_t) observed at
-    //                       sentence position s.  Gives slot 0 the
-    //                       distribution of sentence-opener words,
-    //                       slot 1 the distribution of second-word
-    //                       words, etc. Pure position prior.
-    //
-    //   _slotDelta[s]     — running mean of (emb(word_s) − emb(word_{s-1}))
-    //                       observed at position s.  Per-position
-    //                       average bigram transition vector. Adding
-    //                       delta[s] to the previous word's embedding
-    //                       points toward the "typical next word"
-    //                       region without storing any bigrams.
-    //
-    // Both are just Float64Array vectors updated by running mean.
-    // Zero matrices, zero ridge regression, zero sentence lists.
-    // ═══════════════════════════════════════════════════════════════
-
+    // T13.7 — per-slot running-mean priors, context vector, attractors,
+    // and subject starters all deleted. Topic lives in the live cortex
+    // cluster state (via parseTree injection). Position priors and
+    // transition deltas live in the cortex's recurrent synapse matrix
+    // (trained via persona Hebbian at boot). The language cortex is
+    // now pure reader + emission-loop host — zero stored priors.
     this._maxSlots = 8;
-    this._slotCentroid = [];
-    this._slotDelta = [];
-    for (let s = 0; s < this._maxSlots; s++) {
-      this._slotCentroid.push(new Float64Array(PATTERN_DIM));
-      this._slotDelta.push(new Float64Array(PATTERN_DIM));
-    }
-    this._slotCentroidCount = new Array(this._maxSlots).fill(0);
-    this._slotDeltaCount = new Array(this._maxSlots).fill(0);
-    this._obsCount = 0;
-
-    // Per-slot average wordType signature. Each slot accumulates the
-    // running mean of wordType(word_t) score vectors observed at that
-    // position. This gives the generator a grammatical-type prior
-    // at each slot computed from Unity's own letter-equation word
-    // classifier — not a hardcoded grammar rule, not a stored
-    // part-of-speech tagger, just "what type of word is typically
-    // at position t" in words she's seen. Used as a multiplicative
-    // bias on the cosine score so slot 0 prefers pronouns/articles/
-    // interjections and slot 1 after a pronoun prefers verbs etc.
-    this._slotTypeSignature = [];
-    for (let s = 0; s < this._maxSlots; s++) {
-      this._slotTypeSignature.push({
-        pronoun: 0, verb: 0, noun: 0, adj: 0,
-        conj: 0, prep: 0, det: 0, qword: 0,
-      });
-    }
-
-    // Learned intent attractors — running means of cortex states
-    // observed at structural positions. Replace the old enum-typed
-    // intent classifier with equational cosine distances.
-    //   greetingAttractor  = EMA of cortex_final for session openers
-    //   selfRefAttractor   = EMA of cortex_final for 2nd-person questions
-    //   introAttractor     = EMA of cortex_final for "my name is X" patterns
-    //   commandAttractor   = EMA of cortex_final for imperative openers
-    this._greetingAttractor = new Float64Array(PATTERN_DIM);
-    this._selfRefAttractor = new Float64Array(PATTERN_DIM);
-    this._introAttractor = new Float64Array(PATTERN_DIM);
-    this._commandAttractor = new Float64Array(PATTERN_DIM);
-    this._attractorEMA = 0.05;
-    this._attractorObs = {
-      greeting: 0, selfRef: 0, intro: 0, command: 0,
-    };
-
-    // Subject starters — learned from sentence boundaries. Still
-    // useful as a vocative bias at slot 0 without being a corpus
-    // lookup (it's a word-frequency map, not a sentence store).
-    this._subjectStarters = new Map();
 
     this.zipfAlpha = 1.0;
     this.sentencesLearned = 0;
@@ -738,54 +656,10 @@ export class LanguageCortex {
    *      → sentence isn't in Unity's own voice
    *   6. Length 3-25 words — too short = fragment, too long = rambling
    */
-  /**
-   * T11 — stub. Filter stack deleted. All sentences pass as observations.
-   * Geometry of the fitted W_slot matrices handles register/voice without
-   * per-sentence gating.
-   */
-  _sentencePassesFilters(_text, _arousal, _valence) {
-    return true;
-  }
-
-  /**
-   * T11 — stub. Memory pool deleted. Unity has no stored-sentence
-   * recall; her output comes from live cortex state via the W_slot
-   * projections. This no-op remains only so stray callers (none
-   * expected after the generate() rewrite) do not throw.
-   */
-  _storeMemorySentence(_text, _arousal, _valence) {
-    // intentionally empty — see T11 architecture notes
-  }
-
-  /**
-   * U282 — Hippocampus-style associative recall over the stored persona
-   * sentences. Feeds the current context vector in as a partial pattern,
-   * finds the highest-cosine match, returns the sentence with a confidence
-   * score (basin depth proxy).
-   *
-   * Confidence gates (caller decides how to use):
-   *   > 0.60 → emit the stored sentence directly (highest persona fidelity)
-   *   0.30-0.60 → use as bigram seed for soft-recall generation
-   *   ≤ 0.30 → fall through to cold generation (U276-280 pipeline)
-   */
-  /**
-   * T11 — stub. Recall deleted. Unity no longer pulls stored
-   * sentences; she generates fresh output from cortex state via
-   * the W_slot projections. Returning null keeps any stray caller
-   * (checking recall?.confidence etc.) safe during the T11
-   * transition — generate() itself no longer calls this.
-   */
-  _recallSentence(_contextVector, _opts = {}) {
-    return null;
-  }
-
-  /**
-   * Legacy hook — kept so older callers that invoked _loadStructure(dict)
-   * at boot don't crash. All real structure now comes from loadSelfImage.
-   */
-  _loadStructure(_dictionary) {
-    // no-op: structure is learned, not hardcoded
-  }
+  // T13.7 — `_sentencePassesFilters`, `_storeMemorySentence`, and
+  // `_recallSentence` were T11 stubs preserved for backcompat. Nothing
+  // calls them after the T13 emission loop replaced slot-prior gen.
+  // Deleted. `_loadStructure` similarly deleted.
 
   _initLetterPatterns() {
     for (let i = 0; i < 26; i++) {
@@ -1060,8 +934,7 @@ export class LanguageCortex {
     // functional pronouns for verb-boost purposes. "Unity expresses..." must
     // teach "expresses" as a verb even though "unity" isn't a pronoun by letters.
     const prevIsSubject = prevType.pronoun > 0.5
-      || this._isNominativePronoun(prevWord)
-      || (this._subjectStarters.get(prevWord.toLowerCase()) || 0) >= 1;
+      || this._isNominativePronoun(prevWord);
 
     if (!this._usageTypes.has(word)) {
       this._usageTypes.set(word, { pronoun: 0, verb: 0, noun: 0, adj: 0, prep: 0, det: 0, conj: 0, qword: 0 });
@@ -1509,14 +1382,7 @@ export class LanguageCortex {
    * should fall back to other scoring signals).
    */
   /**
-   * T11 — deleted type-n-gram tables. Type grammar now emerges from
-   * the per-slot W_slot projections + slot centroids learned via
-   * observation. This stub remains for any legacy caller but always
-   * returns 0 so it contributes nothing to downstream scoring.
-   */
-  _typeGrammarScore(_candidateType, _historyTypes) {
-    return 0;
-  }
+  // T13.7 — `_typeGrammarScore` stub deleted.
 
   _isNominativePronoun(word) {
     const w = (word || '').toLowerCase();
@@ -1747,29 +1613,28 @@ export class LanguageCortex {
    * Target vector is the cortex state, not a weighted blend of slot
    * priors; position-conditioned priors from T11.7 are not read.
    *
-   * Dispatches to `_generateSlotPrior` (T11.7 legacy path, preserved as
-   * rollback) when `opts.cortexCluster` is absent — keeps pre-T13
-   * callers working during incremental rollout.
+   * Requires `opts.cortexCluster` — the live NeuronCluster whose
+   * recurrent weights were trained on persona corpus via T13.1
+   * Hebbian and whose state reflects T13.2 parse-tree injection.
+   * Returns empty string if the cluster reference is missing (no
+   * fallback path — T13.7 removed the slot-prior rollback).
    *
    * @param {Dictionary} dictionary
    * @param {number} arousal
    * @param {number} valence
    * @param {number} coherence
-   * @param {object} [opts]
-   * @param {NeuronCluster} [opts.cortexCluster] — live cortex reference for T13 loop
+   * @param {object} opts
+   * @param {NeuronCluster} opts.cortexCluster — live cortex reference (required)
    * @param {string} [opts.drugState]
    * @param {number} [opts.predictionError]
    * @param {number} [opts.motorConfidence]
-   * @param {Float64Array} [opts.cortexPattern] — optional pre-read (ignored by T13 path)
    */
   generate(dictionary, arousal, valence, coherence, opts = {}) {
     if (!dictionary || !dictionary._words || dictionary._words.size === 0) return '';
 
-    // Rollback path — if no live cortex cluster is supplied, fall
-    // through to T11.7 slot-prior generation so pre-T13 callers still
-    // work while T13.7 deletion is deferred.
     if (!opts.cortexCluster || typeof opts.cortexCluster.getSemanticReadout !== 'function') {
-      return this._generateSlotPrior(dictionary, arousal, valence, coherence, opts);
+      console.warn('[LanguageCortex] generate called without cortexCluster — T13.7 removed the slot-prior fallback. Caller must pass opts.cortexCluster.');
+      return '';
     }
 
     const cluster = opts.cortexCluster;
@@ -1926,239 +1791,6 @@ export class LanguageCortex {
     return rendered;
   }
 
-  /**
-   * T11.7 slot-prior generation — preserved as rollback path.
-   * Called by `generate` when no cortex cluster reference is supplied.
-   * Will be deleted in T13.7 once T13 emission loop is verified
-   * producing coherent output.
-   */
-  _generateSlotPrior(dictionary, arousal, valence, coherence, opts = {}) {
-    if (!dictionary || !dictionary._words || dictionary._words.size === 0) return '';
-
-    const drugState = opts.drugState || 'cokeAndWeed';
-    let drugLengthBias = 1.0;
-    if (drugState === 'coke' || drugState === 'cokeAndWeed') drugLengthBias = 0.85;
-    else if (drugState === 'weed') drugLengthBias = 1.15;
-
-    const targetLen = Math.max(2, Math.min(this._maxSlots,
-      Math.floor(3 + arousal * 3 * drugLengthBias)));
-
-    // Mental state — starts from the brain's live cortex semantic
-    // readout if the caller supplied one (via opts.cortexPattern from
-    // the engine's getSemanticReadout call). Falls back to the
-    // running context vector. Evolves per slot as words are emitted.
-    const mental = new Float64Array(PATTERN_DIM);
-    const cortexSource = (opts.cortexPattern && opts.cortexPattern.length >= PATTERN_DIM)
-      ? opts.cortexPattern
-      : (this._contextVectorHasData ? this._contextVector : null);
-    if (cortexSource) {
-      for (let i = 0; i < PATTERN_DIM; i++) mental[i] = cortexSource[i];
-    }
-
-    // Context vector — separate topic bias from user input.
-    const ctxRaw = new Float64Array(PATTERN_DIM);
-    if (this._contextVectorHasData) {
-      for (let i = 0; i < PATTERN_DIM; i++) ctxRaw[i] = this._contextVector[i];
-    }
-    const ctxN = this._l2(ctxRaw);
-
-    const words = [];
-    const emitted = new Set();
-    let prevEmb = null;
-
-    const TOP_K = 5;
-    const temperature = 0.25 + (1 - coherence) * 0.3;
-    const mentalDecay = 0.55;
-
-    // Normalized-component weights — rebalanced 2026-04-14 after
-    // diagnostic smoke test showed slot 0 picking nouns like
-    // "Destructure" / "Third" / "Unity" because context (topic blob)
-    // was 45% and grammar prior (slot-0 centroid) was only 30%.
-    // Topic too dominant at the opener position.
-    //
-    //   Slot 0: centroid (sentence-opener distribution learned from
-    //   observation) is now the dominant component. Context provides
-    //   topical bias. Mental state (brain cortex readout) adds
-    //   brain-driven nuance.
-    //
-    //   Slot N: transition (prev word + learned slot-delta) is the
-    //   dominant signal — learned bigram geometry without stored
-    //   bigrams. Mental state keeps Unity's ongoing thought visible.
-    //   Context is a weak topic anchor. Centroid is a small nudge.
-    const W0 = { centroid: 0.40, context: 0.30, mental: 0.30, transition: 0.00 };
-    const WN = { centroid: 0.10, context: 0.15, mental: 0.25, transition: 0.50 };
-
-    for (let slot = 0; slot < targetLen; slot++) {
-      const slotIdx = Math.min(slot, this._maxSlots - 1);
-      const weights = slot === 0 ? W0 : WN;
-
-      // Component vectors, each L2-normalized before mixing.
-      const centroidN = this._slotCentroidCount[slotIdx] > 3
-        ? this._l2(this._slotCentroid[slotIdx])
-        : null;
-      const mentalN = this._l2(mental);
-
-      // Transition component: prev embedding + learned slot delta.
-      let transitionN = null;
-      if (slot >= 1 && prevEmb && this._slotDeltaCount[slotIdx] > 3) {
-        const transition = new Float64Array(PATTERN_DIM);
-        const delta = this._slotDelta[slotIdx];
-        for (let i = 0; i < PATTERN_DIM; i++) transition[i] = prevEmb[i] + delta[i];
-        transitionN = this._l2(transition);
-      }
-
-      const target = new Float64Array(PATTERN_DIM);
-      for (let i = 0; i < PATTERN_DIM; i++) {
-        if (centroidN) target[i] += centroidN[i] * weights.centroid;
-        if (ctxN) target[i] += ctxN[i] * weights.context;
-        if (mentalN) target[i] += mentalN[i] * weights.mental;
-        if (transitionN) target[i] += transitionN[i] * weights.transition;
-      }
-      const targetN = this._l2(target);
-      if (!targetN) break;
-
-      // Learned slot type signature — dot product between the slot's
-      // average wordType distribution and the candidate's wordType
-      // gives a grammar-fit gate. Pure letter-equation, no lists.
-      // Used in TWO ways below:
-      //   1. As a HARD POOL FILTER — candidates with typeFit < 0.10
-      //      are skipped entirely (a totally-wrong-type word like
-      //      "destructure" at slot 0 never enters argmax).
-      //   2. As a MULTIPLICATIVE GATE on the cosine score —
-      //      score = cosine · (0.35 + 0.65 · normalizedTypeFit).
-      //      Wrong-type candidates lose up to 65% of their cosine
-      //      magnitude. Right-type candidates keep full cosine.
-      // Pre-T11 follow-up (2026-04-14) — additive bonus was too weak
-      // and the ungated pool was too broad.
-      const slotSig = this._slotTypeSignature[slotIdx];
-      const slotSigActive = this._slotCentroidCount[slotIdx] > 3;
-      // Compute the slot's max possible type-fit (the dot product of
-      // a perfect-match candidate against the slot's type distribution
-      // is just the slot's peak coordinate). Used both as the hard
-      // pool filter floor and to normalize per-candidate fit into
-      // [0, 1] for the multiplicative score gate.
-      let slotSigMax = 0;
-      if (slotSigActive) {
-        for (const k of Object.keys(slotSig)) {
-          if (slotSig[k] > slotSigMax) slotSigMax = slotSig[k];
-        }
-      }
-      // Per-slot ADAPTIVE floor: candidate must score at least 30%
-      // of the slot's peak type weight to enter the argmax pool.
-      // For slot 0 with peak pronoun=0.53, floor=0.16 — a pure noun
-      // (typeFit = 0.18) just barely passes, a det (0.12) fails,
-      // and a verb (0.08) fails. The floor scales with the slot's
-      // type concentration so very flat distributions admit more
-      // candidates and very peaked distributions are strict.
-      const TYPE_FLOOR = slotSigActive ? slotSigMax * 0.30 : 0;
-
-      // Cosine scoring over learned dictionary, with wordType gate.
-      const scored = [];
-      for (const [w, entry] of dictionary._words) {
-        if (!entry || !entry.pattern) continue;
-        if (emitted.has(w)) continue;
-        if (this._recentOutputWords.includes(w)) continue;
-
-        // Type-fit gate (computed first so we can hard-filter before
-        // doing the more expensive cosine math).
-        let typeFit = 0;
-        let wt = null;
-        if (slotSigActive) {
-          wt = this.wordType(w);
-          typeFit = (wt.pronoun || 0) * slotSig.pronoun
-                  + (wt.verb || 0) * slotSig.verb
-                  + (wt.noun || 0) * slotSig.noun
-                  + (wt.adj || 0) * slotSig.adj
-                  + (wt.conj || 0) * slotSig.conj
-                  + (wt.prep || 0) * slotSig.prep
-                  + (wt.det || 0) * slotSig.det
-                  + (wt.qword || 0) * slotSig.qword;
-          if (typeFit < TYPE_FLOOR) continue;  // hard pool filter
-        }
-
-        // Slot-0 specific: noun-dominance reject. The learned slot-0
-        // type signature has noun weight ~0.18 because the corpora
-        // contain non-conversational sentences with noun openers
-        // ("Rain falls...", "Function does..."). That lets pure-noun
-        // candidates like "pizza", "destructure", "wallets" pass the
-        // global typeFit floor. English conversational sentences
-        // however overwhelmingly open with pronouns / determiners /
-        // qwords / interjections, never bare common nouns.
-        // Structural check: at slot 0, reject candidates whose
-        // wordType.noun dominates pronoun + det + qword by more
-        // than 0.30. Pure equational — checks the candidate's own
-        // letter-equation type distribution, not a content list.
-        if (slot === 0 && wt) {
-          const openerTypes = (wt.pronoun || 0) + (wt.det || 0) + (wt.qword || 0);
-          const nounDom = (wt.noun || 0) - openerTypes;
-          if (nounDom > 0.30) continue;
-        }
-
-        const p = entry.pattern;
-        let dot = 0, pn = 0;
-        for (let i = 0; i < PATTERN_DIM; i++) {
-          dot += targetN[i] * p[i];
-          pn += p[i] * p[i];
-        }
-        if (pn <= 0) continue;
-        const cosSim = dot / Math.sqrt(pn);
-
-        // Pure multiplicative type gate: normalized typeFit IS the
-        // gate. A perfect-type candidate keeps full cosine; a
-        // half-type candidate keeps half cosine; a wrong-type
-        // candidate is already filtered above by TYPE_FLOOR. No
-        // base retention because the floor is doing that job —
-        // the gate is now a clean linear scale over the admitted
-        // pool.
-        const normTypeFit = (slotSigActive && slotSigMax > 0)
-          ? Math.min(1, typeFit / slotSigMax)
-          : 1;
-        scored.push({ w, score: cosSim * normTypeFit });
-      }
-      if (scored.length === 0) break;
-      scored.sort((a, b) => b.score - a.score);
-      const top = scored.slice(0, Math.min(TOP_K, scored.length));
-
-      const maxScore = top[0].score;
-      let totalExp = 0;
-      for (const c of top) { c._exp = Math.exp((c.score - maxScore) / temperature); totalExp += c._exp; }
-      let roll = Math.random() * totalExp;
-      let picked = top[0];
-      for (const c of top) {
-        roll -= c._exp;
-        if (roll <= 0) { picked = c; break; }
-      }
-      const bestWord = picked.w;
-      words.push(bestWord);
-      emitted.add(bestWord);
-      prevEmb = dictionary._words.get(bestWord)?.pattern || this.wordToPattern(bestWord);
-
-      // Mental state absorbs the emitted word — this is the brain's
-      // ongoing thought evolving as it speaks.
-      for (let i = 0; i < PATTERN_DIM; i++) {
-        mental[i] = mental[i] * mentalDecay + prevEmb[i] * (1 - mentalDecay);
-      }
-    }
-
-    if (words.length === 0) return '';
-    // Track for recency
-    for (const w of words) {
-      this._recentOutputWords.push(w);
-      if (this._recentOutputWords.length > this._recentOutputMax) {
-        this._recentOutputWords.shift();
-      }
-    }
-    // Determine sentence type for rendering (punctuation)
-    const type = this.sentenceType(arousal, opts.predictionError || 0, opts.motorConfidence || 0, coherence);
-    const rendered = this._renderSentence(words, type);
-    // Dedup ring
-    const lower = rendered.trim().toLowerCase();
-    this._recentSentences.push(lower);
-    if (this._recentSentences.length > this._recentSentenceMax) {
-      this._recentSentences.shift();
-    }
-    return rendered;
-  }
 
   /**
    * Render the final sentence with proper punctuation and capitalization.
@@ -3105,32 +2737,12 @@ export class LanguageCortex {
     // into the persistent schema slots.
     this._updateSocialSchema(text);
 
-    // U276 — decaying running topic attractor. Updated ONLY on user input
-    // (this method is the user-input hook). Unity's own output does NOT
-    // feed context — she tracks the listener's topic, not her own words.
-    this._updateContextVector(topicPattern, count);
+    // T13.7 — `_contextVector` decaying topic attractor deleted. Topic
+    // now lives in the live cortex cluster state via `brain.injectParseTree`
+    // at `engine.processAndRespond`, which routes the content embedding
+    // directly into the cortex language region before the settle-ticks.
 
     return { isQuestion, topicPattern, words, parsed };
-  }
-
-  /**
-   * U276 — Context vector decay update.
-   *   c(t) = λ·c(t-1) + (1-λ)·mean(pattern(input_content_words))
-   * Zero-content inputs (all function words) leave the vector alone so
-   * greetings and affirmations don't wipe the running topic.
-   */
-  _updateContextVector(topicPattern, contentCount) {
-    if (!topicPattern || contentCount === 0) return;
-    const λ = this._contextVectorLambda;
-    if (!this._contextVectorHasData) {
-      // First update — seed directly, no decay
-      for (let i = 0; i < PATTERN_DIM; i++) this._contextVector[i] = topicPattern[i];
-      this._contextVectorHasData = true;
-      return;
-    }
-    for (let i = 0; i < PATTERN_DIM; i++) {
-      this._contextVector[i] = λ * this._contextVector[i] + (1 - λ) * topicPattern[i];
-    }
   }
 
   /**
@@ -3263,15 +2875,7 @@ export class LanguageCortex {
     return this._socialSchema;
   }
 
-  _semanticFit(wordOrPattern) {
-    if (!this._contextVectorHasData) return 0;
-    const pattern = typeof wordOrPattern === 'string'
-      ? this.wordToPattern(wordOrPattern)
-      : wordOrPattern;
-    if (!pattern) return 0;
-    const sim = this._cosine(pattern, this._contextVector);
-    return Math.max(0, sim);
-  }
+  // T13.7 — `_semanticFit` deleted (no callers after slot-prior removal).
 
   _getContextPattern() {
     if (this._contextPatterns.length === 0) return new Float64Array(PATTERN_DIM);
@@ -3314,72 +2918,19 @@ export class LanguageCortex {
     if (rawWords.length < 2) return;
     const words = this._expandContractionsForLearning(rawWords);
 
-    if (fromPersona && words.length > 0) {
-      const first = words[0].replace(/\*/g, '');
-      if (first) this._subjectStarters.set(first, (this._subjectStarters.get(first) || 0) + 1);
-    }
-
-    // T11.2 + T11.6 — running-mean observation with arousal weighting.
-    // For each token at position t, update per-slot priors:
-    //   _slotCentroid[t]       ← weighted mean of emb(word_t)
-    //   _slotDelta[t]          ← weighted mean of (emb_t − emb_{t-1})
-    //   _slotTypeSignature[t]  ← weighted mean of wordType(word_t)
-    //
-    // The observation weight scales with arousal so live-chat input
-    // (arousal floor 0.95 from inner-voice.learn) pulls the running
-    // mean harder than corpus-loaded sentences (persona arousal 0.75,
-    // baseline 0.5, coding 0.4). Higher arousal → more influence.
-    // Weighted mean update: mean ← (mean·N + x·w) / (N + w).
-    // This is T11.6 — without it all observations would have equal
-    // weight and thousands of corpus sentences would drown out a
-    // handful of live-chat sentences. With it, live chat shapes the
-    // priors proportionally to how engaged the brain is.
-    const obsWeight = Math.max(0.25, arousal * 2); // 0.4 arousal → 0.8, 0.95 → 1.9
-    const PD = PATTERN_DIM;
+    // T13.7 — per-slot running means deleted. Dictionary learning,
+    // usage-type feedback, and optional morphological inflection are
+    // the only surviving observation side-effects. Persona corpus
+    // shapes the CORTEX recurrent weights via `cluster.learnSentenceHebbian`
+    // at boot (T13.1), not per-slot priors here. `skipSlotPriors` arg
+    // is retained as a no-op for backcompat with the `loadCodingKnowledge`
+    // caller until that call site is cleaned up.
     for (let t = 0; t < words.length; t++) {
       const w = words[t];
       const pattern = cortexPattern || this.wordToPattern(w);
       dictionary?.learnWord?.(w, pattern, arousal, valence);
 
       if (t > 0) this._learnUsageType(words[t - 1], w);
-
-      const currEmb = this.wordToPattern(w);
-
-      // Slot centroid + type signature update (all positions including 0).
-      // GATED by skipSlotPriors so vocabulary-only corpora (coding) feed
-      // the dictionary without polluting the conversational slot priors.
-      // Without this gate, coding-corpus sentence openers like "Function",
-      // "Variable", "Return" pushed slot 0's noun weight up to ~0.24,
-      // which let noun candidates beat pronouns at the opener position
-      // even with the type-fit gate.
-      if (!skipSlotPriors && t < this._maxSlots) {
-        const centroid = this._slotCentroid[t];
-        const n = this._slotCentroidCount[t];
-        for (let i = 0; i < PD; i++) {
-          centroid[i] = (centroid[i] * n + currEmb[i] * obsWeight) / (n + obsWeight);
-        }
-        // Slot type signature — running mean of wordType scores.
-        const sig = this._slotTypeSignature[t];
-        const wt = this.wordType(w);
-        for (const k of Object.keys(sig)) {
-          sig[k] = (sig[k] * n + (wt[k] || 0) * obsWeight) / (n + obsWeight);
-        }
-        this._slotCentroidCount[t] = n + obsWeight;
-      }
-
-      // Slot delta update (t >= 1 only — needs a previous word).
-      // Same skipSlotPriors gate.
-      if (!skipSlotPriors && t >= 1 && t < this._maxSlots) {
-        const prevEmb = this.wordToPattern(words[t - 1]);
-        const delta = this._slotDelta[t];
-        const n = this._slotDeltaCount[t];
-        for (let i = 0; i < PD; i++) {
-          const obs = currEmb[i] - prevEmb[i];
-          delta[i] = (delta[i] * n + obs * obsWeight) / (n + obsWeight);
-        }
-        this._slotDeltaCount[t] = n + obsWeight;
-        this._obsCount++;
-      }
 
       if (doInflections) {
         const inflections = this._generateInflections(w);
@@ -3551,22 +3102,7 @@ export class LanguageCortex {
     return result;
   }
 
-  /**
-   * Pick a conjunction by mood, searching the learned dictionary for
-   * words classified as conjunctions by the wordType equation. No lists —
-   * the candidates come from whatever the brain has learned.
-   */
-  _pickConjByMood(_arousal, _valence) {
-    // T11 — conjunction picking used _marginalCounts scan. Table is
-    // deleted. Callers get null; the compound-sentence splice is
-    // effectively disabled (was already marked DISABLED in the render
-    // path). Pure generation covers this via slot projection when
-    // a conjunction is the correct next word at a given slot.
-    return null;
-  }
-
-  _condProb(_word, _prev) { return 0; }
-  mutualInfo(_w1, _w2) { return 0; }
+  // T13.7 — `_pickConjByMood`, `_condProb`, `mutualInfo` stubs deleted.
 
   /**
    * L2-normalize a Float64Array vector. Returns a new Float64Array
@@ -3604,76 +3140,34 @@ export class LanguageCortex {
   // ═══════════════════════════════════════════════════════════════
 
   /**
-   * T11.2 — persistence serializes the learned slot priors and
-   * attractor vectors. Pure numerical state — running means of word
-   * embeddings and wordType signatures, nothing resembling stored
-   * text. Float64Arrays flatten to regular arrays for JSON.
+   * T13.7 — persistence now only covers language-cortex state that
+   * isn't in the cortex cluster. Slot priors and attractors are gone;
+   * persona voice lives in the cortex recurrent synapse matrix which
+   * the cluster serializes via its own SparseMatrix.serialize path.
+   * Remaining state here: usage-type drifts + sentencesLearned counter
+   * + selfImage/baseline/coding loaded flags.
    */
   serialize() {
-    const flatArr = (ta) => Array.from(ta);
     return {
-      version: 'T11.2',
-      slotCentroid: this._slotCentroid.map(flatArr),
-      slotDelta: this._slotDelta.map(flatArr),
-      slotCentroidCount: [...this._slotCentroidCount],
-      slotDeltaCount: [...this._slotDeltaCount],
-      slotTypeSignature: this._slotTypeSignature.map(sig => ({ ...sig })),
-      greetingAttractor: flatArr(this._greetingAttractor),
-      selfRefAttractor: flatArr(this._selfRefAttractor),
-      introAttractor: flatArr(this._introAttractor),
-      commandAttractor: flatArr(this._commandAttractor),
-      attractorObs: { ...this._attractorObs },
-      obsCount: this._obsCount,
-      subjectStarters: Object.fromEntries(this._subjectStarters),
+      version: 'T13.7',
       usageTypes: Object.fromEntries(this._usageTypes),
       zipfAlpha: this.zipfAlpha,
       sentencesLearned: this.sentencesLearned,
       wordsProcessed: this.wordsProcessed,
       selfImageLoaded: this._selfImageLoaded,
+      baselineLoaded: this._baselineLoaded,
+      codingLoaded: this._codingLoaded,
     };
   }
 
   deserialize(data) {
-    if (!data || data.version !== 'T11.2') return;
-    const loadMats = (src, dst) => {
-      if (!src) return;
-      for (let s = 0; s < Math.min(src.length, dst.length); s++) {
-        const arr = src[s];
-        for (let i = 0; i < Math.min(arr.length, dst[s].length); i++) dst[s][i] = arr[i];
-      }
-    };
-    const loadVec = (src, dst) => {
-      if (!src) return;
-      for (let i = 0; i < Math.min(src.length, dst.length); i++) dst[i] = src[i];
-    };
-    loadMats(data.slotCentroid, this._slotCentroid);
-    loadMats(data.slotDelta, this._slotDelta);
-    if (data.slotCentroidCount) {
-      for (let s = 0; s < Math.min(data.slotCentroidCount.length, this._slotCentroidCount.length); s++) {
-        this._slotCentroidCount[s] = data.slotCentroidCount[s];
-      }
-    }
-    if (data.slotDeltaCount) {
-      for (let s = 0; s < Math.min(data.slotDeltaCount.length, this._slotDeltaCount.length); s++) {
-        this._slotDeltaCount[s] = data.slotDeltaCount[s];
-      }
-    }
-    if (data.slotTypeSignature) {
-      for (let s = 0; s < Math.min(data.slotTypeSignature.length, this._slotTypeSignature.length); s++) {
-        Object.assign(this._slotTypeSignature[s], data.slotTypeSignature[s]);
-      }
-    }
-    loadVec(data.greetingAttractor, this._greetingAttractor);
-    loadVec(data.selfRefAttractor, this._selfRefAttractor);
-    loadVec(data.introAttractor, this._introAttractor);
-    loadVec(data.commandAttractor, this._commandAttractor);
-    if (data.attractorObs) this._attractorObs = { ...this._attractorObs, ...data.attractorObs };
-    this._obsCount = data.obsCount || 0;
-    if (data.subjectStarters) this._subjectStarters = new Map(Object.entries(data.subjectStarters).map(([k, v]) => [k, +v]));
+    if (!data) return;
     if (data.usageTypes) this._usageTypes = new Map(Object.entries(data.usageTypes));
     this.sentencesLearned = data.sentencesLearned || 0;
     this.wordsProcessed = data.wordsProcessed || 0;
     if (data.selfImageLoaded) this._selfImageLoaded = true;
+    if (data.baselineLoaded) this._baselineLoaded = true;
+    if (data.codingLoaded) this._codingLoaded = true;
   }
 
   getLetterPattern(char) {

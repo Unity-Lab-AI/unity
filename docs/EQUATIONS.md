@@ -547,57 +547,56 @@ Called right after `innerVoice.loadPersona(text)` so the dictionary already has 
 
 ### Generation Equation — Cortex State → Words (T11.7 slot-prior layer, T13.3 will replace)
 
-No slot scorer, no softmax over n-grams, no hardcoded greeting openers. Each word is picked by cosine argmax against a target vector built from normalized priors and the brain's live cortex readout, then passed through a three-stage type-fit gate that keeps the candidate pool grammatically appropriate at each slot position.
+**T13.7 (2026-04-14) — slot-prior generation is deleted.** The equation block below describes the **T13.3 brain-driven emission loop** that runs at runtime. Target vector is the live cortex readout per emission, not a weighted blend of stored slot priors. No slot counter in the scoring logic — the `slot` index is only an emission counter for length cap and first-word constraints. Every stored running-mean prior (`_slotCentroid`, `_slotDelta`, `_slotTypeSignature`, `_contextVector`, attractor vectors) is gone from the constructor.
 
 ```
-mental(0)      = opts.cortexPattern  ← brain live semantic readout
-                                      via cluster.getSemanticReadout()
-                 || _contextVector   ← fallback to running topic attractor
+// Per emission (no slot counter in the logic):
+for emission in 0..maxLen:
+    for tick in 0..3:  cortex.step(0.001)                          // LIF integrate
+    target = cortex.getSemanticReadout(sharedEmbeddings)            // live 50d readout
 
-mental(slot+1) = 0.55 · mental(slot) + 0.45 · emb(nextWord)
+    // T13.6 drift-quiescence stop
+    if drift(target, lastReadout) < 0.08  and emitted ≥ 2:
+        break
+    lastReadout = target.slice()
 
-target(slot) = wC · L2(_slotCentroid[slot])
-             + wX · L2(_contextVector)
-             + wM · L2(mental)
-             + wT · L2(prevEmb + _slotDelta[slot])
+    // Score all dictionary candidates
+    for each w in dictionary._words:
+        if emitted.has(w):              skip
+        if slot==0 and nounDom(w) > 0.30: skip    (opener safety rail)
 
-W₀ = { centroid: 0.40, context: 0.30, mental: 0.30, transition: 0.00 }
-Wₙ = { centroid: 0.10, context: 0.15, mental: 0.25, transition: 0.50 }
+        cosSim       = cos(target, entry.pattern)
+        valenceMatch = 1 − 0.5 · |entry.valence − brainValence|
+        arousalBoost = 1 + arousal · (valenceMatch − 0.5)
+        recencyMul   = w ∈ recentOutputRing ? 0.3 : 1.0
+        score(w)     = cosSim · arousalBoost · recencyMul
+
+    // Softmax sample top-5
+    temperature = 0.25 + (1 − coherence) · 0.35
+    picked = softmax-sample top-5 by score at temperature
+    emit picked.w
+
+    // T13.4 efference copy — emitted word reshapes cortex for next emission
+    cortex.injectCurrent(mapToCortex(picked.emb, 300, 150) · 0.35)
+
+    // T13.6 grammatical terminability stop
+    if emitted ≥ max(3, maxLen−1) and fineType(last) ∉ dangling:  break
+
+maxLen = max(2, min(_maxSlots=8, floor(3 + arousal · 3 · drugLengthBias)))
 ```
 
-**Three-stage candidate scoring** — every word in `dictionary._words` runs through a hard pool filter, an optional slot-0 noun-dominance reject, and a multiplicative type-fit gate before the cosine score is even computed:
+**The slot-0 noun-dominance safety rail** is the only piece of T11.7 that survived into T13. Pure letter-equation check on the candidate's own wordType distribution — if `wordType(w).noun − (pronoun + det + qword) > 0.30`, skip it at slot 0. Until persona Hebbian basins are deep enough to guarantee pronoun-shape openers on their own, this structural reject keeps the opener conversational regardless of cortex drift.
 
-```
-typeFit(w, slot)  = Σ_k wordType(w)[k] · _slotTypeSignature[slot][k]
-slotSigMax(slot)  = max_k _slotTypeSignature[slot][k]
+**Amygdala valence shaping** (T13.5) multiplies cosine by `1 + arousal · (valenceMatch − 0.5)` where `valenceMatch = 1 − 0.5 · |word.valence − brainValence|`. Horny Unity picks different words from sad Unity given the same cortex readout — same dictionary, same cortex state, different multiplier shape per word.
 
-(1) HARD POOL FILTER:
-    if typeFit(w, slot) < slotSigMax(slot) · 0.30   →  skip word
+**Efference copy feedback** (T13.4) is the load-bearing recurrent loop. After every emission, the emitted word's embedding flows back into the cortex language region via `sharedEmbeddings.mapToCortex(emb, 300, 150) · 0.35` → `cluster.injectCurrent`. The next iteration's `getSemanticReadout` sees a cortex state shaped by what was just said. The brain hears itself speak at the embedding level and the next word reacts.
 
-(2) SLOT-0 NOUN-DOMINANCE REJECT (slot == 0 only):
-    nounDom = wordType(w).noun
-            − (wordType(w).pronoun + wordType(w).det + wordType(w).qword)
-    if slot == 0 ∧ nounDom > 0.30   →  skip word
+**Natural stopping** (T13.6) has three signals:
+1. **Drift quiescence** — `||target − lastReadout||₂ < 0.08` after 2+ emissions.
+2. **Grammatical terminability** — emitted length ≥ max(3, maxLen−1) AND last word's `_fineType` not in the dangling set `{DET, PREP, COPULA, AUX_DO, AUX_HAVE, MODAL, NEG, CONJ_COORD, CONJ_SUB, PRON_POSS}`.
+3. **Hard length cap** — `maxLen = floor(3 + arousal · 3 · drugLengthBias)`, capped at `_maxSlots = 8`.
 
-    English conversational sentences open with pronouns / dets /
-    qwords / interjections, never with bare common nouns. Pure
-    letter-equation property check on the candidate's own wordType
-    distribution, no content list.
-
-(3) MULTIPLICATIVE GATE on the cosine score:
-    normTypeFit = min(1, typeFit / slotSigMax(slot))
-    score(w)    = cos(target, emb(w)) · normTypeFit
-
-nextWord(slot) = softmax-sample top-5 by score
-                 over dictionary._words (post all three gates)
-                 excluding emitted-this-sentence + recency ring
-```
-
-All four target component vectors are L2-normalized before mixing so no single term swamps the others. The cosine score is in `[−1, 1]` and `normTypeFit` is in `[0, 1]`, so the multiplicative gate scales the cosine proportionally to type fit — wrong-type candidates that survive the hard filter get downweighted, right-type candidates keep full cosine.
-
-**Slot 0** weights favor **centroid** (sentence-opener distribution learned from observation) and balance **context** + **mental** for topic + brain-state awareness. Transition is zero because there is no previous word. The slot-0 noun-dominance reject is the conversational-grammar guarantee — even if the slot 0 type signature has noun weight pulled up by mixed-genre training data, the candidate pool stays pronoun/det/qword/interjection-shaped at the opener position.
-
-**Slot N (N ≥ 1)** weights favor **transition** (learned bigram geometry without storing any bigrams) and **mental** (brain cortex state evolving as words emit). Context keeps topic from drifting. Centroid contributes a small grammar nudge. Slots 1+ admit nouns / verbs / adjectives freely — only slot 0 has the noun-dominance reject.
+**What T13.7 deleted** that used to be in this section: `_slotCentroid[s]` position prior, `_slotDelta[s]` transition prior, `_slotTypeSignature[s]` type distribution, `_contextVector` decaying topic attractor, the `W₀` / `Wₙ` weight tables, the `mental(t+1) = 0.55·mental + 0.45·emb(nextWord)` formula decay (replaced by real feedback injection), the three-stage candidate gate (hard pool filter + noun reject + multiplicative gate — only the slot-0 noun reject survived), and `_recallSentence` / `_generateSlotPrior` fallback. See `docs/FINALIZED.md` T13.7 entry for the full deletion list and line-delta accounting.
 
 **Length** comes from brain state:
 

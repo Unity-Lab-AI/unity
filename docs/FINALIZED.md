@@ -5,6 +5,86 @@
 
 ---
 
+## 2026-04-14 — T13.7: Slot prior deletion pass — commitment point crossed
+
+**Context:** Gee's instruction: "keep working till done. we will to the comp later so quit mentioning it." T13.7 is the commitment point where rollback becomes expensive. Executed after T13.1-T13.6 landed in the same session, before any runtime verification — Gee accepted the risk explicitly.
+
+**What got ripped out of `js/brain/language-cortex.js`:**
+
+### Constructor fields (≈90 lines deleted)
+- `_contextVector` / `_contextVectorLambda` / `_contextVectorHasData` — running topic attractor
+- `_slotCentroid[]` / `_slotCentroidCount[]` — per-slot position prior (running mean of embeddings)
+- `_slotDelta[]` / `_slotDeltaCount[]` — per-slot transition prior (running mean of delta embeddings)
+- `_slotTypeSignature[]` — per-slot 8-dim wordType distribution
+- `_greetingAttractor` / `_selfRefAttractor` / `_introAttractor` / `_commandAttractor` — learned intent attractors
+- `_attractorEMA` / `_attractorObs` — EMA rate + observation counters
+- `_subjectStarters` — sentence-initial word frequency map
+- `_obsCount` — legacy observation counter
+
+Kept: `_maxSlots = 8` (still used by the T13.3 emission loop as a hard upper bound on length).
+
+### Methods deleted
+- `_generateSlotPrior` — the T11.7 slot-prior generation body that was preserved as rollback after T13.3. Full 234 lines gone via a node-splice pass.
+- `_updateContextVector` — context vector decay update (13 lines).
+- `_semanticFit` — cosine-against-context-vector helper (9 lines).
+- `_sentencePassesFilters` — T11 no-op stub (3 lines).
+- `_storeMemorySentence` — T11 no-op stub (3 lines).
+- `_recallSentence` — T11 no-op stub (3 lines).
+- `_loadStructure` — legacy no-op stub (3 lines).
+- `_typeGrammarScore` — T11 no-op stub returning 0 (3 lines).
+- `_pickConjByMood` — T11 no-op stub returning null (8 lines).
+- `_condProb` — T11 no-op stub returning 0 (1 line).
+- `mutualInfo` — T11 no-op stub returning 0 (1 line).
+
+### `learnSentence` body — slot-prior update block deleted
+The 65-line block that computed `obsWeight = max(0.25, arousal·2)` and did three running-mean updates per word position (centroid + delta + type signature) is gone. `learnSentence` now only does: token expansion → dictionary `learnWord` → `_learnUsageType` → optional morphological inflection. The `skipSlotPriors` 8th arg is retained as a no-op for backcompat with `loadCodingKnowledge` which still passes `true` there. Persona voice now lives in the cortex cluster's recurrent synapse matrix (trained via T13.1 Hebbian), not in position-conditioned running means.
+
+The `fromPersona` code path that bumped `_subjectStarters` also gone.
+
+### `analyzeInput` — `_contextVector` update call removed
+`analyzeInput(text, dictionary)` still runs `parseSentence`, updates `_lastInputWords` / `_lastInputRaw` / `_contextPatterns`, and calls `_updateSocialSchema`. The `_updateContextVector(topicPattern, count)` line at the bottom is gone. Topic now reaches the cortex via `brain.injectParseTree` at `engine.processAndRespond` which injects the content embedding directly into the cortex language region before the settle loop.
+
+### `_learnUsageType` — `_subjectStarters` lookup removed
+The check `|| (this._subjectStarters.get(prevWord.toLowerCase()) || 0) >= 1` on the `prevIsSubject` branch is gone. `_learnUsageType` now determines subject status purely from `wordType(prevWord).pronoun > 0.5 || _isNominativePronoun(prevWord)` — letter-equation detection, no learned frequency map needed.
+
+### `generate()` dispatcher — fallback path removed
+Pre-T13.7 the new `generate()` dispatched to `_generateSlotPrior` when `opts.cortexCluster` was absent. Now it logs `[LanguageCortex] generate called without cortexCluster — T13.7 removed the slot-prior fallback. Caller must pass opts.cortexCluster.` and returns empty string. Every caller in the engine already passes the cluster reference (three call sites updated in the T13.2-T13.6 push), so this path should never fire in practice — the warning exists as a loud diagnostic if a future caller forgets.
+
+### `serialize()` / `deserialize()` — reduced to usage-types only
+T13.7 persistence version bumped to `'T13.7'`. Serialized state is now `{usageTypes, zipfAlpha, sentencesLearned, wordsProcessed, selfImageLoaded, baselineLoaded, codingLoaded}`. The slot prior fields / attractors / subject starters / obsCount all removed from the serialized payload. Deserialize no longer does the 30-line load dance for slot prior matrices. Trained cortex weights persist through the cluster's own `SparseMatrix.serialize` path via `BrainPersistence.save`.
+
+### `js/app.js` `/think` debug preview — retargeted to cortex readout
+The `/think` slash command's Step 1 used to measure cosine shift in `lc._contextVector` before/after `sensory.analyzeInput(userText)`. With `_contextVector` deleted, it now measures cosine shift in `brain.clusters.cortex.getSemanticReadout(sharedEmbeddings)` instead — same visualization ("context vector shifted N%") but reading the live cortex readout instead of a stored decaying-mean field. Step 2 (hippocampus recall preview) had been calling `lc._recallSentence(userText)`, which is now deleted; replaced with a placeholder note that recall is implicit in persona Hebbian basins.
+
+### Net line delta
+- **Before T13.7:** `js/brain/language-cortex.js` = 3584 lines
+- **After T13.7:** `js/brain/language-cortex.js` = 3178 lines
+- **Delta:** **−406 lines** on language-cortex.js alone, plus ~20 lines trimmed from `js/app.js` `/think` debug. Total T13.7 delete ≈ −425 lines.
+
+T13 as a whole (T13.1 + T13.2 + T13.3 + T13.4 partial + T13.5 partial + T13.6 + T13.7) net line delta:
+- `cluster.js`: +131 (Hebbian method + diagnostic)
+- `language-cortex.js`: +198 (T13.3 emission loop) − 406 (T13.7 deletion) + 55 (T13.1 trainPersonaHebbian driver) = **−153 net**
+- `engine.js`: +95 (T13.1 wrapper + T13.2 injectParseTree + opts updates)
+- `inner-voice.js`: +18 (delegates + cortexCluster passthrough)
+- `app.js`: +15 (T13.1 boot wire) − 20 (T13.7 /think debug trim) = −5 net
+
+### Deferred (intentionally, not forgotten)
+- **Comments referencing deleted symbols** — a handful of `// _recallSentence ...` / `// _contextVector ...` / `// _slotCentroid ...` comment strings remain as historical pointers inside `language-cortex.js` (lines 93, 981, 1591, 2706). They're cheap and aid future archaeology. Leaving them.
+- **Public doc files** (`README.md`, `brain-equations.html`, `docs/EQUATIONS.md` generation equation block) still contain slot-prior equation blocks that are NOT describing live code. These get updated in the same T13.7 push per LAW.
+
+### Honest verification status
+No runtime test per NO TESTS policy. Verification is:
+1. `node -c js/brain/language-cortex.js` — SYNTAX OK
+2. `node -c js/brain/engine.js` — SYNTAX OK
+3. `node -c js/brain/inner-voice.js` — SYNTAX OK
+4. `node -c js/brain/cluster.js` — SYNTAX OK
+5. `node -c js/app.js` — SYNTAX OK
+6. Grep for deleted symbols outside `language-cortex.js` — only hits are in doc files (addressed in same commit)
+
+Rollback path after T13.7 is a git revert of this commit, not a one-line opts change. Commitment point crossed.
+
+---
+
 ## 2026-04-14 — T13.2–T13.6: Brain-driven emission loop + parse-tree injection (four T13 milestones)
 
 **Context:** Shipped in the same session as T13.1 (persona Hebbian training). Gee's instruction: "keep working till done". This wave lands parse-tree injection into brain clusters (T13.2), rewrites `LanguageCortex.generate()` as the T13 brain-driven emission loop (T13.3), wires efference copy feedback (T13.4, partial), adds amygdala valence shaping in the scoring equation (T13.5, partial), and implements natural stopping criteria (T13.6). Slot prior deletion (T13.7) deferred one more session so rollback stays cheap — `LanguageCortex._generateSlotPrior` holds the full T11.7 path and `generate()` auto-falls-back when no `cortexCluster` reference is supplied.

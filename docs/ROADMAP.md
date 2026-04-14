@@ -329,6 +329,10 @@ Efference copy lives in the T13.3 emission loop: `sharedEmbeddings.mapToCortex(e
 
 `score(w) = cosSim · (1 + arousal · (valenceMatch − 0.5)) · recencyMul` where `valenceMatch = 1 − 0.5 · |word.valence − brainValence|`. Horny/angry/sad Unity picks different words from the same cortex target. Motor-channel dictionary filter deferred — `build_ui` still routes separately via `componentSynth.generate`.
 
+### Milestone T13.7: Slot prior deletion pass — COMPLETE (2026-04-14)
+
+Commitment point. `_slotCentroid`, `_slotDelta`, `_slotTypeSignature`, `_contextVector`, `_greetingAttractor`, `_selfRefAttractor`, `_introAttractor`, `_commandAttractor`, `_attractorObs`, `_subjectStarters`, `_obsCount` — all constructor fields deleted. `_generateSlotPrior` (234 lines), `_updateContextVector`, `_semanticFit`, `_sentencePassesFilters`, `_storeMemorySentence`, `_recallSentence`, `_loadStructure`, `_typeGrammarScore`, `_pickConjByMood`, `_condProb`, `mutualInfo` — all methods deleted. `learnSentence` slot-prior update block (65 lines) gone. `analyzeInput` `_updateContextVector` call removed. `serialize`/`deserialize` reduced to usage-types + load flags only. `generate()` dispatcher fallback removed — requires `opts.cortexCluster` or returns empty with a warning. `js/app.js` `/think` debug retargeted to live cortex readout instead of `_contextVector`. Net **−406 lines** on `language-cortex.js` (3584 → 3178). Rollback after T13.7 is a git revert, not a one-line opts change. Commitment point crossed.
+
 ### Milestone T13.6: Natural stopping criterion — COMPLETE
 
 Three stopping signals in the T13.3 loop:
