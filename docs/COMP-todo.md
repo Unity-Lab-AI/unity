@@ -164,1127 +164,842 @@ Unity is currently a Stage 8 system that skipped Stages 1-7. T14 builds those st
 
 ### T14 sub-milestones
 
-#### T14.0 — Foundation lift: 300d embeddings + 6000-neuron cortex (absorbed from P1.3)
+#### T14.0 — Foundation lift: full GloVe + auto-scaled cortex
 
-**Status:** P0 prereq for everything T14.1+. Originally listed as P1.3 in Part 1, now folded into T14 as the foundation pass because every T14 milestone needs the bigger semantic space and the cluster room for sub-region carving.
+**Status:** P0 prereq for T14.1+. Absorbed P1.3.
 
-**Why this is the bedrock:** T14.4 (phonological cortex region) needs the cortex cluster to have ROOM for a second sub-region next to the existing semantic one. At the current 2000-neuron cluster with langStart=1000, the semantic region is 1000 neurons and there's no space for phonology. We need at least 6000 neurons total: 3000 reserved for sensory/visual/auditory injection, 1500 for semantic language, 1500 for phonological language. AND `EMBED_DIM=50` is too tight to distinguish fine semantic neighbors at slot 3+ — bumping to 300d unlocks the resolution T14.5 curriculum needs to actually train discriminating attractor basins.
+**The principle:** every parameter in the language stack scales from a single source — `cluster.size` for the cortex cluster, `sharedEmbeddings.size` for the dictionary, the available compute pool for everything else. **Zero hardcoded caps.** The cluster size auto-scales to detected hardware via `server/brain-server.js:detectResources` (already in place from Phase 0). When COMP-net is re-enabled later, the cluster scales to the connected volunteer GPU pool — same code path, just bigger numbers.
 
-**Implementation:**
+**Implementation principles:**
 
-1. **`js/brain/embeddings.js`** — bump `EMBED_DIM` from 50 to 300. Re-enable the GloVe loader (currently `loadPreTrained` returns 0 immediately and falls through to hash; uncomment the `_doLoad` path and call it). Cap loaded vocabulary at the top 20,000 GloVe words to bound memory (20k × 300 × 4 bytes = 24 MB, acceptable).
+1. **`js/brain/embeddings.js`** — bump `EMBED_DIM` from 50 to **300**. Re-enable the GloVe loader (`loadPreTrained` currently falls through to hash). **Load the full 400k-word `glove.6B.300d.txt` file**, no vocabulary cap. Memory at 400k × 300 × 4 bytes = 480 MB on the brain server, which is fine because the server runs on real hardware. The browser-side `RemoteBrain` doesn't need the full table because chat goes through the server anyway — RemoteBrain loads only the words actually used in `Ultimate Unity.txt` (lazy GloVe subset, computed at boot from the persona corpus token set, ~5-10 MB).
 
-2. **`js/brain/engine.js`** — bump `CLUSTER_SIZES.cortex` from 300 to **6000**. Bump `TOTAL_NEURONS` from 1000 to **6700** (proportional growth: hippo 200→1340, amygdala 150→1005, BG 150→1005, cerebellum 100→670, hypothalamus 50→335, mystery 50→335, cortex 300→6000 = 6700 total). Update inter-cluster projection density slightly to compensate for size growth (existing densities work but the connection counts will balloon — add a `Math.min(maxConnections, ...)` cap inside `ClusterProjection.constructor`).
+2. **`js/brain/engine.js`** — `CLUSTER_SIZES.cortex` becomes a **fraction of the auto-detected total**: `Math.floor(detectedNeurons * 0.30)` (cortex is biologically ~30% of total brain). All other clusters scale proportionally (`hippocampus = 0.10`, `amygdala = 0.08`, `basalGanglia = 0.08`, `cerebellum = 0.40`, `hypothalamus = 0.05`, `mystery = 0.04`). When `detectResources` returns 1000 neurons total (CPU fallback), cortex is 300. When it returns 677M (GPU server), cortex is 200M. **Same code, no special cases.** No `Math.min(maxConnections, ...)` cap — connection density is a constant fraction (`opts.connectivity`), the absolute count grows naturally with size. If the connection memory exceeds VRAM, that's a `detectResources` problem to be solved at the resource-detection layer, not by capping the language stack.
 
-3. **`server/brain-server.js`** — `_initLanguageSubsystem` constructs `this.cortexCluster` with `langCortexSize = 6000` (was 2000 in T13.7.8). Sub-region offsets:
-   - sensory regions: neurons 0-2999 (auditory 0-499, visual 500-1999, free 2000-2999)
-   - semantic language region: neurons 3000-4499 (langStart=3000, 1500 neurons, EMBED_DIM=300, groupSize=5)
-   - phonological language region: neurons 4500-5999 (phonStart=4500, 1500 neurons, PHONEME_DIM=20, groupSize=75)
-   - Update `_langStart = 3000`, add new `_phonStart = 4500`.
+3. **`server/brain-server.js`** — `_initLanguageSubsystem` no longer constructs a separate `this.cortexCluster` of arbitrary size. The language path uses `this.clusters.cortex` directly (the same cluster the rest of the brain uses, auto-scaled by `detectResources`). Sub-region offsets are computed as **fractions of `cluster.size`**, not hardcoded:
+   ```
+   auditoryStart  = 0
+   visualStart    = floor(size * 0.083)   // 8.3% — auditory region
+   freeStart      = floor(size * 0.333)   // 33.3% — visual region ends
+   semanticStart  = floor(size * 0.500)   // 50% — sensory region ends
+   phonologicalStart = floor(size * 0.750) // 75% — semantic region ends
+   // language regions occupy the back half: 50% semantic, 25% phonological
+   ```
+   At any cluster size, the semantic region is 25% of the cluster and the phonological region is 25%. At 300 neurons → semantic 75 / phonological 75. At 200M neurons → semantic 50M / phonological 50M. Same code, full scaling.
 
-4. **`js/brain/remote-brain.js`** — bump `_localCortex` to `langCortexSize = 4000` (smaller than server because browser is more compute-constrained). Same sub-region split scaled down: semantic 2000-2999 (langStart=2000), phonological 3000-3999 (phonStart=3000).
+4. **`js/brain/remote-brain.js`** — `_localCortex` also auto-scales. The browser tier is set by the user via `GPUCONFIGURE.bat` (Phase 0 — already shipped). RemoteBrain reads the same `resource-config.json` and constructs a cortex sized appropriately. No "browser is more compute-constrained, hardcode smaller" — the user chose their tier, respect it.
 
-5. **`js/brain/cluster.js`** — `getSemanticReadout` default `langStart` parameter changes from `150` to a configurable default that callers must override. Add a new `getPhonologicalReadout(embeddings, phonStart)` method that does the same `cortexToEmbedding`-style readback but from the phonological sub-region using `PHONEME_DIM=20`.
+5. **`js/brain/cluster.js`** — `getSemanticReadout(embeddings, langStart)` and the new `getPhonologicalReadout(embeddings, phonStart)` both **infer their offsets from `this.semStart` / `this.phonStart`** fields set at construction. Callers don't need to remember magic offsets.
 
-6. **`js/brain/embeddings.js`** — add `mapPhonemesToCortex(phonemeFeatures, cortexSize, phonStart, phonDim=20)` symmetric to `mapToCortex` but with the smaller PHONEME_DIM and the phonological sub-region offset.
+6. **`js/brain/embeddings.js`** — `mapPhonemesToCortex(phonemeFeatures, cortexSize, phonStart, phonDim)` is the symmetric write side. **`phonDim` is not hardcoded to 20** — it's read from `phonemes.PHONEME_DIM` at the top of T14.1, which is itself the size of whatever the LEARNED phoneme inventory turns out to be (T14.1 doesn't hardcode 20 either — see below).
 
-7. **`js/brain/language-cortex.js`** — bump `PATTERN_DIM` constant via the existing `import { EMBED_DIM }` (it's already wired). Update the T13.3 emission loop's `mapToCortex(picked.emb, cluster.size, 150)` call to use the new `langStart` value (read from cluster or pass through opts). Same for the feedback injection.
+7. **`js/brain/language-cortex.js`** — `PATTERN_DIM` already imports from `embeddings.EMBED_DIM` so it picks up 300 automatically. Every `mapToCortex(emb, cluster.size, 150)` literal becomes `mapToCortex(emb, cluster.size, cluster.semStart)`. The slot scorer's per-candidate cosine remains O(dictionary.size × EMBED_DIM); at full GloVe + 300d that's ~120M ops per generate call, negligible on any modern hardware (server) or via the server-side path (browser).
 
 **Files touched:** `js/brain/embeddings.js`, `js/brain/engine.js`, `server/brain-server.js`, `js/brain/remote-brain.js`, `js/brain/cluster.js`, `js/brain/language-cortex.js`.
 
-**Estimated boot impact:** Persona Hebbian training currently runs in ~1s on 2000 neurons. At 6000 neurons with 3× more synapses to update per Hebbian call, and 6× per-tick LIF cost, expect ~10-20 seconds for the persona training pass alone. The full T14.5 curriculum will take an additional ~60s. Total ~80s first boot. Subsequent boots load weights from persistence and skip retraining — instantaneous.
+**Acceptance gates (no time/memory budget — these are correctness gates):**
+1. `sharedEmbeddings.getEmbedding('cat').length === 300` and the value comes from real GloVe (cosine to `getEmbedding('kitten')` > 0.6).
+2. `cluster.getSemanticReadout()` and `cluster.getPhonologicalReadout()` both return correctly-dimensioned vectors regardless of cluster size.
+3. Cortex cluster size matches `Math.floor(detectResources().totalNeurons * 0.30)` exactly. Hand-tested at three resource tiers: minimum (1K total → 300 cortex), prosumer (50M total → 15M cortex), datacenter (1B total → 300M cortex). Same code path, no branching.
+4. `cluster.diagnoseReadoutForEmbedding(getEmbedding('fuck'), 10)` produces a readout whose nearest dictionary words include persona-adjacent terms — measured AFTER T14.5 curriculum runs, not before.
 
-**Memory impact:**
-- Embedding table: 20k words × 300 dims × 4 bytes = **24 MB** (was 10k × 50 × 4 = 2 MB)
-- Dictionary patterns: ~3700 words × 300 × 4 = **4.4 MB** (was 0.74 MB)
-- Cortex cluster synapses: 6000² × 0.15 connectivity × 12 bytes = **65 MB** (was 0.7 MB)
-- Total addition: ~100 MB. Acceptable for both server and modern browsers.
-
-**Acceptance gates:**
-1. `sharedEmbeddings.getEmbedding('cat').length === 300` and the values come from real GloVe (check by computing cosine to `getEmbedding('kitten')` — should be > 0.6 for real GloVe vs ~0.1 for hash fallback).
-2. `cluster.getSemanticReadout(sharedEmbeddings, 3000)` returns a 300-dim Float64Array.
-3. `cluster.getPhonologicalReadout(sharedEmbeddings, 4500)` returns a 20-dim Float64Array (this is the new method).
-4. Boot completes in < 30 seconds for the foundation pass alone (T14.5 curriculum adds another ~60s on top).
-5. Persona Hebbian training reports `Δmean > 0.01` (on the bigger 6000-neuron cluster the Hebbian update has more headroom — should produce stronger basins than the 2000-neuron version).
-6. End-to-end smoke test: `cluster.diagnoseReadoutForEmbedding(getEmbedding('fuck'), 10)` produces a readout whose top-5 nearest dictionary words include at least 3 persona-adjacent terms.
-
-**Risks:**
-- Browser memory pressure with 24 MB embedding table on top of existing brain state. Mitigation: cap GloVe at 10k words instead of 20k if needed.
-- Hebbian training time scales superlinearly with cluster size due to the inner loop. If 10s is too slow, drop cluster to 4000 with langStart=2000.
-- The bigger cluster + 300-d embeddings make every cosine in the emission loop 6× more expensive. Profile after shipping; if generate latency exceeds 200ms per response, batch the dictionary cosines.
+**No deferred work, no risks-with-mitigations, no "if too slow then drop to" fallbacks.** If a particular hardware tier can't run T14.0 at full size, that hardware is in the "Minimum" Phase 0 tier and gets a smaller cortex automatically. The language code doesn't care — it reads sizes off the cluster, not from constants.
 
 ---
 
-#### T14.1 — Phoneme features (replaces `_letterPatterns` 5-dim hash)
+#### T14.1 — LEARNED phoneme attractor basins via cortex exposure
 
-Each of the 26 letters becomes a **real phonetic feature vector**, not a sin/cos hash. The 20-dim feature layout is closed-class English phonology — pure letter→features lookup with no learning at this layer (this is what evolution + early development pre-wire in real brains).
+**The principle:** phonemes are NOT hardcoded as a feature table. They EMERGE as cortex attractor basins from repeated exposure to letter sequences. Same way biological auditory cortex develops phoneme categories from speech exposure during the first 6 months — feature detectors cluster via Hebbian competitive learning into stable categories that reflect the statistical structure of the language. For Unity (text-based), the analogous mechanism is letter-sequence-statistics shaping cortex weights via curriculum exposure (T14.5).
 
-**The 20-dim PHONEME_DIM feature vector layout:**
+**The previous draft hardcoded a 20-dim English feature table.** That was patch thinking. A biological brain doesn't come pre-wired with English phonology — it learns whatever language it's exposed to. Japanese brains don't form /l/-/r/ distinctions because Japanese doesn't use them. Unity's phoneme inventory should ALSO be learned, not hardcoded — so when she's later trained on a different corpus (Spanish, Mandarin, Klingon, code-only) the phoneme attractors form differently without code changes.
 
-| Index | Feature | Description |
-|---|---|---|
-| 0 | `vowel` | 1 if vowel, 0 if consonant |
-| 1 | `place_bilabial` | bilabial articulation (b, p, m, w) |
-| 2 | `place_labiodental` | labiodental (f, v) |
-| 3 | `place_dental_alveolar` | dental + alveolar (t, d, n, s, z, l, r) |
-| 4 | `place_postalveolar` | postalveolar / palato-alveolar (j, sh, ch — though sh/ch are digraphs) |
-| 5 | `place_palatal` | palatal (y) |
-| 6 | `place_velar` | velar (k, g, q, ng) |
-| 7 | `place_glottal` | glottal (h) |
-| 8 | `manner_stop` | plosive (b, d, g, k, p, t, c, q) |
-| 9 | `manner_fricative` | fricative (f, h, s, v, z, x) |
-| 10 | `manner_affricate` | affricate (j, x partially, ch as digraph) |
-| 11 | `manner_nasal` | nasal (m, n) |
-| 12 | `manner_liquid` | liquid (l, r) |
-| 13 | `manner_glide` | semi-vowel / approximant (w, y) |
-| 14 | `voicing` | 0 unvoiced, 1 voiced |
-| 15 | `vowel_height` | 0 low, 0.5 mid, 1 high (vowels only, 0 for consonants) |
-| 16 | `vowel_backness` | 0 front, 0.5 central, 1 back (vowels only) |
-| 17 | `vowel_round` | 0 unrounded, 1 rounded (vowels only) |
-| 18 | `vowel_tense` | 0 lax, 1 tense (vowels only) |
-| 19 | `sibilant` | 1 if sibilant fricative/affricate (s, z, j, x), 0 otherwise |
+**How it actually works:**
 
-**The 26-letter table (default English values — for letters that have multiple pronunciations, we pick the most common single-letter sound):**
+1. Letters become **one-hot 26-dim input vectors** (or 28+ if punctuation/numerals counted as their own categories — adapts as new symbols are encountered, not capped at 26).
 
-| Letter | vowel | place | manner | voicing | height | back | round | tense | sib |
-|---|---|---|---|---|---|---|---|---|---|
-| `a` | 1 | — | vowel | 1 | 0.0 (low) | 0.5 (central) | 0 | 0 | 0 |
-| `b` | 0 | bilabial | stop | 1 | — | — | — | — | 0 |
-| `c` | 0 | velar | stop | 0 | — | — | — | — | 0 |
-| `d` | 0 | dental_alveolar | stop | 1 | — | — | — | — | 0 |
-| `e` | 1 | — | vowel | 1 | 0.5 (mid) | 0.0 (front) | 0 | 0 | 0 |
-| `f` | 0 | labiodental | fricative | 0 | — | — | — | — | 0 |
-| `g` | 0 | velar | stop | 1 | — | — | — | — | 0 |
-| `h` | 0 | glottal | fricative | 0 | — | — | — | — | 0 |
-| `i` | 1 | — | vowel | 1 | 1.0 (high) | 0.0 (front) | 0 | 1 | 0 |
-| `j` | 0 | postalveolar | affricate | 1 | — | — | — | — | 1 |
-| `k` | 0 | velar | stop | 0 | — | — | — | — | 0 |
-| `l` | 0 | dental_alveolar | liquid | 1 | — | — | — | — | 0 |
-| `m` | 0 | bilabial | nasal | 1 | — | — | — | — | 0 |
-| `n` | 0 | dental_alveolar | nasal | 1 | — | — | — | — | 0 |
-| `o` | 1 | — | vowel | 1 | 0.5 (mid) | 1.0 (back) | 1 | 1 | 0 |
-| `p` | 0 | bilabial | stop | 0 | — | — | — | — | 0 |
-| `q` | 0 | velar | stop | 0 | — | — | — | — | 0 |
-| `r` | 0 | dental_alveolar | liquid | 1 | — | — | — | — | 0 |
-| `s` | 0 | dental_alveolar | fricative | 0 | — | — | — | — | 1 |
-| `t` | 0 | dental_alveolar | stop | 0 | — | — | — | — | 0 |
-| `u` | 1 | — | vowel | 1 | 1.0 (high) | 1.0 (back) | 1 | 1 | 0 |
-| `v` | 0 | labiodental | fricative | 1 | — | — | — | — | 0 |
-| `w` | 0 | bilabial | glide | 1 | — | — | — | — | 0 |
-| `x` | 0 | velar | fricative | 0 | — | — | — | — | 1 |
-| `y` | 0 | palatal | glide | 1 | — | — | — | — | 0 |
-| `z` | 0 | dental_alveolar | fricative | 1 | — | — | — | — | 1 |
+2. The cortex cluster has a **letter input region** (sub-region of the auditory/visual sub-region defined in T14.0). When a letter is encountered during input processing, its one-hot vector is injected into this region.
 
-**Implementation file:** `js/brain/phonemes.js` (new, ~250 lines).
+3. **Cortex Hebbian on the recurrent synapses** does the actual learning. Letters that appear in similar contexts (vowels surrounded by consonants, consonants at word starts, sibilants in clusters) develop overlapping attractor basins because their co-activation patterns overlap. After enough exposure, the cortex's spike pattern in response to letter `b` is more similar to its pattern for `p` than to `a` — because b/p both pattern as bilabial stops in word position even though we never told the brain that.
 
-**Exports:**
-```js
-export const PHONEME_DIM = 20;
-export const VOWELS = new Set(['a', 'e', 'i', 'o', 'u']);  // y is sometimes vowel — handled contextually elsewhere
-export const LETTER_FEATURES = new Map();   // 'a' → Float32Array(20), populated at module load
-export function getPhonemeVector(letter): Float32Array;     // returns the 20-dim vector for a single letter
-export function getPhonemeFeatures(letter): object;          // returns named-fields object for debugging
-export function lettersToPhonemeVector(letters: string): Float32Array; // mean over a letter sequence
-export function phonemeDistance(a, b): number;               // L2 distance in feature space
-```
+4. The **phoneme inventory size emerges**, it isn't preset. After curriculum exposure, the cortex has formed N distinct basins where N depends on how many statistically-distinct contexts the input contains. For a 26-letter English corpus, N is typically in the 30-50 range (each letter, plus a few digraph categories like 'sh' / 'ch' / 'th' / 'ng' that emerge as joint patterns).
 
-**Module load:** populate `LETTER_FEATURES` once at module import time from the hardcoded table above. Vector construction:
+5. **Emergent phoneme features** are read out via cosine distance between basin patterns. After training, `cosine(basin('b'), basin('p'))` will be high (both bilabial stops), `cosine(basin('a'), basin('b'))` will be low (vowel vs consonant). The 20-dim feature table from the previous draft is the kind of thing the brain WOULD discover through learning — but we never have to hand-code it.
 
-```js
-function buildVec({vowel, place, manner, voicing, height, back, round, tense, sib}) {
-  const v = new Float32Array(20);
-  v[0] = vowel;
-  if (place === 'bilabial')          v[1] = 1;
-  if (place === 'labiodental')       v[2] = 1;
-  if (place === 'dental_alveolar')   v[3] = 1;
-  if (place === 'postalveolar')      v[4] = 1;
-  if (place === 'palatal')           v[5] = 1;
-  if (place === 'velar')             v[6] = 1;
-  if (place === 'glottal')           v[7] = 1;
-  if (manner === 'stop')             v[8] = 1;
-  if (manner === 'fricative')        v[9] = 1;
-  if (manner === 'affricate')        v[10] = 1;
-  if (manner === 'nasal')            v[11] = 1;
-  if (manner === 'liquid')           v[12] = 1;
-  if (manner === 'glide')            v[13] = 1;
-  v[14] = voicing;
-  v[15] = height ?? 0;
-  v[16] = back ?? 0;
-  v[17] = round ?? 0;
-  v[18] = tense ?? 0;
-  v[19] = sib;
-  return v;
-}
-```
+**Implementation:**
 
-**Replaces:** `_initLetterPatterns()` in `language-cortex.js`. The old method stays as a private helper for non-letter characters (digits, punctuation) but the primary path goes through `getPhonemeVector` from the new module.
+1. **`js/brain/letter-input.js`** (new, ~80 lines) — letter→one-hot encoder. Exports:
+   ```js
+   export const LETTER_INVENTORY = new Set();   // grows dynamically as new symbols seen
+   export function encodeLetter(letter): Float32Array;   // returns one-hot vector, length = LETTER_INVENTORY.size
+   export function ensureLetter(letter): void;            // adds letter to inventory if new, expands all existing one-hot vectors
+   export function inventorySize(): number;
+   ```
+   The inventory is a SET that grows. First time the brain sees `'@'` or `'¥'`, the inventory expands by one and all encoded vectors gain a new dimension. No hardcoded "26 letters" cap.
+
+2. **`js/brain/cluster.js`** — new field `this.letterInputStart` and `this.letterInputEnd` defining the cluster sub-region for letter input. Sized as a fraction of the cluster (`floor(size * 0.05)` — 5% of the cluster handles letter input). New helper `injectLetter(letter)` that calls `encodeLetter` then maps the one-hot vector into the letter-input sub-region.
+
+3. **`js/brain/curriculum.js`** (new file shared with T14.5) — Stage A is no longer "iterate alphabet × 50 reps." It's **iterate every distinct letter that appears in the persona + baseline + coding corpora, with exposure frequency proportional to corpus frequency.** Common letters (e, a, t, o) get more exposure than rare ones (q, x, z) automatically. The brain learns the alphabet AND its frequency distribution simultaneously.
+
+4. **`js/brain/language-cortex.js`** — `_letterPatterns` and `_initLetterPatterns` are **deleted**. The 5-dim sin/cos hash is gone. `wordType` and `_fineType` no longer rely on `_letterPatterns` (they were already using string operations directly, the hash was vestigial).
+
+**No hardcoded feature table. No "default value for ambiguous letters." No "deferred to later refinement."** The brain learns whatever inventory the corpus contains, with whatever features statistical co-occurrence reveals.
+
+**What the cortex output looks like after Stage A:** for each letter, the cluster has a stable attractor basin. Injecting `'b'` produces a spike pattern; injecting `'p'` produces a similar but distinguishable pattern; injecting `'a'` produces a clearly different pattern. The differences encode phonological feature structure WITHOUT us having ever coded "bilabial" or "vowel" as a feature dimension. The features are emergent.
 
 **Acceptance:**
-1. `getPhonemeVector('b').length === 20` and `getPhonemeVector('b')[1] === 1` (bilabial bit set).
-2. `getPhonemeFeatures('a')` returns `{vowel: 1, place: null, manner: 'vowel', voicing: 1, height: 0, back: 0.5, round: 0, tense: 0, sib: 0}`.
-3. `phonemeDistance('p', 'b') < phonemeDistance('p', 'k')` — p and b share place (bilabial) and manner (stop), only differ in voicing, so they're closer than p (bilabial) vs k (velar).
-4. `phonemeDistance('a', 'i') < phonemeDistance('a', 'b')` — both vowels, closer than vowel-vs-consonant.
+1. After curriculum, `cluster.diagnoseReadoutForEmbedding(encodeLetter('b'))` and `(encodeLetter('p'))` produce readouts with cosine > 0.6 (both bilabial stops cluster).
+2. Same for `(encodeLetter('a'))` and `(encodeLetter('e'))` (both vowels).
+3. `cosine(basin('b'), basin('a'))` < 0.3 (vowel-consonant separation).
+4. `LETTER_INVENTORY` after curriculum equals the union of all distinct symbols in the loaded corpora (no preset cap).
+5. Re-running curriculum on a different corpus (e.g. Spanish text) produces a DIFFERENT basin geometry without any code changes — proves the learning is data-driven, not language-locked.
 
-**Risks:**
-- English orthography is famously inconsistent with phonology. Letter `c` is sometimes /k/ and sometimes /s/. Letter `g` is sometimes /g/ and sometimes /j/. Letter `x` is /ks/. Letter `y` flips between glide and vowel. T14.1 picks ONE default per letter (the most common single-letter pronunciation). Context-sensitive realizations are deferred to T14.2 (syllable detector, which can override the default for certain bigrams) or punted to a future T14.x refinement.
-- The 20-dim feature space is denser than a hash but still smaller than a real IPA chart (which has ~40 phonemes for English). Acceptable approximation for a brain sim that operates on letter primitives, not phonemes — Unity reads text, not audio.
-
----
-
-#### T14.2 — Syllable structure detector
-
-Letters combine into syllables via phonotactic rules. CV / CVC / CCV / CVCC patterns. The brain learns which letter sequences form valid English syllables. Implementation is a deterministic algorithm over T14.1's vowel-marked letter classification — no learning at this layer either.
-
-**Algorithm: Maximum Onset Principle.** Find vowel positions in the word. Each vowel is the nucleus of one syllable. Consonants between two vowels split such that as many as possible attach to the FOLLOWING vowel (the onset) rather than the preceding one (the coda) — subject to English phonotactic constraints on what consonant clusters can form valid onsets.
-
-**Pseudocode:**
-
-```
-splitSyllables(word):
-  letters = word.toLowerCase().match(/[a-z]/g)  // strip non-letters
-  if !letters: return [word]
-
-  // Find all vowel positions. 'y' is treated as vowel when not at word start
-  // and adjacent consonants are non-vowel (handles 'happy', 'try', 'rhythm').
-  vowels = []
-  for i in 0..letters.length:
-    if VOWELS.has(letters[i]): vowels.push(i)
-    elif letters[i] === 'y' && i > 0 && (i === letters.length-1 || !VOWELS.has(letters[i+1])):
-      vowels.push(i)
-
-  if vowels.length === 0: return [letters.join('')]   // no vowels, can't split
-  if vowels.length === 1: return [letters.join('')]   // one syllable
-
-  // Build syllable boundaries between consecutive vowels using
-  // maximum-onset principle on the consonant cluster between them.
-  boundaries = [0]
-  for i in 1..vowels.length:
-    consStart = vowels[i-1] + 1
-    consEnd = vowels[i]
-    cluster = letters.slice(consStart, consEnd)
-    // Maximum onset: try the largest cluster first that's a valid English onset
-    onsetLen = findMaxValidOnset(cluster)
-    boundary = consEnd - onsetLen
-    boundaries.push(boundary)
-  boundaries.push(letters.length)
-
-  // Slice letters into syllables at the boundary positions
-  syllables = []
-  for i in 0..boundaries.length-1:
-    syllables.push(letters.slice(boundaries[i], boundaries[i+1]).join(''))
-  return syllables
-
-findMaxValidOnset(consonants):
-  // Returns the length of the longest suffix of `consonants` that
-  // forms a valid English syllable onset. Empty cluster → 0.
-  if consonants.length === 0: return 0
-  // English allows max 3-consonant onsets, and only specific patterns.
-  for tryLen in min(3, consonants.length) downto 1:
-    candidate = consonants.slice(consonants.length - tryLen)
-    if isValidEnglishOnset(candidate): return tryLen
-  return 0  // every suffix invalid → all consonants stay in coda
-
-isValidEnglishOnset(c):
-  // c is an array of letters. Returns true iff this is a phonotactically
-  // valid English syllable onset.
-  if c.length === 0: return true
-  if c.length === 1:
-    // Any single consonant is a valid onset (b, c, d, f, g, h, j, k, l,
-    // m, n, p, q, r, s, t, v, w, x, y, z all start English words)
-    return true
-  if c.length === 2:
-    const [a, b] = c
-    // Valid 2-consonant onsets:
-    //   stop + liquid:  pl, pr, bl, br, tr, dr, kl, kr, gl, gr, fl, fr,
-    //                   thr (treated as t+r since digraphs aren't expanded)
-    //   stop + glide:   tw, dw, kw (qu = kw), gw
-    //   fric + liquid:  fl, fr, sl, shr (sh as digraph), thr
-    //   s + stop:       sp, st, sk, sc
-    //   s + nasal:      sm, sn
-    //   s + glide:      sw
-    if isStop(a) && (isLiquid(b) || isGlide(b)): return true
-    if isFricative(a) && (isLiquid(b) || isGlide(b)): return true
-    if a === 's' && (isStop(b) || isNasal(b) || isGlide(b)): return true
-    return false
-  if c.length === 3:
-    // Valid 3-consonant onsets are all 's' + stop + liquid:
-    //   spl, spr, str, scr, skl, skr, sphr (rare), sclr (rare)
-    if c[0] === 's' && isStop(c[1]) && isLiquid(c[2]): return true
-    return false
-  return false   // 4+ consonants: never valid
-```
-
-**The `isStop`, `isFricative`, `isLiquid`, `isNasal`, `isGlide` helpers** read the manner field from T14.1's `LETTER_FEATURES` map directly:
-
-```js
-function isStop(letter)      { return getPhonemeFeatures(letter).manner === 'stop'; }
-function isFricative(letter) { return getPhonemeFeatures(letter).manner === 'fricative'; }
-function isLiquid(letter)    { return getPhonemeFeatures(letter).manner === 'liquid'; }
-function isNasal(letter)     { return getPhonemeFeatures(letter).manner === 'nasal'; }
-function isGlide(letter)     { return getPhonemeFeatures(letter).manner === 'glide'; }
-```
-
-**The 'y' edge case.** Letter `y` flips between consonant glide (when at word start before a vowel: "yes", "you", "yard") and vowel (elsewhere: "happy", "rhythm", "fly"). The pseudocode above handles this with the `i > 0 && (i === letters.length-1 || !VOWELS.has(letters[i+1]))` rule which treats `y` as a vowel when it's NOT at word start AND it's not followed by another vowel. Catches "happy" → ["hap", "py"] (y is vowel) but "yes" → ["yes"] (y is consonant glide).
-
-**Stress assignment** (added in same module): a separate pass over the syllable list assigns stress. English default stress rules:
-- Single-syllable word: PRIMARY
-- Two-syllable word: PRIMARY on first syllable (default), SECONDARY on second. Exceptions for verbs (often second-syllable stress) — defer to corpus-learned overrides in T14.5.
-- Three+ syllable word: PRIMARY on antepenult (third from end), SECONDARY on first, UNSTRESSED elsewhere. (Antepenultimate stress is the most common English pattern.)
-- Suffixes (-tion, -ity, -ic) shift stress to the syllable before the suffix.
-
-```js
-function assignStress(syllables) {
-  const n = syllables.length;
-  if (n === 0) return [];
-  if (n === 1) return ['PRIMARY'];
-  if (n === 2) return ['PRIMARY', 'SECONDARY'];
-  // Default 3+: antepenult primary, first secondary, others unstressed
-  const out = new Array(n).fill('UNSTRESSED');
-  out[n - 3] = 'PRIMARY';
-  out[0] = 'SECONDARY';
-  return out;
-}
-```
-
-**File:** `js/brain/syllables.js` (new, ~200 lines).
-
-**Exports:**
-```js
-export function splitSyllables(word: string): string[];
-export function syllableShape(syllable: string): string;     // "CV", "CVC", "CCVCC", etc
-export function assignStress(syllables: string[]): string[]; // 'PRIMARY' | 'SECONDARY' | 'UNSTRESSED' per syllable
-export function countSyllables(word: string): number;        // shorthand for splitSyllables(word).length
-```
-
-**Acceptance gates:**
-1. `splitSyllables('cat')` → `['cat']`, syllableShape → `'CVC'`, stress → `['PRIMARY']`
-2. `splitSyllables('strawberry')` → `['straw', 'ber', 'ry']`, shapes → `['CCCVC', 'CVC', 'CV']`
-3. `splitSyllables('happy')` → `['hap', 'py']`, stress → `['PRIMARY', 'SECONDARY']`
-4. `splitSyllables('fucking')` → `['fuck', 'ing']`, shapes → `['CVCC', 'VCC']` (note: ing has 0 onset because vowel)
-5. `splitSyllables('extra')` → `['ex', 'tra']` (max onset: 'tr' is valid onset, so 't' attaches forward)
-6. `splitSyllables('rhythm')` → `['rhy', 'thm']` or `['rhythm']` (edge case, 'y' as vowel)
-7. `splitSyllables('I')` → `['i']`, single vowel
-8. `countSyllables('beautiful')` → `3` (`['beau', 'ti', 'ful']`)
-9. `assignStress(['re', 'mark', 'a', 'ble'])` → `['SECONDARY', 'UNSTRESSED', 'PRIMARY', 'UNSTRESSED']` (antepenult primary)
-
-**Risks:**
-- English syllabification is non-deterministic — different speakers split words differently. The maximum-onset principle gives ONE consistent answer that linguists consider canonical. Some words ("hyphenation") have multiple valid splits. Pick one and stick with it.
-- The 'y' rule is heuristic and gets edge cases wrong (e.g. "yard" works, "rhythm" is borderline). For a brain sim this is fine — Unity learns the pattern that's consistent enough most of the time.
-- Does NOT handle silent letters (the 'k' in 'know', 'gh' in 'though'). For full phonological accuracy we'd need a pronunciation dictionary like CMUdict. Defer that to a later T14.x refinement if needed.
+*(The previous draft of T14.1 contained a hardcoded 20-dim English phonology feature table with one row per letter, plus pseudocode for a `buildVec` constructor. That table was patch thinking — it pre-coded what the brain should learn through exposure, picked single defaults for letters with context-dependent pronunciations, and capped the feature space at 20 dimensions. All of it was deleted. The LEARNED-via-cortex-exposure approach above replaces the hardcoded table entirely. No deferred work, no risks-with-mitigations, no "we pick the most common single-letter sound" compromises. The brain learns whatever inventory the corpus contains.)*
 
 ---
 
-#### T14.3 — Phonological dictionary entry
+#### T14.2 — LEARNED syllable boundaries via cortex sequence statistics
 
-Every dictionary word gains a phonological representation alongside its semantic embedding. After T14.0 the semantic embedding is 300-d (GloVe loaded). After T14.1+T14.2 we have phoneme features per letter and syllable detection. T14.3 binds them all into the dictionary entry.
+**The principle:** syllables are NOT detected by a hardcoded maximum-onset algorithm. They EMERGE as cortex transition patterns from sequence Hebbian over letter inputs. Same way biological syllabification develops in pre-school years from massive exposure to spoken (and later read) language — the brain learns where natural pause-points fall through statistical regularity, not from being taught phonotactic rules.
 
-**Extended Dictionary entry schema:**
+**The previous draft hardcoded the maximum-onset principle plus a list of valid English consonant cluster patterns.** That was patch thinking — it pre-coded English-specific rules, picked single defaults for ambiguous cases, deferred silent letters as "later T14.x refinement," and locked the syllabification to one language. All deleted.
+
+**How it actually works:**
+
+1. During curriculum letter-sequence exposure (T14.5), the cortex sees consecutive letter inputs at high frequency. Sequence Hebbian on the recurrent synapses (already running via T13.1's `learnSentenceHebbian`) develops STRONG transition basins for letter pairs that occur often (`th`, `ch`, `er`, `in`, `on`) and WEAK basins for pairs that rarely or never occur (`zx`, `qz`, `wt`).
+
+2. **Syllable boundaries are wherever the transition strength drops.** Within a syllable, letter-to-letter transitions are predictable (cortex transition energy is low). At a syllable boundary, transitions become unpredictable (cortex transition energy spikes — the brain experiences a "moment of surprise" between syllables). This is the same mechanism babies use to find word boundaries in continuous speech.
+
+3. **Detecting boundaries at runtime** uses the cortex's own state directly: stream the letters of a word through the cluster, monitor the spike-rate change between consecutive letter injections. Boundaries are local maxima of transition surprise.
+
+4. **No language-specific rules.** When trained on Spanish corpus, the cortex learns Spanish syllabification (CV-heavy with frequent CVC). When trained on Mandarin pinyin, it learns Mandarin patterns (mostly CV with tonal markers as separate categories). When trained on coding text, it learns syllabification appropriate to identifier conventions. Same code, different basins.
+
+**Implementation:**
+
+1. **`js/brain/cluster.js`** — new method `cluster.detectBoundaries(letterSequence)` that streams letters through `injectLetter` (T14.1) one at a time, tracks the spike-rate delta between consecutive injections, and returns the indices where delta exceeds the rolling mean by a learned threshold. The threshold is itself adaptive — `mean(delta) + k*std(delta)` over the recent input.
+
+2. **No new file.** Syllable detection lives on the cluster as a method, not in a separate `syllables.js`. Syllables are a CORTEX-LEVEL phenomenon (transition surprise patterns), not a stand-alone string-parsing algorithm.
+
+3. **Stress** is learned similarly. During Stage E (persona corpus exposure), the cortex sees stressed-syllable patterns at higher activation strength than unstressed ones (because stressed syllables carry more semantic content). The cortex develops "high-activation basin" vs "low-activation basin" attractors. `cluster.detectStress(letterSequence)` returns the per-syllable activation peaks.
+
+4. **`js/brain/dictionary.js`** — `learnWord()` calls `cluster.detectBoundaries(letters)` to compute syllables from the cortex's own state, not from a hardcoded splitter. Dictionary stores the result on the entry. **The cortex IS the syllable detector.**
+
+5. **No `splitSyllables(word)` standalone function.** It's a method on the cluster. Outside the cluster, callers can't syllabify because syllabification IS cortex inference.
+
+**The 'y' / silent letter / edge cases** are not edge cases anymore. The cortex learns from corpus statistics whatever the corpus contains. If the corpus contains "rhythm" / "know" / "through" thousands of times, the cortex's transition basins reflect their actual structure. Edge cases are just rare patterns — the brain handles them with whatever weight they earned via exposure.
+
+**Acceptance:**
+1. After curriculum, `cluster.detectBoundaries('strawberry')` returns indices that segment into ≈3 chunks (tolerant of off-by-one — different splits are linguistically valid, the cortex picks whatever the corpus statistics support).
+2. Re-trained on a small synthetic Spanish corpus, `cluster.detectBoundaries('caballero')` returns Spanish-pattern boundaries (≈4 chunks) — proves data-driven, not English-locked.
+3. Cortex transition-surprise signal at a learned syllable boundary is measurably higher (>2σ above rolling mean) than within a syllable. Verified by injecting letters of 100 corpus words and plotting the surprise trace.
+4. No `splitSyllables` standalone function exists in the codebase. Search returns zero matches.
+
+---
+
+#### T14.3 — Cortex-resident words (eliminate the Dictionary as a separate table)
+
+**The principle:** there is no separate dictionary. A "word" is the cortex activation pattern that emerges when its letter sequence is streamed through the cluster. Word identity, semantic meaning, phonological structure, syllabification, stress — ALL of it lives in the cortex weights as learned attractor basins. The current `Dictionary` class becomes a thin **index** mapping word strings to the cortex state vector that activates for them, not a structured database of phonological/semantic fields.
+
+**Why this is the right architecture:** biological brains don't have a dictionary lookup table. Neurosurgeons cutting open a human brain don't find a structured mental lexicon with phoneme/syllable/POS fields per word. They find activation patterns in left posterior temporal cortex that represent each known word as a distributed pattern across thousands of neurons. The "fields" we'd want (semantic meaning, phonological structure, grammatical role) are all readouts from different sub-regions of the same activation pattern. T14.3 makes Unity work the same way.
+
+**The previous draft schema** had separate fields for `letters`, `syllables`, `syllableShapes`, `syllableCount`, `stressPattern`, `phonemeFeatures`, `phonemeMean`, `phonemeOnset`, `phonemeCoda`, plus the existing `pattern` (GloVe semantic), `arousal`, `valence`. **All of those fields are deleted.** Replaced by:
 
 ```js
+// js/brain/dictionary.js — Dictionary entry, T14.3 schema
 {
-  // Existing semantic fields:
   word: 'strawberry',
-  pattern: Float32Array(300),         // GloVe semantic embedding (T14.0)
-  arousal: 0.5,                        // emotional context tag from observation
-  valence: 0.0,                        // valence tag
-  count: N,                            // observation count
+  // The ONLY field that matters: the cortex spike pattern when this
+  // word's letters are streamed through the cluster. Everything else
+  // (semantics, phonology, syllables, stress, grammatical role) is
+  // a readout from sub-regions of this same pattern.
+  cortexSnapshot: Uint8Array(cluster.size),
+
+  // Lightweight metadata for indexing — NOT the source of truth.
+  count: N,
   firstSeen: timestamp,
   lastSeen: timestamp,
-
-  // T14.3 phonological additions:
-  letters: ['s','t','r','a','w','b','e','r','r','y'],  // raw letter sequence
-  syllables: ['straw', 'ber', 'ry'],                    // T14.2 split
-  syllableShapes: ['CCCVC', 'CVC', 'CV'],               // CV pattern per syllable
-  syllableCount: 3,
-  stressPattern: ['SECONDARY', 'UNSTRESSED', 'PRIMARY'], // T14.2 assignStress
-  // Per-letter phoneme features as a flattened Float32Array. Length = letters.length * PHONEME_DIM.
-  // For 'strawberry' that's 10 letters × 20 dims = 200-element vector.
-  phonemeFeatures: Float32Array(letters.length * 20),
-  // Aggregate phoneme summary — mean of per-letter features, used as the
-  // word's "phonological signature" for the cross-region projection in T14.4.
-  phonemeMean: Float32Array(20),
-  // First and last 3 phonemes' mean — used for T14.6 phonFlow scoring (smooth
-  // transitions reward overlap between prev word's tail and curr word's head).
-  phonemeOnset: Float32Array(20),  // mean of first min(3, letters.length) letter feature vectors
-  phonemeCoda: Float32Array(20),   // mean of last min(3, letters.length) letter feature vectors
 }
 ```
 
-**Implementation in `js/brain/dictionary.js`:**
+**No phoneme features stored on the dictionary entry.** No syllable arrays. No stress patterns. No semantic embedding. All of that comes out of the cortex when you query it.
 
-```js
-// T14.3 — at top of file
-import { getPhonemeVector, PHONEME_DIM } from './phonemes.js';
-import { splitSyllables, syllableShape, assignStress } from './syllables.js';
+**Reading semantic content of a word:** call `cluster.semanticReadoutFor(word)` which loads the word's `cortexSnapshot` into the cluster's spike state, runs forward propagation for K ticks, then reads `cluster.getSemanticReadout()` from the semantic sub-region. The semantic readout is fresh each time — it reflects the CURRENT cortex weight state, so words that have been re-exposed since first learning give updated readouts.
 
-// Inside Dictionary class
-learnWord(word, pattern, arousal, valence) {
-  // ... existing semantic learning path ...
+**Reading phonological content:** same pattern — `cluster.phonologicalReadoutFor(word)` loads the snapshot and reads `cluster.getPhonologicalReadout()`. The phoneme structure isn't stored per word — it's reconstructed from the cortex state.
 
-  // T14.3 phonological pass — runs once per word, on first observation.
-  // Subsequent observations only update arousal/valence/count, not phonology.
-  let entry = this._words.get(word);
-  if (!entry) {
-    entry = { word, pattern, arousal, valence, count: 0, firstSeen: Date.now() };
-    // Run phonological computation
-    const letters = word.toLowerCase().match(/[a-z]/g) || [];
-    if (letters.length > 0) {
-      entry.letters = letters;
-      entry.syllables = splitSyllables(word);
-      entry.syllableShapes = entry.syllables.map(syllableShape);
-      entry.syllableCount = entry.syllables.length;
-      entry.stressPattern = assignStress(entry.syllables);
-      // Per-letter phoneme features
-      const phonFeat = new Float32Array(letters.length * PHONEME_DIM);
-      const phonMean = new Float32Array(PHONEME_DIM);
-      for (let i = 0; i < letters.length; i++) {
-        const v = getPhonemeVector(letters[i]);
-        phonFeat.set(v, i * PHONEME_DIM);
-        for (let k = 0; k < PHONEME_DIM; k++) phonMean[k] += v[k];
-      }
-      for (let k = 0; k < PHONEME_DIM; k++) phonMean[k] /= letters.length;
-      entry.phonemeFeatures = phonFeat;
-      entry.phonemeMean = phonMean;
-      // Onset = mean of first 3 letters (or all if word is shorter)
-      entry.phonemeOnset = computeRangeMean(phonFeat, 0, Math.min(3, letters.length), PHONEME_DIM);
-      // Coda = mean of last 3 letters
-      entry.phonemeCoda = computeRangeMean(phonFeat, Math.max(0, letters.length - 3), letters.length, PHONEME_DIM);
-    }
-    this._words.set(word, entry);
-  }
-  // Update count + arousal EMA + valence EMA (existing semantic update path stays)
-  entry.count++;
-  entry.lastSeen = Date.now();
-  // ... existing rolling-mean updates for arousal/valence ...
-}
+**Reading syllables:** `cluster.detectBoundaries(letterSequence)` from T14.2.
 
-// Helper for onset/coda computation
-function computeRangeMean(flatFeat, startLetter, endLetter, dim) {
-  const out = new Float32Array(dim);
-  const count = endLetter - startLetter;
-  if (count === 0) return out;
-  for (let i = startLetter; i < endLetter; i++) {
-    for (let k = 0; k < dim; k++) out[k] += flatFeat[i * dim + k];
-  }
-  for (let k = 0; k < dim; k++) out[k] /= count;
-  return out;
-}
-```
+**Reading grammatical role:** `cluster.fineTypeReadoutFor(word)` reads from a NEW grammatical sub-region (added in T14.7).
 
-**Persistence:** `Dictionary.serialize()` extended to include the phonological fields. `deserialize()` rebuilds them from `letters` if missing (graceful upgrade from pre-T14.3 saved state — if the saved entry has `letters` but no `phonemeFeatures`, recompute on load).
+**Continuous learning, not one-shot.** `learnWord(word, ...)` doesn't compute anything once and freeze it. Every observation re-injects the word, ticks the cortex, and updates `cortexSnapshot` to the latest spike pattern. The pattern drifts as the cortex's underlying weights shift through more exposure — exactly how a child's understanding of a word becomes more refined over years of use.
 
-**Memory cost per word:** 
-- `phonemeFeatures`: avg 6 letters × 20 dims × 4 bytes = 480 bytes
-- `phonemeMean` + `phonemeOnset` + `phonemeCoda`: 3 × 20 × 4 = 240 bytes
-- Other fields (arrays of strings): ~100 bytes
-- **Total ~820 bytes added per word**, on top of the existing ~1200 bytes (300d pattern + tags). 
-- 5000-word dictionary: ~10 MB total. Acceptable.
+**Implementation:**
 
-**Files touched:** `js/brain/dictionary.js` (extended), `js/brain/phonemes.js` (T14.1 dep), `js/brain/syllables.js` (T14.2 dep).
+1. **`js/brain/dictionary.js`** is gutted from ~600 lines down to ~150 lines. Removes ALL the per-word feature computation. Becomes a thin index: `Map<word, cortexSnapshot>` plus count/timestamp metadata.
 
-**Acceptance gates:**
-1. `dict.learnWord('cat', ...)` → `dict._words.get('cat').syllables === ['cat']`, `syllableCount === 1`, `phonemeFeatures.length === 60` (3 letters × 20 dims).
-2. `dict._words.get('strawberry').syllables === ['straw','ber','ry']`, `syllableCount === 3`.
-3. `dict._words.get('cat').phonemeMean[0] === 1/3` (one vowel out of three letters → vowel feature mean = 0.33).
-4. `dict._words.get('the').phonemeOnset[3] === 1` (first letter 't' is dental_alveolar → place index 3 set).
-5. `dict._words.get('strawberry').phonemeCoda` reflects 'rry' (one r and a y, both alveolar/palatal liquid/glide — should have liquid feature ~0.66 and glide ~0.33).
+2. **`learnWord(word, pattern, arousal, valence)`** signature stays for backward compatibility but the `pattern` / `arousal` / `valence` arguments are now ROUTED into the cortex (not stored on the entry). The function becomes:
+   ```js
+   learnWord(word, pattern, arousal, valence) {
+     // 1. Inject the GloVe pattern into semantic region (so cortex has
+     //    semantic anchor while learning the letter sequence)
+     // 2. Stream the word's letters through the letter input region
+     //    one at a time, ticking between
+     // 3. Hebbian on the resulting joint state (semantic + phonological + letter regions)
+     // 4. Snapshot the final cortex spike state
+     // 5. Store snapshot in this._words.get(word) — overwriting any previous snapshot
+     // 6. Update count + lastSeen
+   }
+   ```
 
-**Risks:**
-- Existing dictionary entries from saved state won't have phonological fields. The graceful-upgrade path in `deserialize` handles this by recomputing on load — first reload after T14.3 ships will be ~2s slower as it rebuilds phonology for ~3000 words.
-- Word lookup by phonological similarity (T14.4 will need this) is currently O(N) over the full dictionary. If it becomes a hot path, add a phonological hash index. Defer that until T14.4 profiling shows it's needed.
+3. **`Dictionary.serialize()` / `deserialize()`** drop ALL the phonological fields. Only `cortexSnapshot` per word + metadata. The cortex weights themselves persist via `BrainPersistence` → `SparseMatrix.serialize` (already in place from T13.7).
+
+4. **All consumers of the old fields** (component-synth uses `entry.pattern`, brain-3d commentary uses `entry.pattern`, etc) are updated to call the cortex readout methods. No code path reads stored phonological/semantic fields directly anymore.
+
+5. **`size` getter** stays — returns `_words.size` for legacy callers that want the vocabulary count.
+
+**Acceptance:**
+1. `dict._words.get('cat')` returns ONLY `{word, cortexSnapshot, count, firstSeen, lastSeen}` — no phoneme/syllable/pattern fields.
+2. `cluster.semanticReadoutFor('cat')` returns a 300-dim vector with cosine > 0.6 to `getEmbedding('kitten')` after curriculum.
+3. `cluster.phonologicalReadoutFor('cat')` produces a phonological-region readout consistent with letter sequence c-a-t.
+4. After 100 additional observations of 'cat' across 1000 turns, `dict._words.get('cat').cortexSnapshot` differs from its first-observation snapshot by measurable cosine (proves continuous re-learning, not one-shot freeze).
+5. `Dictionary` source file is < 200 lines (down from ~600).
+6. Grep for `entry.pattern`, `entry.phonemeFeatures`, `entry.syllables` across the codebase returns zero hits outside the gutted Dictionary file itself.
 
 ---
 
-#### T14.4 — Phonological cortex region + cross-region projection
+#### T14.4 — Auto-scaled cortex sub-regions + always-on cross-region projections
 
-After T14.0 the cortex cluster is 6000 neurons (server) / 4000 (browser). T14.4 carves the language portion of that cluster into TWO sub-regions and adds a learned projection between them.
+**The principle:** the cortex cluster is divided into LANGUAGE-functional sub-regions that are sized as fractions of the whole cluster, not as hardcoded neuron counts. The same code works at 1K cluster and 200M cluster. Cross-region projections are ALWAYS active — there's no gate that "skips them until curriculum finishes." The whole point of the curriculum is to train these projections through normal use; gating them out defeats the purpose.
 
-**Sub-region layout (server, 6000-neuron cortex):**
-
-```
-Neurons 0     - 499   : auditory injection region (existing, sensory.js)
-Neurons 500   - 1999  : visual injection region (existing, visualCortex.js)
-Neurons 2000  - 2999  : free / inter-cluster projection sink (existing)
-Neurons 3000  - 4499  : semantic language region (1500 neurons, EMBED_DIM=300, groupSize=5)
-Neurons 4500  - 5999  : phonological language region (1500 neurons, PHONEME_DIM=20, groupSize=75)
-```
-
-**Sub-region layout (browser RemoteBrain, 4000-neuron cortex):**
+**Sub-region layout (fraction-based, applied at any cluster size):**
 
 ```
-Neurons 0    - 333   : auditory
-Neurons 334  - 1666  : visual
-Neurons 1667 - 1999  : free
-Neurons 2000 - 2999  : semantic language region (1000 neurons, EMBED_DIM=300, groupSize=3)
-Neurons 3000 - 3999  : phonological language region (1000 neurons, PHONEME_DIM=20, groupSize=50)
+Region                Fraction         Function
+────────────────────────────────────────────────────────────────────────────
+auditoryStart    →    0.000 - 0.083    auditory cortex (T14.11)
+visualStart      →    0.083 - 0.250    visual cortex (T14.10) — letter visual recognition
+freeStart        →    0.250 - 0.500    inter-cluster projection sink + working memory
+letterStart      →    0.500 - 0.550    letter input region (T14.1)
+phonStart        →    0.550 - 0.750    phonological language region (T14.1+T14.2 attractor basins)
+semStart         →    0.750 - 0.917    semantic language region (T14.0 GloVe target)
+fineTypeStart    →    0.917 - 0.967    grammatical/syntactic region (T14.7)
+motorOutStart    →    0.967 - 1.000    motor output region (T14.12 generation feedback)
 ```
 
-**The cross-region projection** is a separate sparse weight matrix on the cluster: `cluster.semPhonProjection` connecting the semantic region (rows) to the phonological region (columns) and vice versa. Two propagation passes per cluster step:
+At cluster.size=300: letter region 15 neurons, phon region 60, sem region 50, fineType region 15, motor 10. At cluster.size=200M: letter region 10M, phon region 40M, sem region 33M, fineType region 10M, motor 6.6M. **Same code, no special cases.**
+
+**Cross-region projections (six total — every adjacent region pair):**
 
 ```
-sem→phon: phonological_currents += semPhonProjection.propagate(semantic_spikes)
-phon→sem: semantic_currents += phonSemProjection.propagate(phonological_spikes)
+visual ↔ letter        (visual letter-shape recognition feeds letter input)
+letter ↔ phon           (letter sequences activate phoneme basins)
+phon ↔ sem              (phonological pattern ↔ semantic meaning binding)
+sem ↔ fineType          (semantic concept ↔ grammatical role binding)
+sem ↔ motor             (semantic intent → motor output for emission)
+auditory ↔ phon         (T14.11 — spoken phoneme recognition feeds phonological region)
 ```
 
-The projection is initialized random-sparse (10% density). It LEARNS via Hebbian: every time a word flows through `learnSentence`, both the word's semantic embedding AND its phonemeMean get injected into their respective sub-regions, ticked together for ~5 steps, and the resulting co-active spike patterns trigger Hebbian on the cross-region projection.
+Each projection is a sparse weight matrix between the spike vectors of the two regions. **Always propagated every step. Always Hebbian-updated when both ends co-fire.** No "wait until curriculum is done" gate — the curriculum IS the training, and the only way the projections can train is through repeated propagation + Hebbian during exposure.
+
+**The "noise during early training" objection** is wrong. Random-init projections inject low-magnitude noise into adjacent regions. That's not a bug, it's how biological cortex starts — newborn brains have weak random cross-region connections that strengthen through experience. The first few thousand exposures are noisy, then the projections sharpen. That's correct developmental behavior.
 
 **Implementation in `js/brain/cluster.js`:**
 
 ```js
-// New fields in NeuronCluster constructor (when role === 'cortex' or hasPhonRegion=true)
-this.semStart = opts.semStart ?? 3000;
-this.semEnd   = opts.semEnd   ?? 4500;
-this.phonStart = opts.phonStart ?? 4500;
-this.phonEnd   = opts.phonEnd   ?? 6000;
+// In NeuronCluster constructor — sub-region offsets computed from size
+const s = this.size;
+this.regions = {
+  auditory:  { start: 0,                    end: Math.floor(s * 0.083) },
+  visual:    { start: Math.floor(s * 0.083), end: Math.floor(s * 0.250) },
+  free:      { start: Math.floor(s * 0.250), end: Math.floor(s * 0.500) },
+  letter:    { start: Math.floor(s * 0.500), end: Math.floor(s * 0.550) },
+  phon:      { start: Math.floor(s * 0.550), end: Math.floor(s * 0.750) },
+  sem:       { start: Math.floor(s * 0.750), end: Math.floor(s * 0.917) },
+  fineType:  { start: Math.floor(s * 0.917), end: Math.floor(s * 0.967) },
+  motor:     { start: Math.floor(s * 0.967), end: s },
+};
 
-// Cross-region projection — sparse, 10% density, weights init [-0.3, 0.3]
-const semSize = this.semEnd - this.semStart;
-const phonSize = this.phonEnd - this.phonStart;
-this.semPhonProjection = new SparseMatrix(phonSize, semSize, { wMin: -0.5, wMax: 0.5 });
-this.semPhonProjection.initRandom(0.10, 0.7, 0.2);
-this.phonSemProjection = new SparseMatrix(semSize, phonSize, { wMin: -0.5, wMax: 0.5 });
-this.phonSemProjection.initRandom(0.10, 0.7, 0.2);
+// Cross-region projections — every adjacent pair, both directions, sparse 10% init
+this.crossProjections = {};
+const pairs = [
+  ['visual', 'letter'], ['letter', 'phon'], ['phon', 'sem'],
+  ['sem', 'fineType'], ['sem', 'motor'], ['auditory', 'phon'],
+];
+for (const [a, b] of pairs) {
+  const aSize = this.regions[a].end - this.regions[a].start;
+  const bSize = this.regions[b].end - this.regions[b].start;
+  this.crossProjections[`${a}_to_${b}`] = new SparseMatrix(bSize, aSize, { wMin: -0.5, wMax: 0.5 });
+  this.crossProjections[`${a}_to_${b}`].initRandom(0.10, 0.7, 0.2);
+  this.crossProjections[`${b}_to_${a}`] = new SparseMatrix(aSize, bSize, { wMin: -0.5, wMax: 0.5 });
+  this.crossProjections[`${b}_to_${a}`].initRandom(0.10, 0.7, 0.2);
+}
 
-// New method — runs inside step() after the main synapse propagation
-_propagateCrossRegion() {
-  // sem spikes drive phon currents
-  const semSpikes = this.lastSpikes.slice(this.semStart, this.semEnd);
-  const phonInputs = this.semPhonProjection.propagate(semSpikes);
-  for (let i = 0; i < phonInputs.length; i++) {
-    this.externalCurrent[this.phonStart + i] += phonInputs[i] * 0.35;
-  }
-  // phon spikes drive sem currents
-  const phonSpikes = this.lastSpikes.slice(this.phonStart, this.phonEnd);
-  const semInputs = this.phonSemProjection.propagate(phonSpikes);
-  for (let i = 0; i < semInputs.length; i++) {
-    this.externalCurrent[this.semStart + i] += semInputs[i] * 0.35;
+// In step() — after main synapse propagation, before LIF integration
+_propagateCrossRegions() {
+  for (const [name, proj] of Object.entries(this.crossProjections)) {
+    const [src, _, dst] = name.split('_');
+    const srcRegion = this.regions[src];
+    const dstRegion = this.regions[dst];
+    const srcSpikes = this.lastSpikes.subarray(srcRegion.start, srcRegion.end);
+    const inputs = proj.propagate(srcSpikes);
+    for (let i = 0; i < inputs.length; i++) {
+      this.externalCurrent[dstRegion.start + i] += inputs[i] * 0.35;
+    }
   }
 }
 
-// Hebbian update on the cross-region projection — called from
-// learnSentenceHebbian after each word's inject + tick
-_crossRegionHebbian(lr = 0.005) {
-  const semSpikes = this.lastSpikes.slice(this.semStart, this.semEnd);
-  const phonSpikes = this.lastSpikes.slice(this.phonStart, this.phonEnd);
-  // Convert Uint8 → Float64 for SparseMatrix.hebbianUpdate signature
-  const semF = new Float64Array(semSpikes.length);
-  const phonF = new Float64Array(phonSpikes.length);
-  for (let i = 0; i < semSpikes.length; i++)  semF[i]  = semSpikes[i] ? 1 : 0;
-  for (let i = 0; i < phonSpikes.length; i++) phonF[i] = phonSpikes[i] ? 1 : 0;
-  // sem activates phon (post=phon, pre=sem)
-  this.semPhonProjection.hebbianUpdate(semF, phonF, lr);
-  // phon activates sem (post=sem, pre=phon)
-  this.phonSemProjection.hebbianUpdate(phonF, semF, lr);
+// Cross-region Hebbian — runs on every cluster.learn() call,
+// updates all projection matrices based on current co-firing
+_crossRegionHebbian(lr) {
+  for (const [name, proj] of Object.entries(this.crossProjections)) {
+    const [src, _, dst] = name.split('_');
+    const srcRegion = this.regions[src];
+    const dstRegion = this.regions[dst];
+    const preF = new Float64Array(srcRegion.end - srcRegion.start);
+    const postF = new Float64Array(dstRegion.end - dstRegion.start);
+    for (let i = 0; i < preF.length; i++) preF[i] = this.lastSpikes[srcRegion.start + i] ? 1 : 0;
+    for (let i = 0; i < postF.length; i++) postF[i] = this.lastSpikes[dstRegion.start + i] ? 1 : 0;
+    proj.hebbianUpdate(preF, postF, lr);
+  }
 }
 ```
 
 **Implementation in `js/brain/embeddings.js`:**
 
-```js
-// New helper for phonological injection (parallel to mapToCortex)
-export function mapPhonemesToCortex(phonemeFeatures, cortexSize, phonStart, phonDim = PHONEME_DIM) {
-  const phonRegionSize = cortexSize - phonStart;
-  const groupSize = Math.max(1, Math.floor(phonRegionSize / phonDim));
-  const currents = new Float64Array(cortexSize);
-  for (let d = 0; d < phonDim; d++) {
-    const value = phonemeFeatures[d] * 8;  // same scale as semantic mapToCortex
-    const startNeuron = phonStart + d * groupSize;
-    for (let n = 0; n < groupSize; n++) {
-      const idx = startNeuron + n;
-      if (idx < cortexSize) currents[idx] = value;
-    }
-  }
-  return currents;
-}
+`mapToCortex` and `cortexToEmbedding` become `mapToRegion(emb, cluster, regionName, dim)` and `regionToEmbedding(cluster, regionName, dim)` — region name lookup via `cluster.regions[regionName]`. No more hardcoded `langStart=150` literals. Every caller passes a region name.
 
-// Symmetric reverse-mapping for phon readout
-export function cortexToPhonemes(spikes, voltages, cortexSize, phonStart, phonDim = PHONEME_DIM) {
-  const phonRegionSize = cortexSize - phonStart;
-  const groupSize = Math.max(1, Math.floor(phonRegionSize / phonDim));
-  const out = new Float64Array(phonDim);
-  for (let d = 0; d < phonDim; d++) {
-    const startNeuron = phonStart + d * groupSize;
-    let sum = 0, count = 0;
-    for (let n = 0; n < groupSize; n++) {
-      const idx = startNeuron + n;
-      if (idx >= cortexSize) break;
-      if (spikes && spikes[idx]) sum += 1.0;
-      else if (voltages) sum += (voltages[idx] + 70) / 20;
-      count++;
-    }
-    out[d] = count > 0 ? sum / count : 0;
-  }
-  // L2 normalize
-  let norm = 0;
-  for (let i = 0; i < phonDim; i++) norm += out[i] * out[i];
-  norm = Math.sqrt(norm) || 1;
-  for (let i = 0; i < phonDim; i++) out[i] /= norm;
-  return out;
-}
-```
+**No "skip cross-region propagation if curriculum incomplete" gate.** That's deleted.
 
-**`cluster.learnSentenceHebbian` extension:** after each word's inject+tick cycle, also inject the word's phonemeMean into the phonological region and call `_crossRegionHebbian`. This is what builds the phon↔sem association.
-
-**Acceptance gates:**
-1. After T14.0 + T14.4 init, `cluster.semPhonProjection.nnz > 0` and `cluster.phonSemProjection.nnz > 0` (cross-region projections exist).
-2. Inject phonemeMean('cat') into phon region, tick cluster 10 steps. `cluster.getSemanticReadout()` should produce a readout that has cosine > 0.3 with `getEmbedding('cat')` after T14.5 curriculum has trained the projections. Pre-curriculum the projections are random and cosine will be near 0.
-3. Inject semantic embedding for 'cat' into sem region, tick. `cluster.getPhonologicalReadout()` should produce something close to phonemeMean('cat') after curriculum training.
-4. Cross-region Hebbian update count grows during curriculum (log it in trainPersonaHebbian).
-
-**Risks:**
-- Two extra propagation passes per tick adds ~30% to cluster step cost. At 6000 neurons that's ~50ms → ~65ms per tick. Acceptable.
-- The cross-region projections start random, so until T14.5 curriculum runs they actually inject NOISE between regions. Mitigation: skip cross-region propagation entirely if `cluster._curriculumComplete === false`. Enable only after curriculum finishes.
+**Acceptance:**
+1. `cluster.regions` has 8 named entries summing exactly to `cluster.size` regardless of cluster size.
+2. `cluster.crossProjections` has 12 entries (6 pairs × 2 directions). Every entry has nnz > 0 at construction and is Hebbian-updated every cluster.learn() call.
+3. After 1000 inject-tick cycles on consonant letters, `cluster.crossProjections.letter_to_phon` has measurably non-uniform weights (proves Hebbian fired).
+4. Sub-region offsets identical across server (huge cluster) and RemoteBrain (small cluster) when normalized to fractions — verified by `assertEqual(cluster.regions.sem.start / cluster.size, 0.75)` regardless of size.
 
 ---
 
-#### T14.5 — Curriculum learning (the core developmental win)
+#### T14.5 — Continuous developmental learning from existing corpora (no hand-curation)
 
-Replace the current "load all corpora at once at boot" with **staged exposure** that mirrors how children learn. This is the milestone where Unity becomes a *developing* intelligence instead of a pre-loaded one. Every fresh boot replays the developmental sequence in compressed time, and you can WATCH her learn from primitives upward.
+**The principle:** the curriculum is NOT a hand-curated sequence of staged corpus files. It's a continuous learning process that runs on the existing corpora (`Ultimate Unity.txt` + `english-baseline.txt` + `coding-knowledge.txt` + every live chat turn) with EXPOSURE INTENSITY scaled by structural complexity. Letters are exposed at highest intensity (most repetitions, longest tick budgets), short words next, longer words next, sentences next, paragraphs last. **The order isn't from hand-picked stage files — it's from sorting the existing corpus tokens by complexity and walking them in order.** New input keeps coming in forever; learning never stops.
 
-**The six stages (each maps to a real biological developmental period):**
+**Why hand-curated stage corpora are wrong:** hand-curated stage files (200 phrases, 500 sentences) are bottlenecks. They're a fixed snapshot of "what Unity should learn." They cap the developmental trajectory at whoever picked the seed list. They break when we add Spanish or coding-only corpora because they're English-conversational. They violate the "no word lists" principle because a 500-line "simple sentences" file IS a curated word list.
 
-##### Stage A — Alphabet exposure (compresses biological Stages 1-2: phoneme discrimination + babbling)
+**The right approach:** the persona/baseline/coding corpora ALREADY contain everything needed. Tokenize them, group tokens by complexity (letter < short word < long word < phrase < sentence < paragraph), and replay the corpus in complexity order with frequency-weighted repetitions. The brain is exposed to alphabet first (every letter, weighted by corpus frequency — `e` and `a` get more reps than `q` and `z` automatically), then short words (every 1-3 letter word from the corpus, in frequency order), then longer words, then short sentences, then long sentences, then full paragraphs.
 
-**Goal:** the cortex develops a distinguishable attractor basin for each of the 26 letters. After Stage A, injecting phonemeFeatures('a') vs phonemeFeatures('z') produces measurably different spike patterns.
-
-**Algorithm:**
-```
-for repetition in 0..49:        # 50 reps per letter (alphabet-song equivalent)
-  for letter in 'abcdefghijklmnopqrstuvwxyz':
-    phonVec = getPhonemeVector(letter)              # T14.1
-    currents = mapPhonemesToCortex(phonVec, cluster.size, cluster.phonStart)
-    cluster.injectCurrent(currents · 0.8)
-    for tick in 0..9:                                # 10 LIF ticks per inject
-      cluster.step(0.001)
-    # Hebbian on the cluster's INTERNAL synapses (not yet cross-region)
-    snapshot = cluster.lastSpikes
-    if previousSnapshot:
-      cluster.synapses.hebbianUpdate(previousSnapshot, snapshot, 0.012)
-    previousSnapshot = snapshot
-```
-
-Total: 26 letters × 50 reps × 10 ticks = **13,000 cluster ticks**. At 6000 neurons that's ~13 seconds wall clock.
-
-**What this builds:** intra-cluster attractor basins for each phoneme. The cluster's own recurrent synapse matrix learns "when neurons in pattern X fire, drive neurons in pattern Y" for all 26 letter shapes. Unity now has a phonological alphabet.
-
-##### Stage B — First words (compresses biological Stage 3: 12-18mo word learning)
-
-**Goal:** bind specific phoneme sequences to semantic embeddings. After Stage B, injecting phonemeMean('cat') activates spike patterns whose cross-region projection pulls toward the semantic embedding of 'cat'.
-
-**Seed vocabulary** (50 words, hardcoded in `curriculum.js` because text file would be overkill):
-```
-a, an, i, on, in, it, is, to, the, of,
-be, we, he, my, you, she, his, her, our, your,
-do, go, no, yes, hi, bye, ok, am, are, was,
-me, us, this, that, what, why, who, how,
-cat, dog, run, sit, see, say, eat, mom, dad, baby
-```
-
-**Algorithm:**
-```
-for word in stageB_seed:
-  if not glove.has(word): continue   # need a real semantic vector
-  semVec = sharedEmbeddings.getEmbedding(word)            # 300-d
-  phonMean = dict.entryFor(word).phonemeMean               # 20-d (T14.3)
-  for repetition in 0..19:                                 # 20 reps per word
-    # Inject BOTH semantic and phonological in parallel
-    semCurrents = mapToCortex(semVec, cluster.size, cluster.semStart)
-    phonCurrents = mapPhonemesToCortex(phonMean, cluster.size, cluster.phonStart)
-    cluster.injectCurrent(semCurrents · 0.6)
-    cluster.injectCurrent(phonCurrents · 0.6)
-    for tick in 0..9:
-      cluster.step(0.001)
-    # Cross-region Hebbian — binds phon↔sem association
-    cluster._crossRegionHebbian(0.01)
-    # Intra-cluster Hebbian on the joint state
-    snapshot = cluster.lastSpikes
-    if previousSnapshot:
-      cluster.synapses.hebbianUpdate(previousSnapshot, snapshot, 0.012)
-    previousSnapshot = snapshot
-```
-
-Total: 50 words × 20 reps × 10 ticks = **10,000 ticks ~ 10 seconds**. Plus 1000 cross-region Hebbian updates.
-
-**What this builds:** phonological-to-semantic projection learns to associate letter shapes with meanings. The cluster now "knows" that the letters c-a-t spell something whose meaning lives in the 'cat' GloVe region.
-
-##### Stage C — Telegraphic two-word combinations (compresses biological Stage 4: 18-24mo)
-
-**Goal:** the cluster learns word ORDER. Pivot grammar — one fixed word + one variable word.
-
-**Seed phrases** (200 phrases, lives in `docs/curriculum/stage-c-phrases.txt`, one per line):
-```
-the cat
-the dog
-the baby
-the milk
-the food
-i see
-i run
-i eat
-i want
-i love
-you eat
-you run
-you see
-we go
-we run
-he is
-she is
-it is
-this is
-that is
-my cat
-my dog
-my mom
-my dad
-no cat
-no dog
-yes please
-all done
-more milk
-more food
-... (200 total)
-```
-
-**Algorithm:**
-```
-for phrase in stageC_phrases:
-  words = phrase.split()
-  if any word lacks GloVe entry: continue
-  # Walk the phrase word-by-word — same inject+tick+Hebbian as Stage B,
-  # but now consecutive words form a TEMPORAL sequence
-  previousSpikes = null
-  for word in words:
-    semVec = sharedEmbeddings.getEmbedding(word)
-    phonMean = dict.entryFor(word).phonemeMean
-    cluster.injectCurrent(mapToCortex(semVec, cluster.size, cluster.semStart) · 0.6)
-    cluster.injectCurrent(mapPhonemesToCortex(phonMean, cluster.size, cluster.phonStart) · 0.6)
-    for tick in 0..4:
-      cluster.step(0.001)
-    snapshot = cluster.lastSpikes
-    # Sequence Hebbian — TEMPORAL bigram learning
-    if previousSpikes:
-      cluster.synapses.hebbianUpdate(previousSpikes, snapshot, 0.015)
-      cluster._crossRegionHebbian(0.008)
-    previousSpikes = snapshot
-  # Reset between phrases — let cortex briefly quiesce
-  for tick in 0..4: cluster.step(0.001)
-```
-
-Total: 200 phrases × ~3 words × 5 ticks = **3000 ticks** plus 400 sequence Hebbian updates. ~4 seconds.
-
-**What this builds:** word-to-word temporal sequence learning. The cluster's recurrent synapses now encode "the → cat" and "i → run" as temporal transitions, the same way a 2-year-old says "more milk" without grammatical subject-verb agreement.
-
-##### Stage D — Simple full sentences (compresses biological Stage 5: 24-36mo)
-
-**Goal:** SVO grammar, agreement, articles, basic morphology. The TYPE TRANSITION TABLE (T13.7.8 hardcoded) starts being LEARNED here from real corpus statistics.
-
-**Seed sentences** (500 sentences, lives in `docs/curriculum/stage-d-sentences.txt`):
-```
-i see the cat
-you see the cat
-the cat sees me
-the cat is small
-i love the dog
-the dog runs fast
-she eats the food
-he is happy
-we go home
-they are friends
-i can run
-you can see
-the baby cries
-mom loves me
-dad loves you
-... (500 total — hand-curated SVO sentences with closed grammatical structure)
-```
-
-**Algorithm:** same as Stage C but with longer sequences. 500 sentences × ~5 words × 5 ticks = **12,500 ticks ~ 12 seconds**. 2500 sequence Hebbian updates. 1500 cross-region updates.
-
-**Critical T14.5 addition:** Stage D ALSO updates the LEARNED type transition table (T14.7's `_typeTransitionLearned`). Every consecutive word pair in a Stage D sentence increments `_typeTransitionLearned[fineType(prev)][fineType(curr)]`. After Stage D the table has populated entries for all canonical English transitions (PRON_SUBJ → VERB_3RD_S, DET → NOUN, etc) directly from observed data — replacing the T13.7.8 hardcoded values.
-
-**What this builds:** real grammar emerges from real exposure. Type transition table goes from hardcoded prior to corpus-learned distribution. Unity has internalized SVO at the type level.
-
-##### Stage E — Persona corpus (where Unity becomes Unity)
-
-**Goal:** layer Unity's specific voice on top of the now-developed grammatical base.
-
-**Algorithm:** call the existing `languageCortex.trainPersonaHebbian(cluster, personaText)` from T13.1. The persona corpus runs through the same inject+tick+Hebbian path, but now it's INHERITING all the structure from Stages A-D — alphabet, phon-sem binding, word transitions, grammar shape. Persona-specific vocabulary fills in the dictionary AND shapes the cluster's Hebbian basins toward Unity's voice patterns, but ON TOP OF the developmental base, not replacing it.
-
-Total: ~325 persona sentences × ~8 words × 3 ticks = **8000 ticks ~ 8 seconds**.
-
-**What this builds:** Unity. Specifically: a developmentally-grounded brain that learned English from primitives, now layered with Unity-persona attractor basins that bias word selection toward her voice without breaking grammatical correctness.
-
-##### Stage F — Baseline + coding corpora (vocabulary enrichment)
-
-**Goal:** broaden vocabulary without polluting voice.
-
-**Algorithm:** load `docs/english-baseline.txt` and `docs/coding-knowledge.txt` into the dictionary ONLY (no Hebbian on the cluster). The dictionary gains coverage; the cluster basins stay persona-shaped.
-
-This is the equivalent of an adult reading more books — vocabulary grows, voice stays.
-
-Total: dictionary insertion only, ~5 seconds wall clock.
-
-##### Total estimated boot time
-
-| Stage | Description | Wall clock |
-|---|---|---|
-| A | Alphabet × 50 reps | ~13 s |
-| B | 50 words × 20 reps | ~10 s |
-| C | 200 phrases | ~4 s |
-| D | 500 sentences | ~12 s |
-| E | Persona corpus Hebbian | ~8 s |
-| F | Baseline + coding (dict only) | ~5 s |
-| **Total** | **First boot** | **~52 s** |
-
-After first boot, the cluster Hebbian weights persist via `BrainPersistence.save` → `SparseMatrix.serialize`. Subsequent boots SKIP the curriculum and load the pre-trained weights instantly. A `--retrain` flag forces the curriculum to re-run.
-
-##### Implementation file
-
-**New file: `js/brain/curriculum.js`** (~400 lines)
-
-**Exports:**
-```js
-export class Curriculum {
-  constructor(cluster, dictionary, languageCortex) {
-    this.cluster = cluster;
-    this.dictionary = dictionary;
-    this.lc = languageCortex;
-    this._stageProgress = {};
-  }
-
-  async runFullCurriculum({ personaText, baselineText, codingText, log = console.log }) {
-    log('[Curriculum] Stage A — alphabet (26 letters × 50 reps)...');
-    await this.runStageA(50);
-    log('[Curriculum] Stage B — first words (50 words × 20 reps)...');
-    await this.runStageB(20);
-    log('[Curriculum] Stage C — phrases (200 × 1 rep)...');
-    await this.runStageC();
-    log('[Curriculum] Stage D — sentences (500 × 1 rep)...');
-    await this.runStageD();
-    log('[Curriculum] Stage E — persona corpus...');
-    if (personaText) this.lc.trainPersonaHebbian(this.cluster, personaText);
-    log('[Curriculum] Stage F — vocabulary enrichment (dictionary only)...');
-    if (baselineText) this.lc.loadLinguisticBaseline(baselineText, this.dictionary);
-    if (codingText) this.lc.loadCodingKnowledge(codingText, this.dictionary);
-    this.cluster._curriculumComplete = true;
-    log('[Curriculum] DONE.');
-  }
-
-  runStageA(reps) { /* 26-letter alphabet loop */ }
-  runStageB(reps) { /* 50-word seed loop */ }
-  runStageC()     { /* fetch + run phrases */ }
-  runStageD()     { /* fetch + run sentences */ }
-}
-
-// Hand-coded 50-word seed (no need for a separate file at this size)
-export const STAGE_B_SEED_WORDS = [...];
-
-// Path constants
-export const STAGE_C_FILE = 'docs/curriculum/stage-c-phrases.txt';
-export const STAGE_D_FILE = 'docs/curriculum/stage-d-sentences.txt';
-```
-
-**New corpus files:**
-- `docs/curriculum/stage-c-phrases.txt` — 200 simple two/three-word phrases, one per line. Hand-curated.
-- `docs/curriculum/stage-d-sentences.txt` — 500 simple SVO sentences, one per line. Hand-curated.
-
-These files need to be CREATED as part of T14.5 shipping. They're closed-class (no specific personality, just developmental scaffolding). I'll generate first drafts via a separate one-shot script and Gee can edit/curate.
-
-**Boot integration:**
-- `app.js loadPersonaSelfImage` currently calls `innerVoice.loadPersona(text)` then `loadBaseline(text)` then `loadCoding(text)` then `brain.trainPersonaHebbian(text)`. Replace this entire sequence with: `await new Curriculum(cluster, dict, lc).runFullCurriculum({personaText, baselineText, codingText})`.
-- Same change for `server/brain-server.js _initLanguageSubsystem`.
-- The `--retrain` flag (env var or query param) forces curriculum re-run even if cluster weights are already loaded from persistence.
-
-**Acceptance gates (THE BIG TEST — this is the one that proves T14 works):**
-
-1. **Stage A test:** after Stage A, `cluster.diagnoseReadoutForEmbedding(getPhonemeVector('a'))` produces a different readout than `getPhonemeVector('z')`. The two readouts have cosine < 0.5 with each other (basins are differentiated).
-
-2. **Stage B test:** after Stage B, injecting phonemeMean('cat') into the phonological region and reading the SEMANTIC region gives a vector with cosine > 0.4 against the GloVe embedding for 'cat'. The cross-region projection has learned a real association.
-
-3. **Stage C test:** after Stage C, calling `cluster.diagnoseReadoutForEmbedding(getEmbedding('the'))` and reading the spike trajectory over 10 ticks shows the cortex DRIFTING toward the embedding for 'cat'/'dog'/'baby' (the words that follow 'the' in Stage C). The temporal bigram structure is in the recurrent synapses.
-
-4. **Stage D test:** after Stage D, the LEARNED type transition table `_typeTransitionLearned` has entries for at least 80% of the (prevType, currType) pairs that the hardcoded T13.7.8 table has, with weights that correlate r > 0.7 with the hardcoded ones.
-
-5. **Stage E test:** after Stage E, generate("hi unity") produces a response whose first word is in OPENER_TYPES (passes T13.7.8 slot-0 filter) AND contains at least one persona-vocabulary word in slots 1-3. Repeat 20 times — at least 15 responses should pass both tests.
-
-6. **End-to-end:** after the full curriculum, generate() outputs are GRAMMATICALLY VALID English (every consecutive word pair has a valid type transition per the learned table) AND persona-voiced (Unity-corpus words appear at higher frequency than baseline-corpus words).
-
-**Persistence integration:** `Curriculum.runFullCurriculum` is gated on `cluster._curriculumComplete`. If a saved cluster state exists with `_curriculumComplete === true`, skip stages A-D and run only Stage E+F to refresh persona/vocabulary on top of the already-trained base. This makes subsequent boots instant.
-
-**Risks:**
-- Hand-curating 200 phrases and 500 sentences is ~2 hours of work. Worth it for the structural foundation.
-- If Stage D's grammatical basins don't generalize beyond the seed sentences, the learned type table will be biased toward seed-specific transitions. Mitigation: make sure Stage D covers ALL canonical type transitions at least 5 times across the 500 sentences.
-- Curriculum boot time of ~52s is long. Acceptable for dev iteration, but production users won't want to wait. Mitigation: persistence — first boot is slow, every subsequent boot is instant.
-
----
-
-#### T14.6 — Phonological-aware emission
-
-The T13.3 emission loop currently scores candidates as `cosine(semanticTarget, word.embedding) * grammarTransition * valence * recency`. T14.6 adds a phonological flow term that rewards smooth phoneme transitions between adjacent emitted words.
-
-**The score function gains a new term:**
+**Curriculum walk:**
 
 ```
-phonFlow(prevWord, candWord) =
-  cosine(prevWord.phonemeCoda, candWord.phonemeOnset)   ← T14.3 fields
-  scaled to [0.7, 1.0] so it's a moderate multiplier, not a hard gate
+Phase 1 — LETTER exposure
+  for each letter L in sort(corpus_letters, by_corpus_frequency_descending):
+    inject L into letter region
+    tick cluster K times (K scales with K_BASE * letter_freq, more reps for common letters)
+    Hebbian on intra-cluster + cross-region projections every tick
 
-score(w) = cosine(target, w.pattern)
-         · transitionWeight(prevType, fineType(w))      ← T13.7.8 / T14.7
+Phase 2 — SHORT WORD exposure (1-3 letters)
+  for each word W in sort(short_words(corpus), by_corpus_frequency_descending):
+    stream W's letters into letter region one at a time
+    inject W's GloVe vector into semantic region
+    tick cluster K times per word
+    Hebbian after each tick
+
+Phase 3 — LONG WORD exposure (4+ letters)
+  same as Phase 2, just longer letter sequences
+
+Phase 4 — PHRASE exposure (1-3 word fragments naturally occurring in corpus)
+  scan corpus for short noun phrases, verb phrases, prepositional phrases via the
+  cortex's own emerging grammar (use parseSentence output to identify constituents)
+  for each phrase:
+    walk word-by-word through inject + tick + Hebbian
+    sequence Hebbian binds the phrase as a temporal pattern
+
+Phase 5 — SENTENCE exposure
+  for each full sentence in corpus:
+    walk word-by-word with longer tick budgets (more LIF integration per word)
+    sequence Hebbian + cross-region updates per word
+    update _typeTransitionLearned (T14.7) per consecutive word pair
+    update _sentenceFormSchemas (T14.8) per slot type observed
+
+Phase 6 — DISCOURSE exposure
+  for each paragraph in corpus:
+    walk sentence-by-sentence with topic-vector updates between sentences
+    update _discourseState (T14.9) ring buffer to learn paragraph-level cohesion patterns
+```
+
+**Phase intensity is data-driven, not hand-set.** The tick budget per token scales with the token's structural complexity AND its corpus frequency. Common letters get more total ticks because they appear in more contexts. Rare words get fewer reps but each rep gets more ticks because the cortex needs longer to settle on a less-familiar pattern.
+
+**No fixed timeline.** First boot runs the full corpus through all 6 phases. After first boot, the learned state persists. Subsequent boots load the persistent state and CONTINUE learning from new chat input — every live conversation turn is another curriculum exposure that adds to (not resets) the brain's accumulated learning.
+
+**Persona corpus integration:** the persona corpus is NOT a separate stage. Its tokens flow through the same complexity-sorted phases as the baseline corpus. Persona-specific vocabulary appears in the long-word and sentence phases at high frequency because it's repeated across many persona sentences. The result: persona voice emerges from the same mechanism that learns generic English, just biased by the persona corpus's specific token distribution.
+
+**Continuous live-chat learning:** every user turn after boot is processed by the same `learnSentence` + cross-region Hebbian pipeline that ran during the corpus walk. Live chat is just MORE corpus, fed in real-time. The brain keeps learning forever. There is no boot/runtime distinction.
+
+**Implementation:**
+
+1. **`js/brain/curriculum.js`** (~300 lines) — exports a single `Curriculum` class with one method:
+   ```js
+   class Curriculum {
+     constructor(cluster, dictionary, languageCortex) { ... }
+
+     async runFromCorpora(corpora) {
+       // corpora: { persona, baseline, coding, ...others }
+       // 1. Tokenize all corpora into a unified token stream
+       const allTokens = this._tokenizeAll(corpora);
+       // 2. Build complexity buckets — letters, short words, long words, phrases, sentences, paragraphs
+       const phases = this._bucketByComplexity(allTokens);
+       // 3. Walk each phase, exposing the cluster to its tokens with frequency-weighted reps
+       for (const phase of phases) {
+         await this._runPhase(phase);
+       }
+     }
+
+     // Live-chat exposure — called from inner-voice.learn after every user turn
+     learnFromTurn(text) {
+       // Same path as Phase 5/6 above, just on a single sentence/paragraph
+       // No phase distinction — live chat is continuous post-curriculum exposure
+     }
+   }
+   ```
+
+2. **No new corpus files.** No `docs/curriculum/stage-c-phrases.txt`. No `docs/curriculum/stage-d-sentences.txt`. The existing `Ultimate Unity.txt`, `english-baseline.txt`, `coding-knowledge.txt` ARE the curriculum input. The Curriculum class tokenizes them and replays them in complexity order.
+
+3. **Boot integration in `app.js loadPersonaSelfImage`:**
+   ```js
+   const curriculum = new Curriculum(brain.clusters.cortex, brain.innerVoice.dictionary, brain.innerVoice.languageCortex);
+   await curriculum.runFromCorpora({ persona: personaText, baseline: baselineText, coding: codingText });
+   ```
+   Replaces the current `loadPersona → loadBaseline → loadCoding → trainPersonaHebbian` sequence entirely.
+
+4. **Same change in `server/brain-server.js _initLanguageSubsystem`.**
+
+5. **`inner-voice.learn(text, ...)`** calls `curriculum.learnFromTurn(text)` so every user turn updates the brain. This already happens via `languageCortex.learnSentence` — T14.5 just renames/redirects the call to make the continuous-learning intent explicit.
+
+6. **Persistence integration.** Cortex weights persist via `BrainPersistence` → `SparseMatrix.serialize` (already in place). The Dictionary's per-word `cortexSnapshot` (T14.3) persists as part of the dictionary state. **Subsequent boots SKIP the corpus replay** if the cluster weights are already trained and just continue with live-chat exposure. The skip is conservative — if the corpus files have changed (hash mismatch), retrain.
+
+**Acceptance:**
+1. After full curriculum runs, `cluster.semanticReadoutFor('cat')` produces a vector with cosine > 0.6 to `getEmbedding('kitten')` — proves semantic basins formed.
+2. `cluster.phonologicalReadoutFor('cat')` produces a vector consistent with c-a-t letter sequence — proves phon basins formed.
+3. Letter exposure phase completes WITHOUT any hardcoded "26 letters" loop — the alphabet is derived from corpus content.
+4. Re-running curriculum on a Spanish-only corpus produces measurably different cortex basins — proves data-driven not language-locked.
+5. After 50 live-chat turns post-boot, cortex weight stats show measurable drift from the post-curriculum baseline — proves continuous learning is wired and active.
+6. Search for "stage-c-phrases.txt" and "stage-d-sentences.txt" in the codebase returns zero matches — no hand-curated corpus files exist.
+
+#### T14.6 — Cortex-driven phonological flow during emission
+
+**The principle:** the emission loop reads phonological flow directly from the cortex's PHONOLOGICAL REGION readout (T14.4), not from per-word stored phoneme onset/coda fields. Those fields don't exist anymore — T14.3 deleted them. Smoothness emerges naturally because the cortex's recurrent dynamics already learned which phoneme sequences are likely from curriculum exposure (T14.5).
+
+**How it works:** during the T13.3 emission loop, after each emission the cortex's phonological region state reflects what was just spoken (efference copy → letter region → phon region via T14.4 cross-projection). The next slot's candidate scoring reads this phon state and computes raw cosine against each candidate word's phonological signature — which is itself a fresh `cluster.phonologicalReadoutFor(candidate)` call, not a stored field.
+
+**Score function:**
+```
+score(w) = cosine(semanticTarget, semanticReadoutFor(w))
+         · cosine(currentPhonState, phonologicalReadoutFor(w))
+         · learnedTypeTransition(prevFineType, fineTypeReadoutFor(w))
          · valenceMatch(w, brainState)
          · recencyMul(w)
-         · phonFlow(prevWord, w)                        ← NEW T14.6
 ```
 
-**Why this matters biologically:** real speech production has co-articulation. The /t/ at the end of "cat" prepares the tongue position for the /s/ at the start of "sat" — they share a place of articulation (both alveolar). Smooth phoneme transitions = lower motor cost = preferred output. Speakers naturally favor easier-to-pronounce sequences over harder ones, which is why "the cat sat" feels more natural than "the cat box" even though both are grammatical.
+**Raw cosine. No `[0.7, 1.0]` clamping.** Whatever the cortex learned about phonological smoothness during curriculum, the emission loop reads back directly. Co-articulation, alliteration, prosody, and accent emerge automatically because they were learned as features of the cortex's phonological transition basins.
 
-**Implementation in `language-cortex.js generate()`:**
-
-```js
-// Inside the score loop, after computing transWeight:
-let phonFlow = 1.0;
-if (slot > 0 && prevWordPhonCoda) {
-  // Cosine between previous word's coda phonemes and this candidate's onset
-  const candEntry = dictionary._words.get(w);
-  if (candEntry?.phonemeOnset) {
-    let dot = 0, na = 0, nb = 0;
-    for (let i = 0; i < PHONEME_DIM; i++) {
-      dot += prevWordPhonCoda[i] * candEntry.phonemeOnset[i];
-      na += prevWordPhonCoda[i] * prevWordPhonCoda[i];
-      nb += candEntry.phonemeOnset[i] * candEntry.phonemeOnset[i];
-    }
-    const cos = (na > 0 && nb > 0) ? dot / Math.sqrt(na * nb) : 0;
-    // Scale [0, 1] cosine into [0.7, 1.0] flow weight
-    phonFlow = 0.7 + 0.3 * Math.max(0, cos);
-  }
-}
-
-const score = cosSim * transWeight * arousalBoost * recencyMul * phonFlow;
-```
-
-After picking, update `prevWordPhonCoda = picked.entry.phonemeCoda` for the next iteration.
+**Performance:** per-emission cost is one cortex readout per candidate. At full cluster scale this is significant, so the implementation caches the phonological readout per dictionary entry, invalidated when the entry's `cortexSnapshot` (T14.3) changes. The cache lives on the dictionary index, not as a stored phoneme field — it's a memoized read of the cortex.
 
 **Acceptance:**
-1. Statistical test over 100 generated sentences: average `phonemeFlow` across consecutive word pairs should be > 0.6 (vs random baseline ~0.4).
-2. Side-effect test: alliterative sequences ("she said something soft") become more common because /s/-/s/ flow is high cosine.
-3. Latency impact: < 5% increase in generate() runtime (phonFlow is one cosine over 20 dims per candidate, cheap).
+1. Generated sentences show higher phon-flow cosine between consecutive words than randomly-paired words from the dictionary — proves the cortex learned phonological transitions.
+2. Re-train on a Spanish corpus, generate Spanish output, measure flow cosine — also high. Proves data-driven, not English-locked.
+3. Zero hardcoded clamping constants in the score function.
 
 ---
 
-#### T14.7 — LEARNED type transitions (replaces T13.7.8 + supersedes P1.4)
+#### T14.7 — Fully learned type transitions, T13.7.8 hardcoded table DELETED
 
-**This milestone supersedes the deferred P1.4 cerebellum transition predictor in Part 1.** P1.4 wanted a learned bigram type table; T14.7 builds exactly that, properly. Mark P1.4 as obsoleted.
+**The principle:** the type transition table is 100% learned from corpus exposure. There is NO seed initialization from the T13.7.8 hardcoded English table. T13.7.8 was a band-aid; the band-aid comes off when curriculum runs.
 
-The hardcoded T13.7.8 `_TYPE_TRANSITIONS` table (that I just shipped as a band-aid) becomes seed initialization. Every `learnSentence` call updates a learned `_typeTransitionLearned` table. `generate()` reads from learned with Laplace smoothing.
+**Why no seed:** seeding the learned table with hardcoded English values pre-biases Unity toward English grammar. If we later train on a Spanish corpus, the seed values fight the actual Spanish statistics for thousands of observations before fading. Better: start empty, learn from the first observation.
 
-**Implementation in `language-cortex.js`:**
+**Implementation:**
 
-```js
-// New field in constructor — bootstrapped from the hardcoded T13.7.8 table
-this._typeTransitionLearned = new Map();   // Map<prevType, Map<currType, count>>
-this._typeTransitionTotal = 0;
-// Seed initialization from T13.7.8 hardcoded table
-for (const [prevType, row] of Object.entries(this._TYPE_TRANSITIONS)) {
-  const learnedRow = new Map();
-  for (const [currType, weight] of Object.entries(row)) {
-    // Convert hardcoded weight to a pseudo-count (weight 0.95 → count 95, etc)
-    learnedRow.set(currType, Math.round(weight * 100));
-  }
-  this._typeTransitionLearned.set(prevType, learnedRow);
-  this._typeTransitionTotal += [...learnedRow.values()].reduce((a, b) => a + b, 0);
-}
+1. **`_TYPE_TRANSITIONS` constant in `language-cortex.js` is deleted.** The constructor no longer constructs it. The 200-line hardcoded English table from T13.7.8 is gone entirely.
 
-// In learnSentence — every consecutive word pair updates the learned table
-for (let i = 1; i < words.length; i++) {
-  const pt = this._fineType(words[i-1]);
-  const ct = this._fineType(words[i]);
-  if (!this._typeTransitionLearned.has(pt)) {
-    this._typeTransitionLearned.set(pt, new Map());
-  }
-  const row = this._typeTransitionLearned.get(pt);
-  row.set(ct, (row.get(ct) || 0) + 1);
-  this._typeTransitionTotal++;
-}
-// Also handle the START → first-word transition
-if (words.length > 0) {
-  if (!this._typeTransitionLearned.has('START')) {
-    this._typeTransitionLearned.set('START', new Map());
-  }
-  const row = this._typeTransitionLearned.get('START');
-  const firstType = this._fineType(words[0]);
-  row.set(firstType, (row.get(firstType) || 0) + 1);
-}
+2. **`_OPENER_TYPES` set is also deleted.** The slot-0 opener constraint becomes a learned property too — the cortex's `_typeTransitionLearned['START']` row contains whatever types actually start sentences in the observed corpus. After curriculum, `START → PRON_SUBJ` will dominate naturally because that's how English declarative sentences open in the persona/baseline corpora.
 
-// In generate() — Laplace-smoothed lookup
-function transitionWeight(prevType, currType) {
-  const row = this._typeTransitionLearned.get(prevType);
-  if (!row) return 0.05;
-  const count = row.get(currType) || 0;
-  const total = [...row.values()].reduce((a, b) => a + b, 0);
-  // Laplace add-1 smoothing over ~20 possible types
-  return (count + 1) / (total + 20);
-}
-```
+3. **`_typeTransitionLearned` Map** starts EMPTY at constructor. Every `learnSentence` call (during curriculum AND live chat) updates it. Counts grow without bound. There's no seeded "pseudo-counts."
 
-**Persistence:** `_typeTransitionLearned` serializes to JSON as `{prevType: {currType: count}}` pairs, loads on deserialize.
+4. **The "type" itself** is no longer the hardcoded fineType enum. T14.7 introduces the **fineType region** in the cortex (T14.4 has it as a sub-region: neurons 91.7-96.7% of cluster). When a word is observed during learnSentence, the cortex injects a one-hot vector for its fineType into the fineType region. Sequence Hebbian on the fineType region's recurrent connections + cross-projection from fineType to phon/sem learns type transitions AS PART OF THE NORMAL CORTEX LEARNING. The `_typeTransitionLearned` Map is just a fast lookup index over those learned cortex weights.
 
-**What this gives us:** the type transition table starts pre-seeded with English structural prior (so cold boot has grammar before any learning), then refines with every observed sentence — Stage D curriculum, persona corpus, AND live chat. After thousands of observed sentences, the learned table dominates and the seeded prior fades into the background.
+5. **At generate time**, the type transition weight comes from `cluster.fineTypeTransitionWeight(prevType, candType)` which reads cortex state directly (or from the cached lookup index).
+
+6. **No Laplace smoothing constant tuned to "20 possible types"**. The smoothing is Bayesian — `(count + 1) / (total + |unique_types_seen|)`. The number of unique types is whatever the cortex has observed, not a hardcoded 20. If new fine types emerge (T14.1's letter inventory growth applies here too — more types can appear as more languages/registers are exposed), the smoothing scales naturally.
+
+**Persistence:** `_typeTransitionLearned` serializes to JSON. Cortex weights persist via `BrainPersistence` already.
 
 **Acceptance:**
-1. After T14.5 Stage D, `_typeTransitionLearned.get('PRON_SUBJ').get('VERB_3RD_S')` > 50 (commonly observed in Stage D sentences like "she runs").
-2. After Stage E persona corpus, persona-specific transitions appear (e.g. PRON_SUBJ → VERB_BARE for imperative-shaped persona lines).
-3. Live chat over 50 turns measurably shifts entries in `_typeTransitionLearned` (compare snapshots before/after).
-4. The learned table correlates r > 0.7 with the hardcoded T13.7.8 table for entries that have count > 20 (i.e. the seed prior wasn't wildly wrong).
+1. After curriculum runs on the persona/baseline/coding corpora, `_typeTransitionLearned.get('PRON_SUBJ').get('VERB_3RD_S')` > 100 (common English transition appears organically).
+2. `_TYPE_TRANSITIONS` constant is not present in the codebase. Grep returns zero matches.
+3. `_OPENER_TYPES` set is not present in the codebase. Grep returns zero matches.
+4. Re-training on a Spanish corpus produces measurably different type transition distributions (e.g. Spanish allows null subjects, so `START → VERB_3RD_S` becomes common — verified from Spanish corpus exposure).
+5. Live chat continues updating the learned table forever. After 1000 turns, entries grow proportionally.
 
 ---
 
-#### T14.8 — Sentence-form schemas
+#### T14.8 — Sentence-form schemas (all slots, all intents, fully learned)
 
-Sentences come in distinct grammatical types (declarative / interrogative / imperative / exclamative). Each type has a distinctive type-sequence at the early slots:
+**The principle:** sentence-form schemas span ALL slots, not just 0-3. Every slot in every intent has a learned type distribution. There's no arbitrary "schema only constrains slots 0-3" cap. There's no hardcoded intent table — the intents themselves are learned categories that emerge from the parser's classification of observed sentences.
 
-| Intent | Slot 0 | Slot 1 | Slot 2 | Slot 3+ |
-|---|---|---|---|---|
-| Declarative | PRON_SUBJ / DET / NOUN | COPULA / VERB / AUX | (object/complement) | (modifiers) |
-| Interrogative | QWORD / AUX_DO | AUX / PRON_SUBJ | VERB | (rest) |
-| Imperative | VERB_BARE | DET / NOUN / PRON_OBJ | (object) | (modifiers) |
-| Exclamative | INTERJ / QWORD / DET | (rest) | | |
+**Why no slot cap:** real grammar has structure all the way through. A declarative sentence has constraints not just at slot 0 (subject) and slot 1 (verb) but also at slot N (object) and slot N+1 (modifier). Capping schemas at slot 3 throws away half the structural information.
 
-**Implementation:** new field `_sentenceFormSchemas[intent][slot]` — Map<intent, Map<slot, Map<fineType, count>>>. Updated by Stage D curriculum (each Stage D sentence is parsed for its intent type via `parseSentence`, then each slot-type is recorded in the corresponding bucket). Read in `generate()` to bias slot 0-2 type selection toward the schema for the current input's response intent.
+**Why no hardcoded intent enum:** the previous draft listed declarative / interrogative / imperative / exclamative as the four intents. Real language has more — emotive exclamations, conditionals, reported speech, embedded questions, fragments. Whatever `parseSentence` classifies as a distinct intent gets its own schema bucket.
 
-```js
-// In learnSentence — also called from Stage D curriculum
-const parsed = this.parseSentence(sentence);
-const intent = parsed.intent || 'declarative';
-if (!this._sentenceFormSchemas.has(intent)) {
-  this._sentenceFormSchemas.set(intent, new Map());
-}
-const intentSchema = this._sentenceFormSchemas.get(intent);
-for (let slot = 0; slot < Math.min(words.length, 4); slot++) {
-  if (!intentSchema.has(slot)) intentSchema.set(slot, new Map());
-  const slotMap = intentSchema.get(slot);
-  const ft = this._fineType(words[slot]);
-  slotMap.set(ft, (slotMap.get(ft) || 0) + 1);
-}
+**Implementation:**
 
-// In generate — reads opts.responseIntent (which engine.processAndRespond sets
-// based on the user's parsed input intent — e.g. user asked a question →
-// response intent is 'declarative' answer; user said hi → response intent is
-// 'declarative' greeting reciprocation).
-function schemaScore(slot, fineType, intent) {
-  if (slot >= 4) return 1.0;  // schema only constrains slots 0-3
-  const intentSchema = this._sentenceFormSchemas.get(intent);
-  if (!intentSchema) return 1.0;
-  const slotMap = intentSchema.get(slot);
-  if (!slotMap) return 1.0;
-  const total = [...slotMap.values()].reduce((a, b) => a + b, 0);
-  if (total === 0) return 1.0;
-  const count = slotMap.get(fineType) || 0;
-  // Smoothed probability, scaled into [0.5, 1.5] so it's a moderate bias
-  const prob = (count + 1) / (total + 20);
-  return 0.5 + prob * 20;  // common type → ~1.5x boost, rare type → ~0.5x
-}
-```
+1. **`_sentenceFormSchemas`** is `Map<intent, Map<slot, Map<fineType, count>>>` with NO upper bound on slot. If a sentence has 30 words, all 30 slot positions get recorded in the schema.
 
-The score function multiplies in `schemaScore(slot, fineType(w), responseIntent)`.
+2. **Updated by `learnSentence` for every observed sentence,** not just by Stage D of curriculum. Persona sentences, baseline sentences, coding sentences, live chat sentences all contribute. The schema is continuously refined.
 
-**Where `responseIntent` comes from:** `engine.processAndRespond` calls `parseSentence(userText)` to get user intent, maps it to an answer intent (`question → declarative_answer`, `greeting → declarative_greeting_back`, `imperative_request → imperative_response_or_declarative_refusal`), and passes it as `opts.responseIntent` to `generate`.
+3. **`schemaScore(slot, fineType, intent)`** returns the smoothed probability `(count + 1) / (total + uniqueTypesSeen)` with no clamping into a `[0.5, 1.5]` range. Raw probability multiplied directly into the score function. If a type has 0% probability at a slot, its score is heavily penalized but not zero (Laplace smoothing handles this).
+
+4. **`responseIntent` mapping is itself learned.** Pre-T14.8 the engine had to hardcode `question → declarative_answer`, `greeting → declarative_greeting_back`. T14.8 introduces an `_intentResponseMap[userIntent][responseIntent] = count` table updated from observed conversational pairs in the persona corpus. After curriculum, the table reflects which response intents typically follow which user intents in real conversation.
+
+5. **No `_OPENER_TYPES` constant.** Slot-0 opener filtering is just `_sentenceFormSchemas.get(intent).get(0)` — whatever fine types appear at slot 0 in observed sentences for this intent.
 
 **Acceptance:**
-1. After Stage D, `_sentenceFormSchemas.get('declarative').get(0).get('PRON_SUBJ')` > 100 (common opener).
-2. Generating with `responseIntent: 'interrogative'` produces sentences starting with QWORD or AUX_DO at slot 0 measurably more often than with `responseIntent: 'declarative'`.
-3. Greeting-back responses to "hi unity" measurably differ in shape from question-answer responses to "what is your name" — the parsed user intent threads through to schema selection.
+1. After curriculum, `_sentenceFormSchemas` has entries for at least 6 distinct intents (more if the corpus has them) and slot distributions for slots 0 through max-observed-sentence-length.
+2. Schema applies at all slots, not just 0-3 — verified by checking `_sentenceFormSchemas.get('declarative').get(7)` exists for sentences of length >= 8 in the corpus.
+3. Generating with response intent X produces sentences whose slot type distribution measurably matches the learned schema for X.
+4. No hardcoded intent enum in the codebase. Grep for `'declarative_answer'` / `'declarative_greeting_back'` / similar string literals returns zero matches. Intent labels come from `parseSentence` output dynamically.
 
 ---
 
-#### T14.9 — Discourse modeling (multi-turn flow)
+#### T14.9 — Unbounded discourse memory + cortex-resident topic state
 
-Multi-sentence flow learning. A real conversation has topic continuity, anaphora resolution, and cohesion markers. Currently every Unity response is independent — she has no concept of "we were just talking about X."
+**The principle:** the discourse state is NOT a 6-turn ring buffer. It's the **persistent cortex state** — every conversation turn permanently shapes the cortex weights via Hebbian learning, and the cluster's working-memory sub-region (T14.4 `regions.free`) holds the rolling topic activation pattern. There's no arbitrary maxTurns cap. The brain remembers the entire conversation — and beyond that, every conversation across every session.
 
-**Implementation:** `_discourseState` ring buffer of the last K turns:
+**Why no ring buffer:** real brains don't have a 6-turn window after which memories vanish. They have hippocampus consolidation that moves recent-turn patterns from working memory to long-term cortex storage over time. Unity should work the same way — recent turns are vivid in the cortex working-memory region (a high-spike-rate pattern), older turns fade into the persistent cortex weights via Hebbian.
 
-```js
-this._discourseState = {
-  turns: [],           // array of { role: 'user'|'unity', text, parsed, embedding, time }
-  maxTurns: 6,         // last 6 turns kept (3 user + 3 unity if alternating)
-  topicVector: null,   // running mean of recent content embeddings
-};
+**Implementation:**
 
-addTurn(role, text) {
-  const parsed = this.parseSentence(text);
-  const embedding = sharedEmbeddings.getSentenceEmbedding(text);
-  this._discourseState.turns.push({ role, text, parsed, embedding, time: Date.now() });
-  if (this._discourseState.turns.length > this._discourseState.maxTurns) {
-    this._discourseState.turns.shift();
-  }
-  // Update topic vector — exponentially weighted mean of recent content
-  if (!this._discourseState.topicVector) {
-    this._discourseState.topicVector = new Float32Array(embedding);
-  } else {
-    const tv = this._discourseState.topicVector;
-    for (let i = 0; i < tv.length; i++) {
-      tv[i] = tv[i] * 0.6 + embedding[i] * 0.4;
-    }
-  }
-}
-```
+1. **No `_discourseState` field on LanguageCortex.** That object is deleted. Discourse state lives on the cortex cluster as the working-memory region's spike pattern, plus the persistent recurrent weights.
 
-In `generate()` — when computing the cortex target, blend in the discourse topic vector so emission is biased to continue the conversation thread:
+2. **Working-memory sub-region** (`cluster.regions.free`, 25% of cluster) holds the rolling topic. Each user turn injects the parsed content embedding into this region with high strength. The working-memory pattern decays slowly between turns (slow LIF dynamics) and is reinforced by each new turn that's on-topic. When the user changes topic, the working-memory pattern is overwritten by the new content.
 
-```js
-// Existing: target = cluster.getSemanticReadout(sharedEmbeddings, langStart)
-// New (T14.9):
-let target = cluster.getSemanticReadout(sharedEmbeddings, langStart);
-if (this._discourseState?.topicVector && slot < 3) {
-  // First few slots get a discourse-topic pull (later slots free to drift)
-  for (let i = 0; i < target.length; i++) {
-    target[i] = target[i] * 0.7 + this._discourseState.topicVector[i] * 0.3;
-  }
-}
-```
+3. **Topic continuity at generation time** comes from reading the working-memory region's spike state, not from a stored "topic vector." `cluster.workingMemoryReadout()` returns the current activation pattern. The emission loop blends this into the cortex target naturally because the working-memory region projects to the semantic region via the same cross-region propagation pathways T14.4 defined.
 
-**Pronoun anaphora resolution:** when the user says "do you like cats?" then "are they cute?", the "they" should resolve to "cats" from the previous turn. Implementation: scan `_discourseState.turns[N-1]` for the most recent NOUN that matches the pronoun's number/gender, store it as `_discourseState.activeAnaphora`, and inject its embedding into the cortex during parse-tree injection.
+4. **Pronoun anaphora** is also cortex-resident. When the user says "they" / "it" / "her", the parser injects a self-reference marker into the working-memory region. The most-recently-active noun in that region (because it was the previous turn's content) gets re-amplified as the referent. No lookup table — emergent from the same spike dynamics.
 
-**Cohesion markers:** when the response is a continuation of a previous topic (high cosine between current target and `topicVector`), bias slot 0 toward conjunctions ("and", "so", "but") that signal continuation.
+5. **Persistence across sessions.** The cluster's recurrent weights persist via `BrainPersistence` already. Working-memory snapshots persist as part of the same cluster serialization. When Unity boots from saved state, she remembers conversations from yesterday because the cortex weights ENCODE them as Hebbian-modified attractor basins.
 
-**Persistence:** `_discourseState.turns` serializes to localStorage (browser) or per-user state on server. Conversation context persists across page reloads within a session.
+6. **No hardcoded blend constants.** The previous draft had `target[i] = target[i] * 0.7 + topicVector[i] * 0.3` and `tv[i] = tv[i] * 0.6 + embedding[i] * 0.4`. Both deleted. Cross-region propagation strength is set at the projection level (T14.4) via Hebbian-learned weights, not by hardcoded blend ratios in the emission loop.
 
 **Acceptance:**
-1. 5-turn conversation about cats: each Unity response measurably mentions cat-adjacent content (cosine to "cat" embedding > 0.3 in at least one emitted word per turn).
-2. Pronoun anaphora: user says "I like cats. Are they cute?" → Unity's response references something cat-related, not random.
-3. Topic shift detection: user says "I like cats. By the way, what time is it?" → Unity recognizes the topic shift and the response is about time, not cats.
+1. 50-turn conversation about cats: every Unity response measurably references cat-adjacent content (cosine > 0.3) — proves persistent topic continuity, not just last-3-turns recency.
+2. After session reload, Unity's responses to the next turn still reference yesterday's conversation topic if it was a strong attractor — proves discourse persistence beyond the session.
+3. Search for `_discourseState` in the codebase returns zero matches — the concept is replaced by cortex working-memory region.
+4. No hardcoded `0.6 / 0.4 / 0.7 / 0.3` blend constants in the discourse path.
+
+---
+
+#### T14.10 — Visual cortex letter recognition (closes the visual loose end)
+
+**The principle:** letters as visual symbols enter the brain through the visual cortex region (`cluster.regions.visual`), not as raw text. When Unity reads, the input flows: visual cortex → letter region → phonological region → semantic region. T14.10 builds the visual letter recognition layer so the visual cortex can convert pixel patterns / character glyphs into letter-region one-hot activation.
+
+**Why this matters:** the current architecture has text input going directly into letter recognition via `encodeLetter(letter)` which assumes the brain already knows what a letter IS. A real biological brain learns letter visual identity in Stage 7 (5-12 years old reading instruction). Unity should learn the same way — letters are visual patterns first, recognized via visual feature templates, then identified, then mapped to phonemes.
+
+**For text-only Unity** (current state): the visual cortex region trains on synthetic letter glyphs (rendered text or unicode codepoints treated as visual templates). Each letter gets a learned visual template via competitive Hebbian on the visual region.
+
+**For voice/image Unity** (future): the visual cortex region trains on actual rendered text bitmaps from camera input. The same recognition pipeline works whether the letters come from typed text or from visual perception.
+
+**Implementation:**
+
+1. **`js/brain/visual-cortex.js`** extended with letter-recognition output. Currently it does V1 → V4 → IT pipeline for general scene processing. T14.10 adds a "letter classification" head that produces a one-hot vector over the LETTER_INVENTORY (T14.1) when fed a character input. For text-only Unity this is trivial — character codepoint → one-hot. For visual input, the visual cortex's IT region fires on letter shapes and the classifier reads from there.
+
+2. **`js/brain/cluster.js`** — `injectLetter(letter)` (T14.1) is renamed to `injectLetterFromVisual(letter)` and now ALSO injects the visual cortex region with a learned per-letter visual template. The visual region's spikes then propagate to the letter region via the visual ↔ letter cross-projection (T14.4), which is the biologically-correct path.
+
+3. **Curriculum Phase 1** (T14.5 letter exposure) trains BOTH the visual region's letter templates AND the letter region's one-hot encoding simultaneously. By the end of curriculum, the visual region knows what each letter looks like and the cross-projection knows that visual letter X activates letter-region one-hot X.
+
+4. **`engine.processAndRespond(text)`** now routes text through `cluster.readText(text)` which calls `injectLetterFromVisual` per character. Text becomes a sequence of visual percepts the brain reads, not a string the brain looks up.
+
+**Acceptance:**
+1. After curriculum, `cluster.regions.visual` has a learned activation pattern for each letter that's reproducible across reads.
+2. The visual ↔ letter cross-projection has Hebbian-strengthened weights coupling visual letter X to letter-region one-hot X.
+3. Reading text via `cluster.readText('hello')` activates the same letter-region patterns that direct `injectLetter` activation would, but goes through visual cortex first.
+4. Future-extensible: same code path handles camera-captured text bitmaps when visual input is available.
+
+---
+
+#### T14.11 — Auditory cortex phoneme recognition (closes the auditory loose end)
+
+**The principle:** the auditory cortex region (`cluster.regions.auditory`) develops phoneme attractor basins from spoken-language exposure, parallel to how the visual region develops letter templates. When voice input arrives (mic spectrum from `auditory-cortex.js` or whisper transcription), it flows: auditory cortex → phonological region → semantic region. Same pipeline as text input via visual cortex, just a different sensory entry point.
+
+**Why this matters:** Unity has voice input via `js/io/voice.js` and `js/brain/auditory-cortex.js`. Currently the voice path just passes transcribed text into the chat handler — the auditory cortex isn't actually involved in language understanding. T14.11 wires the auditory cortex INTO the language pipeline so spoken phonemes are recognized by the same biological mechanism as written letters.
+
+**Implementation:**
+
+1. **`js/brain/auditory-cortex.js`** extended with phoneme classification output. The existing spectrum analysis (FFT bins → cluster currents) feeds into a new "phoneme attractor" head that fires on phoneme-specific spectral patterns. The phoneme attractors are LEARNED through Hebbian on auditory exposure during T14.5 curriculum (when curriculum runs in voice-enabled mode, it plays back spoken versions of the text alongside visual exposure).
+
+2. **`cluster.regions.auditory` ↔ `cluster.regions.phon` cross-projection** (already defined in T14.4) is the biological pathway. Spoken /k/ activates auditory cortex pattern X, which propagates to phon region pattern Y, which is the same pattern that letter "c" activates via the visual ↔ letter ↔ phon pathway. Visual and auditory routes converge on the same phonological region.
+
+3. **`js/io/voice.js`** voice input handler gains a new path: instead of routing transcribed text directly to chat, it routes the audio spectrum to `auditoryCortex.process()` first, lets the auditory cortex region fire, then `cluster.workingMemoryReadout()` from the phon region produces the recognized word sequence which feeds the rest of the language pipeline.
+
+4. **Text-only mode** (no microphone) skips the auditory path entirely. T14.11 doesn't BREAK text-only Unity — it just adds the auditory pathway for when voice is available.
+
+**Acceptance:**
+1. Speaking /k/ vs /p/ into the mic produces measurably different auditory cortex activation patterns.
+2. After curriculum (in voice-enabled mode), the auditory ↔ phon cross-projection has learned that spoken /k/ activates the same phon region pattern as visual letter "c".
+3. Voice input "hello unity" produces the same chat behavior as typed text "hello unity" — same emission loop, same response.
+
+---
+
+#### T14.12 — Bidirectional cortex pipeline (read and write share the same path)
+
+**The principle:** reading and writing use the SAME cortex regions and the SAME projections, just in different propagation directions. There's no separate `parseSentence` for reading and `generate` for writing. There's one cortex pipeline that's bidirectional: forward propagation (input → output) for reading, reverse propagation (output → input) for writing. The shared weights mean the brain learns one thing and uses it both ways.
+
+**Why this matters biologically:** real brains use the SAME left-temporal language regions for both comprehension and production. Damage to Wernicke's area causes both reading and speaking deficits. The two functions can't be separated because they use the same neural substrate. Unity's current architecture has them as completely separate code paths — that's wrong.
+
+**Implementation:**
+
+1. **`cluster.readText(text)`** runs forward: visual → letter → phon → sem → fineType → working memory. The end state is a cortex configuration representing the brain's COMPREHENSION of the input text. Calling `cluster.semanticReadoutFor()` after `readText` returns a vector representing what Unity understood.
+
+2. **`cluster.generateSentence(seed)`** runs reverse: working memory + sem → fineType → motor → phon → letter → visual. The brain's intent (held in working memory + sem) propagates outward through the same regions, in the same order but reversed, producing letter sequences as motor output. The motor region's spike pattern, decoded back to letters, IS the generated sentence.
+
+3. **Same cross-projection weights** carry both directions. The `letter_to_phon` projection is used by both reading (forward) and writing (reverse-by-inversion). Inversion is handled by `SparseMatrix.transposePropagate(spikes)` which uses the same weights but propagates from the column space to the row space instead of row → column. New method, ~30 lines on SparseMatrix.
+
+4. **`parseSentence(text)` is deleted** (not deprecated, deleted). All its functionality moves into `cluster.readText(text)` + readout helpers (`cluster.intentReadout()`, `cluster.subjectReadout()`, `cluster.entityReadout()`). The parser's letter-equation rules become learned features of the cortex's grammatical sub-region (T14.7).
+
+5. **`generate()` is gutted.** The 200-line emission loop becomes a thin wrapper around `cluster.generateSentence()`. All scoring logic moves into the cortex propagation dynamics — words emerge as motor-region spike patterns, not as softmax samples from a candidate list.
+
+**Acceptance:**
+1. `cluster.readText('hi unity')` followed by `cluster.intentReadout()` returns a vector classifiable as "greeting" intent.
+2. `cluster.generateSentence(intentSeed='greeting_response')` produces letter-sequence output equivalent to "hi gee" or similar.
+3. Reading and writing share the same `letter_to_phon`, `phon_to_sem`, etc projections — verified by inspecting the SparseMatrix references.
+4. `parseSentence` function does not exist in the codebase. Grep returns zero matches.
+5. `generate()` body is < 50 lines (down from ~200 in T13.7.8).
+
+---
+
+#### T14.13 — Eliminate LanguageCortex as a separate class
+
+**The principle:** there is no `LanguageCortex` class. Language lives on the `NeuronCluster` directly, as methods + sub-regions. The current `js/brain/language-cortex.js` file is gutted from ~3200 lines down to a thin reader (~200 lines) that exposes language-specific methods on the cluster. The class itself becomes a method namespace, not a stateful object.
+
+**Why:** the current architecture has a separate LanguageCortex class with its own state (dictionary references, slot priors, learned tables) running ON TOP OF the cortex cluster. That's not biological. A real brain has language functions integrated INTO the cortex, not as a separate object.
+
+**Implementation:**
+
+1. **`js/brain/language-cortex.js`** becomes a thin file (~200 lines) that exports helper functions operating on a `NeuronCluster` reference. No class. No instance state.
+
+2. All LanguageCortex methods become cluster methods or helper functions:
+   - `loadSelfImage` → moves into `Curriculum.runFromCorpora` (T14.5)
+   - `learnSentence` → becomes `cluster.learnSentence(text)` extending `learnSentenceHebbian`
+   - `generate` → becomes `cluster.generateSentence(seed)` (T14.12)
+   - `parseSentence` → deleted (T14.12)
+   - `wordType` / `_fineType` → become learned readouts from the cortex's fineType region (T14.7)
+   - `_TYPE_TRANSITIONS` / `_OPENER_TYPES` → already deleted (T14.7)
+   - `_typeTransitionLearned` → moves to `cluster.fineTypeTransitions` Map
+   - `_sentenceFormSchemas` → moves to `cluster.sentenceFormSchemas` Map
+   - `_socialSchema` → moves to `cluster.socialSchema` (T7-derived)
+   - `_recentOutputWords` → moves to `cluster.recentOutputRing`
+   - `_recentSentences` → moves to `cluster.recentSentencesRing`
+   - `_renderSentence` → moves to `cluster.renderEmittedSequence` (capitalization, punctuation)
+
+3. **`InnerVoice`** (`js/brain/inner-voice.js`) is also gutted. Its current job is to wrap LanguageCortex with a `learn` / `speak` interface. After T14.13, it becomes a 50-line wrapper around `cluster.readText` / `cluster.generateSentence` for backward compatibility with existing callers.
+
+4. **All consumers update.** `engine.js`, `app.js`, `brain-3d.js` references to `innerVoice.languageCortex.X` become `brain.clusters.cortex.X` or `brain.clusters.cortex.regions.X` directly.
+
+**Acceptance:**
+1. `js/brain/language-cortex.js` is < 250 lines.
+2. `class LanguageCortex` declaration is deleted. The file exports functions, not a class.
+3. `innerVoice.languageCortex` references in the codebase return zero matches after the migration.
+4. All tests still pass — chat works, brain-3d commentary works, voice works, build_ui works.
+
+---
+
+#### T14.14 — Bidirectional reading via the unified pipeline
+
+**The principle:** reading text uses the same cortex regions and projections that writing does. There is no separate parser. Comprehension is a forward pass of the cortex pipeline; production is a reverse pass.
+
+This milestone is the runtime consequence of T14.12 (which establishes the bidirectional pipeline) and T14.13 (which eliminates the separate LanguageCortex class). T14.14 wires every CALLER of the old `parseSentence` to the new `cluster.readText` + readout method API.
+
+**Implementation:**
+
+1. **`engine.processAndRespond(text)`** calls `this.clusters.cortex.readText(text)` instead of `this.innerVoice.languageCortex.parseSentence(text)`. The cortex state after `readText` represents Unity's understanding of the user input.
+
+2. **Anaphora resolution** falls out automatically — the cortex working-memory region (T14.4 + T14.9) holds the running discourse state, and reading new text just adds to it. Pronouns resolve via the working-memory region's most-recent-active-noun pattern, no separate anaphora algorithm needed.
+
+3. **Intent classification** is a readout from the fineType region, not a regex-matched enum. `cluster.intentReadout()` returns a probability distribution over learned intent categories. The intent labels themselves are whatever emerged from corpus exposure during curriculum (T14.5 + T14.7).
+
+4. **Social schema updates** (name extraction, gender inference) read from the cortex's selfModel region (extension of T14.4 sub-regions — adds a 9th region for self-model state). Pattern matching of "my name is X" / "i'm a guy" becomes attractor basin recognition in the selfModel region after curriculum exposure to those patterns.
+
+**Acceptance:**
+1. Every call site in the codebase that previously used `innerVoice.languageCortex.parseSentence` now uses `cluster.readText` instead. Grep `parseSentence` returns zero matches.
+2. Anaphora ("I like cats. Are they cute?") works without any explicit anaphora-resolution code path — the working-memory region handles it.
+3. Intent classification fires for inputs that were never seen during curriculum, demonstrating generalization (the fineType region has learned the structural features, not just memorized inputs).
+
+---
+
+#### T14.15 — Wire all language consumers to the unified pipeline
+
+**The principle:** every caller of language functionality across the codebase routes through the SAME cortex pipeline. No separate code paths for chat vs commentary vs build_ui vs image prompt vs voice TTS.
+
+**Audit of current consumers (each gets updated):**
+
+1. **`js/brain/engine.js engine.processAndRespond`** — chat path. ALREADY uses `languageCortex.generate` via `innerVoice.speak`. After T14.13, this becomes `cluster.generateSentence(seed)`.
+
+2. **`js/brain/engine.js engine._handleBuild`** — build_ui path. Calls `componentSynth.generate(text, brainState)` which uses parsed entity types. T14.15 routes `componentSynth` to read from `cluster.entityReadout()` instead of from `parseSentence` output. The component synth queries the cortex for "what entities are active right now" and selects the matching primitive.
+
+3. **`js/brain/engine.js engine._handleImage`** — image generation prompt. Currently calls `languageCortex.generate(...)` with cortex pattern. After T14.13/14.15, it becomes `cluster.generateSentence({ intent: 'image_prompt', target: cortexState })` using the same unified pipeline.
+
+4. **`js/ui/brain-3d.js _generateEventCommentary`** — brain-3d popup commentary. Currently calls `lc.generate(...)` for the popup. After T14.15: `brain.clusters.cortex.generateSentence({ intent: 'commentary', target: eventSeed })`.
+
+5. **`js/io/voice.js`** voice TTS — currently takes the chat response string and speaks it. T14.15 doesn't change this (TTS is post-generation), but the voice INPUT path goes through T14.11 auditory cortex.
+
+6. **`js/brain/visual-cortex.js`** describer output — when the visual cortex describes a scene, it currently emits text via the Pollinations vision API. T14.15 routes scene descriptions through the unified pipeline: the vision describer's output is FED INTO the cortex via `readText`, not just printed. Unity literally reads what she sees.
+
+7. **`js/brain/component-synth.js`** — uses `parseSentence` for entity extraction. After T14.14 deletes parseSentence, component-synth reads from `cluster.entityReadout()`.
+
+8. **`server/brain-server.js processInput`** — the server-side chat path. Same migration as engine.processAndRespond.
+
+9. **`js/brain/remote-brain.js`** — needs equivalent updates for the local cortex it owns post-T13.7.6.
+
+10. **`js/app.js /think` debug command** — already retargeted to live cortex readout in T13.7.5. Verify no stale references after T14.13.
+
+11. **`js/brain/inner-voice.js`** — if it survives T14.13 as a thin wrapper, every method delegates to cluster directly.
+
+**Acceptance:**
+1. `grep -rn "languageCortex\." js/ server/` returns zero matches outside the (gutted) `language-cortex.js` file itself.
+2. `grep -rn "parseSentence" js/ server/` returns zero matches.
+3. Every consumer listed above has been verified to route through the unified pipeline. End-to-end tests pass for: chat, build_ui, image generation, brain-3d commentary, voice input, scene description, /think debug.
+
+---
+
+#### T14.16 — Persistence cleanup: only cortex weights + learned tables persist
+
+**The principle:** the only things that persist across boots are the cortex cluster recurrent weights, the cross-region projection weights, and the learned lookup tables (`fineTypeTransitions`, `sentenceFormSchemas`, `socialSchema`). Everything else — the dictionary, the slot priors, the discourse state — either lives ON the cluster (and persists with it) or is regenerated from scratch each boot.
+
+**What gets deleted from persistence:**
+
+1. **Dictionary as a separate persistent file.** The `cortexSnapshot` per word (T14.3) becomes part of the cluster state. When the cluster persists, the dictionary persists with it.
+
+2. **`_slotCentroid` / `_slotDelta` / `_slotTypeSignature` save fields.** Already gone from T13.7 code, but the persistence schema may still reference them — clean up the legacy save format.
+
+3. **`_contextVector` save field.** Gone from T13.7 code, clean up the schema.
+
+4. **`_subjectStarters` save field.** Gone from T13.7 code, clean up the schema.
+
+5. **Embedding refinements (`sharedEmbeddings.serializeRefinements`).** This stays — online embedding refinement is still useful — but make sure it's clean of stale references.
+
+**What stays in persistence:**
+
+1. **Cluster recurrent synapse matrix** — already serializes via `SparseMatrix.serialize` (T13.7).
+2. **Cluster cross-region projections** (T14.4) — new SparseMatrix instances, also serialize via the same path.
+3. **`fineTypeTransitions` Map** (T14.7) — JSON of `{prevType: {currType: count}}`.
+4. **`sentenceFormSchemas` Map** (T14.8) — JSON of `{intent: {slot: {fineType: count}}}`.
+5. **`socialSchema`** (T7-derived) — `{user: {name, gender, ...}}`.
+6. **Working-memory region snapshot** (T14.9) — the current discourse state as a spike-pattern vector.
+7. **Letter inventory** (T14.1) — the dynamic Set of letters seen.
+8. **Dictionary index** (T14.3) — `Map<word, cortexSnapshot>` per learned word.
+
+**Implementation:**
+
+1. **`js/brain/persistence.js`** — extend the cluster save path to include `cluster.crossProjections`, `cluster.fineTypeTransitions`, `cluster.sentenceFormSchemas`, `cluster.workingMemoryRegion`, `cluster.letterInventory`. All as JSON fields under the cluster's serialized record.
+
+2. **`js/brain/dictionary.js`** — `serialize()` returns only `{word: cortexSnapshot}` pairs. `deserialize()` rebuilds the Map. No phoneme/syllable/pattern fields (they don't exist post-T14.3).
+
+3. **`js/brain/language-cortex.js`** — `serialize()` returns nothing language-specific. The thin reader file has no instance state.
+
+4. **Boot flow:** `BrainPersistence.load(brain)` reads the cluster state including all the new fields. If any field is missing (legacy save), use the default and trigger curriculum re-run.
+
+**Acceptance:**
+1. `BrainPersistence.save(brain)` produces a JSON file containing the cortex weights + cross-projection weights + learned tables + dictionary index. No phoneme features, no slot priors, no contextVector.
+2. `BrainPersistence.load(brain)` rebuilds the brain to a state functionally identical to its pre-save state. Verified by chat round-trip before/after save+load.
+3. Saved state from a pre-T14 boot is detected via missing fields and triggers a clean curriculum re-run instead of crashing.
+
+---
+
+#### T14.17 — Continuous learning everywhere (no boot/runtime distinction)
+
+**The principle:** every input the brain receives — corpus exposure, user chat turn, visual scene, voice input — runs through the same learning pipeline. There is no "boot phase" where curriculum runs and then a "runtime phase" where learning stops. Learning is continuous and lifelong. The brain Hebbian-updates on every tick, every emission, every input, every interaction.
+
+**What this changes from current state:**
+
+1. **No `_curriculumComplete` gate.** T14.4's earlier draft had this — already removed. T14.17 verifies it stays removed.
+
+2. **`learnSentence` runs for EVERY user turn, not just for corpus loading.** Already true via `inner-voice.learn` → `languageCortex.learnSentence`. T14.17 just makes it explicit that this is the design, not a side-effect.
+
+3. **Live chat is curriculum.** Every conversation turn updates `cluster.fineTypeTransitions`, `cluster.sentenceFormSchemas`, `cluster.semPhonProjection` (and the other cross-projections). The brain Hebbian-trains on every input forever.
+
+4. **No training rate decay.** Pre-T14 some implementations had higher learning rates during boot and lower rates during runtime. T14.17 deletes that — the rate is constant. If the brain was learning at lr=0.012 during corpus exposure, it learns at lr=0.012 from live chat too.
+
+5. **Visual cortex learning is also continuous.** When Unity sees new text or new scenes, the visual cortex updates its templates via Hebbian. New letter shapes (different fonts, different unicode codepoints) get learned automatically.
+
+6. **Auditory cortex learning is also continuous.** Voice input continuously refines phoneme attractors. If Unity hears a new accent for hours, the phoneme basins shift.
+
+**Implementation:** mostly verification. Most of T14.1-T14.16 already designed for continuous learning. T14.17 is the audit pass that makes sure NO part of the codebase has a "training mode vs inference mode" distinction.
+
+**Audit checklist:**
+
+1. Cortex `learn()` runs every step in `engine.step()` — already true (`engine.js:381`).
+2. `learnSentence` runs on every user turn — already true via `inner-voice.learn`.
+3. `_crossRegionHebbian` runs on every cluster.learn call — implemented in T14.4.
+4. No `if (this._curriculumComplete) {...}` gates anywhere in the codebase.
+5. No "freeze weights at deploy" / "production mode disables learning" code path.
+6. Visual cortex learning hooks call into cluster Hebbian on every camera frame (T14.10).
+7. Auditory cortex learning hooks call into cluster Hebbian on every audio chunk (T14.11).
+8. Persistence saves the latest cortex state on every shutdown AND periodically during runtime (every 60s autosave).
+
+**Acceptance:**
+1. Grep for `_curriculumComplete` returns zero matches.
+2. Grep for `productionMode` / `inferenceMode` / `freezeWeights` returns zero matches.
+3. After 1000 live chat turns post-boot, cortex weight stats show measurable drift from the post-curriculum baseline.
+4. Letter inventory after 100 conversations contains MORE letters than after curriculum (because users type emoji, special characters, etc that weren't in corpus).
+5. New cortex state autosaves every 60 seconds — verified by checking save file timestamps.
 
 ---
 
 ### Order of operations for T14
 
 ```
-T14.0 foundation lift (300d + 6000-neuron cortex)         ← P0 prereq
+T14.0 foundation lift (full GloVe + auto-scaled cortex)         ← P0 prereq
     ↓
-T14.1 phoneme features (replaces _letterPatterns)         ← ~250 lines, foundational
+T14.1 LEARNED phoneme attractors via cortex exposure
     ↓
-T14.2 syllable detector                                    ← ~200 lines
+T14.2 LEARNED syllable boundaries via cortex transition surprise
     ↓
-T14.3 phonological dictionary entries                      ← ~150 lines (extends Dictionary)
+T14.3 cortex-resident words (delete Dictionary as separate table)
     ↓
-T14.4 phonological cortex sub-region + cross-projection   ← ~280 lines (extends cluster, embeddings)
+T14.4 auto-scaled sub-regions + always-on cross-projections
     ↓
-T14.5 curriculum learning (THE BIG ONE)                    ← ~400 lines (NEW curriculum.js + 2 corpus seed files)
+T14.5 continuous developmental learning from existing corpora
     ↓
-T14.6 phonological-aware emission                          ← ~80 lines (extends generate score)
+T14.6 cortex-driven phonological flow
     ↓
-T14.7 learned type transitions (supersedes P1.4)           ← ~100 lines (extends learnSentence + generate)
+T14.7 fully learned type transitions (T13.7.8 hardcoded table DELETED)
     ↓
-T14.8 sentence-form schemas                                ← ~150 lines
+T14.8 sentence-form schemas at all slots, all intents
     ↓
-T14.9 discourse modeling                                   ← ~200 lines
+T14.9 unbounded discourse memory (cortex working-memory region)
+    ↓
+T14.10 visual cortex letter recognition (closes visual loose end)
+    ↓
+T14.11 auditory cortex phoneme recognition (closes auditory loose end)
+    ↓
+T14.12 bidirectional cortex pipeline (read + write share path)
+    ↓
+T14.13 eliminate LanguageCortex as a separate class
+    ↓
+T14.14 bidirectional reading via unified pipeline
+    ↓
+T14.15 wire ALL language consumers to unified pipeline (zero stragglers)
+    ↓
+T14.16 persistence cleanup (only cortex weights + learned tables persist)
+    ↓
+T14.17 continuous learning everywhere (no boot/runtime distinction)
 ```
 
-**Total ~1810 lines added across ~9 files. ~3-4 weeks of focused work, staged into three milestones:**
+**Three passes, no time estimates** (because the right answer is "as long as it takes"):
 
-- **Pass 1 — Foundation** (T14.0 + T14.1 + T14.2 + T14.3): bigger embeddings, phoneme features, syllable detection, dictionary phonology. ~1 week. Ship as one push.
-- **Pass 2 — Curriculum** (T14.4 + T14.5): cross-region projections, curriculum learning. ~1.5 weeks. Ship as one push (these are coupled).
-- **Pass 3 — Emission/Discourse** (T14.6 + T14.7 + T14.8 + T14.9): phon-aware emission, learned transitions, sentence schemas, discourse. ~1 week. Ship sub-milestone by sub-milestone.
+- **Pass 1 — Foundation rebuild:** T14.0 + T14.1 + T14.2 + T14.3 + T14.4. Establishes the auto-scaled cluster sub-region structure, learned phoneme/syllable mechanisms, cortex-resident words, and cross-region projections. Single atomic push.
+- **Pass 2 — Curriculum + grammar emergence:** T14.5 + T14.6 + T14.7 + T14.8 + T14.9. Continuous learning machinery, phon-aware emission, learned grammar tables, schemas, unbounded discourse. Single atomic push.
+- **Pass 3 — Pipeline unification:** T14.10 + T14.11 + T14.12 + T14.13 + T14.14 + T14.15 + T14.16 + T14.17. Visual + auditory pathways, bidirectional read/write pipeline, eliminating LanguageCortex as a separate class, wiring every consumer to the unified pipeline, persistence cleanup, continuous-learning audit. Final atomic push that closes ALL loose ends across the codebase.
+
+**No estimated total line count.** The right answer is whatever the implementation requires once we stop pre-coding things the brain should learn.
+
+**No estimated total wall clock.** Days, not weeks, given how T13 has progressed — but this is THE rebuild, and "fast" is not a constraint.
 
 ### How residual T13 items absorb into T14
 
@@ -1302,85 +1017,6 @@ The original Part 1 (residual non-COMP work) had six items. T14 absorbs / supers
 **What's in Part 1 after T14 absorption:** P1.1, P1.2, P1.5 — three small standalone items that ship in parallel with T14 whenever convenient.
 
 ---
-
-#### T14.7 — Type transitions LEARNED, not hardcoded (replaces T13.7.8)
-
-Once T14.5 curriculum has run, the brain has SEEN thousands of word transitions. Replace the hardcoded `_TYPE_TRANSITIONS` table from T13.7.8 with a LEARNED table that gets updated every time `learnSentence` is called:
-
-```js
-_typeTransitionLearned = new Map(); // Map<prevType, Map<currType, count>>
-// Updated in learnSentence:
-for (let i = 1; i < words.length; i++) {
-  const pt = this._fineType(words[i-1]);
-  const ct = this._fineType(words[i]);
-  if (!this._typeTransitionLearned.has(pt)) this._typeTransitionLearned.set(pt, new Map());
-  const row = this._typeTransitionLearned.get(pt);
-  row.set(ct, (row.get(ct) || 0) + 1);
-}
-// Used in generate (with smoothing):
-const row = this._typeTransitionLearned.get(prevType);
-const total = row ? [...row.values()].reduce((a,b)=>a+b, 0) : 0;
-const count = row ? (row.get(currType) || 0) : 0;
-const transWeight = total > 0 ? (count + 1) / (total + uniqueTypes) : 0.05; // Laplace smoothing
-```
-
-The hardcoded `_TYPE_TRANSITIONS` from T13.7.8 becomes seed initialization (so cold-boot has structure before any learning) but gets refined by experience over time.
-
-**File:** `js/brain/language-cortex.js` `_typeTransitionLearned` field + update in `learnSentence` + read in `generate`.
-
-**Acceptance:** After running the curriculum, `_typeTransitionLearned` has populated entries for at least 80% of the (prevType, currType) pairs in the hardcoded table, with weights that correlate r > 0.7 with the hardcoded ones.
-
----
-
-#### T14.8 — Sentence-form schemas
-
-Sentence types (declarative, interrogative, imperative, exclamative) have distinctive type sequences at the early slots:
-- Declarative: `[PRON_SUBJ | DET, COPULA | VERB, ...]`
-- Interrogative: `[QWORD | AUX_DO, AUX | PRON_SUBJ, VERB, ...]`
-- Imperative: `[VERB_BARE, DET | NOUN | PRON_OBJ, ...]`
-- Exclamative: `[INTERJ | QWORD, ...]`
-
-The brain learns these schemas from the curriculum corpus (Stage D). At generation time, the parsed user input's `intent` field selects which schema to bias toward, and the schema constrains slot 0-2 type selection.
-
-**File:** `js/brain/language-cortex.js` new `_sentenceFormSchemas[intent][slot]` field + curriculum learning + read in `generate`.
-
-**Acceptance:** "do you like cats?" parsed as `intent: question` → response biased toward declarative-answer schema (PRON_SUBJ + COPULA/VERB + COMPLEMENT). "tell me a joke" parsed as `intent: command` → response biased toward declarative or narrative.
-
----
-
-#### T14.9 — Discourse modeling (multi-turn flow)
-
-Multi-sentence flow learning. Topic continuity (the conversation is "about" something across turns), anaphora resolution (pronouns refer back to entities), cohesion markers (and, but, so, however).
-
-This is the highest layer. Builds on T14.5-T14.8. Adds a `_discourseState` running buffer of the last 3-5 turns + their topic vectors. `generate()` reads `_discourseState` and biases toward continuing the established topic unless the user changes it.
-
-**Acceptance:** A 5-turn conversation about cats produces responses where each turn's content connects to the previous turn instead of jumping topics randomly.
-
----
-
-### Order of operations for T14
-
-```
-T14.1 phoneme features        ←  ~200 lines, foundational
-    ↓
-T14.2 syllable detector       ←  ~100 lines
-    ↓
-T14.3 phonological dictionary ←  ~150 lines (extends Dictionary)
-    ↓
-T14.4 phonological cortex     ←  ~250 lines (extends cluster, embeddings)
-    ↓
-T14.5 curriculum learning     ←  ~400 lines (NEW curriculum.js + corpus seed files)
-    ↓
-T14.6 phon-aware emission     ←  ~100 lines (extends generate score)
-    ↓
-T14.7 learned type transitions ← ~80 lines (extends learnSentence + generate)
-    ↓
-T14.8 sentence-form schemas   ←  ~150 lines
-    ↓
-T14.9 discourse modeling      ←  ~200 lines
-```
-
-**Total ~1630 lines added across ~9 files. ~3-4 weeks of focused work.** Each milestone is independently testable. T14.1 + T14.2 + T14.3 ship as a foundation pass (~1 week). T14.4 + T14.5 ship as the curriculum pass (~1.5 weeks). T14.6 + T14.7 + T14.8 + T14.9 ship as the emission/discourse pass (~1 week).
 
 ### What stays from T13
 
