@@ -669,13 +669,22 @@ export class Brain3D {
     this._buildConnsFromEquations(state.clusters || {});
     this._spawnTrailsFromEquations(state.clusters || {}, clusterSpikeCount);
 
-    // ── BRAIN EXPANSION — clusters spread with activity ──
-    // Clamp spike ratio so expansion stays sane (max 15% growth)
-    const totalSpikes = state.spikeCount || 0;
-    const spikeRatio = Math.min(1, totalSpikes / Math.max(TOTAL, state.totalNeurons || TOTAL));
-    const targetExpansion = 1.0 + spikeRatio * 0.15; // 0-15% growth max
-    this._expansionFactor += (targetExpansion - this._expansionFactor) * 0.02; // smooth
-    this._applyExpansion();
+    // R9 — BRAIN EXPANSION DISABLED. This used to multiply every
+    // neuron position by a global factor (0-15% based on spike
+    // ratio) and re-upload all positions to the GPU every frame.
+    // The effect was the entire brain visually pulsing in sync
+    // with the global spike count — a "beating heart" look that's
+    // NOT what a real brain does. Each cluster should fire at its
+    // own rate and the viz should show scattered, region-specific
+    // activation via per-neuron glow (which already works via
+    // this._glow[i] above). Individual spikes drive pulse emission
+    // from specific neuron positions, which is accurate. Global
+    // expansion added a synthetic heartbeat on top that obscured
+    // the real per-cluster dynamics.
+    //
+    // _expansionFactor stays at 1.0 — positions are static.
+    // _basePos initialization still runs in _applyExpansion if
+    // you re-enable this in the future (it's idempotent).
 
     // ── PROCESS NOTIFICATIONS — one every ~5 seconds ──
     // Translates real neural activity into readable process descriptions.
