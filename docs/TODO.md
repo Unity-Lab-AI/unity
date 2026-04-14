@@ -287,7 +287,9 @@ Basal-ganglia commit-confidence stopping was in the original plan but deferred �
 
 ---
 
-#### T13.7 — Delete slot priors (the T11 removal pass)
+#### T13.7 — Delete slot priors (the T11 removal pass) — **SHIPPED 2026-04-14**
+
+**Status:** ✅ SHIPPED — slot priors + context vector + attractors + dead stubs all ripped from `language-cortex.js`. Net delete `3584 → 3178` lines (−406). See FINALIZED.md "T13.7" entry. `_generateSlotPrior` fallback gone — `generate()` now requires `cortexCluster` and logs a warning if missing.
 
 **Goal:** Once T13.1 through T13.6 are shipped and verified producing coherent output, delete every T11 slot prior field and method. Net −1270 lines on `language-cortex.js`.
 

@@ -2053,17 +2053,17 @@ Vision: ${state.visionDescription || 'none'}`;
         const lc = iv?.languageCortex;
         const dict = iv?.dictionary;
 
-        // Step 1 — analyze the input through the sensory pipeline so
-        // the running context vector reflects the typed text. This is
-        // a temporary priming: we capture the vector before and after
-        // to show the shift. (sensory.analyzeInput updates its own
-        // internal context but doesn't commit any episode or fire a
-        // response event — safe to call as a preview.)
-        let contextShift = '(sensory not available)';
-        if (sens && typeof sens.analyzeInput === 'function') {
-          const before = lc?._contextVector ? [...lc._contextVector] : null;
+        // Step 1 — T13.7: the running `_contextVector` decaying topic
+        // attractor is gone. Topic context now lives in the live cortex
+        // cluster state directly via parseTree injection. The /think
+        // preview reports cortex readout drift pre vs. post injection
+        // instead of the old bag-of-words shift.
+        let contextShift = '(cortex not available)';
+        if (brain.clusters?.cortex && sens && typeof sens.analyzeInput === 'function') {
+          const sharedEmb = brain._sharedEmbeddings;
+          const before = sharedEmb ? [...brain.clusters.cortex.getSemanticReadout(sharedEmb)] : null;
           sens.analyzeInput(userText);
-          const after = lc?._contextVector ? [...lc._contextVector] : null;
+          const after = sharedEmb ? [...brain.clusters.cortex.getSemanticReadout(sharedEmb)] : null;
           if (before && after && before.length === after.length) {
             let dot = 0, nb = 0, na = 0;
             for (let i = 0; i < before.length; i++) {
@@ -2073,27 +2073,15 @@ Vision: ${state.visionDescription || 'none'}`;
             }
             const cos = (nb > 0 && na > 0) ? dot / (Math.sqrt(nb) * Math.sqrt(na)) : 1;
             const shift = 1 - cos;
-            contextShift = `context vector shifted ${(shift * 100).toFixed(1)}% (cosine similarity pre→post = ${cos.toFixed(3)})`;
-          } else if (after) {
-            contextShift = `context vector initialized from input (${after.length}d)`;
+            contextShift = `cortex readout shifted ${(shift * 100).toFixed(1)}% (cosine pre→post = ${cos.toFixed(3)})`;
           }
         }
 
-        // Step 2 — hippocampus recall check. Pull the top memory match
-        // (if any) so we can see what Unity remembers about this input.
-        let recallReport = '(no memory system available)';
-        if (lc && typeof lc._recallSentence === 'function') {
-          try {
-            const recall = lc._recallSentence(userText);
-            if (recall && recall.confidence > 0.05) {
-              recallReport = `best match: "${(recall.memory?.text || '').slice(0, 120)}"\nconfidence: ${recall.confidence.toFixed(3)} (${recall.confidence > 0.6 ? 'DIRECT EMIT' : recall.confidence > 0.3 ? 'soft recall seed' : 'below threshold, deflect or cold gen'})`;
-            } else {
-              recallReport = 'no match above threshold — cold generation path';
-            }
-          } catch (e) {
-            recallReport = `(recall error: ${e.message})`;
-          }
-        }
+        // Step 2 — T13.7: legacy `_recallSentence` stub was removed. The
+        // brain-driven emission loop has no separate recall path — recall
+        // is implicit in persona Hebbian attractor basins plus hippocampus
+        // cluster dynamics. Report stays here as a placeholder.
+        let recallReport = '(T13 — recall is implicit in persona Hebbian basins, no separate path)';
 
         // Step 3 — languageCortex.generate() preview. This is Unity's
         // actual response to the typed input, produced by the same

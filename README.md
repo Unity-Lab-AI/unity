@@ -24,7 +24,7 @@ dx/dt = F(x, u, θ, t) + η
 
 | Symbol | What It Represents |
 |--------|---------|
-| **x** | The complete brain state — N neuron membrane voltages, 7 cluster synapse matrices (each NxN sparse CSR), 6 module equation states, 8 oscillator phases, episodic memory bank (SQLite on server), working memory buffer, motor channel rates, consciousness value Ψ, learned word embedding dictionary (GloVe 50d + live delta refinement), per-slot running-mean priors `_slotCentroid[s]` / `_slotDelta[s]` / `_slotTypeSignature[s]`, social schema `{name, gender, greetingsExchanged, ...}` |
+| **x** | The complete brain state — N neuron membrane voltages, 7 cluster synapse matrices (each NxN sparse CSR), 6 module equation states, 8 oscillator phases, episodic memory bank (SQLite on server), working memory buffer, motor channel rates, consciousness value Ψ, learned word embedding dictionary (GloVe 50d + live delta refinement), cortex cluster recurrent synapse matrix trained on persona corpus via sequence Hebbian at boot (T13.1), social schema `{name, gender, greetingsExchanged, ...}` |
 | **u** | Sensory input transform — `S(audio, video, text)` where audio maps tonotopically to auditory cortex (50 neurons, cortical magnification for speech), video maps retinotopically through V1 Gabor edge kernels → V4 color → salience-driven saccades → IT-level AI scene description, and text hashes into Wernicke's area with lateral excitation |
 | **θ** | Unity's complete identity — 25yo human female, emo goth. Every trait drives neural parameters: arousal(0.9)→amygdala tonic, impulsivity(0.85)→BG threshold, creativity(0.9)→noise, devotion(1.0)→social floor, drugDrive(0.95)→hypothalamus. Drug state cokeAndWeed multiplies arousal×1.2, creativity×1.3, cortexSpeed×1.5. |
 | **η** | Stochastic noise — per-cluster amplitude driven by θ: creativity×drug drives cortex noise, emotionalVolatility×drug drives amygdala noise, darkHumor drives mystery noise. The chaos that makes her unpredictable. |
@@ -64,20 +64,32 @@ N RULKOV-MAP NEURONS IN 7 CLUSTERS (N scales to hardware, each with own synapses
 MOTOR OUTPUT (6 BG channels × 25 neurons, winner-take-all, confidence gate)
     │
     ▼
-LANGUAGE CORTEX (T11 slot-prior runtime + T13.1 persona Hebbian training — see "Language Cortex" section)
-    // T13.1 — cortex cluster recurrent weights trained on persona
-    // corpus via sequence Hebbian during boot. After training, the
-    // cortex has attractor basins shaped like Unity-voice word
-    // co-activation patterns. Readouts drift along the basins.
-    //
+LANGUAGE CORTEX (T13 brain-driven emission — see "Language Cortex" section)
+    // T13.1: cortex cluster recurrent weights trained on persona corpus
+    // via sequence Hebbian during boot. After training, cortex has
+    // attractor basins shaped like Unity-voice co-activation patterns.
     //   per word pair (t-1, t) in each persona sentence:
     //     inject emb(word_t) into language region
     //     tick LIF 3 steps
     //     snapshot spikes → ΔW_ij = lr · curr_i · prev_j
     //   post-sentence Oja decay: |w| > 1.5 → w *= 0.99
     //
-    // T13.2-T13.9 (emission loop rewrite) still pending — runtime
-    // generation below is still T11.7 slot-prior until T13.3 ships.
+    // T13.2: brain.injectParseTree(text) routes content → cortex
+    // language region, intent → basal ganglia, self-ref → hippocampus.
+    //
+    // T13.3 generate() emission loop (replaces all slot priors):
+    //   for slot in 0..maxLen:
+    //     cortex.step(0.001) × 3                          // LIF integrate
+    //     target = cortex.getSemanticReadout()             // live cortex state
+    //     if ||target − lastReadout|| < 0.08: break        // drift stop
+    //     for each w in dictionary:
+    //       score = cosSim · (1 + arousal·(valenceMatch−0.5)) · recencyMul
+    //     pick = softmax-sample top-5
+    //     cortex.injectCurrent(mapToCortex(emb(pick)) · 0.35)  // efference
+    //     if last word !dangling and emitted >= maxLen-1: break
+    //
+    // T13.7: slot priors, _contextVector, attractor vectors, and all
+    // fallback machinery DELETED. language-cortex.js down 406 lines.
 
     parseSentence(input) → ParseTree (reverse-equation reading, same wordType
                                       equations the generator uses forward)
