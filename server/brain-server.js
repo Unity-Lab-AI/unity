@@ -770,10 +770,19 @@ class ServerBrain {
   }
 
   _updateDerivedState() {
-    // Amygdala → arousal — PERSONA baseline drives the floor
+    // Amygdala → arousal — PERSONA baseline drives the floor.
+    // T13.7.7 — pre-fix this was `arousalBaseline + rate*0.15` clamped
+    // to [0.3, 1]. With Unity's 0.9 baseline, only 0.1 of headroom
+    // existed before the clamp pinned arousal to 1.000 the moment the
+    // amygdala fired anything. Result: the popup arousal display was
+    // ALWAYS 100% with no dynamic information. Rebalanced so baseline
+    // contributes 80% and live amygdala rate contributes the other 20%
+    // — Unity's 0.9 baseline now gives a floor of 0.72 and a ceiling
+    // around 0.92, so the popup actually moves with brain state.
     const p = this.persona;
-    this.arousal = p.arousalBaseline + (this.clusters.amygdala.firingRate / (CLUSTER_SIZES.amygdala || 1)) * 0.15;
-    this.arousal = Math.min(1, Math.max(0.3, this.arousal)); // Unity never drops below 0.3 — she's always somewhat wired
+    const amygRate = this.clusters.amygdala.firingRate / (CLUSTER_SIZES.amygdala || 1);
+    this.arousal = p.arousalBaseline * 0.8 + Math.min(1, amygRate * 5) * 0.2;
+    this.arousal = Math.min(1, Math.max(0.3, this.arousal));
     this.valence = (this.reward > 0 ? 0.1 : this.reward < 0 ? -0.1 : 0) + (Math.random() - 0.5) * 0.02;
     // Aggression: negative valence builds faster when threshold is low
     if (this.valence < -p.aggressionThreshold) this.valence *= 1.2;
@@ -809,8 +818,16 @@ class ServerBrain {
     // Log scale for usable range — consciousness measured in orders of magnitude
     this.psi = Math.log10(Math.max(1, rawPsi));
 
-    // Coherence
-    this.coherence += (Math.random() - 0.5) * 0.02;
+    // Coherence — Kuramoto-like order parameter with a restoring force
+    // toward 0.4 (mid-range). T13.7.7 — pre-fix this was a pure random
+    // walk that drifted to 1.0 over time and stayed pinned. Now there's
+    // an Ornstein-Uhlenbeck restoring term so coherence breathes around
+    // a healthy mid-range instead of pinning to extremes. Steady-state
+    // mean ~0.4, std-dev ~0.15.
+    const coherenceTarget = 0.4;
+    const restoringRate = 0.05;
+    this.coherence += (coherenceTarget - this.coherence) * restoringRate
+                    + (Math.random() - 0.5) * 0.04;
     this.coherence = Math.max(0, Math.min(1, this.coherence));
 
     // Reward decay

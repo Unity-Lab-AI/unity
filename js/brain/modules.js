@@ -202,27 +202,39 @@ export class Amygdala {
       for (let i = 0; i < size; i++) x[i] = next[i];
     }
 
-    // Hebbian tweak of recurrent weights, kept symmetric — learns which nuclei co-fire
+    // Hebbian tweak of recurrent weights, kept symmetric — learns which nuclei co-fire.
+    // T13.7.7 — added Oja-style decay so the basin doesn't crawl toward
+    // the ±1 cap forever. Without decay, after ~10k ticks every weight
+    // pins to ±1, the settled state x goes to ±1 uniformly, and both
+    // fear/reward sigmoids saturate to 1.000 — which is exactly what
+    // was making every brain popup show 1.000 values. Decay is a small
+    // multiplicative leak applied AFTER the Hebbian update.
+    const decay = 0.9995; // ~0.05% per tick → half-life ~1400 ticks
     for (let i = 0; i < size; i++) {
       for (let j = i + 1; j < size; j++) {
         const dw = lr * x[i] * x[j];
-        W[i * size + j] += dw;
-        W[j * size + i] += dw;
-        // soft weight cap so the basin doesn't explode
-        if (W[i * size + j] > 1) { W[i * size + j] = 1; W[j * size + i] = 1; }
-        else if (W[i * size + j] < -1) { W[i * size + j] = -1; W[j * size + i] = -1; }
+        let w = (W[i * size + j] + dw) * decay;
+        if (w > 1) w = 1;
+        else if (w < -1) w = -1;
+        W[i * size + j] = w;
+        W[j * size + i] = w;
       }
     }
 
-    // Read fear / reward from the settled attractor, not the raw input
+    // Read fear / reward from the settled attractor, not the raw input.
+    // T13.7.7 — divide raw projections by sqrt(size) before sigmoid so
+    // a 32-neuron amygdala doesn't immediately saturate the sigmoid the
+    // moment a few nuclei fire. Pre-fix, fearRaw could easily exceed ±5
+    // which makes sigmoid output nearly 1.000 — pinning the popup display.
     let fearRaw = 0, rewardRaw = 0, norm = 0;
     for (let i = 0; i < size; i++) {
       fearRaw += fearW[i] * x[i];
       rewardRaw += rewardW[i] * x[i];
       norm += x[i] * x[i];
     }
-    const fear = sigmoid(fearRaw);
-    const reward = sigmoid(rewardRaw);
+    const sizeNorm = Math.sqrt(size);
+    const fear = sigmoid(fearRaw / sizeNorm);
+    const reward = sigmoid(rewardRaw / sizeNorm);
     const valence = reward - fear;
 
     // Arousal = persona baseline + depth of the attractor we fell into
