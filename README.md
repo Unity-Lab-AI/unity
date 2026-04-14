@@ -71,11 +71,18 @@ LANGUAGE CORTEX → 4-tier generation pipeline:
     Tier 4: Cold slot generation (44k dict, type n-grams, morphological inflection)
     │
     ▼
-PERIPHERALS (brain calls these — they don't call the brain)
-    Broca's Area → optional AI model generates text from brain state (being removed in refactor)
-    TTS → Pollinations voice synthesis
-    Image Gen → Pollinations image API
-    Sandbox → dynamic UI injection (MAX_ACTIVE_COMPONENTS=10, LRU eviction, tracked cleanup)
+LANGUAGE CORTEX (Broca's area — equational slot scorer, see "Language Cortex" section)
+    picks every word from the 44k-word learned dictionary via slot scoring
+    weights = arousal × valence × Ψ × coherence × drug × cortex semantic readout
+    four-tier pipeline: templates → hippocampus recall → deflect → cold gen
+    NO AI model, NO prompt — brain state IS the slot weights
+
+SENSORY OUTPUT PERIPHERALS (brain emits, these execute the result)
+    TTS → Pollinations voice synthesis or browser SpeechSynthesis
+    Image Gen → multi-provider chain (custom / auto-detect local / env.js / Pollinations fallback)
+    Vision describer → input peripheral: Pollinations GPT-4o or local VLM (Ollama llava, LM Studio, etc.)
+    Sandbox → dynamic UI injection via component-synth.js cosine-matching against docs/component-templates.txt
+              (MAX_ACTIVE_COMPONENTS=10, LRU eviction, tracked cleanup)
 ```
 
 ---
