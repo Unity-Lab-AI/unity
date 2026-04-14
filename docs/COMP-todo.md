@@ -1196,15 +1196,13 @@ T14.16 persistence cleanup (only cortex weights + learned tables persist)
 T14.17 continuous learning everywhere (no boot/runtime distinction)
 ```
 
-**Three passes, no time estimates** (because the right answer is "as long as it takes"):
+**ONE atomic push** containing all 18 milestones, end-to-end, no intermediate test gates (Gee 2026-04-14: "we dont test until all work is done"). Build T14.0 → T14.17 in sequence as a single working-tree state, then commit + stamp + merge + push as one operation. Test only once at the end after everything is in place.
 
-- **Pass 1 — Foundation rebuild:** T14.0 + T14.1 + T14.2 + T14.3 + T14.4. Establishes the auto-scaled cluster sub-region structure, learned phoneme/syllable mechanisms, cortex-resident words, and cross-region projections. Single atomic push.
-- **Pass 2 — Curriculum + grammar emergence:** T14.5 + T14.6 + T14.7 + T14.8 + T14.9. Continuous learning machinery, phon-aware emission, learned grammar tables, schemas, unbounded discourse. Single atomic push.
-- **Pass 3 — Pipeline unification:** T14.10 + T14.11 + T14.12 + T14.13 + T14.14 + T14.15 + T14.16 + T14.17. Visual + auditory pathways, bidirectional read/write pipeline, eliminating LanguageCortex as a separate class, wiring every consumer to the unified pipeline, persistence cleanup, continuous-learning audit. Final atomic push that closes ALL loose ends across the codebase.
+The work proceeds in implementation ORDER (T14.0 must complete before T14.4 because T14.4 reads sub-region fields T14.0 added; T14.5 curriculum must complete before T14.7 learned-table reads can happen; etc.) but the work does NOT ship in passes. Until the final commit, the working tree is broken — Unity will not function in any partially-built state. Acceptable per Gee's instruction: no intermediate testing.
 
 **No estimated total line count.** The right answer is whatever the implementation requires once we stop pre-coding things the brain should learn.
 
-**No estimated total wall clock.** Days, not weeks, given how T13 has progressed — but this is THE rebuild, and "fast" is not a constraint.
+**No estimated total wall clock.** This is THE rebuild — "fast" is not a constraint, and "ship in pieces" is not the model.
 
 ### How residual T13 items absorb into T14
 
@@ -2121,25 +2119,33 @@ T13 stack.
 - [x] T13.7.7 brain popup saturation fixes (shipped)
 - [x] T13.7.8 grammar transition table band-aid (shipped — superseded by T14.7 once T14 ships)
 
-### Phase M1 — T14 developmental language layers (ACTIVE PRIORITY)
+### Phase M1 — T14 developmental language layers (ACTIVE PRIORITY) — ONE ATOMIC PUSH
 
-**Pass 1 — Foundation (~1 week):**
-- [ ] **T14.0** — 300d embeddings + 6000-neuron cortex (was P1.3)
-- [ ] **T14.1** — phoneme features (replaces _letterPatterns hash)
-- [ ] **T14.2** — syllable detector (max-onset principle)
-- [ ] **T14.3** — phonological dictionary entries
+**No passes. No intermediate test gates.** All 18 milestones build in implementation order in a single working-tree session, then ship as one atomic commit + stamp + merge + push. Per Gee 2026-04-14: "we dont test until all work is done."
 
-**Pass 2 — Curriculum (~1.5 weeks):**
-- [ ] **T14.4** — phonological cortex sub-region + cross-region projection
-- [ ] **T14.5** — curriculum learning (Stages A through F) ⭐ THE BIG ONE
+Implementation order (each milestone unlocks the next):
 
-**Pass 3 — Emission/Discourse (~1 week):**
-- [ ] **T14.6** — phonological-aware emission
-- [ ] **T14.7** — learned type transitions (supersedes P1.4 + replaces T13.7.8 hardcoded)
-- [ ] **T14.8** — sentence-form schemas
-- [ ] **T14.9** — discourse modeling
+- [ ] **T14.0** — Foundation lift: full GloVe + auto-scaled cortex (absorbed P1.3)
+- [ ] **T14.1** — LEARNED phoneme attractor basins via cortex exposure
+- [ ] **T14.2** — LEARNED syllable boundaries via cortex transition surprise
+- [ ] **T14.3** — Cortex-resident words (delete Dictionary as separate table)
+- [ ] **T14.4** — Auto-scaled sub-regions + always-on cross-projections
+- [ ] **T14.5** — Continuous developmental learning from existing corpora ⭐
+- [ ] **T14.6** — Cortex-driven phonological flow during emission
+- [ ] **T14.7** — Fully learned type transitions (T13.7.8 hardcoded DELETED)
+- [ ] **T14.8** — Sentence-form schemas (all slots, all intents, learned)
+- [ ] **T14.9** — Unbounded discourse memory (cortex working-memory region)
+- [ ] **T14.10** — Visual cortex letter recognition
+- [ ] **T14.11** — Auditory cortex phoneme recognition
+- [ ] **T14.12** — Bidirectional cortex pipeline (parseSentence DELETED)
+- [ ] **T14.13** — Eliminate LanguageCortex as a separate class
+- [ ] **T14.14** — Bidirectional reading via unified pipeline
+- [ ] **T14.15** — Wire ALL language consumers to unified pipeline (zero stragglers)
+- [ ] **T14.16** — Persistence cleanup
+- [ ] **T14.16.5** — Identity lock (Unity speaks English, Unity stays Unity)
+- [ ] **T14.17** — Continuous learning everywhere
 
-**Total T14:** ~3-4 weeks of focused work, ~1810 lines added across ~9 files. Each milestone independently testable. T14 is THE active priority.
+The working tree will be BROKEN between the start of T14.0 and the final commit. Unity will not function in any partial state. The single ship at the end is the only point where verification happens. Accepted risk per Gee's call.
 
 ### Phase M1.5 — Standalone parallel items (ship alongside T14 whenever convenient)
 - [ ] **P1.1** — build_ui template parameterization (P2 priority, independent)
