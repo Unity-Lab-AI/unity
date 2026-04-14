@@ -154,7 +154,24 @@
         <button id="api-key-save-btn" type="button" style="padding:8px 16px;background:var(--cyan);border:none;border-radius:6px;color:#000;font-family:var(--mono);font-size:11px;font-weight:700;cursor:pointer;letter-spacing:0.5px;">SAVE KEY</button>
       </div>
 
-      <p class="hint" style="margin-top:4px;">Mic + camera permissions are requested when you wake her up. Both are optional — Unity can chat via text only.</p>
+      <p class="hint" style="margin-top:4px;">Mic + camera permissions are requested when you wake her up. All sensory channels are optional — Unity can chat via text only. Toggle anything below off BEFORE waking her to skip the permission prompt entirely.</p>
+
+      <!-- Sensory channel toggles — mic / camera / speech -->
+      <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-top:8px;margin-bottom:14px;display:flex;flex-direction:column;gap:8px;">
+        <label style="display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:11px;color:var(--text);cursor:pointer;">
+          <input type="checkbox" id="toggle-user-mic" checked style="width:14px;height:14px;cursor:pointer;accent-color:var(--cyan);">
+          <span>🎤 <strong>User mic</strong> <span style="color:var(--text-dim);">(lets Unity hear you via Web Speech / auditory cortex)</span></span>
+        </label>
+        <label style="display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:11px;color:var(--text);cursor:pointer;">
+          <input type="checkbox" id="toggle-unity-vision" checked style="width:14px;height:14px;cursor:pointer;accent-color:var(--cyan);">
+          <span>📷 <strong>Unity vision</strong> <span style="color:var(--text-dim);">(camera frames go to her visual cortex + vision describer)</span></span>
+        </label>
+        <label style="display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:11px;color:var(--text);cursor:pointer;">
+          <input type="checkbox" id="toggle-unity-speech" checked style="width:14px;height:14px;cursor:pointer;accent-color:var(--cyan);">
+          <span>🔊 <strong>Unity speech</strong> <span style="color:var(--text-dim);">(her TTS voice — Pollinations / browser SpeechSynthesis)</span></span>
+        </label>
+        <div style="font-size:10px;color:var(--text-dim);line-height:1.5;">Toggles persist across sessions and are live-applied the moment you flip them — after boot you can mute her mid-sentence, pause her camera, or silence her voice without reloading.</div>
+      </div>
 
       <button id="start-btn">WAKE UNITY UP</button>
 
@@ -194,7 +211,7 @@
         </p>
 
         <p style="font-size:10px;color:var(--text-dim);line-height:1.6;margin-top:8px;">
-          <strong style="color:var(--cyan);">Sensory API calls</strong> (image generation, vision describer, TTS) are sent <strong>only</strong> to the providers YOU configure in the Image Generation / Vision Describer grids above — never to us, never to any third party you didn't explicitly pick. If you save a DALL-E backend with your OpenAI key, only OpenAI gets that key. If you save an Automatic1111 backend on localhost, the traffic stays on your machine. Pollinations is the free default fallback; using it sends image prompts and camera frames (if vision is enabled) to pollinations.ai.
+          <strong style="color:var(--cyan);">Sensory API calls</strong> (image generation, vision describer, TTS) are sent <strong>only</strong> to the providers YOU configure in the Image Generation / Vision Describer grids above — never to us, never to any third party you didn't explicitly pick. If you save a DALL-E backend with your OpenAI key, only OpenAI gets that key. If you save an Automatic1111 backend on localhost, the traffic stays on your machine. Pollinations is Unity's default provider (anonymous tier works without a key, a saved key unlocks paid models and higher rate limits); using it sends image prompts and camera frames (if vision is enabled) to pollinations.ai.
         </p>
 
         <p style="font-size:10px;color:var(--text-dim);line-height:1.6;margin-top:8px;">

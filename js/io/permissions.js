@@ -7,8 +7,13 @@ const STORAGE_KEY = 'unity_brain_permissions';
  * Request microphone and camera permissions independently.
  * If one fails, the other still gets attempted.
  * Returns { mic, camera, micStream, cameraStream }
+ *
+ * @param {{requestMic?: boolean, requestCamera?: boolean}} opts —
+ *   skip prompts for channels the user toggled off in the setup modal.
  */
-export async function requestPermissions() {
+export async function requestPermissions(opts = {}) {
+  const wantMic = opts.requestMic !== false;
+  const wantCam = opts.requestCamera !== false;
   const result = {
     mic: false,
     camera: false,
@@ -17,21 +22,25 @@ export async function requestPermissions() {
   };
 
   // Request microphone
-  try {
-    const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    result.mic = true;
-    result.micStream = micStream;
-  } catch (err) {
-    console.warn('Microphone permission denied or unavailable:', err.message);
+  if (wantMic) {
+    try {
+      const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      result.mic = true;
+      result.micStream = micStream;
+    } catch (err) {
+      console.warn('Microphone permission denied or unavailable:', err.message);
+    }
   }
 
   // Request camera — independent of mic result
-  try {
-    const cameraStream = await navigator.mediaDevices.getUserMedia({ video: true });
-    result.camera = true;
-    result.cameraStream = cameraStream;
-  } catch (err) {
-    console.warn('Camera permission denied or unavailable:', err.message);
+  if (wantCam) {
+    try {
+      const cameraStream = await navigator.mediaDevices.getUserMedia({ video: true });
+      result.camera = true;
+      result.cameraStream = cameraStream;
+    } catch (err) {
+      console.warn('Camera permission denied or unavailable:', err.message);
+    }
   }
 
   // Persist what was granted

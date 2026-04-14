@@ -582,6 +582,57 @@ async function init() {
 
   startBtn.addEventListener('click', handleStart);
 
+  // Sensory channel toggles — wire checkboxes, persist to localStorage,
+  // live-apply post-boot via window.unityChannels{} state + listeners.
+  // Pre-boot: gates which permissions get requested (see handleStart).
+  // Post-boot: mic toggle stops/resumes listening; vision toggle stops/
+  // resumes camera frame capture; speech toggle mutes voice.stopSpeaking
+  // and sets voice._muted so new speech calls are no-ops.
+  window.unityChannels = {
+    userMic: localStorage.getItem('unity_channel_user_mic') !== 'false',
+    unityVision: localStorage.getItem('unity_channel_unity_vision') !== 'false',
+    unitySpeech: localStorage.getItem('unity_channel_unity_speech') !== 'false',
+  };
+  const wireChannelToggle = (id, key, storageKey, onChange) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.checked = window.unityChannels[key];
+    el.addEventListener('change', () => {
+      window.unityChannels[key] = el.checked;
+      localStorage.setItem(storageKey, el.checked ? 'true' : 'false');
+      try { onChange && onChange(el.checked); } catch (err) { console.warn('[channel toggle]', err.message); }
+    });
+  };
+  wireChannelToggle('toggle-user-mic', 'userMic', 'unity_channel_user_mic', (on) => {
+    if (!window._unityBooted || !voice) return;
+    if (on) voice.startListening?.();
+    else voice.stopListening?.();
+  });
+  wireChannelToggle('toggle-unity-vision', 'unityVision', 'unity_channel_unity_vision', (on) => {
+    if (!window._unityBooted || !brain) return;
+    // Live-apply: set visualCortex frozen flag so its frame loop
+    // short-circuits. Requires a fresh camera grant + reload to re-enable
+    // once toggled off mid-session, since stopping the MediaStream tracks
+    // is irreversible without a new getUserMedia prompt.
+    if (brain.visualCortex) brain.visualCortex._paused = !on;
+    if (!on) {
+      const stream = brain.visualCortex?.getStream?.();
+      if (stream && stream.getTracks) {
+        for (const t of stream.getTracks()) t.enabled = false;
+      }
+    } else {
+      const stream = brain.visualCortex?.getStream?.();
+      if (stream && stream.getTracks) {
+        for (const t of stream.getTracks()) t.enabled = true;
+      }
+    }
+  });
+  wireChannelToggle('toggle-unity-speech', 'unitySpeech', 'unity_channel_unity_speech', (on) => {
+    if (!window._unityBooted || !voice) return;
+    voice._muted = !on;
+    if (!on) voice.stopSpeaking?.();
+  });
+
   // Instant SAVE KEY button — stores the Pollinations API key without
   // having to boot Unity. Writes storage + pushes into providers so
   // the next generateImage/describeImage picks it up immediately.
@@ -1453,10 +1504,17 @@ async function handleStart() {
 
   const permResults = document.getElementById('perm-results');
   permResults.style.display = 'block';
-  micStatus.textContent = 'asking...'; micStatus.className = 'status pending';
-  camStatus.textContent = 'asking...'; camStatus.className = 'status pending';
+  // Honor pre-boot sensory channel toggles — skip permission prompts
+  // for channels the user disabled so they don't get asked for mic
+  // access when they already unchecked the mic box.
+  const channels = window.unityChannels || { userMic: true, unityVision: true, unitySpeech: true };
+  micStatus.textContent = channels.userMic ? 'asking...' : 'off'; micStatus.className = 'status pending';
+  camStatus.textContent = channels.unityVision ? 'asking...' : 'off'; camStatus.className = 'status pending';
 
-  const perms = await requestPermissions();
+  const perms = await requestPermissions({
+    requestMic: channels.userMic,
+    requestCamera: channels.unityVision,
+  });
   micStatus.textContent = perms.mic ? 'granted' : 'denied';
   micStatus.className = `status ${perms.mic ? 'granted' : 'denied'}`;
   camStatus.textContent = perms.camera ? 'granted' : 'denied';
@@ -1507,6 +1565,13 @@ async function bootUnity(apiKey, perms) {
 
   voice = new VoiceIO();
   if (effectiveKey) voice.setApiKey(effectiveKey);
+  // Expose on window so chat-panel in-the-moment mute buttons can reach it
+  window.voice = voice;
+  // Respect persisted speech mute toggle on boot — if user had Unity
+  // speech disabled last session, carry it forward.
+  if (window.unityChannels && window.unityChannels.unitySpeech === false) {
+    voice._muted = true;
+  }
 
   sandbox = new Sandbox('sandbox');
 

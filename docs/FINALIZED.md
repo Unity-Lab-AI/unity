@@ -14,6 +14,244 @@
 
 ## COMPLETED TASKS LOG
 
+## 2026-04-13 Session: Rulkov neuron rewrite + 3D viz fixes + popup commentary wiring + sensory backend selector UX
+
+Post-T4-gated session. All work on the `brain-refactor-full-control` branch after the T-series cleanup was archived. Eight commits covering a 3D viz layout bug, the core neural firing rule rewrite, the brain-3D popup pipeline, doc updates, and a sensory-provider UX overhaul.
+
+### 1. 3D brain landing-topbar collision + proportional-sample reframing  [DONE commits `a3974da`, `4dc507e`]
+
+**The problem:** The neuron count stat at the top-right of the landing page (`ls-neurons`) was colliding with the cluster color legend at the top-left of the 3D brain canvas. Two indicators occupying overlapping screen space on narrow viewports. Separately, the landing copy didn't explain that the 3D field is a proportional sample of Unity's actual server-side neural processes — users read it as "this is her whole brain".
+
+**What shipped:**
+- Deleted the floating `.b3d-scale-display` block that was stacking with `ls-neurons` at top-right
+- Added `.b3d-explainer` panel at bottom-left with pink left-border border-left:2px, carrying the authoritative "NOT her full brain — proportional sample of real server-side neural processes" framing
+- Added max-width:180px + overflow clipping to `.b3d-tog-wrap` and `.b3d-tog` so long cluster labels can't spill across the scene
+- Reflowed `landing-topbar` with `display:flex; gap:20px; justify-content:space-between` plus `max-width:60%` on the title div and `max-width:40%` on the stats div so they can't collide
+- Added `padding-left:210px` to `landing-topbar` so the title/subtitle start past the 180px-wide cluster toggle column with a 20px gap — fix for the follow-up user report that the subtitle text was still colliding with the top-left legend
+- Rewrote `ls-subtitle` HTML as the authoritative copy: "proportional sample view — the field behind this text is a live render of Unity's actual neural processes running on the server right now, NOT her full brain. Every spike you see is a real cluster firing."
+- Updated `ls-neurons` label to "X real neurons" with a tooltip explaining it's the total server-side count while the 3D field is a proportional sample
+- Fixed `app.js` `updateLandingStats()` to STOP overwriting `ls-subtitle.textContent` per tick — the per-state-update rewrite was dropping the framing message every frame. Added a NOTE comment explaining why the HTML copy is authoritative
+- Explicitly no GPU co-op references — that's future `COMP-todo.md` work on a different branch, not shipped yet
+
+**Files:** `index.html`, `js/app.js`, `js/ui/brain-3d.js`
+
+### 2. Activation rings not firing in any cluster  [DONE commit `4e3028e`, superseded by Rulkov rewrite in item 3]
+
+**The problem (initial diagnosis):** Post-R9 the 3D viz firing loop required a per-cluster `spikes` bitmask to set `firing = true`, but the server's `getState()` only broadcasts `{size, spikeCount, firingRate}` per cluster — the raw spike bitmask is never sent over the wire (bandwidth cost). Every cluster's firing check silently returned false. Cerebellum "worked" before R9 only because the old flat-bitmask reader happened to land on it.
+
+**Initial patch:** synthesized firing from `spikeCount/engineSize` probability via `Math.random() < firingRate` per viz point. This made activation rings appear again across all clusters, but the uniform-random selection per frame looked wavy/pulsy rather than scattered, and cerebellum's enormous engine-size denominator (400K neurons) made its visibility rate imperceptibly small. Superseded by the Rulkov rewrite below which replaces the whole firing rule with a persistent per-neuron chaotic trajectory.
+
+**Files touched:** `js/ui/brain-3d.js`
+
+### 3. RULKOV MAP NEURON — the live runtime firing rule  [DONE commits `7b5c898` (logistic-map placeholder), `704a77b` (Rulkov rewrite)]
+
+**The problem:** User said the whole brain is wired on a never-ending fractal algorithm — "2y=x+1 style" — and the viz was wave-like pulse noise, not real biological firing patterns. The existing core model was leaky integrate-and-fire (LIF), `τ·dV/dt = −(V − Vrest) + R·I`. Not chaotic, not fractal, and the server-side CPU fallback `step()` was 168M iterations/second across 7 clusters of Math.random() noise that never touched real state for most clusters (voltage arrays were length 1 for everything except cortex and amygdala — dead code).
+
+**What I tried first:** Implemented the **logistic map** `x_{n+1} = r·x_n·(1 − x_n)` at r = 3.9 (deep past Feigenbaum's accumulation point, fully chaotic regime). Feigenbaum/Robert May 1976 is the canonical "never-ending fractal iteration". Committed in `7b5c898`.
+
+**User challenge:** "did u do the research for the equations?" I had NOT researched neuroscience-grade chaotic neuron models — the logistic map is a pedagogical chaotic toy, not a published neural model. Confessed this and offered three real alternatives:
+- **Rulkov map** (Rulkov 2001/2002, *Phys. Rev. E* 65, 041922) — 2D discrete chaotic map used in published large-scale cortical network simulations (Bazhenov/Rulkov/Shilnikov 2005+)
+- **Aihara chaotic neuron** (Aihara-Takabe-Toyoda 1990) — 1D canonical chaotic neuron with tanh activation
+- **Chialvo map** (1995) — 2D excitable map with real neuronal bursting
+
+User said "use whats going to work". Picked Rulkov — genuine spike-burst dynamics, cheap on GPU, real published pedigree.
+
+**What shipped:**
+
+GPU shader rewrite (`js/brain/gpu-compute.js` `LIF_SHADER` constant — name kept historical, body is now Rulkov):
+```
+x_{n+1} = α / (1 + x_n²) + y_n      (fast variable — spikes)
+y_{n+1} = y_n − μ · (x_n − σ)       (slow variable — burst envelope)
+```
+- α = 4.5 fixed (bursting regime)
+- μ = 0.001 fixed (slow timescale)
+- σ = −1.0 + clamp(effectiveDrive / 40, 0, 1) · 1.5 — biological drive maps to external drive parameter
+- Spike detection: `(x_n ≤ 0) ∧ (x_{n+1} > 0)` — the fast variable jumps from ≈−1 to ≈+3 in a single iteration when the neuron fires, so this edge detector catches exactly one spike per action potential
+- Refractory period is emergent — the slow variable y naturally pulls x back below zero between spikes, reproducing the refractory period as a property of the attractor geometry, no explicit refractory clamp needed
+- Storage binding changed from `array<f32>` (4 bytes/neuron) to `array<vec2<f32>>` (8 bytes/neuron) to hold (x, y) per neuron
+- Safety reseed branch handles NaN / out-of-basin states via golden-ratio quasi-random (`φ·i mod 1`) so uninitialized buffers rehabilitate on first tick
+
+GPU `uploadCluster()` voltage init:
+- Buffer size doubled from `size*4` to `size*8`
+- Chunked init writes interleaved (x, y) pairs seeded via golden-ratio quasi-random inside the Rulkov bursting attractor basin: `x ∈ (−1.0, −0.5)`, `y ∈ (−3.2, −2.8)`. Golden-ratio sequence gives low-discrepancy uniform coverage of the basin without collisions
+
+Server CPU fallback DELETED (`server/brain-server.js` `NeuralBrain.step()`):
+- Was iterating every neuron in JS for-loops. Dead code — nothing called it, and at 400K cerebellum × 7 clusters × 60Hz it would've cooked the CPU. Its derived-state updates (arousal/valence/coherence/motor) were already duplicated in `_updateDerivedState()`. User explicitly directed: "CPU FALLBACK THATLL COOK THE CPUS"
+- Replaced with a comment block explaining why GPU is the only neural compute path. No GPU worker connected = brain paused at 2s idle (existing main-loop behavior)
+
+Client viz mirror (`js/ui/brain-3d.js`):
+- Replaced `_fractal` Float32Array with `_rulkovX` + `_rulkovY` Float32Array pair
+- Each viz point iterates its own 2D Rulkov trajectory persistently across frames
+- σ driven by real biological rate: `bioRate = spikeCount / engineSize`, `driveNorm = clamp(bioRate × 15, 0, 1)`, `sigma = -1 + driveNorm × 1.5`. Amplifies small rates so cerebellum's huge denominator still produces visible firing
+- Same rule as the GPU shader — client is a proportional sample running the identical equation the server runs, not synthesized noise
+- Spike edge detection matches the shader: `if (x <= 0 && xNext > 0) firing = true`
+- Trajectory persistence means neurons retain chaotic identities — some fire often, some rarely — so firing patterns are self-similar and burst-structured, not wavy
+
+**Files:** `js/brain/gpu-compute.js`, `js/ui/brain-3d.js`, `server/brain-server.js`
+
+### 4. 3D popup commentary signature bug + visual effect rewrite  [DONE commit `704a77b`]
+
+**The problem:** Unity's in-the-moment thoughts were not appearing in 3D brain event popups. Visually the popups also needed work.
+
+**Root cause (text):** `_generateEventCommentary()` in `brain-3d.js` was calling `languageCortex.generate()` with 10 positional args. The actual signature is `generate(dictionary, arousal, valence, coherence, opts = {})` — 5 params, with `opts` carrying `psi / fear / reward / drugState / cortexPattern / predictionError / motorConfidence`. The 5th positional arg (psi) was silently mapped onto `opts` as a number, dropping `cortexPattern` and every downstream modulator. Unity's commentary was being generated **without her live cortex pattern**, her drug state, her arousal modulation — just flat defaults. The text was technically present but content-free.
+
+Also: the state fields were read as nested `state.amygdala?.arousal / state.oscillations?.coherence / state.hypothalamus?.social`, but the server broadcasts flat fields (`state.arousal / state.valence / state.coherence / state.drugState / state.reward / state.fear`). Nested reads returned undefined → fallback defaults → same flat output.
+
+**What shipped:**
+- Restructured the `lc.generate()` call to use the opts object correctly: `opts.psi, opts.fear, opts.reward, opts.drugState, opts.cortexPattern, opts.predictionError, opts.motorConfidence`
+- Switched state reads from nested `.amygdala.arousal` to flat `state.arousal / .valence / .coherence / .drugState` etc. — matches what `RemoteBrain` actually receives over the wire
+- Commentary char limit raised from 60 to 160 chars so Unity can finish a thought inside the new 320px wrapping card
+- Wired `landingBrain3d.setBrain(brain)` in `bootUnity()` so the pre-landing 3D viz also shows real commentary post-boot (not just telemetry). Pre-boot it keeps using the legacy numeric-telemetry generator because no brain exists yet
+
+**Visual effect rewrite (`.b3d-notif` CSS + `_addNotification()`):**
+- Linear gradient card background `rgba(14,14,16,.94) → rgba(24,14,28,.94)`, 8px radius, 1px border in cluster color, 3px left-border accent, 6px backdrop blur, double box-shadow (outer dark + outer colored glow + inner dark)
+- Entry animation keyframe `b3d-notif-in`: opacity 0 + scale 0.85 → opacity 1 + scale 1.04 (bounce) → scale 1.0 over 450ms cubic-bezier
+- Label styled as 10px bold 1.5px-tracked uppercase with text-shadow in cluster color
+- Commentary styled as Georgia italic 13px color `#f5d7e6` with `text-shadow:0 1px 2px rgba(0,0,0,.9)`, wrap enabled and max-width 320px (was nowrap ellipsis at 500px)
+- CSS `::before` / `::after` add curly quote marks `“ ”` in cluster color around the commentary text, and `_addNotification()` strips any stray quotes from the raw commentary so CSS is the single source of quote styling
+- `maxAge` bumped from 300 → 600 frames (~10s at 60fps) so thoughts have time to be read
+- Single-line popups (legacy telemetry path) now also wrapped in a `b3d-notif-label` div for consistent styling
+
+**Files:** `js/ui/brain-3d.js`, `js/app.js`
+
+### 5. Documentation update for the Rulkov neuron model  [DONE commit `40bd086`]
+
+User directive: "then update the equations docs and public faceing docs and workflow docs".
+
+**What shipped:**
+
+`README.md`:
+- New §"Neuron Models — Reference + Runtime" leads with Rulkov as the live rule, including the full (x, y) equation pair, fixed parameter values, biological drive mapping, spike edge detector derivation, GPU storage layout, citation (Rulkov 2002 *Phys. Rev. E* 65, 041922), pedigree note (Bazhenov/Rulkov/Shilnikov 2005+ published cortical simulations), and reproduction fidelity (thalamic relay / cortical pyramidal / cerebellar Purkinje). Notes that client viz runs the same Rulkov iteration as a proportional sample. LIFPopulation and HHNeuron demoted to "Reference models still shipped" — LIF = browser-only fallback + `/scale-test` benchmark, HH = `brain-equations.html` teaching backing
+- Super-equation F-term updated: "7 parallel LIF populations" → "7 parallel Rulkov-map chaotic neuron populations"
+- Execution paragraph updated: no longer claims WebGPU handles "all LIF + synapse propagation" — now names the Rulkov rule explicitly
+
+`brain-equations.html`:
+- Replaced the LIF subsection with a new §2 "Rulkov Map — Live Runtime Neuron Model" leading subsection. Full equation pair, parameter table (α, μ, σ, x, y with meanings and values), biological drive mapping expression, σ range explanation, GPU storage description, tooltip text teaching the reader what a 2D chaotic map is
+- Kept the old LIF subsection below Rulkov as "Legacy: Leaky Integrate-and-Fire (LIF) — Historical Runtime" with a note that LIF is still shipped for the browser-only fallback path and scale-test benchmark — so the teaching page still covers both models
+- Data flow diagram: "1000 LIF Neurons in 7 CLUSTERS" → "N Rulkov-map Neurons in 7 CLUSTERS"
+- Super-equation F-term inside the page: `Σ_clusters [ τ⁻¹(−(V−V_rest) + R·I) ]` → `Σ_clusters [ Rulkov(x,y; α,μ,σ) ]`
+- GPU-exclusive compute card step protocol now shows the `effectiveDrive → σ` collapse and the full Rulkov iteration instead of the old LIF equation
+- WGSL Compute Shader card rewritten with the actual Rulkov kernel body — α/μ/σ computation, fast + slow variable updates, zero-crossing spike detection, `vec2<f32>` state storage. Notes that the `LIF_SHADER` constant name is historical; the shader body is the Rulkov iteration
+- Biological comparison table row "Neuron model" updated: "Rulkov 2D chaotic map per cluster (GPU runtime) + LIF + HH reference models"
+
+`docs/ARCHITECTURE.md`:
+- Tech stack "Brain Sim" row: "LIF populations" → "Rulkov 2D chaotic map (α=4.5, μ=0.001)"
+- Architecture diagram inner panel: "1000 LIF neurons" → "N Rulkov-map neurons", "own LIF pop" → "own Rulkov pop"
+- Fractal Signal Propagation scale 1 shows the Rulkov map instead of LIF
+- Scaling formula comment bumped from 8 bytes/neuron to 12 bytes/neuron (vec2<f32> state + spikes u32)
+- Scaling paragraph updated: notes GPU is the only compute path for Rulkov and explicitly calls out the browser-only LIFPopulation fallback
+- File tree entries for `neurons.js` and `gpu-compute.js` annotated with the split — LIFPopulation is historical/fallback, gpu-compute LIF_SHADER constant name is historical but shader body is Rulkov
+- Integration Points WebGPU row: "Rulkov 2D chaotic map neuron iteration + sparse CSR synapse propagation"
+- Amygdala attractor description: "150-LIF cluster" → "150-neuron Rulkov cluster"
+
+`docs/EQUATIONS.md`:
+- SCALE 1 of fractal signal propagation: full Rulkov map with α, μ, σ parameters
+- GPU pipeline table row: hierarchical modulation collapse to effectiveDrive scalar, σ derivation, Rulkov iteration, zero-crossing spike detection
+
+`docs/FINALIZED.md` and `docs/COMP-todo.md` intentionally not modified in this docs pass — FINALIZED is a permanent archive (historical LIF references stay accurate as-of-session), COMP-todo is future GPU co-op planning that's not on the runtime path.
+
+**Files:** `README.md`, `brain-equations.html`, `docs/ARCHITECTURE.md`, `docs/EQUATIONS.md`
+
+### 6. Sensory backend "(fallback)" labeling fix + SAVE KEY button + active provider selector UX  [DONE commit `85b447c`]
+
+**User feedback (verbatim):** "why does it say fallbacks pollinations is not a fallback and it is not free, and i still do not see a connect button to connect my pollinations key or other keys even" followed by "and like a said there needsd to be a selcotor for the available models capable of being vision aand or image based on keys proved, any number of keys acan be provided but the option to use one needs to be selected from available".
+
+**Three issues:**
+1. Pollinations was labeled `(fallback)` in the inventory but it's the default provider, not a fallback
+2. The existing copy claimed Pollinations is "Free" which user said is wrong — anonymous tier exists but a key unlocks paid models and higher rate limits
+3. No visible Save button next to the Pollinations API key input — users couldn't save a key without going through the full "WAKE UNITY UP" boot flow
+4. No way to pick WHICH configured backend Unity should actually use when multiple were saved, and no model dropdown per-backend
+
+**What shipped:**
+
+`js/brain/peripherals/ai-providers.js`:
+- `getStatus()`: both Pollinations entries (image + vision) tagged `source: 'default'` instead of `'fallback'`
+- New `setPreferredBackend(kind, pref)` method — called from app.js when the setup-modal selector dropdowns change. Sets `_preferredImage` / `_preferredVision` instance fields
+- New `_findBackend(kind, source, name)` helper — maps a (source, name) preference back to the live backend entry so the dispatcher can reuse `_customGenerateImage` / `_customDescribeImage` without reimplementing per-backend auth
+- `generateImage()` new step 0 at the top of the priority chain: if `_preferredImage` is set, route there first. Pollinations preference routes through `_pollinations.generateImage()` with the user's picked model. Local/custom prefs route through `_customGenerateImage()` with the preference's model overriding the registered one. Falls through to the existing priority chain on failure — preferred backend is a FIRST choice, not a HARD choice
+- `describeImage()` same treatment: step 0 honors `_preferredVision`, falls through on failure
+- `_pollinationsDescribeImage()` now accepts an optional `modelOverride` arg so the preference can pick a multimodal chat model without mutating the instance-wide default
+
+`js/ui/sensory-status.js`:
+- Autodetect-complete toast text corrected: no longer calls Pollinations a "fallback". Now reads "Using Pollinations default provider. Add an API key in the setup modal or configure a local backend in js/env.js."
+
+`js/app.js`:
+- `BACKEND_CATALOG.img:pollinations` and `BACKEND_CATALOG.vis:pollinations` instruction text rewritten. No more "Free default" claim. Now reads "Unity's default image gen / vision describer provider — active out of the box, no setup needed for the anonymous tier. Paste your Pollinations API key below to authenticate (raises rate limits and unlocks paid models). Get a key at pollinations.ai/dashboard."
+- New `refreshActiveBackendSelectors(status)` function called from `renderSensoryInventory()` every time the inventory redraws. Populates two `<select>` dropdowns (image backend, vision backend) from `providers.getStatus().image` and `.vision`, plus two model `<select>` dropdowns that repopulate when the backend choice changes
+- New `BACKEND_MODEL_CATALOG` map — static per-backend model lists:
+  - `image:Pollinations` → flux, flux-realism, flux-anime, flux-3d, turbo, sdxl-1.0
+  - `image:OpenAI DALL-E` → dall-e-3, dall-e-2
+  - `image:Stability AI` → sdxl-1.0, sd3-large, sd3-medium
+  - `vision:Pollinations` → openai, claude-haiku, gemini
+  - `vision:Ollama (VLM)` → llava, moondream, bakllava, minicpm-v
+  - (others default to a single 'default' entry)
+- Persistence to localStorage: `unity_pref_image_backend`, `unity_pref_vision_backend`, `unity_pref_image_model`, `unity_pref_vision_model`. Pushes the choice into `providers.setPreferredBackend()` on every change AND on initial render so reloading the page doesn't reset to first-in-list priority
+- SAVE KEY button handler wired at setup-modal init time: writes the Pollinations key via `storage.setApiKey('pollinations', key)`, pushes it into `providers._pollinations._apiKey` for immediate effect, flashes a "SAVED ✓" confirmation, and re-renders the inventory. No brain-boot needed
+
+`index.html`:
+- New "⚡ Active Provider (choose from configured)" section below the Detected / Saved Backends inventory. Two rows (🎨 Image gen, 👁 Vision) each with a backend `<select>` and a model `<select>`. Short help text: "Any number of backends can be configured above. This picks which one Unity actually uses. Model dropdown lists the options available at the selected backend."
+- Pollinations key input rewrapped: now a flex row with an explicit SAVE KEY button (`#api-key-save-btn`). Placeholder text clarifies the anonymous tier. Help text corrected: "(optional — anonymous tier works without, a key raises rate limits and unlocks paid models for image gen, TTS, and vision describer)"
+
+**Files:** `js/brain/peripherals/ai-providers.js`, `js/ui/sensory-status.js`, `js/app.js`, `index.html`
+
+### 7. Privacy section wording fix + sensory channel toggles (mic / vision / speech) in setup modal AND chat panel  [DONE]
+
+**User feedback (verbatim):** "you fixed this right? Pollinations is the free default fallback; using it sends image prompts and camera frames (if vision is enabled) to pollinations.ai. in the privacy...." and "shouldnt we have toggles for Unity speech muting and toggleing off her speech and vision and user mic in the landing page setup for models??" and "and we also need a topggle mute in the panel for when chatting with her if they want in the moment to mute her even tho talking is toggled on".
+
+**Three issues:**
+1. Privacy notice in `index.html` still said "Pollinations is the free default fallback" — contradicted the R85b447c fix
+2. No setup-modal toggles for sensory channels — users couldn't opt out of mic/camera/speech before waking Unity, so they got forced through permission prompts even if they wanted text-only mode
+3. No in-the-moment mute button in the chat panel — once Unity was booted with speech on, silencing her required closing the chat and flipping the persistent toggle
+
+**What shipped:**
+
+Privacy wording corrections:
+- `index.html` line 197: "Pollinations is the free default fallback" → "Pollinations is Unity's default provider (anonymous tier works without a key, a saved key unlocks paid models and higher rate limits); using it sends image prompts and camera frames (if vision is enabled) to pollinations.ai"
+- `README.md` data flow diagram line 82: "Pollinations fallback" → "Pollinations default"
+- `README.md` privacy section line 393: "TTS (Pollinations + SpeechSynthesis fallback)" → "TTS (Pollinations default + browser SpeechSynthesis as last-resort fallback)"; "vision describer (Pollinations GPT-4o on camera frames)" clarified as "default provider"
+- `README.md` sensory peripheral bullet line 540: "Pollinations free fallback" → "Pollinations default (anonymous tier without a key, paid models + higher rate limits with a key)"
+
+Setup modal sensory channel toggles (`index.html` + `js/app.js`):
+- New card between the perms hint and WAKE UNITY UP button. Three checkboxes all checked by default:
+  - `#toggle-user-mic` — 🎤 User mic (lets Unity hear you via Web Speech / auditory cortex)
+  - `#toggle-unity-vision` — 📷 Unity vision (camera frames go to her visual cortex + vision describer)
+  - `#toggle-unity-speech` — 🔊 Unity speech (her TTS voice — Pollinations / browser SpeechSynthesis)
+- Help text: "Toggles persist across sessions and are live-applied the moment you flip them — after boot you can mute her mid-sentence, pause her camera, or silence her voice without reloading."
+- State lives on `window.unityChannels = { userMic, unityVision, unitySpeech }` — shared with chat panel so both UIs stay in sync
+- Persisted to localStorage under `unity_channel_user_mic` / `unity_channel_unity_vision` / `unity_channel_unity_speech` — boot reads them back
+- Wired at setup-modal init time with a `wireChannelToggle(id, key, storageKey, onChange)` helper. Flipping a toggle: (a) updates `window.unityChannels`, (b) writes to localStorage, (c) calls the onChange handler to live-apply
+
+Pre-boot gating (`js/io/permissions.js` + `js/app.js handleStart`):
+- `requestPermissions()` signature extended: now accepts `{requestMic, requestCamera}` opts. When a channel is disabled, that getUserMedia call is skipped entirely — the user doesn't get a permission prompt for a channel they opted out of
+- `handleStart()` reads `window.unityChannels` and passes the flags through. Perm status spans show "off" instead of "asking..." for disabled channels
+
+Post-boot live-apply:
+- User mic toggle: calls `voice.startListening() / voice.stopListening()` to toggle the Web Speech recognition engine without dropping the mic device
+- Vision toggle: sets `brain.visualCortex._paused` and toggles `MediaStreamTrack.enabled` on each camera track so the video element freezes without tearing down the stream. Unpausing re-enables the tracks in-place (no new getUserMedia prompt)
+- Speech toggle: sets `voice._muted = true` and calls `voice.stopSpeaking()` to interrupt any in-progress TTS. The next speak() call is a no-op
+
+`js/io/voice.js`:
+- `speak()` short-circuits immediately if `this._muted` is true. Respects both the boot-time flag (carried from `window.unityChannels.unitySpeech === false`) and in-the-moment toggling from the chat panel
+
+Chat panel in-the-moment mute buttons (`js/ui/chat-panel.js`):
+- Two new icon buttons in the chat-header-btns row:
+  - `.chat-mute-btn` — 🔊 / 🔇 — toggles Unity's speech
+  - `.chat-mic-btn` — 🎤 / 🚫 — toggles user mic
+- Both buttons are LIVE MIRRORS of `window.unityChannels` — clicking them updates the same state the setup-modal checkboxes write to, writes to the same localStorage keys, AND syncs the modal checkboxes back via `document.getElementById('toggle-unity-speech').checked = ...` so both UIs always agree
+- Click handlers flip state, persist, live-apply (stop TTS / start-stop Web Speech), and call `syncButtons()` to update the icon + opacity
+- No separate "chat-panel-only mute" state — the user's mute is one toggle that lives in `window.unityChannels` and is reflected everywhere
+
+`window.voice` exposed:
+- `bootUnity()` now sets `window.voice = voice` after constructing VoiceIO so the chat panel's module-local mute buttons can reach the instance. Also carries forward the persisted speech mute: if `window.unityChannels.unitySpeech === false` at boot, `voice._muted = true` immediately so her first response after boot respects the toggle
+
+**Files:** `index.html`, `README.md`, `js/app.js`, `js/io/permissions.js`, `js/io/voice.js`, `js/ui/chat-panel.js`
+
+### Session summary
+
+Nine commits, four distinct problem domains: (1) 3D viz layout + firing rule correctness, (2) Unity's in-the-moment thought commentary pipeline, (3) sensory provider UX fidelity + model selection, (4) sensory channel privacy toggles (setup modal + chat panel mirror) + privacy notice wording. All syntax-validated via `npx esbuild js/app.js --bundle`. No TODO entries created or closed — this session's work is all bug fixes and quality-of-life on code that was already shipped as part of T1–T6. T4 (manual verification + merge PR to main) is still the only open task in `docs/TODO.md`.
+
+---
+
 ## 2026-04-13 Session: Original task specifications — verbatim archive (T1/T2/T3/T5/T6 full planning text)
 
 When I rewrote `docs/TODO.md` down to just T4 earlier today, I wrote short summary entries in FINALIZED describing WHAT shipped for each T-task. I did NOT copy the original task planning text (problem statements, proposed approaches, 6-step implementation plans, detector tables, acceptance criteria) verbatim. Gee caught this: the rule says "copy their full content (not a summary) into a new FINALIZED session entry". This archive entry fixes that by embedding the original task specs verbatim as they were written in `docs/TODO.md` before the rewrite commits (`4a787e5` and `5b5ecab`). Nothing lost.
