@@ -392,11 +392,13 @@ All N neurons (auto-scaled to hardware via the formula below) run on GPU. Zero C
 
 | Equation | Purpose |
 |----------|---------|
-| `N_vram = VRAM_bytes × 0.85 / 8` (SLIM layout: 8 bytes/neuron) | Primary bound — 85% of VRAM at 8 bytes/neuron |
+| `N_vram = VRAM_bytes × 0.85 / 12` (Rulkov layout: vec2<f32> state + spikes u32 = 12 bytes/neuron) | Primary VRAM bound |
 | `N_ram = RAM_bytes × 0.1 / 0.001` | Secondary bound — server RAM essentially unlimited (cluster state lives on GPU) |
-| `N = max(1000, min(N_vram, N_ram))` | Combined auto-scale formula with absolute floor |
-| GPU: 20 bytes/neuron (5 buffers × 4 bytes f32) | VRAM constraint |
-| Server: 9 bytes/neuron (voltages for cortex + amygdala only) | RAM constraint — 332MB saved vs full allocation |
+| `N_binding_ceiling = (2 GB / 8) / 0.4` | Per-cluster state buffer must fit in WebGPU maxStorageBufferBindingSize (2 GB spec minimum); cerebellum = 40% of N |
+| `N = max(1000, min(N_vram, N_ram, N_binding_ceiling))` | Combined auto-scale formula with absolute floor + binding ceiling |
+| GPU: 12 bytes/neuron (8 state vec2<f32> + 4 spike u32) | Rulkov VRAM layout |
+| Server: 9 bytes/neuron injection arrays only (cortex + amygdala text-injection paths) | RAM constraint — full cluster state lives on GPU |
+| Admin override via `server/resource-config.json` (written by `GPUCONFIGURE.bat`) can LOWER N but never raise above detected hardware |
 | `TICK_MS = N>1M ? 100 : N>500K ? 50 : N>100K ? 33 : 16` | Tick rate |
 | `SUBSTEPS = N>1M ? 3 : N>500K ? 5 : N>100K ? 10 : 10` | Steps per tick |
 | N auto-scales every boot based on detected hardware | Bigger GPU/RAM = more neurons. No manual tuning. The formula IS the canonical answer — there's no fixed "default" count. |

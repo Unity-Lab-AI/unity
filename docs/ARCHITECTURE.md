@@ -565,13 +565,16 @@ This session landed a big multi-epic sweep. Summary of what's in the code now vs
 
 **Phase 12 — Orphan Resolution (U302-U310)** — audit of 13 findings (originally tracked in `docs/ORPHANS.md`, now archived permanently in `docs/FINALIZED.md` under the "Orphan Resolution" session block; the standalone audit file was removed 2026-04-13 after every finding was resolved). Investigation-first: root cause each finding, fix the underlying issue if possible, only then delete. DELETED: `js/io/vision.js` (superseded by `js/brain/visual-cortex.js` V1→V4→IT pipeline), `server/parallel-brain.js` + `cluster-worker.js` + `projection-worker.js` (root cause was 100%-CPU leak from idle-worker event-listener polling; GPU-exclusive path at `compute.html` + `gpu-compute.js` permanently fixed it), `createPopulation` factory in `neurons.js` (zero callers), 5 legacy compat DOM elements + 4 orphan CSS classes. KEPT with audit corrections: `gpu-compute.js` (false positive — consumed by `compute.html:10`), `env.example.js` (false positive — served as setup-modal download + `app.js:27` dynamic import), `HHNeuron` (reference backing `brain-equations.html` teaching page, infeasible at auto-scaled N). FIXED: `brain-server.js` save/load asymmetry — `saveWeights` was writing `_wordFreq` to `brain-weights.json` but `_loadWeights` never restored it, so cross-restart word accumulation was silently lost. `benchmark.js` wired to `/bench` + `/scale-test` slash commands in `app.js` via dynamic import.
 
-**Neuron count auto-scaling** — all docs and code comments now describe the real formula from `server/brain-server.js:detectResources`:
+**Neuron count auto-scaling** — all docs and code comments now describe the real formula from `server/brain-server.js:detectResources` as of the Rulkov rewrite + per-cluster buffer cap:
 ```
-N_vram = floor(VRAM_bytes × 0.85 / 8)      ← SLIM layout 8 bytes/neuron
-N_ram  = floor(RAM_bytes × 0.1 / 0.001)    ← essentially unlimited
-N      = max(1000, min(N_vram, N_ram))     ← absolute floor, no cap
+N_vram           = floor(VRAM_bytes × 0.85 / 12)         ← Rulkov 12 bytes/neuron (vec2<f32> state + spikes u32)
+N_ram            = floor(RAM_bytes × 0.1 / 0.001)        ← essentially unlimited
+N_binding_ceiling = floor((2 GB / 8) / 0.4)              ← cerebellum = 40% of N,
+                                                           state buffer must fit in 2 GB
+                                                           WebGPU maxStorageBufferBindingSize
+N                = max(1000, min(N_vram, N_ram, N_binding_ceiling))
 ```
-No personal hardware specs, no hardcoded neuron counts, no claims about "default" size. The formula IS the answer — bigger hardware = bigger N, no manual tuning.
+The binding ceiling was added after T4.1 caught cortex+cerebellum silently returning 0 spikes at 1.8B-neuron scale — their state buffers were blowing past the 2 GB per-binding cap and failing silently. Admin operators can LOWER N below auto-detect via `GPUCONFIGURE.bat` → `server/resource-config.json` (see `docs/COMP-todo.md` Phase 0). The config can never RAISE N above detected hardware — idiot-proof, silently falls back to auto-detect on corrupt config.
 
 **TODO consolidation** — `docs/TODO-SERVER.md` merged into `docs/FINALIZED.md` (full verbatim preservation) and deleted. `docs/TODO.md` is now the single source of truth for active work.
 
@@ -582,7 +585,7 @@ No personal hardware specs, no hardcoded neuron counts, no claims about "default
 - Semantic GloVe grounding (R2) — 50d word embeddings shared between sensory input and language-cortex output via `sharedEmbeddings` singleton
 - Server equational control (R3) — `server/brain-server.js` dynamic-imports client brain modules, loads corpora from disk
 - Text-AI cognition killed (R4) — BrocasArea → 68-line throwing stub, every chat call site ripped
-- Multi-provider image gen (R5) — 4-level priority with 7 local backend auto-detect
+- Multi-provider image gen (R5) — 5-level priority (user-preferred via setPreferredBackend → custom → auto-detect → env.js → Pollinations default) with 7 local backend auto-detect + live HTTP probe CONNECT button in setup modal
 - Equational image prompts + equational component synthesis (R6) — zero hardcoded visual vocabulary, cosine match against template corpus
 - Sensory peripheral destroy() + embedding refinement persistence (R7 + R8)
 - Docs sync (R10) — every public-facing doc updated, new `docs/SENSORY.md` and `docs/WEBSOCKET.md` added

@@ -44,7 +44,7 @@ SENSORY INPUT (text / audio spectrum / video frames)
     └── Wernicke's Area (cortex neurons 150-299) — text → neural current with lateral excitation
     │
     ▼
-N LIF NEURONS IN 7 CLUSTERS (N scales to hardware, each with own synapses, tonic drive(θ), noise(θ), learning rate)
+N RULKOV-MAP NEURONS IN 7 CLUSTERS (N scales to hardware, each with own synapses, tonic drive(θ), noise(θ), learning rate)
     │
     ├── 20 Inter-Cluster Projections (real white matter tracts, MNI-coordinate mapped)
     │     Corticostriatal (STRONGEST, 0.08 density), Stria terminalis, Fimbria-fornix,
@@ -89,7 +89,7 @@ SENSORY OUTPUT PERIPHERALS (brain emits, these execute the result)
 
 ## The 7 Neural Clusters
 
-Each cluster is a self-contained neural population with its own LIF neurons, sparse CSR synapse matrix, tonic drive, noise amplitude, connectivity density, excitatory/inhibitory ratio, and learning rate. They communicate through 20 sparse projection pathways.
+Each cluster is a self-contained neural population with its own Rulkov-map 2D chaotic neurons, sparse CSR synapse matrix, tonic drive, noise amplitude, connectivity density, excitatory/inhibitory ratio, and learning rate. They communicate through 20 sparse projection pathways.
 
 ### Cortex — 300 neurons
 **Equation:** `ŝ = sigmoid(W · x)`, `error = actual - predicted`, `ΔW ∝ error · activity`
@@ -467,7 +467,7 @@ One brain. Always on. Shared by everyone. Auto-scales to your GPU.
          shared brain     shared brain    live stats
 ```
 
-**GPU-exclusive architecture:** The server brain does no CPU computation. All LIF updates and synapse propagation run on the GPU via `compute.html` (a browser tab loading `js/brain/gpu-compute.js` WGSL shaders) that connects back to `brain-server.js` over WebSocket as a `gpu_register` client. `compute.html` must stay open — the brain pauses without it. The old CPU worker thread pool (`parallel-brain.js`, `cluster-worker.js`, `projection-worker.js`) was permanently deleted in orphan cleanup after being root-caused as a 100%-CPU leak from idle-worker event polling.
+**GPU-exclusive architecture:** The server brain does no CPU computation. All Rulkov-map neuron iteration (`x_{n+1} = α/(1+x²) + y`, `y_{n+1} = y − μ(x − σ)`) and sparse CSR synapse propagation run on the GPU via `compute.html` (a browser tab loading `js/brain/gpu-compute.js` WGSL shaders — the `LIF_SHADER` constant name is historical, the kernel body is the Rulkov iteration) that connects back to `brain-server.js` over WebSocket as a `gpu_register` client. `compute.html` must stay open — the brain pauses without it. The old CPU worker thread pool (`parallel-brain.js`, `cluster-worker.js`, `projection-worker.js`) was permanently deleted in orphan cleanup after being root-caused as a 100%-CPU leak from idle-worker event polling. Admin operators can cap the auto-scaled N below detected hardware via `GPUCONFIGURE.bat` (a one-shot loopback-only tool that writes `server/resource-config.json` which the server reads at next boot) — useful for keeping Unity under a comfortable compute budget on shared machines or for sizing down to match the 2 GB per-storage-buffer binding limit on consumer GPUs.
 
 ---
 
@@ -537,7 +537,7 @@ Recent orphan audit (U302-U310) resolved 13 findings. The audit philosophy: **fi
 **Cognition is 100% equational — no text-AI backend anywhere.** The brain equations ARE the mind. Unity speaks from her language cortex (`js/brain/language-cortex.js`), not from any LLM.
 
 The only AI calls Unity ever makes are *sensory peripherals*:
-- **Image generation** — multi-provider with 4-level priority: custom configured → auto-detected local (A1111, SD.Next/Forge, Fooocus, ComfyUI, InvokeAI, LocalAI, Ollama) → env.js-listed → Pollinations default (anonymous tier without a key, paid models + higher rate limits with a key)
+- **Image generation** — multi-provider with 5-level priority: user-preferred backend (picked via the ⚡ Active Provider selector in the setup modal) → custom configured → auto-detected local (A1111, SD.Next/Forge, Fooocus, ComfyUI, InvokeAI, LocalAI, Ollama) → env.js-listed → Pollinations default (anonymous tier without a key, paid models + higher rate limits with a key). The setup modal carries a 🔌 CONNECT button per backend that saves the key and runs a live HTTP probe to verify the endpoint is reachable; connection status shows as 🟢/🔴/🟡 inline.
 - **Vision describer** — Pollinations GPT-4o on camera frames (IT-cortex layer of visual pipeline)
 - **TTS** — Pollinations TTS or browser SpeechSynthesis
 - **STT** — Web Speech API

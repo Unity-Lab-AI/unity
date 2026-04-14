@@ -304,7 +304,7 @@ The contract for a new sensory peripheral (e.g. a future `js/brain/olfactory-cor
 1. **Implement the three-method interface:** `init(source)`, `process(dt?)`, `destroy()`. Treat the source as opaque — don't assume MediaStream shape.
 2. **Expose a `Float64Array` of currents** for the cortex region it drives, or a metadata object if it's an output peripheral. Sized to match the neuron group in `cluster.js`.
 3. **Add a wiring step to `bootUnity()`** following the pattern at `app.js` steps 10-13.
-4. **If it uses AI at any layer,** add a `SensoryAIProviders` method and follow the 4-level priority + dead-cooldown + status-event pattern from `generateImage()` / `describeImage()`.
+4. **If it uses AI at any layer,** add a `SensoryAIProviders` method and follow the 5-level priority (user-preferred via `setPreferredBackend` → custom → auto-detect → env.js → Pollinations default) + dead-cooldown + status-event pattern from `generateImage()` / `describeImage()`.
 5. **If it's a new physical AI service,** add probe entries to `LOCAL_IMAGE_BACKENDS` or `LOCAL_VISION_BACKENDS` (or a new `LOCAL_<KIND>_BACKENDS` list) and a new `autoDetect<Kind>()` method that mirrors the existing two.
 6. **Write per-backend response shape parsing** in a `_custom<Kind>Call()` helper, supporting the common wire formats for that category.
 7. **Update `getStatus()`** to include the new backend list in its returned snapshot so the HUD shows it.
