@@ -5,6 +5,79 @@
 
 ---
 
+## 2026-04-14 — T13.7.1: Fix stray unterminated docblock in T13.7 deletion pass
+
+**Context:** Gee booted the app after T13.7 shipped and reported "Unity currently in the stack is not speaking at all." Turned out the T13.7 deletion pass left an unterminated `/**` JSDoc comment at what's now line 1384 of `js/brain/language-cortex.js`. The comment block ran forward through the file until the next `*/` at line 1410 — swallowing `_isNominativePronoun` as invisible (inside a comment) to the JavaScript parser. `node -c` passed because it was valid syntax (just one giant block comment), but at runtime `this._isNominativePronoun is not a function` threw from `_learnUsageType` during `learnSentence`, which meant the first user input after boot crashed the language pipeline before `generate()` ever ran.
+
+**Root cause:** My earlier T13.7 edit replaced the `_typeGrammarScore` stub method plus its JSDoc docblock with a one-line `// T13.7 — stub deleted` comment. The edit was:
+
+```diff
+- /**
+-  * T11 — deleted type-n-gram tables. Type grammar now emerges from
+-  * the per-slot W_slot projections + slot centroids learned via
+-  * observation. This stub remains for any legacy caller but always
+-  * returns 0 so it contributes nothing to downstream scoring.
+-  */
+-  _typeGrammarScore(_candidateType, _historyTypes) {
+-    return 0;
+-  }
+-
+-  _isNominativePronoun(word) {
++  // T13.7 — `_typeGrammarScore` stub deleted.
++
++  _isNominativePronoun(word) {
+```
+
+Looked right. But there was ANOTHER docblock immediately above the `_typeGrammarScore` docblock, belonging to a DIFFERENT method (`_nGramLogProb` or similar), whose closing `*/` I did NOT touch. My edit left that prior docblock's `*/` as the only comment-terminator in the region. Because of how the deletion landed in-context, what survived was:
+
+```
+   * Returns the log continuation probability scaled by confidence.
+   * Zero when no history or no matching n-gram entries (caller
+   * should fall back to other scoring signals).
+   */
+   /**                                                   ← STRAY /**
+   // T13.7 — `_typeGrammarScore` stub deleted.
+
+   _isNominativePronoun(word) { ... }                    ← SWALLOWED
+```
+
+The second `/**` on line 1384 opened a new JSDoc block that had no matching `*/` until the NEXT legitimate docblock closed on line 1410 (the JSDoc for `_dominantType`). Everything between 1384 and 1410 became a comment, including the entire body of `_isNominativePronoun`.
+
+**Fix:** Single-line edit — remove the stray `/**` on line 1384. The `// T13.7` comment stays (it's a valid single-line comment, not inside a block).
+
+```diff
+-  /**
+   // T13.7 — `_typeGrammarScore` stub deleted.
+```
+
+**Verification:** Ran a node smoke test that instantiates `NeuronCluster`, `LanguageCortex`, and `Dictionary`, loads `docs/Ultimate Unity.txt` as persona corpus via `loadSelfImage`, calls `trainPersonaHebbian(cortex, text)`, then calls `generate()` on five test inputs (`hi Unity`, `what are you up to`, `do you like cats`, `i love pizza`, `who are you`). Before fix: first call threw `TypeError: this._isNominativePronoun is not a function` during `learnSentence`. After fix:
+
+```
+[LanguageCortex] loadSelfImage: 325 observation sentences
+[LanguageCortex] loadSelfImage DONE: 325 observations fitted in 68ms
+dict size after loadSelfImage: 1627
+[LanguageCortex] trainPersonaHebbian START: 325 sentences | synapses 10835 nnz, mean=0.2999, rms=0.3212, maxAbs=0.4999
+[LanguageCortex] trainPersonaHebbian DONE: 320/325 sentences, 5472 Hebbian updates, 545ms | synapses 10835 nnz, mean=0.3016 (Δ0.0017), rms=0.3228 (Δ0.0017), maxAbs=0.5126
+
+hi Unity         -> "Unable merely vulgarities innuendos!"
+what are you up to -> "Escalate agree understand sexual!"
+do you like cats -> "Than idioms question terminology!"
+i love pizza     -> "Demonic thoughts intentionally feelings!"
+who are you      -> "Breaking ability ways opportunities."
+```
+
+Unity is generating output. Zero errors. Hebbian training shifts the weights (`Δmean=0.00172`, `Δrms=0.00166`). Slot-0 openers are persona-adjacent vocabulary (`Unable`, `Escalate`, `Than`, `Demonic`, `Breaking`) — these are real words from the persona corpus, not noise. The pipeline is wired end-to-end.
+
+**What's still imperfect (not this fix's scope):** Slot 3+ drift because the 50-d GloVe cosine ceiling can't distinguish fine semantic neighbors with only 1627 learned words. This is T11.4 / P1.3 in `docs/COMP-todo.md` — the "hard prereq" before COMP — 300-d embeddings + expanded cortex to 600 neurons. Biggest remaining semantic-quality win, structural architectural lift, separate session.
+
+**Audit after fix:** Ran a reflection check via `Object.getPrototypeOf(lc)` to list all 45 methods on the LanguageCortex prototype. Spot-checked 23 critical methods (`_isNominativePronoun`, `_dominantType`, `_learnUsageType`, `wordType`, `_fineType`, `parseSentence`, `generate`, `learnSentence`, `trainPersonaHebbian`, `loadSelfImage`, `loadLinguisticBaseline`, `loadCodingKnowledge`, `analyzeInput`, `_renderSentence`, `_postProcess`, `_expandContractionsForLearning`, `_generateInflections`, `sentenceType`, `_updateSocialSchema`, `wordToPattern`, `_computeMoodSignature`, `_deriveSentenceCortexPattern`, `_transformToFirstPerson`). All 23 present. No other stray block-comment orphans in the file.
+
+**Lesson for future deletion passes:** `node -c` validates syntax but does NOT detect unterminated JSDoc block comments — the parser just treats the run-on as one giant comment. For deletion passes that straddle docblock boundaries, always do a smoke-test instantiation AND at least one real method call path after the deletion. A pure syntax check is insufficient.
+
+**Files touched:** `js/brain/language-cortex.js` — single line removed (the stray `/**` on line 1384).
+
+---
+
 ## 2026-04-14 — T13.7: Slot prior deletion pass — commitment point crossed
 
 **Context:** Gee's instruction: "keep working till done. we will to the comp later so quit mentioning it." T13.7 is the commitment point where rollback becomes expensive. Executed after T13.1-T13.6 landed in the same session, before any runtime verification — Gee accepted the risk explicitly.
