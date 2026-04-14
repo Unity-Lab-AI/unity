@@ -1,6 +1,6 @@
 # ARCHITECTURE — IF ONLY I HAD A BRAIN
 
-> Last updated: 2026-04-14 | Phase 13 brain-refactor-full-control merged to main; deploy versioning 0.1.0 stamped per push
+> Last updated: 2026-04-14 | Phase 13 brain-refactor-full-control merged to main; T11 pure equational language cortex shipped; deploy versioning 0.1.0 stamped per push
 > Unity AI Lab — Hackall360, Sponge, GFourteen
 
 ---
@@ -437,119 +437,171 @@ This term is ALWAYS present. It represents what we DON'T know. It's the default 
 
 ---
 
-## Language Generation Pipeline — Four-Tier Semantic Coherence (Phase 11, 2026-04-13)
+## Language Generation Pipeline — T11 Pure Equational Cortex (2026-04-14)
 
-Language cortex is no longer a pure letter-equation slot scorer. It's a **tiered pipeline** that peels off easy cases to fast paths before cold generation runs. The old slot scorer still exists but now runs only as the fallback when the three upstream tiers all miss.
+Language cortex is a pure-equation pipeline. Zero stored sentences, zero n-gram tables, zero filter stack, zero template short-circuits, zero intent-enum branching. The T11 rewrite (2026-04-14) deleted 1773 lines of the old multi-tier wrapper layer — every word is now computed fresh from brain cortex state plus three per-slot running-mean priors.
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│ TIER 1 — INTENT CLASSIFICATION + TEMPLATE POOL FLIP              │
+│ READING — parseSentence(text) → ParseTree                        │
 │                                                                   │
-│ _classifyIntent(text) via pure letter equations                  │
-│     ↓                                                             │
-│ greeting / yesno / math / short (wordCount ≤ 3)                  │
-│     ↓                                                             │
-│ selectUnityResponse(intent, brainState)                          │
-│     ↓                                                             │
-│ Ultimate Unity template pool — emo goth stoner voice              │
-│     RETURN                                                        │
+│ Walks user tokens forward using the same wordType + _fineType    │
+│ letter equations the generator uses forward. Returns:            │
+│   intent, isQuestion, isSelfReference, addressesUser,            │
+│   isGreeting, introducesName, introducesGender,                  │
+│   subject/verb/object slots,                                     │
+│   entities{ names, colors, numbers, componentTypes, actions },   │
+│   mood{ polarity, intensity }                                    │
+│ Memoized on text equality. Downstream consumers read fields,    │
+│ no regex, no string matching, no enum dispatch.                 │
 ├──────────────────────────────────────────────────────────────────┤
-│ TIER 2 — HIPPOCAMPUS ASSOCIATIVE RECALL                          │
+│ OBSERVATION — every learned sentence updates three priors:       │
 │                                                                   │
-│ _recallSentence(contextVector)                                    │
-│     queries _memorySentences populated from Ultimate Unity.txt    │
-│     with HARD requirement: content-word overlap ≠ ∅               │
-│     ↓                                                             │
-│ confidence > 0.60 → _finalizeRecalledSentence(best.text) RETURN  │
-│ confidence ∈ [0.30, 0.60] → recallSeed (soft recall bias)        │
-│ confidence ≤ 0.30 on question/statement → TIER 3                 │
+│ for t in 0..|words|:                                             │
+│   _slotCentroid[t]      += weighted mean of emb(word_t)          │
+│   _slotDelta[t]         += weighted mean of (emb_t - emb_{t-1})  │
+│   _slotTypeSignature[t] += weighted mean of wordType(word_t)     │
+│                                                                   │
+│ weight = max(0.25, arousal · 2)                                  │
+│   coding (0.4)    → w=0.8                                        │
+│   baseline (0.5)  → w=1.0                                        │
+│   persona (0.75)  → w=1.5                                        │
+│   live chat (0.95)→ w=1.9   (2.37× corpus influence)             │
 ├──────────────────────────────────────────────────────────────────┤
-│ TIER 3 — DEFLECT TEMPLATE FALLBACK                                │
+│ GENERATION — no tiers, no short-circuits, no templates:          │
 │                                                                   │
-│ selectUnityResponse({...intent, deflect:true})                    │
-│     question_deflect category (12 emo-goth-stoner variants)       │
-│     RETURN                                                        │
-├──────────────────────────────────────────────────────────────────┤
-│ TIER 4 — COLD SLOT GENERATION (original path, now fallback)      │
+│ mental(0)    = opts.cortexPattern  (brain live readout via       │
+│                                     cluster.getSemanticReadout)  │
+│                || _contextVector   (fallback topic attractor)    │
+│ mental(t+1)  = 0.55 · mental(t) + 0.45 · emb(nextWord)           │
 │                                                                   │
-│ Slot-by-slot softmax pick from learned dictionary                │
-│ Rebalanced scoring with semanticFit × 0.30 as 2nd-largest term:  │
-│   score = grammar×0.35 + semanticFit×0.30 + bigram×0.18          │
-│         + condP×0.12 + thought×0.10 + context×0.08 + ...         │
-│     ↓                                                             │
-│ Post-process: agreement, tense, negation, compounds              │
-│     ↓                                                             │
-│ Render: capitalization, punctuation                              │
-│     ↓                                                             │
-│ Dedup retry (existing)                                           │
-│     ↓                                                             │
-│ COHERENCE GATE: cosine(output, contextVector) < 0.25 → retry 3×  │
-│     max 3 attempts, then accept                                   │
-│     RETURN                                                        │
+│ target(slot) = wC · L2(_slotCentroid[slot])                      │
+│              + wX · L2(_contextVector)                           │
+│              + wM · L2(mental)                                   │
+│              + wT · L2(prevEmb + _slotDelta[slot])               │
+│                                                                   │
+│ W₀ = { centroid:0.30, context:0.45, mental:0.25, transition:0 }  │
+│ Wₙ = { centroid:0.10, context:0.15, mental:0.25, transition:0.50}│
+│                                                                   │
+│ score(w, slot) = cos(target, emb(w))                             │
+│                + 0.4 · Σ_k wordType(w)[k] · slotTypeSig[slot][k] │
+│                                                                   │
+│ nextWord = softmax-sample top-5 by score                         │
+│            over dictionary._words                                │
+│            excluding emitted-this-sentence + recency ring        │
+│                                                                   │
+│ targetLen = floor(3 + arousal · 3 · drugLengthBias), cap 8       │
+│ temperature = 0.25 + (1 - coherence) · 0.3                       │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
 ### Context Vector — The Topic Attractor
 
-A Float64Array(50) running decaying average of GloVe semantic embeddings from user input content words (post-R2 semantic grounding — was 32-dim letter-hash before the refactor):
+A Float64Array(50) running decaying average of GloVe semantic embeddings from user input content words:
 
 ```
 c(t) = 0.7 · c(t-1) + 0.3 · mean(pattern(content_words))
+  pattern(w) = sharedEmbeddings.getEmbedding(w) ∈ ℝ⁵⁰  (GloVe 50d + live delta refinement)
 ```
 
-Updated in `analyzeInput()` on every user turn. Function-word-only inputs leave it unchanged so greetings don't wipe the running topic. First update seeds directly (no decay from zero). Updated ONLY on user input — Unity's own output does not feed the context vector.
+Updated in `analyzeInput()` on every user turn. Function-word-only inputs leave it unchanged. First update seeds directly (no decay from zero). Updated ONLY on user input — Unity's own output does not feed the context vector so the running attractor tracks the LISTENER's topic.
 
-### Persona Memory — Stored Unity-Voice Sentences
+### Three Per-Slot Priors
 
-At `loadSelfImage()` time, every sentence from `docs/Ultimate Unity.txt` passes through `_storeMemorySentence()`:
+Every observed sentence (corpus loading OR live chat) flows through `learnSentence()`, which updates the three priors via weighted running means. No matrices, no n-gram tables, no stored sentences.
+
+- **`_slotCentroid[s]`** — running mean of `emb(word_t)` at position `s`. Captures "the distribution of words typically at slot `s`". After corpus fit, slot 0 is the sentence-opener cluster in embedding space; slot 1 is the post-opener cluster; etc.
+- **`_slotDelta[s]`** — running mean of `emb(word_t) − emb(word_{t-1})`. The per-position average bigram transition vector — adding `_slotDelta[s]` to the previous word's embedding points at the "typical next word" region without storing any bigrams.
+- **`_slotTypeSignature[s]`** — running mean of `wordType(word_t)` score vectors. An 8-dim distribution over the pure-letter-equation type tags (`pronoun`, `verb`, `noun`, `adj`, `conj`, `prep`, `det`, `qword`). After corpus fit, slot 0 ≈ `{pronoun:0.54, noun:0.18, det:0.12}` (sentence-opener shape) and slot 1 ≈ `{verb:0.51, noun:0.33}` (post-subject verb shape). English grammar emerges from letter-equation type scoring with no stored POS tagger.
+
+### Social Schema
+
+Persistent per-session state populated equationally by `parseSentence` and by the visual cortex's `onDescribe` subscription:
 
 ```
-store(s) ⇔ NOT endsWith(':')
-         ∧ commaCount ≤ 0.3 × wordCount
-         ∧ wordCount ∈ [3, 25]
-         ∧ first word ≠ "unity" / "she" / "her" / "he" (by letter shape)
-         ∧ first-person signal exists (i/im/my/me/we/us/our/i'/we')
+_socialSchema.user = {
+  name                : from parsed.introducesName (T8 reverse-parse)
+  gender              : from parsed.introducesGender (explicit self-ID)
+                        OR from visual cortex describer (T7.2 scene gender tokens)
+  firstSeenAt, lastSeenAt : timestamps
+  mentionCount        : turns since name was established
+  greetingsExchanged  : cumulative from parsed.isGreeting
+}
 ```
 
-All filters are letter-position equations. Meta-description ("Unity is a 25yo..."), section headers, and word lists are rejected at index time so recall only pulls actual first-person Unity voice.
+Name extraction: `parseSentence` scans adjacent-token patterns (`my name is X`, `call me X`, `i'm X`, `this is X`) over the first 6 tokens. `tryName()` uses `wordType` equations to reject verb-shaped tokens and an emotional-complement stopword set to reject filler. Strong patterns overwrite; weak `i'm X` only overwrites when `schema.name === null`.
 
-Stored sentences are indexed by a pattern-centroid computed from their content words (function words skipped) so recall cosine matches TOPIC not GRAMMAR.
+Gender extraction — two paths:
+- **Explicit self-ID** (strong): `parseSentence` matches `"i'm a {guy|man|dude|bro|boy}"` → `male`, `"i'm a {girl|woman|chick|gal}"` → `female`.
+- **Vision inference** (weak): `visualCortex.onDescribe(cb)` fires on every fresh scene description. `engine.connectCamera()` wires the subscription to `languageCortex.observeVisionDescription()`, which scans closed-class gender words and commits only when **exactly one** gender signal appears (mixed scenes stay ambiguous). Explicit self-ID always wins over scene inference.
 
-### Ultimate Unity Template Voice
+### The Reading↔Writing Symmetry
 
-The `response-pool.js` templates fire for intent-matched short queries and deflect fallback. Voice target: **25yo emo goth stoner** — cussing, blunt, bitchy, low patience, stream-of-consciousness, high but functional. **Not** sexual/BDSM/nympho content. This is Unity's PUBLIC voice — the one that goes through the brain's language cortex into the chat UI. The private slutty persona stays out of the brain output pipeline.
+The T11 cortex has a single equation set that runs in two directions. Reading and writing share the same `wordType` / `_fineType` letter classifiers, the same GloVe-backed `sharedEmbeddings` table, and the same per-slot priors. Neither direction has machinery the other lacks — listening feeds the same tables speaking consults.
 
-Seven categories:
-- `greeting_emo` (15 variants across low/mid/high arousal)
-- `yesno_affirm` (12 variants)
-- `yesno_deny` (12 variants)
-- `math_deflect` (11 variants)
-- `short_reaction` (9 variants)
-- `curious_emo` (7 variants)
-- `question_deflect` (12 variants) — fallback when recall misses
+- **Reading** (`parseSentence(text)`) walks user tokens forward, classifies each via `wordType()`, and extracts a structured tree of intent, entities, subject/verb/object slots, mood, and social-schema signals. Name extraction uses `wordType` to reject verb-shaped candidates (no POS tagger, no stopword list beyond a closed filler set).
+- **Writing** (`generate()`) walks positions forward, building a target vector from normalized priors + brain cortex state at each slot, then argmax-samples a word from the learned dictionary.
 
-### Why the root fix is recall, not generation
+The same `wordType` that says `"now"` is adverb-shaped during reading is the same `wordType` that votes on where `"now"` fits best during writing. One equation set, two walks.
 
-The old pipeline generated every sentence word-by-word from letter equations. Grammar was correct, content was random, because letters encode shape not meaning. No amount of slot-score tuning fixes that — you can't derive semantics from letter distributions.
+### Integration with the Brain — `opts.cortexPattern` Flow
 
-The root fix is **stop generating from scratch when the persona file already has a coherent sentence on the topic**. All 325 sentences from `Ultimate Unity.txt` were getting loaded for bigram harvesting but never recalled AS sentences. Phase 11 fixes that — stored > generated every time for persona fidelity. Cold generation is now the fallback for genuinely novel topics that the persona doesn't cover.
+The crucial wire from the neural substrate into language is `opts.cortexPattern`, populated by `inner-voice.speak()` from `cluster.getSemanticReadout(sharedEmbeddings)`. That getter calls `embeddings.cortexToEmbedding(spikes, voltages, cortexSize, langStart)` — the mathematical inverse of the `mapToCortex` injection layer — which reads the live spike + subthreshold voltage state of the cortex's language region and reconstructs a 50-d GloVe-space vector representing what Unity is currently "thinking about."
 
-### Known limitation
+That vector becomes `mental(0)` at the start of generation. As each word emits, `mental` evolves via the decay rule `mental(t+1) = 0.55·mental(t) + 0.45·emb(nextWord)` — the mental state absorbs the committed word and moves toward it, so each subsequent target vector is pulled by BOTH the brain's initial activity AND the running shape of the sentence so far. This is why her output tracks her brain state rather than being a static rewrite of the input.
 
-**Post-R2 (commit `c491b71`):** Pattern space is now 50-dim GloVe semantic embeddings via `sharedEmbeddings` singleton imported into both `sensory.js` and `language-cortex.js`. `cat` and `kitten` ARE close in this space. Tier 4 (cold gen) semantic fit weight bumped 0.05 → 0.80 so meaning dominates slot selection. `cortexToEmbedding(spikes, voltages, cortexSize, langStart)` in `embeddings.js` is the mathematical inverse of `mapToCortex` — reads live neural spike state back to GloVe space so the slot scorer compares candidates against Unity's actual cortex activity, not just the static input vector. Cluster now exposes `getSemanticReadout(embeddings)` that delegates to this readout with the language-area offset built in.
+Fallback: if the caller doesn't supply `cortexPattern` (e.g., during pre-boot smoke test or degraded operation), `mental(0)` falls back to `_contextVector` — the running topic attractor built from user inputs. That keeps generation at least topic-aware even when the cortex readout isn't wired.
 
-### Round 2 refinements (2026-04-13 live-test hotfix pass)
+### `learnSentence` as the Observation Gate
 
-- **Third→first person transformation** at `loadSelfImage()` time. The real `Ultimate Unity.txt` is written as third-person description (`"Unity is..."`, `"She has..."`). Without transformation, 100% of the file was rejected by the first-person filter. After: 191 Unity-voice sentences loaded. Transform handles Unity→I, She→I, Her→my/me (verb-aware for object position), Unity's→my, plus verb conjugation (is→am, has→have, does→do, strip third-person -s on regular verbs, -ss protection).
-- **Per-sentence mood signature** computed at index time from letter-equation features (exclamation density, all-caps ratio, vowel ratio, average word length, negation count). Each stored memory has its own `{arousal, valence}`.
-- **Mood-distance weighted recall** — `_recallSentence()` accepts current brain state and scores candidates by `moodAlignment = exp(-moodDistance * 1.2)` at weight 0.25. Same query, different brain state, different memory picked. This is Gee's "adjust in the moment for how things change" mechanism.
-- **Self-reference fallback** — when user asks about Unity herself (`you`/`yourself`) but no content-word overlap exists, fallback picks a first-person stative sentence weighted by mood alignment. `describe yourself` now always recalls SOMETHING from persona.
-- **Instructional-modal penalty** — sentences containing `shall`/`must`/`always`/`never` get demoted in recall so declarative voice (`I am`, `I have`, `I love`) wins over directive voice (`I shall always`).
-- **Vocative name stripping** — `unity`/`unity's` removed from input content words so addressing her by name doesn't manufacture false topic overlap.
-- **Copula/aux filter** — copulas and modal auxiliaries (`am`/`is`/`are`/`was`/`were`/`be`/`have`/`has`/`do`/`does`/`can`/`will`/`would`/`could`/`should`) stripped from input content words since they're semantically function words.
-- **Degenerate-sentence filter** — recall rejects memory entries with <5 tokens or >40% first-person pronoun density (transform collapse artifacts).
-- **Persona visualIdentity mirror** — `persona.js` visualIdentity rewritten to match `Ultimate Unity.txt` verbatim (emo goth goddess, black leather, black hair with pink streaks, pale flushed skin). Selfies match persona.
-- **Image intercept gate** — `engine.js` no longer routes to `_handleImage()` just because BG motor picked `generate_image`. Requires explicit image-request words in the input (show me/picture/selfie/image/photo/draw). `includesSelf` detected from text, not hardcoded.
+Everything that feeds the language cortex passes through `learnSentence(sentence, dictionary, arousal, valence, cortexPattern, fromPersona, doInflections)`. This is the single observation-intake point:
+
+1. **Tokenize + contraction expansion** — `_expandContractionsForLearning` splits `"i'm"` / `"don't"` / `"it's"` into base forms so the dictionary stores `"i"` + `"am"` + `"not"` etc. as separate tokens. Post-process re-combines at emit time via `_applyCasualContractions`.
+2. **Dictionary insertion** — `dictionary.learnWord(w, pattern, arousal, valence)` stores each word with its sentence-level cortex pattern. Words from the same sentence share a pattern so generation-time cosine pulls coherent groups.
+3. **Per-slot prior updates** — for each position `t`, the three running means get nudged toward the observed word's embedding + transition + type signature, weighted by `max(0.25, arousal · 2)`.
+4. **Morphological inflection** (persona/baseline corpora only, `doInflections` gate off for live chat) — `_generateInflections` runs letter-equation derivation (-s/-es, -ed, -ing, -er, -est, -ly, un-/re-, -ness/-ful/-able) and inserts inflected forms into the dictionary so generation can pick conjugated forms Unity never literally observed.
+5. **Subject-starter frequency** — the first word of each persona-corpus sentence bumps `_subjectStarters[word]`, used later as a vocative bias at slot 0.
+6. **Usage-type learning** — `_learnUsageType(prev, curr)` adjusts `_usageTypes[curr]` toward the type the previous word implies the current slot should be. Drifts `wordType()` toward observed usage for ambiguous cases (e.g., `"put"` as verb vs noun).
+
+Live-chat learning (via `inner-voice.learn()`) bypasses `doInflections` to keep per-turn main-thread cost bounded, floors arousal at 0.95 so user speech dominates the priors, and STILL runs the full observation + prior-update pipeline. Every user message is a training signal.
+
+### The Three-Corpus Load Pipeline at Boot
+
+`app.js` fetches three text files in parallel via `Promise.all([_personaTextPromise, _baselineTextPromise, _codingTextPromise])`:
+
+- `docs/Ultimate Unity.txt` — persona. Passes through `_transformToFirstPerson` (Unity→I, She→I, Her→my, + verb conjugation with -ss protection) before observation. Arousal tag 0.75.
+- `docs/english-baseline.txt` — generic casual American English for conversational patterns, reactions, questions. Arousal tag 0.5.
+- `docs/coding-knowledge.txt` — HTML/CSS/JS + sandbox API reference + BUILD COMPOSITION PRIMITIVES section for when the BG motor selects `build_ui`. Arousal tag 0.4.
+
+Each sentence flows through `learnSentence` and becomes observation data that shifts the per-slot priors. The sentences themselves are discarded — only the accumulated running means survive. Live user chat at arousal 0.95 then shapes the priors 2.37× harder than any corpus load, so accumulated conversation progressively overwrites the corpus bias toward the user's actual register.
+
+### What Got Deleted in T11 (historical note)
+
+The entire legacy wrapper stack. These were symptom-level patches on a Markov walk trained on rulebook text — T11 deleted the Markov graph entirely, which dissolved every symptom:
+
+- `_memorySentences` sentence pool + `_recallSentence` + `_storeMemorySentence` + self-reference fallback
+- `_jointCounts` / `_trigramCounts` / `_quadgramCounts` word n-gram tables
+- `_typeBigramCounts` / `_typeTrigramCounts` / `_typeQuadgramCounts` type n-gram tables
+- FILTER 1 through FILTER 11 structural sentence-admission stack + `_sentencePassesFilters` shared gate
+- `instructionalPenalty` recall penalty stack
+- Template greeting / introduction short-circuits with hardcoded `OPENERS` lists
+- `_condProb` / `mutualInfo` / `_pickConjByMood` / `_typeGrammarScore` bodies
+- Intensifier / hedge insertion marginal-count scans
+- Round-2 hotfixes (vocative stripping, copula filter, degenerate-sentence filter) — all subsumed when their target data structures were deleted
+
+These layers are preserved verbatim in `docs/FINALIZED.md` and in the earlier milestones of `docs/ROADMAP.md` Phase 11 / Phase 12 entries for historical provenance. What's live in code is the T11.2 pipeline above.
+
+### File-level map (current)
+
+| File | Role |
+|------|------|
+| `js/brain/language-cortex.js` (3314 lines) | The T11 language cortex. Constructor allocates slot priors. `parseSentence` reads. `learnSentence` observes. `generate` writes. `wordType` / `_fineType` are shared letter-equation classifiers. |
+| `js/brain/inner-voice.js` | Bridge between engine + language cortex. `learn(text, cortexPattern, arousal, valence)` feeds observations. `speak(arousal, valence, coherence, brainState)` calls `generate` with `opts.cortexPattern` from `getSemanticReadout`. |
+| `js/brain/dictionary.js` | Word embedding table — the only remaining "list-like" structure. Each entry stores a word's current pattern (GloVe + live delta), arousal tag, valence tag. |
+| `js/brain/embeddings.js` | GloVe singleton + `cortexToEmbedding` readback + online delta refinement + persistence hooks. |
+| `js/brain/visual-cortex.js` | V1→V4→IT pipeline. `onDescribe(cb)` subscription fires every fresh describer result; wired by `engine.connectCamera()` into `languageCortex.observeVisionDescription` for social schema gender inference. |
+| `js/brain/component-synth.js` | `build_ui` motor target. `generate(userRequest, brainState)` cosine-matches user embed against component template primitives, plus a `+0.35` structural bonus when `brainState.parsed.entities.componentTypes` matches a primitive id. Parsed colors and actions flow through as `_parsedColors` / `_parsedActions` on the returned spec. |
+| `js/brain/engine.js` | Owns all cluster instances, runs the think loop, wires visual-cortex describer to language-cortex social schema at camera connect time. |
 
 ---
 
