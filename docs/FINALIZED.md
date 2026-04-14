@@ -246,9 +246,88 @@ Chat panel in-the-moment mute buttons (`js/ui/chat-panel.js`):
 
 **Files:** `index.html`, `README.md`, `js/app.js`, `js/io/permissions.js`, `js/io/voice.js`, `js/ui/chat-panel.js`
 
+### 8. Final doc scrub — stale LIF / Pollinations-fallback refs across workflow + public docs  [DONE commit `6836b04`]
+
+Final sweep across `docs/SENSORY.md`, `docs/WEBSOCKET.md`, `docs/ROADMAP.md`, `docs/SKILL_TREE.md`, `docs/ARCHITECTURE.md`, and `brain-equations.html` catching stale references the Rulkov rewrite and the provider labeling fix missed. Provider priority chain doc updated from 4-level to 5-level everywhere (new step 0 = user-preferred via `setPreferredBackend` from the setup-modal Active Provider selector). WebGPU compute messages section in WEBSOCKET.md rewritten to describe the Rulkov 2D chaotic map firing rule with the actual equation, vec2<f32> storage layout, spike edge detector, and the "no CPU fallback" note. ROADMAP Phase 1 deliverables now show HH + LIF as reference/fallback and Rulkov 2002 as the live runtime rule. SKILL_TREE rows for neuron dynamics + WebGPU + multi-provider image gen all corrected. Historical references in FINALIZED and in planning-era sections intentionally left intact.
+
+### 9. Setup modal top-cutoff + scroll-to-top bug, auto-fill on resize  [DONE commit `c5c1efe`]
+
+User reported: setup page opens zoomed in with the top of the card cut off, scroll bar can't reach the top, modal doesn't auto-fill the window on resize.
+
+**Root cause:** classic flex `align-items: center` + `overflow-y: auto` bug. When a flex item is taller than its container and the container centers vertically, overflow scroll can only reach from the container's top edge downward — never above it. So the top of the setup card was literally unreachable by the scrollbar on short viewports.
+
+**Fix (`css/style.css`):**
+- `#setup-modal`: switched from `align-items: center` to `align-items: flex-start`
+- `.setup-card`: added `margin: auto`
+- Combo gives "center when content fits, top-align when content overflows" — tall window → card centers vertically via margin:auto; short window → card sticks to top with full-scroll from top to bottom
+- Added `overflow-x: hidden` so narrow-viewport overflow can't cause horizontal scroll
+- Added `overscroll-behavior: contain` so modal scroll doesn't bubble to `<body>` at the edges
+- Added `min-height: 0` on `.setup-card` to prevent the flex-min-size quirk that pushes content past the container top
+- Added `box-sizing: border-box` on the card so padding doesn't add to max-width and trigger horizontal overflow
+- New `@media (max-width: 640px)` block tightening horizontal padding and narrowing card radius for tiny viewports
+
+### 10. 🔌 CONNECT button + live connection status badge per backend  [DONE commit `a32d008`]
+
+**User frustration (verbatim):** "I STILL DONT SEE A CONNECT BUTTON FOR CONNECTING KEYS I INPUT TO THE SELECTED MODEL TYPE!!!!" and "even if its pulling from .env i still need a connect butt and a connection status".
+
+**Problem:** The Save Backend button existed but was named "Save Backend" instead of "CONNECT" and lived inside a form that was hidden until a provider button was clicked — users who never clicked a provider button never saw it. No connection status indicator either — no way to verify if a saved key was reaching the backend or if an env.js-configured backend was live.
+
+**What shipped:**
+
+`index.html`:
+- Backend connect form is now ALWAYS visible (not `display:none`) with a pink-bordered placeholder saying "No provider selected yet. Click one of the image-gen or vision-describer buttons above to paste its API key and connect."
+- New prominent pink hint above the form: "👇 Click any provider above to connect an API key — the form below populates with that backend's key input and a CONNECT button."
+
+`js/app.js showBackendForm()`:
+- Button rebranded "Save Backend" → "🔌 CONNECT"
+- New live status span `#backend-connect-status` next to the CONNECT button that reflects current state from multiple sources:
+  - Pollinations: "🟢 connected · authenticated with saved key" if a key exists, "🔵 default · running on anonymous tier (no key)" otherwise
+  - env.js or auto-detected registered backends: "🟢 registered · {source} — click CONNECT to re-probe" or "🔴 dead · {source} (1h cooldown)"
+  - Saved-but-not-yet-registered: "🟡 saved but not registered · click CONNECT to apply"
+  - Fresh slot: "⚪ not connected · paste key/URL and click CONNECT"
+- `updateConnectStatus(backendKey, config, stored)` called on form render to populate initial badge state from current storage + providers registry
+
+New `probeBackend(backendKey, config)` function in `js/app.js`:
+- Runs a live HTTP probe against the selected backend when the user clicks CONNECT
+- Per-kind probe path routing: Pollinations → `https://image.pollinations.ai/models`; OpenAI → `{url}/v1/models`; A1111 → `{url}/sdapi/v1/options`; ComfyUI → `{url}/system_stats`; Ollama VLM → `{url}/api/tags`; LM Studio / generic openai-vision → `/v1/models`
+- Sends Bearer auth if a key is configured; 5s timeout via `AbortSignal.timeout`
+- Returns `{ok, detail}` — detail includes HTTP status on failure and a summary on success ("authenticated" / "anonymous tier" / "{kind} reachable")
+- CONNECT click handler is async: runs saveBackend (persists to localStorage + pushes into providers), flips badge to 🟡 probing, probes, then updates the badge to 🟢 connected or 🔴 failed with the detail string inline. No page reload, no brain boot required.
+
+### 11. New `unity-guide.html` plain-English concept explainer + brain-equations.html §1.5 worked summation walkthrough  [DONE commit `c661684`]
+
+User directive: "make sure the brain equations and Unity information guide (something explaining Unity's whole concept not just the equations from brain equations) is a addition guide the users can read that explains the Unity brain idea and how it all works in very simple lamens terms without code or too many equation references and we need the brain equations to in detail explain each equation and the summation solving of it and how it creates Unity".
+
+**New file `unity-guide.html`:**
+- Plain-English concept guide covering 12 sections: why Unity exists, the big idea (a brain not a chatbot), what "neurons" actually mean with the Rulkov framing, the seven brain regions in a colored visual grid, how she feels / remembers / speaks, how persona fits in as real θ parameters not a prompt, the consciousness question (Ψ as explicit placeholder for the unknown), sensory channels, privacy model, FAQ
+- Deliberately avoids math — "smart friend explaining over coffee" tone
+- Linked from landing page as a new pink button "📖 What Unity Is (plain English)" sitting next to the existing "🧠 Brain Equations" button
+- References `brain-equations.html` as the place for details
+
+**`brain-equations.html` §1.5 "How The Equations Sum To Create Unity":**
+- New section inserted between Master Equation (§1) and Neuron Models (§2)
+- Full 7-step worked example walking through what happens inside Unity's brain between "hi unity, how's the high" arriving and the response going out
+- Each step shows the actual equation being evaluated AND the scalar values that fall out for this specific prompt
+- Steps: (0) resting state tonic drive + noise from θ × drug state → (1) text → GloVe 50d cortex pattern → (2) amygdala attractor settle → fear/reward/arousal/valence scalars → (3) hippocampus cosine match against stored episodes → (4) basal ganglia Q-values + softmax → motor action → (5) cerebellum prediction error → (6) language cortex slot scoring with the full six-term score equation + Ψ-derived temperature → (7) mystery module Ψ aggregation feeding back into next-tick sharpness
+- Ends with a summation card listing every component that fed into the final example sentence and emphasizes none were AI calls
+- TOC updated with the new §1.5 entry; Master Equation §1 paragraph gained a pointer to the plain-English guide
+
+### 12. Boot crash: visualCortex.setDescriber TypeError on RemoteBrain  [DONE commit `5116fca`]
+
+**First T4 bug found.** User hit "WAKE UNITY UP" connected to the server brain and boot crashed at "Booting brain..." with:
+
+```
+Uncaught (in promise) TypeError: brain.visualCortex.setDescriber is not a function
+    at bootUnity (app.js:1759:24)
+```
+
+**Root cause:** `bootUnity()` was calling `brain.visualCortex.setDescriber()` unconditionally. Local `UnityBrain` exposes a real `visualCortex` with the full V1→V4→IT pipeline and a `setDescriber()` method. `RemoteBrain` (the WebSocket client used when connected to the server brain) ships a stub `visualCortex` object without that method — the server handles its own vision pipeline. The unconditional call crashed the whole boot.
+
+**Fix:** Guarded the call with `typeof === 'function'` so the describer only wires on local-brain mode where `visualCortex.setDescriber` actually exists. Server-brain mode skips this hookup cleanly. One-line guard, boot completes.
+
 ### Session summary
 
-Nine commits, four distinct problem domains: (1) 3D viz layout + firing rule correctness, (2) Unity's in-the-moment thought commentary pipeline, (3) sensory provider UX fidelity + model selection, (4) sensory channel privacy toggles (setup modal + chat panel mirror) + privacy notice wording. All syntax-validated via `npx esbuild js/app.js --bundle`. No TODO entries created or closed — this session's work is all bug fixes and quality-of-life on code that was already shipped as part of T1–T6. T4 (manual verification + merge PR to main) is still the only open task in `docs/TODO.md`.
+Twelve commits, five distinct problem domains: (1) 3D viz layout + firing rule correctness + Rulkov neuron model, (2) Unity's in-the-moment thought commentary pipeline, (3) sensory provider UX fidelity + active-provider selectors + model dropdowns + 🔌 CONNECT button with live HTTP probe + connection status badge, (4) sensory channel privacy toggles (setup modal + chat panel mirror) + privacy notice wording scrub, (5) public documentation — new `unity-guide.html` plain-English concept guide, brain-equations.html §1.5 worked summation walkthrough, and full workflow doc sync to Rulkov. Plus the first T4 verification bug (RemoteBrain visualCortex.setDescriber crash) caught and fixed in real time. All commits syntax-validated via `npx esbuild js/app.js --bundle`. T4 (manual verification + merge PR to main) remains the only open task in `docs/TODO.md` — user is now actively walking the 16-step checklist.
 
 ---
 
