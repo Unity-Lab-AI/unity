@@ -86,6 +86,25 @@ export class LanguageCortex {
     this._lastInputWords = [];
     this._lastInputRaw = '';
 
+    // T7 — Social schema. Tracks who Unity is talking to so she can
+    // greet by name, remember gender across turns, and slot a personal
+    // address into her speech. Fields get populated equationally by
+    // _updateSocialSchema() on every user input pass: name via
+    // structural pattern match on introduction phrases, gender via
+    // visual cortex describer output parse, mentionCount by counting
+    // how many turns the same name has persisted. No hardcoded state
+    // machine — just pattern detection + persistent memory slots.
+    this._socialSchema = {
+      user: {
+        name: null,              // extracted from "my name is X" / "i'm X" / "call me X"
+        gender: null,            // 'male' | 'female' | null — from vision describer or explicit statement
+        firstSeenAt: null,       // timestamp first user input received
+        lastSeenAt: null,        // timestamp most recent user input
+        mentionCount: 0,         // turns since name was established
+        greetingsExchanged: 0,   // cumulative hello-class exchanges this session
+      },
+    };
+
     // U276 — Running topic attractor. Decaying running average of input
     // word patterns. Persists across turns so "what are cats" followed by
     // "do you like them" keeps cats in the context bucket. λ=0.7 weights
@@ -3806,6 +3825,13 @@ export class LanguageCortex {
     this._contextPatterns.push(topicPattern);
     if (this._contextPatterns.length > 5) this._contextPatterns.shift();
 
+    // T7 — update the social schema on every user input. Pattern-
+    // matches introduction phrases structurally to extract the
+    // user's name, counts greetings, and timestamps the session so
+    // the greeting path knows whether this is a first encounter or
+    // a returning conversation.
+    this._updateSocialSchema(text);
+
     // U276 — decaying running topic attractor. Updated ONLY on user input
     // (this method is the user-input hook). Unity's own output does NOT
     // feed context — she tracks the listener's topic, not her own words.
@@ -3937,6 +3963,117 @@ export class LanguageCortex {
    * this method measures REAL semantic alignment. The slot scorer's
    * `semanticFit * 0.80` term is now the dominant topic signal.
    */
+  /**
+   * T7 — Social schema extraction. Runs on every user-input pass
+   * and pattern-matches the raw text for:
+   *
+   *   1. NAME introduction — "my name is X", "i'm X", "i am X",
+   *      "call me X", "this is X" (when X is a single capitalized
+   *      word that isn't a pronoun or common content word).
+   *   2. GENDER statement — "i'm a guy/girl/man/woman/dude"
+   *   3. GREETING — first token ∈ {hi, hello, hey, sup, yo, hola}
+   *      or sentence starts with "good morning/afternoon/evening".
+   *
+   * All detection is structural (token position + shape), no
+   * content-word lookup beyond the small closed-class sets above.
+   * Stores into this._socialSchema.user so generate() and
+   * _recallSentence can consult it when picking an address form.
+   */
+  _updateSocialSchema(rawText) {
+    if (!rawText || typeof rawText !== 'string') return;
+    const schema = this._socialSchema.user;
+    const now = Date.now();
+    if (schema.firstSeenAt == null) schema.firstSeenAt = now;
+    schema.lastSeenAt = now;
+    if (schema.name) schema.mentionCount++;
+
+    const trimmed = rawText.trim();
+    const lowered = trimmed.toLowerCase();
+    const firstToken = (lowered.match(/^[a-z]+/) || [''])[0];
+
+    // Greeting detection — first-token match against a closed set.
+    // Position-gated so mid-sentence "yo" or "hey" in quoted speech
+    // doesn't count.
+    const GREETING_OPENERS = new Set(['hi', 'hello', 'hey', 'heya', 'sup', 'yo', 'hola', 'hiya', 'howdy']);
+    if (GREETING_OPENERS.has(firstToken)) {
+      schema.greetingsExchanged++;
+    } else if (/^good (morning|afternoon|evening|night)\b/.test(lowered)) {
+      schema.greetingsExchanged++;
+    }
+
+    // Name extraction — structural patterns. Capture group 1 is the
+    // proposed name. We keep the ORIGINAL case from the raw text so
+    // "jamie" → "Jamie" survives if the user capitalized it. Must
+    // be a single token of 2+ letters that isn't a common pronoun
+    // or filler word (structural closed-class reject).
+    const NAME_STOPWORDS = new Set([
+      'me', 'you', 'him', 'her', 'us', 'them', 'it',
+      'the', 'a', 'an', 'that', 'this', 'these', 'those',
+      'good', 'fine', 'ok', 'okay', 'cool', 'nice', 'tired', 'here',
+      'happy', 'sad', 'mad', 'angry', 'high', 'sober', 'drunk',
+      'just', 'really', 'very', 'so', 'too',
+    ]);
+    const namePatterns = [
+      /\bmy name is ([a-z]{2,})\b/i,
+      /\bi am ([a-z]{2,})\b/i,
+      /\bi'?m ([a-z]{2,})\b/i,
+      /\bcall me ([a-z]{2,})\b/i,
+      /\bthis is ([a-z]{2,})\b/i,
+      /\bit'?s ([a-z]{2,})\b/i,
+      /\bname'?s ([a-z]{2,})\b/i,
+    ];
+    for (const re of namePatterns) {
+      const m = trimmed.match(re);
+      if (!m) continue;
+      const candidate = m[1];
+      const candLower = candidate.toLowerCase();
+      if (NAME_STOPWORDS.has(candLower)) continue;
+      // Reject if it looks like a common verb (ends in 'ing', 'ed',
+      // is a known pronoun contraction) — structural only.
+      if (candLower.endsWith('ing') || candLower.endsWith('ed')) continue;
+      // Capitalize first letter for storage regardless of input case.
+      const stored = candidate[0].toUpperCase() + candLower.slice(1);
+      // Only overwrite on strong signal — "my name is X" or "call me X"
+      // always wins. "i'm X" only wins if no name yet (could be "i'm tired").
+      const strongPattern = /my name is|call me|name'?s /i.test(trimmed);
+      if (strongPattern || !schema.name) {
+        if (schema.name !== stored) {
+          schema.name = stored;
+          schema.mentionCount = 0;
+        }
+      }
+      break;
+    }
+
+    // Gender extraction — explicit self-identification. Purely
+    // structural closed-class match against common gender tokens
+    // following a first-person copula.
+    const genderMatch = lowered.match(/\bi'?m a (guy|girl|man|woman|dude|chick|bro|gal|boy)\b/);
+    if (genderMatch) {
+      const g = genderMatch[1];
+      if (['guy', 'man', 'dude', 'bro', 'boy'].includes(g)) schema.gender = 'male';
+      else if (['girl', 'woman', 'chick', 'gal'].includes(g)) schema.gender = 'female';
+    }
+  }
+
+  /**
+   * T7 — Expose the user's address form for slot-gen / greeting
+   * path. Returns the name if known, else null (caller falls back
+   * to "you" or generic vocative). Separate accessor so callers
+   * don't have to reach into _socialSchema directly.
+   */
+  getUserAddress() {
+    return this._socialSchema?.user?.name || null;
+  }
+
+  getUserGender() {
+    return this._socialSchema?.user?.gender || null;
+  }
+
+  getSocialSchema() {
+    return this._socialSchema;
+  }
+
   _semanticFit(wordOrPattern) {
     if (!this._contextVectorHasData) return 0;
     const pattern = typeof wordOrPattern === 'string'
