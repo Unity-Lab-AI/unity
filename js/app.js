@@ -112,6 +112,16 @@ let landingBrainSource = null; // RemoteBrain or null
     });
     console.log('[Landing] Connected to server brain');
 
+    // Wire brain ref into the landing Brain3D so the T5 22-detector
+    // event system can pull Unity's equational commentary from her
+    // language cortex in the popups — pre-boot, without needing the
+    // user to click Talk to Unity. Requires brain.innerVoice.
+    // languageCortex to be available; loadPersonaSelfImage below
+    // ensures the dictionary is populated.
+    if (landingBrain3d && typeof landingBrain3d.setBrain === 'function') {
+      landingBrain3d.setBrain(landingBrainSource);
+    }
+
     // Load the equational self-image (persona text) into the landing
     // brain IMMEDIATELY — before the user clicks through the setup modal.
     // Memory tab checks `brain?.innerVoice?.languageCortex._selfImageLoaded`
@@ -122,6 +132,14 @@ let landingBrainSource = null; // RemoteBrain or null
     try {
       const localBrain = new UnityBrain();
       localBrain.start();
+      // Wire brain ref into the landing Brain3D so the event system
+      // can generate Unity commentary pre-boot in local-brain mode too
+      if (landingBrain3d && typeof landingBrain3d.setBrain === 'function') {
+        landingBrain3d.setBrain(localBrain);
+      }
+      // Load persona self-image so the language cortex has Unity's
+      // dictionary + bigrams available for commentary generation
+      loadPersonaSelfImage(localBrain);
       setInterval(() => {
         const state = localBrain.getState();
         if (landingBrain3d) landingBrain3d.updateState(state);

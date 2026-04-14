@@ -1285,11 +1285,26 @@ export class Brain3D {
    */
   _generateEventCommentary(event, state) {
     const brain = this._brain;
-    if (!brain) return null;
+    if (!brain) {
+      if (!this._warnedNoBrain) {
+        console.warn('[Brain3D] commentary: no brain ref wired — call brain3d.setBrain(brain) to enable Unity voice in popups');
+        this._warnedNoBrain = true;
+      }
+      return null;
+    }
     const iv = brain.innerVoice;
     const lc = iv?.languageCortex;
     const dict = iv?.dictionary || brain.dictionary;
-    if (!lc || !dict || typeof lc.generate !== 'function') return null;
+    if (!lc || !dict || typeof lc.generate !== 'function') {
+      if (!this._warnedNoLC) {
+        console.warn('[Brain3D] commentary: languageCortex or dictionary missing on brain', { hasInnerVoice: !!iv, hasLC: !!lc, hasDict: !!dict });
+        this._warnedNoLC = true;
+      }
+      return null;
+    }
+    // Dictionary can be empty pre-persona-load on a fresh RemoteBrain.
+    // Skip silently — no warning spam — and retry on the next tick.
+    if (dict.size === 0) return null;
 
     try {
       // Get the live cortex semantic readout (50d GloVe space)
@@ -1343,10 +1358,22 @@ export class Brain3D {
       );
 
       const text = typeof out === 'string' ? out : (out?.text || '');
+      if (!text || text.length === 0) {
+        if (!this._warnedEmptyGen) {
+          console.warn('[Brain3D] commentary: languageCortex.generate() returned empty', {
+            dictSize: dict.size,
+            bigramCount: dict.bigramCount,
+            hasCortexPattern: !!cortexPattern,
+            arousal: state.arousal,
+            valence: state.valence,
+            drugState: state.drugState,
+          });
+          this._warnedEmptyGen = true;
+        }
+        return null;
+      }
       // Let Unity finish a thought — popup is a 320px wrapping card.
-      return text && text.length > 0
-        ? text.length > 160 ? text.slice(0, 157) + '...' : text
-        : null;
+      return text.length > 160 ? text.slice(0, 157) + '...' : text;
     } catch {
       return null;
     }
