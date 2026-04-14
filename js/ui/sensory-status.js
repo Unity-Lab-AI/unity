@@ -16,32 +16,59 @@
 const TOAST_DURATION = 6000;
 const MAX_TOASTS = 4;
 
+// Module-level dedup state. Survives any re-instantiation of the
+// SensoryStatusUI singleton and is shared across every providers
+// instance that emits a `unity-sensory-status` event. Without this
+// the boot-inventory toast was firing twice on Gee's deploy because:
+//
+//   (a) two app.js init paths (landing IIFE at line ~798 and the
+//       bootUnity branch at line ~1856) both called sensoryStatus
+//       .init(providers), which historically appended a SECOND
+//       window event listener AND a SECOND HUD-poll setInterval;
+//   (b) a single autodetect-complete event then ran every attached
+//       listener, so one event = N toasts.
+//
+// Fix: track shown-state at module scope, and make init() fully
+// idempotent — first call wires the listener + interval, every
+// subsequent call only updates the providers reference.
+const SHOWN_BOOT_INVENTORY = { image: false, vision: false };
+let MODULE_INITIALIZED = false;
+let MODULE_LISTENER = null;
+let MODULE_HUD_INTERVAL = null;
+
 export class SensoryStatusUI {
   constructor() {
     this._container = null;
     this._hud = null;
     this._toasts = [];
     this._providers = null;
-    this._bootInventoryShown = { image: false, vision: false };
   }
 
   /**
-   * Wire up the listener. Called once from app.js after providers is
-   * constructed. The event payload comes from ai-providers.js
-   * _emitStatus({kind, event, backend, reason, ...}).
+   * Wire up the listener. Idempotent — the first call attaches the
+   * window event listener + HUD-poll interval; subsequent calls only
+   * update the providers reference so a freshly-constructed providers
+   * instance (e.g. after bootUnity) takes over for status queries.
    */
   init(providers) {
     this._providers = providers;
     this._createContainer();
     this._createHud();
 
-    window.addEventListener('unity-sensory-status', (e) => {
-      this._handleStatus(e.detail);
-    });
+    if (MODULE_INITIALIZED) {
+      // Already wired — just refresh the HUD with the new providers
+      // and bail. Don't duplicate the listener or the interval.
+      this._refreshHud();
+      return;
+    }
+    MODULE_INITIALIZED = true;
+
+    MODULE_LISTENER = (e) => this._handleStatus(e.detail);
+    window.addEventListener('unity-sensory-status', MODULE_LISTENER);
 
     // Poll the HUD every 5s so dead-cooldown recovery shows up even
     // without an explicit event.
-    setInterval(() => this._refreshHud(), 5000);
+    MODULE_HUD_INTERVAL = setInterval(() => this._refreshHud(), 5000);
   }
 
   _createContainer() {
@@ -146,8 +173,11 @@ export class SensoryStatusUI {
     if (event === 'autodetect-complete') {
       const backends = payload.backends || [];
       const label = kind === 'image' ? 'Image gen' : 'Vision';
-      if (!this._bootInventoryShown[kind]) {
-        this._bootInventoryShown[kind] = true;
+      // Module-level dedup — only fire the boot inventory toast once
+      // per kind, ever, regardless of how many providers instances or
+      // event sources fire autodetect-complete.
+      if (!SHOWN_BOOT_INVENTORY[kind]) {
+        SHOWN_BOOT_INVENTORY[kind] = true;
         if (backends.length === 0) {
           this._toast(`${label}: no local backends found. Using Pollinations default provider. Add an API key in the setup modal or configure a local backend in js/env.js.`, 'info');
         } else {

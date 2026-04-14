@@ -5,6 +5,34 @@
 
 ---
 
+## 2026-04-14 — Sensory boot toasts firing twice (idempotent init + module dedup)
+
+**Symptom:** On boot, the same two toast notifications appeared twice:
+> Image gen: no local backends found. Using Pollinations default provider...
+> Vision: no local backends found. Using Pollinations default provider...
+
+Two of each, four toasts total.
+
+**Root cause — two compounding issues in `js/ui/sensory-status.js`:**
+
+1. **`init(providers)` was not idempotent.** Every call appended a new `window.addEventListener('unity-sensory-status', ...)` AND a new `setInterval(refreshHud, 5000)`. There are two app.js init paths that legitimately call `sensoryStatus.init(providers)` — the landing-page `initLanding` IIFE at line ~798 and the bootUnity branch at line ~1856 — so the listener accumulated across them. One emitted event then ran every attached handler.
+2. **`_bootInventoryShown` was per-instance state.** Even though `sensoryStatus` is exported as a singleton (`export const sensoryStatus = new SensoryStatusUI()`), the dedup flag lived on `this`, which made it fragile against any future re-instantiation or duplicate listener wiring.
+
+**Fix:**
+
+- Promoted `_bootInventoryShown`, init-state, listener handle, and HUD-interval handle to **module-level constants/lets** (`SHOWN_BOOT_INVENTORY`, `MODULE_INITIALIZED`, `MODULE_LISTENER`, `MODULE_HUD_INTERVAL`). They survive any singleton re-instantiation and are shared across every providers instance.
+- **`init()` is now fully idempotent.** First call wires the window listener + HUD-poll interval and sets `MODULE_INITIALIZED = true`. Every subsequent call only updates `this._providers` to point at the freshest instance and refreshes the HUD with that providers' status — it does NOT re-attach the listener and does NOT start a second interval.
+- `_handleStatus` reads from the module-level `SHOWN_BOOT_INVENTORY` set, so the boot inventory toast for each kind (`image` / `vision`) fires **at most once per page-load lifetime** regardless of how many providers instances or autodetect events fan in.
+
+**Verified:**
+- `node --check js/ui/sensory-status.js` — clean parse
+- Module-level `SHOWN_BOOT_INVENTORY = { image: false, vision: false }` declared at module scope
+- `MODULE_INITIALIZED` guard at top of `init()` prevents duplicate listener / interval registration
+- `_handleStatus` `autodetect-complete` branch reads from the module-level set, not `this._bootInventoryShown` (the field is gone from `this`)
+- Cross-referenced `docs/SENSORY.md` and added a note about init idempotency in the Sensory Status HUD section
+
+---
+
 ## 2026-04-14 — T7.2 + T11.6 + T5 component-synth + TODO reconciliation
 
 Batch of open-item cleanups after T11 shipped. Everything that survived the pure-equational rewrite gets its wiring finished.

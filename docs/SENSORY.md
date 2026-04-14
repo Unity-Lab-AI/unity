@@ -233,6 +233,8 @@ Max 4 toasts onscreen, 6-second auto-dismiss, 0.3s fade-in/out.
 
 Subscribe from application code via `providers.onStatus(fn)` which returns an unsubscribe function.
 
+`sensoryStatus.init(providers)` is **idempotent**: the first call attaches the window event listener + the 5-second HUD-poll interval, every subsequent call only updates the providers reference. Boot-inventory toasts (`Image gen: ...` / `Vision: ...`) are deduplicated at module scope so they fire **at most once per kind for the entire session lifetime**, regardless of how many providers instances or init calls happen. Without this dedup the toast would have fired twice on Gee's deploy because the listener registration accumulated across two init paths.
+
 ---
 
 ## The Peripherals That Don't Use AI
