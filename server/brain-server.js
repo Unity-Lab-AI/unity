@@ -452,17 +452,34 @@ class ServerBrain {
     console.log('[Brain] R3 — loading language subsystem (dictionary + language cortex + embeddings + component synth)...');
     const startMs = Date.now();
     try {
-      const [dictMod, lcMod, embedMod, csMod, modulesMod] = await Promise.all([
+      const [dictMod, lcMod, embedMod, csMod, modulesMod, clusterMod] = await Promise.all([
         import('../js/brain/dictionary.js'),
         import('../js/brain/language-cortex.js'),
         import('../js/brain/embeddings.js'),
         import('../js/brain/component-synth.js'),
         import('../js/brain/modules.js'),
+        import('../js/brain/cluster.js'),
       ]);
 
       this.sharedEmbeddings = embedMod.sharedEmbeddings;
       this.dictionary = new dictMod.Dictionary();
       this.languageCortex = new lcMod.LanguageCortex();
+
+      // T13.7.6 — server needs a real NeuronCluster cortex for the T13
+      // brain-driven emission loop in languageCortex.generate. The server
+      // doesn't run full LIF clusters for the rest of the brain (GPU
+      // pipeline elsewhere), but for language emission the cluster has
+      // to exist and be Hebbian-trained on persona corpus so generate()
+      // can read state, score candidates, and feedback-inject. This is
+      // a small 300-neuron cortex purely for the language path — same
+      // size as the client UnityBrain default.
+      this.cortexCluster = new clusterMod.NeuronCluster('cortex', 300, {
+        tonicDrive: 14 + (this.persona.arousalBaseline || 0.9) * 6,
+        noiseAmplitude: 7,
+        connectivity: 0.15,
+        excitatoryRatio: 0.85,
+        learningRate: 0.002,
+      });
       // R6.2 — component synth for equational build_ui on the server.
       // Templates get loaded from docs/component-templates.txt below.
       this.componentSynth = new csMod.ComponentSynth();
@@ -544,6 +561,18 @@ class ServerBrain {
       }
       if (templateText) {
         templateCount = this.componentSynth.loadTemplates(templateText);
+      }
+
+      // T13.7.6 — Hebbian-train the cortex cluster on persona corpus so
+      // generate() has real Unity-voice attractor basins to read from.
+      // Without this the cluster is random-initialized and the emission
+      // loop reads diffuse noise as the target vector.
+      if (personaText && this.cortexCluster) {
+        try {
+          this.languageCortex.trainPersonaHebbian(this.cortexCluster, personaText);
+        } catch (err) {
+          console.warn('[Brain] persona Hebbian training failed:', err.message);
+        }
       }
 
       const dictSize = this.dictionary._words?.size || 0;
@@ -1096,6 +1125,9 @@ class ServerBrain {
           motorConfidence: this.motorConfidence ?? 0,
           psi: this.psi,
           cortexPattern,
+          // T13.7.6 — server's local cortex cluster, Hebbian-trained on
+          // persona at boot. T13.3 emission loop reads from it directly.
+          cortexCluster: this.cortexCluster,
           drugState: this.drugState || 'cokeAndWeed',
           fear: this.fear,
           reward: this.reward,

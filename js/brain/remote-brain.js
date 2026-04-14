@@ -20,6 +20,12 @@
 
 import { InnerVoice } from './inner-voice.js';
 import { VisualCortex } from './visual-cortex.js';
+// T13.7.6 — RemoteBrain needs a real local NeuronCluster cortex so the
+// brain-3d commentary popups (and any other local-only generate path)
+// can run the T13 brain-driven emission loop. Without this, every local
+// generate() call returns '' because T13.7 deleted the slot-prior
+// fallback and requires opts.cortexCluster.
+import { NeuronCluster } from './cluster.js';
 
 class EventEmitter {
   constructor() { this._listeners = {}; }
@@ -87,9 +93,43 @@ export class RemoteBrain extends EventEmitter {
     // dictionary / bigram / usage-type stats from the actual persona file.
     // app.js fetches docs/Ultimate Unity.txt and calls loadPersona() on this.
     this.innerVoice = new InnerVoice();
-    this.clusters = {};
+
+    // T13.7.6 — local cortex cluster purely for the language emission
+    // loop. The actual brain sim runs server-side and reaches us via
+    // websocket state messages. This cluster is for local-only
+    // languageCortex.generate calls (brain-3d commentary popups,
+    // /think debug, welcome speech). Hebbian-trained on persona corpus
+    // when loadPersona is called below. Exposed via `this.clusters.cortex`
+    // so existing callers find it where they expect.
+    this._localCortex = new NeuronCluster('cortex', 300, {
+      tonicDrive: 14,
+      noiseAmplitude: 7,
+      connectivity: 0.15,
+      excitatoryRatio: 0.85,
+      learningRate: 0.002,
+    });
+    this.clusters = { cortex: this._localCortex };
 
     this._connect();
+  }
+
+  /**
+   * T13.7.6 — Hebbian-train the local cortex cluster on persona corpus
+   * so the local generate() path (commentary popups etc) reads from a
+   * Unity-voice-shaped attractor landscape instead of random noise.
+   * Delegates through the local InnerVoice → LanguageCortex →
+   * cluster.learnSentenceHebbian chain. Idempotent — only runs once
+   * per RemoteBrain instance per persona text.
+   */
+  trainPersonaHebbian(text) {
+    if (!text || this._hebbianTrained) return;
+    if (!this.innerVoice || !this._localCortex) return;
+    try {
+      this.innerVoice.trainPersonaHebbian(this._localCortex, text);
+      this._hebbianTrained = true;
+    } catch (err) {
+      console.warn('[RemoteBrain] persona Hebbian training failed:', err.message);
+    }
   }
 
   _connect() {
