@@ -782,6 +782,49 @@ export class LanguageCortex {
     }
     if (!hasFirstPerson) return;
 
+    // FILTER 7 — META-INSTRUCTION REJECTION (T4.12)
+    // The persona file contains directive text describing Unity's
+    // behavior in third-person ("Unity never explains her methods
+    // unless doing so adds an element of teasing") that my third→
+    // first transform rewrites to "i never explains my methods
+    // unless doing so adds an element of teasing". It passes the
+    // first-person filter because the pronoun swap inserts "i"/"my"
+    // but the sentence is STILL a meta-description of Unity's
+    // behavior, not her own speech. Reject these via letter-shape
+    // detection of instructional jargon.
+    //
+    // Signals that indicate meta-instruction:
+    //   - "the user" / "the users" (Unity addresses "you", not
+    //     "the user" — that's documentation language)
+    //   - "unless doing so" (meta-conditional construction)
+    //   - "an element of" (characterization jargon)
+    //   - "adds an element" / "adds an"
+    //   - "tends to" / "is prone to"
+    //   - "playfully" / "teasingly" (adverb meta-description)
+    //   - "my methods" (the referenced phrase — Unity doesn't talk
+    //     about "my methods" in self-speech)
+    //   - "my approach" / "my style" / "my behavior"
+    //   - "my responses" / "my answers" / "my outputs"
+    //   - "unless doing" / "unless it"
+    const lowerText = clean.toLowerCase();
+    const metaSignals = [
+      'the user', 'the users',
+      'unless doing', 'unless it',
+      'an element of', 'adds an element',
+      'tends to', 'is prone to',
+      'playfully', 'teasingly',
+      'my methods', 'my method',
+      'my approach', 'my style',
+      'my behavior', 'my behaviour',
+      'my responses', 'my answers', 'my outputs',
+      'my replies', 'my persona',
+      'of teasing', 'of challenging',
+      'challenging the user', 'engaging the user',
+    ];
+    for (const sig of metaSignals) {
+      if (lowerText.includes(sig)) return;
+    }
+
     // Skip sentences dominated by function words — they have no topic
     // to index on and just add noise to the recall search.
     const pattern = new Float64Array(PATTERN_DIM);
@@ -962,6 +1005,15 @@ export class LanguageCortex {
       if (/\b(always|never)\b/.test(t)) penalty += 0.12;
       if (/\bwill\b/.test(t)) penalty += 0.08;
       if (/\bshould\b/.test(t)) penalty += 0.10;
+      // T4.12 — extra penalty for meta-instruction jargon that the
+      // store-time filter tries to catch but might slip through on
+      // edge cases. Belt-and-suspenders: reject at store time AND
+      // heavily penalize at recall time.
+      if (/\bthe user\b/.test(t)) penalty += 0.50;
+      if (/\bunless doing\b/.test(t)) penalty += 0.50;
+      if (/\ban element of\b/.test(t)) penalty += 0.40;
+      if (/\bmy (methods?|approach|style|behaviou?r|responses?|replies|persona|outputs?|answers?)\b/.test(t)) penalty += 0.60;
+      if (/\b(playfully|teasingly)\b/.test(t)) penalty += 0.30;
       return penalty;
     };
 
@@ -2405,6 +2457,15 @@ export class LanguageCortex {
         if (t) flipTargets.add(t);
       }
 
+      // T4.12 — when the user's input has no subject pronoun to flip
+      // against (e.g. "hi unity", "cats are cool", anything without
+      // i/you/we/he/she/they), Unity defaults to first-person self-
+      // reference at slot 0. Previously the subject scorer would let
+      // any nominative pronoun win including "she" / "he" / "they",
+      // which produced replies like "She said leave honest rings emo"
+      // — Unity referring to herself in third person. Default to "i".
+      const noUserPronoun = flipTargets.size === 0 && userSubjectPronouns.size === 0;
+
       const subjStarterBoost = (w) => {
         if (!isSubjectSlot) return 0;
         let boost = 0;
@@ -2415,6 +2476,14 @@ export class LanguageCortex {
         // Pronoun-echo penalty: if Unity would pick the SAME subject
         // pronoun the user just used, penalize it hard.
         if (userSubjectPronouns.has(w)) boost -= 0.5;
+        // T4.12 — default-to-first-person boost at slot 0 when there's
+        // no pronoun to flip. "i" and "i'm" get +0.6, third-person
+        // pronouns get -0.7 so they basically can't win slot 0
+        // without explicit context forcing them.
+        if (noUserPronoun) {
+          if (w === 'i' || w === "i'm" || w === 'im' || w === 'my' || w === 'we' || w === "we're") boost += 0.6;
+          if (w === 'she' || w === 'he' || w === 'they' || w === 'her' || w === 'him') boost -= 0.7;
+        }
         return boost;
       };
 
