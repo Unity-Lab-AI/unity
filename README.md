@@ -69,7 +69,15 @@ LANGUAGE CORTEX (T11 pure equational generation — see "Language Cortex" sectio
                                       equations the generator uses forward)
     target(slot) = wC·slotCentroid[slot] + wX·contextVector
                  + wM·mental + wT·(prevEmb + slotDelta[slot])
-    score(w)     = cos(target, emb(w)) + 0.4·Σ wordType(w)·slotTypeSignature[slot]
+    W₀ = {c:0.40, x:0.30, m:0.30, t:0}   Wₙ = {c:0.10, x:0.15, m:0.25, t:0.50}
+
+    // T11.7 three-stage candidate gate:
+    typeFit(w,s)  = Σ_k wordType(w)[k] · slotTypeSignature[s][k]
+    slotSigMax(s) = max_k slotTypeSignature[s][k]
+    (1) HARD POOL FILTER : skip if typeFit < slotSigMax · 0.30
+    (2) SLOT-0 NOUN REJECT: skip if slot==0 ∧ (wt.noun − (pronoun+det+qword)) > 0.30
+    (3) MULTIPLICATIVE   : score(w) = cos(target, emb(w)) · min(1, typeFit/slotSigMax)
+
     nextWord     = softmax-sample top-5 over dictionary._words
     mental(0)    = brain live cortex readout via getSemanticReadout()
     mental(t+1)  = 0.55·mental + 0.45·emb(nextWord)

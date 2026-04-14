@@ -1028,8 +1028,20 @@ for slot in 0..targetLen:
                  + wM · L2(mental)
                  + wT · L2(prevEmb + _slotDelta[slot])
 
-    score(w)   = cos(target, emb(w))
-               + 0.4 · Σ wordType(w) · _slotTypeSignature[slot]
+    THREE-STAGE CANDIDATE GATE (per word w in dictionary):
+      typeFit(w,s)  = Σ_k wordType(w)[k] · _slotTypeSignature[s][k]
+      slotSigMax(s) = max_k _slotTypeSignature[s][k]
+
+      (1) HARD POOL FILTER:
+          if typeFit < slotSigMax · 0.30  → skip word
+
+      (2) SLOT-0 NOUN-DOMINANCE REJECT (slot==0 only):
+          nounDom = wt.noun − (wt.pronoun + wt.det + wt.qword)
+          if nounDom > 0.30  → skip word
+
+      (3) MULTIPLICATIVE GATE:
+          normTypeFit = min(1, typeFit / slotSigMax)
+          score(w)    = cos(target, emb(w)) · normTypeFit
 
     nextWord   = softmax-sample top-5 by score
                  over dictionary._words
@@ -1040,7 +1052,7 @@ for slot in 0..targetLen:
     ↓
 targetLen  = floor(3 + arousal · 3 · drugLengthBias), capped to _maxSlots=8
 temperature= 0.25 + (1 - coherence) · 0.3
-W₀         = { centroid:0.30, context:0.45, mental:0.25, transition:0 }
+W₀         = { centroid:0.40, context:0.30, mental:0.30, transition:0 }   ← T11.7 rebalance
 Wₙ         = { centroid:0.10, context:0.15, mental:0.25, transition:0.50 }
                  + moodMatch × 0.03
                  + moodBias × 0.02)
@@ -1524,11 +1536,16 @@ UPDATE (during observation):
       _slotTypeSignature[t][k] = (_slotTypeSignature[t][k]·N + wordType(w)[k]·w)
                                  / (N + w)
 
-READ (during generation):
-  score(w, slot) = cos(target, emb(w))
-                 + 0.4 · Σ_k wordType(w)[k] · _slotTypeSignature[slot][k]
+READ (during generation, T11.7 three-stage gate):
+  typeFit(w,s)  = Σ_k wordType(w)[k] · _slotTypeSignature[s][k]
+  slotSigMax(s) = max_k _slotTypeSignature[s][k]
 
-Emergent after corpus fit:
+  (1) HARD POOL FILTER  : skip word if typeFit < slotSigMax · 0.30
+  (2) SLOT-0 NOUN REJECT: skip word if slot==0 ∧ (wt.noun − (wt.pronoun + wt.det + wt.qword)) > 0.30
+  (3) MULTIPLICATIVE    : score(w, slot) = cos(target, emb(w)) · min(1, typeFit / slotSigMax)
+
+Emergent after corpus fit (persona + baseline only — coding corpus
+bypasses prior updates via skipSlotPriors=true):
   slot 0 ≈ { pronoun: 0.54, noun: 0.18, det: 0.12, ... }   ← sentence openers
   slot 1 ≈ { verb: 0.51, noun: 0.33, ... }                 ← post-subject verbs
       </pre>

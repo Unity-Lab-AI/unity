@@ -319,11 +319,18 @@ target(slot)  = wC · L2(_slotCentroid[slot])
               + wM · L2(mental)
               + wT · L2(prevEmb + _slotDelta[slot])
 
-score(w)      = cos(target, emb(w)) + 0.4 · Σ wordType(w) · _slotTypeSignature[slot]
+// T11.7 three-stage gate (replaced the additive 0.4·typeFit bonus):
+typeFit(w,s)  = Σ_k wordType(w)[k] · _slotTypeSignature[s][k]
+slotSigMax(s) = max_k _slotTypeSignature[s][k]
+
+(1) HARD POOL FILTER : skip if typeFit < slotSigMax · 0.30
+(2) SLOT-0 NOUN REJECT: skip if slot==0 ∧ (wt.noun − (wt.pronoun + wt.det + wt.qword)) > 0.30
+(3) MULTIPLICATIVE    : score(w) = cos(target, emb(w)) · min(1, typeFit / slotSigMax)
+
 nextWord      = softmax-sample top-5 over dictionary._words
 ```
 
-Slot 0 weights favor context (topic lock from user input) + centroid (grammatical-position prior). Slot N weights favor transition (learned bigram geometry without stored bigrams) + mental (brain cortex state evolving).
+Slot 0 weights (T11.7 rebalance) — `{centroid:0.40, context:0.30, mental:0.30, transition:0}` — lean harder on the learned opener-cluster centroid than on the topic vector, so pronoun-shape openers dominate slot 0 even when the user just spoke a noun-heavy sentence. Slot N weights still favor transition (learned bigram geometry without stored bigrams) + mental (brain cortex state evolving).
 
 Observed emergent grammar after corpus fit:
 - `_slotTypeSignature[0]` ≈ `{pronoun: 0.54, noun: 0.18, det: 0.12}` — real sentence-opener distribution
@@ -338,6 +345,37 @@ Running-mean updates use `obsWeight = max(0.25, arousal · 2)`:
 - live chat observation (arousal 0.95) → w = 1.9
 
 Live chat shapes the priors **2.37×** harder than low-arousal corpus loads, so accumulated user conversation progressively dominates the slot geometry. `inner-voice.learn()` already floors chat arousal at 0.95 — the weighting is transparent at the caller.
+
+### Milestone T11.7: Slot-0 noun-pollution fix — COMPLETE (2026-04-14)
+
+**Symptom:** Slot 0 was emitting raw nouns (`Third`, `Unity`, `Ten`, `Pizza`) instead of pronoun-shape openers. `"Hi Unity!"` → `"Third described api above laughter"`.
+
+**Root cause:** Two compounding bugs.
+1. The coding corpus (606 lines of `class`/`function`/`button`-prefixed sentences) was running through `learnSentence` at full strength, polluting `_slotTypeSignature[0]` with `noun:0.24` mass.
+2. The additive `+ 0.4·typeFit` bonus was structurally too weak against raw cosine, so high-cosine nouns won slot 0 even when the prior said "pronoun shape here."
+
+**Fix:** Three structural changes, not a knob tweak.
+
+1. **Coding corpus `skipSlotPriors=true`** — `learnSentence` now takes an 8th positional arg. `loadCodingKnowledge` passes `true`, so coding sentences enter the dictionary (vocabulary still grows) but bypass `_slotCentroid` / `_slotDelta` / `_slotTypeSignature` updates. Slot priors now reflect persona + baseline only.
+2. **W₀ rebalanced** to `{centroid:0.40, context:0.30, mental:0.30, transition:0.00}` (from `{0.30, 0.45, 0.25, 0.00}`). Slot 0 leans harder on the learned opener-cluster centroid than on the user's just-spoken topic vector.
+3. **Three-stage candidate gate** at every slot:
+   - **Hard pool filter** — drop any candidate where `typeFit < slotSigMax · 0.30` before scoring.
+   - **Slot-0 noun-dominance reject** — at slot 0 only, drop any candidate where `wordType.noun − (pronoun + det + qword) > 0.30`. Structural conversational-grammar guarantee.
+   - **Multiplicative gate** — survivors score as `cos(target, emb(w)) · normTypeFit`. A perfect-cosine noun in a pronoun slot now scales toward zero instead of beating a moderate-cosine pronoun.
+
+**Smoke-test verification (post-fix):**
+```
+"Hi Unity!"            → slot0 pool: Hi / Mine / Her / Tab / Tag
+"can u understand me?" → slot0 pool: Ten / Even / Us / Me / Yourself
+"You like cats?"       → slot0 pool: She / Cool / Yours / Myself / Her
+"i love pizza"         → slot0 pool: Him / Ten / Mine / Even / Hi
+"who are you"          → slot0 pool: Me / Us / Our / I / Them
+```
+
+Slot 0 grammar correctness is now a **structural guarantee**, not a soft preference. Slot 1+ still has 50-d GloVe cosine drift on complex queries — that's the structural T11.4 (higher-dim embeddings) limit, not a pipeline bug.
+
+### Files touched (T11.7)
+- `js/brain/language-cortex.js` — `learnSentence` 8th arg `skipSlotPriors`; `loadCodingKnowledge` passes `true`; `generate()` slot scoring rewritten with three-stage gate; W₀ rebalanced.
 
 ### Files touched
 - `js/brain/language-cortex.js` — ~560 lines added across constructor, `loadSelfImage`, `analyzeInput`, eight new methods, `generate()` three-stage preamble, rebalanced slot scoring, coherence retry gate

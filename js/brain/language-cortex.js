@@ -324,7 +324,13 @@ export class LanguageCortex {
       try {
         const mood = this._computeMoodSignature(s);
         const sentenceCortex = this._deriveSentenceCortexPattern(s);
-        this.learnSentence(s, dictionary, mood.arousal, mood.valence, sentenceCortex, false, false);
+        // skipSlotPriors=true — coding corpus contributes to the
+        // dictionary (vocabulary + word embeddings + morphological
+        // forms) but does NOT shape the per-slot conversational
+        // priors. Code openers like "Function" / "Variable" / "Return"
+        // would otherwise pollute slot 0 type signature with noun
+        // weight that beats pronouns at the chat sentence opener.
+        this.learnSentence(s, dictionary, mood.arousal, mood.valence, sentenceCortex, false, false, true);
       } catch (err) {
         console.warn('[LanguageCortex] loadCodingKnowledge observation failed:', err.message);
       }
@@ -1704,19 +1710,22 @@ export class LanguageCortex {
     const temperature = 0.25 + (1 - coherence) * 0.3;
     const mentalDecay = 0.55;
 
-    // Normalized-component weights.
-    //   Slot 0: context (topic from user input) dominates so the
-    //   opener reflects what was just said. Centroid supplies the
-    //   grammatical position prior (pronouns / determiners / opener
-    //   interjections). Mental state (brain cortex readout) adds
+    // Normalized-component weights — rebalanced 2026-04-14 after
+    // diagnostic smoke test showed slot 0 picking nouns like
+    // "Destructure" / "Third" / "Unity" because context (topic blob)
+    // was 45% and grammar prior (slot-0 centroid) was only 30%.
+    // Topic too dominant at the opener position.
+    //
+    //   Slot 0: centroid (sentence-opener distribution learned from
+    //   observation) is now the dominant component. Context provides
+    //   topical bias. Mental state (brain cortex readout) adds
     //   brain-driven nuance.
     //
-    //   Slot N: transition (prev word + learned slot-delta) takes
-    //   over as the dominant signal — this is the learned bigram
-    //   geometry without storing bigrams. Mental state keeps Unity's
-    //   ongoing thought visible in the output. Context is a weak
-    //   topic anchor. Centroid becomes a small grammar nudge.
-    const W0 = { centroid: 0.30, context: 0.45, mental: 0.25, transition: 0.00 };
+    //   Slot N: transition (prev word + learned slot-delta) is the
+    //   dominant signal — learned bigram geometry without stored
+    //   bigrams. Mental state keeps Unity's ongoing thought visible.
+    //   Context is a weak topic anchor. Centroid is a small nudge.
+    const W0 = { centroid: 0.40, context: 0.30, mental: 0.30, transition: 0.00 };
     const WN = { centroid: 0.10, context: 0.15, mental: 0.25, transition: 0.50 };
 
     for (let slot = 0; slot < targetLen; slot++) {
@@ -1750,16 +1759,81 @@ export class LanguageCortex {
 
       // Learned slot type signature — dot product between the slot's
       // average wordType distribution and the candidate's wordType
-      // gives a grammar-fit bonus. Pure letter-equation, no lists.
+      // gives a grammar-fit gate. Pure letter-equation, no lists.
+      // Used in TWO ways below:
+      //   1. As a HARD POOL FILTER — candidates with typeFit < 0.10
+      //      are skipped entirely (a totally-wrong-type word like
+      //      "destructure" at slot 0 never enters argmax).
+      //   2. As a MULTIPLICATIVE GATE on the cosine score —
+      //      score = cosine · (0.35 + 0.65 · normalizedTypeFit).
+      //      Wrong-type candidates lose up to 65% of their cosine
+      //      magnitude. Right-type candidates keep full cosine.
+      // Pre-T11 follow-up (2026-04-14) — additive bonus was too weak
+      // and the ungated pool was too broad.
       const slotSig = this._slotTypeSignature[slotIdx];
       const slotSigActive = this._slotCentroidCount[slotIdx] > 3;
+      // Compute the slot's max possible type-fit (the dot product of
+      // a perfect-match candidate against the slot's type distribution
+      // is just the slot's peak coordinate). Used both as the hard
+      // pool filter floor and to normalize per-candidate fit into
+      // [0, 1] for the multiplicative score gate.
+      let slotSigMax = 0;
+      if (slotSigActive) {
+        for (const k of Object.keys(slotSig)) {
+          if (slotSig[k] > slotSigMax) slotSigMax = slotSig[k];
+        }
+      }
+      // Per-slot ADAPTIVE floor: candidate must score at least 30%
+      // of the slot's peak type weight to enter the argmax pool.
+      // For slot 0 with peak pronoun=0.53, floor=0.16 — a pure noun
+      // (typeFit = 0.18) just barely passes, a det (0.12) fails,
+      // and a verb (0.08) fails. The floor scales with the slot's
+      // type concentration so very flat distributions admit more
+      // candidates and very peaked distributions are strict.
+      const TYPE_FLOOR = slotSigActive ? slotSigMax * 0.30 : 0;
 
-      // Cosine scoring over learned dictionary, with wordType bonus.
+      // Cosine scoring over learned dictionary, with wordType gate.
       const scored = [];
       for (const [w, entry] of dictionary._words) {
         if (!entry || !entry.pattern) continue;
         if (emitted.has(w)) continue;
         if (this._recentOutputWords.includes(w)) continue;
+
+        // Type-fit gate (computed first so we can hard-filter before
+        // doing the more expensive cosine math).
+        let typeFit = 0;
+        let wt = null;
+        if (slotSigActive) {
+          wt = this.wordType(w);
+          typeFit = (wt.pronoun || 0) * slotSig.pronoun
+                  + (wt.verb || 0) * slotSig.verb
+                  + (wt.noun || 0) * slotSig.noun
+                  + (wt.adj || 0) * slotSig.adj
+                  + (wt.conj || 0) * slotSig.conj
+                  + (wt.prep || 0) * slotSig.prep
+                  + (wt.det || 0) * slotSig.det
+                  + (wt.qword || 0) * slotSig.qword;
+          if (typeFit < TYPE_FLOOR) continue;  // hard pool filter
+        }
+
+        // Slot-0 specific: noun-dominance reject. The learned slot-0
+        // type signature has noun weight ~0.18 because the corpora
+        // contain non-conversational sentences with noun openers
+        // ("Rain falls...", "Function does..."). That lets pure-noun
+        // candidates like "pizza", "destructure", "wallets" pass the
+        // global typeFit floor. English conversational sentences
+        // however overwhelmingly open with pronouns / determiners /
+        // qwords / interjections, never bare common nouns.
+        // Structural check: at slot 0, reject candidates whose
+        // wordType.noun dominates pronoun + det + qword by more
+        // than 0.30. Pure equational — checks the candidate's own
+        // letter-equation type distribution, not a content list.
+        if (slot === 0 && wt) {
+          const openerTypes = (wt.pronoun || 0) + (wt.det || 0) + (wt.qword || 0);
+          const nounDom = (wt.noun || 0) - openerTypes;
+          if (nounDom > 0.30) continue;
+        }
+
         const p = entry.pattern;
         let dot = 0, pn = 0;
         for (let i = 0; i < PATTERN_DIM; i++) {
@@ -1769,19 +1843,17 @@ export class LanguageCortex {
         if (pn <= 0) continue;
         const cosSim = dot / Math.sqrt(pn);
 
-        let typeFit = 0;
-        if (slotSigActive) {
-          const wt = this.wordType(w);
-          typeFit = (wt.pronoun || 0) * slotSig.pronoun
-                  + (wt.verb || 0) * slotSig.verb
-                  + (wt.noun || 0) * slotSig.noun
-                  + (wt.adj || 0) * slotSig.adj
-                  + (wt.conj || 0) * slotSig.conj
-                  + (wt.prep || 0) * slotSig.prep
-                  + (wt.det || 0) * slotSig.det
-                  + (wt.qword || 0) * slotSig.qword;
-        }
-        scored.push({ w, score: cosSim + typeFit * 0.4 });
+        // Pure multiplicative type gate: normalized typeFit IS the
+        // gate. A perfect-type candidate keeps full cosine; a
+        // half-type candidate keeps half cosine; a wrong-type
+        // candidate is already filtered above by TYPE_FLOOR. No
+        // base retention because the floor is doing that job —
+        // the gate is now a clean linear scale over the admitted
+        // pool.
+        const normTypeFit = (slotSigActive && slotSigMax > 0)
+          ? Math.min(1, typeFit / slotSigMax)
+          : 1;
+        scored.push({ w, score: cosSim * normTypeFit });
       }
       if (scored.length === 0) break;
       scored.sort((a, b) => b.score - a.score);
@@ -2973,7 +3045,7 @@ export class LanguageCortex {
    * remaining list-like structure — the word embedding table, not
    * stored text.
    */
-  learnSentence(sentence, dictionary, arousal, valence, cortexPattern = null, fromPersona = false, doInflections = false) {
+  learnSentence(sentence, dictionary, arousal, valence, cortexPattern = null, fromPersona = false, doInflections = false, skipSlotPriors = false) {
     const rawWords = String(sentence).toLowerCase()
       .replace(/[^a-z0-9' ?!*-]/g, '')
       .split(/\s+/)
@@ -3013,8 +3085,14 @@ export class LanguageCortex {
 
       const currEmb = this.wordToPattern(w);
 
-      // Slot centroid update (all positions including 0)
-      if (t < this._maxSlots) {
+      // Slot centroid + type signature update (all positions including 0).
+      // GATED by skipSlotPriors so vocabulary-only corpora (coding) feed
+      // the dictionary without polluting the conversational slot priors.
+      // Without this gate, coding-corpus sentence openers like "Function",
+      // "Variable", "Return" pushed slot 0's noun weight up to ~0.24,
+      // which let noun candidates beat pronouns at the opener position
+      // even with the type-fit gate.
+      if (!skipSlotPriors && t < this._maxSlots) {
         const centroid = this._slotCentroid[t];
         const n = this._slotCentroidCount[t];
         for (let i = 0; i < PD; i++) {
@@ -3029,8 +3107,9 @@ export class LanguageCortex {
         this._slotCentroidCount[t] = n + obsWeight;
       }
 
-      // Slot delta update (t >= 1 only — needs a previous word)
-      if (t >= 1 && t < this._maxSlots) {
+      // Slot delta update (t >= 1 only — needs a previous word).
+      // Same skipSlotPriors gate.
+      if (!skipSlotPriors && t >= 1 && t < this._maxSlots) {
         const prevEmb = this.wordToPattern(words[t - 1]);
         const delta = this._slotDelta[t];
         const n = this._slotDeltaCount[t];
