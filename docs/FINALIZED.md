@@ -5,6 +5,34 @@
 
 ---
 
+> **🏁 BRAIN REFACTOR COMPLETE — 2026-04-14**
+>
+> Branch `brain-refactor-full-control` is code-complete, docs-complete, and manual-verification-complete. Gee walked the 16-step T4 checklist on 2026-04-14 and confirmed all steps passed. Nine follow-up bugs (T4.1 through T4.9) were caught and fixed in-flight during verification — their full verbatim task entries live in this file.
+>
+> **What is done:**
+> - R1–R15 epic (Phase 13 Full Equational Control)
+> - T1 / T2 / T3 / T5 / T6 cleanup
+> - T4 manual verification walkthrough
+> - T4.1 — cortex+cerebellum firing at multi-billion-neuron scale (2 GB per-cluster binding cap)
+> - T4.2 — over-time firing-rate EMA readout in the Neurons tab
+> - T4.3 — fear readout via the real Amygdala attractor module on the server
+> - T4.4 — motor channels computing per-channel Q-values from cluster activity
+> - T4.5 — 3D brain popups with full state-shape normalization + three-line format (label + readout + commentary)
+> - T4.6 + T4.7 — HUD placement and duplicate landing-stats cleanup
+> - T4.8 — 4-tier language pipeline restored (template → recall verbatim → slot gen rebalanced → deflect fallback)
+> - T4.9 — RemoteBrain runs a real local VisualCortex for Eye widget iris tracking
+> - GPUCONFIGURE.bat admin resource-cap tool (COMP-todo Phase 0)
+> - unity-guide.html plain-English concept guide
+> - brain-equations.html §1.5 worked summation walkthrough
+> - Full public + workflow doc sync (README / ARCHITECTURE / EQUATIONS / SENSORY / WEBSOCKET / ROADMAP / SKILL_TREE / brain-equations / COMP-todo)
+>
+> **What is left:**
+> - `gh pr create --base main --head brain-refactor-full-control` — gated on Gee's explicit open-the-PR call
+>
+> **Future work:** COMP-todo Phases C1–C11 (distributed GPU compute network) target a future `comp-net` branch, not this one.
+
+---
+
 > **CRITICAL:** This section is a PERMANENT ARCHIVE.
 > - All completed tasks are moved here from TODO.md
 > - NEVER delete entries — only APPEND
