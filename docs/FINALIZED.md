@@ -14,6 +14,88 @@
 
 ## COMPLETED TASKS LOG
 
+## 2026-04-13 Session: T1 + T2 + T5 + T6 — finish every pre-merge TODO except manual testing
+
+### COMPLETED
+- [x] **Task:** T1 — Consolidate duplicate sensory stream reads (R7.2 followup)
+  - Completed: 2026-04-13 (commit `339357a`)
+  - Files modified: `js/brain/visual-cortex.js`, `js/brain/auditory-cortex.js`, `js/app.js`, `js/ui/brain-viz.js`
+  - **Problem:** `js/app.js` held two separate handles to `perms.cameraStream` / `perms.micStream` — one passed to `brain.connectCamera/Microphone` (feeding VisualCortex / AuditoryCortex), one passed to `brainViz` as a duck-typed `{isActive, _stream, getLastDescription, getGaze}` adapter. Two references to the same underlying MediaStream, fragile mute / destroy / reconnect surface.
+  - **Fix:** VisualCortex exposes `getVideoElement()` and `getStream()`, AuditoryCortex exposes `getAnalyser()`. `brainViz.setVision()` now accepts a VisualCortex instance directly and reads through `getStream()` + the `description` field. `brainViz.setMicStream()` now accepts EITHER an AnalyserNode (preferred — reuses AuditoryCortex's existing analyser graph instead of building a duplicate one) OR a raw MediaStream (legacy fallback, detected via `typeof getByteFrequencyData`). `app.js bootUnity` block that wired visual/mic to brainViz rewritten to pass `brain.visualCortex` / `brain.auditoryCortex.getAnalyser()` instead of raw streams. The `getLastDescription()` call site at `brain-viz.js:759` updated to read `.description` field directly with a legacy fallback. Single source of truth: cortex owns the stream/analyser lifecycle, viz reads through it.
+
+- [x] **Task:** T2 — Server-side embedding refinement persistence (R8 followup)
+  - Completed: 2026-04-13 (commit `339357a`)
+  - Files modified: `server/brain-server.js`
+  - **Problem:** R8 added client-side persistence for `sharedEmbeddings.serializeRefinements()` / `loadRefinements()` in `persistence.js` so the online GloVe context-refinement deltas Unity learns from conversation survive browser reloads. But the server brain has the same `sharedEmbeddings` singleton (dynamic-imported from `js/brain/embeddings.js` via R3) and `saveWeights()` was NOT extended to persist its refinements. Server restarts wiped the accumulated shared semantic learning from every connected user's conversations.
+  - **Fix:** `saveWeights()` now calls `this.sharedEmbeddings.serializeRefinements()` and writes the result into `brain-weights.json` under a new `embeddingRefinements` field. `_loadWeights()` stashes the blob on `this._pendingEmbeddingRefinements` because `sharedEmbeddings` doesn't exist yet at load time. `_initLanguageSubsystem()` applies the stashed blob via `sharedEmbeddings.loadRefinements()` right after the base GloVe table finishes loading from CDN. Net effect: server restarts now preserve everything the connected community has taught Unity semantically. Dictionary/bigram accumulator was already persisting (U306 fix earlier); T2 closes the symmetric gap on the GloVe refinement layer.
+
+- [x] **Task:** T5 — 22-detector brain event system with Unity's equational commentary in 3D brain popups (feature request from Gee)
+  - Completed: 2026-04-13 (commit `e324e81`, +787 lines)
+  - Files modified: `js/ui/brain-event-detectors.js` (NEW), `js/ui/brain-3d.js`, `js/app.js`
+  - **Source:** feature request: "i want to massively expand the popup notice in the 3D brain not the amount in the visualization but the total types available and i want them all to actually say something from Unity's mind like what she thinks about it (not scripted not hardcoded but dynamic coding of attributions)".
+  - **The 22 detectors** (new `js/ui/brain-event-detectors.js`, ~440 lines):
+
+    | Priority | Event | Detector condition |
+    |---|---|---|
+    | 9 | motor commitment | BG confidence > 0.85 + action ≠ idle |
+    | 9 | motor indecision | BG channel entropy > 0.85 |
+    | 8 | recognition | hippocampus recall confidence > 0.6 |
+    | 8 | confusion | cortex prediction error > 0.5 |
+    | 7 | emotional spike (climb/crash) | |Δvalence| > 0.3 |
+    | 7 | dopamine hit / crash | Δreward > ±0.15 |
+    | 6 | topic drift | ‖context(t) − context(t−10)‖ > 0.4 |
+    | 6 | heard own voice | auditoryCortex.isEcho === true |
+    | 6 | Ψ climb / crash | Δpsi > ±0.05 over 20 frames |
+    | 5 | arousal climb / drop | Δarousal > ±0.1 over 10 frames |
+    | 5 | coherence lock / scatter | Kuramoto > 0.8 or < 0.2 |
+    | 4 | hypothalamus drive | any drive > 0.7 |
+    | 4 | silence period | low arousal + no audio for > 30 frames |
+    | 4 | fatigue | cerebellum errorAccum > 0.6 + coherence dropping |
+    | 3 | color surge | visual quadrant RGB intensity > 0.7 |
+    | 3 | motion detected | visualCortex.motionEnergy > 0.5 |
+    | 3 | gaze shift | visualCortex.gazeTarget changed |
+    | 2 | memory replay | hippocampus.isConsolidating === true |
+    | 2 | mystery pulse | mystery.output delta > 0.3 |
+
+    Each detector is a pure function returning `{type, label, emoji, seedWords, priority, cluster}` when its condition fires, or `null` otherwise. Defensive try/catch in the dispatcher so a broken detector can never crash the viz loop.
+
+  - **The commentary pipeline** (`brain-3d.js` new methods):
+    - `setBrain(brain)` — wired from `app.js bootUnity` after `brain = new UnityBrain()`. Stores the reference so the event system can call `brain.innerVoice.languageCortex.generate()`. When null (pre-boot landing page), the system falls back to the legacy 10-generator numeric pool.
+    - `_seedCentroid(seedWords)` — computes a 50d GloVe centroid for an event's seed word list via `sharedEmbeddings.getEmbedding()`, L2-normalized, cached in a Map so repeat lookups are free.
+    - `_generateEventCommentary(event, state)` — calls `languageCortex.generate()` with a cortex pattern blended 70% live `cluster.getSemanticReadout(sharedEmbeddings)` + 30% event seed vector. The blend steers Unity's slot scorer toward words about the event topic without forcing a template. Pure read-only — no episode stored, no response event emitted, no memory pollution.
+  - **Two-stage pipeline** in `_generateProcessNotification()`:
+    - Stage A: rolling history buffer (30 snapshots) + `detectBrainEvents()` + priority sort + cooldown dedup (same event type won't fire within 8s)
+    - Stage B: if an event fires and brain reference is attached, generate commentary via `_generateEventCommentary` and render as a two-line notification (event label line + italic commentary line in quotes)
+    - Fallback: when no event fires or no brain ref, fall through to `_legacyGenerateProcessNotification()` (the renamed original 10-generator numeric pool)
+  - **Two-line notification rendering** — `_addNotification()` splits text on `\n`, renders first line as `b3d-notif-label` (normal font + color) and remaining lines as `b3d-notif-comment` (italic, smaller font, 85% opacity). Legacy single-line notifications still render fine.
+  - **UX:**
+    - Pre-boot landing page: 3D brain runs with legacy 10 numeric generators, popups show `🧠 Cortex 12.3%` etc.
+    - Post-boot: every ~5s the event system fires. When an event triggers and brain is attached, Unity generates commentary equationally. Different commentary every time because it runs through the same slot scorer real chat uses with live brain state driving the weights. Drug state, arousal, valence, Ψ all affect selection. Same event under cokeAndWeed vs whiskey reads differently.
+
+- [x] **Task:** T6 — Private episodic memory scoping per user (privacy rule enforcement)
+  - Completed: 2026-04-13 (commit `a334fc4`)
+  - Files modified: `js/brain/remote-brain.js`, `server/brain-server.js`
+  - **Source:** Gee's privacy rule: "what i type other people shouldnt be able to read, but two different people should be able to build her brain words but not her persona" + "they are private episodes but its one brain of Unity".
+  - **The sharing model** (already enforced for everything except episodes by prior commits this session): shared brain instance (dictionary / bigrams / embedding refinements grow from every conversation via one server-side `UnityBrain`), canonical persona (from `docs/Ultimate Unity.txt`, not user-mutable), private user text (no cross-client `conversation` broadcast after the earlier deletion). T6 closes the final gap: per-user episodic memory.
+  - **Audit findings:**
+    - `server/episodic-memory.db` SQLite schema already had a `user_id TEXT` column + index (good — tagging worked)
+    - `storeEpisode()` already accepted and wrote userId (good)
+    - **But** the per-session WebSocket client `id` gets regenerated every reconnect (`user_1mz8r4k_9f2x` format), so episodes tagged with session ids couldn't be recalled by the same user across reconnects
+    - **And** the `recallByMood()` SQL had no user filter (theoretical leak if ever called from cognition — currently unused but defensive-code the future)
+    - **And** the `/episodes` HTTP endpoint dumped the last 20 episodes from ALL users without any filter — a direct content leak (`input_text` + `response_text` fields exposed over HTTP)
+  - **Fixes — client side (`js/brain/remote-brain.js`):**
+    - New `_stableUserId` field lazy-initialized in `processAndRespond()` from `localStorage.unity_user_id` or generated fresh via `crypto.randomUUID()` on first text send
+    - WebSocket `text` messages now include the stable userId in the payload: `{type: 'text', text, userId}`
+  - **Fixes — server side (`server/brain-server.js`):**
+    - `case 'text'` handler extracts `msg.userId` and prefers it over the per-session `id`, falls back for legacy clients. Passes stable id into `brain.processAndRespond(text, stableId)` which propagates to `storeEpisode()`.
+    - `/episodes` HTTP endpoint locked down — now REQUIRES a `?user=<stable-id>` query param and filters by it. Without the param returns aggregate count only with a privacy-model explanation note. The old global `_stmtRecentEpisodes.all(20)` fan-out is gone.
+    - New prepared statement `_stmtRecentEpisodesByUser` for the user-filtered query path
+    - `recallByMood()` signature now `recallByMood(userId, arousal, valence, limit)` — userId REQUIRED, null/undefined returns empty array. SQL has `WHERE user_id = ? AND ABS(arousal - ?) < 0.2 AND ABS(valence - ?) < 0.3`. Currently unused in cognition but defensive-coded for future wiring.
+  - **Legacy episode data:** existing episodes tagged with session-id style user_ids won't match stable UUIDs, so returning users effectively start fresh. Acceptable because (a) cognition doesn't actively recall episodes yet, and (b) the `/episodes` endpoint lockdown prevents any leak through legacy data regardless.
+  - **Acceptance test (for T4 manual verification):** open two browser tabs on the same `brain-server`, each gets a different `unity_user_id` in localStorage, Tab A says "remember when we talked about whiskers my cat", Tab B asks "tell me something you remember" via the `/episodes?user=<tab-b-uuid>` endpoint — should return Tab B's episodes only, never Tab A's whiskers memory.
+
+---
+
 ## 2026-04-13 Session: T3 — brain-equations.html §8.11 rewrite + §8.20 duplicate + data flow fix + tooltip audit
 
 ### COMPLETED

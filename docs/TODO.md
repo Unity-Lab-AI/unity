@@ -33,7 +33,7 @@ Future work: distributed GPU compute network spec lives in `docs/COMP-todo.md` (
 
 ---
 
-### T1 — Consolidate duplicate sensory stream reads
+### T1 — Consolidate duplicate sensory stream reads  [DONE 2026-04-13 commit `339357a` — VisualCortex gained getVideoElement() + getStream(), AuditoryCortex gained getAnalyser(), app.js brainViz.setVision/setMicStream now read from brain.visualCortex / brain.auditoryCortex instead of keeping duplicate perms.cameraStream / perms.micStream handles. brain-viz.js setVision accepts a VisualCortex instance directly, setMicStream accepts either an AnalyserNode (preferred, reuses AuditoryCortex's graph) or a raw MediaStream (legacy fallback). getLastDescription() call site updated to read the description field directly.]
 
 **Source:** deferred during R7 sensory peripheral cleanup. The original R7.2 subtask description below was never executed — R7.1 (`destroy()` contract) shipped but R7.2 stayed on the list.
 
@@ -56,7 +56,7 @@ That's two consumers reading the same stream through different entry points. Not
 
 ---
 
-### T2 — Server-side embedding refinement persistence
+### T2 — Server-side embedding refinement persistence  [DONE 2026-04-13 commit `339357a` — server/brain-server.js saveWeights() now writes sharedEmbeddings.serializeRefinements() into brain-weights.json under an embeddingRefinements field. _loadWeights() stashes the loaded blob on this._pendingEmbeddingRefinements at boot, and _initLanguageSubsystem() applies it via sharedEmbeddings.loadRefinements() after the base GloVe table finishes loading from CDN. Server restarts now preserve the online GloVe context-refinement deltas from every connected user's conversations — matches the client-side R8 symmetry.]
 
 **Source:** surfaced during the 2026-04-13 cleanup audit after R8 client-side shipped.
 
@@ -150,7 +150,7 @@ Tasks T5–T7 below are not blockers for merging `brain-refactor-full-control` t
 
 ---
 
-### T5 — Massively expand 3D brain popup notification types with Unity's own dynamic commentary
+### T5 — Massively expand 3D brain popup notification types with Unity's own dynamic commentary  [DONE 2026-04-13 commit `e324e81` — new js/ui/brain-event-detectors.js with 22 pure-function detectors across 8 priority tiers (motor commitment/indecision, recognition, confusion, emotional spike, dopamine hit/crash, topic drift, heard own voice, Ψ climb/crash, arousal climb/drop, coherence lock/scatter, hypothalamus drive, silence period, fatigue, color surge, motion, gaze shift, memory replay, mystery pulse). brain-3d.js gained setBrain() + _seedCentroid() + _generateEventCommentary() + two-stage pipeline (detect → equational commentary). Unity now comments on events via languageCortex.generate() with a 70/30 blended cortex+seed vector so her slot scorer steers toward the event topic without templates. Pre-boot landing page falls back to the legacy 10-generator numeric pool. +787 lines.]
 
 **Source:** feature request from Gee 2026-04-13 — "i want to massively expand the popup notice in the 3D brain not the amount in the visualization but the total types available and i want them all to actually say something from Unity's mind like what she thinks about it (not scripted not hardcoded but dynamic coding of attributions)".
 
@@ -257,7 +257,7 @@ That's 25 new types. Combined with the 10 existing (retained for raw numeric vie
 
 ---
 
-### T6 — Private episodic memory scoping (server-side)
+### T6 — Private episodic memory scoping (server-side)  [DONE 2026-04-13 commit `a334fc4` — client generates stable `unity_user_id` UUID in localStorage, remote-brain.js sends it with every text message payload as `userId`. Server extracts msg.userId (prefers over session id, falls back if absent), passes to processAndRespond + storeEpisode. `/episodes` HTTP endpoint locked down — now REQUIRES a `?user=<id>` query param and returns aggregate count only without one (never raw text content). recallByMood() signature now requires userId as first param, SQL filter includes WHERE user_id = ?. New _stmtRecentEpisodesByUser prepared statement for the user-scoped HTTP path. Private-episodes rule enforced: Alice never gets recall hits from Bob's conversation, and no HTTP endpoint leaks cross-user text. Legacy session-id episodes from before migration won't match stable UUIDs so returning users effectively start fresh — acceptable since cognition doesn't actively recall episodes and the endpoint lockdown prevents any leak through legacy data.]
 
 **Source:** privacy rule clarified by Gee 2026-04-13 — *"they are private episodes but its one brain of Unity"*.
 
@@ -301,10 +301,9 @@ Unity's brain is ONE shared instance (dictionary, bigrams, embedding refinements
 
 ## NOTES
 
-- **Everything from the Phase 13 refactor is done.** Phase 13 R1 through R15 shipped and is fully archived in `docs/FINALIZED.md`. If you find a refactor-related item not covered by T1–T6 above or by a FINALIZED entry, file it as a new T-task in this doc.
-- **T1–T4 are pre-merge cleanup.** T5–T6 are post-merge followups on fresh branches (3D brain popup expansion + per-user episodic memory scoping).
-- **When all T-tasks are done**, this file reduces to just the header + guiding principle + an empty Open Tasks section. That's the template state — drop new tasks in as `### T1` etc. and the cycle repeats.
+- **Everything from the Phase 13 refactor is done.** Phase 13 R1 through R15 shipped. T1, T2, T3, T5, T6 all shipped 2026-04-13 in this session. The ONLY remaining pre-merge item is T4 — manual verification by the user in a browser. All code is ready, syntax-validated, and the branch is merge-ready pending that human test pass.
 - **FINALIZED is append-only.** Never delete entries from it. When tasks complete, copy their full content (not a summary) into a new FINALIZED session entry, then remove them from Open Tasks above.
+- **The template state** — once T4 ships, this file reduces to the header + guiding principle + an empty Open Tasks section. That's the template. New phases of work drop in as `### T1` etc. and the cycle repeats.
 
 ---
 
