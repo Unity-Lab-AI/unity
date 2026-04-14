@@ -366,6 +366,24 @@ Each channel gets the same 70/30 EMA update that used to apply to the spike-coun
 
 **Files:** `server/brain-server.js` `_updateDerivedState()` motor block
 
+### T4.7 — Duplicate landing-stats panel behind the draggable HUD + dead settings buttons pre-boot  [DONE this session]
+
+**Source:** T4 manual verification.
+
+**Symptoms:**
+1. On the landing page (pre-boot), the top-right `landing-stats` block inside `landing-topbar` duplicates the `hud-metrics` panel — both show `real neurons / Ψ / users / ⚙ / ✕`. When the user drags the HUD panel, the duplicate peeks out from underneath. User: "that should not be under the panel".
+2. The ⚙ settings button on the landing-topbar didn't work at all pre-boot. Neither did the HUD panel's `hud-settings-btn` or the toolbar's `settings-btn`. They were only wired inside `bootUnity()` which meant any click before WAKE UNITY UP was dead.
+
+**Fixes:**
+
+`index.html` — nuked the duplicate `landing-stats` div inside `landing-topbar`. The topbar now contains only the title and subtitle (the "IF ONLY I HAD A BRAIN" headline + proportional-sample explainer copy). Stats and action buttons were redundant with `hud-metrics` / `hud-settings-btn` / `hud-clear-btn` which are already visible pre-boot on server-brain mode. The `ls-neurons` / `ls-psi` / `ls-users` element IDs no longer exist in the DOM; the `el()` helper in `updateLandingStats()` already has an `if (e)` guard so those calls silently no-op. Removed the inline `padding-left:210px` that was compensating for the cluster-toggle collision, and the `flex:1` / `max-width:40%` constraints on the removed stats div — simplified to a plain flex container with the title left-aligned.
+
+`js/app.js initLanding()` — new `wireSettingsBtn(id)` helper called at page-load time for all three settings button IDs (`landing-settings-btn`, `hud-settings-btn`, `settings-btn`). Opens the setup modal via the existing `openSetupModal` closure. Idempotent via `_wired` flag so `bootUnity`'s later re-wire doesn't double-bind.
+
+`js/app.js bootUnity()` — `wireSettings()` re-write uses `cloneNode(true)` + `parentNode.replaceChild()` to drop the pre-boot listener and install the post-boot version (which also sets `startBtn.textContent = 'Apply Changes'` and refreshes the sensory inventory on open — behavior the pre-boot handler doesn't need). Prevents double-bound click handlers opening the modal twice.
+
+**Files:** `index.html`, `js/app.js`
+
 ### T4.5 — 3D brain popups never produce Unity commentary (comprehensive state-shape fix)  [DONE this session]
 
 **Source:** T4 manual verification.

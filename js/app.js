@@ -202,6 +202,21 @@ let landingBrainSource = null; // RemoteBrain or null
       }
     });
   }
+
+  // Wire every settings button (landing-topbar, hud-metrics panel,
+  // bottom toolbar) at page load so they work pre-boot. Previously
+  // these only got wired inside bootUnity() which meant clicking ⚙
+  // before WAKE UNITY UP did nothing — dead button bug. Idempotent
+  // via the _wired flag so bootUnity's re-wire is a no-op.
+  const wireSettingsBtn = (id) => {
+    const btn = document.getElementById(id);
+    if (!btn || btn._wired) return;
+    btn._wired = true;
+    btn.addEventListener('click', openSetupModal);
+  };
+  wireSettingsBtn('landing-settings-btn');
+  wireSettingsBtn('hud-settings-btn');
+  wireSettingsBtn('settings-btn');
 })();
 
 let _landingState = null;
@@ -2192,17 +2207,26 @@ Vision: ${state.visionDescription || 'none'}`;
   const micMuteBtn = document.getElementById('mic-mute-btn');
   if (micMuteBtn) micMuteBtn.addEventListener('click', toggleMicMute);
 
-  // Settings buttons — both toolbar and HUD open setup modal
+  // Settings buttons — both toolbar and HUD open setup modal.
+  // Idempotent: skips buttons that were already wired at page-load
+  // time (initLanding now does the initial wire so they work
+  // pre-boot). This re-wire runs after boot so post-boot openings
+  // get the "Apply Changes" button text + sensory inventory
+  // refresh the pre-boot handler doesn't bother with.
   const wireSettings = (btnId) => {
     const btn = document.getElementById(btnId);
-    if (btn) btn.addEventListener('click', () => {
+    if (!btn) return;
+    // Replace the handler — pre-boot one only opens the modal,
+    // post-boot version also updates the button text + refreshes
+    // inventory. Clone the node to drop any existing listeners.
+    const fresh = btn.cloneNode(true);
+    btn.parentNode.replaceChild(fresh, btn);
+    fresh._wired = true;
+    fresh.addEventListener('click', () => {
       setupModal.classList.remove('hidden');
       setupModal.style.display = '';
       startBtn.textContent = 'Apply Changes';
       startBtn.disabled = false;
-      // R15 — refresh the sensory backend inventory so returning
-      // users see the current detected state (which backends went
-      // alive/dead since last time the modal was open).
       renderSensoryInventory();
     });
   };
