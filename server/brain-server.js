@@ -499,6 +499,22 @@ class ServerBrain {
       // Below the CPU cap, scale is honored. Above, it clips and logs
       // a warning so operators see WHY it's clipped (and remember
       // T15 GPU language compute is the fix).
+      // T14.21 — CPU cap set at 10,000 neurons now that the two
+      // underlying slow paths are fixed:
+      //   1. SparseMatrix.initRandom rewritten from O(rows*cols) scan
+      //      to O(nnz) rejection sampling — 10K cluster init drops
+      //      from ~2-5 sec to ~60ms (50-100x faster).
+      //   2. dictionary.learnWord no longer calls cluster.detectStress
+      //      during pre-curriculum corpus loading (results are
+      //      meaningless noise until fineType basins are shaped).
+      //      Per-word cost drops from ~200-500ms to microseconds.
+      //
+      // At 10K neurons × 300 targetFanout = 3M synapse entries
+      // (~36 MB). cluster.step() runs the sparse propagate in
+      // ~150ms per tick, so generation at 100-200 ticks finishes
+      // in 15-30 sec. That's borderline for interactive chat but
+      // acceptable for a rebuild branch that's not yet optimized.
+      // Further scaling requires T15 GPU language compute.
       const CPU_LANGUAGE_CORTEX_CAP = 10000;
       const configuredCortex = CLUSTER_SIZES.cortex;
       const langCortexSize = Math.min(configuredCortex, CPU_LANGUAGE_CORTEX_CAP);
@@ -623,17 +639,27 @@ class ServerBrain {
       // centroid computation. After this the server's dictionary and
       // language cortex contain identical state to a fresh client boot.
       let personaCount = 0, baselineCount = 0, codingCount = 0, templateCount = 0;
+      // T14.21 — stage-by-stage progress logging so any future crash
+      // has a clearly-attributable last-successful-stage in the output.
       if (personaText) {
+        console.log('[Brain] Stage: loadSelfImage START');
         personaCount = this.languageCortex.loadSelfImage(personaText, this.dictionary, 0.75, 0.25);
+        console.log(`[Brain] Stage: loadSelfImage DONE (${personaCount} sentences)`);
       }
       if (baselineText) {
+        console.log('[Brain] Stage: loadLinguisticBaseline START');
         baselineCount = this.languageCortex.loadLinguisticBaseline(baselineText, this.dictionary, 0.50, 0);
+        console.log(`[Brain] Stage: loadLinguisticBaseline DONE (${baselineCount} sentences)`);
       }
       if (codingText) {
+        console.log('[Brain] Stage: loadCodingKnowledge START');
         codingCount = this.languageCortex.loadCodingKnowledge(codingText, this.dictionary, 0.40, 0);
+        console.log(`[Brain] Stage: loadCodingKnowledge DONE (${codingCount} sentences)`);
       }
       if (templateText) {
+        console.log('[Brain] Stage: loadTemplates START');
         templateCount = this.componentSynth.loadTemplates(templateText);
+        console.log(`[Brain] Stage: loadTemplates DONE (${templateCount} templates)`);
       }
 
       // T13.7.6 — Hebbian-train the cortex cluster on persona corpus so
@@ -644,12 +670,14 @@ class ServerBrain {
       // measurable. Also pass langStart so injection lands in the new
       // language region (1000-1999), not the default 150.
       if (personaText && this.cortexCluster) {
+        console.log('[Brain] Stage: trainPersonaHebbian START');
         try {
           this.languageCortex.trainPersonaHebbian(this.cortexCluster, personaText, {
             lr: 0.012,
             langStart: this._langStart,
             injectStrength: 0.8,
           });
+          console.log('[Brain] Stage: trainPersonaHebbian DONE');
         } catch (err) {
           console.warn('[Brain] persona Hebbian training failed:', err.message);
         }
@@ -663,11 +691,13 @@ class ServerBrain {
       // dictionary and type-transition tables — this pass actually shapes
       // the cross-region projections T14.4 wired up.
       if (this.curriculum && typeof this.curriculum.runFromCorpora === 'function') {
+        console.log('[Brain] Stage: curriculum.runFromCorpora START');
         try {
           await this.curriculum.runFromCorpora(
             { persona: personaText, baseline: baselineText, coding: codingText },
             { arousal: 0.8, valence: 0.2 },
           );
+          console.log('[Brain] Stage: curriculum.runFromCorpora DONE');
         } catch (err) {
           console.warn('[Brain] curriculum.runFromCorpora failed:', err?.message || err);
         }
@@ -1598,8 +1628,35 @@ class ServerBrain {
 
 // ── WebSocket Server ────────────────────────────────────────────
 
+// T14.21 — process-level error handlers so silent crashes during boot
+// surface with a real stack trace instead of just vanishing. Writes to
+// both stderr AND server/boot-error.log so the log survives whatever
+// start.bat's `start /b` + `cmd /k` combo does to stdio. CommonJS so
+// __dirname is available directly.
+const _bootErrorLog = (kind, err) => {
+  const msg = `[${new Date().toISOString()}] ${kind}: ${err && err.stack ? err.stack : String(err)}\n`;
+  try { process.stderr.write(msg); } catch {}
+  try {
+    fs.appendFileSync(path.join(__dirname, 'boot-error.log'), msg);
+  } catch {}
+};
+process.on('uncaughtException', (err) => {
+  _bootErrorLog('uncaughtException', err);
+  process.exit(1);
+});
+process.on('unhandledRejection', (reason) => {
+  _bootErrorLog('unhandledRejection', reason);
+  process.exit(1);
+});
+
 const brain = new ServerBrain();
-brain.start();
+// T14.21 — catch any rejection from brain.start() so async init failures
+// surface with a stack trace instead of silently terminating the process
+// via Node's default --unhandled-rejections=throw behavior.
+brain.start().catch((err) => {
+  _bootErrorLog('brain.start() rejected', err);
+  process.exit(1);
+});
 
 // Periodic saves
 setInterval(() => {

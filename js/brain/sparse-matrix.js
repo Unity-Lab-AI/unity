@@ -51,21 +51,54 @@ export class SparseMatrix {
     const { rows, cols } = this;
     const noSelfConnect = (rows === cols);
 
-    // Build connection lists per row, single pass
+    // T14.21 (2026-04-14) — rewritten to sample in O(nnz) instead of
+    // O(rows * cols). The old algorithm walked a nested loop over every
+    // matrix cell and ran Math.random() per cell to decide inclusion:
+    //
+    //   for i in 0..rows:
+    //     for j in 0..cols:
+    //       if random() < density: include (i, j)
+    //
+    // At 10K * 10K that's 100M iterations per cluster. At 100K * 100K
+    // it's 10B iterations — won't finish in human timescales. Biological
+    // scale (1M+ neurons) is completely unreachable via the nested scan.
+    //
+    // New algorithm: for each row, compute target k = round(cols * density),
+    // then sample k unique column indices via rejection (Set-dedup). At
+    // sparse densities (d < 0.1) rejection is efficient because the
+    // probability of picking a repeat column stays small. Total work
+    // is O(nnz) with a small constant — at 10K * 300 fanout that's 3M
+    // ops (~60ms) instead of 100M ops (~2-5s). 50-100x faster, exact
+    // same output shape.
     const rowEntries = new Array(rows);
     let total = 0;
-
     for (let i = 0; i < rows; i++) {
-      rowEntries[i] = [];
-      for (let j = 0; j < cols; j++) {
-        if (noSelfConnect && i === j) continue;
-        if (Math.random() < density) {
-          const sign = Math.random() < excitatoryRatio ? 1 : -1;
-          const w = sign * (0.1 + Math.random() * 0.4) * strength;
-          rowEntries[i].push({ j, w });
-          total++;
-        }
+      // Exact target count from density × cols. At d=0.03 on 10K cols,
+      // that's 300 connections per row. Clamped to cols-1 to guarantee
+      // termination of the rejection loop even at d=1.0.
+      let kPerRow = Math.min(Math.round(cols * density), Math.max(0, cols - (noSelfConnect ? 1 : 0)));
+      if (kPerRow <= 0) {
+        rowEntries[i] = [];
+        continue;
       }
+      const seen = new Set();
+      const entries = [];
+      while (entries.length < kPerRow) {
+        const j = Math.floor(Math.random() * cols);
+        if (noSelfConnect && i === j) continue;
+        if (seen.has(j)) continue;
+        seen.add(j);
+        const sign = Math.random() < excitatoryRatio ? 1 : -1;
+        const w = sign * (0.1 + Math.random() * 0.4) * strength;
+        entries.push({ j, w });
+      }
+      // Sort entries by column index so the CSR output has ascending
+      // column order per row, matching what the dense-scan algorithm
+      // produced and keeping downstream consumers (propagate,
+      // hebbianUpdate) happy with sorted CSR.
+      entries.sort((a, b) => a.j - b.j);
+      rowEntries[i] = entries;
+      total += entries.length;
     }
 
     // Allocate and fill CSR arrays

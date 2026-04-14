@@ -182,11 +182,26 @@ export class Dictionary {
     // boundaries + primary-stress index + a cortex spike snapshot from
     // the post-stream state. Skipped cleanly when no cluster is wired
     // (browser boot before engine wires it, or headless tooling).
+    //
+    // T14.21 (2026-04-14) — ALSO skipped when the cluster hasn't been
+    // curriculum-calibrated yet (no `intentCentroids`). Before
+    // curriculum runs, the fineType/phon/letter cross-projection
+    // weights are random, so `detectStress` produces meaningless
+    // noise that just wastes per-new-word boot time. With Gee's
+    // post-T14.18 configured cortex at 10K+ neurons, each first-
+    // observation detectStress call was costing ~200-500ms which
+    // multiplied by ~2000 new corpus words turned `loadSelfImage` +
+    // `loadBaseline` + `loadCoding` into a 15-20 minute silent boot
+    // that looked like a crash. Now the cortex snapshot gets populated
+    // lazily by curriculum itself (which runs AFTER the legacy
+    // loaders) or stays null until a post-curriculum chat turn
+    // re-observes the word.
     let cortexSnapshot = null;
     let syllables = null;
     let stressPrimary = -1;
     const cluster = this._cluster;
-    if (cluster && typeof cluster.detectStress === 'function' && clean.length > 0) {
+    const curriculumHasRun = cluster && cluster.intentCentroids && cluster.intentCentroids.size > 0;
+    if (cluster && typeof cluster.detectStress === 'function' && clean.length > 0 && curriculumHasRun) {
       // Only letters (a-z) get streamed through the letter region — digits
       // and apostrophes get skipped so the letter-region one-hot doesn't
       // grow dimensions for non-phonological symbols during vocabulary
