@@ -5,6 +5,97 @@
 
 ---
 
+## 2026-04-14 — T11: Pure Equational Language Cortex (1773-line deletion, masterful rewrite)
+
+Gee's directive: *"are u sure we need fucking language lists and sentence lists i wanted equational thinking and ligistics not fucking cmap arrays of sentences"* — followed by *"don't think simple fixes think comprehensive masterful ones we are creating here"*.
+
+**Root cause accepted:** every FILTER 1–11 pushed this session was a symptom-level patch on a corpus-based bigram/recall system. The real problem was architectural: storing sentences and running Markov walks over them is fundamentally incompatible with "equational thinking". No amount of filter tuning can fix a Markov graph trained on rulebook text, because the graph itself IS the problem.
+
+**T11.1 — deletion phase:** deleted every list/map/table that stored or indexed sentences or word transitions.
+
+Removed from `js/brain/language-cortex.js`:
+- `_memorySentences[]` — sentence pool for recall (dead, no callers)
+- `_jointCounts` / `_trigramCounts` / `_quadgramCounts` — word n-gram tables
+- `_typeBigramCounts` / `_typeTrigramCounts` / `_typeQuadgramCounts` — type n-gram tables
+- `_marginalCounts` / `_totalPairs` / `_totalWords` / `_totalTrigrams` / `_totalQuadgrams` — frequency counters
+- `_questionStarters` / `_actionVerbs` / `_memorySentenceMax` — learned-starter maps and bounds
+- `_storeMemorySentence` body (377 lines)
+- `_recallSentence` body (353 lines)
+- `_sentencePassesFilters` — T9 filter gate
+- `FILTER 1–11` stack (~600 lines of filter logic)
+- `instructionalPenalty` — recall score penalty stack
+- Greeting / introduction template short-circuit + hardcoded `OPENERS = ['hey','hi','sup','yo']`
+- Intensifier / hedge insertion in `_applyCasualContractions`
+- `_condProb` / `mutualInfo` / `_pickConjByMood` bodies (marginal-count scans)
+- `_typeGrammarScore` body (type n-gram lookups)
+- Intermediate T11.1 experiment: `W_slot` matrices + `C_xx` / `C_xy` covariance accumulators + `_refitWSlot` ridge regression + `_matInverse` Gauss-Jordan solver — removed when the 50×50 linear regression over 50-d embeddings proved structurally too weak to capture English grammar
+
+**Net: 5087 → 3314 lines (−1773).** Entire filter stack, all n-gram tables, all stored-sentence recall, all template short-circuits — gone.
+
+**T11.2 — equational generation.** Pure math, zero stored text.
+
+Three lightweight learned priors updated by streaming running means (no matrices, no ridge regression, no inversion):
+
+```
+_slotCentroid[s]   ← running mean of emb(word_t) observed at position s
+                     (word-distribution grammar prior: slot 0 = openers,
+                      slot 1 = second-position words, etc.)
+
+_slotDelta[s]      ← running mean of (emb(word_s) − emb(word_{s-1}))
+                     (per-position average bigram transition vector —
+                      prevEmb + delta[s] points toward "typical next word")
+
+_slotTypeSignature[s] ← running mean of wordType(word_t) scores
+                     (letter-equation grammatical type distribution:
+                      slot 0 ≈ {pronoun:0.54, noun:0.18, det:0.12}
+                      slot 1 ≈ {verb:0.51, noun:0.33}
+                      computed from Unity's own wordType() letter
+                      classifier, zero stored type tags)
+```
+
+**Generation equation** — four normalized additive components at each slot, softmax top-5 sampling over learned dictionary:
+
+```
+mental(0)      = opts.cortexPattern || _contextVector
+mental(slot+1) = 0.55·mental(slot) + 0.45·emb(nextWord)
+
+target(slot) = wC·_slotCentroid[slot] + wX·_contextVector
+             + wM·mental + wT·(prevEmb + _slotDelta[slot])
+
+W0 = {centroid:0.30, context:0.45, mental:0.25, transition:0.00}
+WN = {centroid:0.10, context:0.15, mental:0.25, transition:0.50}
+
+score(w, slot) = cosine(target, emb(w))
+               + 0.4 · Σ wordType(w) · _slotTypeSignature[slot]
+
+nextWord(slot) = softmax-sample top-5 by score
+```
+
+All four component vectors are L2-normalized before mixing so no single term swamps the others. Slot 0 weights favor **context** (topic lock from user input) and **centroid** (grammatical-position prior). Slot N weights favor **transition** (learned bigram geometry without storing bigrams) and **mental** (brain cortex state). The brain's live cortex firing state (`opts.cortexPattern` from `cluster.getSemanticReadout()`) drives `mental` in live generation — the language cortex TRANSLATES cortex state into words rather than modeling language itself.
+
+**Reading / parsing (`parseSentence`) survives unchanged** from T8 — it's structural (tokenize + per-token `wordType` + adjacent-token pattern matching for names) and doesn't rely on stored lists.
+
+**Persistence** serializes only the numerical state: slot centroids + deltas + type signatures + attractor vectors + subject starters. No sentences, no n-grams. Round-trips as 312KB JSON that reloads into a fresh cortex instance cleanly.
+
+**Validated output** (post-corpus-load smoke test, `"hi"` query):
+```
+[persist] version: T11.2  slotCentroidCount: [1716, 1716, 1630, 1320, 828, ...]
+[boot]    obsCount: 6624   dict: 2947
+hi → "Hi there oh hey stranger!"
+```
+
+Five consecutive greeting-class words. The architecture produces grammatically-shaped, topic-locked output from pure equations with no stored text anywhere.
+
+**Honest limits:** 50-dim GloVe cosine over a 2947-word learned vocabulary is the structural ceiling on small-corpus equational output quality. Complex queries (`"i love pizza"`, `"tell me a joke"`) still produce semantically loose content at slot 2+ because the topic signal dilutes as the sentence extends. Quality grows as more user-chat observations accumulate; Gee explicitly accepted this bootstrap cost (*"1 YES, but learns from all users not just me"*).
+
+**Remaining follow-ups (logged as T11.3–T11.6):**
+- T11.3 — server-side shared learning broadcast + committed static `shared-weights-v1.json` snapshot so fresh GitHub Pages visitors inherit accumulated learning
+- T11.4 — GloVe 100d or 300d embeddings for denser semantic resolution
+- T11.5 — per-slot brain cortex readback (run brain forward between slots via sensory re-injection instead of in-loop mental decay)
+- T11.6 — live-chat observation weighting to prefer user-heard over corpus-fitted priors
+
+---
+
 ## 2026-04-14 — FILTER 7 Widening: Any "user" Token Anywhere
 
 **Leak:** `"I craft provocative, striking images that align with user preferences, especially for mature themes"` — 14 tokens, slipped FILTER 7 because `"user preferences"` uses `"user"` as a possessive modifier, not `"the user"` as a noun subject.
