@@ -38,6 +38,34 @@ let totalComputeMs = 0;
 
 const clusterState = {}; // persists across reconnects
 
+// T14.22.3 (2026-04-14) — compute request queue.
+//
+// Server dispatches 7 compute_request messages in parallel via
+// Promise.all at every substep. Browser WebSocket fires ws.onmessage
+// for each message individually, and async handlers don't wait for
+// previous promises to resolve. That meant 7 gpu.fullStep calls ran
+// concurrently on the same GPUCompute instance, which share GPU
+// state (readback buffer map state, in-flight command submissions)
+// and collided with:
+//
+//   Failed to execute 'mapAsync' on 'GPUBuffer':
+//   Buffer already has an outstanding map pending.
+//
+// Plus cascading:
+//   [Buffer (unlabeled)] used in submit while mapped.
+//   [Buffer (unlabeled)] used in submit while pending map.
+//
+// No compute_results came back to the server, all cluster spike
+// counts stayed at 0, UI showed all zeros, 3D brain had no activity
+// to render. Classic concurrency collision.
+//
+// Fix: chain every compute_request onto a single Promise queue so
+// fullStep calls serialize. Only one in flight at a time. GPU can
+// still pipeline internally (shader dispatches run on GPU command
+// queue regardless) but the JS-side mapAsync / unmap lifecycle
+// stays single-threaded and safe.
+let computeQueue = Promise.resolve();
+
 function connectToServer() {
   // R14 — brain-server moved from 8080 to 7525
   ws = new WebSocket('ws://localhost:7525');
@@ -81,49 +109,12 @@ function connectToServer() {
 
     // ── STEP: Server sends only tonic + noise (two numbers) ──
     if (msg.type === 'compute_request' && gpuReady) {
-      const { clusterName, size } = msg;
-      const state = clusterState[clusterName];
-
-      // If not initialized yet, request init
-      if (!state?.initialized) {
-        // Can't compute without init — tell server we missed
-        ws.send(JSON.stringify({ type: 'compute_result', clusterName, spikeCount: 0, spikeIndices: [], size }));
-        return;
-      }
-
-      // FULL GPU PIPELINE — zero JS loops for N neurons (scales to hardware)
-      // 1. GPU generates currents (PCG hash noise — no Math.random loop)
-      // 2. GPU runs LIF shader (voltage update + spike check)
-      // 3. GPU counts spikes (atomic counter — no JS scan)
-      // I = (tonic × driveBaseline × emotionalGate × gainMultiplier + errorCorrection) + noise
-      const tonic = msg.tonicDrive || 16;
-      const noiseAmp = msg.noiseAmp || 5;
-      const gain = msg.gainMultiplier || 1.0;
-      const emoGate = msg.emotionalGate || 1.0;
-      const drive = msg.driveBaseline || 1.0;
-      const errCorr = msg.errorCorrection || 0;
-      const effectiveDrive = tonic * drive * emoGate * gain + errCorr;
-
-      const t0 = performance.now();
-
-      // ALL ON GPU — no JS loops, no CPU→GPU current upload, no GPU→CPU spike readback
-      const result = await gpu.fullStep(clusterName, effectiveDrive, noiseAmp);
-
-      // Send back spike count only — 4 bytes instead of N-sized array
-      // Server doesn't need individual spike indices (no intra-cluster synapses at scale)
-      ws.send(JSON.stringify({
-        type: 'compute_result',
-        clusterName,
-        spikeCount: result.spikeCount,
-        size: state.size,
-      }));
-
-      stepsComputed++;
-      const elapsed = performance.now() - t0;
-      totalComputeMs += elapsed;
-      const avg = totalComputeMs / stepsComputed;
-      statsEl.textContent = `Steps: ${stepsComputed.toLocaleString()} | Avg: ${avg.toFixed(1)}ms | Last: ${elapsed.toFixed(1)}ms | ${state.size.toLocaleString()} neurons`;
-      perfEl.textContent = `Throughput: ${(state.size / (elapsed / 1000)).toFixed(0)} neurons/sec | Spikes: ${result.spikeCount.toLocaleString()} (${(result.spikeCount/state.size*100).toFixed(1)}%)`;
+      // T14.22.3 — chain onto the serialization queue so concurrent
+      // compute_request messages don't overlap inside fullStep.
+      computeQueue = computeQueue.then(() => handleComputeRequest(msg)).catch(err => {
+        console.warn('[GPU Compute] queued request failed:', err && err.message ? err.message : err);
+      });
+      return;
     }
   } catch (err) {
     console.warn('[GPU Compute] Error:', err.message, err.stack);
@@ -136,6 +127,47 @@ function connectToServer() {
     setTimeout(() => connectToServer(), 3000);
   };
 } // end connectToServer
+
+// T14.22.3 — serialized compute request handler. One fullStep in
+// flight at a time, awaited by the queue so mapAsync / buffer state
+// never overlap. The GPU shader itself is still fast — this just
+// prevents the JS-side buffer lifecycle from racing.
+async function handleComputeRequest(msg) {
+  const { clusterName, size } = msg;
+  const state = clusterState[clusterName];
+
+  if (!state?.initialized) {
+    ws.send(JSON.stringify({ type: 'compute_result', clusterName, spikeCount: 0, spikeIndices: [], size }));
+    return;
+  }
+
+  // FULL GPU PIPELINE — zero JS loops for N neurons (scales to hardware)
+  //   I = (tonic × driveBaseline × emotionalGate × gainMultiplier + errorCorrection) + noise
+  const tonic = msg.tonicDrive || 16;
+  const noiseAmp = msg.noiseAmp || 5;
+  const gain = msg.gainMultiplier || 1.0;
+  const emoGate = msg.emotionalGate || 1.0;
+  const drive = msg.driveBaseline || 1.0;
+  const errCorr = msg.errorCorrection || 0;
+  const effectiveDrive = tonic * drive * emoGate * gain + errCorr;
+
+  const t0 = performance.now();
+  const result = await gpu.fullStep(clusterName, effectiveDrive, noiseAmp);
+
+  ws.send(JSON.stringify({
+    type: 'compute_result',
+    clusterName,
+    spikeCount: result.spikeCount,
+    size: state.size,
+  }));
+
+  stepsComputed++;
+  const elapsed = performance.now() - t0;
+  totalComputeMs += elapsed;
+  const avg = totalComputeMs / stepsComputed;
+  statsEl.textContent = `Steps: ${stepsComputed.toLocaleString()} | Avg: ${avg.toFixed(1)}ms | Last: ${elapsed.toFixed(1)}ms | ${state.size.toLocaleString()} neurons`;
+  perfEl.textContent = `Throughput: ${(state.size / (elapsed / 1000)).toFixed(0)} neurons/sec | Spikes: ${result.spikeCount.toLocaleString()} (${(result.spikeCount/state.size*100).toFixed(1)}%)`;
+}
 </script>
 </body>
 </html>
