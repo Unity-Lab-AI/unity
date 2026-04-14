@@ -1089,10 +1089,17 @@ export class LanguageCortex {
     const scoreMem = (mem) => {
       const count = overlapCount(mem);
       if (count === 0) return { score: -1, count: 0, cosine: 0 };
+      const penalty = instructionalPenalty(mem);
+      // HARD reject structural meta-prose from recall entirely.
+      // FILTER 7/8 mirror penalties of ≥0.40 mean the sentence is a
+      // rulebook line, not speech. Returning -1 keeps it out of the
+      // pool regardless of overlap/cosine/mood alignment — otherwise
+      // a high-overlap meta sentence can still beat a low-overlap
+      // real speech match via the additive composite score.
+      if (penalty >= 0.40) return { score: -1, count: 0, cosine: 0 };
       const overlapFrac = count / inputSize;
       const cosine = Math.max(0, this._cosine(mem.pattern, contextVector));
       const alignment = moodAlignment(mem); // [0, 1]
-      const penalty = instructionalPenalty(mem);
       // 0.55 overlap + 0.20 cosine + 0.25 mood alignment - instructional penalty.
       // Mood alignment makes the SAME query pick different memories depending
       // on current drug state / arousal — Gee's "adjust in the moment" requirement.
@@ -1178,6 +1185,15 @@ export class LanguageCortex {
         if (isDegenerate(mem)) continue;
         const alignment = moodAlignment(mem);
         const penalty = instructionalPenalty(mem);
+        // HARD reject structural meta-prose. FILTER 7 (interlocutor-
+        // as-third-party) and FILTER 8 (≥2 "like a" / "when asked" /
+        // "to anyone") mirror penalties are all ≥0.40. Those aren't
+        // "lower-quality but better than nothing" — they're rulebook
+        // lines, and the self-ref fallback was happily emitting them
+        // verbatim because `alignment + lengthBonus - penalty` was
+        // still positive. Gate them out entirely so the fallback only
+        // picks real first-person speech.
+        if (penalty >= 0.40) continue;
         const lengthBonus = Math.min(0.15, mem.tokens.length * 0.01);
         const score = alignment + lengthBonus - penalty;
         if (score > 0) fbPool.push({ mem, score });
