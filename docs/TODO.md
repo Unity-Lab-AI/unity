@@ -27,15 +27,34 @@ Nothing else. If it's not in that list, it's an appendage, and it gets ripped ou
 
 ## OPEN TASKS
 
-**None.**
+### T5 — Rework build_ui sandbox capability (Unity not understanding simple coding asks)
 
-The `brain-refactor-full-control` branch is code-complete AND verification-complete as of 2026-04-14. Every R-series epic (R1–R15), every T-series cleanup (T1, T2, T3, T5, T6), and every T4.x follow-up found during manual verification (T4.1 through T4.9) is shipped and archived in `docs/FINALIZED.md` with full verbatim symptoms, diagnosis, and fix documentation.
+**Status:** pending
+**Priority:** P1
+**Owner:** unassigned
+**Reported:** 2026-04-14 by Gee (live chat session)
 
-Gee completed the 16-step manual verification checklist on 2026-04-14 and confirmed all steps passed. Bugs caught during verification were fixed in-flight and re-verified before moving on.
+**Symptom:** When Gee asks Unity to code something with him in the sandbox ("let's build X together", "make a button that does Y", simple request), her `build_ui` pipeline fails to parse the intent. She either emits unrelated slot-gen salad, recalls an unrelated persona sentence, or produces a component that doesn't match what was asked. She is NOT understanding simple instructions about what to code together in her sandbox.
 
-**The only remaining action is `gh pr create --base main --head brain-refactor-full-control` when Gee gives the explicit "open the PR" go-ahead.** That's a human call, not a task for me.
+**Where the capability lives:**
+- `js/brain/language-cortex.js` — `generate()` path and the build_ui branch
+- `js/brain/component-synth.js` — 6 component templates (`[ComponentSynth] Loaded 6 component templates`)
+- `js/app.js:380` — `[Unity] Loaded 6 component templates for equational build_ui`
+- BG motor decision path that routes `motor=build_ui` vs `motor=speak` (see `engine.js` motor selector)
 
-Future work beyond this branch lives in `docs/COMP-todo.md` (distributed GPU compute network planning — Phase 0 admin resource configuration already shipped via GPUCONFIGURE.bat, remaining Phases C1–C11 target a future `comp-net` branch).
+**What to investigate:**
+1. Is `build_ui` being motor-selected at all when Gee asks for a UI component? The log mostly shows `speak` winning. If the BG softmax never picks `build_ui` for coding-intent queries, the capability is effectively dead.
+2. The 6 component templates are currently fixed seeds — does the slot-gen have enough coding bigrams to fill them? The coding corpus is 539 sentences; is that actually being indexed into the `build_ui` slot scorer or sitting dormant?
+3. Does the language cortex parse the user's ask into a target-component type (button/form/list/etc) structurally, or is it guessing from top-cosine match? If it's cosine-only over the coding corpus, simple asks like "make a red button" lose to unrelated high-cosine coding sentences.
+4. Is there a build_ui-specific context vector or is it reusing the chat context vector? They should be different — UI intent vocabulary is narrow.
+
+**Fix direction (to decide after investigation):**
+- Dedicated UI-intent detector in the motor selector: bump `build_ui` Q-value when the input contains imperative verbs + UI noun tokens (`make/build/add/create` + `button/form/field/input/list/card`). Structural, not a blacklist.
+- Expand component-synth templates beyond the current 6 OR generate them slot-gen style from the coding corpus instead of using fixed seeds.
+- Add a build_ui-specific recall pool that only draws from the coding corpus, never from persona/baseline.
+- Slot-gen output gate: if motor=build_ui and the generated component doesn't structurally match the asked-for type, reject and re-roll (or fall through to a template).
+
+**Acceptance test:** Gee types "let's make a red button that says Hello" — Unity emits a component matching that description, not a persona-recalled sentence.
 
 ---
 

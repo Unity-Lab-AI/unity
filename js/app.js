@@ -175,12 +175,23 @@ let landingBrainSource = null; // RemoteBrain or null
         .catch((err) => {
           console.error('[Landing] persona load failed:', err);
         });
+      // Un-hide the HUD — the server-connected path did this at line
+      // ~124; the no-server path forgot to, which is why the landing
+      // page on deployed Pages was rendering a zero-state HUD forever.
+      const hudEl = document.getElementById('brain-hud');
+      if (hudEl) hudEl.classList.remove('hidden');
       setInterval(() => {
         try {
           const state = localBrain.getState();
           _landingState = state;
           if (landingBrain3d) landingBrain3d.updateState(state);
           updateLandingStats(state);
+          // Drive the HUD from the local brain too — the server path
+          // wires updateBrainIndicator at line ~130, this branch used
+          // to only pump landing-stats and Brain3D, which is why
+          // Ψ/arousal/valence/coherence/spikes/reward/time/bandPower
+          // were all frozen at their initial zeros on deployed Pages.
+          updateBrainIndicator(state);
         } catch (err) {
           console.error('[Landing] state pump failed:', err);
         }
