@@ -20,7 +20,7 @@ import { NeuronCluster, ClusterProjection } from './cluster.js';
 import { Cortex, Hippocampus, Amygdala, BasalGanglia, Cerebellum, Hypothalamus } from './modules.js';
 import { MysteryModule } from './mystery.js';
 import { OscillatorNetwork } from './oscillations.js';
-import { UNITY_PERSONA, loadPersona, getBrainParams } from './persona.js';
+import { loadPersona, getBrainParams } from './persona.js';
 import { SensoryProcessor } from './sensory.js';
 import { MotorOutput } from './motor.js';
 import { MemorySystem } from './memory.js';

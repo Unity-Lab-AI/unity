@@ -12,7 +12,6 @@ import { UnityBrain } from './brain/engine.js';
 // brain.processAndRespond → innerVoice.languageCortex.generate. No
 // more text-AI peripheral. The language.js file still exists as a
 // shim (see its header) but is not imported here.
-import { UNITY_PERSONA } from './brain/persona.js';
 import { AIProviders } from './brain/peripherals/ai-providers.js';
 import { PollinationsAI } from './ai/pollinations.js';
 import { VoiceIO } from './io/voice.js';

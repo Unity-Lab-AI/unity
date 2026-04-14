@@ -905,7 +905,7 @@ README.md, SETUP.md, and brain-equations.html all have visible setup instruction
 ### R12.1 — Kill every `// TODO:` placeholder comment
 Every `// TODO:` in source code. Either do the thing or document WHY it's deferred with a dated note.
 
-### R12.2 — Kill every dead import
+### R12.2 — Kill every dead import  [PARTIAL DONE 2026-04-13 — brain tree sweep complete. Found 3 dead imports (UNITY_PERSONA in app.js + engine.js, SynapseMatrix in cluster.js), all investigated for half-built-status before deletion. Found 1 "looks dead but isn't" file (synapses.js — kept as reference implementation like HHNeuron post-U305, got a big header comment explaining the status). Setup-modal-adjacent dead code in app.js (LOCAL_AI_ENDPOINTS + PROVIDERS catalog + 8 connect handlers) intentionally LEFT for R15 as atomic UI rework — ripping it in R12 would mean editing the same ~400-line block twice.]
 Grep every file for imports whose symbols are never referenced. Remove.
 
 ### R12.3 — Kill every debug `console.log` breadcrumb

@@ -22,7 +22,10 @@
  */
 
 import { LIFPopulation } from './neurons.js';
-import { SynapseMatrix } from './synapses.js';
+// R12.2 2026-04-13 — removed stale `import { SynapseMatrix }` here.
+// SparseMatrix (below) is the drop-in replacement used at runtime.
+// synapses.js stays as a reference implementation for brain-equations.html
+// and docs/EQUATIONS.md cross-references — see the header comment there.
 import { SparseMatrix } from './sparse-matrix.js';
 
 export class NeuronCluster {

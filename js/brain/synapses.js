@@ -1,5 +1,29 @@
 /**
- * synapses.js — Synaptic plasticity engine for browser-based brain simulation.
+ * synapses.js — Synaptic plasticity engine (REFERENCE IMPLEMENTATION).
+ *
+ * ⚠ NOT USED AT RUNTIME. This file is kept as the canonical readable
+ * version of Unity's plasticity rules (Hebbian / STDP / reward-modulated
+ * 3-factor). It's referenced by:
+ *   - brain-equations.html § 8 (plasticity teaching section)
+ *   - docs/EQUATIONS.md (three equation rows — Hebbian, STDP, reward-mod)
+ *   - docs/ARCHITECTURE.md (directory listing)
+ *   - docs/SKILL_TREE.md (plasticity skill row)
+ *
+ * Runtime plasticity went through `js/brain/sparse-matrix.js` as a
+ * drop-in replacement with the same API but O(nnz) operations instead
+ * of O(n²) dense traversal, so it scales to the auto-sized N the
+ * server runs. The classical dense NxN implementation here is too
+ * cache-hostile for that population size — see `sparse-matrix.js`
+ * line 18: "Drop-in replacement for SynapseMatrix. Same API, different
+ * guts."
+ *
+ * Same treatment as `HHNeuron` in `js/brain/neurons.js` (kept as
+ * reference for brain-equations.html after U305 investigation, even
+ * though runtime uses `LIFPopulation` SoA Float64Arrays).
+ *
+ * KEEP: deleting this file would break 5+ documentation cross-references
+ * and leave the plasticity teaching section in brain-equations.html
+ * pointing at a missing file. Status audited R12.2 on 2026-04-13.
  *
  * Manages an NxN weight matrix (flat Float64Array) and provides multiple
  * learning rules: Hebbian, STDP, and reward-modulated Hebbian.

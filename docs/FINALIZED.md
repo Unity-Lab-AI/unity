@@ -14,6 +14,29 @@
 
 ## COMPLETED TASKS LOG
 
+## 2026-04-13 Session: R12.2 partial — dead-import sweep (brain tree)
+
+### COMPLETED
+- [x] **Task:** R12.2 partial — Kill every dead import in the brain tree. Per Gee's rule "make sure orphans are actually orphans and not shit that we need that never was implimented", every candidate got the full investigation-first treatment before any deletion: find, read, trace consumers, decide. Same approach as the U302-U310 orphan resolution that built the refactor.
+  - Completed: 2026-04-13
+  - Files modified: `js/app.js`, `js/brain/engine.js`, `js/brain/cluster.js`, `js/brain/synapses.js`
+  - Investigation methodology: for each `import { X } from ...` line in the brain tree, counted references to X in the importing file. A count of 1 meant only the import line itself existed — pure orphan candidate. Each candidate then got a secondary cross-codebase grep to determine WHY it was orphaned (half-built feature? superseded module? R4 text-AI blast radius? reference implementation like HHNeuron?).
+  - Findings:
+    - **`UNITY_PERSONA` in `js/app.js:15`** — PURE DEAD, removed. Reference count in app.js = 1 (just the import). Cross-codebase grep found the smoking gun at `docs/KILL_LIST.md:68`: pre-R4, line 922 of app.js had `brocasArea = new BrocasArea({ persona: UNITY_PERSONA })`. R4 killed BrocasArea → that consumer vanished → import became orphaned. `loadPersona()` is the actual path used now (returns a deep copy of UNITY_PERSONA so no shared mutation). Safe deletion — the whole import line removed.
+    - **`UNITY_PERSONA` in `js/brain/engine.js:23`** — PURE DEAD, removed. Same root cause (R4 BrocasArea blast radius). The import was a 3-symbol `import { UNITY_PERSONA, loadPersona, getBrainParams }` — `loadPersona` and `getBrainParams` both verified as live consumers (ref counts 2 and 3 respectively, real call sites at engine.js:79, 81, 1070). Only UNITY_PERSONA removed, the other two kept.
+    - **`SynapseMatrix` in `js/brain/cluster.js:25`** — STALE REFACTOR LEFTOVER, removed. Reference count = 1. Investigation revealed this was NOT a half-built feature but a leftover import from the sparse CSR refactor: `sparse-matrix.js:18` explicit comment says "Drop-in replacement for SynapseMatrix. Same API, different guts." `cluster.js` now uses `SparseMatrix` (5 references, actively consumed at runtime) but the old `import { SynapseMatrix }` line was never cleaned up when the refactor swapped the internals. Line removed and replaced with an R12.2 comment explaining why (so future maintainers don't re-add it).
+    - **`js/brain/synapses.js` as a file** — KEPT as reference implementation, documented. After removing the cluster.js import, this file had ZERO consumers in the JS source tree — textbook dead-file candidate. BUT the cross-codebase grep showed 7 documentation files reference it as the canonical implementation of Unity's plasticity rules: `brain-equations.html:379` ("Three learning rules operating on a 200×200 weight matrix... Implemented in `js/brain/synapses.js`"), `docs/EQUATIONS.md:121-123` (three equation rows pointing at it), `docs/ARCHITECTURE.md:349` (directory listing), `docs/SKILL_TREE.md:148` (plasticity skill row), `docs/ROADMAP.md:54` (project history), `SETUP.md:112` (directory listing), `docs/TODO.md:49` (code inventory). Same situation as HHNeuron post-U305 — kept as a readable reference implementation backing the teaching docs, even though runtime uses the sparse drop-in replacement. File KEPT with a new 25-line header comment explaining: (a) not used at runtime, (b) list of 5+ doc cross-references, (c) why the sparse replacement was needed at scale, (d) parallel to HHNeuron's reference-implementation status, (e) DO NOT DELETE — would break documentation cross-references.
+  - Files NOT touched this pass (intentionally deferred to R15):
+    - `js/app.js:528-534` `LOCAL_AI_ENDPOINTS` const (4 text-AI text-chat endpoints including the deleted claude-proxy on port 8080)
+    - `js/app.js:540+` `PROVIDERS` catalog (8-provider text-AI object: pollinations, openrouter, openai, anthropic, mistral, deepseek, groq, local)
+    - `detectedAI`, `bestBackend`, `_allTextOptions` module-level vars
+    - All connect-button event handlers and provider-probe code
+    - These are part of the setup modal connect flow that R15 is going to rewrite as an atomic UI rework. Ripping them in R12 would mean editing the same ~400-line block twice. R12.2 stays a "quiet cleanup" and R15 stays a "visible landing page rework" per the split Gee agreed to.
+  - UI/IO/AI/storage leaf modules (`js/ui/sandbox.js`, `chat-panel.js`, `brain-viz.js`, `brain-3d.js`, `sensory-status.js`, `js/io/voice.js`, `permissions.js`, `js/ai/pollinations.js`, `js/storage.js`) verified as zero-import leaf files — nothing to sweep there.
+  - Final state: R12.2 brain-tree sweep complete, 3 dead imports removed, 1 reference file formally documented. Setup modal ecosystem stays pending under R15. The remaining R12 subtasks (R12.1 dead TODO comments, R12.3 debug console.log breadcrumbs, R12.5 bundle rebuild, R12.6 final grep sanity sweep) haven't been touched yet.
+
+---
+
 ## 2026-04-13 Session: R10.9 + R10.10 — new SENSORY.md + WEBSOCKET.md docs
 
 ### COMPLETED
