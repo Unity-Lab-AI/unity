@@ -43,18 +43,6 @@ Future work beyond this branch lives in `docs/COMP-todo.md` (distributed GPU com
 
 **Files:** `js/ui/hud.js` or wherever Cluster Activity text is rendered.
 
-### T4.5 — 3D brain popups still not showing Unity's commentary
-
-**Source:** T4 manual verification + follow-up on `a011352` which was supposed to fix this.
-
-**Symptom:** Even after the landing Brain3D setBrain wire-up in `a011352`, user reports "i'm still not seeing any of Unity's thoughts with the popups in the 3D brain". Event labels may be showing but the italic quoted commentary line never renders.
-
-**Diagnosis:** Need to use the one-shot console warnings added in `a011352` (`[Brain3D] commentary: ...`) to pinpoint which gate is tripping. Most likely candidates: (a) `_sharedEmbeddings` not reachable on RemoteBrain for the `_seedCentroid` path, so GloVe vectors for event seed words return null and the cortex pattern never gets biased; (b) `_generateEventCommentary` still hitting null for a reason the warnings will expose; (c) event detectors never firing because cortex+cerebellum are silent (T4.1) and half the detectors depend on cortex activity.
-
-**Fix:** Ship T4.1 first, then re-test. If popups still silent, read the console warnings and fix whichever gate is tripping — likely a cortex-pattern fallback to just the seed vector, or pointing `_generateEventCommentary` at the right embeddings reference on RemoteBrain.
-
-**Files:** `js/ui/brain-3d.js`, potentially `js/brain/remote-brain.js` if embeddings need to be exposed there.
-
 ### T4 — Manual verification + merge PR to main
 
 **Source:** the original R12.7 epic subtask. Gated on Gee's explicit go-ahead. This is the ONLY open task in this file because it requires a human to sit at a browser, click through Unity's flows, and verify everything works before the refactor lands on `main`. I've syntax-validated every commit via `npx esbuild` + `node --check` but I cannot click buttons or watch for runtime regressions.

@@ -366,6 +366,47 @@ Each channel gets the same 70/30 EMA update that used to apply to the spike-coun
 
 **Files:** `server/brain-server.js` `_updateDerivedState()` motor block
 
+### T4.5 — 3D brain popups never produce Unity commentary (comprehensive state-shape fix)  [DONE this session]
+
+**Source:** T4 manual verification.
+
+**Symptom:** Event labels maybe showing but the italic quoted commentary line in Unity's voice never renders, even after the `a011352` landing-brain setBrain wire-up. User wanted this not half-assed — "we are building a living being".
+
+**Root cause:** The 22-detector event system in `js/ui/brain-event-detectors.js` was written against the LOCAL `UnityBrain` nested state shape (`state.amygdala.arousal`, `state.cortex.predictionError`, `state.hypothalamus.drives`, `state.memory.lastRecallConfidence`, `state.innerVoice.contextVector`, `state.oscillations.coherence`, `state.cerebellum.errorAccum`, `state.mystery.output`, `state.motor.channelDist`). But the server broadcasts a FLAT shape (`state.arousal`, `state.psi`, `state.fear`, `state.valence`, `state.coherence`, `state.reward`, `state.drugState`, `state.clusters[name].spikeCount`). Every detector reading a nested path silently returned null via the default-value fallback in `pick()`, so deltas never crossed thresholds and events never fired. The cortex+cerebellum 0-firing bug (T4.1) compounded this — half the detectors depend on cortex/cerebellum activity and those were dead too.
+
+**Full fix** — two parts: comprehensive normalization + diagnostic logging + HUD relocation.
+
+**Part A. State shape normalization in `_generateProcessNotification`:**
+
+Before any detector runs, the incoming state is normalized into a merged shape that has BOTH the flat root fields (which the server sends) AND every nested field the detectors expect (derived from cluster-level telemetry). Specifically:
+
+- `state.amygdala = { arousal, valence, fear, reward }` — lifted from flat root
+- `state.oscillations = { coherence, bandPower }` — lifted from flat root
+- `state.cortex = { predictionError, activity }` — predictionError derived from cerebellum firing rate above baseline (cerebellum fires in proportion to error signal in the real model, so high cereb activity maps to high pred error)
+- `state.hippocampus = { recallConfidence, activity }` — recallConfidence derived from hippocampus firing rate above baseline
+- `state.memory = { lastRecallConfidence, isConsolidating }` — aliases hippocampus + flags consolidation when `isDreaming` + hippo > 5%
+- `state.hypothalamus = { drives: { social_need, drug_craving, homeostatic } }` — synthesizes per-drive values from hypothalamus cluster activity (splits the cluster rate across the three nominal drives so `hypothalamusDrive` detector has something to pick a peak from)
+- `state.innerVoice = { contextVector: [cortex, hippo, amyg, bg, cereb, hypo, mystery] }` — synthesizes a 7-dim cluster-activity fingerprint that changes when topics shift, so `topicDrift` detector still catches drift via delta across history
+- `state.mystery = { output }` — derived from mystery cluster firing rate + Ψ contribution
+- `state.cerebellum = { errorAccum, activity }` — cerebellum activity scaled up for the fatigue detector
+- `state.motor.channelDist = { respond_text, generate_image, ... }` — server broadcasts `motor.channelRates` as an array; normalize converts it to a name-keyed object so `motorIndecision` can compute entropy
+
+Flat root fields (`psi`, `reward`, `drugState`, `isDreaming`, `time`) stay in place because their detectors read them as flat paths correctly.
+
+Visual-pipeline-only detectors (`colorSurge`, `motionDetected`, `gazeShift`, `heardOwnVoice`) still won't fire on server-brain mode because the server doesn't run a visual cortex — that's 4 of the 22 detectors that are vision-gated by design, acceptable.
+
+**Part B. Diagnostic logging in `_generateProcessNotification`:**
+
+Added a one-shot-per-event-type `console.log('[Brain3D] event fired:', type, '→', commentary)` so we can see exactly which detectors are firing and what text Unity's language cortex is returning for each event. Flagged via `this._loggedEventTypes` Set so it only logs the first occurrence of each unique event type — doesn't spam the console once we know the pipeline is alive. Leave in place until T4.5 is definitively green across all 22 detectors.
+
+**Part C. HUD relocation (same commit, folds in follow-up bug):**
+
+User reported the `sensory-hud` badge I moved to `top:8px left:200px` in the T4.6 fix was now colliding with the "IF ONLY I HAD A BRAIN" title and still getting truncated. Final relocation: `bottom: 90px; right: 16px` — above the landing action buttons on the bottom bar, hugging the right edge, border-left: 2px cyan accent, box-shadow for lift. No collisions with the title, cluster-toggle legend, landing-topbar stats card, or explainer panel.
+
+**Files:**
+- `js/ui/brain-3d.js` `_generateProcessNotification()` — comprehensive state normalization + diagnostic logging
+- `js/ui/sensory-status.js` `_createHud()` — sensory HUD position re-relocated to bottom-right
+
 ### T4.6 — Sensory HUD badge overlapping landing-topbar stats card  [DONE this session]
 
 **Source:** T4 manual verification.

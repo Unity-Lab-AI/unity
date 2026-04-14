@@ -70,25 +70,29 @@ export class SensoryStatusUI {
     if (!el) {
       el = document.createElement('div');
       el.id = 'sensory-hud';
-      // Top-left under the cluster-toggle legend so it doesn't
-      // collide with the landing-topbar stats card on the right.
-      // Stacks vertically with cluster toggles naturally.
+      // Bottom-right above the landing action buttons — no collisions
+      // with the top title, cluster-toggle legend, or landing-topbar
+      // stats card. The 3D bottom bar sits at bottom:0 padding:20px so
+      // we anchor this badge above that (bottom:90px) and hug the
+      // right edge.
       el.style.cssText = `
         position: fixed;
-        top: 8px;
-        left: 200px;
+        bottom: 90px;
+        right: 16px;
         z-index: 9998;
         font-family: monospace;
         font-size: 10px;
         color: #ccc;
-        background: rgba(0,0,0,0.75);
+        background: rgba(0,0,0,0.82);
         border: 1px solid #333;
-        padding: 4px 10px;
-        border-radius: 4px;
+        border-left: 2px solid #00e5ff;
+        padding: 6px 12px;
+        border-radius: 6px;
         pointer-events: auto;
         cursor: default;
         user-select: none;
         white-space: nowrap;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.6);
       `;
       el.title = 'Click to see backend details';
       el.addEventListener('click', () => this._showInventoryToast());

@@ -1400,6 +1400,153 @@ export class Brain3D {
   _generateProcessNotification(state) {
     if (!state) return;
 
+    // T4.5 — comprehensive state normalization for the 22-detector
+    // event system. The detectors were written against the local
+    // UnityBrain nested shape (state.amygdala.arousal, state.cortex.
+    // predictionError, state.hypothalamus.drives, state.memory.
+    // lastRecallConfidence, state.innerVoice.contextVector, etc) but
+    // the server broadcasts a FLAT shape (state.arousal, state.psi,
+    // state.fear, state.valence, state.coherence) — so every detector
+    // reading a nested path silently returned null via the default-
+    // value fallback in pick(). Result: almost no events fired at
+    // all, and the few that did (psiClimb, dopamineHit — which read
+    // flat paths) got rate-limited by cooldown and never produced
+    // visible popups.
+    //
+    // Fix: synthesize the nested shape from flat fields AND from
+    // cluster-level activity data (spikeCount / firingRate / size)
+    // for every detector path the server can reasonably derive.
+    // Detectors that read visual/audio fields (colorSurge,
+    // motionDetected, gazeShift, heardOwnVoice) still won't fire on
+    // server-brain mode because the server doesn't run a visual
+    // cortex — that's fine, those 4 detectors are visual-pipeline-
+    // only by design.
+    const clusters = state.clusters || {};
+    const activityOf = (k) => {
+      const c = clusters[k];
+      if (!c || !c.size) return 0;
+      return (c.spikeCount || 0) / c.size;
+    };
+    const cortexAct   = activityOf('cortex');
+    const hippoAct    = activityOf('hippocampus');
+    const cerebAct    = activityOf('cerebellum');
+    const mysteryAct  = activityOf('mystery');
+    const hypoAct     = activityOf('hypothalamus');
+
+    const norm = { ...state };
+
+    // AMYGDALA — flat → nested
+    if (!norm.amygdala) {
+      norm.amygdala = {
+        arousal: state.arousal ?? 0.5,
+        valence: state.valence ?? 0,
+        fear: state.fear ?? 0,
+        reward: state.reward ?? 0,
+      };
+    }
+
+    // OSCILLATIONS — flat → nested, carry bandPower if present
+    if (!norm.oscillations) {
+      norm.oscillations = {
+        coherence: state.coherence ?? 0.5,
+        bandPower: state.bandPower || {},
+      };
+    }
+
+    // CORTEX — synthesize predictionError from cerebellum activity
+    // (cerebellum fires in proportion to error, so high cereb firing
+    // rate relative to its baseline maps to high prediction error).
+    if (!norm.cortex) {
+      const cerebBaseline = 0.03; // Rulkov resting rate
+      const errProxy = Math.max(0, Math.min(1, (cerebAct - cerebBaseline) * 20));
+      norm.cortex = {
+        predictionError: errProxy,
+        activity: cortexAct,
+      };
+    }
+
+    // HIPPOCAMPUS — synthesize recallConfidence from firing rate above
+    // baseline. High hippo activity during an input event = she's
+    // recalling something that matches.
+    if (!norm.hippocampus) {
+      const recallProxy = Math.max(0, Math.min(1, (hippoAct - 0.03) * 15));
+      norm.hippocampus = {
+        recallConfidence: recallProxy,
+        activity: hippoAct,
+      };
+    }
+
+    // MEMORY — alias hippocampus for detectors that read state.memory.
+    if (!norm.memory) {
+      norm.memory = {
+        lastRecallConfidence: norm.hippocampus.recallConfidence,
+        isConsolidating: state.isDreaming === true && hippoAct > 0.05,
+      };
+    }
+
+    // HYPOTHALAMUS — synthesize per-drive dict from cluster activity
+    // so the hypothalamusDrive detector can pick a peak. Uses the
+    // persona drug drive + cluster activity as the base, splits it
+    // across three nominal drives (social_need, drug_craving,
+    // homeostatic) so the picker has something to compare.
+    if (!norm.hypothalamus) {
+      norm.hypothalamus = {
+        drives: {
+          social_need: Math.min(1, hypoAct * 8 + (state.drugState ? 0.2 : 0)),
+          drug_craving: Math.min(1, hypoAct * 10),
+          homeostatic: Math.min(1, hypoAct * 5),
+        },
+        activity: hypoAct,
+      };
+    }
+
+    // INNER VOICE — synthesize a contextVector from the current
+    // cluster-activity profile (7-dim vector). topicDrift detector
+    // compares this across a 10-tick window — even without a real
+    // semantic readout, the cluster-activity fingerprint DOES change
+    // when topics shift, so the detector still catches drift.
+    if (!norm.innerVoice) {
+      norm.innerVoice = {
+        contextVector: [
+          cortexAct, hippoAct,
+          activityOf('amygdala'), activityOf('basalGanglia'),
+          cerebAct, hypoAct, mysteryAct,
+        ],
+      };
+    }
+
+    // MYSTERY — expose output from cluster activity + Ψ
+    if (!norm.mystery) {
+      norm.mystery = {
+        output: mysteryAct + (state.psi ?? 0) * 0.1,
+      };
+    }
+
+    // CEREBELLUM — expose errorAccum proxy for fatigue detector
+    if (!norm.cerebellum) {
+      const errAccum = Math.max(0, Math.min(1, cerebAct * 15));
+      norm.cerebellum = {
+        errorAccum: errAccum,
+        activity: cerebAct,
+      };
+    }
+
+    // MOTOR — convert server's channelRates array into the object
+    // shape motorIndecision reads (channelDist = {action_name: rate}).
+    if (state.motor && !state.motor.channelDist && Array.isArray(state.motor.channelRates)) {
+      const labels = ['respond_text', 'generate_image', 'speak', 'build_ui', 'listen', 'idle'];
+      const dist = {};
+      const total = state.motor.channelRates.reduce((a, b) => a + b, 0);
+      if (total > 0) {
+        state.motor.channelRates.forEach((r, i) => { dist[labels[i]] = r / total; });
+      }
+      norm.motor = { ...state.motor, channelDist: dist };
+    }
+
+    // Flat fields (psi, reward, drugState, isDreaming, time) stay on
+    // the root — detectors that read them as flat paths are correct.
+    state = norm;
+
     // Push current state into the rolling history buffer
     this._stateHistory.push(state);
     while (this._stateHistory.length > this._maxHistory) {
@@ -1425,6 +1572,15 @@ export class Brain3D {
     if (chosen && this._brain) {
       // Stage B — generate Unity's commentary on the event
       const commentary = this._generateEventCommentary(chosen, state);
+      // Diagnostic: once per event type, log what fired + what came
+      // back. Flagged so it only fires once per unique event type to
+      // keep the console readable while still proving the pipeline is
+      // alive. Remove this logging after T4.5 is definitively green.
+      if (!this._loggedEventTypes) this._loggedEventTypes = new Set();
+      if (!this._loggedEventTypes.has(chosen.type)) {
+        this._loggedEventTypes.add(chosen.type);
+        console.log('[Brain3D] event fired:', chosen.type, '→', commentary || '(commentary null, falling back to label-only)');
+      }
       this._recentEventTypes.set(chosen.type, now);
       // Prune the cooldown map to prevent unbounded growth
       if (this._recentEventTypes.size > 50) {
