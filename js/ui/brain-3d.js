@@ -611,19 +611,48 @@ export class Brain3D {
     this._canvas = null;
     this._animId = null;
 
-    // Build
-    this._buildDOM();
-    if (!this._canvas) {
-      console.warn('[Brain3D] Canvas not created — 3D viewer disabled');
+    // T14.22.2 — loud error logging so init failures surface in the
+    // browser console without the operator having to hunt through
+    // console.warn buffers. Gee reported "3D brain completely missing
+    // from view" and we needed visibility on exactly which init stage
+    // died. Every failure path now prints console.error AND exposes
+    // the Brain3D instance on window so devtools can inspect state.
+    try {
+      this._buildDOM();
+    } catch (err) {
+      console.error('[Brain3D] _buildDOM threw:', err, err.stack);
       this._destroyed = true;
       return;
     }
-    this._genPositions();
+    if (!this._canvas) {
+      console.error('[Brain3D] Canvas not created — container:', containerId, 'found element:', document.getElementById(containerId));
+      this._destroyed = true;
+      return;
+    }
+    try {
+      this._genPositions();
+    } catch (err) {
+      console.error('[Brain3D] _genPositions threw:', err, err.stack);
+      this._destroyed = true;
+      return;
+    }
     try {
       this._initGL();
-      if (this._gl) this._uploadStatic();
+      if (!this._gl) {
+        console.error('[Brain3D] _initGL returned without creating GL context — WebGL unavailable in this browser?');
+        this._destroyed = true;
+        return;
+      }
+      this._uploadStatic();
+      console.log('[Brain3D] init complete — container:', containerId, 'canvas:', this._canvas.width + 'x' + this._canvas.height, 'gl:', !!this._gl);
     } catch (err) {
-      console.warn('[Brain3D] WebGL init failed:', err.message);
+      console.error('[Brain3D] _initGL or _uploadStatic threw:', err, err.stack);
+      this._destroyed = true;
+    }
+    // Expose on window for devtools inspection
+    if (typeof window !== 'undefined') {
+      window.__brain3dInstances = window.__brain3dInstances || [];
+      window.__brain3dInstances.push(this);
     }
   }
 
