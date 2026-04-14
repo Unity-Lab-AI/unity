@@ -295,6 +295,23 @@
 // within the class of hardware it's named after. Tiers that exceed
 // the admin's actual detected hardware are auto-disabled.
 // ══════════════════════════════════════════════════════════════
+// T14.20 (2026-04-14) — tier ladder rebalanced.
+// Old presets were calibrated at laughably conservative neuron counts
+// relative to their VRAM caps (e.g. enthusiast-gpu said 1.5M neurons
+// for 10GB VRAM, but 10GB / 8 bytes/neuron = 1.34B theoretical). The
+// presets were set from a CPU-footprint worst-case assumption, but
+// Unity runs on GPU where Rulkov state is 8 bytes/neuron flat. The
+// server enforces a 671M single-GPU cap via the 2GB per-buffer
+// binding ceiling (see detectResources maxTotalForBinding), so every
+// single-GPU tier realistically caps there regardless of how much
+// VRAM the card has — higher-VRAM tiers get HEADROOM for projections
+// and cross-region weights, not more raw neurons. Multi-GPU tiers
+// above split across bindings and can exceed the single-GPU cap.
+//
+// Also added enthusiast-16gb tier for 16GB cards (4070 Ti SUPER /
+// 4080 SUPER 16 / 4060 Ti 16 / RTX 5080) which previously fell in
+// a gap between enthusiast-gpu (10GB) and high-end (22GB) — users
+// with 16GB had to pick the 10GB tier and waste 6GB.
 const TIERS = [
   {
     id: 'minimum',
@@ -307,43 +324,57 @@ const TIERS = [
     id: 'budget-laptop',
     name: 'Budget Laptop — integrated GPU',
     desc: 'Intel Iris Xe, Apple M1/M2 integrated, 4-8GB shared memory.',
-    neurons: 50000,
+    neurons: 2000000,
     vramMB: 1024,
   },
   {
     id: 'entry-gpu',
     name: 'Entry GPU — GTX 1050 / RX 560 class',
     desc: '2-4GB VRAM, ~2048 CUDA cores.',
-    neurons: 200000,
+    neurons: 200000000,
     vramMB: 2048,
   },
   {
     id: 'mid-gpu',
     name: 'Mid GPU — GTX 1060 / RX 580 / RTX 3050',
     desc: '6-8GB VRAM, ~2048-4096 shader units.',
-    neurons: 750000,
+    neurons: 600000000,
     vramMB: 6144,
   },
   {
     id: 'enthusiast-gpu',
-    name: 'Enthusiast GPU — RTX 3070 / 4070',
-    desc: '8-12GB VRAM, modern Ampere/Ada architecture.',
-    neurons: 1500000,
+    name: 'Enthusiast GPU 10GB — RTX 3070 / 4070',
+    desc: '10GB VRAM, modern Ampere/Ada architecture. Capped at 671M by per-buffer binding ceiling.',
+    neurons: 671000000,
     vramMB: 10240,
   },
   {
+    id: 'enthusiast-12gb',
+    name: 'Enthusiast GPU 12GB — RTX 3060 12GB / RTX 4070 / RTX 5070',
+    desc: '12GB VRAM. Headroom for bigger projections + weights than 10GB tier. Capped at 671M by binding ceiling.',
+    neurons: 671000000,
+    vramMB: 12288,
+  },
+  {
+    id: 'enthusiast-16gb',
+    name: 'Enthusiast GPU 16GB — RTX 4060 Ti 16GB / 4070 Ti SUPER / 4080 SUPER / RTX 5080',
+    desc: '16GB VRAM. Sits between enthusiast-12 and high-end-24. Capped at 671M by binding ceiling.',
+    neurons: 671000000,
+    vramMB: 16384,
+  },
+  {
     id: 'high-end',
-    name: 'High-End — RTX 3090 / 4080 / 4090',
-    desc: '16-24GB VRAM, top-tier gaming cards.',
-    neurons: 5000000,
-    vramMB: 22528,
+    name: 'High-End 24GB — RTX 3090 / 4090 / 5090',
+    desc: '24GB VRAM, top-tier gaming cards. Maximum single-GPU headroom. Capped at 671M by binding ceiling.',
+    neurons: 671000000,
+    vramMB: 24576,
   },
   {
     id: 'prosumer',
     name: 'Prosumer — RTX 6000 Ada / Radeon Pro W7900',
-    desc: '48GB VRAM workstation cards.',
-    neurons: 15000000,
-    vramMB: 46080,
+    desc: '48GB VRAM workstation cards. Capped at 671M by binding ceiling; headroom for larger projection fanouts.',
+    neurons: 671000000,
+    vramMB: 49152,
   },
   {
     id: 'datacenter',

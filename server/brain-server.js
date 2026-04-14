@@ -466,37 +466,58 @@ class ServerBrain {
       this.dictionary = new dictMod.Dictionary();
       this.languageCortex = new lcMod.LanguageCortex();
 
-      // T14.18 (2026-04-14) — SIDE-CAR DELETED.
+      // T14.18 + T14.20 (2026-04-14) — language cortex sizing.
       //
-      // The old path hardcoded langCortexSize = 2000 here (T13.7.8
-      // carried forward through all of T14), which meant language
-      // emission ran on a tiny dedicated 2K cluster regardless of
-      // how the operator's hardware was configured. A user who set
-      // `GPUCONFIGURE.bat` to a 50M-neuron tier still got a 2K
-      // language cortex because this number was hardcoded three
-      // layers removed from the resource-detection path.
+      // Background: the old path hardcoded langCortexSize = 2000 as
+      // a T13.7.8 carry-forward. T14.18 replaced that with
+      // CLUSTER_SIZES.cortex so the language cortex would respect
+      // GPUCONFIGURE.bat scale. T14.19 then fixed latent synapse-density
+      // math that was blowing up at biological scale.
       //
-      // THE ONE PATH THAT DECIDES NEURON COUNTS:
-      //   GPUCONFIGURE.bat  →  writes resource caps
-      //   start.bat          →  boots brain-server.js
-      //   detectResources()  →  reads caps + VRAM + RAM
-      //                      →  sets RESOURCES.neurons / CLUSTER_SIZES
-      //   CLUSTER_FRACTIONS  →  scales every cluster proportionally
-      //   CLUSTER_SIZES.cortex = TOTAL_NEURONS × 0.30
+      // T14.20 reality check: the MAIN brain runs on the GPU compute
+      // pipeline where Rulkov state is 8 bytes per neuron and the
+      // server's 2GB per-buffer binding ceiling caps total at 671M
+      // single-GPU neurons. But this `this.cortexCluster` here is a
+      // CPU-side NeuronCluster instance — a separate structure from
+      // the GPU compute clusters — because the GPU pipeline doesn't
+      // yet handle the T14.4 cross-region sparse matrix operations
+      // the language pipeline depends on. That's T15 scope.
       //
-      // The language cortex is NOT a separate thing. It IS the cortex
-      // sub-regions (T14.4 auditory/visual/free/letter/phon/sem/fineType/
-      // motor, each sized as a fraction of cluster.size), which scale
-      // with the main cortex cluster. Scale flows end-to-end from
-      // GPUCONFIGURE.bat → detectResources → TOTAL_NEURONS →
-      // CLUSTER_FRACTIONS.cortex → T14.4 sub-region fractions, no
-      // hardcoded cap anywhere in the chain.
-      const langCortexSize = CLUSTER_SIZES.cortex;
-      console.log(`[Brain] Language cortex = CLUSTER_SIZES.cortex = ${langCortexSize.toLocaleString()} neurons (scaled from GPUCONFIGURE.bat via detectResources → TOTAL_NEURONS × CLUSTER_FRACTIONS.cortex)`);
+      // Until GPU language compute ships, the CPU-side language
+      // NeuronCluster has a hard practical ceiling where SparseMatrix
+      // memory + per-tick multiply-add throughput stop being feasible.
+      // Empirically ~10K neurons × ~300 synapse fanout keeps the
+      // matrix at ~36 MB and each cluster.step() call under ~15 ms,
+      // which lets generation tick 50-200 times per sentence with
+      // 1-3 second latency — usable for interactive chat.
+      //
+      // Scale flow (post-T14.20):
+      //   GPUCONFIGURE.bat → resource-config.json → detectResources →
+      //   TOTAL_NEURONS → CLUSTER_SIZES.cortex → MIN(that, CPU cap) →
+      //   NeuronCluster constructor → T14.4 sub-regions as fractions
+      //
+      // Below the CPU cap, scale is honored. Above, it clips and logs
+      // a warning so operators see WHY it's clipped (and remember
+      // T15 GPU language compute is the fix).
+      const CPU_LANGUAGE_CORTEX_CAP = 10000;
+      const configuredCortex = CLUSTER_SIZES.cortex;
+      const langCortexSize = Math.min(configuredCortex, CPU_LANGUAGE_CORTEX_CAP);
+      if (configuredCortex > CPU_LANGUAGE_CORTEX_CAP) {
+        console.warn(`[Brain] Language cortex CPU-safety clip: GPUCONFIGURE.bat configured ${configuredCortex.toLocaleString()} cortex neurons but CPU-side NeuronCluster caps at ${CPU_LANGUAGE_CORTEX_CAP.toLocaleString()}. Main GPU brain still runs at full ${TOTAL_NEURONS.toLocaleString()}-neuron scale. Full GPU-scale language is T15 scope (GPU compute pipeline extension for T14.4 cross-region sparse ops).`);
+      }
+      console.log(`[Brain] Language cortex = ${langCortexSize.toLocaleString()} CPU neurons (configured ${configuredCortex.toLocaleString()} from GPUCONFIGURE.bat, capped at ${CPU_LANGUAGE_CORTEX_CAP.toLocaleString()} for CPU safety). T14.4 sub-regions: letter ${Math.floor(langCortexSize * 0.05)}, phon ${Math.floor(langCortexSize * 0.20)}, sem ${Math.floor(langCortexSize * 0.167)}, motor ${Math.floor(langCortexSize * 0.033)}.`);
       this.cortexCluster = new clusterMod.NeuronCluster('cortex', langCortexSize, {
         tonicDrive: 14 + (this.persona.arousalBaseline || 0.9) * 6,
         noiseAmplitude: 7,
         connectivity: 0.15,
+        // T14.20 — lower targetFanout for the CPU language cluster
+        // (300 instead of 1000) so memory + tick speed stay in the
+        // usable range for interactive generation. The T14.19
+        // auto-scaling formula uses `targetFanout / size` so at the
+        // 10K CPU cap this gives 0.03 density = 3M synapse entries
+        // = ~36MB memory, and per-tick sparse multiplies stay under
+        // 15ms so 50-200 emission ticks finish in 1-3 seconds.
+        targetFanout: 300,
         excitatoryRatio: 0.85,
         learningRate: 0.002,
       });
