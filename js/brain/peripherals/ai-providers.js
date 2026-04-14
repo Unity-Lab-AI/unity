@@ -78,6 +78,69 @@ const LOCAL_VISION_BACKENDS = [
 // /api/tags or /v1/models to pick the right model id.
 const VISION_MODEL_HINTS = ['llava', 'moondream', 'bakllava', 'vision', 'vl', 'cogvlm', 'minicpm-v'];
 
+// Module-level shared state — survives across SensoryAIProviders
+// instances. The landing page and bootUnity both construct their own
+// providers, and without a shared dead-backend map each instance would
+// re-discover the same 400s from scratch. These are keyed by URL so
+// every instance sees the same dead state and the same resolved
+// Pollinations vision model id once the first probe completes.
+const SHARED_DEAD_BACKENDS = new Map(); // url → timestamp
+let SHARED_POLL_VISION_MODEL = null;    // resolved after /v1/models probe
+let SHARED_POLL_VISION_PROBE = null;    // in-flight probe promise
+
+// Ordered preference list for picking a Pollinations vision model.
+// First hit in the current /v1/models list that has 'image' in its
+// input_modalities wins. Any saved value not in the current list is
+// discarded as stale.
+const POLL_VISION_PREFERENCE = [
+  'openai-large', 'openai', 'openai-fast',
+  'claude-large', 'claude',
+  'gemini-large', 'gemini',
+  'qwen-vision', 'qwen-large',
+  'mistral-large', 'mistral',
+];
+
+async function resolvePollinationsVisionModel(savedOverride) {
+  if (SHARED_POLL_VISION_MODEL) return SHARED_POLL_VISION_MODEL;
+  if (SHARED_POLL_VISION_PROBE) return SHARED_POLL_VISION_PROBE;
+  SHARED_POLL_VISION_PROBE = (async () => {
+    try {
+      const res = await fetch('https://gen.pollinations.ai/v1/models', {
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const list = await res.json();
+      const visionCapable = new Set();
+      for (const m of Array.isArray(list) ? list : []) {
+        const id = m?.id || m?.name;
+        const mods = m?.input_modalities || [];
+        if (id && mods.includes('image')) visionCapable.add(id);
+      }
+      // Saved override wins IF it's still valid in the live list
+      if (savedOverride && visionCapable.has(savedOverride)) {
+        SHARED_POLL_VISION_MODEL = savedOverride;
+      } else {
+        for (const pref of POLL_VISION_PREFERENCE) {
+          if (visionCapable.has(pref)) { SHARED_POLL_VISION_MODEL = pref; break; }
+        }
+        if (!SHARED_POLL_VISION_MODEL && visionCapable.size > 0) {
+          SHARED_POLL_VISION_MODEL = visionCapable.values().next().value;
+        }
+      }
+      console.log(`[SensoryAI] resolved Pollinations vision model → ${SHARED_POLL_VISION_MODEL || '(none)'}`);
+    } catch (err) {
+      console.warn('[SensoryAI] Pollinations /v1/models probe failed:', err.message);
+      // Fall back to the canonical default — Pollinations will tell us
+      // if it's wrong with a proper 400 body and the dead marker engages.
+      SHARED_POLL_VISION_MODEL = savedOverride || 'openai-large';
+    } finally {
+      SHARED_POLL_VISION_PROBE = null;
+    }
+    return SHARED_POLL_VISION_MODEL;
+  })();
+  return SHARED_POLL_VISION_PROBE;
+}
+
 export class SensoryAIProviders {
   constructor({ pollinations, storage }) {
     this._pollinations = pollinations;
@@ -111,7 +174,10 @@ export class SensoryAIProviders {
     this._statusListeners = [];
 
     this._abortController = null;
-    this._deadBackends = new Map(); // url → timestamp when marked dead
+    // Shared across every SensoryAIProviders instance (landing page +
+    // bootUnity construct separate instances, but Pollinations dead
+    // state must be global or each instance re-learns the same 400s).
+    this._deadBackends = SHARED_DEAD_BACKENDS;
     this._deadCooldown = 3600000;   // 1 hour — if a backend is dead, leave it
 
     // User-selected preferred backends. When set, generateImage and
@@ -491,15 +557,28 @@ export class SensoryAIProviders {
     const userPrompt = opts.userPrompt || 'What do you see?';
     const timeout = opts.timeout || 15000;
 
+    // Track whether Pollinations has already been tried in this cycle
+    // so the fallback path doesn't double-fire the same endpoint after
+    // a preferred-pollinations attempt already failed. Previously each
+    // describe cycle fired TWO identical 400s before the dead marker
+    // could engage (preferred at step 0, fallback at step 3).
+    let pollTried = false;
+
     // 0. User-preferred vision backend — honored first if set
     if (this._preferredVision) {
       const pref = this._preferredVision;
       const target = this._findBackend('vision', pref.source, pref.name);
       if (target?.pollinations) {
         try {
-          const desc = await this._pollinationsDescribeImage(dataUrl, system, userPrompt, timeout, pref.model);
+          // Do NOT pass pref.model — stale saved overrides (e.g. old
+          // 'openai' id from a previous session) beat the auto-probed
+          // model. Let _pollinationsDescribeImage resolve the id from
+          // the live /v1/models list.
+          const desc = await this._pollinationsDescribeImage(dataUrl, system, userPrompt, timeout);
+          pollTried = true;
           if (desc) return desc;
         } catch (err) {
+          pollTried = true;
           console.warn('[SensoryAI] preferred Pollinations vision failed:', err.message);
         }
       } else if (target && !this._isBackendDead(target.url)) {
@@ -529,16 +608,19 @@ export class SensoryAIProviders {
       }
     }
 
-    // 3. Pollinations fallback — multimodal chat via the openai model
-    try {
-      const desc = await this._pollinationsDescribeImage(dataUrl, system, userPrompt, timeout);
-      if (desc) {
-        this._visionFailCount = 0;
-        return desc;
+    // 3. Pollinations fallback — skip if already tried as preferred
+    // above (prevents the double-fire-per-cycle 400 flood).
+    if (!pollTried) {
+      try {
+        const desc = await this._pollinationsDescribeImage(dataUrl, system, userPrompt, timeout);
+        if (desc) {
+          this._visionFailCount = 0;
+          return desc;
+        }
+      } catch (err) {
+        console.warn('[SensoryAI] Pollinations vision fallback failed:', err.message);
+        this._emitStatus({ kind: 'vision', event: 'backend-failed', backend: 'Pollinations', reason: err.message });
       }
-    } catch (err) {
-      console.warn('[SensoryAI] Pollinations vision fallback failed:', err.message);
-      this._emitStatus({ kind: 'vision', event: 'backend-failed', backend: 'Pollinations', reason: err.message });
     }
 
     // Total failure across all tiers — increment counter, maybe pause
@@ -678,11 +760,23 @@ export class SensoryAIProviders {
     if (this._pollinations?._apiKey) {
       headers['Authorization'] = `Bearer ${this._pollinations._apiKey}`;
     }
-    // openai-large = GPT-4o w/ vision (canonical multimodal id in the
-    // Pollinations /v1/models list). The bare 'openai' alias is text-
-    // biased and was returning 400 on image_url content parts for some
-    // accounts. Users can still override via the setup modal.
-    const model = modelOverride || this._pollinationsVisionModel || 'openai-large';
+    // Model resolution order:
+    //  1. Caller explicit override (rare — only if code forces an id)
+    //  2. Module-level resolved model from live /v1/models probe
+    //     (cached across all SensoryAIProviders instances)
+    //  3. Saved user preference from localStorage — BUT only if the
+    //     probe validated it as still present in the current model list
+    //  4. Canonical 'openai-large' default
+    //
+    // The auto-probe kicks off on first call if it hasn't been run and
+    // awaits its result before firing the first fetch. Subsequent calls
+    // hit the cached value with zero latency. Stale saved overrides
+    // that are no longer in Pollinations' live model list get discarded
+    // inside resolvePollinationsVisionModel() — that's what was causing
+    // the 400 flood (user's saved 'openai' was beating the new default).
+    const resolved = SHARED_POLL_VISION_MODEL
+      || await resolvePollinationsVisionModel(this._pollinationsVisionModel);
+    const model = modelOverride || resolved || 'openai-large';
     const res = await fetch(VISION_URL, {
       method: 'POST',
       headers,
