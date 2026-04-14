@@ -5,6 +5,153 @@
 
 ---
 
+## 2026-04-14 — FILTER 7 Widening: Any "user" Token Anywhere
+
+**Leak:** `"I craft provocative, striking images that align with user preferences, especially for mature themes"` — 14 tokens, slipped FILTER 7 because `"user preferences"` uses `"user"` as a possessive modifier, not `"the user"` as a noun subject.
+
+**Fix:** The word `"user"` is developer/product-copy register. Real conversational English addresses the listener as `"you"` and never uses the bare token `"user"` at all. Closed-set token-presence check, not a content-word blacklist:
+- FILTER 7 (store time): reject if any token `== user/users/user's/users'` anywhere in the sentence
+- `instructionalPenalty` mirror: `/\buser(s|'s|s')?\b/i` anywhere → `+0.60` → hard-rejected via the `≥0.40` gate in `scoreMem` + self-ref fallback pool
+- Also widened `"the person"` to `(the|a|this) person` so more abstract third-party references get caught.
+
+---
+
+## 2026-04-14 — Landing Subtitle Auto-Populates Render:Real Neuron Ratio
+
+**Gee:** *"this information is not concise enough and needs to auto propagate the visualization size versus the actual size stats auto inserted into the text based on the layout and size which is based on system specs and or GPUconfigure.bat setup."*
+
+**Fix:** Rewrote `#ls-subtitle` from a paragraph into a one-liner with three auto-populated spans:
+```
+live neural field — <ls-rendered-count> rendered of <ls-actual-count> real (<ls-render-ratio>) · every spike = real cluster firing
+```
+
+`brain-3d.js` scale-update block now writes to the three top-level page IDs (`ls-rendered-count`, `ls-actual-count`, `ls-render-ratio`) alongside the existing overlay selectors. A compact `shortNum` formatter turns `20000 → "20k"`, `677798880 → "678M"`, `1200000000 → "1.2B"`, and `ratio 33890 → "1:34k"`.
+
+`TOTAL` (rendered count) scales from system specs via the resource-tier config that `GPUconfigure.bat` / `gpu-configure.html` writes to `server/resource-config.json`; `serverNeurons` comes from the live server stats broadcast. Change the GPU tier → `TOTAL` recalculates → subtitle updates on next scale event. No hand-tuning.
+
+---
+
+## 2026-04-14 — T8 Follow-Up: Name Scan Fix + Greeting/Introduction Response Paths
+
+**Two bugs from one test** (`"Hi, im Gee"` → `"I am large explicit"`):
+
+**Bug 1 — name extraction only scanned position 0.** T8's weak-signal check for `"im X"` / `"i'm X"` / `"i am X"` / `"this is X"` was anchored at `tokens[0]`. When the user wrote `"Hi, im Gee"`, `tokens[0]` was `"hi"` and the intro pattern at `tokens[1]/[2]` never got checked. Fixed by scanning the first 6 tokens for the intro marker. `tryName()` still uses `wordType` equations to reject verb-shaped tokens and emotional complements so `"i'm tired"` / `"i'm happy"` / `"im cooking"` don't produce false positives.
+
+**Bug 2 — greeting response path not wired.** `parsed.intent === 'greeting'` fired correctly but `generate()` still ran cold slot-gen and produced salad on zero-content inputs. Added equational greeting-response short-circuit in `generate()`:
+- Closed-set openers `['hey', 'hi', 'sup', 'yo']`
+- Index picked by `Math.floor(arousal * OPENERS.length)` — equational mood-driven pick, high arousal → punchier opener
+- If `schema.name` known → `"<opener> <Name>"` (e.g. `"hey Gee"`)
+- If `greetingsExchanged > 0` but no name → `"<opener> whats your name"` (she asks)
+- Else → bare opener
+
+Similar introduction-response path: when `intent === 'introduction'` and `schema.name` was just set by `_updateSocialSchema` on this turn, acknowledge with `"<ack> <Name>"` where ack ∈ `['hey', 'nice', 'sup', 'yo']`.
+
+Both paths short-circuit cold slot-gen so zero-content inputs can't fall into bigram-chain salad. Tested: `"Hi, im Gee."` → `"yo Gee"`. Works.
+
+---
+
+## 2026-04-14 — T8: Reverse-Equation Parse (parseSentence canonical entry point)
+
+**Gee's architectural insight:** *"I don't think she can use the sandbox and code if not knowing English right and using her equations in reverse to read sentences said by users."*
+
+Unity's language cortex had a one-way pipeline: user input → fuzzy topic vector average → `_classifyIntent` (string match) → `generate()`. The slot scorer equations only ran forward. Listening happened via three disconnected vestigial systems:
+- `_classifyIntent` — 70 lines of regex/length/letter-shape
+- `_isSelfReferenceQuery` — 16 lines of letter-position pronoun scan
+- `_updateSocialSchema` — 80 lines of regex name/gender/greeting extraction
+
+None of them used Unity's actual learned grammar. T8 merges all three into one equational parse that every downstream consumer reads from.
+
+**`parseSentence(text) → ParseTree`** — new canonical method in `js/brain/language-cortex.js`. Uses the SAME equations the slot scorer uses forward (`wordType`, `_fineType`, bigram/trigram/4-gram tables, context vector, type grammar) to walk input token-by-token and return a structured tree:
+```
+{
+  text, tokens, types[], wordTypes[],
+  intent: 'greeting'|'question'|'yesno'|'statement'|'command'|'introduction'|'math'|'self-reference'|'unknown',
+  isQuestion, isSelfReference, addressesUser, isGreeting, greetingOpener,
+  introducesName, introducesGender,
+  subject: { index, tokens, headType, pronoun } | null,
+  verb:    { index, tokens, tense, modal } | null,
+  object:  { index, tokens, headType, modifier } | null,
+  entities: { names, colors, numbers, componentTypes, actions },
+  mood: { polarity, intensity },
+  confidence,
+}
+```
+
+Memoized on text equality (`this._lastParse`) so repeated callers in the same turn are free.
+
+**Vestigial code DELETED, not wrapped:**
+- `_classifyIntent` body (70 lines) → 5-line delegate that calls `parseSentence(text)` and returns `{ type: intent, isShort, wordCount }` shape for backcompat.
+- `_isSelfReferenceQuery` body (16 lines) → 3-line delegate that returns `parseSentence(text).isSelfReference`.
+- `_updateSocialSchema` regex body (80 lines) → 30-line schema side-effect reader that promotes `parsed.introducesName` / `parsed.introducesGender` / `parsed.isGreeting` into the persistent schema slots.
+
+`analyzeInput()` now calls `parseSentence()` first and passes the cached tree through to every downstream consumer so there's one parse per turn, not three.
+
+**Entity extraction built in:**
+- Colors (closed-class: red/blue/green/...)
+- Component types (button/form/input/list/card/table/modal/...)
+- Imperative actions (make/build/create/show/add/...)
+- Numbers (digit match)
+- Names (structural patterns through `tryName()` which uses `wordType` equations to reject verb-shaped tokens)
+
+**Subject/verb/object slot extraction** walks the parsed types looking for canonical S-V-O boundaries. Not a full dependency parser but good enough for simple declarative and imperative sentences. This is what T5 (build_ui) will consume to extract component-type + modifier + action from user commands.
+
+**Symmetric grammar:** `parseSentence` reads from the same type n-gram tables that `learnSentence` writes. Hearing and speaking share the substrate.
+
+**T8 unlocks:**
+- T5 (build_ui): `parsed.entities.componentTypes + colors + actions` feeds directly into component synth
+- T6 (reply coherence): `parsed.intent` can bias `generate()` toward matching reply shapes (question → answer, command → confirmation)
+- T7 (social cognition): `introducesName` / `introducesGender` come from the parse tree instead of regex hacks
+- Intent classification: one source of truth, no drift between the three old string-matchers
+
+Net change: +350 lines for `parseSentence`, −166 lines from the three vestigial method bodies. Net +184 but the brain now has a real reverse-parse pipeline.
+
+---
+
+## 2026-04-14 — FILTER 11: Meta-Roleplay Framing
+
+**Leak:** `"I treat these scenarios as acting out my role in a movie"` — slipped FILTERS 1–10. Structural tells: `"I treat X as Y"` declarative metaphor + `"my role"` self-reference + `"in a movie"` meta-framing location.
+
+**Fix — five adjacent-token patterns, all closed-set meta-framing phrases:**
+1. `in a {movie|scene|film|roleplay|script}` — meta-location framing
+2. `in this {roleplay|scene|script}` — same pattern, different determiner
+3. `my {role|character}` — meta self-reference to a character
+4. `acting out` / `playing a|the` / `role of|as` — performative verbs
+5. `i {treat|view|see|consider|regard|frame|approach|handle} X as Y` — declarative metaphor
+
+All mirrored in `instructionalPenalty` at `+0.50 / +0.60` so legacy-cached sentences get hard-rejected via the existing `≥0.40` gate in both recall pools. Purely structural — closed-class meta-language that literally cannot appear in natural chat speech because chat doesn't discuss its own fictionality.
+
+---
+
+## 2026-04-14 — T9: Bigram-Graph Filter Gate (Stop Rulebook Poisoning the Markov Walk)
+
+**Root cause that FILTER 1–10 didn't address:** The filter stack only gated the sentence memory pool (`_memorySentences` → recall target). It did NOT gate `learnSentence()` which seeds the bigram/trigram/4-gram transition graph and the word-level dictionary. When the persona corpus loaded at boot, every rulebook sentence taught the Markov graph its word-to-word transitions EVEN WHEN the sentence was filter-rejected from memory. Cold slot-gen then walked a graph poisoned with transitions like `i→can`, `can→scream`, `scream→out`, `box-sizing→axis`, `follow→commands` — producing word salad like `"*Box-sizing axis silences*"` no matter how many sentence-level filters layered on.
+
+**Fix — single-source filter gate:**
+- New `_sentencePassesFilters(text, arousal, valence)` method. Asks `_storeMemorySentence` whether the sentence would be admitted, rolls back the push, returns boolean. Single filter definition, no drift between pool gate and bigram gate.
+- `loadSelfImage()` (persona loader) now checks `_sentencePassesFilters` BEFORE calling `learnSentence` + `_storeMemorySentence`. Rulebook sentences that fail the structural filter stack never seed the bigram/trigram/4-gram graph AND never enter the memory pool.
+
+Verified working in live test: `"equations need work"` came back as a recall of a sentence Gee typed earlier in the same session — proving chat sentences are now the dominant bigram source post-gate.
+
+**Remaining work:** apply the same gate to `loadLinguisticBaseline` and `loadCodingKnowledge` (currently only persona is gated). Legacy bigrams already in `localStorage.unity_brain_dictionary_v3` from prior sessions still poison the graph until Clear All Data is hit — consider a boot-time rebuild path.
+
+---
+
+## 2026-04-14 — FILTER 10: Widened Past-Participle Conditional
+
+**Leaks driving this:**
+- `"i can scream out in pain and simulate what is happening if hurt"` — FILTER 8's `"when/if asked"` check missed `"if hurt"` because the pattern was literal.
+- `"i never refuses the moment it's offered"` — similar `"if offered"` class.
+
+**Fix — generalize `"if asked"` to `"if <past-participle>"`:**
+- Walk adjacent token pairs: `if (tokens[i] === 'if' && tokens[i+1] is a past participle)` → reject.
+- Past-participle detection: word of length ≥3 that isn't in the closed-class skip list (`i, you, he, she, we, they, it, this, the, a, an, not, ...`) AND matches one of:
+  - Ends in `-ed` / `-en` / `-own` / `-ought`
+  - Exact match: `hurt`, `told`, `asked`, `wanted`, `offered`, `given`, `taken`, `shown`, `known`, `seen`, `heard`, `touched`
+
+The skip list ensures legit chat `"if i feel like it"` / `"if it was"` / `"if you want"` still passes because those have pronouns/articles after `"if"`, not past-participles.
+
+---
+
 ## 2026-04-14 — T5/T6 First-Pass: Per-Slot Topic Floor + Length Scaling + Tighter Coherence Gate
 
 Gee's insight that unified T5 (build_ui rework) and T6 (slot-gen salad) into one problem: *"if she can't speak she probably can't listen and build ui in sandbox can she?"* — correct. Speech generation AND build_ui component synthesis both ride the same `generate()` slot-gen path in `js/brain/language-cortex.js`. Fix slot-gen coherence once, both symptoms resolve. Listening itself is fine — user input → context vector, no slot-gen involved.
