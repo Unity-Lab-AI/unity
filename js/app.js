@@ -1756,18 +1756,20 @@ async function bootUnity(apiKey, perms) {
     // multimodal fallback). Returns null on total failure instead of a
     // lying "processing..." string so visual cortex can skip the frame
     // and retry cleanly on the next scheduled call.
-    brain.visualCortex.setDescriber(async (dataUrl) => {
-      if (!dataUrl) return null;
-      const desc = await providers.describeImage(dataUrl);
-      if (desc) {
-        console.log('[Vision]', desc.slice(0, 80));
-        return desc;
-      }
-      // Total failure — let visual-cortex treat this as "no describer
-      // ran this frame" and retry next tick. The provider layer already
-      // emitted the failure/pause status event.
-      return null;
-    });
+    // RemoteBrain uses a stub visualCortex without setDescriber — the
+    // server handles its own vision pipeline. Only wire the describer
+    // on local-brain mode where visualCortex is the real V1→IT pipeline.
+    if (brain.visualCortex && typeof brain.visualCortex.setDescriber === 'function') {
+      brain.visualCortex.setDescriber(async (dataUrl) => {
+        if (!dataUrl) return null;
+        const desc = await providers.describeImage(dataUrl);
+        if (desc) {
+          console.log('[Vision]', desc.slice(0, 80));
+          return desc;
+        }
+        return null;
+      });
+    }
   }
 
   // ── Connect brain peripherals — brain controls everything ──
