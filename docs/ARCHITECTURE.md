@@ -30,7 +30,7 @@ The unknown — what we can't model, what makes consciousness CONSCIOUSNESS — 
 | **GPU Compute** | WebGPU WGSL shaders via compute.html — all 7 clusters on GPU, zero CPU workers |
 | **Server** | Node.js brain server, 16-core parallel, WebSocket API, auto-scales to hardware |
 | **Database** | SQLite (better-sqlite3) for episodic memory, JSON for weights + conversations |
-| **AI Backends** | Multi-provider: Pollinations, OpenRouter, OpenAI, Claude/Anthropic, Mistral, DeepSeek, Groq, Local AI |
+| **AI Backends** | **Sensory-only** — image gen (custom/auto-detected local/env.js/Pollinations), vision describer (Pollinations GPT-4o), TTS/STT. Zero text-AI for cognition — language cortex generates every word equationally. |
 | **Embeddings** | GloVe 50d word vectors, online context refinement, hash fallback |
 | **Voice I/O** | Web Speech API (listen) + Pollinations TTS / browser SpeechSynthesis (speak) |
 | **Image Gen** | Pollinations API (flux, photorealistic, anime, cyberpunk + 20 more models) |
@@ -301,18 +301,30 @@ Implemented in `js/ui/brain-3d.js`. WebGL-based 3D rendering (fixed pool of 20K 
 
 ---
 
-## Multi-Provider AI System (NEW — 2026-04-11)
+## Sensory AI System (REFACTORED — 2026-04-13)
 
-Users can connect MULTIPLE AI providers simultaneously and pick one for text, another for images:
+**Cognition is 100% equational — there are no text-AI backends.** The AI model slot is purely a sensory peripheral layer, wired through `js/brain/peripherals/ai-providers.js` as the `SensoryAIProviders` class.
 
-- **Setup modal**: Click provider → paste key → Connect. Green badge shows on connected providers. Repeat for as many as you want.
-- **env.js**: API keys can also be pre-loaded from `js/env.js` (gitignored) so returning users don't retype keys.
-- **Auto-reconnect**: On return visits, ALL saved providers auto-reconnect and populate the model dropdowns.
-- **Text dropdown**: Shows models from all connected text-capable providers.
-- **Image dropdown**: Shows models from Pollinations (the only image provider currently).
-- **Router**: Text and image backends are independent — e.g., use OpenRouter for chat, Pollinations for images.
+### Image Generation — 4-Level Priority
 
-Each provider links to its actual key page (not someone else's).
+1. **Custom-configured** — user-added entries in `ENV_KEYS.imageBackends[]` with `{name, url, model, key, kind}`
+2. **Auto-detected local** — `autoDetect()` probes 7 common ports in parallel (1.5s timeout each): A1111 `:7860`, SD.Next/Forge `:7861`, Fooocus `:7865`, ComfyUI `:8188`, InvokeAI `:9090`, LocalAI `:8081`, Ollama `:11434`
+3. **env.js-listed** — backends loaded from `js/env.js` via `providers.loadEnvConfig(ENV_KEYS)` at boot
+4. **Pollinations fallback** — free, no config needed, always available
+
+`_customGenerateImage(url, model, key, prompt, opts)` supports 4 response shapes so practically any SD-alike backend works: OpenAI `{data:[{url}]}`, OpenAI b64 `{data:[{b64_json}]}`, A1111 `{images:['<base64>']}`, generic `{url}`/`{image_url}`. Dead-backend cooldown (1 hour) on auth/payment errors so bad endpoints don't get hammered.
+
+### Vision Describer
+
+Pollinations GPT-4o receives camera frames from the IT layer of `js/brain/visual-cortex.js`. The description text flows into `brainState.visionDescription` and feeds the cortex visual region as one of the language-cortex context sources. Vision is sensory — it never decides what Unity says, only what she *sees*.
+
+### TTS / STT
+
+`js/io/voice.js` uses Pollinations TTS (shimmer/nova voices) with SpeechSynthesis browser fallback, and Web Speech API for input. Both are peripheral: input gets mapped to auditory cortex neural current, output receives text from `brain.emit('response', ...)` events.
+
+### What Was Ripped
+
+R4 (commit `7e095d0`) deleted: `BrocasArea.generate()` AI-prompting pipeline, `_customChat()` helper, all text-AI backend endpoint probing, text-chat dead-backend cooldown, `_buildBuildPrompt`, `connectLanguage()`, the legacy multi-provider text dropdown, `claude-proxy.js`, `start-unity.bat`. `language.js` shrunk from 333 → 68 lines (throwing stub only). Every text-AI cognition call site in `engine.js` + `app.js` was either replaced with `languageCortex.generate()` or deleted outright.
 
 ---
 
@@ -341,7 +353,10 @@ Dream/
 │   │   ├── persona.js          # Traits → brain params + drug states
 │   │   ├── sensory.js          # Sensory input pipeline (text/audio/video → cortex)
 │   │   ├── motor.js            # Motor output (6 BG channels, winner-take-all)
-│   │   ├── language.js         # Broca's area (AI language peripheral)
+│   │   ├── language.js         # DEPRECATED stub (68 lines post-R4) — BrocasArea throws if called. Kept as tripwire, scheduled for deletion in R12.
+│   │   ├── component-synth.js  # R6.2 equational component synthesis — parses component-templates.txt, cosine-matches user request vs primitive descriptions, returns {id, html, css, js}
+│   │   ├── peripherals/
+│   │   │   └── ai-providers.js # SensoryAIProviders — multi-provider image gen (custom → auto-detect → env.js → Pollinations), TTS, NO text chat
 │   │   ├── visual-cortex.js    # V1→V4→IT vision pipeline
 │   │   ├── auditory-cortex.js  # Tonotopic processing + efference copy
 │   │   ├── memory.js           # Episodic + working + consolidation
@@ -389,12 +404,9 @@ Dream/
 
 | System | Connection |
 |--------|-----------|
-| Pollinations API | Text chat, image generation, TTS — BYOP key for higher limits, 12K fallback trimming |
-| OpenRouter | 200+ models including Claude — browser-compatible, model filter search |
-| OpenAI | GPT-4o, o1 — direct browser calls |
-| Claude/Anthropic | Via `proxy.js` local CORS proxy or via OpenRouter — CORS-blocked providers hidden from dropdown |
-| Mistral / DeepSeek / Groq | Direct browser API calls with user's key |
-| Local AI | Auto-detected: Ollama, LM Studio, LocalAI, vLLM, Jan, Kobold, GPT4All, llama.cpp |
+| Pollinations API | Image generation + TTS + vision describer GPT-4o. **No text chat.** Free fallback in the 4-level image-gen priority. |
+| Local image backends | Auto-detected at boot on localhost: A1111/SD.Next/Forge/Fooocus/ComfyUI/InvokeAI/LocalAI/Ollama. 1.5s probe timeout per port. |
+| env.js image backends | `ENV_KEYS.imageBackends[]` array — persistent custom endpoints (OpenAI-compatible, A1111 kind, ComfyUI workflow kind, or generic URL+key). |
 | Web Speech API | Voice input (SpeechRecognition) with speech interruption handling |
 | Pollinations TTS | Voice output (shimmer/nova voices) |
 | Webcam / Vision | `getUserMedia` capture → AI scene description → gaze tracking → Eye widget |
@@ -478,7 +490,7 @@ Language cortex is no longer a pure letter-equation slot scorer. It's a **tiered
 
 ### Context Vector — The Topic Attractor
 
-A Float64Array(32) running decaying average of content-word letter-pattern vectors from user input:
+A Float64Array(50) running decaying average of GloVe semantic embeddings from user input content words (post-R2 semantic grounding — was 32-dim letter-hash before the refactor):
 
 ```
 c(t) = 0.7 · c(t-1) + 0.3 · mean(pattern(content_words))
@@ -523,7 +535,7 @@ The root fix is **stop generating from scratch when the persona file already has
 
 ### Known limitation
 
-Pattern-space cosine uses letter-hash vectors, not true word embeddings. `cat` and `kitten` are NOT close in this space. Real semantic coherence depends primarily on Tier 1 (templates) and Tier 2 (recall) working. Tier 4 (cold gen) with semantic fit is the weakest layer because its "semantic" is just letter-pattern similarity. Future improvement: wire real embeddings (GloVe or persona-trained co-occurrence) into slot scoring.
+**Post-R2 (commit `c491b71`):** Pattern space is now 50-dim GloVe semantic embeddings via `sharedEmbeddings` singleton imported into both `sensory.js` and `language-cortex.js`. `cat` and `kitten` ARE close in this space. Tier 4 (cold gen) semantic fit weight bumped 0.05 → 0.80 so meaning dominates slot selection. `cortexToEmbedding(spikes, voltages, cortexSize, langStart)` in `embeddings.js` is the mathematical inverse of `mapToCortex` — reads live neural spike state back to GloVe space so the slot scorer compares candidates against Unity's actual cortex activity, not just the static input vector. Cluster now exposes `getSemanticReadout(embeddings)` that delegates to this readout with the language-area offset built in.
 
 ### Round 2 refinements (2026-04-13 live-test hotfix pass)
 

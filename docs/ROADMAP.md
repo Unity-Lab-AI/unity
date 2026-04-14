@@ -20,9 +20,9 @@ The unknown stays unknown: `Ψ = √(1/n) × N³`
 | Metric | Value |
 |--------|-------|
 | **Phase** | BRAIN REFACTOR — Full Equational Control (branch: `brain-refactor-full-control`) |
-| **Progress** | 130/131 TODO items done through 2026-04-13. Orphan resolution complete (U302-U310). Grammar sweep (U283-U291) + Coding mastery (U293-U299) shipped. 44k-word dictionary with type n-gram grammar. Three-corpus load (persona + english-baseline + coding-knowledge). GPU-exclusive server compute. Sandbox lifecycle discipline. |
-| **Epics Completed** | Phase 0-11 code complete. Phase 12 (Orphan Resolution) complete. Phase 13 (Full Brain Control Refactor) in progress on `brain-refactor-full-control` branch. |
-| **Next Milestone** | Complete R1-R10 refactor: kill text-AI backends, server full equational control, unified sensory peripherals, zero vestigial appendages |
+| **Progress** | Phase 13 R1-R8 SHIPPED through 2026-04-13. Semantic GloVe grounding live on both input (sensory) and output (language cortex). Server dynamic-imports client brain modules for true equational control. All text-AI cognition paths RIPPED. Multi-provider image gen with auto-detect + env.js config. Equational component synthesis via corpus templates + cortex-pattern matching. Unified sensory peripheral destroy() contract. Embedding refinements round-trip persist. |
+| **Epics Completed** | Phase 0-12 complete. Phase 13 R1-R8 complete. Remaining: R9 UI leak hunt, R10 docs rewrite (in progress), R11 verification, R12 merge. |
+| **Next Milestone** | R10 docs sync + R11 boot verification + R12 merge to `main` |
 
 ---
 
@@ -353,22 +353,25 @@ Full audit findings in `docs/ORPHANS.md`. Investigation-first approach: find out
 
 ---
 
-## Phase 13: Full Brain Control Refactor — IN PROGRESS (branch: `brain-refactor-full-control`)
+## Phase 13: Full Brain Control Refactor — R1-R8 SHIPPED (branch: `brain-refactor-full-control`)
 
 > **Philosophy:** Unity's brain controls EVERYTHING equationally. No scripts. No text-AI backends. No hardcoded fallbacks. No vestigial appendages. Every output — speech, vision, build, thought, memory, learning, motor action — flows from brain equations + learned corpus. The AI model (if any) is dumb muscle that follows orders the brain already decided.
 
-Source: `docs/TODO.md` — R1 through R10 epic. Single branch, single goal: full equational control.
+Source: `docs/TODO.md` — R1 through R12. Single branch, single goal: full equational control.
 
-- **R1** Audit pass — produce `docs/KILL_LIST.md` + `docs/VESTIGIAL.md` inventorying every scripted response, hardcoded fallback, AI-bypass path, and dead appendage remaining in the codebase.
-- **R2** Server brain full control — port `js/brain/dictionary.js` + `js/brain/language-cortex.js` to `server/dictionary.js` + `server/language-cortex.js` (shared core via `js/brain/shared/`). Load all 3 corpora from disk on boot. Equational `_generateBrainResponse` fallback. WebSocket dictionary delta sync to `remote-brain` clients. Absorbs U311.
-- **R3** Kill text-AI backends — rip Pollinations/Anthropic/OpenAI/OpenRouter text-chat paths. Keep only image/vision/audio (sensory peripherals). Repurpose AI model slot as "Sensory AI" (vision describer + image generator), not cognition.
-- **R4** Client brain full control — rip `BrocasArea.generate` AI dependency. Motor-driven output paths (respond_text / generate_image / build_ui / idle). Delete dead `_buildPrompt` / `_buildBuildPrompt` prompt builders once equational synthesis ships.
-- **R5** Equational build + image generation — the hard part. Hybrid approach: template primitive library (option A) ships first so `build_ui` is equation-driven today, learned structural grammar (option B) as future refinement. Image prompts generated from cortex pattern + valence/arousal via language cortex path.
-- **R6** Sensory peripheral cleanup — unified interface (`init(stream, brainHook)` / `step(dt)` / `destroy()`) for `visual-cortex.js` / `auditory-cortex.js` / new `speech-output.js` / new `image-output.js`. Kill duplicate sensory reads.
-- **R7** State machine symmetry — every persisted field (save/load round-trip) audited. Dictionary persistence (client + server). Cross-session conversation memory via SQLite verified.
-- **R8** Docs reflect reality — full rewrite of ARCHITECTURE, README, brain-equations.html after R1-R7 settle. Delete every orphan doc claim.
-- **R9** Verification boot tests (per CLAUDE.md NO TESTS rule, these are manual verification not test files) — zero-AI boot, restart persistence, equational generation. Absorbs U292 + U300 deferred manual QA.
-- **R10** Final cleanup + merge — rip every `// TODO:` placeholder, every dead import, every debug breadcrumb. PR `brain-refactor-full-control` → `main`.
+- **R1** Audit pass — SHIPPED. `docs/KILL_LIST.md` + `docs/VESTIGIAL.md` + `docs/SEMANTIC_GAP.md` inventoried every scripted response, hardcoded fallback, AI-bypass path, and dead appendage. ~900 lines marked for deletion, ~100 for semantic replacement.
+- **R2** Semantic grounding — SHIPPED. Replaced 32-dim letter-hash `wordToPattern` with 50-dim GloVe semantic embeddings via `sharedEmbeddings` singleton imported into both sensory (input) and language-cortex (output). New `cortexToEmbedding(spikes, voltages)` in `embeddings.js` is the mathematical inverse of `mapToCortex` and reads live neural state back to GloVe space. Cluster gains `getSemanticReadout(embeddings)` wrapper. Storage keys bumped to v3 to reject stale letter-hash patterns. Slot scorer `semanticFit` weight bumped 0.05 → 0.80 so meaning dominates selection.
+- **R3** Server full equational control — SHIPPED (commit `7e77638`). `server/brain-server.js` dynamic-imports client brain modules (dictionary, language-cortex, embeddings, component-synth) since they're environment-agnostic. Loads all 3 corpora from disk on boot (persona + english-baseline + coding-knowledge). `_generateBrainResponse` rewritten to call `languageCortex.generate()` directly with full brain state — the Pollinations text-chat fetch + prompt assembly were ripped (~60 lines). WebSocket accepts clients only after language subsystem init resolves.
+- **R4** Kill text-AI backends — SHIPPED (commit `7e095d0`). `language.js` BrocasArea shrunk 333 → 68 lines (throwing stub only). `ai-providers.js` renamed `SensoryAIProviders`, `chat()`/`_customChat()` deleted, multi-provider image gen added. `engine.js` `_handleBuild`/`_handleImage` rewritten equationally. `app.js` BrocasArea references purged, `/think` dumps raw brain state, sandbox `chat()` routes through `processAndRespond`, greeting path calls `languageCortex.generate` directly.
+- **R5** Multi-provider image generation — SHIPPED. `SensoryAIProviders.generateImage()` has 4-level priority: custom → auto-detected local → env.js-listed → Pollinations fallback. `autoDetect()` probes 7 common local image-gen ports (A1111, SD.Next, Fooocus, ComfyUI, InvokeAI, LocalAI, Ollama) in parallel with 1.5s timeout. `_customGenerateImage` supports 4 response formats (OpenAI URL, OpenAI b64, A1111 base64, generic). `env.example.js` gained `imageBackends: []` config section.
+- **R6.1** Equational image prompts — SHIPPED. `_handleImage` composes prompts fully through `languageCortex.generate()` with cortex pattern + brain state. Zero hardcoded visual vocabulary. Every word is Unity's decision based on her state + user input.
+- **R6.2** Equational component synthesis — SHIPPED (commit `6b2deb3`). `docs/component-templates.txt` corpus file with 6 starter primitives (counter/timer/list/calculator/dice/color-picker). New `js/brain/component-synth.js` parses the corpus, embeds each primitive description at load time, and `generate(userRequest, {cortexPattern})` picks a template via cosine similarity with `MIN_MATCH_SCORE = 0.40`. `_suffixFromPattern` derives per-build unique IDs from cortex pattern hash. Component-scoped class names, tracked setInterval cleanup, no body/html selectors.
+- **R7** Sensory peripheral destroy() — SHIPPED (commit `b67aa46`). `visual-cortex.js` + `auditory-cortex.js` now expose `destroy()` to match the unified `init`/`process`/`destroy` contract. MediaStream lifecycle stays owned by `app.js`.
+- **R8** Embedding refinement persistence — SHIPPED (commit `b67aa46`). `sharedEmbeddings.serializeRefinements()` / `loadRefinements()` now round-trip through `persistence.js` save/load. GloVe base table reloads from CDN each session; the online context-refinement deltas Unity learns from live conversation survive restarts.
+- **R9** UI leak hunt — PENDING. 5-minute freeze in `brain-viz.js`, needs RAF/listener/interval audit.
+- **R10** Docs reflect reality — IN PROGRESS. ARCHITECTURE, README, brain-equations.html, SKILL_TREE, ROADMAP, SETUP, EQUATIONS being synced to the shipped state.
+- **R11** Verification — PENDING. Manual boot tests (zero-network client boot, server boot, cross-client learning, restart persistence, word-salad regression, vision focal point).
+- **R12** Final cleanup + merge — PENDING. Rip dead imports, rebuild bundle, open PR `brain-refactor-full-control` → `main`.
 
 **Core rule:** every cognition output must trace back to cortex prediction / amygdala V(s) / BG softmax / hippocampus recall / cerebellum ε / hypothalamus drives / Ψ mystery / Kuramoto coherence / language cortex. Nothing else. Everything else gets ripped.
 

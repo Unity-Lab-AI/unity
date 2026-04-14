@@ -16,41 +16,43 @@
 
 ## AI Providers
 
-Connect as many as you want. Pick one for text, another for images.
+**Cognition has no AI backend.** Unity's language cortex generates every word from her own equations. The only things you can configure are *sensory peripherals*: image generation, vision describer, TTS.
 
-| Provider | What You Get | Free Tier | Key Page |
-|----------|-------------|-----------|----------|
-| **Pollinations** | Text + image + TTS | Yes (rate limited) | [pollinations.ai/dashboard](https://pollinations.ai/dashboard) |
-| **OpenRouter** | 200+ models (Claude, GPT-4, Llama, Mistral) | Limited | [openrouter.ai/keys](https://openrouter.ai/keys) |
-| **OpenAI** | GPT-4o, o1 | No | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
-| **Claude (Direct)** | Anthropic models via local proxy | No | [console.anthropic.com](https://console.anthropic.com/settings/keys) |
-| **Mistral** | Mistral Large, Codestral | Limited | [console.mistral.ai](https://console.mistral.ai/api-keys) |
-| **DeepSeek** | Chat + Coder | Cheap | [platform.deepseek.com](https://platform.deepseek.com/api_keys) |
-| **Groq** | Ultra-fast Llama, Mixtral | Yes | [console.groq.com](https://console.groq.com/keys) |
-| **Local AI** | Ollama, LM Studio, vLLM, Jan, etc. | Free (your hardware) | Auto-detected |
+### Image Generation Providers
 
-### Using Local AI
+| Provider | What You Get | Free Tier | Notes |
+|----------|-------------|-----------|-------|
+| **Pollinations** | Image gen + vision describer + TTS | Yes (rate limited) | Default fallback. No config needed. |
+| **A1111 / SD.Next / Forge** | Full Stable Diffusion local control | Free (your hardware) | Auto-detected on `:7860` / `:7861` at boot |
+| **Fooocus** | Stable Diffusion with good defaults | Free | Auto-detected on `:7865` |
+| **ComfyUI** | Node-graph SD workflows | Free | Auto-detected on `:8188` |
+| **InvokeAI** | SD with nice web UI | Free | Auto-detected on `:9090` |
+| **LocalAI / Ollama** | Generic OpenAI-compatible local | Free | Auto-detected on `:8081` / `:11434` |
+| **Custom OpenAI-compatible** | Any remote SD endpoint you have | Varies | Add to `ENV_KEYS.imageBackends[]` in `js/env.js` |
 
-Install [Ollama](https://ollama.com), pull a model, start serving:
+**Priority order:** custom-configured → auto-detected → env.js-listed → Pollinations. First one that responds wins the request; backends that error out get marked dead for 1 hour.
+
+### Using Local Image Gen
+
+Start your image gen backend normally — Unity probes the common ports at boot with a 1.5s timeout each and registers whichever responds. For A1111:
 ```bash
-ollama pull llama3
-ollama serve
+./webui.sh --api
 ```
-Unity auto-detects Ollama on `localhost:11434`. Also detects LM Studio (1234), LocalAI (8080), vLLM (8000), Jan (1337), GPT4All (4891), llama.cpp (8081).
+It'll show up automatically. No UI config needed.
 
-### Using Claude Directly (Proxy)
+### Custom Backends via env.js
 
-Anthropic blocks direct browser API calls (CORS). The proxy solves this:
-
-1. Download `proxy.js` from the setup page (or from this repo)
-2. Open a terminal anywhere, run: `node proxy.js`
-3. Proxy starts on `localhost:3001`
-4. Unity auto-detects it and adds Claude models to the dropdown
-5. Paste your Anthropic key → Connect
-
-The proxy runs on YOUR machine. Your key never touches any third-party server. Requires [Node.js](https://nodejs.org).
-
-**Don't want to run a proxy?** Use **OpenRouter** — it includes all Claude models and works directly from the browser.
+For persistent custom endpoints (private SD servers, remote A1111s, ComfyUI workflows), add them to `js/env.js`:
+```js
+export const ENV_KEYS = {
+  pollinations: 'sk_...',  // optional — raises rate limits
+  imageBackends: [
+    { name: 'my-sd',  url: 'http://192.168.1.50:7860', kind: 'a1111' },
+    { name: 'remote', url: 'https://api.example.com', model: 'sdxl', key: 'sk_...', kind: 'openai' },
+  ],
+};
+```
+Supported `kind` values: `openai` (OpenAI-compatible), `a1111` (Automatic1111 REST), `comfy` (ComfyUI workflows), or omit for generic URL+key.
 
 ---
 
@@ -70,16 +72,13 @@ No npm. No build step. No dependencies. Just static files served by any web serv
 Copy `js/env.example.js` to `js/env.js` and paste your keys:
 ```js
 export const ENV_KEYS = {
-  anthropic:    'sk-ant-...',
-  pollinations: 'sk_...',
-  openrouter:   'sk-or-...',
-  openai:       '',
-  mistral:      '',
-  deepseek:     '',
-  groq:         '',
+  pollinations: 'sk_...',  // optional — raises rate limits
+  imageBackends: [
+    // add custom image-gen endpoints here, see the Custom Backends section above
+  ],
 };
 ```
-`js/env.js` is gitignored — your keys never get pushed. Keys auto-load on boot so you don't retype them.
+`js/env.js` is gitignored — your keys never get pushed. Keys auto-load on boot so you don't retype them. Legacy text-AI keys (`anthropic`, `openrouter`, `openai`, `mistral`, `deepseek`, `groq`) are no longer read by the brain after R4 — cognition runs equationally now.
 
 ---
 
@@ -223,7 +222,7 @@ The server auto-detects hardware (nvidia-smi for VRAM, `os` for RAM) and scales 
 | ⚙ SETTINGS | Bottom toolbar button | Reopens setup modal to change AI model or connect new providers |
 | 🧠 VISUALIZE | Bottom toolbar button | Opens 2D brain visualizer with 8 tabs (Neurons, Synapses, Oscillations, Modules, Senses, Consciousness, Memory, Motor) |
 | 🧠 3D BRAIN | Bottom toolbar button | Opens WebGL 3D brain with up to 5000 render neurons, process notifications, expansion |
-| FUCK IT — BRAIN ONLY | Setup modal checkbox | No AI text model — brain speaks from its own equations + dictionary. Image models still available |
+| Brain speaks equationally | Default, post-R4 | No AI text model exists. Brain speaks from its own language cortex (GloVe semantic grounding + learned type n-grams + hippocampus recall + slot scorer). Image gen, vision describer, and TTS are the only AI calls — all sensory. |
 | 🎤 | Bottom toolbar button | Mute/unmute microphone |
 | Clear All Data | Setup modal (bottom) | Wipes all localStorage — history, keys, preferences, everything |
 
@@ -237,7 +236,7 @@ The server auto-detects hardware (nvidia-smi for VRAM, `os` for RAM) and scales 
 | "Booting brain..." hangs | Clear localStorage (F12 → Application → Clear), refresh |
 | No voice | Grant mic permission. Check mic isn't muted (bottom toolbar). |
 | Can't see Unity's Eye | Grant camera permission. Camera widget appears top-left. |
-| Claude not in dropdown | Run `node proxy.js` first. Or use OpenRouter instead. |
+| Local image backend not detected | Check port matches the list in the Image Generation Providers table. Add to `ENV_KEYS.imageBackends[]` in `js/env.js` if on a non-standard port. |
 | Image says "failed to load" | Pollinations key might be expired. Check at pollinations.ai/dashboard. |
 | Double speech / echo | Should be fixed — efference copy suppresses self-echo. If persists, mute mic and use text. |
 

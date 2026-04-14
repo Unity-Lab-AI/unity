@@ -14,6 +14,36 @@
 
 ## COMPLETED TASKS LOG
 
+## 2026-04-13 Session: Refactor R10 partial — Docs Reflect Reality (5 of 10 subtasks)
+
+### COMPLETED
+- [x] **Task:** R10.1 — `README.md` sync. Rip every text-AI claim, document the equational language cortex, update the AI policy block to reflect sensory-only AI.
+  - Completed: 2026-04-13
+  - Files modified: `README.md`
+  - Details: "What This Is" section no longer mentions BRAIN ONLY mode (it's the only mode). Current-branch note updated to list R1-R8 shipped + R9-R12 remaining. Old "Broca's Area — What the AI Model Receives" block fully rewritten as "Language Cortex — How Unity Speaks Equationally" showing the slot scorer inputs (cortex pattern 50d GloVe from `getSemanticReadout(sharedEmbeddings)`, arousal/valence/Ψ/coherence/drug state bias, type n-gram hard gate, recent openers buffer, hippocampus recall with mood-distance weighting). Added explicit statement that `/think` dumps raw brain state (no prompt exists). Build action routing through `component-synth.js` documented. "On AI Models" policy block fully rewritten to state cognition is 100% equational and list the 4 sensory peripheral AI calls (image gen, vision describer, TTS, STT) with the 4-level image-gen priority.
+
+- [x] **Task:** R10.2 — `docs/ARCHITECTURE.md` sync. Replace Multi-Provider AI section with Sensory AI System, update context-vector dim, update letter-hash notes to GloVe, add peripherals directory.
+  - Completed: 2026-04-13
+  - Files modified: `docs/ARCHITECTURE.md`
+  - Details: "Multi-Provider AI System" section replaced with "Sensory AI System (REFACTORED — 2026-04-13)" documenting the 4-level image-gen priority, auto-detected local ports, `_customGenerateImage` response-shape parsers, vision describer pipeline, TTS/STT, and the "What Was Ripped" block listing everything R4 deleted. Directory structure updated: `language.js` annotated as deprecated 68-line stub, new `component-synth.js` entry added, new `peripherals/ai-providers.js` entry added. Executive Summary AI Backends row rewritten to "sensory-only" with explicit no-text-AI statement. Context-vector dimension updated from `Float64Array(32)` letter-pattern to `Float64Array(50)` GloVe. "Pattern-space cosine uses letter-hash" paragraph rewritten to document R2 semantic grounding: sharedEmbeddings singleton shared between sensory and language cortex, slot scorer semantic fit weight 0.05 → 0.80, `cortexToEmbedding` as mathematical inverse of `mapToCortex`, `getSemanticReadout(embeddings)` wrapper on cluster. Integration Points table replaced Pollinations/OpenRouter/OpenAI/Anthropic/etc. rows with Pollinations image-only, local image backends with probed ports, and env.js imageBackends.
+
+- [x] **Task:** R10.5 — `docs/SKILL_TREE.md` update. Add new skill rows for all shipped refactor work, flip dead skills.
+  - Completed: 2026-04-13
+  - Files modified: `docs/SKILL_TREE.md`
+  - Details: AI & Machine Learning domain list updated — removed Claude API / Pollinations multi-model text, added GloVe semantic grounding, equational language generation, sensory-only AI policy statement. "Build-mode Broca prompt" skill flipped to **REMOVED 2026-04-13** with superseded-by pointer to R6.2 component synth. 8 new skill rows added: Equational component synthesis (component-synth.js + templates), Multi-provider image generation (4-level priority + autoDetect), Semantic grounding GloVe (R2 commit c491b71), Server equational control (R3 commit 7e77638 dynamic-import), Kill text-AI cognition (R4 commit 7e095d0), Peripheral destroy() contract (R7 commit b67aa46), Embedding refinement persistence (R8 commit b67aa46).
+
+- [x] **Task:** R10.6 — `docs/ROADMAP.md` Phase 13 rewrite to match actual shipped state.
+  - Completed: 2026-04-13
+  - Files modified: `docs/ROADMAP.md`
+  - Details: Current Status table Phase row updated to reflect R1-R8 shipped with explicit list of what each delivered. Progress line now documents semantic GloVe grounding, server dynamic-import equational control, text-AI cognition kill, multi-provider image gen, equational component synth, unified sensory peripheral destroy() contract, embedding refinement persistence. Epics Completed line bumped to Phase 13 R1-R8 complete with R9-R12 remaining. Phase 13 body fully rewritten — old R1-R10 letter numbering (which was planned work) replaced with the actual R1-R12 ship log: R1 audit docs shipped, R2 semantic grounding shipped with commit hashes, R3 server control shipped, R4 text-AI kill shipped, R5 multi-provider image gen shipped, R6.1 equational image prompts shipped, R6.2 equational component synthesis shipped, R7 sensory peripheral destroy() shipped, R8 embedding persistence shipped, R9 UI leak hunt pending, R10 docs sync in progress, R11 verification pending, R12 merge pending.
+
+- [x] **Task:** R10.7 — `SETUP.md` update. Replace multi-provider AI table with image-gen providers, rip proxy/Anthropic sections, update env.js example.
+  - Completed: 2026-04-13
+  - Files modified: `SETUP.md`
+  - Details: Old multi-provider table (Pollinations/OpenRouter/OpenAI/Claude/Mistral/DeepSeek/Groq/Local AI) replaced with Image Generation Providers table (Pollinations, A1111/SD.Next/Forge, Fooocus, ComfyUI, InvokeAI, LocalAI/Ollama, Custom OpenAI-compatible) with priority-order note. "Using Local AI" section rewritten as "Using Local Image Gen" showing A1111 `./webui.sh --api` start and auto-probe behavior. "Using Claude Directly (Proxy)" section fully deleted. "Custom Backends via env.js" section added with the `imageBackends: [{name, url, kind}]` schema and supported kind values (openai, a1111, comfy, or generic). `env.js` pre-load example rewritten to only show `pollinations` + `imageBackends`; legacy text-AI keys (anthropic, openrouter, openai, mistral, deepseek, groq) explicitly called out as no longer read by the brain. FUCK IT — BRAIN ONLY toggle row replaced with "Brain speaks equationally" as the default. Troubleshooting "Claude not in dropdown" row replaced with "Local image backend not detected" row.
+
+---
+
 ## 2026-04-13 Session: Refactor R7 + R8 — Peripheral destroy() + Embedding persistence
 
 ### COMPLETED

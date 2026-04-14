@@ -623,7 +623,7 @@ Boot Unity with viz panel open, let it run 10 minutes, take Chrome memory snapsh
 
 **Goal:** After R1-R9 land, every doc must match the new architecture. No claims about deleted features. Full rewrites where necessary.
 
-### R10.1 — `README.md` full rewrite
+### R10.1 — `README.md` full rewrite  [DONE 2026-04-13 — text-AI claims ripped, Language Cortex section rewritten, sensory-only AI policy block]
 - Remove every mention of "text-AI backend" / "multi-provider AI chat"
 - Remove BRAIN ONLY toggle (that's now the only mode)
 - New architecture diagram showing the shared core and sensory-only AI
@@ -633,7 +633,7 @@ Boot Unity with viz panel open, let it run 10 minutes, take Chrome memory snapsh
 - Keep the persona-as-parameters section
 - Keep the Ψ mystery module section
 
-### R10.2 — `docs/ARCHITECTURE.md` full rewrite
+### R10.2 — `docs/ARCHITECTURE.md` full rewrite  [DONE 2026-04-13 — Multi-Provider AI section replaced with Sensory AI System, context-vector dim 32→50, letter-hash note updated to GloVe, peripherals dir added]
 - Blank slate start
 - Document the semantic grounding stack (embeddings → dictionary → language cortex → slot scorer)
 - Document the shared core architecture (client/server both import `js/brain/shared/*`)
@@ -657,18 +657,18 @@ Boot Unity with viz panel open, let it run 10 minutes, take Chrome memory snapsh
 - Remove letter-pattern wordToPattern equation
 - Add component synthesis equation from R6.2
 
-### R10.5 — `docs/SKILL_TREE.md` update
+### R10.5 — `docs/SKILL_TREE.md` update  [DONE 2026-04-13 — added R2/R3/R4/R5/R6.2/R7/R8 skill rows, flipped build-mode Broca prompt to REMOVED]
 - Mark semantic grounding as DONE
 - Mark server language port as DONE
 - Mark kill-text-AI as DONE
 - Add new skill rows for the shared core, semantic embeddings, component synth, sensory peripheral interface
 
-### R10.6 — `docs/ROADMAP.md` Phase 13 → DONE + Phase 14 next
+### R10.6 — `docs/ROADMAP.md` Phase 13 → DONE + Phase 14 next  [DONE 2026-04-13 — Phase 13 rewritten with actual R1-R8 shipped entries + R9-R12 pending status]
 - Mark R1-R10 as complete
 - Document the Phase 13 deliverables (semantic grounding shipped, text-AI removed, etc.)
 - Optional Phase 14 preview: learned structural grammar (R6.2 Approach B), production deployment, multi-brain federation
 
-### R10.7 — `SETUP.md` update
+### R10.7 — `SETUP.md` update  [DONE 2026-04-13 — multi-provider AI table replaced with image-gen providers, proxy/anthropic sections ripped, env.js example updated to imageBackends shape]
 - New setup flow (no text-AI key required)
 - Image/vision/TTS keys only
 - New diagram
