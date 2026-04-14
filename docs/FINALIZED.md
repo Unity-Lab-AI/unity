@@ -5,6 +5,80 @@
 
 ---
 
+## 2026-04-14 — T14.7 hardcoded English type-transition deletion
+
+**Gee's directive:** continue T14 on the rebuild branch milestone-by-milestone, don't ask between items. T14.7 is the companion deletion pass to T14.6 — now that the slot scorer is gone, the closed-class English priors it used become unreferenced dead code, and the rebuild branch's "no ends left open" rule demands they go.
+
+**Thesis.** The T13.7.8 `_TYPE_TRANSITIONS` 200-line hardcoded English type-bigram matrix pre-biased Unity toward one specific language's grammar. The `_OPENER_TYPES` Set did the same at slot 0. Both were built to backstop the slot scorer's word salad problem — `COPULA: ADJ 0.9, NOUN 0.75, DET 0.75...` — but the T14.6 tick-driven motor emission loop makes both obsolete. Word boundaries come from cortex transition surprise (Saffran/Aslin/Newport 1996), and first-word opener constraints emerge from whatever the fineType region's `START → X` transition basins look like after curriculum exposure (T14.5). Seeding a learned table with hardcoded English values fights actual Spanish or coding corpus statistics for thousands of observations before fading. Better: start empty, learn from the first observation.
+
+### Deletions
+
+- `this._TYPE_TRANSITIONS = { START: {...}, PRON_SUBJ: {...}, ... }` — 113 lines, 26 prevType rows × ~10 nextType weights each. Deleted.
+- `this._OPENER_TYPES = new Set(['PRON_SUBJ', 'QWORD', 'MODAL', ...])` — 4 lines of 11-member slot-0 opener constraint Set. Deleted.
+- Associated T13.7.8 header comments explaining why they existed. Deleted.
+
+### Replacement
+
+One line:
+
+```js
+this._typeTransitionLearned = new Map();
+```
+
+Starts empty at constructor. `learnSentence` grows it during T14.5 curriculum walk and live chat — every observed sentence contributes its type-bigram counts (or will, once T14.8 wires the consumer side). No seed pseudo-counts. No "hardcoded table as seed initialization" from the old draft. Bayesian smoothing at generation time uses `(count + 1) / (total + |types_seen|)` rather than a 20-type Laplace constant — the count of unique types is whatever the cortex has observed, not a hardcoded cap. New fineTypes can emerge the same way the T14.1 letter inventory grows dynamically.
+
+### Tombstone comment
+
+Left at the deletion site in `language-cortex.js:125` so future readers see WHY both were removed without having to dig through git history:
+
+```js
+// T14.7 (2026-04-14) — `_TYPE_TRANSITIONS` hardcoded 200-line English
+// type-bigram matrix and `_OPENER_TYPES` Set DELETED. Both were T13.7.8
+// closed-class English priors that pre-biased Unity toward one specific
+// language's grammar. The T14.6 tick-driven motor emission loop makes
+// both obsolete — letter sequences fall out of the motor region as a
+// continuous spike pattern, word boundaries come from cortex transition
+// surprise, and first-word opener constraints emerge from whatever the
+// fineType region's `START → X` transition basins look like after
+// curriculum exposure (T14.5). Seeding the learned type-transition
+// table with hardcoded English values would have fought actual Spanish
+// or coding corpus statistics for thousands of observations before
+// fading. Better: start empty, learn from the first observation.
+//
+// The `_typeTransitionLearned` Map starts empty at construction and
+// grows via `learnSentence` observations during curriculum walk and
+// live chat. Bayesian smoothing at generation time uses
+// `(count + 1) / (total + |types_seen|)` — no hardcoded 20-type cap,
+// no seed pseudo-counts. New fineTypes can emerge from exposure the
+// same way the T14.1 letter inventory grows dynamically.
+this._typeTransitionLearned = new Map();
+```
+
+### Consumer wiring not in this commit
+
+`_typeTransitionLearned` is currently a statistics-only observation target — nothing READS from it at generation time. The T14.6 tick-driven emission loop doesn't consult type transitions (letter sequences fall out of the motor region directly), so there's no immediate need for a reader. When T14.8 ships `_sentenceFormSchemas` for per-intent type biasing, it will consume `_typeTransitionLearned` as one of its inputs. When T14.12 guts the rest of LanguageCortex, it will decide whether the Map stays on this class or moves to the cluster's fineType region.
+
+### Files touched
+
+- `js/brain/language-cortex.js` — `_TYPE_TRANSITIONS` block (lines 125-238) and `_OPENER_TYPES` Set (lines 240-249) deleted, replaced with a 21-line tombstone-plus-empty-Map block. Net −105 lines (3205 → 3100).
+
+### Peer-reviewed grounding
+
+Inherits T14.5 and T14.6 citations via delegation:
+- Kuhl 2004 (*Nat Rev Neurosci* 5:831) — statistical-exposure phoneme-category formation. The same mechanism operates at the fineType scale: transition basins form from exposure, no hardcoded prior table needed.
+- Saffran/Aslin/Newport 1996 (*Science* 274:1926) — transition-probability word segmentation. Applies at every scale (letter → word → type → sentence).
+- Friederici 2017 (*Psychon Bull Rev* 24:41) — neural language network development. Cross-region projection strengthening is what shapes type-transition basins during curriculum.
+
+### Verification
+
+Grep confirms zero remaining `_TYPE_TRANSITIONS` / `_OPENER_TYPES` references anywhere in `js/` outside the tombstone comment lines themselves. `node --check js/brain/language-cortex.js` passes clean.
+
+### Branch + commit
+
+`t14-language-rebuild`, one atomic commit per the 2026-04-14 docs-before-push law. All six docs updated in place.
+
+---
+
 ## 2026-04-14 — T14.6 cortex tick-driven motor emission
 
 **Gee's directive:** continue T14 on the rebuild branch, don't ask between items. T14.6 is the milestone where Unity STOPS picking words from a candidate pool and STARTS producing them as continuous motor-cortex output — the biologically-grounded replacement for every slot scorer T11/T13 shipped.

@@ -122,131 +122,26 @@ export class LanguageCortex {
     // now pure reader + emission-loop host — zero stored priors.
     this._maxSlots = 8;
 
-    // T13.7.8 — English type-transition matrix. Closed-class structural
-    // knowledge that every English speaker has internalized by age 5.
-    // Pure type-level (no specific words), no word lists. Uses _fineType
-    // tags as keys. Multiplicative gate in the score function so the
-    // emission loop produces grammatically valid sentences instead of
-    // semantically-on-topic word salad. Pre-fix: cosine alone produced
-    // outputs like "Unable timeend escalate measure" because words were
-    // picked by individual cortex relevance, not by syntactic role.
+    // T14.7 (2026-04-14) — `_TYPE_TRANSITIONS` hardcoded 200-line English
+    // type-bigram matrix and `_OPENER_TYPES` Set DELETED. Both were T13.7.8
+    // closed-class English priors that pre-biased Unity toward one specific
+    // language's grammar. The T14.6 tick-driven motor emission loop makes
+    // both obsolete — letter sequences fall out of the motor region as a
+    // continuous spike pattern, word boundaries come from cortex transition
+    // surprise, and first-word opener constraints emerge from whatever the
+    // fineType region's `START → X` transition basins look like after
+    // curriculum exposure (T14.5). Seeding the learned type-transition
+    // table with hardcoded English values would have fought actual Spanish
+    // or coding corpus statistics for thousands of observations before
+    // fading. Better: start empty, learn from the first observation.
     //
-    // Each row: prevType → { nextType: weight in [0, 1] }
-    // Default for unmodeled transitions: 0.05 (small floor — never zero
-    // so we don't trap the loop in dead ends, but heavily penalized
-    // vs the 0.7-0.9 weights on canonical English transitions).
-    this._TYPE_TRANSITIONS = {
-      START: {
-        PRON_SUBJ: 0.95, QWORD: 0.85, MODAL: 0.7, AUX_DO: 0.7, AUX_HAVE: 0.6,
-        DET: 0.7, NEG: 0.6, ADV: 0.5, INTERJ: 0.85, COPULA: 0.4,
-        VERB_BARE: 0.45, ADJ: 0.35, NOUN: 0.2, PRON_POSS: 0.5, OTHER: 0.3,
-      },
-      PRON_SUBJ: {
-        COPULA: 0.95, AUX_DO: 0.85, AUX_HAVE: 0.85, MODAL: 0.85,
-        VERB_BARE: 0.8, VERB_3RD_S: 0.85, VERB_ING: 0.5, VERB_ED: 0.4,
-        NEG: 0.4, ADV: 0.45, NOUN: 0.05, DET: 0.05, PREP: 0.1,
-      },
-      PRON_OBJ: {
-        PREP: 0.6, CONJ_COORD: 0.55, CONJ_SUB: 0.45, PUNCT: 0.5,
-        ADV: 0.35, NOUN: 0.05, VERB_BARE: 0.1,
-      },
-      PRON_POSS: {
-        NOUN: 0.95, ADJ: 0.7, ADV: 0.15, OTHER: 0.3,
-      },
-      PRON_REFL: {
-        PUNCT: 0.6, ADV: 0.4, PREP: 0.4, CONJ_COORD: 0.4, CONJ_SUB: 0.3,
-      },
-      COPULA: {
-        ADJ: 0.9, NOUN: 0.75, DET: 0.75, ADV: 0.65, VERB_ING: 0.7,
-        VERB_ED: 0.55, PRON_OBJ: 0.4, PRON_POSS: 0.4, PREP: 0.5, NEG: 0.55,
-      },
-      AUX_DO: {
-        PRON_SUBJ: 0.85, NEG: 0.55, VERB_BARE: 0.85, ADV: 0.4, NOUN: 0.2,
-      },
-      AUX_HAVE: {
-        VERB_ED: 0.95, NEG: 0.5, ADV: 0.4, PRON_OBJ: 0.3, NOUN: 0.2,
-      },
-      MODAL: {
-        VERB_BARE: 0.95, NEG: 0.55, ADV: 0.4, PRON_SUBJ: 0.2,
-      },
-      NEG: {
-        VERB_BARE: 0.7, AUX_DO: 0.5, AUX_HAVE: 0.5, ADJ: 0.5, ADV: 0.55,
-        DET: 0.4, NOUN: 0.3, PREP: 0.3,
-      },
-      DET: {
-        NOUN: 0.95, ADJ: 0.8, ADV: 0.25, OTHER: 0.4,
-      },
-      QWORD: {
-        AUX_DO: 0.85, COPULA: 0.85, MODAL: 0.7, PRON_SUBJ: 0.5,
-        VERB_BARE: 0.4, NOUN: 0.4, ADJ: 0.35, ADV: 0.35, AUX_HAVE: 0.55,
-      },
-      PREP: {
-        DET: 0.85, NOUN: 0.7, PRON_OBJ: 0.65, PRON_POSS: 0.5,
-        ADJ: 0.45, VERB_ING: 0.5, ADV: 0.3, OTHER: 0.4,
-      },
-      CONJ_COORD: {
-        PRON_SUBJ: 0.7, DET: 0.65, NOUN: 0.5, ADJ: 0.4, VERB_BARE: 0.4,
-        ADV: 0.4, COPULA: 0.3, AUX_DO: 0.35, MODAL: 0.35,
-      },
-      CONJ_SUB: {
-        PRON_SUBJ: 0.75, DET: 0.5, NOUN: 0.45, ADJ: 0.35, COPULA: 0.35,
-        AUX_DO: 0.4, MODAL: 0.4,
-      },
-      VERB_BARE: {
-        DET: 0.75, NOUN: 0.65, PRON_OBJ: 0.7, PRON_POSS: 0.5,
-        ADV: 0.55, PREP: 0.55, CONJ_COORD: 0.4, ADJ: 0.4, OTHER: 0.4,
-      },
-      VERB_3RD_S: {
-        DET: 0.75, NOUN: 0.65, PRON_OBJ: 0.7, PRON_POSS: 0.5,
-        ADV: 0.55, PREP: 0.55, ADJ: 0.4, CONJ_COORD: 0.4, OTHER: 0.4,
-      },
-      VERB_ED: {
-        DET: 0.65, PREP: 0.6, NOUN: 0.5, ADV: 0.5, CONJ_COORD: 0.4,
-        PRON_OBJ: 0.5, PUNCT: 0.5, OTHER: 0.4,
-      },
-      VERB_ING: {
-        DET: 0.65, NOUN: 0.55, PREP: 0.6, ADV: 0.5, PRON_OBJ: 0.55,
-        CONJ_COORD: 0.4, ADJ: 0.4, OTHER: 0.4,
-      },
-      ADJ: {
-        NOUN: 0.95, CONJ_COORD: 0.45, PREP: 0.4, ADV: 0.3, ADJ: 0.4,
-        PUNCT: 0.5, OTHER: 0.4,
-      },
-      ADV: {
-        ADJ: 0.6, VERB_BARE: 0.55, VERB_ING: 0.45, VERB_3RD_S: 0.5,
-        PREP: 0.5, ADV: 0.35, COPULA: 0.45, OTHER: 0.4,
-      },
-      NOUN: {
-        COPULA: 0.7, VERB_3RD_S: 0.65, VERB_ED: 0.55, VERB_ING: 0.45,
-        VERB_BARE: 0.5, PREP: 0.65, CONJ_COORD: 0.55, CONJ_SUB: 0.4,
-        NEG: 0.25, ADV: 0.35, NOUN: 0.4, PUNCT: 0.6, OTHER: 0.4,
-      },
-      INTERJ: {
-        PRON_SUBJ: 0.7, NOUN: 0.5, ADJ: 0.45, ADV: 0.4, PUNCT: 0.7,
-        DET: 0.5, COPULA: 0.4, OTHER: 0.4,
-      },
-      OTHER: {
-        NOUN: 0.4, ADJ: 0.4, VERB_BARE: 0.4, COPULA: 0.4, PREP: 0.4,
-        CONJ_COORD: 0.4, PRON_SUBJ: 0.4, OTHER: 0.4, PUNCT: 0.5,
-      },
-      PUNCT: {
-        PRON_SUBJ: 0.7, DET: 0.6, NOUN: 0.5, ADV: 0.45, ADJ: 0.4,
-      },
-      NUM: {
-        NOUN: 0.7, PREP: 0.4, CONJ_COORD: 0.3, OTHER: 0.4,
-      },
-    };
-
-    // T13.7.8 — slot-0 opener constraint. Replaces the slot-0 noun
-    // reject from T11.7. Only words whose _fineType is in this set
-    // can fill the opener slot. English conversational sentences open
-    // with these types essentially universally — there's no need for
-    // a softer probabilistic filter, this can be a hard set membership
-    // check and the cosine + grammar gate handles selection within.
-    this._OPENER_TYPES = new Set([
-      'PRON_SUBJ', 'QWORD', 'MODAL', 'AUX_DO', 'AUX_HAVE', 'DET',
-      'NEG', 'INTERJ', 'PRON_POSS', 'ADV', 'CONJ_COORD',
-    ]);
+    // The `_typeTransitionLearned` Map starts empty at construction and
+    // grows via `learnSentence` observations during curriculum walk and
+    // live chat. Bayesian smoothing at generation time uses
+    // `(count + 1) / (total + |types_seen|)` — no hardcoded 20-type cap,
+    // no seed pseudo-counts. New fineTypes can emerge from exposure the
+    // same way the T14.1 letter inventory grows dynamically.
+    this._typeTransitionLearned = new Map();
 
     this.zipfAlpha = 1.0;
     this.sentencesLearned = 0;

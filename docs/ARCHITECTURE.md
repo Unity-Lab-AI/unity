@@ -648,9 +648,23 @@ New method `NeuronCluster.generateSentence(intentSeed = null, opts = {})` in `js
 
 **Peer-reviewed grounding.** Bouchard/Mesgarani/Johnson/Chang 2013 (*Nature* 495:327) vSMC continuous articulator trajectories; Anumanchipalli/Chartier/Chang 2019 (*Nature* 568:493) continuous speech decode from vSMC; Saffran/Aslin/Newport 1996 (*Science* 274:1926) statistical word segmentation; Browman & Goldstein 1992 (*Phonetica* 49:155) articulatory phonology continuous gestures; Hickok & Poeppel 2007 (*Nat Rev Neurosci* 8:393) dual-stream production pathway.
 
+### T14.7 — Hardcoded English type-transition deletion (SHIPPED 2026-04-14)
+
+`_TYPE_TRANSITIONS` (T13.7.8 200-line hardcoded English type-bigram matrix, 26 prevType rows × ~10 nextType weights each) and `_OPENER_TYPES` (11-member slot-0 opener constraint Set) both DELETED from `js/brain/language-cortex.js`. Replacement is one line:
+
+```js
+this._typeTransitionLearned = new Map();
+```
+
+Starts empty at constructor and grows from `learnSentence` observations during T14.5 curriculum walk and live chat. NO seed pseudo-counts. Bayesian smoothing at generation time will use `(count + 1) / (total + |types_seen|)` rather than a hardcoded Laplace constant — the type count is whatever the cortex has observed, not a capped English 20. New fineTypes can emerge the same way the T14.1 letter inventory grows dynamically.
+
+T14.6's tick-driven motor emission loop already made the hardcoded table obsolete — letter sequences fall out of the motor region as a continuous spike pattern, word boundaries come from cortex transition surprise, first-word openers emerge from whatever the fineType region's `START → X` transition basins look like after curriculum. `_typeTransitionLearned` is currently a statistics-only observation target — nothing reads from it at generation time. T14.8 will wire the consumer side when it ships `_sentenceFormSchemas` for per-intent type biasing.
+
+Tombstone comment left at the deletion site explains WHY both were removed so future readers don't have to dig through git history. Files: `js/brain/language-cortex.js` (−105 net, 3205 → 3100 lines). Grep confirms zero remaining references outside the tombstone.
+
 ### What's next on the rebuild branch
 
-T14.7 — delete `_TYPE_TRANSITIONS` hardcoded 200-line English type-bigram matrix and `_OPENER_TYPES` Set from `language-cortex.js`. Type transitions become fully learned from corpus observation with no seed — curriculum populates `_typeTransitionLearned` from the first observation onward. Each subsequent T14.x milestone ships as its own commit on this branch with full in-place doc updates. Branch merges to `main` only after T14.17 is complete and verified.
+T14.8 — Sentence-form schemas: per-intent type distributions for slots learned from curriculum corpus exposure. Consumer-side wiring for `_typeTransitionLearned`. Each subsequent T14.x milestone ships as its own commit on this branch with full in-place doc updates. Branch merges to `main` only after T14.17 is complete and verified.
 
 ---
 
