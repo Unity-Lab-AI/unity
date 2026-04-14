@@ -831,13 +831,13 @@ All currently derive from the one `PORT` constant in brain-server.js:111, so R14
 
 ---
 
-## R15 — LANDING PAGE REWORK (index.html setup modal)
+## R15 — LANDING PAGE REWORK (index.html setup modal)  [DONE 2026-04-13 — all 6 subtasks complete + bubble click fix. Commit touched index.html, js/app.js, css/style.css. Net -331 lines. See FINALIZED.md for the full teardown.]
 
 **Goal:** The `index.html` setup modal is stuck in pre-R4 reality. It still advertises every text-AI backend that got gutted, gates the start button on "Connect an AI" when Unity's brain needs nothing, offers a `proxy.js` download for a file that was deleted in R1, and hides the actual Sensory AI / multi-provider image gen path behind a "FUCK IT — BRAIN ONLY" toggle that's now the only mode. First impression of the project is 100% wrong.
 
 **Context (2026-04-13):** The user flagged this during R10 remnants pass: "the persay landing page where all the ai shit was gutted". R4 removed the text-AI cognition backends but left the setup modal DOM + event handlers in place. Everything a first-time visitor sees in the setup modal is stale.
 
-### R15.1 — Rip the dead UI
+### R15.1 — Rip the dead UI  [DONE 2026-04-13 — all 8 stale provider buttons, proxy.js download link, FUCK IT BRAIN ONLY toggle, text/image model selectors + filter input, connect form + status list + scan area, provider-setup-hint block all deleted from index.html. See FINALIZED.md for full list.]
 Inventory at `index.html:78-170`:
 - **`<a href="proxy.js" download>` (line 84)** — download link for a file deleted in R1 vestigial sweep. 404s on click.
 - **Connect buttons for 8 text-AI providers (lines 94-101)** — `pollinations`, `openrouter`, `openai`, `anthropic`, `mistral`, `deepseek`, `groq`, `local`. The last one (local) auto-detects Ollama/LM Studio/LocalAI for TEXT chat which no longer exists. All 8 connect-flow handlers in `js/app.js` around line 538+ go with them.
@@ -848,7 +848,7 @@ Inventory at `index.html:78-170`:
 - **`start-btn` disabled text "Connect an AI first" (line 148)** — Unity's brain boots without any AI. Start should always be enabled.
 - **`api-key-input` hidden input (line 162)** — read/written by the app.js connect flow for text-AI keys. Dead after R15.
 
-### R15.2 — New setup flow
+### R15.2 — New setup flow  [DONE 2026-04-13 — setup modal now shows: h1 + subtitle, Brain Equations + env.example.js links, explanation paragraph that cognition is 100% equational, #sensory-inventory panel (populated from providers.getStatus at modal open time), optional Pollinations API key input, permission prompts, always-enabled WAKE UNITY UP button, Clear All Data, Privacy notice. Start button is NO LONGER gated on connecting an AI.]
 What the modal SHOULD show post-R15:
 ```
 🧠 Unity
@@ -881,19 +881,19 @@ The only things you CAN configure are sensory peripherals:
 [ Clear All Data ]
 ```
 
-### R15.3 — Wire the status HUD into the modal
+### R15.3 — Wire the status HUD into the modal  [DONE 2026-04-13 — new `renderSensoryInventory()` function in app.js reads `providers.getStatus()` and populates #sensory-inventory-content with color-coded dots (🟢 alive / 🔴 dead / ⚪ not configured) grouped by IMAGE GENERATION and VISION DESCRIBER. Called on init (pre-boot placeholder), on TALK TO UNITY / bubble click (via openSetupModal helper), and on Settings gear click (post-boot refresh path). Shows vision-paused warning if 30s cooldown is active.]
 The R13 `sensoryStatus` HUD already lives in `js/ui/sensory-status.js` with a bottom-right toast container and a top-right backend-counts indicator. The setup modal should READ from `providers.getStatus()` at open time and render the full per-backend list inline (same data as the clickable HUD inventory popup) so users see what's detected before they click Wake Unity Up.
 
-### R15.4 — Rip the event handler graveyard in app.js
+### R15.4 — Rip the event handler graveyard in app.js  [DONE 2026-04-13 — deleted: LOCAL_AI_ENDPOINTS const, detectedAI + bestBackend + _allTextOptions module vars, PROVIDERS 8-entry catalog, autoReconnectProvider() + enableWakeUp() + addConnectedStatus() + rebuildModelDropdowns() + _applyTextFilter() + showConnectForm() + scanLocalOnly() + scanAnthropicProxy() functions, brain-only checkbox wiring block, init() connect-btn forEach + auto-reconnect loop, handleStart() text/image model-select reader block, bootUnity _brainOnlyMode conditional, inline unityAvatar click handler at bootUnity. Also fixed the HUD 'model' label to show 'BRAIN' instead of the deleted bestBackend.model reference. And fixed the scanAnthropicProxy dead-code probe to localhost:3001 (the deleted claude-proxy). Net -482 lines / +151 lines across app.js+index.html+css.]
 Connected tasks:
 - `LOCAL_AI_ENDPOINTS` const at `app.js:528-534` — dead R4 text-AI detection (Claude Code CLI on 8080, Ollama on 11434, LM Studio on 1234, LocalAI on 8090). Already flagged for R12 deletion.
 - `detectedAI`, `bestBackend` module-level vars — used ONLY by the dead setup flow and a HUD label at line 1569. Both can go.
 - `_allTextOptions`, connect button handlers, provider probe code — all dead after R15.1.
 
-### R15.5 — CSS cleanup
+### R15.5 — CSS cleanup  [DONE 2026-04-13 — deleted 5 dead `.connect-btn` rules from css/style.css (base + :hover + .active + .connected + .connected.active). Replaced with an R15 comment block. All other deleted DOM ids (#connect-form, #text-model-select, #image-model-select, etc.) had no dedicated CSS rules so nothing else to remove.]
 Styles targeting `.connect-btn`, `#connect-form`, `#text-model-select`, `#text-model-filter`, `#brain-only-toggle` — verify no other code uses them and delete.
 
-### R15.6 — Update the docs table + screenshot references
+### R15.6 — Update the docs table + screenshot references  [PARTIAL DONE 2026-04-13 — README docs table + SETUP.md setup flow were already updated in R10.1/R10.7 earlier this session to describe the sensory-only model. No dedicated screenshots exist in the docs so no screenshot refresh needed. brain-equations.html has no setup-instruction section. Effectively already done via the R10 pass — no new work this commit.]
 README.md, SETUP.md, and brain-equations.html all have visible setup instructions that reference the old modal flow. Each needs a pass to describe the new flow instead.
 
 **Estimated footprint:** ~100 lines deleted from index.html, ~200 lines deleted from app.js, new `_renderSetupModalStatus()` helper around 60 lines, CSS pass. Bigger than R13 but smaller than R2.

@@ -14,6 +14,93 @@
 
 ## COMPLETED TASKS LOG
 
+## 2026-04-13 Session: R15 — Landing page / setup modal rework (atomic rewrite)
+
+### COMPLETED
+- [x] **Task:** R15 full epic (6 subtasks + dead-bubble bug fix) — Rewrite the index.html setup modal, rip the text-AI connect-flow graveyard in app.js, and fix the pre-boot dead Unity bubble bug the user called out during R10.9/R10.10 discussion ("i want the talk to unity or clicking the chat icon in the bottom right to open the landing page" + "if i didnt do the talk to unity first this icon was dead and did nothing").
+  - Completed: 2026-04-13
+  - Files modified: `js/app.js` (-417 lines), `index.html` (-55 lines), `css/style.css` (-12 lines). Net **-482 lines / +151 lines** across the three files.
+  - Design constraint: Gee's "dont batch shit quickly" rule — did phased edits on app.js (10 surgical Edit calls targeting specific dead blocks) then one atomic index.html replacement then one small CSS cleanup, verifying after each step that no dangling references remained. Full sweep at the end: only historical comments reference the deleted symbols, zero live code references them.
+
+  **Dead-bubble bug root cause found and fixed:**
+  - `<div id="unity-bubble" class="hidden">` at index.html:312 had a `.hidden` class but there is NO `#unity-bubble.hidden` CSS rule anywhere — the class was a cosmetic lie, so the bubble was visible from page load.
+  - `unityAvatar.addEventListener('click', () => chatPanel.toggle())` was wired inside `bootUnity()` at line 1232, which only runs AFTER the user completes the setup modal flow. So pre-boot clicks on the bubble hit a DOM element with no listener and were silently dropped.
+  - **Fix:** wired a state-aware click handler at page-load time (inside the `initLanding` IIFE near the TALK TO UNITY button wiring). Pre-boot clicks call `openSetupModal()` (same path as the TALK TO UNITY button). Post-boot clicks toggle the chat panel. The branch uses a new `window._unityBooted` flag set at the end of `bootUnity()` so both states are handled from ONE persistent handler. Removed the old inline `unityAvatar.addEventListener` at the old line 1232 since the early handler replaces it.
+
+  **R15.1 — Dead UI inventory removed from index.html setup modal (lines 78-181 rewrite):**
+    - `<a href="proxy.js" download>` — proxy.js was deleted in R1 vestigial sweep, this link would have 404ed
+    - 8 `.connect-btn` buttons: pollinations / openrouter / openai / anthropic / mistral / deepseek / groq / local
+    - `#connect-form` + `#connect-desc` + `#connect-link` + `#connect-key-input` + `#connect-hint` + `#connect-local-hint` + `#rescan-btn` + `#connect-save-btn`
+    - `#connect-status-list` (post-connect "Connected 5 models" status rows)
+    - `#ai-scan-area` + `#ai-scan-results` (post-connect model selection section)
+    - `#brain-only-toggle` + `#brain-only-cb` (the "FUCK IT — BRAIN ONLY" checkbox — that's now the only mode, toggle is pointless)
+    - `#text-model-label` + `#text-model-filter` + `#text-model-select` (text model dropdown — nothing to select, no text AI)
+    - `#image-model-select` (image model dropdown — image gen is now driven by `ENV_KEYS.imageBackends[]` + auto-detect, not a dropdown)
+    - `#provider-setup-hint` (per-provider setup instructions panel — no providers to configure)
+    - `<input type="hidden" id="api-key-input">` replaced with a visible optional input
+
+  **R15.2 — New setup flow in index.html:**
+    - `<h1>🧠 Unity</h1>` + subtitle kept
+    - Brain Equations link + env.example.js download link kept (proxy.js link removed)
+    - New explanation paragraph: *"Unity's cognition runs entirely on math — her language cortex, memory, motor selection, and decisions all emerge from brain equations. No text-AI backend is required. The only optional pieces are sensory peripherals: image generation, the vision describer (VLM), and TTS. They're auto-detected at boot time from anything running locally, and fall back to free Pollinations otherwise."*
+    - New `#sensory-inventory` panel (populated by `renderSensoryInventory()` in app.js) showing per-backend status with color dots and source labels
+    - New visible `#api-key-input` — password field for optional Pollinations API key with a hint explaining it only raises rate limits on image gen / TTS / vision describer fallbacks
+    - Permission prompts for mic + camera kept (both explicitly optional now — "Unity can chat via text only")
+    - Start button renamed `WAKE UNITY UP`, no longer disabled by default, no longer gated on connecting an AI
+    - Clear All Data button kept (moved to a listener-wired handler in init() instead of inline onclick)
+    - Privacy notice rewritten to mention the fully-open-source + sensory-only policy
+    - Credit line kept: `Unity AI Lab · Hackall360, Sponge, GFourteen`
+
+  **R15.3 — Sensory status HUD wired into the modal:**
+    - New `renderSensoryInventory()` function in app.js reads `providers.getStatus()` (the R13 method that returns per-backend state snapshot) and populates `#sensory-inventory-content` with two sections:
+      - `🎨 IMAGE GENERATION` — color-coded list of every registered image backend with source label (auto / env / config / fallback)
+      - `👁 VISION DESCRIBER` — same, for the R13 VLM auto-detect targets
+    - Dots: 🟢 alive, 🔴 dead (1h cooldown), ⚪ not configured
+    - Shows `⚠ vision paused — repeated failures` warning if the R13 30-second pause window is active
+    - Called at init() time (pre-boot placeholder), when the modal is opened via TALK TO UNITY / bubble / Settings gear (via the shared `openSetupModal()` helper and the wireSettings click handler)
+
+  **R15.4 — app.js event handler graveyard ripped (~300 lines deleted):**
+    - `const LOCAL_AI_ENDPOINTS` (4 text-AI probe entries including the deleted claude-proxy on 8080)
+    - `let detectedAI = []`, `let bestBackend = null`, `let _allTextOptions = []` module vars
+    - `const PROVIDERS = { ... }` 8-entry text-AI provider catalog with names/descriptions/URLs/modelsEndpoints/keys
+    - Functions deleted entirely:
+      - `autoReconnectProvider(providerId, key)` — fetched models list from each provider's /v1/models and pushed into detectedAI
+      - `enableWakeUp(providerName, modelCount)` — un-disabled the start button after a successful connect
+      - `addConnectedStatus(name, modelCount)` — rendered a "Connected — N models" row in the deleted #connect-status-list
+      - `rebuildModelDropdowns()` — ~55 lines of model dropdown building with priority sorting (Claude first, then local, then Pollinations)
+      - `_applyTextFilter(query)` — ~25 lines of filter-matching for the deleted #text-model-filter input
+      - `showConnectForm(providerId)` — ~60 lines of per-provider connect form wiring with an inline 8-entry setupHints map
+      - `scanLocalOnly()` — probed LOCAL_AI_ENDPOINTS at boot for text-AI servers
+      - `scanAnthropicProxy()` — live `fetch('http://localhost:3001/v1/chat/completions', ...)` to the deleted claude-proxy. This was the R12.6 "live text-AI call from cognition" R15-pending item — now ripped.
+    - `init()` simplified from ~40 lines of connect-btn wiring + auto-reconnect loop + scanLocalOnly/scanAnthropicProxy calls to ~25 lines: storage init, env.js key seeding, Pollinations key pre-fill, startBtn click handler, Clear All Data button handler, initial `renderSensoryInventory()` call
+    - `handleStart()` simplified from ~45 lines to ~30 lines: deleted the text-model-select / image-model-select reader block that wrote `bestBackend` / `custom_ai_url` / `image_model` / `image_backend_url` into storage
+    - `bootUnity()` condition at former line 998 simplified from `if (landingBrainSource && landingBrainSource.isConnected() && !window._brainOnlyMode)` to `if (landingBrainSource && landingBrainSource.isConnected())` — brain-only is the only mode now, R15 dropped the guard
+    - `bootUnity()` log messages cleaned of `(BRAIN ONLY — no AI text)` parenthetical since it's always brain-only
+    - HUD label at former line 1568: `bestBackend?.model?.slice(0, 25) || '—'` replaced with just `'BRAIN'` — no model to display because no text AI
+    - Inline `unityAvatar.addEventListener('click', () => chatPanel.toggle())` at former line 1232 removed — replaced by the state-aware handler wired at page-load time
+    - Added `window._unityBooted = true` at the end of bootUnity so the early bubble click handler knows to toggle chat instead of opening the setup modal
+    - Added `renderSensoryInventory()` call to the Settings gear wireSettings click handler so post-boot users see fresh backend state when reopening settings
+
+  **R15.5 — CSS cleanup in css/style.css:**
+    - Deleted 5 `.connect-btn` rules (base + :hover + .active + .connected + .connected.active) replacing with a single R15 comment block explaining why
+    - Other deleted DOM ids (#connect-form, #text-model-select, #image-model-select, #provider-setup-hint, etc.) had no dedicated CSS rules — they were styled inline in index.html — so nothing else to remove
+
+  **R15.6 — Documentation:**
+    - README docs table + SETUP.md setup flow were already updated in R10.1 / R10.7 earlier this session to describe the sensory-only model. No dedicated screenshots exist in the docs so no screenshot refresh needed. brain-equations.html has no setup-instruction section. R15.6 effectively already done via the R10 pass — no new work this commit.
+
+  **Verification before commit:** grep confirmed every deleted symbol is referenced only from historical comments in app.js + style.css. Three total matches: `// R15 2026-04-13 — LOCAL_AI_ENDPOINTS, PROVIDERS catalog, detectedAI, bestBackend all DELETED here`, `// R15 — text-model-select / image-model-select readers DELETED`, `/* R15 2026-04-13 — .connect-btn rules DELETED */`. Zero live references. index.html has zero references to any deleted DOM id.
+
+  **Expected user experience post-R15:**
+  1. Page loads → 3D brain visible with TALK TO UNITY button + viz tabs + Unity bubble (bottom-right, visible immediately)
+  2. Click TALK TO UNITY **OR** click Unity bubble (both entry points alive now) → setup modal opens showing: brief explanation, sensory backend inventory, optional Pollinations key input, permission prompts, WAKE UNITY UP button
+  3. Click WAKE UNITY UP → mic + camera prompts → brain boots → modal closes → chat panel becomes toggle-able via the bubble
+  4. Click bubble post-boot → chat panel toggles open/closed
+  5. Click Settings gear (top-right / HUD) → setup modal re-opens with "Apply Changes" button and refreshed sensory inventory showing current detected state
+
+  **R12.7 merge gate:** R15 was the last substantive R-series task. R12 cleanup subtasks 1-6 are all done. The only remaining item is R12.7 (PR `brain-refactor-full-control` → `main`) which is explicitly NOT happening without an explicit go-ahead from Gee. The branch is now ready for review but stays on `brain-refactor-full-control`.
+
+---
+
 ## 2026-04-13 Session: R12.1 + R12.3 + R12.4 + R12.5 + R12.6 — no-action cleanup + final sanity sweep
 
 ### COMPLETED

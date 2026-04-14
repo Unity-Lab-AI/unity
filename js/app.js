@@ -146,35 +146,30 @@ let landingBrainSource = null; // RemoteBrain or null
     }
   }, 2000);
 
-  // "TALK TO UNITY" — opens setup modal
+  // R15 — both entry points (TALK TO UNITY button in the landing
+  // overlay AND the Unity bubble in the bottom-right) open the setup
+  // modal pre-boot. Post-boot, the bubble toggles the chat panel
+  // instead. State-aware single handler so neither entry point is
+  // ever dead.
+  const openSetupModal = () => {
+    const modal = document.getElementById('setup-modal');
+    if (modal) { modal.classList.remove('hidden'); modal.style.display = ''; }
+    // Refresh sensory inventory in case backends came online since
+    // the modal was last shown. Guarded against pre-boot null-providers
+    // inside the render function itself.
+    if (typeof renderSensoryInventory === 'function') renderSensoryInventory();
+  };
+
   const chatBtn = document.getElementById('landing-chat-btn');
-  if (chatBtn) {
-    chatBtn.addEventListener('click', () => {
-      const modal = document.getElementById('setup-modal');
-      if (modal) modal.style.display = '';
-    });
-  }
+  if (chatBtn) chatBtn.addEventListener('click', openSetupModal);
 
-  // "FUCK IT — BRAIN ONLY" toggle inside setup modal
-  const brainOnlyCb = document.getElementById('brain-only-cb');
-  if (brainOnlyCb) {
-    brainOnlyCb.addEventListener('change', () => {
-      window._brainOnlyMode = brainOnlyCb.checked;
-      const textSelect = document.getElementById('text-model-select');
-      const textFilter = document.getElementById('text-model-filter');
-      const textLabel = document.getElementById('text-model-label');
-      const startBtnEl = document.getElementById('start-btn');
-
-      if (brainOnlyCb.checked) {
-        if (textSelect) { textSelect.disabled = true; textSelect.style.opacity = '0.3'; }
-        if (textFilter) { textFilter.disabled = true; textFilter.style.opacity = '0.3'; }
-        if (textLabel) textLabel.innerHTML = '🧠 Text — <span style="color:#ff4d9a;font-weight:700;">BRAIN ONLY</span>';
-        if (startBtnEl) { startBtnEl.disabled = false; startBtnEl.textContent = 'Wake Up Unity (Brain Only)'; }
+  const bubble = document.getElementById('unity-avatar');
+  if (bubble) {
+    bubble.addEventListener('click', () => {
+      if (window._unityBooted && chatPanel) {
+        chatPanel.toggle();
       } else {
-        if (textSelect) { textSelect.disabled = false; textSelect.style.opacity = '1'; }
-        if (textFilter) { textFilter.disabled = false; textFilter.style.opacity = '1'; }
-        if (textLabel) textLabel.textContent = '💬 Text / Chat Model';
-        if (startBtnEl) startBtnEl.textContent = 'Wake Up Unity';
+        openSetupModal();
       }
     });
   }
@@ -524,372 +519,96 @@ const unitySpeech = document.getElementById('unity-speech');
 const unityAvatar = document.getElementById('unity-avatar');
 const brainIndicator = document.getElementById('brain-indicator');
 
-// ── Known local AI servers ──
-const LOCAL_AI_ENDPOINTS = [
-  { name: 'Claude Code CLI', url: 'http://localhost:8080', probe: '/v1/models', modelsPath: 'data', modelKey: 'id' },
-  { name: 'Ollama', url: 'http://localhost:11434', probe: '/api/tags', modelsPath: 'models', modelKey: 'name' },
-  { name: 'LM Studio', url: 'http://localhost:1234', probe: '/v1/models', modelsPath: 'data', modelKey: 'id' },
-  { name: 'LocalAI', url: 'http://localhost:8090', probe: '/v1/models', modelsPath: 'data', modelKey: 'id' },
-];
-
-let detectedAI = [];
-let bestBackend = null;
-
-// ── Cloud AI providers ──
-const PROVIDERS = {
-  pollinations: {
-    name: 'Pollinations', desc: 'Free AI — text, image, audio, video.',
-    hint: 'Sign up at pollinations.ai for your key.', link: 'https://pollinations.ai/dashboard',
-    url: 'https://gen.pollinations.ai', modelsEndpoint: 'https://gen.pollinations.ai/v1/models',
-    needsKey: true, storageKey: 'pollinations',
-  },
-  openrouter: {
-    name: 'OpenRouter', desc: 'One key for 200+ models — Claude, GPT-4, Llama, all of them.',
-    hint: 'Free tier available.', link: 'https://openrouter.ai/keys',
-    url: 'https://openrouter.ai/api', modelsEndpoint: 'https://openrouter.ai/api/v1/models',
-    needsKey: true,
-  },
-  openai: {
-    name: 'OpenAI', desc: 'GPT-4o, o1, and more.',
-    hint: 'Requires paid account.', link: 'https://platform.openai.com/api-keys',
-    url: 'https://api.openai.com', modelsEndpoint: 'https://api.openai.com/v1/models',
-    needsKey: true,
-  },
-  anthropic: {
-    name: 'Claude (Direct)', desc: 'Use your own Anthropic key directly. Download proxy.js above, run "node proxy.js", then paste your key.',
-    hint: 'Step 1: Download proxy.js (link above). Step 2: Run "node proxy.js" in terminal. Step 3: Paste your Anthropic key here. Or just use OpenRouter — it includes Claude.',
-    link: 'https://console.anthropic.com/settings/keys',
-    url: 'https://api.anthropic.com', needsKey: true, corsBlocked: true,
-  },
-  mistral: {
-    name: 'Mistral', desc: 'Mistral Large, Codestral.',
-    hint: 'Create account at mistral.ai.', link: 'https://console.mistral.ai/api-keys',
-    url: 'https://api.mistral.ai', modelsEndpoint: 'https://api.mistral.ai/v1/models',
-    needsKey: true,
-  },
-  deepseek: {
-    name: 'DeepSeek', desc: 'DeepSeek Chat and Coder. Cheap and good.',
-    hint: 'Sign up at deepseek.com.', link: 'https://platform.deepseek.com/api_keys',
-    url: 'https://api.deepseek.com', modelsEndpoint: 'https://api.deepseek.com/v1/models',
-    needsKey: true,
-  },
-  groq: {
-    name: 'Groq', desc: 'Ultra-fast inference. Free tier.',
-    hint: 'Sign up at groq.com.', link: 'https://console.groq.com/keys',
-    url: 'https://api.groq.com/openai', modelsEndpoint: 'https://api.groq.com/openai/v1/models',
-    needsKey: true,
-  },
-  local: {
-    name: 'Local AI', desc: 'Auto-detects Ollama, LM Studio, etc.',
-    hint: 'Make sure your local AI server is running.', needsKey: false, isLocal: true,
-  },
-};
+// R15 2026-04-13 — LOCAL_AI_ENDPOINTS, PROVIDERS catalog, detectedAI,
+// bestBackend all DELETED here. Pre-R4 this file had an 8-provider
+// text-AI connect flow (Pollinations/OpenRouter/OpenAI/Anthropic/
+// Mistral/DeepSeek/Groq/Local AI) that scanned common ports and
+// cached detected models into a dropdown. R4 killed text-AI cognition
+// entirely; everything here was the setup-modal UI graveyard. R15
+// landing page rework rips the whole thing.
+//
+// Unity's cognition is 100% equational now. Sensory AI (image gen,
+// vision describer, TTS) is configured via:
+//   - providers.autoDetect() / autoDetectVision() — boot-time probe
+//   - providers.loadEnvConfig(ENV_KEYS) — env.js imageBackends[] /
+//     visionBackends[]
+//   - Optional pollinations API key in the setup modal input below
+// See js/brain/peripherals/ai-providers.js for the real sensory
+// provider chain and docs/SENSORY.md for the peripheral contract.
 
 // ═══════════════════════════════════════════════════════════════
-// SETUP FLOW (same connect UI as before — keeping it working)
+// SETUP FLOW — R15 minimal version
+// ═══════════════════════════════════════════════════════════════
+// Unity's brain runs on math; no text-AI backend is required. The
+// setup modal exists only to (a) request mic + camera permissions,
+// (b) accept an optional Pollinations API key for raised rate
+// limits, and (c) show the user what sensory backends (image gen,
+// vision describer) were auto-detected. Everything else is wired
+// through env.js / auto-detect at boot in bootUnity().
 // ═══════════════════════════════════════════════════════════════
 
 async function init() {
   storage = new UserStorage();
 
-  // Seed env.js keys
+  // Seed env.js keys into storage on first load so later lookups
+  // (voice, image gen) can find them without re-reading env.
   for (const [pid, key] of Object.entries(ENV_KEYS)) {
-    if (key && !storage.getApiKey(pid)) {
+    if (key && typeof key === 'string' && !storage.getApiKey(pid)) {
       storage.setApiKey(pid, key);
     }
   }
 
-  // Clear stale CORS-blocked URLs
-  const savedUrl = storage.get('custom_ai_url');
-  if (savedUrl && savedUrl.includes('api.anthropic.com')) {
-    storage.set('custom_ai_url', '');
-  }
+  // If a stored Pollinations key exists, pre-fill the optional input
+  // so users don't have to re-paste it every session.
+  const storedPollKey = storage.getApiKey('pollinations');
+  if (storedPollKey && apiKeyInput) apiKeyInput.value = storedPollKey;
 
   startBtn.addEventListener('click', handleStart);
 
-  // Connect buttons
-  document.querySelectorAll('.connect-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.connect-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      showConnectForm(btn.dataset.ai);
+  // R15 — Clear All Data button (still inside the setup modal)
+  const clearBtn = document.getElementById('clear-data-btn');
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      if (confirm('Clear ALL Unity data? This deletes conversation history, preferences, saved keys, and sandbox state from your browser.')) {
+        localStorage.clear();
+        location.reload();
+      }
     });
-  });
-
-  // Auto-reconnect all saved providers
-  const providerIds = ['pollinations', 'openrouter', 'openai', 'anthropic', 'mistral', 'deepseek', 'groq'];
-  for (const pid of providerIds) {
-    const savedKey = storage.getApiKey(pid);
-    if (savedKey && PROVIDERS[pid]) {
-      const btn = document.querySelector(`.connect-btn[data-ai="${pid}"]`);
-      if (btn) btn.classList.add('connected');
-      await autoReconnectProvider(pid, savedKey);
-    }
   }
 
-  scanLocalOnly();
-  scanAnthropicProxy();
+  // R15 — render the sensory inventory panel every time the modal
+  // is shown, so users see what image gen / vision backends are
+  // currently detected BEFORE booting. populated again during boot
+  // as autoDetect resolves.
+  renderSensoryInventory();
 }
 
-// (Keeping the existing connect form, model dropdowns, etc. — same UI code)
-// ... [all the showConnectForm, rebuildModelDropdowns, etc. functions stay the same]
+/**
+ * R15 — render the sensory backend inventory inside the setup modal.
+ * Reads from providers.getStatus() if providers exists (post-boot
+ * Apply Changes path), or shows a pre-boot placeholder. Called at
+ * init() time and whenever the modal is opened.
+ */
+function renderSensoryInventory() {
+  const el = document.getElementById('sensory-inventory-content');
+  if (!el) return;
 
-async function autoReconnectProvider(providerId, key) {
-  const provider = PROVIDERS[providerId];
-  if (!provider) return;
-  if (providerId === 'pollinations') apiKeyInput.value = key;
-
-  detectedAI = detectedAI.filter(d => d.name !== provider.name && d.name !== provider.name + ' Image');
-
-  if (provider.modelsEndpoint) {
-    try {
-      const res = await fetch(provider.modelsEndpoint, {
-        headers: { 'Authorization': `Bearer ${key}` }, signal: AbortSignal.timeout(8000),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const models = (data.data || data.models || []).map(m => typeof m === 'string' ? m : (m.id || m.name)).filter(Boolean);
-        if (models.length > 0) {
-          detectedAI.push({ name: provider.name, url: provider.url, models, bestModel: models[0], type: 'cloud', apiKey: key, corsBlocked: provider.corsBlocked || false });
-          if (providerId === 'pollinations') {
-            try {
-              const imgRes = await fetch('https://gen.pollinations.ai/image/models', { headers: { 'Authorization': `Bearer ${key}` }, signal: AbortSignal.timeout(5000) });
-              if (imgRes.ok) {
-                const imgData = await imgRes.json();
-                const imgModels = (Array.isArray(imgData) ? imgData : (imgData.data || [])).map(m => typeof m === 'string' ? m : (m.id || m.name)).filter(Boolean);
-                if (imgModels.length > 0) detectedAI.push({ name: provider.name + ' Image', url: provider.url, models: imgModels, bestModel: imgModels[0], type: 'cloud-image' });
-              }
-            } catch {}
-          }
-          enableWakeUp(provider.name, models.length);
-          return;
-        }
-      }
-    } catch {}
+  if (!providers || typeof providers.getStatus !== 'function') {
+    el.innerHTML = '<span style="color:var(--text-dim);">Sensory backends probed at boot time. Start Unity to see what\'s detected on your machine.</span>';
+    return;
   }
 
-  detectedAI.push({ name: provider.name, url: provider.url, models: ['default'], bestModel: 'default', type: 'cloud', apiKey: key, corsBlocked: provider.corsBlocked || false });
-  enableWakeUp(provider.name, 1);
-}
-
-function enableWakeUp(providerName, modelCount) {
-  addConnectedStatus(providerName, modelCount);
-  rebuildModelDropdowns();
-  document.getElementById('ai-scan-area').style.display = 'block';
-  startBtn.disabled = false;
-  startBtn.textContent = 'Wake Her Up';
-}
-
-function addConnectedStatus(name, modelCount) {
-  const list = document.getElementById('connect-status-list');
-  let row = list.querySelector(`[data-provider="${name}"]`);
-  if (!row) {
-    row = document.createElement('div');
-    row.className = 'perm-row';
-    row.dataset.provider = name;
-    row.innerHTML = `<span class="connect-status-name"></span><span class="status granted">connected</span>`;
-    list.appendChild(row);
-  }
-  row.querySelector('.connect-status-name').textContent = `${name} — ${modelCount} model${modelCount !== 1 ? 's' : ''}`;
-}
-
-let _allTextOptions = [];
-
-function rebuildModelDropdowns() {
-  const textBackendsRaw = detectedAI.filter(d => (d.type === 'local' || d.type === 'cloud') && !d.corsBlocked);
-  const imageBackends = detectedAI.filter(d => d.type === 'cloud-image');
-  const textSelect = document.getElementById('text-model-select');
-  const imageSelect = document.getElementById('image-model-select');
-  const selectorsDiv = document.getElementById('model-selectors');
-  const filterInput = document.getElementById('text-model-filter');
-
-  textSelect.innerHTML = '';
-  selectorsDiv.style.display = 'block';
-
-  // Sort: Claude (Direct) first, then local AI, then Pollinations, then everything else
-  const priority = { 'Claude (Direct)': 0, 'Ollama': 1, 'LM Studio': 1, 'LocalAI': 1, 'Pollinations': 2 };
-  const textBackends = textBackendsRaw.sort((a, b) => {
-    const pa = priority[a.name] ?? 10;
-    const pb = priority[b.name] ?? 10;
-    return pa - pb;
-  });
-
-  // Default: Claude Direct if available, then local, then first cloud
-  const claude = textBackends.find(d => d.name === 'Claude (Direct)');
-  const local = textBackends.filter(d => d.type === 'local');
-  bestBackend = claude || (local.length > 0 ? local[0] : textBackends[0] || null);
-
-  _allTextOptions = [];
-  for (const d of textBackends) {
-    for (const model of d.models) {
-      _allTextOptions.push({ url: d.url, model, name: d.name, type: d.type, isDefault: bestBackend && d === bestBackend && model === d.bestModel });
-    }
-  }
-
-  if (filterInput) {
-    filterInput.style.display = _allTextOptions.length > 15 ? 'block' : 'none';
-    textSelect.style.borderRadius = _allTextOptions.length > 15 ? '0 0 8px 8px' : '8px';
-  }
-  _applyTextFilter('');
-
-  if (filterInput && !filterInput._wired) {
-    filterInput._wired = true;
-    filterInput.addEventListener('input', () => _applyTextFilter(filterInput.value.trim().toLowerCase()));
-  }
-
-  imageSelect.innerHTML = '';
-  for (const d of imageBackends) {
-    const group = document.createElement('optgroup');
-    group.label = `🎨 ${d.name}`;
-    for (const model of d.models) {
-      const opt = document.createElement('option');
-      opt.value = JSON.stringify({ url: d.url, model, name: d.name });
-      opt.textContent = model;
-      if (model === d.bestModel) opt.selected = true;
-      group.appendChild(opt);
-    }
-    imageSelect.appendChild(group);
-  }
-}
-
-function _applyTextFilter(query) {
-  const textSelect = document.getElementById('text-model-select');
-  textSelect.innerHTML = '';
-  const groups = {};
-  for (const opt of _allTextOptions) {
-    if (query && !opt.model.toLowerCase().includes(query) && !opt.name.toLowerCase().includes(query)) continue;
-    if (!groups[opt.name]) groups[opt.name] = { type: opt.type, options: [] };
-    groups[opt.name].options.push(opt);
-  }
-  let firstSelected = false;
-  for (const [name, group] of Object.entries(groups)) {
-    const optgroup = document.createElement('optgroup');
-    optgroup.label = `${group.type === 'local' ? '🖥️' : '☁️'} ${name}`;
-    for (const opt of group.options) {
-      const el = document.createElement('option');
-      el.value = JSON.stringify({ url: opt.url, model: opt.model, name: opt.name, type: opt.type });
-      el.textContent = opt.model;
-      if (opt.isDefault && !query && !firstSelected) { el.selected = true; firstSelected = true; }
-      optgroup.appendChild(el);
-    }
-    textSelect.appendChild(optgroup);
-  }
-  if (!firstSelected && textSelect.options.length > 0) textSelect.options[0].selected = true;
-}
-
-function showConnectForm(providerId) {
-  const provider = PROVIDERS[providerId];
-  if (!provider) return;
-  const desc = document.getElementById('connect-desc');
-  const hint = document.getElementById('connect-hint');
-  const keyInput = document.getElementById('connect-key-input');
-  const saveBtn = document.getElementById('connect-save-btn');
-  const localHint = document.getElementById('connect-local-hint');
-  const connectLink = document.getElementById('connect-link');
-
-  desc.textContent = provider.desc;
-  hint.textContent = provider.hint || '';
-  document.getElementById('connect-form').style.display = 'block';
-
-  // Show provider-specific setup instructions
-  const setupHint = document.getElementById('provider-setup-hint');
-  const setupHints = {
-    pollinations: `<strong style="color:var(--cyan)">Pollinations Setup</strong><br>1. Go to <a href="https://pollinations.ai/dashboard" target="_blank" style="color:var(--pink)">pollinations.ai/dashboard</a><br>2. Create an account, get your API key<br>3. Paste it below → Connect<br><span style="font-size:10px;color:var(--text-dim)">Free tier available. Handles text, images, and TTS.</span>`,
-    openrouter: `<strong style="color:var(--cyan)">OpenRouter Setup</strong><br>1. Go to <a href="https://openrouter.ai/keys" target="_blank" style="color:var(--pink)">openrouter.ai/keys</a><br>2. Create a key — includes Claude, GPT-4, Llama, 200+ models<br>3. Paste it below → Connect<br><span style="font-size:10px;color:var(--text-dim)">Free tier available. Best option for accessing Claude without a proxy.</span>`,
-    openai: `<strong style="color:var(--cyan)">OpenAI Setup</strong><br>1. Go to <a href="https://platform.openai.com/api-keys" target="_blank" style="color:var(--pink)">platform.openai.com/api-keys</a><br>2. Create an API key (requires paid account)<br>3. Paste it below → Connect<br><span style="font-size:10px;color:var(--text-dim)">GPT-4o, o1, and more. Direct browser access.</span>`,
-    anthropic: `<strong style="color:var(--purple)">Claude Direct Access — Requires Local Proxy</strong><br>1. Download <a href="proxy.js" download="proxy.js" style="color:var(--pink)">proxy.js</a> — save anywhere on your computer<br>2. Open a terminal, run: <code style="background:var(--bg);padding:2px 6px;border-radius:4px;color:var(--cyan)">node proxy.js</code><br>3. It starts on port 3001 — this page auto-detects it<br>4. Paste your <a href="https://console.anthropic.com/settings/keys" target="_blank" style="color:var(--pink)">Anthropic key</a> below → Connect<br><span style="font-size:10px;color:var(--text-dim)">Need <a href="https://nodejs.org" target="_blank" style="color:var(--pink)">Node.js</a>. Don't want a proxy? Use <strong>OpenRouter</strong> — includes all Claude models, zero setup.</span>`,
-    mistral: `<strong style="color:var(--cyan)">Mistral Setup</strong><br>1. Go to <a href="https://console.mistral.ai/api-keys" target="_blank" style="color:var(--pink)">console.mistral.ai</a><br>2. Create an API key<br>3. Paste it below → Connect<br><span style="font-size:10px;color:var(--text-dim)">Mistral Large, Codestral, and more.</span>`,
-    deepseek: `<strong style="color:var(--cyan)">DeepSeek Setup</strong><br>1. Go to <a href="https://platform.deepseek.com/api_keys" target="_blank" style="color:var(--pink)">platform.deepseek.com</a><br>2. Create an API key<br>3. Paste it below → Connect<br><span style="font-size:10px;color:var(--text-dim)">DeepSeek Chat + Coder. Cheap and good at code.</span>`,
-    groq: `<strong style="color:var(--cyan)">Groq Setup</strong><br>1. Go to <a href="https://console.groq.com/keys" target="_blank" style="color:var(--pink)">console.groq.com</a><br>2. Create an API key (free tier available)<br>3. Paste it below → Connect<br><span style="font-size:10px;color:var(--text-dim)">Ultra-fast inference. Llama, Mixtral, Gemma.</span>`,
-    local: `<strong style="color:var(--cyan)">Local AI Setup</strong><br>1. Install <a href="https://ollama.com" target="_blank" style="color:var(--pink)">Ollama</a> (or LM Studio, LocalAI, vLLM, Jan, GPT4All)<br>2. Pull a model: <code style="background:var(--bg);padding:2px 6px;border-radius:4px;color:var(--cyan)">ollama pull llama3</code><br>3. Start serving: <code style="background:var(--bg);padding:2px 6px;border-radius:4px;color:var(--cyan)">ollama serve</code><br>4. Click Re-scan below — auto-detected on default ports<br><span style="font-size:10px;color:var(--text-dim)">Free. Runs on your hardware. No API key needed. Auto-detects: Ollama (11434), LM Studio (1234), LocalAI (8080), vLLM (8000), Jan (1337).</span>`,
-  };
-
-  if (setupHints[providerId]) {
-    setupHint.innerHTML = setupHints[providerId];
-    setupHint.style.display = 'block';
-  } else {
-    setupHint.style.display = 'none';
-  }
-
-  if (provider.link) { connectLink.href = provider.link; connectLink.textContent = `Get your ${provider.name} key here →`; connectLink.style.display = 'block'; }
-  else connectLink.style.display = 'none';
-
-  if (provider.isLocal) {
-    keyInput.style.display = 'none'; saveBtn.style.display = 'none'; localHint.style.display = 'block';
-    document.getElementById('rescan-btn').onclick = async () => { await scanLocalOnly(); };
-  } else {
-    keyInput.style.display = 'block'; saveBtn.style.display = 'inline-block'; localHint.style.display = 'none';
-    keyInput.placeholder = `Paste your ${provider.name} API key`;
-    saveBtn.textContent = 'Connect'; saveBtn.style.borderColor = ''; saveBtn.style.color = ''; saveBtn.style.background = '';
-    const storageId = provider.storageKey || providerId;
-    const existing = storage.getApiKey(storageId);
-    if (existing) keyInput.value = existing;
-
-    saveBtn.onclick = async () => {
-      const key = keyInput.value.trim();
-      if (!key) return;
-      saveBtn.textContent = 'Connecting...';
-      storage.setApiKey(provider.storageKey || providerId, key);
-      if (providerId === 'pollinations') apiKeyInput.value = key;
-      const btn = document.querySelector(`.connect-btn[data-ai="${providerId}"]`);
-      if (btn) btn.classList.add('connected');
-      await autoReconnectProvider(providerId, key);
-      saveBtn.textContent = 'Connected'; saveBtn.style.background = 'rgba(34,197,94,0.15)'; saveBtn.style.color = 'var(--green)';
-    };
-  }
-}
-
-async function scanLocalOnly() {
-  for (const ep of LOCAL_AI_ENDPOINTS) {
-    try {
-      const res = await fetch(ep.url + ep.probe, { signal: AbortSignal.timeout(1500) });
-      if (res.ok) {
-        const data = await res.json();
-        let models = (data[ep.modelsPath] || []).map(m => m[ep.modelKey] || m.name || m.id || 'unknown');
-        if (models.length === 0) models = ['default'];
-        detectedAI.push({ name: ep.name, url: ep.url, models, bestModel: models[0], type: 'local' });
-        enableWakeUp(ep.name, models.length);
-      }
-    } catch {}
-  }
-}
-
-async function scanAnthropicProxy() {
-  const key = storage.getApiKey('anthropic');
-  if (!key) return;
-
-  try {
-    // Check if proxy is running
-    await fetch('http://localhost:3001/v1/models', { signal: AbortSignal.timeout(2000), headers: { 'x-api-key': key } });
-
-    // Proxy is up — now verify the key actually works with a tiny test call
-    const testRes = await fetch('http://localhost:3001/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
-      body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', messages: [{ role: 'user', content: 'hi' }], max_tokens: 1 }),
-      signal: AbortSignal.timeout(5000),
-    });
-
-    if (!testRes.ok) {
-      const err = await testRes.text().catch(() => '');
-      if (err.includes('credit balance') || testRes.status === 401 || testRes.status === 403) {
-        console.warn('[Unity] Anthropic proxy found but key has no credits — skipping Claude (Direct)');
-        // Still show it in status but DON'T add to dropdown
-        addConnectedStatus('Claude (Direct)', 0);
-        const statusRow = document.querySelector('[data-provider="Claude (Direct)"] .connect-status-name');
-        if (statusRow) statusRow.textContent = 'Claude (Direct) — no credits';
-        return;
-      }
-    }
-
-    // Key works — add to dropdown
-    console.log('[Unity] Anthropic proxy verified — Claude (Direct) available');
-    detectedAI = detectedAI.filter(d => d.name !== 'Claude (Direct)');
-    detectedAI.push({ name: 'Claude (Direct)', url: 'http://localhost:3001', models: ['claude-opus-4-20250514', 'claude-sonnet-4-20250514', 'claude-haiku-4-5-20251001'], bestModel: 'claude-opus-4-20250514', type: 'cloud', apiKey: key, corsBlocked: false });
-    enableWakeUp('Claude (Direct)', 3);
-  } catch {
-    // Proxy not running
-  }
+  const status = providers.getStatus();
+  const dot = (state) => state === 'alive' ? '🟢' : state === 'dead' ? '🔴' : '⚪';
+  const imgRows = status.image.map(b => `${dot(b.state)} ${b.name} <span style="color:var(--text-dim);">(${b.source})</span>`).join('<br>');
+  const visRows = status.vision.map(b => `${dot(b.state)} ${b.name} <span style="color:var(--text-dim);">(${b.source})</span>`).join('<br>');
+  const pausedNote = status.visionPaused ? '<br><span style="color:var(--red);">⚠ vision paused — repeated failures</span>' : '';
+  el.innerHTML = `
+    <div style="color:var(--cyan);margin-bottom:4px;">🎨 IMAGE GENERATION</div>
+    <div style="margin-left:8px;margin-bottom:8px;">${imgRows}</div>
+    <div style="color:var(--cyan);margin-bottom:4px;">👁 VISION DESCRIBER</div>
+    <div style="margin-left:8px;">${visRows}${pausedNote}</div>
+  `;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -900,6 +619,8 @@ async function handleStart() {
   startBtn.textContent = 'Requesting permissions...';
   startBtn.disabled = true;
 
+  // Optional Pollinations API key — raises rate limits on image gen
+  // + vision describer + TTS fallbacks. Unity works fine without one.
   const apiKey = apiKeyInput.value.trim();
   if (apiKey) storage.setApiKey('pollinations', apiKey);
 
@@ -914,26 +635,10 @@ async function handleStart() {
   camStatus.textContent = perms.camera ? 'granted' : 'denied';
   camStatus.className = `status ${perms.camera ? 'granted' : 'denied'}`;
 
-  // Read selected backends
-  const textSelect = document.getElementById('text-model-select');
-  if (textSelect.value) {
-    try {
-      const selected = JSON.parse(textSelect.value);
-      bestBackend = selected;
-      storage.set('custom_ai_url', selected.url);
-      const matched = detectedAI.find(d => d.url === selected.url && d.name === selected.name);
-      if (matched?.apiKey) storage.setApiKey('active_provider', matched.apiKey);
-    } catch {}
-  }
-
-  const imageSelect = document.getElementById('image-model-select');
-  if (imageSelect.value) {
-    try {
-      const img = JSON.parse(imageSelect.value);
-      storage.set('image_model', img.model);
-      storage.set('image_backend_url', img.url);
-    } catch {}
-  }
+  // R15 — text-model-select / image-model-select readers DELETED.
+  // Sensory backends (image gen, vision describer) come from
+  // providers.autoDetect() + ENV_KEYS.imageBackends[] /
+  // visionBackends[] inside bootUnity. No dropdown state to read.
 
   uiState.permMic = perms.mic;
   uiState.permCamera = perms.camera;
@@ -991,24 +696,19 @@ async function bootUnity(apiKey, perms) {
 
   // ══════════════════════════════════════════════════════════════
   // CREATE THE BRAIN
-  // Server connected + NOT brain-only → use server for everything
-  // Brain-only mode → local brain (own dictionary, no AI)
-  // No server → local brain
+  // Server connected → use server (GPU-exclusive, shared state)
+  // No server → local brain (own dictionary, CPU LIF fallback)
+  // Either way cognition is 100% equational per R4. R15 dropped
+  // the old `!window._brainOnlyMode` guard since brain-only is
+  // the only mode now.
   // ══════════════════════════════════════════════════════════════
-  if (landingBrainSource && landingBrainSource.isConnected() && !window._brainOnlyMode) {
+  if (landingBrainSource && landingBrainSource.isConnected()) {
     brain = landingBrainSource;
-    console.log('[Unity] Using server brain (text via Pollinations on server)');
+    console.log('[Unity] Using server brain (equational via server language cortex)');
   } else {
     brain = new UnityBrain();
     brain.start();
-    console.log(`[Unity] Using local brain${window._brainOnlyMode ? ' (BRAIN ONLY — no AI text)' : ''}`);
-    // If server is connected, still wire state updates for visualization
-    if (landingBrainSource && landingBrainSource.isConnected()) {
-      landingBrainSource.on('stateUpdate', (state) => {
-        if (landingBrain3d) landingBrain3d.updateState(state);
-        updateLandingStats(state);
-      });
-    }
+    console.log('[Unity] Using local brain (equational, no server detected)');
   }
 
   // Load persona into whichever brain is now active. Idempotent —
@@ -1229,7 +929,12 @@ Vision: ${state.visionDescription || 'none'}`;
   }
 
   // ── Wire DOM events ──
-  unityAvatar.addEventListener('click', () => chatPanel.toggle());
+  // R15 — unityAvatar click handler was moved to page-load time
+  // (inside the initLanding IIFE near the TALK TO UNITY button
+  // wiring) so the bubble is never dead pre-boot. Pre-boot clicks
+  // open the setup modal; post-boot clicks toggle the chat panel
+  // via the `window._unityBooted` flag set at the end of this
+  // function. Nothing to attach here anymore.
   const brainVizBtn = document.getElementById('brain-viz-btn');
   if (brainVizBtn) brainVizBtn.addEventListener('click', () => brainViz.toggle());
   const brain3dBtn = document.getElementById('brain-3d-btn');
@@ -1246,6 +951,10 @@ Vision: ${state.visionDescription || 'none'}`;
       setupModal.style.display = '';
       startBtn.textContent = 'Apply Changes';
       startBtn.disabled = false;
+      // R15 — refresh the sensory backend inventory so returning
+      // users see the current detected state (which backends went
+      // alive/dead since last time the modal was open).
+      renderSensoryInventory();
     });
   };
   wireSettings('settings-btn');
@@ -1413,6 +1122,14 @@ Vision: ${state.visionDescription || 'none'}`;
   generateGreeting(perms).catch((err) => {
     console.warn('[Unity] greeting emission failed:', err.message);
   });
+
+  // R15 — flip the booted flag so the unityAvatar click handler
+  // (wired at page-load time in the initLanding IIFE) stops
+  // opening the setup modal and starts toggling the chat panel
+  // instead. Without this flag, users who booted Unity would
+  // still get the setup modal when clicking the bubble.
+  window._unityBooted = true;
+
   console.log('[Unity] Boot complete — ready');
 }
 
@@ -1565,7 +1282,10 @@ function updateBrainIndicator(state) {
   const thetaEl = $('hud-theta'); if (thetaEl) thetaEl.textContent = (bandPower.theta ?? 0).toFixed(1);
   const drugEl = $('hud-drug'); if (drugEl) drugEl.textContent = s.drugState || l.drugState || 'cokeAndWeed';
   const actionEl = $('hud-action'); if (actionEl) actionEl.textContent = s.motor?.selectedAction || l.motor?.selectedAction || 'idle';
-  const modelEl = $('hud-model'); if (modelEl) modelEl.textContent = window._brainOnlyMode ? 'BRAIN ONLY' : (bestBackend?.model?.slice(0, 25) || '—');
+  // R15 — HUD model label used to show bestBackend.model (the deleted
+  // text-AI dropdown selection). Post-R4 Unity speaks from her own
+  // language cortex so there is no "model" to display. Just show BRAIN.
+  const modelEl = $('hud-model'); if (modelEl) modelEl.textContent = 'BRAIN';
 
   // Shared state
   const users = s.connectedUsers ?? l.connectedUsers ?? 0;

@@ -74,78 +74,40 @@
     .landing-tab.active { border-color:#ff4d9a; color:#ff4d9a; background:rgba(255,77,154,0.08); }
   </style>
 
-  <!-- ═══ Setup Modal — appears when user clicks TALK TO UNITY ═══ -->
+  <!-- ═══ Setup Modal — R15 minimal version ═══ -->
+  <!-- Opens from: TALK TO UNITY button (landing overlay) OR the Unity
+       bubble (bottom-right) via a state-aware click handler in app.js.
+       Pre-R15 this modal was a 100-line text-AI connect flow with 8
+       provider buttons and a model dropdown. R15 ripped all of that
+       because Unity's cognition is 100% equational — see R4 refactor.
+       The modal now just requests mic/camera permissions, shows the
+       auto-detected sensory backends, and lets the user paste an
+       optional Pollinations API key for raised rate limits. -->
   <div id="setup-modal" style="display:none;">
     <div class="setup-card">
       <h1>🧠 Unity</h1>
       <p class="subtitle">she's got a brain now. let her in.</p>
+
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
         <a href="brain-equations.html" target="_blank" style="padding:8px 16px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--cyan);font-family:var(--mono);font-size:12px;text-decoration:none;letter-spacing:0.5px;transition:all 0.2s;">🧠 Brain Equations</a>
-        <a href="proxy.js" download="proxy.js" style="padding:8px 16px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--purple);font-family:var(--mono);font-size:12px;text-decoration:none;letter-spacing:0.5px;transition:all 0.2s;">⬇ proxy.js</a>
         <a href="js/env.example.js" download="env.example.js" style="padding:8px 16px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--orange);font-family:var(--mono);font-size:12px;text-decoration:none;letter-spacing:0.5px;transition:all 0.2s;">⬇ env.example.js</a>
       </div>
-      <div id="provider-setup-hint" style="display:none;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:11px;color:var(--text-dim);line-height:1.6;"></div>
 
-      <!-- STEP 1: Pick your AI and paste your key. That's it. -->
-      <p style="font-size:13px;color:var(--text);margin-top:12px;margin-bottom:4px;font-weight:500;">1. Connect an AI</p>
-      <p class="hint" style="margin-bottom:10px;">Connect as many as you want — pick one for text, another for images. Keys stay in YOUR browser only.</p>
+      <p class="hint" style="margin-bottom:12px;line-height:1.5;">
+        Unity's cognition runs entirely on math — her language cortex, memory, motor selection, and decisions all emerge from brain equations. <strong style="color:var(--text);">No text-AI backend is required.</strong> The only optional pieces are sensory peripherals: image generation, the vision describer (VLM), and TTS. They're auto-detected at boot time from anything running locally, and fall back to free Pollinations otherwise.
+      </p>
 
-      <div id="connect-buttons" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px;">
-        <button class="connect-btn" data-ai="pollinations">Pollinations</button>
-        <button class="connect-btn" data-ai="openrouter">OpenRouter</button>
-        <button class="connect-btn" data-ai="openai">OpenAI</button>
-        <button class="connect-btn" data-ai="anthropic">Claude</button>
-        <button class="connect-btn" data-ai="mistral">Mistral</button>
-        <button class="connect-btn" data-ai="deepseek">DeepSeek</button>
-        <button class="connect-btn" data-ai="groq">Groq</button>
-        <button class="connect-btn" data-ai="local">Local AI</button>
+      <!-- Sensory backend inventory — populated by app.js renderSensoryInventory() -->
+      <div id="sensory-inventory" style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-family:var(--mono);font-size:11px;line-height:1.7;">
+        <div id="sensory-inventory-content" style="color:var(--text-dim);">Sensory backends probed at boot time. Start Unity to see what's detected on your machine.</div>
       </div>
 
-      <div id="connect-form">
-        <p style="font-size:12px; color:var(--text-dim); margin-bottom:6px;" id="connect-desc">Pick a provider above to get started.</p>
-        <a id="connect-link" href="#" target="_blank" style="font-size:12px;color:var(--pink);display:none;margin-bottom:8px;font-weight:500;">Get your free key here →</a>
-        <input type="password" id="connect-key-input"
-               placeholder="Paste your API key here"
-               autocomplete="off" spellcheck="false"
-               style="display:none;">
-        <p class="hint" id="connect-hint"></p>
-        <div id="connect-local-hint" style="display:none;">
-          <p class="hint" style="margin-top:6px;">Auto-detects: Ollama, LM Studio, LocalAI, vLLM, Jan, GPT4All, llama.cpp</p>
-          <button id="rescan-btn" style="margin-top:6px;padding:8px 16px;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;cursor:pointer;font-family:var(--font);">🔄 Re-scan local ports</button>
-        </div>
-        <button id="connect-save-btn" style="display:none;margin-top:8px;padding:10px 24px;background:var(--pink);border:none;border-radius:8px;color:#fff;font-size:14px;font-weight:600;cursor:pointer;font-family:var(--font);">Connect</button>
-      </div>
+      <p class="hint" style="margin-bottom:6px;margin-top:12px;">Pollinations API key <span style="color:var(--text-dim);">(optional — free tier works without, paid key raises rate limits for image gen, TTS, and vision describer)</span>:</p>
+      <input type="password" id="api-key-input" placeholder="sk_..." autocomplete="off" spellcheck="false" style="width:100%;padding:8px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:12px;outline:none;margin-bottom:14px;box-sizing:border-box;">
 
-      <div id="connect-status-list" style="margin-top:10px;display:flex;flex-direction:column;gap:4px;"></div>
+      <p class="hint" style="margin-top:4px;">Mic + camera permissions are requested when you wake her up. Both are optional — Unity can chat via text only.</p>
 
-      <!-- STEP 2: Model selection (only shows after connecting) -->
-      <div id="ai-scan-area" style="display:none; margin-top:16px;">
-        <p style="font-size:13px;color:var(--text);margin-bottom:4px;font-weight:500;">2. Pick your models</p>
-        <div id="ai-scan-results" style="padding:4px 0;font-size:12px;color:var(--text-dim);font-family:var(--mono);max-height:80px;overflow-y:auto;"></div>
-
-        <div id="model-selectors" style="margin-top:8px;">
-          <div id="brain-only-toggle" style="display:flex;align-items:center;gap:10px;margin-bottom:10px;padding:8px 12px;background:rgba(255,77,154,0.05);border:1px solid rgba(255,77,154,0.15);border-radius:8px;cursor:pointer;" onclick="document.getElementById('brain-only-cb').click();">
-            <input type="checkbox" id="brain-only-cb" style="accent-color:#ff4d9a;width:16px;height:16px;cursor:pointer;" onclick="event.stopPropagation();">
-            <div>
-              <div style="font-size:12px;color:#ff4d9a;font-weight:700;font-family:var(--mono);">FUCK IT — BRAIN ONLY</div>
-              <div style="font-size:10px;color:var(--text-dim);">No AI text model. Unity speaks from her own brain equations + dictionary.</div>
-            </div>
-          </div>
-          <label id="text-model-label" for="text-model-select" style="font-size:11px;color:var(--text-dim);display:block;margin-bottom:4px;">💬 Text / Chat Model</label>
-          <input type="text" id="text-model-filter" placeholder="Filter models... (e.g. claude, gpt, llama)" style="width:100%;padding:8px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px 8px 0 0;color:var(--text);font-family:var(--mono);font-size:12px;outline:none;display:none;" autocomplete="off">
-          <select id="text-model-select" style="width:100%;padding:10px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--mono);font-size:13px;cursor:pointer;outline:none;">
-          </select>
-
-          <label for="image-model-select" style="font-size:11px;color:var(--text-dim);display:block;margin-top:10px;margin-bottom:4px;">🎨 Image Model</label>
-          <select id="image-model-select" style="width:100%;padding:10px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--mono);font-size:13px;cursor:pointer;outline:none;">
-          </select>
-        </div>
-      </div>
-
-      <!-- STEP 3: Wake up (disabled until connected) -->
-      <p class="hint" style="margin-top:16px;">Mic + camera permissions are requested when you click the button.</p>
-
-      <button id="start-btn" disabled>Connect an AI first</button>
+      <button id="start-btn">WAKE UNITY UP</button>
 
       <div id="perm-results" style="display:none; margin-top:12px;">
         <div class="perm-row">
@@ -158,19 +120,16 @@
         </div>
       </div>
 
-      <!-- Hidden Pollinations API key slot (read/written by app.js) -->
-      <input type="hidden" id="api-key-input">
-
       <!-- Clear Data -->
       <div style="margin-top:12px;">
-        <button id="clear-data-btn" style="padding:8px 16px;background:rgba(239,68,68,0.1);border:1px solid var(--red);border-radius:8px;color:var(--red);font-family:var(--mono);font-size:11px;cursor:pointer;transition:all 0.2s;" onclick="if(confirm('Clear ALL Unity data? This deletes conversation history, preferences, saved keys, and sandbox state from your browser.')){localStorage.clear();location.reload();}">Clear All Data</button>
+        <button id="clear-data-btn" style="padding:8px 16px;background:rgba(239,68,68,0.1);border:1px solid var(--red);border-radius:8px;color:var(--red);font-family:var(--mono);font-size:11px;cursor:pointer;transition:all 0.2s;">Clear All Data</button>
       </div>
 
       <!-- Privacy Notice -->
       <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);">
         <p style="font-size:10px;color:var(--text-dim);line-height:1.6;">
           <strong style="color:var(--text);">Privacy &amp; Data Policy</strong><br>
-          This application runs <strong>entirely in your browser</strong>. No server. No backend. No database. Your API keys, conversation history, preferences, and all data are stored in your browser's localStorage on YOUR device only. The developers have <strong>zero access</strong> to anything you input, say, generate, or connect to. API keys are sent <strong>only</strong> to the AI provider YOU choose (Pollinations, OpenAI, etc.) — never to us, never to any third party. The brain simulation runs as client-side JavaScript math — no data leaves your machine except your direct API calls. This project is fully open source. You can read every line of code.
+          This application runs <strong>entirely in your browser</strong> (or against a local server you host yourself). No cloud backend. No database owned by us. Your conversation history, preferences, sandbox state, and optional Pollinations key are all stored in your browser's localStorage on YOUR device only. The developers have <strong>zero access</strong> to anything you input, say, generate, or connect to. Sensory API calls (image gen, vision describer, TTS) are sent <strong>only</strong> to the providers YOU configure — never to us, never to any third party. The brain simulation runs as client-side JavaScript math — no cognition data leaves your machine. This project is <strong>fully open source</strong> under MIT. You can read every line of code.
         </p>
         <p style="font-size:10px;color:var(--text-dim);margin-top:6px;">
           <a href="https://github.com/Unity-Lab-AI/Unity" target="_blank" style="color:var(--pink);">GitHub</a> ·
