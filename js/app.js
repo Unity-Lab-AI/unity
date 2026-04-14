@@ -363,19 +363,31 @@ function renderLandingTab(tab, s) {
 
   switch (tab) {
     case 'neurons': {
+      // T4.2 — use the per-cluster EMA-smoothed firingRate (which the
+      // server already computes as firingRate = firingRate*0.95 +
+      // spikeCount*0.05) instead of the raw instant-tick spikeCount.
+      // Raw spike counts flicker to 0 on idle clusters and make the
+      // readout unreadable. The EMA has a ~20-tick half-life which at
+      // 60fps × 10 substeps/frame is ~33ms — smooth without feeling
+      // laggy.
+      const smoothedFiring = s.clusters
+        ? Object.values(s.clusters).reduce((sum, c) => sum + (c.firingRate || 0), 0)
+        : spikes;
+      const totalN = s.totalNeurons ?? 1000;
       let html = card('Neuron Population', `
-        ${metric('Total', (s.totalNeurons ?? 1000).toLocaleString(), '#ff4d9a')}
-        ${metric('Firing', spikes, '#22c55e')}
-        ${metric('Rate', ((spikes / (s.totalNeurons ?? 1000)) * 100).toFixed(1) + '%', '#00e5ff')}
+        ${metric('Total', totalN.toLocaleString(), '#ff4d9a')}
+        ${metric('Firing rate (EMA)', Math.round(smoothedFiring).toLocaleString(), '#22c55e')}
+        ${metric('Rate %', ((smoothedFiring / totalN) * 100).toFixed(2) + '%', '#00e5ff')}
       `);
       if (s.clusters) {
         const colors = { cortex:'#ff4d9a', hippocampus:'#a855f7', amygdala:'#ef4444', basalGanglia:'#22c55e', cerebellum:'#00e5ff', hypothalamus:'#f59e0b', mystery:'#c084fc' };
-        // Scale bars relative to max cluster activity (not absolute %)
-        const maxPct = Math.max(1, ...Object.values(s.clusters).map(c => c.size ? c.spikeCount / c.size * 100 : 0));
-        html += card('Cluster Activity', Object.entries(s.clusters).map(([name, c]) => {
-          const pct = c.size ? (c.spikeCount / c.size * 100) : 0;
+        // Scale bars relative to max cluster EMA (not absolute %)
+        const maxPct = Math.max(1, ...Object.values(s.clusters).map(c => c.size ? (c.firingRate || 0) / c.size * 100 : 0));
+        html += card('Cluster Activity (EMA rate)', Object.entries(s.clusters).map(([name, c]) => {
+          const rate = c.firingRate || 0;
+          const pct = c.size ? (rate / c.size * 100) : 0;
           const barPct = maxPct > 0 ? (pct / maxPct * 100) : 0; // relative to most active cluster
-          return `<div style="margin:4px 0;">${metric(name, `${c.spikeCount.toLocaleString()}/${c.size.toLocaleString()} (${pct.toFixed(1)}%)`, colors[name] || '#fff')}${bar(barPct, colors[name] || '#fff')}</div>`;
+          return `<div style="margin:4px 0;">${metric(name, `${Math.round(rate).toLocaleString()}/${c.size.toLocaleString()} (${pct.toFixed(2)}%)`, colors[name] || '#fff')}${bar(barPct, colors[name] || '#fff')}</div>`;
         }).join(''));
       }
       el.innerHTML = html;

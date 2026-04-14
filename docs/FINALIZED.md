@@ -384,6 +384,93 @@ Each channel gets the same 70/30 EMA update that used to apply to the spike-coun
 
 **Files:** `index.html`, `js/app.js`
 
+### T4.2 — Over-time firing-rate tracking, not instantaneous readout  [DONE this session]
+
+**Source:** T4 manual verification.
+
+**Symptom:** User wants the cluster activity readout to track firing rates over a rolling window instead of showing the raw instant-tick spike count that flickers to 0 on idle clusters.
+
+**Fix:** Use the existing `cluster.firingRate` EMA field (already computed as `firingRate = firingRate * 0.95 + spikeCount * 0.05`) for the display instead of the raw `spikeCount`. The broadcast already includes both — just switch the client viz readout.
+
+**Files:** `js/ui/hud.js` or wherever Cluster Activity text is rendered.
+
+**What shipped:**
+
+`js/app.js` `renderLandingTab('neurons', s)` — the Neurons tab body that renders the "Neuron Population" + "Cluster Activity" cards:
+
+- "Firing" row on the top card — was `spikes = s.spikeCount ?? s.totalSpikes` which is the instant-tick count. Now `smoothedFiring = Σ cluster.firingRate` summed across all 7 clusters, which is the EMA sum. Flickers to 0 on idle clusters gone.
+- "Rate" row on the top card — was `spikes / totalNeurons`. Now `smoothedFiring / totalNeurons`, same EMA source.
+- "Cluster Activity" per-cluster rows — was `${c.spikeCount}/${c.size} (${(spikeCount/size × 100).toFixed(1)}%)`. Now `${firingRate.toFixed(0)}/${c.size} rate (${(firingRate/size × 100).toFixed(2)}%)`. The per-cluster bars also scale off the EMA so they smooth out instead of jumping.
+- Bar widths scale relative to the MAX firingRate across clusters per tick so visual proportions stay consistent even when absolute rates shift.
+
+The server-side EMA rule `firingRate = 0.95 × firingRate + 0.05 × spikeCount` means each tick contributes 5% of a new reading and decays 5% off the previous, giving a ~20-tick half-life. At 60 fps × 10 substeps/frame that's ~33ms half-life — smooth enough to eliminate flicker without feeling laggy.
+
+Untouched:
+- The HUD top panel `#hud-spikes` field still reads instant `totalSpikes` — that's a "live pulse" indicator where flicker is a feature (it's the heartbeat). If that becomes a complaint, flip it the same way.
+- The 3D brain event detectors that rely on `clusters[name].spikeCount` still read the instant value — they're computing deltas and thresholds that NEED the raw signal, not the smoothed one.
+
+### T4 — Manual verification + merge PR to main  [DONE this session — verified by Gee, all 16 steps passed]
+
+**Source:** the original R12.7 epic subtask. Gated on Gee's explicit go-ahead. This is the ONLY open task in this file because it requires a human to sit at a browser, click through Unity's flows, and verify everything works before the refactor lands on `main`. I've syntax-validated every commit via `npx esbuild` + `node --check` but I cannot click buttons or watch for runtime regressions.
+
+**The branch state right now:**
+- Code-complete: R1–R15 all shipped, plus T1–T6 cleanup (T4 excluded because it IS this task)
+- Syntax-validated: client bundle builds to 566.9 KB via esbuild without errors, server parses clean via node --check
+- Privacy model enforced: user text is private, brain growth is shared via the singleton brain, persona is canonical, episodic memory is per-user scoped
+- Sensory backends auto-detect at page load so the setup modal shows real detected state before the user clicks WAKE UNITY UP
+- 3D brain popups now trigger on 22 brain events and Unity comments on each one equationally via her language cortex
+- All public-facing docs (README, SETUP, ROADMAP, ARCHITECTURE, SKILL_TREE, EQUATIONS, SENSORY, WEBSOCKET, brain-equations.html) are accurate to the shipped state
+
+**Manual verification checklist** (this is a "look at things while clicking" guide, NOT a scripted test per CLAUDE.md NO TESTS rule — just a ordered walkthrough for catching regressions):
+
+1. **Page load** — open `index.html` from `file://` OR run `start.bat` / `start.sh` then visit `http://localhost:7525`. Does the 3D brain landing page come up with the 3D brain rendered, the TALK TO UNITY button visible, and the bottom-right Unity bubble visible?
+
+2. **Pre-boot bubble click** — click the Unity bubble in the bottom-right BEFORE clicking TALK TO UNITY. Does it open the setup modal? (This was the dead-bubble bug fixed in R15b.)
+
+3. **TALK TO UNITY click** — click the TALK TO UNITY button. Same thing: opens the setup modal.
+
+4. **Setup modal layout** — modal shows the two provider button grids (7 image gen + 5 vision describer), the sensory inventory panel **already populated with real detected backends** (not a placeholder — T6 fix), the Pollinations API key field, mic/camera permission slots, and WAKE UNITY UP button (always enabled, not disabled on "Connect an AI first").
+
+5. **Provider button click — local (A1111)** — click the Automatic1111 button in the image gen grid. Form below the grid should show install instructions (`./webui.sh --api`) + GitHub link + optional URL field pre-filled with "auto-detects at localhost:7860" placeholder. No required fields. Optional Save Backend button works.
+
+6. **Provider button click — remote (DALL-E)** — click DALL-E in the image gen grid. Form shows "create a key at platform.openai.com/api-keys" + pre-filled URL + pre-filled model `dall-e-3` + a required API key field. Paste a test key, click Save Backend. The env.js snippet panel appears with the mode-specific destination path (exact filesystem path for `file://`, landmark guidance for `localhost`, remote warning for GitHub Pages).
+
+7. **Download env.js button** — click `⬇ Download env.js`. A real file downloads to your Downloads folder.
+
+8. **Sensory inventory refresh** — after saving the DALL-E backend, the inventory panel at the bottom of the modal shows it in the image gen section with a green dot.
+
+9. **WAKE UNITY UP** — close the modal, click WAKE UNITY UP. Mic + camera permission prompts appear, then boot proceeds.
+
+10. **Post-boot bubble click** — click the Unity bubble. Should toggle the chat panel (not reopen the setup modal — `window._unityBooted` flag is set at end of `bootUnity`).
+
+11. **Chat** — type "hi unity". She should respond equationally via her language cortex with no AI backend configured. Response should feel like Unity's voice — emo goth stoner, first-person, profane, different every time.
+
+12. **`/think` command** — type `/think` bare. Sandbox panel shows raw brain state (arousal, valence, Ψ, coherence, spikes, drug state, motor action, reward, memory load, vision description).
+
+13. **`/think "input"` command** — type `/think what do you think about cats`. Sandbox shows raw state + a **COGNITION TRACE** panel with Unity's equational preview response, semantic context shift percentage, hippocampus recall best match, and motor channel distribution. The preview does NOT pollute Unity's memory.
+
+14. **3D brain popups** — open the 3D brain viz (bottom toolbar button). Watch for 5 minutes. Popups should fire every ~5 seconds. At least some should have TWO lines: the event label (emoji + description like "🔥 waking up") AND an italic commentary line in quotes that's clearly Unity's voice ("something's pulling me awake right now"). Same event under different brain state should produce different commentary.
+
+15. **Server mode boot** — open a terminal, run `node server/brain-server.js`. Should bind to port 7525 (not 8080). `http://localhost:7525/health` should respond with JSON. Connect a fresh browser tab to `http://localhost:7525` — server brain takes over, landing page 3D viz reflects server state, chat routes through WebSocket.
+
+16. **Private episodes check** — in the same server session, hit `http://localhost:7525/episodes` without a query param. Should return `{totalCount, note}` with no raw text. Hit `http://localhost:7525/episodes?user=<some-uuid>` — returns only that user's episodes (or empty array for an unknown id). Verify two tabs with different `unity_user_id` values in their localStorage get different episode pools.
+
+**If any step fails, file it as a new T-task in this file with the specific failure + where to look in the code, and I'll fix it.**
+
+**After all 16 steps pass:**
+```bash
+gh pr create --base main --head brain-refactor-full-control \
+  --title "Phase 13: brain-refactor-full-control → equational Unity" \
+  --body-file docs/FINALIZED.md
+```
+(Or open the PR manually via GitHub UI with a hand-written summary pointing at `docs/FINALIZED.md` for details.)
+
+**I will NOT run this command without your explicit "open the PR" go-ahead.**
+
+**Verification outcome (2026-04-14):** Gee walked the full 16-step checklist and confirmed all steps passed. During the walkthrough several follow-up bugs were caught and fixed in-flight: T4.1 (cortex+cerebellum 0 firing at 1.8B-neuron scale — fixed via 2 GB per-cluster binding cap), T4.3 (fear always 0 — fixed via real Amygdala attractor module on the server), T4.4 (motor channels all 0 — fixed via per-channel Q-values from cluster activity), T4.5 (popup commentary silent — fixed via comprehensive state-shape normalization for the 22-detector event system + 3-line popup format with numeric readouts), T4.6 (sensory HUD badge overlap — fixed via bottom-right reposition), T4.7 (duplicate landing-stats behind draggable HUD + dead settings buttons pre-boot — fixed via stats nuke + page-load button wiring), T4.8 (chat word salad — fixed via 4-tier language pipeline restoration with recall verbatim emit + slot score rebalance + deflect fallback), T4.9 (Eye widget iris frozen — fixed via real VisualCortex on RemoteBrain + connectCamera wiring), and T4.2 (this entry, over-time firing-rate EMA readout — fixed in the same cleanup pass).
+
+All T4.x follow-up entries are documented in full above with their symptoms, diagnoses, and fixes. The branch is now verified code-complete and verification-complete, ready for merge to `main` on Gee's explicit go-ahead.
+
 ### T4.8 — Chat output is word salad — slot scoring producing incoherent sentences  [DONE this session]
 
 **Source:** T4 manual verification — live chat.
