@@ -26,7 +26,7 @@ The unknown — what we can't model, what makes consciousness CONSCIOUSNESS — 
 | Layer | Technology |
 |-------|------------|
 | **Language** | JavaScript (ES modules, browser + Node.js server) |
-| **Brain Sim** | N neurons (scales to hardware), GPU exclusive compute, sparse CSR, LIF populations |
+| **Brain Sim** | N neurons (scales to hardware), GPU exclusive compute, sparse CSR, Rulkov 2D chaotic map (α=4.5, μ=0.001) |
 | **GPU Compute** | WebGPU WGSL shaders via compute.html — all 7 clusters on GPU, zero CPU workers |
 | **Server** | Node.js brain server, 16-core parallel, WebSocket API, auto-scales to hardware |
 | **Database** | SQLite (better-sqlite3) for episodic memory, JSON for weights + conversations |
@@ -56,7 +56,7 @@ The unknown — what we can't model, what makes consciousness CONSCIOUSNESS — 
 │                                                                  │
 │  ┌────────────────────────────────────────────────────────┐      │
 │  │              BRAIN SIMULATION LOOP                      │      │
-│  │  1000 LIF neurons in 7 CLUSTERS                        │      │
+│  │  N Rulkov-map neurons in 7 CLUSTERS                    │      │
 │  │  20 inter-cluster projection pathways                  │      │
 │  │  10 steps per frame × 60fps = 600ms brain/s            │      │
 │  │                                                        │      │
@@ -69,7 +69,7 @@ The unknown — what we can't model, what makes consciousness CONSCIOUSNESS — 
 │  │    Hypothalamus (50) — drive baseline homeostasis       │      │
 │  │    Mystery (50) — consciousness gain √(1/n) × N³              │      │
 │  │                                                        │      │
-│  │  Each cluster: own LIF pop, synapse matrix, tonic,     │      │
+│  │  Each cluster: own Rulkov pop, synapse matrix, tonic,  │      │
 │  │  noise, connectivity, learning rate                     │      │
 │  │  Hierarchical modulation across all clusters            │      │
 │  └────────────────────────────────────────────────────────┘      │
@@ -123,7 +123,7 @@ fear   = σ(fearProj · x)                  (readout from settled attractor)
 reward = σ(rewardProj · x)
 arousal = arousalBaseline·0.6 + 0.4·|x|rms + 0.1·(fear+reward)
 ```
-Mirrors the 150-LIF amygdala cluster: lateral recurrent connections between nuclei settle into stable low-energy basins (fear, reward, neutral). Persistent state carries across frames with leak 0.85, so emotional basins don't reset every tick. Symmetric Hebbian learning (`lr=0.003`, capped [-1,1]) carves basins from co-firing nuclei. Fear and reward are read from the SETTLED attractor, not the raw input — the attractor IS the emotion. Arousal combines persona baseline with the RMS depth of the basin the system fell into.
+Mirrors the 150-neuron Rulkov amygdala cluster: lateral recurrent connections between nuclei settle into stable low-energy basins (fear, reward, neutral). Persistent state carries across frames with leak 0.85, so emotional basins don't reset every tick. Symmetric Hebbian learning (`lr=0.003`, capped [-1,1]) carves basins from co-firing nuclei. Fear and reward are read from the SETTLED attractor, not the raw input — the attractor IS the emotion. Arousal combines persona baseline with the RMS depth of the basin the system fell into.
 
 ### Basal Ganglia — Action Selection
 ```
@@ -219,12 +219,12 @@ Unity's persona files (unity-persona.md, unity-coder.md) don't just describe beh
 N neurons (scales to GPU + RAM) organized in 7 biologically-proportioned clusters. Auto-scaled at server boot via `detectResources()` in `brain-server.js`:
 
 ```
-N_vram = floor(VRAM_bytes × 0.85 / 8)    // SLIM layout: 8 bytes/neuron (voltage f32 + spikes u32)
+N_vram = floor(VRAM_bytes × 0.85 / 12)   // Rulkov layout: 12 bytes/neuron (vec2<f32> state + spikes u32)
 N_ram  = floor(RAM_bytes × 0.1 / 0.001)  // essentially unlimited — server RAM holds only injection arrays
 N      = max(1000, min(N_vram, N_ram))   // VRAM-bound in practice, absolute floor 1000
 ```
 
-No artificial cap — hardware decides. VRAM and RAM are the only limits. The formula expands with whatever hardware you point it at. Client-only mode (browser, no server) runs a local CPU LIF fallback brain sized to what the browser JS engine can sustain. Implemented in `js/brain/cluster.js` with `NeuronCluster` and `ClusterProjection` classes.
+No artificial cap — hardware decides. VRAM and RAM are the only limits. The formula expands with whatever hardware you point it at. GPU is the only compute path for the Rulkov neuron model — a CPU fallback would cook the server at 168M iterations/second across 7 clusters. If no GPU worker is connected (no `compute.html` tab open), the server brain idles (2s poll) until one appears. Client-only mode (browser, no server) runs a local LIF fallback brain via `js/brain/cluster.js` `NeuronCluster` / `ClusterProjection` — that's the historical LIF runtime, kept for the browser-only path where Rulkov on CPU would be equally punishing.
 
 ### Cluster Breakdown
 
@@ -247,7 +247,7 @@ Percentages are biologically-proportioned — each cluster gets its fraction of 
 ### Fractal Signal Propagation
 
 Signal propagation is self-similar — the same `I = Σ W × s` equation repeats at every scale:
-1. **Neuron**: `τ·dV/dt = -(V-Vrest) + R·I` (LIF)
+1. **Neuron**: Rulkov map — `x_{n+1} = α/(1+x²) + y`, `y_{n+1} = y − μ(x − σ)` (2D chaotic map, see Neuron Model section)
 2. **Intra-cluster**: `I_i = Σ W_ij × s_j` (sparse-matrix.js propagate)
 3. **Inter-cluster**: same `propagate()` between clusters via 20 white matter tracts
 4. **Hierarchical**: each cluster's output modulates all others (Ψ gain, emotional gate, drive baseline)
@@ -345,7 +345,7 @@ Dream/
 │   ├── brain/
 │   │   ├── engine.js           # UnityBrain — 7-cluster sim loop at 60fps (scales to hardware)
 │   │   ├── cluster.js          # NeuronCluster + ClusterProjection classes (7 clusters, 20 projections)
-│   │   ├── neurons.js          # LIFPopulation (live) + HHNeuron (reference-only, backs brain-equations.html)
+│   │   ├── neurons.js          # LIFPopulation (historical / browser-only fallback) + HHNeuron (reference-only, backs brain-equations.html) — live neuron model is Rulkov map in gpu-compute.js
 │   │   ├── synapses.js         # NxN weights — Hebbian, STDP, reward-mod
 │   │   ├── modules.js          # 6 brain region equation modules
 │   │   ├── oscillations.js     # 8 Kuramoto oscillators
@@ -365,7 +365,7 @@ Dream/
 │   │   ├── persistence.js      # Save/load brain state (sparse CSR + weights)
 │   │   ├── remote-brain.js     # WebSocket client for server brain
 │   │   ├── sparse-matrix.js    # CSR sparse connectivity (O(nnz) operations)
-│   │   ├── gpu-compute.js      # WebGPU compute shaders (WGSL LIF + synapses)
+│   │   ├── gpu-compute.js      # WebGPU compute shaders (WGSL Rulkov 2D chaotic map + synapses). LIF_SHADER constant name is historical — the shader body is the Rulkov x_{n+1}=α/(1+x²)+y, y_{n+1}=y−μ(x−σ) iteration, not LIF. Storage binding is vec2<f32> (8 bytes/neuron) holding (x, y) state.
 │   │   ├── embeddings.js       # Semantic word embeddings (GloVe 50d)
 │   │   ├── language-cortex.js  # Language from pure equations — NO word lists. Word type via _fineType(word) letter-position classifier (PRON_SUBJ/COPULA/NEG/MODAL/AUX_DO/AUX_HAVE/DET/PREP/CONJ/QWORD/VERB_ING/VERB_ED/VERB_3RD_S/VERB_BARE/ADJ/ADV/NOUN). Learned type bigram/trigram/4-gram grammar (_typeBigramCounts/_typeTrigramCounts/_typeQuadgramCounts) with backoff + zero-count penalty. 4-tier pipeline: intent classification templates → hippocampus recall → deflect → cold slot gen. Semantic fit weight 0.30. _isCompleteSentence post-render validator. _postProcess: applyThird agreement, intensifier insertion (no doubles), tense, copula. Candidate pre-filter from bigram followers (perf). Morphological inflections via _generateInflections (-s/-ed/-ing/-er/-est/-ly + un-/re-/-ness/-ful/-able). Loads 3 corpora via loadSelfImage() + loadBaseline() + loadCodingKnowledge() on boot. ~3900 lines.
 │   │   ├── benchmark.js        # Dense vs sparse + neuron scale test — wired to /bench + /scale-test slash commands in app.js
@@ -413,7 +413,7 @@ Dream/
 | localStorage | Persistent storage for keys, history, preferences, sandbox state, chat history |
 | Server Brain | WebSocket on port 7525 (moved off 8080 in R14 to avoid llama.cpp collision). Shared brain state (one singleton UnityBrain instance). User text is PRIVATE per connection (no cross-client broadcast). Dictionary / bigrams / embeddings grow from every user's conversation and benefit everyone — see privacy model in `docs/WEBSOCKET.md`. |
 | SQLite | Episodic memory persistence on server (better-sqlite3) |
-| WebGPU | GPU compute shaders for LIF neuron updates + synapse propagation |
+| WebGPU | GPU compute shaders for Rulkov 2D chaotic map neuron iteration + sparse CSR synapse propagation |
 | GloVe Embeddings | 50d word vectors from CDN, online context refinement |
 
 ---

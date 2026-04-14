@@ -168,8 +168,10 @@ Speech: concise, sharp, slang-heavy, foul-mouthed, clingy girlfriend energy
 Signal propagation is self-similar at every scale — the same `I = Σ W × s` equation repeats fractally:
 
 ```
-SCALE 1 — Single neuron:
-  τ·dV/dt = -(V-Vrest) + R·I           (LIF equation)
+SCALE 1 — Single neuron (Rulkov 2002 2D chaotic map):
+  x_{n+1} = α / (1 + x_n²) + y_n       (fast variable — spikes when x crosses 0)
+  y_{n+1} = y_n − μ · (x_n − σ)        (slow variable — burst envelope)
+  with α=4.5, μ=0.001, σ ∈ [-1.0, 0.5] driven by biological input
 
 SCALE 2 — Intra-cluster synapses:
   I_i = Σ W_ij × s_j                   (sparse-matrix.js propagate)
@@ -377,8 +379,8 @@ All N neurons (auto-scaled to hardware via the formula below) run on GPU. Zero C
 |----------|---------|------|
 | `gpu_init`: base64 voltages (once per cluster) | GPU creates buffers, maintains own voltage state | `compute.html` |
 | `compute_request`: `{ tonicDrive, noiseAmp, gainMultiplier, emotionalGate, driveBaseline, errorCorrection }` | Full brain equation params per step — NOT voltage arrays | `brain-server.js` |
-| `I = (tonic × drive × emoGate × Ψgain + errCorr) + noise` | GPU generates currents from hierarchical modulation | `compute.html` |
-| `τ·dV/dt = -(V-Vrest) + R·I` → spike check → refractory | WGSL LIF shader, 256 threads/workgroup | `gpu-compute.js` |
+| `effectiveDrive = tonic × drive × emoGate × Ψgain + errCorr` | hierarchical modulation collapsed to one scalar per cluster per step | `compute.html` |
+| `σ = −1.0 + clamp(effectiveDrive / 40, 0, 1) × 1.5` → Rulkov map `x_{n+1} = α/(1+x²) + y`, `y_{n+1} = y − μ(x − σ)` → spike when x crosses 0 upward | WGSL Rulkov shader (LIF_SHADER constant name is historical), 256 threads/workgroup, vec2<f32> state storage | `gpu-compute.js` |
 | `compute_result`: sparse spike indices (only fired neurons, not full N array) | 95%+ compression at any N — only active-spike indices return over WebSocket | `compute.html` |
 | `gpu_init_ack`: GPU confirms buffer creation | Server knows GPU is ready | `compute.html` |
 | All 7 clusters init at once on first tick | No staggering, no CPU fallback | `brain-server.js` |

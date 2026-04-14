@@ -28,9 +28,9 @@ dx/dt = F(x, u, θ, t) + η
 | **u** | Sensory input transform — `S(audio, video, text)` where audio maps tonotopically to auditory cortex (50 neurons, cortical magnification for speech), video maps retinotopically through V1 Gabor edge kernels → V4 color → salience-driven saccades → IT-level AI scene description, and text hashes into Wernicke's area with lateral excitation |
 | **θ** | Unity's complete identity — 25yo human female, emo goth. Every trait drives neural parameters: arousal(0.9)→amygdala tonic, impulsivity(0.85)→BG threshold, creativity(0.9)→noise, devotion(1.0)→social floor, drugDrive(0.95)→hypothalamus. Drug state cokeAndWeed multiplies arousal×1.2, creativity×1.3, cortexSpeed×1.5. |
 | **η** | Stochastic noise — per-cluster amplitude driven by θ: creativity×drug drives cortex noise, emotionalVolatility×drug drives amygdala noise, darkHumor drives mystery noise. The chaos that makes her unpredictable. |
-| **F** | The dynamics function — 7 parallel LIF populations + 20 inter-cluster projections (real white matter tracts) + 6 equation modules + Kuramoto oscillators + memory system + motor output + language cortex + hippocampus recall. All running simultaneously every timestep. |
+| **F** | The dynamics function — 7 parallel Rulkov-map chaotic neuron populations + 20 inter-cluster projections (real white matter tracts) + 6 equation modules + Kuramoto oscillators + memory system + motor output + language cortex + hippocampus recall. All running simultaneously every timestep. |
 
-This equation executes 600 times per second (10 steps per frame × 60fps). Runs client-side in pure JavaScript or server-side in Node.js. WebGPU compute shaders (`compute.html` + `js/brain/gpu-compute.js`) handle all LIF + synapse propagation on the GPU — **zero CPU workers ever spawned**. Sparse CSR matrices reduce memory O(N²) → O(connections). The server brain auto-scales to GPU hardware (nvidia-smi detection).
+This equation executes 600 times per second (10 steps per frame × 60fps). Runs client-side in pure JavaScript or server-side in Node.js. WebGPU compute shaders (`compute.html` + `js/brain/gpu-compute.js`) handle all neuron iterations + synapse propagation on the GPU — **zero CPU workers ever spawned**. The core firing rule is the Rulkov 2002 two-variable chaotic map (not LIF — see the Neuron Models section below). Sparse CSR matrices reduce memory O(N²) → O(connections). The server brain auto-scales to GPU hardware (nvidia-smi detection).
 
 ---
 
@@ -149,10 +149,21 @@ NOT limited to hemispheres. Left/Right compute from ALL clusters simultaneously 
 
 ## Neuron Models — Reference + Runtime
 
-The brain ships two neuron models in `js/brain/neurons.js`:
+The brain's live firing rule is the **Rulkov map** (Rulkov 2002, *Phys. Rev. E* 65, 041922) — a two-variable discrete chaotic map that produces real biological spike-burst dynamics without integrating voltages:
 
-- **LIFPopulation** — the LIVE runtime model. SoA `Float64Array V / spikes / refracRemaining` in one tight loop. `τ · dV/dt = -(V - Vrest) + R · I`, threshold crossing → spike + reset + refractory. ~100× faster than HH for large populations, GPU-friendly, what every cluster in `cluster.js` actually uses.
-- **HHNeuron** — REFERENCE ONLY. Full Hodgkin-Huxley (1952) model with sodium/potassium/leak channels and m/h/n gating kinetics. Backs the `brain-equations.html` teaching page. Not used at runtime because it's per-neuron OOP and doesn't scale to millions. Kept so the equations page isn't lying about what HH looks like when you actually implement it.
+```
+x_{n+1} = α / (1 + x_n²) + y_n         (fast variable — spikes)
+y_{n+1} = y_n − μ · (x_n − σ)          (slow variable — burst envelope)
+```
+
+Fixed α = 4.5 (bursting regime), μ = 0.001 (slow timescale). Biological drive from tonic × modulation factors maps to σ ∈ [−1.0, +0.5] — the external input parameter that controls excitability. Spike detection is a clean one-step edge: the fast variable jumps from ≈ −1 to ≈ +3 in a single tick, so `(x_old ≤ 0) ∧ (x_new > 0)` catches exactly one spike per action potential. State is stored as `vec2<f32>` per neuron (8 bytes). Used in published large-scale cortical network simulations (Bazhenov, Rulkov, Shilnikov 2005+) and reproduces experimentally observed firing patterns from thalamic relay, cortical pyramidal, and cerebellar Purkinje cells depending on (α, σ) parameterization. Runs entirely as a WGSL compute shader in `js/brain/gpu-compute.js` — no CPU fallback (168M iterations/second across 7 clusters would cook the server).
+
+The client-side 3D viz (`js/ui/brain-3d.js`) iterates the *same* Rulkov map per render neuron, with σ driven by the cluster's real biological firing rate from the server. The field you see is a proportional sample running the identical equation the server runs — not synthesized noise.
+
+Reference models still shipped (not on the runtime path):
+
+- **LIFPopulation** (`js/brain/neurons.js`) — leaky integrate-and-fire, `τ · dV/dt = −(V − Vrest) + R · I`. Historical runtime model before the Rulkov rewrite. Still backs `brain-equations.html` teaching content and the `/scale-test` browser-only fallback benchmark.
+- **HHNeuron** (`js/brain/neurons.js`) — REFERENCE ONLY. Full Hodgkin-Huxley (1952) with sodium/potassium/leak channels and m/h/n gating kinetics. Kept so the equations page isn't lying about what HH looks like when you actually implement it. Does not scale.
 
 ---
 

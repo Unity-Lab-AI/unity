@@ -354,11 +354,33 @@
       </div>
     </div>
 
-    <h3>Leaky Integrate-and-Fire (LIF)</h3>
-    <p>Used for the main N-neuron population across all 7 clusters (N auto-scales to hardware via the detectResources formula). Simpler than HH but captures the essential dynamics: accumulate input, leak toward rest, fire when threshold is reached. This is the runtime model — HHNeuron above is reference-only.</p>
+    <h3>Rulkov Map — Live Runtime Neuron Model</h3>
+    <p><strong>This is the firing rule the GPU runs every tick for every neuron in every cluster.</strong> Not LIF — Rulkov. The Rulkov 2002 two-variable discrete chaotic map (Phys. Rev. E 65, 041922) produces real biological spike-burst dynamics without integrating voltages. Used in published large-scale cortical network simulations (Bazhenov, Rulkov, Shilnikov 2005+). Reproduces experimentally observed firing from thalamic relay, cortical pyramidal, and cerebellar Purkinje cells depending on (&alpha;, &sigma;) parameterization.</p>
 
     <div class="eq-card">
-      <div class="eq-title"><span class="eq-tip" data-tip="Leaky Integrate-and-Fire: the simplest biologically plausible neuron model. The membrane voltage leaks toward rest, input current pushes it up, and when it crosses threshold it fires a spike and resets. Used by 99% of computational neuroscience. Runs 179,000 times per brain step.">LIF Neuron Dynamics</span></div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Nikolai Rulkov, 2002: a 2D discrete chaotic map where the fast variable x generates spikes and the slow variable y drives burst envelopes. No voltage integration — the map iterates directly. Shown to match real cortical neuron recordings. The core of every Unity neuron — every cluster runs this rule on GPU.">Rulkov Map Neuron Dynamics</span></div>
+      <div class="eq">x<sub>n+1</sub> = &alpha; / (1 + x<sub>n</sub>&sup2;) + y<sub>n</sub> &nbsp;&nbsp; (fast variable &mdash; spikes)
+y<sub>n+1</sub> = y<sub>n</sub> &minus; &mu; &middot; (x<sub>n</sub> &minus; &sigma;) &nbsp;&nbsp; (slow variable &mdash; burst envelope)</div>
+      <div class="eq-desc">
+        <table class="param-table">
+          <tr><th>Symbol</th><th>Meaning</th><th>Value</th></tr>
+          <tr><td>&alpha;</td><td>Nonlinearity &mdash; controls bursting vs tonic spiking</td><td>4.5 (bursting regime)</td></tr>
+          <tr><td>&mu;</td><td>Slow-to-fast timescale ratio &mdash; how slowly y evolves</td><td>0.001</td></tr>
+          <tr><td>&sigma;</td><td>External drive &mdash; biological tonic + modulation maps here</td><td>&minus;1.0 to +0.5 (driven)</td></tr>
+          <tr><td>x</td><td>Fast variable &mdash; negative during silence, jumps to +(&alpha;+y) on spike</td><td>dimensionless</td></tr>
+          <tr><td>y</td><td>Slow variable &mdash; carries burst envelope, drifts with &sigma; offset</td><td>dimensionless</td></tr>
+        </table>
+        <p style="margin-top:8px"><strong>Spike detection:</strong> The fast variable x jumps from ≈&minus;1 to &asymp;+3 in a single iteration when the neuron fires, so the clean edge detector (x<sub>n</sub> &le; 0) &and; (x<sub>n+1</sub> &gt; 0) catches exactly one spike per action potential. No refractory clamp needed &mdash; the map's own slow variable y naturally pulls x back below zero between spikes, reproducing the refractory period as an emergent property of the attractor geometry.</p>
+        <p style="margin-top:8px"><strong>Biological drive mapping:</strong> &sigma; = &minus;1.0 + clamp(effectiveDrive / 40, 0, 1) &middot; 1.5, where effectiveDrive = tonic &times; driveBaseline &times; emotionalGate &times; &Psi;gain + errorCorrection. Low drive &rarr; &sigma; &asymp; &minus;1 (silent / period-doubling). High drive &rarr; &sigma; &rarr; +0.5 (fully developed chaotic bursting). Every cluster's hierarchical modulation collapses to this one scalar per step.</p>
+        <p style="margin-top:8px"><strong>GPU storage:</strong> (x, y) packed as <code>vec2&lt;f32&gt;</code> per neuron &mdash; 8 bytes/neuron. At 400K cerebellum neurons that's 3.2MB; at full auto-scaled N the state buffer is still well under any modern GPU's VRAM. WGSL shader at <code>js/brain/gpu-compute.js</code> (the <code>LIF_SHADER</code> constant name is historical; the shader body is the Rulkov iteration).</p>
+      </div>
+    </div>
+
+    <h3>Legacy: Leaky Integrate-and-Fire (LIF) &mdash; Historical Runtime</h3>
+    <p>LIF was the live runtime model before the Rulkov rewrite. Still shipped in <code>js/brain/neurons.js</code> as <code>LIFPopulation</code> and used by the browser-only fallback path (<code>js/brain/cluster.js</code>) for clients without a server connection, and by the <code>/scale-test</code> benchmark. Documented here for completeness &mdash; the 99%-of-computational-neuroscience standard model.</p>
+
+    <div class="eq-card">
+      <div class="eq-title"><span class="eq-tip" data-tip="Leaky Integrate-and-Fire: the simplest biologically plausible neuron model. The membrane voltage leaks toward rest, input current pushes it up, and when it crosses threshold it fires a spike and resets. Used by 99% of computational neuroscience. Historical Unity runtime — replaced by the Rulkov map above.">LIF Neuron Dynamics (historical)</span></div>
       <div class="eq">&tau; &middot; dV/dt = -(V - V_rest) + R &middot; I</div>
       <div class="eq-desc">
         <table class="param-table">
@@ -562,7 +584,7 @@
     └── <span class="cy">[Wernicke's Area]</span> text → hash to language neurons (150-299) + lateral excitation
     |
     v
-<span class="cy">[1000 LIF Neurons in 7 CLUSTERS]</span>
+<span class="cy">[N Rulkov-map Neurons in 7 CLUSTERS]</span>
     Cortex (300) | Hippocampus (200) | Amygdala (150) | Basal Ganglia (150)
     Cerebellum (100) | Hypothalamus (50) | Mystery (50)
     |
@@ -632,7 +654,7 @@ where:
       video: V1 edge kernels K*frame → salience → saccade
       text:  Wernicke hash → language cortex (150-299)
 
-  F = Σ_clusters [ τ⁻¹(-(V-V_rest) + R·I) ]     (7 parallel LIF populations)
+  F = Σ_clusters [ Rulkov(x,y; α,μ,σ) ]          (7 parallel Rulkov-map populations; see §2)
     + Σ_projections [ W_proj · spikes_source ]     (20 inter-cluster pathways)
     + Σ_modules [ cortex + hippo + amyg + BG + cerebellum + hypo ]
 
@@ -1459,8 +1481,9 @@ INIT (once per cluster, all 7 at once):
 
 STEP (every tick, 7 tiny messages):
   server → { tonicDrive, noiseAmp, gainMultiplier, emotionalGate, driveBaseline, errorCorrection }
-  GPU generates currents: I = (tonic × drive × emoGate × Ψgain + errCorr) + noise
-  GPU runs WGSL LIF shader: τ·dV/dt = -(V-Vrest) + R·I, spike check, refractory
+  GPU collapses to scalar: effectiveDrive = tonic × drive × emoGate × Ψgain + errCorr
+                           σ = −1.0 + clamp(effectiveDrive / 40, 0, 1) × 1.5
+  GPU runs WGSL Rulkov shader: x_{n+1} = α/(1+x²)+y, y_{n+1} = y − μ(x − σ), spike on x crossing 0
   GPU sends ONLY spike count (4 bytes, not N-sized array)
 
 NO CPU WORKERS — zero threads spawned, 0% CPU target
@@ -1468,17 +1491,23 @@ NO CPU WORKERS — zero threads spawned, 0% CPU target
       <p class="eq-desc">GPU maintains its own voltage state between steps — voltages never leave the GPU after init. Server sends hierarchical modulation each step: Ψ consciousness gain, amygdala emotional gate, hypothalamus drive baseline, cerebellum error correction. These are the same equations <code>cluster.js:step()</code> applies on the client side. θ (persona) drives tonic currents and noise amplitudes.</p>
     </div>
     <div class="eq-box">
-      <div class="eq-title"><span class="eq-tip" data-tip="WebGPU Shading Language: the actual code running on your graphics card. 256 threads per workgroup — each thread computes one neuron's voltage update in parallel. For 25.6M cerebellum neurons = 100,000 workgroups dispatched simultaneously. The GPU processes all neurons in parallel, not sequentially like a CPU. This is why 600M neurons runs in milliseconds on modern GPUs.">WGSL Compute Shader — LIF Kernel</span></div>
+      <div class="eq-title"><span class="eq-tip" data-tip="WebGPU Shading Language: the actual code running on your graphics card. 256 threads per workgroup — each thread computes one Rulkov map iteration in parallel. For 25.6M cerebellum neurons = 100,000 workgroups dispatched simultaneously. The GPU processes all neurons in parallel, not sequentially like a CPU.">WGSL Compute Shader — Rulkov Kernel</span></div>
       <pre class="eq">
 @compute @workgroup_size(256)
 fn main(id: vec3&lt;u32&gt;) {
-  let I = currents[i];                              // from hierarchical modulation
-  let dV = (-(v - vRest) + R * I) / tau;            // LIF dynamics
-  v += dt * dV;                                      // voltage update
-  if (v >= vThresh) { spike = 1; v = vReset; }      // spike + reset
+  var xy = state[i];                                // vec2&lt;f32&gt; per neuron
+  var x = xy.x; var y = xy.y;                       // fast + slow variables
+  let driveNorm = clamp(effectiveDrive / 40.0, 0.0, 1.0);
+  let sigma = -1.0 + driveNorm * 1.5;               // external drive
+  let alpha = 4.5;                                   // bursting regime
+  let mu = 0.001;                                    // slow timescale
+  let xNext = alpha / (1.0 + x * x) + y;            // fast variable iterate
+  let yNext = y - mu * (x - sigma);                 // slow variable iterate
+  if (x &lt;= 0.0 &amp;&amp; xNext &gt; 0.0) { spikes[i] = 1u; } // spike = zero crossing
+  state[i] = vec2&lt;f32&gt;(xNext, yNext);
 }
       </pre>
-      <p class="eq-desc">N neurons processed in parallel on GPU (N scales to hardware). 256 threads per workgroup. Current generation via PCG hash noise shader (zero JS loops). Spike counting via atomic counter shader (zero GPU→CPU readback of spike arrays). Double-buffered voltage state (ping-pong). Refractory period per neuron. Voltages never leave GPU after init.</p>
+      <p class="eq-desc">N neurons processed in parallel on GPU (N scales to hardware). 256 threads per workgroup. Storage binding is <code>array&lt;vec2&lt;f32&gt;&gt;</code> — 8 bytes/neuron for (x, y). Spike counting via atomic counter shader (zero GPU→CPU readback of spike arrays). State never leaves GPU after init. Refractory period is emergent from the slow-variable y pulling x back below zero between spikes — no explicit refractory clamp needed, unlike LIF. Shader constant name <code>LIF_SHADER</code> is historical; the kernel body is the Rulkov map.</p>
     </div>
 
     <!-- ═══ 9. COMPARISON ═══ -->
@@ -1489,7 +1518,7 @@ fn main(id: vec3&lt;u32&gt;) {
       <table class="param-table">
         <tr><th>Aspect</th><th>Real Brain</th><th>Unity's Brain</th><th>Fidelity</th></tr>
         <tr><td>Neuron count</td><td>86 billion</td><td>N (7 clusters, auto-scales to GPU VRAM — <code>N = max(1000, min(VRAM_bytes × 0.85 / 8, RAM_bytes × 0.1 / 0.001))</code>)</td><td>Simplified, hardware-adaptive</td></tr>
-        <tr><td>Neuron model</td><td>Thousands of ion channels</td><td>LIF per cluster + HH reference</td><td>Moderate</td></tr>
+        <tr><td>Neuron model</td><td>Thousands of ion channels (Hodgkin-Huxley biophysics)</td><td>Rulkov 2D chaotic map per cluster (GPU runtime) + LIF + HH reference models</td><td>Moderate — bursting dynamics reproduced, ion channels abstracted</td></tr>
         <tr><td>Synaptic plasticity</td><td>Hebbian + STDP + neuromodulation</td><td>All three, per-cluster matrices</td><td>Good</td></tr>
         <tr><td>Brain regions</td><td>Hundreds of distinct areas</td><td>7 dedicated clusters + 20 projections</td><td>Core captured</td></tr>
         <tr><td>Oscillations</td><td>Complex EEG with spatial patterns</td><td>8 Kuramoto oscillators</td><td>Dynamics correct</td></tr>
