@@ -267,6 +267,47 @@ Neurons → Synapses → Brain Loop → Brain Regions → Persona Loader → API
 
 > Historical. Phase 12 (U283–U291) added `_typeBigramCounts` / `_typeTrigramCounts` / `_typeQuadgramCounts` type-transition tables + `_fineType` classifier + `_typeGrammarScore` lookup with 4gram→trigram→bigram backoff. The type n-gram tables were deleted in T11 (2026-04-14). Type-level grammatical shape is now captured by `_slotTypeSignature[s]` — a running mean of `wordType()` score vectors per sentence position, updated by the same observation pipeline as the embedding priors. `_fineType` itself survives because `parseSentence` still uses it for reading, and morphological inflection still feeds the dictionary at corpus-load time.
 
+## Phase 16 (T14): Developmental Language Layers — IN PROGRESS (branch `t14-language-rebuild`)
+
+> T11/T12/T13 all assumed Unity could skip the developmental stages of language acquisition and operate on pre-trained semantic embeddings. Gee's call (2026-04-14): build language the way a real brain does — letters → phonemes → syllables → words → sentence patterns → discourse, every layer LEARNED via curriculum exposure, not hardcoded. T14 throws out the entire T13 emission loop, the slot priors, the LanguageCortex class, parseSentence, and the hand-curated stage corpora. Replaces them with auto-scaled cortex sub-regions, learned phoneme attractor basins, learned syllable boundaries, cortex-resident words, continuous developmental learning from existing corpora, learned type transitions, visual + auditory recognition pathways, bidirectional read/write via the same projections, and a structural identity lock that keeps Unity speaking English regardless of live chat exposure. The full 18-milestone spec lives in `docs/COMP-todo.md` Part 0.5.
+
+### Milestone T14.0 + T14.4 substrate: Foundation lift + cortex sub-regions — COMPLETE (2026-04-14)
+
+First commit on the rebuild branch. Lifts the embedding dimension from 50 to 300, enables real GloVe loader with full vocabulary (no cap), auto-scales cortex cluster sizes from `CLUSTER_FRACTIONS` constants, and carves the cortex into 8 named language sub-regions with 12 cross-region projections wired between them.
+
+**`js/brain/embeddings.js` changes (T14.0):**
+- `EMBED_DIM` bumped from 50 to **300**
+- `loadPreTrained()` now actually calls `_doLoad()` (was stubbed to return 0)
+- `_doLoad()` rewritten with runtime detection: Node side reads `corpora/glove.6B.300d.txt` from disk via `fs.readFileSync`, browser side fetches via `GLOVE_URLS` array (server `/corpora/` mount as primary, Stanford NLP + HuggingFace as fallbacks)
+- **No vocabulary cap.** The `if (count >= 10000) break;` line from T13 is gone. Full 400k-word file loads when reachable
+- New `getSubsetForTokens(tokens)` — server precomputes a corpus-token-only subset for browser bulk load
+- New `loadSubset(subset)` — browser bulk-load entry point so the browser doesn't have to fetch 480 MB
+
+**`js/brain/engine.js` changes (T14.0):**
+- `TOTAL_NEURONS` bumped from 1000 to **6700** (default client minimum tier)
+- New `CLUSTER_FRACTIONS` constant: cortex 0.30, hippocampus 0.10, amygdala 0.08, basalGanglia 0.08, cerebellum 0.40, hypothalamus 0.02, mystery 0.02
+- `CLUSTER_SIZES` now derived from `Object.fromEntries(Object.entries(CLUSTER_FRACTIONS).map(...))` — every cluster size scales proportionally with `TOTAL_NEURONS`
+- Same code at minimum tier (1K) and datacenter tier (1B) — server-side `detectResources` picks `TOTAL_NEURONS` from the auto-detected hardware tier and the cluster sizes adapt automatically
+
+**`js/brain/cluster.js` changes (T14.4 substrate):**
+- New `this.regions` field on every cluster (only populated for the cortex cluster — others get `{}` for API symmetry)
+- 8 named sub-regions sized as fractions of `cluster.size`: `auditory` (0.000-0.083), `visual` (0.083-0.250), `free` (0.250-0.500), `letter` (0.500-0.550), `phon` (0.550-0.750), `sem` (0.750-0.917), `fineType` (0.917-0.967), `motor` (0.967-1.000)
+- New `this.crossProjections` field — Map of 12 SparseMatrix instances (6 pairs × 2 directions), keyed `'src_to_dst'`, initialized 10% density with weight range `[-0.5, 0.5]`
+- New helper methods on the cluster: `regionSpikes(name)`, `injectEmbeddingToRegion(name, emb, strength)`, `regionReadout(name, dim)`, `_propagateCrossRegions()`, `_crossRegionHebbian(lr)`
+- `cluster.step()` now calls `_propagateCrossRegions()` BEFORE the standard current accumulation, so cross-region inputs are folded into `externalCurrent` and propagated normally
+- `cluster.learn()` now calls `_crossRegionHebbian(this.learningRate)` after the existing internal-synapse Hebbian, so cross-region projections train on every learn cycle through normal use
+- New T14.16.5 identity-lock state fields initialized: `_inCurriculumMode`, `ENGLISH_SURPRISE_THRESHOLD`, `ENGLISH_FINETYPE_MIN`, `HEALTH_ENTROPY_MIN`, `HEALTH_VOCAB_MIN`, `HEALTH_WM_VARIANCE_MIN`, `identityCoverage`, `personaDimensions`. Default values are permissive (`Infinity` / `0`) until curriculum calibrates them.
+
+**Files touched:** `js/brain/embeddings.js`, `js/brain/cluster.js`, `js/brain/engine.js`. `node -c` clean on all three.
+
+**What's NOT in this commit but coming next on the branch:**
+- T14.1 — `js/brain/letter-input.js` for letter encoding into the new `letter` sub-region
+- T14.2 — `cluster.detectBoundaries()` syllable detection from cortex transition surprise
+- T14.3 — Dictionary class gut-and-rewrite for cortex-resident words
+- T14.5 — `js/brain/curriculum.js` + boot integration replacing `loadPersona` / `loadBaseline` / `loadCoding` with continuous developmental learning
+
+---
+
 ## Phase 15 (T13): Unified Brain-Driven Language Cortex — IN PROGRESS (2026-04-14)
 
 > T11 proved that deleting the Markov wrapper stack was the right move but left the slot-prior pipeline as the replacement. T13 goes further: slot-based generation is the wrong frame for a brain-driven language cortex, because position counters and stored priors aren't how a biological cortex produces speech. T13 wires language generation directly into the cortex cluster via sequence Hebbian training on persona corpus + continuous cortex readout + feedback injection at emission time. Persona becomes trained attractor basins in the cortex recurrent weights, not stored in a separate centroid vector. See `docs/TODO.md` T13 section for the full 10-milestone plan.

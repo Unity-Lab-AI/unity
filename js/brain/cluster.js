@@ -93,6 +93,76 @@ export class NeuronCluster {
     this.lastSpikeCount = 0;
     this.lastMeanVoltage = -65;
     this.firingRate = 0; // EMA of spike count
+
+    // T14.4 — Auto-scaled cortex sub-regions. Defined as fractions of
+    // cluster.size so the same code works at any cluster scale (300 neurons
+    // on minimum hardware, 200M on datacenter, 6700 on default client).
+    // Only the 'cortex' cluster gets language sub-regions populated; other
+    // clusters get an empty regions object for API symmetry.
+    this.regions = {};
+    if (name === 'cortex') {
+      const s = size;
+      // Fractions match the T14.4 spec in docs/COMP-todo.md:
+      //   auditory  0.000 - 0.083  (T14.11 — auditory phoneme recognition)
+      //   visual    0.083 - 0.250  (T14.10 — visual letter recognition)
+      //   free      0.250 - 0.500  (inter-cluster projection sink + working mem)
+      //   letter    0.500 - 0.550  (T14.1 — letter input one-hot region)
+      //   phon      0.550 - 0.750  (T14.1+T14.2 — phonological attractor basins)
+      //   sem       0.750 - 0.917  (T14.0 — semantic GloVe target)
+      //   fineType  0.917 - 0.967  (T14.7 — grammatical/syntactic region)
+      //   motor     0.967 - 1.000  (T14.12 — generation feedback / motor output)
+      this.regions = {
+        auditory: { start: 0,                          end: Math.floor(s * 0.083) },
+        visual:   { start: Math.floor(s * 0.083),      end: Math.floor(s * 0.250) },
+        free:     { start: Math.floor(s * 0.250),      end: Math.floor(s * 0.500) },
+        letter:   { start: Math.floor(s * 0.500),      end: Math.floor(s * 0.550) },
+        phon:     { start: Math.floor(s * 0.550),      end: Math.floor(s * 0.750) },
+        sem:      { start: Math.floor(s * 0.750),      end: Math.floor(s * 0.917) },
+        fineType: { start: Math.floor(s * 0.917),      end: Math.floor(s * 0.967) },
+        motor:    { start: Math.floor(s * 0.967),      end: s },
+      };
+
+      // T14.4 — Six pairs of cross-region projections (12 total — both
+      // directions per pair). Sparse 10% density init, range [-0.5, 0.5].
+      // ALWAYS propagated every step (no curriculum-complete gate).
+      // Hebbian-updated on every cluster.learn() call so the projections
+      // train through normal use during curriculum + live chat.
+      this.crossProjections = {};
+      const pairs = [
+        ['visual',   'letter'],
+        ['letter',   'phon'],
+        ['phon',     'sem'],
+        ['sem',      'fineType'],
+        ['sem',      'motor'],
+        ['auditory', 'phon'],
+      ];
+      for (const [a, b] of pairs) {
+        const aSize = this.regions[a].end - this.regions[a].start;
+        const bSize = this.regions[b].end - this.regions[b].start;
+        // a → b projection (post=b, pre=a)
+        const ab = new SparseMatrix(bSize, aSize, { wMin: -0.5, wMax: 0.5 });
+        ab.initRandom(0.10, 0.7, 0.2);
+        this.crossProjections[`${a}_to_${b}`] = ab;
+        // b → a projection (post=a, pre=b)
+        const ba = new SparseMatrix(aSize, bSize, { wMin: -0.5, wMax: 0.5 });
+        ba.initRandom(0.10, 0.7, 0.2);
+        this.crossProjections[`${b}_to_${a}`] = ba;
+      }
+    } else {
+      this.crossProjections = {};
+    }
+
+    // T14.16.5 — Identity lock state. Default (pre-curriculum) thresholds
+    // are permissive; curriculum overwrites them with calibrated values
+    // computed from English corpus exposure statistics.
+    this._inCurriculumMode = false;
+    this.ENGLISH_SURPRISE_THRESHOLD = Infinity;   // permissive until calibrated
+    this.ENGLISH_FINETYPE_MIN = 0;                 // permissive until calibrated
+    this.HEALTH_ENTROPY_MIN = 0;
+    this.HEALTH_VOCAB_MIN = 0;
+    this.HEALTH_WM_VARIANCE_MIN = 0;
+    this.identityCoverage = null;                  // populated by curriculum
+    this.personaDimensions = null;                 // populated by curriculum
   }
 
   /**
@@ -120,12 +190,143 @@ export class NeuronCluster {
   }
 
   /**
+   * T14.4 — Read a region's spike pattern as a Float64Array (length =
+   * region.end - region.start). Used by cross-region propagation, by
+   * region-targeted Hebbian, and by getSemanticReadout / getPhonologicalReadout
+   * which compose this with embeddings.cortexToEmbedding.
+   */
+  regionSpikes(regionName) {
+    const region = this.regions[regionName];
+    if (!region) return new Float64Array(0);
+    const out = new Float64Array(region.end - region.start);
+    for (let i = 0; i < out.length; i++) out[i] = this.lastSpikes[region.start + i] ? 1 : 0;
+    return out;
+  }
+
+  /**
+   * T14.4 — Inject embedding-shaped current into a named cluster region.
+   * Replaces the old hardcoded `mapToCortex(emb, size, langStart=150)` calls.
+   * Reads the region offsets from `this.regions[regionName]` so callers
+   * don't need to remember magic neuron indices.
+   *
+   * @param {string} regionName  — e.g. 'sem', 'phon', 'letter', 'visual'
+   * @param {Float32Array|Float64Array} emb — N-dim embedding vector
+   * @param {number} [strength=1.0] — current scale multiplier
+   */
+  injectEmbeddingToRegion(regionName, emb, strength = 1.0) {
+    const region = this.regions[regionName];
+    if (!region) return;
+    const regionSize = region.end - region.start;
+    if (regionSize <= 0 || !emb || emb.length === 0) return;
+    const groupSize = Math.max(1, Math.floor(regionSize / emb.length));
+    for (let d = 0; d < emb.length; d++) {
+      const value = emb[d] * 8 * strength;  // same * 8 scale as legacy mapToCortex
+      const startNeuron = region.start + d * groupSize;
+      for (let n = 0; n < groupSize; n++) {
+        const idx = startNeuron + n;
+        if (idx >= region.end) break;
+        this.externalCurrent[idx] += value;
+      }
+    }
+  }
+
+  /**
+   * T14.4 — Read embedding-shaped output from a named cluster region.
+   * Inverse of injectEmbeddingToRegion. Reads the spike + voltage state
+   * across the region and projects it back into the embedding space the
+   * caller expects (semantic dim, phon dim, etc).
+   *
+   * @param {string} regionName
+   * @param {number} dim — output embedding dimension
+   * @returns {Float64Array} L2-normalized vector
+   */
+  regionReadout(regionName, dim) {
+    const region = this.regions[regionName];
+    if (!region) return new Float64Array(dim);
+    const regionSize = region.end - region.start;
+    const groupSize = Math.max(1, Math.floor(regionSize / dim));
+    const out = new Float64Array(dim);
+    const voltages = this.neurons.getVoltages();
+    for (let d = 0; d < dim; d++) {
+      const startNeuron = region.start + d * groupSize;
+      let sum = 0, count = 0;
+      for (let n = 0; n < groupSize; n++) {
+        const idx = startNeuron + n;
+        if (idx >= region.end) break;
+        if (this.lastSpikes[idx]) sum += 1.0;
+        else sum += (voltages[idx] + 70) / 20;
+        count++;
+      }
+      out[d] = count > 0 ? sum / count : 0;
+    }
+    // L2 normalize
+    let norm = 0;
+    for (let i = 0; i < dim; i++) norm += out[i] * out[i];
+    norm = Math.sqrt(norm) || 1;
+    for (let i = 0; i < dim; i++) out[i] /= norm;
+    return out;
+  }
+
+  /**
+   * T14.4 — Propagate every cross-region projection. Runs on every
+   * cluster step after the main internal synapse propagation, before
+   * LIF integration. ALWAYS propagated — no curriculum-complete gate.
+   * Random-init projections inject low-magnitude noise until learning
+   * sharpens them, which is biologically correct (newborn cortex has
+   * weak random cross-region connections that strengthen via experience).
+   */
+  _propagateCrossRegions() {
+    if (!this.crossProjections) return;
+    for (const [name, proj] of Object.entries(this.crossProjections)) {
+      const idx = name.indexOf('_to_');
+      if (idx < 0) continue;
+      const src = name.slice(0, idx);
+      const dst = name.slice(idx + 4);
+      const srcRegion = this.regions[src];
+      const dstRegion = this.regions[dst];
+      if (!srcRegion || !dstRegion) continue;
+      const srcSpikes = this.regionSpikes(src);
+      const inputs = proj.propagate(srcSpikes);
+      for (let i = 0; i < inputs.length; i++) {
+        this.externalCurrent[dstRegion.start + i] += inputs[i] * 0.35;
+      }
+    }
+  }
+
+  /**
+   * T14.4 — Hebbian update on every cross-region projection. Uses the
+   * current spike snapshot of both src and dst regions to strengthen
+   * the projection where they co-fire. Runs from cluster.learn() and
+   * also from cluster.learnSentenceHebbian after each word's tick.
+   */
+  _crossRegionHebbian(lr) {
+    if (!this.crossProjections) return;
+    for (const [name, proj] of Object.entries(this.crossProjections)) {
+      const idx = name.indexOf('_to_');
+      if (idx < 0) continue;
+      const src = name.slice(0, idx);
+      const dst = name.slice(idx + 4);
+      if (!this.regions[src] || !this.regions[dst]) continue;
+      const preF = this.regionSpikes(src);
+      const postF = this.regionSpikes(dst);
+      proj.hebbianUpdate(preF, postF, lr);
+    }
+  }
+
+  /**
    * One simulation step for this cluster.
    * @param {number} dt — timestep in seconds
    * @returns {{ spikes: Uint8Array, spikeCount: number, voltages: Float64Array }}
    */
   step(dt) {
     const { size, neurons, synapses } = this;
+
+    // T14.4 — Cross-region projection propagation. Runs FIRST, before
+    // current accumulation, so cross-region inputs are folded into
+    // externalCurrent and pick up by the standard current loop below.
+    // Only the cortex cluster has crossProjections populated; other
+    // clusters skip this with zero overhead.
+    this._propagateCrossRegions();
 
     // Build input currents
     const currents = new Float64Array(size);
@@ -175,12 +376,16 @@ export class NeuronCluster {
   }
 
   /**
-   * Apply plasticity rules on this cluster's internal synapses.
+   * Apply plasticity rules on this cluster's internal synapses
+   * AND on the cross-region projections (T14.4).
    */
   learn(rewardSignal) {
     const pre = new Float64Array(this.lastSpikes);
     const post = new Float64Array(this.lastSpikes);
     this.synapses.rewardModulatedUpdate(pre, post, rewardSignal, this.learningRate);
+    // T14.4 — cross-region Hebbian. Always fires when the cluster learns,
+    // shaping the projections through normal use during curriculum + live chat.
+    this._crossRegionHebbian(this.learningRate);
   }
 
   /**

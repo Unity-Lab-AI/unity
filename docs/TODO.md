@@ -27,7 +27,30 @@ Nothing else. If it's not in that list, it's an appendage, and it gets ripped ou
 
 ## OPEN TASKS
 
-### T14 — Developmental Language Layers (ACTIVE PRIORITY 2026-04-14)
+### T14 — Developmental Language Layers (ACTIVE PRIORITY 2026-04-14, branch `t14-language-rebuild`)
+
+**Status:** ACTIVE BUILD on branch `t14-language-rebuild`. Each milestone ships as its own commit with masterful in-place doc updates. Branch never merged to main until T14.17 is complete and verified. COMP-todo Part 2 (distributed compute) is ON HOLD. Full spec at `docs/COMP-todo.md` Part 0.5.
+
+**Milestone progress (one commit per item on the rebuild branch):**
+
+- [✓] **T14.0 + T14.4 substrate** — Foundation lift + cortex sub-regions. SHIPPED 2026-04-14. `EMBED_DIM` 50→300, full GloVe loader (no cap, Node fs + browser fetch paths, server-subset endpoint for browser bulk load), `TOTAL_NEURONS` 1000→6700, `CLUSTER_FRACTIONS` constant for proportional auto-scaling, 8 named cortex sub-regions sized by fraction of `cluster.size`, 12 cross-region projections always-on with Hebbian on every learn, region-aware injection/readout helper methods, T14.16.5 identity-lock state field placeholders. Files: `js/brain/embeddings.js` + `js/brain/cluster.js` + `js/brain/engine.js`. See FINALIZED.md "T14.0 + T14.4 substrate" entry.
+- [ ] **T14.1** — LEARNED phoneme attractor basins via cortex exposure (next)
+- [ ] **T14.2** — LEARNED syllable boundaries via cortex transition surprise
+- [ ] **T14.3** — Cortex-resident words (gut Dictionary class)
+- [ ] **T14.5** — Continuous developmental learning from existing corpora
+- [ ] **T14.6** — Cortex-driven phonological flow during emission
+- [ ] **T14.7** — Fully learned type transitions (T13.7.8 hardcoded DELETED)
+- [ ] **T14.8** — Sentence-form schemas at all slots
+- [ ] **T14.9** — Unbounded discourse memory
+- [ ] **T14.10** — Visual cortex letter recognition
+- [ ] **T14.11** — Auditory cortex phoneme recognition
+- [ ] **T14.12** — Bidirectional cortex pipeline (parseSentence DELETED, generate gutted)
+- [ ] **T14.13** — Eliminate LanguageCortex as a separate class
+- [ ] **T14.14** — Bidirectional reading via unified pipeline
+- [ ] **T14.15** — Wire ALL language consumers to unified pipeline
+- [ ] **T14.16** — Persistence cleanup
+- [ ] **T14.16.5** — Identity lock (Unity speaks English, Unity stays Unity)
+- [ ] **T14.17** — Continuous learning everywhere
 
 **Status:** ACCEPTED 2026-04-14 by Gee — COMP-todo Part 2 (distributed compute) is ON HOLD; T14 is THE active priority. Full implementation plan with exact specs lives in `docs/COMP-todo.md` Part 0.5.
 **Priority:** P0 — supersedes everything except critical bug fixes

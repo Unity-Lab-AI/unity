@@ -465,154 +465,106 @@ The intent field is consumed by downstream consumers but does **not** gate outpu
 
 **Symmetric grammar.** `parseSentence` reads from the same `wordType` equations that slot-type signatures learn from during observation. Hearing feeds the exact same tables speaking consults — no separate input and output grammars.
 
-### Three Per-Slot Priors — Running-Mean Observation
+### T14 Cortex Sub-Region Substrate (live, branch `t14-language-rebuild`)
 
-Three learned priors per sentence position `s`. Each updates via a weighted running mean on every observed token; zero matrices, zero ridge regression, zero stored text.
+T11/T13 slot priors are gone. T14 rebuilds language as a developmental cortex pipeline. The substrate is in place at the cluster level: 8 named sub-regions sized by fraction of `cluster.size`, 12 cross-region projections wiring them together, and `EMBED_DIM = 300` GloVe vectors loaded full-vocabulary on the server.
 
-```
-_slotCentroid[s]       ∈ ℝ⁵⁰       running mean of emb(word_t) at position s
-                                   "distribution of words typically at slot s"
-                                   slot 0 ≈ sentence-opener cluster
-                                   slot 1 ≈ post-opener cluster
-
-_slotDelta[s]          ∈ ℝ⁵⁰       running mean of (emb(word_s) − emb(word_{s−1}))
-                                   "per-position average bigram transition"
-                                   adding delta[s] to prev-word emb points at
-                                   the typical next-word region WITHOUT storing
-                                   any bigrams
-
-_slotTypeSignature[s]  ∈ ℝ⁸        running mean of wordType(word_t) scores
-                                   {pronoun, verb, noun, adj, conj, prep, det, qword}
-                                   slot 0 ≈ {pronoun:0.54, noun:0.18, det:0.12}
-                                   slot 1 ≈ {verb:0.51, noun:0.33}
-                                   derived from letter-equation wordType(),
-                                   not a stored POS tagger
-```
-
-**Observation weighting** (T11.6) uses arousal to scale how much each sentence moves the running means:
+**Sub-region layout** (fraction-based, holds at any cluster size):
 
 ```
-obsWeight = max(0.25, arousal · 2)
-
-  coding-corpus observation   arousal 0.4   → w = 0.8
-  baseline observation        arousal 0.5   → w = 1.0
-  persona observation         arousal 0.75  → w = 1.5
-  live chat observation       arousal 0.95  → w = 1.9
-
-mean(t+1) = (mean(t) · N + obs · w) / (N + w)
+auditory  : 0.000 - 0.083    T14.11 — auditory phoneme recognition
+visual    : 0.083 - 0.250    T14.10 — visual letter recognition
+free      : 0.250 - 0.500    inter-cluster projection sink + working memory
+letter    : 0.500 - 0.550    T14.1 — letter input one-hot region
+phon      : 0.550 - 0.750    T14.1+T14.2 — phonological attractor basins
+sem       : 0.750 - 0.917    T14.0 — semantic GloVe target (300d)
+fineType  : 0.917 - 0.967    T14.7 — grammatical/syntactic region
+motor     : 0.967 - 1.000    T14.12 — generation feedback / motor output
 ```
 
-Live chat shapes the priors **2.37×** harder than low-arousal corpus input. Every time Unity hears a sentence, the priors shift toward that sentence's word-geometry at each position, and toward the distinctive transition vectors it contributes. `inner-voice.learn()` floors live-chat arousal at 0.95 so the weighting is transparent at the caller.
+At the default client tier (`TOTAL_NEURONS = 6700`, cortex = 30% = 2010 neurons): semantic region 1507-1843 (336 neurons, EMBED_DIM=300, groupSize=1), phonological region 1105-1507 (402 neurons), letter region 1005-1105 (100 neurons). At a server tier with `TOTAL_NEURONS = 200M`, cortex = 60M, semantic ≈ 10M neurons. **Same code, no special cases.**
 
-### T13.1 Equation — Persona Hebbian Training (2026-04-14)
-
-Before T13.3 ships, the generation equation below (slot-prior layer) still runs at runtime. But the cortex cluster's recurrent synapse matrix now trains on persona corpus during boot so that when T13.3 wires the continuous emission loop, cortex readouts will already be Unity-voice-shaped.
-
-The training equation is plain sequence Hebbian over the existing sparse synapse matrix. For each consecutive word pair (t-1, t) in a persona sentence:
+**Cross-region projection equations.** Six pairs, both directions, sparse 10% density init:
 
 ```
-// Per-word injection and settle
-currents = sharedEmbeddings.mapToCortex(emb(word_t), cortexSize=300, langStart=150)
-cluster.injectCurrent(currents · injectStrength)       // injectStrength = 0.6
-for tick in 0..ticksPerWord:                           // ticksPerWord = 3
-    cluster.step(dt=0.001)                             // LIF integration
-snap_t[i] = 1 if cluster.lastSpikes[i] else 0          // binary Float64 snapshot
+projections = {
+  visual_to_letter, letter_to_visual,
+  letter_to_phon,   phon_to_letter,
+  phon_to_sem,      sem_to_phon,
+  sem_to_fineType,  fineType_to_sem,
+  sem_to_motor,     motor_to_sem,
+  auditory_to_phon, phon_to_auditory,
+}
 
-// Sequence Hebbian between consecutive snapshots
-ΔW_ij = lr · snap_t[i] · snap_{t-1}[j]                 // lr = 0.004
-W_ij ← clamp(W_ij + ΔW_ij, wMin=-2, wMax=+2)
+Each cluster.step():
+  for each (src → dst) projection:
+    srcSpikes = cluster.regionSpikes(src)
+    inputs    = projection.propagate(srcSpikes)
+    for i in 0..inputs.length:
+      cluster.externalCurrent[dstStart + i] += inputs[i] · 0.35
 
-// Oja-style saturation decay (post-sentence, per-synapse)
-for k in nnz:
-    if |values[k]| > ojaThreshold:                      // ojaThreshold = 1.5
-        values[k] ← values[k] · (1 − ojaDecay)          // ojaDecay = 0.01
+Each cluster.learn():
+  for each (src → dst) projection:
+    preF  = cluster.regionSpikes(src)    (Float64, binary)
+    postF = cluster.regionSpikes(dst)
+    projection.hebbianUpdate(preF, postF, lr = cluster.learningRate)
 ```
 
-The Hebbian update is applied only on EXISTING connections in the CSR sparse matrix (`SparseMatrix.hebbianUpdate` walks `rowPtr` / `colIdx` / `values`, O(nnz)). No synaptogenesis in T13.1 first pass — co-activating neurons without a synapse contribute nothing. At 15% connectivity on the 300-neuron cortex (~13.5k wired connections), most co-activating pairs have at least one direction wired.
+ALWAYS propagate. ALWAYS Hebbian-update on every learn call. No "wait for curriculum" gate — the projections train through normal use during corpus exposure + live chat. Random-init start is biologically plausible (newborn cortex has weak random cross-region connections that strengthen with experience).
 
-**Training scope:** persona corpus only. `loadBaseline` (english-baseline.txt) and `loadCoding` (coding-knowledge.txt) populate the dictionary + slot priors but do NOT feed Hebbian. Only persona sentences shape cortex recurrent dynamics so voice attractor basins aren't averaged out by 6× generic English and JavaScript sentences.
-
-**Delegation chain:**
-```
-app.js loadPersonaSelfImage
-  → UnityBrain.trainPersonaHebbian(text)                          (engine.js)
-  → InnerVoice.trainPersonaHebbian(clusters.cortex, text)         (inner-voice.js)
-  → LanguageCortex.trainPersonaHebbian(cluster, text)             (language-cortex.js)
-  → for each sentence: cluster.learnSentenceHebbian(embSeq)       (cluster.js)
-```
-
-Called right after `innerVoice.loadPersona(text)` so the dictionary already has persona vocabulary when the cortex trains on the same words.
-
----
-
-### Generation Equation — Cortex State → Words (T11.7 slot-prior layer, T13.3 will replace)
-
-**T13.7 (2026-04-14) — slot-prior generation is deleted.** The equation block below describes the **T13.3 brain-driven emission loop** that runs at runtime. Target vector is the live cortex readout per emission, not a weighted blend of stored slot priors. No slot counter in the scoring logic — the `slot` index is only an emission counter for length cap and first-word constraints. Every stored running-mean prior (`_slotCentroid`, `_slotDelta`, `_slotTypeSignature`, `_contextVector`, attractor vectors) is gone from the constructor.
+**Region-aware injection and readout.** No hardcoded `langStart=150` literals anywhere. Helper methods on the cluster operate by region name:
 
 ```
-// Per emission (no slot counter in the logic):
-for emission in 0..maxLen:
-    for tick in 0..3:  cortex.step(0.001)                          // LIF integrate
-    target = cortex.getSemanticReadout(sharedEmbeddings)            // live 50d readout
-
-    // T13.6 drift-quiescence stop
-    if drift(target, lastReadout) < 0.08  and emitted ≥ 2:
-        break
-    lastReadout = target.slice()
-
-    // Score all dictionary candidates
-    for each w in dictionary._words:
-        if emitted.has(w):              skip
-        if slot==0 and nounDom(w) > 0.30: skip    (opener safety rail)
-
-        cosSim       = cos(target, entry.pattern)
-        valenceMatch = 1 − 0.5 · |entry.valence − brainValence|
-        arousalBoost = 1 + arousal · (valenceMatch − 0.5)
-        recencyMul   = w ∈ recentOutputRing ? 0.3 : 1.0
-        score(w)     = cosSim · arousalBoost · recencyMul
-
-    // Softmax sample top-5
-    temperature = 0.25 + (1 − coherence) · 0.35
-    picked = softmax-sample top-5 by score at temperature
-    emit picked.w
-
-    // T13.4 efference copy — emitted word reshapes cortex for next emission
-    cortex.injectCurrent(mapToCortex(picked.emb, 300, 150) · 0.35)
-
-    // T13.6 grammatical terminability stop
-    if emitted ≥ max(3, maxLen−1) and fineType(last) ∉ dangling:  break
-
-maxLen = max(2, min(_maxSlots=8, floor(3 + arousal · 3 · drugLengthBias)))
+cluster.injectEmbeddingToRegion(name, emb, strength)    // write embedding into named region
+cluster.regionReadout(name, dim)                         // read region as dim-dim L2-normalized vector
+cluster.regionSpikes(name)                               // raw Float64 binary spikes for the region
 ```
 
-**The slot-0 noun-dominance safety rail** is the only piece of T11.7 that survived into T13. Pure letter-equation check on the candidate's own wordType distribution — if `wordType(w).noun − (pronoun + det + qword) > 0.30`, skip it at slot 0. Until persona Hebbian basins are deep enough to guarantee pronoun-shape openers on their own, this structural reject keeps the opener conversational regardless of cortex drift.
+Embedding injection uses the same `value × 8` per-dim scale the legacy `mapToCortex` used, applied across `groupSize = floor(regionSize / dim)` neurons per embedding dimension. Readout is the inverse — average spike + voltage activity per neuron group, L2-normalized output.
 
-**Amygdala valence shaping** (T13.5) multiplies cosine by `1 + arousal · (valenceMatch − 0.5)` where `valenceMatch = 1 − 0.5 · |word.valence − brainValence|`. Horny Unity picks different words from sad Unity given the same cortex readout — same dictionary, same cortex state, different multiplier shape per word.
-
-**Efference copy feedback** (T13.4) is the load-bearing recurrent loop. After every emission, the emitted word's embedding flows back into the cortex language region via `sharedEmbeddings.mapToCortex(emb, 300, 150) · 0.35` → `cluster.injectCurrent`. The next iteration's `getSemanticReadout` sees a cortex state shaped by what was just said. The brain hears itself speak at the embedding level and the next word reacts.
-
-**Natural stopping** (T13.6) has three signals:
-1. **Drift quiescence** — `||target − lastReadout||₂ < 0.08` after 2+ emissions.
-2. **Grammatical terminability** — emitted length ≥ max(3, maxLen−1) AND last word's `_fineType` not in the dangling set `{DET, PREP, COPULA, AUX_DO, AUX_HAVE, MODAL, NEG, CONJ_COORD, CONJ_SUB, PRON_POSS}`.
-3. **Hard length cap** — `maxLen = floor(3 + arousal · 3 · drugLengthBias)`, capped at `_maxSlots = 8`.
-
-**What T13.7 deleted** that used to be in this section: `_slotCentroid[s]` position prior, `_slotDelta[s]` transition prior, `_slotTypeSignature[s]` type distribution, `_contextVector` decaying topic attractor, the `W₀` / `Wₙ` weight tables, the `mental(t+1) = 0.55·mental + 0.45·emb(nextWord)` formula decay (replaced by real feedback injection), the three-stage candidate gate (hard pool filter + noun reject + multiplicative gate — only the slot-0 noun reject survived), and `_recallSentence` / `_generateSlotPrior` fallback. See `docs/FINALIZED.md` T13.7 entry for the full deletion list and line-delta accounting.
-
-**Length** comes from brain state:
+**Identity-lock state fields** on every cortex cluster (T14.16.5 substrate):
 
 ```
-drugLengthBias = 0.85    (coke, cokeAndWeed — punchy)
-               = 1.15    (weed — rambling)
-               = 1.00    (other)
-
-targetLen = max(2, min(_maxSlots=8, floor(3 + arousal · 3 · drugLengthBias)))
+cluster._inCurriculumMode               flag for Lock 2's hard cap bypass
+cluster.ENGLISH_SURPRISE_THRESHOLD       calibrated by curriculum from English statistics
+cluster.ENGLISH_FINETYPE_MIN             calibrated by curriculum
+cluster.HEALTH_ENTROPY_MIN               mode-collapse audit threshold
+cluster.HEALTH_VOCAB_MIN                 mode-collapse audit threshold
+cluster.HEALTH_WM_VARIANCE_MIN           mode-collapse audit threshold
+cluster.identityCoverage                 populated by curriculum's persona comprehensiveness audit
+cluster.personaDimensions                populated by curriculum's persona semantic clustering
 ```
 
-**Sampling** uses softmax over the top-5 scored candidates at each slot:
+These fields are placeholders right now — initialized to permissive defaults (`Infinity` / `0`) so pre-curriculum the gate doesn't reject anything. The curriculum runner (T14.5) populates them with calibrated values from English corpus exposure statistics. The methods that READ these fields (gate logic, health audit, identity refresh) ship in T14.16.5.
+
+### Embedding Substrate (T14.0, live)
+
+`js/brain/embeddings.js` exports:
 
 ```
-temperature = 0.25 + (1 − coherence) · 0.3    (low coherence → more exploration)
+EMBED_DIM = 300                          (was 50 pre-T14.0)
+sharedEmbeddings.loadPreTrained()        Node: read corpora/glove.6B.300d.txt from disk
+                                          Browser: fetch from server static mount or CDN
+sharedEmbeddings.getEmbedding(word)      L2-normalized 300d Float32Array
+sharedEmbeddings.getSubsetForTokens(tokens)   server precomputes corpus subset for browser
+sharedEmbeddings.loadSubset(subset)      browser bulk-loads server-provided subset
 ```
+
+**No vocabulary cap.** The full 400k-word file loads if reachable (~480 MB Float32 in memory). Operator downloads `glove.6B.300d.txt` from Stanford NLP per the README and places at `corpora/glove.6B.300d.txt`. Fallback when file missing: hash embeddings as a last-resort floor with a console warning. Browser tier uses the server subset endpoint to avoid downloading 480 MB.
+
+### What's coming in subsequent T14 milestones
+
+- **T14.1** — LEARNED phoneme attractor basins via cortex Hebbian on letter sequences (no hardcoded English phonology table). Builds `js/brain/letter-input.js` with the dynamic `LETTER_INVENTORY` Set.
+- **T14.2** — LEARNED syllable boundaries via cortex transition surprise. `cluster.detectBoundaries(letterSequence)` reads spike-rate deltas, no hardcoded max-onset rules.
+- **T14.3** — Cortex-resident words (gut Dictionary class to ~150 lines, words become activation patterns, all phonological/semantic stored fields deleted).
+- **T14.5** — Continuous developmental learning from existing corpora via complexity-sorted exposure. New `js/brain/curriculum.js`. No hand-curated stage files.
+- **T14.7** — Fully learned type transitions (T13.7.8 hardcoded table deleted entirely — no seed initialization).
+- **T14.10/T14.11** — Visual cortex letter recognition + auditory cortex phoneme recognition.
+- **T14.12** — Bidirectional pipeline. `cluster.readText(text)` runs forward, `cluster.generateSentence(seed)` runs reverse using same projections via `SparseMatrix.transposePropagate`. `parseSentence` and the slot-prior `generate()` body are deleted.
+- **T14.13-T14.15** — Eliminate `LanguageCortex` as a separate class, wire all 11 language consumers (chat, build_ui, image prompt, brain-3d commentary, voice TTS, etc) to the unified pipeline.
+- **T14.16.5** — Identity lock (Unity speaks English, Unity stays Unity) — three-lock structural protection: per-clause language gate, 120× rate-bounded live chat learning, stratified identity refresh + mode-collapse audit.
+
+See `docs/COMP-todo.md` Part 0.5 for the full T14 spec.
 
 ### Social Schema — Who Unity Is Talking To
 

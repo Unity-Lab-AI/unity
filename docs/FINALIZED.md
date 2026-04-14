@@ -5,6 +5,80 @@
 
 ---
 
+## 2026-04-14 — T14.0 + T14.4 substrate: Foundation lift + cortex sub-regions (first commit on `t14-language-rebuild` branch)
+
+**Context:** Gee accepted T14 (developmental language layers) as the active priority and asked for the work to ship on a new branch with one commit per milestone, masterful in-place doc updates each time, branch never merged to main until T14.17 is complete and verified. This is the first commit on the new `t14-language-rebuild` branch.
+
+**What this commit ships:**
+
+### T14.0 — Foundation lift (full GloVe + auto-scaled cortex)
+
+`js/brain/embeddings.js` — `EMBED_DIM` lifted from 50 to 300. The 50-dim ceiling was the structural limit on Unity's slot-3+ semantic resolution. 300-dim gives roughly 6× the discriminating power between fine semantic neighbors. Real GloVe loader is now wired:
+
+- `loadPreTrained()` actually calls `_doLoad()` (was stubbed to return 0 immediately in T13)
+- `_doLoad()` rewritten with runtime detection — Node side reads `corpora/glove.6B.300d.txt` from disk via `fs.readFileSync` with multiple candidate paths relative to `cwd` and module location; browser side fetches via `GLOVE_URLS` array (server `/corpora/` mount as primary, Stanford NLP and HuggingFace as fallbacks)
+- **No vocabulary cap.** The `if (count >= 10000) break;` line that capped T13 is gone. The full 400k-word file loads when reachable. ~480 MB Float32 in memory on the server, which is acceptable for the brain server hardware tier
+- Hash embeddings remain as a last-resort floor when no GloVe is reachable, with a console warning telling the operator to download `glove.6B.300d.txt` from Stanford NLP and place it at `corpora/glove.6B.300d.txt`
+- New `getSubsetForTokens(tokens)` method — server precomputes a corpus-token-only subset for browser-side bulk load, so the browser doesn't have to download 480 MB. Returns `{word: Array<number>}` shape
+- New `loadSubset(subset)` method — browser bulk-load entry point, unpacks the server subset into `_embeddings` Map
+
+`js/brain/engine.js` — `TOTAL_NEURONS` bumped from 1000 to **6700** (default client minimum tier). The previous 1000 was a 50d-era client floor; with 300d embeddings and the 8-region cortex layout, ~6700 is the minimum that gives every region a meaningful neuron count even at the smallest tier. New `CLUSTER_FRACTIONS` constant defines per-cluster fractions: cortex 0.30, hippocampus 0.10, amygdala 0.08, basalGanglia 0.08, cerebellum 0.40, hypothalamus 0.02, mystery 0.02. `CLUSTER_SIZES` is derived from `Object.fromEntries(...)` over `CLUSTER_FRACTIONS` × `TOTAL_NEURONS`. Same code at any scale — server-side `detectResources` picks `TOTAL_NEURONS` from auto-detected hardware tier (Phase 0 admin config) and the cluster sizes scale proportionally with no special cases.
+
+### T14.4 substrate — Cortex sub-regions + cross-region projections
+
+`js/brain/cluster.js` constructor extended:
+
+- **8 named sub-regions** populated only on the cortex cluster (other clusters get an empty `regions` object for API symmetry). Sized as fractions of `cluster.size`:
+  - `auditory` 0.000-0.083 (T14.11)
+  - `visual` 0.083-0.250 (T14.10)
+  - `free` 0.250-0.500 (inter-cluster sink + working memory)
+  - `letter` 0.500-0.550 (T14.1)
+  - `phon` 0.550-0.750 (T14.1+T14.2)
+  - `sem` 0.750-0.917 (T14.0)
+  - `fineType` 0.917-0.967 (T14.7)
+  - `motor` 0.967-1.000 (T14.12)
+- **12 cross-region projections** (6 named pairs × 2 directions) initialized 10% density, weight range `[-0.5, 0.5]`. Pairs: visual↔letter, letter↔phon, phon↔sem, sem↔fineType, sem↔motor, auditory↔phon. Stored as `cluster.crossProjections` Map of SparseMatrix instances keyed `'src_to_dst'`
+- **New helper methods on the cluster:**
+  - `regionSpikes(name)` — returns Float64Array of binary spikes for a named region
+  - `injectEmbeddingToRegion(name, emb, strength)` — write embedding-shaped current into a named region. Replaces the legacy `mapToCortex(emb, size, langStart=150)` literal-offset pattern
+  - `regionReadout(name, dim)` — read embedding-shaped output from a named region (inverse of injectEmbeddingToRegion). L2-normalized output
+  - `_propagateCrossRegions()` — iterates all 12 cross projections, propagates source-region spikes through each into the destination region's `externalCurrent` at strength 0.35
+  - `_crossRegionHebbian(lr)` — iterates all 12 cross projections, runs Hebbian update on each using current src/dst region spike snapshots
+- **Step + learn integration:**
+  - `cluster.step(dt)` calls `_propagateCrossRegions()` BEFORE current accumulation, so cross-region inputs fold into `externalCurrent` and pick up via the standard current loop
+  - `cluster.learn(rewardSignal)` calls `_crossRegionHebbian(this.learningRate)` AFTER the existing internal-synapse Hebbian, so cross-region projections train through normal use during corpus exposure + live chat. ALWAYS ON — no curriculum-complete gate
+- **T14.16.5 identity-lock state fields** initialized to permissive defaults: `_inCurriculumMode = false`, `ENGLISH_SURPRISE_THRESHOLD = Infinity`, `ENGLISH_FINETYPE_MIN = 0`, `HEALTH_ENTROPY_MIN = 0`, `HEALTH_VOCAB_MIN = 0`, `HEALTH_WM_VARIANCE_MIN = 0`, `identityCoverage = null`, `personaDimensions = null`. Curriculum (T14.5) populates these with calibrated values from English corpus exposure statistics. The methods that READ these fields (gate logic, health audit, identity refresh) ship in T14.16.5
+
+### Doc updates (in-place, masterful, not addendums)
+
+- **`docs/ARCHITECTURE.md`** — entire pre-existing "Language Generation Pipeline — T13 Brain-Driven Cortex (LIVE)" section deleted in place and replaced with a new "Language Pipeline — T14 Developmental Cortex" section that describes the live T14 substrate (sub-regions table, cross-projection table, embedding substrate, cluster sizing, identity-lock state fields, what's coming next on the branch). The obsolete "Language Generation Pipeline — T11 Pure Equational Cortex" historical section that was sitting underneath was also deleted (212 lines of pre-T13 walkthrough — superseded by T13 which was just superseded by T14, no value in keeping any of it)
+- **`docs/EQUATIONS.md`** — "Three Per-Slot Priors" + "T13.1 Equation" + "Generation Equation" + the related slot-prior length/sampling sections all deleted in place and replaced with a new "T14 Cortex Sub-Region Substrate" section that describes the sub-region layout, cross-region projection equations, region-aware injection/readout, identity-lock state fields, and the 300d embedding substrate. Plus a "What's coming in subsequent T14 milestones" forward-looking pointer
+- **`docs/SKILL_TREE.md`** — "Cortex-state driven generation" row updated in place to reflect REBUILDING status under T14. "Persona Hebbian training" row marked SUPERSEDED by T14.5 curriculum. Five new rows added: "Cortex sub-regions", "Cortex cross-region projections", "GloVe 300d full vocabulary", "Auto-scaled cluster sizes". Each row points at the specific files + methods that ship the capability
+- **`docs/ROADMAP.md`** — new "Phase 16 (T14): Developmental Language Layers — IN PROGRESS" entry inserted at the top of the language phase section (above the now-historical T13 phase). Contains the full T14.0 + T14.4 substrate milestone breakdown with file-by-file change description
+- **`docs/FINALIZED.md`** — this entry. Permanent archive of what shipped in this first T14 commit
+- **`docs/TODO.md`** — T14.0 + T14.4 substrate marked as in-progress under the T14 master entry (separate edit on the same commit)
+- **`docs/COMP-todo.md`** — already up to date with the full T14 spec from earlier doc-only commits. No change needed in this commit
+
+### Files touched (code)
+
+- `js/brain/embeddings.js` — header doc rewritten, `EMBED_DIM` 50 → 300, `GLOVE_URLS` updated to 300d sources, `GLOVE_LOCAL_PATH` constant added, `loadPreTrained()` actually calls `_doLoad()`, `_doLoad()` rewritten with Node fs + browser fetch paths, no vocabulary cap, `getSubsetForTokens()` + `loadSubset()` added. `getEmbedding()` doc comment updated to reference EMBED_DIM not 50d
+- `js/brain/cluster.js` — `regions` field + `crossProjections` field + identity-lock state fields added in constructor for cortex cluster. Five new helper methods (`regionSpikes`, `injectEmbeddingToRegion`, `regionReadout`, `_propagateCrossRegions`, `_crossRegionHebbian`). `step()` calls `_propagateCrossRegions()` before current accumulation. `learn()` calls `_crossRegionHebbian()` after internal-synapse Hebbian
+- `js/brain/engine.js` — `TOTAL_NEURONS` bumped to 6700, `CLUSTER_FRACTIONS` constant added, `CLUSTER_SIZES` derived from fractions
+
+### Verification
+
+- `node -c js/brain/embeddings.js` — clean
+- `node -c js/brain/cluster.js` — clean
+- `node -c js/brain/engine.js` — clean
+
+No runtime testing in this commit. Per Gee 2026-04-14: "we dont test until all work is done." The branch accumulates T14.0 through T14.17 commits, then verifies once at the end before merging to main.
+
+### What's next on the branch
+
+T14.1 — LEARNED phoneme attractor basins via cortex Hebbian on letter sequences. Builds `js/brain/letter-input.js` with the dynamic `LETTER_INVENTORY` Set, the `encodeLetter(letter)` one-hot encoder, and integration into `cluster.injectLetter(letter)`. Curriculum (T14.5) Phase 1 will then train the cluster's letter-region recurrent synapses via Hebbian on letter sequences from the persona/baseline/coding corpora. After T14.1 the cortex has a substrate ready to learn phonemes the way a real brain does — from exposure to letter co-occurrence patterns, not from a hardcoded English phonology table.
+
+---
+
 ## 2026-04-14 — T13.7.2: stale bundle silent-fallback (the REAL reason Unity was dead)
 
 **Context:** After shipping T13.7.1 (the comment-swallow fix that restored `_isNominativePronoun`), my node smoke test produced output through every layer — full UnityBrain construction, loadPersona, trainPersonaHebbian, processAndRespond, the works. But Gee booted in his browser and reported: *"No Unity talking, no unity thought or comments in popup and no unity voice or chat its like her brain is dead."* Total brain death — not even the sensory autodetect toasts firing. That meant something was breaking BEFORE any brain code ran.

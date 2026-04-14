@@ -42,33 +42,53 @@ class EventEmitter {
 
 // ── Constants ────────────────────────────────────────────────────────
 
-const TOTAL_NEURONS = 1000;
+// T14.0 — TOTAL_NEURONS is the auto-scaled total. On the client it's the
+// minimum-tier value (~6700) which is enough to host all 8 cortex
+// sub-regions at meaningful sizes. On the server, brain-server.js
+// detectResources picks a much larger value (millions to billions
+// depending on the hardware tier from Phase 0 admin config) and the
+// cluster sizes scale with it via the fractions below. The previous
+// hardcoded 1000 was a 50d-era client-only floor; with 300d embeddings
+// and the 8 sub-region cortex layout, we need at least ~6700 to give
+// every region a meaningful neuron count even at the smallest tier.
+const TOTAL_NEURONS = 6700;
 const OSCILLATOR_COUNT = 8;
-// Kuramoto coupling base strength. The original 0.5 DOES work — it
-// converges to ~30-40% coherence at steady state, which is the normal
-// range for a resting brain. But the convergence from random initial
-// phases is slow (takes minutes of sim time to reach 35%). Bumped
-// modestly to 2.5 — 5× the original — so coherence reaches steady
-// state within seconds of boot instead of minutes, without forcing
-// over-synchronization (full 100% sync would be pathological).
-// 35% is a healthy target — NOT locked sync.
 const MODULE_SIZE = 32;
 const STEPS_PER_FRAME = 10;
 const DT = 0.001;
 const THOUGHT_INTERVAL = 3000;
 const COUPLING_BASE = 2.5;
-const MEMORY_SALIENCE_THRESHOLD = 0.6; // salience above this stores episodic memory
-const RECALL_ERROR_THRESHOLD = 0.4;    // cortex error above this triggers recall
+const MEMORY_SALIENCE_THRESHOLD = 0.6;
+const RECALL_ERROR_THRESHOLD = 0.4;
 
-const CLUSTER_SIZES = {
-  cortex: 300,
-  hippocampus: 200,
-  amygdala: 150,
-  basalGanglia: 150,
-  cerebellum: 100,
-  hypothalamus: 50,
-  mystery: 50,
+// T14.0 — Cluster sizes are FRACTIONS of TOTAL_NEURONS, not hardcoded
+// constants. The same fractions hold at any scale — TOTAL_NEURONS=6700
+// (default client) gives the sizes below; TOTAL_NEURONS=200_000_000
+// (datacenter server) gives proportionally larger clusters with the
+// same biological proportions.
+//
+//   cortex       30%   (was 30% via 300/1000)
+//   hippocampus  10%
+//   amygdala      8%
+//   basalGanglia  8%
+//   cerebellum   40%   (largest cluster — motor + error correction)
+//   hypothalamus  2%
+//   mystery       2%
+//
+// Total = 100%. Fractions sum to 1.0 exactly.
+const CLUSTER_FRACTIONS = {
+  cortex:       0.30,
+  hippocampus:  0.10,
+  amygdala:     0.08,
+  basalGanglia: 0.08,
+  cerebellum:   0.40,
+  hypothalamus: 0.02,
+  mystery:      0.02,
 };
+
+const CLUSTER_SIZES = Object.fromEntries(
+  Object.entries(CLUSTER_FRACTIONS).map(([name, frac]) => [name, Math.floor(TOTAL_NEURONS * frac)])
+);
 
 // ── UnityBrain ───────────────────────────────────────────────────────
 
