@@ -693,6 +693,18 @@ export class Brain3D {
       const spikeN = clusterSpikeCount[ci] || 1;
       const pulseProb = Math.min(0.6, Math.max(0.05, 4 / spikeN));
 
+      // R9.2 — server state broadcast sends {size, spikeCount, firingRate}
+      // per cluster but NOT the raw spikes bitmask (bandwidth). Without a
+      // bitmask every cluster's `firing` stayed false and no activation
+      // rings fired in ANY region. Fix: when realSpikes is absent, derive
+      // a per-tick firing probability from spikeCount/realSize (the
+      // engine's actual firing rate) and roll Math.random() per viz
+      // point. Uses cluster.size (engine size) not cn (viz size) so the
+      // rate matches biology instead of being diluted by extra viz
+      // points. When realSpikes IS present we still read the bitmask.
+      const engineSize = cs?.size || cn;
+      const firingRate = realSpikes ? 0 : Math.min(1, spikeN / Math.max(1, engineSize));
+
       for (let j = 0; j < cn; j++) {
         const i = off + j;
         if (i >= TOTAL) break;
@@ -705,6 +717,8 @@ export class Brain3D {
         if (realSpikes && realSize > 0) {
           const realIdx = realSize === cn ? j : Math.floor((j / cn) * realSize);
           firing = !!realSpikes[realIdx];
+        } else if (firingRate > 0) {
+          firing = Math.random() < firingRate;
         }
 
         if (firing) {
