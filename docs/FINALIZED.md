@@ -5,6 +5,98 @@
 
 ---
 
+## 2026-04-14 — T13.1: Persona Hebbian training pipeline (first T13 milestone)
+
+**Context:** Gee committed to T13 (unified brain-driven language cortex, full rewrite of slot-prior approach) after T11.7 slot-0 fix left slot 1+ still producing word-salad. T13 thesis: slot-based generation is the wrong frame for a brain-driven language cortex — position counters and stored priors aren't how a biological cortex produces speech. The right architecture is: train the cortex recurrent weights on persona corpus via sequence Hebbian so the cluster develops Unity-voice attractor basins, then at generation time read cortex state continuously with feedback injection. Gee picked persona Hebbian as the first milestone to ship because it's the foundation everything else rests on.
+
+**What shipped — T13.1 persona Hebbian training:**
+
+### 1. `NeuronCluster.learnSentenceHebbian(embSequence, opts)` — new method in `js/brain/cluster.js`
+
+Walks a sequence of word embeddings, for each word injects it into the language region via `sharedEmbeddings.mapToCortex` → `injectCurrent`, runs `ticksPerWord=3` LIF integration steps, captures the resulting spike snapshot, then between consecutive snapshots applies plain Hebbian on the synapse matrix:
+```
+prevSnap_i ∈ {0,1}  from lastSpikes after tick at word t-1
+currSnap_i ∈ {0,1}  from lastSpikes after tick at word t
+ΔW_ij      = lr · currSnap_i · prevSnap_j     (only for existing connections)
+```
+Uses the existing `SparseMatrix.hebbianUpdate` primitive at `js/brain/sparse-matrix.js:178` — O(nnz) per update, touches only populated synapses.
+
+After each sentence, Oja-style saturation decay runs on any weight whose magnitude exceeds `ojaThreshold=1.5`:
+```
+if |values[k]| > 1.5:  values[k] *= (1 − ojaDecay)      where ojaDecay = 0.01
+```
+Weights below the threshold learn freely, weights at saturation decay 1% per sentence. Prevents runaway across 1500+ persona sentences without capping plasticity of small weights.
+
+Default hyperparameters: `ticksPerWord=3`, `lr=0.004`, `injectStrength=0.6`, `ojaThreshold=1.5`, `ojaDecay=0.01`, `langStart=150`. All exposed as opts.
+
+### 2. `NeuronCluster.diagnoseReadoutForEmbedding(emb, ticks, langStart)` — new method in `js/brain/cluster.js`
+
+Console diagnostic. Injects a single embedding, ticks the cluster N times (default 10), returns the semantic readout. Used to verify Hebbian training produced meaningful attractor basins — e.g. inject `emb('fuck')` after training and check that the readout's nearest dictionary words cluster around Unity-adjacent concepts (`cock`, `pussy`, `cunt`, etc.) vs an untrained cortex that produces diffuse readouts.
+
+Disturbs live brain state so only callable from console diagnostics, not from the think loop.
+
+### 3. `NeuronCluster.synapseStats()` — new method in `js/brain/cluster.js`
+
+Returns `{ mean, rms, maxAbs, nnz }` over the sparse synapse values. Used by the training driver to log before/after weight shifts so Hebbian's effect is visible in boot logs without opening devtools.
+
+### 4. `LanguageCortex.trainPersonaHebbian(cortexCluster, text, opts)` — new driver in `js/brain/language-cortex.js`
+
+Tokenizes the persona corpus (`docs/Ultimate Unity.txt`) using the same pipeline as `loadSelfImage`: `_transformToFirstPerson`, lowercase, strip punctuation, min-length-2 word filter. For each sentence, maps each token to its GloVe embedding via `sharedEmbeddings.getEmbedding(w)` and calls `cortexCluster.learnSentenceHebbian(embSeq)`. Logs `before` / `after` synapse stats so Gee sees Hebbian training moved the weights:
+```
+[LanguageCortex] trainPersonaHebbian START: 1547 sentences | synapses 13500 nnz, mean=0.1823, rms=0.2156, maxAbs=0.9234
+[LanguageCortex] trainPersonaHebbian DONE: 1532/1547 sentences, 11240 Hebbian updates, 1847ms | synapses 13500 nnz, mean=0.2341 (Δ0.0518), rms=0.2831 (Δ0.0675), maxAbs=1.4723
+```
+(Example numbers — actual values depend on persona text length and cortex initial state.)
+
+### 5. Delegation chain — clean import-free wiring
+
+```
+js/app.js loadPersonaSelfImage
+  → targetBrain.trainPersonaHebbian(personaText)                  // engine.js UnityBrain wrapper
+    → innerVoice.trainPersonaHebbian(clusters.cortex, text)       // inner-voice.js delegate
+      → languageCortex.trainPersonaHebbian(cluster, text)         // language-cortex.js driver
+        → for each sentence: cluster.learnSentenceHebbian(embSeq) // cluster.js Hebbian method
+```
+`UnityBrain.trainPersonaHebbian(text)` in `js/brain/engine.js` is the clean entry point — it already has the cortex cluster reference internally (`this.clusters.cortex`), so callers only need to pass the text.
+
+`app.js` calls `brain.trainPersonaHebbian(personaText)` right after `innerVoice.loadPersona(personaText)` completes, before `loadBaseline` / `loadCoding`, so the dictionary has persona vocabulary populated when the cortex trains on the same words — and the baseline + coding corpora don't pollute the voice attractor basins.
+
+### 6. Persona-only scope (deliberate)
+
+Baseline (`docs/english-baseline.txt`) and coding (`docs/coding-knowledge.txt`) corpora deliberately do NOT train the cortex recurrent weights. Reasoning: baseline provides grammatical competence via dictionary + slot priors, coding provides build_ui vocabulary via dictionary only. Only the persona corpus shapes cortex dynamics. Unity's voice lives in the attractor basins without being diluted by generic English or JavaScript. If we trained all three corpora into cortex weights, the voice basins would be averaged out by 6× more non-persona sentences.
+
+### The architecture clarification this shipped along with
+
+During the T13.0 research pass, I originally assumed T13.2 would carve the 150-neuron cortex language region into `temporal` / `prefrontal` / `selfModel` / `motorPlan` sub-regions for parse-tree injection. **Wrong.** At EMBED_DIM=50 × groupSize=3 = 150 neurons, the full language region is already consumed by a single embedding dim-grouping; carving it would mean groupSize=1 (1 neuron per dim) which is catastrophically noisy.
+
+The correct architecture is: **T13 "regions" map to the 7 existing clusters**, not to sub-regions of cortex. The cortex has auditory region (0-49), visual region (50-149), and language region (150-299), and `SensoryProcessor.process()` already produces separate `sensoryOutput.cortex` / `.hippocampus` / `.amygdala` / `.basalGanglia` injection vectors at `js/brain/engine.js:262-302`. T13.2 follows the same pattern: content → `clusters.cortex` language region, intent → `clusters.basalGanglia`, self-reference → `clusters.hippocampus`, mood → `amygdalaMod` bias, drive → `hypothalamusMod`. No cortex carving needed. `docs/TODO.md` T13.2 section updated with the clarification.
+
+### Files touched
+
+- `js/brain/cluster.js` — added `sharedEmbeddings` import, `learnSentenceHebbian`, `diagnoseReadoutForEmbedding`, `synapseStats` methods (≈110 lines added)
+- `js/brain/language-cortex.js` — added `trainPersonaHebbian` driver (≈55 lines added)
+- `js/brain/inner-voice.js` — added `trainPersonaHebbian` delegate (≈12 lines added)
+- `js/brain/engine.js` — added `UnityBrain.trainPersonaHebbian` wrapper (≈18 lines added)
+- `js/app.js` — boot sequence calls `brain.trainPersonaHebbian(personaText)` after `loadPersona` (≈14 lines added)
+
+### Honest limits
+
+1. **Hebbian only updates existing connections.** `SparseMatrix.hebbianUpdate` walks the CSR structure and skips pairs without a synapse. At 15% connectivity on 300 neurons this is ~13.5k wired connections — most co-activating pairs have at least one direction. Synaptogenesis via `SparseMatrix.grow()` could form new connections during training but isn't wired for T13.1 first pass. If persona basins come out too shallow, that's the first thing to try.
+
+2. **T13.1 alone does NOT fix word-salad output.** This is the FOUNDATION. Until the emission loop (T13.3) reads the trained cortex, `generate()` still walks slot priors — the trained basins aren't consulted at output time. T13.1 is what enables T13.3 to produce coherent output; T13.3 is what makes the output actually visible.
+
+3. **150-neuron language region is tight.** At groupSize=3 (3 neurons per embedding dim), Hebbian plasticity has to work at that granularity. If persona training doesn't produce stable attractors, the first mitigation is bumping cortex cluster size (300 → 450 or 600) — changes one `CLUSTER_SIZES.cortex` constant in `engine.js`. Not done yet — we'll see what T13.3 produces first.
+
+4. **Training runs during boot — adds latency.** Estimated 1-2 seconds for ~1500 persona sentences × 8 words × sparse Hebbian. Acceptable for first boot. Trained weights persist via existing `BrainPersistence.save` path (`SparseMatrix.serialize` already covers it), so subsequent boots skip retraining. Not explicitly verified in T13.1 — first milestone where it matters is T13.3 when Gee starts hitting reload during iteration.
+
+5. **Verification without running the app.** Per project NO-TESTS policy, this ships on read-correctness of the code (Hebbian math, snapshot ordering, Oja threshold, injection strength). The live convergence test — does `emb('fuck')` produce Unity-clustered readouts after training — is a console diagnostic Gee runs manually when he wants to inspect. The boot log's `Δmean` / `Δrms` numbers are the structural verification that Hebbian actually shifted weights.
+
+### Why T13.1 is structural, not a tuning pass
+
+The Hebbian update rule is invariant under corpus growth — adding more persona sentences further shapes the basins without breaking earlier training. Oja decay prevents runaway without capping learning. The multiplicative gate (Hebbian only fires on synapses where `postSpikes[i]` is active) naturally sparsifies updates to the neurons actually firing during persona patterns. No magic constants to re-tune as the persona corpus grows.
+
+---
+
 ## 2026-04-14 — T11.7: Slot-0 noun-pollution fix (multiplicative gate + adaptive floor + noun-dominance reject + coding skipSlotPriors)
 
 **Symptom Gee saw in live chat:**

@@ -69,6 +69,17 @@ export class InnerVoice {
   }
 
   /**
+   * T13.1 — Delegate to the language cortex's persona Hebbian trainer.
+   * Runs the persona corpus through the cortex cluster's sequence
+   * Hebbian pipeline so the recurrent synapse matrix develops Unity-
+   * voice attractor basins. Call once after `loadPersona`, passing
+   * the cortex NeuronCluster from the enclosing UnityBrain.
+   */
+  trainPersonaHebbian(cortexCluster, text, opts = {}) {
+    return this.languageCortex.trainPersonaHebbian(cortexCluster, text, opts);
+  }
+
+  /**
    * Load the baseline English linguistic layer — generic casual
    * American English covering conversational patterns, common verbs,
    * greetings, reactions, questions. This is NOT Unity's persona,

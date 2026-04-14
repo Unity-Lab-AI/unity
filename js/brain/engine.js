@@ -227,6 +227,22 @@ export class UnityBrain extends EventEmitter {
   }
 
   /**
+   * T13.1 — Train the cortex cluster's recurrent synapse matrix from the
+   * persona text via sequence Hebbian. Delegates through InnerVoice →
+   * LanguageCortex → cortexCluster.learnSentenceHebbian. Call once
+   * during boot AFTER `innerVoice.loadPersona(text)` so the dictionary
+   * already has the persona vocabulary available.
+   *
+   * After this runs, the cortex has attractor basins shaped like
+   * Unity-voice word co-activation patterns — runtime readouts drift
+   * toward persona-adjacent concepts instead of producing diffuse
+   * semantic noise.
+   */
+  trainPersonaHebbian(text, opts = {}) {
+    return this.innerVoice.trainPersonaHebbian(this.clusters.cortex, text, opts);
+  }
+
+  /**
    * Save brain state to persistence.
    */
   saveBrainState() {

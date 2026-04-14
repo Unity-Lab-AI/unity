@@ -285,6 +285,68 @@ export class LanguageCortex {
   }
 
   /**
+   * T13.1 — Persona Hebbian training driver.
+   *
+   * After `loadSelfImage` has populated the dictionary with persona
+   * vocabulary, this method runs the SAME persona text through the
+   * cortex cluster via sequence Hebbian — sentence by sentence, word
+   * by word — so the cluster's recurrent synapse matrix develops
+   * Unity-voice attractor basins. At runtime during generation,
+   * injecting any concept embedding pulls cortex state along those
+   * basins, making readouts semantically persona-shaped instead of
+   * diffuse.
+   *
+   * The cortex cluster's own `learnSentenceHebbian` method handles
+   * the tick-inject-Hebbian inner loop; this driver is just the
+   * tokenize-and-embed outer walk over the persona corpus.
+   *
+   * Logs before/after synapse weight stats so Gee can see Hebbian
+   * actually moved the weights without opening devtools.
+   *
+   * @param {NeuronCluster} cortexCluster
+   * @param {string} text — raw persona corpus text
+   * @param {object} [opts] — forwarded to learnSentenceHebbian
+   * @returns {{sentences:number, updates:number, ms:number, before:object, after:object}}
+   */
+  trainPersonaHebbian(cortexCluster, text, opts = {}) {
+    if (!cortexCluster || typeof cortexCluster.learnSentenceHebbian !== 'function' || !text) {
+      return { sentences: 0, updates: 0, ms: 0, before: null, after: null };
+    }
+
+    const sentences = String(text)
+      .replace(/[*_#`>|\[\]()]/g, ' ')
+      .split(/[.!?\n\r]+/)
+      .map(s => s.trim())
+      .filter(s => s.length >= 3);
+
+    const before = cortexCluster.synapseStats();
+    console.log(`[LanguageCortex] trainPersonaHebbian START: ${sentences.length} sentences | synapses ${before.nnz} nnz, mean=${before.mean.toFixed(4)}, rms=${before.rms.toFixed(4)}, maxAbs=${before.maxAbs.toFixed(4)}`);
+    const startTime = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+
+    let totalUpdates = 0;
+    let trained = 0;
+    for (const raw of sentences) {
+      try {
+        const firstPerson = this._transformToFirstPerson(raw);
+        const tokens = firstPerson.toLowerCase().replace(/[^a-z' -]/g, ' ').split(/\s+/).filter(w => w.length >= 2);
+        if (tokens.length < 2) continue;
+
+        const embSeq = tokens.map(w => sharedEmbeddings.getEmbedding(w));
+        const updates = cortexCluster.learnSentenceHebbian(embSeq, opts);
+        totalUpdates += updates;
+        trained++;
+      } catch (err) {
+        console.warn('[LanguageCortex] trainPersonaHebbian sentence failed:', err.message);
+      }
+    }
+
+    const ms = Math.round(((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - startTime);
+    const after = cortexCluster.synapseStats();
+    console.log(`[LanguageCortex] trainPersonaHebbian DONE: ${trained}/${sentences.length} sentences, ${totalUpdates} Hebbian updates, ${ms}ms | synapses ${after.nnz} nnz, mean=${after.mean.toFixed(4)} (Δ${(after.mean - before.mean).toFixed(4)}), rms=${after.rms.toFixed(4)} (Δ${(after.rms - before.rms).toFixed(4)}), maxAbs=${after.maxAbs.toFixed(4)}`);
+    return { sentences: trained, updates: totalUpdates, ms, before, after };
+  }
+
+  /**
    * Load baseline English linguistic layer — generic casual American
    * English sentences covering conversational patterns, common verbs,
    * greetings, questions, reactions, etc. This is NOT Unity's persona

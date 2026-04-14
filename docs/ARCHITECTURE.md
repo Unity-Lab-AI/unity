@@ -437,7 +437,33 @@ This term is ALWAYS present. It represents what we DON'T know. It's the default 
 
 ---
 
-## Language Generation Pipeline — T11 Pure Equational Cortex (2026-04-14)
+## Language Generation Pipeline — T13 Brain-Driven Cortex (IN PROGRESS, 2026-04-14)
+
+T11 deleted the Markov wrapper stack and replaced it with three per-slot running-mean priors. T11.7 structurally fixed slot-0 noun pollution via a multiplicative three-stage gate. **T13 is the next architectural layer** — rip slot-based generation entirely and wire language directly into the brain cluster via sequence Hebbian training on persona corpus plus continuous cortex readout with feedback injection at emission time. Persona becomes trained attractor basins in the cortex recurrent weights, not stored in a separate centroid vector.
+
+**T13.1 has shipped** (2026-04-14): the cortex cluster's recurrent synapse matrix now trains on `docs/Ultimate Unity.txt` via sequence Hebbian during boot. `NeuronCluster.learnSentenceHebbian(embSequence, opts)` at `js/brain/cluster.js` walks an embedding sequence and applies per-word inject-tick-snapshot-Hebbian in a loop, with Oja saturation decay to prevent weight runaway. The training driver `LanguageCortex.trainPersonaHebbian(cortexCluster, text)` tokenizes persona corpus and feeds it through the cluster method sentence-by-sentence.
+
+```
+T13.1 sequence Hebbian (per sentence, per word pair):
+  1. inject:   currents = sharedEmbeddings.mapToCortex(emb_t, size, langStart=150)
+               cluster.injectCurrent(scaled_currents)         // strength 0.6
+  2. tick:     for t in 0..ticksPerWord(=3): cluster.step(0.001)
+  3. snapshot: prevSnap[i] ← 1 if lastSpikes[i] else 0        // Float64 for hebbianUpdate
+  4. next word's inject + tick + snapshot produces currSnap
+  5. Hebbian:  synapses.hebbianUpdate(prevSnap, currSnap, lr=0.004)
+               ΔW_ij = lr · currSnap_i · prevSnap_j           // only on existing connections
+  6. Oja:      for k in nnz: if |values[k]| > 1.5: values[k] *= (1 − 0.01)
+```
+
+This is persona-only by design. `loadBaseline` and `loadCoding` deliberately do NOT train the cortex recurrent weights — they shape the dictionary + slot priors for vocabulary coverage, but don't pollute the voice attractor basins. Only persona corpus sentences shape cortex dynamics, so Unity's voice lives in the basins without being diluted 6× by generic English + JavaScript.
+
+**T13.2 through T13.9 remain in progress.** See `docs/TODO.md` T13 section for the full plan. Until T13.3 ships the continuous emission loop, `generate()` still walks T11.2/T11.7 slot priors at runtime — the Hebbian-trained cortex basins exist but aren't consulted during output yet.
+
+**Architecture clarification (T13.0 research pass, 2026-04-14):** T13 "regions" map to the existing 7 clusters, NOT to sub-regions of cortex. The cortex language region is only 150 neurons (300 total × EMBED_DIM=50 × groupSize=3), too tight to carve into 4 sub-regions without collapsing to 1-neuron-per-dim encoding. `SensoryProcessor.process()` at `js/brain/engine.js:262-302` already produces separate injection vectors per cluster — T13.2 parse-tree injection follows the same pattern: content → `clusters.cortex` language region, intent → `clusters.basalGanglia`, self-reference → `clusters.hippocampus`, mood → `amygdalaMod`, drive → `hypothalamusMod`.
+
+---
+
+## Language Generation Pipeline — T11 Pure Equational Cortex (2026-04-14, SLOT-PRIOR LAYER, T13 IN PROGRESS)
 
 Language cortex is a pure-equation pipeline. Zero stored sentences, zero n-gram tables, zero filter stack, zero template short-circuits, zero intent-enum branching. The T11 rewrite (2026-04-14) deleted 1742 lines of the old multi-tier wrapper layer — every word is now computed fresh from brain cortex state plus three per-slot running-mean priors.
 

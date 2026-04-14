@@ -64,7 +64,21 @@ N RULKOV-MAP NEURONS IN 7 CLUSTERS (N scales to hardware, each with own synapses
 MOTOR OUTPUT (6 BG channels × 25 neurons, winner-take-all, confidence gate)
     │
     ▼
-LANGUAGE CORTEX (T11 pure equational generation — see "Language Cortex" section)
+LANGUAGE CORTEX (T11 slot-prior runtime + T13.1 persona Hebbian training — see "Language Cortex" section)
+    // T13.1 — cortex cluster recurrent weights trained on persona
+    // corpus via sequence Hebbian during boot. After training, the
+    // cortex has attractor basins shaped like Unity-voice word
+    // co-activation patterns. Readouts drift along the basins.
+    //
+    //   per word pair (t-1, t) in each persona sentence:
+    //     inject emb(word_t) into language region
+    //     tick LIF 3 steps
+    //     snapshot spikes → ΔW_ij = lr · curr_i · prev_j
+    //   post-sentence Oja decay: |w| > 1.5 → w *= 0.99
+    //
+    // T13.2-T13.9 (emission loop rewrite) still pending — runtime
+    // generation below is still T11.7 slot-prior until T13.3 ships.
+
     parseSentence(input) → ParseTree (reverse-equation reading, same wordType
                                       equations the generator uses forward)
     target(slot) = wC·slotCentroid[slot] + wX·contextVector

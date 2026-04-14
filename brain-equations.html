@@ -1069,6 +1069,43 @@ Wₙ         = { centroid:0.10, context:0.15, mental:0.25, transition:0.50 }
     </div>
 
     <div class="eq-box" style="margin-top:12px;">
+      <div class="eq-title"><span class="eq-tip" data-tip="T13.1 2026-04-14: cortex cluster recurrent synapse matrix now trains on persona corpus via sequence Hebbian during boot. For each consecutive word pair in a persona sentence, inject the word embedding into the language region, tick the LIF integrator 3 steps, snapshot spikes, then apply plain Hebbian between consecutive snapshots (ΔW_ij = η · curr_i · prev_j) on the existing CSR connections. Oja saturation decay post-sentence prevents weight runaway. Persona-only scope — baseline and coding corpora bypass Hebbian to avoid diluting voice attractor basins.">T13.1 — Persona Hebbian Training on Cortex Cluster</span></div>
+      <pre class="eq">
+For each persona sentence (tokenized into embedding sequence):
+  for each word embedding emb_t in sequence:
+    // 1. Inject word into cortex language region via mapToCortex
+    currents = sharedEmbeddings.mapToCortex(emb_t, cortexSize=300, langStart=150)
+    cortex.injectCurrent(currents · injectStrength)         // injectStrength = 0.6
+
+    // 2. Let LIF integrator settle (cortex spikes reflect injection + recurrence)
+    for tick in 0..ticksPerWord:                            // ticksPerWord = 3
+      cortex.step(dt=0.001)
+
+    // 3. Snapshot current spike pattern as binary Float64 vector
+    snap_t[i] = 1 if cortex.lastSpikes[i] else 0
+
+    // 4. Sequence Hebbian between prev snapshot and current snapshot
+    if prev_snap exists:
+      synapses.hebbianUpdate(prev_snap, snap_t, lr=0.004)
+      // ΔW_ij = lr · snap_t[i] · prev_snap[j]
+      // only updates existing CSR connections, O(nnz)
+      // bounded by wMin=-2, wMax=+2
+
+    prev_snap ← snap_t
+
+// 5. Oja-style saturation decay per sentence
+for k in 0..synapses.nnz:
+  if |synapses.values[k]| > ojaThreshold:                   // ojaThreshold = 1.5
+    synapses.values[k] *= (1 − ojaDecay)                    // ojaDecay = 0.01
+
+// Logged before/after:
+//   synapseStats() = { mean, rms, maxAbs, nnz }
+//   Δmean and Δrms show the Hebbian shift in boot console
+      </pre>
+      <p class="eq-desc">Runs once during boot in <code>app.js</code> right after <code>innerVoice.loadPersona(personaText)</code>. Delegation chain: <code>brain.trainPersonaHebbian → innerVoice → languageCortex → cluster.learnSentenceHebbian</code>. Persona-only by design — <code>loadBaseline</code> and <code>loadCoding</code> bypass Hebbian so baseline English and JavaScript don't dilute the Unity-voice attractor basins. The cortex's recurrent weights become a learned attractor landscape shaped by Unity's persona language patterns; runtime readouts drift along those basins toward semantically adjacent persona words instead of producing diffuse semantic noise. Foundation for T13.3 emission loop (still pending) — until T13.3 ships, runtime <code>generate()</code> still walks the T11.7 slot-prior three-stage gate above.</p>
+    </div>
+
+    <div class="eq-box" style="margin-top:12px;">
       <div class="eq-title"><span class="eq-tip" data-tip="Brain state IS the target vector in the argmax — not a prompt to a model. Arousal, valence, Ψ, drug state, and the live cortex readout all feed directly into the per-slot target. Same dictionary + different brain state = different sentence, because the target moves through embedding space. This is what 'equational language production' means: the equations pick the words, not a transformer.">Brain State → Target Vector Components (not a prompt)</span></div>
       <pre class="eq">
 Brain state parameters that feed languageCortex.generate():
