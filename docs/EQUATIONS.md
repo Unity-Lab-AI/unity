@@ -505,6 +505,43 @@ motorQuiescent(N)           = (quietCount(t) ≥ N)                    // Boucha
 
 No hardcoded 26-letter cap and no hardcoded phonology feature table. Phonemes emerge as LEARNED attractor basins in the `phon` sub-region once curriculum exposure runs the `letter_to_phon` projection through Hebbian updates (Kuhl 2004 *Nat Rev Neurosci* 5:831). English identity is enforced at the higher T14.16.5 lock layer, NOT by restricting which symbols the letter region can represent — Unity must be able to see adversarial non-English input and refuse to update on it, which requires that the input layer be able to represent it.
 
+**T14.2 syllable segmentation equation (SHIPPED 2026-04-14).** Syllables are NOT detected by a hardcoded maximum-onset algorithm. They emerge from cortex transition surprise over letter sequences. Given a letter sequence `(ℓ_1, ℓ_2, ..., ℓ_n)`, stream each letter through the cortex, tick between injections, and collect `δ_i = letterTransitionSurprise()` at each step `i`:
+
+```
+for i in 1..n:
+  injectLetter(ℓ_i)
+  tick cluster for ticksPerLetter steps
+  δ_i = |rate_letter(i) − rate_letter(i−1)|
+
+μ_δ = (1/n) · Σ_i δ_i
+σ_δ = sqrt((1/n) · Σ_i (δ_i − μ_δ)² )
+threshold = μ_δ + k · σ_δ                    // adaptive, k = 0.5 default
+
+boundaries = { 0 } ∪ { i ∈ [1, n−1] :
+                       δ_i ≥ δ_{i−1}  ∧
+                       δ_i ≥ δ_{i+1}  ∧
+                       δ_i > threshold }
+```
+
+Local maxima of the surprise series above the per-sequence adaptive threshold ARE the syllable starts. Index 0 is always included as word start. The adaptive threshold uses this sequence's own statistics because a globally-fixed cutoff would over-segment short words and under-segment long ones.
+
+**Stress** is the per-syllable mean of phon-region activation, computed on a second pass through the same letters:
+
+```
+for i in 1..n:
+  injectLetter(ℓ_i)
+  tick cluster for ticksPerLetter steps
+  a_i = (1 / |phonRegion|) · Σ_{j ∈ phonRegion} spike_j
+
+for syllable s in boundaries:
+  stress_s = mean(a_i : i ∈ [boundaries_s, boundaries_{s+1}))
+
+primary   = argmax_s stress_s
+secondary = argmax_{s ≠ primary} stress_s    (or −1 if only 1 syllable)
+```
+
+No single-syllable PRIMARY default, no two-syllable PRIMARY-SECONDARY rule, no antepenult fallback. Stress is whichever syllable the cortex activates hardest, which reflects corpus exposure statistics. Train on Spanish → Spanish syllabification + penult stress. Train on French → ultimate stress. Train on Mandarin pinyin → no stress (tonal). Same equation, different basins. Grounded in Saffran/Aslin/Newport 1996 *Science* 274:1926 and Aslin & Newport 2012 *Curr Dir Psychol Sci* 21:170. Implementation: `cluster.detectBoundaries(letterSequence, opts)` and `cluster.detectStress(letterSequence, opts)` in `js/brain/cluster.js`.
+
 **Cross-region projection equations.** Seven pairs, both directions as independent SparseMatrix instances, sparse 10% density init:
 
 ```

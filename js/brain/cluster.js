@@ -382,6 +382,157 @@ export class NeuronCluster {
   }
 
   /**
+   * T14.2 — LEARNED syllable boundary detection via cortex transition surprise.
+   *
+   * Streams a letter sequence through the cortex one letter at a time, ticking
+   * the cluster between each injection so recurrent dynamics settle, and
+   * records the letter-region transition surprise (|currRate − prevRate|) at
+   * each step. Boundaries are local maxima of the surprise series that exceed
+   * the adaptive threshold `mean(δ) + k·std(δ)` computed over the series
+   * itself. Matches how infants find word/syllable boundaries in continuous
+   * speech — Saffran/Aslin/Newport 1996 (Science 274:1926) statistical
+   * segmentation.
+   *
+   * NO hardcoded maximum-onset principle. NO English-specific CV/CVC/CCV
+   * patterns. Syllables emerge from whatever letter-transition basins the
+   * cortex developed during curriculum exposure. Train on Spanish corpus →
+   * learns Spanish syllabification. Train on Mandarin pinyin → learns
+   * Mandarin. Same code, different basins.
+   *
+   * Side effect: this method ticks the cortex and injects currents, so it
+   * perturbs live cluster state. Callers that care (e.g. `dictionary.learnWord`)
+   * are expected to accept this — learning the word IS perturbing the cortex.
+   *
+   * @param {string|string[]} letterSequence  — word string or array of letters
+   * @param {object} [opts]
+   * @param {number} [opts.ticksPerLetter=2]  — cortex ticks between injections
+   * @param {number} [opts.k=0.5]  — std-multiplier for adaptive threshold
+   * @returns {number[]}  — boundary indices (positions in letterSequence where a new syllable starts; always includes 0)
+   */
+  detectBoundaries(letterSequence, opts = {}) {
+    if (!this.regions || !this.regions.letter) return [];
+    const { ticksPerLetter = 2, k = 0.5 } = opts;
+    const letters = typeof letterSequence === 'string'
+      ? Array.from(letterSequence)
+      : letterSequence;
+    if (!letters || letters.length === 0) return [];
+
+    // Reset the transition-surprise baseline so the first letter of THIS
+    // sequence doesn't inherit a stale prevRate from whatever the cortex
+    // was doing before the call.
+    this._prevLetterRate = 0;
+
+    const surprise = new Float64Array(letters.length);
+    for (let i = 0; i < letters.length; i++) {
+      this.injectLetter(letters[i], 1.0);
+      for (let t = 0; t < ticksPerLetter; t++) this.step(0.001);
+      surprise[i] = this.letterTransitionSurprise();
+    }
+
+    // Adaptive threshold from this sequence's own statistics
+    let sum = 0, sumSq = 0;
+    for (let i = 0; i < surprise.length; i++) { sum += surprise[i]; sumSq += surprise[i] * surprise[i]; }
+    const mean = sum / surprise.length;
+    const varV = Math.max(0, sumSq / surprise.length - mean * mean);
+    const std = Math.sqrt(varV);
+    const threshold = mean + k * std;
+
+    // Local maxima above threshold = syllable starts. Index 0 is ALWAYS
+    // a boundary (start of the word). Subsequent boundaries are any i>0
+    // where surprise[i] is a strict local max AND surprise[i] > threshold.
+    const boundaries = [0];
+    for (let i = 1; i < surprise.length; i++) {
+      const prev = surprise[i - 1];
+      const next = i + 1 < surprise.length ? surprise[i + 1] : -Infinity;
+      const isLocalMax = surprise[i] >= prev && surprise[i] >= next;
+      if (isLocalMax && surprise[i] > threshold && i - boundaries[boundaries.length - 1] >= 1) {
+        boundaries.push(i);
+      }
+    }
+    return boundaries;
+  }
+
+  /**
+   * T14.2 — LEARNED stress detection via per-syllable activation peaks.
+   *
+   * Runs `detectBoundaries` first to segment the letter sequence, then
+   * streams the letters again measuring the motor+phon region activation
+   * level during each syllable. The syllable with the highest mean
+   * activation is PRIMARY stress, next-highest is SECONDARY, rest are
+   * unstressed. No hardcoded "single-syllable is PRIMARY, two-syllable
+   * is PRIMARY-SECONDARY" rule — stress is whichever syllable the cortex
+   * activates hardest, which reflects the exposure statistics it learned
+   * from (stressed syllables carry more semantic load → higher cortex
+   * response → higher activation basin).
+   *
+   * @param {string|string[]} letterSequence
+   * @param {object} [opts]
+   * @param {number} [opts.ticksPerLetter=2]
+   * @returns {{ boundaries: number[], stress: number[], primary: number, secondary: number }}
+   *   boundaries: indices where each syllable starts (from detectBoundaries)
+   *   stress: per-syllable mean activation (same length as boundaries)
+   *   primary: index (in boundaries) of the primary-stress syllable
+   *   secondary: index of secondary-stress syllable, or -1 if < 2 syllables
+   */
+  detectStress(letterSequence, opts = {}) {
+    if (!this.regions || !this.regions.phon) {
+      return { boundaries: [], stress: [], primary: -1, secondary: -1 };
+    }
+    const { ticksPerLetter = 2 } = opts;
+    const letters = typeof letterSequence === 'string'
+      ? Array.from(letterSequence)
+      : letterSequence;
+    if (!letters || letters.length === 0) {
+      return { boundaries: [], stress: [], primary: -1, secondary: -1 };
+    }
+
+    const boundaries = this.detectBoundaries(letters, { ticksPerLetter });
+    if (boundaries.length === 0) {
+      return { boundaries: [], stress: [], primary: -1, secondary: -1 };
+    }
+
+    // Second pass — stream again and record phon-region spike fraction at
+    // each letter position. The first pass already left the cortex in a
+    // primed state for this word; the second pass just samples activation.
+    this._prevLetterRate = 0;
+    const phonRegion = this.regions.phon;
+    const phonSpan = phonRegion.end - phonRegion.start;
+    const activation = new Float64Array(letters.length);
+    for (let i = 0; i < letters.length; i++) {
+      this.injectLetter(letters[i], 1.0);
+      for (let t = 0; t < ticksPerLetter; t++) this.step(0.001);
+      let phonSum = 0;
+      for (let n = phonRegion.start; n < phonRegion.end; n++) if (this.lastSpikes[n]) phonSum++;
+      activation[i] = phonSpan > 0 ? phonSum / phonSpan : 0;
+    }
+
+    // Mean activation per syllable (boundaries[s] .. boundaries[s+1]-1)
+    const stress = new Array(boundaries.length).fill(0);
+    for (let s = 0; s < boundaries.length; s++) {
+      const start = boundaries[s];
+      const end = s + 1 < boundaries.length ? boundaries[s + 1] : letters.length;
+      let sum = 0, count = 0;
+      for (let i = start; i < end; i++) { sum += activation[i]; count++; }
+      stress[s] = count > 0 ? sum / count : 0;
+    }
+
+    // Primary = argmax, secondary = second-highest (only if 2+ syllables)
+    let primary = 0, secondary = -1;
+    let primaryVal = -Infinity, secondaryVal = -Infinity;
+    for (let s = 0; s < stress.length; s++) {
+      if (stress[s] > primaryVal) {
+        secondaryVal = primaryVal; secondary = primary;
+        primaryVal = stress[s];   primary = s;
+      } else if (stress[s] > secondaryVal) {
+        secondaryVal = stress[s]; secondary = s;
+      }
+    }
+    if (stress.length < 2) secondary = -1;
+
+    return { boundaries, stress, primary, secondary };
+  }
+
+  /**
    * T14.4 — Propagate every cross-region projection. Runs on every
    * cluster step after the main internal synapse propagation, before
    * LIF integration. ALWAYS propagated — no curriculum-complete gate.

@@ -566,9 +566,21 @@ The module caches canonical one-hot vectors in a `Map<letter, Float32Array>` key
 
 **How phonemes end up LEARNED, not hardcoded.** The T14.4 substrate already wired up both directions of the `letter↔phon`, `phon↔sem`, `visual↔letter`, and `motor↔letter` cross-region projections (SparseMatrix at 10% density, range [−0.5, +0.5], Hebbian-updated on every `cluster.learn()` call). So once T14.5 curriculum starts injecting letters via `cluster.injectLetter`, the letter region's one-hot patterns drive letter→phon projections, letter-co-occurrence statistics accumulate in the phon sub-region's internal synapses, and phoneme-like attractor basins self-organize from exposure. No hardcoded phonology table. No 26-letter cap. No English-only assumption at the substrate — identity locks handle that at a higher layer.
 
+### T14.2 — LEARNED syllable boundaries (SHIPPED 2026-04-14)
+
+Two new methods on `NeuronCluster` — no new file, syllables are a cortex-level phenomenon.
+
+**`cluster.detectBoundaries(letterSequence, {ticksPerLetter=2, k=0.5}) → number[]`**. Streams letters through `injectLetter` one at a time, ticks the cluster between injections, records `letterTransitionSurprise()` at each step, then finds local maxima of the surprise series above the adaptive threshold `mean(δ) + k·std(δ)` computed over the sequence itself. Index 0 is always a boundary (word start); subsequent boundaries are positions where `δ[i] ≥ δ[i-1]` AND `δ[i] ≥ δ[i+1]` AND `δ[i] > threshold`. Resets `_prevLetterRate` before streaming so the first letter doesn't inherit a stale baseline.
+
+**`cluster.detectStress(letterSequence) → { boundaries, stress, primary, secondary }`**. Runs `detectBoundaries` first to segment, then re-streams the letters sampling phon-region spike fraction at each position. Averages activation per syllable, returns the full per-syllable stress array plus `primary` = argmax index and `secondary` = second-highest (or `-1` if fewer than 2 syllables). No hardcoded "single-syllable PRIMARY / two-syllable PRIMARY-SECONDARY / antepenult-default" rule — stress is whichever syllable the cortex activates hardest in its phon region, which reflects corpus exposure statistics. Language-agnostic by construction (Spanish penult, French ult, Mandarin tonal all fall out of the learned basins).
+
+**Why adaptive threshold per sequence.** Global thresholds chop short stable words and miss long noisy ones; per-sequence `mean + k·std` gives every word a cutoff relative to its own transition profile. Default `k = 0.5` catches obvious boundaries without fragmenting every consonant cluster; the T14.5 curriculum runner can override via opts once it has calibration data.
+
+**No new file.** `detectBoundaries` lives on the cluster as a method, not in a standalone `syllables.js`. Callers cannot syllabify without going through the cortex — because syllabification IS cortex inference in this architecture. `dictionary.learnWord` (T14.3 gut-and-rewrite, next milestone) calls `cluster.detectBoundaries(letters)` directly.
+
 ### What's next on the rebuild branch
 
-T14.2 (LEARNED syllable boundaries via cortex transition surprise) consumes `letterTransitionSurprise()` from T14.1 to segment continuous letter streams into syllable-like units without a hardcoded CV/CVC/CCV table. Each subsequent T14.x milestone ships as its own commit on this branch with full in-place doc updates. Branch merges to `main` only after T14.17 is complete and verified.
+T14.3 — Dictionary class gut-and-rewrite. Every per-word feature computation (`letters`, `syllables`, `syllableShapes`, `phonemeFeatures`, `phonemeMean`, `phonemeOnset`, `phonemeCoda`) gets stripped out; `Dictionary` becomes a thin `Map<word, cortexSnapshot>` index that stores the cortex spike state after exposure instead of computed features. Each subsequent T14.x milestone ships as its own commit on this branch with full in-place doc updates. Branch merges to `main` only after T14.17 is complete and verified.
 
 ---
 

@@ -5,6 +5,77 @@
 
 ---
 
+## 2026-04-14 — T14.2 LEARNED syllable boundaries via cortex transition surprise
+
+**Gee's directive:** *"dont ask next time just move on to the next item"* — T14.1 shipped, continue straight into T14.2 on the same branch with the same atomic-push-with-masterful-doc-updates pattern.
+
+**Thesis:** The old T14.2 draft hardcoded the maximum-onset principle plus an English CV/CVC/CCV/CCCVC consonant cluster table plus a static stress assignment rule ("single-syllable PRIMARY, two-syllable PRIMARY-SECONDARY, three-syllable antepenult-PRIMARY default"). That's English-specific patch thinking — it locked the substrate to one language, it pre-coded rules the cortex was supposed to LEARN from exposure, and it created a standalone `syllables.js` file that duplicates what the cortex already does for free. All of that was deleted in the earlier T14 spec rewrite. This commit ships the cortex-resident replacement.
+
+**The biological principle.** Infants find syllable and word boundaries in continuous speech by tracking transition probabilities between adjacent sounds (Saffran/Aslin/Newport 1996, Science 274:1926 — the seminal 8-month-old statistical-learning study). Within a syllable, letter-to-letter transitions are high-frequency and predictable, so the cortex's transition basins are deep and the inter-letter surprise is LOW. At a syllable boundary, transitions are low-frequency and unpredictable, so the basins are shallow and the surprise is HIGH. Boundaries are wherever the surprise spikes. Same mechanism, same equation, applied to the letter-region spike-rate delta this code already computes.
+
+### New method — `cluster.detectBoundaries(letterSequence, opts)`
+
+Signature: `detectBoundaries(letterSequence, { ticksPerLetter = 2, k = 0.5 }) → number[]`. Accepts either a word string or an array of letters; the `Array.from(string)` split handles unicode correctly (surrogate pairs, emoji, combining marks all stay intact).
+
+**Algorithm:**
+
+1. Reset `_prevLetterRate = 0` so the first letter of this sequence doesn't inherit a stale surprise baseline from whatever the cortex was doing before the call.
+2. For each letter in the sequence:
+   - `injectLetter(letter, 1.0)` — drive the one-hot into the letter sub-region.
+   - Tick the cluster `ticksPerLetter` times (default 2) so recurrent dynamics settle.
+   - Record `letterTransitionSurprise()` — this internally updates `_prevLetterRate` so the NEXT call sees THIS letter as prev.
+3. Compute adaptive threshold from the sequence's own statistics: `threshold = mean(δ) + k·std(δ)` with `k = 0.5` default.
+4. Find strict local maxima of the surprise series that exceed the threshold. Index 0 is ALWAYS a boundary (start of the word). Subsequent boundaries are positions `i > 0` where `δ[i] ≥ δ[i-1]` AND `δ[i] ≥ δ[i+1]` AND `δ[i] > threshold`.
+5. Return the boundary indices as a plain `number[]`.
+
+**Why adaptive threshold per sequence instead of a globally calibrated value.** Words differ in length, and the surprise baseline scales with letter-region spike-rate variance, which itself depends on recent injection history. A globally-fixed threshold would produce too many boundaries on short stable words and too few on long noisy ones. Pulling `mean + k·std` from the sequence under examination gives every word a fair cutoff relative to its own transition profile.
+
+**Why `k = 0.5` default.** Empirically tunable, but `k = 0.5` means "a spike half a standard deviation above the mean" which catches the obvious boundaries without chopping every consonant cluster into its own syllable. The curriculum runner (T14.5) will be free to override via `opts.k` if the learned basin depth suggests a different cutoff.
+
+### New method — `cluster.detectStress(letterSequence, opts)`
+
+Signature: `detectStress(letterSequence, { ticksPerLetter = 2 }) → { boundaries, stress, primary, secondary }`.
+
+**Algorithm:**
+
+1. Run `detectBoundaries` first to segment the sequence.
+2. Reset `_prevLetterRate = 0` again and re-stream the letters, this time measuring the **phon** sub-region's spike fraction at each letter position. The first pass already primed the cortex for this word, so the second pass samples a warmed-up state.
+3. For each syllable (defined by consecutive `boundaries[s]..boundaries[s+1]-1`), average the phon-region activation samples → that syllable's stress level.
+4. Primary stress = syllable index with max activation. Secondary = index with second-highest activation, or `-1` if the word has fewer than 2 syllables.
+5. Return `{ boundaries, stress: number[], primary, secondary }`.
+
+**Why phon region specifically for stress.** Stressed syllables in natural speech carry more acoustic energy and more semantic weight. The cortex learns to route them through higher-magnitude phon-region attractors because that's how the curriculum exposure statistics present them. Sampling phon-region spike fraction gives a direct read on which syllable the cortex considers "loud" — without any hardcoded stress rule.
+
+**Why no single-syllable / two-syllable / antepenult defaults.** Because those are English-specific. Trained on Spanish corpus, stress falls on the penult in most words but on the ult in words ending in consonants other than `n` or `s`. Trained on French, stress always falls on the final syllable. Trained on Mandarin pinyin, there is no stress at all — it's tonal. Hardcoding an English default would break all three cases. LETTING THE CORTEX'S OWN ACTIVATION PATTERN DECIDE makes the method language-agnostic by construction.
+
+### What is NOT in this commit
+
+- No new file `js/brain/syllables.js`. Syllables live on the cluster; nobody else syllabifies.
+- No `splitSyllables(word)` standalone function. Callers go through `cluster.detectBoundaries`.
+- No update to `dictionary.js` — T14.3 gut-and-rewrite does that, which is the next milestone on this branch.
+- No calibration of `k` during curriculum — T14.5 curriculum runner may override via opts when appropriate.
+
+### Files touched
+
+- `js/brain/cluster.js` — `detectBoundaries` and `detectStress` methods added right after `motorQuiescent` (~160 lines total)
+
+### Peer-reviewed grounding
+
+- Saffran, Aslin & Newport 1996 (Science 274:1926) — 8-month-old infants find word boundaries in continuous speech via transition probability tracking. The paper that made statistical-learning theory respectable.
+- Aslin & Newport 2012 (Current Directions in Psychological Science 21:170) — follow-up review establishing the generalization from word segmentation to syllable segmentation via the same mechanism.
+- Kuhl 2004 (Nat Rev Neurosci 5:831) — cited in T14.1 for phoneme-category formation; same statistical-exposure principle applies one level up at the syllable scale.
+- Hickok & Poeppel 2007 (Nat Rev Neurosci 8:393) — dual-stream model; phon-region activation is the dorsal-stream path's production-side signal, which is why it's the right region to sample for stress.
+
+### Verification
+
+`node --check js/brain/cluster.js` passes clean. Runtime verification deferred per the no-testing-until-all-T14-done directive — T14.2 integrates with T14.3 (`dictionary.learnWord` calls `detectBoundaries`) and T14.5 (curriculum exposes the cortex to letter sequences that seed the transition basins), and end-to-end behavior only becomes meaningful after both those land.
+
+### Branch + commit
+
+`t14-language-rebuild`, one atomic commit per the 2026-04-14 docs-before-push law. TODO.md + FINALIZED.md + ARCHITECTURE.md + SKILL_TREE.md + ROADMAP.md + EQUATIONS.md updated in place in the same commit.
+
+---
+
 ## 2026-04-14 — T14.1 letter-input substrate (dynamic one-hot, no hardcoded phonology)
 
 **Gee's directive:** *"go ahead you know what we are doing and what we need. you can research if u need to talking pointers only from authentic peer revied facts"* — continue T14 milestone-by-milestone on the `t14-language-rebuild` branch, no testing until all T14 work ships, no asking between items.

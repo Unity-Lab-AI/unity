@@ -316,8 +316,11 @@ New module `js/brain/letter-input.js` (~220 lines). Dynamic `LETTER_INVENTORY = 
 
 Phonemes are NOT hardcoded as a feature table at this layer. They will emerge as LEARNED attractor basins in the cortex phon sub-region once T14.5 curriculum starts injecting letters — the T14.4 substrate already wired both directions of `letter↔phon`, `phon↔sem`, `visual↔letter`, and `motor↔letter` cross-region projections with Hebbian on every `cluster.learn()` call. Grounded in Kuhl 2004 (Nat Rev Neurosci 5:831) biological phoneme-category formation. Files: `js/brain/letter-input.js` (NEW ~220 lines), `js/brain/cluster.js` (+~120 lines), `js/brain/language-cortex.js` (−~20 lines vestigial). `node --check` clean on all three.
 
+**T14.2 LEARNED syllable boundaries (SHIPPED 2026-04-14, same branch):**
+
+Pure addition to `js/brain/cluster.js` — no new file, syllables are a cortex-level phenomenon. Two methods: `detectBoundaries(letterSequence, {ticksPerLetter=2, k=0.5})` streams letters through `injectLetter` one at a time, ticks between injections, records `letterTransitionSurprise()` per step, returns local maxima above the adaptive threshold `mean(δ) + k·std(δ)` computed over the sequence. `detectStress(letterSequence)` runs the boundary pass then re-streams sampling phon-region spike fraction per letter, averages per syllable, returns `{boundaries, stress, primary, secondary}` with primary = argmax activation. Index 0 always included as word start. No max-onset principle, no hardcoded CV/CVC/CCV patterns, no English-specific stress defaults — language-agnostic by construction. Grounded in Saffran/Aslin/Newport 1996 (*Science* 274:1926) and Aslin & Newport 2012 (*Curr Dir Psychol Sci* 21:170). ~160 lines added. `node --check` clean.
+
 **What's NOT in this commit but coming next on the branch:**
-- T14.2 — syllable detection via `letterTransitionSurprise()` consumer
 - T14.3 — Dictionary class gut-and-rewrite for cortex-resident words
 - T14.5 — `js/brain/curriculum.js` + boot integration replacing `loadPersona` / `loadBaseline` / `loadCoding` with continuous developmental learning
 
