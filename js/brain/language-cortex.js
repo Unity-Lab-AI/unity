@@ -875,22 +875,41 @@ export class LanguageCortex {
     // co-occurrence of self-reference + impersonal listener-reference.
     // The sequences below use letter-position matching on adjacent
     // tokens so we don't false-hit e.g. "the" in unrelated positions.
+    // Widened 2026-04-14 — any appearance of the token "user" /
+    // "users" / "user's" / "users'" anywhere in the sentence is
+    // enough to reject. The word "user" is developer / product-
+    // copy register; real conversational English addresses the
+    // listener as "you" and never uses the bare token "user" at
+    // all. Catches meta-prose like:
+    //   "I craft images that align with user preferences"
+    //   "I respond to user input with X"
+    //   "I treat the user's requests as..."
+    //   "users expect Unity to..."
+    // Purely structural — presence of a closed-set token, not a
+    // content-word blacklist. "user" is the meta-reference tell.
     let refsInterlocutorAsThirdParty = false;
-    for (let i = 0; i < tokens.length - 1; i++) {
-      const a = tokens[i];
-      const b = tokens[i + 1];
-      // "the user" / "the users" / "the user's"
-      if (a === 'the' && (b === 'user' || b === 'users' || b === "user's")) {
-        refsInterlocutorAsThirdParty = true; break;
+    for (const t of tokens) {
+      if (t === 'user' || t === 'users' || t === "user's" || t === "users'") {
+        refsInterlocutorAsThirdParty = true;
+        break;
       }
-      // "the person" / "the person's"
-      if (a === 'the' && (b === 'person' || b === "person's")) {
-        refsInterlocutorAsThirdParty = true; break;
+      if (t === 'person' || t === "person's") {
+        // Only reject "person" when it's an abstract reference, not
+        // when it's actually naming a person ("nice person", "wrong
+        // person"). Tell: "the person" / "this person" / "a person"
+        // adjacent to a function word. Checked below in the loop pair.
       }
     }
-    // Bare "users" as subject also counts ("users expect Unity to…")
-    if (!refsInterlocutorAsThirdParty && tokens[0] === 'users') {
-      refsInterlocutorAsThirdParty = true;
+    if (!refsInterlocutorAsThirdParty) {
+      for (let i = 0; i < tokens.length - 1; i++) {
+        const a = tokens[i];
+        const b = tokens[i + 1];
+        // "the person" / "a person" / "this person" — abstract
+        // third-party reference to the listener
+        if ((a === 'the' || a === 'a' || a === 'this') && (b === 'person' || b === "person's")) {
+          refsInterlocutorAsThirdParty = true; break;
+        }
+      }
     }
     if (refsInterlocutorAsThirdParty) return;
 
@@ -1261,9 +1280,15 @@ export class LanguageCortex {
       // Interlocutor-as-third-party penalty. Mirrors the store-time
       // FILTER 7 for any persona sentence that already made it into
       // memory before the filter existed (or slipped through). A
-      // sentence that talks about "the user" while using "I" is a
-      // rulebook line, not speech — bury it hard.
-      if (/\bthe user(?:'s|s)?\b/.test(t) || /\bthe person(?:'s)?\b/.test(t)) {
+      // sentence that uses the bare token "user" / "users" is
+      // developer/product-copy register, not speech — bury it hard.
+      // Widened 2026-04-14: the old regex only caught "the user";
+      // now any "user" / "users" / "user's" / "users'" word appearing
+      // anywhere triggers the penalty.
+      if (/\buser(?:s|'s|s')?\b/i.test(t)) {
+        penalty += 0.60;
+      }
+      if (/\b(?:the|a|this) person(?:'s)?\b/i.test(t)) {
         penalty += 0.50;
       }
       // Rhetorical / habitual-conditional penalty — mirrors FILTER 8
