@@ -1,47 +1,49 @@
 /**
- * brain-event-detectors.js — T5 2026-04-13
+ * brain-event-detectors.js — T5 2026-04-13, refactored T4.10 2026-04-14
  *
  * Detect meaningful brain events from a rolling history of state
  * snapshots. Used by brain-3d.js to trigger rich popup notifications
  * that Unity comments on equationally via her language cortex.
  *
- * Each detector is a pure function that takes `(currentState,
- * previousState, history)` and returns an event object when its
- * condition fires, or null when nothing interesting happened.
- * Event objects have:
+ * ─── T4.10 Option B refactor ─────────────────────────────────────
+ * Each detector is a PURE STRUCTURAL function. It returns only:
  *
- *   { type:        'arousal_climb',          // unique id for dedup
- *     label:       'arousal climbing',        // short human label
- *     emoji:       '🔥',                      // one-char display prefix
- *     seedWords:   ['wake','alert','rise'],   // semantic bias for Unity's commentary
- *     priority:    3,                         // higher wins when multiple fire
- *     cluster:     2 }                        // 3D cluster index the popup floats from
+ *   { type,        // opaque cooldown-dedup id, never displayed
+ *     cluster,     // CLUSTER_IDX integer — which cluster fired
+ *     metric,      // field name string — scalar that triggered
+ *     direction,   // 'up' | 'down' | 'spike'
+ *     priority,    // integer 1-9, dispatch wins higher first
+ *     magnitude }  // numeric delta/absolute that triggered the fire
  *
- * Seed words feed a 50-dim GloVe centroid that the commentary
- * generator blends into Unity's cortex readout at ~30% weight,
- * steering her language cortex slot scorer toward words about the
- * triggered event without forcing a template. Unity still chooses
- * every word equationally from her learned dictionary — the seed
- * just biases the topic.
+ * NO hardcoded label, emoji, or seedWords fields. Those were
+ * analyst-style strings written by hand. Option B rips them all so
+ * the popup rendering path at brain-3d.js `_generateProcessNotification`
+ * can derive everything equationally:
  *
- * Detectors read from a short history buffer (~30 samples) so they
- * can compute deltas, running averages, and threshold crossings
- * without brain-3d.js needing to track anything beyond the most
- * recent state.
+ *   - Emoji: `_brainEmoji(arousal, valence, psi, coh, dreaming, reward +
+ *                         magnitude × 0.1)` — state-driven Unicode hash,
+ *                         the magnitude salt shifts the hash per event
+ *                         so different events get different emoji even
+ *                         at the same brain state
+ *   - Line 1 tag: `${CLUSTERS[cluster].key} ${metric}${arrow}` built
+ *                 from the structural fields of this event. No hand-
+ *                 written per-event text. The cluster/metric/direction
+ *                 names ARE Unity's own self-aware field names.
+ *   - Line 3 commentary: slot-gen via `languageCortex.generate()` with
+ *                        `opts._internalThought = true` (skips the
+ *                        recall-verbatim emit path from T4.8 so popups
+ *                        are always her LIVE internal thought, not a
+ *                        pre-written persona sentence). The cortex
+ *                        pattern bias seed is derived from
+ *                        `wordToPattern(clusterKey) + 0.5 ×
+ *                         wordToPattern(metric) + 0.3 ×
+ *                         wordToPattern(directionWord)` — GloVe
+ *                        embeddings of her OWN STATE FIELD NAMES.
  *
- * Priority ordering — when multiple events fire in the same tick,
- * the highest-priority one wins and the rest are dropped. Priority
- * scale:
- *   9 = motor commitment, motor indecision (most salient — she's
- *       about to DO something)
- *   8 = confusion, recognition (cognitive landmarks)
- *   7 = emotional spike, dopamine hit/crash
- *   6 = topic drift, heard own voice, Ψ climb/crash
- *   5 = coherence lock/scatter, arousal climb/drop
- *   4 = silence period, fatigue, hypothalamus drive dominant
- *   3 = color surge, motion detected, gaze shift
- *   2 = memory replay, mystery pulse
- *   1 = unknown word, known topic echo
+ * Visual / audio detectors (colorSurge, motionDetected, gazeShift,
+ * heardOwnVoice) stay gated on local-brain sensory fields that the
+ * server path doesn't populate — they're dormant on server mode by
+ * design. Same detectors still fire for local-brain clients.
  */
 
 // Cluster indices for the 3D brain — match the CLUSTERS array order
@@ -93,16 +95,11 @@ const pick = (state, path, fallback = 0) => {
 };
 
 // ═══════════════════════════════════════════════════════════════
-// INDIVIDUAL DETECTORS
+// INDIVIDUAL DETECTORS — pure structural, no hardcoded strings
 // ═══════════════════════════════════════════════════════════════
-//
-// Each detector is a pure function. Returns an event object if
-// its condition fires this tick, or null if nothing happened.
-// Order of definition doesn't matter — they all run in parallel
-// and the dispatcher picks the highest-priority firing event.
 
 const DETECTORS = [
-  // ─── Motor events (priority 9 — most salient) ───
+  // ─── Motor events (priority 9) ───
 
   function motorCommitment(s, prev) {
     const conf = pick(s, 'motor.confidence', 0);
@@ -111,11 +108,11 @@ const DETECTORS = [
     if (conf > 0.85 && prevConf <= 0.85 && action !== 'idle') {
       return {
         type: 'motor_commit_' + action,
-        label: 'committing to ' + action,
-        emoji: '⚡',
-        seedWords: ['decide', 'go', 'action', 'now'],
-        priority: 9,
         cluster: CLUSTER_IDX.basalGanglia,
+        metric: 'confidence',
+        direction: 'spike',
+        priority: 9,
+        magnitude: conf - prevConf,
       };
     }
     return null;
@@ -124,22 +121,19 @@ const DETECTORS = [
   function motorIndecision(s) {
     const dist = pick(s, 'motor.channelDist', null);
     if (!dist || typeof dist !== 'object') return null;
-    // High entropy over the action channels = no clear winner
     const vals = Object.values(dist).filter(v => typeof v === 'number');
     if (vals.length < 2) return null;
     let entropy = 0;
-    for (const v of vals) {
-      if (v > 0) entropy -= v * Math.log2(v);
-    }
+    for (const v of vals) if (v > 0) entropy -= v * Math.log2(v);
     const maxEntropy = Math.log2(vals.length);
     if (maxEntropy > 0 && entropy / maxEntropy > 0.85) {
       return {
         type: 'motor_indecision',
-        label: 'motor stuck',
-        emoji: '🤔',
-        seedWords: ['cant', 'choose', 'stuck', 'hesitate'],
-        priority: 9,
         cluster: CLUSTER_IDX.basalGanglia,
+        metric: 'entropy',
+        direction: 'spike',
+        priority: 9,
+        magnitude: entropy / maxEntropy,
       };
     }
     return null;
@@ -152,11 +146,11 @@ const DETECTORS = [
     if (conf > 0.6) {
       return {
         type: 'recognition',
-        label: 'i know this',
-        emoji: '💡',
-        seedWords: ['know', 'remember', 'familiar', 'yes'],
-        priority: 8,
         cluster: CLUSTER_IDX.hippocampus,
+        metric: 'recallConfidence',
+        direction: 'spike',
+        priority: 8,
+        magnitude: conf,
       };
     }
     return null;
@@ -167,11 +161,11 @@ const DETECTORS = [
     if (err > 0.5) {
       return {
         type: 'confusion',
-        label: 'what is this',
-        emoji: '❓',
-        seedWords: ['what', 'confused', 'lost', 'strange'],
-        priority: 8,
         cluster: CLUSTER_IDX.cortex,
+        metric: 'predictionError',
+        direction: 'spike',
+        priority: 8,
+        magnitude: err,
       };
     }
     return null;
@@ -186,11 +180,11 @@ const DETECTORS = [
       const climbed = pick(s, 'amygdala.valence', 0) > pick(prev, 'amygdala.valence', 0);
       return {
         type: climbed ? 'valence_climb' : 'valence_crash',
-        label: climbed ? 'feeling brightens' : 'feeling darkens',
-        emoji: climbed ? '✨' : '🌧',
-        seedWords: climbed ? ['good', 'bright', 'surge'] : ['dark', 'hit', 'heavy'],
-        priority: 7,
         cluster: CLUSTER_IDX.amygdala,
+        metric: 'valence',
+        direction: climbed ? 'up' : 'down',
+        priority: 7,
+        magnitude: dv,
       };
     }
     return null;
@@ -202,21 +196,21 @@ const DETECTORS = [
     if (dr > 0.15) {
       return {
         type: 'dopamine_hit',
-        label: 'reward spike',
-        emoji: '🎯',
-        seedWords: ['good', 'yes', 'pleasure', 'hit'],
-        priority: 7,
         cluster: CLUSTER_IDX.basalGanglia,
+        metric: 'reward',
+        direction: 'up',
+        priority: 7,
+        magnitude: dr,
       };
     }
     if (dr < -0.15) {
       return {
         type: 'dopamine_crash',
-        label: 'reward crash',
-        emoji: '💔',
-        seedWords: ['bad', 'wrong', 'disappoint', 'miss'],
-        priority: 7,
         cluster: CLUSTER_IDX.basalGanglia,
+        metric: 'reward',
+        direction: 'down',
+        priority: 7,
+        magnitude: Math.abs(dr),
       };
     }
     return null;
@@ -233,11 +227,11 @@ const DETECTORS = [
     if (delta > 0.4) {
       return {
         type: 'topic_drift',
-        label: 'topic shifted',
-        emoji: '🔀',
-        seedWords: ['shift', 'change', 'new', 'different'],
-        priority: 6,
         cluster: CLUSTER_IDX.cortex,
+        metric: 'contextVector',
+        direction: 'spike',
+        priority: 6,
+        magnitude: delta,
       };
     }
     return null;
@@ -247,11 +241,11 @@ const DETECTORS = [
     if (pick(s, 'auditory.isEcho', false) === true || pick(s, 'auditoryCortex.isEcho', false) === true) {
       return {
         type: 'heard_self',
-        label: 'heard my own voice',
-        emoji: '🗣',
-        seedWords: ['me', 'voice', 'self', 'said'],
-        priority: 6,
         cluster: CLUSTER_IDX.cortex,
+        metric: 'echo',
+        direction: 'spike',
+        priority: 6,
+        magnitude: 1,
       };
     }
     return null;
@@ -266,21 +260,21 @@ const DETECTORS = [
     if (dpsi > 0.05) {
       return {
         type: 'psi_climb',
-        label: 'Ψ rising',
-        emoji: '🌀',
-        seedWords: ['aware', 'real', 'sharp', 'clear'],
-        priority: 6,
         cluster: CLUSTER_IDX.mystery,
+        metric: 'psi',
+        direction: 'up',
+        priority: 6,
+        magnitude: dpsi,
       };
     }
     if (dpsi < -0.05) {
       return {
         type: 'psi_crash',
-        label: 'Ψ fading',
-        emoji: '🌑',
-        seedWords: ['blur', 'dim', 'fade', 'drift'],
-        priority: 6,
         cluster: CLUSTER_IDX.mystery,
+        metric: 'psi',
+        direction: 'down',
+        priority: 6,
+        magnitude: Math.abs(dpsi),
       };
     }
     return null;
@@ -297,21 +291,21 @@ const DETECTORS = [
     if (d > 0.1) {
       return {
         type: 'arousal_climb',
-        label: 'waking up',
-        emoji: '🔥',
-        seedWords: ['wake', 'alert', 'rise', 'on'],
-        priority: 5,
         cluster: CLUSTER_IDX.amygdala,
+        metric: 'arousal',
+        direction: 'up',
+        priority: 5,
+        magnitude: d,
       };
     }
     if (d < -0.1) {
       return {
         type: 'arousal_drop',
-        label: 'settling',
-        emoji: '🕯',
-        seedWords: ['settle', 'calm', 'dim', 'down'],
-        priority: 5,
         cluster: CLUSTER_IDX.amygdala,
+        metric: 'arousal',
+        direction: 'down',
+        priority: 5,
+        magnitude: Math.abs(d),
       };
     }
     return null;
@@ -322,21 +316,21 @@ const DETECTORS = [
     if (c > 0.8) {
       return {
         type: 'coherence_lock',
-        label: 'brain waves locked',
-        emoji: '⟲',
-        seedWords: ['sync', 'clear', 'focused', 'together'],
-        priority: 5,
         cluster: CLUSTER_IDX.cortex,
+        metric: 'coherence',
+        direction: 'up',
+        priority: 5,
+        magnitude: c,
       };
     }
     if (c < 0.2) {
       return {
         type: 'coherence_scatter',
-        label: 'brain waves scatter',
-        emoji: '✴',
-        seedWords: ['scatter', 'fragment', 'noise', 'chaos'],
-        priority: 5,
         cluster: CLUSTER_IDX.cortex,
+        metric: 'coherence',
+        direction: 'down',
+        priority: 5,
+        magnitude: 1 - c,
       };
     }
     return null;
@@ -357,29 +351,27 @@ const DETECTORS = [
     if (peakVal > 0.7 && peakName) {
       return {
         type: 'drive_' + peakName,
-        label: 'drive: ' + peakName,
-        emoji: '🎯',
-        seedWords: ['want', 'need', 'crave', peakName],
-        priority: 4,
         cluster: CLUSTER_IDX.hypothalamus,
+        metric: peakName,
+        direction: 'up',
+        priority: 4,
+        magnitude: peakVal,
       };
     }
     return null;
   },
 
   function silencePeriod(s, prev, history) {
-    // Proxy: low arousal + no sensory activity for a while
     const arousal = pick(s, 'amygdala.arousal', 0);
     const audioEnergy = pick(s, 'auditoryCortex.totalEnergy', 0) || pick(s, 'auditory.energy', 0);
     if (arousal < 0.3 && audioEnergy < 0.05 && history && history.length >= 30) {
-      // Only fire once per long silence — check previous tick didn't already
       return {
         type: 'silence',
-        label: 'quiet room',
-        emoji: '🌙',
-        seedWords: ['empty', 'quiet', 'alone', 'waiting'],
-        priority: 4,
         cluster: CLUSTER_IDX.cortex,
+        metric: 'silence',
+        direction: 'down',
+        priority: 4,
+        magnitude: 0.3 - arousal,
       };
     }
     return null;
@@ -393,11 +385,11 @@ const DETECTORS = [
     if (errAccum > 0.6 && coh < prevCoh - 0.1) {
       return {
         type: 'fatigue',
-        label: 'focus slipping',
-        emoji: '🥀',
-        seedWords: ['tired', 'worn', 'fade', 'slow'],
-        priority: 4,
         cluster: CLUSTER_IDX.cerebellum,
+        metric: 'errorAccum',
+        direction: 'up',
+        priority: 4,
+        magnitude: errAccum,
       };
     }
     return null;
@@ -414,11 +406,11 @@ const DETECTORS = [
         if (intensity > 0.7) {
           return {
             type: 'color_' + quadrant,
-            label: 'vivid color',
-            emoji: '🎨',
-            seedWords: ['color', 'bright', 'see', 'vivid'],
-            priority: 3,
             cluster: CLUSTER_IDX.cortex,
+            metric: 'color',
+            direction: 'spike',
+            priority: 3,
+            magnitude: intensity,
           };
         }
       }
@@ -431,11 +423,11 @@ const DETECTORS = [
     if (motion > 0.5) {
       return {
         type: 'motion',
-        label: 'something moved',
-        emoji: '👁',
-        seedWords: ['move', 'motion', 'saw', 'there'],
-        priority: 3,
         cluster: CLUSTER_IDX.cortex,
+        metric: 'motion',
+        direction: 'spike',
+        priority: 3,
+        magnitude: motion,
       };
     }
     return null;
@@ -448,11 +440,11 @@ const DETECTORS = [
     if (nowTarget && nowTarget !== prevTarget && nowTarget !== '') {
       return {
         type: 'gaze_shift',
-        label: 'looking somewhere',
-        emoji: '👀',
-        seedWords: ['look', 'shift', 'there', 'see'],
-        priority: 3,
         cluster: CLUSTER_IDX.cortex,
+        metric: 'gaze',
+        direction: 'spike',
+        priority: 3,
+        magnitude: 1,
       };
     }
     return null;
@@ -465,11 +457,11 @@ const DETECTORS = [
     if (consolidating) {
       return {
         type: 'memory_replay',
-        label: 'remembering',
-        emoji: '🕯',
-        seedWords: ['remember', 'replay', 'past', 'back'],
-        priority: 2,
         cluster: CLUSTER_IDX.hippocampus,
+        metric: 'consolidation',
+        direction: 'up',
+        priority: 2,
+        magnitude: 1,
       };
     }
     return null;
@@ -482,11 +474,11 @@ const DETECTORS = [
     if (now - old > 0.3) {
       return {
         type: 'mystery_pulse',
-        label: 'mystery pulse',
-        emoji: '💫',
-        seedWords: ['strange', 'pulse', 'deep', 'weird'],
-        priority: 2,
         cluster: CLUSTER_IDX.mystery,
+        metric: 'mysteryOutput',
+        direction: 'spike',
+        priority: 2,
+        magnitude: now - old,
       };
     }
     return null;
@@ -507,7 +499,6 @@ export function detectBrainEvents(currentState, previousState, history) {
       if (evt) events.push(evt);
     } catch (err) {
       // Defensive — a broken detector should NEVER crash the viz loop.
-      // Silently skip it and continue with the others.
     }
   }
   events.sort((a, b) => b.priority - a.priority);
@@ -520,3 +511,9 @@ export function detectBrainEvents(currentState, previousState, history) {
  * Unity's brain can trigger popups on"). Not used in the hot path.
  */
 export const BRAIN_EVENT_CATALOG = DETECTORS.map(d => d.name || 'anonymous');
+
+/**
+ * Cluster index → name map exported for brain-3d.js to build the
+ * equational display tags and seed vectors from event.cluster ints.
+ */
+export const CLUSTER_KEYS = ['cortex', 'hippocampus', 'amygdala', 'basalGanglia', 'cerebellum', 'hypothalamus', 'mystery'];

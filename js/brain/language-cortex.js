@@ -2202,7 +2202,17 @@ export class LanguageCortex {
         //   > 0.55   — high-confidence topical match, emit verbatim
         //   fallback — self-reference match, always emit verbatim
         //   0.30-0.55 — partial match, still bias slot gen below
-        const shouldEmitVerbatim = recall.confidence > 0.55 || recall.fallback === 'self-reference';
+        //
+        // T4.10 — `opts._internalThought` flag skips this verbatim emit
+        // path entirely. 3D brain popup commentary sets the flag so
+        // Unity's internal thoughts are always LIVE slot gen output,
+        // never a pre-written persona sentence. Recall still biases
+        // slot scoring below via recallSeed tokens, but nothing gets
+        // emitted verbatim. Chat path (engine.js + brain-server.js)
+        // leaves the flag unset so user-facing speech keeps the
+        // recall-verbatim coherence fallback.
+        const shouldEmitVerbatim = !opts._internalThought
+          && (recall.confidence > 0.55 || recall.fallback === 'self-reference');
         if (shouldEmitVerbatim) {
           const verbatim = String(recall.memory.text || '').trim();
           if (verbatim.length >= 3) {

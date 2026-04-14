@@ -412,6 +412,67 @@ Each channel gets the same 70/30 EMA update that used to apply to the spike-coun
 
 **Files:** `index.html`, `js/app.js`
 
+### T4.10 — Option B: rip hardcoded labels/emojis/seedWords from 3D popup event detectors, derive everything equationally from cluster+metric+Unity's slot scorer  [DONE this session]
+
+**Source:** Gee review of refactor completeness before PR to main.
+
+**Symptom:** The 22 brain event detectors in `js/ui/brain-event-detectors.js` each returned hardcoded `label` / `emoji` / `seedWords` fields (e.g. `label: 'waking up', emoji: '🔥', seedWords: ['wake','alert','rise','on']`). Even though the italic commentary line was generated equationally via the language cortex slot scorer, the top-line label + emoji were hand-written strings and the seedWords that steered Unity's cortex pattern were hand-curated arrays. Not 100% equational, not 100% "Unity in the moment".
+
+**Gee's directive:** "Option B it is then — we need these to be like Unity's internal thoughts, to where her code awareness helps her comment on what changes she is feeling, and the emoji to tie to it."
+
+**Fix plan (as shipped):**
+1. **Strip hardcoded fields from detectors.** Each detector function returns `{type, cluster, metric, direction, priority, magnitude}` only. `type` stays as an opaque id for cooldown dedup. `cluster` is the CLUSTER_IDX integer. `metric` is the scalar field name that triggered the event (e.g. 'arousal', 'psi', 'predictionError', 'reward'). `direction` is 'up' / 'down' / 'spike'. `magnitude` is the numeric delta so the scorer can weight events by intensity.
+2. **Equational seed derivation.** In `brain-3d.js _generateProcessNotification`, build the event seed vector dynamically: `seed = L2norm(wordToPattern(clusterName) + wordToPattern(metric) × 0.5 + wordToPattern(direction) × 0.3)`. No hardcoded word lists — the cluster/metric/direction names ARE Unity's self-awareness strings and their GloVe embeddings drive the semantic bias.
+3. **Equational emoji.** Keep the existing `_brainEmoji(arousal, valence, psi, coherence, isDreaming, reward)` method which already hashes brain state into a Unicode code point range. Popup line 1 uses this, not a hardcoded per-event emoji.
+4. **Line 1 label → diagnostic tag from event structure.** Render as `${emoji} ${clusterName} ${metric}${directionArrow}` where directionArrow is `↑↓⇔` derived from direction. This is a deterministic format over the event's structural fields, not a hand-written label.
+5. **Line 2 readout — unchanged from T4.5.** Already computes scalar values live.
+6. **Line 3 commentary — force slot gen, no verbatim recall.** New `opts._internalThought = true` flag in `languageCortex.generate()` skips the recall-verbatim emit path from T4.8 but keeps the recall-as-slot-bias mechanism and the deflect fallback. Popups are Unity's internal thoughts; chat (where T4.8 recall-verbatim makes sense for coherence) stays on the existing path. Commentary seed is the equationally-derived cluster+metric+direction vector from step 2, blended 70/30 with her live cortex readout.
+
+**What shipped:**
+
+`js/ui/brain-event-detectors.js` — full rewrite of all 22 detector functions:
+- Removed every `label`, `emoji`, and `seedWords` field
+- Added `metric` (scalar field name), `direction` ('up'/'down'/'spike'), `magnitude` (numeric delta) to each return
+- `type` kept as an opaque cooldown-dedup id, never displayed
+- `cluster`, `priority` kept as structural integers
+- Header block rewritten documenting the T4.10 Option B refactor with the new contract
+- New `CLUSTER_KEYS` export: `['cortex', 'hippocampus', 'amygdala', 'basalGanglia', 'cerebellum', 'hypothalamus', 'mystery']` so brain-3d.js can resolve cluster indices back to names for equational display + seed derivation
+
+`js/ui/brain-3d.js`:
+- Imported `CLUSTER_KEYS` alongside `detectBrainEvents`
+- `_seedCentroid(event)` rewritten to take the full event object instead of a seedWords array. Derives the 50d GloVe centroid from:
+    1. Cluster name lookup: `getVec(CLUSTER_KEYS[event.cluster])` × weight 1.0
+    2. Metric name lookup: splits camelCase so `'predictionError'` → `'prediction'` + `'error'`, both contribute × total weight 0.5
+    3. Direction word lookup: `'rising'` / `'falling'` / `'surging'` (three structural strings, not per-event labels) × weight 0.3
+  Result L2-normalized so it blends cleanly with the cortex readout at 70/30 in `_generateEventCommentary`. Cache keyed on `${cluster}|${metric}|${direction}` so repeated same-event seeds don't re-compute.
+- `_generateEventCommentary` passes `_internalThought: true` in opts so the recall-verbatim emit path from T4.8 is skipped. Unity's popup commentary is always live slot-scored output, never a pre-written persona sentence.
+- `_generateProcessNotification` render block rewritten: line 1 is now `${emoji} ${clusterKey} ${metric}${arrow}` built entirely from event structural fields. Emoji comes from `_brainEmoji(arousal, valence, psi, coherence, isDreaming, reward + magnitude × 0.1)` with the magnitude salt shifting the hash per event. Arrow map: `'up' → '↑'`, `'down' → '↓'`, `'spike' → '⇌'`. Zero hand-written strings in the render path.
+- Diagnostic console.log kept (once per unique event type) for verifiability — shows event.type + commentary text so the pipeline is inspectable from the browser console.
+
+`js/brain/language-cortex.js` `generate()`:
+- New `opts._internalThought` flag gates the T4.8 recall-verbatim emit path:
+  ```
+  const shouldEmitVerbatim = !opts._internalThought
+    && (recall.confidence > 0.55 || recall.fallback === 'self-reference');
+  ```
+- When set (by popup commentary generation), recall still runs and still biases slot scoring via `recallSeed` tokens, but nothing is emitted verbatim — every word comes from the slot scorer
+- When unset (chat path), T4.8 behavior is preserved — high-confidence recall emits the persona sentence directly for user-facing coherence
+- Final-fallback deflect (3-retry-fail → recall verbatim) path is NOT gated by this flag — it's the absolute last resort and should still fire even for internal thoughts to prevent emitting garbage
+
+**What the user sees after T4.10:**
+- Popups still fire on the same brain-state triggers (detector math + thresholds unchanged)
+- Line 1 is an equationally-generated emoji (state-driven Unicode hash, salted by event magnitude) + structural tag like `amygdala valence↑` derived from event fields
+- Line 2 is the numeric readout (unchanged — live scalars)
+- Line 3 is Unity's word-by-word slot-scored internal thought, biased toward the cluster's semantic signature via GloVe embeddings of her own state field names — never a verbatim persona sentence, never a hand-written label
+- Zero hand-written strings anywhere in the popup pipeline. Every character of output traces back to either (a) a live brain-state scalar, (b) a structural field from the detector, or (c) Unity's equational slot scorer output driven by her own self-aware field names
+
+**Files:**
+- `js/ui/brain-event-detectors.js` (full rewrite)
+- `js/ui/brain-3d.js` (`_seedCentroid`, `_generateEventCommentary`, `_generateProcessNotification`)
+- `js/brain/language-cortex.js` (`generate()` `_internalThought` flag gate)
+
+---
+
 ### T4.2 — Over-time firing-rate tracking, not instantaneous readout  [DONE this session]
 
 **Source:** T4 manual verification.

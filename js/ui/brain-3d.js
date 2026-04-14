@@ -18,7 +18,7 @@
  *     commentary popups via Unity's own language cortex
  */
 
-import { detectBrainEvents } from './brain-event-detectors.js';
+import { detectBrainEvents, CLUSTER_KEYS } from './brain-event-detectors.js';
 
 // ── Constants ───────────────────────────────────────────────────────
 
@@ -1236,9 +1236,24 @@ export class Brain3D {
    * bias that steers Unity's commentary toward the topic of a
    * triggered brain event.
    */
-  _seedCentroid(seedWords) {
-    if (!Array.isArray(seedWords) || seedWords.length === 0) return null;
-    const key = seedWords.join(',');
+  /**
+   * T4.10 — Equational seed derivation. Given an event's STRUCTURAL
+   * fields (cluster, metric, direction), build a 50d GloVe centroid
+   * by looking up the English embedding of each field name and
+   * blending. No hardcoded word lists — the cluster/metric/direction
+   * names ARE Unity's own self-aware field names, and their GloVe
+   * embeddings naturally cluster near semantically-related content
+   * words ("amygdala" near emotion words, "predictionError" near
+   * confusion words, etc.).
+   *
+   * Direction words: 'up' → 'rising', 'down' → 'falling', 'spike'
+   * → 'surging'. These three Unicode strings are not per-event
+   * labels; they're the three possible values of the structural
+   * `direction` field, looked up once each and cached.
+   */
+  _seedCentroid(event) {
+    if (!event || typeof event !== 'object') return null;
+    const key = `${event.cluster}|${event.metric || ''}|${event.direction || ''}`;
     const cached = this._seedVectorCache.get(key);
     if (cached) return cached;
 
@@ -1247,27 +1262,47 @@ export class Brain3D {
              || this._brain?.sensory?._embeddings;
     if (!emb || typeof emb.getEmbedding !== 'function') return null;
 
-    // Average the GloVe vectors for each seed word (skipping OOV)
     const dim = 50;
     const centroid = new Float64Array(dim);
-    let count = 0;
-    for (const word of seedWords) {
+
+    const getVec = (word) => {
       try {
-        const v = emb.getEmbedding(word.toLowerCase());
-        if (v && v.length >= dim) {
-          for (let i = 0; i < dim; i++) centroid[i] += v[i];
-          count++;
-        }
-      } catch {}
+        const v = emb.getEmbedding(String(word || '').toLowerCase());
+        return v && v.length >= dim ? v : null;
+      } catch { return null; }
+    };
+    const addVec = (vec, weight) => {
+      if (!vec) return;
+      for (let i = 0; i < dim; i++) centroid[i] += vec[i] * weight;
+    };
+
+    // Primary bias: cluster name (e.g. "amygdala", "cortex", "mystery")
+    const clusterKey = CLUSTER_KEYS[event.cluster] || 'cortex';
+    addVec(getVec(clusterKey), 1.0);
+
+    // Secondary bias: metric field name (e.g. "arousal", "predictionError")
+    // Split camelCase so "predictionError" → "prediction" + "error" and
+    // both lookups contribute. This surfaces compound field names into
+    // their component semantics.
+    if (event.metric) {
+      const parts = String(event.metric).replace(/([A-Z])/g, ' $1').toLowerCase().split(/\s+/).filter(Boolean);
+      for (const part of parts) addVec(getVec(part), 0.5 / parts.length * parts.length); // total weight 0.5
     }
-    if (count === 0) return null;
-    for (let i = 0; i < dim; i++) centroid[i] /= count;
+
+    // Tertiary bias: direction word mapped from structural direction.
+    // Three strings only — 'rising', 'falling', 'surging' — one per
+    // possible direction value. Not per-event text.
+    const directionWord = event.direction === 'up' ? 'rising'
+                         : event.direction === 'down' ? 'falling'
+                         : 'surging';
+    addVec(getVec(directionWord), 0.3);
 
     // L2 normalize so the bias blends cleanly with a normalized
     // cortex readout in _generateEventCommentary
     let norm = 0;
     for (let i = 0; i < dim; i++) norm += centroid[i] * centroid[i];
-    norm = Math.sqrt(norm) || 1;
+    norm = Math.sqrt(norm);
+    if (norm < 1e-6) return null;
     for (let i = 0; i < dim; i++) centroid[i] /= norm;
 
     this._seedVectorCache.set(key, centroid);
@@ -1316,9 +1351,10 @@ export class Brain3D {
         cortexPattern = cortex.getSemanticReadout(sharedEmb);
       }
 
-      // Blend in the event seed to bias Unity toward commenting on
-      // the triggered event type
-      const seed = this._seedCentroid(event.seedWords);
+      // T4.10 — derive seed equationally from event structural
+      // fields (cluster + metric + direction) via GloVe lookups.
+      // No hardcoded seedWords array anymore.
+      const seed = this._seedCentroid(event);
       if (cortexPattern && seed && cortexPattern.length === seed.length) {
         const biased = new Float64Array(cortexPattern.length);
         for (let i = 0; i < cortexPattern.length; i++) {
@@ -1355,6 +1391,13 @@ export class Brain3D {
           cortexPattern,
           predictionError: 0,
           motorConfidence: state.motor?.confidence ?? 0,
+          // T4.10 — popup is Unity's LIVE internal thought. Skip the
+          // T4.8 recall-verbatim emit path so she never speaks a
+          // pre-written persona sentence in a popup. Slot gen only.
+          // Chat path (engine.js + brain-server.js) leaves this flag
+          // unset so recall-verbatim still fires for user-facing
+          // coherence.
+          _internalThought: true,
         }
       );
 
@@ -1701,16 +1744,42 @@ export class Brain3D {
           if (v < cutoff) this._recentEventTypes.delete(k);
         }
       }
-      // Build a numeric-telemetry line showing the actual state
-      // changes that drove THIS event — brings back the pre-T5
-      // "see the values change" feel alongside Unity's commentary.
-      // Each event type maps to the most relevant scalar readouts.
+      // T4.10 — render all three lines equationally. No hand-written
+      // labels, no per-event emoji map.
+      //
+      //   Line 1 = {emoji} {clusterKey} {metric}{arrow}
+      //     - emoji from _brainEmoji salted with event magnitude so
+      //       different events produce different Unicode even at the
+      //       same global brain state
+      //     - clusterKey / metric / direction arrow all derived from
+      //       event structural fields (zero hand-written text)
+      //   Line 2 = numeric telemetry from _eventReadout(metric, state)
+      //   Line 3 = Unity's slot-gen internal thought (if generated)
+      const clusterKey = CLUSTER_KEYS[chosen.cluster] || 'cortex';
+      const arrow = chosen.direction === 'up' ? '↑'
+                   : chosen.direction === 'down' ? '↓'
+                   : '⇌';
+      const emoji = this._brainEmoji(
+        state.arousal ?? 0.5,
+        state.valence ?? 0,
+        state.psi ?? 0,
+        state.coherence ?? 0.5,
+        state.isDreaming || false,
+        (state.reward ?? 0) + (chosen.magnitude || 0) * 0.1
+      );
+      const tag = `${emoji} ${clusterKey} ${chosen.metric || ''}${arrow}`;
       const readout = this._eventReadout(chosen, state);
-      // Render as a three-line notification:
-      //   1. event emoji + label
-      //   2. numeric telemetry (readout) — the actual process values
-      //   3. Unity's commentary in quotes (if generated)
-      const lines = [`${chosen.emoji} ${chosen.label}`];
+
+      // Diagnostic — once per event type, log what fired + what came
+      // back. Keeps the commentary pipeline verifiable from the
+      // browser console without spamming.
+      if (!this._loggedEventTypes) this._loggedEventTypes = new Set();
+      if (!this._loggedEventTypes.has(chosen.type)) {
+        this._loggedEventTypes.add(chosen.type);
+        console.log('[Brain3D] event fired:', chosen.type, '→', commentary || '(commentary null)');
+      }
+
+      const lines = [tag];
       if (readout) lines.push(readout);
       if (commentary) lines.push(`"${commentary}"`);
       this._addNotification(lines.join('\n'), chosen.cluster);
