@@ -6,11 +6,14 @@
   "main": "brain-server.js",
   "scripts": {
     "start": "node brain-server.js",
-    "build": "npx esbuild ../js/app.js --bundle --format=esm --outfile=../js/app.bundle.js --platform=browser --target=esnext"
+    "build": "esbuild ../js/app.js --bundle --format=esm --outfile=../js/app.bundle.js --platform=browser --target=esnext"
   },
   "dependencies": {
-    "ws": "^8.16.0",
+    "better-sqlite3": "^11.0.0",
     "node-fetch": "^3.3.2",
-    "better-sqlite3": "^11.0.0"
+    "ws": "^8.16.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.21.5"
   }
 }
