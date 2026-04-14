@@ -491,6 +491,11 @@ class ServerBrain {
       // EMBED_DIM=50 = 20 neurons per embedding dim, 4× more granular
       // than the previous 300-neuron cluster which had groupSize=3.
       this._langStart = Math.floor(langCortexSize / 2);
+      // T14.3 — wire the language cortex cluster into the dictionary so
+      // new words route their letter streams through cluster.detectBoundaries
+      // and cluster.detectStress on first observation. Server mirrors the
+      // browser's wiring from engine.js.
+      this.dictionary.setCluster(this.cortexCluster);
       // R6.2 — component synth for equational build_ui on the server.
       // Templates get loaded from docs/component-templates.txt below.
       this.componentSynth = new csMod.ComponentSynth();

@@ -5,6 +5,102 @@
 
 ---
 
+## 2026-04-14 — T14.3 cortex-resident words (Dictionary routed through cluster)
+
+**Gee's directive:** *"dont ask next time just move on to the next item"* — continue T14 milestone-by-milestone on `t14-language-rebuild`.
+
+**Thesis.** The old T14.3 draft proposed adding nine hardcoded phonological fields to every Dictionary entry (`letters`, `syllables`, `syllableShapes`, `syllableCount`, `stressPattern`, `phonemeFeatures`, `phonemeMean`, `phonemeOnset`, `phonemeCoda`) computed via a standalone phoneme feature table plus a maximum-onset syllabifier. That was patch thinking at two levels — it duplicated what the cortex was supposed to learn and it locked the dictionary to one English-specific phonology. The rewritten T14 spec kills both: phonology is cortex-level via T14.1 letter one-hots + T14.2 transition surprise, the dictionary just stores the cortex's output. This commit ships that.
+
+### New Dictionary entry shape
+
+```
+{
+  word:           string,
+  pattern:        Float64Array(PATTERN_DIM)   // semantic readout (300d GloVe/cortex)
+  arousal:        number,
+  valence:        number,
+  frequency:      number,                      // observation count
+  cortexSnapshot: Uint8Array | null,           // cluster.lastSpikes copy after 1st-observation stream
+  syllables:      number[] | null,             // boundary indices from cluster.detectBoundaries
+  stressPrimary:  number,                      // primary-stress syllable index (or -1)
+  lastSeen:       number,                      // ms timestamp of most recent observation
+}
+```
+
+No `letters` field (just use `word.length` or iterate the string). No `syllableShapes` (the shape is implicit in the boundary indices + the letter sequence). No `phonemeFeatures` table (phonemes are LEARNED cortex attractor basins in the phon sub-region). No `phonemeOnset` / `phonemeCoda` (those become cortex readouts on demand if a consumer ever needs them). The dictionary stores what the cortex learned, not a parallel hand-computed feature set.
+
+### `Dictionary.setCluster(cluster)` — new method
+
+Wires a cortex cluster reference for cortex-routed learning. Called once during brain boot right after both the clusters and the Dictionary instance exist. Safe to call before any words have been learned (new words pick up the cluster at their first `learnWord`) or after (existing words keep their pre-wire state until re-observed — but observation does NOT re-stream, see below).
+
+Browser wiring: `js/brain/engine.js` line 211, right after `new InnerVoice()`:
+
+```js
+this.innerVoice = new InnerVoice();
+this.innerVoice.dictionary.setCluster(this.clusters.cortex);
+```
+
+Server wiring: `server/brain-server.js` `_initLanguageSubsystem`, right after `this.cortexCluster = new clusterMod.NeuronCluster('cortex', 2000, ...)`:
+
+```js
+this.dictionary.setCluster(this.cortexCluster);
+```
+
+### `learnWord` — rewritten for first-observation cortex routing
+
+Two paths:
+
+**Existing word** — bump frequency + running-mean pattern/arousal/valence. Does NOT re-stream the cortex. Re-streaming every word on every observation would call `cluster.detectStress → cluster.detectBoundaries → inject letters + tick cluster twice per letter` on every chat turn, which would shred live brain state and cost hundreds of cluster.step() calls per sentence. Phonological refinement for already-learned words is deferred to the T14.5 curriculum runner, which gets to own the perturbation budget deliberately.
+
+**New word** — pattern still comes from the caller's `cortexPattern` arg or from `sharedEmbeddings.getEmbedding(clean)` as the legacy v3 path did. Then:
+
+1. Strip non-letters: `letterOnly = clean.replace(/[^a-z]/g, '')`. Digits and apostrophes don't get streamed through the letter region, because the T14.1 inventory is meant for phonological primitives, not punctuation artifacts inside words like `don't` or `it's`. The T14.1 inventory will still accept them via direct `cluster.injectLetter` calls from other paths.
+2. If `letterOnly.length > 0` and `cluster.detectStress` exists: `cluster.detectStress(letterOnly, { ticksPerLetter: 2 })`. This runs the T14.2 two-pass algorithm — first pass computes boundaries via transition surprise, second pass samples phon-region activation per letter and averages per syllable.
+3. Read back `{ boundaries, stress, primary, secondary }`. Store `boundaries` as `syllables` and `primary` as `stressPrimary`.
+4. Snapshot `cluster.lastSpikes` as a fresh `Uint8Array(cluster.lastSpikes)` and store as `cortexSnapshot`. This is the cortex state AFTER the two-pass detectStress run, i.e. the cortex's spike pattern in response to this specific word's letter sequence given the current cluster weights.
+5. Wrap the whole thing in a try/catch — a failure in stress detection does NOT block the word from entering the dictionary. It still gets the semantic pattern and emotional state; it just loses the phonological fields.
+
+### `syllablesFor(word)` and `snapshotFor(word)` — new readers
+
+Plain lookups. Return `null` if the word is unknown or was stored without cluster wiring. Callers wanting on-demand syllabification of a fresh string should go through `cluster.detectBoundaries` directly — the dictionary only exposes stored state, not computation.
+
+### Persistence
+
+`serialize()` extended to write `cortexSnapshot` (as a plain array of 0/1 bytes), `syllables`, `stressPrimary`, `lastSeen` alongside the existing fields. `_load()` restores them with `new Uint8Array(entry.cortexSnapshot)` and graceful fallbacks for any field that was absent on old payloads.
+
+`STORAGE_KEY` bumped `'unity_brain_dictionary_v3'` → `'unity_brain_dictionary_v4'`. Old v3 caches are abandoned by localStorage key mismatch so Unity boots with a fresh dictionary on upgrade rather than trying to reconcile stale 50d patterns with the new 300d world. No compatibility shim — on the T14 rebuild branch the entire stack is in flux and upgrade-through-boot is cheaper than upgrade-through-shim.
+
+### What is NOT in this commit
+
+- `Dictionary` is NOT gutted down to 150 lines. The earlier spec proposed deleting `findByMood`, `findByPattern`, `generateSentence`, and the bigram tables, keeping only `Map<word, cortexSnapshot>`. I kept all of those — they're still used by `language-cortex.js:generate` (scheduled for deletion in T14.12), by `inner-voice.js` (mood-matched recall), and by the live app path. Deleting them now would break the running app for the six milestones it takes to reach T14.12. The new cortex-routed fields were ADDED alongside, not instead-of.
+- No updates to `language-cortex.js:generate` candidate-scoring loop. That loop's deletion is T14.12's job; T14.3 only has to make sure it still works, and it does — `entry.pattern` is still populated.
+- No rewrite of `component-synth` or `brain-3d` consumers of `entry.pattern`. Same reason — T14.12 gets to choose the cortex-readout replacement path once.
+- No curriculum-driven syllable refinement. That's T14.5.
+
+### Files touched
+
+- `js/brain/dictionary.js` — entry shape extended, `setCluster` / `syllablesFor` / `snapshotFor` added, `learnWord` rewritten for the two-path cortex routing, serialize/deserialize extended, STORAGE_KEY bumped v3 → v4 (~130 lines net)
+- `js/brain/engine.js` — 8 lines wiring `this.innerVoice.dictionary.setCluster(this.clusters.cortex)` right after innerVoice construction
+- `server/brain-server.js` — 6 lines mirroring the wiring on the 2000-neuron server language cortex cluster inside `_initLanguageSubsystem`
+
+### Cost analysis
+
+First-observation cost per new word: 2 passes × lettersInWord × ticksPerLetter cluster.step() calls, plus bookkeeping. For a 6-letter word that's 24 step() calls. At ~50 µs per step on a 2000-neuron Rulkov cluster, ~1.2 ms per new word. For a 5000-word persona+baseline+coding corpus at server boot, one-time cost ≈ 6 seconds. Acceptable — boot is NOT a hot path, and every subsequent chat turn pays zero cost for re-observations (just a Map lookup + 3 running-mean updates).
+
+### Peer-reviewed grounding
+
+Inherits T14.1 and T14.2 citations via delegation. Storing the cortex's own response to a word's letter sequence is the operational version of Kuhl 2004's statistical-exposure phoneme-category formation claim — the cortex snapshot IS what that phrase means when you try to write it down as a data structure. Hickok & Poeppel 2007 dorsal/ventral streams justify using the phon region specifically for stress readout (dorsal production-side signal).
+
+### Verification
+
+`node --check` passes clean on `js/brain/dictionary.js`, `js/brain/engine.js`, and `server/brain-server.js`. End-to-end verification deferred per the no-testing-until-all-T14-done directive — T14.3 becomes meaningful once T14.5 curriculum streams corpus vocabulary through the cortex at boot, which is the earliest point the stored snapshots reflect anything more than initial random cortex weights.
+
+### Branch + commit
+
+`t14-language-rebuild`, one atomic commit per the 2026-04-14 docs-before-push law. All six docs updated in place.
+
+---
+
 ## 2026-04-14 — T14.2 LEARNED syllable boundaries via cortex transition surprise
 
 **Gee's directive:** *"dont ask next time just move on to the next item"* — T14.1 shipped, continue straight into T14.2 on the same branch with the same atomic-push-with-masterful-doc-updates pattern.

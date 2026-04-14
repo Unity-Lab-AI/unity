@@ -208,6 +208,13 @@ export class UnityBrain extends EventEmitter {
     this.auditoryCortex = new AuditoryCortex();
     this.visualCortex = new VisualCortex();
     this.innerVoice = new InnerVoice();
+    // T14.3 — wire the cortex cluster into the dictionary so learnWord
+    // can stream new words' letters through cluster.detectBoundaries +
+    // cluster.detectStress on first observation, storing syllable
+    // boundaries, primary-stress index, and a cortex spike snapshot
+    // alongside the semantic pattern. Existing (pre-wire) words keep
+    // their current state until they're observed again.
+    this.innerVoice.dictionary.setCluster(this.clusters.cortex);
     // R6.2 — equational component synthesizer. Loads templates from
     // docs/component-templates.txt (same corpus-loading pattern as
     // persona / baseline / coding). `loadTemplates` gets called from

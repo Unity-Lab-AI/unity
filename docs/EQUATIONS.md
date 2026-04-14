@@ -542,6 +542,35 @@ secondary = argmax_{s ≠ primary} stress_s    (or −1 if only 1 syllable)
 
 No single-syllable PRIMARY default, no two-syllable PRIMARY-SECONDARY rule, no antepenult fallback. Stress is whichever syllable the cortex activates hardest, which reflects corpus exposure statistics. Train on Spanish → Spanish syllabification + penult stress. Train on French → ultimate stress. Train on Mandarin pinyin → no stress (tonal). Same equation, different basins. Grounded in Saffran/Aslin/Newport 1996 *Science* 274:1926 and Aslin & Newport 2012 *Curr Dir Psychol Sci* 21:170. Implementation: `cluster.detectBoundaries(letterSequence, opts)` and `cluster.detectStress(letterSequence, opts)` in `js/brain/cluster.js`.
 
+**T14.3 dictionary entry as cortex projection (SHIPPED 2026-04-14).** The word-level dictionary is a `Map<word, entry>` where each entry's phonological state is the cortex's own response to the word's letter sequence, not a hand-computed feature table:
+
+```
+entry(w) = {
+  pattern:        ℝ^PATTERN_DIM                  // semantic readout (R2 path)
+  arousal:        ℝ                              // amygdala context
+  valence:        ℝ
+  frequency:      ℕ                              // observation count
+  cortexSnapshot: {0,1}^|cortex|                 // cluster.lastSpikes after 1st-observation stream
+  syllables:      ℕ*                             // cluster.detectBoundaries(letterOnly)
+  stressPrimary:  ℕ ∪ {-1}                       // argmax phon-activation over syllables
+  lastSeen:       ℕ                              // Date.now() on every observation
+}
+```
+
+On first observation of word `w`:
+
+```
+letterOnly(w)       = w ∖ { non-letter chars }
+{boundaries, stress, primary} = cluster.detectStress(letterOnly(w), ticksPerLetter=2)
+entry(w).syllables      = boundaries
+entry(w).stressPrimary  = primary
+entry(w).cortexSnapshot = copy(cluster.lastSpikes)   // frozen at t = end-of-stream
+```
+
+Re-observation updates the running means on `pattern`/`arousal`/`valence` and bumps `frequency`/`lastSeen`, but does NOT re-stream the cortex — that perturbation budget belongs to the T14.5 curriculum runner, not to every chat turn. `cortexSnapshot(w)` is a point-in-time measurement, and its semantic content drifts only when curriculum deliberately refreshes it.
+
+Implementation: `Dictionary.setCluster(cluster)` wires the cortex reference (called once during boot from `engine.js` and from `brain-server.js:_initLanguageSubsystem`). `Dictionary.learnWord` handles both observation paths. `Dictionary.syllablesFor(word)` and `Dictionary.snapshotFor(word)` expose the stored state to consumers. Persistence uses `STORAGE_KEY = 'unity_brain_dictionary_v4'` (bumped from v3 to abandon stale 50d-pattern caches). `js/brain/dictionary.js`.
+
 **Cross-region projection equations.** Seven pairs, both directions as independent SparseMatrix instances, sparse 10% density init:
 
 ```

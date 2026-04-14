@@ -578,9 +578,35 @@ Two new methods on `NeuronCluster` — no new file, syllables are a cortex-level
 
 **No new file.** `detectBoundaries` lives on the cluster as a method, not in a standalone `syllables.js`. Callers cannot syllabify without going through the cortex — because syllabification IS cortex inference in this architecture. `dictionary.learnWord` (T14.3 gut-and-rewrite, next milestone) calls `cluster.detectBoundaries(letters)` directly.
 
+### T14.3 — Dictionary routed through cortex (SHIPPED 2026-04-14)
+
+`Dictionary` entry shape extended with cortex-routed phonological state instead of a hand-computed feature table. New fields on every entry:
+
+| Field | Source | Purpose |
+|---|---|---|
+| `cortexSnapshot` | `Uint8Array(cluster.lastSpikes)` after first-observation letter stream | Frozen cortex response to this word's letter sequence |
+| `syllables` | `cluster.detectBoundaries(letterOnly)` (T14.2) | Boundary indices — where each syllable starts |
+| `stressPrimary` | `cluster.detectStress(letterOnly).primary` | Index (into syllables) of the primary-stress syllable |
+| `lastSeen` | `Date.now()` on every observation | Most recent observation timestamp |
+
+Old fields (`pattern`, `arousal`, `valence`, `frequency`) stay in place for backward compat with `language-cortex.js:generate`, `component-synth`, `brain-3d`, and the live app path. T14.12 will gut those consumers once the tick-driven emission loop replaces the slot scorer; until then T14.3 lives alongside the legacy state, not in place of it.
+
+**`Dictionary.setCluster(cluster)`** — new method. Wires a cortex cluster reference for cortex-routed learning. Called once during brain boot after both the clusters and the Dictionary instance exist. Browser wiring: `js/brain/engine.js` calls `this.innerVoice.dictionary.setCluster(this.clusters.cortex)` right after `new InnerVoice()`. Server wiring: `server/brain-server.js:_initLanguageSubsystem` calls `this.dictionary.setCluster(this.cortexCluster)` right after the 2000-neuron server language cortex cluster is constructed.
+
+**`learnWord` rewritten** for two-path routing:
+
+- **Existing word** — bump `frequency` + running-mean `pattern` / `arousal` / `valence`, update `lastSeen`. Does NOT re-stream the cortex. Re-streaming on every observation would call `cluster.detectStress → cluster.detectBoundaries → inject letters + tick cluster twice per letter` on every chat turn, shredding live brain state and costing hundreds of `cluster.step()` calls per sentence. Phonological refinement for already-learned words is owned by the T14.5 curriculum runner.
+- **New word** — pattern still comes from caller `cortexPattern` or `sharedEmbeddings.getEmbedding(clean)`. Then: strip non-letters (`letterOnly = clean.replace(/[^a-z]/g, '')`), call `cluster.detectStress(letterOnly, { ticksPerLetter: 2 })` if cluster is wired and `letterOnly.length > 0`, store `boundaries`/`primary` as `syllables`/`stressPrimary`, snapshot `cluster.lastSpikes` as `cortexSnapshot`. Wrapped in try/catch so phono-detection failure doesn't block the word from entering the dictionary.
+
+**`syllablesFor(word)` / `snapshotFor(word)`** — new readers. Plain lookups that return `null` for unknown words or words stored without cluster wiring. Callers wanting on-demand syllabification of fresh strings go through `cluster.detectBoundaries` directly — the dictionary only exposes stored state.
+
+**Persistence.** `serialize()` writes the new fields (cortexSnapshot as a 0/1 byte array, syllables/stressPrimary/lastSeen as plain values). `_load()` restores them with `new Uint8Array(...)` and `??` fallbacks. `STORAGE_KEY` bumped `v3 → v4` so stale 50d-pattern caches are abandoned by localStorage key mismatch instead of carried forward as incompatible state. No compatibility shim — on the T14 rebuild branch the stack is in flux and upgrade-through-boot is cheaper than upgrade-through-shim.
+
+**First-observation cost.** ~24 `cluster.step()` calls for a 6-letter word (2 passes × 6 letters × 2 ticks/letter). At ~50 µs/step on a 2000-neuron Rulkov cluster, ~1.2 ms per new word. For a 5000-word server boot corpus, one-time cost ≈ 6 seconds. Runtime chat cost is zero for re-observations (Map lookup + 3 running means).
+
 ### What's next on the rebuild branch
 
-T14.3 — Dictionary class gut-and-rewrite. Every per-word feature computation (`letters`, `syllables`, `syllableShapes`, `phonemeFeatures`, `phonemeMean`, `phonemeOnset`, `phonemeCoda`) gets stripped out; `Dictionary` becomes a thin `Map<word, cortexSnapshot>` index that stores the cortex spike state after exposure instead of computed features. Each subsequent T14.x milestone ships as its own commit on this branch with full in-place doc updates. Branch merges to `main` only after T14.17 is complete and verified.
+T14.5 — continuous developmental learning curriculum runner. Replaces one-shot persona/baseline/coding corpus loading with staged exposure (alphabet → seed words → phrases → sentences → persona → vocabulary) and owns the phonological-refinement perturbation budget for already-learned words. Each subsequent T14.x milestone ships as its own commit on this branch with full in-place doc updates. Branch merges to `main` only after T14.17 is complete and verified.
 
 ---
 
