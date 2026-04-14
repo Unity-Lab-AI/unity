@@ -553,6 +553,112 @@ export class NeuronCluster {
   }
 
   /**
+   * T14.9 — Working-memory readout from the cortex `free` sub-region.
+   *
+   * Replaces the old `_discourseState` 6-turn ring buffer concept. The
+   * `free` sub-region (fraction 0.250-0.500 of cluster.size, T14.4) is
+   * the cortex working-memory scratchpad — every user turn injects the
+   * parsed content into this region with high strength, slow LIF
+   * dynamics decay it between turns, and on-topic turns reinforce
+   * whatever pattern was already there. Topic continuity at generation
+   * time is just "read the free region's spike pattern" — no stored
+   * topic vector, no maxTurns cap, no hardcoded blend constants.
+   *
+   * @param {number} [dim=PATTERN_DIM]  — output dimension to project to
+   * @returns {Float64Array}  — L2-normalized activation snapshot
+   */
+  workingMemoryReadout(dim = 64) {
+    if (!this.regions || !this.regions.free) return new Float64Array(dim);
+    return this.regionReadout('free', dim);
+  }
+
+  /**
+   * T14.9 — Inject a content vector into the working-memory region.
+   * Called by the sensory path on every user turn so the free region's
+   * activation pattern represents the current discourse topic. No blend
+   * constants — the cortex's own LIF decay + cross-region Hebbian handle
+   * topic fade / reinforcement automatically.
+   */
+  injectWorkingMemory(contentVec, strength = 0.8) {
+    if (!this.regions || !this.regions.free || !contentVec || contentVec.length === 0) return;
+    this.injectEmbeddingToRegion('free', contentVec, strength);
+  }
+
+  /**
+   * T14.10 — Read text through the visual pathway.
+   *
+   * For each character in `text`, drives the visual sub-region with
+   * the letter's learned visual template (if visualCortex is wired),
+   * then injects the letter one-hot into the letter region via the
+   * existing T14.1 injectLetter path. When curriculum has trained
+   * the visual↔letter cross-projection, the visual-region spikes
+   * arrive at letter region anyway via T14.4 propagation — this
+   * explicit injection is belt-and-braces guaranteeing the letter
+   * region fires regardless of how deep visual learning is.
+   *
+   * Ticks the cluster between characters so recurrent dynamics settle.
+   * Used by `engine.processAndRespond` to route text input through
+   * the visual pathway instead of the direct letter-injection path,
+   * matching the biological reading pipeline (visual → letter → phon
+   * → sem → fineType) from Hickok & Poeppel 2007.
+   *
+   * @param {string} text
+   * @param {object} [opts]
+   * @param {number} [opts.ticksPerChar=2]
+   * @param {object} [opts.visualCortex]  — optional VisualCortex instance
+   *   with `renderLetterTemplate(letter) → Float64Array` capability
+   */
+  readText(text, opts = {}) {
+    if (!this.regions || !this.regions.letter || !text) return;
+    const ticksPerChar = opts.ticksPerChar ?? 2;
+    const visualCortex = opts.visualCortex || null;
+    const chars = Array.from(text.toLowerCase());
+    this._prevLetterRate = 0;
+    for (const ch of chars) {
+      if (visualCortex && typeof visualCortex.renderLetterTemplate === 'function') {
+        const template = visualCortex.renderLetterTemplate(ch);
+        if (template && template.length > 0 && this.regions.visual) {
+          this.injectEmbeddingToRegion('visual', template, 0.7);
+        }
+      }
+      this.injectLetter(ch, 1.0);
+      for (let t = 0; t < ticksPerChar; t++) this.step(0.001);
+    }
+  }
+
+  /**
+   * T14.11 — Hear a phoneme through the auditory pathway.
+   *
+   * Symmetric with `readText`/`injectLetterFromVisual` but on the
+   * auditory side: drives the auditory sub-region with a phoneme
+   * template (from `auditoryCortex.renderPhonemeTemplate` for text-
+   * only mode, or real spectral features when mic input is wired),
+   * then ticks the cluster so the T14.4 auditory↔phon cross-projection
+   * propagates the activation into the phon region. Curriculum
+   * exposure (T14.5) shapes the cross-projection weights so over time
+   * `/k/` auditory input activates the same phon basin that visual
+   * letter "c" activates via the visual↔letter↔phon pathway — the
+   * dual-stream convergence from Hickok & Poeppel 2007.
+   *
+   * @param {string} phoneme — symbol
+   * @param {object} [opts]
+   * @param {object} [opts.auditoryCortex] — instance with renderPhonemeTemplate
+   * @param {number} [opts.ticks=2]
+   * @param {number} [opts.strength=0.7]
+   */
+  hearPhoneme(phoneme, opts = {}) {
+    if (!this.regions || !this.regions.auditory) return;
+    const ticks = opts.ticks ?? 2;
+    const strength = opts.strength ?? 0.7;
+    const auditoryCortex = opts.auditoryCortex || null;
+    if (!auditoryCortex || typeof auditoryCortex.renderPhonemeTemplate !== 'function') return;
+    const template = auditoryCortex.renderPhonemeTemplate(phoneme);
+    if (!template || template.length === 0) return;
+    this.injectEmbeddingToRegion('auditory', template, strength);
+    for (let t = 0; t < ticks; t++) this.step(0.001);
+  }
+
+  /**
    * T14.6 — Cortex tick-driven motor emission.
    *
    * Speech production is a continuous time-varying motor cortex output,

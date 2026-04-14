@@ -55,6 +55,69 @@ export class AuditoryCortex {
     this._motorOutput = '';  // what Unity is currently saying
     this.isEcho = false;     // true = heard speech matches our own output
     this.isExternalSpeech = false; // true = someone else is talking
+
+    // T14.11 (2026-04-14) — per-phoneme auditory attractor templates.
+    // Parallel to T14.10's visual letter templates: each unique phoneme
+    // symbol the brain hears gets a deterministic trig-hash signature
+    // the cortex auditory sub-region receives on every exposure. For
+    // voice-capable Unity, the spectrum bins from `process()` will
+    // eventually replace this synthetic template with real per-phoneme
+    // spectral fingerprints, but the downstream contract
+    // (`cluster.injectEmbeddingToRegion('auditory', template, ...)`)
+    // stays identical — only the template source changes.
+    this._phonemeTemplateCache = new Map();
+    this._phonemeTemplateDim = 48;
+  }
+
+  /**
+   * T14.11 — Render a deterministic auditory template for a phoneme.
+   *
+   * Text-only Unity doesn't have mic input rendering spoken phonemes,
+   * so the auditory template has to come from somewhere. This method
+   * generates a stable L2-normalized Float64Array from the phoneme
+   * symbol's codepoint via a trig hash that's seeded differently from
+   * T14.10's visual letter hash — the visual and auditory sub-regions
+   * converge on the phon region via the T14.4 cross-projections, and
+   * they have to arrive from uncorrelated starting points so curriculum
+   * Hebbian can shape their convergence as a learned correspondence
+   * rather than a trivial identity mapping.
+   *
+   * Called from `cluster.hearPhoneme(symbol)` (or the voice-input
+   * pathway once T14.12 wires it) to drive the cortex auditory region
+   * before downstream propagation to phon region. Over T14.5 curriculum
+   * exposure the auditory↔phon cross-projection learns that spoken /k/
+   * activates the same phon basin as visual letter "c" — the dual-stream
+   * convergence from Hickok & Poeppel 2007.
+   *
+   * @param {string} phoneme — symbol for the phoneme (e.g. 'a', 'k', '/ʃ/')
+   * @returns {Float64Array} — L2-normalized template of length _phonemeTemplateDim
+   */
+  renderPhonemeTemplate(phoneme) {
+    if (!phoneme || typeof phoneme !== 'string' || phoneme.length === 0) {
+      return new Float64Array(this._phonemeTemplateDim);
+    }
+    const key = phoneme.toLowerCase();
+    const cached = this._phonemeTemplateCache.get(key);
+    if (cached) return cached;
+    const cp = key.codePointAt(0) || 0;
+    const out = new Float64Array(this._phonemeTemplateDim);
+    // Auditory prime seeds — DIFFERENT from the visual cortex T14.10
+    // primes so visual/auditory templates for the same symbol do NOT
+    // trivially match. Convergence on phon region is a LEARNED
+    // correspondence, not a hash coincidence.
+    const PRIMES = [41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89];
+    for (let i = 0; i < this._phonemeTemplateDim; i++) {
+      const p = PRIMES[i % PRIMES.length];
+      const phase = (i * 0.23) + 0.59;
+      out[i] = Math.sin(cp * 0.5236 * p + phase)
+             + Math.cos(cp * 0.8660 * p + phase * 3);
+    }
+    let norm = 0;
+    for (let i = 0; i < out.length; i++) norm += out[i] * out[i];
+    norm = Math.sqrt(norm) || 1;
+    for (let i = 0; i < out.length; i++) out[i] /= norm;
+    this._phonemeTemplateCache.set(key, out);
+    return out;
   }
 
   /**

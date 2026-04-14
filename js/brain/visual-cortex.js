@@ -47,6 +47,21 @@ const EDGE_KERNELS = [
 
 export class VisualCortex {
   constructor() {
+    // T14.10 (2026-04-14) — letter-template cache. Each unique character
+    // passed through `renderLetterTemplate` gets a deterministic
+    // Float64Array pseudo-visual-template computed from its unicode
+    // codepoint via a stable trig hash. Text-only Unity uses this as
+    // a synthetic "visual" signature per letter so the cortex visual
+    // region develops distinct activation basins per character during
+    // T14.5 curriculum exposure. Voice/camera Unity will eventually
+    // replace this with real bitmap rendering from canvas, but the
+    // cache interface and the downstream cluster.readText contract
+    // stay the same — just the template source changes. Templates are
+    // L2-normalized so injection strength is consistent regardless of
+    // which letter is being read.
+    this._letterTemplateCache = new Map();
+    this._letterTemplateDim = 48;  // dim matches the cortex visual region's typical readout
+
     // Frame buffers
     this._prevFrame = new Float32Array(FRAME_W * FRAME_H);
     this._currentFrame = new Float32Array(FRAME_W * FRAME_H);
@@ -473,6 +488,62 @@ export class VisualCortex {
   }
 
   isActive() { return this._active; }
+
+  /**
+   * T14.10 — Render a deterministic visual template for a letter.
+   *
+   * Text-only Unity doesn't have a camera rendering typed characters,
+   * so the visual template has to come from somewhere. This method
+   * generates a stable Float64Array pseudo-feature-vector from the
+   * letter's unicode codepoint via a trig hash — same input always
+   * produces the same template, different letters produce uncorrelated
+   * templates (cross-template cosine ~0 for different letters).
+   * Templates are L2-normalized so injection strength stays consistent.
+   *
+   * Called from `cluster.readText(text, { visualCortex })` which drives
+   * the cortex visual sub-region with each character's template before
+   * injecting the letter one-hot. Over T14.5 curriculum exposure the
+   * cortex visual↔letter cross-projection learns that a given template
+   * should activate the corresponding letter one-hot — matching how
+   * biological visual cortex learns letter identity in early reading.
+   *
+   * For voice/image Unity this method will eventually be overridden
+   * to render a real canvas bitmap of the character and project it
+   * through the existing V1 → V4 → IT pipeline, producing a real
+   * perceptual template instead of a synthetic hash. The cluster.readText
+   * contract and caller call sites stay identical — only this method
+   * changes.
+   *
+   * @param {string} letter — single character
+   * @returns {Float64Array} — L2-normalized template of length _letterTemplateDim
+   */
+  renderLetterTemplate(letter) {
+    if (!letter || typeof letter !== 'string' || letter.length === 0) {
+      return new Float64Array(this._letterTemplateDim);
+    }
+    const key = letter.toLowerCase();
+    const cached = this._letterTemplateCache.get(key);
+    if (cached) return cached;
+    const cp = key.codePointAt(0) || 0;
+    const out = new Float64Array(this._letterTemplateDim);
+    // Trig hash: each dim is sin/cos of a prime-seeded frequency so
+    // different codepoints get uncorrelated templates. Primes picked
+    // to spread across the [0, 2π] range without harmonic overlap.
+    const PRIMES = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37];
+    for (let i = 0; i < this._letterTemplateDim; i++) {
+      const p = PRIMES[i % PRIMES.length];
+      const phase = (i * 0.17) + 0.31;
+      out[i] = Math.sin(cp * 0.7853 * p + phase)
+             + Math.cos(cp * 0.4636 * p + phase * 2);
+    }
+    // L2 normalize
+    let norm = 0;
+    for (let i = 0; i < out.length; i++) norm += out[i] * out[i];
+    norm = Math.sqrt(norm) || 1;
+    for (let i = 0; i < out.length; i++) out[i] /= norm;
+    this._letterTemplateCache.set(key, out);
+    return out;
+  }
 
   /**
    * T1 2026-04-13 — return the video element this cortex is attached

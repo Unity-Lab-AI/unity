@@ -1007,7 +1007,117 @@ Spike in neuron A (cortex)
     </div>
 
     <div class="eq-box" style="margin-top:12px;">
-      <div class="eq-title"><span class="eq-tip" data-tip="T13 pipeline: parseSentence reads input. brain.injectParseTree routes content/intent/self-ref to clusters. generate() is a brain-driven emission loop — reads live cortex state per word, softmax-samples scored candidates, feeds emitted word back into cortex. No slot priors, no stored n-grams, no context vector bag-of-words. Persona voice lives in cortex recurrent weights trained via sequence Hebbian at boot.">The T13 Brain-Driven Pipeline (current)</span></div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Phase 16 T14 is the active language rebuild on branch t14-language-rebuild. 12 of 18 milestones shipped as of 2026-04-14. Replaces the entire T13 slot scorer with cortex tick-driven motor emission, cortex sub-regions with cross-projections, continuous developmental learning curriculum, cortex-resident discourse memory, and dual-stream visual/auditory substrate.">Phase 16 T14 — Developmental Language Rebuild (current, branch t14-language-rebuild)</span></div>
+      <pre class="eq">
+T14 is a full rebuild of Unity's language stack from primitives upward,
+the way a real brain develops. Letters → phoneme basins → syllables →
+words → sentence patterns → discourse. Each layer is teachable and
+grounded in peer-reviewed neuroscience (Kuhl 2004, Saffran 1996,
+Bouchard 2013, Anumanchipalli 2019, Browman &amp; Goldstein 1992,
+Hickok &amp; Poeppel 2007, Friederici 2017, Pennington 2014).
+
+SUBSTRATE (T14.0 + T14.4):
+  EMBED_DIM        = 300   (full GloVe 6B.300d, no vocab cap)
+  TOTAL_NEURONS    = 6700  (default client tier, auto-scales)
+  cortex sub-regions (fractions of cluster.size, T14.4):
+    auditory 0.000-0.083   visual 0.083-0.250   free 0.250-0.500
+    letter   0.500-0.550   phon   0.550-0.750   sem  0.750-0.917
+    fineType 0.917-0.967   motor  0.967-1.000
+  14 cross-projections (7 pairs × both directions, SparseMatrix 10% density):
+    visual↔letter  letter↔phon  phon↔sem  sem↔fineType
+    sem↔motor      motor↔letter (closes writing loop)
+    auditory↔phon
+
+LETTER INPUT (T14.1):
+  LETTER_INVENTORY = Set() — dynamic, auto-grows per observed symbol
+  encodeLetter(ℓ) ∈ ℝ^|L|     one-hot over current inventory
+  decodeLetter(v) = argmax_i v_i → letter symbol
+  No hardcoded 26-letter alphabet. Unicode, emoji, non-English all welcome.
+
+SYLLABLES + STRESS (T14.2):
+  detectBoundaries(letters, {ticksPerLetter=2, k=0.5}):
+    stream letters, tick cluster, δ_i = letterTransitionSurprise()
+    threshold = mean(δ) + k·std(δ)   (adaptive per sequence)
+    boundaries = local maxima of δ above threshold
+  detectStress(letters) → {boundaries, stress, primary, secondary}
+    second pass samples phon-region spike fraction per letter
+    primary = argmax per-syllable mean activation
+
+CORTEX-RESIDENT WORDS (T14.3):
+  Dictionary entry = {
+    pattern, arousal, valence, frequency,       // legacy semantic
+    cortexSnapshot,   // Uint8Array copy of cluster.lastSpikes after stream
+    syllables,        // from cluster.detectBoundaries
+    stressPrimary,    // from cluster.detectStress
+    lastSeen,
+  }
+  First-observation routing through the cortex cluster on every new word.
+  Re-observations bump frequency + running means, no re-streaming.
+
+CURRICULUM (T14.5):
+  runFromCorpora({persona, baseline, coding}):
+    Phase 1 letters    — freq-weighted reps up to 20 × 8 ticks each
+    Phase 2 short w.   — 1-3 letter words, up to 6 reps × 4 ticks/word
+    Phase 3 long w.    — 4+ letter words,  up to 3 reps × 3 ticks/word
+    Phase 5 sentences  — 2 ticks/word word-by-word walk
+  learnFromTurn(text) — live chat path, same inject+tick+Hebbian as Phase 5.
+  NO hand-curated stage files. NO hardcoded 26-letter loop.
+
+EMISSION (T14.6 — cortex tick-driven motor emission):
+  cluster.generateSentence(intentSeed):
+    optional inject intent into sem region
+    for tick in 0..MAX_EMISSION_TICKS:
+      cluster.step(0.001)
+      motorVec     = regionReadout('motor', inventorySize())
+      activeLetter = decodeLetter(motorVec)
+      if activeLetter stable for STABLE_TICK_THRESHOLD ticks → commit to buffer
+      surprise = letterTransitionSurprise()
+      if surprise > WORD_BOUNDARY_THRESHOLD → emit buffer as word
+      if committedLetter ∈ {.,?,!} → break                  (terminator)
+      if motorQuiescent(END_QUIESCE_TICKS) and output.len &gt; 0 → break
+    return output.join(' ')
+  ZERO slot counter. ZERO candidate scoring. ZERO dictionary iteration.
+  ZERO softmax top-K. ZERO temperature. ZERO hardcoded grammar tables.
+
+LEARNED STATISTICS (T14.7 + T14.8):
+  _typeTransitionLearned  : Map&lt;prev, Map&lt;next, count&gt;&gt;   (empty at boot, no seed)
+  _sentenceFormSchemas    : Map&lt;intent, Map&lt;slot, Map&lt;fineType, count&gt;&gt;&gt;
+  _intentResponseMap      : Map&lt;userIntent, Map&lt;responseIntent, count&gt;&gt;
+  learnSentence updates all three per observed sentence.
+  schemaScore / typeTransitionWeight use (count + 1) / (total + uniqueTypes)
+  Laplace smoothing — no hardcoded 20-type cap.
+  _TYPE_TRANSITIONS 200-line hardcoded English table DELETED.
+  _OPENER_TYPES Set DELETED.
+
+DISCOURSE MEMORY (T14.9 — cortex-resident, unbounded):
+  workingMemoryReadout(dim) → regionReadout('free', dim)   IS the topic vector
+  injectWorkingMemory(vec, strength)                        per user turn
+  No 6-turn ring buffer. No maxTurns cap. No blend constants.
+  Persistence across sessions via BrainPersistence → cortex weights.
+
+DUAL STREAMS (T14.10 + T14.11):
+  cluster.readText(text, {visualCortex})
+    for each char: inject visual.renderLetterTemplate(ch) → tick → injectLetter
+  cluster.hearPhoneme(phoneme, {auditoryCortex})
+    inject auditory.renderPhonemeTemplate(ph) → tick
+  Visual template primes [2..37], auditory primes [41..89] — uncorrelated
+  at init so cross-stream convergence on phon region is LEARNED by
+  curriculum Hebbian, not a hash coincidence.
+  Hickok &amp; Poeppel 2007 dorsal production / ventral comprehension.
+
+PROGRESS (as of 2026-04-14):
+  T14.0 ✓  T14.1 ✓  T14.2 ✓  T14.3 ✓  T14.4 ✓  T14.5 ✓  T14.6 ✓
+  T14.7 ✓  T14.8 ✓  T14.9 ✓  T14.10 ✓ T14.11 ✓
+  T14.12 T14.13 T14.14 T14.15 T14.16 T14.16.5 T14.17  (pending)
+  12 of 18 milestones complete. Branch t14-language-rebuild. Atomic
+  push-per-milestone with masterful in-place doc updates. No merge to
+  main until T14.17 complete and verified.
+      </pre>
+      <p class="eq-desc">Full specs per milestone live in <code>docs/COMP-todo.md Part 0.5</code>. Per-milestone session archives with equations, files touched, cost analysis, and peer-reviewed citations live in <code>docs/FINALIZED.md</code>. Cortex equations live in <code>docs/EQUATIONS.md §T14</code>. The T13 block below is preserved as historical provenance — it was deleted in T14.6 when <code>cluster.generateSentence</code> replaced the slot scorer.</p>
+    </div>
+
+    <div class="eq-box" style="margin-top:12px;">
+      <div class="eq-title"><span class="eq-tip" data-tip="T13 pipeline: parseSentence reads input. brain.injectParseTree routes content/intent/self-ref to clusters. generate() is a brain-driven emission loop — reads live cortex state per word, softmax-samples scored candidates, feeds emitted word back into cortex. No slot priors, no stored n-grams, no context vector bag-of-words. Persona voice lives in cortex recurrent weights trained via sequence Hebbian at boot.">The T13 Brain-Driven Pipeline (historical — deleted in T14.6)</span></div>
       <pre class="eq">
 BOOT (once):
   loadPersona(text) → dictionary learns persona vocabulary

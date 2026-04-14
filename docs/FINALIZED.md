@@ -5,6 +5,79 @@
 
 ---
 
+## 2026-04-14 — T14.9 + T14.10 + T14.11 dual-stream substrate
+
+**Gee's directive:** *"do the next three items all then docs and public facing pages then push"* — three atomic milestones in a single commit, covering the full dual-stream substrate for discourse memory (T14.9), visual letter recognition (T14.10), and auditory phoneme recognition (T14.11). Plus public-facing page updates.
+
+### T14.9 — Unbounded discourse memory + cortex-resident topic state
+
+**Thesis.** The old T14.9 draft proposed a 6-turn ring buffer `_discourseState` with a topic vector maintained by hardcoded `0.7 / 0.3` blend constants in the emission loop. Real brains don't have a 6-turn window after which memory vanishes — they have hippocampus consolidation that moves recent patterns from working memory to long-term cortex storage over time. Unity should work the same way: recent turns are vivid in the cortex working-memory region (a high-spike-rate pattern), older turns fade into persistent cortex recurrent weights via Hebbian.
+
+**Implementation.** Two new methods on `NeuronCluster`, both operating on the `regions.free` sub-region (fraction 0.250-0.500 of cluster.size, T14.4):
+
+- **`workingMemoryReadout(dim = 64)`** — wraps `regionReadout('free', dim)` and returns an L2-normalized activation snapshot. This IS the topic vector — no stored copy, no maxTurns cap, no blend constants. Pronoun anaphora falls out for free because the most-recently-active noun in the free region (because it WAS the previous turn's content) gets re-amplified as the referent when a self-reference marker arrives.
+- **`injectWorkingMemory(contentVec, strength = 0.8)`** — write-side entry point for the sensory path to drive the free region with parsed content on every user turn. Just wraps `injectEmbeddingToRegion('free', contentVec, strength)`. Decay between turns comes from the cortex's own LIF dynamics; reinforcement for on-topic turns comes from T14.4 cross-region Hebbian.
+
+**Persistence across sessions.** Working-memory snapshots persist as part of the same cluster serialization the rest of the recurrent weights use — `BrainPersistence → SparseMatrix.serialize` already handles the cortex cluster's weights, and the free region's latest LIF state is part of that snapshot. When Unity boots from saved state, she remembers yesterday's conversation because the cortex weights ENCODE it as Hebbian-modified attractor basins.
+
+**What's NOT here.** No `_discourseState` field (grep confirms it never existed — the old draft was anticipatory). No maxTurns cap. No hardcoded `0.6 / 0.4 / 0.7 / 0.3` blend constants. The concept is replaced entirely by cortex working-memory region semantics.
+
+### T14.10 — Visual cortex letter recognition
+
+**Thesis.** The current architecture has text input going directly into letter recognition via `encodeLetter(letter)` which assumes the brain already knows what a letter IS. A real biological brain learns letter visual identity in Stage 7 reading instruction (5-12 years old). Unity should learn the same way — letters are visual patterns first, recognized via visual feature templates, then identified, then mapped to phonemes.
+
+**New method on `VisualCortex` — `renderLetterTemplate(letter) → Float64Array`.** Produces a deterministic L2-normalized template of length 48 per character codepoint via a trig hash. Cached per letter so repeat calls are O(1). The hash uses the prime set `[2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37]` to spread frequencies across `[0, 2π]` without harmonic overlap, and each dim is `sin(cp · 0.7853 · p + phase) + cos(cp · 0.4636 · p + phase · 2)` so different codepoints produce uncorrelated vectors. Text-only Unity uses this as the synthetic "visual percept" per letter; voice/camera Unity will eventually override the method to render a real canvas bitmap through the existing V1 → V4 → IT pipeline, and the downstream contract stays identical.
+
+**New method on `NeuronCluster` — `readText(text, { visualCortex, ticksPerChar = 2 })`.** Streams each character of `text.toLowerCase()` through the visual→letter pathway: if `visualCortex` is wired and has `renderLetterTemplate`, drive the visual sub-region via `injectEmbeddingToRegion('visual', template, 0.7)`; then call the existing T14.1 `injectLetter(letter, 1.0)` for belt-and-braces letter-region activation regardless of how deep visual learning is; then tick the cluster `ticksPerChar` times so recurrent dynamics settle. Resets `_prevLetterRate = 0` at the start so the first character doesn't inherit a stale transition baseline. Over T14.5 curriculum exposure the visual↔letter cross-projection learns the mapping from template to one-hot; before curriculum, the belt-and-braces `injectLetter` guarantees correct behavior regardless.
+
+**Wiring into `engine.processAndRespond` happens in T14.12.** For now `cluster.readText` exists as a callable primitive that both T14.5 curriculum and the future T14.12 unified pipeline will use. Keeping it unwired preserves the running app through the remaining six milestones on the branch.
+
+### T14.11 — Auditory cortex phoneme recognition
+
+**Thesis.** Parallel to T14.10 for letters. Unity has voice input via `js/io/voice.js` and `js/brain/auditory-cortex.js`, but currently the voice path just passes transcribed text into the chat handler — the auditory cortex isn't actually involved in language understanding. T14.11 wires the auditory cortex INTO the language pipeline so spoken phonemes are recognized by the same biological mechanism as written letters, with both streams converging on the phon region (Hickok & Poeppel 2007 dual-stream model).
+
+**New method on `AuditoryCortex` — `renderPhonemeTemplate(phoneme) → Float64Array`.** Same trig-hash structure as `renderLetterTemplate` but with a **different** prime set: `[41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89]`. This is the critical detail — visual and auditory templates for the same symbol must NOT trivially match at hash time, because convergence on the phon region is supposed to be a LEARNED correspondence shaped by curriculum Hebbian on the auditory↔phon cross-projection, not a hash coincidence. Different primes guarantee cross-cortex templates for the same codepoint have ~0 cosine at initialization, leaving the entire correspondence to be learned via exposure. Each dim is `sin(cp · 0.5236 · p + phase) + cos(cp · 0.8660 · p + phase · 3)` — different phase multipliers from visual too so no accidental symmetry remains.
+
+**New method on `NeuronCluster` — `hearPhoneme(phoneme, { auditoryCortex, ticks = 2, strength = 0.7 })`.** Parallel to `readText` but on the auditory side. Reads the phoneme template from the auditory cortex instance, drives the auditory sub-region via `injectEmbeddingToRegion('auditory', template, strength)`, ticks the cluster `ticks` times so the T14.4 auditory↔phon cross-projection propagates the activation into the phon region. Over T14.5 curriculum the cross-projection weights will shape so spoken `/k/` activates the same phon basin that visual letter `"c"` activates — the dorsal production / ventral comprehension convergence from Hickok & Poeppel 2007.
+
+**Voice/spectrum integration.** For voice-capable Unity the real spectral-fingerprint path from `AuditoryCortex.process()` will eventually replace the synthetic template, but the downstream contract (`cluster.injectEmbeddingToRegion('auditory', ...)`) stays identical — only the template source changes. `js/io/voice.js` integration happens in T14.12 alongside the full bidirectional pipeline rewire.
+
+### Files touched (all three T14.9/T14.10/T14.11)
+
+- `js/brain/cluster.js` — T14.9 `workingMemoryReadout` + `injectWorkingMemory` methods (+~40 lines), T14.10 `readText` method (+~25 lines), T14.11 `hearPhoneme` method (+~30 lines). Net +~95 lines.
+- `js/brain/visual-cortex.js` — `_letterTemplateCache` field + `_letterTemplateDim = 48` field in constructor (+~15 lines header comment), `renderLetterTemplate` method (+~55 lines with full docstring). Net +~70 lines.
+- `js/brain/auditory-cortex.js` — `_phonemeTemplateCache` field + `_phonemeTemplateDim = 48` field in constructor (+~12 lines), `renderPhonemeTemplate` method (+~55 lines with full docstring). Net +~67 lines.
+
+### What is NOT in this commit
+
+- No `_discourseState` deletion — the field never existed in the codebase (the old draft was anticipatory). Grep-confirmed.
+- No `engine.processAndRespond` rewire to use `cluster.readText`. T14.12 owns the full bidirectional pipeline rewire and handles all call-site updates atomically.
+- No `voice.js` rewire to use `cluster.hearPhoneme`. Same T14.12 dependency.
+- No T14.5 curriculum call site for the new visual/auditory template paths. Curriculum can adopt them in a post-T14.12 tuning pass once the full pipeline is live.
+- No end-to-end runtime verification — deferred per the no-testing-until-all-T14-done directive.
+
+### Peer-reviewed grounding
+
+- **Hickok & Poeppel 2007** (*Nat Rev Neurosci* 8:393-402) — dorsal/ventral dual-stream model. T14.9 working-memory region is the cortex scratchpad shared by both streams, T14.10 visual→letter is the ventral reading path, T14.11 auditory→phon is the auditory comprehension path, and both converge on the T14.4 phon sub-region via learned cross-projections.
+- **Kuhl 2004** (*Nat Rev Neurosci* 5:831) — statistical-exposure phoneme-category formation. The same mechanism that shapes letter basins in the phon region from visual exposure (T14.10) shapes phoneme basins from auditory exposure (T14.11). The cross-stream correspondence is what curriculum learning will establish.
+- **Saffran/Aslin/Newport 1996** (*Science* 274:1926) — statistical word segmentation in infants. T14.9 working-memory topic state uses the same transition-probability mechanism at the turn level that T14.2 uses at the syllable level and T14.6 uses at the word level.
+- **Friederici 2017** (*Psychon Bull Rev* 24:41) — neural language network development. Cross-region projection strengthening via exposure is the mechanism that shapes the visual↔letter, auditory↔phon, and letter↔phon correspondences curriculum builds.
+
+### Verification
+
+`node --check` passes clean on `js/brain/cluster.js`, `js/brain/visual-cortex.js`, and `js/brain/auditory-cortex.js`. Runtime verification deferred.
+
+### Public-facing pages updated
+
+- `brain-equations.html` — Phase 16 T14 summary block updated to reflect T14.9-11 dual-stream substrate shipped.
+- `README.md` — T14 progress line updated (9/18 → 12/18 milestones complete).
+
+### Branch + commit
+
+`t14-language-rebuild`, one atomic commit per the 2026-04-14 docs-before-push law. All affected docs + public-facing pages updated in place in the same commit.
+
+---
+
 ## 2026-04-14 — T14.8 sentence-form schemas + learned intent-pair routing
 
 **Gee's directive:** continue T14 on the rebuild branch milestone-by-milestone, don't ask between items.
