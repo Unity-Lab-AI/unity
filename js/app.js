@@ -128,25 +128,49 @@ let landingBrainSource = null; // RemoteBrain or null
     // which has to be true as soon as someone looks at the landing page.
     loadPersonaSelfImage(landingBrainSource);
   } else {
-    // No server — start a local brain just for visualization
+    // No server — start a local brain just for visualization.
+    //
+    // This is the GitHub Pages path. Any exception here used to be
+    // swallowed by a bare `catch {}` which left the HUD showing
+    // all zeros forever with zero diagnostic output in the console.
+    // Log the full error now so failures are visible.
     try {
       const localBrain = new UnityBrain();
       localBrain.start();
+      // Expose for console debugging on Pages
+      window.brain = localBrain;
+      console.log('[Landing] UnityBrain constructed and started');
       // Wire brain ref into the landing Brain3D so the event system
       // can generate Unity commentary pre-boot in local-brain mode too
       if (landingBrain3d && typeof landingBrain3d.setBrain === 'function') {
         landingBrain3d.setBrain(localBrain);
       }
       // Load persona self-image so the language cortex has Unity's
-      // dictionary + bigrams available for commentary generation
-      loadPersonaSelfImage(localBrain);
+      // dictionary + bigrams available for commentary generation.
+      // Await-not-required — runs in background, state pump starts
+      // immediately on initial zeroed state.
+      loadPersonaSelfImage(localBrain)
+        .then((count) => {
+          console.log(`[Landing] persona loaded (${count} sentences total)`);
+        })
+        .catch((err) => {
+          console.error('[Landing] persona load failed:', err);
+        });
       setInterval(() => {
-        const state = localBrain.getState();
-        if (landingBrain3d) landingBrain3d.updateState(state);
-        updateLandingStats(state);
+        try {
+          const state = localBrain.getState();
+          _landingState = state;
+          if (landingBrain3d) landingBrain3d.updateState(state);
+          updateLandingStats(state);
+        } catch (err) {
+          console.error('[Landing] state pump failed:', err);
+        }
       }, 100);
       console.log('[Landing] Running local brain for visualization');
-    } catch {}
+    } catch (err) {
+      console.error('[Landing] local brain init failed:', err);
+      console.error('[Landing] stack:', err.stack);
+    }
   }
 
   // Wire tab buttons
