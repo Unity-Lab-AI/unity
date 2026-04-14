@@ -116,6 +116,290 @@ after a major refactor, verify these are still accurate before starting.
 
 ---
 
+## PART 0.5 — T14: DEVELOPMENTAL LANGUAGE LAYERS (the real fix)
+
+> **Gee, 2026-04-14: "we are making a biological brain simulation so just like how a human learns letters then sounds then syllables then words then sentences structures of all the kinds and them paragraphs"**
+>
+> This is the architectural call that makes everything else right. The T13 work was correct in *direction* (deletion of slot priors, brain-driven emission loop, persona Hebbian) but WRONG in *foundation* — it skipped the developmental layers that biological brains build language on top of. T14 rebuilds the language stack from primitives upward, the way a real brain develops.
+
+### The thesis
+
+The current Unity language stack has:
+- **Top layer:** GloVe 50d semantic embeddings (pre-trained on 6B-word corpus, NOT learned by Unity)
+- **Middle layer:** `wordType()` / `_fineType()` POS classifiers (algorithmic letter-pattern equations, NOT learned)
+- **Bottom layer:** 5-dim per-letter hash patterns (`_initLetterPatterns`, deterministic sin/cos, NOT phonetic)
+
+**Nothing below the word level was ever learned by Unity.** She has no phoneme knowledge. No syllable structure. No spelling-to-sound mapping. No articulatory features. Letters exist only as suffix-detection helpers in `wordType` and as the indexing key for the dictionary. She skipped Stages 1-6 of biological language acquisition and went straight to Stage 8 (text I/O over pre-trained semantic embeddings).
+
+**That's why she doesn't sound like a developing intelligence — because she isn't one.** She's a static GloVe lookup with a brain-shaped frontend. T13.7.8 (the grammar transition table I just shipped) is a hardcoded English structural table — it makes outputs grammatical, but it doesn't give Unity the *experience* of having learned grammar. A real brain learns grammar by hearing 10,000+ sentences over years and internalizing the type-transition statistics. We can compress that into a curriculum.
+
+### The eight stages of biological language acquisition
+
+```
+Stage 1 (0-6mo)   Phoneme discrimination          — auditory cortex feature detectors
+Stage 2 (6-12mo)  Babbling — articulatory motor   — efference copy + auditory feedback
+Stage 3 (12-18mo) First words                     — phoneme→meaning binding
+Stage 4 (18-24mo) Vocabulary explosion + telegraphic speech (pivot grammar)
+Stage 5 (24-36mo) Grammar emerges (SVO, agreement, articles, plurals, tense)
+Stage 6 (3-5y)    Complex grammar (subordinate clauses, conditionals, passive)
+Stage 7 (5-12y)   Reading — letter visual recognition + grapheme-phoneme mapping
+Stage 8 (lifelong) Writing
+```
+
+Unity is currently a Stage 8 system that skipped Stages 1-7. T14 builds those stages properly, in compressed-curriculum form.
+
+### T14 sub-milestones
+
+#### T14.1 — Phoneme features (replaces `_letterPatterns` 5-dim hash)
+
+Each of the 26 letters becomes a **real phonetic feature vector**, not a sin/cos hash. Features are closed-class English phonology:
+
+| Feature | Values |
+|---|---|
+| `vowel` | 0 or 1 (binary) |
+| `place` | one of {bilabial, labiodental, dental, alveolar, palatal, velar, glottal} |
+| `manner` | one of {stop, fricative, affricate, nasal, liquid, glide, vowel} |
+| `voicing` | 0 (unvoiced) or 1 (voiced) |
+| `vowelHeight` | high / mid / low (vowels only) |
+| `vowelBack` | front / central / back (vowels only) |
+| `vowelRound` | 0 / 1 (vowels only) |
+| `vowelTense` | 0 / 1 (vowels only) |
+
+Encoded as a ~16-dim feature vector per letter. Pure letter→features lookup, hardcoded English phonology — no learning at this layer (this is what evolution + early development pre-wire).
+
+**File:** `js/brain/phonemes.js` (new). Exports a `LETTER_FEATURES` Map and `getPhonemeVector(letter)` helper.
+
+**Replaces:** `_initLetterPatterns()` in language-cortex.js, which stays as a fallback for non-letter characters.
+
+**Acceptance:** `getPhonemeVector('b')` returns `{vowel:0, place:'bilabial', manner:'stop', voicing:1, ...}`. `getPhonemeVector('a')` returns `{vowel:1, vowelHeight:'low', vowelBack:'central', vowelRound:0, vowelTense:0, ...}`.
+
+---
+
+#### T14.2 — Syllable structure detector
+
+Letters combine into syllables via phonotactic rules. CV (consonant-vowel), CVC, CCV, CVCC patterns. The brain learns which letter sequences form valid English syllables.
+
+**Algorithm:** sliding window over the letter sequence, finding vowel cores and the consonant clusters around them. Each vowel center + adjacent consonants = one syllable. Apply maximum-onset principle (consonants attach to following vowel, not preceding) to handle ambiguous boundaries like "extra" → "ex-tra" not "ext-ra".
+
+**File:** `js/brain/syllables.js` (new). Exports `splitSyllables(word)` returning an array of syllable strings, and `syllableShape(syllable)` returning the CV pattern (e.g. "CCV").
+
+**Acceptance:** `splitSyllables("strawberry")` → `["straw", "ber", "ry"]`. `splitSyllables("cat")` → `["cat"]`. `syllableShape("straw")` → `"CCCVC"`.
+
+---
+
+#### T14.3 — Phonological dictionary entry
+
+Every dictionary word gains a phonological representation alongside its semantic embedding. The Dictionary class extends:
+
+```js
+{
+  word: 'cat',
+  pattern: <Float32Array(50)>,     // existing GloVe semantic embedding
+  arousal: 0.5,
+  valence: 0.0,
+  // T14.3 additions:
+  phonemes: ['k', 'a', 't'],        // grapheme-phoneme decomposition
+  syllables: ['cat'],                // syllable break
+  syllableCount: 1,
+  stressPattern: ['PRIMARY'],        // primary/secondary/unstressed per syllable
+  phonemeFeatures: <Float32Array(48)>, // 3 phonemes × 16 features each
+}
+```
+
+**File:** `js/brain/dictionary.js` extended. Each `learnWord()` call now ALSO computes phonological features via T14.1 + T14.2 helpers and stores them on the entry.
+
+**Acceptance:** `dict._words.get('cat').syllables = ['cat']`, `dict._words.get('strawberry').syllables = ['straw','ber','ry']`.
+
+---
+
+#### T14.4 — Phonological cortex region (separate from semantic)
+
+Currently the cortex cluster has a single language region (neurons 150-299 by default) that maps GloVe semantic embeddings via `mapToCortex`. T14.4 splits this into TWO regions:
+
+- **Semantic region** (existing) — neurons 150-299. Holds GloVe meaning vectors.
+- **Phonological region** (new) — neurons 300-499 (or wherever the cluster has room). Holds phoneme feature vectors.
+
+The two regions project to each other via a learned projection matrix. Hearing a word activates phonology → semantics (recognition). Speaking a word activates semantics → phonology (production). The projection matrix is learned from corpus exposure: every word that flows through `learnSentence` updates the `semantic ↔ phonological` association via Hebbian.
+
+**File:** `js/brain/cluster.js` extended with sub-region offsets. `js/brain/embeddings.js` extended with `mapPhonemesToCortex(phonemeVec, cluster.size, phonStart)`.
+
+**Acceptance:** Inject the phoneme vector for "cat" into the phonological region. Tick the cortex 5 steps. The semantic region readout should pull toward "cat"-adjacent words via the learned cross-region projection.
+
+---
+
+#### T14.5 — Curriculum learning (the core developmental win)
+
+Replace the current "load all corpora at once at boot" with **staged exposure** that mirrors how children learn:
+
+**Stage A — Alphabet exposure (Stages 1-2 compressed)**
+Iterate the 26 letters. For each letter:
+  - Inject phoneme features into phonological region
+  - Tick cortex 10 steps (let attractor form for that phoneme)
+  - Hebbian update on the resulting spike pattern
+  - Repeat 50× per letter (alphabet song equivalent)
+
+After Stage A, the cortex has 26 phoneme attractor basins. The cluster "knows the alphabet" in the same way a 3-year-old does — letter patterns activate distinguishable cortex states.
+
+**Stage B — Two-letter and three-letter words (Stage 3-4)**
+Iterate a hand-picked seed of ~50 simple high-frequency words: "a", "an", "i", "on", "in", "it", "is", "to", "the", "be", "we", "he", "she", "you", "go", "do", "no", "yes", "cat", "dog", "run", "sit", "see", "say", "eat", "hi", "bye", "mom", "dad". For each:
+  - Inject phonemes sequentially (letter at a time, phoneme region) + GloVe semantic vector (semantic region)
+  - Tick cortex 10 steps per word
+  - Hebbian update binds phoneme sequence ↔ semantic vector
+  - Repeat each word 20× (toddler vocabulary repetition)
+
+After Stage B, the cortex has phoneme→semantic binding for the seed vocabulary. Unity now "knows" 50 words the way a 2-year-old does.
+
+**Stage C — Phrasal exposure (Stage 4-5)**
+Iterate ~200 simple two-and-three-word phrases: "the cat", "i run", "you eat", "we go", "is good", "want it", "more milk", "all done". For each:
+  - Walk word-by-word through phoneme + semantic injection
+  - Ticks between words to let cortex evolve
+  - Hebbian binds the temporal sequence (this word follows that word)
+
+After Stage C, the cortex has telegraphic-grammar bigram structure. Unity "knows" common word combinations.
+
+**Stage D — Sentence patterns (Stage 5-6)**
+Iterate ~500 simple full sentences: "I see the cat", "you eat food", "we go home", "she is happy". Same training pattern but with full sentence-length sequences. After Stage D, the cortex has full SVO grammar emerging from learned bigram statistics.
+
+**Stage E — Persona corpus (where Unity becomes Unity)**
+NOW load `docs/Ultimate Unity.txt`. The persona vocabulary trains on top of the developmental base. Unity's voice is layered on top of grammatical English, the way a real human develops a personal style on top of native fluency.
+
+**Stage F — Baseline + coding corpora**
+The other corpora train AFTER persona, since by this point the developmental base is solid and the additional vocabulary just enriches the dictionary without polluting the basins.
+
+**File:** new `js/brain/curriculum.js` with `runCurriculum(cluster, dictionary, languageCortex)` that walks all stages. Called once at boot, replaces the current `loadPersona → loadBaseline → loadCoding` sequence.
+
+**Estimated boot time:** Stage A ~2s (26 letters × 50 reps × 10 ticks). Stage B ~5s (50 words × 20 reps × ~30 ticks). Stage C ~10s (200 phrases × ~5 ticks each). Stage D ~30s (500 sentences). Stage E + F ~10s for the existing corpora. **Total ~60s first boot, persisted via existing SparseMatrix serialize.**
+
+**Acceptance:** After running the curriculum on a fresh cortex, calling `cluster.diagnoseReadoutForEmbedding(emb('cat'))` produces a readout whose nearest dictionary words contain animal-adjacent terms. Calling it on `emb('hi')` produces greeting-adjacent terms. The cortex actually learned, not just stored.
+
+---
+
+#### T14.6 — Phonological-aware emission
+
+The T13.3 emission loop currently picks words by `cosine(target, word.semanticEmbedding) * grammarTransition * valence * recency`. T14.6 adds a phonological flow term:
+
+```
+phonFlow(prevWord, candWord) = phonemeBlendCost(prevWord.lastPhonemes, candWord.firstPhonemes)
+```
+
+This rewards smooth phoneme transitions ("The cat sat" — the /t/ of "cat" flows into the /s/ of "sat") and penalizes jarring ones. Allows alliteration learning and prosodic shape.
+
+**File:** `js/brain/language-cortex.js` `generate()` extended. Multiply `phonFlow(prev, cand)` into the score.
+
+**Acceptance:** Output sentences have measurably smoother phoneme transitions than the pre-T14.6 baseline (statistical test over 100 generated sentences).
+
+---
+
+#### T14.7 — Type transitions LEARNED, not hardcoded (replaces T13.7.8)
+
+Once T14.5 curriculum has run, the brain has SEEN thousands of word transitions. Replace the hardcoded `_TYPE_TRANSITIONS` table from T13.7.8 with a LEARNED table that gets updated every time `learnSentence` is called:
+
+```js
+_typeTransitionLearned = new Map(); // Map<prevType, Map<currType, count>>
+// Updated in learnSentence:
+for (let i = 1; i < words.length; i++) {
+  const pt = this._fineType(words[i-1]);
+  const ct = this._fineType(words[i]);
+  if (!this._typeTransitionLearned.has(pt)) this._typeTransitionLearned.set(pt, new Map());
+  const row = this._typeTransitionLearned.get(pt);
+  row.set(ct, (row.get(ct) || 0) + 1);
+}
+// Used in generate (with smoothing):
+const row = this._typeTransitionLearned.get(prevType);
+const total = row ? [...row.values()].reduce((a,b)=>a+b, 0) : 0;
+const count = row ? (row.get(currType) || 0) : 0;
+const transWeight = total > 0 ? (count + 1) / (total + uniqueTypes) : 0.05; // Laplace smoothing
+```
+
+The hardcoded `_TYPE_TRANSITIONS` from T13.7.8 becomes seed initialization (so cold-boot has structure before any learning) but gets refined by experience over time.
+
+**File:** `js/brain/language-cortex.js` `_typeTransitionLearned` field + update in `learnSentence` + read in `generate`.
+
+**Acceptance:** After running the curriculum, `_typeTransitionLearned` has populated entries for at least 80% of the (prevType, currType) pairs in the hardcoded table, with weights that correlate r > 0.7 with the hardcoded ones.
+
+---
+
+#### T14.8 — Sentence-form schemas
+
+Sentence types (declarative, interrogative, imperative, exclamative) have distinctive type sequences at the early slots:
+- Declarative: `[PRON_SUBJ | DET, COPULA | VERB, ...]`
+- Interrogative: `[QWORD | AUX_DO, AUX | PRON_SUBJ, VERB, ...]`
+- Imperative: `[VERB_BARE, DET | NOUN | PRON_OBJ, ...]`
+- Exclamative: `[INTERJ | QWORD, ...]`
+
+The brain learns these schemas from the curriculum corpus (Stage D). At generation time, the parsed user input's `intent` field selects which schema to bias toward, and the schema constrains slot 0-2 type selection.
+
+**File:** `js/brain/language-cortex.js` new `_sentenceFormSchemas[intent][slot]` field + curriculum learning + read in `generate`.
+
+**Acceptance:** "do you like cats?" parsed as `intent: question` → response biased toward declarative-answer schema (PRON_SUBJ + COPULA/VERB + COMPLEMENT). "tell me a joke" parsed as `intent: command` → response biased toward declarative or narrative.
+
+---
+
+#### T14.9 — Discourse modeling (multi-turn flow)
+
+Multi-sentence flow learning. Topic continuity (the conversation is "about" something across turns), anaphora resolution (pronouns refer back to entities), cohesion markers (and, but, so, however).
+
+This is the highest layer. Builds on T14.5-T14.8. Adds a `_discourseState` running buffer of the last 3-5 turns + their topic vectors. `generate()` reads `_discourseState` and biases toward continuing the established topic unless the user changes it.
+
+**Acceptance:** A 5-turn conversation about cats produces responses where each turn's content connects to the previous turn instead of jumping topics randomly.
+
+---
+
+### Order of operations for T14
+
+```
+T14.1 phoneme features        ←  ~200 lines, foundational
+    ↓
+T14.2 syllable detector       ←  ~100 lines
+    ↓
+T14.3 phonological dictionary ←  ~150 lines (extends Dictionary)
+    ↓
+T14.4 phonological cortex     ←  ~250 lines (extends cluster, embeddings)
+    ↓
+T14.5 curriculum learning     ←  ~400 lines (NEW curriculum.js + corpus seed files)
+    ↓
+T14.6 phon-aware emission     ←  ~100 lines (extends generate score)
+    ↓
+T14.7 learned type transitions ← ~80 lines (extends learnSentence + generate)
+    ↓
+T14.8 sentence-form schemas   ←  ~150 lines
+    ↓
+T14.9 discourse modeling      ←  ~200 lines
+```
+
+**Total ~1630 lines added across ~9 files. ~3-4 weeks of focused work.** Each milestone is independently testable. T14.1 + T14.2 + T14.3 ship as a foundation pass (~1 week). T14.4 + T14.5 ship as the curriculum pass (~1.5 weeks). T14.6 + T14.7 + T14.8 + T14.9 ship as the emission/discourse pass (~1 week).
+
+### What stays from T13
+
+- T13.1 persona Hebbian → still used, but runs at the end of curriculum (Stage E) instead of as the only language training
+- T13.2 parse-tree injection → unchanged, still routes content/intent/self-ref to clusters
+- T13.3 emission loop → core stays, score function gets extended with phonFlow + learned transitions + sentence schema biases
+- T13.7.8 type transition table → demoted from primary mechanism to seed initialization for the learned T14.7 table
+
+### What gets deleted in T14
+
+- The "single-shot loadPersona → loadBaseline → loadCoding" sequence in app.js / brain-server.js. Replaced by `runCurriculum(...)`.
+- The 5-dim per-letter hash in `_initLetterPatterns()`. Replaced by T14.1 phoneme feature vectors.
+- The hardcoded T13.7.8 `_TYPE_TRANSITIONS` becomes a SEED (still in code, but gets overwritten by learned values after curriculum).
+
+### Why this is the right call
+
+- **Biologically grounded.** Mirrors actual developmental linguistics. Same order, compressed timescale.
+- **Each layer is teachable.** Adding new languages, dialects, or specialized vocabularies is just running additional curriculum stages. The infrastructure scales.
+- **Phonological awareness unlocks alliteration, rhyme, prosody, accent learning.** All of which are blocked in the current GloVe-only architecture.
+- **Letter-level primitives are minimal and pure.** No word lists in the literal sense — just 26 letters with closed-class phonetic features, which every English speaker has.
+- **Unity becomes a developing intelligence.** When she boots fresh, she goes through Stages A→F in 60 seconds and you can WATCH her learn. Every reload is a developmental replay.
+
+### The honest scope warning
+
+T14 is bigger than T13. T13.1-T13.7 was ~3000 lines net delta over a few sessions of frantic editing. T14 will be ~1600 lines added across 9 files over ~3-4 weeks if done properly. Each milestone needs careful smoke testing before the next ships. The curriculum corpus seed files (alphabet, simple words, simple phrases, simple sentences) need to be hand-curated.
+
+### What ships RIGHT NOW (T13.7.8) is the holdover
+
+The grammar transition table I just shipped at T13.7.8 makes Unity grammatical IMMEDIATELY while T14 is being built. Once T14.7 lands, the hardcoded table becomes seed initialization and gets refined by learning. The work is not wasted — it's the structural prior the curriculum builds on top of.
+
+---
+
 ## PART 1 — RESIDUAL NON-COMP WORK
 
 These items are NOT distributed compute. They're loose ends from the T5/T7/
