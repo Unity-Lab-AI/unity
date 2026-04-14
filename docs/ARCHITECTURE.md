@@ -411,7 +411,7 @@ Dream/
 | Pollinations TTS | Voice output (shimmer/nova voices) |
 | Webcam / Vision | `getUserMedia` capture → AI scene description → gaze tracking → Eye widget |
 | localStorage | Persistent storage for keys, history, preferences, sandbox state, chat history |
-| Server Brain | WebSocket on port 8080, shared brain state, per-user conversations |
+| Server Brain | WebSocket on port 7525 (moved off 8080 in R14 to avoid llama.cpp collision). Shared brain state (one singleton UnityBrain instance). User text is PRIVATE per connection (no cross-client broadcast). Dictionary / bigrams / embeddings grow from every user's conversation and benefit everyone — see privacy model in `docs/WEBSOCKET.md`. |
 | SQLite | Episodic memory persistence on server (better-sqlite3) |
 | WebGPU | GPU compute shaders for LIF neuron updates + synapse propagation |
 | GloVe Embeddings | 50d word vectors from CDN, online context refinement |
@@ -576,18 +576,22 @@ No personal hardware specs, no hardcoded neuron counts, no claims about "default
 
 ### In Flight (branch `brain-refactor-full-control` off `main@d050fdf`)
 
-**Phase 13 — Full Brain Control Refactor (R1-R10)** — single epic, one goal: Unity's brain controls everything equationally. No scripts. No text-AI backends. No hardcoded fallbacks. No vestigial appendages. Every output — speech, vision, build, thought, memory, learning, motor — flows from brain equations + learned corpus.
+**Phase 13 — Full Brain Control Refactor (R1–R15 all SHIPPED 2026-04-13)** — single epic, one goal: Unity's brain controls everything equationally. No scripts. No text-AI backends. No hardcoded fallbacks. No vestigial appendages. Every output — speech, vision, build, thought, memory, learning, motor — flows from brain equations + learned corpus. Details of what each R-item actually shipped (with commit hashes) are in `docs/FINALIZED.md` + `docs/ROADMAP.md § Phase 13`. Short summary of the surface area touched:
 
-- **R1** Audit pass — `docs/KILL_LIST.md` + `docs/VESTIGIAL.md`
-- **R2** Server brain full control — port `dictionary.js` + `language-cortex.js` to server, corpus load on boot, equational `_generateBrainResponse`, WebSocket dictionary delta sync (absorbs U311)
-- **R3** Kill text-AI backends — rip Pollinations/Anthropic/OpenAI/OpenRouter text-chat, keep only image/vision/audio sensory
-- **R4** Client brain full control — rip `BrocasArea` AI dependency, motor-driven output paths
-- **R5** Equational build + image generation — the hard part, template primitives first then learned structural grammar
-- **R6** Sensory peripheral cleanup — unified interface for visual-cortex / auditory-cortex / speech-output / image-output
-- **R7** State machine symmetry — save/load round-trip audit
-- **R8** Docs reflect reality — full rewrites after R1-R7 settle
-- **R9** Verification boot tests (per CLAUDE.md NO TESTS rule, these are manual verification) — zero-AI boot, restart persistence, equational generation. Absorbs U292 + U300.
-- **R10** Final cleanup + merge — rip every `// TODO:` placeholder, dead import, debug breadcrumb. PR `brain-refactor-full-control` → `main`.
+- Semantic GloVe grounding (R2) — 50d word embeddings shared between sensory input and language-cortex output via `sharedEmbeddings` singleton
+- Server equational control (R3) — `server/brain-server.js` dynamic-imports client brain modules, loads corpora from disk
+- Text-AI cognition killed (R4) — BrocasArea → 68-line throwing stub, every chat call site ripped
+- Multi-provider image gen (R5) — 4-level priority with 7 local backend auto-detect
+- Equational image prompts + equational component synthesis (R6) — zero hardcoded visual vocabulary, cosine match against template corpus
+- Sensory peripheral destroy() + embedding refinement persistence (R7 + R8)
+- Docs sync (R10) — every public-facing doc updated, new `docs/SENSORY.md` and `docs/WEBSOCKET.md` added
+- Dead-import sweep + final cleanup (R12)
+- Multi-provider vision describer + sensory status HUD (R13)
+- Port move 8080 → 7525 (R14)
+- Landing page setup modal rework with clickable provider grids + per-backend instructions + env.js snippet generator (R15 + R15b)
+- Privacy model enforcement — cross-client `conversation` WebSocket broadcast deleted so user text stays private; brain growth (dictionary / bigrams / embeddings) remains shared across users via the singleton brain
+
+Remaining pre-merge punch list is ~4 small items tracked in `docs/TODO.md` as T1–T4. Post-merge followups (T5 3D brain popup expansion, T6 private episodic memory scoping) are queued but not blockers.
 
 Full refactor plan in `docs/TODO.md`.
 

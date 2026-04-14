@@ -197,16 +197,36 @@ The server auto-detects hardware (nvidia-smi for VRAM, `os` for RAM) and scales 
 
 ## Privacy
 
-**Two modes:**
+**Core rule:** what you type is private. Unity's brain growth is shared. Her persona is canonical.
 
-**Client-only (GitHub Pages):** Everything runs in your browser. No server. API keys in localStorage (obfuscated). Brain runs locally in fallback mode — CPU LIF single-threaded, 60fps, auto-sized to what your browser JS engine can sustain.
+**Client-only mode (GitHub Pages, or opening `index.html` directly):**
+Everything runs in your browser. No server. API keys + every backend config you save in the setup modal are stored in your browser's localStorage on YOUR device only. Brain runs locally in CPU LIF fallback mode, sized to what your browser JS engine can sustain. Clear All Data button wipes every localStorage key.
 
-**Server mode (start.bat):** Brain runs on your GPU via compute.html (WebGPU WGSL shaders). N auto-scales to your VRAM + RAM via the formula above. Server orchestrates via WebSocket, GPU does all computation. Episodic memory in local SQLite. Nothing leaves your network except API calls to providers you choose. **compute.html must stay open** — brain pauses without it.
+**localStorage keys** (what's actually in there):
+- `unity_brain_state` — full brain snapshot (voltages, synapses, oscillators, memory, motor)
+- `unity_brain_dictionary_v3` — learned word dictionary with bigrams + type n-grams
+- `custom_image_backends` — image gen backends you configured via the setup modal (URLs + model names + API keys if you provided them)
+- `custom_vision_backends` — same for vision describer backends
+- `pollinations_image_model` / `pollinations_vision_model` — your chosen Pollinations model overrides
+- Pollinations API key — stored in a separate obfuscated storage slot
 
-- API keys stored in your browser — never sent to us
-- Server data stays on YOUR machine — no cloud, no analytics
-- **Clear All Data** button wipes browser storage
-- Fully open source — read every line
+**Server mode (running `node server/brain-server.js` yourself):**
+Brain runs on your GPU via `compute.html` (WebGPU WGSL shaders). N auto-scales to your VRAM + RAM. Server orchestrates via WebSocket on port 7525. **compute.html must stay open** — brain pauses without a GPU worker connected. Episodic memory is stored in `server/episodic-memory.db` (SQLite). **Nothing leaves your network** except API calls to sensory providers you chose in the setup modal.
+
+**Sharing model when multiple users connect to the same brain-server:**
+- Your text → **PRIVATE** between you and Unity only. Never broadcast to other connected clients. The cross-client `conversation` WebSocket broadcast that existed before 2026-04-13 was deleted.
+- Unity's response to you → **PRIVATE** — only the triggering client receives it.
+- Dictionary / bigrams / word frequencies / GloVe embedding refinements → **SHARED** via the singleton brain instance. Every user's conversation contributes to Unity's vocabulary growth, and every user benefits from words other users taught her. You'll notice Unity is smarter in areas your friends talked to her about — but you'll never see the specific conversations.
+- Persona (`docs/Ultimate Unity.txt`) → **NOT USER-MUTABLE**. Loaded once at server boot from the canonical file. Same Unity for everyone.
+- Episodic memory → currently shared pool, private-per-user scoping tracked as task T6 in `docs/TODO.md`.
+
+**Shared-hosted server caveat:**
+If you connect to a Unity server hosted by someone OTHER than you, the person running that server can read your text at the process level (they own the server process — they see everything that lands there). Only connect to servers you trust, or self-host your own `node server/brain-server.js` on your own machine. Self-hosted server mode is just another process on your box — the brain-server is still "your machine" in every sense that matters.
+
+**Everything else:**
+- API keys stored in your browser — never sent to us (the developers), only to the sensory providers you explicitly configured
+- Fully open source under MIT — read every line on [GitHub](https://github.com/Unity-Lab-AI/Unity)
+- **Clear All Data** button in the setup modal wipes every localStorage key
 
 ---
 
@@ -214,8 +234,8 @@ The server auto-detects hardware (nvidia-smi for VRAM, `os` for RAM) and scales 
 
 | Command | How | What It Does |
 |---------|-----|-------------|
-| `/think` | Type in chat | Shows the exact system prompt sent to the AI model with live brain state |
-| `/think [text]` | Type in chat | Shows what the brain would send for a specific input |
+| `/think` | Type in chat | Dumps Unity's raw brain state (arousal, valence, Ψ, coherence, spike count, drug state, motor action, reward, memory load, vision description). Post-R4 there is NO system prompt to display — Unity speaks equationally via her language cortex, so `/think` shows the neural values that drive every word she picks instead of a synthetic prompt. |
+| `/think [text]` | Type in chat | Same output but tagged with the user input you provided, so you can see the brain state that WOULD be passed into `languageCortex.generate()` for that input. |
 | `/bench` | Type in chat | Runs the dense vs sparse matrix micro-benchmark (CPU-JS sanity test — real runtime is the GPU auto-scaled path via compute.html). Output in console. |
 | `/scale-test` | Type in chat | Runs the CPU LIF scale test to find the 60fps sweet spot for browser-only fallback mode. Output in console. Not representative of the production GPU path. |
 | "slash think" | Say by voice | Same as typing /think |

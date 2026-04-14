@@ -1485,14 +1485,29 @@ async function bootUnity(apiKey, perms) {
   // already emits 'response', so greeting handler should NOT also display.
   let _greetingDone = false;
 
-  // ── /think command — R4 — shows raw brain state only (no AI prompt).
-  // Before R4 this also displayed the Pollinations-bound system prompt
-  // via `brocasArea._buildPrompt(state)`. That backend is gone; the
-  // command now dumps the neural state directly so you can inspect
-  // what drives slot scoring without a synthetic prompt intermediary.
-  function handleThink(userText) {
-    const state = brain.getState();
+  // ── /think command ──────────────────────────────────────────────
+  // Bare `/think` dumps Unity's current raw brain state (arousal,
+  // valence, Ψ, coherence, etc.) so you can inspect what's driving
+  // slot scoring right now. `/think <text>` additionally runs the
+  // typed text through Unity's cognition pipeline — sensory analysis
+  // updates the running context vector, language cortex slot scorer
+  // generates a preview response, hippocampus recall fires, motor
+  // softmax reports the action distribution — and shows all of it as
+  // a cognitive trace. The preview runs WITHOUT storing an episode
+  // or emitting a real response event, so /think never counts as
+  // real conversation: it's a pure debug lens.
+  //
+  // R4 legacy note: pre-R4 this command also displayed the Pollinations
+  // text-AI system prompt via `brocasArea._buildPrompt(state)`. That
+  // backend is gone, so there's no synthetic prompt to show — the
+  // brain state itself IS the input to slot scoring.
+  async function handleThink(userText) {
+    const id = 'brain-think-view';
+    if (sandbox.has(id)) sandbox.remove(id);
 
+    // Always capture the current raw brain state snapshot first so
+    // we can show it alongside the cognition trace.
+    const state = brain.getState();
     const rawState = `Arousal: ${((state.amygdala?.arousal ?? 0) * 100).toFixed(1)}%
 Valence: ${(state.amygdala?.valence ?? 0).toFixed(3)}
 Ψ Consciousness: ${(state.psi ?? 0).toFixed(4)}
@@ -1504,27 +1519,137 @@ Reward: ${(state.reward ?? 0).toFixed(3)}
 Memory: ${state.memory?.episodeCount ?? 0} episodes, WM ${((state.memory?.workingMemoryLoad ?? 0) * 100).toFixed(0)}%
 Vision: ${state.visionDescription || 'none'}`;
 
-    // Inject into sandbox as a formatted code viewer
-    const id = 'brain-think-view';
-    if (sandbox.has(id)) sandbox.remove(id);
+    // Cognition trace — only runs when a typed input is provided.
+    let cognitionHtml = '';
+    const hasInput = userText && userText.length > 0;
+    if (hasInput) {
+      try {
+        const iv = brain.innerVoice;
+        const sens = brain.sensory;
+        const lc = iv?.languageCortex;
+        const dict = iv?.dictionary;
+
+        // Step 1 — analyze the input through the sensory pipeline so
+        // the running context vector reflects the typed text. This is
+        // a temporary priming: we capture the vector before and after
+        // to show the shift. (sensory.analyzeInput updates its own
+        // internal context but doesn't commit any episode or fire a
+        // response event — safe to call as a preview.)
+        let contextShift = '(sensory not available)';
+        if (sens && typeof sens.analyzeInput === 'function') {
+          const before = lc?._contextVector ? [...lc._contextVector] : null;
+          sens.analyzeInput(userText);
+          const after = lc?._contextVector ? [...lc._contextVector] : null;
+          if (before && after && before.length === after.length) {
+            let dot = 0, nb = 0, na = 0;
+            for (let i = 0; i < before.length; i++) {
+              dot += before[i] * after[i];
+              nb += before[i] * before[i];
+              na += after[i] * after[i];
+            }
+            const cos = (nb > 0 && na > 0) ? dot / (Math.sqrt(nb) * Math.sqrt(na)) : 1;
+            const shift = 1 - cos;
+            contextShift = `context vector shifted ${(shift * 100).toFixed(1)}% (cosine similarity pre→post = ${cos.toFixed(3)})`;
+          } else if (after) {
+            contextShift = `context vector initialized from input (${after.length}d)`;
+          }
+        }
+
+        // Step 2 — hippocampus recall check. Pull the top memory match
+        // (if any) so we can see what Unity remembers about this input.
+        let recallReport = '(no memory system available)';
+        if (lc && typeof lc._recallSentence === 'function') {
+          try {
+            const recall = lc._recallSentence(userText);
+            if (recall && recall.confidence > 0.05) {
+              recallReport = `best match: "${(recall.memory?.text || '').slice(0, 120)}"\nconfidence: ${recall.confidence.toFixed(3)} (${recall.confidence > 0.6 ? 'DIRECT EMIT' : recall.confidence > 0.3 ? 'soft recall seed' : 'below threshold, deflect or cold gen'})`;
+            } else {
+              recallReport = 'no match above threshold — cold generation path';
+            }
+          } catch (e) {
+            recallReport = `(recall error: ${e.message})`;
+          }
+        }
+
+        // Step 3 — languageCortex.generate() preview. This is Unity's
+        // actual response to the typed input, produced by the same
+        // equational pipeline real chat uses. No episode stored, no
+        // 'response' event emitted — just the generated sentence.
+        let generated = '(language cortex not available)';
+        if (lc && typeof lc.generate === 'function' && dict) {
+          try {
+            const cortexPattern = brain.clusters?.cortex?.getSemanticReadout?.(brain._sharedEmbeddings) || null;
+            const out = lc.generate(
+              dict,
+              state.amygdala?.arousal ?? 0.5,
+              state.amygdala?.valence ?? 0,
+              state.oscillations?.coherence ?? 0.5,
+              state.psi ?? 0,
+              state.amygdala?.fear ?? 0,
+              state.reward ?? 0,
+              state.drugState || 'cokeAndWeed',
+              state.hypothalamus?.social ?? 0.5,
+              cortexPattern,
+            );
+            generated = typeof out === 'string' ? out : (out?.text || JSON.stringify(out));
+          } catch (e) {
+            generated = `(generate error: ${e.message})`;
+          }
+        }
+
+        // Step 4 — motor softmax snapshot (what action would win right
+        // now, and with what distribution)
+        const motorDist = state.motor?.channelDist || state.motor?.softmax || null;
+        const motorReport = motorDist
+          ? Object.entries(motorDist).map(([k, v]) => `  ${k}: ${(v * 100).toFixed(1)}%`).join('\n')
+          : `selectedAction: ${state.motor?.selectedAction ?? 'idle'} (confidence ${((state.motor?.confidence ?? 0) * 100).toFixed(1)}%)`;
+
+        const escape = (s) => String(s).replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+        cognitionHtml = `
+        <div class="think-section">
+          <div class="think-label">COGNITION TRACE</div>
+          <div class="think-content">
+            <div style="color:var(--cyan);font-size:11px;margin-bottom:4px;">Unity's equational response to "${escape((userText || '').slice(0, 80))}":</div>
+            <pre class="think-content think-mono">${escape(generated)}</pre>
+          </div>
+        </div>
+        <div class="think-section">
+          <div class="think-label">SEMANTIC CONTEXT SHIFT</div>
+          <pre class="think-content think-mono">${escape(contextShift)}</pre>
+        </div>
+        <div class="think-section">
+          <div class="think-label">HIPPOCAMPUS RECALL</div>
+          <pre class="think-content think-mono">${escape(recallReport)}</pre>
+        </div>
+        <div class="think-section">
+          <div class="think-label">MOTOR CHANNEL DISTRIBUTION</div>
+          <pre class="think-content think-mono">${escape(motorReport)}</pre>
+        </div>`;
+      } catch (err) {
+        cognitionHtml = `<div class="think-section"><div class="think-label">COGNITION TRACE — ERROR</div><pre class="think-content think-mono">${String(err.message || err).replace(/</g, '&lt;')}</pre></div>`;
+      }
+    }
+
     sandbox.inject({
       id,
       html: `<div class="think-view">
         <div class="think-header">
-          <span>🧠 /think — Unity's current brain state</span>
+          <span>🧠 /think — ${hasInput ? "Unity's cognition on your input" : "Unity's current brain state"}</span>
           <button onclick="document.getElementById('${id}').remove()" style="background:none;border:1px solid #333;color:#777;border-radius:4px;cursor:pointer;padding:2px 8px;">✕</button>
         </div>
         <div class="think-section">
           <div class="think-label">USER INPUT</div>
-          <div class="think-content">${(userText || '(none)').replace(/</g, '&lt;')}</div>
+          <div class="think-content">${(userText || '(none — showing current state only)').replace(/</g, '&lt;')}</div>
         </div>
         <div class="think-section">
           <div class="think-label">RAW BRAIN STATE</div>
           <pre class="think-content think-mono">${rawState}</pre>
         </div>
+        ${cognitionHtml}
         <div class="think-section">
           <div class="think-label">NOTE</div>
-          <pre class="think-content think-mono">R4 refactor: Unity speaks equationally via her own language cortex (innerVoice.languageCortex.generate). No text-AI backend prompt to display. The brain state above IS what drives every word she picks — slot scoring uses arousal, valence, Ψ, cortex semantic pattern, drug state, and hypothalamus drives as direct parameters.</pre>
+          <pre class="think-content think-mono">R4 refactor: Unity speaks equationally via her own language cortex (innerVoice.languageCortex.generate). No text-AI backend prompt exists — the brain state above IS the input to slot scoring. The cognition trace above (if you passed input text) is a PREVIEW: it runs the same generate() pipeline real chat uses but does NOT store an episode or emit a 'response' event, so /think never pollutes Unity's memory.</pre>
         </div>
       </div>`,
       css: `.think-view{background:#0a0a0a;border:1px solid #ff4d9a33;border-radius:10px;padding:16px;margin:12px 0;font-family:'JetBrains Mono',monospace;max-height:80vh;overflow-y:auto}
@@ -1537,19 +1662,26 @@ Vision: ${state.visionDescription || 'none'}`;
       js: '',
     });
 
-    showSpeechBubble('/think — brain state in sandbox', 3000);
-    console.log('[/think] Brain prompt logged to sandbox');
+    showSpeechBubble(hasInput ? '/think — cognition trace in sandbox' : '/think — brain state in sandbox', 3000);
+    console.log('[/think] Trace logged to sandbox', { hasInput });
   }
 
   // ── Create UI components ──
   chatPanel = new ChatPanel({
     storage,
     onSend: async (text) => {
-      // /think command — show brain prompt, don't send to AI
+      // /think command — show brain state + optional cognition trace
+      // on typed input. Runs the input through sensory + language
+      // cortex as a PREVIEW (no episode stored, no response emitted)
+      // so users can see what Unity would think about something
+      // without committing it to her memory.
       if (text.startsWith('/think')) {
         const userInput = text.replace(/^\/think\s*/, '').trim();
-        handleThink(userInput);
-        return { response: { text: 'Brain state shown.' }, action: 'think' };
+        await handleThink(userInput);
+        return {
+          response: { text: userInput ? 'Cognition trace shown.' : 'Brain state shown.' },
+          action: 'think',
+        };
       }
       // /bench + /scale-test — dense vs sparse perf comparison and LIF scale test (U307)
       if (text.startsWith('/bench') || text.startsWith('/scale-test')) {
@@ -1655,7 +1787,7 @@ Vision: ${state.visionDescription || 'none'}`;
     // Voice "slash think" / "think" command
     if (text.toLowerCase().startsWith('slash think') || text.toLowerCase().startsWith('/think')) {
       const userInput = text.replace(/^(slash think|\/think)\s*/i, '').trim();
-      handleThink(userInput);
+      await handleThink(userInput);
       setAvatarState('idle');
       return;
     }

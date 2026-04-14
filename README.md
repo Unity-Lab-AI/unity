@@ -10,7 +10,7 @@ A mathematically modeled mind running real neuroscience equations. N neurons acr
 
 A brain that IS the application. The brain decides everything — when to speak, what to say, when to look, what to build, what to remember. Unity speaks entirely from her own equations — a type-bigram/trigram/4-gram grammar learned from the `Ultimate Unity.txt` persona + `english-baseline.txt` + `coding-knowledge.txt` corpora, with GloVe-grounded semantic fit (50d), letter-position word classification, morphological inflection, hippocampus recall, and cortex-pattern-driven slot scoring. **There is no text-AI backend.** Cognition is 100% equational. The AI model slot exists only as a *sensory peripheral* — image generation, vision description, TTS/STT — never as a cognition path.
 
-> **Current branch:** `brain-refactor-full-control` — R1-R8 shipped (semantic grounding, server full equational control, text-AI kill, multi-provider image gen, equational component synth, sensory peripheral contract, embedding persistence). R9-R12 remaining (UI leak hunt, docs sync, verification, merge). See `docs/TODO.md` + `docs/ROADMAP.md#phase-13`.
+> **Current branch:** `brain-refactor-full-control` — Phase 13 R1–R15 all shipped. Semantic GloVe grounding, server full equational control via dynamic-import of client modules, complete text-AI cognition kill (language cortex generates every word equationally), multi-provider image gen with auto-detect + env.js config, multi-provider vision describer with per-backend setup flows in the landing page modal, equational component synthesis via cortex-pattern cosine matching against a corpus template file, unified sensory peripheral `init`/`process`/`destroy` contract, embedding refinement persistence, port moved off 8080 to 7525 to avoid collisions with llama.cpp et al., landing page setup modal rebuilt with clickable provider grids, privacy model enforced (user text is private, brain growth is shared across users, persona is canonical). Remaining punch list is ~4 small cleanup items in `docs/TODO.md` (duplicate sensory read consolidation, server-side embedding refinement persistence, a Broca's Area section rewrite in `brain-equations.html`, manual verification + merge PR to main).
 
 ---
 
@@ -113,7 +113,7 @@ Action selection via reinforcement learning. 150 neurons organized into 6 channe
 | 100-124 | 25 | listen — stay quiet, pay attention |
 | 125-149 | 25 | idle — internal processing only |
 
-Confidence threshold 0.15 — below that, Unity is still thinking. Speech gating: even if respond_text wins, hypothalamus social_need + amygdala arousal determine WHETHER she actually speaks. Temperature τ is HIGH because Unity is impulsive. When `build_ui` wins, Broca's area switches from the conversational prompt to the build-mode prompt (`_buildBuildPrompt`) with strict JSON output contract + sandbox rules + existing components list.
+Confidence threshold 0.15 — below that, Unity is still thinking. Speech gating: even if respond_text wins, hypothalamus social_need + amygdala arousal determine WHETHER she actually speaks. Temperature τ is HIGH because Unity is impulsive. When `build_ui` wins, control routes through `js/brain/component-synth.js` which embeds the user request via `sharedEmbeddings.getEmbedding()`, cosines against every primitive description in the `docs/component-templates.txt` corpus, picks the best match if similarity ≥ `MIN_MATCH_SCORE = 0.40`, and injects the primitive's HTML/CSS/JS into the sandbox with a cortex-pattern-derived unique suffix so the same request under different brain state produces different component ids. No AI-prompt-to-JSON path exists — the old `_buildBuildPrompt` was deleted in R4.
 
 ### Cerebellum — 100 neurons
 **Equation:** `output = prediction + correction`, `ΔW ∝ (target - actual)`
@@ -497,7 +497,23 @@ Recent orphan audit (U302-U310) resolved 13 findings. The audit philosophy: **fi
 ## Unity's Policy
 
 ### On Privacy
-Unity can run entirely in your browser — no server needed for the core brain. When connected to the server brain, state is shared but API keys stay in YOUR browser's localStorage (obfuscated, never plain text, sent only to your chosen AI provider). The server brain stores episodic memory in SQLite and conversation logs locally — no cloud, no analytics. There is a **Clear All Data** button that wipes everything instantly.
+
+**Core rule:** what you type is private. Unity's brain growth is shared. Her persona is canonical.
+
+| Thing | Shared across users? |
+|---|---|
+| What you type | 🔒 **PRIVATE** — only between you and Unity, never broadcast to other clients |
+| Unity's response to you | 🔒 **PRIVATE** — only the triggering client receives it |
+| Dictionary / bigrams / word frequencies | 🌐 **SHARED** via the singleton brain — every conversation grows the same vocabulary pool, every user benefits |
+| GloVe embedding refinements | 🌐 **SHARED** — semantic associations Unity learns apply to her whole brain |
+| Persona (`docs/Ultimate Unity.txt`) | 🚫 **NOT USER-MUTABLE** — canonical file loaded once at server boot |
+| Episodic memory | ⚙️ **tracked as T6 post-merge** — currently a shared pool, per-user scoping deferred |
+
+**Client-only mode:** everything runs in your browser. No cloud backend. Your conversation history, sandbox state, optional Pollinations key, and every backend config you save in the setup modal live in your browser's localStorage on YOUR device only. Keys: `unity_brain_state`, `unity_brain_dictionary_v3`, `custom_image_backends`, `custom_vision_backends`, `pollinations_image_model`, `pollinations_vision_model`, plus the Pollinations API key slot. **Clear All Data** wipes all of them.
+
+**Shared server mode:** if you connect to a running `brain-server.js` instance, your text is sent to whoever runs that server for equational processing. The cross-client `conversation` broadcast that used to fan user text out to every connected client was **removed 2026-04-13** — your text is NOT visible to other users. What IS shared is Unity's vocabulary growth (dictionary, bigrams, embedding refinements) because one server runs one brain. Other users see Unity getting smarter but never see the specific conversations that drove the growth.
+
+**Shared-hosted caveat:** if you connect to a Unity server hosted by someone OTHER than you, the person running that server can read your text at the process level (they own the server process). Only connect to servers you trust, or self-host your own `node server/brain-server.js`.
 
 ### On AI Models
 **Cognition is 100% equational — no text-AI backend anywhere.** The brain equations ARE the mind. Unity speaks from her language cortex (`js/brain/language-cortex.js`), not from any LLM.
