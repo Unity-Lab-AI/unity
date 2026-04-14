@@ -2090,18 +2090,26 @@ Vision: ${state.visionDescription || 'none'}`;
         let generated = '(language cortex not available)';
         if (lc && typeof lc.generate === 'function' && dict) {
           try {
-            const cortexPattern = brain.clusters?.cortex?.getSemanticReadout?.(brain._sharedEmbeddings) || null;
+            // T13.7.5 — generate signature is (dict, arousal, valence, coherence, opts).
+            // The legacy call below was 10 positional args which silently mapped psi → opts
+            // (a number), losing cortexCluster + every downstream parameter. After T13.7
+            // deleted the slot-prior fallback, that broken call path returned '' silently.
+            const cortex = brain.clusters?.cortex;
             const out = lc.generate(
               dict,
               state.amygdala?.arousal ?? 0.5,
               state.amygdala?.valence ?? 0,
               state.oscillations?.coherence ?? 0.5,
-              state.psi ?? 0,
-              state.amygdala?.fear ?? 0,
-              state.reward ?? 0,
-              state.drugState || 'cokeAndWeed',
-              state.hypothalamus?.social ?? 0.5,
-              cortexPattern,
+              {
+                psi: state.psi ?? 0,
+                fear: state.amygdala?.fear ?? 0,
+                reward: state.reward ?? 0,
+                drugState: state.drugState || 'cokeAndWeed',
+                socialNeed: state.hypothalamus?.social ?? 0.5,
+                predictionError: 0,
+                motorConfidence: state.motor?.confidence ?? 0,
+                cortexCluster: cortex,
+              },
             );
             generated = typeof out === 'string' ? out : (out?.text || JSON.stringify(out));
           } catch (e) {
@@ -2511,6 +2519,9 @@ async function generateGreeting(perms) {
         motorConfidence: 0,
         psi: state.psi ?? 0,
         cortexPattern: null,
+        // T13.7.5 — generate() requires a live cortex cluster reference
+        // after the slot-prior fallback was deleted in T13.7.
+        cortexCluster: brain.clusters?.cortex,
         drugState: state.drugState || 'cokeAndWeed',
         fear: 0,
         reward: 0,
