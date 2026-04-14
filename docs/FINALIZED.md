@@ -14,6 +14,86 @@
 
 ## COMPLETED TASKS LOG
 
+## 2026-04-13 Session: R10.9 + R10.10 — new SENSORY.md + WEBSOCKET.md docs
+
+### COMPLETED
+- [x] **Task:** R10.9 — Create `docs/SENSORY.md` covering the peripheral contract and R13 multi-provider failover behavior. Per the user's instruction "don't hold back on public facing docs — this is 100% open source", wrote as a full-content reference document.
+  - Completed: 2026-04-13
+  - Files modified: `docs/SENSORY.md` (NEW, ~300 lines), `README.md` (docs table row added)
+  - Content sections:
+    - **The Core Rule** — cognition vs sensory AI boundary with a category table showing which operations are allowed to call AI (sensory input describer, sensory output effectors) vs not (everything Unity decides, says, remembers, feels, builds). Boundary test: "if removing the AI call would stop Unity from thinking, it's on the wrong side."
+    - **The Peripheral Interface Contract (R7)** — `init(source) / process(dt?) / destroy()` three-method contract, current peripherals table (visual cortex / auditory cortex / voice I/O) with source type, return shape, destroy targets. Explanation of why MediaStream lifecycle stays owned by app.js.
+    - **The Sensory AI Provider — 4-Level Priority** — `SensoryAIProviders` three methods (generateImage, describeImage, speak), 4-level priority chain prose + flowchart, dead-backend cooldown explanation, auto-detected image gen ports table (7 entries), auto-detected VLM ports table (5 entries) with `VISION_MODEL_HINTS` substring filter, env.js `imageBackends[]` + `visionBackends[]` schema with examples, response shape handling table for image backends (4 shapes) and vision backends (2 wire shapes ollama-vision + openai-vision).
+    - **Vision Describer Failure Handling (R13)** — 3-layer resilience: backend-level fallthrough, consecutive failure counter with 30s pause after 3 total failures, visual cortex retry semantics with `_hasDescribedOnce` reset. Pre-R13 bug (lying 'processing...' string) documented as fixed.
+    - **Sensory Status HUD & Toasts (R13)** — top-right HUD indicator format, bottom-right toast stream with 4-level color coding, event catalog (`autodetect-complete` / `backend-failed` / `backend-dead` / `paused` / `all-failed`), `providers.onStatus(fn)` subscription API.
+    - **The Peripherals That Don't Use AI** — table showing V1/V4/motion/salience/tonotopic/band/efference copy are all pure client math, only 4 total AI touchpoints (IT describer, TTS, image gen, vision describer). "Zero of them drive what Unity says, decides, remembers, or feels. Removing all four breaks her ability to speak out loud, paint, or name what she sees — but she still thinks."
+    - **Boot Sequence** — 16-step ordered list of the init sequence in `bootUnity()` showing providers setup, auto-detect fire-and-forget, sensoryStatus.init, brain wiring, describer wrapper.
+    - **Server-side Sensory Path** — explains the server runs with NO peripherals (no camera/mic/image gen/TTS/vision), only text in + text out over WebSocket. Cognition happens wherever is cheaper, sensory always runs client-side.
+    - **Adding a New Peripheral** — 7-step guide for future peripherals with the rule that never changes: AI can describe/transcribe/paint/speak but never think.
+  - README.md docs table got a new row: "Sensory Contract — Peripheral interface (init/process/destroy), cognition-vs-sensory AI boundary, R13 multi-provider vision + image gen failover, status HUD"
+
+- [x] **Task:** R10.10 — Create `docs/WEBSOCKET.md` covering the complete wire protocol between `brain-server.js` and its clients. Same full-content treatment.
+  - Completed: 2026-04-13
+  - Files modified: `docs/WEBSOCKET.md` (NEW, ~350 lines), `README.md` (docs table row added)
+  - Content sections:
+    - **Endpoint** — default `ws://localhost:7525` (with R14 port move note), env override, `ws` library on server, browser-native on client, plain HTTP upgrade, JSON content type, no compression.
+    - **Connection Lifecycle** — text flowchart from ws open through welcome / state broadcast loop / text request / response / disconnect cleanup. `brain.clients` Map shape documented.
+    - **Messages: Server → Client** — 8 message types fully documented with JSON example + field table where relevant:
+      - `welcome` — initial handshake with client id, state snapshot, emotionHistory
+      - `state` — 10 Hz broadcast with full brain.getState() shape
+      - `response` — Unity's equational text reply with motor action
+      - `build` — R6.2 component synth result (per-user, not broadcast)
+      - `image` — R6.1 equational image prompt (client paints using own providers)
+      - `conversation` — anonymized broadcast of text+response to all clients
+      - `error` — rate limit or validation errors
+      - `speak` — reserved (client handler exists, server currently uses response with action=speak)
+      - 4 GPU compute message types (`gpu_init`, `compute_request`, `gpu_init_ack`, `compute_result`) with the ~100 KB/step architecture explanation of why voltages stay on GPU
+    - **Messages: Client → Server** — 6 message types:
+      - `text` — primary user input, rate limited at 2/sec per client
+      - `reward` — scalar modulation of brain.reward
+      - `setName` — client display name, server-local only
+      - `gpu_register` — mark self as GPU compute client
+      - `compute_result` — GPU reply with spikeCount (voltages stay on GPU)
+      - `gpu_init_ack` — GPU confirms cluster initialization
+      - Unknown-type handling note (server logs and drops, forward-compat)
+    - **Rate Limiting** — table showing text is the only type with a limit (MAX_TEXT_PER_SEC=2, 500ms minimum gap), everything else is unlimited + TCP backpressure. Note about conversation broadcast fan-out scaling with client count.
+    - **Client Reconnection Behavior** — 4-point contract: onclose 1s backoff, reconnect gets fresh id, repeated failures get exponential backoff with no give-up, messages during gap are dropped. Rationale: brain state lives server-side, client only holds HUD snapshot.
+    - **The Hostname Gate** — detectRemoteBrain only probes from localhost/127/[::1]/file: origins, explaining why GitHub Pages visitors don't auto-connect to loopback.
+    - **Security Model** — 5 points: no auth (loopback only for single-user, LAN fine for trusted, needs external auth layer for public internet), no API keys traverse the WebSocket (cognition is server-equational), no key material in server storage, conversation broadcasts anonymized to userId only, rate limiting is per-client per-type.
+    - **Server HTTP Endpoints** — sibling endpoints on same port: `/`, `/dashboard.html`, `/compute.html`, `/health`, `/versions`, `/rollback/:slot`, `/episodes`, `/history`, static file fallthrough.
+    - **Protocol Evolution Rules** — 5 informal semver-ish rules: additive server-to-client and client-to-server are safe, new fields on existing types are safe, removed fields are breaking and need schema bump, message type removal needs a deprecation cycle. "No schema registry, no protocol buffers, no versioning handshake — plain JSON by design."
+  - README.md docs table got a new row: "WebSocket Protocol — Complete wire reference — every message type, rate limits, reconnection, security model, HTTP sibling endpoints"
+  - README.md TODO row updated: `R1-R14` → `R1-R15` to reflect the R15 landing page rework queued earlier in this session.
+
+---
+
+## 2026-04-13 Session: R15 plan added — landing page / setup modal rework
+
+### COMPLETED (planning, not execution)
+- [x] **Task:** R15 plan — add landing page / setup modal rework as a proper R-series item. The user flagged during the R10.9/R10.10 discussion that "the persay landing page where all the ai shit was gutted" needs a pass because `index.html` setup modal still advertises every text-AI backend R4 deleted. Added R15 to TODO with 6 subtasks.
+  - Completed: 2026-04-13 (commit `46caf24`)
+  - Files modified: `docs/TODO.md`
+  - R15.1 Rip the dead UI — inventory of stale elements in index.html:78-170 (proxy.js download link, 8 text-AI connect buttons for pollinations/openrouter/openai/anthropic/mistral/deepseek/groq/local, "1. Connect an AI" heading, "FUCK IT — BRAIN ONLY" toggle, text model selector, start-btn disabled "Connect an AI first", hidden api-key-input slot)
+  - R15.2 New setup flow — mockup showing what the modal SHOULD look like post-R15 (sensory AI provider inventory, optional custom backend entry field, always-enabled Wake Unity Up button, Clear All Data)
+  - R15.3 Wire the R13 sensoryStatus HUD into the modal — read `providers.getStatus()` at open time, render the full per-backend list inline so users see what's detected before clicking Wake Unity Up
+  - R15.4 Rip the event handler graveyard in `js/app.js` — LOCAL_AI_ENDPOINTS const (528-534), detectedAI + bestBackend module vars, _allTextOptions, connect button handlers, provider probe code
+  - R15.5 CSS cleanup — styles targeting .connect-btn, #connect-form, #text-model-select, #text-model-filter, #brain-only-toggle
+  - R15.6 README.md / SETUP.md / brain-equations.html setup instruction updates
+  - Slotted into Execution Order after R14 and before R12 merge. No execution this session — this was the planning entry only.
+
+---
+
+## 2026-04-13 Session: gitignore — cover .claude/.claude/ nested duplicate
+
+### COMPLETED
+- [x] **Task:** Gitignore audit + fix for the nested `.claude/.claude/` directory that has been showing up as an untracked path in every git status for the entire session. The user asked during the R10.9/R10.10 discussion: "are there temp files we have been creating that need to be gitignored".
+  - Completed: 2026-04-13 (commit `e089078`)
+  - Files modified: `.gitignore`
+  - Audit result: clean. Ran `git status --short --ignored` — every other floating file in the tree is already covered (`.claude/pollinations-user.json`, `.claude/settings.local.json`, `.claude/start.bat`, `js/app.bundle.js`, `js/env.js`, all `server/brain-weights*.json`, `server/conversations.json`, `server/episodic-memory.db*` SQLite files, `server/node_modules/`, `server/package-lock.json`). Nothing else leaks.
+  - Fix: added `.claude/.claude/` to the "Claude Code" section of `.gitignore` with a comment explaining the stray directory is a Claude Code CLI artifact from being invoked with a stray working directory. Inspection showed it contains a single `settings.local.json` (489 bytes) which is a nested duplicate of the real `.claude/settings.local.json` at the correct path — not load-bearing, just noise.
+
+---
+
 ## 2026-04-13 Session: R10.4 — docs/EQUATIONS.md update for R2 grounding + R6.2 component synth + privacy fix
 
 ### COMPLETED

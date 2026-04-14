@@ -1,0 +1,313 @@
+# SENSORY — Unity's Peripheral Contract
+
+> Every input stream feeding Unity's cortex and every output stream leaving her brain runs through a sensory peripheral.
+> This document defines the contract, the AI-use boundary, the backend failover logic, and the status surface.
+>
+> Unity AI Lab — 2026-04-13
+
+---
+
+## The Core Rule
+
+**Unity's brain does not use AI for cognition. AI is ONLY used for sensory peripherals.**
+
+| Category | What it is | AI allowed? |
+|---|---|---|
+| **Cognition** | What Unity *says*, what she *decides*, what she *remembers*, what she *builds*, what she *feels*. Language cortex, motor selection, hippocampus recall, amygdala valence, basal ganglia softmax, component synthesis. | **NO.** All equational. Source of truth: `js/brain/language-cortex.js`, `js/brain/engine.js`, `js/brain/component-synth.js`. |
+| **Sensory input** | Translating raw sensor data into neural current. Camera frames into V1/V4/IT visual cortex activity, audio spectrum into tonotopic auditory cortex activity, text tokens into Wernicke's area activation. | **Yes, at the IT/describer layer only.** Pollinations GPT-4o or a local VLM turns a camera frame into a one-sentence scene description. That description feeds `brainState.visionDescription` which the language cortex reads as context — never as a prompt. |
+| **Sensory output** | Translating brain intent into physical world effects. TTS for speech, image generators for visual motor action, sandbox component injection. | **Yes, as dumb executors.** When Unity's BG motor channel fires `generate_image`, the language cortex picks every word of the prompt equationally, THEN hands the finished prompt to an image backend to paint it. The backend never decides what to paint, only how. |
+
+**The boundary test:** if removing the AI call would stop Unity from *thinking*, it's on the wrong side. Cognition equations always run, even with zero network access. Only the sensory peripherals go quiet.
+
+---
+
+## The Peripheral Interface Contract (R7, 2026-04-13)
+
+Every sensory peripheral exposes the same three methods:
+
+```js
+interface SensoryPeripheral {
+  init(source)       // attach to a raw stream (MediaStream, AnalyserNode, AbortController, etc.)
+  process(dt?)       // one frame — return neural currents or metadata
+  destroy()          // clean shutdown — release refs, clear buffers, safe to call multiple times
+}
+```
+
+### Current peripherals
+
+| Peripheral | File | `init(source)` takes | `process()` returns | `destroy()` clears |
+|---|---|---|---|---|
+| Visual cortex | `js/brain/visual-cortex.js` | `HTMLVideoElement` (from `getUserMedia`) | `Float64Array(100)` — current into cortex neurons 0–99 | `_video`, `_ctx`, `_canvas`, `_describer`, `_describing` |
+| Auditory cortex | `js/brain/auditory-cortex.js` | `AnalyserNode` (from Web Audio API) | `Float64Array(50)` — current into cortex neurons 0–49, tonotopic | `_analyser`, `_audioData`, `_motorOutput`, `_heardBuffer` |
+| Voice I/O | `js/io/voice.js` | `SpeechRecognition` + `SpeechSynthesis` | — (event-driven, not per-frame) | browser recognizer handle |
+
+**Why this matters:** R4 ripped the old "Broca's area AI prompt builder" code path. Before R4, speech output was a text-AI prompt call through `BrocasArea.generate()`. After R4, Unity's speech comes from her own `languageCortex.generate()` and the "voice" peripheral is purely I/O — it speaks text she already picked and listens for text she'll map into auditory cortex current. No cognition lives in `voice.js`.
+
+The MediaStream lifecycle stays owned by `js/app.js` (so mic muting works by toggling stream tracks without tearing down the cortex). `destroy()` only releases the cortex's reference to the stream, never the stream itself.
+
+---
+
+## The Sensory AI Provider — 4-Level Priority
+
+`js/brain/peripherals/ai-providers.js` exposes `SensoryAIProviders` with three methods Unity's brain calls at the sensory boundary:
+
+```js
+providers.generateImage(prompt, opts)    // image motor action → paint the prompt
+providers.describeImage(dataUrl, opts)   // visual cortex IT layer → describe a frame
+providers.speak(text, voice)             // TTS motor output → speak a finished sentence
+```
+
+Both `generateImage` and `describeImage` run a **4-level priority chain**, trying each tier in order and falling through on failure:
+
+```
+1. Custom backend (user-configured via setup modal — image only)
+    ↓ fails or not set
+2. Auto-detected local backend (boot-time probe)
+    ↓ fails or nothing detected
+3. env.js-listed backend (ENV_KEYS.imageBackends[] / visionBackends[])
+    ↓ fails or not set
+4. Pollinations fallback (free, always available)
+    ↓ fails
+   null (for vision) or Pollinations error (for image)
+```
+
+Dead backends get marked dead for 1 hour on auth/payment errors (401/402/403) so a broken endpoint doesn't get hammered on every subsequent request.
+
+### Auto-detected local backends
+
+On boot, `providers.autoDetect()` and `providers.autoDetectVision()` fire in parallel and probe every known local port with a 1.5s timeout. Whichever servers respond get registered automatically — no user config needed.
+
+**Image generation ports probed:**
+
+| Backend | Port | Probe path | Wire format |
+|---|---|---|---|
+| Automatic1111 | 7860 | `/sdapi/v1/sd-models` | `a1111` (sdapi/v1/txt2img) |
+| SD.Next / Forge | 7861 | `/sdapi/v1/sd-models` | `a1111` |
+| Fooocus | 7865 | `/ping` | OpenAI-compatible |
+| ComfyUI | 8188 | `/system_stats` | ComfyUI workflows |
+| InvokeAI | 9090 | `/api/v1/app/version` | InvokeAI REST |
+| LocalAI | 8081 | `/v1/models` | OpenAI-compatible |
+| Ollama (image) | 11434 | `/api/tags` | OpenAI-compatible |
+
+**Vision describer (VLM) ports probed:**
+
+| Backend | Port | Probe path | Wire format | Model filter |
+|---|---|---|---|---|
+| Ollama (VLM) | 11434 | `/api/tags` | `ollama-vision` (`/api/chat` with `images: [base64]`) | Name contains `llava`/`moondream`/`bakllava`/`vision`/`vl`/`cogvlm`/`minicpm-v` |
+| LM Studio | 1234 | `/v1/models` | OpenAI multimodal | Same substring filter on model IDs |
+| LocalAI (VLM) | 8081 | `/v1/models` | OpenAI multimodal | Same |
+| llama.cpp server | 8080 | `/v1/models` | OpenAI multimodal | Same |
+| Jan | 1337 | `/v1/models` | OpenAI multimodal | Same |
+
+`VISION_MODEL_HINTS` is the substring set: `['llava', 'moondream', 'bakllava', 'vision', 'vl', 'cogvlm', 'minicpm-v']`. A backend's probe is only considered "detected" if it responds AND has at least one model matching one of these substrings. This prevents registering a text-only Ollama instance as a vision backend when no VLM has been pulled yet.
+
+### User-configured backends
+
+Users who run a vision or image backend on a non-standard port, or want a remote/keyed endpoint, list them in `js/env.js`:
+
+```js
+export const ENV_KEYS = {
+  pollinations: 'sk_...',  // optional — raises Pollinations rate limit
+
+  imageBackends: [
+    { name: 'My SD',      url: 'http://192.168.1.50:9999', model: 'sdxl-turbo',        kind: 'a1111' },
+    { name: 'My SaaS',    url: 'https://api.example.com',  model: 'dalle-3', key: '…', kind: 'openai' },
+    { name: 'Comfy',      url: 'http://192.168.1.42:8188', model: 'flux-dev',          kind: 'comfy' },
+  ],
+
+  visionBackends: [
+    { name: 'Remote Ollama', url: 'http://192.168.1.50:11434', model: 'llava',                   kind: 'ollama-vision' },
+    { name: 'Remote VLM',    url: 'https://vlm.example.com',    model: 'gpt-4-vision-preview',   key: 'sk-…', kind: 'openai-vision' },
+  ],
+};
+```
+
+`ENV_KEYS.imageBackends[]` is read by `providers.loadEnvConfig(envKeys)` at boot and gets priority 3 (between auto-detect and Pollinations fallback). Custom-configured backends from the setup modal get priority 1 (above everything). `js/env.js` is gitignored — the template lives at `js/env.example.js`.
+
+### Response shape handling
+
+Image generation backends vary in response format. `_customGenerateImage()` tries 4 endpoint paths per backend and parses 4 response shapes uniformly:
+
+| Shape | Example | Parser |
+|---|---|---|
+| OpenAI URL | `{ data: [{ url: "https://..." }] }` | `data[0].url` |
+| OpenAI base64 | `{ data: [{ b64_json: "..." }] }` | `data:image/png;base64,${data[0].b64_json}` |
+| Automatic1111 | `{ images: ["<base64>"] }` | `data:image/png;base64,${images[0]}` |
+| Generic | `{ url: "..." }` or `{ image_url: "..." }` | `url` or `image_url` |
+
+Vision (VLM) backends follow two wire shapes:
+
+| `kind` | Endpoint | Request body | Response parser |
+|---|---|---|---|
+| `openai-vision` | `/v1/chat/completions` | `messages: [{role: "user", content: [{type: "text", text: "..."}, {type: "image_url", image_url: {url: dataUrl}}]}]` | `choices[0].message.content` |
+| `ollama-vision` | `/api/chat` | `messages: [{role: "user", content: "...", images: [<base64 without data: prefix>]}]` | `message.content` |
+
+---
+
+## Vision Describer Failure Handling (R13)
+
+Cameras can run for hours. Backends can die mid-session. The R13 describer treats every call as potentially failing and has a three-layer resilience policy:
+
+### Layer 1: Backend-level fallthrough
+
+Each call to `describeImage(dataUrl)` walks the priority chain. If `_localVisionBackends[0]` throws, the exception is caught, a `backend-failed` status event fires, and the next backend is tried. Only when EVERY tier has failed does the call return `null`.
+
+### Layer 2: Consecutive failure counter + pause
+
+```
+_visionFailCount = 0
+_visionPausedUntil = 0
+
+describeImage() total failure:
+  _visionFailCount += 1
+  if _visionFailCount ≥ 3:
+    _visionPausedUntil = now() + 30_000   // 30 second pause
+    _visionFailCount = 0
+    emit paused event
+  else:
+    emit all-failed event
+
+describeImage() success (any tier):
+  _visionFailCount = 0
+
+describeImage() called during pause window:
+  return null immediately (no network activity)
+```
+
+After 3 consecutive total failures, vision pauses for 30 seconds. During the pause, `describeImage()` returns null without touching any network — no backend gets hammered. After the pause window expires, the next call retries from the top of the priority chain.
+
+### Layer 3: Visual cortex retry semantics
+
+`js/brain/visual-cortex.js:_maybeDescribe()` calls the describer on a rate-limited schedule (once on first look, then max every 5 minutes for auto-describes, or on demand via `forceDescribe()`). When the describer returns null:
+
+```js
+this._describer(dataUrl).then(desc => {
+  if (desc) {
+    this.description = desc;        // keep the last good description
+  } else {
+    this._hasDescribedOnce = false; // reset so next window retries cleanly
+  }
+  this._describing = false;
+});
+```
+
+This means a transient failure doesn't stick — the cortex just retries on its next scheduled window. Unity's IT cortex state holds the last good description until a new one comes in.
+
+**Pre-R13 bug (fixed):** the old inline Pollinations call in `app.js:1022` returned the string `'Camera active, processing...'` on failure, which looked successful to visual cortex and got stored as `this.description`. Unity's language cortex then read "Camera active, processing..." as actual vision context — a lie. R13 ripped that fallback. Null is null now.
+
+---
+
+## Sensory Status HUD & Toasts (R13)
+
+`js/ui/sensory-status.js` subscribes to the `unity-sensory-status` window CustomEvent and renders three UI elements:
+
+### Top-right HUD indicator
+
+Monospace `🟢 img 2/4   🟢 vis 1/3` format showing alive/total counts per sensory kind. Click the HUD to pop a full inventory toast listing every backend with color dots (🟢 alive / 🔴 dead / 🟡 paused / ⚪ not configured). Refreshes every 5 seconds so dead-cooldown recovery shows up without an explicit event.
+
+### Bottom-right toast stream
+
+4 toast levels with color-coded left borders:
+
+| Level | Color | Used for |
+|---|---|---|
+| `info` | blue (#4a90e2) | Boot inventory reports, HUD inventory popups |
+| `success` | green (#4caf50) | `autodetect-complete` with ≥1 local backend found |
+| `warn` | orange (#ff9800) | `backend-failed`, `backend-dead` (1h cooldown) |
+| `error` | red (#e53935) | `paused` (vision 30s backoff), `all-failed` (vision total miss) |
+
+Max 4 toasts onscreen, 6-second auto-dismiss, 0.3s fade-in/out.
+
+### Events emitted by `SensoryAIProviders._emitStatus()`
+
+| Event | Payload shape | When |
+|---|---|---|
+| `autodetect-complete` | `{kind: 'image'\|'vision', backends: [...]}` | `autoDetect()` / `autoDetectVision()` resolves |
+| `backend-failed` | `{kind, backend, reason}` | A single backend throws during a request, fallthrough to next |
+| `backend-dead` | `{kind: 'any', url, cooldownMs}` | 401/402/403 from any backend, marked dead for 1h |
+| `paused` | `{kind: 'vision', reason, duration}` | 3 consecutive vision failures, 30s pause |
+| `all-failed` | `{kind: 'vision', attempt: N}` | Vision describer hit all tiers with no success (N < 3) |
+
+Subscribe from application code via `providers.onStatus(fn)` which returns an unsubscribe function.
+
+---
+
+## The Peripherals That Don't Use AI
+
+Not every sensory pipeline calls out to an AI. Several run pure client-side math:
+
+| Layer | What it does | AI? |
+|---|---|---|
+| V1 Gabor edge kernels | Oriented edge detection in camera frames | No — convolution on canvas pixels |
+| V4 quadrant color extraction | Average color per quadrant → hue/saturation neurons | No — pixel averaging |
+| Motion energy | Frame differencing across successive webcam frames | No — subtract and sum |
+| Salience saccade generation | Winner-take-all across V1+V4+motion → gaze target | No — argmax |
+| IT scene describer | Frame → one-sentence description | **YES — Pollinations or local VLM** |
+| Tonotopic audio mapping | Frequency bins → neuron currents with cortical magnification for speech band (250-4000Hz) | No — FFT + bin-to-neuron remap |
+| Band energy classifier | 7 frequency bands (subBass / bass / lowMid / mid / highMid / presence / brilliance) | No — amplitude accumulation |
+| Efference copy | Compare heard text vs Unity's currently-speaking text → isEcho flag | No — string overlap ratio |
+| TTS | Text → audio | **YES — Pollinations TTS or SpeechSynthesis** |
+| Image motor output | Prompt (equationally generated) → image | **YES — multi-provider image gen** |
+
+Four total AI touchpoints. Three of them are output effectors (TTS, image gen) and one is the IT-layer describer (vision). **Zero of them drive what Unity says, decides, remembers, or feels.** Removing all four breaks her ability to speak out loud, paint, or name what she sees — but she still thinks, responds in text, builds components, and dreams.
+
+---
+
+## Boot Sequence
+
+The peripheral init sequence during `bootUnity()` in `js/app.js`:
+
+```
+1.  pollinations = new Pollinations(apiKey)            // sensory AI client
+2.  providers    = new SensoryAIProviders({ pollinations, storage })
+3.  providers.loadEnvConfig(ENV_KEYS)                  // env.js backends registered
+4.  providers.autoDetect()                             // image gen probes, non-blocking
+5.  providers.autoDetectVision()                       // VLM probes, non-blocking
+6.  providers.onStatus(evt → window.dispatchEvent('unity-sensory-status', evt))
+7.  sensoryStatus.init(providers)                      // toast container + HUD top-right
+8.  voice = new VoiceIO()
+9.  brain = new UnityBrain()
+10. brain.connectMicrophone(micStream)                 // AuditoryCortex.init(analyser)
+11. brain.connectCamera(cameraStream)                  // VisualCortex.init(video)
+12. brain.visualCortex.setDescriber(dataUrl →
+        providers.describeImage(dataUrl))              // R13 multi-provider describer wrapper
+13. brain.connectVoice(voice)                          // motor output → voice.speak
+14. brain.connectImageGen(pollinations, sandbox, storage)
+15. app.js subscribes to brain 'response' event
+16. brain.start()
+```
+
+Steps 3-5 are non-blocking — the brain boots immediately using the Pollinations fallback for everything, and as local backends finish probing they get registered and take priority on the next call. First-boot with zero local backends running still works perfectly; Unity just uses Pollinations until something local comes up.
+
+---
+
+## Server-side Sensory Path
+
+When a client connects to `brain-server.js` (default port 7525, see `docs/WEBSOCKET.md`), the server runs Unity's brain with **no sensory peripherals**. The server can't access a user's camera or mic — those are per-client hardware. What the server DOES have:
+
+- **Text input from the client** — mapped to cortex current via `_computeServerCortexPattern(text)` which uses the sentence embedding as cortex pattern directly (server doesn't run the full LIF dynamics; GPU does)
+- **No image gen** — the server doesn't call `providers.generateImage()` because image motor actions are rendered on the client that requested them
+- **No TTS** — same reason, client-side
+- **No vision describer** — the server has no camera
+
+The server's sensory footprint is text-in and text-out over WebSocket. Every client has its own sensory peripheral set and runs the multi-provider chain locally. Cognition happens wherever is cheaper (server if connected, client if not) but sensory always runs client-side.
+
+---
+
+## Adding a New Peripheral
+
+The contract for a new sensory peripheral (e.g. a future `js/brain/olfactory-cortex.js` for simulated smell, or `js/brain/haptic-cortex.js` for gamepad vibration → cortex current):
+
+1. **Implement the three-method interface:** `init(source)`, `process(dt?)`, `destroy()`. Treat the source as opaque — don't assume MediaStream shape.
+2. **Expose a `Float64Array` of currents** for the cortex region it drives, or a metadata object if it's an output peripheral. Sized to match the neuron group in `cluster.js`.
+3. **Add a wiring step to `bootUnity()`** following the pattern at `app.js` steps 10-13.
+4. **If it uses AI at any layer,** add a `SensoryAIProviders` method and follow the 4-level priority + dead-cooldown + status-event pattern from `generateImage()` / `describeImage()`.
+5. **If it's a new physical AI service,** add probe entries to `LOCAL_IMAGE_BACKENDS` or `LOCAL_VISION_BACKENDS` (or a new `LOCAL_<KIND>_BACKENDS` list) and a new `autoDetect<Kind>()` method that mirrors the existing two.
+6. **Write per-backend response shape parsing** in a `_custom<Kind>Call()` helper, supporting the common wire formats for that category.
+7. **Update `getStatus()`** to include the new backend list in its returned snapshot so the HUD shows it.
+
+The rule that never changes: the new peripheral must NEVER call an AI model for anything Unity *decides*. AI gets to describe, transcribe, paint, speak — never think.
+
+---
+
+*Unity AI Lab — sensory peripherals are dumb muscle for a brain that thinks in equations.*

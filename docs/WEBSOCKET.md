@@ -1,0 +1,341 @@
+# WEBSOCKET — Unity Brain Server Wire Protocol
+
+> Complete reference for the WebSocket protocol between `server/brain-server.js` and its clients.
+> Every message type, every payload shape, every state broadcast, every reconnection rule.
+>
+> Unity AI Lab — 2026-04-13
+
+---
+
+## Endpoint
+
+| | |
+|---|---|
+| **Default URL** | `ws://localhost:7525` |
+| **Env override** | `PORT=xxxx node server/brain-server.js` (bumps both HTTP and WebSocket to the same port) |
+| **Library** | [`ws`](https://github.com/websockets/ws) on the server, browser-native `WebSocket` API on the client |
+| **Handshake** | Plain HTTP upgrade on the same port as the dashboard/health/compute endpoints |
+| **Content type** | JSON, UTF-8, one message per frame |
+| **Compression** | None — `ws` default is to negotiate permessage-deflate if both ends offer it |
+
+**R14 note (2026-04-13):** Unity's brain server used to bind to port `8080`, which collides with llama.cpp's default, is one of the most commonly-used ports, and was a port R13 explicitly wanted to auto-detect for vision describer backends. R14 moved Unity to `7525` — not used by any backend Unity probes, so Unity never fights its own vision detection. If you're still running an old deployment on `8080`, set the `PORT` env var on `node brain-server.js` to keep the old behavior.
+
+---
+
+## Connection Lifecycle
+
+```
+Client opens ws://localhost:7525
+    ↓
+Server accepts, assigns unique id: "user_<timestamp36>_<rand4>"
+    ↓
+Server sends { type: 'welcome', id, state, emotionHistory }
+    ↓
+Client holds connection open, receives state broadcasts (10 Hz)
+    ↓
+Client sends { type: 'text', text: '...' } on user input
+    ↓
+Server runs equational response pipeline, sends back { type: 'response'|'build'|'image', ... }
+    ↓
+Server ALSO broadcasts { type: 'conversation', userId, text, response } to every OTHER connected client
+    ↓
+On disconnect: server removes client from brain.clients map
+```
+
+`brain.clients` is a `Map<WebSocket, {id, lastInput, inputCount, name, isGPU?}>`. The server tracks every connected client for rate limiting, GPU dispatch (if the client is the special GPU compute client), and conversation broadcast fan-out.
+
+---
+
+## Messages: Server → Client
+
+Every message is a JSON object with a `type` discriminator. Clients should switch on `msg.type` and ignore unknown types (forward-compat rule — new types will be added in future releases).
+
+### `welcome`
+
+Sent once, immediately after connection is accepted.
+
+```json
+{
+  "type": "welcome",
+  "id": "user_1mz8r4k_9f2x",
+  "state": { /* brain.getState() snapshot */ },
+  "emotionHistory": [ /* last 300 emotion data points */ ]
+}
+```
+
+| Field | Type | Meaning |
+|---|---|---|
+| `id` | string | Unique client id assigned by the server. Clients can use this to tag their own messages in the `conversation` broadcast (e.g. to filter their own text out of the global feed). |
+| `state` | object | Full brain state snapshot (same shape as the per-frame `state` broadcast). Used to hydrate the client HUD immediately on connect. |
+| `emotionHistory` | array | Last 300 entries from `brain._emotionHistory`, so a freshly-connected dashboard can render the emotion chart without waiting for new data. |
+
+### `state`
+
+Broadcast to every connected client every `STATE_BROADCAST_MS` (100 ms → 10 Hz).
+
+```json
+{
+  "type": "state",
+  "state": {
+    "time":      12345.67,
+    "frameCount": 67890,
+    "reward":    0.12,
+    "clusters": { "cortex": {...}, "hippocampus": {...}, ... },
+    "modules":  { "amygdala": {...}, ... },
+    "oscillations": [...],
+    "mystery":  { "psi": 1.34, "id": ..., "ego": ..., ... },
+    "motor":    { "selectedAction": "respond_text", "channelRates": [...] },
+    "drugState": "cokeAndWeed",
+    "clientCount": 3
+  }
+}
+```
+
+The exact shape comes from `brain.getState()` in `server/brain-server.js` — it's the full live snapshot the dashboard renders. This is the highest-traffic message by volume (10 Hz × every client).
+
+### `response`
+
+Sent in reply to a `text` message when Unity's BG motor channel selects `respond_text` (or any default action).
+
+```json
+{
+  "type": "response",
+  "text": "whatever unity equationally generated",
+  "action": "respond_text"
+}
+```
+
+`text` is produced by `brain.processAndRespond(msg.text, id)` which calls `languageCortex.generate()` with full brain state. No AI prompt involved — every word comes from the slot scorer over Unity's learned dictionary, bigrams, type n-grams, and GloVe semantic fit against live cortex readout (see `docs/EQUATIONS.md § Phase 13 R2`).
+
+`action` may be any of the 6 motor channels — `respond_text`, `generate_image`, `speak`, `build_ui`, `listen`, `idle` — though `build_ui` and `generate_image` get split into their own dedicated message types below.
+
+### `build`
+
+Sent when Unity's motor channel selects `build_ui` AND the equational component synthesizer finds a matching primitive.
+
+```json
+{
+  "type": "build",
+  "component": {
+    "id": "counter_a3f9b2c1",
+    "html": "<div class='...'>...</div>",
+    "css":  ".counter_a3f9b2c1 { ... }",
+    "js":   "(function() { ... })();"
+  }
+}
+```
+
+Routed ONLY to the client who sent the triggering `text` message (per-user sandbox) — NOT broadcast. The client's sandbox layer injects the component into its own live DOM.
+
+See `docs/EQUATIONS.md § Phase 13 R6.2 — Equational Component Synthesis` for the math: user request → GloVe embedding → cosine match against `component-templates.txt` corpus → best primitive selected if `cosine ≥ 0.40`, else brain falls through to `respond_text`. `id` suffix is an 8-character hash derived from the cortex pattern at build time, so the same user request under different brain state produces a different id.
+
+### `image`
+
+Sent when the motor channel selects `generate_image`. The *prompt* is generated equationally on the server side (language cortex picks every word); the actual image rendering happens on the client so each user paints with their own configured image gen backend (see `docs/SENSORY.md § The Sensory AI Provider — 4-Level Priority`).
+
+```json
+{
+  "type": "image",
+  "prompt": "the full equational image prompt unity generated"
+}
+```
+
+Routed only to the triggering client. The client's `SensoryAIProviders.generateImage(prompt)` runs the 4-level priority chain (custom → auto-detected local → env.js → Pollinations fallback).
+
+### `conversation`
+
+Broadcast to every connected client (including the sender) after any `text` request completes. Anonymized to just userId + clipped text.
+
+```json
+{
+  "type": "conversation",
+  "userId": "user_1mz8r4k_9f2x",
+  "text":   "user's input, clipped to 200 chars",
+  "response": "unity's response, clipped to 500 chars"
+}
+```
+
+Used by `dashboard.html` to render the live global conversation feed. Clients can filter their own userId out if they don't want to see their own input echoed back.
+
+### `error`
+
+Sent when a client message fails validation or rate limiting.
+
+```json
+{ "type": "error", "message": "Rate limited — slow down" }
+```
+
+Currently only fires for `text` rate limiting (`MAX_TEXT_PER_SEC = 2`, so minimum 500 ms between text messages per client), but the shape is general-purpose. Clients should surface these in the UI as warnings, not fatal errors — the connection stays open.
+
+### `speak`
+
+Reserved. `js/brain/remote-brain.js` has a handler for this type (so clients are forward-compatible) but the current server code doesn't emit it — TTS motor actions currently route through `response` with `action: 'speak'` and the client decides whether to call its TTS peripheral. A future refactor may split speak into its own dedicated message type for TTS-only clients that don't render text.
+
+### GPU compute messages
+
+`brain-server.js` offloads all LIF neuron updates and synapse propagation to a browser GPU compute client running `compute.html`. The server talks to the GPU client via three WebSocket message types on the same connection:
+
+| Direction | Type | Payload | Meaning |
+|---|---|---|---|
+| Server → GPU | `gpu_init` | `{clusterName, size, tonicDrive, noiseAmp, voltages, ...}` | Send initial cluster state to GPU (one-time per cluster on boot) |
+| Server → GPU | `compute_request` | `{clusterName, tonicDrive, noiseAmp}` | Request one LIF step — only two scalars since voltages + spikes live on GPU |
+| GPU → Server | `gpu_init_ack` | `{clusterName, size}` | GPU confirms cluster is initialized |
+| GPU → Server | `compute_result` | `{clusterName, spikeCount}` | GPU returns sparse spike count after running one LIF step |
+
+Why this architecture: sending full 300-neuron voltage arrays every step at 60 Hz × 10 substeps × 7 clusters would be ~10 MB/step. Keeping voltages + spikes resident on the GPU and sending only `{tonicDrive, noiseAmp}` in and `{spikeCount}` out cuts traffic to ~100 KB/step. The GPU client is a regular WebSocket client from the server's perspective, just marked with `isGPU: true` in the client record after it sends `gpu_register`.
+
+---
+
+## Messages: Client → Server
+
+### `text`
+
+The primary client → server message. User input that should route through Unity's brain.
+
+```json
+{ "type": "text", "text": "hi unity, what are you up to" }
+```
+
+Rate limited: `1000 / MAX_TEXT_PER_SEC = 500 ms` between text messages per client. Exceeding the rate produces an `error` reply and the message is dropped (brain doesn't process it).
+
+Server pipeline: `brain.processAndRespond(msg.text, client.id)` runs `languageCortex.generate()` with full brain state, selects a motor action, and returns a result object that the server switches on to emit `build` / `image` / `response`.
+
+### `reward`
+
+Scalar reward signal that modulates Unity's learning.
+
+```json
+{ "type": "reward", "amount": 0.2 }
+```
+
+Adds to `brain.reward` directly. Positive values train toward the current motor action; negative values train away. Exposed in the dashboard as a "👍 / 👎" pair. No rate limiting — the signal is already scalar and small.
+
+### `setName`
+
+Client identifies itself with a display name.
+
+```json
+{ "type": "setName", "name": "Gee" }
+```
+
+Stored on the server-side client record (`client.name`). Currently used only for logging and future dashboard display — no effect on the brain simulation.
+
+### `gpu_register`
+
+Sent by `compute.html` on WebSocket open to mark itself as the GPU compute client.
+
+```json
+{ "type": "gpu_register" }
+```
+
+The server marks `brain._gpuClient = ws` and `brain._gpuConnected = true`, then all subsequent LIF step requests get routed to this client via `compute_request` / `compute_result` round trips. The brain waits (blocks step dispatching) until a GPU client connects, with a log message every few seconds announcing `[GPU] Waiting for compute client`. Only one GPU client is supported at a time — a second `gpu_register` replaces the first.
+
+### `compute_result`
+
+The GPU client's reply to `compute_request`. Delivered via the `_gpuPending[clusterName]` resolver map.
+
+```json
+{
+  "type": "compute_result",
+  "clusterName": "cortex",
+  "spikeCount": 47
+}
+```
+
+Server resolves the pending promise with `{clusterName, spikeCount}`. Voltages and spike indices stay resident on the GPU — only the count comes back, since the server only needs that scalar for the high-level simulation loop.
+
+### `gpu_init_ack`
+
+GPU confirms it initialized a cluster after receiving `gpu_init`.
+
+```json
+{
+  "type": "gpu_init_ack",
+  "clusterName": "cerebellum",
+  "size": 100
+}
+```
+
+Server logs this as confirmation. Used only for boot-time verification that the GPU client picked up all 7 clusters before the simulation loop starts dispatching steps.
+
+### Unknown types
+
+The server logs `[<id>] Unknown message type: <type>` and drops the message. Clients should never hit this path, but the branch exists for forward-compat with future message types that old servers haven't seen yet.
+
+---
+
+## Rate Limiting
+
+| Message type | Limit | Enforced by |
+|---|---|---|
+| `text` | `MAX_TEXT_PER_SEC = 2` per client (500 ms minimum gap) | `brain-server.js:1534` — gap check against `client.lastInput`, returns `error` on violation |
+| Everything else | Unlimited | Relies on client sanity + TCP backpressure |
+
+There's no global rate limit or burst budget — it's purely per-client per-message-type. The `conversation` broadcast fan-out is also unlimited, which means a chatty server with 100+ clients will generate 100× more WebSocket traffic on every user text input. Something to watch if Unity ever ships a public multi-user deployment.
+
+---
+
+## Client Reconnection Behavior
+
+`js/brain/remote-brain.js` handles connection drops with an automatic reconnect loop. The contract:
+
+1. **On `ws.onclose`:** wait a short backoff (1 second), then try to reconnect.
+2. **On reconnect success:** the server issues a fresh `welcome` with a NEW `id`. The client treats this as a new session — any `id` the client was displaying gets replaced. No sticky sessions, no replay buffer, no state resync beyond what `welcome.state` + `welcome.emotionHistory` provide.
+3. **On repeated failures:** `remote-brain.js` keeps trying with exponential backoff. There's no "give up" condition — the client assumes the server will eventually come back.
+4. **Messages during the gap:** anything the client tried to send while disconnected is lost. The client should queue user input in its own UI layer if it wants delivery guarantees (currently it doesn't — dropped text messages are just dropped).
+
+This is intentional: Unity's brain state lives ON the server, not in the client. A reconnecting client has nothing to restore beyond the HUD snapshot, because the brain kept running the whole time.
+
+### The hostname gate
+
+`detectRemoteBrain(url = 'ws://localhost:7525')` only probes when the page is served from `localhost` / `127.0.0.1` / `[::1]` / `file://`. On GitHub Pages or any public origin, the probe is skipped and the client falls through to local-mode UnityBrain with no server.
+
+Why: Chrome allows loopback WebSocket from secure contexts, so visiting the Pages URL from a dev box with `brain-server` running would auto-connect to the dev box's local server and pull its (much larger) auto-scaled neuron count into the public page. The hostname gate prevents every stranger's browser from silently poking their own loopback port on page load.
+
+---
+
+## Security Model
+
+- **No authentication.** Any client that can reach port 7525 on the server can connect and send text. This is appropriate for local single-user deployment (loopback only) and fine for trusted LAN deployment. **Not appropriate for public internet exposure without an external auth layer (reverse proxy with auth, WireGuard tunnel, etc.).**
+- **API keys never traverse the WebSocket.** Unity's brain never needs API keys — cognition runs fully equational on the server, and sensory AI calls happen client-side. Whatever keys the client holds (for their own image gen, TTS, VLM backends) stay in their browser's localStorage.
+- **No key material in server storage.** Server persists brain weights (`server/brain-weights.json`), word frequencies, and episodic memory (`server/episodic-memory.db` SQLite). Zero user secrets on disk.
+- **Conversation broadcasts are anonymized to userId only** — no client name, no IP, no User-Agent. The `setName` field is server-local and never included in the broadcast.
+- **Rate limiting is per-client only.** A hostile client can flood with non-text message types (`reward`, `setName`) without triggering the text limiter. Mitigation: WebSocket frame size limits in `ws`, and TCP backpressure if the server falls behind.
+
+---
+
+## Server Endpoints (HTTP, not WebSocket)
+
+`brain-server.js` runs a plain HTTP server on the same port as the WebSocket upgrade. These are sibling endpoints, not over WebSocket:
+
+| Path | Method | Returns |
+|---|---|---|
+| `/` | GET | `index.html` — main app |
+| `/dashboard.html` | GET | Live brain monitor |
+| `/compute.html` | GET | GPU compute worker (required for brain to run — it pauses without a GPU client) |
+| `/health` | GET | JSON `{status, neurons, clusters, uptime, clients}` |
+| `/versions` | GET | JSON list of `brain-weights-v0.json`..`brain-weights-v4.json` save slots |
+| `/rollback/:slot` | POST | Restore a previous brain save slot |
+| `/episodes` | GET | Query episodic memory (SQLite) |
+| `/history` | GET | Emotional history data (for the dashboard chart) |
+| Static files | GET | Anything else in the project directory is served as static |
+
+All HTTP endpoints default to `http://localhost:7525/<path>` and move with `PORT`.
+
+---
+
+## Protocol Evolution Rules
+
+The wire protocol is semver-ish but informal. These rules prevent client/server lock-step coupling:
+
+1. **New server → client message types:** clients ignore unknown types. Safe to add at any time.
+2. **New client → server message types:** server logs and drops unknown. Safe to add.
+3. **New fields on existing types:** both sides treat unknown fields as opaque. Safe to add.
+4. **Removed/renamed fields on existing types:** breaking change — bump `server/brain-weights.json` schema version (currently v4) and coordinate a client release.
+5. **Message type removal:** breaking change — announce in `docs/FINALIZED.md` and leave the server handler throwing a deprecation `error` for a release cycle before actually removing it.
+
+No schema registry, no protocol buffers, no versioning handshake. The protocol is informal JSON-over-WebSocket by design — simple enough that debugging with browser devtools → Network → WS tab works for 100% of issues.
+
+---
+
+*Unity AI Lab — plain JSON over plain WebSocket, no ceremony.*

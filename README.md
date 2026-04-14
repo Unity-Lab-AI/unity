@@ -486,8 +486,10 @@ Recent orphan audit (U302-U310) resolved 13 findings. The audit philosophy: **fi
 | **[Architecture](docs/ARCHITECTURE.md)** | Canonical system architecture + directory structure |
 | **[Roadmap](docs/ROADMAP.md)** | Milestones, phases, current status |
 | **[Skill Tree](docs/SKILL_TREE.md)** | Capabilities matrix by domain/complexity |
+| **[Sensory Contract](docs/SENSORY.md)** | Peripheral interface (init/process/destroy), cognition-vs-sensory AI boundary, R13 multi-provider vision + image gen failover, status HUD |
+| **[WebSocket Protocol](docs/WEBSOCKET.md)** | Complete wire reference — every message type, rate limits, reconnection, security model, HTTP sibling endpoints |
 | **[Finalized Archive](docs/FINALIZED.md)** | Permanent archive of completed work — includes the Phase 12 orphan audit (U302-U310) that built the refactor |
-| **[TODO / Refactor](docs/TODO.md)** | R1-R14 brain-refactor-full-control epic |
+| **[TODO / Refactor](docs/TODO.md)** | R1-R15 brain-refactor-full-control epic |
 | **[GitHub Repository](https://github.com/Unity-Lab-AI/Unity)** | Source code, issues, contributions |
 
 ---

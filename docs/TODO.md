@@ -677,11 +677,11 @@ Boot Unity with viz panel open, let it run 10 minutes, take Chrome memory snapsh
 - Mark all orphan items as resolved (post-R2-R9 some will have been rewritten as part of the shared core)
 - Add "This audit is closed — see ARCHITECTURE.md for current structure"
 
-### R10.9 — `docs/SENSORY.md` (from R7.3)
+### R10.9 — `docs/SENSORY.md` (from R7.3)  [DONE 2026-04-13 — full peripheral contract doc. Sections: Core Rule (cognition vs sensory AI boundary), Peripheral Interface Contract (init/process/destroy), Sensory AI Provider 4-level priority, auto-detect probe tables for image + vision, user-configured env.js backends, response shape parsing, vision describer failure handling (3-layer resilience), sensory status HUD + toast event catalog, peripherals that DON'T use AI, boot sequence, server-side sensory footprint, adding a new peripheral guide. Markdown not HTML — not equation-heavy, architectural reference.]
 - Peripheral contract
 - When AI is allowed
 
-### R10.10 — `docs/WEBSOCKET.md` (from R3.8)
+### R10.10 — `docs/WEBSOCKET.md` (from R3.8)  [DONE 2026-04-13 — full wire protocol reference. Sections: Endpoint (with R14 port 7525 note), Connection Lifecycle, Messages Server→Client (welcome/state/response/build/image/conversation/error/speak + 4 GPU compute types with payload tables), Messages Client→Server (text/reward/setName + 4 GPU types), Rate Limiting, Client Reconnection Behavior + hostname gate, Security Model (no auth, loopback only, no key material server-side), HTTP sibling endpoints on same port, Protocol Evolution Rules (additive-safe, breaking-changes need schema bump). Matches actual code behavior at brain-server.js:1515-1635 + remote-brain.js:117-267.]
 - Wire format
 - Delta sync protocol
 - Client reconnection behavior
