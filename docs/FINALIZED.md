@@ -412,6 +412,46 @@ Each channel gets the same 70/30 EMA update that used to apply to the spike-coun
 
 **Files:** `index.html`, `js/app.js`
 
+### T4.11 — Prominent "Get API Key" / "Install Docs" buttons in provider setup forms + correct Pollinations signup URL  [DONE this session]
+
+**Source:** Gee follow-up during refactor polish.
+
+**Symptom:** User: "need to add links to the models like pollinations api key page so users dont have to search it all up theriselves". Every `BACKEND_CATALOG` entry in `js/app.js` already had a `link` field, but `showBackendForm()` rendered it as a tiny dim URL at the bottom of each form via `class="hint-link"` — easy to miss, hard to click. Users had to first click a provider button, then squint at a faint URL, then hand-search if they wanted the signup page.
+
+Separately, the Pollinations link pointed at `pollinations.ai/dashboard` which is the wrong URL. Gee supplied the correct one: `https://enter.pollinations.ai/`.
+
+**What shipped:**
+
+`js/app.js BACKEND_CATALOG`:
+- Added explicit `linkLabel` field per entry so each provider gets a clear action label:
+  - `img:pollinations` → "🔑 Get Pollinations API key" (link corrected to `https://enter.pollinations.ai/`)
+  - `img:a1111` → "📦 A1111 install docs"
+  - `img:comfyui` → "📦 ComfyUI install docs"
+  - `img:dalle` → "🔑 Get OpenAI API key"
+  - `img:stability` → "🔑 Get Stability AI key"
+  - `vis:pollinations` → "🔑 Get Pollinations API key" (same corrected URL)
+  - `vis:ollama` → "📦 Ollama VLM model library"
+  - `vis:lmstudio` → "📦 LM Studio download"
+  - `vis:openai` → "🔑 Get OpenAI API key"
+- 🔑 emoji for key-signup pages, 📦 for install/docs pages
+- Pollinations instructions text updated to drop the stale "Get a key at pollinations.ai/dashboard" reference — the button carries the call-to-action now
+- Custom backends don't set `linkLabel`; they fall through to no button
+
+`js/app.js showBackendForm()`:
+- Link render block rewritten from a faint `<a class="hint-link">${url} →</a>` to a prominent `<a class="provider-link-btn">${linkLabel} →</a>`
+- Default label "🔗 Open provider site" catches any future catalog entry that forgets to set linkLabel
+- `target="_blank"` opens in a new tab so the user doesn't lose setup modal state
+
+`css/style.css` — new `.provider-link-btn` rule:
+- Pink-themed button: `font-mono 11px bold`, pink border + background tint, 8px 14px padding, 12px bottom margin
+- Hover state: brighter background, `translateY(-1px)` lift, pink box-shadow
+- 0.15s transition for responsive feel
+- Positioned above the URL/model/key inputs so it's the first thing users see after the instructions
+
+**User flow now:** click provider button → form opens with prominent "🔑 Get Pollinations API key →" pink button directly below the instructions → one click opens the signup page in a new tab → grab the key → paste into the form → click 🔌 CONNECT → live HTTP probe → 🟢 status badge.
+
+**Files:** `js/app.js`, `css/style.css`
+
 ### T4.10 — Option B: rip hardcoded labels/emojis/seedWords from 3D popup event detectors, derive everything equationally from cluster+metric+Unity's slot scorer  [DONE this session]
 
 **Source:** Gee review of refactor completeness before PR to main.
