@@ -67,6 +67,10 @@ export class VisualCortex {
     this._hasDescribedOnce = false; // first look on boot
     this._describer = null; // function(frameCanvas) => Promise<string>
     this._describing = false;
+    // T7.2 — subscribers notified whenever a fresh description
+    // lands. Language cortex uses this to feed the text into its
+    // social schema (gender inference via closed-class token match).
+    this._describeSubscribers = [];
 
     // Gaze — determined by salience map peak
     this.gazeX = 0.5;
@@ -438,15 +442,34 @@ export class VisualCortex {
     this._describer(dataUrl).then(desc => {
       // null = describer failed (backend dead / paused / bad response).
       // Keep _hasDescribedOnce=true so the 5-min rate limit engages and
-      // we don't retry every frame against a dead backend (the old code
-      // flipped it back to false which caused a 400-flood loop —
-      // dead-backend short-circuited but the describe cycle kept firing
-      // every RAF). Real retries happen after the 5-min window.
-      if (desc) this.description = desc;
+      // we don't retry every frame against a dead backend.
+      if (desc) {
+        this.description = desc;
+        // T7.2 — notify subscribers so downstream consumers (the
+        // language cortex social schema, specifically) can extract
+        // gender / scene context from the describer output.
+        for (const cb of this._describeSubscribers) {
+          try { cb(desc); } catch (err) { console.warn('[VisualCortex] describe subscriber error:', err.message); }
+        }
+      }
       this._describing = false;
     }).catch(() => {
       this._describing = false;
     });
+  }
+
+  /**
+   * T7.2 — subscribe to fresh description events. Callback receives
+   * the raw description string every time the describer completes
+   * with a non-null result. Used by the language cortex to pull
+   * gender tokens out of the scene description.
+   */
+  onDescribe(cb) {
+    if (typeof cb === 'function') this._describeSubscribers.push(cb);
+    return () => {
+      const i = this._describeSubscribers.indexOf(cb);
+      if (i >= 0) this._describeSubscribers.splice(i, 1);
+    };
   }
 
   isActive() { return this._active; }

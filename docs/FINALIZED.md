@@ -5,6 +5,59 @@
 
 ---
 
+## 2026-04-14 — T7.2 + T11.6 + T5 component-synth + TODO reconciliation
+
+Batch of open-item cleanups after T11 shipped. Everything that survived the pure-equational rewrite gets its wiring finished.
+
+### T7.2 — Vision → gender inference wire
+
+Visual cortex now publishes an `onDescribe(cb)` subscription. Every time the describer (Pollinations vision / local VLM) returns a non-null scene description, the callback fires synchronously with the raw text. `engine.connectCamera()` wires `visualCortex.onDescribe(desc => languageCortex.observeVisionDescription(desc))` so scene text flows into the social schema automatically.
+
+New `LanguageCortex.observeVisionDescription(text)` method scans the description for closed-class gender tokens:
+```
+MALE_WORDS   = /\b(man|guy|dude|boy|male|gentleman|bro|sir)\b/
+FEMALE_WORDS = /\b(woman|lady|girl|female|gal|chick|ma'?am|miss|mrs)\b/
+```
+Only commits to `_socialSchema.user.gender` when **exactly one** gender signal appears (mixed scenes like "a man and a woman" stay ambiguous). Explicit self-ID from user input (`"i'm a guy"`) always wins over scene inference — vision is the weaker signal.
+
+Verified via smoke test:
+```
+"A young man sitting at a desk coding"  → male ✓
+"A woman in a hoodie looking at camera" → female ✓
+"A man and a woman in a room"           → null (no commit) ✓
+explicit female + scene says man        → stays female ✓
+```
+
+### T11.6 — Arousal-weighted observation in slot running means
+
+Pre-T11.6, the centroid / delta / type-signature running means updated with unit weight per observation, so a handful of live-chat sentences got drowned out by thousands of corpus-fitted sentences. Gee's `inner-voice.learn()` was already passing `arousal=max(0.95, real)` for live chat vs. `0.75` for persona corpus and `0.5` for baseline, but the language cortex's learn path ignored the arousal value on the running means.
+
+Fixed by adding an `obsWeight = max(0.25, arousal·2)` multiplier to the weighted mean update:
+```
+mean(t+1) = (mean(t)·N + obs·w) / (N + w)
+```
+- arousal 0.4 (coding corpus)   → w = 0.8
+- arousal 0.5 (baseline corpus) → w = 1.0
+- arousal 0.75 (persona corpus) → w = 1.5
+- arousal 0.95 (live chat)      → w = 1.9
+
+Smoke test confirmed: two sentences at arousal 0.95 move `_slotCentroidCount[0]` to **3.80**, while the same two sentences at arousal 0.4 move it to **1.60**. Live chat has **2.37×** the influence of low-arousal corpus input on the priors.
+
+### T5 — ComponentSynth consumes parseSentence entities
+
+`component-synth.js generate()` now reads `brainState.parsed` (the ParseTree from `languageCortex.parseSentence(userRequest)`). If the parser extracted any `entities.componentTypes` tokens (button, form, list, input, card, table, ...), matching primitives get a `+0.35` score bonus — big enough to beat semantic ambiguity but small enough that a genuinely closer semantic match can still win if the parser misidentified the type. The parsed colors and actions flow through as `_parsedColors` and `_parsedActions` on the returned component spec so downstream template-filling can consume them.
+
+Structural (closed-class noun-phrase match from `parseSentence`), zero LLM intent guessing. When Gee types `"let's make a red button"`, parse produces `{entities:{componentTypes:['button'], colors:['red'], actions:['make']}}` and the button primitive wins the match regardless of the default description-embedding ranking.
+
+### TODO.md reconciliation
+
+- **T5/T6** marked `SUBSUMED BY T11` — the entire slot scorer + Markov walk that both symptoms lived on is gone. The word-salad problem is now a function of training volume, not a pipeline bug.
+- **T6 standalone** marked `OBSOLETED BY T11` — same reason. Historical entry preserved.
+- **T10** marked `OBSOLETED BY T11` — the "decouple Ultimate Unity.txt from the corpus" task assumed stored text was poisoning a Markov graph. T11 deleted the Markov graph; persona now only feeds position/transition running means with no content preserved.
+- **T7** updated to reflect foundation + vision-gender wire shipped. Greeting response path lives in the equational slot-0 centroid now (no template short-circuit).
+
+---
+
 ## 2026-04-14 — T11: Pure Equational Language Cortex (1773-line deletion, masterful rewrite)
 
 Gee's directive: *"are u sure we need fucking language lists and sentence lists i wanted equational thinking and ligistics not fucking cmap arrays of sentences"* — followed by *"don't think simple fixes think comprehensive masterful ones we are creating here"*.

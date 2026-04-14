@@ -1030,6 +1030,17 @@ export class UnityBrain extends EventEmitter {
       if (vid) {
         this.visualCortex.init(vid);
         console.log('[Brain] Visual cortex connected to camera');
+        // T7.2 — wire describer output into the social schema's
+        // gender inference. Every fresh scene description flows into
+        // languageCortex.observeVisionDescription where closed-class
+        // gender tokens get promoted to schema.user.gender (but only
+        // when no explicit self-ID exists). This is the "use her
+        // vision to see if the user is male or female" requirement.
+        const lc = this.innerVoice?.languageCortex;
+        if (lc && typeof lc.observeVisionDescription === 'function') {
+          this.visualCortex.onDescribe((desc) => lc.observeVisionDescription(desc));
+          console.log('[Brain] Vision → social schema gender inference wired');
+        }
       } else {
         console.warn('[Brain] No video element available for visual cortex');
       }
