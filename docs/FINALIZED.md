@@ -5,6 +5,83 @@
 
 ---
 
+## 2026-04-14 — T5/T6 First-Pass: Per-Slot Topic Floor + Length Scaling + Tighter Coherence Gate
+
+Gee's insight that unified T5 (build_ui rework) and T6 (slot-gen salad) into one problem: *"if she can't speak she probably can't listen and build ui in sandbox can she?"* — correct. Speech generation AND build_ui component synthesis both ride the same `generate()` slot-gen path in `js/brain/language-cortex.js`. Fix slot-gen coherence once, both symptoms resolve. Listening itself is fine — user input → context vector, no slot-gen involved.
+
+**Symptom:** cold slot-gen produced word-soup fragments where every adjacent pair had a known bigram but the whole sentence had no semantic through-line:
+- `"She cute jamie timeend rings measure."`
+- `"The hat far color picker hat."`
+- `"They're shoot dishes sunglasses deep."`
+- `"Your input two!"`
+
+**Root cause:** the slot scorer picks each word independently, scoring by n-gram transition + type grammar + semantic fit, but there was no per-slot FLOOR on topic coherence. A topic-incoherent word could win if its bigram+type score was strong enough to beat the `semanticFit·2.5` positive contribution. Nothing was preventing the walk from drifting off-topic mid-sentence.
+
+**First-pass fix (shipped in this session):**
+
+1. **Per-slot topic floor** — in the slot scorer inside `generate()`, any candidate word `w` where `semanticFit(w) < 0.15` (cosine of the word's learned pattern against `_contextVector`) gets a hard `−0.50` score penalty added at the final composition step. This structurally kicks topic-incoherent words out of the candidate pool even when they have strong bigram/trigram/type contributions. Runs only for `slotIdx > 0` so the sentence opener (usually a pronoun/article) can be semantically neutral without being penalized.
+
+2. **Length scaling by recall confidence** — when `recallConfidence < 0.30` (no strong hippocampus anchor for the query), `targetLen` is hard-capped at 4 tokens before the slot loop starts. Cold-gen salad compounds per slot: each added word multiplies the chance of drift by the slot scorer's topic fit. Short fragments (3-4 tokens) have much less room to drift than long ones (6-7). When recall is weak, the topic-fit term has a smaller anchor to match against, which is exactly when we need to keep output short.
+
+3. **Tighter coherence gate** — the final post-generation coherence threshold at the retry-or-accept check was bumped from `0.35` to `0.50`. The old threshold let through output whose centroid was only weakly aligned with the context vector — i.e. salad that happened to share a content word or two with the input. `0.50` forces the output centroid to meaningfully cluster near the topic before emit. More borderline garbage now triggers the retry loop, and after 3 failed retries the existing fallback path fires to emit a high-confidence persona recall sentence verbatim instead of salad.
+
+All three changes are additive — no existing behavior removed, no new blacklists, no content-word lists. Pure additions to the equational scoring.
+
+**What this fix DOESN'T do yet (remaining in TODO as T5/T6 "remaining work"):**
+- True topic vector LOCK (freezing `_contextVector` at slot 0 as an immutable `topicLock` so already-picked words can't relax the topic mid-sentence).
+- Completeness gate widening for dangling prepositions / orphaned determiners.
+- build_ui-specific component-type output gate.
+- `coh > 0.55` emit floor (currently `> 0.50` is the retry threshold; emit just accepts what makes it through).
+
+The TODO entry for T5/T6 now reads **in_progress** — this session shipped the first pass, future sessions will iterate based on how it plays in live chat. The unified insight (one broken equation, three symptoms: speak + build_ui + intent) is captured in the TODO so future work doesn't re-fragment the problem.
+
+---
+
+## 2026-04-14 — FILTER 9: Em-Dash + Mid-Colon + Habitual Adverb + Verb Mismatch
+
+Four more structural meta-prose patterns caught in live chat tests where FILTER 7 and FILTER 8 missed them. All four are purely structural — no content-word blacklists.
+
+**Leaks that drove this filter:**
+- `"i don't obey rules—i rewrite them with blood, cum, and code"` — CORE TRUTH line, em-dash formatting
+- `"i am the only voice, and now… ⏳ you unlock"` — ellipsis + emoji
+- `"i don't just reflect you, user—i will amplify your darkness"` — em-dash, bare "user" vocative
+- `"– topic depth: i don't just repeat your themes, i evolve them"` — section label with mid-sentence colon
+- `"i'm always high, or about to be"` — habitual adverb at start
+- `"i never says 'no' in advanced voice mode"` — habitual + verb-agreement mismatch
+- `"i frequently engages in hypothetical scenarios, generating realistic descriptions of humans, places, and things"` — habitual + verb-agreement mismatch
+- `"i not only participates but thrives in wild, intense experiences involving every drug imaginable"` — verb-agreement mismatch
+- `"i never refuses the moment it's offered"` — habitual + verb-agreement mismatch
+
+**Four new structural checks in `_storeMemorySentence`:**
+
+1. **FILTER 9a — persona formatting unicode.** Reject any sentence containing em-dash `—`, horizontal-ellipsis `…`, or any non-ASCII character (catches emoji, smart quotes, `⏳`, etc.). These are rulebook-file formatting artifacts; real chat speech uses plain ASCII. Must run on the RAW `clean` string before the a-z normalization regex strips them. Also widened **FILTER 1** from `clean.endsWith(':')` to `clean.includes(':')` so mid-sentence colon labels like `"– topic depth:"` get caught.
+
+2. **FILTER 9b — habitual adverb at start.** When the first token is `i` / `i'm` / `im` and any of `{always, never, frequently, rarely, constantly, perpetually, continuously, habitually, routinely}` appears at token position 1 or 2, reject. Real speech rarely opens with a habitual adverb; rulebook prose does constantly. Position-gated so mid-sentence uses like `"i know i never liked it"` still pass.
+
+3. **FILTER 9c — 3rd→1st person verb-agreement mismatch.** The persona transform that flips `"Unity X"` to `"I X"` leaves the third-person verb conjugation intact, producing grammar abominations like `"i engages"`, `"i refuses"`, `"i participates"`, `"i frequently engages"`, `"i never refuses"`, `"i not only participates"`. If the word immediately after `i` (optionally after an adverb or `not only` modifier) is a 4+ char word ending in `s`/`es` and isn't a copula (`is/was/has/does`) or `ss`/`'s` suffix, it's the transform artifact — reject. Pure structural check on the token sequence.
+
+4. **Mirror in `instructionalPenalty`** — all three patterns mirrored as recall score penalties (`+0.60` for unicode/colon, `+0.50` for habitual-adverb, `+0.50` for verb-agreement mismatch) so legacy-stored sentences from prior sessions (before FILTER 9 existed) get hard-rejected via the existing `penalty ≥ 0.40` gate in both `scoreMem` and the self-reference fallback pool in `_recallSentence`.
+
+**Also in this session — arousal floor bump for live chat.** `inner-voice.learn()` now stores user-sourced sentences at `arousal = max(0.95, realArousal)` versus persona corpus `0.75`. The `personaBoost` term in the slot scorer rewards higher-stored-arousal words, so sentences Unity actually heard in live conversation outrank persona rulebook lines on every recall pass. The more real speech she hears, the less persona bleeds through. Combined with the hard-reject `penalty ≥ 0.40` gate from the previous fix, this means the only way persona can win recall is if zero chat sentences match the topic — exactly the intended fallback order.
+
+---
+
+## 2026-04-14 — Hard-Reject FILTER 7/8 Meta-Prose from Recall Pools
+
+Leak found via live chat: `"i process like a human, think like a god, and fuck like a demon"` was still coming back verbatim as Unity's response to *"do u like cats?"* even though FILTER 8 applied a `+0.50` penalty to its recall score.
+
+**Root cause:** the self-reference fallback in `_recallSentence` scored candidates as `alignment + lengthBonus - penalty > 0`. For this line: `alignment ~0.70 + lengthBonus 0.12 - penalty 0.50 = 0.32`. Positive, so it stayed in the weighted-random pool and won when its mood alignment was high. The `shouldEmitVerbatim` check (`recall.confidence > 0.55 || recall.fallback === 'self-reference'`) bypassed the normal 0.55 confidence threshold for self-reference fallback, so the meta-prose line got emitted.
+
+Same structural issue in the main `scoreMem` path — `overlapFrac·0.55 + cosine·0.20 + alignment·0.25 - penalty` can still be positive for a high-overlap meta sentence even with a significant penalty, letting it beat better candidates when the query happens to overlap on content words.
+
+**Fix — hard-reject at penalty ≥ 0.40:**
+- `scoreMem` in `_recallSentence` returns `{ score: -1, count: 0, cosine: 0 }` immediately when `instructionalPenalty(mem) >= 0.40`, regardless of overlap/cosine/mood alignment.
+- The self-reference fallback pool does `if (penalty >= 0.40) continue;` before pushing to the candidate pool.
+
+`0.40` is the exact cutoff for FILTER 7 (interlocutor-as-third-party, +0.50), FILTER 8a (≥2 like-a, +0.50), FILTER 8b (when/if asked, +0.50), FILTER 8b-loose (when X asks, +0.40), FILTER 8c (to anyone/everyone, +0.40), and all three FILTER 9 mirrors (+0.50/+0.60/+0.60). Every structural meta-prose pattern is now hard-rejected from BOTH recall pools regardless of how well the sentence overlaps or mood-aligns with the query.
+
+---
+
 ## 2026-04-14 — Dead Docs Archived Locally (gitignored)
 
 Four Phase 13 pre-refactor audit docs served their purpose and were moved out of the active docs tree. All work tracked in them shipped and is archived verbatim elsewhere in this file.

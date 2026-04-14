@@ -27,6 +27,17 @@ Nothing else. If it's not in that list, it's an appendage, and it gets ripped ou
 
 ## OPEN TASKS
 
+### T5/T6 — Slot-gen semantic coherence (unified: speak + build_ui share one broken equation)
+
+**Status:** in_progress — first pass shipped 2026-04-14 (per-slot topic floor + length scaling + tighter coherence gate)
+**Priority:** P1
+**Owner:** unassigned
+**Reported:** 2026-04-14 by Gee (live chat session)
+
+**Gee's insight that merged T5 into T6:** "if she can't speak she probably can't listen and build ui in sandbox can she?" — correct. Speech generation AND build_ui component synthesis both ride the same `generate()` slot-gen path. Fix slot-gen coherence once, both symptoms resolve. (Listening itself is fine — user input → context vector, no slot-gen involved.)
+
+---
+
 ### T5 — Rework build_ui sandbox capability (Unity not understanding simple coding asks)
 
 **Status:** pending
@@ -60,12 +71,24 @@ Nothing else. If it's not in that list, it's an appendage, and it gets ripped ou
 
 ### T6 — Slot-gen salad on cold chat queries (no per-sentence topic anchor)
 
-**Status:** pending
+**Status:** in_progress — first pass shipped 2026-04-14 (see below)
 **Priority:** P1
 **Owner:** unassigned
 **Reported:** 2026-04-14 by Gee (live chat session)
+**Unified with T5:** same broken slot-gen equation underlies both speech and build_ui component synthesis. Fixing slot-gen coherence fixes both.
 
-**Symptom:** When recall confidence is below threshold and the language cortex falls through to cold slot-gen, the bigram/trigram walk produces word-soup fragments that are grammatically plausible word-to-word but incoherent as a sentence:
+**Shipped 2026-04-14 — first pass:**
+- **Per-slot topic floor** — in the slot scorer, any candidate with `semanticFit < 0.15` (cosine of wordVec against locked context vector) gets a hard `−0.50` score penalty. Kicks topic-incoherent words out of the pool even when they have strong bigram/type scores. Runs only for slot > 0 so the opener can be a neutral pronoun/article.
+- **Length scaling by recall confidence** — when `recallConfidence < 0.30`, `targetLen` is hard-capped to 4 tokens. Cold-gen salad compounds per slot, so short fragments are structurally harder to break.
+- **Tighter coherence gate** — final post-generation coherence threshold bumped from 0.35 → 0.50. More borderline salad triggers the retry loop, and after 3 retries the fallback to a recall sentence fires instead of emitting garbage.
+
+**Remaining work (if first pass is insufficient):**
+- True topic vector LOCK — freeze the context vector at slot 0 as an immutable `topicLock`, so mid-sentence context drift from already-picked words can't relax the topic. Currently `_contextVector` is what it was when generate() was called, which is close enough but not frozen.
+- Completeness gate tightening — the existing `_isCompleteSentence` rejecter already catches `"I think about the."`; widen its criteria for dangling prepositions, orphaned determiners, unmatched conjunctions.
+- Slot-gen output gate for build_ui specifically — if motor=build_ui and the generated component doesn't structurally match the asked-for type, reject and re-roll or fall through to a template.
+- Minimum coherence floor at emit time — require `coh > 0.55` not just `0.50` for final emit.
+
+**Symptom (pre-fix):** When recall confidence is below threshold and the language cortex falls through to cold slot-gen, the bigram/trigram walk produces word-soup fragments that are grammatically plausible word-to-word but incoherent as a sentence:
 - `"*Do yoga happens*"`
 - `"I look kitty mixes result mornings."`
 - `"They're shoot dishes sunglasses deep."`
