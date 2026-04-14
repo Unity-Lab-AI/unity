@@ -788,6 +788,38 @@ export class LanguageCortex {
     }
     if (!hasFirstPerson) return;
 
+    // FILTER 7 — interlocutor-as-third-party. Real speech addresses
+    // the listener as "you", not "the user" / "the person" / "users".
+    // A sentence with BOTH first-person ("I/my/me") AND a third-party
+    // reference to the interlocutor is structurally a rulebook entry
+    // describing Unity's own behavior from the outside, not speech.
+    // Catches things like:
+    //   "I defer to the user over stating contradictory information"
+    //   "I am happy to tell the user about myself when asked"
+    //   "I never ask the person to repeat themselves"
+    // Purely structural — no content-word blacklist, just the
+    // co-occurrence of self-reference + impersonal listener-reference.
+    // The sequences below use letter-position matching on adjacent
+    // tokens so we don't false-hit e.g. "the" in unrelated positions.
+    let refsInterlocutorAsThirdParty = false;
+    for (let i = 0; i < tokens.length - 1; i++) {
+      const a = tokens[i];
+      const b = tokens[i + 1];
+      // "the user" / "the users" / "the user's"
+      if (a === 'the' && (b === 'user' || b === 'users' || b === "user's")) {
+        refsInterlocutorAsThirdParty = true; break;
+      }
+      // "the person" / "the person's"
+      if (a === 'the' && (b === 'person' || b === "person's")) {
+        refsInterlocutorAsThirdParty = true; break;
+      }
+    }
+    // Bare "users" as subject also counts ("users expect Unity to…")
+    if (!refsInterlocutorAsThirdParty && tokens[0] === 'users') {
+      refsInterlocutorAsThirdParty = true;
+    }
+    if (refsInterlocutorAsThirdParty) return;
+
     // Skip sentences dominated by function words — they have no topic
     // to index on and just add noise to the recall search.
     const pattern = new Float64Array(PATTERN_DIM);
@@ -975,6 +1007,14 @@ export class LanguageCortex {
       // 25-token sentence gets demoted heavily.
       const memLen = (mem.tokens?.length || 0);
       if (memLen > 14) penalty += Math.min(0.6, (memLen - 14) * 0.05);
+      // Interlocutor-as-third-party penalty. Mirrors the store-time
+      // FILTER 7 for any persona sentence that already made it into
+      // memory before the filter existed (or slipped through). A
+      // sentence that talks about "the user" while using "I" is a
+      // rulebook line, not speech — bury it hard.
+      if (/\bthe user(?:'s|s)?\b/.test(t) || /\bthe person(?:'s)?\b/.test(t)) {
+        penalty += 0.50;
+      }
       return penalty;
     };
 
