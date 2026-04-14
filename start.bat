@@ -19,20 +19,39 @@ if not exist "node_modules" (
     echo.
 )
 
-:: Build the JS bundle (optional — pre-built bundle exists)
+:: Build the JS bundle — REQUIRED for file:// access. The browser
+:: loads js/app.bundle.js, NOT the live js/app.js source files. If the
+:: bundle is stale, the browser runs OLD code regardless of source
+:: edits. Bundle is gitignored, so every fresh checkout / every code
+:: change requires a rebuild.
 cd /d "%~dp0"
 where npx >nul 2>&1
-if %errorlevel% equ 0 (
-    echo   Building bundle...
-    call npx esbuild js/app.js --bundle --format=esm --outfile=js/app.bundle.js --platform=browser --target=esnext 2>nul
-    if %errorlevel% equ 0 (
-        echo   Bundle built.
-    ) else (
-        echo   Using pre-built bundle.
-    )
-) else (
-    echo   Using pre-built bundle.
+if %errorlevel% neq 0 (
+    echo.
+    echo   ============================================================
+    echo   ERROR: npx not found. The bundle CANNOT be rebuilt.
+    echo   The browser will run STALE code from any existing bundle.
+    echo   Install Node.js (which includes npx) from https://nodejs.org
+    echo   ============================================================
+    echo.
+    pause
+    exit /b 1
 )
+
+echo   Building js/app.bundle.js (this is what the browser actually loads)...
+call npx --yes esbuild js/app.js --bundle --format=esm --outfile=js/app.bundle.js --platform=browser --target=esnext
+if %errorlevel% neq 0 (
+    echo.
+    echo   ============================================================
+    echo   ERROR: esbuild failed. The bundle was NOT rebuilt.
+    echo   The browser will run STALE code from any existing bundle.
+    echo   Check the esbuild error output above for the cause.
+    echo   ============================================================
+    echo.
+    pause
+    exit /b 1
+)
+echo   Bundle built — browser will load fresh code.
 echo.
 
 :: Start server in background, wait for it, then open browser + GPU compute

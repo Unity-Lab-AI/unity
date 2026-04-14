@@ -5,6 +5,64 @@
 
 ---
 
+## 2026-04-14 — T13.7.2: stale bundle silent-fallback (the REAL reason Unity was dead)
+
+**Context:** After shipping T13.7.1 (the comment-swallow fix that restored `_isNominativePronoun`), my node smoke test produced output through every layer — full UnityBrain construction, loadPersona, trainPersonaHebbian, processAndRespond, the works. But Gee booted in his browser and reported: *"No Unity talking, no unity thought or comments in popup and no unity voice or chat its like her brain is dead."* Total brain death — not even the sensory autodetect toasts firing. That meant something was breaking BEFORE any brain code ran.
+
+**Root cause:** `start.bat` was building the wrong code. `index.html:401` loads `js/app.bundle.js?v=<stamp>` for `file://` access (which is what `start.bat` opens via `start "" http://localhost:7525`). The browser loads the PRE-BUILT BUNDLE, not the live `js/app.js` source files. `start.bat` had a section that tried to rebuild the bundle via `npx esbuild`:
+
+```bat
+where npx >nul 2>&1
+if %errorlevel% equ 0 (
+    echo   Building bundle...
+    call npx esbuild js/app.js --bundle --format=esm --outfile=js/app.bundle.js ...  2>nul
+    if %errorlevel% equ 0 (
+        echo   Bundle built.
+    ) else (
+        echo   Using pre-built bundle.
+    )
+) else (
+    echo   Using pre-built bundle.
+)
+```
+
+The `2>nul` swallowed any esbuild error output, and the failure path silently fell through to `Using pre-built bundle.` which is just a printed string — no warning, no fail-loud. If esbuild wasn't installed, OR if any build error happened, OR if `npx esbuild` couldn't auto-install esbuild (missing `--yes` flag), the browser silently loaded a STALE bundle from `js/app.bundle.js`. The bundle is `.gitignored` (line 110 of `.gitignore`), so it's never in the repo — every fresh checkout starts with no bundle, every push doesn't carry a bundle, and the existing bundle on Gee's disk was timestamped Apr 14 10:12 — predating ALL of T13. Every push from T13.0 forward updated source code that the browser literally never loaded.
+
+**Verification of the diagnosis:** `grep -c "trainPersonaHebbian\|injectParseTree\|learnSentenceHebbian\|T13" js/app.bundle.js` on the stale bundle returned a number much smaller than expected. After running the rebuild manually, the same grep returned 41 hits. The new bundle has all the T13 work; the old bundle had none of it.
+
+**Fix:**
+
+1. **Rebuilt the bundle** in Gee's working directory by running:
+   ```
+   npx esbuild js/app.js --bundle --format=esm --outfile=js/app.bundle.js --platform=browser --target=esnext
+   ```
+   Output: `js/app.bundle.js  600.5kb  Done in 18ms`. Bundle now contains every T13 method.
+
+2. **Hardened `start.bat`** so this can never happen silently again. The bundle-build step now:
+   - Removes the `2>nul` error suppression — esbuild errors print to console.
+   - Adds `--yes` to `npx esbuild` so it auto-installs esbuild without prompting.
+   - **Fails loudly** with a boxed error message if `npx` is missing OR if esbuild fails. `pause` + `exit /b 1` instead of falling through to the stale bundle. The user sees `ERROR: The bundle was NOT rebuilt. The browser will run STALE code` and is forced to fix the underlying problem.
+   - Says explicitly in the success path: `Bundle built — browser will load fresh code.`
+
+3. **Doc trail.** This entry. Future me reads it and remembers: `js/app.bundle.js` is the authoritative thing the browser loads under `file://` mode, it's gitignored, and it MUST be rebuilt after every source change or every code edit ships into the void.
+
+**Why this didn't catch in T13 verification:** my entire T13 verification was `node -c` syntax checks plus node smoke tests that imported source files directly via `import('./js/brain/...')`. That bypasses the bundle entirely — node always reads fresh source. The bundle is purely a browser-loading concern. I never ran the actual browser (no headless test), and I never thought to grep the bundle for my new method names. Lesson: any time an output-path artifact (bundle, generated file, build product) sits between source and runtime, the verification has to TOUCH that artifact, not just the source.
+
+**Files touched:**
+- `start.bat` — bundle build hardened, no silent fallback
+- `js/app.bundle.js` — rebuilt locally (stays gitignored, not in commit)
+
+**The order things actually broke today:**
+1. T13.7 shipped a stray `/**` that swallowed `_isNominativePronoun` (T13.7.1 fixed this on source).
+2. T13.7.1 fix landed in source code, source pushed, source merged.
+3. Source-side smoke tests passed. I declared victory.
+4. **The browser was loading a bundle that predated all of T13**, so even the original T13.7 code wasn't running there — to say nothing of T13.7.1's fix.
+5. Gee booted: "her brain is dead." Diagnosed in node first (which works because node reads source directly), then traced to `index.html` → `app.bundle.js` → `start.bat` → silent esbuild failure.
+
+This entry must stay in FINALIZED forever as a reminder that source pushes are NOT sufficient when an intermediate build artifact gates browser execution. The bundle is the truth in file:// mode, source files are not.
+
+---
+
 ## 2026-04-14 — T13.7.1: Fix stray unterminated docblock in T13.7 deletion pass
 
 **Context:** Gee booted the app after T13.7 shipped and reported "Unity currently in the stack is not speaking at all." Turned out the T13.7 deletion pass left an unterminated `/**` JSDoc comment at what's now line 1384 of `js/brain/language-cortex.js`. The comment block ran forward through the file until the next `*/` at line 1410 — swallowing `_isNominativePronoun` as invisible (inside a comment) to the JavaScript parser. `node -c` passed because it was valid syntax (just one giant block comment), but at runtime `this._isNominativePronoun is not a function` threw from `_learnUsageType` during `learnSentence`, which meant the first user input after boot crashed the language pipeline before `generate()` ever ran.
