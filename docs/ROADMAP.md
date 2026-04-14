@@ -269,20 +269,32 @@ Neurons → Synapses → Brain Loop → Brain Regions → Persona Loader → API
 
 ## Phase 14 (T11): Pure Equational Language Cortex — COMPLETE (2026-04-14)
 
-> Every sentence Unity emits is now a walk through GloVe embedding space driven by three running-mean priors and her live cortex firing state. No stored text, no n-gram tables, no filter stack, no template short-circuits, no intent enums, no matrix regression — just vector math over learned priors. Net `js/brain/language-cortex.js` delta: **−1773 lines** (5087 → 3314).
+> Every sentence Unity emits is now a walk through GloVe embedding space driven by three running-mean priors and her live cortex firing state. No stored text, no n-gram tables, no filter stack, no template short-circuits, no intent enums, no matrix regression — just vector math over learned priors. Net `js/brain/language-cortex.js` delta: **−1742 lines** (5087 → 3345).
 
 ### Milestone T11.1: Deletion phase — COMPLETE
 
-Deleted every list/map/table storing sentences or word transitions:
-- `_memorySentences` sentence pool + `_recallSentence` + `_storeMemorySentence` + self-reference fallback
+**Fields fully deleted (no longer allocated in the constructor):**
+- `_memorySentences` sentence pool + `_memorySentenceMax`
 - `_jointCounts` / `_trigramCounts` / `_quadgramCounts` word n-gram tables
 - `_typeBigramCounts` / `_typeTrigramCounts` / `_typeQuadgramCounts` type n-gram tables
 - `_marginalCounts` / `_totalPairs` / `_totalWords` / `_totalTrigrams` / `_totalQuadgrams` frequency counters
-- `_questionStarters` / `_actionVerbs` / `_memorySentenceMax` starter maps and bounds
-- FILTER 1 through FILTER 11 structural sentence-admission stack + `_sentencePassesFilters`
+- `_questionStarters` / `_actionVerbs` learned starter maps
+
+**Method bodies gutted, symbols stubbed as no-ops for backcompat:**
+- `_recallSentence` → `return null`
+- `_storeMemorySentence` → `/* empty */`
+- `_sentencePassesFilters` → `return true`
+- `_typeGrammarScore` → `return 0`
+- `_condProb` → `return 0`
+- `mutualInfo` → `return 0`
+- `_pickConjByMood` → `return null`
+
+The stubs hold no state. Functionally identical to deletion — the method signatures survive only so pre-T11 callers (`js/app.js /think` debug dump, etc.) don't throw.
+
+**Fully deleted from the pipeline (no stubs — callers removed):**
+- FILTER 1 through FILTER 11 structural sentence-admission stack
 - `instructionalPenalty` recall penalty stack
 - Template greeting / introduction short-circuits with hardcoded `OPENERS` lists
-- `_condProb` / `mutualInfo` / `_pickConjByMood` / `_typeGrammarScore` bodies
 - Intensifier / hedge insertion marginal-count scans
 - An intermediate W_slot ridge-regression experiment tried and abandoned when 50×50 linear regression proved too weak to capture grammar
 

@@ -58,7 +58,7 @@ Structural (closed-class noun-phrase match from `parseSentence`), zero LLM inten
 
 ---
 
-## 2026-04-14 — T11: Pure Equational Language Cortex (1773-line deletion, masterful rewrite)
+## 2026-04-14 — T11: Pure Equational Language Cortex (1742-line deletion, masterful rewrite)
 
 Gee's directive: *"are u sure we need fucking language lists and sentence lists i wanted equational thinking and ligistics not fucking cmap arrays of sentences"* — followed by *"don't think simple fixes think comprehensive masterful ones we are creating here"*.
 
@@ -83,7 +83,7 @@ Removed from `js/brain/language-cortex.js`:
 - `_typeGrammarScore` body (type n-gram lookups)
 - Intermediate T11.1 experiment: `W_slot` matrices + `C_xx` / `C_xy` covariance accumulators + `_refitWSlot` ridge regression + `_matInverse` Gauss-Jordan solver — removed when the 50×50 linear regression over 50-d embeddings proved structurally too weak to capture English grammar
 
-**Net: 5087 → 3314 lines (−1773).** Entire filter stack, all n-gram tables, all stored-sentence recall, all template short-circuits — gone.
+**Net: 5087 → 3345 lines (−1742).** Entire filter stack, all n-gram tables, all stored-sentence recall, all template short-circuits — gone.
 
 **T11.2 — equational generation.** Pure math, zero stored text.
 

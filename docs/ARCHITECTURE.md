@@ -439,7 +439,7 @@ This term is ALWAYS present. It represents what we DON'T know. It's the default 
 
 ## Language Generation Pipeline — T11 Pure Equational Cortex (2026-04-14)
 
-Language cortex is a pure-equation pipeline. Zero stored sentences, zero n-gram tables, zero filter stack, zero template short-circuits, zero intent-enum branching. The T11 rewrite (2026-04-14) deleted 1773 lines of the old multi-tier wrapper layer — every word is now computed fresh from brain cortex state plus three per-slot running-mean priors.
+Language cortex is a pure-equation pipeline. Zero stored sentences, zero n-gram tables, zero filter stack, zero template short-circuits, zero intent-enum branching. The T11 rewrite (2026-04-14) deleted 1742 lines of the old multi-tier wrapper layer — every word is now computed fresh from brain cortex state plus three per-slot running-mean priors.
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
@@ -577,17 +577,32 @@ Each sentence flows through `learnSentence` and becomes observation data that sh
 
 ### What Got Deleted in T11 (historical note)
 
-The entire legacy wrapper stack. These were symptom-level patches on a Markov walk trained on rulebook text — T11 deleted the Markov graph entirely, which dissolved every symptom:
+The entire legacy wrapper stack. These were symptom-level patches on a Markov walk trained on rulebook text — T11 deleted the Markov graph entirely, which dissolved every symptom.
 
-- `_memorySentences` sentence pool + `_recallSentence` + `_storeMemorySentence` + self-reference fallback
+**Fields fully deleted (no longer allocated in the constructor):**
+- `_memorySentences` sentence pool + `_memorySentenceMax`
 - `_jointCounts` / `_trigramCounts` / `_quadgramCounts` word n-gram tables
 - `_typeBigramCounts` / `_typeTrigramCounts` / `_typeQuadgramCounts` type n-gram tables
-- FILTER 1 through FILTER 11 structural sentence-admission stack + `_sentencePassesFilters` shared gate
+- `_marginalCounts` / `_totalPairs` / `_totalWords` / `_totalTrigrams` / `_totalQuadgrams` frequency counters
+- `_questionStarters` / `_actionVerbs` learned starter maps
+
+**Method bodies gutted, symbols stubbed as no-ops for backcompat with any stray external caller:**
+- `_recallSentence(_contextVector, _opts) { return null; }`
+- `_storeMemorySentence(_text, _arousal, _valence) { /* empty */ }`
+- `_sentencePassesFilters(_text, _arousal, _valence) { return true; }`
+- `_typeGrammarScore(_candidateType, _historyTypes) { return 0; }`
+- `_condProb(_word, _prev) { return 0; }`
+- `mutualInfo(_w1, _w2) { return 0; }`
+- `_pickConjByMood(_arousal, _valence) { return null; }`
+
+The stubs hold no state, read no state, and return constants. Functionally identical to deletion — the only reason the method signatures survive is so pre-T11 callers (e.g., the `/think` debug dump in `js/app.js`) don't throw `TypeError: is not a function`.
+
+**Fully deleted from the pipeline (no stubs — callers removed):**
+- FILTER 1 through FILTER 11 structural sentence-admission stack
 - `instructionalPenalty` recall penalty stack
 - Template greeting / introduction short-circuits with hardcoded `OPENERS` lists
-- `_condProb` / `mutualInfo` / `_pickConjByMood` / `_typeGrammarScore` bodies
 - Intensifier / hedge insertion marginal-count scans
-- Round-2 hotfixes (vocative stripping, copula filter, degenerate-sentence filter) — all subsumed when their target data structures were deleted
+- Round-2 hotfixes (vocative stripping, copula filter, degenerate-sentence filter) — all subsumed when their target data structures were removed
 
 These layers are preserved verbatim in `docs/FINALIZED.md` and in the earlier milestones of `docs/ROADMAP.md` Phase 11 / Phase 12 entries for historical provenance. What's live in code is the T11.2 pipeline above.
 
@@ -595,7 +610,7 @@ These layers are preserved verbatim in `docs/FINALIZED.md` and in the earlier mi
 
 | File | Role |
 |------|------|
-| `js/brain/language-cortex.js` (3314 lines) | The T11 language cortex. Constructor allocates slot priors. `parseSentence` reads. `learnSentence` observes. `generate` writes. `wordType` / `_fineType` are shared letter-equation classifiers. |
+| `js/brain/language-cortex.js` (3345 lines) | The T11 language cortex. Constructor allocates slot priors. `parseSentence` reads. `learnSentence` observes. `generate` writes. `wordType` / `_fineType` are shared letter-equation classifiers. |
 | `js/brain/inner-voice.js` | Bridge between engine + language cortex. `learn(text, cortexPattern, arousal, valence)` feeds observations. `speak(arousal, valence, coherence, brainState)` calls `generate` with `opts.cortexPattern` from `getSemanticReadout`. |
 | `js/brain/dictionary.js` | Word embedding table — the only remaining "list-like" structure. Each entry stores a word's current pattern (GloVe + live delta), arousal tag, valence tag. |
 | `js/brain/embeddings.js` | GloVe singleton + `cortexToEmbedding` readback + online delta refinement + persistence hooks. |
