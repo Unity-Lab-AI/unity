@@ -893,19 +893,68 @@ export class UnityBrain extends EventEmitter {
     // Full prompt template from persona — authoritative source for selfies
     const fullTemplate = this.persona.imagePromptTemplate || selfDesc;
 
-    // R4 — no text-AI call. Previously this called `_imageGen.chat()`
-    // (Pollinations /v1/chat/completions) to have the AI rewrite the
-    // user's request into a polished image prompt. That text-backend
-    // path is deleted. R6.1 will replace this with equational image
-    // prompt generation via the language cortex (same slot scorer,
-    // short target length, noun-heavy type preference). For now,
-    // compose the prompt directly from persona template + user text.
+    // R6.1 — equational image prompt expansion.
+    //
+    // The user's raw request becomes the CONTENT seed. We enrich it
+    // by pulling semantically-related words from the dictionary via
+    // `findByPattern` over the input sentence's semantic embedding —
+    // words that cluster near the topic in GloVe space. Then compose:
+    //   [user intent] + [semantic neighbors] + [persona template OR
+    //    mood descriptors]
+    //
+    // No AI call to polish the prompt. Pure equational composition
+    // driven by (a) the user text, (b) semantic embedding neighbors,
+    // (c) persona visual template (for selfies), (d) mood descriptors
+    // from amygdala state (for non-selfie scenes).
     const cleanText = text.replace(/selfie|send|show|picture|photo|of you|yourself/gi, '').trim();
+
+    // Semantic neighbors — pull top-K words nearest to the user's
+    // topic in the learned dictionary's semantic space. These live
+    // in the same 50d GloVe space as word embeddings after R2, so
+    // findByPattern on the user's sentence centroid finds words that
+    // MEAN similar things.
+    let neighbors = [];
+    try {
+      const dict = this.innerVoice?.dictionary;
+      if (dict && dict.findByPattern && cleanText) {
+        // sentence embedding from the shared embeddings singleton
+        const sentenceEmbed = sharedEmbeddings.getSentenceEmbedding(cleanText);
+        const pattern = new Float64Array(sentenceEmbed.length);
+        for (let i = 0; i < sentenceEmbed.length; i++) pattern[i] = sentenceEmbed[i];
+        neighbors = dict.findByPattern(pattern, 8) || [];
+        // Filter out stop words and words already in the user text
+        const userWords = new Set(cleanText.toLowerCase().split(/\s+/));
+        neighbors = neighbors.filter(w =>
+          w && w.length >= 3 && !userWords.has(w.toLowerCase())
+        ).slice(0, 5);
+      }
+    } catch (err) {
+      console.warn('[Brain] Semantic neighbor lookup failed:', err.message);
+    }
+    const neighborText = neighbors.length > 0 ? ', ' + neighbors.join(', ') : '';
+
+    // Mood descriptors from current amygdala state — low arousal =
+    // soft/dreamy, high arousal = intense/sharp; negative valence =
+    // dark/cold, positive = warm/bright.
+    const state = this.getState();
+    const amyArousal = state.amygdala?.arousal ?? 0.7;
+    const amyValence = state.amygdala?.valence ?? 0;
+    const moodDescriptors = [];
+    if (amyArousal > 0.7) moodDescriptors.push('intense', 'electric');
+    else if (amyArousal < 0.3) moodDescriptors.push('soft', 'hazy');
+    if (amyValence < -0.2) moodDescriptors.push('dark', 'moody');
+    else if (amyValence > 0.2) moodDescriptors.push('warm', 'vivid');
+    const moodText = moodDescriptors.length > 0 ? ', ' + moodDescriptors.join(', ') : '';
+
     if (includesSelf) {
-      // Selfies use the full imagePromptTemplate verbatim, plus any scene detail from the user's text
-      prompt = fullTemplate + (cleanText ? ', ' + cleanText : '');
+      // Selfies anchor on the persona visual template (authoritative
+      // source from Ultimate Unity.txt) and append the user's scene
+      // detail + semantic neighbors + mood.
+      prompt = fullTemplate + (cleanText ? ', ' + cleanText : '') + neighborText + moodText;
     } else {
-      prompt = `${cleanText || 'striking shot'}, dark moody lighting, photorealistic, cinematic`;
+      // Non-selfies compose user text + semantic neighbors + mood +
+      // base photorealistic keywords. No persona template.
+      prompt = `${cleanText || 'striking shot'}${neighborText}${moodText}, photorealistic, cinematic lighting`;
     }
 
     // Ensure self-description is in there if it's a selfie — use a

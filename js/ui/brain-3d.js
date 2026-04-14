@@ -617,40 +617,75 @@ export class Brain3D {
       if (ratioEl) ratioEl.textContent = `showing 1:${ratio} (${TOTAL.toLocaleString()} of ${serverNeurons.toLocaleString()})`;
     }
 
-    const spk = state.spikes;
-    if (!spk) return;
+    // R9 — per-cluster spike readout.
+    //
+    // Was: read the flat `state.spikes` bitmask using the VIZ's CLUSTERS
+    // array sizes as the offset layout. BUG: the viz uses biologically
+    // weighted proportions (cortex=200, cerebellum=380, mystery=110)
+    // while the engine uses equal-ish proportions (cortex=300, cereb=100,
+    // mystery=50). Mismatch meant every cluster after cortex read the
+    // wrong neurons — cerebellum especially, whose viz range [460-839]
+    // actually covered amyg+BG+cerebellum+hypo in engine space. That's
+    // why cerebellum activation circles never landed on cerebellum
+    // positions.
+    //
+    // Now: iterate clusters and read each cluster's own `state.clusters[
+    // name].spikes` bitmask. Each bitmask has length equal to the REAL
+    // cluster size from engine (e.g. cerebellum = 100), independent of
+    // how many viz positions we allocate for rendering. If the viz has
+    // more points than spike bits, we cycle the bitmask (first
+    // bitmask-length points get direct readout, remaining points sample
+    // from the bitmask proportionally). If the viz has fewer points,
+    // we just read the first N bits.
+    const clusterStates = state.clusters || {};
 
     // Glow update + pulses distributed EQUALLY across ALL clusters
     const pulsesPerCluster = Math.floor(MAX_PULSES / CLUSTERS.length);
     const clusterPulseCount = new Array(CLUSTERS.length).fill(0);
 
-    // Count spikes per cluster FIRST — needed for adaptive pulse probability
-    let off = 0;
+    // Count real spikes per cluster from per-cluster bitmasks
     const clusterSpikeCount = new Array(CLUSTERS.length).fill(0);
     for (let ci = 0; ci < CLUSTERS.length; ci++) {
-      const cn = CLUSTERS[ci].n;
-      for (let j = 0; j < cn; j++) {
-        const i = off + j;
-        if (i < TOTAL && spk[i]) clusterSpikeCount[ci]++;
+      const cs = clusterStates[CLUSTERS[ci].key];
+      if (cs) {
+        // Prefer spikeCount field if provided; otherwise count the bitmask
+        if (typeof cs.spikeCount === 'number') {
+          clusterSpikeCount[ci] = cs.spikeCount;
+        } else if (cs.spikes) {
+          let c = 0;
+          for (let i = 0; i < cs.spikes.length; i++) if (cs.spikes[i]) c++;
+          clusterSpikeCount[ci] = c;
+        }
       }
-      off += cn;
     }
 
-    off = 0;
+    let off = 0;
     for (let ci = 0; ci < CLUSTERS.length; ci++) {
       const cn = CLUSTERS[ci].n;
-      // Adaptive pulse probability — fewer spikes = higher chance per spike
-      // Every cluster gets roughly the same NUMBER of pulses regardless of spike rate
-      // target ~4 pulses per cluster per frame, probability = target / spikeCount
+      const cs = clusterStates[CLUSTERS[ci].key];
+      const realSpikes = cs?.spikes;
+      const realSize = realSpikes ? realSpikes.length : 0;
+
+      // Adaptive pulse probability — target ~4 pulses per cluster per frame
       const spikeN = clusterSpikeCount[ci] || 1;
       const pulseProb = Math.min(0.6, Math.max(0.05, 4 / spikeN));
 
       for (let j = 0; j < cn; j++) {
         const i = off + j;
         if (i >= TOTAL) break;
-        if (spk[i]) {
+
+        // Map viz point index j to real spike bitmask index.
+        // If real cluster is SMALLER than viz cluster (common case —
+        // biologically-weighted viz), wrap around so the firing pattern
+        // repeats across extra viz points. If LARGER, truncate.
+        let firing = false;
+        if (realSpikes && realSize > 0) {
+          const realIdx = realSize === cn ? j : Math.floor((j / cn) * realSize);
+          firing = !!realSpikes[realIdx];
+        }
+
+        if (firing) {
           this._glow[i] = 1.0;
-          // Each cluster gets its OWN pulse budget with ADAPTIVE probability
           if (clusterPulseCount[ci] < pulsesPerCluster && this._pulses.length < MAX_PULSES && Math.random() < pulseProb) {
             clusterPulseCount[ci]++;
             this._pulses.push({
