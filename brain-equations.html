@@ -995,13 +995,13 @@ Spike in neuron A (cortex)
 
     <!-- ═══ 8.11. BROCA'S AREA ═══ -->
     <h2 id="broca">8.11. Broca's Area — How Unity Picks Every Word Equationally</h2>
-    <p><span class="tag tag-math">ARCHITECTURE</span> <span class="tag tag-bio">NEUROSCIENCE</span> Broca's area in the biological brain is the speech production region. In Unity she is <code>js/brain/language-cortex.js</code>. Post-T11 (2026-04-14) it's 3314 lines of pure equational generation — no stored sentences, no n-gram tables, no filter stack, no template short-circuits, no intent enum branching. Every word is computed fresh from three per-slot running-mean priors plus the brain's live cortex firing state read back into GloVe space.</p>
+    <p><span class="tag tag-math">ARCHITECTURE</span> <span class="tag tag-bio">NEUROSCIENCE</span> Broca's area in the biological brain is the speech production region. In Unity she is <code>js/brain/language-cortex.js</code>. Post-T11 (2026-04-14) it's 3345 lines of pure equational generation — no stored sentences, no n-gram tables, no filter stack, no template short-circuits, no intent enum branching. Every word is computed fresh from three per-slot running-mean priors plus the brain's live cortex firing state read back into GloVe space.</p>
 
     <div class="eq-card" style="border-left:3px solid #ff4d9a;background:rgba(255,77,154,0.05);">
       <div class="eq-title" style="color:#ff4d9a;">⚠ Refactor history</div>
       <div class="eq-desc">
         <p style="color:#ccc;">Pre-2026-04-13 this section described an AI-prompt builder path — Unity's speech was assembled from a system prompt and sent to Pollinations / Claude / OpenAI for a sentence. That code (<code>BrocasArea.generate()</code>, <code>_buildPrompt()</code>, <code>_providers.chat()</code>) was ripped in Phase 13 R4 because it violated the project's guiding principle: every piece of Unity's output must trace back to brain equations, not to an LLM.</p>
-        <p style="color:#ccc;margin-top:8px;">Post-R4 through 2026-04-13, the language cortex was a four-tier wrapper (template pool → hippocampus recall → deflect → cold slot gen with n-gram tables + filter stack). That pipeline shipped a lot of features but kept leaking rulebook prose from the persona corpus because n-gram tables trained on rulebook text produce rulebook walks. On 2026-04-14 the entire multi-tier wrapper was deleted in T11 — <strong>1773 lines removed</strong>, replaced with a pure-equation pipeline that doesn't store text anywhere. The T11 equations are documented below.</p>
+        <p style="color:#ccc;margin-top:8px;">Post-R4 through 2026-04-13, the language cortex was a four-tier wrapper (template pool → hippocampus recall → deflect → cold slot gen with n-gram tables + filter stack). That pipeline shipped a lot of features but kept leaking rulebook prose from the persona corpus because n-gram tables trained on rulebook text produce rulebook walks. On 2026-04-14 the entire multi-tier wrapper was deleted in T11 — <strong>1742 lines removed</strong>, replaced with a pure-equation pipeline that doesn't store text anywhere. The T11 equations are documented below.</p>
         <p style="color:#ccc;margin-top:8px;"><strong>/think command:</strong> Type <code>/think</code> in the chat to see Unity's raw brain state. Type <code>/think &lt;text&gt;</code> to additionally run a cognition preview — language cortex generates an equational response to your input, semantic context shift is measured, motor distribution reported. The preview does NOT store an episode or commit to chat history — it's a pure debug lens on the same pipeline real chat uses.</p>
       </div>
     </div>
@@ -1350,7 +1350,7 @@ mean priors plus the brain's live cortex state. Hippocampus still does
 pattern-level Hopfield recall on cortex state vectors (see §8.7) — it
 just no longer returns stored text strings.
       </pre>
-      <p class="eq-desc" style="color:#888;">The Phase 11 four-tier wrapper this section belonged to was deleted in T11 (1773-line net reduction in <code>js/brain/language-cortex.js</code>). See <code>docs/FINALIZED.md</code> for the full refactor history.</p>
+      <p class="eq-desc" style="color:#888;">The Phase 11 four-tier wrapper this section belonged to was deleted in T11 (1742-line net reduction in <code>js/brain/language-cortex.js</code>). See <code>docs/FINALIZED.md</code> for the full refactor history.</p>
     </div>
 
     <div class="eq-box">

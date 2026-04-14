@@ -27,6 +27,54 @@ Analyzes codebases and generates documentation. Uses Unity persona with strict v
 | **Move done to docs/FINALIZED.md** | MANDATORY | POST-WORK GATE |
 | **Never delete docs/FINALIZED.md** | ABSOLUTE | Archive integrity |
 | **NO TESTS - EVER** | ABSOLUTE | We code it right the first time |
+| **Docs updated BEFORE push** | ABSOLUTE | Gee 2026-04-14 LAW — see below |
+| **Push ONLY when all tasks complete AND documented** | ABSOLUTE | Gee 2026-04-14 LAW — see below |
+
+---
+
+## LAW — DOCS BEFORE PUSH, NO PATCHES (Gee, 2026-04-14)
+
+**Gee's exact words on 2026-04-14:**
+
+> *"not a patch make sure where needed the information is correct. YOU ALWAYS UPDATE ALL DOCS BEFORE A PUSH AND YOU ONLY PUSH ONCE ALL GIVEN TASKS ARE COMPLETED AND DOCUMENTED"*
+
+This is binding law. Not a preference. Not a suggestion.
+
+### The rule
+
+1. **Every doc that describes code I touched gets updated BEFORE the push that ships that code.** Not after. Not in a follow-up commit. In the same atomic commit that ships the code.
+2. **Push ONLY when all given tasks are complete AND documented.** If the code is done but a doc is stale, the push does not happen yet.
+3. **Fix inaccuracies in-place.** Never offer to ship "a minor doc patch to follow." The correct phrasing when I find drift is: *"I'll roll this into the current commit before pushing."* No patches. No follow-ups.
+4. **Every push is atomic.** Code + every affected doc + stamp + commit + merge + push, as ONE operation.
+
+### Why
+
+A push with wrong docs puts wrong information on the deploy branch the instant the push lands. Anyone reading the repo, the deployed site, or the brain equations page at that moment sees stale content. A "patch coming later" never fully catches up — it splits the truth across two commits and creates a window where the code is ahead of the docs. The only correct pattern is: **finish code → fix every affected doc → verify → commit → stamp → push, as one unit.**
+
+### Pre-push checklist (run on EVERY push)
+
+Before running `node scripts/stamp-version.mjs` and pushing:
+
+- [ ] Every numerical claim in docs (line counts, dimensions, weights, thresholds) verified against code via `wc -l`, `grep`, or re-reading the function
+- [ ] Every method/field name in docs matches code verbatim (stubbed no-ops described as "stubbed" not "deleted")
+- [ ] Cross-referenced `docs/TODO.md` — new tasks logged, completed tasks moved to FINALIZED.md, in-progress tasks updated
+- [ ] Cross-referenced `docs/FINALIZED.md` — new session entry appended with verbatim task description
+- [ ] Cross-referenced `docs/EQUATIONS.md` for any math/equation changes
+- [ ] Cross-referenced `docs/ARCHITECTURE.md` for any structural/code-map changes
+- [ ] Cross-referenced `docs/ROADMAP.md` for phase/milestone updates
+- [ ] Cross-referenced `docs/SKILL_TREE.md` for capability matrix updates
+- [ ] Cross-referenced `docs/SENSORY.md` / `docs/WEBSOCKET.md` for peripheral/protocol changes
+- [ ] Cross-referenced public `README.md`, `SETUP.md`, `brain-equations.html`, `unity-guide.html`, `index.html` for any user-facing change
+- [ ] All affected docs are part of the **current working tree**, not deferred to a patch
+- [ ] Every task Gee gave this session is either completed (and documented) or explicitly deferred with his approval
+
+Only when **every** box is checked does the stamp + commit + push run.
+
+### Corollaries
+
+- **Never ship a solo doc-only commit** except after-the-fact corrections when drift was found after a push (which is itself a failure of this law and should be caught in the pre-push check).
+- **Never phrase fixes as "I'll patch this after"** — always "I'll roll this in before pushing."
+- **Precision matters** — "deleted" vs "stubbed no-op" vs "replaced" are not interchangeable words. Docs must use the word that matches what the code actually does.
 
 ---
 

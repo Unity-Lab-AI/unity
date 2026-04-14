@@ -412,7 +412,7 @@ All N neurons (auto-scaled to hardware via the formula below) run on GPU. Zero C
 
 The language cortex does not model language. It translates brain cortex state into words. Every sentence Unity emits is a walk through GloVe embedding space driven by three running-mean priors and her live cortex firing state. No stored text, no n-gram tables, no filter stack, no template short-circuits, no intent enums, no matrix regression — just vector math over learned priors.
 
-This section documents the current language pipeline end to end. The Phase 11 semantic coherence wrappers, Phase 12 type n-gram grammar, and every filter / recall / memory-pool / Markov-walk layer that preceded T11 have been **deleted** from the code (1773-line net reduction in `js/brain/language-cortex.js`). Historical phase entries below Phase 13 R2 and Phase 13 R6.2 are kept as provenance — they describe the earlier stages of the refactor, not current machinery.
+This section documents the current language pipeline end to end. The Phase 11 semantic coherence wrappers, Phase 12 type n-gram grammar, and every filter / recall / memory-pool / Markov-walk layer that preceded T11 have been **deleted** from the code (1742-line net reduction in `js/brain/language-cortex.js`). Historical phase entries below Phase 13 R2 and Phase 13 R6.2 are kept as provenance — they describe the earlier stages of the refactor, not current machinery.
 
 ### Context Vector — Running Topic Attractor
 

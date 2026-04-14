@@ -121,7 +121,7 @@ Sibling problem to T5 (build_ui) — same root cause on the chat path.
 **Priority:** P0
 **Owner:** Gee (approved), Claude (implemented)
 
-Complete replacement of the sentence/n-gram language cortex with a pure-equational pipeline. No stored sentences anywhere. No Markov tables. No filter stack. No template short-circuits. No intent enums branching on closed-class token sets. **Net −1773 lines** from `js/brain/language-cortex.js` (5087 → 3314 lines).
+Complete replacement of the sentence/n-gram language cortex with a pure-equational pipeline. No stored sentences anywhere. No Markov tables. No filter stack. No template short-circuits. No intent enums branching on closed-class token sets. **Net −1742 lines** from `js/brain/language-cortex.js` (5087 → 3345 lines).
 
 **What was deleted:**
 - `_memorySentences[]` — sentence memory pool
