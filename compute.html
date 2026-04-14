@@ -112,9 +112,27 @@ function connectToServer() {
     // aggregated result. Cuts WebSocket traffic from ~70 messages
     // per tick to 2 (request + response), eliminating the protocol
     // overhead that was dominating tick latency at biological scale.
+    //
+    // T14.23.3 — batch mutex at the call site via try/finally so
+    // exceptions don't leave the mutex stuck in the "in flight"
+    // state and deadlock the brain.
     if (msg.type === 'compute_batch' && gpuReady) {
+      if (_batchInFlight) {
+        // Previous batch still running — drop this one. Server tick
+        // loop sees it as a miss and retries next tick.
+        ws.send(JSON.stringify({
+          type: 'compute_batch_result',
+          batchId: msg.batchId,
+          perCluster: {},
+          dropped: 'another batch in flight',
+        }));
+        return;
+      }
+      _batchInFlight = true;
       handleComputeBatch(msg).catch(err => {
         console.warn('[GPU Compute] batch failed:', err && err.message ? err.message : err);
+      }).finally(() => {
+        _batchInFlight = false;
       });
       return;
     }
@@ -136,6 +154,14 @@ function connectToServer() {
 // depends on substep N's voltage state (recurrent LIF integration).
 // Accumulates per-cluster spike totals + tracks last-substep count
 // for the server's firingRate EMA.
+// T14.23.3 — batch mutex. Set true while handleComputeBatch runs,
+// released via try/finally at the onmessage call site so exceptions
+// inside the batch handler don't leave it stuck and deadlock the
+// brain. Concurrent compute_batch messages (e.g. server retrying
+// after a timeout) get dropped via an early-return at the call
+// site; server records them as misses and retries next tick.
+let _batchInFlight = false;
+
 async function handleComputeBatch(msg) {
   const { batchId, substeps, clusters } = msg;
   if (!Array.isArray(clusters) || clusters.length === 0) {

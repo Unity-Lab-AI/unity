@@ -1186,22 +1186,54 @@ class ServerBrain {
 
       if (gpuReady) {
         if (!this._gpuInitialized) this._gpuInitialized = {};
+        if (!this._gpuInitializedConfirmed) this._gpuInitializedConfirmed = {};
         if (!this._gpuHits) this._gpuHits = 0;
         if (!this._gpuMisses) this._gpuMisses = 0;
 
         try {
           const allClusters = Object.keys(CLUSTER_SIZES);
 
-          // Init phase — send gpu_init for any uninitialized clusters
-          // and skip compute for this tick while GPU allocates buffers.
-          const needsInit = allClusters.filter(c => !this._gpuInitialized[c]);
-          if (needsInit.length > 0) {
-            console.log(`[Brain] GPU initializing ${needsInit.length} clusters: ${needsInit.join(', ')}`);
-            for (const gc of needsInit) {
-              this._gpuStep(gc); // sends gpu_init, marks initialized
+          // T14.23.3 — TWO-PHASE GPU INIT.
+          //
+          // Phase A: for any cluster that hasn't had its gpu_init message
+          //          SENT yet, send it (once). _gpuInitialized tracks
+          //          what's been sent.
+          // Phase B: wait for gpu_init_ack messages to confirm the GPU
+          //          actually allocated its buffers. _gpuInitializedConfirmed
+          //          tracks confirmed state.
+          // Phase C: only when ALL clusters are confirmed, enter the
+          //          BATCHED COMPUTE path.
+          //
+          // Old code used _gpuInitialized as both the "sent" flag AND
+          // the "confirmed" flag, which meant the tick loop would enter
+          // the compute path as soon as the server had SENT the init
+          // messages — before compute.html had actually processed them.
+          // At Gee's 677M-neuron scale each gpu_init takes seconds of
+          // GPU buffer allocation (cerebellum alone is ~2 GB of vec2<f32>
+          // voltage state). Compute_batch messages queued behind the
+          // init messages in compute.html's onmessage queue and timed
+          // out before getting processed. Now the tick loop idles on
+          // compute dispatch until every cluster's ack comes back.
+          const needsSend = allClusters.filter(c => !this._gpuInitialized[c]);
+          if (needsSend.length > 0) {
+            console.log(`[Brain] GPU init send: ${needsSend.join(', ')}`);
+            for (const gc of needsSend) {
+              this._gpuStep(gc); // sends gpu_init, marks _gpuInitialized
             }
             this._updateDerivedState();
           } else {
+            const needsAck = allClusters.filter(c => !this._gpuInitializedConfirmed[c]);
+            if (needsAck.length > 0) {
+              // Init messages sent, waiting for GPU to confirm.
+              // Don't re-send. Don't dispatch compute. Just idle this
+              // tick and let the event loop service the incoming
+              // gpu_init_ack messages.
+              if (!this._gpuInitWaitLogged) {
+                console.log(`[Brain] Waiting for GPU init acks: ${needsAck.join(', ')}`);
+                this._gpuInitWaitLogged = true;
+              }
+              this._updateDerivedState();
+            } else {
             // T14.23 — BATCHED COMPUTE PATH.
             //
             // Old path: server dispatched SUBSTEPS * allClusters = 70
@@ -1272,7 +1304,8 @@ class ServerBrain {
             }
 
             this._updateDerivedState();
-          }
+            } // end: needsAck.length === 0 (all confirmed)
+          } // end: needsSend.length === 0 (all sent)
         } catch (err) {
           console.warn('[Brain] GPU error:', err.message);
         }
@@ -2159,6 +2192,20 @@ wss.on('connection', (ws, req) => {
         }
 
         case 'gpu_init_ack':
+          // T14.23.3 — track ACTUAL GPU-confirmed init state, not just
+          // "we sent the init message". The server's _gpuInitialized
+          // flag gets set synchronously when _gpuStep sends a gpu_init,
+          // which is way before compute.html has actually allocated the
+          // GPU buffers for that cluster. At Gee's 677M-neuron scale
+          // uploadCluster can take several seconds per cluster, and if
+          // the server dispatches compute_batch before all 7 acks come
+          // back, the batch queues behind the init messages in
+          // compute.html's onmessage queue and times out before getting
+          // processed. _gpuInitializedConfirmed only flips when we
+          // actually see the ack — tick loop waits for this instead of
+          // the optimistic _gpuInitialized flag.
+          if (!brain._gpuInitializedConfirmed) brain._gpuInitializedConfirmed = {};
+          brain._gpuInitializedConfirmed[msg.clusterName] = true;
           console.log(`[GPU] Confirmed: ${msg.clusterName} initialized (${(msg.size || 0).toLocaleString()} neurons)`);
           break;
 
