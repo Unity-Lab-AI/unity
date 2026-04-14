@@ -579,17 +579,42 @@ export class GPUCompute {
     if (!bufs) return 0;
     const device = this._device;
 
-    // Create atomic counter buffer if not exists
+    // Atomic counter buffer is per-cluster and persistent — safe to
+    // share across sequential calls because it's cleared via
+    // writeBuffer at the start of each dispatch.
     if (!bufs.spikeCountBuf) {
       bufs.spikeCountBuf = device.createBuffer({
         size: 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
       });
-      bufs.spikeCountReadback = device.createBuffer({
-        size: 4,
-        usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
-      });
     }
+
+    // T14.22.6 — per-call readback buffer. The old code shared
+    // bufs.spikeCountReadback across all calls for this cluster,
+    // which collided when two fullStep calls overlapped in time:
+    // call 1 awaited mapAsync on the shared buffer, call 2 tried
+    // to submit an encoder that used the same buffer as a copy
+    // destination while it was still pending-mapped from call 1,
+    // producing:
+    //   Failed to execute 'mapAsync' on 'GPUBuffer': Buffer
+    //   already has an outstanding map pending.
+    // Plus cascading "used in submit while mapped/pending map"
+    // warnings. T14.22.3 worked around this by serializing fullStep
+    // calls in compute.html, which fixed the crash but cost 7x
+    // parallelism — 7 clusters ran sequentially instead of
+    // concurrently, turning ~50ms/substep into ~350ms/substep
+    // (500x slower wall-clock perf at Gee's 677M-neuron scale).
+    //
+    // Real fix: per-call readback buffer. 4 bytes, disposable,
+    // freed immediately after unmap. Concurrent calls for the
+    // SAME cluster each get their own readback buffer with its
+    // own map lifecycle — no shared state, no collision possible.
+    // Then the compute.html serialization can come back off and
+    // all 7 clusters run in parallel on the GPU again.
+    const readback = device.createBuffer({
+      size: 4,
+      usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+    });
 
     // Zero the counter
     device.queue.writeBuffer(bufs.spikeCountBuf, 0, new Uint32Array([0]));
@@ -617,13 +642,18 @@ export class GPUCompute {
     this._dispatch2D(pass, bufs.size, bufs.gridX);
     pass.end();
 
-    // Readback the count
-    encoder.copyBufferToBuffer(bufs.spikeCountBuf, 0, bufs.spikeCountReadback, 0, 4);
+    // Readback the count into the per-call disposable buffer
+    encoder.copyBufferToBuffer(bufs.spikeCountBuf, 0, readback, 0, 4);
     device.queue.submit([encoder.finish()]);
 
-    await bufs.spikeCountReadback.mapAsync(GPUMapMode.READ);
-    const count = new Uint32Array(bufs.spikeCountReadback.getMappedRange().slice(0))[0];
-    bufs.spikeCountReadback.unmap();
+    await readback.mapAsync(GPUMapMode.READ);
+    const count = new Uint32Array(readback.getMappedRange().slice(0))[0];
+    readback.unmap();
+    // Free the disposable buffer + disposable paramsBuffer.
+    // WebGPU reclaims these when destroyed explicitly rather than
+    // waiting for GC, keeping GPU memory bounded under steady load.
+    readback.destroy();
+    paramsBuffer.destroy();
     return count;
   }
 

@@ -38,42 +38,17 @@ let totalComputeMs = 0;
 
 const clusterState = {}; // persists across reconnects
 
-// T14.22.3 (2026-04-14) — compute request queue.
-//
-// Server dispatches 7 compute_request messages in parallel via
-// Promise.all at every substep. Browser WebSocket fires ws.onmessage
-// for each message individually, and async handlers don't wait for
-// previous promises to resolve. That meant 7 gpu.fullStep calls ran
-// concurrently on the same GPUCompute instance, which share GPU
-// state (readback buffer map state, in-flight command submissions)
-// and collided with:
-//
-//   Failed to execute 'mapAsync' on 'GPUBuffer':
-//   Buffer already has an outstanding map pending.
-//
-// Plus cascading:
-//   [Buffer (unlabeled)] used in submit while mapped.
-//   [Buffer (unlabeled)] used in submit while pending map.
-//
-// No compute_results came back to the server, all cluster spike
-// counts stayed at 0, UI showed all zeros, 3D brain had no activity
-// to render. Classic concurrency collision.
-//
-// Fix: chain every compute_request onto a single Promise queue so
-// fullStep calls serialize. Only one in flight at a time. GPU can
-// still pipeline internally (shader dispatches run on GPU command
-// queue regardless) but the JS-side mapAsync / unmap lifecycle
-// stays single-threaded and safe.
-let computeQueue = Promise.resolve();
-let computeQueueDepth = 0;
-// T14.22.5 — queue depth cap so the Promise chain doesn't grow
-// unbounded across long sessions. Each chained .then() adds a link
-// to the V8 microtask graph. Under steady state the tail settles
-// each tick, but pathological load spikes or a stuck fullStep could
-// let the chain grow without bound. Resetting to Promise.resolve()
-// when depth hits the cap drops the tail so new requests attach to
-// a fresh chain. In-flight work completes normally.
-const COMPUTE_QUEUE_MAX = 200;
+// T14.22.3 — T14.22.5: compute request serialization queue (REMOVED
+// in T14.22.6). The queue was a workaround for a GPU buffer collision
+// inside GPUCompute.readbackSpikeCount where a per-cluster readback
+// buffer was shared across calls and concurrent fullSteps raced on
+// its mapAsync lifecycle. T14.22.6 fixed the underlying issue by
+// making readbackSpikeCount allocate a per-call 4-byte disposable
+// readback buffer, so concurrent calls now have independent map
+// state and the collision is impossible by construction. With the
+// collision gone, the serialization queue is no longer needed — all
+// 7 cluster compute_request messages process in parallel again,
+// getting ~7x GPU throughput back at biological scale.
 
 function connectToServer() {
   // R14 — brain-server moved from 8080 to 7525
@@ -118,19 +93,15 @@ function connectToServer() {
 
     // ── STEP: Server sends only tonic + noise (two numbers) ──
     if (msg.type === 'compute_request' && gpuReady) {
-      // T14.22.3 — chain onto the serialization queue so concurrent
-      // compute_request messages don't overlap inside fullStep.
-      // T14.22.5 — reset the chain at COMPUTE_QUEUE_MAX so the
-      // Promise graph doesn't grow unbounded over long sessions.
-      if (computeQueueDepth >= COMPUTE_QUEUE_MAX) {
-        computeQueue = Promise.resolve();
-        computeQueueDepth = 0;
-      }
-      computeQueueDepth++;
-      computeQueue = computeQueue.then(() => handleComputeRequest(msg)).catch(err => {
-        console.warn('[GPU Compute] queued request failed:', err && err.message ? err.message : err);
-      }).finally(() => {
-        computeQueueDepth--;
+      // T14.22.6 — parallel dispatch restored. Each onmessage
+      // invocation fires its own async handleComputeRequest which
+      // awaits fullStep; the browser event loop lets multiple
+      // invocations overlap, so all 7 clusters' GPU work runs
+      // concurrently on the device command queue. No shared JS
+      // state to collide on now that readbackSpikeCount uses a
+      // per-call disposable readback buffer.
+      handleComputeRequest(msg).catch(err => {
+        console.warn('[GPU Compute] request failed:', err && err.message ? err.message : err);
       });
       return;
     }
