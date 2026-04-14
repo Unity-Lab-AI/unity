@@ -919,6 +919,8 @@ class ServerBrain {
       reward: this.reward,               // for future plasticity
     }));
 
+    // T14.23 — (see _gpuBatch below for the batched protocol).
+    //
     // T14.22.5 — GPU timeout raised 800ms → 10000ms.
     //
     // At Gee's 677M-neuron scale, a single GPU fullStep takes ~40ms
@@ -948,6 +950,49 @@ class ServerBrain {
           resolve(null);
         }
       }, 10000);
+    });
+  }
+
+  /**
+   * T14.23 — BATCHED GPU dispatch.
+   *
+   * Sends ONE compute_batch message containing all per-cluster
+   * parameters, waits for ONE compute_batch_result response.
+   * compute.html runs the full SUBSTEPS × clusters loop internally
+   * with parallel per-substep cluster dispatches. Cuts the per-tick
+   * WebSocket message count from ~70 (10 substeps × 7 clusters) to
+   * 2 (one request + one response), eliminating the 6× protocol
+   * overhead that was dominating tick latency at biological scale.
+   *
+   * @param {number} substeps — how many LIF steps to run this tick
+   * @param {Array<{name, size, tonicDrive, noiseAmp, gainMultiplier,
+   *                emotionalGate, driveBaseline, errorCorrection, reward}>} clusterParams
+   * @returns {Promise<{perCluster: Object} | null>}
+   */
+  async _gpuBatch(substeps, clusterParams) {
+    if (!this._gpuClient || this._gpuClient.readyState !== 1) return null;
+
+    // Use a monotonic batch id so late-arriving responses from a
+    // previous tick never resolve the current tick's promise.
+    this._batchSeq = (this._batchSeq || 0) + 1;
+    const batchId = this._batchSeq;
+
+    this._gpuClient.send(JSON.stringify({
+      type: 'compute_batch',
+      batchId,
+      substeps,
+      clusters: clusterParams,
+    }));
+
+    return new Promise((resolve) => {
+      this._gpuBatchPending = { batchId, resolve };
+      setTimeout(() => {
+        if (this._gpuBatchPending && this._gpuBatchPending.batchId === batchId) {
+          this._gpuBatchPending = null;
+          console.warn(`[Brain] compute_batch ${batchId} timed out after 15s — GPU may be hung`);
+          resolve(null);
+        }
+      }, 15000);
     });
   }
 
@@ -1145,40 +1190,82 @@ class ServerBrain {
         if (!this._gpuMisses) this._gpuMisses = 0;
 
         try {
-          for (let sub = 0; sub < SUBSTEPS; sub++) {
-            const allClusters = Object.keys(CLUSTER_SIZES);
+          const allClusters = Object.keys(CLUSTER_SIZES);
 
-            // Init ALL uninitialized clusters at once (first tick after GPU connects)
-            const needsInit = allClusters.filter(c => !this._gpuInitialized[c]);
-            if (needsInit.length > 0) {
-              console.log(`[Brain] GPU initializing ${needsInit.length} clusters: ${needsInit.join(', ')}`);
-              for (const gc of needsInit) {
-                this._gpuStep(gc); // sends gpu_init, marks initialized, returns null
-              }
-              // Skip this substep — GPU needs to process inits
-              this._updateDerivedState();
-              continue;
+          // Init phase — send gpu_init for any uninitialized clusters
+          // and skip compute for this tick while GPU allocates buffers.
+          const needsInit = allClusters.filter(c => !this._gpuInitialized[c]);
+          if (needsInit.length > 0) {
+            console.log(`[Brain] GPU initializing ${needsInit.length} clusters: ${needsInit.join(', ')}`);
+            for (const gc of needsInit) {
+              this._gpuStep(gc); // sends gpu_init, marks initialized
             }
-
-            // All clusters on GPU — dispatch all 7
+            this._updateDerivedState();
+          } else {
+            // T14.23 — BATCHED COMPUTE PATH.
+            //
+            // Old path: server dispatched SUBSTEPS * allClusters = 70
+            // compute_request messages per tick, each with its own
+            // WebSocket RTT. compute.html processed them individually.
+            // At Gee's scale ~40ms GPU work was buried in ~50ms of
+            // round-trip latency per message = 7x protocol overhead.
+            //
+            // New path: server sends ONE compute_batch message per tick
+            // containing all per-cluster parameters (tonic, noise,
+            // modulation factors). compute.html runs the full substep
+            // loop internally, dispatches all 7 clusters in parallel
+            // per substep, accumulates spike totals across substeps,
+            // sends back ONE compute_batch_result with per-cluster
+            // totals. Cuts WebSocket message count from ~70/tick to
+            // 2/tick (request + response), eliminating most of the
+            // protocol overhead.
             if (!this._gpuModeLogged) {
-              console.log(`[Brain] GPU RUNNING — all ${allClusters.length} clusters, 0 CPU workers, 0% CPU target`);
+              console.log(`[Brain] GPU BATCHED RUNNING — ${allClusters.length} clusters * ${SUBSTEPS} substeps in 1 message/tick`);
               this._gpuModeLogged = true;
             }
 
-            const gpuPromises = allClusters.map(gc => this._gpuStep(gc));
-            const gpuResults = await Promise.all(gpuPromises);
+            const p = this.persona;
+            const psiGain = Math.max(0.8, Math.min(1.5, 0.9 + (this.psi || 0) * 0.004));
+            const emotionalGate = 0.7 + (this.arousal || 0.5) * 0.6;
+            const driveFactor = 0.8 + ((this.clusters.hypothalamus?.spikeCount || 0) > 100 ? 0.4 : 0.0);
+            const clusterParams = allClusters.map((name) => {
+              const errorSignal = name === 'cortex' || name === 'basalGanglia'
+                ? -(this.clusters.cerebellum?.spikeCount || 0) / (CLUSTER_SIZES.cerebellum || 1) * 2 : 0;
+              return {
+                name,
+                size: CLUSTER_SIZES[name],
+                tonicDrive: this.tonicDrives[name],
+                noiseAmp: this.noiseAmplitudes[name],
+                gainMultiplier: psiGain,
+                emotionalGate,
+                driveBaseline: driveFactor,
+                errorCorrection: errorSignal,
+                reward: this.reward,
+              };
+            });
+
+            const batchResult = await this._gpuBatch(SUBSTEPS, clusterParams);
 
             this.totalSpikes = 0;
-            for (let gi = 0; gi < gpuResults.length; gi++) {
-              const gr = gpuResults[gi];
-              const name = allClusters[gi];
-              if (gr && gr.spikeCount !== undefined) {
-                this._gpuHits++;
-                this.clusters[name].spikeCount = gr.spikeCount;
-                this.clusters[name].firingRate = this.clusters[name].firingRate * 0.95 + gr.spikeCount * 0.05;
-                this.totalSpikes += gr.spikeCount;
-              } else {
+            if (batchResult && batchResult.perCluster) {
+              for (const name of allClusters) {
+                const entry = batchResult.perCluster[name];
+                if (entry && typeof entry.lastSpikeCount === 'number') {
+                  this._gpuHits++;
+                  this.clusters[name].spikeCount = entry.lastSpikeCount;
+                  // Blend firing rate across the whole batch using the
+                  // substep-average spike count, not just the last one.
+                  const avg = (entry.spikeCountTotal || 0) / SUBSTEPS;
+                  this.clusters[name].firingRate = this.clusters[name].firingRate * 0.95 + avg * 0.05;
+                  this.totalSpikes += entry.lastSpikeCount;
+                } else {
+                  this._gpuMisses++;
+                  this.totalSpikes += this.clusters[name].spikeCount || 0;
+                }
+              }
+            } else {
+              // Batch missing — every cluster counts as a miss
+              for (const name of allClusters) {
                 this._gpuMisses++;
                 this.totalSpikes += this.clusters[name].spikeCount || 0;
               }
@@ -2045,6 +2132,29 @@ wss.on('connection', (ws, req) => {
             clusterName: name,
             spikeCount: msg.spikeCount || 0,
           });
+          break;
+        }
+
+        case 'compute_batch_result': {
+          // T14.23 — batched substep+cluster loop result from compute.html.
+          // msg shape:
+          //   { batchId, perCluster: {
+          //       cortex: { spikeCountTotal, lastSpikeCount },
+          //       hippocampus: { ... },
+          //       ...
+          //     }
+          //   }
+          // spikeCountTotal = sum across all substeps in the batch
+          // lastSpikeCount  = final substep's spike count (used as the
+          //                   current-state readout by the tick loop)
+          if (!brain._gpuBatchPending) break;
+          if (brain._gpuBatchPending.batchId !== msg.batchId) {
+            console.warn(`[Brain] compute_batch_result batchId mismatch: expected ${brain._gpuBatchPending.batchId}, got ${msg.batchId}`);
+            break;
+          }
+          const resolver = brain._gpuBatchPending.resolve;
+          brain._gpuBatchPending = null;
+          resolver({ perCluster: msg.perCluster || {} });
           break;
         }
 

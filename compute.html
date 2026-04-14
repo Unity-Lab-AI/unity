@@ -105,6 +105,19 @@ function connectToServer() {
       });
       return;
     }
+
+    // T14.23 — BATCHED compute. One message per tick carries all
+    // per-cluster params + substep count. compute.html runs the
+    // entire substep × cluster loop internally and sends back one
+    // aggregated result. Cuts WebSocket traffic from ~70 messages
+    // per tick to 2 (request + response), eliminating the protocol
+    // overhead that was dominating tick latency at biological scale.
+    if (msg.type === 'compute_batch' && gpuReady) {
+      handleComputeBatch(msg).catch(err => {
+        console.warn('[GPU Compute] batch failed:', err && err.message ? err.message : err);
+      });
+      return;
+    }
   } catch (err) {
     console.warn('[GPU Compute] Error:', err.message, err.stack);
   }
@@ -116,6 +129,89 @@ function connectToServer() {
     setTimeout(() => connectToServer(), 3000);
   };
 } // end connectToServer
+
+// T14.23 — BATCHED compute handler. Runs the full substep × cluster
+// loop internally. Per substep, all 7 clusters dispatch in parallel
+// via Promise.all. Across substeps, serialized because substep N+1
+// depends on substep N's voltage state (recurrent LIF integration).
+// Accumulates per-cluster spike totals + tracks last-substep count
+// for the server's firingRate EMA.
+async function handleComputeBatch(msg) {
+  const { batchId, substeps, clusters } = msg;
+  if (!Array.isArray(clusters) || clusters.length === 0) {
+    ws.send(JSON.stringify({ type: 'compute_batch_result', batchId, perCluster: {} }));
+    return;
+  }
+
+  // Verify every cluster is initialized before running the batch —
+  // any missing one gets an empty result so the server's tick loop
+  // can miss-count it and keep going.
+  const ready = clusters.filter(c => {
+    const s = clusterState[c.name];
+    return s && s.initialized;
+  });
+  if (ready.length === 0) {
+    const empty = {};
+    for (const c of clusters) empty[c.name] = { spikeCountTotal: 0, lastSpikeCount: 0 };
+    ws.send(JSON.stringify({ type: 'compute_batch_result', batchId, perCluster: empty }));
+    return;
+  }
+
+  const t0 = performance.now();
+  const perCluster = {};
+  for (const c of ready) {
+    perCluster[c.name] = { spikeCountTotal: 0, lastSpikeCount: 0 };
+  }
+
+  // Precompute effective drive per cluster once for the whole batch.
+  // Brain-state modulation (psiGain, emotionalGate, driveBaseline,
+  // errorCorrection) only changes between server ticks, not between
+  // substeps within one tick, so holding them constant across the
+  // batch matches the server's semantics exactly.
+  const effectiveDrives = {};
+  const noiseAmps = {};
+  for (const c of ready) {
+    const tonic = c.tonicDrive ?? 16;
+    const drive = c.driveBaseline ?? 1.0;
+    const emoGate = c.emotionalGate ?? 1.0;
+    const gain = c.gainMultiplier ?? 1.0;
+    const errCorr = c.errorCorrection ?? 0;
+    effectiveDrives[c.name] = tonic * drive * emoGate * gain + errCorr;
+    noiseAmps[c.name] = c.noiseAmp ?? 5;
+  }
+
+  // Run substeps * clusters. Within a substep, all clusters dispatch
+  // in parallel via Promise.all (no shared state after T14.22.6's
+  // per-call readback buffer fix). Across substeps, serialize so
+  // each substep sees the voltage state the previous one left on
+  // the GPU.
+  for (let sub = 0; sub < substeps; sub++) {
+    const results = await Promise.all(ready.map(async (c) => {
+      const r = await gpu.fullStep(c.name, effectiveDrives[c.name], noiseAmps[c.name]);
+      return { name: c.name, spikeCount: r.spikeCount };
+    }));
+    for (const r of results) {
+      const acc = perCluster[r.name];
+      acc.spikeCountTotal += r.spikeCount;
+      acc.lastSpikeCount = r.spikeCount;
+    }
+  }
+
+  ws.send(JSON.stringify({
+    type: 'compute_batch_result',
+    batchId,
+    perCluster,
+  }));
+
+  // Telemetry
+  const elapsed = performance.now() - t0;
+  stepsComputed += ready.length * substeps;
+  totalComputeMs += elapsed;
+  const totalSize = ready.reduce((s, c) => s + (clusterState[c.name]?.size || 0), 0);
+  statsEl.textContent = `Batch: ${ready.length}×${substeps} steps in ${elapsed.toFixed(0)}ms | Total: ${stepsComputed.toLocaleString()} steps | ${(totalSize / 1e6).toFixed(0)}M neurons`;
+  const totalSpikes = Object.values(perCluster).reduce((s, p) => s + p.lastSpikeCount, 0);
+  perfEl.textContent = `Throughput: ${((totalSize * substeps) / (elapsed / 1000) / 1e9).toFixed(2)} Gneurons/sec | Last-substep spikes: ${totalSpikes.toLocaleString()}`;
+}
 
 // T14.22.3 — serialized compute request handler. One fullStep in
 // flight at a time, awaited by the queue so mapAsync / buffer state
