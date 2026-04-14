@@ -85,6 +85,15 @@ void main() {
 
   // STRUCTURE: bright solid core + ring + soft halo fading to edge
   // All three are visible on every neuron — the HALO is the key visual element
+  //
+  // PHOTOSENSITIVITY PASS — desaturate to ~60% of raw vCol and dim
+  // overall output by ~25%. The old shader blasted pure saturated
+  // pink/cyan/purple at full intensity which reads as "Vegas neon"
+  // and can stress photosensitive viewers. Mix toward luma and scale
+  // the final alpha down so the composition still reads clearly but
+  // doesn't strobe the retina.
+  float luma = dot(vCol, vec3(0.299, 0.587, 0.114));
+  vec3 baseCol = mix(vec3(luma), vCol, 0.60);
 
   // Core — bright center dot (0 to 0.18)
   float core = smoothstep(0.18, 0.0, d);
@@ -95,20 +104,24 @@ void main() {
   // Halo — soft glow fading from ring edge to dot edge (0.32 to 0.5)
   float halo = smoothstep(0.5, 0.32, d);
 
-  // Base brightness scales with glow (spiking = brighter)
-  float glowBoost = 1.0 + vGlow * 0.8;
+  // Base brightness scales with glow (spiking = brighter). Reduced
+  // from 0.8 to 0.5 so firing neurons pop without blowing out.
+  float glowBoost = 1.0 + vGlow * 0.5;
 
-  // Combine: core is brightest, ring is medium, halo is soft
-  float coreAlpha = core * 1.0 * glowBoost;
-  float ringAlpha = ring * 0.8 * glowBoost;
-  float haloAlpha = halo * 0.35 * glowBoost;
+  // Combine: core is brightest, ring is medium, halo is soft.
+  // Halo contribution dropped from 0.35 to 0.20 so the ambient wash
+  // of color across the field is much calmer.
+  float coreAlpha = core * 0.85 * glowBoost;
+  float ringAlpha = ring * 0.65 * glowBoost;
+  float haloAlpha = halo * 0.20 * glowBoost;
 
   float alpha = max(coreAlpha, max(ringAlpha, haloAlpha));
 
-  // Color: white hot core, colored ring, softer colored halo
-  vec3 coreCol = mix(vCol, vec3(1.0), 0.6 + vGlow * 0.4);
-  vec3 ringCol = vCol * (1.2 + vGlow * 0.5);
-  vec3 haloCol = vCol * (0.7 + vGlow * 0.5);
+  // Color: white hot core (softened from 0.6+0.4 to 0.45+0.3),
+  // colored ring, softer colored halo — all using desaturated baseCol.
+  vec3 coreCol = mix(baseCol, vec3(1.0), 0.45 + vGlow * 0.3);
+  vec3 ringCol = baseCol * (1.0 + vGlow * 0.35);
+  vec3 haloCol = baseCol * (0.60 + vGlow * 0.35);
 
   vec3 col;
   if (core > 0.01) col = coreCol;
@@ -163,12 +176,23 @@ void main() {
   vec2 c = gl_PointCoord - 0.5;
   float d = length(c);
   if (d > 0.5) discard;
-  // Bright expanding ring with glowing edge
-  float ring = smoothstep(0.28, 0.38, d) * smoothstep(0.5, 0.42, d);
-  float core = smoothstep(0.5, 0.0, d) * 0.2;
-  float alpha = (ring * 1.4 + core) * vLife;
-  // Brighter color — add white core to make it pop
-  vec3 col = vCol + vec3(0.3) * ring;
+  // Activation aura ring — thin line-like band, not a big wash.
+  // Gee flagged the old (0.28-0.5 width = 0.22) ring as too thick
+  // and too similar to the fractal activation pattern underneath.
+  // Tightened to (0.39-0.47 width = 0.08) so it reads as a distinct
+  // line hovering just outside the neuron's own aura. Core
+  // contribution dropped from 0.2 to 0.04 so the interior stays
+  // almost empty, which is what makes the outline feel like a ring
+  // rather than a filled disc.
+  float ring = smoothstep(0.39, 0.42, d) * smoothstep(0.47, 0.44, d);
+  float core = smoothstep(0.5, 0.0, d) * 0.04;
+  // Ring intensity dropped from 1.4 to 1.0 so it doesn't strobe.
+  float alpha = (ring * 1.0 + core) * vLife;
+  // Desaturate the ring color toward luma by 40% and drop the
+  // white-pop additive from 0.3 to 0.12 for photosensitivity.
+  float luma = dot(vCol, vec3(0.299, 0.587, 0.114));
+  vec3 baseCol = mix(vec3(luma), vCol, 0.60);
+  vec3 col = baseCol + vec3(0.12) * ring;
   gl_FragColor = vec4(col, alpha);
 }
 `;
