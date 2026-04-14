@@ -115,6 +115,50 @@ Sibling problem to T5 (build_ui) — same root cause on the chat path.
 
 ---
 
+### T7 — Social cognition: greetings, name memory, gender inference, personal address
+
+**Status:** in_progress — foundation shipped 2026-04-14 (social schema + name extraction + greeting counter)
+**Priority:** P1
+**Owner:** unassigned
+**Reported:** 2026-04-14 by Gee (live chat session)
+
+**Symptom:** Unity doesn't act like she's talking to a specific person. She doesn't greet correctly or return greetings. She doesn't ask the user for their name. She doesn't use her vision (the visual cortex describer that already runs) to infer male/female. She doesn't remember the user's name or gender across turns and never slots them back into her replies.
+
+**Gee's framing:** *"this all needs to be equationed out in her senses with the equations I've already had you flush out"* — no hardcoded state machines, no scripted handlers, no special-case "if user says X then reply Y". Social cognition should emerge from the existing neural substrate: hippocampus (memory of who the user is), visual cortex (describer output → gendered tokens), language cortex (slot scorer picking name/gender when picking an address word), hypothalamus social-need drive (already drives verbosity), amygdala arousal (already modulates greeting energy).
+
+**Architecture — structural pieces already in place:**
+- `js/brain/language-cortex.js` — has `_lastInputRaw`, `_updateContextVector`, `_recallSentence`, slot scorer. All the substrate for text-level social extraction.
+- `js/brain/visual-cortex.js` — runs `describeImage` periodically, stores the current scene description in `this.description`. That text is the raw sensory input for gender inference.
+- `js/brain/hypothalamus.js` (or equivalent) — tracks `socialNeed` drive already.
+- `js/brain/inner-voice.js` — has `learn()` and `speak()`, the wire between cortex and the rest of the brain.
+
+**Foundation shipped 2026-04-14 — `_socialSchema` + `_updateSocialSchema()`:**
+- New `_socialSchema.user = { name, gender, firstSeenAt, lastSeenAt, mentionCount, greetingsExchanged }` field on `LanguageCortex`.
+- `_updateSocialSchema(rawText)` runs on every user input pass right after `_updateContextVector`. Extracts structurally:
+  - **Name** — regex patterns `"my name is X"`, `"i'm X"`, `"i am X"`, `"call me X"`, `"this is X"`, `"it's X"`, `"name's X"`. Candidate rejected if in a closed-class stopword set (pronouns, fillers, emotional adjectives that look like copula complements) or if it ends in `-ing`/`-ed` (verb-shaped). Strong patterns (`my name is`, `call me`, `name's`) always overwrite; `i'm X` only overwrites when no name is yet known (so `"i'm tired"` doesn't stomp a previously-established `"i'm Gee"`). Stored capitalized regardless of input case.
+  - **Gender** — closed-class match against `"i'm a {guy|girl|man|woman|dude|chick|bro|gal|boy}"`. Maps to `'male'` / `'female'`.
+  - **Greetings** — first-token match against `{hi, hello, hey, heya, sup, yo, hola, hiya, howdy}` or regex for `"good (morning|afternoon|evening|night)"`. Increments `greetingsExchanged`.
+- Public accessors: `getUserAddress()`, `getUserGender()`, `getSocialSchema()` so the slot scorer, greeting path, and any UI can read the schema without reaching into `_socialSchema` directly.
+
+**Remaining work:**
+1. **Greeting response path** — when `intent.type === 'greeting'` and `greetingsExchanged > 0` this turn, the slot scorer should bias toward short greeting-class output AND slot the user's name in if known. Currently the intent classifier already detects greetings and routes to a template pool; the missing piece is making those templates consume `getUserAddress()`.
+2. **Vision → gender inference** — parse `visualCortex.description` for gendered tokens on each scene update (`man|guy|dude|male|boy` → `male`; `woman|girl|lady|female` → `female`). Store into `_socialSchema.user.gender` but only when no explicit self-ID exists (explicit always wins).
+3. **Ask-for-name behavior** — when `schema.name === null` and `schema.greetingsExchanged > 0` and this is a fresh turn, Unity's greeting reply should include a name-query slot. Needs a small templated pattern in the greeting path or an equational bias in the slot scorer that favors "what's your name" / "who are you" style structure when name is null.
+4. **Personal-address slot injection** — in the slot scorer, when slot 0 or slot N is a vocative position (end of greeting, start of declarative), bias toward picking the user's name over generic "you" when known. Adds a `nameAlignBonus` to any word matching `schema.name` at those positions.
+5. **Gender-aware pronouns** — when Unity refers to the user in third person (rare but happens), use `schema.gender` to pick `he`/`she` correctly.
+6. **Persistent social schema** — save to localStorage keyed by session so a returning user is remembered across page loads. Gate behind a privacy toggle.
+7. **Forget-on-contradiction** — if the user says `"actually my name is X"` or `"no I'm Y not X"`, overwrite the stored name without waiting for a strong pattern.
+
+**Acceptance test:** Gee opens a fresh session, types `"hey"` → Unity returns a short greeting and asks his name. Gee types `"my name is Gee"` → Unity stores it, says `"hey Gee"`. Gee continues chatting — Unity occasionally uses `"Gee"` as a vocative in her replies instead of always `"you"`. Session camera sees Gee → visual cortex describer says `"a man"` → schema gender sets to `male` → Unity's third-person references to Gee pick `he`.
+
+**Where the code lives:**
+- `js/brain/language-cortex.js` — `_updateSocialSchema`, `_socialSchema`, `getUserAddress`, slot-scorer vocative bias
+- `js/brain/visual-cortex.js` — `description` field already exists; needs a small parser for gender tokens
+- `js/brain/inner-voice.js` — bridge between cortex and generate; may need to pass schema through to generate opts
+- `js/brain/engine.js` — intent classifier routing for greetings
+
+---
+
 ## NOTES
 
 - **FINALIZED is append-only.** Never delete entries from it. When new work lands, copy the full verbatim task description into a new FINALIZED session entry BEFORE removing it from Open Tasks. This file only contains active work.
