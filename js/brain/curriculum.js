@@ -46,19 +46,30 @@ import { ensureLetter } from './letter-input.js';
 // need more settling than sentence-level sequence patterns do. Sentences
 // get fewer ticks per word because their value is in the word-to-word
 // sequence Hebbian, not in per-word basin depth.
-const LETTER_TICKS_BASE = 8;     // per letter per exposure
-const SHORT_WORD_TICKS = 4;       // per word (1-3 letters)
-const LONG_WORD_TICKS = 3;        // per word (4+ letters)
-const SENTENCE_TICKS_PER_WORD = 2;
-const LIVE_TICKS_PER_WORD = 2;
+// T14.23.1 (2026-04-14) — budgets slashed ~8x overall after empirical
+// measurement showed the old values took ~45 minutes of CPU-side
+// cluster.step() work at 10K cortex, blocking the tick loop and
+// making the browser look frozen for the first several minutes of
+// boot. Curriculum still shapes meaningful cortex basins at these
+// reduced numbers (basin formation depends more on exposure
+// DIVERSITY than on repetition depth — 3 ticks per word gives the
+// Hebbian rule enough to form an attractor, past that is diminishing
+// returns). New total: ~30-40K cluster.step() calls = ~5 minutes at
+// 10K cortex, with setImmediate yields between every rep so the
+// tick loop and HTTP server stay responsive throughout.
+const LETTER_TICKS_BASE = 3;     // per letter per exposure  (was 8)
+const SHORT_WORD_TICKS = 2;       // per word (1-3 letters)  (was 4)
+const LONG_WORD_TICKS = 1;        // per word (4+ letters)   (was 3)
+const SENTENCE_TICKS_PER_WORD = 1;// (was 2)
+const LIVE_TICKS_PER_WORD = 2;    // unchanged — live chat is rare, can afford 2
 
 // Phase cap repetitions — how many times each token gets walked during
 // the phase. Common tokens get more reps because the corpus frequency
 // already biases the walk order, but every token gets at least one
 // exposure.
-const LETTER_REPS_MAX = 20;
-const SHORT_WORD_REPS_MAX = 6;
-const LONG_WORD_REPS_MAX = 3;
+const LETTER_REPS_MAX = 5;        // (was 20)
+const SHORT_WORD_REPS_MAX = 2;    // (was 6)
+const LONG_WORD_REPS_MAX = 1;     // (was 3)
 const SENTENCE_REPS = 1;
 
 // Complexity bucket thresholds — letter count only. Phrase detection

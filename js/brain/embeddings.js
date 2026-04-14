@@ -48,10 +48,19 @@ const EMBED_DIM = 300;
 // foundation lift loads the entire vocabulary on the server. Browser-side
 // uses a corpus-token subset hosted by the server (T14.0 RemoteBrain path).
 const GLOVE_LOCAL_PATH = 'corpora/glove.6B.300d.txt';
+// T14.23.2 — URL order trimmed. The Stanford NLP URL is CORS-blocked
+// from all browser origins (no Access-Control-Allow-Origin header),
+// and the HuggingFace URL returns 404 because the resolve path is
+// wrong. Both used to hang for ~90s each before erroring out, eating
+// 3+ minutes of boot time. Now only the localhost URL is attempted.
+// Operators who want full GloVe download the file manually and place
+// it at corpora/glove.6B.300d.txt — the server mounts /corpora/
+// statically so the local URL hits it at runtime. Missing file
+// produces a fast 404 which falls through to hash embeddings in
+// under a second. External CDN fallback re-added if/when a CORS-
+// permitting mirror is found.
 const GLOVE_URLS = [
   'http://localhost:7525/corpora/glove.6B.300d.txt',
-  'https://nlp.stanford.edu/data/glove.6B.zip',
-  'https://huggingface.co/stanfordnlp/glove/resolve/main/glove.6B.300d.txt',
 ];
 
 export class SemanticEmbeddings {
@@ -121,17 +130,47 @@ export class SemanticEmbeddings {
           throw new Error(`Server GloVe load failed: ${err.message}`);
         }
       } else {
-        // Browser path — try the configured URLs in order
+        // Browser path — try the configured URLs in order.
+        //
+        // T14.23.2 (2026-04-14) — AbortController with a 3-second
+        // per-URL timeout. The old code used bare `await fetch(url)`
+        // with no timeout, so a CORS-blocked or hanging CDN URL
+        // could hang for minutes before erroring out. At Gee's
+        // Stanford NLP URL (CORS-blocked) and HuggingFace URL
+        // (returns 404 but slowly), the sequential fetches were
+        // eating 5+ minutes of boot time with zero CPU activity
+        // while the browser waited on network sockets. Now each
+        // fetch has a hard 3s cap so even 3 failing URLs fall
+        // through to hash embeddings in under 10 seconds.
         let response = null;
         for (const url of GLOVE_URLS) {
+          let controller = null;
+          let timer = null;
           try {
-            response = await fetch(url);
+            controller = new AbortController();
+            timer = setTimeout(() => controller.abort(), 3000);
+            response = await fetch(url, { signal: controller.signal });
+            clearTimeout(timer);
             if (response.ok) break;
             response = null;
-          } catch { continue; }
+          } catch (err) {
+            if (timer) clearTimeout(timer);
+            console.log(`[Embeddings] GloVe fetch aborted/failed at ${url}: ${err?.name || err?.message || err}`);
+            continue;
+          }
         }
         if (!response) throw new Error('All GloVe URLs failed in browser path');
-        text = await response.text();
+        // Also cap the response-body read so a slow trickle can't
+        // hang the boot even if the server technically returned 200.
+        const bodyController = new AbortController();
+        const bodyTimer = setTimeout(() => bodyController.abort(), 30000);
+        try {
+          text = await response.text();
+          clearTimeout(bodyTimer);
+        } catch (err) {
+          clearTimeout(bodyTimer);
+          throw new Error(`GloVe body read failed: ${err?.message || err}`);
+        }
       }
 
       // Parse the GloVe text — one word per line, space-separated:
