@@ -544,8 +544,23 @@ export class Curriculum {
 }
 
 // Yield to the event loop so long curriculum walks don't starve the
-// browser main thread. Uses Promise.resolve() as a cross-env microtask
-// — works in Node and browser without needing setImmediate or MessageChannel.
+// host thread.
+//
+// T14.22 (2026-04-14) — switched from Promise.resolve() microtask to
+// setImmediate (Node) / setTimeout(0) (browser). Microtasks run BEFORE
+// I/O callbacks in Node's event loop, so yielding via Promise.resolve
+// didn't actually let HTTP requests get serviced during a long
+// curriculum run — Node would just keep chewing through microtasks
+// and browsers connecting to the server saw spinning wheels. A macrotask
+// yield (setImmediate in Node, setTimeout in browsers) drops to the
+// back of the event loop, so pending I/O callbacks run between chunks
+// and the HTTP server stays responsive.
 function _microtask() {
-  return new Promise(resolve => { Promise.resolve().then(resolve); });
+  return new Promise(resolve => {
+    if (typeof setImmediate === 'function') {
+      setImmediate(resolve);
+    } else {
+      setTimeout(resolve, 0);
+    }
+  });
 }

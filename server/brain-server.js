@@ -99,20 +99,34 @@ function detectResources() {
 
     // PER-CLUSTER BUFFER CAP — WebGPU's maxStorageBufferBindingSize is
     // typically 2 GB (hard spec minimum). Some desktop GPUs raise it to
-    // ~4 GB but we can't assume that. The Rulkov state buffer for a
-    // single cluster is size × 8 bytes (vec2<f32>). If a cluster's
-    // state buffer would exceed 2 GB it binds to zero and that cluster
-    // silently never fires — exactly what was happening to cortex +
-    // cerebellum at 1.8 B-neuron scale. Cap total N so the LARGEST
-    // cluster (cerebellum, 40% of total) stays under 2 GB.
-    const PER_BUFFER_CEILING = 2 * 1024 * 1024 * 1024; // 2 GB in bytes
-    const maxPerClusterNeurons = Math.floor(PER_BUFFER_CEILING / 8);
+    // ~4 GB. With Chrome's `--enable-unsafe-webgpu` flag (which Unity
+    // uses per Gee's setup) the limit rises further — effectively up to
+    // device-maximum (VRAM bytes minus overhead). The Rulkov state
+    // buffer for a single cluster is size × 8 bytes (vec2<f32>); if it
+    // exceeds the real binding limit the cluster silently binds to zero
+    // and never fires — exactly what was happening to cortex + cerebellum
+    // at 1.8 B-neuron scale.
+    //
+    // T14.22 (2026-04-14) — binding ceiling is now ADMIN-OVERRIDABLE
+    // via `bindingCeilingMB` in resource-config.json. When running
+    // unsafe WebGPU the operator can raise the cap to their real
+    // binding limit (4 GB, 8 GB, full VRAM). Default stays at 2 GB
+    // for safe-mode Chrome / Firefox / Safari deployments.
+    let bindingCeilingBytes = 2 * 1024 * 1024 * 1024; // 2 GB default
+    if (override && typeof override.bindingCeilingMB === 'number' && override.bindingCeilingMB >= 1024) {
+      // Clamp to detected VRAM so a corrupt config can't exceed
+      // hardware reality even in unsafe mode.
+      const requested = Math.min(override.bindingCeilingMB, gpu.vram || override.bindingCeilingMB);
+      bindingCeilingBytes = requested * 1024 * 1024;
+    }
+    const maxPerClusterNeurons = Math.floor(bindingCeilingBytes / 8);
     const maxTotalForBinding = Math.floor(maxPerClusterNeurons / 0.4); // cerebellum = 40%
+    const bindingCeilingLabel = `${Math.round(bindingCeilingBytes / 1048576 / 1024)}GB`;
     if (maxNeurons > maxTotalForBinding) {
       maxNeurons = maxTotalForBinding;
-      scaleSource = `GPU: ${gpu.name} (${gpu.vram}MB VRAM, capped to ${(maxTotalForBinding/1e6).toFixed(0)}M to keep per-cluster state < 2GB binding ceiling — admin override via GPUCONFIGURE.bat can raise this)`;
+      scaleSource = `GPU: ${gpu.name} (${gpu.vram}MB VRAM, capped to ${(maxTotalForBinding/1e6).toFixed(0)}M to keep per-cluster state < ${bindingCeilingLabel} binding ceiling — raise via bindingCeilingMB in resource-config.json if running unsafe WebGPU)`;
     } else {
-      scaleSource = `GPU: ${gpu.name} (${gpu.vram}MB VRAM, ${Math.round(freeRAM/1024/1024/1024)}GB RAM, Rulkov 12bytes/neuron)`;
+      scaleSource = `GPU: ${gpu.name} (${gpu.vram}MB VRAM, ${Math.round(freeRAM/1024/1024/1024)}GB RAM, Rulkov 12bytes/neuron, binding ceiling ${bindingCeilingLabel})`;
     }
   } else {
     // CPU only — limited by cores
@@ -669,19 +683,16 @@ class ServerBrain {
       // each individual update needs to push harder for basins to be
       // measurable. Also pass langStart so injection lands in the new
       // language region (1000-1999), not the default 150.
-      if (personaText && this.cortexCluster) {
-        console.log('[Brain] Stage: trainPersonaHebbian START');
-        try {
-          this.languageCortex.trainPersonaHebbian(this.cortexCluster, personaText, {
-            lr: 0.012,
-            langStart: this._langStart,
-            injectStrength: 0.8,
-          });
-          console.log('[Brain] Stage: trainPersonaHebbian DONE');
-        } catch (err) {
-          console.warn('[Brain] persona Hebbian training failed:', err.message);
-        }
-      }
+      // T14.22 (2026-04-14) — trainPersonaHebbian call DELETED from
+      // the server boot path. It was T13 legacy that ran ~15 minutes
+      // of synchronous Hebbian at the new 10K cortex size, blocking
+      // the event loop so HTTP requests couldn't be serviced and the
+      // browser just showed spinning wheels. T14.5 curriculum.run
+      // FromCorpora below does the same per-sentence Hebbian work via
+      // its Phase 5 sentence walk (with async microtask yields every
+      // 16 sentences + T14.22 setImmediate yields so the event loop
+      // actually runs). No duplicate work, no blocked event loop.
+      console.log('[Brain] Stage: trainPersonaHebbian SKIPPED (T14.22 — curriculum does the equivalent work async)');
 
       // T14.5 — continuous developmental learning pass. Runs the same
       // corpora the legacy loaders just consumed through the complexity-
