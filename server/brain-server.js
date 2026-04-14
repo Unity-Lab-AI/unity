@@ -452,13 +452,14 @@ class ServerBrain {
     console.log('[Brain] R3 — loading language subsystem (dictionary + language cortex + embeddings + component synth)...');
     const startMs = Date.now();
     try {
-      const [dictMod, lcMod, embedMod, csMod, modulesMod, clusterMod] = await Promise.all([
+      const [dictMod, lcMod, embedMod, csMod, modulesMod, clusterMod, curriculumMod] = await Promise.all([
         import('../js/brain/dictionary.js'),
         import('../js/brain/language-cortex.js'),
         import('../js/brain/embeddings.js'),
         import('../js/brain/component-synth.js'),
         import('../js/brain/modules.js'),
         import('../js/brain/cluster.js'),
+        import('../js/brain/curriculum.js'),
       ]);
 
       this.sharedEmbeddings = embedMod.sharedEmbeddings;
@@ -496,6 +497,17 @@ class ServerBrain {
       // and cluster.detectStress on first observation. Server mirrors the
       // browser's wiring from engine.js.
       this.dictionary.setCluster(this.cortexCluster);
+      // T14.5 — continuous developmental learning curriculum runner for
+      // the server-side language cortex. runFromCorpora is invoked after
+      // the legacy persona/baseline/coding loaders below so the complexity-
+      // sorted exposure walk happens on top of the established vocabulary.
+      // Stashed for later live-chat routing once the server exposes a
+      // per-turn hook analogous to browser innerVoice.learn.
+      this.curriculum = new curriculumMod.Curriculum(
+        this.cortexCluster,
+        this.dictionary,
+        this.languageCortex,
+      );
       // R6.2 — component synth for equational build_ui on the server.
       // Templates get loaded from docs/component-templates.txt below.
       this.componentSynth = new csMod.ComponentSynth();
@@ -595,6 +607,24 @@ class ServerBrain {
           });
         } catch (err) {
           console.warn('[Brain] persona Hebbian training failed:', err.message);
+        }
+      }
+
+      // T14.5 — continuous developmental learning pass. Runs the same
+      // corpora the legacy loaders just consumed through the complexity-
+      // sorted walk (letters → short words → long words → sentences) so
+      // the cortex picks up phoneme/syllable attractor basins from
+      // frequency-weighted exposure. The legacy path only populated the
+      // dictionary and type-transition tables — this pass actually shapes
+      // the cross-region projections T14.4 wired up.
+      if (this.curriculum && typeof this.curriculum.runFromCorpora === 'function') {
+        try {
+          await this.curriculum.runFromCorpora(
+            { persona: personaText, baseline: baselineText, coding: codingText },
+            { arousal: 0.8, valence: 0.2 },
+          );
+        } catch (err) {
+          console.warn('[Brain] curriculum.runFromCorpora failed:', err?.message || err);
         }
       }
 

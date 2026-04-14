@@ -16,6 +16,12 @@
 
 import { Dictionary } from './dictionary.js';
 import { LanguageCortex } from './language-cortex.js';
+// T14.5 — continuous developmental learning reference. Wired by engine.js
+// via `innerVoice.setCurriculum(curriculum)` once the cortex cluster
+// exists. When present, `learn()` routes every user turn through
+// `curriculum.learnFromTurn` as a continuous post-boot exposure. Null
+// before wiring and on headless tooling that doesn't construct a full
+// engine. See `js/brain/curriculum.js`.
 
 // Thought-to-speech threshold equation:
 // shouldSpeak = socialNeed × arousal × cortexCoherence > SPEECH_THRESHOLD
@@ -31,6 +37,8 @@ export class InnerVoice {
   constructor(opts = {}) {
     this.dictionary = new Dictionary();
     this.languageCortex = new LanguageCortex();
+    // T14.5 — curriculum reference, null until engine wiring.
+    this._curriculum = null;
     // Self-image: the brain boots EMPTY and learns everything from the
     // persona text (equational self-image) + live conversation. No lists.
     // Caller may pass opts.selfImageText directly, or call loadPersona(text)
@@ -209,8 +217,25 @@ export class InnerVoice {
    * @param {number} arousal
    * @param {number} valence
    */
+  setCurriculum(curriculum) {
+    this._curriculum = curriculum || null;
+  }
+
   learn(text, cortexPattern, arousal, valence) {
     this.dictionary.learnSentence(text, cortexPattern, arousal, valence);
+    // T14.5 — continuous developmental learning hook. Every user turn
+    // goes through the same inject+tick+Hebbian path the boot sentence
+    // phase uses on the corpus. No boot/runtime distinction — live chat
+    // is just more corpus fed in real-time. Runs BEFORE the legacy
+    // languageCortex.learnSentence so the cortex state the legacy path
+    // reads reflects the new exposure.
+    if (this._curriculum && typeof this._curriculum.learnFromTurn === 'function') {
+      try {
+        this._curriculum.learnFromTurn(text, Math.max(0.95, arousal ?? 0.5), valence ?? 0);
+      } catch (err) {
+        // Non-fatal — legacy path below still runs
+      }
+    }
     // Live chat learning gets a FLOOR of 0.95 arousal so user-sourced
     // sentences beat the persona corpus (loaded at 0.75) in recall
     // scoring. personaBoost rewards words stored at arousal ≥ 0.5,

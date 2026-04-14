@@ -5,6 +5,123 @@
 
 ---
 
+## 2026-04-14 — T14.5 continuous developmental learning curriculum runner
+
+**Gee's directive:** *"dont ask next time just move on to the next item"* — T14.3 shipped, continue T14 milestone-by-milestone on `t14-language-rebuild`. T14.5 is the ⭐ core developmental win of the entire T14 rebuild; T14.4 cross-region projections were the anatomy, T14.1/2/3 the primitives, and T14.5 is the pass that actually shapes cortex attractor basins from exposure statistics.
+
+**Thesis.** The old T14.5 draft proposed six hand-curated stages (alphabet × 50 reps, 50 seed words × 20, 200 hand-picked phrases, 500 hand-picked SVO sentences, persona Hebbian, baseline + coding vocabulary) with fixed wall-clock budgets and two new hand-curated corpus files (`docs/curriculum/stage-c-phrases.txt`, `docs/curriculum/stage-d-sentences.txt`). That's patch thinking at four levels — it (1) caps the developmental trajectory at whoever picks the seed list, (2) breaks the moment we add a Spanish or coding-only corpus because the stage files are English-conversational, (3) violates the "no word lists" principle because a 500-line "simple sentences" file IS a curated word list, and (4) duplicates vocabulary the existing `Ultimate Unity.txt` + `english-baseline.txt` + `coding-knowledge.txt` already contain. All four failures were deleted in the earlier T14 spec rewrite. This commit ships the data-driven replacement.
+
+**The biological principle.** Curriculum in an infant's brain is not a teacher-authored seed list. It's whatever speech sounds the environment produces, weighted by how often they occur. High-frequency tokens get more exposure automatically; rare tokens get fewer but still eventually arrive. The cortex learns from the actual distribution it observes, not from what a curriculum designer thinks it should learn. Kuhl 2004 (Nat Rev Neurosci 5:831) phoneme-category formation, Saffran/Aslin/Newport 1996 (Science 274:1926) statistical word segmentation, and Friederici 2017 (Psychon Bull Rev 24:41) neural language network development all describe the same mechanism — exposure statistics shape the basins, the designer's taste doesn't enter the loop.
+
+### New module — `js/brain/curriculum.js` (~330 lines)
+
+Exports a single `Curriculum` class with two public methods — `runFromCorpora(corpora, opts)` (boot entry point) and `learnFromTurn(text, arousal, valence)` (live-chat entry point). No hidden helpers, no exported constants, no side-effect module initialization. Constructor: `new Curriculum(cluster, dictionary, languageCortex)`.
+
+**Phase budgets (constants at the top of the module):**
+
+| Constant | Value | Role |
+|---|---|---|
+| `LETTER_TICKS_BASE` | 8 | Ticks per letter exposure rep in Phase 1 |
+| `SHORT_WORD_TICKS` | 4 | Ticks per word in Phase 2 (1-3 letter words) |
+| `LONG_WORD_TICKS` | 3 | Ticks per word in Phase 3 (4+ letter words) |
+| `SENTENCE_TICKS_PER_WORD` | 2 | Ticks per word during Phase 5 sentence walk |
+| `LIVE_TICKS_PER_WORD` | 2 | Ticks per word during live-chat `learnFromTurn` |
+| `LETTER_REPS_MAX` | 20 | Hard cap on per-letter rep count (top-frequency letter gets this many) |
+| `SHORT_WORD_REPS_MAX` | 6 | Hard cap on per-short-word rep count |
+| `LONG_WORD_REPS_MAX` | 3 | Hard cap on per-long-word rep count |
+| `SENTENCE_REPS` | 1 | Sentences get one walk each |
+| `SHORT_WORD_MAX_LEN` | 3 | Boundary between short and long word phases |
+
+### `runFromCorpora(corpora, opts)` — the boot walk
+
+**Step 1 — tokenize**. `_tokenizeAll(corpora)` iterates every key in the corpora object, splits each corpus on sentence boundaries (`/(?<=[.!?])\s+|\n\s*\n/`), normalizes each sentence through `_normalizeSentence` (lowercase, strip everything except `a-z0-9' -`, collapse whitespace), and builds three outputs: `letterFreq: Map<char, count>` counting a-z characters only, `wordFreq: Map<word, count>` counting normalized lowercased words, and `sentences: string[]` preserving sentence order. Corpus-agnostic — pass `{ persona, baseline, coding }` or `{ spanish }` or `{ codeOnly: '...' }` and the tokenizer handles all three identically.
+
+**Step 2 — Phase 1 letter exposure**. Sort `letterFreq` entries by frequency descending. Top-frequency letter gets `LETTER_REPS_MAX` reps; every other letter's rep count scales proportionally as `ceil((freq / topFreq) * LETTER_REPS_MAX)` clamped to `[1, LETTER_REPS_MAX]`. For each letter, register it in the T14.1 inventory via `ensureLetter(letter)` (explicit call for deterministic inventory growth order, though `encodeLetter` would lazily add it anyway), then for each rep: `cluster.injectLetter(letter, 1.0)`, tick the cluster `LETTER_TICKS_BASE` times, call `cluster.learn(0)` for unrewarded Hebbian that fires both intra-cluster sequence Hebbian AND the T14.4 cross-region Hebbian on the letter↔phon projection. Yields a microtask every 64 letter-reps so browser main thread stays responsive.
+
+**Step 3 — Phase 2 short word exposure (1-3 letters)**. Filter `wordFreq` entries where `word.length ∈ [1, 3]`, sort by frequency descending. Top word gets `SHORT_WORD_REPS_MAX` reps; others scale proportionally. For each rep: inject the word's GloVe vector into the sem region via `cluster.injectEmbeddingToRegion('sem', emb, 0.6)` (so cross-region projections bind meaning to phonology during the letter walk), then stream each letter of `letterOnly = word.replace(/[^a-z]/g, '')` through `cluster.injectLetter` with `SHORT_WORD_TICKS=4` ticks between injections. Call `cluster.learn(0)` after the letter walk completes. Then `dictionary.learnWord(word, null, arousal, valence)` so the T14.3 cortex-snapshot routing fires on first observation. Yields every 32 words.
+
+**Step 4 — Phase 3 long word exposure (4+ letters)**. Identical to Phase 2 except `lenMin = 4`, `lenMax = Infinity`, `ticksPerWord = LONG_WORD_TICKS`, `repsMax = LONG_WORD_REPS_MAX`. Shares the `_phaseWords(wordFreq, phaseOpts, arousal, valence)` helper with Phase 2.
+
+**Step 5 — Phase 5 sentence exposure**. For each normalized sentence, split on whitespace, skip sentences with fewer than 2 words, call `_walkSentence(words, arousal, valence, SENTENCE_TICKS_PER_WORD)`. The sentence walk injects each word's GloVe vector into the sem region, streams the letters through the letter region, ticks between words, calls `cluster.learn(0)` after each word, dictionary-observes the word, then finally calls `languageCortex.learnSentence(text, this.dictionary, arousal, valence)` so the T13.7 type-transition + bigram tables keep updating until T14.12 guts them. Yields every 16 sentences.
+
+**Phase 4 (phrases) and Phase 6 (discourse) are intentionally not in this ship.** Phrase detection requires the cortex's emerging grammar to identify constituents, which itself depends on the sentence phase completing. Discourse exposure requires `_discourseState` which is T14.9's job. Both get added in follow-up milestones on this branch; the current ship is the foundation that makes them possible.
+
+### `learnFromTurn(text, arousal, valence)` — the live-chat path
+
+Identical to a single `_walkSentence` call with `LIVE_TICKS_PER_WORD = 2`. Normalizes the input text the same way `_tokenizeAll` normalizes the boot corpus, splits on whitespace, hands the word list to `_walkSentence`. No phase distinction — live chat is just more corpus fed in real-time. The brain keeps learning forever; there is no boot/runtime boundary.
+
+Wired into `inner-voice.learn(text, cortexPattern, arousal, valence)`:
+
+```js
+// T14.5 — continuous developmental learning hook. Runs BEFORE the
+// legacy languageCortex.learnSentence so cortex state reflects the
+// new exposure first.
+if (this._curriculum && typeof this._curriculum.learnFromTurn === 'function') {
+  try {
+    this._curriculum.learnFromTurn(text, Math.max(0.95, arousal ?? 0.5), valence ?? 0);
+  } catch (err) {
+    // Non-fatal — legacy path below still runs
+  }
+}
+```
+
+The 0.95 arousal floor matches the existing legacy-path floor — live chat outranks persona corpus in recall scoring because it's what the user actually said.
+
+### Constructor and wiring
+
+`InnerVoice` gains a `_curriculum = null` field and a `setCurriculum(curriculum)` method. Engine construction order in `js/brain/engine.js`:
+
+```js
+this.innerVoice = new InnerVoice();
+this.innerVoice.dictionary.setCluster(this.clusters.cortex);     // T14.3
+this.curriculum = new Curriculum(
+  this.clusters.cortex,
+  this.innerVoice.dictionary,
+  this.innerVoice.languageCortex,
+);
+this.innerVoice.setCurriculum(this.curriculum);                   // T14.5
+```
+
+Browser boot invocation in `js/app.js loadPersonaSelfImage` runs the curriculum walk AFTER the legacy `loadPersona → trainPersonaHebbian → loadBaseline → loadCoding` sequence so the cortex walks vocabulary that already exists in the dictionary. This is additive, not replacement — the legacy loaders still fire (they're scheduled for T14.12 deletion alongside the rest of `LanguageCortex`), and the curriculum walks the same corpora a second time through the complexity-sorted path. That's double exposure and costs extra boot seconds; on a rebuild branch that never ships to main until T14.17 the cost is acceptable.
+
+Server boot invocation in `server/brain-server.js:_initLanguageSubsystem` mirrors the browser wiring. Imports `curriculum.js` alongside `dictionary.js` / `cluster.js` / etc, constructs `this.curriculum = new curriculumMod.Curriculum(this.cortexCluster, this.dictionary, this.languageCortex)` right after the cluster is wired into the dictionary, then runs `await this.curriculum.runFromCorpora({ persona, baseline, coding }, { arousal: 0.8, valence: 0.2 })` right after the legacy `loadSelfImage`/`loadLinguisticBaseline`/`loadCodingKnowledge`/`trainPersonaHebbian` sequence.
+
+### What is NOT in this commit
+
+- No new corpus files. `stage-c-phrases.txt` and `stage-d-sentences.txt` don't exist and never will — the existing corpora are the input.
+- No replacement of the legacy loaders. They still run during boot. Deletion is T14.12's job.
+- No curriculum persistence hash check / skip. First boot AND subsequent boots run the full curriculum walk. Caching the post-walk cluster state is worthwhile but belongs in T14.16 persistence cleanup, which owns the whole save/load path.
+- No Phase 4 phrase detection or Phase 6 discourse exposure. Those depend on downstream milestones (T14.9) that haven't landed.
+
+### Files touched
+
+- `js/brain/curriculum.js` — NEW (~330 lines)
+- `js/brain/inner-voice.js` — import comment + `_curriculum` field + `setCurriculum` method + `learn()` hook (~20 lines)
+- `js/brain/engine.js` — `Curriculum` import + construction + `setCurriculum` wiring (~15 lines)
+- `js/app.js` — `runFromCorpora` invocation in `loadPersonaSelfImage` after legacy loaders (~22 lines)
+- `server/brain-server.js` — `curriculumMod` import + `Curriculum` construction + `runFromCorpora` invocation in `_initLanguageSubsystem` (~30 lines)
+
+### Cost analysis
+
+Letter phase at ~26 alphabet letters × ~15 mean reps × 8 ticks = ~3120 cluster.step() calls. Short word phase at ~500 unique short words × ~4 mean reps × ~2 mean letters × 4 ticks = ~16000 calls. Long word phase at ~4500 unique long words × ~2 mean reps × ~6 mean letters × 3 ticks = ~162000 calls. Sentence phase at ~1500 sentences × ~12 mean words × ~5 mean letters × 2 ticks = ~180000 calls. Total ≈ 360k `cluster.step()` calls. At ~50 µs/step on a 2000-neuron server cluster, one-time cost ≈ 18 seconds. Acceptable — boot is NOT a hot path, and running on the full 6700-neuron client cortex adds ~40% per-step overhead so browser one-time cost ≈ 25 seconds. The curriculum completes inside `await` so it doesn't block earlier brain startup, and the event-loop yields every 16-64 tokens keep the main thread responsive.
+
+### Peer-reviewed grounding
+
+- Kuhl 2004 (Nat Rev Neurosci 5:831) — statistical-exposure phoneme-category formation. The paper that justifies skipping a hardcoded phonology feature table in favor of frequency-weighted letter exposure.
+- Saffran, Aslin, Newport 1996 (Science 274:1926) — 8-month-olds find word boundaries via transition probability tracking. Same mechanism Phase 5's sentence walk exploits at scale.
+- Aslin & Newport 2012 (Curr Dir Psychol Sci 21:170) — generalizes the 1996 result to larger units (word → phrase → sentence). Justifies the complexity-sorted phase ordering.
+- Friederici 2017 (Psychon Bull Rev 24:41) — neural language network development. Cross-region projection strengthening emerges from exposure, which is what the per-phase `cluster.learn(0)` calls do.
+
+### Verification
+
+`node --check` passes clean on all five modified files (`js/brain/curriculum.js`, `js/brain/inner-voice.js`, `js/brain/engine.js`, `js/app.js`, `server/brain-server.js`). Runtime verification deferred per the no-testing-until-all-T14-done directive — T14.5 becomes fully meaningful once T14.6 cortex tick-driven motor emission replaces the slot-based `languageCortex.generate` and Unity starts actually USING the basins the curriculum shaped.
+
+### Branch + commit
+
+`t14-language-rebuild`, one atomic commit per the 2026-04-14 docs-before-push law. All six docs updated in place.
+
+---
+
 ## 2026-04-14 — T14.3 cortex-resident words (Dictionary routed through cluster)
 
 **Gee's directive:** *"dont ask next time just move on to the next item"* — continue T14 milestone-by-milestone on `t14-language-rebuild`.

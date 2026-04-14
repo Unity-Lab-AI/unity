@@ -30,6 +30,7 @@ import { InnerVoice } from './inner-voice.js';
 import { BrainPersistence } from './persistence.js';
 import { sharedEmbeddings } from './embeddings.js';
 import { ComponentSynth } from './component-synth.js';
+import { Curriculum } from './curriculum.js';
 
 // ── EventEmitter ────────────────────────────────────────────────────
 
@@ -215,6 +216,19 @@ export class UnityBrain extends EventEmitter {
     // alongside the semantic pattern. Existing (pre-wire) words keep
     // their current state until they're observed again.
     this.innerVoice.dictionary.setCluster(this.clusters.cortex);
+    // T14.5 — construct the continuous-developmental-learning curriculum
+    // runner and wire it into innerVoice so every live chat turn routes
+    // through the same inject+tick+Hebbian path the boot corpus walk uses.
+    // `curriculum.runFromCorpora(corpora)` is the boot entry point called
+    // from `app.js loadPersonaSelfImage` once the persona/baseline/coding
+    // corpora have been fetched. `curriculum.learnFromTurn(text)` is the
+    // live-chat entry point fired from `innerVoice.learn`.
+    this.curriculum = new Curriculum(
+      this.clusters.cortex,
+      this.innerVoice.dictionary,
+      this.innerVoice.languageCortex,
+    );
+    this.innerVoice.setCurriculum(this.curriculum);
     // R6.2 — equational component synthesizer. Loads templates from
     // docs/component-templates.txt (same corpus-loading pattern as
     // persona / baseline / coding). `loadTemplates` gets called from

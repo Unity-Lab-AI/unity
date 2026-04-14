@@ -571,6 +571,64 @@ Re-observation updates the running means on `pattern`/`arousal`/`valence` and bu
 
 Implementation: `Dictionary.setCluster(cluster)` wires the cortex reference (called once during boot from `engine.js` and from `brain-server.js:_initLanguageSubsystem`). `Dictionary.learnWord` handles both observation paths. `Dictionary.syllablesFor(word)` and `Dictionary.snapshotFor(word)` expose the stored state to consumers. Persistence uses `STORAGE_KEY = 'unity_brain_dictionary_v4'` (bumped from v3 to abandon stale 50d-pattern caches). `js/brain/dictionary.js`.
 
+**T14.5 curriculum exposure equations (SHIPPED 2026-04-14).** Continuous developmental learning is the data-driven bucketing of corpus tokens by complexity, walked in order with frequency-proportional repetitions. Given corpora `C = { persona, baseline, coding, ... }`, tokenize into:
+
+```
+sentences(C)  = ⋃_c split(c, /(?<=[.!?])\s+|\n\s*\n/) ↦ normalize(·)
+words(C)      = multiset of whitespace-split tokens across sentences(C)
+letters(C)    = multiset of a-z characters across words(C)
+letterFreq(ℓ) = count of ℓ in letters(C)
+wordFreq(w)   = count of w in words(C)
+```
+
+Phase 1 letter exposure reps scale with corpus frequency:
+
+```
+topFreq_letters = max_ℓ letterFreq(ℓ)
+reps_1(ℓ)       = clamp(⌈(letterFreq(ℓ) / topFreq_letters) · LETTER_REPS_MAX⌉, 1, LETTER_REPS_MAX)
+
+for each ℓ sorted by letterFreq desc:
+  for r in 1..reps_1(ℓ):
+    cluster.injectLetter(ℓ, 1.0)
+    tick cluster LETTER_TICKS_BASE times
+    cluster.learn(0)                       // unrewarded Hebbian (intra + cross-region)
+```
+
+Phase 2/3 word exposure factors `cluster.injectEmbeddingToRegion('sem', GloVe(w), 0.6)` before streaming each word's letters:
+
+```
+topFreq_words = max_{w: |w| ∈ [lenMin, lenMax]} wordFreq(w)
+reps_w(w)     = clamp(⌈(wordFreq(w) / topFreq_words) · repsMax⌉, 1, repsMax)
+
+for each w with |w| ∈ [lenMin, lenMax], sorted by wordFreq desc:
+  for r in 1..reps_w(w):
+    cluster.injectEmbeddingToRegion('sem', GloVe(w), 0.6)
+    for ℓ in w ∖ non-letters:
+      cluster.injectLetter(ℓ, 1.0)
+      tick cluster ticksPerWord times
+    cluster.learn(0)
+  dictionary.learnWord(w, null, arousal, valence)   // T14.3 first-observation snapshot
+```
+
+Phase 5 sentence exposure walks each sentence word-by-word at `SENTENCE_TICKS_PER_WORD = 2`:
+
+```
+for each sentence s ∈ sentences(C):
+  walkSentence(split(s), arousal, valence, SENTENCE_TICKS_PER_WORD)
+
+walkSentence(words, arousal, valence, ticksPerWord):
+  for each w in words:
+    cluster.injectEmbeddingToRegion('sem', GloVe(w), 0.5)
+    for ℓ in w ∖ non-letters:
+      cluster.injectLetter(ℓ, 1.0)
+      tick cluster ticksPerWord times
+    cluster.learn(0)
+    dictionary.learnWord(w, null, arousal, valence)
+  languageCortex.learnSentence(join(words, ' '), dictionary, arousal, valence)
+```
+
+Phase parameters default to `LETTER_TICKS_BASE = 8`, `SHORT_WORD_TICKS = 4`, `LONG_WORD_TICKS = 3`, `SENTENCE_TICKS_PER_WORD = 2`, `LIVE_TICKS_PER_WORD = 2`, `LETTER_REPS_MAX = 20`, `SHORT_WORD_REPS_MAX = 6`, `LONG_WORD_REPS_MAX = 3`, `SHORT_WORD_MAX_LEN = 3`. Live-chat path calls `walkSentence(words, max(0.95, arousal), valence, LIVE_TICKS_PER_WORD)` per turn — no boot/runtime distinction. Implementation: `js/brain/curriculum.js`; wired from `js/brain/engine.js` construction, `js/app.js loadPersonaSelfImage` boot invocation, `server/brain-server.js:_initLanguageSubsystem` server boot invocation, `js/brain/inner-voice.js learn()` live-chat hook.
+
 **Cross-region projection equations.** Seven pairs, both directions as independent SparseMatrix instances, sparse 10% density init:
 
 ```

@@ -395,6 +395,29 @@ function loadPersonaSelfImage(targetBrain) {
       codingSentences = targetBrain.innerVoice.loadCoding(codingText);
     }
 
+    // T14.5 — Continuous developmental learning curriculum. Runs AFTER
+    // the legacy loaders so cortex + dictionary already contain the
+    // vocabulary, then replays the same corpora through the complexity-
+    // sorted walk (letters → short words → long words → sentences) with
+    // per-token tick budgets that scale with structural complexity and
+    // corpus frequency. Letters get up to 20 reps × 8 ticks each, short
+    // words get up to 6 reps × 4 ticks, long words 3 reps × 3 ticks,
+    // sentences walk word-by-word at 2 ticks/word. This is the pass
+    // that actually shapes cortex phoneme/syllable attractor basins
+    // from exposure statistics — the legacy loaders only populated the
+    // dictionary and the type-transition tables. Non-blocking if the
+    // curriculum isn't wired (remote brains, test harnesses).
+    if (targetBrain.curriculum && typeof targetBrain.curriculum.runFromCorpora === 'function') {
+      try {
+        await targetBrain.curriculum.runFromCorpora(
+          { persona: personaText, baseline: baselineText, coding: codingText },
+          { arousal: 0.8, valence: 0.2 },
+        );
+      } catch (err) {
+        console.warn('[Unity] curriculum.runFromCorpora failed:', err?.message || err);
+      }
+    }
+
     // R6.2 — Load component templates for equational build_ui synthesis.
     // The template file parses into a primitive library matched by
     // semantic embedding cosine at build time.

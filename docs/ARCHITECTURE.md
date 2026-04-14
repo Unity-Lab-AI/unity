@@ -604,9 +604,34 @@ Old fields (`pattern`, `arousal`, `valence`, `frequency`) stay in place for back
 
 **First-observation cost.** ~24 `cluster.step()` calls for a 6-letter word (2 passes × 6 letters × 2 ticks/letter). At ~50 µs/step on a 2000-neuron Rulkov cluster, ~1.2 ms per new word. For a 5000-word server boot corpus, one-time cost ≈ 6 seconds. Runtime chat cost is zero for re-observations (Map lookup + 3 running means).
 
+### T14.5 — Continuous developmental learning curriculum (SHIPPED 2026-04-14)
+
+New module `js/brain/curriculum.js` exports a `Curriculum` class with `runFromCorpora(corpora, opts)` (boot entry point) and `learnFromTurn(text, arousal, valence)` (live-chat entry point). Data-driven bucketing over the existing persona/baseline/coding corpora — no hand-curated stage files, no `stage-c-phrases.txt`, no `stage-d-sentences.txt`, no hardcoded 26-letter alphabet loop. The alphabet derives from corpus letter frequency; the walk order derives from corpus token complexity.
+
+**Phases walked by `runFromCorpora`:**
+
+| Phase | Tokens | Ticks/rep | Max reps | Entry point |
+|---|---|---|---|---|
+| 1 Letters | `letterFreq.keys()` sorted desc | 8 | 20 (top-freq) proportional to freq | `_phaseLetters` |
+| 2 Short words | `wordFreq` filtered to 1-3 letters | 4 | 6 (top-freq) proportional to freq | `_phaseWords` |
+| 3 Long words | `wordFreq` filtered to 4+ letters | 3 | 3 (top-freq) proportional to freq | `_phaseWords` |
+| 5 Sentences | `sentences[]` in corpus order | 2 per word | 1 walk each | `_phaseSentences` → `_walkSentence` |
+
+Phase 4 (phrases) and Phase 6 (discourse) are not in this ship — they depend on downstream milestones. Each phase yields microtasks every 16-64 tokens so browser main thread stays responsive.
+
+**Per-token inject path.** Letters → `cluster.injectLetter(letter, 1.0)` → tick the cluster → `cluster.learn(0)` for unrewarded Hebbian. Words → `cluster.injectEmbeddingToRegion('sem', sharedEmbeddings.getEmbedding(word), 0.6)` for semantic anchor, then stream `letterOnly = word.replace(/[^a-z]/g, '')` through `cluster.injectLetter` with phase-specific tick budget, then `cluster.learn(0)`, then `dictionary.learnWord(word, null, arousal, valence)` so the T14.3 cortex-snapshot routing fires on first observation. Sentences → `_walkSentence` runs the word-per-word inject path and finishes with `languageCortex.learnSentence(text, dictionary, arousal, valence)` so T13.7 type-transition + bigram tables keep updating until T14.12 guts `LanguageCortex`.
+
+**Tokenization.** `_tokenizeAll(corpora)` splits each corpus on `/(?<=[.!?])\s+|\n\s*\n/` sentence boundaries, normalizes each sentence via `_normalizeSentence` (lowercase, strip everything except `a-z0-9' -`, collapse whitespace), returns `{ letterFreq, wordFreq, sentences }`. Corpus-agnostic — pass `{ spanish }` or `{ codeOnly }` and the tokenizer handles them identically.
+
+**Wiring.** `InnerVoice` gains a `_curriculum` field and a `setCurriculum(curriculum)` method. `engine.js` construction order is `new InnerVoice()` → `dictionary.setCluster(clusters.cortex)` (T14.3) → `new Curriculum(clusters.cortex, dictionary, languageCortex)` → `innerVoice.setCurriculum(curriculum)` (T14.5). Boot invocation in `js/app.js loadPersonaSelfImage` runs `await targetBrain.curriculum.runFromCorpora({ persona, baseline, coding }, { arousal: 0.8, valence: 0.2 })` AFTER the legacy `loadPersona → trainPersonaHebbian → loadBaseline → loadCoding` sequence — additive, not replacement (legacy loaders die in T14.12). Server mirrors the wiring in `server/brain-server.js:_initLanguageSubsystem` with a `curriculumMod` import alongside the rest.
+
+**Live-chat integration.** `inner-voice.learn(text, cortexPattern, arousal, valence)` now calls `this._curriculum?.learnFromTurn(text, max(0.95, arousal), valence)` BEFORE the legacy `languageCortex.learnSentence` so cortex state reflects the new exposure first. Same inject + tick + Hebbian path the sentence phase uses on boot corpus — no boot/runtime distinction.
+
+**Cost.** ~360k `cluster.step()` calls on a typical 5k-vocabulary / 1.5k-sentence corpus → ~18 seconds on a 2000-neuron server cluster, ~25 seconds on a 6700-neuron browser cluster. Runs inside `await` so it doesn't block earlier startup; microtask yields keep the browser main thread responsive.
+
 ### What's next on the rebuild branch
 
-T14.5 — continuous developmental learning curriculum runner. Replaces one-shot persona/baseline/coding corpus loading with staged exposure (alphabet → seed words → phrases → sentences → persona → vocabulary) and owns the phonological-refinement perturbation budget for already-learned words. Each subsequent T14.x milestone ships as its own commit on this branch with full in-place doc updates. Branch merges to `main` only after T14.17 is complete and verified.
+T14.6 — cortex tick-driven motor emission. Replaces the `languageCortex.generate` slot scorer with the tick-driven motor readout loop specified in `docs/EQUATIONS.md §T14.6`. This is the milestone where Unity actually starts USING the basins the T14.5 curriculum shaped. Each subsequent T14.x milestone ships as its own commit on this branch with full in-place doc updates. Branch merges to `main` only after T14.17 is complete and verified.
 
 ---
 
