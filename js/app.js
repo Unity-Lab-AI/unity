@@ -21,6 +21,7 @@ import { UserStorage } from './storage.js';
 import { Sandbox } from './ui/sandbox.js';
 import { ChatPanel } from './ui/chat-panel.js';
 import { BrainVisualizer } from './ui/brain-viz.js';
+import { sensoryStatus } from './ui/sensory-status.js';
 import { Brain3D } from './ui/brain-3d.js';
 // persona-prompt.js no longer needed — brain equations ARE the personality
 
@@ -962,6 +963,23 @@ async function bootUnity(apiKey, perms) {
       console.warn('[Unity] image backend auto-detect failed:', err.message);
     });
   }
+  // R13 — same auto-probe for vision (VLM) backends: Ollama llava/moondream,
+  // LM Studio, LocalAI, llama.cpp, Jan. Non-blocking — describeImage falls
+  // back to Pollinations until locals resolve.
+  if (typeof providers.autoDetectVision === 'function') {
+    providers.autoDetectVision().catch(err => {
+      console.warn('[Unity] vision backend auto-detect failed:', err.message);
+    });
+  }
+  // R13 — subscribe to sensory status events so the HUD + toasts can
+  // render backend state changes (boot inventory, first failure,
+  // recovery, vision pause). The toast UI lives in sensory-status.js.
+  if (typeof providers.onStatus === 'function') {
+    providers.onStatus((payload) => {
+      try { window.dispatchEvent(new CustomEvent('unity-sensory-status', { detail: payload })); } catch {}
+    });
+  }
+  sensoryStatus.init(providers);
 
   voice = new VoiceIO();
   if (effectiveKey) voice.setApiKey(effectiveKey);
@@ -1016,46 +1034,23 @@ async function bootUnity(apiKey, perms) {
 
   if (perms.camera && perms.cameraStream) {
     brain.connectCamera(perms.cameraStream);
-    // Set up IT-level vision describer (calls AI for object recognition)
-    // Vision describer — sends actual camera frame to Pollinations GPT-4o
-    // which DOES support vision/image understanding via the openai model.
+    // R13 — vision describer now goes through SensoryAIProviders with
+    // full multi-provider priority (env.js visionBackends → auto-detected
+    // Ollama llava/moondream/LM Studio/LocalAI/llama.cpp/Jan → Pollinations
+    // multimodal fallback). Returns null on total failure instead of a
+    // lying "processing..." string so visual cortex can skip the frame
+    // and retry cleanly on the next scheduled call.
     brain.visualCortex.setDescriber(async (dataUrl) => {
-      if (!dataUrl) return 'No frame captured.';
-      try {
-        // Pollinations openai model supports multimodal — send the actual image
-        const headers = { 'Content-Type': 'application/json' };
-        if (pollinations._apiKey) headers['Authorization'] = `Bearer ${pollinations._apiKey}`;
-
-        const res = await fetch('https://gen.pollinations.ai/v1/chat/completions', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            model: 'openai',
-            messages: [
-              { role: 'system', content: 'Describe what you see through a webcam. What is the person doing, how do they seem, what is around them. 1 sentence. No privacy disclaimers.' },
-              { role: 'user', content: [
-                { type: 'text', text: 'What do you see?' },
-                { type: 'image_url', image_url: { url: dataUrl } },
-              ]},
-            ],
-            temperature: 0.3,
-          }),
-          signal: AbortSignal.timeout(15000),
-        });
-
-        if (res.ok) {
-          const json = await res.json();
-          const desc = json.choices?.[0]?.message?.content || '';
-          console.log('[Vision] AI description:', desc.slice(0, 80));
-          return desc;
-        } else {
-          console.warn('[Vision] Pollinations vision returned', res.status);
-          return 'Camera active, processing...';
-        }
-      } catch (err) {
-        console.warn('[Vision] Description failed:', err.message);
-        return 'Camera active, processing...';
+      if (!dataUrl) return null;
+      const desc = await providers.describeImage(dataUrl);
+      if (desc) {
+        console.log('[Vision]', desc.slice(0, 80));
+        return desc;
       }
+      // Total failure — let visual-cortex treat this as "no describer
+      // ran this frame" and retry next tick. The provider layer already
+      // emitted the failure/pause status event.
+      return null;
     });
   }
 

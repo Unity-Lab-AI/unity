@@ -13,6 +13,7 @@
 // What Unity DOES read:
 //   - pollinations       — default image gen + TTS + vision describer
 //   - imageBackends[]    — your own image gen servers (custom or local)
+//   - visionBackends[]   — your own VLM servers (Ollama llava, LM Studio, etc.)
 // ═══════════════════════════════════════════════════════════════
 
 export const ENV_KEYS = {
@@ -46,6 +47,30 @@ export const ENV_KEYS = {
     //
     // Example: ComfyUI server with workflow
     // { name: 'Comfy', url: 'http://192.168.1.42:8188', model: 'flux-dev', kind: 'comfy' },
+  ],
+
+  // ── Vision describer backends (R13 multi-provider vision) ────
+  //
+  // Unity's visual cortex IT layer asks a VLM "what do you see" on
+  // camera frames. Same 4-level priority as image gen: env.js
+  // visionBackends → auto-detected local VLMs → Pollinations fallback.
+  //
+  // Auto-detected at boot (no config needed if they're running):
+  //   - Ollama with a vision model (localhost:11434)
+  //       pulls llava/moondream/bakllava automatically
+  //   - LM Studio (localhost:1234)
+  //   - LocalAI (localhost:8081)
+  //   - llama.cpp server (localhost:8080)
+  //   - Jan (localhost:1337)
+  //
+  // The easiest local vision setup is Ollama: `ollama pull llava` then
+  // `ollama serve`. Unity will find it on boot.
+  visionBackends: [
+    // Example: remote Ollama server with llava
+    // { name: 'Remote Ollama', url: 'http://192.168.1.50:11434', model: 'llava', kind: 'ollama-vision' },
+    //
+    // Example: OpenAI-compatible vision endpoint
+    // { name: 'Remote VLM', url: 'https://vlm.example.com', model: 'gpt-4-vision-preview', key: 'sk-...', kind: 'openai-vision' },
   ],
 
   // ── LEGACY TEXT-AI KEYS (no longer used by Unity's cognition) ──

@@ -436,9 +436,18 @@ export class VisualCortex {
     const dataUrl = descCanvas.toDataURL('image/jpeg', 0.6);
 
     this._describer(dataUrl).then(desc => {
-      this.description = desc || '';
+      // R13 — null = describer failed (all backends dead or paused).
+      // Don't overwrite the last good description with empty string;
+      // reset _hasDescribedOnce so we retry cleanly on the next window
+      // instead of getting stuck in "described nothing" forever.
+      if (desc) {
+        this.description = desc;
+      } else {
+        this._hasDescribedOnce = false;
+      }
       this._describing = false;
     }).catch(() => {
+      this._hasDescribedOnce = false;
       this._describing = false;
     });
   }

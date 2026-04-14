@@ -50,6 +50,30 @@ const LOCAL_IMAGE_BACKENDS = [
   { name: 'Ollama (SD)',    url: 'http://localhost:11434', probe: '/api/tags',                 kind: 'openai' },
 ];
 
+// ── Local VLM (vision-language model) backends for the describer ──
+//
+// R13 — same auto-probe treatment as image gen, but for vision. Unity's
+// visual cortex IT layer asks these backends "what do you see" on camera
+// frames. Ollama's vision models (llava, moondream, bakllava) are the
+// easiest path since most people already run Ollama for text. LM Studio
+// and llama.cpp server both expose OpenAI-compatible /v1/chat/completions
+// with multimodal message content.
+//
+// For Ollama specifically we probe /api/tags and filter for vision-capable
+// model names at register time — the model list tells us which VLM is
+// actually loaded.
+const LOCAL_VISION_BACKENDS = [
+  { name: 'Ollama (VLM)',   url: 'http://localhost:11434', probe: '/api/tags',   kind: 'ollama-vision' },
+  { name: 'LM Studio',      url: 'http://localhost:1234',  probe: '/v1/models',  kind: 'openai-vision' },
+  { name: 'LocalAI (VLM)',  url: 'http://localhost:8081',  probe: '/v1/models',  kind: 'openai-vision' },
+  { name: 'llama.cpp',      url: 'http://localhost:8080',  probe: '/v1/models',  kind: 'openai-vision' },
+  { name: 'Jan',            url: 'http://localhost:1337',  probe: '/v1/models',  kind: 'openai-vision' },
+];
+
+// Substrings that mark a model as vision-capable. Used when probing
+// /api/tags or /v1/models to pick the right model id.
+const VISION_MODEL_HINTS = ['llava', 'moondream', 'bakllava', 'vision', 'vl', 'cogvlm', 'minicpm-v'];
+
 export class SensoryAIProviders {
   constructor({ pollinations, storage }) {
     this._pollinations = pollinations;
@@ -67,9 +91,86 @@ export class SensoryAIProviders {
     // iterates this list between the custom and Pollinations fallbacks.
     this._localImageBackends = [];
 
+    // R13 — auto-detected + env.js-configured VLM backends for vision
+    // describer. describeImage() iterates this list before falling
+    // back to Pollinations multimodal.
+    this._localVisionBackends = [];
+
+    // R13 — consecutive failure counter on vision describer; after 3
+    // hits we pause vision for 30s to avoid hammering a dead endpoint.
+    this._visionFailCount = 0;
+    this._visionPausedUntil = 0;
+
+    // R13 — event emitter for sensory status changes. App.js subscribes
+    // to render toasts. Not a full EventTarget, just a callback list
+    // to keep the peripheral layer framework-free.
+    this._statusListeners = [];
+
     this._abortController = null;
     this._deadBackends = new Map(); // url → timestamp when marked dead
     this._deadCooldown = 3600000;   // 1 hour — if a backend is dead, leave it
+  }
+
+  /**
+   * R13 — subscribe to sensory status events. Fires when a backend is
+   * registered, marked dead, recovered, or when a request falls through
+   * the priority chain. Payload: {kind, event, backend, reason}.
+   */
+  onStatus(fn) {
+    this._statusListeners.push(fn);
+    return () => {
+      const i = this._statusListeners.indexOf(fn);
+      if (i >= 0) this._statusListeners.splice(i, 1);
+    };
+  }
+
+  _emitStatus(payload) {
+    for (const fn of this._statusListeners) {
+      try { fn(payload); } catch (err) { console.warn('[SensoryAI] status listener error:', err.message); }
+    }
+  }
+
+  /**
+   * R13 — return a snapshot of every registered backend for the status
+   * HUD. Groups by kind (image/vision) with state dots.
+   */
+  getStatus() {
+    const imageBackends = [];
+    if (this._customImageUrl) {
+      imageBackends.push({
+        name: 'custom',
+        url: this._customImageUrl,
+        source: 'configured',
+        state: this._isBackendDead(this._customImageUrl) ? 'dead' : 'alive',
+      });
+    }
+    for (const b of this._localImageBackends) {
+      imageBackends.push({
+        name: b.name,
+        url: b.url,
+        source: b.fromEnv ? 'env' : (b.detected ? 'auto' : 'config'),
+        state: this._isBackendDead(b.url) ? 'dead' : 'alive',
+      });
+    }
+    imageBackends.push({ name: 'Pollinations', url: 'pollinations', source: 'fallback', state: 'alive' });
+
+    const visionBackends = [];
+    for (const b of this._localVisionBackends) {
+      visionBackends.push({
+        name: b.name,
+        url: b.url,
+        model: b.model,
+        source: b.fromEnv ? 'env' : (b.detected ? 'auto' : 'config'),
+        state: this._isBackendDead(b.url) ? 'dead' : 'alive',
+      });
+    }
+    visionBackends.push({ name: 'Pollinations', url: 'pollinations', source: 'fallback', state: 'alive' });
+
+    return {
+      image: imageBackends,
+      vision: visionBackends,
+      visionPaused: Date.now() < this._visionPausedUntil,
+    };
   }
 
   /**
@@ -113,7 +214,68 @@ export class SensoryAIProviders {
       console.log(`[SensoryAI] ${this._localImageBackends.length} local image backend(s) registered:`,
         this._localImageBackends.map(b => b.name).join(', '));
     }
+    this._emitStatus({ kind: 'image', event: 'autodetect-complete', backends: this._localImageBackends });
     return this._localImageBackends;
+  }
+
+  /**
+   * R13 — auto-detect local VLM backends for the vision describer.
+   * Same shape as autoDetect() but for vision. For Ollama we additionally
+   * parse /api/tags to find a vision-capable model to use.
+   */
+  async autoDetectVision(opts = {}) {
+    const timeoutMs = opts.timeoutMs ?? 1500;
+    const probes = LOCAL_VISION_BACKENDS.map(async (backend) => {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), timeoutMs);
+        const res = await fetch(backend.url + backend.probe, {
+          method: 'GET',
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+        if (!res.ok) return null;
+
+        // Parse the model list to pick a vision-capable model id
+        const data = await res.json().catch(() => null);
+        let visionModel = null;
+        if (data) {
+          if (Array.isArray(data.models)) {
+            // Ollama shape
+            const hit = data.models.find(m =>
+              VISION_MODEL_HINTS.some(h => (m.name || m.model || '').toLowerCase().includes(h))
+            );
+            if (hit) visionModel = hit.name || hit.model;
+          } else if (Array.isArray(data.data)) {
+            // OpenAI shape
+            const hit = data.data.find(m =>
+              VISION_MODEL_HINTS.some(h => (m.id || '').toLowerCase().includes(h))
+            );
+            if (hit) visionModel = hit.id;
+          }
+        }
+
+        if (!visionModel && backend.kind === 'ollama-vision') {
+          // Ollama probe succeeded but no vision model pulled — skip
+          return null;
+        }
+
+        console.log(`[SensoryAI] Detected vision backend: ${backend.name} at ${backend.url}${visionModel ? ` (model: ${visionModel})` : ''}`);
+        return { ...backend, model: visionModel || 'gpt-4-vision-preview', detected: true };
+      } catch {
+        return null;
+      }
+    });
+
+    const results = await Promise.all(probes);
+    const found = results.filter(r => r !== null);
+    this._localVisionBackends.push(...found);
+    if (found.length > 0) {
+      console.log(`[SensoryAI] ${found.length} vision backend(s) registered:`,
+        found.map(b => b.name).join(', '));
+    }
+    this._emitStatus({ kind: 'vision', event: 'autodetect-complete', backends: this._localVisionBackends });
+    return this._localVisionBackends;
   }
 
   /**
@@ -132,8 +294,8 @@ export class SensoryAIProviders {
    */
   loadEnvConfig(envKeys) {
     if (!envKeys) return;
-    const backends = Array.isArray(envKeys.imageBackends) ? envKeys.imageBackends : [];
-    for (const b of backends) {
+    const imageBackends = Array.isArray(envKeys.imageBackends) ? envKeys.imageBackends : [];
+    for (const b of imageBackends) {
       if (b.url) {
         this._localImageBackends.push({
           name: b.name || `env:${b.url}`,
@@ -146,8 +308,27 @@ export class SensoryAIProviders {
         });
       }
     }
-    if (backends.length > 0) {
-      console.log(`[SensoryAI] Loaded ${backends.length} image backend(s) from env.js`);
+    if (imageBackends.length > 0) {
+      console.log(`[SensoryAI] Loaded ${imageBackends.length} image backend(s) from env.js`);
+    }
+
+    // R13 — env.js-configured vision backends
+    const visionBackends = Array.isArray(envKeys.visionBackends) ? envKeys.visionBackends : [];
+    for (const b of visionBackends) {
+      if (b.url) {
+        this._localVisionBackends.push({
+          name: b.name || `env:${b.url}`,
+          url: b.url,
+          model: b.model || 'gpt-4-vision-preview',
+          kind: b.kind || 'openai-vision',
+          key: b.key || null,
+          detected: false,
+          fromEnv: true,
+        });
+      }
+    }
+    if (visionBackends.length > 0) {
+      console.log(`[SensoryAI] Loaded ${visionBackends.length} vision backend(s) from env.js`);
     }
   }
 
@@ -214,6 +395,75 @@ export class SensoryAIProviders {
   }
 
   /**
+   * R13 — describe what's in an image. Multi-provider with the same
+   * 4-level priority as generateImage:
+   *   1. env.js-configured VLM backends (visionBackends array)
+   *   2. Auto-detected local VLMs (Ollama llava/moondream, LM Studio,
+   *      LocalAI, llama.cpp, Jan — whichever responded to probes)
+   *   3. Pollinations multimodal (openai model) as always-available fallback
+   *
+   * After 3 consecutive failures across ALL backends, vision pauses for
+   * 30 seconds to avoid hammering dead endpoints. During the pause,
+   * describeImage() returns null immediately and emits a status event.
+   *
+   * @param {string} dataUrl — base64 data URL of the frame
+   * @param {object} opts — { system, userPrompt, timeout }
+   * @returns {Promise<string|null>} — description text, or null on failure
+   */
+  async describeImage(dataUrl, opts = {}) {
+    if (!dataUrl) return null;
+
+    // Paused after repeated failures — fail fast
+    if (Date.now() < this._visionPausedUntil) {
+      return null;
+    }
+
+    const system = opts.system || 'Describe what you see through a webcam. What is the person doing, how do they seem, what is around them. 1 sentence. No privacy disclaimers.';
+    const userPrompt = opts.userPrompt || 'What do you see?';
+    const timeout = opts.timeout || 15000;
+
+    // 1. + 2. Try every registered local vision backend in order
+    for (const backend of this._localVisionBackends) {
+      if (this._isBackendDead(backend.url)) continue;
+      try {
+        const desc = await this._customDescribeImage(backend, dataUrl, system, userPrompt, timeout);
+        if (desc) {
+          this._visionFailCount = 0;
+          return desc;
+        }
+      } catch (err) {
+        if (err.name === 'AbortError') throw err;
+        console.warn(`[SensoryAI] Vision backend ${backend.name} failed:`, err.message);
+        this._emitStatus({ kind: 'vision', event: 'backend-failed', backend: backend.name, reason: err.message });
+      }
+    }
+
+    // 3. Pollinations fallback — multimodal chat via the openai model
+    try {
+      const desc = await this._pollinationsDescribeImage(dataUrl, system, userPrompt, timeout);
+      if (desc) {
+        this._visionFailCount = 0;
+        return desc;
+      }
+    } catch (err) {
+      console.warn('[SensoryAI] Pollinations vision fallback failed:', err.message);
+      this._emitStatus({ kind: 'vision', event: 'backend-failed', backend: 'Pollinations', reason: err.message });
+    }
+
+    // Total failure across all tiers — increment counter, maybe pause
+    this._visionFailCount++;
+    if (this._visionFailCount >= 3) {
+      this._visionPausedUntil = Date.now() + 30000;
+      this._visionFailCount = 0;
+      console.warn('[SensoryAI] Vision describer paused for 30s after 3 consecutive failures');
+      this._emitStatus({ kind: 'vision', event: 'paused', reason: 'consecutive-failures', duration: 30000 });
+    } else {
+      this._emitStatus({ kind: 'vision', event: 'all-failed', attempt: this._visionFailCount });
+    }
+    return null;
+  }
+
+  /**
    * Speak via TTS. Pollinations has an audio endpoint (35+ voices).
    *
    * @param {string} text
@@ -235,6 +485,112 @@ export class SensoryAIProviders {
 
   // ── Private ────────────────────────────────────────────────────
 
+  /**
+   * R13 — call a vision backend with the image data URL. Supports two
+   * wire shapes:
+   *   - openai-vision: OpenAI /v1/chat/completions with multimodal message
+   *     content (type: image_url). Works with LM Studio, LocalAI, llama.cpp,
+   *     Jan, and any OpenAI-compatible server.
+   *   - ollama-vision: Ollama /api/chat with images array (base64 without
+   *     the data: prefix). Works with llava, moondream, bakllava.
+   */
+  async _customDescribeImage(backend, dataUrl, system, userPrompt, timeoutMs) {
+    const headers = { 'Content-Type': 'application/json' };
+    if (backend.key) headers['Authorization'] = `Bearer ${backend.key}`;
+
+    const signal = AbortSignal.timeout(timeoutMs);
+
+    if (backend.kind === 'ollama-vision') {
+      // Strip the "data:image/...;base64," prefix — Ollama wants raw b64
+      const base64 = dataUrl.includes(',') ? dataUrl.split(',', 2)[1] : dataUrl;
+      const res = await fetch(backend.url + '/api/chat', {
+        method: 'POST',
+        headers,
+        signal,
+        body: JSON.stringify({
+          model: backend.model,
+          messages: [
+            { role: 'system', content: system },
+            { role: 'user', content: userPrompt, images: [base64] },
+          ],
+          stream: false,
+        }),
+      });
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 402 || res.status === 403) {
+          this._markBackendDead(backend.url);
+        }
+        return null;
+      }
+      const data = await res.json().catch(() => null);
+      return data?.message?.content || null;
+    }
+
+    // openai-vision (default) — multimodal chat completion
+    const endpoints = ['/v1/chat/completions', '/chat/completions'];
+    for (const ep of endpoints) {
+      try {
+        const res = await fetch(backend.url + ep, {
+          method: 'POST',
+          headers,
+          signal,
+          body: JSON.stringify({
+            model: backend.model,
+            messages: [
+              { role: 'system', content: system },
+              { role: 'user', content: [
+                { type: 'text', text: userPrompt },
+                { type: 'image_url', image_url: { url: dataUrl } },
+              ]},
+            ],
+            temperature: 0.3,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json().catch(() => null);
+          return data?.choices?.[0]?.message?.content || null;
+        }
+        if (res.status === 401 || res.status === 402 || res.status === 403) {
+          this._markBackendDead(backend.url);
+          return null;
+        }
+      } catch (err) {
+        if (err.name === 'AbortError') throw err;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * R13 — Pollinations multimodal fallback. Same call the old
+   * app.js:1022 inline handler used, now centralized.
+   */
+  async _pollinationsDescribeImage(dataUrl, system, userPrompt, timeoutMs) {
+    const headers = { 'Content-Type': 'application/json' };
+    if (this._pollinations?._apiKey) {
+      headers['Authorization'] = `Bearer ${this._pollinations._apiKey}`;
+    }
+    const res = await fetch('https://gen.pollinations.ai/v1/chat/completions', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model: 'openai',
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: [
+            { type: 'text', text: userPrompt },
+            { type: 'image_url', image_url: { url: dataUrl } },
+          ]},
+        ],
+        temperature: 0.3,
+      }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => null);
+    return data?.choices?.[0]?.message?.content || null;
+  }
+
   _isBackendDead(url) {
     const deadTime = this._deadBackends.get(url);
     if (!deadTime) return false;
@@ -247,7 +603,8 @@ export class SensoryAIProviders {
 
   _markBackendDead(url) {
     this._deadBackends.set(url, Date.now());
-    console.warn(`[SensoryAI] Image backend marked dead for ${this._deadCooldown / 1000}s:`, url);
+    console.warn(`[SensoryAI] Backend marked dead for ${this._deadCooldown / 1000}s:`, url);
+    this._emitStatus({ kind: 'any', event: 'backend-dead', url, cooldownMs: this._deadCooldown });
   }
 
   /**

@@ -802,6 +802,35 @@ The current `app.js:1057` catch returns `'Camera active, processing...'` which i
 
 ---
 
+## R14 — MOVE UNITY'S OWN PORTS OFF COMMON DEFAULTS
+
+**Goal:** Unity's brain-server and proxy bind to ports that collide with services R13 wants to detect. Move them to uncommon ports so Unity never fights Ollama, llama.cpp, LocalAI, or any user's existing tooling.
+
+**Context (2026-04-13):** Currently `server/brain-server.js:111` hardcodes `PORT = 8080`. That's the SAME port llama.cpp uses by default, the same port LocalAI is commonly deployed on, and one of the top-5 most-used ports in existence. If a user runs Unity's server and llama.cpp on the same box, one of them won't boot — and Unity will silently fail its own autoDetectVision probe of port 8080 because Unity IS the thing answering on 8080. Every port we probe in R13 for local backends (7860, 7861, 7865, 8080, 8081, 8188, 9090, 11434, 1234, 1337) is used by something real — Unity must live somewhere OUT of that set.
+
+### R14.1 — Pick new uncommon ports for Unity's services
+- **brain-server.js HTTP + WebSocket** — move from `8080` to something obscure. Candidates: `9823`, `47474`, `28080`, `31337` (too cute), `7777` (too common), `8787`. **Proposed: `9823`** (not in any common-port list, easy to remember as "98-two-three").
+- **proxy.js** (if still present after R12 cleanup) — was on `3001`. Also common. Move or delete.
+- **compute.html** dev server if one exists — check.
+- Document the chosen port prominently in README boot instructions and SETUP.md.
+
+### R14.2 — Audit the full probe list for overlap with Unity ports
+After picking new ports, grep `LOCAL_IMAGE_BACKENDS` + `LOCAL_VISION_BACKENDS` in `js/brain/peripherals/ai-providers.js` to confirm Unity's ports aren't in either list. If a future user runs Unity AND a vision model on the same machine, Unity should never probe itself.
+
+### R14.3 — Environment override
+Add `PORT` env var support so users can override: `PORT=9876 node server/brain-server.js`. Default to the new uncommon value when unset. Document in SETUP.md.
+
+### R14.4 — Client default matches server default
+Whatever port the server settles on, `js/brain/remote-brain.js` default WebSocket URL needs to match. Grep for any hardcoded `8080` in client code and update together.
+
+### R14.5 — Dashboard / health / any other HTTP endpoints
+- `http://localhost:PORT/dashboard.html`
+- `http://localhost:PORT/health`
+- `ws://localhost:PORT` for brain state stream
+All currently derive from the one `PORT` constant in brain-server.js:111, so R14.1 fixes them in one edit. Verify nothing else hardcodes `8080`.
+
+---
+
 ## R12 — FINAL CLEANUP + MERGE
 
 ### R12.1 — Kill every `// TODO:` placeholder comment
@@ -850,8 +879,9 @@ The bundled entry point for `file://` mode needs to be rebuilt against the refac
 9. **R9** UI leak hunt (parallel with anything — touches different files)
 10. **R10** Docs (only after R1-R9 settle)
 11. **R13** Multi-provider vision + user-facing connection notices (can parallel R9/R10 — touches `peripherals/ai-providers.js`, `app.js`, `visual-cortex.js`, new UI status element)
-12. **R11** Verification (only after R10 + R13)
-13. **R12** Merge (only after R11 green)
+12. **R14** Move Unity's own ports off common defaults (can parallel anything — touches `brain-server.js:111`, `remote-brain.js`, README/SETUP)
+13. **R11** Verification (only after R10 + R13 + R14)
+14. **R12** Merge (only after R11 green)
 
 **Parallel lanes:**
 - Lane 1 (sequential, critical path): R1 → R2 → R3 → R4 → R5 → R6
