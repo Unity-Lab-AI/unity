@@ -9,10 +9,12 @@
 
 // LOUD VERSION MARKER — if your browser console doesn't show this,
 // you're on a cached/stale bundle and need to hard-reload
-// (Ctrl+Shift+R / Cmd+Shift+R). This log fires at module-load time,
-// before anything else runs, so its absence in the console means
-// the NEW app.js never reached the browser.
-console.log('%c[Unity] app.js v20260414-T4.12 module loaded', 'color:#ff4d9a;font-weight:bold');
+// (Ctrl+Shift+R / Cmd+Shift+R). Version comes from js/version.js
+// which is stamped by scripts/stamp-version.mjs on every deploy, so
+// the string here always matches the ?v= cache-buster in index.html
+// — no hand-bumping.
+import { FULL as UNITY_BUILD } from './version.js';
+console.log(`%c[Unity] app.js ${UNITY_BUILD} module loaded`, 'color:#ff4d9a;font-weight:bold');
 // Catch uncaught errors (from RAF callbacks, async handlers, etc.)
 // so they can't silently kill the app.
 if (typeof window !== 'undefined') {

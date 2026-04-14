@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-04-13 — Deploy Versioning System (0.1.0 + build hash)
+
+Ripped the vestigial `v=20260414-T4.xx` cache-buster scheme Gee called out as patchwork. Replaced with a real versioning system:
+
+- **`js/version.js`** — single source of truth. Exports `VERSION = '0.1.0'`, `BUILD` (stamped), and `FULL = "${VERSION}+${BUILD}"`. Imported by `js/app.js` for the boot log so the console marker and the `?v=` cache-buster can never drift apart again.
+- **`scripts/stamp-version.mjs`** — run before every push. Builds a deploy id of the form `<gitShort8>-<rand4hex>` using `git rev-parse --short=8 HEAD` plus 2 bytes from `crypto.randomBytes`. Rewrites `js/version.js` BUILD line and the `?v=` query in `index.html`. Exits non-zero if either file can't be stamped. Random nonce guarantees two pushes from the same commit still invalidate CDN caches.
+- **`docs/PUSH_WORKFLOW.md`** — documents the push sequence: commit work → `node scripts/stamp-version.mjs` → commit stamp → push. Also documents the semver lock (see below).
+- **VERSION LOCK** — Only Gee bumps `VERSION`. It stays at `0.1.0` until he explicitly says otherwise. The stamp script deliberately leaves VERSION alone — it only rewrites BUILD. Saved as persistent rule in `feedback_version_lock.md` memory.
+- **First stamped build:** `0.1.0+f41223c4-a40d`. Boot log now shows `[Unity] app.js 0.1.0+<gitShort>-<rand> module loaded`. No more hand-bumping `T4.xx` markers, no more version-string/cache-buster drift.
+
+---
+
 > **🏁 BRAIN REFACTOR COMPLETE — 2026-04-14**
 >
 > Branch `brain-refactor-full-control` is code-complete, docs-complete, and manual-verification-complete. Gee walked the 16-step T4 checklist on 2026-04-14 and confirmed all steps passed. Nine follow-up bugs (T4.1 through T4.9) were caught and fixed in-flight during verification — their full verbatim task entries live in this file.
