@@ -339,7 +339,7 @@ Language cortex is no longer a pure letter-equation slot scorer. It's now a **ti
 - **U299** BUILD COMPOSITION PRIMITIVES section at `coding-knowledge.txt:421` — calculator, list, timer, canvas game, form, modal, tabs, counter, color picker, dice roller. Patterns not code.
 
 ### Milestone 12.3: Orphan Resolution — COMPLETE
-Full audit findings in `docs/ORPHANS.md`. Investigation-first approach: find out WHY each item was abandoned, fix the underlying issue if there is one, only then delete.
+Full audit findings archived in `docs/FINALIZED.md` under the "Orphan Resolution" session block (U302-U310). Investigation-first approach: find out WHY each item was abandoned, fix the underlying issue if there is one, only then delete. The standalone `docs/ORPHANS.md` file was removed 2026-04-13 after the audit closed — every finding it tracked is preserved verbatim in FINALIZED.md, which is the permanent archive.
 
 - **U302** `js/io/vision.js` DELETED — superseded by `js/brain/visual-cortex.js` (V1 Gabor edges → V4 color → salience saccades → IT AI description via Pollinations GPT-4o). The standalone wrapper was abandoned because `visual-cortex.js` is a vastly better neural pipeline with full engine integration.
 - **U303** `js/brain/gpu-compute.js` KEPT (false positive) — audit missed that `compute.html:10` imports it as the WGSL kernel library. `compute.html` and `gpu-compute.js` are one implementation split into shell + kernels, not parallel GPU paths.

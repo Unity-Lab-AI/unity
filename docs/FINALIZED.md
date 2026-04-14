@@ -14,14 +14,20 @@
 
 ## COMPLETED TASKS LOG
 
-## 2026-04-13 Session: R10.8 Cross-reference — ORPHANS.md was already closed
+## 2026-04-13 Session: R10.8 + ORPHANS.md removal
 
-### COMPLETED (pre-existing, cross-reference only)
-- [x] **Task:** R10.8 — Close out `docs/ORPHANS.md` audit. Gee flagged during the R10 remnants pass that this work was already done — the orphan resolution (U302-U310) is what BUILT this refactor, not pending work inside it.
-  - Completed: 2026-04-13 (status reconciliation, not execution — the underlying work shipped earlier)
-  - Verification: ORPHANS.md opened and confirmed to contain inline ✅ resolution markers on all 13 findings (9 HIGH + 4 MED + 1 LOW). Every entry points to the specific U-task that resolved it (U302 vision.js, U303 gpu-compute.js false positive, U304 worker threads, U305 HHNeuron reference + createPopulation, U306 server dictionary, U307 benchmark wiring, U308 env.example.js false positive, U309 meta-tracking, U310 dead UI paths). Every U302-U310 also has its own per-task entry in the "Orphan Resolution" session block at `docs/FINALIZED.md:318`.
-  - No file changes to ORPHANS.md. The doc is internally complete. R10.8 in TODO.md flipped to DONE status in place with a pointer to this cross-reference.
-  - Why it looked pending: R10.8 was added to the R10 plan before Gee reviewed whether the orphan work was already final. It was. The R10 plan had it as "mark all orphan items resolved, add 'audit closed — see ARCHITECTURE.md for current structure'" — but every item was already marked resolved at creation time, and the ARCHITECTURE.md cross-reference isn't load-bearing (ORPHANS.md is a point-in-time audit, not an ongoing reference).
+### COMPLETED
+- [x] **Task:** R10.8 — Close out `docs/ORPHANS.md` audit AND remove the standalone file. Gee flagged during the R10 remnants pass that the orphan resolution work (U302-U310) is what BUILT this refactor, not pending work inside it — then immediately followed up with "we can remove orphans.md" since its content is already preserved in FINALIZED.md.
+  - Completed: 2026-04-13
+  - Files modified: `docs/ORPHANS.md` (DELETED), `README.md`, `docs/ARCHITECTURE.md`, `docs/ROADMAP.md`, `docs/SKILL_TREE.md`, `docs/TODO.md`
+  - Verification before deletion: ORPHANS.md opened and confirmed to contain inline ✅ resolution markers on all 13 findings (9 HIGH + 4 MED + 1 LOW). Every entry pointed to the specific U-task that resolved it (U302 vision.js, U303 gpu-compute.js false positive, U304 worker threads, U305 HHNeuron reference + createPopulation, U306 server dictionary, U307 benchmark wiring, U308 env.example.js false positive, U309 meta-tracking, U310 dead UI paths). Every U302-U310 already had its own per-task entry in the "Orphan Resolution" session block at `docs/FINALIZED.md:318`, so deleting the standalone audit file loses no information — it only removes a redundant copy.
+  - Live references re-pointed to the FINALIZED archive:
+    - `README.md:489` — docs table entry "Orphan Audit" → replaced with "Finalized Archive" pointing at FINALIZED.md (also bumped R1-R10 → R1-R14 in the row above)
+    - `docs/ARCHITECTURE.md:565` — Phase 12 Orphan Resolution paragraph — "audit of 13 findings in `docs/ORPHANS.md`" → "audit of 13 findings (originally tracked in `docs/ORPHANS.md`, now archived permanently in `docs/FINALIZED.md` under the 'Orphan Resolution' session block; the standalone audit file was removed 2026-04-13 after every finding was resolved)"
+    - `docs/ROADMAP.md:342` — Milestone 12.3 header line — "Full audit findings in `docs/ORPHANS.md`" → "Full audit findings archived in `docs/FINALIZED.md` under the 'Orphan Resolution' session block (U302-U310)"
+    - `docs/SKILL_TREE.md:225` — "Orphan resolution audit" skill row — pointer updated from `docs/ORPHANS.md` to `docs/FINALIZED.md`
+  - Intentionally untouched: 8 references in `docs/FINALIZED.md` itself (U302-U310 archive entries listing ORPHANS.md as a file that was modified during the resolution). Per the CLAUDE.md NEVER DELETE FROM FINALIZED rule, historical archive entries describe what was true at commit time and stay frozen. The file path they reference no longer exists but the entries remain accurate as historical record.
+  - Why R10.8 looked pending when we started this R10 remnants pass: it was added to the R10 plan before Gee reviewed whether the orphan work was already final. It was. The R10 plan had it as "mark all orphan items resolved, add 'audit closed — see ARCHITECTURE.md for current structure'" — but every item was already marked resolved at creation time. Gee's call to simply delete the redundant file is the cleanest possible close-out.
 
 ---
 
