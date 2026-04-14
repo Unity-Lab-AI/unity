@@ -676,12 +676,35 @@ export class Brain3D {
       console.log(`[Brain3D] Scaled to ${TOTAL} render neurons (server has ${serverNeurons.toLocaleString()})`);
       // Update scale displays
       const ratio = Math.round(serverNeurons / TOTAL);
+      // Short-form number formatter for the concise landing subtitle.
+      // 20000 → "20k", 677798880 → "678M", 1200000000 → "1.2B".
+      const shortNum = (n) => {
+        if (n >= 1e9) return (n / 1e9).toFixed(1).replace(/\.0$/, '') + 'B';
+        if (n >= 1e6) return (n / 1e6).toFixed(0) + 'M';
+        if (n >= 1e3) return (n / 1e3).toFixed(0) + 'k';
+        return String(n);
+      };
+      const shortRatio = ratio >= 1e6 ? `1:${(ratio / 1e6).toFixed(1)}M`
+                       : ratio >= 1e3 ? `1:${(ratio / 1e3).toFixed(0)}k`
+                       : `1:${ratio}`;
       const scaleInfo = this._overlay?.querySelector('.b3d-scale-info');
       if (scaleInfo) scaleInfo.textContent = `${TOTAL.toLocaleString()} rendered · ${serverNeurons.toLocaleString()} actual (${ratio}:1) · 7 clusters`;
       const actualEl = this._overlay?.querySelector('.b3d-actual-count');
       if (actualEl) actualEl.textContent = serverNeurons.toLocaleString();
       const ratioEl = this._overlay?.querySelector('.b3d-render-ratio');
       if (ratioEl) ratioEl.textContent = `showing 1:${ratio} (${TOTAL.toLocaleString()} of ${serverNeurons.toLocaleString()})`;
+      // T-landing — propagate counts into the landing-page subtitle so
+      // users see the render:real ratio auto-inserted into the headline
+      // copy. Rendered count is driven by TOTAL (which itself scales
+      // from system specs / GPUconfigure resource tier); actual count
+      // comes from the server stats. Both flow through the same
+      // calculation; this just surfaces them into the subtitle spans.
+      const lsRendered = typeof document !== 'undefined' && document.getElementById('ls-rendered-count');
+      if (lsRendered) lsRendered.textContent = shortNum(TOTAL);
+      const lsActual = typeof document !== 'undefined' && document.getElementById('ls-actual-count');
+      if (lsActual) lsActual.textContent = shortNum(serverNeurons);
+      const lsRatio = typeof document !== 'undefined' && document.getElementById('ls-render-ratio');
+      if (lsRatio) lsRatio.textContent = shortRatio;
     }
 
     // R9 — per-cluster spike readout.
