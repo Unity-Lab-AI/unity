@@ -12,6 +12,9 @@ js/env.js
 .claude/pollinations-user.json
 .claude/settings.local.json
 .claude/start.bat
+# Nested duplicate that the Claude Code CLI occasionally writes when
+# invoked from a stray working directory. Not load-bearing, just noise.
+.claude/.claude/
 
 # === Workflow docs — tracked for project documentation ===
 # (Previously ignored as "generated at runtime" but these are real docs now)
