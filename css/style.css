@@ -38,11 +38,24 @@ html, body {
 #setup-modal {
   position: fixed; inset: 0;
   background: rgba(0,0,0,0.9);
-  display: flex; align-items: center; justify-content: center;
+  /* Flex-start vertical + margin:auto on the card = card centers
+     vertically when the viewport is taller than the content, but
+     sticks to the top when the content is taller than the viewport.
+     Classic "align-items:center + overflow" bug workaround: centered
+     flex items can't scroll above the container's top edge, so tall
+     content gets cut off. flex-start + auto-margin fixes it. */
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
   z-index: 10000;
   backdrop-filter: blur(10px);
-  padding: 12px;
+  padding: 20px 12px;
   overflow-y: auto;
+  overflow-x: hidden;
+  /* Make the modal itself the scroll container. `overscroll-behavior
+     :contain` stops scroll events from bubbling to <body> once you
+     reach the modal edges. */
+  overscroll-behavior: contain;
 }
 
 #setup-modal.hidden { display: none; }
@@ -55,6 +68,26 @@ html, body {
   max-width: 1200px;
   width: 96%;
   text-align: center;
+  /* margin:auto = horizontal centering always, vertical centering ONLY
+     when the card fits inside the modal viewport. When content is
+     taller, the card starts at the top and scrolls naturally. */
+  margin: auto;
+  /* Flex items don't shrink below their intrinsic min-content by
+     default, which can push content past the top. Force it. */
+  min-height: 0;
+  box-sizing: border-box;
+}
+
+/* Narrow viewports — tighten horizontal padding so more content fits */
+@media (max-width: 640px) {
+  .setup-card {
+    padding: 16px 14px;
+    width: 100%;
+    border-radius: 10px;
+  }
+  #setup-modal {
+    padding: 12px 6px;
+  }
 }
 
 .setup-card h1 {
