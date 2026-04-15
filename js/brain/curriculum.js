@@ -5712,6 +5712,21 @@ export class Curriculum {
     ], 4);
   }
 
+  async _teachColonialUS() {
+    // T14.24 Session 61 (task #118) — Soc-G5 colonial US. TODO line
+    // 508: "_teachColonialUS() as dated event sequence. Gate:
+    // event-date binding ≥35%". Temporal sequence walks over the
+    // colonial-to-independence arc, keyed by event causality so
+    // the working-memory injectWorkingMemory binding reflects the
+    // real cause→effect chain.
+    return this._teachSequenceCycles([
+      ['jamestown', 'mayflower', 'plymouth', 'colonies', 'trade', 'taxation'],
+      ['stamp act', 'boston massacre', 'tea party', 'declaration', 'revolution', 'yorktown'],
+      ['colonists', 'taxation', 'protest', 'war', 'independence', 'constitution'],
+      ['washington', 'continental army', 'valley forge', 'yorktown', 'treaty', 'presidency'],
+    ], { reps: 4, ticksPerStep: 2 });
+  }
+
   async _teachStateHistory() {
     // T14.24 Session 60 (task #117) — Soc-G4 state history. TODO
     // line 504: "_teachStateHistory() temporal sequence walks. Gate:
@@ -7159,6 +7174,9 @@ export class Curriculum {
       'the founders wrote the bill of rights', 'rights protect the people',
       'freedom of speech is a right', 'freedom of religion is a right',
     ];
+    // T14.24 Session 61 — prime colonial US temporal sequence per
+    // TODO line 508 before the colonial sentence pass.
+    await this._teachColonialUS();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
