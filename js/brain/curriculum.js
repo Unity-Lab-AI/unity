@@ -5712,6 +5712,36 @@ export class Curriculum {
     ], 4);
   }
 
+  async _teachGovBranches() {
+    // T14.24 Session 67 (task #124) — Soc-G11 government branches.
+    // TODO line 530: "_teachGovBranches() three-branch structure.
+    // Gate: branch/role binding ≥30%". 8d features encoding
+    // separation of powers: [0]=legislative, [1]=executive,
+    // [2]=judicial, [3]=makes-law, [4]=enforces-law,
+    // [5]=interprets-law, [6]=elected, [7]=appointed. Each branch
+    // and its key roles share specific dims.
+    return this._conceptTeach([
+      // Legislative
+      { name: 'legislative',  feat: [1, 0, 0, 1, 0, 0, 1, 0] },
+      { name: 'congress',     feat: [1, 0, 0, 1, 0, 0, 1, 0] },
+      { name: 'senate',       feat: [1, 0, 0, 1, 0, 0, 1, 0] },
+      { name: 'house of representatives', feat: [1, 0, 0, 1, 0, 0, 1, 0] },
+      // Executive
+      { name: 'executive',    feat: [0, 1, 0, 0, 1, 0, 1, 0] },
+      { name: 'president',    feat: [0, 1, 0, 0, 1, 0, 1, 0] },
+      { name: 'cabinet',      feat: [0, 1, 0, 0, 1, 0, 0, 1] },
+      { name: 'veto',         feat: [0, 1, 0, 0, 1, 0, 0, 0] },
+      // Judicial
+      { name: 'judicial',     feat: [0, 0, 1, 0, 0, 1, 0, 1] },
+      { name: 'supreme court', feat: [0, 0, 1, 0, 0, 1, 0, 1] },
+      { name: 'justice',      feat: [0, 0, 1, 0, 0, 1, 0, 1] },
+      { name: 'judicial review', feat: [0, 0, 1, 0, 0, 1, 0, 0] },
+      // Cross-cutting
+      { name: 'checks and balances', feat: [1, 1, 1, 0, 0, 0, 0, 0] },
+      { name: 'separation of powers', feat: [1, 1, 1, 0, 0, 0, 0, 0] },
+    ], 4);
+  }
+
   async _teachUS20thCentury() {
     // T14.24 Session 66 (task #123) — Soc-G10 US 20th century. TODO
     // line 526-527: "US history (20th century). Gate ≥30%".
@@ -8728,6 +8758,9 @@ export class Curriculum {
       'the media informs the public', 'public opinion shapes policy',
       'rights come with responsibilities',
     ];
+    // T14.24 Session 67 — prime three-branch structure per TODO
+    // line 530 before the civics sentence pass.
+    await this._teachGovBranches();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
