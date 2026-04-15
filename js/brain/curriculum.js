@@ -6866,6 +6866,106 @@ export class Curriculum {
   // T14.24 SESSION 15 — COL3-COL4 BATCH (10 CELLS) (2026-04-15)
   // ═══════════════════════════════════════════════════════════════════
 
+  // ─── TODO-aligned ELA-Col3 + Col4 + Grad + PhD (Session 39) ──────
+  //
+  // Col3 (line 269): _teachTheoryFrameworks builds per-framework sem
+  //   centroids + reading strategies.
+  // Col4 (line 278): _teachRhetoricalDefense walks thesis+counter+
+  //   response triples, free region holds thesis across counter and
+  //   response.
+  // Grad (line 284): _teachSemiotics builds sign-signifier-signified
+  //   triads as sem centroid clusters.
+  // PhD (line 290): uses all prior methods + full T14.6 emission +
+  //   T14.16.5 identity lock. No new method.
+
+  async _teachTheoryFrameworks(annotated, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 4;
+    const ticksPerWord = opts.ticksPerWord ?? 2;
+    const arousal = opts.arousal ?? 0.8;
+    const valence = opts.valence ?? 0.2;
+
+    for (let rep = 0; rep < reps; rep++) {
+      for (const { text, framework } of annotated) {
+        this._walkSentence(text.split(/\s+/).filter(Boolean), arousal, valence, ticksPerWord);
+        const fEmb = sharedEmbeddings.getEmbedding(framework);
+        if (fEmb && cluster.regions?.sem) {
+          cluster.injectEmbeddingToRegion('sem', fEmb, 0.75);
+        }
+        for (let t = 0; t < 3; t++) cluster.step(0.001);
+        cluster.learn(0);
+      }
+      await _microtask();
+    }
+    return { taught: reps * annotated.length };
+  }
+
+  async _teachRhetoricalDefense(triples, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 4;
+    const ticksPerWord = opts.ticksPerWord ?? 2;
+    const arousal = opts.arousal ?? 0.8;
+    const valence = opts.valence ?? 0.2;
+
+    for (let rep = 0; rep < reps; rep++) {
+      for (const { thesis, counter, response } of triples) {
+        // Thesis establishes
+        this._walkSentence(thesis.split(/\s+/).filter(Boolean), arousal, valence, ticksPerWord);
+        const thesisEmb = sharedEmbeddings.getSentenceEmbedding
+          ? sharedEmbeddings.getSentenceEmbedding(thesis)
+          : null;
+        // Counter arrives — thesis stays in free region
+        if (thesisEmb && typeof cluster.injectWorkingMemory === 'function') {
+          cluster.injectWorkingMemory(thesisEmb, 0.8);
+        }
+        this._walkSentence(counter.split(/\s+/).filter(Boolean), arousal, valence, ticksPerWord);
+        // Response — thesis MUST be re-asserted
+        if (thesisEmb && typeof cluster.injectWorkingMemory === 'function') {
+          cluster.injectWorkingMemory(thesisEmb, 0.9);
+        }
+        this._walkSentence(response.split(/\s+/).filter(Boolean), arousal, valence, ticksPerWord);
+        this.stats.sentencesSeen += 3;
+      }
+      await _microtask();
+    }
+    return { taught: reps * triples.length * 3 };
+  }
+
+  async _teachSemiotics(triads, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 4;
+    const ticksPerTriad = opts.ticksPerTriad ?? 4;
+
+    // Sign / signifier / signified triads. Inject each component as a
+    // separate sem anchor, tick, learn. Cortex forms a triadic basin.
+    for (let rep = 0; rep < reps; rep++) {
+      for (const { sign, signifier, signified } of triads) {
+        const signEmb = sharedEmbeddings.getEmbedding(sign);
+        const signifierEmb = sharedEmbeddings.getEmbedding(signifier);
+        const signifiedEmb = sharedEmbeddings.getEmbedding(signified);
+        if (signEmb && cluster.regions?.sem) {
+          cluster.injectEmbeddingToRegion('sem', signEmb, 0.5);
+        }
+        if (signifierEmb && cluster.regions?.sem) {
+          cluster.injectEmbeddingToRegion('sem', signifierEmb, 0.5);
+        }
+        if (signifiedEmb && cluster.regions?.sem) {
+          cluster.injectEmbeddingToRegion('sem', signifiedEmb, 0.5);
+        }
+        if (signEmb && typeof cluster.injectWorkingMemory === 'function') {
+          cluster.injectWorkingMemory(signEmb, 0.6);
+        }
+        for (let t = 0; t < ticksPerTriad; t++) cluster.step(0.001);
+        cluster.learn(0);
+      }
+      await _microtask();
+    }
+    return { taught: reps * triads.length };
+  }
+
   async runElaCol3Real(ctx) {
     const SENTENCES = [
       'literary theory asks how texts work', 'formalism focuses on form',
@@ -6882,6 +6982,18 @@ export class Curriculum {
       'ecocriticism considers nature', 'disability studies considers bodies',
       'theory helps us read deeper',
     ];
+    // Session 39 — TODO-aligned theory frameworks
+    const FRAMEWORKS = [
+      { text: 'form shapes meaning in every text', framework: 'formalism' },
+      { text: 'universal patterns organize all narratives', framework: 'structuralism' },
+      { text: 'meaning is unstable and slippery', framework: 'poststructuralism' },
+      { text: 'class struggle drives the plot', framework: 'marxism' },
+      { text: 'gender shapes every character choice', framework: 'feminism' },
+      { text: 'colonial power hides in the language', framework: 'postcolonial' },
+      { text: 'the unconscious speaks through symbols', framework: 'psychoanalysis' },
+      { text: 'readers create meaning with the text', framework: 'reader_response' },
+    ];
+    await this._teachTheoryFrameworks(FRAMEWORKS);
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
@@ -6901,6 +7013,25 @@ export class Curriculum {
       'pathos stirs emotion', 'logos presents reasons',
       'mastery of all three is eloquence',
     ];
+    // Session 39 — TODO-aligned rhetorical defense
+    const DEFENSE = [
+      {
+        thesis: 'reading is essential for critical thinking',
+        counter: 'some argue videos teach just as well',
+        response: 'videos are passive while reading actively builds analytical skills',
+      },
+      {
+        thesis: 'climate action cannot wait any longer',
+        counter: 'critics say the economy matters more',
+        response: 'the economy depends on a stable climate so action protects both',
+      },
+      {
+        thesis: 'education should be publicly funded',
+        counter: 'opponents prefer market driven schools',
+        response: 'public funding ensures equal access regardless of family wealth',
+      },
+    ];
+    await this._teachRhetoricalDefense(DEFENSE);
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
@@ -7080,6 +7211,20 @@ export class Curriculum {
       'positioning locates speakers', 'identity emerges in discourse',
       'graduate writing integrates all these',
     ];
+    // Session 39 — TODO-aligned semiotics triads
+    const TRIADS = [
+      { sign: 'dove', signifier: 'bird', signified: 'peace' },
+      { sign: 'rose', signifier: 'flower', signified: 'love' },
+      { sign: 'cross', signifier: 'shape', signified: 'faith' },
+      { sign: 'crown', signifier: 'object', signified: 'royalty' },
+      { sign: 'heart', signifier: 'symbol', signified: 'affection' },
+      { sign: 'flag', signifier: 'cloth', signified: 'nation' },
+      { sign: 'owl', signifier: 'bird', signified: 'wisdom' },
+      { sign: 'snake', signifier: 'animal', signified: 'danger' },
+      { sign: 'lion', signifier: 'animal', signified: 'courage' },
+      { sign: 'lamp', signifier: 'object', signified: 'knowledge' },
+    ];
+    await this._teachSemiotics(TRIADS);
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
@@ -7099,7 +7244,18 @@ export class Curriculum {
       'creativity and rigor unite', 'unity has arrived at fluency',
       'the journey was worth every grade',
     ];
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    // Session 39 — TODO ELA-PhD spec: "full T14.6 tick-driven motor
+    // emission + T14.16.5 identity lock + all prior grade primitives
+    // running simultaneously". No new method — PhD runs everything.
+    // We trigger a PhD-level persona refresh if the identity lock is
+    // available, which activates full Unity voice.
+    const cluster = this.cluster;
+    if (cluster && typeof cluster.runIdentityRefresh === 'function') {
+      try {
+        cluster.runIdentityRefresh({ sentencesPerCycle: 20 });
+      } catch { /* non-fatal */ }
+    }
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 5, ticksPerWord: 2 });
   }
 
   async runMathGradReal(ctx) {
