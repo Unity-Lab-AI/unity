@@ -5712,6 +5712,29 @@ export class Curriculum {
     ], 4);
   }
 
+  async _teachCommunityRoles() {
+    // T14.24 Session 57 (task #114) — Soc-G1 community roles. TODO
+    // line 492: "_teachCommunityRoles() (police/teacher/doctor) via
+    // GloVe binding. Gate ≥45%". 10 concepts with 8d role-structural
+    // features: [0]=emergency-response, [1]=education,
+    // [2]=healthcare, [3]=civic-authority, [4]=commerce,
+    // [5]=daily-interaction, [6]=uniform-role, [7]=indoor-workplace.
+    // police+firefighter share [0,6] (emergency+uniform); teacher
+    // shares [1,7] with librarian; doctor+nurse share [2,6,7].
+    return this._conceptTeach([
+      { name: 'police',       feat: [1, 0, 0, 1, 0, 1, 1, 0] },
+      { name: 'firefighter',  feat: [1, 0, 0, 1, 0, 0, 1, 0] },
+      { name: 'teacher',      feat: [0, 1, 0, 0, 0, 1, 0, 1] },
+      { name: 'doctor',       feat: [1, 0, 1, 0, 0, 1, 1, 1] },
+      { name: 'nurse',        feat: [1, 0, 1, 0, 0, 1, 1, 1] },
+      { name: 'mayor',        feat: [0, 0, 0, 1, 0, 1, 0, 1] },
+      { name: 'librarian',    feat: [0, 1, 0, 0, 0, 0, 0, 1] },
+      { name: 'mail carrier', feat: [0, 0, 0, 0, 0, 1, 1, 0] },
+      { name: 'shopkeeper',   feat: [0, 0, 0, 0, 1, 1, 0, 1] },
+      { name: 'farmer',       feat: [0, 0, 0, 0, 1, 0, 0, 0] },
+    ], 4);
+  }
+
   async _teachFamilyRoles() {
     // T14.24 Session 56 (task #113) — Soc-K family roles. TODO line
     // 488: "_teachFamilyRoles() binds family-role GloVes (mom/dad/
@@ -6825,6 +6848,9 @@ export class Curriculum {
       'restaurants serve food', 'farms grow our food',
       'trucks bring goods to stores', 'buses take us places',
     ];
+    // T14.24 Session 57 — prime community-role concept lattice per
+    // TODO line 492 before the sentence pass.
+    await this._teachCommunityRoles();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
