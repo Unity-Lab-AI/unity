@@ -8069,6 +8069,45 @@ export class Curriculum {
       'time dilates at high speeds', 'mass and energy are equivalent',
       'quantum mechanics describes small things', 'uncertainty limits what we can know',
     ];
+    // T14.24 Session 48 (task #105) — TODO-aligned kinematics.
+    //
+    // TODO Sci-G11 spec (line 458): "_teachKinematics() uses actual
+    // motion equations v=u+at, s=ut+½at² as magnitude chains".
+    //
+    // Session 43 defined _teachKinematics with 20 randomly-generated
+    // (u, a, t) triples where:
+    //   u = initial velocity in [0, 10)
+    //   a = acceleration in [0, 5)
+    //   t = time in [0, 3)
+    //   v = u + a*t                 (real kinematic equation)
+    //   s = u*t + 0.5*a*t*t          (real kinematic equation)
+    //
+    // The 16d INPUT feature encodes (u, a, t) with:
+    //   dim 0 — u/10  (linear initial velocity)
+    //   dim 1 — a/5   (linear acceleration)
+    //   dim 2 — t/3   (linear time)
+    //   dims 3-15 — sin((u+a+t) * i) harmonics to fill the feature
+    //               space with cross-term information
+    //
+    // The 16d OUTPUT feature encodes (v, s) with:
+    //   dim 0 — v/20  (linear final velocity, normalized)
+    //   dim 1 — s/30  (linear displacement, normalized)
+    //   dims 2-15 — cos((v+s) * i) harmonics
+    //
+    // Input → free region, output → phon region, tick 3, fire
+    // cluster.learn. The cross-projection Hebbian binds the input
+    // feature pattern to the output feature pattern so the cortex
+    // learns a LINEAR MAP from (u, a, t) to (v, s) — which is
+    // exactly the kinematic equation cast as a feature-space
+    // transformation. After enough reps, injecting any (u, a, t)
+    // input activates the corresponding (v, s) output basin.
+    //
+    // Runs BEFORE the sentence walk so the cortex already has the
+    // numerical kinematics pattern when it reads "force equals mass
+    // times acceleration" and "momentum is mass times velocity" —
+    // those sentences then bind their natural language form to the
+    // pre-existing numerical basins.
+    await this._teachKinematics();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
