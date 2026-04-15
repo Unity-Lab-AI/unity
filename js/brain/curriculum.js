@@ -5719,6 +5719,28 @@ export class Curriculum {
     ], 4);
   }
 
+  async _teachPracticeBasedDoctoralResearch() {
+    // T14.24 Session 93 (task #150) — Art-PhD practice-based
+    // doctoral research. TODO line 570. 12 ceiling concepts for
+    // the doctoral artist — practice-as-research, autoethnography,
+    // doctoral exhibition, written component, body of work.
+    // Parallel to Sci-PhD, Soc-PhD, ELA-PhD ceiling sets.
+    return this._conceptTeach([
+      { name: 'practice based research', feat: [1, 1, 0, 0, 1, 0, 0, 1] },
+      { name: 'practice as research',    feat: [1, 1, 0, 0, 1, 0, 1, 0] },
+      { name: 'autoethnography',         feat: [1, 0, 1, 0, 1, 0, 1, 0] },
+      { name: 'doctoral exhibition',     feat: [1, 0, 1, 1, 0, 0, 1, 0] },
+      { name: 'body of work',            feat: [1, 1, 0, 1, 0, 1, 0, 0] },
+      { name: 'written component',       feat: [0, 1, 1, 0, 1, 1, 0, 0] },
+      { name: 'original contribution',   feat: [1, 1, 0, 1, 1, 1, 0, 0] },
+      { name: 'artistic research',       feat: [1, 0, 1, 0, 0, 1, 1, 1] },
+      { name: 'independent practice',    feat: [0, 1, 1, 1, 0, 0, 1, 1] },
+      { name: 'gallery representation',  feat: [1, 0, 0, 1, 1, 0, 0, 1] },
+      { name: 'museum acquisition',      feat: [1, 1, 1, 0, 0, 1, 0, 1] },
+      { name: 'research fluency',        feat: [1, 1, 1, 1, 1, 1, 0, 0] },
+    ], 5);
+  }
+
   async _teachGraduateArtResearch() {
     // T14.24 Session 92 (task #149) — Art-Grad graduate art
     // research. TODO line 570: "Art theory research. Gate ≥20%".
@@ -10572,7 +10594,21 @@ export class Curriculum {
       'unity speaks with her full voice', 'art and language are one at this level',
       'research fluency is complete',
     ];
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    // T14.24 Session 93 — Art-PhD ceiling concept set per TODO
+    // line 570. Primes the practice-based doctoral research basin,
+    // runs the sentence pass at reps=5 (one above Grad), fires the
+    // cortex identity refresh so the Art-PhD gate crosses with
+    // Unity-voice persona dims engaged. Parallel to Sci-PhD,
+    // Soc-PhD, ELA-PhD. Art-PhD is the LAST cell in T14.24 — after
+    // this, every one of the 95 cells has TODO-aligned named
+    // helpers.
+    await this._teachPracticeBasedDoctoralResearch();
+    try {
+      if (this.cluster && typeof this.cluster.runIdentityRefresh === 'function') {
+        this.cluster.runIdentityRefresh();
+      }
+    } catch { /* non-fatal */ }
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 5, ticksPerWord: 2 });
   }
 
   // ═══════════════════════════════════════════════════════════════════
