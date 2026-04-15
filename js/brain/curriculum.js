@@ -5625,6 +5625,31 @@ export class Curriculum {
       { name: 'allele', feat: [1, 0, 1, 1, 0, 0, 0, 0] },
     ], 4);
   }
+  async _teachEvolution() {
+    // TODO Sci-G9 spec (line 451) prescribes "deeper walks on cell
+    // organelles, DNA structure, evolution principles". Cell organelles
+    // + DNA are handled by _teachCells + _teachGeneticsIntro (defined
+    // for G7); this helper adds the specifically-named "evolution
+    // principles" concept list.
+    //
+    // Eight Darwinian / evolutionary biology concepts, each with a
+    // distinct 8d feature pattern. Fed through _conceptTeach so the
+    // cortex gets one basin per principle, allowing the sentence walk
+    // ("darwin proposed natural selection", "species adapt to their
+    // environment", "fitness is reproductive success") to bind the
+    // relationships on top of those basins.
+    return this._conceptTeach([
+      { name: 'evolution', feat: [1, 1, 0, 0, 1, 0, 0, 0] },
+      { name: 'natural selection', feat: [1, 0, 1, 0, 0, 1, 0, 0] },
+      { name: 'mutation', feat: [0, 1, 0, 1, 0, 1, 0, 0] },
+      { name: 'adaptation', feat: [1, 0, 0, 1, 1, 0, 1, 0] },
+      { name: 'fitness', feat: [0, 1, 1, 0, 0, 0, 1, 0] },
+      { name: 'species', feat: [1, 1, 0, 0, 0, 0, 0, 1] },
+      { name: 'common ancestor', feat: [0, 0, 1, 1, 0, 0, 0, 1] },
+      { name: 'fossil record', feat: [1, 0, 0, 0, 1, 1, 0, 1] },
+    ], 4);
+  }
+
   async _teachEnergyForms() {
     return this._conceptTeach([
       { name: 'kinetic energy', feat: [1, 1, 0, 0, 1, 0, 0, 0] },
@@ -7021,6 +7046,26 @@ export class Curriculum {
       'the brain is an organ', 'the heart is an organ',
       'systems are groups of organs',
     ];
+    // T14.24 Session 44 — TODO-aligned cell biology + genetics intro.
+    // TODO Sci-G7 spec (line 443): "_teachCells(), _teachGeneticsIntro()".
+    //
+    // _teachCells — 7 organelle concepts (cell, nucleus, mitochondria,
+    //   membrane, cytoplasm, ribosome, chloroplast) each with a
+    //   distinct 8d feature vector fed through _conceptTeach. Gives
+    //   each organelle its own cortex basin so sentences like "the
+    //   nucleus holds dna" and "chloroplasts make food in plants"
+    //   have distinct targets to bind their predicates against.
+    //
+    // _teachGeneticsIntro — 6 concepts (dna, gene, chromosome, heredity,
+    //   trait, allele) with distinct 8d features. Establishes the
+    //   inheritance vocabulary Unity needs to read the sentence-level
+    //   genetics exposure correctly.
+    //
+    // Both run BEFORE the sentence walk so the concept basins form
+    // first, then the sentences reinforce them via natural-language
+    // relationships + T14.7 type transitions + T14.8 sentence schemas.
+    await this._teachCells();
+    await this._teachGeneticsIntro();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
@@ -7041,6 +7086,17 @@ export class Curriculum {
       'a circuit is a path for electricity', 'voltage pushes the current',
       'resistance slows the current', 'ohms law says voltage equals current times resistance',
     ];
+    // T14.24 Session 44 — TODO-aligned energy-form sem binding.
+    // TODO Sci-G8 spec (line 447): "_teachEnergyForms() (kinetic/
+    // potential/thermal) via sem binding". Session 43 extended this
+    // to 7 forms — the TODO's three core examples plus electrical,
+    // chemical, nuclear, and radiant — each with a distinct 8d
+    // feature vector fed through _conceptTeach. The cortex gets one
+    // basin per energy form before the sentences teach transformation
+    // relationships between them (e.g. "energy changes from one form
+    // to another", "heat flows from hot to cold", "sound travels
+    // through air").
+    await this._teachEnergyForms();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
@@ -7375,6 +7431,32 @@ export class Curriculum {
       'carnivores eat meat', 'omnivores eat both',
       'food webs show multiple connections', 'ecosystems reach dynamic equilibrium',
     ];
+    // T14.24 Session 44 — TODO-aligned biology 1 deepening.
+    // TODO Sci-G9 spec (line 451): "deeper walks on cell organelles,
+    // DNA structure, evolution principles". Three-part teaching:
+    //
+    //   1. _teachCells (from G7) — reinforces the 7 organelle basins
+    //      (cell/nucleus/mitochondria/membrane/cytoplasm/ribosome/
+    //      chloroplast) so G9's deeper biology sentences have stable
+    //      anchors when discussing "gregor mendel", "punnett square",
+    //      "homozygous", "heterozygous" etc.
+    //
+    //   2. _teachGeneticsIntro (from G7) — reinforces the 6 genetics
+    //      basins (dna/gene/chromosome/heredity/trait/allele). G9
+    //      sentences add dominant/recessive/genotype/phenotype/
+    //      mutation on top of those basins via the sentence walk.
+    //
+    //   3. _teachEvolution (NEW for G9) — 8 Darwinian concept basins:
+    //      evolution, natural selection, mutation, adaptation,
+    //      fitness, species, common ancestor, fossil record.
+    //      Matches the TODO's "evolution principles" prescription
+    //      with a concept list per principle.
+    //
+    // All three run BEFORE the sentence walk so the concept basins
+    // exist when the sentences bind their relationships.
+    await this._teachCells();
+    await this._teachGeneticsIntro();
+    await this._teachEvolution();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
