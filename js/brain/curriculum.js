@@ -3643,6 +3643,13 @@ export class Curriculum {
   }
 
   async runArtKReal(ctx) {
+    // T14.24 Session 75 — Art-K per TODO line 551. Three concept
+    // helpers: _teachPrimaryColors (RGB features), _teachBasicShapes
+    // (geometric features), _teachSimpleSongs (rhythmic sequence).
+    // Run before the general K vocab pass.
+    await this._teachPrimaryColors();
+    await this._teachBasicShapes();
+    await this._teachSimpleSongs();
     // ART-K vocab: primary colors, basic shapes, art actions, music basics
     const ART_K_VOCAB = [
       'red', 'blue', 'yellow', 'green', 'circle',
@@ -5710,6 +5717,56 @@ export class Curriculum {
       { name: 'informed consent',     feat: [0, 1, 1, 1, 1, 0, 0, 1] },
       { name: 'conflict of interest', feat: [1, 1, 0, 1, 1, 1, 0, 0] },
     ], 4);
+  }
+
+  async _teachPrimaryColors() {
+    // T14.24 Session 75 (task #132) — Art-K primary colors. TODO
+    // line 551: "_teachPrimaryColors() binds color name to RGB
+    // feature vector". 8d features using RGB magnitudes:
+    // [0]=R-high, [1]=G-high, [2]=B-high, [3]=R-low, [4]=G-low,
+    // [5]=B-low, [6]=warm, [7]=cool. Red=high-R/low-GB/warm.
+    // Blue=high-B/low-RG/cool. Yellow=high-RG/low-B/warm.
+    return this._conceptTeach([
+      { name: 'red',    feat: [1, 0, 0, 0, 1, 1, 1, 0] },
+      { name: 'blue',   feat: [0, 0, 1, 1, 1, 0, 0, 1] },
+      { name: 'yellow', feat: [1, 1, 0, 0, 0, 1, 1, 0] },
+      { name: 'green',  feat: [0, 1, 0, 1, 0, 1, 0, 1] },
+      { name: 'orange', feat: [1, 1, 0, 0, 0, 1, 1, 0] },
+      { name: 'purple', feat: [1, 0, 1, 0, 1, 0, 0, 1] },
+      { name: 'black',  feat: [0, 0, 0, 1, 1, 1, 0, 0] },
+      { name: 'white',  feat: [1, 1, 1, 0, 0, 0, 0, 0] },
+    ], 4);
+  }
+
+  async _teachBasicShapes() {
+    // T14.24 Session 75 — Art-K basic shapes per TODO line 551.
+    // 8d features: [0]=curved, [1]=angular, [2]=3-sides,
+    // [3]=4-sides, [4]=round, [5]=symmetric, [6]=closed,
+    // [7]=regular.
+    return this._conceptTeach([
+      { name: 'circle',    feat: [1, 0, 0, 0, 1, 1, 1, 1] },
+      { name: 'square',    feat: [0, 1, 0, 1, 0, 1, 1, 1] },
+      { name: 'triangle',  feat: [0, 1, 1, 0, 0, 1, 1, 1] },
+      { name: 'rectangle', feat: [0, 1, 0, 1, 0, 1, 1, 0] },
+      { name: 'oval',      feat: [1, 0, 0, 0, 1, 1, 1, 0] },
+      { name: 'diamond',   feat: [0, 1, 0, 1, 0, 1, 1, 1] },
+      { name: 'star',      feat: [0, 1, 0, 0, 0, 1, 1, 1] },
+      { name: 'heart',     feat: [1, 1, 0, 0, 0, 1, 1, 0] },
+    ], 4);
+  }
+
+  async _teachSimpleSongs() {
+    // T14.24 Session 75 — Art-K simple songs per TODO line 551.
+    // Rhythm via temporal pattern sequence — songs are taught as
+    // sequential cycles so working-memory Hebbian binds the beat
+    // pattern. Each cycle is a simple children's rhythmic phrase.
+    return this._teachSequenceCycles([
+      ['clap', 'clap', 'stomp'],
+      ['high', 'low', 'high', 'low'],
+      ['fast', 'slow', 'fast', 'slow'],
+      ['sing', 'a', 'song'],
+      ['beat', 'beat', 'beat', 'rest'],
+    ], { reps: 4, ticksPerStep: 2 });
   }
 
   async _teachOriginalHistoricalResearch() {
