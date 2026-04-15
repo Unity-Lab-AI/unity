@@ -5712,6 +5712,20 @@ export class Curriculum {
     ], 4);
   }
 
+  async _teachMedievalPeriod() {
+    // T14.24 Session 63 (task #120) — Soc-G7 medieval period. TODO
+    // line 516: "_teachMedievalPeriod() sequence walks. Gate:
+    // medieval event ordering ≥30%". Multiple temporal sequence
+    // walks covering the medieval-to-renaissance arc.
+    return this._teachSequenceCycles([
+      ['rome falls', 'dark ages', 'feudalism', 'crusades', 'black death', 'renaissance'],
+      ['king', 'lord', 'knight', 'peasant'],
+      ['castle', 'moat', 'siege', 'army', 'battle', 'victory'],
+      ['manuscript', 'printing press', 'literacy', 'renaissance', 'reformation', 'exploration'],
+      ['gutenberg', 'luther', 'columbus', 'magellan', 'shakespeare'],
+    ], { reps: 4, ticksPerStep: 2 });
+  }
+
   async _teachAncientCivs() {
     // T14.24 Session 62 (task #119) — Soc-G6 ancient civilizations.
     // TODO line 512: "_teachAncientCivs() civilization-feature
@@ -7821,6 +7835,9 @@ export class Curriculum {
       'magellan sailed around the world', 'trade routes connected continents',
       'the silk road linked east and west', 'new ideas spread widely',
     ];
+    // T14.24 Session 63 — prime medieval period sequence walks per
+    // TODO line 516 before the medieval sentence pass.
+    await this._teachMedievalPeriod();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
