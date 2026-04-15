@@ -6483,6 +6483,173 @@ export class Curriculum {
   // ═══════════════════════════════════════════════════════════════════
   // College year 1 + 2 across all 5 subjects.
 
+  // ─── TODO-aligned ELA-Col1 + Col2 helpers (Session 38) ───────────
+  //
+  // ELA-Col1 (line 252): _teachMultiSourceSynthesis(essays) walks
+  //   essays that cite 3+ sources, injects each source anchor
+  //   separately, binds to thesis.
+  // ELA-Col2 (line 260): _teachPhonology extends phoneme features with
+  //   feature bundles. _teachMorphology walks root+affix pairs.
+  //   _teachSyntax builds parse-tree via recursive schema.
+
+  async _teachMultiSourceSynthesis(essays, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 3;
+    const ticksPerWord = opts.ticksPerWord ?? 2;
+    const arousal = opts.arousal ?? 0.8;
+    const valence = opts.valence ?? 0.2;
+
+    for (let rep = 0; rep < reps; rep++) {
+      for (const { thesis, sources } of essays) {
+        // Walk thesis
+        this._walkSentence(thesis.split(/\s+/).filter(Boolean), arousal, valence, ticksPerWord);
+        const thesisEmb = sharedEmbeddings.getSentenceEmbedding
+          ? sharedEmbeddings.getSentenceEmbedding(thesis)
+          : null;
+        // Walk each source with BOTH thesis and source-name in working memory
+        for (const { name, claim } of sources) {
+          if (thesisEmb && typeof cluster.injectWorkingMemory === 'function') {
+            cluster.injectWorkingMemory(thesisEmb, 0.6);
+          }
+          const sourceEmb = sharedEmbeddings.getEmbedding(name);
+          if (sourceEmb && cluster.regions?.sem) {
+            cluster.injectEmbeddingToRegion('sem', sourceEmb, 0.5);
+          }
+          this._walkSentence(claim.split(/\s+/).filter(Boolean), arousal, valence, ticksPerWord);
+        }
+        this.stats.sentencesSeen++;
+      }
+      await _microtask();
+    }
+    return { taught: reps * essays.length };
+  }
+
+  async _teachPhonology(opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 4;
+    const ticksPerRep = opts.ticksPerRep ?? 3;
+
+    // Phoneme feature bundles — extends ELA-K letter-sound basins with
+    // broader phonological groupings (voiced/unvoiced, vowel/consonant,
+    // nasal/stop/fricative). Groups of letters share a bundle feature
+    // that gets injected alongside the letter one-hot.
+    const GROUPS = {
+      vowels: 'aeiou',
+      voiced_stops: 'bdg',
+      unvoiced_stops: 'ptk',
+      voiced_fricatives: 'vzj',
+      unvoiced_fricatives: 'fsh',
+      nasals: 'mn',
+      liquids: 'lr',
+    };
+
+    for (let rep = 0; rep < reps; rep++) {
+      for (const [groupName, letters] of Object.entries(GROUPS)) {
+        const groupEmb = sharedEmbeddings.getEmbedding(groupName);
+        for (const letter of letters) {
+          cluster.injectLetter(letter, 1.0);
+          if (groupEmb && cluster.regions?.sem) {
+            cluster.injectEmbeddingToRegion('sem', groupEmb, 0.5);
+          }
+          const phonFeat = _phonemeFeatureForLetter(letter);
+          if (phonFeat && cluster.regions?.phon) {
+            cluster.injectEmbeddingToRegion('phon', phonFeat, 0.6);
+          }
+          for (let t = 0; t < ticksPerRep; t++) cluster.step(0.001);
+          cluster.learn(0);
+        }
+      }
+      await _microtask();
+    }
+    return { taught: reps };
+  }
+
+  async _teachMorphology(opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 5;
+    const ticksPerPair = opts.ticksPerPair ?? 3;
+
+    // Root + affix pairs. Prefixes and suffixes teach the cortex the
+    // morphological decomposition pattern via letter-region sequence
+    // Hebbian on the shared root + divergent affix.
+    const PAIRS = [
+      ['happy', 'unhappy'], ['do', 'redo'], ['write', 'rewrite'],
+      ['agree', 'disagree'], ['like', 'dislike'], ['able', 'unable'],
+      ['teach', 'teacher'], ['paint', 'painter'], ['read', 'reader'],
+      ['write', 'writer'], ['play', 'player'], ['sing', 'singer'],
+      ['kind', 'kindness'], ['happy', 'happiness'], ['dark', 'darkness'],
+      ['friend', 'friendly'], ['love', 'lovely'], ['quick', 'quickly'],
+      ['slow', 'slowly'], ['soft', 'softly'],
+    ];
+
+    for (let rep = 0; rep < reps; rep++) {
+      for (const [root, derived] of PAIRS) {
+        // Walk root
+        const rootEmb = sharedEmbeddings.getEmbedding(root);
+        if (rootEmb && cluster.regions?.sem) {
+          cluster.injectEmbeddingToRegion('sem', rootEmb, 0.5);
+        }
+        for (const ch of root) {
+          cluster.injectLetter(ch, 1.0);
+          for (let t = 0; t < ticksPerPair; t++) cluster.step(0.001);
+        }
+        cluster.learn(0);
+        // Walk derived
+        const derivedEmb = sharedEmbeddings.getEmbedding(derived);
+        if (derivedEmb && cluster.regions?.sem) {
+          cluster.injectEmbeddingToRegion('sem', derivedEmb, 0.5);
+        }
+        for (const ch of derived) {
+          cluster.injectLetter(ch, 1.0);
+          for (let t = 0; t < ticksPerPair; t++) cluster.step(0.001);
+        }
+        cluster.learn(0);
+      }
+      await _microtask();
+    }
+    return { taught: reps * PAIRS.length * 2 };
+  }
+
+  async _teachSyntax(opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 4;
+    const ticksPerWord = opts.ticksPerWord ?? 2;
+    const arousal = opts.arousal ?? 0.8;
+    const valence = opts.valence ?? 0.2;
+
+    // Parse-tree teaching via sentences with labeled structural
+    // patterns. Each sentence is walked and the structure label is
+    // injected as a sem anchor.
+    const SENTENCES = [
+      { text: 'the big dog ran fast', structure: 'np_vp' },
+      { text: 'she gave him the book', structure: 'ditransitive' },
+      { text: 'the cat that slept was happy', structure: 'relative_clause' },
+      { text: 'walking home she saw a bird', structure: 'participial' },
+      { text: 'to win the game they practiced', structure: 'infinitive' },
+      { text: 'when the rain stopped we left', structure: 'adverbial' },
+      { text: 'the book on the table is red', structure: 'prepositional' },
+      { text: 'running fast is exhausting', structure: 'gerund' },
+    ];
+
+    for (let rep = 0; rep < reps; rep++) {
+      for (const { text, structure } of SENTENCES) {
+        this._walkSentence(text.split(/\s+/).filter(Boolean), arousal, valence, ticksPerWord);
+        const structureEmb = sharedEmbeddings.getEmbedding(structure);
+        if (structureEmb && cluster.regions?.sem) {
+          cluster.injectEmbeddingToRegion('sem', structureEmb, 0.65);
+        }
+        for (let t = 0; t < 3; t++) cluster.step(0.001);
+        cluster.learn(0);
+      }
+      await _microtask();
+    }
+    return { taught: reps * SENTENCES.length };
+  }
+
   async runElaCol1Real(ctx) {
     const SENTENCES = [
       'college composition builds on high school', 'academic writing is formal',
@@ -6499,6 +6666,26 @@ export class Curriculum {
       'the humanities favor narrative', 'the sciences favor data',
       'every essay has a purpose', 'writing is thinking made visible',
     ];
+    // Session 38 — TODO-aligned multi-source synthesis
+    const MULTI_ESSAYS = [
+      {
+        thesis: 'climate change requires urgent action',
+        sources: [
+          { name: 'science', claim: 'ipcc reports confirm rising temperatures' },
+          { name: 'economics', claim: 'stern review shows the cost of inaction exceeds cost of action' },
+          { name: 'policy', claim: 'paris agreement sets international reduction targets' },
+        ],
+      },
+      {
+        thesis: 'early childhood education shapes lifelong outcomes',
+        sources: [
+          { name: 'psychology', claim: 'heckman studies show early investments pay off later' },
+          { name: 'neuroscience', claim: 'brain development peaks in the first five years' },
+          { name: 'economics', claim: 'every dollar spent early returns seven dollars' },
+        ],
+      },
+    ];
+    await this._teachMultiSourceSynthesis(MULTI_ESSAYS);
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
@@ -6518,6 +6705,10 @@ export class Curriculum {
       'sociolinguistics studies language and society', 'psycholinguistics studies the mind',
       'applied linguistics solves problems',
     ];
+    // Session 38 — TODO-aligned linguistics trio
+    await this._teachPhonology();
+    await this._teachMorphology();
+    await this._teachSyntax();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
