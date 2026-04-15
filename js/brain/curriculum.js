@@ -5712,6 +5712,27 @@ export class Curriculum {
     ], 4);
   }
 
+  async _teachResearchHistoriography() {
+    // T14.24 Session 73 (task #130) — Soc-Grad research
+    // historiography. TODO line 540-541: "Research historiography.
+    // Gate ≥15%". 12 grad-level concepts covering the historian's
+    // craft at research depth.
+    return this._conceptTeach([
+      { name: 'archival research',    feat: [1, 1, 0, 0, 1, 0, 0, 1] },
+      { name: 'source criticism',     feat: [1, 0, 1, 0, 1, 0, 1, 0] },
+      { name: 'periodization',        feat: [0, 1, 1, 0, 1, 0, 1, 0] },
+      { name: 'longue duree',         feat: [1, 0, 0, 1, 0, 1, 0, 1] },
+      { name: 'revisionism',          feat: [0, 1, 0, 1, 1, 0, 1, 0] },
+      { name: 'public history',       feat: [0, 1, 1, 0, 0, 1, 1, 0] },
+      { name: 'digital humanities',   feat: [1, 1, 0, 0, 0, 1, 0, 1] },
+      { name: 'narrative history',    feat: [0, 1, 0, 1, 0, 1, 1, 0] },
+      { name: 'quantitative history', feat: [1, 0, 1, 0, 1, 0, 0, 1] },
+      { name: 'world systems theory', feat: [1, 1, 0, 1, 1, 0, 0, 1] },
+      { name: 'postcolonial theory',  feat: [1, 0, 1, 1, 0, 1, 0, 1] },
+      { name: 'dissertation advisor', feat: [0, 1, 1, 1, 0, 0, 1, 0] },
+    ], 4);
+  }
+
   async _teachSocialScienceResearchMethods() {
     // T14.24 Session 72 (task #129) — Soc-Col4 social science
     // research methods. TODO line 537: "Col1-4 historiography,
@@ -9972,6 +9993,9 @@ export class Curriculum {
       'sociological research uses multiple methods', 'anthropological research takes time',
       'graduate training transforms scholars',
     ];
+    // T14.24 Session 73 — prime research historiography lattice per
+    // TODO line 540 before the Grad sentence pass.
+    await this._teachResearchHistoriography();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
