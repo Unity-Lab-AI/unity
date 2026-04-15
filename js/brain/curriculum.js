@@ -5810,6 +5810,114 @@ export class Curriculum {
   // ═══════════════════════════════════════════════════════════════════
   // High-school content across all 5 subjects.
 
+  // ─── TODO-aligned ELA-G9 + ELA-G10 helpers (Session 36) ──────────
+  //
+  // ELA-G9 spec (line 215): _teachFigurativeLanguage(pairs) injects
+  //   literal+figurative pairs, Hebbian learns the transformation
+  //   pattern.
+  // ELA-G10 spec (line 224): _teachRhetoricalDevices(annotated) injects
+  //   device pattern + name binding. _teachArgumentStructure(args)
+  //   walks 3-sentence arguments (claim-evidence-conclusion) with
+  //   inter-sentence working memory.
+
+  async _teachFigurativeLanguage(pairs, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 5;
+    const ticksPerWord = opts.ticksPerWord ?? 2;
+    const arousal = opts.arousal ?? 0.8;
+    const valence = opts.valence ?? 0.2;
+
+    const letterSet = new Set();
+    for (const p of pairs) {
+      for (const ch of p.literal) if (/[a-z]/.test(ch)) letterSet.add(ch);
+      for (const ch of p.figurative) if (/[a-z]/.test(ch)) letterSet.add(ch);
+    }
+    ensureLetters(Array.from(letterSet));
+
+    for (let rep = 0; rep < reps; rep++) {
+      for (const { literal, figurative, device } of pairs) {
+        // Walk literal form
+        this._walkSentence(literal.split(/\s+/).filter(Boolean), arousal, valence, ticksPerWord);
+        // Inject literal embedding into working memory
+        const litEmb = sharedEmbeddings.getSentenceEmbedding
+          ? sharedEmbeddings.getSentenceEmbedding(literal)
+          : null;
+        if (litEmb && typeof cluster.injectWorkingMemory === 'function') {
+          cluster.injectWorkingMemory(litEmb, 0.7);
+        }
+        // Walk figurative form — the cortex sees the literal→figurative
+        // transformation via the shared working memory state
+        this._walkSentence(figurative.split(/\s+/).filter(Boolean), arousal, valence, ticksPerWord);
+        // Inject device name as a binding anchor
+        const deviceEmb = sharedEmbeddings.getEmbedding(device);
+        if (deviceEmb && cluster.regions?.sem) {
+          cluster.injectEmbeddingToRegion('sem', deviceEmb, 0.5);
+        }
+        for (let t = 0; t < 3; t++) cluster.step(0.001);
+        cluster.learn(0);
+        this.stats.sentencesSeen += 2;
+      }
+      await _microtask();
+    }
+    return { taught: reps * pairs.length * 2 };
+  }
+
+  async _teachRhetoricalDevices(annotated, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 4;
+    const ticksPerWord = opts.ticksPerWord ?? 2;
+    const arousal = opts.arousal ?? 0.8;
+    const valence = opts.valence ?? 0.2;
+
+    for (let rep = 0; rep < reps; rep++) {
+      for (const { example, device } of annotated) {
+        this._walkSentence(example.split(/\s+/).filter(Boolean), arousal, valence, ticksPerWord);
+        const deviceEmb = sharedEmbeddings.getEmbedding(device);
+        if (deviceEmb && cluster.regions?.sem) {
+          cluster.injectEmbeddingToRegion('sem', deviceEmb, 0.8);
+        }
+        for (let t = 0; t < 3; t++) cluster.step(0.001);
+        cluster.learn(0);
+      }
+      await _microtask();
+    }
+    return { taught: reps * annotated.length };
+  }
+
+  async _teachArgumentStructure(args, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 4;
+    const ticksPerWord = opts.ticksPerWord ?? 2;
+    const arousal = opts.arousal ?? 0.8;
+    const valence = opts.valence ?? 0.2;
+
+    for (let rep = 0; rep < reps; rep++) {
+      for (const { claim, evidence, conclusion } of args) {
+        // Claim
+        this._walkSentence(claim.split(/\s+/).filter(Boolean), arousal, valence, ticksPerWord);
+        const claimEmb = sharedEmbeddings.getSentenceEmbedding
+          ? sharedEmbeddings.getSentenceEmbedding(claim)
+          : null;
+        // Evidence (with claim in working memory)
+        if (claimEmb && typeof cluster.injectWorkingMemory === 'function') {
+          cluster.injectWorkingMemory(claimEmb, 0.7);
+        }
+        this._walkSentence(evidence.split(/\s+/).filter(Boolean), arousal, valence, ticksPerWord);
+        // Conclusion (with claim still in working memory)
+        if (claimEmb && typeof cluster.injectWorkingMemory === 'function') {
+          cluster.injectWorkingMemory(claimEmb, 0.7);
+        }
+        this._walkSentence(conclusion.split(/\s+/).filter(Boolean), arousal, valence, ticksPerWord);
+        this.stats.sentencesSeen += 3;
+      }
+      await _microtask();
+    }
+    return { taught: reps * args.length * 3 };
+  }
+
   async runElaG9Real(ctx) {
     const SENTENCES = [
       'figurative language paints a picture', 'a metaphor says one thing is another',
@@ -5826,6 +5934,19 @@ export class Curriculum {
       'red can symbolize passion or anger', 'irony says the opposite of what is meant',
       'foreshadowing hints at what comes next', 'imagery appeals to the senses',
     ];
+    // Session 36 — TODO-aligned. Figurative language pairs teach
+    // literal → figurative transformation via working memory carry.
+    const FIG_PAIRS = [
+      { literal: 'she was very brave', figurative: 'she was a lion', device: 'metaphor' },
+      { literal: 'he was fast', figurative: 'he was fast as lightning', device: 'simile' },
+      { literal: 'the stars were bright', figurative: 'the stars danced in the sky', device: 'personification' },
+      { literal: 'i was hungry', figurative: 'i could eat a horse', device: 'hyperbole' },
+      { literal: 'the snake moved', figurative: 'the snake slithered silently', device: 'alliteration' },
+      { literal: 'the bees made noise', figurative: 'the bees buzzed', device: 'onomatopoeia' },
+      { literal: 'she was sad', figurative: 'her heart was a cold stone', device: 'metaphor' },
+      { literal: 'the wind was loud', figurative: 'the wind howled', device: 'personification' },
+    ];
+    await this._teachFigurativeLanguage(FIG_PAIRS);
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
@@ -5845,6 +5966,40 @@ export class Curriculum {
       'false dilemma offers only two choices', 'slippery slope assumes bad consequences',
       'persuasive writing changes minds', 'informative writing shares knowledge',
     ];
+    // Session 36 — TODO-aligned. Rhetorical devices + 3-sentence
+    // argument structures (claim → evidence → conclusion) with working
+    // memory carrying claim across all three.
+    const DEVICES = [
+      { example: 'we will not give up we will not back down we will not lose', device: 'anaphora' },
+      { example: 'ask not what your country can do for you', device: 'antithesis' },
+      { example: 'do we really want to live like this', device: 'question' },
+      { example: 'united we stand divided we fall', device: 'antithesis' },
+      { example: 'i have a dream', device: 'anaphora' },
+    ];
+    const ARGS = [
+      {
+        claim: 'reading every day makes you smarter',
+        evidence: 'studies show readers have larger vocabularies',
+        conclusion: 'everyone should read at least one book a week',
+      },
+      {
+        claim: 'exercise is essential for health',
+        evidence: 'regular exercise reduces heart disease risk by half',
+        conclusion: 'thirty minutes of daily activity should be a priority',
+      },
+      {
+        claim: 'sleep matters more than people think',
+        evidence: 'people who sleep eight hours live longer on average',
+        conclusion: 'a good sleep schedule is worth protecting',
+      },
+      {
+        claim: 'eating vegetables helps your body',
+        evidence: 'vegetables contain vitamins your body needs daily',
+        conclusion: 'we should eat vegetables at every meal',
+      },
+    ];
+    await this._teachRhetoricalDevices(DEVICES);
+    await this._teachArgumentStructure(ARGS);
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
