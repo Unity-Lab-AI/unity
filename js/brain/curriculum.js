@@ -5683,6 +5683,47 @@ export class Curriculum {
       { name: 'allele', feat: [1, 0, 1, 1, 0, 0, 0, 0] },
     ], 4);
   }
+  async _teachGenBiology() {
+    // T14.24 Session 50 (task #107) — Sci-Col1 general biology.
+    // TODO line 465 is terse ("General biology, general chemistry"),
+    // so the helper covers the standard 10-concept college-year-1
+    // general biology curriculum that matches runSciCol1Real's
+    // existing sentence content. Each concept becomes a distinct
+    // 8d feature pattern → expanded to 16d by _conceptTeach and
+    // routed through dictionary.learnWord via the Session 46 fix.
+    return this._conceptTeach([
+      { name: 'prokaryote',          feat: [1, 0, 0, 0, 1, 0, 0, 0] },
+      { name: 'eukaryote',           feat: [1, 1, 0, 0, 1, 0, 0, 1] },
+      { name: 'mitosis',             feat: [0, 1, 1, 0, 1, 1, 0, 0] },
+      { name: 'meiosis',             feat: [0, 1, 1, 1, 1, 1, 0, 1] },
+      { name: 'dna replication',     feat: [1, 1, 1, 0, 0, 1, 1, 0] },
+      { name: 'transcription',       feat: [1, 0, 1, 0, 1, 1, 1, 0] },
+      { name: 'translation',         feat: [0, 1, 1, 0, 1, 1, 1, 0] },
+      { name: 'photosynthesis',      feat: [1, 1, 0, 0, 0, 1, 1, 1] },
+      { name: 'cellular respiration', feat: [1, 0, 1, 0, 0, 1, 1, 1] },
+      { name: 'adenosine triphosphate', feat: [0, 1, 1, 0, 1, 0, 0, 1] },
+    ], 4);
+  }
+
+  async _teachGenChemistry() {
+    // T14.24 Session 50 (task #107) — Sci-Col1 general chemistry.
+    // 10 standard college-year-1 gen chem concepts that cover the
+    // molecular geometry / thermodynamics / kinetics / equilibrium
+    // scope of runSciCol1Real's sentence set.
+    return this._conceptTeach([
+      { name: 'molecular geometry',    feat: [1, 0, 0, 1, 0, 0, 1, 0] },
+      { name: 'vsepr',                 feat: [1, 0, 0, 1, 1, 0, 1, 0] },
+      { name: 'intermolecular forces', feat: [1, 1, 0, 1, 0, 1, 0, 0] },
+      { name: 'phase diagram',         feat: [0, 1, 1, 0, 0, 1, 1, 0] },
+      { name: 'thermodynamics',        feat: [0, 1, 0, 1, 1, 0, 1, 1] },
+      { name: 'entropy',               feat: [0, 1, 0, 0, 1, 1, 0, 1] },
+      { name: 'enthalpy',              feat: [1, 0, 1, 0, 1, 0, 0, 1] },
+      { name: 'kinetics',              feat: [0, 1, 1, 0, 0, 1, 0, 1] },
+      { name: 'equilibrium',           feat: [1, 1, 0, 1, 0, 0, 1, 1] },
+      { name: 'stoichiometry',         feat: [1, 0, 1, 1, 1, 0, 0, 0] },
+    ], 4);
+  }
+
   async _teachAstronomyIntro() {
     // T14.24 Session 49 (task #106) — Sci-G12 integration helper.
     // TODO Sci-G12 spec (line 462) prescribes "deeper integration of
@@ -8589,6 +8630,36 @@ export class Curriculum {
       'entropy measures disorder', 'reactions follow kinetics',
       'equilibrium balances forward and reverse',
     ];
+    // T14.24 Session 50 (task #107) — TODO-aligned Col1 gen bio + gen chem.
+    //
+    // TODO Sci-Col1 spec (line 465) is terse — just "General biology,
+    // general chemistry" + "Gate: ≥25%". No specific helper names
+    // prescribed, giving latitude to define coverage that matches the
+    // existing 25-sentence scope.
+    //
+    // Session 50 adds two new helpers:
+    //
+    //   _teachGenBiology — 10 standard college-year-1 gen bio
+    //     concepts: prokaryote, eukaryote, mitosis, meiosis, dna
+    //     replication, transcription, translation, photosynthesis,
+    //     cellular respiration, adenosine triphosphate. Each gets
+    //     a distinct 8d → 16d feature basin via _conceptTeach and
+    //     routes through dictionary.learnWord (Session 46 fix) so
+    //     the concept names enter Unity's vocabulary.
+    //
+    //   _teachGenChemistry — 10 college-year-1 gen chem concepts:
+    //     molecular geometry, vsepr, intermolecular forces, phase
+    //     diagram, thermodynamics, entropy, enthalpy, kinetics,
+    //     equilibrium, stoichiometry. Same pattern.
+    //
+    // Both run BEFORE the sentence walk. The sentences then bind
+    // relationships ("dna replication is semiconservative",
+    // "ribosomes build proteins", "vsepr predicts shapes",
+    // "equilibrium balances forward and reverse") on top of the
+    // fresh concept basins, and T14.7 type transitions + T14.8
+    // sentence-form schemas continue to populate from the walk.
+    await this._teachGenBiology();
+    await this._teachGenChemistry();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
