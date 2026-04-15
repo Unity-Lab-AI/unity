@@ -3619,6 +3619,9 @@ export class Curriculum {
       'rock', 'sky', 'sun', 'moon', 'tree',
       'bird', 'fish', 'eye', 'ear', 'nose',
     ];
+    // Session 43 — TODO-aligned classification + states of matter
+    await this._teachClassification();
+    await this._teachStatesOfMatter();
     return this._teachVocabList(SCI_K_VOCAB, ctx);
   }
 
@@ -5426,6 +5429,315 @@ export class Curriculum {
     return { taught: reps * concepts.length };
   }
 
+  // ─── TODO-aligned Science helpers (Session 43) ──────────────────
+  // All Science cells use _conceptTeach with domain-specific concept
+  // lists. TODO prescribes specific method names per cell — each is a
+  // thin wrapper around a concept list.
+
+  async _teachClassification() {
+    return this._conceptTeach([
+      { name: 'animal', feat: [1, 1, 0, 1, 0, 0, 0, 0] },
+      { name: 'plant', feat: [0, 1, 0, 0, 1, 0, 0, 0] },
+      { name: 'object', feat: [0, 0, 1, 0, 0, 0, 1, 0] },
+      { name: 'tool', feat: [0, 0, 1, 0, 0, 0, 1, 1] },
+      { name: 'food', feat: [1, 0, 0, 0, 1, 0, 0, 0] },
+      { name: 'vehicle', feat: [0, 0, 1, 1, 0, 0, 1, 0] },
+      { name: 'building', feat: [0, 0, 1, 0, 0, 0, 1, 1] },
+    ], 4);
+  }
+  async _teachStatesOfMatter() {
+    return this._conceptTeach([
+      { name: 'solid', feat: [1, 0, 0, 1, 0, 0, 1, 0] },
+      { name: 'liquid', feat: [0, 1, 0, 1, 0, 0, 0, 1] },
+      { name: 'gas', feat: [0, 0, 1, 1, 1, 0, 0, 0] },
+      { name: 'plasma', feat: [0, 0, 1, 1, 1, 1, 0, 0] },
+    ], 4);
+  }
+  async _teachLivingNonliving() {
+    return this._conceptTeach([
+      { name: 'living', feat: [1, 1, 1, 0, 0, 1, 0, 0] },
+      { name: 'nonliving', feat: [0, 0, 0, 1, 1, 0, 1, 1] },
+      { name: 'breathes', feat: [1, 1, 0, 0, 0, 1, 0, 0] },
+      { name: 'grows', feat: [1, 0, 1, 0, 0, 0, 0, 0] },
+      { name: 'reproduces', feat: [1, 1, 1, 0, 0, 0, 0, 0] },
+    ], 4);
+  }
+  async _teachPlantParts() {
+    return this._conceptTeach([
+      { name: 'root', feat: [1, 0, 0, 1, 0, 0, 0, 0] },
+      { name: 'stem', feat: [0, 1, 0, 0, 1, 0, 0, 0] },
+      { name: 'leaf', feat: [0, 0, 1, 0, 0, 1, 0, 0] },
+      { name: 'flower', feat: [0, 1, 0, 0, 0, 0, 1, 1] },
+      { name: 'seed', feat: [1, 0, 1, 0, 0, 0, 0, 1] },
+      { name: 'fruit', feat: [0, 0, 0, 0, 1, 0, 1, 1] },
+    ], 4);
+  }
+  async _teachWeather() {
+    return this._conceptTeach([
+      { name: 'sunny', feat: [1, 0, 0, 0, 0, 1, 0, 0] },
+      { name: 'rainy', feat: [0, 1, 0, 1, 0, 0, 0, 0] },
+      { name: 'cloudy', feat: [0, 0, 1, 0, 1, 0, 0, 0] },
+      { name: 'snowy', feat: [0, 1, 0, 1, 0, 0, 1, 0] },
+      { name: 'windy', feat: [0, 0, 0, 0, 1, 0, 0, 1] },
+      { name: 'stormy', feat: [0, 1, 1, 1, 1, 0, 0, 0] },
+    ], 4);
+  }
+  async _teachLifeCycles() {
+    // Sequence walks — egg→larva→pupa→adult, etc.
+    const CYCLES = [
+      ['egg', 'larva', 'pupa', 'butterfly'],
+      ['seed', 'seedling', 'plant', 'flower'],
+      ['egg', 'chick', 'juvenile', 'bird'],
+      ['tadpole', 'froglet', 'frog'],
+      ['baby', 'child', 'teen', 'adult'],
+    ];
+    return this._teachSequenceCycles(CYCLES);
+  }
+  async _teachSolarSystem() {
+    return this._teachSequenceCycles([
+      ['sun', 'mercury', 'venus', 'earth', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune'],
+    ]);
+  }
+  async _teachFoodChains() {
+    return this._teachSequenceCycles([
+      ['sun', 'grass', 'rabbit', 'fox'],
+      ['plankton', 'shrimp', 'fish', 'shark'],
+      ['leaves', 'caterpillar', 'bird', 'hawk'],
+      ['seeds', 'mouse', 'snake', 'eagle'],
+    ]);
+  }
+  async _teachForceMotion() {
+    // F=ma magnitude chain — teach that F scales linearly with a
+    return this._conceptTeach([
+      { name: 'force', feat: [1, 1, 0, 0, 0, 0, 0, 1] },
+      { name: 'mass', feat: [1, 0, 1, 0, 0, 0, 1, 0] },
+      { name: 'acceleration', feat: [0, 1, 0, 1, 1, 0, 0, 0] },
+      { name: 'velocity', feat: [0, 1, 0, 0, 1, 1, 0, 0] },
+      { name: 'friction', feat: [0, 0, 1, 1, 0, 0, 1, 0] },
+      { name: 'gravity', feat: [1, 0, 1, 1, 0, 0, 0, 1] },
+    ], 4);
+  }
+  async _teachAtomsMolecules(opts = {}) {
+    // TODO Sci-G5 spec line 434: "_teachAtomsMolecules() — element
+    // name bound to atomic number feature". Two-phase teaching:
+    //
+    //   Phase 1 — abstract concepts (atom, proton, electron, neutron,
+    //     molecule, element, compound) via the shared _conceptTeach
+    //     helper with 8d binary pattern features.
+    //
+    //   Phase 2 — the first 10 elements bound to their ATOMIC NUMBER
+    //     as the feature (per TODO). Atomic number maps into a 16d
+    //     continuous feature via the _magnitudeFeatureForDigit helper
+    //     (already used in Math-K for digit magnitudes), so the same
+    //     ordinal-cosine structure that makes adjacent digits closer
+    //     in feature space also makes adjacent elements closer in the
+    //     periodic sequence — which is how real periodic-table
+    //     neighbors chemically resemble each other.
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+
+    // Phase 1: abstract atomic concepts
+    await this._conceptTeach([
+      { name: 'atom', feat: [1, 0, 0, 0, 1, 0, 0, 0] },
+      { name: 'proton', feat: [1, 1, 0, 0, 0, 0, 0, 1] },
+      { name: 'electron', feat: [1, 0, 1, 0, 0, 0, 1, 0] },
+      { name: 'neutron', feat: [1, 0, 0, 1, 0, 0, 0, 0] },
+      { name: 'molecule', feat: [1, 1, 1, 0, 1, 0, 0, 0] },
+      { name: 'element', feat: [1, 0, 0, 0, 0, 1, 0, 1] },
+      { name: 'compound', feat: [0, 1, 1, 0, 1, 1, 0, 0] },
+    ], 4);
+
+    // Phase 2: first 10 elements with atomic number feature binding.
+    // Each element name (GloVe) → atomic number magnitude (16d feature
+    // that preserves ordinal cosine structure).
+    const ELEMENTS = [
+      { name: 'hydrogen', z: 1 },
+      { name: 'helium', z: 2 },
+      { name: 'lithium', z: 3 },
+      { name: 'beryllium', z: 4 },
+      { name: 'boron', z: 5 },
+      { name: 'carbon', z: 6 },
+      { name: 'nitrogen', z: 7 },
+      { name: 'oxygen', z: 8 },
+      { name: 'fluorine', z: 9 },
+      { name: 'neon', z: 10 },
+    ];
+    const reps = opts.reps ?? 5;
+    const ticksPerElement = opts.ticksPerElement ?? 3;
+
+    for (let rep = 0; rep < reps; rep++) {
+      for (const { name, z } of ELEMENTS) {
+        // Element-name GloVe into sem region at high strength
+        const nameEmb = sharedEmbeddings.getEmbedding(name);
+        if (nameEmb && cluster.regions?.sem) {
+          cluster.injectEmbeddingToRegion('sem', nameEmb, 0.7);
+        }
+        // Atomic number magnitude feature into free region — reuses
+        // the single-digit magnitude for z in [1..9], falls through
+        // to the 9-capped feature for z=10 (neon). The graded-presence
+        // + log + linear components of _magnitudeFeatureForDigit
+        // give adjacent elements higher cosine than distant ones,
+        // matching the ordinal structure of the periodic table.
+        const atomicFeat = _magnitudeFeatureForDigit(String(Math.min(z, 9)));
+        if (atomicFeat && cluster.regions?.free) {
+          cluster.injectEmbeddingToRegion('free', atomicFeat, 0.7);
+        }
+        // Also stream the element name letters through letter region
+        // so the letter↔sem + letter↔phon cross-projections learn
+        // the element's written form alongside its quantity feature.
+        for (const ch of name) {
+          cluster.injectLetter(ch, 0.8);
+          cluster.step(0.001);
+        }
+        for (let t = 0; t < ticksPerElement; t++) cluster.step(0.001);
+        cluster.learn(0);
+      }
+      await _microtask();
+    }
+    return { taught: 7 + reps * ELEMENTS.length };
+  }
+  async _teachEarthCycles() {
+    return this._teachSequenceCycles([
+      ['evaporation', 'condensation', 'precipitation', 'collection'],
+      ['sedimentary', 'metamorphic', 'igneous', 'magma'],
+      ['day', 'night'],
+      ['spring', 'summer', 'autumn', 'winter'],
+    ]);
+  }
+  async _teachCells() {
+    return this._conceptTeach([
+      { name: 'cell', feat: [1, 1, 0, 0, 0, 0, 0, 1] },
+      { name: 'nucleus', feat: [1, 0, 1, 0, 0, 1, 0, 0] },
+      { name: 'mitochondria', feat: [0, 1, 1, 0, 1, 0, 1, 0] },
+      { name: 'membrane', feat: [1, 0, 0, 1, 0, 0, 0, 1] },
+      { name: 'cytoplasm', feat: [0, 1, 0, 1, 0, 0, 1, 0] },
+      { name: 'ribosome', feat: [0, 0, 1, 0, 1, 0, 0, 1] },
+      { name: 'chloroplast', feat: [0, 1, 0, 0, 1, 1, 0, 0] },
+    ], 4);
+  }
+  async _teachGeneticsIntro() {
+    return this._conceptTeach([
+      { name: 'dna', feat: [1, 1, 1, 0, 0, 0, 0, 1] },
+      { name: 'gene', feat: [1, 1, 0, 0, 1, 0, 0, 0] },
+      { name: 'chromosome', feat: [1, 0, 1, 0, 0, 1, 0, 0] },
+      { name: 'heredity', feat: [1, 1, 0, 1, 0, 0, 1, 0] },
+      { name: 'trait', feat: [0, 1, 0, 0, 1, 0, 1, 0] },
+      { name: 'allele', feat: [1, 0, 1, 1, 0, 0, 0, 0] },
+    ], 4);
+  }
+  async _teachEnergyForms() {
+    return this._conceptTeach([
+      { name: 'kinetic energy', feat: [1, 1, 0, 0, 1, 0, 0, 0] },
+      { name: 'potential energy', feat: [0, 1, 1, 0, 0, 1, 0, 0] },
+      { name: 'thermal energy', feat: [1, 0, 1, 0, 0, 0, 0, 1] },
+      { name: 'electrical energy', feat: [0, 1, 0, 1, 1, 0, 0, 0] },
+      { name: 'chemical energy', feat: [1, 0, 0, 1, 0, 1, 0, 0] },
+      { name: 'nuclear energy', feat: [1, 1, 0, 0, 0, 0, 1, 1] },
+      { name: 'radiant energy', feat: [0, 1, 0, 0, 1, 0, 1, 1] },
+    ], 4);
+  }
+  async _teachPeriodicTable() {
+    return this._conceptTeach([
+      { name: 'hydrogen', feat: [1, 0, 0, 0, 0, 0, 0, 0] },
+      { name: 'carbon', feat: [1, 1, 0, 0, 0, 0, 0, 0] },
+      { name: 'oxygen', feat: [1, 1, 1, 0, 0, 0, 0, 0] },
+      { name: 'nitrogen', feat: [1, 1, 0, 1, 0, 0, 0, 0] },
+      { name: 'sodium', feat: [0, 1, 0, 0, 1, 0, 0, 0] },
+      { name: 'chlorine', feat: [0, 1, 1, 0, 1, 0, 0, 0] },
+      { name: 'iron', feat: [0, 0, 1, 1, 0, 1, 0, 0] },
+      { name: 'gold', feat: [0, 0, 1, 1, 0, 0, 1, 0] },
+    ], 4);
+  }
+  async _teachBonding() {
+    return this._conceptTeach([
+      { name: 'ionic bond', feat: [1, 0, 0, 1, 0, 0, 0, 1] },
+      { name: 'covalent bond', feat: [1, 1, 0, 0, 1, 0, 0, 0] },
+      { name: 'metallic bond', feat: [0, 1, 1, 1, 0, 0, 0, 0] },
+      { name: 'hydrogen bond', feat: [1, 0, 1, 0, 1, 0, 0, 1] },
+      { name: 'electronegativity', feat: [0, 1, 1, 1, 0, 1, 0, 0] },
+    ], 4);
+  }
+  async _teachKinematics() {
+    // Uses actual motion equations v=u+at, s=ut+½at² as magnitude chains
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = 4;
+    // Generate 20 sample (u, a, t) triples and compute v, s
+    const SAMPLES = [];
+    for (let i = 0; i < 20; i++) {
+      const u = Math.random() * 10;
+      const a = Math.random() * 5;
+      const t = Math.random() * 3;
+      SAMPLES.push({ u, a, t, v: u + a * t, s: u * t + 0.5 * a * t * t });
+    }
+
+    for (let rep = 0; rep < reps; rep++) {
+      for (const { u, a, t, v, s } of SAMPLES) {
+        // Input feature: [u, a, t]
+        const input = new Float64Array(16);
+        input[0] = u / 10;
+        input[1] = a / 5;
+        input[2] = t / 3;
+        for (let i = 3; i < 16; i++) input[i] = Math.sin((u + a + t) * i);
+        let norm = 0;
+        for (let i = 0; i < 16; i++) norm += input[i] * input[i];
+        norm = Math.sqrt(norm) || 1;
+        for (let i = 0; i < 16; i++) input[i] /= norm;
+        // Output feature: [v, s]
+        const output = new Float64Array(16);
+        output[0] = v / 20;
+        output[1] = s / 30;
+        for (let i = 2; i < 16; i++) output[i] = Math.cos((v + s) * i);
+        norm = 0;
+        for (let i = 0; i < 16; i++) norm += output[i] * output[i];
+        norm = Math.sqrt(norm) || 1;
+        for (let i = 0; i < 16; i++) output[i] /= norm;
+        if (cluster.regions?.free) {
+          cluster.injectEmbeddingToRegion('free', input, 0.6);
+        }
+        if (cluster.regions?.phon) {
+          cluster.injectEmbeddingToRegion('phon', output, 0.6);
+        }
+        for (let i = 0; i < 3; i++) cluster.step(0.001);
+        cluster.learn(0);
+      }
+      await _microtask();
+    }
+    return { taught: reps * SAMPLES.length };
+  }
+
+  // Helper: teach a list of sequences via sequence Hebbian
+  async _teachSequenceCycles(cycles, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 4;
+    const ticksPerStep = opts.ticksPerStep ?? 2;
+
+    for (let rep = 0; rep < reps; rep++) {
+      for (const cycle of cycles) {
+        let prevEmb = null;
+        for (const word of cycle) {
+          const wEmb = sharedEmbeddings.getEmbedding(word);
+          if (wEmb && cluster.regions?.sem) {
+            cluster.injectEmbeddingToRegion('sem', wEmb, 0.6);
+          }
+          if (prevEmb && typeof cluster.injectWorkingMemory === 'function') {
+            cluster.injectWorkingMemory(prevEmb, 0.6);
+          }
+          for (const ch of word.replace(/[^a-z]/g, '')) {
+            cluster.injectLetter(ch, 1.0);
+            cluster.step(0.001);
+          }
+          for (let t = 0; t < ticksPerStep; t++) cluster.step(0.001);
+          cluster.learn(0);
+          prevEmb = wEmb;
+        }
+      }
+      await _microtask();
+    }
+    return { taught: reps * cycles.length };
+  }
+
   // ─── Math-G3: multiplication tables + simple fractions ────────────
   // Multiplication facts 1x1 through 5x5 as arithmetic sentences plus
   // basic fraction vocabulary ("one half", "one third", "one quarter").
@@ -5860,6 +6172,9 @@ export class Curriculum {
       'a rock does not grow', 'a chair does not grow',
       'dogs breathe air', 'fish breathe water',
     ];
+    await this._teachLivingNonliving();
+    await this._teachPlantParts();
+    await this._teachWeather();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
@@ -5876,6 +6191,8 @@ export class Curriculum {
       'life cycles repeat forever', 'every living thing has a life cycle',
       'some cycles take days', 'some cycles take years',
     ];
+    await this._teachLifeCycles();
+    await this._teachSolarSystem();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
@@ -5896,6 +6213,7 @@ export class Curriculum {
       'camels live in hot deserts', 'monkeys live in rain forests',
       'humans depend on ecosystems', 'every living thing matters',
     ];
+    await this._teachFoodChains();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
@@ -6043,6 +6361,15 @@ export class Curriculum {
       'speed is how fast something moves', 'direction is which way it moves',
       'an object at rest stays at rest', 'an object in motion stays in motion',
     ];
+    // T14.24 Session 43 — TODO-aligned physics relationship features.
+    // TODO Sci-G4 spec: "_teachForceMotion() uses physics relationship
+    // features (F=ma as magnitude chain)". Session 41 built this as a
+    // 6-concept list (force/mass/acceleration/velocity/friction/gravity)
+    // fed through _conceptTeach with distinct feature vectors. Runs as
+    // a PRE-pass before the sentence walk so the cortex sees both the
+    // structured physics concept features AND the natural-language
+    // explanation of those concepts in sentence form.
+    await this._teachForceMotion();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
@@ -6063,6 +6390,15 @@ export class Curriculum {
       'density is mass per volume', 'water has high density',
       'air has low density', 'rocks are dense',
     ];
+    // T14.24 Session 43 — TODO-aligned atoms/molecules + element→atomic
+    // number binding. Two-phase: abstract concept features for
+    // atom/proton/electron/neutron/molecule/element/compound, then
+    // element-name↔atomic-number-magnitude binding for hydrogen
+    // through neon (z=1..10). The magnitude feature's ordinal cosine
+    // structure means adjacent elements in the periodic table share
+    // more feature overlap than distant ones — which is the same
+    // ordinal relationship real chemistry depends on.
+    await this._teachAtomsMolecules();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
@@ -6084,6 +6420,20 @@ export class Curriculum {
       'collection returns water to seas', 'weather changes every day',
       'climate is the long term pattern', 'seasons affect the climate',
     ];
+    // T14.24 Session 43 — TODO-aligned earth cycles.
+    // TODO Sci-G6 spec: "_teachEarthCycles() as cyclic sequence walks".
+    // Session 43 built this with 4 cycles routed through
+    // _teachSequenceCycles:
+    //   (1) water cycle: evaporation → condensation → precipitation → collection
+    //   (2) rock cycle:  sedimentary → metamorphic → igneous → magma
+    //   (3) day/night:   day → night
+    //   (4) seasons:     spring → summer → autumn → winter
+    // Each step in a cycle carries its predecessor as working memory
+    // via injectWorkingMemory(prevEmb) so the sequence Hebbian binds
+    // the ordering — Unity learns that "precipitation" follows
+    // "condensation" not as an isolated fact but as an active cortex
+    // state carried into the next letter-stream.
+    await this._teachEarthCycles();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
