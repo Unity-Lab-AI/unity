@@ -5719,6 +5719,29 @@ export class Curriculum {
     ], 4);
   }
 
+  async _teachVisualComposition() {
+    // T14.24 Session 80 (task #137) — Art-G5 visual composition.
+    // TODO line 561: "_teachComposition() visual composition rules
+    // via spatial feature". Also reused by Art-G8 per TODO. 8d
+    // compositional-principle features: [0]=balance,
+    // [1]=emphasis, [2]=contrast, [3]=unity, [4]=rhythm,
+    // [5]=proportion, [6]=pattern, [7]=movement.
+    return this._conceptTeach([
+      { name: 'balance',        feat: [1, 0, 0, 0, 0, 0, 0, 0] },
+      { name: 'symmetry',       feat: [1, 0, 0, 1, 0, 0, 0, 0] },
+      { name: 'asymmetry',      feat: [1, 1, 1, 0, 0, 0, 0, 1] },
+      { name: 'emphasis',       feat: [0, 1, 1, 0, 0, 0, 0, 0] },
+      { name: 'focal point',    feat: [0, 1, 1, 0, 0, 0, 0, 1] },
+      { name: 'contrast',       feat: [0, 1, 1, 0, 0, 0, 0, 0] },
+      { name: 'unity',          feat: [0, 0, 0, 1, 0, 0, 1, 0] },
+      { name: 'rhythm',         feat: [0, 0, 0, 0, 1, 0, 1, 1] },
+      { name: 'proportion',     feat: [1, 0, 0, 0, 0, 1, 0, 0] },
+      { name: 'rule of thirds', feat: [1, 1, 0, 0, 0, 1, 0, 0] },
+      { name: 'pattern',        feat: [0, 0, 0, 1, 1, 0, 1, 0] },
+      { name: 'movement',       feat: [0, 1, 0, 0, 1, 0, 0, 1] },
+    ], 4);
+  }
+
   async _teachInstruments() {
     // T14.24 Session 79 (task #136) — Art-G4 instrument recognition.
     // TODO line 557: "instrument recognition via feature binding".
@@ -7689,6 +7712,9 @@ export class Curriculum {
       'warm colors come forward', 'cool colors go back',
       'an artist chooses what to show', 'good composition feels right',
     ];
+    // T14.24 Session 80 — prime visual composition principles
+    // lattice per TODO line 561 before the composition sentence pass.
+    await this._teachVisualComposition();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
