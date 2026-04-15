@@ -39,7 +39,7 @@
  */
 
 import { sharedEmbeddings } from './embeddings.js';
-import { ensureLetter } from './letter-input.js';
+import { ensureLetter, ensureLetters, decodeLetter, inventorySize } from './letter-input.js';
 
 // Phase tick budgets. These scale the intensity of exposure — letters
 // and short words get more ticks per token because phonological basins
@@ -1402,7 +1402,15 @@ export class Curriculum {
   _cellRunner(subject, grade) {
     if (subject === 'ela') {
       switch (grade) {
-        case 'kindergarten': return async (ctx) => this.runKindergarten(ctx.letterFreq, ctx.arousal, ctx.valence);
+        // T14.24 Session 2 (2026-04-15) — ELA-K now dispatches to the
+        // REAL teaching equations: alphabet-order exposure + letter-name
+        // GloVe binding + letter-sound phoneme-feature binding + reverse-
+        // pass TALK training + 3-pathway READ/THINK/TALK gate. The
+        // pre-Session-2 `runKindergarten` (frequency-ordered exposure
+        // via `_phaseLetters`) is retained in the class for reference
+        // and for any legacy caller that wants raw corpus letter
+        // exposure without the name/sound binding.
+        case 'kindergarten': return async (ctx) => this.runElaKReal(ctx);
         case 'grade1':       return async (ctx) => this.runGrade1(ctx.wordFreq, ctx.arousal, ctx.valence);
         case 'grade2':       return async (ctx) => this.runGrade2(ctx.wordFreq, ctx.arousal, ctx.valence);
         case 'grade3':       return async (ctx) => this.runGrade3(ctx.sentences, ctx.arousal, ctx.valence);
@@ -1616,6 +1624,251 @@ export class Curriculum {
       if (idx >= 0 && idx < minIdx) minIdx = idx;
     }
     return minIdx === Infinity ? 'pre-K' : GRADE_ORDER[minIdx];
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // T14.24 SESSION 2 — REAL ELA-K TEACHING EQUATIONS (2026-04-15)
+  // ═══════════════════════════════════════════════════════════════════
+  //
+  // Gee binding 2026-04-14: "in kindergarden u learn the alphabet and
+  // sounds of letters first and 1st grade u start learning how to write
+  // sentences ect ect all the way up to doctorate in english" +
+  // "remember Unity needs to be able to use these to think, read, and
+  // talk" + "what the fuck are you talking about its shipped you didnt
+  // even teach it keindergarden abcs and 123s and letter sounds you fool".
+  //
+  // Real kindergarten English teaching. Three things in parallel:
+  //
+  //   1. Alphabet in ALPHABETICAL ORDER — letters register into the
+  //      T14.1 LETTER_INVENTORY in a→z order so the inventory ordering
+  //      matches a K classroom ABC chart. Existing inventory entries
+  //      from T14.5 corpus walk keep their slots (ensureLetters is
+  //      idempotent), but freshly registered letters land in order.
+  //
+  //   2. Letter-name GloVe binding via sem↔letter cross-projection
+  //      Hebbian — inject letter one-hot into letter region AND inject
+  //      GloVe(letter) as the semantic anchor into the sem region
+  //      simultaneously, tick, learn. After enough reps the letter↔sem
+  //      basin pair is stable.
+  //
+  //   3. Letter-sound phoneme-feature binding via phon↔letter cross-
+  //      projection Hebbian — the 24-dim `_phonemeFeatureForLetter` goes
+  //      into the phon region as the phonological anchor at the same
+  //      tick as the letter + sem injections. The phon basin per letter
+  //      becomes distinct.
+  //
+  // Then a reverse pass (TALK training) drives sem + phon regions WITHOUT
+  // the letter region so the return-direction cross-projections learn
+  // sem→letter→motor production.
+  //
+  // The gate then probes all THREE pathways on every letter:
+  //   - READ:  letter one-hot → tick → phon region cosine vs expected
+  //             phoneme feature > 0.15
+  //   - THINK: letter → tick → 10 silence ticks → free region variance
+  //             > baseline (letter state persists in working memory)
+  //   - TALK:  GloVe(letter) into sem region ONLY → tick → decodeLetter
+  //             of motor region argmax matches target
+  //
+  // PASS when ≥ 50% of the alphabet passes each pathway. Relaxed from
+  // academic 70% because biological-scale basins form slowly and Session
+  // 2 is the first real teaching cell — subsequent cells re-expose the
+  // alphabet in corpus walks and strengthen via Hebbian on every pass.
+
+  async runElaKReal(ctx) {
+    const cluster = this.cluster;
+    if (!cluster) return { pass: false, reason: 'no cluster wired' };
+
+    const ALPHABET = ALPHABET_ORDER;
+    const REPS_PER_LETTER = 8;
+    const REVERSE_REPS = 4;
+    const TEACH_TICKS_PER_REP = 4;
+    const arousal = ctx?.arousal ?? 0.8;
+    const valence = ctx?.valence ?? 0.2;
+
+    // STEP 1 — register alphabet in ORDER so LETTER_INVENTORY insertion
+    // matches a classroom ABC chart. ensureLetters is idempotent — any
+    // letters already registered by T14.5 corpus walk keep their existing
+    // inventory slot, and freshly-registered letters land in order.
+    ensureLetters(ALPHABET.split(''));
+
+    // STEP 2 — FORWARD PASS: letter + sem + phon regions all driven at
+    // the same tick. Cross-projection Hebbian fires on the three-way
+    // coincidence and binds the letter to both its name and its sound.
+    for (let rep = 0; rep < REPS_PER_LETTER; rep++) {
+      for (const letter of ALPHABET) {
+        // Semantic anchor: GloVe embedding of the letter as a word.
+        // ('a' / 'b' / 'c' all exist as first-class tokens in GloVe 6B)
+        const nameEmb = sharedEmbeddings.getEmbedding(letter);
+
+        // Phonological anchor: 24-dim phoneme feature from the trig-hash
+        // already defined at the top of this file. Deterministic per
+        // letter, L2-normalized, decorrelated across the alphabet so
+        // different letters fall into different phon basins.
+        const phonFeat = _phonemeFeatureForLetter(letter);
+
+        // Triple inject — letter region + sem region + phon region, all
+        // firing at the same tick so cross-projection Hebbian gets a
+        // clean three-way coincidence signal.
+        cluster.injectLetter(letter, 1.0);
+        if (nameEmb && nameEmb.length > 0 && cluster.regions?.sem) {
+          cluster.injectEmbeddingToRegion('sem', nameEmb, 0.6);
+        }
+        if (phonFeat && phonFeat.length > 0 && cluster.regions?.phon) {
+          cluster.injectEmbeddingToRegion('phon', phonFeat, 0.6);
+        }
+
+        // Tick the cortex so the injection propagates through the
+        // recurrent weights and the cross-projections reach steady state
+        for (let t = 0; t < TEACH_TICKS_PER_REP; t++) {
+          cluster.step(0.001);
+          this.stats.totalTicks++;
+        }
+
+        // Unrewarded Hebbian on every cross-projection via cluster.learn
+        cluster.learn(0);
+        this.stats.lettersSeen++;
+      }
+      // Yield every rep so event loop breathes during the walk
+      await _microtask();
+    }
+
+    // STEP 3 — REVERSE PASS (TALK training): drive sem + phon regions
+    // WITHOUT direct letter-region injection. Forces the sem→letter and
+    // phon→letter cross-projections to learn the RETURN direction — given
+    // a letter name embedding, activate the letter region basin, which
+    // then drives the motor region via the motor↔letter cross-projection
+    // (T14.4). Without this reverse pass the TALK gate fails because the
+    // letter region never gets activated from the sem side alone.
+    for (let rep = 0; rep < REVERSE_REPS; rep++) {
+      for (const letter of ALPHABET) {
+        const nameEmb = sharedEmbeddings.getEmbedding(letter);
+        const phonFeat = _phonemeFeatureForLetter(letter);
+
+        if (nameEmb && nameEmb.length > 0 && cluster.regions?.sem) {
+          cluster.injectEmbeddingToRegion('sem', nameEmb, 0.7);
+        }
+        if (phonFeat && phonFeat.length > 0 && cluster.regions?.phon) {
+          cluster.injectEmbeddingToRegion('phon', phonFeat, 0.5);
+        }
+        // Weak letter inject (0.3) — keeps the target in the basin for
+        // Hebbian alignment but doesn't dominate so the cross-projection
+        // still has to do most of the work
+        cluster.injectLetter(letter, 0.3);
+
+        for (let t = 0; t < TEACH_TICKS_PER_REP; t++) {
+          cluster.step(0.001);
+          this.stats.totalTicks++;
+        }
+        cluster.learn(0);
+        this.stats.lettersSeen++;
+      }
+      await _microtask();
+    }
+
+    // Gate the cell — probes all three pathways
+    return this._gateElaKReal();
+  }
+
+  _gateElaKReal() {
+    const cluster = this.cluster;
+    const ALPHABET = ALPHABET_ORDER;
+
+    let readPass = 0;
+    let thinkPass = 0;
+    let talkPass = 0;
+
+    const READ_COS_MIN = 0.15;
+    const THINK_VAR_MIN = 0.0005;
+
+    const perLetter = [];
+
+    for (const letter of ALPHABET) {
+      // ─── READ probe: letter → phon basin ───────────────────────────
+      // Inject letter one-hot → tick → read phon region → cosine against
+      // expected phoneme feature. If > READ_COS_MIN the letter→phon
+      // cross-projection has learned a recognizable basin.
+      cluster.injectLetter(letter, 1.0);
+      for (let t = 0; t < 4; t++) cluster.step(0.001);
+      const phonReadout = cluster.regionReadout('phon', 24);
+      const expectedPhon = _phonemeFeatureForLetter(letter);
+      let readCos = 0;
+      if (phonReadout && expectedPhon && phonReadout.length > 0 && expectedPhon.length > 0) {
+        const L = Math.min(phonReadout.length, expectedPhon.length);
+        let dot = 0, np = 0, ne = 0;
+        for (let i = 0; i < L; i++) {
+          dot += phonReadout[i] * expectedPhon[i];
+          np += phonReadout[i] * phonReadout[i];
+          ne += expectedPhon[i] * expectedPhon[i];
+        }
+        const denom = Math.sqrt(np) * Math.sqrt(ne);
+        readCos = denom > 0 ? dot / denom : 0;
+      }
+      const readOk = readCos > READ_COS_MIN;
+      if (readOk) readPass++;
+
+      // ─── THINK probe: state persists across silence ────────────────
+      // Inject letter → tick → 10 silence ticks (no injection) → read
+      // free region variance. If the free region is still holding state
+      // above baseline the working memory is persisting the letter.
+      cluster.injectLetter(letter, 1.0);
+      for (let t = 0; t < 4; t++) cluster.step(0.001);
+      // Silence ticks — just tick, no injection
+      for (let t = 0; t < 10; t++) cluster.step(0.001);
+      const freeReadout = cluster.regionReadout('free', 64);
+      let thinkVar = 0;
+      if (freeReadout && freeReadout.length > 0) {
+        let mean = 0;
+        for (let i = 0; i < freeReadout.length; i++) mean += freeReadout[i];
+        mean /= freeReadout.length;
+        for (let i = 0; i < freeReadout.length; i++) {
+          const d = freeReadout[i] - mean;
+          thinkVar += d * d;
+        }
+        thinkVar /= freeReadout.length;
+      }
+      const thinkOk = thinkVar > THINK_VAR_MIN;
+      if (thinkOk) thinkPass++;
+
+      // ─── TALK probe: name → motor → decodeLetter ───────────────────
+      // Inject GloVe(letter) into sem region ONLY (no letter one-hot)
+      // → tick → read motor region → decodeLetter → check match. This
+      // tests the full sem→letter→motor production chain — the hardest
+      // of the three pathways because the sem→letter cross-projection
+      // must activate the correct letter basin from the name alone.
+      const nameEmb = sharedEmbeddings.getEmbedding(letter);
+      if (nameEmb && nameEmb.length > 0 && cluster.regions?.sem) {
+        cluster.injectEmbeddingToRegion('sem', nameEmb, 0.8);
+      }
+      for (let t = 0; t < 6; t++) cluster.step(0.001);
+      const invSize = inventorySize();
+      const motorVec = invSize > 0 ? cluster.regionReadout('motor', invSize) : null;
+      const decoded = motorVec ? decodeLetter(motorVec) : null;
+      const talkOk = decoded === letter;
+      if (talkOk) talkPass++;
+
+      perLetter.push({ letter, readCos, thinkVar, decoded, readOk, thinkOk, talkOk });
+    }
+
+    const N = ALPHABET.length;
+    const readRate = readPass / N;
+    const thinkRate = thinkPass / N;
+    const talkRate = talkPass / N;
+
+    // ≥ 50% per pathway is the Session 2 gate. Biological-scale basins
+    // form slowly — subsequent ELA cells (G1, G2, ...) re-expose the
+    // alphabet through corpus walks and strengthen basins via Hebbian on
+    // every pass, so this threshold can tighten at later cells.
+    const PATH_MIN = 0.50;
+    const readOkAll = readRate >= PATH_MIN;
+    const thinkOkAll = thinkRate >= PATH_MIN;
+    const talkOkAll = talkRate >= PATH_MIN;
+    const pass = readOkAll && thinkOkAll && talkOkAll;
+
+    return {
+      pass,
+      reason: `READ ${readPass}/${N} (${(readRate * 100).toFixed(0)}%), THINK ${thinkPass}/${N} (${(thinkRate * 100).toFixed(0)}%), TALK ${talkPass}/${N} (${(talkRate * 100).toFixed(0)}%)`,
+      metrics: { readRate, thinkRate, talkRate, perLetter },
+    };
   }
 
   /**
