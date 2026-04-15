@@ -5719,6 +5719,28 @@ export class Curriculum {
     ], 4);
   }
 
+  async _teachArtHistory() {
+    // T14.24 Session 84 (task #141) — Art-G9 art history survey.
+    // TODO line 565: "Art history, music history, advanced theory.
+    // Gate ≥30%". Sequence walks over chronological art movements
+    // so the working-memory Hebbian binds the period ordering,
+    // plus canonical artist names bound to their periods.
+    return this._teachSequenceCycles([
+      // Core chronology
+      ['prehistoric', 'egyptian', 'greek', 'roman', 'medieval', 'renaissance'],
+      ['renaissance', 'baroque', 'rococo', 'neoclassical', 'romantic', 'impressionism'],
+      ['impressionism', 'post impressionism', 'cubism', 'abstract', 'contemporary'],
+      // Renaissance masters
+      ['leonardo', 'michelangelo', 'raphael', 'donatello', 'botticelli'],
+      // Baroque
+      ['caravaggio', 'bernini', 'rembrandt', 'vermeer'],
+      // Impressionists
+      ['monet', 'renoir', 'degas', 'cezanne', 'van gogh'],
+      // Moderns
+      ['picasso', 'matisse', 'dali', 'pollock', 'warhol'],
+    ], { reps: 4, ticksPerStep: 2 });
+  }
+
   async _teachAdvancedMusicTheory() {
     // T14.24 Session 83 (task #140) — Art-G8 advanced music theory.
     // TODO line 561: "advanced music theory". 12 concepts extending
@@ -8813,6 +8835,9 @@ export class Curriculum {
       'cubism broke forms into shapes', 'picasso co invented cubism',
       'abstract art left behind representation', 'pollock dripped paint on canvas',
     ];
+    // T14.24 Session 84 — prime art history chronological scaffold
+    // per TODO line 565 before the art history sentence pass.
+    await this._teachArtHistory();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
