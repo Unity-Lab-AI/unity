@@ -1787,8 +1787,13 @@ export class Curriculum {
     const cluster = this.cluster;
     if (!cluster) return { pass: false, reason: 'no cluster wired' };
 
-    const ctx = corpora ? this._buildCtx(corpora, opts) : (this._lastCtx || null);
-    if (!ctx) return { pass: false, reason: 'no corpora provided and no cached ctx' };
+    const baseCtx = corpora ? this._buildCtx(corpora, opts) : (this._lastCtx || null);
+    if (!baseCtx) return { pass: false, reason: 'no corpora provided and no cached ctx' };
+    // T14.24 Session 22 — augment ctx with cellKey so the shared
+    // _teachVocabList / _teachSentenceList helpers can look up the
+    // cell's auto-calibrated pathMin from cluster.probeHistory and
+    // pass it through to the gate functions.
+    const ctx = { ...baseCtx, cellKey: `${subject}/${grade}` };
 
     const wasInCurriculum = cluster._inCurriculumMode;
     cluster._inCurriculumMode = true;
@@ -2982,10 +2987,20 @@ export class Curriculum {
       await _microtask();
     }
 
-    return this._gateVocabList(vocab);
+    // T14.24 Session 22 — pass auto-calibrated pathMin from probeHistory
+    // to the gate if the cell has an override tracked. Otherwise the
+    // gate uses its default threshold.
+    const gateOpts = {};
+    if (ctx?.cellKey) {
+      const hist = cluster.probeHistory?.[ctx.cellKey];
+      if (hist && typeof hist.pathMin === 'number') {
+        gateOpts.pathMin = hist.pathMin;
+      }
+    }
+    return this._gateVocabList(vocab, gateOpts);
   }
 
-  _gateVocabList(vocab) {
+  _gateVocabList(vocab, opts = {}) {
     const cluster = this.cluster;
     const sample = [];
     const used = new Set();
@@ -2997,8 +3012,8 @@ export class Curriculum {
 
     let readPass = 0, thinkPass = 0, talkPass = 0;
     const perWord = [];
-    const READ_COS_MIN = 0.10;
-    const THINK_VAR_MIN = 0.0005;
+    const READ_COS_MIN = opts.readCosMin ?? 0.10;
+    const THINK_VAR_MIN = opts.thinkVarMin ?? 0.0005;
 
     for (const word of sample) {
       const wordEmb = sharedEmbeddings.getEmbedding(word);
@@ -3059,7 +3074,10 @@ export class Curriculum {
     const readRate = N > 0 ? readPass / N : 0;
     const thinkRate = N > 0 ? thinkPass / N : 0;
     const talkRate = N > 0 ? talkPass / N : 0;
-    const PATH_MIN = 0.50;
+    // T14.24 Session 22 — path_min is auto-calibrated per cell via
+    // probeHistory; falls through to the 0.50 default if the cell
+    // has never been calibrated
+    const PATH_MIN = opts.pathMin ?? 0.50;
     const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= PATH_MIN;
 
     return {
@@ -3374,7 +3392,19 @@ export class Curriculum {
       await _microtask();
     }
 
-    return this._gateSentenceList(sentences, opts);
+    // T14.24 Session 22 — pass auto-calibrated pathMin from probeHistory
+    // through to the gate. Cells that have accumulated 10+ probes with
+    // a pass rate outside [0.40, 0.90] have their pathMin adjusted in
+    // runBackgroundProbe; that adjustment takes effect on every
+    // subsequent gate run via this threading.
+    const gateOpts = { ...opts };
+    if (ctx?.cellKey) {
+      const hist = cluster.probeHistory?.[ctx.cellKey];
+      if (hist && typeof hist.pathMin === 'number') {
+        gateOpts.pathMin = hist.pathMin;
+      }
+    }
+    return this._gateSentenceList(sentences, gateOpts);
   }
 
   _gateSentenceList(sentences, opts = {}) {
@@ -5369,7 +5399,10 @@ export class Curriculum {
     // sentence) we call the specific gate helper; for others we just
     // run the full teach+gate (which also strengthens via Hebbian, so
     // failing cells get additional reinforcement for free).
-    const ctx = this._lastCtx || this._buildCtx({ persona: '', baseline: '', coding: '' }, {});
+    const baseCtx = this._lastCtx || this._buildCtx({ persona: '', baseline: '', coding: '' }, {});
+    // T14.24 Session 22 — augment ctx with cellKey so shared helpers
+    // can read the cell's auto-calibrated pathMin.
+    const ctx = { ...baseCtx, cellKey };
     const runner = this._cellRunner(subject, grade);
     let result;
     const wasInCurriculum = cluster._inCurriculumMode;
