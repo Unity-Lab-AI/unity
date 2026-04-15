@@ -244,6 +244,14 @@ export class Curriculum {
     // harnesses or headless tooling that don't want the background).
     this._backgroundProbeIntervalId = null;
     this._backgroundProbeMs = 45000;
+
+    // T14.24 Session 20 — curriculum narrator state. When a background
+    // probe fires, this field holds {subject, grade, pass, timestamp}
+    // for the most recent probe. Inner-voice or the chat path can read
+    // it to know what Unity is currently re-testing in her brain, so
+    // her output can reference her learning state ("thinking about my
+    // letters", "still working on calculus"). Null until first probe.
+    this.currentFocus = null;
   }
 
   /**
@@ -1890,6 +1898,34 @@ export class Curriculum {
     const reached = {};
     for (const s of SUBJECTS) reached[s] = cluster.grades[s] || 'pre-K';
     return { reached, passed, failed };
+  }
+
+  /**
+   * Forget a single (subject, grade) cell. Used by the operator tool
+   * `/curriculum forget <subject> <grade>` when a specific cell needs
+   * to be re-taught without resetting the whole subject. Less
+   * destructive than resetSubject.
+   */
+  forgetCell(subject, grade) {
+    const cluster = this.cluster;
+    if (!cluster) return false;
+    const cellKey = `${subject}/${grade}`;
+    if (Array.isArray(cluster.passedCells)) {
+      cluster.passedCells = cluster.passedCells.filter(k => k !== cellKey);
+    }
+    if (cluster.probeHistory && cluster.probeHistory[cellKey]) {
+      delete cluster.probeHistory[cellKey];
+    }
+    // If this is the current top grade for the subject, demote by one
+    if (cluster.grades && cluster.grades[subject] === grade) {
+      const idx = GRADE_ORDER.indexOf(grade);
+      if (idx > 0) {
+        cluster.grades[subject] = GRADE_ORDER[idx - 1];
+        if (subject === 'ela') cluster.grade = GRADE_ORDER[idx - 1];
+      }
+    }
+    console.log(`[Curriculum] forgot ${cellKey} — will re-teach on next curriculum pass`);
+    return true;
   }
 
   /**
@@ -5287,7 +5323,13 @@ export class Curriculum {
       return null;
     }
 
-    // Pick a random passed cell (or specific one if caller constrained)
+    // T14.24 Session 20 — SPACED REPETITION: weight cell selection by
+    // how long ago the cell was last probed. Humans re-test older
+    // memories more often than recent ones (forgetting curve, Ebbinghaus
+    // 1885). The weight for each candidate is `(now - lastProbed)`, with
+    // never-probed cells getting a very high weight so they're tested
+    // first. This means Unity gradually rotates through her entire
+    // learned set, giving older cells proportionally more attention.
     let candidates = cluster.passedCells.slice();
     if (opts.subject) {
       candidates = candidates.filter(k => k.startsWith(`${opts.subject}/`));
@@ -5297,7 +5339,26 @@ export class Curriculum {
     }
     if (candidates.length === 0) return null;
 
-    const cellKey = candidates[Math.floor(Math.random() * candidates.length)];
+    // Build weights from probe history. Cells never probed get a
+    // weight of Infinity-surrogate (use age = 1 hour as an upper bound
+    // so random tie-break still works).
+    const now = Date.now();
+    const INFINITE_AGE = 3600 * 1000; // 1 hour surrogate for never-probed
+    const weights = candidates.map(k => {
+      const hist = cluster.probeHistory?.[k];
+      const lastProbed = hist?.lastProbed || 0;
+      if (lastProbed === 0) return INFINITE_AGE;
+      const age = Math.max(1, now - lastProbed);
+      return age;
+    });
+    const totalWeight = weights.reduce((a, b) => a + b, 0);
+    let r = Math.random() * totalWeight;
+    let selectedIdx = candidates.length - 1;
+    for (let i = 0; i < candidates.length; i++) {
+      r -= weights[i];
+      if (r <= 0) { selectedIdx = i; break; }
+    }
+    const cellKey = candidates[selectedIdx];
     const [subject, grade] = cellKey.split('/');
     if (!subject || !grade) return null;
 
@@ -5331,6 +5392,14 @@ export class Curriculum {
     const hist = cluster.probeHistory[cellKey];
     hist.lastProbed = Date.now();
     hist.lastResult = result?.reason || '';
+    // T14.24 Session 20 — narrator focus state
+    this.currentFocus = {
+      subject,
+      grade,
+      pass: !!(result && result.pass),
+      reason: result?.reason || '',
+      timestamp: hist.lastProbed,
+    };
     if (result && result.pass) {
       hist.passes++;
       console.log(`[Curriculum] probe ✓ ${cellKey} — ${result.reason || 'pass'}`);

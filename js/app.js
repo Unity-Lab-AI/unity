@@ -2328,6 +2328,12 @@ Vision: ${state.visionDescription || 'none'}`;
               const perSubj = Object.entries(ps.perSubject).map(([s, n]) => `${s}:${n}`).join(', ');
               lines.push(`  probes per subject: ${perSubj}`);
             }
+            // T14.24 Session 20 — narrator focus
+            if (c.currentFocus) {
+              const f = c.currentFocus;
+              const age = Math.round((Date.now() - f.timestamp) / 1000);
+              lines.push(`  currently thinking about: ${f.subject}/${f.grade} (${f.pass ? '✓' : '✗'} ${age}s ago)`);
+            }
             if (st.passedCells.length > 0) {
               lines.push(`  recent cells: ${st.passedCells.slice(-12).join(', ')}${st.passedCells.length > 12 ? ' …' : ''}`);
             }
@@ -2348,6 +2354,17 @@ Vision: ${state.visionDescription || 'none'}`;
             if (!subject) return { response: { text: '[curriculum] usage: /curriculum reset <subject>' }, action: 'curriculum' };
             const ok = typeof c.resetSubject === 'function' ? c.resetSubject(subject) : false;
             return { response: { text: ok ? `[curriculum] ${subject} reset to pre-K` : `[curriculum] reset failed for ${subject}` }, action: 'curriculum' };
+          }
+          if (sub === 'forget') {
+            // T14.24 Session 20 — forget a single cell (less destructive
+            // than reset which wipes a whole subject)
+            const subject = parts[1];
+            const grade = parts[2];
+            if (!subject || !grade) {
+              return { response: { text: '[curriculum] usage: /curriculum forget <subject> <grade>' }, action: 'curriculum' };
+            }
+            const ok = typeof c.forgetCell === 'function' ? c.forgetCell(subject, grade) : false;
+            return { response: { text: ok ? `[curriculum] forgot ${subject}/${grade} — will re-teach next pass` : `[curriculum] forget failed for ${subject}/${grade}` }, action: 'curriculum' };
           }
           if (sub === 'verify') {
             // T14.24 Session 19 — /curriculum verify walks every cell
@@ -2388,7 +2405,7 @@ Vision: ${state.visionDescription || 'none'}`;
             }
             return { response: { text: '[curriculum] full not available' }, action: 'curriculum' };
           }
-          return { response: { text: '[curriculum] usage: /curriculum status|verify|run <subject> <grade>|gate <subject> <grade>|reset <subject>|full [subject]' }, action: 'curriculum' };
+          return { response: { text: '[curriculum] usage: /curriculum status|verify|run <subject> <grade>|gate <subject> <grade>|reset <subject>|forget <subject> <grade>|full [subject]' }, action: 'curriculum' };
         } catch (err) {
           return { response: { text: `[curriculum] error: ${err?.message || err}` }, action: 'curriculum' };
         }
