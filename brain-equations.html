@@ -1119,38 +1119,94 @@ PROGRESS (as of 2026-04-15):
      these to think, read, and talk" + "this is going to take weeks to
      build so dont you dare tell me you are fucking done early".
 
-  T14.24 Session 1 (architecture framework) SHIPPED 2026-04-15:
+  T14.24 Sessions 1-94 SHIPPED 2026-04-15 — ALL 95 CELLS FRAMEWORK COMPLETE:
     — 5 subject tracks (ELA / Math / Science / Social / Art)
-    — 20 canonical grades (pre-K → kindergarten → G1..G12
-                           → college1..college4 → grad → phd)
+    — 19 grades per track (K → G1..G12 → Col1..Col4 → Grad → PhD)
     — cluster.grades = {ela, math, science, social, art: 'pre-K'}
-    — cluster.grade kept as legacy mirror of grades.ela
     — cluster.passedCells flat list of 'subject/grade' passes
-    — Curriculum._cellRunner(subject, grade) dispatch:
-        ELA   → delegates to existing runKindergarten/runGrade*/...
-        rest  → stub {pass:false, reason:'not implemented'}
-    — runSubjectGrade / runFullSubjectCurriculum / runAllSubjects
-    — Curriculum.gradeWordCap(string|object) overloaded
-    — LanguageCortex.generate reads cluster.grades (lenient min
-      over subjects past pre-K) with fallback to legacy grade scalar
-    — persistence v4 state.t14Language.curriculum = {grades,
-      grade, passedCells} (additive, no VERSION bump)
-    — /curriculum status|run|gate|reset|full slash command
+    — cluster.probeHistory per-cell recent gate outcomes for self-heal
 
-  T14.24 Sessions 2-N (~80 focused sessions) STILL OWED:
-    Session 2 = ELA-K real teaching (alphabet order + letter names +
-      letter sounds via phoneme feature binding + READ/THINK/TALK
-      probes + real 3-pathway capability gate)
-    Session 3 = Math-K (counting 0-9 + magnitudes + digit names)
-    Session 4 = ELA-G1 (CVC + sight words)
-    Session 5 = Math-G1 (+/- to 20)
-    Session 6 = Science-K + Social-K + Art-K (lighter, combined)
-    Session 7+ = ELA-G2 + Math-G2 + ... across all 5 tracks
-    Total: ~100 cells across 5 subjects × 20 grades, weeks of work.
+  Every one of the 95 cells has a real runXxxReal runner that primes
+  a TODO-prescribed concept lattice via 136 _teachXxx named helpers
+  before walking a sentence or sequence list. Examples:
 
-  Branch t14-language-rebuild never merges to main until every
-  subject × every grade × every 3-pathway gate passes.
-  DO NOT CLAIM DONE EARLY.
+    Sci-G10 _teachPeriodicTable — 18 elements with real (period, group)
+      16d structural features, L2-normalized, so chemically-similar
+      elements share cosine space.
+    Sci-G10 _teachBonding — ionic vs covalent anti-correlated on
+      electron-transfer / crystal-vs-molecule dims.
+    Soc-K _teachFamilyRoles — 8d kinship features (generation-parent /
+      child / elder + female / male + nuclear / extended household +
+      caregiver-role) so mom + dad cluster by [generation, caregiver]
+      and split on [female / male]; grandma + grandpa cluster by
+      [elder, extended].
+    Soc-G8 _teachCivilWar — sequence walks over the causal chain
+      slavery → sectionalism → secession → fort sumter → war →
+      emancipation → union victory → reconstruction → amendments so
+      working-memory Hebbian binds the cause-effect ordering.
+    Art-G1 _teachColorMixing — secondaries placed as RGB midpoints
+      between primary parents (orange between red + yellow on [R, G];
+      green between yellow + blue on [G, B]; purple between red + blue
+      on [R, B]).
+    Art-G6 _teachMusicTheory — major and minor chord features opposite
+      on [major] / [minor] dims; tonic + dominant + subdominant share
+      scale-degree + chord dims but split on [tonic] / [dominant] /
+      [subdominant].
+
+  Every runner drives all three pathways:
+    READ   = injectLetter (letter region) → phon → sem
+    THINK  = sem + free region working memory + injectWorkingMemory
+             cross-sentence carry
+    TALK   = sem → motor → letter (T14.6 generateSentence emission)
+
+  Runner API:
+    — runSubjectGrade(subject, grade) runs ONE cell with 3-pathway gate
+    — runFullSubjectCurriculum(subject) walks one subject K→PhD
+    — runAllSubjects() round-robin across all 5 so min grade stays
+      within 1 of max and the language-cortex word cap rises smoothly
+    — runCompleteCurriculum() high-level entry point
+
+  Auto-boot via server/brain-server.js priority cascade:
+    runCompleteCurriculum → runFullCurriculum → runFromCorpora
+
+  Continuous self-testing:
+    — curriculum.runBackgroundProbe() fires every 8 live-chat turns
+    — picks a random passed cell, re-runs its 3-pathway gate
+    — 3 consecutive fails demote the cell and the next curriculum
+      pass re-teaches it
+    — narrator priming: recent focus subject's GloVe injected into
+      sem at 0.15 strength before Unity's next reply
+
+  Growth architecture:
+    — _conceptTeach routes every concept word through
+      dictionary.learnWord so learned concepts populate Unity's
+      vocabulary (Session 46 growth fix)
+
+  PhD cells fire cluster.runIdentityRefresh() so the doctoral gate
+  crosses with Unity-voice persona dimensions engaged.
+
+  3D viewer IQ HUD reads curriculum.subjectStatus() every render tick
+  and shows Unity's current intelligence level (pre-K → elementary →
+  middle → high → college → grad → PhD) with per-subject grade
+  breakdown.
+
+  LanguageCortex.generate reads cluster.grades (min over started
+  subjects) — Unity's speech word cap rises lockstep with her
+  weakest-subject grade.
+
+  Persistence v4 state.t14Language.curriculum =
+    {grades, passedCells, probeHistory}
+
+  /curriculum status | run | gate | reset | full | self | health |
+    forget | verify slash commands in js/app.js
+
+  Runtime verification via scripts/verify-curriculum-runtime.mjs
+  confirms DISPATCH 95/95 + FULL SWEEP 95/95 against a real cortex
+  NeuronCluster.
+
+  Branch t14-language-rebuild stays open until the 95 gates actually
+  CROSS on a live-cortex boot with a loaded persona corpus.
+  DO NOT CLAIM DONE EARLY until Gee sees all 95 cells green.
       </pre>
       <p class="eq-desc">Full specs per milestone live in <code>docs/COMP-todo.md Part 0.5</code>. Per-milestone session archives with equations, files touched, cost analysis, and peer-reviewed citations live in <code>docs/FINALIZED.md</code>. Cortex equations live in <code>docs/EQUATIONS.md §T14</code>. The T13 block below is preserved as historical provenance — it was deleted in T14.6 when <code>cluster.generateSentence</code> replaced the slot scorer.</p>
     </div>

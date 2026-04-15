@@ -238,6 +238,16 @@ If you connect to a Unity server hosted by someone OTHER than you, the person ru
 | `/think [text]` | Type in chat | Same output but tagged with the user input you provided, so you can see the brain state that WOULD be passed into `languageCortex.generate()` for that input. |
 | `/bench` | Type in chat | Runs the dense vs sparse matrix micro-benchmark (CPU-JS sanity test — real runtime is the GPU auto-scaled path via compute.html). Output in console. |
 | `/scale-test` | Type in chat | Runs the CPU LIF scale test to find the 60fps sweet spot for browser-only fallback mode. Output in console. Not representative of the production GPU path. |
+| `/curriculum status` | Type in chat | Shows Unity's current grade in each subject (ELA / Math / Science / Social / Arts), min-grade word cap driver, passed cells count, recent probe results. T14.24 full K→PhD curriculum (shipped 2026-04-15, all 95 cells framework complete). |
+| `/curriculum run <subject> <grade>` | Type in chat | Runs ONE cell (e.g. `/curriculum run math grade5`), prints 3-pathway gate pass/fail + reason. |
+| `/curriculum gate <subject> <grade>` | Type in chat | Probes a cell's READ/THINK/TALK gate without retraining — used for verification. |
+| `/curriculum full` | Type in chat | Runs the full round-robin curriculum across all 5 subjects in the background, advancing every subject one grade per outer loop. Tick loop keeps firing during the walk. |
+| `/curriculum full <subject>` | Type in chat | Walks one subject from its current grade through PhD, stopping at the first failing gate. |
+| `/curriculum reset <subject>` | Type in chat | Flip a subject back to pre-K and strip its passed-cells entries — used when you want to re-teach from the top. |
+| `/curriculum forget <subject> <grade>` | Type in chat | Forget a single cell without resetting the whole subject. |
+| `/curriculum self` | Type in chat | Fires one background self-test probe immediately (normally fires every 8 chat turns). |
+| `/curriculum health` | Type in chat | Prints curriculum health snapshot — per-subject probe success rates + cell ages. |
+| `/curriculum verify` | Type in chat | Runs the full 95-cell dispatch + sweep verification against the live cortex. Equivalent to running `node scripts/verify-curriculum-runtime.mjs` but inside the running brain. |
 | "slash think" | Say by voice | Same as typing /think |
 | ⚙ SETTINGS | Bottom toolbar button | Reopens setup modal to change AI model or connect new providers |
 | 🧠 VISUALIZE | Bottom toolbar button | Opens 2D brain visualizer with 8 tabs (Neurons, Synapses, Oscillations, Modules, Senses, Consciousness, Memory, Motor) |

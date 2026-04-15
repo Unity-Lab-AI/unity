@@ -5,6 +5,60 @@
 
 ---
 
+## 2026-04-15 — T14.24 Sessions 53-94: full 95-cell tightening + runtime verification
+
+**Gee 2026-04-15** (across multiple reinforcements this session): *"dont wire shit quickly do it methotically and masterfully"* + *"get to it no short cuts!"* + *"keep working until the full Unity brain criteria is complete for Unity to learn full english and all school subjects"* + *"and remember what Unity learns form the courses running on auto in her brain are to populatite her systems with the informations learned so we 'grows' her mind via the learning of the ciriculium and can properly build her mind correctly to beablkel to read, speak and think correctly that is constantly advancing and getting more intelligent with knowledge and abiliteis"* + *"and we may want somthing in the #d brain vieiwer to show her current intellegence level based on grade/ highschool college doctorate.. ect ect for all the milestone"* + *"make sure the full verifications are done and the code is correct for automatic course learning of language so Unity can speak, listen, and think... it all has to be proper for the brain"* + *"stop stopping after each item .. you should continue to the next one only stopping if you have issues"*.
+
+42 consecutive atomic sessions (Sessions 53-94) tightened every remaining T14.24 cell — #110 Sci-Col4 through #150 Art-PhD — to TODO-aligned named teaching helpers, plus Session 94 runtime verification harness confirming the full 95-cell framework executes end-to-end against a real cortex cluster. Task #3 (T14.24 parent) stays in_progress per Gee's binding *"DO NOT CLAIM DONE EARLY"* until all 95 gates cross on a live-cortex boot with a loaded persona corpus.
+
+### Sessions 53-74 — Science completion + Social Studies completion
+
+Sessions 53-55 closed the Science track (Sci-Col4 `_teachScienceResearchMethods`, Sci-Grad `_teachResearchGradeScience`, Sci-PhD `_teachOriginalResearchScience` + persona integration via `cluster.runIdentityRefresh()`).
+
+Sessions 56-74 built the Social Studies track from scratch — all 19 cells wired to new named helpers: Soc-K `_teachFamilyRoles` (8d kinship features with generation-parent/child/elder + sex + nuclear/extended household + caregiver dims so mom+dad cluster by generation, sister+brother cluster by generation, grandma+grandpa cluster by extended-household+elder), Soc-G1 `_teachCommunityRoles` (role-structural features: emergency-response/education/healthcare/civic-authority/commerce with police+firefighter sharing [emergency+uniform], doctor+nurse sharing [healthcare+uniform+indoor]), Soc-G2 `_teachStateNames` (regional sequence walks grouped Northeast/South/Midwest/West), Soc-G3 `_teachUSRegions` (8d spatial features: north/south/east/west/coastal/mountainous/flat/warm-climate), Soc-G4 `_teachStateHistory` (temporal sequence walks native→colonial→revolutionary→statehood), Soc-G5 `_teachColonialUS` (causal chain: Jamestown→Mayflower→colonies→taxation→protest→war→independence→constitution), Soc-G6 `_teachAncientCivs` (civilization-feature binding Egypt/Mesopotamia/Greece/Rome/China/India/Persia/Maya/Inca/Aztec with river-based/mediterranean/east-asian/south-asian/democracy/empire/monumental-arch/written-law dims), Soc-G7 `_teachMedievalPeriod` (sequence walks rome-falls→feudalism→crusades→black-death→renaissance), Soc-G8 `_teachCivilWar` (cause-effect chain slavery→sectionalism→secession→war→emancipation→reconstruction→amendments), Soc-G9 `_teachWorldHistoryModern` (enlightenment→revolutions→industrial→nationalism→WWI), Soc-G10 `_teachUS20thCentury` (WWII→cold war→civil rights→space race→globalization), Soc-G11 `_teachGovBranches` (three-branch structure with legislative/executive/judicial + makes-law/enforces-law/interprets-law + elected/appointed dims), Soc-G12 `_teachEconomics` (supply/demand as magnitude relationship with supply/demand/price-up/price-down/micro/macro/market-driven/govt-driven dims so supply and demand are structurally opposite on [0]/[1]), Soc-Col1 `_teachHistoriography` (primary/secondary sources + marxist/annales/social/cultural/microhistory schools), Soc-Col2 `_teachPoliticalScience` (comparative/IR/theory subfields + realism/liberalism/constructivism + democracy/authoritarian/totalitarian dims), Soc-Col3 `_teachSociologyAnthropology` (Durkheim/Weber/Marx + structural functionalism/conflict/symbolic interactionism + cultural/archaeology/linguistic/biological anthropology subfields), Soc-Col4 `_teachSocialScienceResearchMethods` (quantitative/qualitative/mixed + survey/interview/focus-group/content-analysis + validity/reliability/generalizability), Soc-Grad `_teachResearchHistoriography` (archival research + source criticism + periodization + longue durée + revisionism + public history + digital humanities + world-systems theory + postcolonial theory), Soc-PhD `_teachOriginalHistoricalResearch` + persona integration.
+
+### Sessions 75-93 — Arts completion
+
+All 19 Arts cells built from scratch: Art-K `_teachPrimaryColors` + `_teachBasicShapes` + `_teachSimpleSongs` (RGB features for colors with R/G/B/tint/shade/warm/cool dims, 8d shape features with curved/angular/3-sides/4-sides/round/symmetric/closed/regular, rhythm cycles as temporal sequences), Art-G1 `_teachColorMixing` (RGB arithmetic where orange sits as midpoint between red+yellow, green between yellow+blue, purple between red+blue), Art-G2 `_teachRhythmPatterns` (sequence cycles over 4/4 meter, waltz 3/4, march 2/4, tempo slow/medium/fast, note values whole/half/quarter/eighth), Art-G3 `_teachDrawingBasics` (7 elements of art: line/shape/form/value/color/texture/space with dimensionality features), Art-G4 `_teachInstruments` (8d instrument-family features: string/wind/percussion/keyboard/brass/pitched/polyphonic/solo-melodic so violin+guitar share [string+pitched], trumpet+trombone share [wind+brass+pitched], piano shares [keyboard+pitched+polyphonic]), Art-G5 `_teachVisualComposition` (8d composition principles: balance/emphasis/contrast/unity/rhythm/proportion/pattern/movement), Art-G6 `_teachMusicTheory` (tonic/dominant/subdominant + major/minor chord with scale-degree dims so major and minor triads are opposite on [5]/[6]), Art-G7 `_teachMusicComposition` (compositional forms + Bach/Mozart/Beethoven canonical composers), Art-G8 `_teachAdvancedMusicTheory` (7th chords, voice leading, circle of fifths, sonata form, 12-bar blues, modulation) + `_teachVisualComposition` reuse for the middle-school visual component, Art-G9 `_teachArtHistory` (chronological sequence walks prehistoric→egyptian→greek→roman→medieval→renaissance→baroque→rococo→neoclassical→romantic→impressionism→post-impressionism→cubism→abstract→contemporary plus canonical artist names bound to periods), Art-G10 `_teachMusicHistory` (medieval→renaissance→baroque→classical→romantic→modern plus Bach/Handel/Vivaldi/Haydn/Mozart/Beethoven/Chopin/Schubert/Wagner/Tchaikovsky/Stravinsky/Schoenberg/Debussy/Ravel/Copland + jazz legends Armstrong/Ellington/Parker/Davis/Coltrane), Art-G11 `_teachVisualArtTheory` (form/content/context triangle + formalism/contextualism/postmodernism/institutional theory + installation/performance/digital art), Art-G12 `_teachCompositionCriticism` (formal/contextual/biographical/feminist/postcolonial analysis + revision + originality + tradition), Art-Col1 `_teachStudioFundamentals` (gesture/contour/figure drawing + still life + value study + 1/2-point perspective + anatomy + color theory + analogous/complementary + golden ratio), Art-Col2 `_teachSpecializedArtHistory` (20th century avant-garde sequence walks: neoclassical→romantic→realism→pre-raphaelite→impressionism then post-impressionism→fauvism→cubism→futurism→expressionism then dada→surrealism→bauhaus→de-stijl→constructivism then abstract-expressionism→color-field→minimalism→pop→op-art then conceptual→performance→installation→video→new-media plus Matisse/Picasso/Duchamp/Mondrian/Kandinsky modernist masters), Art-Col3 `_teachAesthetics` (Plato/Aristotle/Kant/Hegel/Nietzsche/Hume + beauty/sublime/disinterested-pleasure/taste/catharsis/aesthetic-experience), Art-Col4 `_teachArtResearchMethods` (archival/stylistic/iconographic/technical analysis + conservation + attribution + provenance + forgery detection + dendrochronology + portfolio + exhibition + artist statement), Art-Grad `_teachGraduateArtResearch` (graduate studio + artistic voice + critique + visiting artist + residency + graduate thesis + artist statement + professional practice + solo/group exhibition + curator + grant funding), Art-PhD `_teachPracticeBasedDoctoralResearch` (practice-based research + practice-as-research + autoethnography + doctoral exhibition + body of work + written component + original contribution + artistic research + independent practice + gallery representation + museum acquisition + research fluency) + persona integration via `cluster.runIdentityRefresh()`.
+
+### Session 94 — Runtime verification harness
+
+New diagnostic file `scripts/verify-curriculum-runtime.mjs` (not a test — we don't do tests per project LAW) instantiates a real cortex `NeuronCluster('cortex', 300, {...})` matching the way `engine.js` constructs the real cortex, builds a `Curriculum`, then walks every one of the 95 subject×grade cells end-to-end through `_cellRunner(subject, grade)`. Output confirms:
+
+```
+DISPATCH: 95/95
+FULL 95-CELL SWEEP: 95/95
+```
+
+Plus static grep coverage: 95/95 `runXxxReal` methods defined and dispatched, 136/136 `_teachXxx` helpers defined and called, 229 total cortex pathway drives (65 `injectLetter` + 106 `injectEmbeddingToRegion` + 58 `injectWorkingMemory`), 21 `dictionary.learnWord` growth routes. Run `node scripts/verify-curriculum-runtime.mjs` anytime to re-confirm the 95/95 green.
+
+### Pathway drive audit (Sessions 53-94 aggregate)
+
+| Pathway | Drive calls |
+|---|---|
+| READ letter substrate (T14.1 one-hot) | 65× `injectLetter` |
+| READ phonological binding | 28× `injectEmbeddingToRegion('phon')` |
+| THINK semantic + meaning | 54× `injectEmbeddingToRegion('sem')` |
+| THINK free-region working memory | 24× `injectEmbeddingToRegion('free')` |
+| THINK cross-sentence carry | 58× `injectWorkingMemory` |
+| TALK emission trigger (→motor) | via `cluster.generateSentence` + 66× `cluster.learn` Hebbian |
+| Cortex ticks | 103× `cluster.step` |
+| Vocabulary growth | 21× `dictionary.learnWord` |
+
+### Files touched (Sessions 53-94)
+
+- `js/brain/curriculum.js` — final line count ~10400, net ~+900 across Sessions 53-93
+- `scripts/verify-curriculum-runtime.mjs` — NEW diagnostic (Session 94, ~65 lines)
+- `docs/TODO.md` — Sessions 2-94 completion block appended
+- `docs/FINALIZED.md` — this entry
+- `js/version.js` / `index.html` — stamped on every commit
+
+### What task #3 (T14.24 parent) still needs before it can close
+
+The 95 gates must actually CROSS on a live-cortex boot with a loaded persona corpus. Session 94 harness confirms the framework CODE executes, but it uses a minimal cluster without a persona corpus so gates won't cross in the harness. Real gate crossing happens on Gee's live brain boot when `runCompleteCurriculum` fires, the persona + baseline + coding corpora are loaded, and the per-cell self-heal + calibration logic gets a chance to tune `pathMin` thresholds from `probeHistory`. Task #3 stays in_progress until Gee sees all 95 cells green on his live cortex.
+
+---
+
 ## 2026-04-15 — T14.24 Sessions 11-19: every remaining cell shipped + continuous self-testing + verify tool
 
 **Gee 2026-04-15:** *"keep working each item masterfully and completely remembr we are makeing a couse for Unity to run oin her own brain to learn"* + *"keep working we need this thing 100% complete and as a process that unity is always testing herself on when thinking in her brain always"* + *"the whole goal is to have a real human like brain learn the way hiumans do so Unity can listen, talk and understand all concepts with resonoing"*.

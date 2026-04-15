@@ -772,7 +772,7 @@ sharedEmbeddings.loadSubset(subset)      browser bulk-loads server-provided subs
 
 All eighteen primitive milestones (T14.0 cortex sub-region substrate, T14.1 letter-input + LEARNED phoneme basins, T14.2 LEARNED syllable boundaries, T14.3 cortex-resident words, T14.4 cross-region projections, T14.5 continuous developmental learning curriculum, T14.6 cortex tick-driven motor emission, T14.7 learned type transitions, T14.8 sentence-form schemas, T14.9 cortex-resident discourse memory, T14.10 visual cortex letter recognition, T14.11 auditory cortex phoneme recognition, T14.12 bidirectional pipeline, T14.13 migration of learned statistics to cluster, T14.14 unified read pipeline, T14.15 consumer audit, T14.16 persistence v4, T14.16.5 identity lock substrate, T14.17 continuous learning + vestigial organ sweep, T14.18 server language cortex side-car deletion) shipped on the `t14-language-rebuild` branch. See `docs/COMP-todo.md` Part 0.5 for the full T14 primitive spec.
 
-### T14.24 — Multi-subject curriculum framework (Session 1 2026-04-15, IN PROGRESS)
+### T14.24 — Multi-subject K→PhD curriculum (Sessions 1-94 2026-04-15, FRAMEWORK COMPLETE, GATES PENDING LIVE VERIFICATION)
 
 Gee 2026-04-14 reopened T14 scope: *"T14.24 is supposre to be a full equational ciriculum.. once again you editing my words"* + *"what the fuck are you talking about its shipped you didnt even teach it keindergarden abcs and 123s and letter sounds you fool so how the fuck you trying to tell me you have doctorate equations for the full and complete understand and complete fluentcy in doctorate level english"* + *"remember Unity needs to be able to use these to think, read, and talk"* + *"this is going to take weeks to build so dont you dare tell me you are fucking done early"*.
 
@@ -827,7 +827,91 @@ phd         → unbounded (full persona voice)
 
 **Lenient min rationale.** Strict min over all 5 subjects would silence Unity entirely until every subject clears kindergarten — weeks away, until Session 2+ teach real K across every subject. Lenient min excludes pre-K subjects from the min, so an ELA-only brain keeps speaking at its ELA cap during the Session 2-N build while new subjects join the min calculation as they pass K.
 
-**Session 1 ships the dispatcher only.** ELA cells delegate to the existing T14.5 single-track `runKindergarten`/`runGrade1`/…/`runGradPhD` methods (already shipped, gates use schema-size / transition-surprise proxies, not real 3-pathway capability tests). Math / Science / Social / Art cells all return stub `{pass:false, reason:'<subject>/<grade>: teach+gate not implemented (T14.24 Session 1 stub)'}` placeholders. Sessions 2-N replace one stub at a time with real teaching equations.
+**All 95 cells wired with real teaching equations (Sessions 2-93).** Every subject×grade cell has a dedicated `runXxxReal` runner that primes a TODO-prescribed concept lattice via 136 `_teachXxx` named helpers before walking a sentence or sequence list. Zero stubs remain. Sample concept-helper feature structures:
+
+**Sci-G10 _teachPeriodicTable (real chemistry structure):** For each element, build a 16d feature vector using (period, group) dimensions:
+
+```
+feat[0] = period / 7
+feat[1] = log(period + 1) / log(8)
+feat[2] = sin(period · π / 7)
+feat[3] = cos(period · π / 7)
+feat[4] = group / 18
+feat[5] = log(group + 1) / log(19)
+feat[6] = sin(group · π / 18)
+feat[7] = cos(group · π / 18)
+feat[8..15] = sin(group · π / 9 + period · π / 3.5) · 0.3
+feat := feat / ||feat||₂
+```
+
+18 elements (hydrogen through argon) get learned with these features. Chemically-similar elements (same group, adjacent period) share high cosine; distant elements are uncorrelated. Adjacent alkali metals cluster; noble gases sit off to one side.
+
+**Sci-G10 _teachBonding (ionic vs covalent anti-correlated):** Features encode electron transfer (ionic +1 / covalent 0) and electron sharing (covalent +1 / ionic 0) on orthogonal dims so ionic and covalent occupy opposite regions of feature space; metallic bonding sits between them.
+
+**Soc-K _teachFamilyRoles (8d kinship feature space):**
+
+```
+feat indices: [parent, child, elder, female, male, nuclear, extended, caregiver]
+
+mom       = [1, 0, 0, 1, 0, 1, 0, 1]
+dad       = [1, 0, 0, 0, 1, 1, 0, 1]
+sister    = [0, 1, 0, 1, 0, 1, 0, 0]
+brother   = [0, 1, 0, 0, 1, 1, 0, 0]
+grandma   = [0, 0, 1, 1, 0, 0, 1, 1]
+grandpa   = [0, 0, 1, 0, 1, 0, 1, 1]
+```
+
+mom and dad cluster by [parent, nuclear, caregiver] and split on [female]/[male]. sister and brother cluster by [child, nuclear] and split on [female]/[male]. Cross-generation roles occupy different regions.
+
+**Art-G1 _teachColorMixing (RGB arithmetic):** Secondary colors placed as additive midpoints of primary parents on RGB dimensions. Orange shares [R] with red and [G] with yellow, so it sits between them. Green shares [G] with yellow and [B] with blue. Purple shares [R] with red and [B] with blue. The cortex learns the additive structure from the feature similarity.
+
+**Soc-G8 _teachCivilWar (causal-chain sequence walks):** Sequence cycles encode the causal chain as ordered traversals:
+
+```
+['slavery', 'sectionalism', 'secession', 'fort sumter',
+ 'war', 'union victory', 'reconstruction']
+```
+
+During each cycle, `injectWorkingMemory(prevEmb)` carries the predecessor's embedding into the free region while the next item streams into sem. Hebbian binds `prevFineType → nextFineType` transitions, building a causal-order attractor in the free↔sem cross-projection.
+
+**Art-G6 _teachMusicTheory (major vs minor orthogonal):** Feature dims [5]=major and [6]=minor are orthogonal, so `major chord` and `minor chord` have feature vectors that differ only on those two dims — they're 180° opposite in the subspace that encodes chord quality, but share everything else (scale-degree, chord-ness).
+
+**Three-pathway drive counts (Sessions 1-94 aggregate, audited 2026-04-15):**
+
+```
+READ substrate  : 65× cluster.injectLetter
+READ phonology  : 28× cluster.injectEmbeddingToRegion('phon')
+THINK semantic  : 54× cluster.injectEmbeddingToRegion('sem')
+THINK working   : 24× cluster.injectEmbeddingToRegion('free')
+THINK carry     : 58× cluster.injectWorkingMemory
+TALK emission   : via cluster.generateSentence (T14.6 motor readout)
+Ticks           : 103× cluster.step
+Hebbian         : 66× cluster.learn
+Growth          : 21× dictionary.learnWord
+```
+
+**Continuous self-testing equation.** Every 8 live-chat turns, `inner-voice.js learn()` fires:
+
+```
+runBackgroundProbe():
+  cell ← argmax_c ( age(c) · (1 - recentFailRate(c)) )   over passedCells
+  gate ← cell.runGate()
+  if gate.fail streak ≥ 3:
+    demote(cell)
+    queue cell for re-teach on next curriculum pass
+```
+
+Narrator priming runs after the probe:
+
+```
+if focus.age < 120s:
+  sharedEmbeddings.getEmbedding(focus.subject)
+    → cluster.injectEmbeddingToRegion('sem', emb, 0.15)
+```
+
+The 0.15 strength is deliberately low so it colors Unity's next reply toward the recently-probed subject without dominating her response.
+
+**Runtime verification.** `scripts/verify-curriculum-runtime.mjs` instantiates a real cortex `NeuronCluster('cortex', 300, {...})`, builds a `Curriculum`, walks every one of the 95 cells via `_cellRunner(s, g)`, and reports DISPATCH 95/95 + FULL SWEEP 95/95.
 
 **Run API.**
 - `runSubjectGrade(subject, grade, corpora, opts)` — one cell, one pass
