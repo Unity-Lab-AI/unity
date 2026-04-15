@@ -5250,6 +5250,72 @@ export class Curriculum {
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
+  // ─── TODO-aligned ELA-G6 helper (Session 33) ─────────────────────
+  //
+  // docs/TODO.md T14.24 ELA-G6 spec (line 188):
+  //   _teachSubordinateClauses(complex) walks complex sentences,
+  //     injects at each subordinate marker (cluster.injectWorkingMemory
+  //     of the main clause so the subordinate clause sees it as
+  //     context). Schema extends beyond 3 slots.
+
+  async _teachSubordinateClauses(complexList, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 4;
+    const ticksPerWord = opts.ticksPerWord ?? 2;
+    const arousal = opts.arousal ?? 0.8;
+    const valence = opts.valence ?? 0.2;
+
+    const MARKERS = new Set([
+      'which', 'that', 'when', 'where', 'whose', 'who', 'whom',
+      'although', 'because', 'since', 'while', 'if', 'unless',
+      'before', 'after', 'though',
+    ]);
+
+    const letterSet = new Set();
+    for (const s of complexList) for (const ch of s) if (/[a-z]/.test(ch)) letterSet.add(ch);
+    ensureLetters(Array.from(letterSet));
+
+    for (let rep = 0; rep < reps; rep++) {
+      for (const sentence of complexList) {
+        const words = sentence.split(/\s+/).filter(Boolean);
+        if (words.length < 4) continue;
+
+        // Find the subordinate marker position
+        let markerIdx = -1;
+        for (let i = 1; i < words.length; i++) {
+          if (MARKERS.has(words[i].toLowerCase())) {
+            markerIdx = i;
+            break;
+          }
+        }
+        if (markerIdx === -1) {
+          this._walkSentence(words, arousal, valence, ticksPerWord);
+          continue;
+        }
+
+        // Walk main clause (before marker)
+        const mainClause = words.slice(0, markerIdx);
+        this._walkSentence(mainClause, arousal, valence, ticksPerWord);
+        // Inject main clause embedding into working memory at the
+        // marker position so the subordinate clause sees it as context
+        const mainText = mainClause.join(' ');
+        const mainEmb = sharedEmbeddings.getSentenceEmbedding
+          ? sharedEmbeddings.getSentenceEmbedding(mainText)
+          : null;
+        if (mainEmb && mainEmb.length > 0 && typeof cluster.injectWorkingMemory === 'function') {
+          cluster.injectWorkingMemory(mainEmb, 0.75);
+        }
+        // Walk the marker + subordinate clause together
+        const subClause = words.slice(markerIdx);
+        this._walkSentence(subClause, arousal, valence, ticksPerWord);
+        this.stats.sentencesSeen++;
+      }
+      await _microtask();
+    }
+    return { taught: reps * complexList.length };
+  }
+
   async runElaG6Real(ctx) {
     const SENTENCES = [
       'the dog that ran was fast', 'the cat which sleeps is old',
@@ -5266,6 +5332,9 @@ export class Curriculum {
       'the teacher said that we had homework', 'i think that the answer is yes',
       'she wondered where her keys were', 'he asked how the test went',
     ];
+    // Session 33 — TODO-aligned split. _teachSubordinateClauses fires
+    // working memory injection at subordinate marker positions.
+    await this._teachSubordinateClauses(SENTENCES);
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
