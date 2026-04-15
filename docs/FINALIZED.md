@@ -5,6 +5,53 @@
 
 ---
 
+## 2026-04-15 — T14.24 Session 5: Math-G1 real teaching equations (addition/subtraction to 10 + arithmetic-fact 3-pathway gate)
+
+**Gee's binding 2026-04-14:** *"1st grade u start learning how to write sentences ect ect all the way up to doctorate"* applied to math = first-grade arithmetic fact memorization + sentence-form association.
+
+Session 5 ships the fourth real teaching cell of T14.24. Task #29 (Math-G1) completed. Task #3 parent stays in_progress — 91 cells still owed.
+
+### What landed
+
+**`js/brain/curriculum.js` (+241 lines net, 2411 → 2652):**
+
+- **`runMathG1Real(ctx)`** — real Grade 1 math teaching via arithmetic fact sentence walks. Builds on Session 3's Math-K digit + magnitude basins:
+  - **50 arithmetic facts** auto-generated — 25 addition facts (a+b where a,b ∈ [1,5], so all results ≤ 10) + 25 subtraction inverses. Each fact is a full English sentence like "one plus one is two" or "four minus two is two". Facts are DATA not rules — synthesizing arithmetic sentences from the digit-name table is primitive input, same principle as Session 2's alphabet data.
+  - **Sentence walk pass (4 reps)** — each fact is walked through `_walkSentence` (the existing T14.5 path) which streams each word's letters through the letter region, injects each word's GloVe into the sem region, fires `cluster.learn` after each word, AND routes through `languageCortex.learnSentence` so T14.7 type transitions + T14.8 sentence-form schemas pick up the arithmetic sentence structure.
+  - **Completion pass (2 extra reps)** — walks the PARTIAL fact (just "one plus one is" without the answer), then injects the answer word's GloVe into sem region at 0.8 plus the answer digit character + magnitude into letter/phon regions, then Hebbian. Builds the sequence Hebbian asymmetry so the `(a, op, b, is)` → `(c)` direction is stronger than the reverse — which is what a completion probe tests.
+
+- **`_gateMathG1Real(facts)`** — real arithmetic-fact 3-pathway gate. Samples 12 random facts and probes each:
+  - **READ probe:** walk partial fact ("one plus one is") through letter + sem path → read sem region → cosine against GloVe(answerWord) > 0.08. Threshold lowered from ELA-G1's 0.10 because arithmetic-fact association is a harder binding than direct word recognition.
+  - **THINK probe:** partial walk → 10 silence ticks → free region variance > 0.0005.
+  - **TALK probe:** after partial walk, read motor region argmax → check first letter matches answer word's first letter (same simplified probe as ELA-G1 — full-word multi-letter motor emission waits for Session 7+).
+
+  PASS when ≥ 45% of sampled facts clear each pathway. Threshold relaxed from 50% because arithmetic completion requires the cortex to have a learnable asymmetry in sequence Hebbian, which forms slower than direct association.
+
+**`Curriculum._cellRunner('math', 'grade1')`** — dispatch flipped from Session 1 stub to the new `runMathG1Real`.
+
+### Why rote memorization over compositional rules
+
+A Grade 1 child doesn't learn the ABSTRACT rule of addition (commutativity, associativity, cardinality preservation). They memorize their addition tables — "one plus one is two" as a fact, not as a derivation. Session 5 teaches the same way: 50 arithmetic facts as synthesized English sentences, walked through the sequence Hebbian path, forming associative basins that the completion probe can then trigger. Compositional arithmetic (learning the RULE of addition rather than individual facts) is Session 6+ territory when the brain has enough basin depth to support rule generalization.
+
+This matches Gee's T14.24 spec intent: each grade teaches what a child at that grade actually knows, not an idealized adult form of the subject.
+
+### Integration with Math-K
+
+Math-G1 intentionally reuses Session 3's magnitude features during the completion pass — every time the cortex learns "one plus one is two", it also re-injects `_magnitudeFeatureForDigit('2')` into the phon region alongside the answer digit character. This reinforces Session 3's magnitude basins on every Math-G1 fact exposure, so Math-K capability gets stronger as a side effect of Math-G1 teaching. The cells compound.
+
+### What Session 5 does NOT ship
+
+- Does NOT teach arithmetic involving numbers > 10 — that's Math-G2 (place value)
+- Does NOT teach multiplication or division — that's Math-G3
+- Does NOT teach compositional arithmetic rules (commutativity, etc.) — rote memorization only
+- Does NOT cover Science/Social/Art — still Session 6+
+
+### Commit status
+
+Committed as part of Session 5 atomic push to `t14-language-rebuild`.
+
+---
+
 ## 2026-04-15 — T14.24 Session 4: ELA-G1 real teaching equations (CVC + Dolch sight words + word-level 3-pathway gate)
 
 **Gee's binding 2026-04-14:** *"1st grade u start learning how to write sentences ect ect all the way up to doctorate in english"* + *"remember Unity needs to be able to use these to think, read, and talk"*.

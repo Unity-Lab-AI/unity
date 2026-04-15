@@ -1437,6 +1437,11 @@ export class Curriculum {
     if (subject === 'math' && grade === 'kindergarten') {
       return async (ctx) => this.runMathKReal(ctx);
     }
+    // T14.24 Session 5 (2026-04-15) — Math-G1 ships real teaching
+    // (arithmetic fact sentence walks + completion probe).
+    if (subject === 'math' && grade === 'grade1') {
+      return async (ctx) => this.runMathG1Real(ctx);
+    }
     // Stub for remaining cells — Session 1 framework only. Sessions 4-N
     // replace one stub at a time.
     return async () => ({
@@ -2318,6 +2323,242 @@ export class Curriculum {
       pass,
       reason: `READ ${readPass}/${N} (${(readRate * 100).toFixed(0)}%), THINK ${thinkPass}/${N} (${(thinkRate * 100).toFixed(0)}%), TALK ${talkPass}/${N} (${(talkRate * 100).toFixed(0)}%)`,
       metrics: { readRate, thinkRate, talkRate, perWord },
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // T14.24 SESSION 5 — REAL MATH-G1 TEACHING EQUATIONS (2026-04-15)
+  // ═══════════════════════════════════════════════════════════════════
+  //
+  // Gee binding 2026-04-14: "1st grade u start learning how to write
+  // sentences ect ect all the way up to doctorate" applied to math =
+  // first-grade arithmetic fact memorization + sentence-form association.
+  //
+  // Real Grade 1 math. Builds on Session 3's Math-K digit + magnitude
+  // basins by teaching addition and subtraction facts through arithmetic
+  // sentence walks. Each fact is a sentence like "one plus one is two"
+  // or "four minus two is two" — walking the sentence through the
+  // cortex via the T14.5 _walkSentence path fires sequence Hebbian on
+  // the (arg1, op, arg2, result) tuple and builds an associative basin.
+  //
+  // The approach is rote memorization via exposure, which is how Grade
+  // 1 children actually learn their addition tables in a classroom.
+  // Compositional arithmetic (learning the RULE of addition rather than
+  // individual facts) is Session 6+ territory — Grade 1 just memorizes
+  // the 25 addition facts up through 5+5=10 and their 25 subtraction
+  // inverses.
+  //
+  // Gate probes all three pathways:
+  //   - READ:  walk partial fact "one plus one is" → sem readout
+  //             cosine vs GloVe('two') > 0.10
+  //   - THINK: walk fact → silence → free region variance > baseline
+  //             (the fact persists as working memory)
+  //   - TALK:  walk partial fact → motor argmax → first letter of
+  //             expected result word
+
+  async runMathG1Real(ctx) {
+    const cluster = this.cluster;
+    if (!cluster) return { pass: false, reason: 'no cluster wired' };
+
+    const DIGIT_NAMES_FULL = ['zero', 'one', 'two', 'three', 'four', 'five',
+                               'six', 'seven', 'eight', 'nine', 'ten'];
+    const FACTS = [];
+    // Generate 25 addition facts (a+b ≤ 10 with a,b ∈ [1,5])
+    for (let a = 1; a <= 5; a++) {
+      for (let b = 1; b <= 5; b++) {
+        const c = a + b;
+        FACTS.push({
+          a, b, c, op: 'plus',
+          sentence: `${DIGIT_NAMES_FULL[a]} plus ${DIGIT_NAMES_FULL[b]} is ${DIGIT_NAMES_FULL[c]}`,
+          partial:  `${DIGIT_NAMES_FULL[a]} plus ${DIGIT_NAMES_FULL[b]} is`,
+          answerWord: DIGIT_NAMES_FULL[c],
+        });
+      }
+    }
+    // Generate 25 subtraction inverses (c-b = a for each addition fact)
+    for (let a = 1; a <= 5; a++) {
+      for (let b = 1; b <= 5; b++) {
+        const c = a + b;
+        FACTS.push({
+          a: c, b, c: a, op: 'minus',
+          sentence: `${DIGIT_NAMES_FULL[c]} minus ${DIGIT_NAMES_FULL[b]} is ${DIGIT_NAMES_FULL[a]}`,
+          partial:  `${DIGIT_NAMES_FULL[c]} minus ${DIGIT_NAMES_FULL[b]} is`,
+          answerWord: DIGIT_NAMES_FULL[a],
+        });
+      }
+    }
+
+    const REPS_PER_FACT = 4;
+    const TICKS_PER_WORD = 2;
+    const arousal = ctx?.arousal ?? 0.8;
+    const valence = ctx?.valence ?? 0.2;
+
+    // Register all the characters used in the fact sentences (digit
+    // names + 'plus' / 'minus' / 'is'). _walkSentence uses injectLetter
+    // under the hood, so inventory registration happens lazily — but
+    // doing it up-front keeps ordering deterministic.
+    const letterSet = new Set();
+    for (const f of FACTS) {
+      for (const ch of f.sentence) {
+        if (/[a-z]/.test(ch)) letterSet.add(ch);
+      }
+    }
+    ensureLetters(Array.from(letterSet));
+
+    // STEP 1 — walk every fact sentence through the T14.5 _walkSentence
+    // path. This drives the letter region with each word's letters,
+    // injects each word's GloVe into the sem region, fires cluster.learn
+    // after each word, and routes the sentence through languageCortex
+    // .learnSentence so T14.7 type transitions + T14.8 sentence-form
+    // schemas pick up the arithmetic pattern too.
+    for (let rep = 0; rep < REPS_PER_FACT; rep++) {
+      for (const fact of FACTS) {
+        const words = fact.sentence.split(/\s+/).filter(Boolean);
+        this._walkSentence(words, arousal, valence, TICKS_PER_WORD);
+        this.stats.sentencesSeen++;
+      }
+      await _microtask();
+    }
+
+    // STEP 2 — additional reverse/completion pass: walk only the partial
+    // prompts (without the answer word) so the cortex learns to predict
+    // completion. This reinforces the sequence Hebbian asymmetry — the
+    // (a, op, b, is) → (c) direction is stronger than the reverse.
+    for (let rep = 0; rep < 2; rep++) {
+      for (const fact of FACTS) {
+        const partialWords = fact.partial.split(/\s+/).filter(Boolean);
+        this._walkSentence(partialWords, arousal, valence, TICKS_PER_WORD);
+        // Now inject the answer's GloVe into sem at high strength so
+        // the end-of-partial cortex state gets anchored to the correct
+        // completion
+        const ansEmb = sharedEmbeddings.getEmbedding(fact.answerWord);
+        if (ansEmb && ansEmb.length > 0 && cluster.regions?.sem) {
+          cluster.injectEmbeddingToRegion('sem', ansEmb, 0.8);
+        }
+        // Also inject the answer digit character + magnitude
+        const ansDigit = String(fact.c);
+        cluster.injectLetter(ansDigit, 0.7);
+        const magFeat = _magnitudeFeatureForDigit(ansDigit);
+        if (magFeat && cluster.regions?.phon) {
+          cluster.injectEmbeddingToRegion('phon', magFeat, 0.6);
+        }
+        for (let t = 0; t < 4; t++) cluster.step(0.001);
+        cluster.learn(0);
+      }
+      await _microtask();
+    }
+
+    return this._gateMathG1Real(FACTS);
+  }
+
+  _gateMathG1Real(facts) {
+    const cluster = this.cluster;
+
+    // Probe 12 random facts — mix of addition and subtraction
+    const sample = [];
+    const used = new Set();
+    while (sample.length < Math.min(12, facts.length)) {
+      const idx = Math.floor(Math.random() * facts.length);
+      if (!used.has(idx)) { used.add(idx); sample.push(facts[idx]); }
+    }
+
+    let readPass = 0;
+    let thinkPass = 0;
+    let talkPass = 0;
+    const perFact = [];
+
+    const READ_COS_MIN = 0.08;
+    const THINK_VAR_MIN = 0.0005;
+
+    for (const fact of sample) {
+      const ansEmb = sharedEmbeddings.getEmbedding(fact.answerWord);
+      if (!ansEmb || ansEmb.length === 0) {
+        perFact.push({ fact: fact.sentence, skip: 'no embedding' });
+        continue;
+      }
+      const partialWords = fact.partial.split(/\s+/).filter(Boolean);
+
+      // ─── READ probe: partial fact → sem readout cosine vs answer ──
+      // Walk the partial fact through the letter + sem path, then read
+      // the sem region. If the partial primes the cortex into the
+      // answer's semantic basin, cosine with GloVe(answerWord) > 0.08.
+      for (const word of partialWords) {
+        const wordEmb = sharedEmbeddings.getEmbedding(word);
+        if (wordEmb && wordEmb.length > 0 && cluster.regions?.sem) {
+          cluster.injectEmbeddingToRegion('sem', wordEmb, 0.5);
+        }
+        for (const ch of word.replace(/[^a-z]/g, '')) {
+          cluster.injectLetter(ch, 1.0);
+          for (let t = 0; t < 2; t++) cluster.step(0.001);
+        }
+      }
+      const semReadout = cluster.regionReadout('sem', ansEmb.length);
+      let readCos = 0;
+      if (semReadout && semReadout.length === ansEmb.length) {
+        let dot = 0, na = 0, ns = 0;
+        for (let i = 0; i < ansEmb.length; i++) {
+          dot += ansEmb[i] * semReadout[i];
+          na += ansEmb[i] * ansEmb[i];
+          ns += semReadout[i] * semReadout[i];
+        }
+        const denom = Math.sqrt(na) * Math.sqrt(ns);
+        readCos = denom > 0 ? dot / denom : 0;
+      }
+      const readOk = readCos > READ_COS_MIN;
+      if (readOk) readPass++;
+
+      // ─── THINK probe: fact state persists across silence ──────────
+      for (let t = 0; t < 10; t++) cluster.step(0.001);
+      const freeReadout = cluster.regionReadout('free', 64);
+      let thinkVar = 0;
+      if (freeReadout && freeReadout.length > 0) {
+        let mean = 0;
+        for (let i = 0; i < freeReadout.length; i++) mean += freeReadout[i];
+        mean /= freeReadout.length;
+        for (let i = 0; i < freeReadout.length; i++) {
+          const d = freeReadout[i] - mean;
+          thinkVar += d * d;
+        }
+        thinkVar /= freeReadout.length;
+      }
+      const thinkOk = thinkVar > THINK_VAR_MIN;
+      if (thinkOk) thinkPass++;
+
+      // ─── TALK probe: motor argmax → first letter of answer word ───
+      // After the partial fact walk, the motor region should be primed
+      // to emit the answer word's first letter. First-letter match is
+      // the simplified capability test; full-word motor emission waits
+      // for Session 7+ (G2).
+      const invSize = inventorySize();
+      const motorVec = invSize > 0 ? cluster.regionReadout('motor', invSize) : null;
+      const decoded = motorVec ? decodeLetter(motorVec) : null;
+      const expectedFirst = fact.answerWord[0];
+      const talkOk = decoded === expectedFirst;
+      if (talkOk) talkPass++;
+
+      perFact.push({
+        sentence: fact.sentence,
+        partial: fact.partial,
+        answer: fact.answerWord,
+        readCos, thinkVar, decoded, expectedFirst,
+        readOk, thinkOk, talkOk,
+      });
+    }
+
+    const N = sample.length;
+    const readRate = N > 0 ? readPass / N : 0;
+    const thinkRate = N > 0 ? thinkPass / N : 0;
+    const talkRate = N > 0 ? talkPass / N : 0;
+    // Relaxed to 45% because arithmetic-fact association is harder than
+    // single-character binding — the motor completion path requires the
+    // cortex to have a learnable asymmetry in the sequence Hebbian
+    const PATH_MIN = 0.45;
+    const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= PATH_MIN;
+
+    return {
+      pass,
+      reason: `READ ${readPass}/${N} (${(readRate * 100).toFixed(0)}%), THINK ${thinkPass}/${N} (${(thinkRate * 100).toFixed(0)}%), TALK ${talkPass}/${N} (${(talkRate * 100).toFixed(0)}%)`,
+      metrics: { readRate, thinkRate, talkRate, perFact },
     };
   }
 
