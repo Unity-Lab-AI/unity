@@ -3682,12 +3682,167 @@ export class Curriculum {
     return out;
   }
 
+  // ─── TODO-aligned ELA-G2 helpers (Session 28) ────────────────────
+  //
+  // docs/TODO.md T14.24 ELA-G2 spec (line 152):
+  //   _teachDigraphs(digraphs) injects each digraph as a paired letter
+  //     stream with shorter inter-letter gap (2 ticks instead of 3) so
+  //     the letter-region transition surprise treats them as a unit.
+  //   _teachLongWords(words) extends the CVC pattern to 4-6 letters
+  //     with boundary detection via cluster.detectBoundaries(word).
+  //   _teachPhrases(phrases) walks 3-word phrases through the full
+  //     letter-stream + sem-inject pipeline per word + sequence Hebbian
+  //     between words.
+
+  async _teachDigraphs(digraphs, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 6;
+    // TODO-prescribed SHORTER inter-letter gap (2 ticks vs 3 for
+    // CVC words) — the shorter gap makes the letter-region transition
+    // surprise treat the pair as a single unit.
+    const ticksPerLetter = opts.ticksPerLetter ?? 2;
+
+    const letterSet = new Set();
+    for (const d of digraphs) for (const ch of d) letterSet.add(ch);
+    ensureLetters(Array.from(letterSet));
+
+    for (let rep = 0; rep < reps; rep++) {
+      for (const digraph of digraphs) {
+        const digEmb = sharedEmbeddings.getEmbedding(digraph);
+        if (digEmb && digEmb.length > 0 && cluster.regions?.sem) {
+          cluster.injectEmbeddingToRegion('sem', digEmb, 0.4);
+        }
+        // First letter
+        cluster.injectLetter(digraph[0], 1.0);
+        const phon1 = _phonemeFeatureForLetter(digraph[0]);
+        if (phon1 && cluster.regions?.phon) {
+          cluster.injectEmbeddingToRegion('phon', phon1, 0.5);
+        }
+        for (let t = 0; t < ticksPerLetter; t++) {
+          cluster.step(0.001);
+          this.stats.totalTicks++;
+        }
+        // Second letter + DIGRAPH-level phoneme feature at higher
+        // strength
+        cluster.injectLetter(digraph[1], 1.0);
+        const digPhon = this._phonemeFeatureForDigraph(digraph);
+        if (digPhon && cluster.regions?.phon) {
+          cluster.injectEmbeddingToRegion('phon', digPhon, 0.8);
+        }
+        for (let t = 0; t < ticksPerLetter; t++) {
+          cluster.step(0.001);
+          this.stats.totalTicks++;
+        }
+        cluster.learn(0);
+        this.stats.lettersSeen += 2;
+      }
+      await _microtask();
+    }
+    return { taught: reps * digraphs.length };
+  }
+
+  async _teachLongWords(words, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 4;
+    const ticksPerLetter = opts.ticksPerLetter ?? 3;
+    const arousal = opts.arousal ?? 0.8;
+    const valence = opts.valence ?? 0.2;
+
+    const letterSet = new Set();
+    for (const w of words) for (const ch of w) letterSet.add(ch);
+    ensureLetters(Array.from(letterSet));
+
+    // Filter to 4-6 letter words per TODO spec
+    const eligible = words.filter(w => w.length >= 4 && w.length <= 6);
+    if (eligible.length === 0) return { taught: 0 };
+
+    for (let rep = 0; rep < reps; rep++) {
+      for (const word of eligible) {
+        const wordEmb = sharedEmbeddings.getEmbedding(word);
+        if (wordEmb && wordEmb.length > 0 && cluster.regions?.sem) {
+          cluster.injectEmbeddingToRegion('sem', wordEmb, 0.6);
+        }
+        for (const ch of word.replace(/[^a-z]/g, '')) {
+          cluster.injectLetter(ch, 1.0);
+          const phonFeat = _phonemeFeatureForLetter(ch);
+          if (phonFeat && phonFeat.length > 0 && cluster.regions?.phon) {
+            cluster.injectEmbeddingToRegion('phon', phonFeat, 0.4);
+          }
+          for (let t = 0; t < ticksPerLetter; t++) {
+            cluster.step(0.001);
+            this.stats.totalTicks++;
+          }
+        }
+        cluster.learn(0);
+        // TODO-prescribed boundary detection check per word — routes
+        // through T14.2 detectBoundaries so the syllable segmentation
+        // primitive gets exercised on each long word
+        if (typeof cluster.detectBoundaries === 'function') {
+          try {
+            cluster.detectBoundaries(word.replace(/[^a-z]/g, ''), { ticksPerLetter: 2, k: 0.5 });
+          } catch { /* non-fatal */ }
+        }
+        if (this.dictionary && typeof this.dictionary.learnWord === 'function') {
+          try { this.dictionary.learnWord(word, null, arousal, valence); } catch {}
+        }
+        this.stats.longWordsSeen++;
+      }
+      await _microtask();
+    }
+    return { taught: reps * eligible.length };
+  }
+
+  async _teachPhrases(phrases, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 4;
+    const ticksPerWord = opts.ticksPerWord ?? 2;
+    const arousal = opts.arousal ?? 0.8;
+    const valence = opts.valence ?? 0.2;
+
+    const letterSet = new Set();
+    for (const p of phrases) for (const ch of p) if (/[a-z]/.test(ch)) letterSet.add(ch);
+    ensureLetters(Array.from(letterSet));
+
+    // Walks each 3-word phrase through _walkSentence which handles
+    // the per-word letter stream + sem inject + inter-word sequence
+    // Hebbian automatically.
+    for (let rep = 0; rep < reps; rep++) {
+      for (const phrase of phrases) {
+        const words = phrase.split(/\s+/).filter(Boolean);
+        if (words.length < 2) continue;
+        this._walkSentence(words, arousal, valence, ticksPerWord);
+        this.stats.sentencesSeen++;
+      }
+      await _microtask();
+    }
+    return { taught: reps * phrases.length };
+  }
+
   async runElaG2Real(ctx) {
     const cluster = this.cluster;
     if (!cluster) return { pass: false, reason: 'no cluster wired' };
 
     // The 7 most common English digraphs — each covers a distinct phoneme
     const DIGRAPHS = ['th', 'sh', 'ch', 'ph', 'wh', 'ck', 'ng'];
+
+    // T14.24 Session 28 — TODO-aligned three-method split. Call the
+    // named methods with additional long-word + phrase coverage that
+    // the original Session 7 impl didn't split out.
+    const LONG_WORDS = [
+      'chat', 'fish', 'duck', 'rock', 'king', 'song',
+      'thing', 'graph', 'check', 'bring', 'black', 'quick',
+      'white', 'phone', 'green', 'which', 'where', 'while',
+    ];
+    const PHRASES_G2 = [
+      'the dog', 'the cat', 'with them', 'she ran', 'ship sail',
+      'chip dip', 'phone ring', 'what fun', 'sing along', 'back pack',
+    ];
+    await this._teachDigraphs(DIGRAPHS);
+    await this._teachLongWords(LONG_WORDS);
+    await this._teachPhrases(PHRASES_G2);
 
     // Short phrases exercising each digraph in natural English context
     const PHRASES = [
