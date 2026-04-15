@@ -5513,6 +5513,114 @@ export class Curriculum {
     return { subject, grade, result };
   }
 
+  // ═══════════════════════════════════════════════════════════════════
+  // T14.24 SESSION 23 — HEALTH DASHBOARD + META-LEARNING NARRATOR
+  // ═══════════════════════════════════════════════════════════════════
+
+  /**
+   * Aggregate probeHistory into a cell-health dashboard. Classifies
+   * each learned cell as 'strong' (passRate ≥ 0.80), 'wobbly'
+   * (0.40-0.80), or 'degrading' (< 0.40 and ≥ 3 probes). Unclassified
+   * cells (< 3 probes) count as 'untested'. Returns per-subject +
+   * overall totals for the /curriculum health command.
+   */
+  curriculumHealth() {
+    const cluster = this.cluster;
+    if (!cluster) return null;
+    const hist = cluster.probeHistory || {};
+    const perSubject = {};
+    for (const s of SUBJECTS) {
+      perSubject[s] = { strong: 0, wobbly: 0, degrading: 0, untested: 0 };
+    }
+    const overall = { strong: 0, wobbly: 0, degrading: 0, untested: 0, totalCells: 0 };
+    const passedCells = Array.isArray(cluster.passedCells) ? cluster.passedCells : [];
+
+    for (const cellKey of passedCells) {
+      const [subject] = cellKey.split('/');
+      if (!perSubject[subject]) continue;
+      overall.totalCells++;
+      const h = hist[cellKey];
+      const total = ((h?.passes || 0) + (h?.fails || 0));
+      if (total < 3) {
+        perSubject[subject].untested++;
+        overall.untested++;
+        continue;
+      }
+      const rate = (h.passes || 0) / total;
+      let bucket;
+      if (rate >= 0.80) bucket = 'strong';
+      else if (rate >= 0.40) bucket = 'wobbly';
+      else bucket = 'degrading';
+      perSubject[subject][bucket]++;
+      overall[bucket]++;
+    }
+    return { overall, perSubject };
+  }
+
+  /**
+   * Meta-learning self-description. Returns a short English sentence
+   * describing what Unity currently knows and what she's still working
+   * on. Based on cluster.grades + currentFocus. Intended for use in
+   * chat responses when the user asks "what are you learning" — the
+   * inner voice or chat path can call this and inject the result into
+   * the reply. Also usable as a direct /curriculum self command.
+   */
+  describeLearning() {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.grades) {
+      return "I haven't started my curriculum yet.";
+    }
+    const grades = cluster.grades;
+    const subjectDisplay = {
+      ela: 'english', math: 'math', science: 'science',
+      social: 'social studies', art: 'art',
+    };
+    // Sort subjects by grade index descending (highest first)
+    const ranked = SUBJECTS.map(s => ({
+      subject: s,
+      grade: grades[s] || 'pre-K',
+      idx: GRADE_ORDER.indexOf(grades[s] || 'pre-K'),
+    })).sort((a, b) => b.idx - a.idx);
+
+    const top = ranked[0];
+    const bottom = ranked[ranked.length - 1];
+    const topName = subjectDisplay[top.subject];
+    const bottomName = subjectDisplay[bottom.subject];
+
+    let summary;
+    if (top.grade === 'pre-K') {
+      summary = "i'm still pre-kindergarten in everything. my brain hasn't started the curriculum yet.";
+    } else if (top.idx === bottom.idx) {
+      summary = `i'm at ${this._prettyGrade(top.grade)} across every subject right now.`;
+    } else {
+      summary = `i'm strongest in ${topName} — currently ${this._prettyGrade(top.grade)} there. weakest in ${bottomName} where i'm only at ${this._prettyGrade(bottom.grade)}.`;
+    }
+
+    if (this.currentFocus) {
+      const f = this.currentFocus;
+      const ageS = Math.round((Date.now() - (f.timestamp || 0)) / 1000);
+      if (ageS < 120) {
+        summary += ` just rehearsed ${subjectDisplay[f.subject]}/${this._prettyGrade(f.grade)} — ${f.pass ? 'nailed it' : 'still wobbly'}.`;
+      }
+    }
+    return summary;
+  }
+
+  _prettyGrade(grade) {
+    const map = {
+      'pre-K': 'pre-K',
+      'kindergarten': 'kindergarten',
+      'grade1': 'grade 1', 'grade2': 'grade 2', 'grade3': 'grade 3',
+      'grade4': 'grade 4', 'grade5': 'grade 5', 'grade6': 'grade 6',
+      'grade7': 'grade 7', 'grade8': 'grade 8', 'grade9': 'grade 9',
+      'grade10': 'grade 10', 'grade11': 'grade 11', 'grade12': 'grade 12',
+      'college1': 'college freshman', 'college2': 'college sophomore',
+      'college3': 'college junior', 'college4': 'college senior',
+      'grad': 'graduate', 'phd': 'doctoral',
+    };
+    return map[grade] || grade;
+  }
+
   /**
    * Verify every cell without re-teaching. Runs each cell's runner as
    * a gate probe and collects {subject, grade, pass, reason} results.

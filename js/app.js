@@ -2366,6 +2366,35 @@ Vision: ${state.visionDescription || 'none'}`;
             const ok = typeof c.forgetCell === 'function' ? c.forgetCell(subject, grade) : false;
             return { response: { text: ok ? `[curriculum] forgot ${subject}/${grade} — will re-teach next pass` : `[curriculum] forget failed for ${subject}/${grade}` }, action: 'curriculum' };
           }
+          if (sub === 'health') {
+            // T14.24 Session 23 — curriculum health dashboard. Classifies
+            // each learned cell as strong / wobbly / degrading / untested
+            // based on probeHistory pass rate.
+            if (typeof c.curriculumHealth !== 'function') {
+              return { response: { text: '[curriculum] health unavailable' }, action: 'curriculum' };
+            }
+            const h = c.curriculumHealth();
+            if (!h) return { response: { text: '[curriculum] no cluster wired' }, action: 'curriculum' };
+            const lines = [
+              `[curriculum] HEALTH — ${h.overall.totalCells} learned cells`,
+              `  strong    ${h.overall.strong} (pass rate ≥ 80%)`,
+              `  wobbly    ${h.overall.wobbly} (40-80%)`,
+              `  degrading ${h.overall.degrading} (< 40%)`,
+              `  untested  ${h.overall.untested} (< 3 probes)`,
+              '  per subject:',
+            ];
+            for (const [s, stats] of Object.entries(h.perSubject)) {
+              lines.push(`    ${s.padEnd(8)} strong:${stats.strong} wobbly:${stats.wobbly} degrading:${stats.degrading} untested:${stats.untested}`);
+            }
+            return { response: { text: lines.join('\n') }, action: 'curriculum' };
+          }
+          if (sub === 'self') {
+            // T14.24 Session 23 — meta-learning self-description
+            if (typeof c.describeLearning !== 'function') {
+              return { response: { text: '[curriculum] self unavailable' }, action: 'curriculum' };
+            }
+            return { response: { text: `[curriculum self] ${c.describeLearning()}` }, action: 'curriculum' };
+          }
           if (sub === 'verify') {
             // T14.24 Session 19 — /curriculum verify walks every cell
             // through its gate and prints a full pass/fail report across
@@ -2405,7 +2434,7 @@ Vision: ${state.visionDescription || 'none'}`;
             }
             return { response: { text: '[curriculum] full not available' }, action: 'curriculum' };
           }
-          return { response: { text: '[curriculum] usage: /curriculum status|verify|run <subject> <grade>|gate <subject> <grade>|reset <subject>|forget <subject> <grade>|full [subject]' }, action: 'curriculum' };
+          return { response: { text: '[curriculum] usage: /curriculum status|self|health|verify|run <subject> <grade>|gate <subject> <grade>|reset <subject>|forget <subject> <grade>|full [subject]' }, action: 'curriculum' };
         } catch (err) {
           return { response: { text: `[curriculum] error: ${err?.message || err}` }, action: 'curriculum' };
         }
