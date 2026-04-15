@@ -4840,6 +4840,405 @@ export class Curriculum {
     return { taught: reps * PAIRS.length };
   }
 
+  // ─── TODO-aligned Math-G6..G12 helpers (Session 41) ──────────────
+  // Math-G6 (346): _teachVariables binds variable-name GloVe (x, y)
+  //   to slot feature in free region. _teachOneVarEquations teaches
+  //   isolation by applying inverse operations.
+  // Math-G7 (352): _teachLinearEquations extends variable teaching
+  //   with slope+intercept feature encoding.
+  // Math-G8 (358): _teachGeometryBasics binds shape names to feature
+  //   encoding. _teachQuadratics teaches factoring and quadratic formula.
+  // Math-G10 (368): _teachGeometricProofs walks proof steps as sem-
+  //   chain Hebbian, each step's state depends on the prior.
+  // Math-G11 (373): _teachTrigFunctions uses Math.sin/cos/tan as
+  //   ground truth — teach angle-feature → ratio-feature mapping.
+  // Math-G12 (378): _teachDerivatives walks function-derivative pairs,
+  //   Hebbian binds input function feature to output derivative.
+
+  async _teachVariables(opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 5;
+    const ticksPerVar = opts.ticksPerVar ?? 3;
+    const VARS = ['x', 'y', 'z', 'a', 'b', 'n', 'k'];
+
+    // Each variable name gets a slot feature in free region — simple
+    // per-variable one-hot in a 16d slot space. Binds variable name
+    // GloVe to slot identity.
+    for (let rep = 0; rep < reps; rep++) {
+      for (let i = 0; i < VARS.length; i++) {
+        const v = VARS[i];
+        const slot = new Float64Array(16);
+        slot[i % 16] = 1.0;
+        const vEmb = sharedEmbeddings.getEmbedding(v);
+        if (vEmb && cluster.regions?.sem) {
+          cluster.injectEmbeddingToRegion('sem', vEmb, 0.7);
+        }
+        if (cluster.regions?.free) {
+          cluster.injectEmbeddingToRegion('free', slot, 0.6);
+        }
+        cluster.injectLetter(v, 1.0);
+        for (let t = 0; t < ticksPerVar; t++) cluster.step(0.001);
+        cluster.learn(0);
+      }
+      await _microtask();
+    }
+    return { taught: reps * VARS.length };
+  }
+
+  async _teachOneVarEquations(opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 4;
+    const ticksPerEq = opts.ticksPerEq ?? 4;
+
+    // One-variable equations: x+b=c → x=c-b. Teach by streaming the
+    // equation sentence + injecting the solution's magnitude into phon.
+    const EQUATIONS = [
+      { eq: 'x plus one equals two', sol: 1 },
+      { eq: 'x plus two equals five', sol: 3 },
+      { eq: 'x plus three equals seven', sol: 4 },
+      { eq: 'x minus one equals four', sol: 5 },
+      { eq: 'x minus two equals three', sol: 5 },
+      { eq: 'two x equals six', sol: 3 },
+      { eq: 'three x equals nine', sol: 3 },
+      { eq: 'x times two equals eight', sol: 4 },
+      { eq: 'x divided by two equals three', sol: 6 },
+      { eq: 'x plus five equals ten', sol: 5 },
+    ];
+
+    for (let rep = 0; rep < reps; rep++) {
+      for (const { eq, sol } of EQUATIONS) {
+        const words = eq.split(/\s+/).filter(Boolean);
+        this._walkSentence(words, 0.8, 0.2, 2);
+        const magSol = _magnitudeFeatureForDigit(String(sol));
+        if (magSol && cluster.regions?.phon) {
+          cluster.injectEmbeddingToRegion('phon', magSol, 0.7);
+        }
+        cluster.injectLetter(String(sol), 0.5);
+        for (let t = 0; t < ticksPerEq; t++) cluster.step(0.001);
+        cluster.learn(0);
+      }
+      await _microtask();
+    }
+    return { taught: reps * EQUATIONS.length };
+  }
+
+  async _teachLinearEquations(opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 4;
+    const ticksPerLine = opts.ticksPerLine ?? 3;
+
+    // Lines y=mx+b. Teach slope m + intercept b as a 2-slot feature
+    // in free region.
+    const LINES = [
+      { m: 1, b: 0 }, { m: 2, b: 0 }, { m: 3, b: 0 }, { m: -1, b: 0 },
+      { m: 1, b: 1 }, { m: 2, b: 1 }, { m: 1, b: -1 }, { m: 0.5, b: 0 },
+      { m: 1, b: 2 }, { m: -2, b: 3 },
+    ];
+
+    for (let rep = 0; rep < reps; rep++) {
+      for (const { m, b } of LINES) {
+        // Build 16d slope+intercept feature: dims 0-7 encode slope,
+        // dims 8-15 encode intercept
+        const feat = new Float64Array(16);
+        feat[0] = m;
+        feat[1] = Math.log(Math.abs(m) + 1) * Math.sign(m);
+        feat[2] = m * m;
+        feat[3] = Math.sin(m);
+        feat[4] = Math.cos(m);
+        feat[8] = b;
+        feat[9] = Math.log(Math.abs(b) + 1) * Math.sign(b);
+        feat[10] = b * b;
+        feat[11] = Math.sin(b);
+        feat[12] = Math.cos(b);
+        let norm = 0;
+        for (let i = 0; i < 16; i++) norm += feat[i] * feat[i];
+        norm = Math.sqrt(norm) || 1;
+        for (let i = 0; i < 16; i++) feat[i] /= norm;
+        if (cluster.regions?.free) {
+          cluster.injectEmbeddingToRegion('free', feat, 0.6);
+        }
+        const slopeEmb = sharedEmbeddings.getEmbedding('slope');
+        if (slopeEmb && cluster.regions?.sem) {
+          cluster.injectEmbeddingToRegion('sem', slopeEmb, 0.5);
+        }
+        for (let t = 0; t < ticksPerLine; t++) cluster.step(0.001);
+        cluster.learn(0);
+      }
+      await _microtask();
+    }
+    return { taught: reps * LINES.length };
+  }
+
+  async _teachGeometryBasics(opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 4;
+    const ticksPerShape = opts.ticksPerShape ?? 3;
+
+    // Bind shape names to geometric feature (sides / angles / symmetry)
+    const SHAPES = [
+      { name: 'triangle', sides: 3, angles: 3, symmetry: 3 },
+      { name: 'square', sides: 4, angles: 4, symmetry: 4 },
+      { name: 'rectangle', sides: 4, angles: 4, symmetry: 2 },
+      { name: 'pentagon', sides: 5, angles: 5, symmetry: 5 },
+      { name: 'hexagon', sides: 6, angles: 6, symmetry: 6 },
+      { name: 'circle', sides: 0, angles: 0, symmetry: 360 },
+      { name: 'rhombus', sides: 4, angles: 4, symmetry: 2 },
+      { name: 'trapezoid', sides: 4, angles: 4, symmetry: 1 },
+    ];
+
+    for (let rep = 0; rep < reps; rep++) {
+      for (const { name, sides, angles, symmetry } of SHAPES) {
+        const feat = new Float64Array(16);
+        feat[0] = sides / 10;
+        feat[1] = angles / 10;
+        feat[2] = Math.log(symmetry + 1) / 10;
+        feat[3] = Math.sin(sides);
+        feat[4] = Math.cos(sides);
+        for (let i = 5; i < 16; i++) feat[i] = Math.sin(sides * i) * 0.1;
+        let norm = 0;
+        for (let i = 0; i < 16; i++) norm += feat[i] * feat[i];
+        norm = Math.sqrt(norm) || 1;
+        for (let i = 0; i < 16; i++) feat[i] /= norm;
+
+        const nameEmb = sharedEmbeddings.getEmbedding(name);
+        if (nameEmb && cluster.regions?.sem) {
+          cluster.injectEmbeddingToRegion('sem', nameEmb, 0.7);
+        }
+        if (cluster.regions?.free) {
+          cluster.injectEmbeddingToRegion('free', feat, 0.6);
+        }
+        for (let t = 0; t < ticksPerShape; t++) cluster.step(0.001);
+        cluster.learn(0);
+      }
+      await _microtask();
+    }
+    return { taught: reps * SHAPES.length };
+  }
+
+  async _teachQuadratics(opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 4;
+    const ticksPerEq = opts.ticksPerEq ?? 3;
+
+    // Quadratic (a,b,c) → roots via discriminant. Teach the full
+    // equation coefficients as a 32d feature and the roots as phon target.
+    const QUADS = [
+      { a: 1, b: -3, c: 2, r1: 1, r2: 2 },
+      { a: 1, b: -5, c: 6, r1: 2, r2: 3 },
+      { a: 1, b: -4, c: 4, r1: 2, r2: 2 },
+      { a: 1, b: 0, c: -4, r1: 2, r2: -2 },
+      { a: 1, b: -6, c: 9, r1: 3, r2: 3 },
+      { a: 1, b: -7, c: 12, r1: 3, r2: 4 },
+      { a: 1, b: -2, c: -3, r1: 3, r2: -1 },
+      { a: 1, b: 1, c: -6, r1: 2, r2: -3 },
+    ];
+
+    for (let rep = 0; rep < reps; rep++) {
+      for (const { a, b, c, r1, r2 } of QUADS) {
+        const feat = new Float64Array(16);
+        feat[0] = a;
+        feat[1] = b / 10;
+        feat[2] = c / 10;
+        feat[3] = (b * b - 4 * a * c) / 100; // discriminant
+        feat[4] = r1 / 10;
+        feat[5] = r2 / 10;
+        for (let i = 6; i < 16; i++) feat[i] = Math.sin(a * i + b);
+        let norm = 0;
+        for (let i = 0; i < 16; i++) norm += feat[i] * feat[i];
+        norm = Math.sqrt(norm) || 1;
+        for (let i = 0; i < 16; i++) feat[i] /= norm;
+        if (cluster.regions?.free) {
+          cluster.injectEmbeddingToRegion('free', feat, 0.6);
+        }
+        const qEmb = sharedEmbeddings.getEmbedding('quadratic');
+        if (qEmb && cluster.regions?.sem) {
+          cluster.injectEmbeddingToRegion('sem', qEmb, 0.5);
+        }
+        for (let t = 0; t < ticksPerEq; t++) cluster.step(0.001);
+        cluster.learn(0);
+      }
+      await _microtask();
+    }
+    return { taught: reps * QUADS.length };
+  }
+
+  async _teachGeometricProofs(opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 4;
+    const ticksPerStep = opts.ticksPerStep ?? 3;
+    const arousal = opts.arousal ?? 0.8;
+    const valence = opts.valence ?? 0.2;
+
+    // Proofs as sem-chain Hebbian — each step's state depends on prior
+    const PROOFS = [
+      [
+        'given triangle abc with ab equal to ac',
+        'angle b equals angle c by isosceles theorem',
+        'the triangle is symmetric about its axis',
+        'therefore base angles are equal',
+      ],
+      [
+        'in triangle abc angle sum equals one eighty degrees',
+        'two angles are sixty degrees each',
+        'the third angle must be sixty degrees',
+        'the triangle is equilateral',
+      ],
+      [
+        'parallel lines cut by a transversal',
+        'alternate interior angles are equal',
+        'corresponding angles are equal',
+        'same side interior angles sum to one eighty',
+      ],
+    ];
+
+    for (let rep = 0; rep < reps; rep++) {
+      for (const proof of PROOFS) {
+        let prevEmb = null;
+        for (const step of proof) {
+          if (prevEmb && typeof cluster.injectWorkingMemory === 'function') {
+            cluster.injectWorkingMemory(prevEmb, 0.75);
+          }
+          const words = step.split(/\s+/).filter(Boolean);
+          this._walkSentence(words, arousal, valence, 2);
+          prevEmb = sharedEmbeddings.getSentenceEmbedding
+            ? sharedEmbeddings.getSentenceEmbedding(step)
+            : null;
+        }
+      }
+      await _microtask();
+    }
+    return { taught: reps * PROOFS.length };
+  }
+
+  async _teachTrigFunctions(opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 5;
+    const ticksPerAngle = opts.ticksPerAngle ?? 3;
+
+    // Use real Math.sin/cos/tan as ground truth. Teach angle feature
+    // → ratio feature mapping via Hebbian on (θ, sin θ) pairs at
+    // cardinal angles.
+    const ANGLES = [
+      0, Math.PI / 6, Math.PI / 4, Math.PI / 3, Math.PI / 2,
+      (2 * Math.PI) / 3, (3 * Math.PI) / 4, (5 * Math.PI) / 6,
+      Math.PI, (7 * Math.PI) / 6, (5 * Math.PI) / 4, (4 * Math.PI) / 3,
+      (3 * Math.PI) / 2, (5 * Math.PI) / 3, (7 * Math.PI) / 4,
+      (11 * Math.PI) / 6,
+    ];
+
+    for (let rep = 0; rep < reps; rep++) {
+      for (const theta of ANGLES) {
+        const s = Math.sin(theta);
+        const c = Math.cos(theta);
+        const t = Math.tan(theta);
+        // Angle input feature: 16d encoding of θ
+        const angleFeat = new Float64Array(16);
+        angleFeat[0] = theta / (2 * Math.PI);
+        angleFeat[1] = Math.sin(theta);
+        angleFeat[2] = Math.cos(theta);
+        for (let i = 3; i < 16; i++) angleFeat[i] = Math.sin(theta * i);
+        let norm = 0;
+        for (let i = 0; i < 16; i++) norm += angleFeat[i] * angleFeat[i];
+        norm = Math.sqrt(norm) || 1;
+        for (let i = 0; i < 16; i++) angleFeat[i] /= norm;
+
+        // Ratio output feature: [sin, cos, tan] stacked
+        const ratioFeat = new Float64Array(16);
+        ratioFeat[0] = s;
+        ratioFeat[1] = c;
+        ratioFeat[2] = isFinite(t) ? Math.tanh(t) : 0;
+        ratioFeat[3] = s * s;
+        ratioFeat[4] = c * c;
+        ratioFeat[5] = s * c;
+        for (let i = 6; i < 16; i++) ratioFeat[i] = Math.sin(theta * (i - 5));
+        norm = 0;
+        for (let i = 0; i < 16; i++) norm += ratioFeat[i] * ratioFeat[i];
+        norm = Math.sqrt(norm) || 1;
+        for (let i = 0; i < 16; i++) ratioFeat[i] /= norm;
+
+        if (cluster.regions?.free) {
+          cluster.injectEmbeddingToRegion('free', angleFeat, 0.6);
+        }
+        if (cluster.regions?.phon) {
+          cluster.injectEmbeddingToRegion('phon', ratioFeat, 0.6);
+        }
+        for (let t2 = 0; t2 < ticksPerAngle; t2++) cluster.step(0.001);
+        cluster.learn(0);
+      }
+      await _microtask();
+    }
+    return { taught: reps * ANGLES.length };
+  }
+
+  async _teachDerivatives(opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 4;
+    const ticksPerPair = opts.ticksPerPair ?? 3;
+
+    // Function → derivative pairs. Build a simple feature per function
+    // based on its polynomial coefficients and teach the derivative
+    // transformation.
+    const PAIRS = [
+      { f: 'x', df: '1', coeffs: [0, 1], dCoeffs: [1] },
+      { f: 'x squared', df: 'two x', coeffs: [0, 0, 1], dCoeffs: [0, 2] },
+      { f: 'x cubed', df: 'three x squared', coeffs: [0, 0, 0, 1], dCoeffs: [0, 0, 3] },
+      { f: 'two x', df: 'two', coeffs: [0, 2], dCoeffs: [2] },
+      { f: 'three x squared', df: 'six x', coeffs: [0, 0, 3], dCoeffs: [0, 6] },
+      { f: 'sine x', df: 'cosine x', coeffs: null, dCoeffs: null }, // trig case
+      { f: 'cosine x', df: 'negative sine x', coeffs: null, dCoeffs: null },
+      { f: 'e to the x', df: 'e to the x', coeffs: null, dCoeffs: null },
+    ];
+
+    const buildCoeffFeat = (coeffs) => {
+      if (!coeffs) return null;
+      const feat = new Float64Array(16);
+      for (let i = 0; i < Math.min(coeffs.length, 8); i++) {
+        feat[i] = coeffs[i] / 10;
+      }
+      for (let i = 8; i < 16; i++) feat[i] = Math.sin((coeffs[0] || 0) * i);
+      let norm = 0;
+      for (let i = 0; i < 16; i++) norm += feat[i] * feat[i];
+      norm = Math.sqrt(norm) || 1;
+      for (let i = 0; i < 16; i++) feat[i] /= norm;
+      return feat;
+    };
+
+    for (let rep = 0; rep < reps; rep++) {
+      for (const { f, df, coeffs, dCoeffs } of PAIRS) {
+        // Walk the function name
+        this._walkSentence(f.split(/\s+/).filter(Boolean), 0.8, 0.2, 2);
+        // Inject function feature if polynomial
+        if (coeffs) {
+          const fFeat = buildCoeffFeat(coeffs);
+          if (fFeat && cluster.regions?.free) {
+            cluster.injectEmbeddingToRegion('free', fFeat, 0.6);
+          }
+        }
+        // Walk the derivative name
+        this._walkSentence(df.split(/\s+/).filter(Boolean), 0.8, 0.2, 2);
+        // Inject derivative feature if polynomial
+        if (dCoeffs) {
+          const dFeat = buildCoeffFeat(dCoeffs);
+          if (dFeat && cluster.regions?.phon) {
+            cluster.injectEmbeddingToRegion('phon', dFeat, 0.6);
+          }
+        }
+        for (let t = 0; t < ticksPerPair; t++) cluster.step(0.001);
+        cluster.learn(0);
+      }
+      await _microtask();
+    }
+    return { taught: reps * PAIRS.length };
+  }
+
   // ─── Math-G3: multiplication tables + simple fractions ────────────
   // Multiplication facts 1x1 through 5x5 as arithmetic sentences plus
   // basic fraction vocabulary ("one half", "one third", "one quarter").
@@ -5726,6 +6125,9 @@ export class Curriculum {
       'plus three is greater than zero', 'absolute value is the distance from zero',
       'minus three and plus three have absolute value three',
     ];
+    // Session 41 — TODO-aligned pre-algebra teaching
+    await this._teachVariables();
+    await this._teachOneVarEquations();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
@@ -6036,6 +6438,8 @@ export class Curriculum {
       'the domain is all inputs', 'the range is all outputs',
       'a graph shows a function visually', 'points on the graph satisfy the equation',
     ];
+    // Session 41 — TODO-aligned linear equation teaching
+    await this._teachLinearEquations();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
@@ -6057,6 +6461,9 @@ export class Curriculum {
       'a quadratic has x squared', 'factoring solves quadratics',
       'the quadratic formula always works', 'the discriminant tells the number of solutions',
     ];
+    // Session 41 — TODO-aligned geometry basics + quadratics
+    await this._teachGeometryBasics();
+    await this._teachQuadratics();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
@@ -6409,6 +6816,8 @@ export class Curriculum {
       'the distance formula measures between points', 'the midpoint formula averages coordinates',
       'circles are defined by their center', 'inscribed angles are half the arc',
     ];
+    // Session 41 — TODO-aligned geometric proofs
+    await this._teachGeometricProofs();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
@@ -6714,6 +7123,8 @@ export class Curriculum {
       'logarithmic growth slows down', 'parametric equations use a parameter',
       'polar coordinates use distance and angle', 'conic sections include ellipses and hyperbolas',
     ];
+    // Session 41 — TODO-aligned trig functions using real Math.sin/cos/tan
+    await this._teachTrigFunctions();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
@@ -6733,6 +7144,8 @@ export class Curriculum {
       'substitution simplifies integrals', 'integration by parts handles products',
       'applications include volumes of revolution', 'calculus connects algebra and geometry',
     ];
+    // Session 41 — TODO-aligned derivative teaching
+    await this._teachDerivatives();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
