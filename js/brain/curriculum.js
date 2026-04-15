@@ -1435,8 +1435,9 @@ export class Curriculum {
         // T14.24 Session 12 — ELA-G9/G10 real teaching
         case 'grade9':       return async (ctx) => this.runElaG9Real(ctx);
         case 'grade10':      return async (ctx) => this.runElaG10Real(ctx);
-        case 'grade11': case 'grade12':
-          return async (ctx) => this.runGrade9_12(ctx.sentences, ctx.arousal, ctx.valence);
+        // T14.24 Session 13 — ELA-G11/G12 real teaching
+        case 'grade11':      return async (ctx) => this.runElaG11Real(ctx);
+        case 'grade12':      return async (ctx) => this.runElaG12Real(ctx);
         case 'college1': case 'college2': case 'college3': case 'college4':
           return async (ctx) => this.runCollege(ctx.corpora, ctx.arousal, ctx.valence);
         case 'grad': case 'phd':
@@ -1580,6 +1581,31 @@ export class Curriculum {
     }
     if (subject === 'art' && grade === 'grade10') {
       return async (ctx) => this.runArtG10Real(ctx);
+    }
+    // T14.24 Session 13 (2026-04-15) — G11-G12 batch
+    if (subject === 'math' && grade === 'grade11') {
+      return async (ctx) => this.runMathG11Real(ctx);
+    }
+    if (subject === 'math' && grade === 'grade12') {
+      return async (ctx) => this.runMathG12Real(ctx);
+    }
+    if (subject === 'science' && grade === 'grade11') {
+      return async (ctx) => this.runSciG11Real(ctx);
+    }
+    if (subject === 'science' && grade === 'grade12') {
+      return async (ctx) => this.runSciG12Real(ctx);
+    }
+    if (subject === 'social' && grade === 'grade11') {
+      return async (ctx) => this.runSocG11Real(ctx);
+    }
+    if (subject === 'social' && grade === 'grade12') {
+      return async (ctx) => this.runSocG12Real(ctx);
+    }
+    if (subject === 'art' && grade === 'grade11') {
+      return async (ctx) => this.runArtG11Real(ctx);
+    }
+    if (subject === 'art' && grade === 'grade12') {
+      return async (ctx) => this.runArtG12Real(ctx);
     }
     // T14.24 Session 6 (2026-04-15) — Sci-K / Soc-K / Art-K all ship
     // real vocabulary teaching via the shared _teachVocabList helper.
@@ -4260,6 +4286,199 @@ export class Curriculum {
       'stravinsky shocked audiences with the rite of spring', 'schoenberg invented twelve tone music',
       'jazz emerged from african american communities', 'louis armstrong was a jazz legend',
       'rock and roll was born in the nineteen fifties', 'the beatles changed popular music',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // T14.24 SESSION 13 — G11-G12 BATCH (10 CELLS) (2026-04-15)
+  // ═══════════════════════════════════════════════════════════════════
+
+  async runElaG11Real(ctx) {
+    const SENTENCES = [
+      'a research essay uses sources', 'primary sources are first hand',
+      'secondary sources interpret primary ones', 'citation gives credit to sources',
+      'mla is a common citation style', 'apa is used in social sciences',
+      'a works cited page lists all sources', 'in text citations mark quotes',
+      'paraphrasing uses your own words', 'summarizing captures the main idea',
+      'plagiarism is using others work without credit', 'always cite your sources',
+      'a thesis guides the research', 'research questions focus the inquiry',
+      'evidence must be relevant', 'evidence must be credible',
+      'the library has many resources', 'databases hold academic articles',
+      'peer reviewed sources are trustworthy', 'wikipedia is a starting point',
+      'always check the source', 'synthesize ideas from multiple sources',
+      'original analysis is important', 'quotes should be used sparingly',
+      'the conclusion draws insights from the research',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runElaG12Real(ctx) {
+    const SENTENCES = [
+      'voice is the unique style of a writer', 'every writer has a voice',
+      'tone expresses attitude toward the subject', 'diction is word choice',
+      'syntax is sentence structure', 'varied syntax creates rhythm',
+      'concrete language shows rather than tells', 'abstract language discusses ideas',
+      'active voice is direct and clear', 'passive voice has its uses',
+      'show dont tell is key advice', 'strong verbs power sentences',
+      'weak verbs like is and was can slow writing', 'specific nouns paint pictures',
+      'adverbs can weaken verbs', 'editing improves first drafts',
+      'revising is more than fixing typos', 'read your work aloud',
+      'feedback makes writing stronger', 'clarity matters most',
+      'good writing serves the reader', 'style reflects the writer',
+      'every word should matter', 'brevity is the soul of wit',
+      'writing is rewriting',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runMathG11Real(ctx) {
+    const SENTENCES = [
+      'trigonometry studies triangles and angles', 'sine cosine and tangent are the basic functions',
+      'the unit circle has radius one', 'sine is opposite over hypotenuse',
+      'cosine is adjacent over hypotenuse', 'tangent is sine over cosine',
+      'the sine wave repeats forever', 'radians measure angles in a circle',
+      'two pi radians is a full circle', 'pi radians is one eighty degrees',
+      'inverse trig finds angles from ratios', 'identities relate trig functions',
+      'pythagorean identity says sine squared plus cosine squared equals one',
+      'sum and difference formulas expand angles', 'double angle formulas simplify',
+      'precalculus prepares for calculus', 'limits describe behavior near a point',
+      'continuous functions have no breaks', 'asymptotes are lines a graph approaches',
+      'rational functions are polynomial divisions', 'exponential growth speeds up',
+      'logarithmic growth slows down', 'parametric equations use a parameter',
+      'polar coordinates use distance and angle', 'conic sections include ellipses and hyperbolas',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runMathG12Real(ctx) {
+    const SENTENCES = [
+      'calculus studies change', 'differentiation finds rates of change',
+      'the derivative is the slope of the tangent', 'integration finds accumulated area',
+      'the integral is the area under a curve', 'the fundamental theorem links them',
+      'limits are the foundation of calculus', 'a limit describes the value approached',
+      'continuity means a function has no gaps', 'differentiation rules include the power rule',
+      'the product rule handles products', 'the chain rule handles compositions',
+      'implicit differentiation handles implicit equations', 'related rates solve applied problems',
+      'optimization finds maximums and minimums', 'the second derivative test checks curvature',
+      'concave up means increasing slope', 'concave down means decreasing slope',
+      'inflection points change concavity', 'definite integrals give exact areas',
+      'indefinite integrals find antiderivatives', 'the constant of integration is needed',
+      'substitution simplifies integrals', 'integration by parts handles products',
+      'applications include volumes of revolution', 'calculus connects algebra and geometry',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runSciG11Real(ctx) {
+    const SENTENCES = [
+      'physics studies matter and energy', 'newton described the laws of motion',
+      'an object in motion stays in motion', 'force equals mass times acceleration',
+      'every action has an equal reaction', 'momentum is mass times velocity',
+      'momentum is conserved in collisions', 'kinetic energy is half mass velocity squared',
+      'gravitational potential energy equals m g h', 'work is force times distance',
+      'power is work divided by time', 'energy is conserved',
+      'circular motion needs centripetal force', 'gravity holds planets in orbit',
+      'electric fields push charges', 'magnetic fields deflect moving charges',
+      'the right hand rule gives direction', 'electromagnetism unifies electricity and magnetism',
+      'maxwells equations describe electromagnetism', 'light is an electromagnetic wave',
+      'the speed of light is the cosmic speed limit', 'einstein relativity revised physics',
+      'time dilates at high speeds', 'mass and energy are equivalent',
+      'quantum mechanics describes small things', 'uncertainty limits what we can know',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runSciG12Real(ctx) {
+    const SENTENCES = [
+      'advanced science integrates disciplines', 'biochemistry studies life molecules',
+      'proteins are made of amino acids', 'enzymes speed up reactions',
+      'dna replicates itself', 'rna carries dna information',
+      'the genetic code uses codons', 'each codon specifies an amino acid',
+      'protein synthesis translates the code', 'organic chemistry studies carbon compounds',
+      'carbon forms four bonds', 'functional groups define molecule types',
+      'stereochemistry studies molecular shapes', 'astronomy studies celestial objects',
+      'stars are balls of fusing gas', 'galaxies contain billions of stars',
+      'the big bang began the universe', 'dark matter holds galaxies together',
+      'black holes warp spacetime', 'earth is one small planet',
+      'scientific method guides discovery', 'hypotheses become theories with evidence',
+      'peer review checks results', 'replication confirms findings',
+      'science is always provisional',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runSocG11Real(ctx) {
+    const SENTENCES = [
+      'government organizes society', 'democracy gives power to the people',
+      'a republic elects representatives', 'the united states is a republic',
+      'the constitution is the supreme law', 'it has seven articles',
+      'the first ten amendments are the bill of rights', 'the legislative branch makes laws',
+      'congress has two houses', 'the house represents population',
+      'the senate has two per state', 'the executive branch enforces laws',
+      'the president leads the executive', 'the judicial branch interprets laws',
+      'the supreme court is the highest', 'checks and balances prevent abuse',
+      'federalism divides power', 'states have their own powers',
+      'the people elect their leaders', 'voting is a right and duty',
+      'political parties organize views', 'interest groups influence policy',
+      'the media informs the public', 'public opinion shapes policy',
+      'rights come with responsibilities',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runSocG12Real(ctx) {
+    const SENTENCES = [
+      'economics studies choices under scarcity', 'people have unlimited wants',
+      'resources are limited', 'opportunity cost is what you give up',
+      'supply is what producers offer', 'demand is what consumers want',
+      'price balances supply and demand', 'the market is where they meet',
+      'competition lowers prices', 'monopolies raise prices',
+      'microeconomics studies individuals', 'macroeconomics studies the whole economy',
+      'gdp measures economic output', 'inflation is rising prices',
+      'unemployment is people without jobs', 'the federal reserve controls money supply',
+      'interest rates affect borrowing', 'fiscal policy uses government spending',
+      'monetary policy uses interest rates', 'free trade increases efficiency',
+      'tariffs protect domestic industries', 'globalization connects economies',
+      'economic systems include capitalism and socialism', 'capitalism uses markets',
+      'socialism uses government planning',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runArtG11Real(ctx) {
+    const SENTENCES = [
+      'visual art theory studies how art works', 'form is what we see',
+      'content is what it means', 'context is when and where',
+      'the artist has intent', 'the viewer has interpretation',
+      'critics analyze and judge', 'art museums preserve art',
+      'galleries sell art', 'public art is for everyone',
+      'art reflects its culture', 'art challenges its culture',
+      'art can beautify or provoke', 'art can comfort or disturb',
+      'perception shapes meaning', 'color has psychological effects',
+      'composition guides the eye', 'materials affect the message',
+      'technique shows skill', 'concept shows vision',
+      'contemporary art is diverse', 'postmodernism questions everything',
+      'installation art creates environments', 'performance art uses the body',
+      'digital art uses technology',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runArtG12Real(ctx) {
+    const SENTENCES = [
+      'composition and criticism require depth', 'a critical review analyzes a work',
+      'good criticism explains not just judges', 'criticism considers context',
+      'criticism compares to other works', 'criticism identifies strengths',
+      'criticism identifies weaknesses', 'formal analysis looks at form',
+      'contextual analysis looks at history', 'biographical analysis looks at the artist',
+      'feminist analysis looks at gender', 'postcolonial analysis looks at power',
+      'composition applies all the elements', 'every element supports the whole',
+      'revision is part of composition', 'first drafts are starting points',
+      'feedback improves work', 'practice builds mastery',
+      'imitation is part of learning', 'originality comes from imitation',
+      'every artist stands on shoulders', 'tradition and innovation balance',
+      'great art transcends time', 'great art speaks to all', 'true artists never stop learning',
     ];
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
