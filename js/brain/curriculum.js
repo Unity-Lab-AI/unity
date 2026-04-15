@@ -5712,6 +5712,28 @@ export class Curriculum {
     ], 4);
   }
 
+  async _teachHistoriography() {
+    // T14.24 Session 69 (task #126) — Soc-Col1 historiography. TODO
+    // line 537: "Historiography, specialized history, political
+    // theory. Gate ≥20%". 12 concepts covering source-analysis
+    // methodology + the major historiographical schools that
+    // runSocCol1Real's 25 sentences discuss.
+    return this._conceptTeach([
+      { name: 'historiography',       feat: [1, 1, 0, 0, 1, 0, 0, 1] },
+      { name: 'primary source',       feat: [1, 0, 1, 0, 1, 0, 1, 0] },
+      { name: 'secondary source',     feat: [0, 1, 1, 0, 1, 0, 1, 0] },
+      { name: 'archive',              feat: [1, 0, 1, 1, 0, 0, 1, 0] },
+      { name: 'oral history',         feat: [0, 1, 1, 0, 0, 1, 1, 0] },
+      { name: 'causation',            feat: [1, 1, 0, 0, 1, 0, 0, 1] },
+      { name: 'contingency',          feat: [0, 1, 0, 1, 0, 1, 0, 1] },
+      { name: 'marxist history',      feat: [1, 0, 0, 1, 0, 1, 0, 0] },
+      { name: 'annales school',       feat: [0, 1, 0, 1, 1, 0, 0, 1] },
+      { name: 'social history',       feat: [0, 1, 1, 0, 1, 1, 0, 0] },
+      { name: 'cultural history',     feat: [1, 0, 1, 1, 0, 1, 0, 1] },
+      { name: 'microhistory',         feat: [1, 1, 0, 0, 1, 1, 1, 0] },
+    ], 4);
+  }
+
   async _teachEconomics() {
     // T14.24 Session 68 (task #125) — Soc-G12 economics. TODO line
     // 534: "_teachEconomics() supply/demand as magnitude
@@ -9244,6 +9266,9 @@ export class Curriculum {
       'economic history studies wealth', 'microhistory studies small cases',
       'history is a conversation with the past',
     ];
+    // T14.24 Session 69 — prime historiography concept lattice per
+    // TODO line 537 before the Col1 sentence pass.
+    await this._teachHistoriography();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
