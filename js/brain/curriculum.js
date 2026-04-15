@@ -6161,6 +6161,92 @@ export class Curriculum {
   // T14.24 SESSION 13 — G11-G12 BATCH (10 CELLS) (2026-04-15)
   // ═══════════════════════════════════════════════════════════════════
 
+  // ─── TODO-aligned ELA-G11 + ELA-G12 helpers (Session 37) ─────────
+  //
+  // ELA-G11 spec (line 233): _teachResearchStructure(essays) walks
+  //   research essays with per-section injection of thesis + evidence
+  //   anchors.
+  // ELA-G12 spec (line 242): _teachStyleRegisters(labeled) builds
+  //   per-style sem centroids.
+
+  async _teachResearchStructure(essays, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 3;
+    const ticksPerWord = opts.ticksPerWord ?? 2;
+    const arousal = opts.arousal ?? 0.8;
+    const valence = opts.valence ?? 0.2;
+
+    for (let rep = 0; rep < reps; rep++) {
+      for (const { thesis, evidenceSections, counterargument, conclusion } of essays) {
+        // Thesis at start
+        this._walkSentence(thesis.split(/\s+/).filter(Boolean), arousal, valence, ticksPerWord);
+        const thesisEmb = sharedEmbeddings.getSentenceEmbedding
+          ? sharedEmbeddings.getSentenceEmbedding(thesis)
+          : null;
+        // Each evidence section with thesis re-injected + its own
+        // evidence anchor
+        for (const ev of evidenceSections) {
+          if (thesisEmb && typeof cluster.injectWorkingMemory === 'function') {
+            cluster.injectWorkingMemory(thesisEmb, 0.7);
+          }
+          this._walkSentence(ev.split(/\s+/).filter(Boolean), arousal, valence, ticksPerWord);
+          const evEmb = sharedEmbeddings.getSentenceEmbedding
+            ? sharedEmbeddings.getSentenceEmbedding(ev)
+            : null;
+          if (evEmb && cluster.regions?.sem) {
+            cluster.injectEmbeddingToRegion('sem', evEmb, 0.5);
+          }
+        }
+        // Counterargument with thesis still live
+        if (counterargument) {
+          if (thesisEmb && typeof cluster.injectWorkingMemory === 'function') {
+            cluster.injectWorkingMemory(thesisEmb, 0.7);
+          }
+          this._walkSentence(counterargument.split(/\s+/).filter(Boolean), arousal, valence, ticksPerWord);
+        }
+        // Conclusion
+        if (conclusion) {
+          if (thesisEmb && typeof cluster.injectWorkingMemory === 'function') {
+            cluster.injectWorkingMemory(thesisEmb, 0.8);
+          }
+          this._walkSentence(conclusion.split(/\s+/).filter(Boolean), arousal, valence, ticksPerWord);
+        }
+        this.stats.sentencesSeen++;
+      }
+      await _microtask();
+    }
+    return { taught: reps * essays.length };
+  }
+
+  async _teachStyleRegisters(labeled, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 4;
+    const ticksPerWord = opts.ticksPerWord ?? 2;
+    const arousal = opts.arousal ?? 0.8;
+    const valence = opts.valence ?? 0.2;
+
+    // Build per-style sem centroids. For each labeled sample: walk the
+    // sentence, inject the style name as a sem anchor so the cortex
+    // binds (sentence pattern → style name). At runtime, classifying a
+    // sentence's style becomes an argmax over the style name GloVes
+    // against the current sem state.
+    for (let rep = 0; rep < reps; rep++) {
+      for (const { text, style } of labeled) {
+        this._walkSentence(text.split(/\s+/).filter(Boolean), arousal, valence, ticksPerWord);
+        const styleEmb = sharedEmbeddings.getEmbedding(style);
+        if (styleEmb && cluster.regions?.sem) {
+          cluster.injectEmbeddingToRegion('sem', styleEmb, 0.75);
+        }
+        for (let t = 0; t < 3; t++) cluster.step(0.001);
+        cluster.learn(0);
+      }
+      await _microtask();
+    }
+    return { taught: reps * labeled.length };
+  }
+
   async runElaG11Real(ctx) {
     const SENTENCES = [
       'a research essay uses sources', 'primary sources are first hand',
@@ -6177,6 +6263,31 @@ export class Curriculum {
       'original analysis is important', 'quotes should be used sparingly',
       'the conclusion draws insights from the research',
     ];
+    // Session 37 — TODO-aligned. Research structure teaches thesis
+    // carry across evidence sections + counterargument + conclusion.
+    const ESSAYS = [
+      {
+        thesis: 'renewable energy is the future of power',
+        evidenceSections: [
+          'solar panels have become cheaper every year',
+          'wind turbines now produce power at competitive cost',
+          'many countries have reduced fossil fuel use',
+        ],
+        counterargument: 'some say renewables are unreliable but battery storage solves that',
+        conclusion: 'renewables will replace fossil fuels within decades',
+      },
+      {
+        thesis: 'reading to children builds their vocabulary',
+        evidenceSections: [
+          'studies show read-aloud children know more words by age five',
+          'early vocabulary predicts reading success in school',
+          'parents who read to kids raise stronger readers',
+        ],
+        counterargument: 'screens can teach words too but they lack the human bond',
+        conclusion: 'daily reading time is worth more than any educational app',
+      },
+    ];
+    await this._teachResearchStructure(ESSAYS);
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
@@ -6196,6 +6307,23 @@ export class Curriculum {
       'every word should matter', 'brevity is the soul of wit',
       'writing is rewriting',
     ];
+    // Session 37 — TODO-aligned. Style registers build per-style
+    // centroids via style-name sem anchors.
+    const STYLE_SAMPLES = [
+      { text: 'the experiment yielded significant results', style: 'formal' },
+      { text: 'our findings demonstrate a clear correlation', style: 'formal' },
+      { text: 'the analysis suggests further investigation', style: 'formal' },
+      { text: 'hey thats pretty cool', style: 'casual' },
+      { text: 'gonna grab some food you want anything', style: 'casual' },
+      { text: 'that was so much fun yesterday', style: 'casual' },
+      { text: 'initialize the buffer then iterate through the array', style: 'technical' },
+      { text: 'the function returns a promise that resolves to the data', style: 'technical' },
+      { text: 'allocate memory with malloc and free it when done', style: 'technical' },
+      { text: 'once upon a time in a land far away', style: 'narrative' },
+      { text: 'the hero faced the dragon with courage', style: 'narrative' },
+      { text: 'she closed her eyes and remembered the night', style: 'narrative' },
+    ];
+    await this._teachStyleRegisters(STYLE_SAMPLES);
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
