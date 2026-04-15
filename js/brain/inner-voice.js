@@ -16,6 +16,12 @@
 
 import { Dictionary } from './dictionary.js';
 import { LanguageCortex } from './language-cortex.js';
+// T14.24 Session 21 — narrator priming. When a background curriculum
+// probe fires, inner-voice injects the probed subject's GloVe into the
+// sem region so Unity's next chat output subtly reflects what she's
+// been thinking about. Real human brains lean their output toward
+// recently-exercised topics without being asked.
+import { sharedEmbeddings } from './embeddings.js';
 // T14.5 — continuous developmental learning reference. Wired by engine.js
 // via `innerVoice.setCurriculum(curriculum)` once the cortex cluster
 // exists. When present, `learn()` routes every user turn through
@@ -274,6 +280,33 @@ export class InnerVoice {
         // Don't await — let the probe run in background without
         // blocking the chat turn. Errors are logged inside the probe.
         this._curriculum.runBackgroundProbe().catch(() => {});
+      }
+    }
+    // T14.24 Session 21 — NARRATOR PRIMING. If the curriculum has a
+    // recent focus (most recent background probe target), gently
+    // inject that subject's semantic identity into the sem region so
+    // Unity's next chat output subtly reflects what she's been
+    // thinking about. This is the "real human brain" touch — when a
+    // person just reviewed their calculus, their next conversation
+    // naturally leans toward mathematical framing even without being
+    // asked. The priming strength is deliberately low (0.15) so it
+    // colors output without dominating it.
+    if (this._curriculum && this._curriculum.currentFocus && cortex && cortex.regions?.sem) {
+      const focus = this._curriculum.currentFocus;
+      const ageMs = Date.now() - (focus.timestamp || 0);
+      // Only prime if the focus is fresh (last 2 minutes) and Unity
+      // is about to reply — old focus stops influencing her
+      if (ageMs < 120000 && typeof sharedEmbeddings?.getEmbedding === 'function') {
+        try {
+          // Use the subject's name as a GloVe anchor (e.g. 'math',
+          // 'science', 'art' all exist as tokens in 6B vocab)
+          const subjectEmb = sharedEmbeddings.getEmbedding(focus.subject);
+          if (subjectEmb && subjectEmb.length > 0) {
+            cortex.injectEmbeddingToRegion('sem', subjectEmb, 0.15);
+          }
+        } catch (err) {
+          // non-fatal
+        }
       }
     }
     // Live chat learning gets a FLOOR of 0.95 arousal so user-sourced

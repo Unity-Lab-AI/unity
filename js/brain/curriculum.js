@@ -5400,6 +5400,30 @@ export class Curriculum {
       reason: result?.reason || '',
       timestamp: hist.lastProbed,
     };
+    // T14.24 Session 21 — AUTO-CALIBRATION. After 10+ probes on a cell,
+    // adjust the pathMin threshold based on historical pass rate. Cells
+    // that consistently pass by huge margin can tighten (raising the
+    // bar). Cells that consistently fail need relaxation (up to a floor
+    // of 0.25 — any lower and the gate stops meaning anything). Stored
+    // on hist.pathMin so subsequent gate runs can read it via a shared
+    // helper. Right now the shared gate functions don't re-read this
+    // (still use defaults), but the value is tracked here for Session
+    // 22+ to consume.
+    const totalProbes = (hist.passes || 0) + (hist.fails || 0);
+    if (totalProbes >= 10) {
+      const passRate = (hist.passes || 0) / totalProbes;
+      const currentMin = hist.pathMin ?? 0.45;
+      let newMin = currentMin;
+      if (passRate >= 0.90 && currentMin < 0.60) {
+        newMin = Math.min(0.60, currentMin + 0.02);
+      } else if (passRate <= 0.40 && currentMin > 0.25) {
+        newMin = Math.max(0.25, currentMin - 0.03);
+      }
+      if (newMin !== currentMin) {
+        hist.pathMin = newMin;
+        console.log(`[Curriculum] auto-calibrate ${cellKey}: pathMin ${currentMin.toFixed(2)} → ${newMin.toFixed(2)} (${(passRate * 100).toFixed(0)}% pass rate over ${totalProbes} probes)`);
+      }
+    }
     if (result && result.pass) {
       hist.passes++;
       console.log(`[Curriculum] probe ✓ ${cellKey} — ${result.reason || 'pass'}`);
