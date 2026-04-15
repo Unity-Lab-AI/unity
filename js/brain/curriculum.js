@@ -3626,6 +3626,13 @@ export class Curriculum {
   }
 
   async runSocKReal(ctx) {
+    // T14.24 Session 56 — Soc-K per TODO line 488. Prime the family-
+    // role concept lattice (mom/dad/sister/brother/grandma/grandpa/
+    // aunt/uncle/cousin with real kinship structural features) before
+    // the general K vocab pass so family roles attach to a
+    // structurally correct basin where same-generation / same-sex
+    // roles share cosine space.
+    await this._teachFamilyRoles();
     // SOC-K vocab: family, community, civic basics
     const SOC_K_VOCAB = [
       'mom', 'dad', 'home', 'school', 'friend',
@@ -5702,6 +5709,34 @@ export class Curriculum {
       { name: 'peer review',          feat: [1, 0, 1, 1, 0, 1, 1, 0] },
       { name: 'informed consent',     feat: [0, 1, 1, 1, 1, 0, 0, 1] },
       { name: 'conflict of interest', feat: [1, 1, 0, 1, 1, 1, 0, 0] },
+    ], 4);
+  }
+
+  async _teachFamilyRoles() {
+    // T14.24 Session 56 (task #113) — Soc-K family roles. TODO line
+    // 488: "_teachFamilyRoles() binds family-role GloVes (mom/dad/
+    // sister/brother) via co-occurrence. Gate: family role recall
+    // ≥50%". Feature dimensions encode real kinship structure so
+    // chemically-similar roles share cosine: [0]=generation-parent,
+    // [1]=generation-child, [2]=generation-elder, [3]=female,
+    // [4]=male, [5]=nuclear-household, [6]=extended-household,
+    // [7]=caregiver-role. mom and dad share [0,5,7] (same
+    // generation, nuclear, caregiving) but split on [3]/[4].
+    // sister and brother share [1,5] and split on [3]/[4].
+    // grandma and grandpa share [2,6] and split on [3]/[4].
+    return this._conceptTeach([
+      { name: 'mom',       feat: [1, 0, 0, 1, 0, 1, 0, 1] },
+      { name: 'dad',       feat: [1, 0, 0, 0, 1, 1, 0, 1] },
+      { name: 'sister',    feat: [0, 1, 0, 1, 0, 1, 0, 0] },
+      { name: 'brother',   feat: [0, 1, 0, 0, 1, 1, 0, 0] },
+      { name: 'baby',      feat: [0, 1, 0, 0, 0, 1, 0, 0] },
+      { name: 'grandma',   feat: [0, 0, 1, 1, 0, 0, 1, 1] },
+      { name: 'grandpa',   feat: [0, 0, 1, 0, 1, 0, 1, 1] },
+      { name: 'aunt',      feat: [1, 0, 0, 1, 0, 0, 1, 0] },
+      { name: 'uncle',     feat: [1, 0, 0, 0, 1, 0, 1, 0] },
+      { name: 'cousin',    feat: [0, 1, 0, 0, 0, 0, 1, 0] },
+      { name: 'family',    feat: [1, 1, 1, 1, 1, 1, 1, 1] },
+      { name: 'home',      feat: [1, 1, 1, 0, 0, 1, 0, 1] },
     ], 4);
   }
 
