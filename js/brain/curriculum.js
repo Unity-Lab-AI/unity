@@ -5719,6 +5719,30 @@ export class Curriculum {
     ], 4);
   }
 
+  async _teachInstruments() {
+    // T14.24 Session 79 (task #136) — Art-G4 instrument recognition.
+    // TODO line 557: "instrument recognition via feature binding".
+    // 8d instrument-family features: [0]=string, [1]=wind,
+    // [2]=percussion, [3]=keyboard, [4]=brass, [5]=pitched,
+    // [6]=polyphonic, [7]=solo-melodic. Violin/guitar share [0,5],
+    // trumpet/trombone share [1,4,5], piano shares [3,5,6],
+    // drum shares [2].
+    return this._conceptTeach([
+      { name: 'violin',    feat: [1, 0, 0, 0, 0, 1, 0, 1] },
+      { name: 'guitar',    feat: [1, 0, 0, 0, 0, 1, 1, 1] },
+      { name: 'cello',     feat: [1, 0, 0, 0, 0, 1, 0, 1] },
+      { name: 'bass',      feat: [1, 0, 0, 0, 0, 1, 0, 1] },
+      { name: 'flute',     feat: [0, 1, 0, 0, 0, 1, 0, 1] },
+      { name: 'clarinet',  feat: [0, 1, 0, 0, 0, 1, 0, 1] },
+      { name: 'trumpet',   feat: [0, 1, 0, 0, 1, 1, 0, 1] },
+      { name: 'trombone',  feat: [0, 1, 0, 0, 1, 1, 0, 1] },
+      { name: 'piano',     feat: [0, 0, 0, 1, 0, 1, 1, 0] },
+      { name: 'drums',     feat: [0, 0, 1, 0, 0, 0, 0, 0] },
+      { name: 'saxophone', feat: [0, 1, 0, 0, 0, 1, 0, 1] },
+      { name: 'organ',     feat: [0, 1, 0, 1, 0, 1, 1, 0] },
+    ], 4);
+  }
+
   async _teachDrawingBasics() {
     // T14.24 Session 78 (task #135) — Art-G3 drawing basics. TODO
     // line 557: "drawing basics". 8d visual-element features:
@@ -7641,6 +7665,10 @@ export class Curriculum {
       'the guitar has six strings', 'the drums keep time',
       'music reads from left to right', 'the staff has five lines',
     ];
+    // T14.24 Session 79 — prime instrument recognition lattice per
+    // TODO line 557 before the melody/pitch sentence pass. Sentences
+    // reference piano/guitar/drums so the basins need to exist first.
+    await this._teachInstruments();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
