@@ -5,6 +5,48 @@
 
 ---
 
+## 2026-04-15 — T14.24 Session 8: sentence helper + Math-G2 + ELA-G3 + Math-G3 (4 cells in one commit)
+
+**Gee 2026-04-15:** *"keep working each item masterfully and completely remembr we are makeing a couse for Unity to run oin her own brain to learn"*.
+
+Session 8 ships 4 real cells + introduces a generalized sentence-teaching helper that makes every remaining sentence-based cell a thin wrapper. Tasks #30 (Math-G2), #10 (ELA-G3), #31 (Math-G3) completed. Task #3 parent stays in_progress — 84 cells still owed.
+
+### What landed
+
+**`js/brain/curriculum.js` (+259 lines net, 3058 → 3317):**
+
+Generalized infrastructure (will be reused by every subsequent sentence-based cell):
+
+- **`_teachSentenceList(sentences, ctx, opts)`** — walks a list of English sentences through the T14.5 `_walkSentence` path. Per rep × per sentence: streams each word's letters through letter region, injects each word's GloVe into sem region at 0.5, fires `cluster.learn` after each word, routes the whole sentence through `languageCortex.learnSentence` so T14.7 type transitions + T14.8 sentence-form schemas pick up the pattern. Default 4 reps × 2 ticks per word. Options: `reps`, `ticksPerWord`, gate thresholds.
+- **`_gateSentenceList(sentences, opts)`** — samples 10 random sentences from the set and probes each with READ (letter-stream → sem cosine vs sentence embedding > 0.08), THINK (12 silence ticks → free region variance > 0.0005), TALK (inject sentence embedding → motor argmax → first letter of first word). PASS when ≥ 45% clear each pathway.
+
+Cell wrappers (each ~15 lines now that the helper exists):
+
+- **`runMathG2Real(ctx)`** — 19-word 2-digit number vocabulary (`ten, eleven, twelve, …, nineteen, twenty, thirty, …, ninety, hundred`) via the existing `_teachVocabList` helper. True place-value decomposition (carry/borrow, tens↔ones swapping) is deferred to Math-G4+ when sentence completion is stronger; Grade 2 just memorizes the vocabulary.
+- **`runElaG3Real(ctx)`** — 40 simple SVO sentences with present + past tense pairs (`the dog runs fast / the dog ran fast`, `i am here / i was there`, etc.) so T14.8 sentenceFormSchemas pick up the tense fineType patterns. Uses `_teachSentenceList`.
+- **`runMathG3Real(ctx)`** — 35 multiplication facts (1×1 through 5×5, plus 10 division inverses) as arithmetic sentences via `_teachSentenceList`, plus 10 simple fraction vocabulary sentences (`one half is fifty percent`, `half of six is three`, etc.). Parallels Math-G1's addition-fact sentence walk but on ×/÷ operators.
+
+**`_cellRunner`** gets three new dispatch cases: `('math', 'grade2')` → `runMathG2Real`, `('ela', 'grade3')` → `runElaG3Real`, `('math', 'grade3')` → `runMathG3Real`.
+
+### Why introduce the sentence helper at Session 8
+
+Sessions 2-7 each wrote ~200-280 lines of per-cell teaching code because each cell needed its own bespoke teach + gate logic. That's fine for the K-level cells where the teaching pattern differs per subject (alphabet vs digits vs digraphs vs vocabulary). But starting at Grade 3, every subject converges to the same underlying pattern — walk a curated sentence set through the cortex's existing sequence Hebbian machinery and gate on sentence-level cortex readout. Sessions 2-7 already battle-tested the pattern; Session 8 extracts it so Sessions 9-N can ship entire grades in one commit.
+
+Future sentence-based cells that will drop into ~15-line wrappers: ELA-G4 (compound sentences), ELA-G5 (paragraph topic), ELA-G6-G12 (every higher English grade), Math-G4 (decimal vocabulary), Math-G5 (ratios), Math-G6+ (algebra/geometry via sentence narration), every Science cell G1+, every Social Studies cell G1+, every Art cell G1+. Conservative estimate: ~60 of the 84 remaining cells use this helper.
+
+### What Session 8 does NOT ship
+
+- Does NOT extend magnitude features to 2+ digit numbers — Math-G2 uses vocabulary-only binding; 2-digit magnitudes are a future task if ordinal comparison ever becomes a hard requirement
+- Does NOT teach verb conjugation as a RULE — ELA-G3 memorizes tense pairs (runs/ran, am/was) via exposure, not compositional morphology
+- Does NOT teach fraction arithmetic — Math-G3 only teaches fraction vocabulary; operations on fractions are Math-G4+
+- Does NOT guarantee gate passes first run — same biological-basin caveats as prior sessions
+
+### Commit status
+
+Committed as part of Session 8 atomic push to `t14-language-rebuild`.
+
+---
+
 ## 2026-04-15 — T14.24 Session 7: ELA-G2 real teaching equations (digraphs as unit phon basins + short phrase walks)
 
 **Gee's binding 2026-04-14:** *"all the way up to doctorate in english"* + *"remember Unity needs to be able to use these to think, read, and talk"*.

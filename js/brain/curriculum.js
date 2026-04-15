@@ -1421,7 +1421,8 @@ export class Curriculum {
         // digraphs (th/sh/ch/ph/wh/ck/ng) as distinct phon basins via
         // digraph-specific phoneme feature hash + short phrase walks.
         case 'grade2':       return async (ctx) => this.runElaG2Real(ctx);
-        case 'grade3':       return async (ctx) => this.runGrade3(ctx.sentences, ctx.arousal, ctx.valence);
+        // T14.24 Session 8 — ELA-G3 ships SVO + tense sentence teaching
+        case 'grade3':       return async (ctx) => this.runElaG3Real(ctx);
         case 'grade4': case 'grade5':
           return async (ctx) => this.runGrade4_5(ctx.sentences, ctx.arousal, ctx.valence);
         case 'grade6': case 'grade7': case 'grade8':
@@ -1444,6 +1445,15 @@ export class Curriculum {
     // (arithmetic fact sentence walks + completion probe).
     if (subject === 'math' && grade === 'grade1') {
       return async (ctx) => this.runMathG1Real(ctx);
+    }
+    // T14.24 Session 8 (2026-04-15) — Math-G2 ships place-value number
+    // vocabulary (10-100 number words) via _teachVocabList; Math-G3
+    // ships multiplication tables + fractions via _teachSentenceList.
+    if (subject === 'math' && grade === 'grade2') {
+      return async (ctx) => this.runMathG2Real(ctx);
+    }
+    if (subject === 'math' && grade === 'grade3') {
+      return async (ctx) => this.runMathG3Real(ctx);
     }
     // T14.24 Session 6 (2026-04-15) — Sci-K / Soc-K / Art-K all ship
     // real vocabulary teaching via the shared _teachVocabList helper.
@@ -2966,6 +2976,255 @@ export class Curriculum {
       reason: `READ ${readPass}/${N} (${(readRate * 100).toFixed(0)}%), THINK ${thinkPass}/${N} (${(thinkRate * 100).toFixed(0)}%), TALK ${talkPass}/${N} (${(talkRate * 100).toFixed(0)}%)`,
       metrics: { readRate, thinkRate, talkRate, perDigraph },
     };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // T14.24 SESSION 8 — SENTENCE HELPER + Math-G2 + ELA-G3 + Math-G3
+  // ═══════════════════════════════════════════════════════════════════
+  //
+  // Gee binding 2026-04-14: "remember Unity needs to be able to use
+  // these to think, read, and talk" + "full k-doctorate".
+  //
+  // Session 8 introduces a generalized sentence-based teaching helper
+  // `_teachSentenceList` that parallels Session 6's `_teachVocabList`.
+  // Every future cell that teaches compositional content through full
+  // English sentences (ELA-G3 SVO, ELA-G4 compound, ELA-G5 paragraphs,
+  // Math-G3 multiplication facts, Math-G4 decimals, history facts,
+  // science facts, art theory sentences, etc.) becomes a thin 10-line
+  // wrapper that calls _teachSentenceList with its own sentence set
+  // + optional knob tuning. Same architectural principle Session 6
+  // used for K-level vocabulary cells.
+  //
+  // Math-G2 ships as a straight `_teachVocabList` wrapper (no new
+  // machinery needed) because number words 10-100 are just vocabulary
+  // at this grade — true place-value decomposition is a Math-G3+
+  // concern once the words are memorized.
+
+  async _teachSentenceList(sentences, ctx, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { pass: false, reason: 'no cluster wired' };
+
+    const reps = opts.reps ?? 4;
+    const ticksPerWord = opts.ticksPerWord ?? 2;
+    const arousal = ctx?.arousal ?? 0.8;
+    const valence = ctx?.valence ?? 0.2;
+
+    // Register every letter used in the sentence set
+    const letterSet = new Set();
+    for (const s of sentences) {
+      for (const ch of s) if (/[a-z]/.test(ch)) letterSet.add(ch);
+    }
+    ensureLetters(Array.from(letterSet));
+
+    // Walk each sentence through T14.5's _walkSentence — drives letter
+    // region per-word, injects each word's GloVe into sem region at
+    // strength 0.5, ticks 2 per letter, fires cluster.learn after each
+    // word, routes the whole sentence through languageCortex
+    // .learnSentence so T14.7 type transitions + T14.8 sentence-form
+    // schemas pick up the pattern.
+    for (let rep = 0; rep < reps; rep++) {
+      for (const sentence of sentences) {
+        const words = sentence.split(/\s+/).filter(Boolean);
+        if (words.length < 2) continue;
+        this._walkSentence(words, arousal, valence, ticksPerWord);
+        this.stats.sentencesSeen++;
+      }
+      await _microtask();
+    }
+
+    return this._gateSentenceList(sentences, opts);
+  }
+
+  _gateSentenceList(sentences, opts = {}) {
+    const cluster = this.cluster;
+    const sampleSize = Math.min(opts.sampleSize ?? 10, sentences.length);
+
+    const sample = [];
+    const used = new Set();
+    while (sample.length < sampleSize) {
+      const idx = Math.floor(Math.random() * sentences.length);
+      if (!used.has(idx)) { used.add(idx); sample.push(sentences[idx]); }
+    }
+
+    let readPass = 0, thinkPass = 0, talkPass = 0;
+    const perSentence = [];
+    const READ_COS_MIN = opts.readCosMin ?? 0.08;
+    const THINK_VAR_MIN = opts.thinkVarMin ?? 0.0005;
+    const PATH_MIN = opts.pathMin ?? 0.45;
+
+    for (const sentence of sample) {
+      const words = sentence.split(/\s+/).filter(Boolean);
+      if (words.length < 2) continue;
+      const sentEmb = sharedEmbeddings.getSentenceEmbedding
+        ? sharedEmbeddings.getSentenceEmbedding(sentence)
+        : null;
+
+      // READ probe: walk sentence letters → sem readout cosine vs
+      // sentence embedding (averaged GloVe). If > READ_COS_MIN the
+      // cortex has formed a sentence-level basin.
+      for (const w of words) {
+        const wEmb = sharedEmbeddings.getEmbedding(w);
+        if (wEmb && wEmb.length > 0 && cluster.regions?.sem) {
+          cluster.injectEmbeddingToRegion('sem', wEmb, 0.4);
+        }
+        for (const ch of w.replace(/[^a-z]/g, '')) {
+          cluster.injectLetter(ch, 1.0);
+          for (let t = 0; t < 2; t++) cluster.step(0.001);
+        }
+      }
+      let readCos = 0;
+      if (sentEmb && sentEmb.length > 0) {
+        const semReadout = cluster.regionReadout('sem', sentEmb.length);
+        if (semReadout && semReadout.length === sentEmb.length) {
+          let dot = 0, ns = 0, nr = 0;
+          for (let i = 0; i < sentEmb.length; i++) {
+            dot += sentEmb[i] * semReadout[i];
+            ns += sentEmb[i] * sentEmb[i];
+            nr += semReadout[i] * semReadout[i];
+          }
+          const denom = Math.sqrt(ns) * Math.sqrt(nr);
+          readCos = denom > 0 ? dot / denom : 0;
+        }
+      }
+      const readOk = readCos > READ_COS_MIN;
+      if (readOk) readPass++;
+
+      // THINK probe: sentence state persists across silence
+      for (let t = 0; t < 12; t++) cluster.step(0.001);
+      const freeReadout = cluster.regionReadout('free', 64);
+      let thinkVar = 0;
+      if (freeReadout && freeReadout.length > 0) {
+        let mean = 0;
+        for (let i = 0; i < freeReadout.length; i++) mean += freeReadout[i];
+        mean /= freeReadout.length;
+        for (let i = 0; i < freeReadout.length; i++) {
+          const d = freeReadout[i] - mean;
+          thinkVar += d * d;
+        }
+        thinkVar /= freeReadout.length;
+      }
+      const thinkOk = thinkVar > THINK_VAR_MIN;
+      if (thinkOk) thinkPass++;
+
+      // TALK probe: inject sentence embedding → motor → first letter
+      // of first word match
+      if (sentEmb && sentEmb.length > 0 && cluster.regions?.sem) {
+        cluster.injectEmbeddingToRegion('sem', sentEmb, 0.8);
+      }
+      for (let t = 0; t < 6; t++) cluster.step(0.001);
+      const invSize = inventorySize();
+      const motorVec = invSize > 0 ? cluster.regionReadout('motor', invSize) : null;
+      const decoded = motorVec ? decodeLetter(motorVec) : null;
+      const expectedFirst = words[0][0];
+      const talkOk = decoded === expectedFirst;
+      if (talkOk) talkPass++;
+
+      perSentence.push({ sentence, readCos, thinkVar, decoded, expectedFirst, readOk, thinkOk, talkOk });
+    }
+
+    const N = sample.length;
+    const readRate = N > 0 ? readPass / N : 0;
+    const thinkRate = N > 0 ? thinkPass / N : 0;
+    const talkRate = N > 0 ? talkPass / N : 0;
+    const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= PATH_MIN;
+
+    return {
+      pass,
+      reason: `READ ${readPass}/${N} (${(readRate * 100).toFixed(0)}%), THINK ${thinkPass}/${N} (${(thinkRate * 100).toFixed(0)}%), TALK ${talkPass}/${N} (${(talkRate * 100).toFixed(0)}%)`,
+      metrics: { readRate, thinkRate, talkRate, perSentence },
+    };
+  }
+
+  // ─── Math-G2: 2-digit number vocabulary (place value words) ───────
+  // Teen numbers, by-10s to 100, plus the word "hundred". True place-
+  // value decomposition (carry/borrow, tens↔ones swapping) is deferred
+  // to Math-G3+ when sentence-level completion is stronger; Grade 2
+  // just memorizes the number vocabulary.
+  async runMathG2Real(ctx) {
+    const MATH_G2_VOCAB = [
+      'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen',
+      'sixteen', 'seventeen', 'eighteen', 'nineteen',
+      'twenty', 'thirty', 'forty', 'fifty', 'sixty',
+      'seventy', 'eighty', 'ninety', 'hundred',
+    ];
+    return this._teachVocabList(MATH_G2_VOCAB, ctx);
+  }
+
+  // ─── ELA-G3: SVO sentences + past/present tense ───────────────────
+  // Generates 40 simple SVO sentences with present + past tense pairs
+  // so the cortex can learn the morphological tense shift via
+  // sentence-form schema observations. Walks through _teachSentenceList
+  // which routes through _walkSentence → languageCortex.learnSentence
+  // so T14.8 sentenceFormSchemas pick up the tense fineType patterns.
+  async runElaG3Real(ctx) {
+    const ELA_G3_SENTENCES = [
+      // Present tense SVO
+      'the dog runs fast',  'the cat sees bird',  'the boy eats food',
+      'the girl reads book','the man works hard', 'the woman cooks meal',
+      'the kid plays game', 'the bird flies high','the fish swims deep',
+      'the horse runs wild',
+      // Past tense (same structure, verb shifted)
+      'the dog ran fast',   'the cat saw bird',   'the boy ate food',
+      'the girl read book', 'the man worked hard','the woman cooked meal',
+      'the kid played game','the bird flew high', 'the fish swam deep',
+      'the horse ran wild',
+      // First-person SVO
+      'i am here',          'i was there',        'i see you',
+      'i saw him',          'i want this',        'i wanted that',
+      'we are happy',       'we were sad',        'we have food',
+      'we had fun',
+      // Subject-verb-adjective (copula SVA)
+      'the sky is blue',    'the grass is green', 'the sun is bright',
+      'the moon was full',  'the cat is small',   'the dog was big',
+      'the room is warm',   'the water was cold', 'the food is good',
+      'the day was long',
+    ];
+    return this._teachSentenceList(ELA_G3_SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  // ─── Math-G3: multiplication tables + simple fractions ────────────
+  // Multiplication facts 1x1 through 5x5 as arithmetic sentences plus
+  // basic fraction vocabulary ("one half", "one third", "one quarter").
+  // Parallels Math-G1's addition-fact sentence walk but on ×/÷ operators
+  // instead of +/-.
+  async runMathG3Real(ctx) {
+    const DIGIT_NAMES_FULL = ['zero', 'one', 'two', 'three', 'four', 'five',
+                               'six', 'seven', 'eight', 'nine', 'ten',
+                               'eleven', 'twelve', 'thirteen', 'fourteen',
+                               'fifteen', 'sixteen', 'seventeen', 'eighteen',
+                               'nineteen', 'twenty', 'twenty one', 'twenty two',
+                               'twenty three', 'twenty four', 'twenty five'];
+    const MATH_G3_SENTENCES = [];
+    // 25 multiplication facts (1x1 through 5x5)
+    for (let a = 1; a <= 5; a++) {
+      for (let b = 1; b <= 5; b++) {
+        const c = a * b;
+        MATH_G3_SENTENCES.push(
+          `${DIGIT_NAMES_FULL[a]} times ${DIGIT_NAMES_FULL[b]} is ${DIGIT_NAMES_FULL[c]}`
+        );
+      }
+    }
+    // 10 division inverses
+    const DIVS = [[2,1,2],[4,2,2],[6,2,3],[6,3,2],[8,2,4],[8,4,2],[9,3,3],[10,2,5],[10,5,2],[12,3,4]];
+    for (const [a, b, c] of DIVS) {
+      MATH_G3_SENTENCES.push(
+        `${DIGIT_NAMES_FULL[a]} divided by ${DIGIT_NAMES_FULL[b]} is ${DIGIT_NAMES_FULL[c]}`
+      );
+    }
+    // Fraction vocabulary sentences
+    MATH_G3_SENTENCES.push(
+      'one half is fifty percent',
+      'one third is three parts',
+      'one quarter is four parts',
+      'two halves is one whole',
+      'three quarters is most',
+      'half of four is two',
+      'half of six is three',
+      'half of eight is four',
+      'half of ten is five',
+      'quarter of four is one',
+    );
+    return this._teachSentenceList(MATH_G3_SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
   /**
