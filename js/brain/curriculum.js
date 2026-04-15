@@ -5719,6 +5719,28 @@ export class Curriculum {
     ], 4);
   }
 
+  async _teachMusicComposition() {
+    // T14.24 Session 82 (task #139) — Art-G7 music composition.
+    // TODO line 561: "_teachComposition() visual composition rules
+    // via spatial feature" — the music-composition cousin. 12
+    // concepts covering compositional forms + the canonical
+    // composers that runArtG7Real's sentences reference.
+    return this._conceptTeach([
+      { name: 'melody',         feat: [1, 0, 0, 0, 1, 0, 0, 1] },
+      { name: 'harmony',        feat: [0, 1, 0, 0, 1, 0, 0, 1] },
+      { name: 'counterpoint',   feat: [1, 1, 0, 1, 0, 1, 0, 0] },
+      { name: 'fugue',          feat: [1, 1, 0, 1, 0, 1, 1, 0] },
+      { name: 'symphony',       feat: [0, 0, 1, 0, 1, 0, 1, 1] },
+      { name: 'sonata',         feat: [0, 0, 1, 0, 1, 1, 1, 0] },
+      { name: 'opera',          feat: [0, 0, 1, 0, 1, 0, 0, 1] },
+      { name: 'concerto',       feat: [0, 0, 1, 0, 1, 1, 0, 1] },
+      { name: 'chamber music',  feat: [0, 0, 1, 0, 0, 1, 0, 1] },
+      { name: 'bach',           feat: [1, 1, 0, 1, 0, 1, 0, 0] },
+      { name: 'mozart',         feat: [0, 0, 1, 0, 1, 1, 1, 0] },
+      { name: 'beethoven',      feat: [0, 0, 1, 0, 1, 1, 1, 1] },
+    ], 4);
+  }
+
   async _teachMusicTheory() {
     // T14.24 Session 81 (task #138) — Art-G6 music theory. TODO
     // line 561: "_teachMusicTheory() notes/scales/chords as
@@ -8343,6 +8365,9 @@ export class Curriculum {
       'decrescendo releases the tension', 'tempo changes create excitement',
       'music tells stories without words', 'every performance is unique',
     ];
+    // T14.24 Session 82 — prime music composition forms + composers
+    // lattice per TODO line 561 before the composition sentence pass.
+    await this._teachMusicComposition();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
