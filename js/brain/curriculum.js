@@ -1432,7 +1432,10 @@ export class Curriculum {
         // T14.24 Session 11 — ELA-G7/G8 ship real teaching
         case 'grade7':       return async (ctx) => this.runElaG7Real(ctx);
         case 'grade8':       return async (ctx) => this.runElaG8Real(ctx);
-        case 'grade9': case 'grade10': case 'grade11': case 'grade12':
+        // T14.24 Session 12 — ELA-G9/G10 real teaching
+        case 'grade9':       return async (ctx) => this.runElaG9Real(ctx);
+        case 'grade10':      return async (ctx) => this.runElaG10Real(ctx);
+        case 'grade11': case 'grade12':
           return async (ctx) => this.runGrade9_12(ctx.sentences, ctx.arousal, ctx.valence);
         case 'college1': case 'college2': case 'college3': case 'college4':
           return async (ctx) => this.runCollege(ctx.corpora, ctx.arousal, ctx.valence);
@@ -1552,6 +1555,31 @@ export class Curriculum {
     }
     if (subject === 'art' && grade === 'grade8') {
       return async (ctx) => this.runArtG8Real(ctx);
+    }
+    // T14.24 Session 12 (2026-04-15) — G9-G10 batch for Math/Sci/Soc/Art
+    if (subject === 'math' && grade === 'grade9') {
+      return async (ctx) => this.runMathG9Real(ctx);
+    }
+    if (subject === 'math' && grade === 'grade10') {
+      return async (ctx) => this.runMathG10Real(ctx);
+    }
+    if (subject === 'science' && grade === 'grade9') {
+      return async (ctx) => this.runSciG9Real(ctx);
+    }
+    if (subject === 'science' && grade === 'grade10') {
+      return async (ctx) => this.runSciG10Real(ctx);
+    }
+    if (subject === 'social' && grade === 'grade9') {
+      return async (ctx) => this.runSocG9Real(ctx);
+    }
+    if (subject === 'social' && grade === 'grade10') {
+      return async (ctx) => this.runSocG10Real(ctx);
+    }
+    if (subject === 'art' && grade === 'grade9') {
+      return async (ctx) => this.runArtG9Real(ctx);
+    }
+    if (subject === 'art' && grade === 'grade10') {
+      return async (ctx) => this.runArtG10Real(ctx);
     }
     // T14.24 Session 6 (2026-04-15) — Sci-K / Soc-K / Art-K all ship
     // real vocabulary teaching via the shared _teachVocabList helper.
@@ -4035,6 +4063,203 @@ export class Curriculum {
       'rondo form repeats a main theme', 'variations transform a theme',
       'theme and variations shows creativity', 'twelve bar blues is a chord pattern',
       'jazz uses swing rhythms', 'improvisation creates music in the moment',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // T14.24 SESSION 12 — G9-G10 BATCH (10 CELLS) (2026-04-15)
+  // ═══════════════════════════════════════════════════════════════════
+  // High-school content across all 5 subjects.
+
+  async runElaG9Real(ctx) {
+    const SENTENCES = [
+      'figurative language paints a picture', 'a metaphor says one thing is another',
+      'life is a journey is a metaphor', 'her voice was music to his ears',
+      'a simile uses like or as', 'brave as a lion is a simile',
+      'as cold as ice describes coldness', 'personification gives objects human traits',
+      'the wind howled through the trees', 'the sun smiled on the beach',
+      'hyperbole is extreme exaggeration', 'i am so hungry i could eat a horse',
+      'the bag weighed a ton', 'i told you a million times',
+      'alliteration repeats the first sound', 'peter piper picked pickled peppers',
+      'sally sells seashells by the seashore', 'onomatopoeia sounds like what it means',
+      'buzz hiss crack and pop are examples', 'the bees buzzed in the garden',
+      'symbolism uses one thing to stand for another', 'a dove symbolizes peace',
+      'red can symbolize passion or anger', 'irony says the opposite of what is meant',
+      'foreshadowing hints at what comes next', 'imagery appeals to the senses',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runElaG10Real(ctx) {
+    const SENTENCES = [
+      'rhetoric is the art of persuasion', 'ethos appeals to credibility',
+      'pathos appeals to emotion', 'logos appeals to logic',
+      'a claim is the main argument', 'evidence supports the claim',
+      'a warrant explains why the evidence matters', 'counterarguments consider other views',
+      'a rebuttal answers counterarguments', 'strong arguments use all three appeals',
+      'an argument has a clear thesis', 'every paragraph supports the thesis',
+      'transitions connect ideas smoothly', 'the conclusion summarizes the argument',
+      'opinions need evidence to be arguments', 'facts are verifiable statements',
+      'opinions are personal beliefs', 'sources should be reliable',
+      'bias can influence arguments', 'logical fallacies weaken arguments',
+      'ad hominem attacks the person not the argument', 'straw man misrepresents the opposition',
+      'false dilemma offers only two choices', 'slippery slope assumes bad consequences',
+      'persuasive writing changes minds', 'informative writing shares knowledge',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runMathG9Real(ctx) {
+    const SENTENCES = [
+      'algebra two extends algebra one', 'polynomials have multiple terms',
+      'the degree is the highest power', 'factoring breaks polynomials apart',
+      'the difference of squares factors nicely', 'a quadratic can factor or use the formula',
+      'complex numbers include square roots of negatives', 'i is the square root of negative one',
+      'i squared equals negative one', 'a function has one output per input',
+      'linear functions graph as lines', 'quadratic functions graph as parabolas',
+      'exponential functions grow fast', 'logarithms undo exponentials',
+      'log base ten of one hundred is two', 'the natural log uses e as base',
+      'systems of equations can have three variables', 'matrices organize equation systems',
+      'matrix operations include addition and multiplication', 'the determinant is a matrix property',
+      'inverse functions undo each other', 'sequences are ordered lists of numbers',
+      'arithmetic sequences add the same amount', 'geometric sequences multiply by the same amount',
+      'the sum of a finite series has a formula', 'an infinite series may converge',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runMathG10Real(ctx) {
+    const SENTENCES = [
+      'a proof shows a statement is true', 'a theorem is a proven statement',
+      'an axiom is assumed without proof', 'a postulate is a basic assumption',
+      'direct proofs start from known facts', 'indirect proofs assume the opposite',
+      'proof by contradiction finds an impossibility', 'proof by induction uses base and step',
+      'congruent triangles have equal parts', 'similar triangles have proportional sides',
+      'side side side proves congruence', 'side angle side also proves congruence',
+      'angle side angle also works', 'hypotenuse leg proves right triangle congruence',
+      'parallel lines never meet', 'perpendicular lines meet at right angles',
+      'a transversal crosses parallel lines', 'alternate interior angles are equal',
+      'corresponding angles are equal', 'the law of sines relates sides and angles',
+      'the law of cosines extends pythagoras', 'area of a triangle is half base times height',
+      'the distance formula measures between points', 'the midpoint formula averages coordinates',
+      'circles are defined by their center', 'inscribed angles are half the arc',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runSciG9Real(ctx) {
+    const SENTENCES = [
+      'biology is the study of life', 'genetics studies heredity',
+      'gregor mendel discovered inheritance', 'genes are segments of dna',
+      'alleles are versions of a gene', 'dominant alleles mask recessive ones',
+      'a punnett square predicts offspring', 'homozygous means two matching alleles',
+      'heterozygous means two different alleles', 'phenotype is the observable trait',
+      'genotype is the genetic code', 'mutations change the dna sequence',
+      'some mutations are harmful', 'some mutations are helpful',
+      'evolution is change over time', 'darwin proposed natural selection',
+      'fitness is reproductive success', 'species adapt to their environment',
+      'the theory of evolution is well supported', 'fossils show how life changed',
+      'ecology studies relationships', 'producers make their own food',
+      'consumers eat other organisms', 'herbivores eat plants',
+      'carnivores eat meat', 'omnivores eat both',
+      'food webs show multiple connections', 'ecosystems reach dynamic equilibrium',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runSciG10Real(ctx) {
+    const SENTENCES = [
+      'chemistry studies matter and change', 'atoms are the basic units',
+      'protons have a positive charge', 'electrons have a negative charge',
+      'neutrons have no charge', 'the atomic number is protons',
+      'the mass number is protons plus neutrons', 'isotopes have different neutrons',
+      'the periodic table organizes elements', 'columns are called groups',
+      'rows are called periods', 'metals are on the left',
+      'nonmetals are on the right', 'noble gases do not react',
+      'ionic bonds transfer electrons', 'covalent bonds share electrons',
+      'metallic bonds share electrons freely', 'acids donate hydrogen ions',
+      'bases accept hydrogen ions', 'ph measures acidity',
+      'a ph of seven is neutral', 'below seven is acidic',
+      'above seven is basic', 'chemical reactions rearrange atoms',
+      'reactants become products', 'mass is conserved in reactions',
+      'balanced equations show equal atoms', 'stoichiometry calculates amounts',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runSocG9Real(ctx) {
+    const SENTENCES = [
+      'world history spans thousands of years', 'civilizations rose and fell',
+      'the enlightenment valued reason', 'thinkers like voltaire and locke wrote',
+      'locke said government protects rights', 'rousseau wrote about the social contract',
+      'the french revolution overthrew the king', 'liberty equality fraternity was the motto',
+      'napoleon rose to power in france', 'napoleon spread revolutionary ideas',
+      'the industrial revolution started in britain', 'machines replaced hand labor',
+      'the steam engine powered factories', 'coal became vital',
+      'workers lived in poor conditions', 'karl marx wrote about class struggle',
+      'imperialism spread european power', 'colonies provided raw materials',
+      'africa was divided by europeans', 'asia was also colonized',
+      'nationalism united people by culture', 'italy and germany unified',
+      'the ottoman empire declined', 'world war one began in nineteen fourteen',
+      'trench warfare was brutal', 'the war ended in nineteen eighteen',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runSocG10Real(ctx) {
+    const SENTENCES = [
+      'the twentieth century saw huge changes', 'world war two was the largest war',
+      'hitler led nazi germany', 'the allies fought the axis',
+      'the holocaust killed six million jews', 'the war ended with atomic bombs',
+      'the cold war followed world war two', 'the united states led the west',
+      'the soviet union led the east', 'the korean war was a cold war conflict',
+      'the vietnam war divided america', 'the berlin wall divided germany',
+      'the civil rights movement fought segregation', 'martin luther king led nonviolent protest',
+      'rosa parks refused to give up her seat', 'the civil rights act was passed',
+      'women fought for equal rights', 'the feminist movement grew',
+      'the space race pushed technology', 'the moon landing was in nineteen sixty nine',
+      'the berlin wall fell in nineteen eighty nine', 'the soviet union collapsed in nineteen ninety one',
+      'globalization connected the world', 'the internet changed everything',
+      'climate change became a concern', 'the century was a time of progress and conflict',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runArtG9Real(ctx) {
+    const SENTENCES = [
+      'art history spans all of human time', 'cave paintings are the oldest art',
+      'egyptian art honored the gods', 'greek art celebrated the human form',
+      'roman art built on greek foundations', 'medieval art focused on religion',
+      'gothic cathedrals reached toward heaven', 'the renaissance revived classical art',
+      'leonardo da vinci painted the mona lisa', 'michelangelo sculpted the david',
+      'michelangelo painted the sistine chapel', 'raphael painted the school of athens',
+      'the baroque used drama and light', 'caravaggio used dramatic lighting',
+      'bernini sculpted emotional figures', 'the rococo was playful and decorative',
+      'neoclassicism revived roman simplicity', 'romanticism valued emotion over reason',
+      'impressionism captured light and moment', 'monet painted water lilies',
+      'renoir painted joyful scenes', 'van gogh used bold colors and swirls',
+      'cubism broke forms into shapes', 'picasso co invented cubism',
+      'abstract art left behind representation', 'pollock dripped paint on canvas',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runArtG10Real(ctx) {
+    const SENTENCES = [
+      'music history spans many centuries', 'medieval music was mostly religious',
+      'gregorian chant was sung in churches', 'the renaissance added harmony',
+      'palestrina wrote renaissance choral music', 'the baroque period came next',
+      'bach wrote the well tempered clavier', 'handel composed the messiah',
+      'vivaldi wrote the four seasons', 'the classical period valued balance',
+      'haydn is the father of the symphony', 'mozart wrote with perfect elegance',
+      'beethoven bridged classical and romantic', 'the ninth symphony is his masterpiece',
+      'the romantic period valued emotion', 'chopin wrote for piano',
+      'schubert wrote beautiful songs', 'wagner wrote epic operas',
+      'tchaikovsky wrote the nutcracker', 'the twentieth century broke rules',
+      'stravinsky shocked audiences with the rite of spring', 'schoenberg invented twelve tone music',
+      'jazz emerged from african american communities', 'louis armstrong was a jazz legend',
+      'rock and roll was born in the nineteen fifties', 'the beatles changed popular music',
     ];
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
