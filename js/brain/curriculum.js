@@ -5712,6 +5712,29 @@ export class Curriculum {
     ], 4);
   }
 
+  async _teachUSRegions() {
+    // T14.24 Session 59 (task #116) — Soc-G3 US regions. TODO line
+    // 500: "_teachUSRegions() spatial feature binding. Gate: region
+    // recall ≥40%". 8d spatial features:
+    // [0]=north, [1]=south, [2]=east, [3]=west, [4]=coastal,
+    // [5]=mountainous, [6]=flat, [7]=warm-climate. Northeast has
+    // [0,2,4]; Southeast has [1,2,4,7]; Midwest has [0,6];
+    // Southwest has [1,3,7,5]; West has [3,5,4]; Pacific has [3,4,7];
+    // Mountain has [3,5]; Great Plains has [0,6].
+    return this._conceptTeach([
+      { name: 'northeast',    feat: [1, 0, 1, 0, 1, 0, 0, 0] },
+      { name: 'southeast',    feat: [0, 1, 1, 0, 1, 0, 0, 1] },
+      { name: 'midwest',      feat: [1, 0, 0, 0, 0, 0, 1, 0] },
+      { name: 'southwest',    feat: [0, 1, 0, 1, 0, 1, 0, 1] },
+      { name: 'west',         feat: [0, 0, 0, 1, 1, 1, 0, 0] },
+      { name: 'pacific',      feat: [0, 0, 0, 1, 1, 0, 0, 1] },
+      { name: 'rockies',      feat: [0, 0, 0, 1, 0, 1, 0, 0] },
+      { name: 'great plains', feat: [1, 0, 0, 0, 0, 0, 1, 0] },
+      { name: 'appalachia',   feat: [1, 0, 1, 0, 0, 1, 0, 0] },
+      { name: 'gulf coast',   feat: [0, 1, 0, 0, 1, 0, 0, 1] },
+    ], 4);
+  }
+
   async _teachStateNames() {
     // T14.24 Session 58 (task #115) — Soc-G2 state names. TODO line
     // 496: "_teachStateNames() via sequence walk. Gate: state
@@ -6916,6 +6939,9 @@ export class Curriculum {
       'the statue of liberty is in new york', 'the white house is in washington',
       'alaska has glaciers', 'hawaii has volcanoes',
     ];
+    // T14.24 Session 59 — prime US regions concept lattice per TODO
+    // line 500 before the geography sentence pass.
+    await this._teachUSRegions();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
