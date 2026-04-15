@@ -5712,6 +5712,36 @@ export class Curriculum {
     ], 4);
   }
 
+  async _teachEconomics() {
+    // T14.24 Session 68 (task #125) — Soc-G12 economics. TODO line
+    // 534: "_teachEconomics() supply/demand as magnitude
+    // relationship. Gate: supply-demand probe ≥25%". 8d features
+    // encoding economic-structure dims: [0]=supply-side,
+    // [1]=demand-side, [2]=price-up, [3]=price-down,
+    // [4]=micro-level, [5]=macro-level, [6]=market-driven,
+    // [7]=govt-driven. Supply and demand are structurally opposite
+    // on [0]/[1], scarcity drives price-up, surplus drives price-down.
+    return this._conceptTeach([
+      { name: 'supply',         feat: [1, 0, 0, 0, 1, 0, 1, 0] },
+      { name: 'demand',         feat: [0, 1, 0, 0, 1, 0, 1, 0] },
+      { name: 'scarcity',       feat: [1, 0, 1, 0, 1, 0, 1, 0] },
+      { name: 'surplus',        feat: [1, 0, 0, 1, 1, 0, 1, 0] },
+      { name: 'shortage',       feat: [0, 1, 1, 0, 1, 0, 1, 0] },
+      { name: 'equilibrium',    feat: [1, 1, 0, 0, 1, 0, 1, 0] },
+      { name: 'price',          feat: [1, 1, 0, 0, 1, 0, 1, 0] },
+      { name: 'market',         feat: [1, 1, 0, 0, 0, 0, 1, 0] },
+      { name: 'competition',    feat: [1, 0, 0, 1, 1, 0, 1, 0] },
+      { name: 'monopoly',       feat: [1, 0, 1, 0, 1, 0, 1, 0] },
+      { name: 'gdp',            feat: [0, 0, 0, 0, 0, 1, 0, 0] },
+      { name: 'inflation',      feat: [0, 0, 1, 0, 0, 1, 0, 0] },
+      { name: 'unemployment',   feat: [0, 0, 0, 0, 0, 1, 0, 0] },
+      { name: 'fiscal policy',  feat: [0, 0, 0, 0, 0, 1, 0, 1] },
+      { name: 'monetary policy', feat: [0, 0, 0, 0, 0, 1, 0, 1] },
+      { name: 'capitalism',     feat: [1, 1, 0, 0, 0, 1, 1, 0] },
+      { name: 'socialism',      feat: [1, 1, 0, 0, 0, 1, 0, 1] },
+    ], 4);
+  }
+
   async _teachGovBranches() {
     // T14.24 Session 67 (task #124) — Soc-G11 government branches.
     // TODO line 530: "_teachGovBranches() three-branch structure.
@@ -8780,6 +8810,9 @@ export class Curriculum {
       'economic systems include capitalism and socialism', 'capitalism uses markets',
       'socialism uses government planning',
     ];
+    // T14.24 Session 68 — prime economics concept lattice per TODO
+    // line 534 before the economics sentence pass.
+    await this._teachEconomics();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
