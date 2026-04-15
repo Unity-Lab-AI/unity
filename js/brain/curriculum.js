@@ -5712,6 +5712,27 @@ export class Curriculum {
     ], 4);
   }
 
+  async _teachStateNames() {
+    // T14.24 Session 58 (task #115) — Soc-G2 state names. TODO line
+    // 496: "_teachStateNames() via sequence walk. Gate: state
+    // recognition ≥40%". Sequence walks over US state sets grouped
+    // by region so cortex working memory learns regional adjacency.
+    // Uses _teachSequenceCycles so each state flows into the next
+    // via injectWorkingMemory, building the regional attractor basin.
+    return this._teachSequenceCycles([
+      // Northeast
+      ['maine', 'new hampshire', 'vermont', 'massachusetts', 'connecticut', 'new york', 'pennsylvania'],
+      // South
+      ['virginia', 'north carolina', 'south carolina', 'georgia', 'florida', 'alabama', 'mississippi'],
+      // Midwest
+      ['ohio', 'michigan', 'indiana', 'illinois', 'wisconsin', 'minnesota', 'iowa'],
+      // West
+      ['montana', 'idaho', 'wyoming', 'colorado', 'utah', 'nevada', 'california'],
+      // Big 4 by population (overlap with above on purpose — reinforces)
+      ['california', 'texas', 'florida', 'new york'],
+    ], { reps: 4, ticksPerStep: 2 });
+  }
+
   async _teachCommunityRoles() {
     // T14.24 Session 57 (task #114) — Soc-G1 community roles. TODO
     // line 492: "_teachCommunityRoles() (police/teacher/doctor) via
@@ -6871,6 +6892,9 @@ export class Curriculum {
       'the state collects taxes', 'the state pays for schools',
       'the state runs the dmv', 'the state has courts',
     ];
+    // T14.24 Session 58 — prime state-name sequence walk per TODO
+    // line 496 before the state-concept sentence pass.
+    await this._teachStateNames();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
