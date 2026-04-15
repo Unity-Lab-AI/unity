@@ -5683,6 +5683,28 @@ export class Curriculum {
       { name: 'allele', feat: [1, 0, 1, 1, 0, 0, 0, 0] },
     ], 4);
   }
+  async _teachScienceResearchMethods() {
+    // T14.24 Session 53 (task #110) — Sci-Col4 specialized research
+    // methods. TODO line 475: "Specialized research methods. Gate
+    // ≥20%". 12 concepts covering experimental design + statistics
+    // + ethics + publication norms that runSciCol4Real's 25 sentences
+    // discuss.
+    return this._conceptTeach([
+      { name: 'scientific method',    feat: [1, 1, 0, 0, 1, 0, 0, 1] },
+      { name: 'hypothesis',           feat: [1, 0, 1, 0, 1, 0, 0, 0] },
+      { name: 'control group',        feat: [1, 1, 0, 1, 0, 0, 1, 0] },
+      { name: 'independent variable', feat: [1, 0, 0, 0, 0, 1, 0, 1] },
+      { name: 'dependent variable',   feat: [0, 1, 0, 0, 0, 1, 1, 1] },
+      { name: 'randomization',        feat: [0, 1, 1, 0, 1, 1, 0, 0] },
+      { name: 'blinding',             feat: [0, 0, 1, 1, 1, 0, 1, 0] },
+      { name: 'statistical significance', feat: [1, 1, 1, 0, 0, 0, 1, 0] },
+      { name: 'reproducibility',      feat: [1, 1, 0, 1, 0, 1, 0, 1] },
+      { name: 'peer review',          feat: [1, 0, 1, 1, 0, 1, 1, 0] },
+      { name: 'informed consent',     feat: [0, 1, 1, 1, 1, 0, 0, 1] },
+      { name: 'conflict of interest', feat: [1, 1, 0, 1, 1, 1, 0, 0] },
+    ], 4);
+  }
+
   async _teachMolecularBiology() {
     // T14.24 Session 52 (task #109) — Sci-Col3 molecular biology.
     // TODO line 471: "Molecular biology, biochemistry, quantum
@@ -9194,6 +9216,12 @@ export class Curriculum {
       'conflicts of interest must be disclosed', 'retraction corrects errors',
       'science is self correcting',
     ];
+    // T14.24 Session 53 — prime the dedicated research-methods concept
+    // lattice (method / hypothesis / controls / blinding / significance /
+    // reproducibility / peer review / ethics) before the sentence pass so
+    // SENTENCES attach to a real methodological basin instead of drifting
+    // into generic sci vocabulary.
+    await this._teachScienceResearchMethods();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
