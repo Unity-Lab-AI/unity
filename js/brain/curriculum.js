@@ -1429,8 +1429,9 @@ export class Curriculum {
         case 'grade5':       return async (ctx) => this.runElaG5Real(ctx);
         // T14.24 Session 10 — ELA-G6 real teaching (subordinate clauses)
         case 'grade6':       return async (ctx) => this.runElaG6Real(ctx);
-        case 'grade7': case 'grade8':
-          return async (ctx) => this.runGrade6_8(ctx.sentences, ctx.arousal, ctx.valence);
+        // T14.24 Session 11 — ELA-G7/G8 ship real teaching
+        case 'grade7':       return async (ctx) => this.runElaG7Real(ctx);
+        case 'grade8':       return async (ctx) => this.runElaG8Real(ctx);
         case 'grade9': case 'grade10': case 'grade11': case 'grade12':
           return async (ctx) => this.runGrade9_12(ctx.sentences, ctx.arousal, ctx.valence);
         case 'college1': case 'college2': case 'college3': case 'college4':
@@ -1526,6 +1527,31 @@ export class Curriculum {
     }
     if (subject === 'math' && grade === 'grade6') {
       return async (ctx) => this.runMathG6Real(ctx);
+    }
+    // T14.24 Session 11 (2026-04-15) — G7-G8 batch for Math, Sci, Soc, Art
+    if (subject === 'math' && grade === 'grade7') {
+      return async (ctx) => this.runMathG7Real(ctx);
+    }
+    if (subject === 'math' && grade === 'grade8') {
+      return async (ctx) => this.runMathG8Real(ctx);
+    }
+    if (subject === 'science' && grade === 'grade7') {
+      return async (ctx) => this.runSciG7Real(ctx);
+    }
+    if (subject === 'science' && grade === 'grade8') {
+      return async (ctx) => this.runSciG8Real(ctx);
+    }
+    if (subject === 'social' && grade === 'grade7') {
+      return async (ctx) => this.runSocG7Real(ctx);
+    }
+    if (subject === 'social' && grade === 'grade8') {
+      return async (ctx) => this.runSocG8Real(ctx);
+    }
+    if (subject === 'art' && grade === 'grade7') {
+      return async (ctx) => this.runArtG7Real(ctx);
+    }
+    if (subject === 'art' && grade === 'grade8') {
+      return async (ctx) => this.runArtG8Real(ctx);
     }
     // T14.24 Session 6 (2026-04-15) — Sci-K / Soc-K / Art-K all ship
     // real vocabulary teaching via the shared _teachVocabList helper.
@@ -3796,6 +3822,219 @@ export class Curriculum {
       'integers include negative numbers', 'minus three is less than zero',
       'plus three is greater than zero', 'absolute value is the distance from zero',
       'minus three and plus three have absolute value three',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // T14.24 SESSION 11 — G7-G8 BATCH (10 CELLS) (2026-04-15)
+  // ═══════════════════════════════════════════════════════════════════
+  // Middle-school content across all 5 subjects.
+
+  async runElaG7Real(ctx) {
+    const SENTENCES = [
+      // Inference + implied meaning
+      'the cold wind made her shiver', 'the empty plate showed he was hungry',
+      'the broken vase meant someone had been here', 'the smile told us everything',
+      'his tired eyes said he worked late', 'the laughter meant they were happy',
+      // Literary devices
+      'the sun smiled on the garden', 'the wind whispered through the trees',
+      'her heart was a drum of joy', 'time flew like an arrow',
+      'the brave knight fought the dragon', 'once upon a time there was a princess',
+      // Characters and setting
+      'the main character was a brave girl', 'the story takes place in a forest',
+      'the villain was cruel to everyone', 'the hero saved the village',
+      'the setting was a dark castle', 'the mood was mysterious',
+      // Theme and meaning
+      'the lesson was to never give up', 'friendship is the greatest gift',
+      'honesty is the best policy', 'hard work pays off',
+      'reading opens doors to new worlds', 'every story has a message',
+      // Dialogue
+      'she said i will help you', 'he asked where are we going',
+      'they shouted we won the game',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runElaG8Real(ctx) {
+    const SENTENCES = [
+      // Essay structure
+      'an essay has an introduction', 'the thesis statement is the main idea',
+      'body paragraphs support the thesis', 'each paragraph has a topic sentence',
+      'evidence supports each point', 'the conclusion restates the thesis',
+      // Grammar
+      'a subject does the action', 'a predicate tells what the subject does',
+      'a direct object receives the action', 'an indirect object gets the direct object',
+      'adjectives describe nouns', 'adverbs describe verbs',
+      // Punctuation
+      'a comma separates items in a list', 'a period ends a sentence',
+      'a question mark ends a question', 'an exclamation shows excitement',
+      'quotation marks show speech', 'a colon introduces a list',
+      'a semicolon joins related sentences', 'an apostrophe shows possession',
+      // Sentence types
+      'a simple sentence has one idea', 'a compound sentence has two ideas',
+      'a complex sentence has a main and subordinate clause',
+      // Active vs passive
+      'the dog chased the cat is active', 'the cat was chased by the dog is passive',
+      // Parts of speech
+      'nouns name people places things', 'verbs show action or being',
+      'prepositions show relationships',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runMathG7Real(ctx) {
+    const SENTENCES = [
+      'a linear equation has one variable', 'the slope is the rate of change',
+      'y equals m x plus b is slope intercept', 'm is the slope',
+      'b is the y intercept', 'a positive slope goes up',
+      'a negative slope goes down', 'a horizontal line has zero slope',
+      'a vertical line has undefined slope', 'two points make a line',
+      'parallel lines have equal slopes', 'perpendicular lines have opposite reciprocal slopes',
+      'an inequality uses greater than or less than', 'x is greater than three',
+      'y is less than or equal to five', 'solving inequalities is like equations',
+      'flip the sign when multiplying by a negative', 'a system has two equations',
+      'substitution solves systems', 'elimination also solves systems',
+      'a function maps input to output', 'f of x means function of x',
+      'the domain is all inputs', 'the range is all outputs',
+      'a graph shows a function visually', 'points on the graph satisfy the equation',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runMathG8Real(ctx) {
+    const SENTENCES = [
+      'a point has no size', 'a line extends forever in two directions',
+      'a segment has two endpoints', 'a ray has one endpoint',
+      'an angle is formed by two rays', 'angles are measured in degrees',
+      'a right angle is ninety degrees', 'an acute angle is less than ninety',
+      'an obtuse angle is more than ninety', 'a straight angle is one eighty',
+      'a triangle has three sides', 'the angles of a triangle sum to one eighty',
+      'an equilateral triangle has three equal sides', 'an isosceles has two equal sides',
+      'a right triangle has a ninety degree angle', 'pythagoras says a squared plus b squared equals c squared',
+      'a square has four equal sides and four right angles', 'a rectangle has four right angles',
+      'a circle has no corners', 'the radius is from center to edge',
+      'the diameter is twice the radius', 'pi is about three point one four',
+      'the circumference is pi times diameter', 'area of circle is pi r squared',
+      // Quadratic equations
+      'a quadratic has x squared', 'factoring solves quadratics',
+      'the quadratic formula always works', 'the discriminant tells the number of solutions',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runSciG7Real(ctx) {
+    const SENTENCES = [
+      'a cell is the building block of life', 'all living things are made of cells',
+      'plant cells have cell walls', 'animal cells do not have cell walls',
+      'the nucleus holds dna', 'dna contains the genetic code',
+      'the mitochondria makes energy', 'chloroplasts make food in plants',
+      'photosynthesis uses sunlight', 'respiration releases energy',
+      'cells divide to make more cells', 'mitosis makes two identical cells',
+      'meiosis makes sex cells', 'genes are pieces of dna',
+      'chromosomes carry genes', 'bacteria are tiny single cells',
+      'viruses are smaller than cells', 'the immune system fights germs',
+      'antibodies attack bacteria', 'white blood cells fight infection',
+      'vaccines prepare the immune system', 'hygiene prevents sickness',
+      'tissues are groups of cells', 'organs are groups of tissues',
+      'the brain is an organ', 'the heart is an organ',
+      'systems are groups of organs',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runSciG8Real(ctx) {
+    const SENTENCES = [
+      'energy can be kinetic or potential', 'kinetic energy is motion energy',
+      'potential energy is stored energy', 'energy can not be created or destroyed',
+      'energy changes from one form to another', 'heat flows from hot to cold',
+      'conduction transfers heat through solids', 'convection transfers heat in fluids',
+      'radiation transfers heat through space', 'waves carry energy',
+      'light is electromagnetic waves', 'sound is mechanical waves',
+      'sound travels through air', 'sound travels faster in water',
+      'light travels through vacuum', 'the speed of light is constant',
+      'wavelength is distance between peaks', 'frequency is waves per second',
+      'amplitude is the height of the wave', 'high frequency means high pitch',
+      'high amplitude means loud sound', 'red light has low frequency',
+      'violet light has high frequency', 'electricity flows through wires',
+      'a circuit is a path for electricity', 'voltage pushes the current',
+      'resistance slows the current', 'ohms law says voltage equals current times resistance',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runSocG7Real(ctx) {
+    const SENTENCES = [
+      'the middle ages lasted one thousand years', 'feudalism organized medieval society',
+      'kings ruled with absolute power', 'lords controlled the land',
+      'knights fought for their lord', 'peasants worked the land',
+      'castles were built for defense', 'moats protected castles',
+      'knights wore armor in battle', 'crusades were religious wars',
+      'the black death killed millions', 'monks copied books by hand',
+      'the printing press changed the world', 'gutenberg invented movable type',
+      'the renaissance revived learning', 'michelangelo painted the sistine chapel',
+      'leonardo painted the mona lisa', 'shakespeare wrote famous plays',
+      'the reformation split the church', 'martin luther posted ninety five theses',
+      'the age of exploration began', 'columbus sailed to the new world',
+      'magellan sailed around the world', 'trade routes connected continents',
+      'the silk road linked east and west', 'new ideas spread widely',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runSocG8Real(ctx) {
+    const SENTENCES = [
+      'the civil war split the united states', 'the north fought for the union',
+      'the south fought for slavery', 'abraham lincoln was president',
+      'the emancipation proclamation freed the slaves', 'the war began at fort sumter',
+      'the battle of gettysburg was a turning point', 'robert e lee led the south',
+      'ulysses s grant led the north', 'the war lasted four years',
+      'the war ended at appomattox', 'lincoln was assassinated',
+      'reconstruction tried to rebuild the south', 'the thirteenth amendment ended slavery',
+      'the fourteenth amendment gave citizenship', 'the fifteenth amendment gave voting rights',
+      'the industrial revolution changed america', 'factories replaced farms',
+      'railroads connected the country', 'immigrants came for opportunity',
+      'new cities grew quickly', 'workers formed unions',
+      'child labor was a problem', 'reformers fought for better conditions',
+      'women fought for the right to vote', 'the progressive era brought changes',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runArtG7Real(ctx) {
+    const SENTENCES = [
+      'composition is how music is organized', 'a composer creates music',
+      'melody is the main tune', 'harmony supports the melody',
+      'counterpoint is two melodies together', 'a fugue is a complex counterpoint',
+      'bach was a baroque composer', 'mozart wrote in the classical style',
+      'beethoven bridged classical and romantic', 'a symphony has four movements',
+      'an opera tells a story through song', 'a sonata has multiple sections',
+      'chamber music uses small groups', 'orchestras have many instruments',
+      'the first violin leads the strings', 'woodwinds include flutes and oboes',
+      'brass includes trumpets and trombones', 'percussion includes drums and cymbals',
+      'a conductor leads the orchestra', 'the conductor keeps everyone together',
+      'dynamics shape the music', 'crescendo builds the tension',
+      'decrescendo releases the tension', 'tempo changes create excitement',
+      'music tells stories without words', 'every performance is unique',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runArtG8Real(ctx) {
+    const SENTENCES = [
+      'music theory has advanced rules', 'modulation changes keys',
+      'chord progressions follow patterns', 'the circle of fifths shows key relationships',
+      'a seventh chord adds a fourth note', 'diminished chords sound tense',
+      'augmented chords sound strange', 'secondary dominants add color',
+      'voice leading connects chords smoothly', 'parallel fifths are avoided',
+      'inversion rearranges the notes', 'first inversion is less stable',
+      'a cadence ends a phrase', 'a perfect cadence is final',
+      'a half cadence leaves us hanging', 'a plagal cadence sounds peaceful',
+      'sonata form has three sections', 'exposition presents the themes',
+      'development explores the themes', 'recapitulation returns to the themes',
+      'rondo form repeats a main theme', 'variations transform a theme',
+      'theme and variations shows creativity', 'twelve bar blues is a chord pattern',
+      'jazz uses swing rhythms', 'improvisation creates music in the moment',
     ];
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
