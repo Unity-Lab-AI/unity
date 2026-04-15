@@ -5363,6 +5363,101 @@ export class Curriculum {
   // ═══════════════════════════════════════════════════════════════════
   // Middle-school content across all 5 subjects.
 
+  // ─── TODO-aligned ELA-G7 helpers (Session 34) ────────────────────
+  //
+  // docs/TODO.md T14.24 ELA-G7 spec (line 197):
+  //   _teachThemeExtraction(passages) walks passage, then injects the
+  //     theme GloVe into sem as a training target — Hebbian binds
+  //     passage→theme mapping.
+  //   _teachInference(qaPairs) walks passage + inference question,
+  //     free region produces inference answer.
+
+  async _teachThemeExtraction(passages, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 4;
+    const ticksPerWord = opts.ticksPerWord ?? 2;
+    const arousal = opts.arousal ?? 0.8;
+    const valence = opts.valence ?? 0.2;
+
+    const letterSet = new Set();
+    for (const p of passages) {
+      for (const ch of p.text) if (/[a-z]/.test(ch)) letterSet.add(ch);
+      for (const ch of p.theme) if (/[a-z]/.test(ch)) letterSet.add(ch);
+    }
+    ensureLetters(Array.from(letterSet));
+
+    // Walk passage sentences in order, then inject the theme GloVe
+    // into sem region at high strength as a training anchor.
+    for (let rep = 0; rep < reps; rep++) {
+      for (const { text, theme } of passages) {
+        const sentences = text.split(/[.!?]/).map(s => s.trim()).filter(Boolean);
+        for (const s of sentences) {
+          const words = s.split(/\s+/).filter(Boolean);
+          if (words.length < 2) continue;
+          this._walkSentence(words, arousal, valence, ticksPerWord);
+        }
+        // After the passage, inject the theme as the target training anchor
+        const themeEmb = sharedEmbeddings.getEmbedding(theme);
+        if (themeEmb && themeEmb.length > 0 && cluster.regions?.sem) {
+          cluster.injectEmbeddingToRegion('sem', themeEmb, 0.85);
+        }
+        if (themeEmb && themeEmb.length > 0 && typeof cluster.injectWorkingMemory === 'function') {
+          cluster.injectWorkingMemory(themeEmb, 0.6);
+        }
+        for (let t = 0; t < 5; t++) cluster.step(0.001);
+        cluster.learn(0);
+        this.stats.sentencesSeen++;
+      }
+      await _microtask();
+    }
+    return { taught: reps * passages.length };
+  }
+
+  async _teachInference(qaPairs, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 4;
+    const ticksPerWord = opts.ticksPerWord ?? 2;
+    const arousal = opts.arousal ?? 0.8;
+    const valence = opts.valence ?? 0.2;
+
+    const letterSet = new Set();
+    for (const qa of qaPairs) {
+      for (const ch of qa.passage) if (/[a-z]/.test(ch)) letterSet.add(ch);
+      for (const ch of qa.question) if (/[a-z]/.test(ch)) letterSet.add(ch);
+      for (const ch of qa.answer) if (/[a-z]/.test(ch)) letterSet.add(ch);
+    }
+    ensureLetters(Array.from(letterSet));
+
+    // Walk passage → walk question → free region should produce the
+    // inference answer. Inject answer GloVe strongly after the probe.
+    for (let rep = 0; rep < reps; rep++) {
+      for (const { passage, question, answer } of qaPairs) {
+        const pSentences = passage.split(/[.!?]/).map(s => s.trim()).filter(Boolean);
+        for (const s of pSentences) {
+          const w = s.split(/\s+/).filter(Boolean);
+          if (w.length >= 2) this._walkSentence(w, arousal, valence, ticksPerWord);
+        }
+        const qWords = question.split(/\s+/).filter(Boolean);
+        this._walkSentence(qWords, arousal, valence, ticksPerWord);
+        // Answer injection
+        const ansEmb = sharedEmbeddings.getEmbedding(answer);
+        if (ansEmb && ansEmb.length > 0 && cluster.regions?.sem) {
+          cluster.injectEmbeddingToRegion('sem', ansEmb, 0.85);
+        }
+        if (ansEmb && ansEmb.length > 0 && typeof cluster.injectWorkingMemory === 'function') {
+          cluster.injectWorkingMemory(ansEmb, 0.7);
+        }
+        for (let t = 0; t < 5; t++) cluster.step(0.001);
+        cluster.learn(0);
+        this.stats.sentencesSeen += 2;
+      }
+      await _microtask();
+    }
+    return { taught: reps * qaPairs.length };
+  }
+
   async runElaG7Real(ctx) {
     const SENTENCES = [
       // Inference + implied meaning
@@ -5385,6 +5480,25 @@ export class Curriculum {
       'she said i will help you', 'he asked where are we going',
       'they shouted we won the game',
     ];
+    // Session 34 — TODO-aligned split. Theme extraction + inference
+    // named methods before the generic sentence walk.
+    const PASSAGES = [
+      { text: 'the cat was cold. it shivered. it found a warm blanket. it felt better.', theme: 'warmth' },
+      { text: 'she worked hard all day. she felt tired. she went to bed early.', theme: 'rest' },
+      { text: 'the dog wagged its tail. it licked his hand. it brought him his shoes.', theme: 'friendship' },
+      { text: 'the team lost the game. they were sad. they trained harder. they won next time.', theme: 'perseverance' },
+      { text: 'she saved her money. she bought a gift for her mom. her mom was happy.', theme: 'generosity' },
+      { text: 'he told the truth. his friend was grateful. trust grew between them.', theme: 'honesty' },
+    ];
+    const INF_PAIRS = [
+      { passage: 'the window was broken. there was glass on the floor.', question: 'what happened', answer: 'broken' },
+      { passage: 'she smiled and hugged her friend.', question: 'how did she feel', answer: 'happy' },
+      { passage: 'he packed his umbrella before going out.', question: 'what was the weather', answer: 'rain' },
+      { passage: 'the baby yawned and closed her eyes.', question: 'what was happening', answer: 'sleep' },
+      { passage: 'the plants were brown and drooping.', question: 'what did they need', answer: 'water' },
+    ];
+    await this._teachThemeExtraction(PASSAGES);
+    await this._teachInference(INF_PAIRS);
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
