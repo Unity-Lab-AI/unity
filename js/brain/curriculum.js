@@ -5719,6 +5719,28 @@ export class Curriculum {
     ], 4);
   }
 
+  async _teachSpecializedArtHistory() {
+    // T14.24 Session 89 (task #146) — Art-Col2 specialized art
+    // history. TODO line 567. Deeper chronological + movement
+    // sequence covering 20th century avant-garde, parallel to
+    // Art-G9 _teachArtHistory but with more granular modernist
+    // and contemporary movements.
+    return this._teachSequenceCycles([
+      // 19th century
+      ['neoclassical', 'romantic', 'realism', 'pre raphaelite', 'impressionism'],
+      // Modernist avant-garde
+      ['post impressionism', 'fauvism', 'cubism', 'futurism', 'expressionism'],
+      // Between wars
+      ['dada', 'surrealism', 'bauhaus', 'de stijl', 'constructivism'],
+      // Mid-century
+      ['abstract expressionism', 'color field', 'minimalism', 'pop art', 'op art'],
+      // Contemporary
+      ['conceptual', 'performance', 'installation', 'video art', 'new media'],
+      // Modernist masters
+      ['matisse', 'picasso', 'duchamp', 'mondrian', 'kandinsky'],
+    ], { reps: 4, ticksPerStep: 2 });
+  }
+
   async _teachStudioFundamentals() {
     // T14.24 Session 88 (task #145) — Art-Col1 studio fundamentals.
     // TODO line 567: "Specialized arts disciplines. Gate ≥25%". 12
@@ -9830,6 +9852,9 @@ export class Curriculum {
       'new media art uses digital tools', 'every movement responds to its time',
       'art reflects culture', 'art shapes culture', 'understanding art needs history',
     ];
+    // T14.24 Session 89 — prime specialized art history movement
+    // chronology per TODO line 567 before the Col2 sentence pass.
+    await this._teachSpecializedArtHistory();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
