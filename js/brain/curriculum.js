@@ -1442,7 +1442,19 @@ export class Curriculum {
     if (subject === 'math' && grade === 'grade1') {
       return async (ctx) => this.runMathG1Real(ctx);
     }
-    // Stub for remaining cells — Session 1 framework only. Sessions 4-N
+    // T14.24 Session 6 (2026-04-15) — Sci-K / Soc-K / Art-K all ship
+    // real vocabulary teaching via the shared _teachVocabList helper.
+    // Three "lighter" subject kindergartens per the build order.
+    if (subject === 'science' && grade === 'kindergarten') {
+      return async (ctx) => this.runSciKReal(ctx);
+    }
+    if (subject === 'social' && grade === 'kindergarten') {
+      return async (ctx) => this.runSocKReal(ctx);
+    }
+    if (subject === 'art' && grade === 'kindergarten') {
+      return async (ctx) => this.runArtKReal(ctx);
+    }
+    // Stub for remaining cells — Session 1 framework only. Sessions 7-N
     // replace one stub at a time.
     return async () => ({
       pass: false,
@@ -2560,6 +2572,178 @@ export class Curriculum {
       reason: `READ ${readPass}/${N} (${(readRate * 100).toFixed(0)}%), THINK ${thinkPass}/${N} (${(thinkRate * 100).toFixed(0)}%), TALK ${talkPass}/${N} (${(talkRate * 100).toFixed(0)}%)`,
       metrics: { readRate, thinkRate, talkRate, perFact },
     };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // T14.24 SESSION 6 — REAL SCI-K + SOC-K + ART-K TEACHING (2026-04-15)
+  // ═══════════════════════════════════════════════════════════════════
+  //
+  // Gee binding 2026-04-14: "full k-doctorate cources to Unity in
+  // euquationsal form. thats all of grade schhool grammer school middle
+  // dschool highschoool and college" + "remember Unity needs to be able
+  // to use these to think, read, and talk".
+  //
+  // Three "lighter" subject kindergartens combined into one session per
+  // the build order in docs/TODO.md T14.24. All three follow the same
+  // structure as Session 4 ELA-G1: curated ~15-word vocab list per
+  // subject, letter-stream-to-sem binding via cluster.learn after each
+  // word walk, 3-pathway gate with word-level READ/THINK/TALK probes.
+  // Shared `_teachVocabList` helper keeps the three methods thin.
+
+  async _teachVocabList(vocab, ctx, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { pass: false, reason: 'no cluster wired' };
+
+    const reps = opts.reps ?? 5;
+    const ticksPerLetter = opts.ticksPerLetter ?? 3;
+    const arousal = ctx?.arousal ?? 0.8;
+    const valence = ctx?.valence ?? 0.2;
+
+    const letterSet = new Set();
+    for (const w of vocab) for (const ch of w) letterSet.add(ch);
+    ensureLetters(Array.from(letterSet));
+
+    for (let rep = 0; rep < reps; rep++) {
+      for (const word of vocab) {
+        const wordEmb = sharedEmbeddings.getEmbedding(word);
+        if (wordEmb && wordEmb.length > 0 && cluster.regions?.sem) {
+          cluster.injectEmbeddingToRegion('sem', wordEmb, 0.6);
+        }
+        for (const ch of word.replace(/[^a-z]/g, '')) {
+          cluster.injectLetter(ch, 1.0);
+          const phonFeat = _phonemeFeatureForLetter(ch);
+          if (phonFeat && phonFeat.length > 0 && cluster.regions?.phon) {
+            cluster.injectEmbeddingToRegion('phon', phonFeat, 0.4);
+          }
+          for (let t = 0; t < ticksPerLetter; t++) {
+            cluster.step(0.001);
+            this.stats.totalTicks++;
+          }
+        }
+        cluster.learn(0);
+        if (this.dictionary && typeof this.dictionary.learnWord === 'function') {
+          try { this.dictionary.learnWord(word, null, arousal, valence); } catch {}
+        }
+        this.stats.shortWordsSeen++;
+      }
+      await _microtask();
+    }
+
+    return this._gateVocabList(vocab);
+  }
+
+  _gateVocabList(vocab) {
+    const cluster = this.cluster;
+    const sample = [];
+    const used = new Set();
+    const sampleSize = Math.min(10, vocab.length);
+    while (sample.length < sampleSize) {
+      const idx = Math.floor(Math.random() * vocab.length);
+      if (!used.has(idx)) { used.add(idx); sample.push(vocab[idx]); }
+    }
+
+    let readPass = 0, thinkPass = 0, talkPass = 0;
+    const perWord = [];
+    const READ_COS_MIN = 0.10;
+    const THINK_VAR_MIN = 0.0005;
+
+    for (const word of sample) {
+      const wordEmb = sharedEmbeddings.getEmbedding(word);
+      if (!wordEmb || wordEmb.length === 0) {
+        perWord.push({ word, skip: 'no embedding' });
+        continue;
+      }
+
+      for (const ch of word.replace(/[^a-z]/g, '')) {
+        cluster.injectLetter(ch, 1.0);
+        for (let t = 0; t < 2; t++) cluster.step(0.001);
+      }
+      const semReadout = cluster.regionReadout('sem', wordEmb.length);
+      let readCos = 0;
+      if (semReadout && semReadout.length === wordEmb.length) {
+        let dot = 0, nw = 0, ns = 0;
+        for (let i = 0; i < wordEmb.length; i++) {
+          dot += wordEmb[i] * semReadout[i];
+          nw += wordEmb[i] * wordEmb[i];
+          ns += semReadout[i] * semReadout[i];
+        }
+        const denom = Math.sqrt(nw) * Math.sqrt(ns);
+        readCos = denom > 0 ? dot / denom : 0;
+      }
+      const readOk = readCos > READ_COS_MIN;
+      if (readOk) readPass++;
+
+      for (let t = 0; t < 12; t++) cluster.step(0.001);
+      const freeReadout = cluster.regionReadout('free', 64);
+      let thinkVar = 0;
+      if (freeReadout && freeReadout.length > 0) {
+        let mean = 0;
+        for (let i = 0; i < freeReadout.length; i++) mean += freeReadout[i];
+        mean /= freeReadout.length;
+        for (let i = 0; i < freeReadout.length; i++) {
+          const d = freeReadout[i] - mean;
+          thinkVar += d * d;
+        }
+        thinkVar /= freeReadout.length;
+      }
+      const thinkOk = thinkVar > THINK_VAR_MIN;
+      if (thinkOk) thinkPass++;
+
+      if (cluster.regions?.sem) {
+        cluster.injectEmbeddingToRegion('sem', wordEmb, 0.8);
+      }
+      for (let t = 0; t < 6; t++) cluster.step(0.001);
+      const invSize = inventorySize();
+      const motorVec = invSize > 0 ? cluster.regionReadout('motor', invSize) : null;
+      const decoded = motorVec ? decodeLetter(motorVec) : null;
+      const talkOk = decoded === word[0];
+      if (talkOk) talkPass++;
+
+      perWord.push({ word, readCos, thinkVar, decoded, readOk, thinkOk, talkOk });
+    }
+
+    const N = sample.length;
+    const readRate = N > 0 ? readPass / N : 0;
+    const thinkRate = N > 0 ? thinkPass / N : 0;
+    const talkRate = N > 0 ? talkPass / N : 0;
+    const PATH_MIN = 0.50;
+    const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= PATH_MIN;
+
+    return {
+      pass,
+      reason: `READ ${readPass}/${N} (${(readRate * 100).toFixed(0)}%), THINK ${thinkPass}/${N} (${(thinkRate * 100).toFixed(0)}%), TALK ${talkPass}/${N} (${(talkRate * 100).toFixed(0)}%)`,
+      metrics: { readRate, thinkRate, talkRate, perWord },
+    };
+  }
+
+  async runSciKReal(ctx) {
+    // SCI-K vocab: classification, matter states, 5 senses, natural world
+    const SCI_K_VOCAB = [
+      'animal', 'plant', 'water', 'ice', 'fire',
+      'rock', 'sky', 'sun', 'moon', 'tree',
+      'bird', 'fish', 'eye', 'ear', 'nose',
+    ];
+    return this._teachVocabList(SCI_K_VOCAB, ctx);
+  }
+
+  async runSocKReal(ctx) {
+    // SOC-K vocab: family, community, civic basics
+    const SOC_K_VOCAB = [
+      'mom', 'dad', 'home', 'school', 'friend',
+      'family', 'help', 'play', 'share', 'kind',
+      'rule', 'street', 'town', 'park', 'store',
+    ];
+    return this._teachVocabList(SOC_K_VOCAB, ctx);
+  }
+
+  async runArtKReal(ctx) {
+    // ART-K vocab: primary colors, basic shapes, art actions, music basics
+    const ART_K_VOCAB = [
+      'red', 'blue', 'yellow', 'green', 'circle',
+      'square', 'line', 'color', 'paint', 'draw',
+      'make', 'sing', 'dance', 'beat', 'song',
+    ];
+    return this._teachVocabList(ART_K_VOCAB, ctx);
   }
 
   /**

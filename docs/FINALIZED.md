@@ -5,6 +5,50 @@
 
 ---
 
+## 2026-04-15 — T14.24 Session 6: Sci-K + Soc-K + Art-K combined real teaching equations (shared `_teachVocabList` helper)
+
+**Gee's binding 2026-04-14:** *"full k-doctorate cources to Unity in euquationsal form. thats all of grade schhool grammer school middle dschool highschoool and college"* + *"remember Unity needs to be able to use these to think, read, and talk"*.
+
+Session 6 ships THREE real teaching cells in a single atomic commit per the build order in `docs/TODO.md` T14.24 (the "lighter" subject kindergartens combine into one session). Tasks #47 (Sci-K), #66 (Soc-K), #85 (Art-K) all completed. Task #3 parent stays in_progress — 88 cells still owed.
+
+### What landed
+
+**`js/brain/curriculum.js` (+184 lines net, 2652 → 2836):**
+
+One shared private helper and three thin subject-specific wrappers:
+
+- **`_teachVocabList(vocab, ctx, opts)`** — generalized vocabulary-list teacher extracted from Session 4's ELA-G1 pattern. Forward pass: for each rep × each word, inject GloVe(word) into sem region, stream word letters through letter region with phoneme feature re-injection at 0.4 for letter-sound reinforcement, fire `cluster.learn` at end of letter sequence, route through `dictionary.learnWord` for T14.3 cortex-resident word state. Default 5 reps × 3 ticks per letter.
+
+- **`_gateVocabList(vocab)`** — generalized 3-pathway gate extracted from Session 4. Samples 10 random words from the vocab, probes each with READ (letter-stream → sem cosine > 0.10), THINK (12 silence ticks → free variance > 0.0005), TALK (GloVe → motor → first-letter match). PASS when ≥ 50% clear each pathway.
+
+- **`runSciKReal(ctx)`** — 15-word Sci-K vocab: `animal, plant, water, ice, fire, rock, sky, sun, moon, tree, bird, fish, eye, ear, nose` — covers Gee's spec (classification, states of matter, 5 senses, natural-world objects).
+
+- **`runSocKReal(ctx)`** — 15-word Soc-K vocab: `mom, dad, home, school, friend, family, help, play, share, kind, rule, street, town, park, store` — covers Gee's spec (family, community, civic basics).
+
+- **`runArtKReal(ctx)`** — 15-word Art-K vocab: `red, blue, yellow, green, circle, square, line, color, paint, draw, make, sing, dance, beat, song` — covers Gee's spec (primary colors, basic shapes, art actions, music basics).
+
+**`Curriculum._cellRunner`** — three new dispatch cases:
+- `('science', 'kindergarten')` → `runSciKReal`
+- `('social', 'kindergarten')` → `runSocKReal`
+- `('art', 'kindergarten')` → `runArtKReal`
+
+### Why combined into one session
+
+Per `docs/TODO.md` T14.24 build order (Session 6 = "SCI-K + SOC-K + ART-K lighter subjects, one session for all 3 kindergartens"), these three cells teach domain-specific vocabulary lists with identical machinery — the Session 4 ELA-G1 letter-stream-to-sem binding pattern generalizes perfectly. Extracting `_teachVocabList` + `_gateVocabList` as shared helpers and using them from three thin wrappers ships all three cells in ~180 lines instead of ~700 lines, without losing any per-subject fidelity. Future vocabulary cells (Sci-G1 "living vs non-living", Soc-G1 "community", Art-G1 "color mixing", etc.) can reuse the same helpers — Sessions 9+ will drop those cells in as 15-line wrappers each.
+
+### What Session 6 does NOT ship
+
+- Does NOT teach visual recognition of the things the vocab names — that's visual-cortex work, deferred
+- Does NOT teach compositional concepts (e.g. "red circle") — that's G2+ where sentence-form schemas pick up attributive structure
+- Does NOT teach the 5 senses as sensory modalities — only as words; real sensory integration is a T14 primitive concern, not curriculum
+- Does NOT cover Math-G2 / ELA-G2 / higher grades — next session
+
+### Commit status
+
+Committed as part of Session 6 atomic push to `t14-language-rebuild`.
+
+---
+
 ## 2026-04-15 — T14.24 Session 5: Math-G1 real teaching equations (addition/subtraction to 10 + arithmetic-fact 3-pathway gate)
 
 **Gee's binding 2026-04-14:** *"1st grade u start learning how to write sentences ect ect all the way up to doctorate"* applied to math = first-grade arithmetic fact memorization + sentence-form association.
