@@ -5712,6 +5712,26 @@ export class Curriculum {
     ], 4);
   }
 
+  async _teachCivilWar() {
+    // T14.24 Session 64 (task #121) — Soc-G8 civil war. TODO line
+    // 520: "_teachCivilWar() with cause-effect chain. Gate:
+    // cause-effect recall ≥30%". Sequence walks encode the causal
+    // chain: slavery/sectionalism → secession → war → emancipation
+    // → union victory → reconstruction → amendments.
+    return this._teachSequenceCycles([
+      // Causal chain (primary)
+      ['slavery', 'sectionalism', 'secession', 'fort sumter', 'war', 'union victory', 'reconstruction'],
+      // Leaders
+      ['lincoln', 'davis', 'grant', 'lee', 'sherman'],
+      // Turning points
+      ['fort sumter', 'bull run', 'antietam', 'gettysburg', 'vicksburg', 'appomattox'],
+      // Legal outcomes
+      ['emancipation proclamation', 'thirteenth amendment', 'fourteenth amendment', 'fifteenth amendment'],
+      // Cause then effect pairs
+      ['cause', 'effect', 'cause', 'effect'],
+    ], { reps: 4, ticksPerStep: 2 });
+  }
+
   async _teachMedievalPeriod() {
     // T14.24 Session 63 (task #120) — Soc-G7 medieval period. TODO
     // line 516: "_teachMedievalPeriod() sequence walks. Gate:
@@ -7857,6 +7877,9 @@ export class Curriculum {
       'child labor was a problem', 'reformers fought for better conditions',
       'women fought for the right to vote', 'the progressive era brought changes',
     ];
+    // T14.24 Session 64 — prime civil war cause-effect chain per
+    // TODO line 520 before the civil-war sentence pass.
+    await this._teachCivilWar();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
