@@ -5712,6 +5712,22 @@ export class Curriculum {
     ], 4);
   }
 
+  async _teachStateHistory() {
+    // T14.24 Session 60 (task #117) — Soc-G4 state history. TODO
+    // line 504: "_teachStateHistory() temporal sequence walks. Gate:
+    // historical event ordering ≥35%". Sequence walks ordered through
+    // US state-formation eras so cortex working memory binds the
+    // temporal ordering: native inhabitation → european contact →
+    // colonial → revolutionary → westward expansion → statehood →
+    // industrial → modern.
+    return this._teachSequenceCycles([
+      ['native', 'explorers', 'settlers', 'colony', 'revolution', 'statehood'],
+      ['settlers', 'farmers', 'railroad', 'telegraph', 'industry', 'modern'],
+      ['native people', 'european contact', 'colonial era', 'independence', 'union', 'growth'],
+      ['exploration', 'settlement', 'trade', 'conflict', 'treaty', 'statehood'],
+    ], { reps: 4, ticksPerStep: 2 });
+  }
+
   async _teachUSRegions() {
     // T14.24 Session 59 (task #116) — Soc-G3 US regions. TODO line
     // 500: "_teachUSRegions() spatial feature binding. Gate: region
@@ -7120,6 +7136,9 @@ export class Curriculum {
       'each generation builds on the last', 'history teaches us lessons',
       'we honor those who came before',
     ];
+    // T14.24 Session 60 — prime state-history temporal sequence per
+    // TODO line 504 before the history sentence pass.
+    await this._teachStateHistory();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
