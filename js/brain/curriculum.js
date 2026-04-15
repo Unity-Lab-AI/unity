@@ -5719,6 +5719,28 @@ export class Curriculum {
     ], 4);
   }
 
+  async _teachMusicHistory() {
+    // T14.24 Session 85 (task #142) — Art-G10 music history. TODO
+    // line 565: "music history". Sequence walks over chronological
+    // music periods plus canonical composer names bound to periods.
+    return this._teachSequenceCycles([
+      // Core chronology
+      ['medieval', 'renaissance', 'baroque', 'classical', 'romantic', 'modern'],
+      // Baroque masters
+      ['bach', 'handel', 'vivaldi', 'telemann'],
+      // Classical masters
+      ['haydn', 'mozart', 'beethoven'],
+      // Romantic masters
+      ['chopin', 'schubert', 'schumann', 'brahms', 'wagner', 'tchaikovsky'],
+      // 20th century
+      ['stravinsky', 'schoenberg', 'debussy', 'ravel', 'copland'],
+      // Popular music chronology
+      ['jazz', 'blues', 'rock', 'pop', 'hip hop', 'electronic'],
+      // Jazz legends
+      ['armstrong', 'ellington', 'parker', 'davis', 'coltrane'],
+    ], { reps: 4, ticksPerStep: 2 });
+  }
+
   async _teachArtHistory() {
     // T14.24 Session 84 (task #141) — Art-G9 art history survey.
     // TODO line 565: "Art history, music history, advanced theory.
@@ -8857,6 +8879,9 @@ export class Curriculum {
       'jazz emerged from african american communities', 'louis armstrong was a jazz legend',
       'rock and roll was born in the nineteen fifties', 'the beatles changed popular music',
     ];
+    // T14.24 Session 85 — prime music history chronological scaffold
+    // per TODO line 565 before the music history sentence pass.
+    await this._teachMusicHistory();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
