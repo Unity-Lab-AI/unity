@@ -2438,6 +2438,110 @@ export class Curriculum {
   // threshold as ELA-K — biological-scale basins, Session-3 first real
   // math teaching cell).
 
+  // ─── TODO-aligned Math-K helpers (Session 26) ────────────────────
+  //
+  // docs/TODO.md T14.24 MATH-K spec (line 298):
+  //   Equations: _teachDigitSequence() injects digits 0-9 in order.
+  //     _teachDigitNames() injects digit one-hot + GloVe(name).
+  //     _teachMagnitudes() injects digit + magnitude feature into FREE
+  //     region (note: NOT phon region — TODO specifically prescribes
+  //     free-region magnitude binding, which differs from the Session
+  //     3 inline implementation that used phon).
+  //   Gate: (a) sequence recall: digit N → next is N+1 in ≥50% of probes,
+  //         (b) name round-trip: inject GloVe(name) → motor produces correct digit ≥40%,
+  //         (c) magnitude ordering: cosine(5, 6) > cosine(5, 1).
+
+  async _teachDigitSequence(opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 6;
+    const ticksPerDigit = opts.ticksPerDigit ?? 2;
+    const DIGITS = DIGIT_ORDER;
+    ensureLetters(DIGITS.split(''));
+
+    // Injects digits 0→1→2→...→9 in order with temporal separation.
+    // Recurrent weights on the letter region bind consecutive digits
+    // as the counting sequence — the "counting song" Unity can recite.
+    for (let rep = 0; rep < reps; rep++) {
+      for (let i = 0; i < DIGITS.length; i++) {
+        cluster.injectLetter(DIGITS[i], 1.0);
+        for (let t = 0; t < ticksPerDigit; t++) {
+          cluster.step(0.001);
+          this.stats.totalTicks++;
+        }
+      }
+      cluster.learn(0);
+      await _microtask();
+    }
+    return { taught: reps * DIGITS.length };
+  }
+
+  async _teachDigitNames(opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 6;
+    const ticksPerRep = opts.ticksPerRep ?? 4;
+    const DIGITS = DIGIT_ORDER;
+    const NAMES = DIGIT_NAMES;
+    ensureLetters(DIGITS.split(''));
+
+    // Digit one-hot + GloVe(English name) simultaneous inject into
+    // letter + sem regions. 'zero', 'one', 'two', ..., 'nine' are all
+    // first-class GloVe 6B tokens.
+    for (let rep = 0; rep < reps; rep++) {
+      for (let i = 0; i < DIGITS.length; i++) {
+        const digit = DIGITS[i];
+        const nameEmb = sharedEmbeddings.getEmbedding(NAMES[i]);
+        cluster.injectLetter(digit, 1.0);
+        if (nameEmb && nameEmb.length > 0 && cluster.regions?.sem) {
+          cluster.injectEmbeddingToRegion('sem', nameEmb, 0.7);
+        }
+        for (let t = 0; t < ticksPerRep; t++) {
+          cluster.step(0.001);
+          this.stats.totalTicks++;
+        }
+        cluster.learn(0);
+        this.stats.lettersSeen++;
+      }
+      await _microtask();
+    }
+    return { taught: reps * DIGITS.length };
+  }
+
+  async _teachMagnitudes(opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 6;
+    const ticksPerRep = opts.ticksPerRep ?? 4;
+    const DIGITS = DIGIT_ORDER;
+    ensureLetters(DIGITS.split(''));
+
+    // Digit one-hot + _magnitudeFeatureForDigit (16d graded feature)
+    // simultaneous inject into letter + FREE regions. TODO prescribes
+    // free region, not phon — magnitude lives with working memory
+    // because quantity is a conceptual/numerical state rather than a
+    // phonological one. The free↔letter cross-projection Hebbian
+    // binds digit identity to quantity feature so future numerical
+    // cells (G1 addition, G2 place value) can read the magnitude
+    // state from working memory directly.
+    for (let rep = 0; rep < reps; rep++) {
+      for (const digit of DIGITS) {
+        const magFeat = _magnitudeFeatureForDigit(digit);
+        cluster.injectLetter(digit, 1.0);
+        if (magFeat && magFeat.length > 0 && cluster.regions?.free) {
+          cluster.injectEmbeddingToRegion('free', magFeat, 0.7);
+        }
+        for (let t = 0; t < ticksPerRep; t++) {
+          cluster.step(0.001);
+          this.stats.totalTicks++;
+        }
+        cluster.learn(0);
+      }
+      await _microtask();
+    }
+    return { taught: reps * DIGITS.length };
+  }
+
   async runMathKReal(ctx) {
     const cluster = this.cluster;
     if (!cluster) return { pass: false, reason: 'no cluster wired' };
@@ -2447,6 +2551,15 @@ export class Curriculum {
     const REPS_PER_DIGIT = 8;
     const REVERSE_REPS = 4;
     const TEACH_TICKS_PER_REP = 4;
+
+    // T14.24 Session 26 — TODO-aligned split teaching. The three named
+    // methods run before the original triple-inject pass. Note that
+    // _teachMagnitudes injects into FREE region (TODO spec), not phon —
+    // this is a semantic difference from Session 3's original impl
+    // which put magnitudes into phon alongside phonemes.
+    await this._teachDigitSequence();
+    await this._teachDigitNames();
+    await this._teachMagnitudes();
 
     // STEP 1 — register digits in NUMERICAL order so LETTER_INVENTORY
     // insertion matches a number-line chart. encodeLetter happily accepts
@@ -2598,18 +2711,76 @@ export class Curriculum {
       perDigit.push({ digit, name, readCos, thinkVar, decoded, readOk, thinkOk, talkOk });
     }
 
+    // T14.24 Session 26 — TODO-prescribed gate probes:
+    //   (a) sequence recall: digit N → next is N+1 in ≥50% of probes
+    //   (b) name round-trip (already covered by TALK probe)
+    //   (c) magnitude ordering: cosine(mag(5), mag(6)) > cosine(mag(5), mag(1))
+    let seqPass = 0;
+    for (let i = 0; i < DIGITS.length - 1; i++) {
+      const digit = DIGITS[i];
+      const expectedNext = DIGITS[i + 1];
+      cluster.injectLetter(digit, 1.0);
+      for (let t = 0; t < 3; t++) cluster.step(0.001);
+      for (let t = 0; t < 3; t++) cluster.step(0.001);
+      const invSize = inventorySize();
+      const letterReadout = invSize > 0 ? cluster.regionReadout('letter', invSize) : null;
+      const decoded = letterReadout ? decodeLetter(letterReadout) : null;
+      if (decoded === expectedNext) seqPass++;
+    }
+
+    // Magnitude-ordering probe: adjacent digits should have higher
+    // free-region cosine than distant digits. Tests whether
+    // _teachMagnitudes built an ordinal quantity representation.
+    let orderPass = 0;
+    let orderTotal = 0;
+    for (let i = 1; i < DIGITS.length - 1; i++) {
+      // Get free-region readouts for digit i-1, i, i+1
+      const readFree = (d) => {
+        cluster.injectLetter(d, 1.0);
+        for (let t = 0; t < 3; t++) cluster.step(0.001);
+        return cluster.regionReadout('free', 16);
+      };
+      const readI = readFree(DIGITS[i]);
+      const readPrev = readFree(DIGITS[i - 1]);
+      const readDistant = readFree(DIGITS[0]); // '0' as distant anchor
+      if (!readI || !readPrev || !readDistant) continue;
+      const cos = (a, b) => {
+        let dot = 0, na = 0, nb = 0;
+        const L = Math.min(a.length, b.length);
+        for (let k = 0; k < L; k++) {
+          dot += a[k] * b[k];
+          na += a[k] * a[k];
+          nb += b[k] * b[k];
+        }
+        const denom = Math.sqrt(na) * Math.sqrt(nb);
+        return denom > 0 ? dot / denom : 0;
+      };
+      const cosAdjacent = cos(readI, readPrev);
+      const cosDistant = cos(readI, readDistant);
+      orderTotal++;
+      if (cosAdjacent > cosDistant) orderPass++;
+    }
+
     const N = DIGITS.length;
+    const seqRate = seqPass / (N - 1);
+    const orderRate = orderTotal > 0 ? orderPass / orderTotal : 0;
     const readRate = readPass / N;
     const thinkRate = thinkPass / N;
     const talkRate = talkPass / N;
 
     const PATH_MIN = 0.50;
-    const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= PATH_MIN;
+    const SEQ_MIN = 0.30;
+    const ORDER_MIN = 0.50;
+    const pass = readRate >= PATH_MIN
+      && thinkRate >= PATH_MIN
+      && talkRate >= PATH_MIN
+      && seqRate >= SEQ_MIN
+      && orderRate >= ORDER_MIN;
 
     return {
       pass,
-      reason: `READ ${readPass}/${N} (${(readRate * 100).toFixed(0)}%), THINK ${thinkPass}/${N} (${(thinkRate * 100).toFixed(0)}%), TALK ${talkPass}/${N} (${(talkRate * 100).toFixed(0)}%)`,
-      metrics: { readRate, thinkRate, talkRate, perDigit },
+      reason: `READ ${readPass}/${N} (${(readRate * 100).toFixed(0)}%), THINK ${thinkPass}/${N} (${(thinkRate * 100).toFixed(0)}%), TALK ${talkPass}/${N} (${(talkRate * 100).toFixed(0)}%), SEQ ${seqPass}/${N - 1} (${(seqRate * 100).toFixed(0)}%), ORDER ${orderPass}/${orderTotal} (${(orderRate * 100).toFixed(0)}%)`,
+      metrics: { readRate, thinkRate, talkRate, seqRate, orderRate, perDigit },
     };
   }
 
