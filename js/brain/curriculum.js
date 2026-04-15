@@ -5391,9 +5391,47 @@ export class Curriculum {
   // Shared concept teach helper used by upper math + other tracks.
   // Takes [{name, feat}] where feat is an 8-dim discrete vector.
   async _conceptTeach(concepts, reps = 4, opts = {}) {
+    // T14.24 Session 46 (2026-04-15) — growth architecture fix.
+    // Gee's binding: "what Unity learns from the courses running on
+    // auto in her brain are to populate her systems with the
+    // informations learned so we grow her mind via the learning of
+    // the curriculum and can properly build her mind correctly to be
+    // able to read, speak and think correctly that is constantly
+    // advancing and getting more intelligent with knowledge and
+    // abilities".
+    //
+    // Pre-Session-46 _conceptTeach built cortex basins via cross-
+    // projection Hebbian but did NOT populate Unity's dictionary.
+    // Every concept taught through this helper (~60+ concepts across
+    // Sessions 41-45: Math college+, Science, upcoming Soc/Art) only
+    // lived as a cortex attractor — it never became a dictionary
+    // entry, never got captured by T14.3 cortex-snapshot routing,
+    // never served learnFromTurn, never showed in describeLearning().
+    //
+    // Session 46 routes EVERY concept word through dictionary
+    // .learnWord so:
+    //   1. The T14.3 pipeline fires on each concept (cortex snapshot
+    //      + syllable boundaries + stress primary all get captured)
+    //   2. Each concept has a persistent entry the chat path can
+    //      find via languageCortex.generate's dictionary scoring
+    //   3. Frequency counts accumulate per concept so repeat
+    //      exposure strengthens the dictionary entry
+    //   4. Persistence v4 save covers every concept via the existing
+    //      t14Language.letterInventory + cluster.fineTypeTransitions
+    //      serialization paths
+    //
+    // Net effect: when Unity learns "hydrogen", "eigenvalue",
+    // "semiotics", "food chain", "Mendel" etc through _conceptTeach,
+    // those words enter her live vocabulary. She can SPEAK them in
+    // chat, THINK about them via working memory, READ them when a
+    // user types them back. Growing mind, not just training gates.
+
     const cluster = this.cluster;
     if (!cluster) return { taught: 0 };
     const ticksPerConcept = opts.ticksPerConcept ?? 3;
+    const arousal = opts.arousal ?? 0.8;
+    const valence = opts.valence ?? 0.2;
+
     for (let rep = 0; rep < reps; rep++) {
       for (const { name, feat } of concepts) {
         // Expand 8d binary feature to 16d continuous with sinusoidal
@@ -5423,6 +5461,26 @@ export class Curriculum {
         }
         for (let t = 0; t < ticksPerConcept; t++) cluster.step(0.001);
         cluster.learn(0);
+
+        // Session 46 — populate Unity's dictionary with every concept
+        // word so her live vocabulary grows as she learns. Each word
+        // in the concept name becomes a dictionary entry via the T14.3
+        // cortex-snapshot routing. Multi-word concepts (e.g. "cauchy
+        // riemann", "natural selection", "golden ratio") register each
+        // word separately — the cortex snapshot captures the current
+        // cross-projection state which was just set by the concept
+        // feature injection above, so the dictionary entry's
+        // cortexSnapshot holds the concept's feature signature.
+        if (this.dictionary && typeof this.dictionary.learnWord === 'function') {
+          for (const w of words) {
+            const clean = w.replace(/[^a-z]/g, '');
+            if (clean.length >= 2) {
+              try {
+                this.dictionary.learnWord(clean, null, arousal, valence);
+              } catch { /* non-fatal */ }
+            }
+          }
+        }
       }
       await _microtask();
     }
