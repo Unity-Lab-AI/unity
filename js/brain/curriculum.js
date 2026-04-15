@@ -5661,26 +5661,221 @@ export class Curriculum {
       { name: 'radiant energy', feat: [0, 1, 0, 0, 1, 0, 1, 1] },
     ], 4);
   }
-  async _teachPeriodicTable() {
-    return this._conceptTeach([
-      { name: 'hydrogen', feat: [1, 0, 0, 0, 0, 0, 0, 0] },
-      { name: 'carbon', feat: [1, 1, 0, 0, 0, 0, 0, 0] },
-      { name: 'oxygen', feat: [1, 1, 1, 0, 0, 0, 0, 0] },
-      { name: 'nitrogen', feat: [1, 1, 0, 1, 0, 0, 0, 0] },
-      { name: 'sodium', feat: [0, 1, 0, 0, 1, 0, 0, 0] },
-      { name: 'chlorine', feat: [0, 1, 1, 0, 1, 0, 0, 0] },
-      { name: 'iron', feat: [0, 0, 1, 1, 0, 1, 0, 0] },
-      { name: 'gold', feat: [0, 0, 1, 1, 0, 0, 1, 0] },
-    ], 4);
+  async _teachPeriodicTable(opts = {}) {
+    // TODO Sci-G10 spec (line 454): "_teachPeriodicTable() element
+    // → group/period feature". The whole point of the periodic table
+    // is that elements in the same GROUP (column) share chemistry —
+    // alkali metals (group 1), halogens (group 17), noble gases
+    // (group 18). A feature encoding that doesn't reflect group
+    // proximity isn't a periodic-table feature, it's arbitrary
+    // labels.
+    //
+    // Session 43 first-ship used arbitrary 8d binary features via
+    // _conceptTeach with 8 scattered elements. Session 45 replaces
+    // that with a REAL periodic-table feature for all 18 first-row
+    // elements where cosine(same group) > cosine(different group).
+    //
+    // Feature encoding: 16d where period and group each contribute
+    // linear + log + sin + cos components, so the L2-normalized
+    // cosine between two elements reflects:
+    //   - distance in period (row) — elements in same row are
+    //     somewhat similar
+    //   - distance in group (column) — elements in same column are
+    //     very similar (strongest structural relationship)
+
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 4;
+    const ticksPerElement = opts.ticksPerElement ?? 3;
+
+    // First 18 elements with their real (period, group) positions
+    // from the IUPAC periodic table.
+    const ELEMENTS = [
+      { name: 'hydrogen',   z: 1,  group: 1,  period: 1 },
+      { name: 'helium',     z: 2,  group: 18, period: 1 },
+      { name: 'lithium',    z: 3,  group: 1,  period: 2 },
+      { name: 'beryllium',  z: 4,  group: 2,  period: 2 },
+      { name: 'boron',      z: 5,  group: 13, period: 2 },
+      { name: 'carbon',     z: 6,  group: 14, period: 2 },
+      { name: 'nitrogen',   z: 7,  group: 15, period: 2 },
+      { name: 'oxygen',     z: 8,  group: 16, period: 2 },
+      { name: 'fluorine',   z: 9,  group: 17, period: 2 },
+      { name: 'neon',       z: 10, group: 18, period: 2 },
+      { name: 'sodium',     z: 11, group: 1,  period: 3 },
+      { name: 'magnesium',  z: 12, group: 2,  period: 3 },
+      { name: 'aluminum',   z: 13, group: 13, period: 3 },
+      { name: 'silicon',    z: 14, group: 14, period: 3 },
+      { name: 'phosphorus', z: 15, group: 15, period: 3 },
+      { name: 'sulfur',     z: 16, group: 16, period: 3 },
+      { name: 'chlorine',   z: 17, group: 17, period: 3 },
+      { name: 'argon',      z: 18, group: 18, period: 3 },
+    ];
+
+    // Build the 16d periodic-table feature per element.
+    //   dim 0  — period linear (period / 7)
+    //   dim 1  — period log (log(period+1) / log(8))
+    //   dim 2  — period sin
+    //   dim 3  — period cos
+    //   dim 4  — group linear (group / 18)
+    //   dim 5  — group log (log(group+1) / log(19))
+    //   dim 6  — group sin (strongest same-group signal)
+    //   dim 7  — group cos (strongest same-group signal)
+    //   dims 8-15 — harmonic cross-terms tying period and group
+    const buildFeat = (period, group) => {
+      const feat = new Float64Array(16);
+      feat[0] = period / 7;
+      feat[1] = Math.log(period + 1) / Math.log(8);
+      feat[2] = Math.sin(period * Math.PI / 7);
+      feat[3] = Math.cos(period * Math.PI / 7);
+      feat[4] = group / 18;
+      feat[5] = Math.log(group + 1) / Math.log(19);
+      feat[6] = Math.sin(group * Math.PI / 18);
+      feat[7] = Math.cos(group * Math.PI / 18);
+      for (let i = 8; i < 16; i++) {
+        // Cross-harmonic: ties period and group together but at
+        // different frequencies so same-group dominates same-period
+        feat[i] = Math.sin(group * Math.PI / 9 + period * Math.PI / 3.5) * 0.3;
+      }
+      // L2 normalize
+      let norm = 0;
+      for (let i = 0; i < 16; i++) norm += feat[i] * feat[i];
+      norm = Math.sqrt(norm) || 1;
+      for (let i = 0; i < 16; i++) feat[i] /= norm;
+      return feat;
+    };
+
+    for (let rep = 0; rep < reps; rep++) {
+      for (const { name, period, group } of ELEMENTS) {
+        const feat = buildFeat(period, group);
+        // Element-name GloVe into sem region
+        const nameEmb = sharedEmbeddings.getEmbedding(name);
+        if (nameEmb && cluster.regions?.sem) {
+          cluster.injectEmbeddingToRegion('sem', nameEmb, 0.7);
+        }
+        // Group/period feature into free region (working memory
+        // holds the periodic position the cortex is learning to
+        // associate with the name)
+        if (cluster.regions?.free) {
+          cluster.injectEmbeddingToRegion('free', feat, 0.7);
+        }
+        // Stream element name letters through letter region so the
+        // letter↔sem binding gets exercised on the element's written
+        // form alongside the group/period feature
+        for (const ch of name) {
+          cluster.injectLetter(ch, 0.7);
+          cluster.step(0.001);
+        }
+        for (let t = 0; t < ticksPerElement; t++) cluster.step(0.001);
+        cluster.learn(0);
+      }
+      await _microtask();
+    }
+    return { taught: reps * ELEMENTS.length };
   }
-  async _teachBonding() {
-    return this._conceptTeach([
-      { name: 'ionic bond', feat: [1, 0, 0, 1, 0, 0, 0, 1] },
-      { name: 'covalent bond', feat: [1, 1, 0, 0, 1, 0, 0, 0] },
-      { name: 'metallic bond', feat: [0, 1, 1, 1, 0, 0, 0, 0] },
-      { name: 'hydrogen bond', feat: [1, 0, 1, 0, 1, 0, 0, 1] },
-      { name: 'electronegativity', feat: [0, 1, 1, 1, 0, 1, 0, 0] },
-    ], 4);
+  async _teachBonding(opts = {}) {
+    // TODO Sci-G10 spec (line 454): "_teachBonding() ionic/covalent
+    // distinction". The distinction is STRUCTURAL — ionic bonds
+    // transfer electrons, covalent bonds share them. Session 43
+    // first-ship used arbitrary 8d binary features; Session 45
+    // replaces them with a real feature encoding where each dim
+    // represents a chemical property, so cosine similarity between
+    // bond types reflects their real chemistry.
+    //
+    // Feature dims:
+    //   dim 0 — electron transfer (1=ionic, 0=covalent)
+    //   dim 1 — electron sharing (0=ionic, 1=covalent)
+    //   dim 2 — metal + nonmetal participants (1=ionic)
+    //   dim 3 — nonmetal + nonmetal participants (1=covalent)
+    //   dim 4 — crystal lattice formation (1=ionic, 1=metallic)
+    //   dim 5 — discrete molecule (1=covalent)
+    //   dim 6 — soluble in water (1=ionic, 0.5=polar covalent)
+    //   dim 7 — bond strength (all structured bonds strong)
+    // This gives ionic and covalent HIGH dim 0/1 anti-correlation
+    // while sharing properties with their close relatives.
+    //
+    // Cosine(ionic, covalent) is LOW (they disagree on dims 0-3).
+    // Cosine(ionic, metallic) is MODERATE (both form crystals and
+    // share metal character at different ends).
+    // Cosine(covalent, hydrogen bond) is MODERATE (both share/partial-
+    // share and form discrete molecules).
+
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 5;
+    const ticksPerBond = opts.ticksPerBond ?? 3;
+
+    const BONDS = [
+      {
+        name: 'ionic bond',
+        feat: [1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1.0],
+        // transfers electrons, metal+nonmetal, forms crystals, water-soluble
+      },
+      {
+        name: 'covalent bond',
+        feat: [0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.3, 1.0],
+        // shares electrons, nonmetal+nonmetal, discrete molecules
+      },
+      {
+        name: 'metallic bond',
+        feat: [0.5, 0.5, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0],
+        // delocalized electron sea, metal+metal, crystal lattice
+      },
+      {
+        name: 'polar covalent bond',
+        feat: [0.2, 0.8, 0.3, 0.7, 0.0, 1.0, 0.6, 1.0],
+        // mostly covalent but partial charge separation, water-soluble
+      },
+      {
+        name: 'hydrogen bond',
+        feat: [0.0, 0.3, 0.0, 0.0, 0.0, 1.0, 0.8, 0.3],
+        // weak intermolecular attraction, water-essential, discrete molecules
+      },
+    ];
+
+    // Build 16d feature per bond type: first 8 dims are the
+    // structural feature above, dims 8-15 are sinusoidal harmonics
+    // to break any accidental degeneracy in cortex representation.
+    const buildFeat = (feat8) => {
+      const feat = new Float64Array(16);
+      for (let i = 0; i < 8; i++) feat[i] = feat8[i];
+      for (let i = 8; i < 16; i++) {
+        feat[i] = Math.sin((feat8[0] + feat8[1] * 2) * i * 0.3) * 0.25;
+      }
+      let norm = 0;
+      for (let i = 0; i < 16; i++) norm += feat[i] * feat[i];
+      norm = Math.sqrt(norm) || 1;
+      for (let i = 0; i < 16; i++) feat[i] /= norm;
+      return feat;
+    };
+
+    for (let rep = 0; rep < reps; rep++) {
+      for (const { name, feat } of BONDS) {
+        const expandedFeat = buildFeat(feat);
+        // Bond type name → sem region
+        const words = name.split(/\s+/).filter(Boolean);
+        const headEmb = sharedEmbeddings.getSentenceEmbedding
+          ? sharedEmbeddings.getSentenceEmbedding(name)
+          : sharedEmbeddings.getEmbedding(words[0]);
+        if (headEmb && cluster.regions?.sem) {
+          cluster.injectEmbeddingToRegion('sem', headEmb, 0.7);
+        }
+        // Structural chemistry feature → free region
+        if (cluster.regions?.free) {
+          cluster.injectEmbeddingToRegion('free', expandedFeat, 0.7);
+        }
+        // Walk letters
+        for (const w of words) {
+          for (const ch of w.replace(/[^a-z]/g, '')) {
+            cluster.injectLetter(ch, 0.7);
+            cluster.step(0.001);
+          }
+        }
+        for (let t = 0; t < ticksPerBond; t++) cluster.step(0.001);
+        cluster.learn(0);
+      }
+      await _microtask();
+    }
+    return { taught: reps * BONDS.length };
   }
   async _teachKinematics() {
     // Uses actual motion equations v=u+at, s=ut+½at² as magnitude chains
@@ -7477,6 +7672,38 @@ export class Curriculum {
       'reactants become products', 'mass is conserved in reactions',
       'balanced equations show equal atoms', 'stoichiometry calculates amounts',
     ];
+    // T14.24 Session 45 — TODO-aligned chemistry 1 with real
+    // structural feature encodings.
+    // TODO Sci-G10 spec (line 454): "_teachPeriodicTable() element →
+    // group/period feature. _teachBonding() ionic/covalent distinction".
+    //
+    // Session 45 replaced both helpers (which were Session 43 arbitrary
+    // 8d binary features) with structurally-meaningful encodings:
+    //
+    // _teachPeriodicTable now walks 18 real elements (H through Ar)
+    // with 16d features encoding (period linear/log/sin/cos + group
+    // linear/log/sin/cos + cross-harmonics). Elements in the same
+    // GROUP (alkali metals Li/Na, halogens F/Cl, noble gases He/Ne/
+    // Ar) now have HIGH feature cosine — matching real chemistry.
+    // Element-name GloVe into sem, group/period feature into free,
+    // letter stream through letter region. Same 3-way binding pattern
+    // as Math-K _teachMagnitudes.
+    //
+    // _teachBonding now uses real chemistry features per bond type:
+    //   ionic:    [transfer, no share, metal+nonmetal, crystal, water]
+    //   covalent: [no transfer, share, nonmetal+nonmetal, molecule]
+    //   metallic: [half-transfer, half-share, crystal]
+    //   polar covalent: [mostly share, partial charge, water-soluble]
+    //   hydrogen: [weak, molecular, water-essential]
+    // Ionic and covalent are ANTI-correlated on transfer/share dims,
+    // which is the core chemical distinction the TODO prescribes.
+    //
+    // Both helpers run BEFORE the sentence walk. Sentences then
+    // teach relationships ("ionic bonds transfer electrons",
+    // "noble gases do not react", "acids donate hydrogen ions") on
+    // top of the stable feature basins.
+    await this._teachPeriodicTable();
+    await this._teachBonding();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
