@@ -5719,6 +5719,27 @@ export class Curriculum {
     ], 4);
   }
 
+  async _teachVisualArtTheory() {
+    // T14.24 Session 86 (task #143) — Art-G11 visual art theory.
+    // TODO line 565 (HS tier). 12 concepts covering form/content/
+    // context triangle + theoretical lenses that runArtG11Real's
+    // sentences discuss.
+    return this._conceptTeach([
+      { name: 'form',              feat: [1, 0, 0, 0, 1, 0, 0, 1] },
+      { name: 'content',           feat: [0, 1, 0, 0, 1, 0, 1, 0] },
+      { name: 'context',           feat: [0, 0, 1, 0, 1, 0, 1, 0] },
+      { name: 'artistic intent',   feat: [1, 1, 0, 1, 0, 0, 0, 1] },
+      { name: 'interpretation',    feat: [0, 1, 1, 0, 0, 1, 1, 0] },
+      { name: 'formalism',         feat: [1, 0, 0, 0, 1, 0, 0, 1] },
+      { name: 'contextualism',     feat: [0, 0, 1, 1, 0, 1, 1, 0] },
+      { name: 'postmodernism',     feat: [1, 1, 1, 1, 0, 1, 0, 1] },
+      { name: 'institutional theory', feat: [0, 0, 1, 1, 1, 1, 0, 0] },
+      { name: 'installation art',  feat: [1, 0, 0, 0, 1, 1, 1, 0] },
+      { name: 'performance art',   feat: [0, 1, 0, 1, 0, 1, 0, 1] },
+      { name: 'digital art',       feat: [1, 1, 0, 1, 1, 0, 1, 0] },
+    ], 4);
+  }
+
   async _teachMusicHistory() {
     // T14.24 Session 85 (task #142) — Art-G10 music history. TODO
     // line 565: "music history". Sequence walks over chronological
@@ -9286,6 +9307,9 @@ export class Curriculum {
       'installation art creates environments', 'performance art uses the body',
       'digital art uses technology',
     ];
+    // T14.24 Session 86 — prime visual art theory lattice per TODO
+    // line 565 before the theory sentence pass.
+    await this._teachVisualArtTheory();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
