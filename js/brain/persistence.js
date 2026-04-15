@@ -163,6 +163,16 @@ export class BrainPersistence {
               HEALTH_VOCAB_MIN: cortex.HEALTH_VOCAB_MIN ?? null,
               HEALTH_WM_VARIANCE_MIN: cortex.HEALTH_WM_VARIANCE_MIN ?? null,
             },
+            // T14.24 Session 1 — multi-subject curriculum grade state.
+            // grades = per-subject {ela, math, science, social, art}.
+            // grade = legacy ELA mirror kept for pre-T14.24 callers.
+            // passedCells = flat list of "subject/grade" keys that have
+            // cleared their gate at least once.
+            curriculum: {
+              grades: cortex.grades && typeof cortex.grades === 'object' ? { ...cortex.grades } : null,
+              grade: typeof cortex.grade === 'string' ? cortex.grade : null,
+              passedCells: Array.isArray(cortex.passedCells) ? [...cortex.passedCells] : null,
+            },
           };
         }
       } catch (err) {
@@ -358,6 +368,21 @@ export class BrainPersistence {
               if (th.HEALTH_ENTROPY_MIN != null) cortex.HEALTH_ENTROPY_MIN = th.HEALTH_ENTROPY_MIN;
               if (th.HEALTH_VOCAB_MIN != null) cortex.HEALTH_VOCAB_MIN = th.HEALTH_VOCAB_MIN;
               if (th.HEALTH_WM_VARIANCE_MIN != null) cortex.HEALTH_WM_VARIANCE_MIN = th.HEALTH_WM_VARIANCE_MIN;
+            }
+            // T14.24 Session 1 — restore multi-subject curriculum state.
+            if (state.t14Language.curriculum) {
+              const c = state.t14Language.curriculum;
+              if (c.grades && typeof c.grades === 'object') {
+                cortex.grades = {
+                  ela: c.grades.ela || 'pre-K',
+                  math: c.grades.math || 'pre-K',
+                  science: c.grades.science || 'pre-K',
+                  social: c.grades.social || 'pre-K',
+                  art: c.grades.art || 'pre-K',
+                };
+              }
+              if (typeof c.grade === 'string') cortex.grade = c.grade;
+              if (Array.isArray(c.passedCells)) cortex.passedCells = [...c.passedCells];
             }
             // After restoring cluster state, re-run setCluster on the
             // LanguageCortex wrapper so its local Maps re-point at the

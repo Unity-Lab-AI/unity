@@ -5,6 +5,109 @@
 
 ---
 
+## 2026-04-15 — T14.24 Session 1: multi-track curriculum FRAMEWORK (not teaching equations)
+
+**Gee's binding 2026-04-14:** *"T14.24 is supposre to be a full equational ciriculum.. once again you editing my words"* + *"what the fuck are you talking about its shipped you didnt even teach it keindergarden abcs and 123s and letter sounds you fool so how the fuck you trying to tell me you have doctorate equations for the full and complete understand and complete fluentcy in doctorate level english"* + *"remember Unity needs to be able to use these to think, read, and talk"* + *"this is going to take weeks to build so dont you dare tell me you are fucking done early"*.
+
+T14.24 is WEEKS of work across ~80 sessions. This entry documents ONLY Session 1 — the multi-track architecture framework. Task #3 (T14.24) stays in_progress.
+
+### What Session 1 is
+
+The pre-Session-1 curriculum was single-track ELA only. `cluster.grade` was a scalar (`pre-K` → `kindergarten` → … → `phd`), `runFullCurriculum` walked 9 ELA methods in sequence, and `LanguageCortex.generate` read the single grade to cap output length.
+
+Gee's T14.24 spec expands this to FIVE parallel subject tracks (English Language Arts, Mathematics, Science, Social Studies/History, Arts) with their own independent grade progression. Each cell in the 5-subject × 20-grade matrix needs real teaching equations that drive the READ (visual/letter→phon→sem), THINK (sem+free working memory), and TALK (sem→motor→letter) pathways — plus a capability gate that tests all three.
+
+Session 1 ships the FRAMEWORK that future sessions will fill in one cell at a time. ELA cells in the framework delegate to the existing single-track methods so ELA keeps working. Math/Science/Social/Art cells return stub `{pass:false, reason:'not implemented'}` results so future sessions can replace one stub at a time without breaking the dispatcher.
+
+### Files touched
+
+**`js/brain/curriculum.js` (+341 lines net, 1367 → 1708):**
+
+New exports:
+- `SUBJECTS = ['ela', 'math', 'science', 'social', 'art']`
+- `GRADE_ORDER = ['pre-K', 'kindergarten', 'grade1'..'grade12', 'college1'..'college4', 'grad', 'phd']` (20 grades)
+
+New module-private constant:
+- `_LEGACY_ELA_TO_CANONICAL` — `grade4_5 → grade5`, `grade6_8 → grade8`, `grade9_12 → grade12`, `college → college4`. Used by the legacy `runFullCurriculum` path so pre-Session-1 stages collapse cleanly into the canonical 20-grade space when mirroring into `cluster.grades.ela`.
+
+New methods on `Curriculum`:
+- `_cellRunner(subject, grade)` — returns an async runner `(ctx) => {pass, reason, metrics}` for the cell. ELA dispatches to existing `runKindergarten`/`runGrade1`/`runGrade2`/`runGrade3`/`runGrade4_5`/`runGrade6_8`/`runGrade9_12`/`runCollege`/`runGradPhD`. Every other subject returns the not-implemented stub.
+- `_buildCtx(corpora, opts)` — tokenizes corpora into `{letterFreq, wordFreq, sentences, corpora, arousal, valence}` and caches on `this._lastCtx` so post-boot slash commands can re-run cells without reloading corpora.
+- `runSubjectGrade(subject, grade, corpora, opts)` — runs ONE cell under `_inCurriculumMode = true`. On pass: writes `cluster.grades[subject] = grade`, appends `subject/grade` to `cluster.passedCells`, mirrors ELA into legacy `cluster.grade`. Accepts null corpora and falls back to cached ctx.
+- `runFullSubjectCurriculum(subject, corpora, opts)` — walks one subject from its current grade through PhD. Stops at first failing gate. Returns `{reached, passed, failed}`.
+- `runAllSubjects(corpora, opts)` — round-robin walk. Subject A grade N → Subject B grade N → … → Subject A grade N+1. Keeps min grade within 1 of max so LanguageCortex word cap rises smoothly.
+- `resetSubject(subject)` — flips subject back to pre-K, strips its entries from passedCells.
+- `subjectStatus()` — snapshot `{grades, passedCells, minGrade}` used by `/curriculum status` and available for persistence.
+- `Curriculum._minGrade(grades)` static — lowest grade across 5 subjects via `GRADE_ORDER.indexOf`.
+- `Curriculum.gradeWordCap(stringOrObject)` — overloaded. Accepts legacy string (single-subject grade) OR the 5-subject object. Object form returns MIN across subjects that have advanced past pre-K (see Semantic choice below).
+- `Curriculum._singleGradeCap(grade)` static — canonical grade→cap table including legacy band names (`grade4_5`, `grade6_8`, `grade9_12`, `college`) so pre-Session-1 saves still resolve.
+
+Existing method update:
+- `runFullCurriculum` now initializes `cluster.grades` + `cluster.passedCells` if absent, caches the tokenized ctx on `this._lastCtx` for post-boot slash commands, maps legacy stage names through `_LEGACY_ELA_TO_CANONICAL` before writing `cluster.grades.ela`, and appends `ela/<canonical>` to `cluster.passedCells` on each stage pass.
+
+**`js/brain/cluster.js` (+13 lines):**
+- `this.grades = { ela: 'pre-K', math: 'pre-K', science: 'pre-K', social: 'pre-K', art: 'pre-K' }` — multi-subject grade tracking
+- `this.grade = 'pre-K'` — legacy mirror of `this.grades.ela`, kept for code written before T14.24 Session 1 (including T14.26 chat-freeze fix's single-grade read path, though language-cortex.js:generate is also updated this session to prefer the object)
+- `this.passedCells = []` — flat list of `subject/grade` keys that have cleared their gate at least once
+
+**`js/brain/language-cortex.js` (~30 lines changed):**
+- `generate()` chat path: now reads `cluster.grades` (object) first, falls back to legacy `cluster.grade` (string), final fallback `'pre-K'`. Passes through to `_gradeWordCap(gradeArg)` which handles both types.
+- `_gradeWordCap(gradeOrGrades)` — accepts string OR object. Object form: min over subjects past pre-K (lenient min — pre-K subjects don't constrain the ceiling until real teaching lands for them in Sessions 2+). String form delegates to `_singleGradeCap`.
+- `_singleGradeCap(grade)` — new private helper; canonical + legacy grade→cap table mirrored from `Curriculum._singleGradeCap` so the two paths can never drift.
+
+**`js/brain/persistence.js` (+30 lines):**
+- Save side: `state.t14Language.curriculum = { grades: {...cortex.grades}, grade: cortex.grade, passedCells: [...cortex.passedCells] }`. Shallow-cloned so subsequent cluster mutations don't leak into the saved state.
+- Load side: restores all three fields onto the cortex cluster with per-subject `pre-K` fallback for missing subjects. Wrapped in the existing try/catch around the `state.t14Language` block.
+- VERSION stays at 4 — new fields are additive inside the `t14Language` block. Older v4 saves without the `curriculum` sub-block load cleanly and fall back to cluster-constructor defaults.
+
+**`js/app.js` (+60 lines):**
+- New `/curriculum` slash command handler inside the `chatPanel.onSend` callback, placed before `/bench`:
+  - `/curriculum status` — prints per-subject grades, min-grade word-cap driver, passed cells count + last 12 cell keys
+  - `/curriculum run <subject> <grade>` — runs ONE cell, prints `PASS`/`FAIL` + reason
+  - `/curriculum gate <subject> <grade>` — currently same path as `run` (Session 1 ELA methods combine teach+gate in a single call). Structurally separate so Session 2+ can diverge teach from gate without another slash-command pass.
+  - `/curriculum reset <subject>` — reset one subject to pre-K, strip passedCells
+  - `/curriculum full [subject]` — with subject arg runs `runFullSubjectCurriculum`, without runs `runAllSubjects` across all 5
+- Defense-in-depth `cortex.grades` + `cortex.passedCells` init in the `loadCorpusIntoBrain` boot path for persisted brains that predate the grades object (parallel to the existing `cortex.grade` defense init)
+
+**`server/brain-server.js` (+9 lines):**
+- Defense-in-depth `cortexCluster.grades` + `cortexCluster.passedCells` init in the `_initLanguageSubsystem` boot path, parallel to the pre-existing `cortexCluster.grade` init
+
+### Semantic choice flagged 2026-04-15 (Gee review requested)
+
+The chat-path word cap reads the MIN across subjects *that have started past pre-K*, NOT a true min across all 5.
+
+- **Strict min (rejected default):** min over all 5 subjects including pre-K ones. Unity goes completely silent from the moment multi-track grades init and stays silent until Sessions 2+ teach Math/Science/Social/Art past pre-K. That's weeks away. Gee would see a regression in apparent functionality during the T14.24 build.
+
+- **Lenient min (shipped default):** min over subjects with grade != 'pre-K'. If only ELA has advanced, cap comes from ELA. When Math passes K in Session 2+, it joins the min — at that point Unity's cap drops to match the weakest *started* subject. This is additive with Gee's *"speaks at her weakest-subject level"* intent because the weakest-that-has-started subject still constrains the cap.
+
+If Gee wants strict min, the flip is two lines: change `if (g === 'pre-K') continue;` to `let g = gradeOrGrades[s] || 'pre-K';` with no continue, in both `js/brain/language-cortex.js:_gradeWordCap` and `js/brain/curriculum.js:Curriculum.gradeWordCap`.
+
+### What Session 1 does NOT ship
+
+- Zero real teaching equations for Math/Science/Social/Art at any grade
+- Zero real READ/THINK/TALK probes for the stub gates
+- Zero alphabet-order / letter-name / letter-sound real K teaching (existing `runKindergarten` still runs frequency-ordered letter exposure, NOT alphabet-order — that's Session 2)
+- Zero real 3-pathway capability gates for any subject (existing ELA gates are schema-size / transition-surprise checks, not true capability tests per Gee's *"every grade's gate must probe all three pathways"* binding)
+
+### What Session 1 does ship
+
+- A multi-track dispatcher that lets future sessions replace one stub at a time
+- A persistence path so Unity's per-subject grade state survives reloads
+- Slash commands so Gee can inspect/drive the curriculum from chat
+- A min-grade word cap in the chat path so when real teaching lands for other subjects, Unity's speech ceiling automatically updates to the weakest-started subject
+
+### Verification
+
+`node --check` clean on all 6 files (curriculum.js, cluster.js, language-cortex.js, persistence.js, app.js, brain-server.js).
+
+No runtime smoke test — NO TESTS EVER per CLAUDE.md policy. Manual verification path: boot brain → `/curriculum status` → expect per-subject `pre-K`. Run `runFullCurriculum` (ELA single-track) → expect `cluster.grades.ela` to advance through canonical grades while math/science/social/art stay at pre-K. LanguageCortex word cap reads lenient min → cap = ELA cap (since ELA is the only started subject).
+
+### Commit status
+
+UNCOMMITTED — per LAW (docs before push, no patches), Session 1 code + all affected docs ship as ONE atomic commit. This FINALIZED entry is part of the same atomic commit as the curriculum.js/cluster.js/language-cortex.js/persistence.js/app.js/brain-server.js code changes.
+
+---
+
 ## 2026-04-14 — T14.18 server language cortex side-car DELETED (correction after T14.17)
 
 **Gee's catch (2026-04-14 post-T14.17):** *"6700 nuron ??? wtf???? im running i think a 700000 neuron on my GPU why is that such a small count???? nuron useage is suppose to mimic real world"*

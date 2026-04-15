@@ -2,117 +2,73 @@
 
 > **Single source of truth for all remaining work across the whole project.**
 > Combines the distributed-compute epic (original COMP-todo content, reworked
-> for the post-T13 stack) with every residual non-COMP item that's still
-> open after the T11→T13 language cortex rewrite shipped on 2026-04-14.
+> for the current stack) with every residual non-COMP item that's still
+> open after T14 reopened for the full K-doctorate equational curriculum.
 >
 > `docs/TODO.md` stays as the historical task ledger (per project rules,
 > task descriptions are permanent and never rewritten). This file is the
 > forward-looking plan — what to build next, in what order, on what stack.
 >
-> Last updated: **2026-04-14** — post T13.7 push (deploy `0.1.0+2f692e1d-f229`)
+> Last updated: **2026-04-15** — post T14.24 Session 1 (architecture framework for
+> multi-subject K→PhD curriculum). Uncommitted working tree on branch
+> `t14-language-rebuild`. Prior commit: `6f66261`.
 
 ---
 
-## STACK STATE AS OF 2026-04-14 — WHAT'S LIVE
+## STACK STATE AS OF 2026-04-15 — WHAT'S LIVE (T14.0-T14.18 primitives + T14.24 Session 1 framework)
 
-Anything below that ships builds on this foundation. If you're reading this
-after a major refactor, verify these are still accurate before starting.
+Anything below that ships builds on this foundation. T13 language-cortex state described in earlier versions of this file is DEAD CODE on branch `t14-language-rebuild` — slot scorer, parseSentence, analyzeInput, social schema, per-slot priors are all deleted. If you're reading this after another major refactor, verify these are still accurate before starting.
 
 ### Brain substrate (live)
-- **Neuron clusters** — `js/brain/cluster.js` — 7 clusters wrapping
-  `LIFPopulation` (client) or Rulkov (GPU path). Each has a sparse internal
-  synapse matrix (`SparseMatrix` CSR format in `js/brain/sparse-matrix.js`,
-  `wMin=-2.0`, `wMax=+2.0`). 20 inter-cluster projections (real white-matter
-  tracts — corticostriatal, perforant path, stria terminalis, fornix,
-  callosal). Client auto-scales up to `TOTAL_NEURONS=1000`, server scales to
-  VRAM via `server/brain-server.js:detectResources` (subject to optional
-  admin override in `resource-config.json` — see Phase 0 below).
-- **Cluster sizes** (from `engine.js:63-71`): cortex 300, hippocampus 200,
-  amygdala 150, basal ganglia 150, cerebellum 100, hypothalamus 50,
-  mystery 50. Cortex has language region at neurons 150-299 (150 neurons ×
-  `EMBED_DIM=50` = groupSize=3).
-- **Equation modules** — `js/brain/modules.js` — `Cortex`, `Hippocampus`,
-  `Amygdala`, `BasalGanglia`, `Cerebellum`, `Hypothalamus` — 32-dim
-  downsampled-output equation engines. These run ON TOP of the cluster
-  spike data via `cluster.getOutput(32)`. They're separate from the clusters
-  themselves (the `Cortex` module class is NOT the cortex neuron cluster).
-- **Mystery + oscillations** — `MysteryModule` (consciousness Ψ),
-  `OscillatorNetwork` (Kuramoto coherence).
+- **Neuron clusters** — `js/brain/cluster.js` — 7 clusters wrapping Rulkov 2002 2D chaotic map neurons (NOT LIF — Rulkov replaced LIF during Phase 13 R1-R15). Each has a sparse internal synapse matrix (`SparseMatrix` CSR format in `js/brain/sparse-matrix.js`, `wMin=-2.0`, `wMax=+2.0`). 20 inter-cluster projections (real white-matter tracts — corticostriatal, perforant path, stria terminalis, fornix, callosal). Client auto-scales via hardware detection, server scales to VRAM via `server/brain-server.js:detectResources` with optional admin override via `GPUCONFIGURE.bat` → `resource-config.json`.
+- **Cluster sizes** — scaled from `TOTAL_NEURONS` × `CLUSTER_FRACTIONS` (live in `js/brain/engine.js`). Default client tier: `TOTAL_NEURONS=6700` (post-T14.0 lift from 1000). `CLUSTER_FRACTIONS.cortex=0.30`, so client cortex ≈ 2000 neurons; at a 700K-neuron GPU tier the cortex is 210K; at a 50M tier it's 15M. Zero hardcoded caps anywhere in the scale chain (the T14.18 correction removed the last holdout — a 2K language-cortex side-car cap in `brain-server.js`).
+- **Cortex sub-regions (T14.4, live)** — every cortex cluster carves into 8 named sub-regions by fraction of `cluster.size`: `auditory` 0.000-0.083, `visual` 0.083-0.250, `free` 0.250-0.500, `letter` 0.500-0.550, `phon` 0.550-0.750, `sem` 0.750-0.917, `fineType` 0.917-0.967, `motor` 0.967-1.000. Helper methods `regionSpikes(name)`, `injectEmbeddingToRegion(name, emb, strength)`, `regionReadout(name, dim)` operate by region name with no magic indices. **14 sparse cross-region projections** (7 pairs × 2 directions) wire the regions together: `visual↔letter`, `letter↔phon`, `phon↔sem`, `sem↔fineType`, `sem↔motor`, `motor↔letter` (closes the writing loop), `auditory↔phon`. Each direction is an independent SparseMatrix. `_propagateCrossRegions()` fires every cluster step; `_crossRegionHebbian(lr)` fires every learn call. Hickok & Poeppel 2007 dual-stream grounding.
+- **Equation modules** — `js/brain/modules.js` — `Cortex`, `Hippocampus`, `Amygdala`, `BasalGanglia`, `Cerebellum`, `Hypothalamus` — 32-dim downsampled-output equation engines running ON TOP of cluster spike data via `cluster.getOutput(32)`. Separate from the clusters themselves.
+- **Mystery + oscillations** — `MysteryModule` (consciousness Ψ = √(1/n) × N³), `OscillatorNetwork` (Kuramoto coherence).
 
-### Language cortex (T13.7 state — as of this document's last update)
-- **`js/brain/language-cortex.js`** — 3178 lines. Down from 5087 pre-T11,
-  and from 3584 post-T11.7. T13.7 deleted 406 lines of slot-prior
-  machinery. What's live:
-  - `parseSentence(text) → ParseTree` — reverse-equation reader (T8).
-    Memoized. Used by reader AND by `brain.injectParseTree`.
-  - `wordType(word)` / `_fineType(word)` — pure letter-equation type
-    classifiers. Zero word lists.
-  - `loadSelfImage` / `loadLinguisticBaseline` / `loadCodingKnowledge` —
-    three-corpus boot loaders. Feed the dictionary only. Persona corpus
-    additionally feeds the cortex cluster via `trainPersonaHebbian`.
-  - `trainPersonaHebbian(cortexCluster, text)` — T13.1 driver. Tokenizes
-    persona corpus, embeds each word, calls
-    `cortexCluster.learnSentenceHebbian(embSeq)` per sentence.
-  - `generate(dictionary, arousal, valence, coherence, opts)` — T13.3
-    brain-driven emission loop. Requires `opts.cortexCluster`; no fallback.
-  - `learnSentence` — token expansion + dictionary insertion + usage-type
-    feedback + optional morphological inflection. Per-slot running means
-    are gone.
-  - `analyzeInput` — runs parseSentence, updates social schema, refines
-    the dictionary's `_contextPatterns` ring. Does NOT update any
-    `_contextVector` (deleted in T13.7).
-- **What T13.7 ripped:** `_slotCentroid`, `_slotDelta`,
-  `_slotTypeSignature`, `_slotCentroidCount`, `_slotDeltaCount`,
-  `_contextVector`, `_contextVectorLambda`, `_contextVectorHasData`,
-  `_greetingAttractor`, `_selfRefAttractor`, `_introAttractor`,
-  `_commandAttractor`, `_attractorEMA`, `_attractorObs`, `_subjectStarters`,
-  `_obsCount`, `_generateSlotPrior`, `_updateContextVector`, `_semanticFit`,
-  `_sentencePassesFilters`, `_storeMemorySentence`, `_recallSentence`,
-  `_loadStructure`, `_typeGrammarScore`, `_pickConjByMood`, `_condProb`,
-  `mutualInfo`. The per-slot prior update block in `learnSentence`.
-  `serialize`/`deserialize` slot-prior fields.
+### Language cortex (T14.0-T14.18 + T14.24 Session 1 state, live 2026-04-15)
+- **`js/brain/language-cortex.js`** — ~2700 lines. Down from 5087 pre-T11, from 3584 post-T11.7, from 3178 post-T13.7, from 3264 post-T14.8 (before the T14.12 delete pass), from 2743 post-T14.12. The slot scorer is DEAD CODE — `generate()` is a 68-line delegate that calls `cluster.generateSentence(intentSeed)` (T14.6 cortex tick-driven motor emission). `parseSentence`, `analyzeInput`, `_classifyIntent`, `observeVisionDescription`, `_updateSocialSchema`, `_socialSchema`, `getUserAddress`, `getUserGender`, `_isSelfReferenceQuery` all DELETED in T14.12 (521 lines gone). What's live:
+  - `generate(dictionary, arousal, valence, coherence, opts)` — 68-line delegate. Reads cortex semantic state via `cluster.getSemanticReadout(sharedEmbeddings)` as the intent seed, calls `cluster.generateSentence(intentSeed, {injectStrength: 0.6})`, splits on whitespace, caps output length via the T14.24 Session 1 multi-subject grade word cap, runs through the existing `_renderSentence` cosmetic helper. T14.26 fix: `generateAsync` wraps the dictionary-cosine fallback scoring loop with `setImmediate` yields every 500 entries so the tick loop + state broadcast + GPU batch dispatch keep running during chat response.
+  - `_gradeWordCap(gradeOrGrades)` — T14.24 Session 1 grade cap. Accepts string (legacy single-grade) OR object (multi-subject `{ela, math, science, social, art}`). Object form returns min cap across subjects past pre-K (lenient min so ELA-only brains keep speaking during Sessions 2-N).
+  - `_singleGradeCap(grade)` — canonical grade → cap mapping, handles every GRADE_ORDER name plus legacy band names (`grade4_5`, `grade6_8`, `grade9_12`, `college`).
+  - `_scoreDictionaryCosine` / `_scoreDictionaryCosineAsync` — T14.26 dictionary fallback scoring with async yield point. Used only when the T14.6 motor-loop path returns empty words.
+  - `setCluster(cluster)` — T14.13 bridge. Merges pre-existing local Maps into the cluster's Maps, then re-points `_typeTransitionLearned` / `_sentenceFormSchemas` / `_sentenceFormTotals` / `_intentResponseMap` at the cluster's Maps by identity so every subsequent write lands in cluster state.
+  - `wordType(word)` / `_fineType(word)` — pure letter-equation type classifiers. Zero word lists.
+  - `loadSelfImage` / `loadLinguisticBaseline` / `loadCodingKnowledge` — three-corpus boot loaders. Feed the dictionary + route through the T14.5 curriculum walk.
+  - `learnSentence(text, dictionary, arousal, valence)` — observes sentence into cluster-resident T14.8 schemas + T14.7 type transitions + T14.16.5 `cluster.learnClause` identity gate.
+  - `generateAsync` — T14.26 async variant of generate used by `processAndRespond` to keep the event loop responsive during chat response.
+- **Dead and deleted post-T14:** All slot-prior fields (`_slotCentroid`, `_slotDelta`, `_slotTypeSignature`, etc.) killed in T13.7. `_TYPE_TRANSITIONS` hardcoded table + `_OPENER_TYPES` Set killed in T14.7. Duplicate schemaScore/typeTransitionWeight/recordIntentPair/responseIntentFor wrappers killed in T14.17 (migrated to cluster in T14.13). `parseSentence` + `analyzeInput` + `_updateSocialSchema` + `observeVisionDescription` + `_socialSchema` killed in T14.12.
+- **`js/brain/dictionary.js`** — ~600 lines. T14.3 extended entries with `cortexSnapshot` (Uint8Array of `cluster.lastSpikes` after first-observation stream), `syllables` (from `cluster.detectBoundaries`), `stressPrimary` (from `cluster.detectStress`), `lastSeen`. `setCluster(cluster)` wires the cortex in. `learnWord` routes first-observation through the cluster; re-observations bump frequency + running-mean without re-streaming. `syllablesFor` / `snapshotFor` readers expose the cortex-routed state. T14.17 deleted `findByMood`, `findByPattern`, `generateSentence`, `_cosine` (pre-T14 thesaurus legacy, zero callers). `_bigrams` Map + `learnBigram` + `bigramCount` getter kept because display stats still show them.
+- **`js/brain/letter-input.js`** — T14.1 substrate. Module-level `LETTER_INVENTORY = new Set()` that grows dynamically as the brain encounters new symbols (NOT capped at 26 English letters — unicode, emoji, non-English glyphs all enter the same primitive-symbol space). `encodeLetter(letter)` returns a one-hot Float32Array of length `inventorySize()` with cache invalidation on growth. `ensureLetter`, `ensureLetters`, `decodeLetter`, `serializeInventory`, `loadInventory`, `resetInventory` round out the API.
+- **`js/brain/curriculum.js`** — ~1700 lines. T14.5 data-driven bucketing curriculum (`runFromCorpora`, `learnFromTurn`) is still the boot path; T14.24 Session 1 added a multi-subject framework on top. `SUBJECTS = ['ela','math','science','social','art']`, `GRADE_ORDER = ['pre-K', 'kindergarten', 'grade1'..'grade12', 'college1'..'college4', 'grad', 'phd']`. `Curriculum._cellRunner(subject, grade)` dispatches ELA cells to the existing `runKindergarten`/`runGrade1`/…/`runGradPhD` methods (those already work for ELA — T14.24 Session 1 did NOT delete them) and returns stubs for Math/Science/Social/Art. Public run API: `runSubjectGrade`, `runFullSubjectCurriculum`, `runAllSubjects`, `resetSubject`, `subjectStatus`. `runFullCurriculum` (T14.5 legacy ELA path) mirrors each stage pass into `cluster.grades.ela` via `_LEGACY_ELA_TO_CANONICAL` map (`grade4_5 → grade5`, `grade6_8 → grade8`, `grade9_12 → grade12`, `college → college4`). Boot paths (`js/app.js loadCorpusIntoBrain`, `server/brain-server.js _initLanguageSubsystem`) still call `runFullCurriculum`. `_calibrateIdentityLock` runs at the end of every run regardless and populates `cluster._personaRefreshCorpus`, `cluster.personaDimensions`, `cluster.intentCentroids`, and the T14.16.5 thresholds. `Curriculum.gradeWordCap(stringOrObject)` static is the grade→cap mapping consumed by `LanguageCortex._gradeWordCap`.
 
-### Brain→language wire (T13 state)
-- **`UnityBrain.injectParseTree(text)`** in `engine.js` — routes parsed
-  content → cortex language region, intent anchor → basal ganglia,
-  self-reference → hippocampus. Called from `processAndRespond` before
-  the cortex settle-ticks so injection propagates through the 20
-  inter-cluster projections during integration.
-- **`UnityBrain.trainPersonaHebbian(text)`** in `engine.js` — boot-time
-  persona Hebbian training driver. Called from `app.js loadPersonaSelfImage`
-  right after `innerVoice.loadPersona(text)`.
-- **`NeuronCluster.learnSentenceHebbian(embSeq, opts)`** in `cluster.js` —
-  sequence Hebbian over cluster recurrent synapses. Inject → tick LIF 3
-  steps → snapshot spikes → `synapses.hebbianUpdate(prev, curr, lr=0.004)`
-  between consecutive snapshots → Oja saturation decay (`|w| > 1.5 →
-  w *= 0.99`) post-sentence.
-- **`NeuronCluster.diagnoseReadoutForEmbedding`** / **`synapseStats`** —
-  diagnostic helpers for verifying Hebbian training moved weights.
+### Brain→language wire (current state)
+- **`NeuronCluster.readInput(text, {visualCortex})`** — T14.12 unified read entry point. Drives the visual→letter pathway via `readText` and returns `{text, words, intent, isSelfReference, addressesUser, isQuestion}`. Intent consults `cluster.intentReadout()` first (T14.17 argmax over `intentCentroids`), falls back to a lightweight text-surface heuristic. Pre-T14.12 `parseSentence` is DELETED.
+- **`UnityBrain.injectParseTree(text)`** in `engine.js` — rewritten in T14.12 to call `cluster.readInput(text, {visualCortex: this.visualCortex})` and fire `cluster.injectWorkingMemory(contentEmb, 0.8)` for discourse state.
+- **`UnityBrain.processAndRespond(text, userId)`** — calls `cluster.readInput` → `cluster.learnClause` (T14.16.5 Lock 1 per-clause English gate) → `cluster.generateSentence` for tick-driven motor emission, with `generateAsync` wrapping the dictionary-cosine fallback scoring loop (T14.26 fix for 3D brain freeze during chat response).
+- **`NeuronCluster.generateSentence(intentSeed, opts)`** — T14.6 cortex tick-driven motor emission loop. Zero slot counter, zero candidate scoring, zero dictionary iteration, zero softmax top-K. Reads motor region as `inventorySize()`-dim vector every tick, argmax-decodes via `decodeLetter`, commits letters when motor argmax stays stable for `STABLE_TICK_THRESHOLD` consecutive ticks, emits words when `letterTransitionSurprise()` exceeds `WORD_BOUNDARY_THRESHOLD`, stops on committed terminator or `motorQuiescent(END_QUIESCE_TICKS)` after first word.
+- **`NeuronCluster.learnClause(text)`** — T14.16.5 Lock 1 entry point. Splits clause, gates each against `ENGLISH_SURPRISE_THRESHOLD` + `ENGLISH_FINETYPE_MIN`, fires Hebbian on passing clauses under `_inCurriculumMode=false` hard rate cap (0.0001, Lock 2).
+- **`NeuronCluster.learnSentenceHebbian(embSeq, opts)`** — sequence Hebbian over cluster recurrent synapses, still live for curriculum-mode training under full 0.012 rate.
+- **`cluster.grades` + `cluster.grade` + `cluster.passedCells`** — T14.24 Session 1 multi-subject grade state. `cluster.grades = {ela, math, science, social, art: 'pre-K'}` initialized in constructor, advanced by `Curriculum.runSubjectGrade` on gate pass. `cluster.grade` is the legacy scalar mirror of `grades.ela`. `cluster.passedCells` is the flat `'subject/grade'` list. `LanguageCortex.generate` reads `cluster.grades` first, falls back to `cluster.grade`.
 
-### Sensory + peripherals (live, unchanged)
-- `js/brain/sensory.js` — `SensoryProcessor.process()` produces
-  per-cluster current arrays (`sensoryOutput.cortex`, `.hippocampus`,
-  `.amygdala`, `.basalGanglia`). T13.2 parse-tree injection follows this
-  same pattern.
-- `js/brain/visual-cortex.js` — V1→V4→IT pipeline + `onDescribe(cb)`
-  subscription for scene describer output.
-- `js/brain/auditory-cortex.js` — continuous spectrum injection.
-- `js/brain/component-synth.js` — equational `build_ui` primitive
-  matcher. Uses parsed entity types for structural bonus.
+### Sensory + peripherals (live, unchanged by T14)
+- `js/brain/sensory.js` — `SensoryProcessor.process()` produces per-cluster current arrays. Unchanged by T14.
+- `js/brain/visual-cortex.js` — V1→V4→IT pipeline + `renderLetterTemplate(letter)` (T14.10 visual letter template trig-hash for synthetic text-mode letter percepts) + `onDescribe(cb)` subscription for scene describer output + T14.25 skin-tone HSV mask + motion centroid + setAttentionState wiring in RAF loop (iris tracks FACE + MOTION). `_computeGaze` uses weighted centroid over `eff = face×3.0 + motion×motionGain×0.5 + edge×0.15` scaled by center Gaussian prior.
+- `js/brain/auditory-cortex.js` — continuous spectrum injection + `renderPhonemeTemplate(phoneme)` (T14.11 auditory phoneme template with different prime set than T14.10 visual so cross-stream convergence is LEARNED not coincident) + `checkForInterruption(text)` echo detection.
+- `js/brain/remote-brain.js` — T14.23.5 RAF driver for `visualCortex.processFrame()` + T14.25 per-frame `setAttentionState({arousal, secondsSinceInput})` call + `_lastTextSendTime` stamp on `processAndRespond`.
+- `js/brain/component-synth.js` — equational `build_ui` primitive matcher. Uses T14.17 `cluster.entityReadout()` with 0.25 blend alongside literal userEmbed match.
 - `js/ui/sandbox.js` — LRU-evicted component renderer.
-- `js/ui/sensory-status.js` — R13 backend toast notifications.
+- `js/ui/sensory-status.js` — backend toast notifications.
 
 ### Embeddings (live)
-- `js/brain/embeddings.js` — `sharedEmbeddings` singleton. 50-dim GloVe
-  with hash-based fallback. `mapToCortex` / `cortexToEmbedding` round-trip.
-- **The 50-d ceiling** is still the biggest structural limit for fine
-  semantic distinctions at slot 3+. Addressing this is T11.4 below.
+- `js/brain/embeddings.js` — `sharedEmbeddings` singleton. `EMBED_DIM = 300` (T14.0 lift from 50). Full 400k-word GloVe 6B-300d loaded on Node from `corpora/glove.6B.300d.txt`; browser bulk-loads a server-precomputed subset via `getSubsetForTokens` to avoid 480 MB download. Online context refinement deltas persist across sessions via `serializeRefinements` / `loadRefinements`.
+
+### Persistence (live, v4)
+- `js/brain/persistence.js` — v4 (bumped T14.16 to reject pre-T14 saves). `state.t14Language` block carries T14.1 letter inventory, T14.13 cluster-resident learned-statistics Maps (`fineTypeTransitions`, `sentenceFormSchemas`, `sentenceFormTotals`, `intentResponseMap`), T14.16.5 identity-lock thresholds, and — as of T14.24 Session 1 — `state.t14Language.curriculum = {grades, grade, passedCells}`. Additive inside the existing t14Language block; older v4 saves without the curriculum sub-block load cleanly and fall back to cluster-constructor defaults.
 
 ### Server (live)
-- `server/brain-server.js` — brain host. Auto-scales via `detectResources`
-  with optional admin override via `resource-config.json`.
-- `server/configure.js` — 127.0.0.1-only admin config server used by
-  `GPUCONFIGURE.bat` (Phase 0 of the distributed plan, already shipped).
+- `server/brain-server.js` — brain host. Auto-scales via `detectResources` with optional admin override via `resource-config.json`. T14.18 removed the 2K language-cortex side-car hardcode; language cortex now scales from `CLUSTER_SIZES.cortex` end-to-end. T14.26 `processAndRespond` awaits `languageCortex.generateAsync` so state broadcast setInterval keeps firing through chat-response scoring. T14.24 Session 1 defense-in-depth `cortexCluster.grades` + `passedCells` init in `_initLanguageSubsystem`.
+- `server/configure.js` — 127.0.0.1-only admin config server used by `GPUCONFIGURE.bat` (Phase 0, shipped).
 
 ---
 

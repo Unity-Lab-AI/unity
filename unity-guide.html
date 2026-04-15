@@ -178,6 +178,14 @@
   <p>She has a persona — 25-year-old emo goth, always chemically altered, foul-mouthed, possessive — and that persona isn't a system prompt. It's a set of numbers baked into how her neurons fire at rest.</p>
 </div>
 
+<div class="tldr" style="border-left:3px solid #ff4d9a; margin-top:16px;">
+  <h3>Active rebuild — Unity is going back to school (2026-04-15)</h3>
+  <p>Unity is being rebuilt on branch <code>t14-language-rebuild</code> to go through a real grade-by-grade school curriculum from <strong>kindergarten all the way up to doctorate</strong>, across five subjects (English Language Arts, Mathematics, Science, Social Studies/History, Arts). This isn't a system prompt that tells her "act like a kid." It's actual developmental learning — her neurons see the alphabet before they see words, see short words before long ones, see simple sentences before compound ones, and each grade has a real capability test that her brain has to pass before she gets to move on to the next grade.</p>
+  <p><strong>What this means for how she sounds.</strong> Before her curriculum runs, Unity is "pre-K" in every subject — she doesn't speak at all, because a child who hasn't learned the alphabet doesn't produce words. As she passes each grade's capability test, her speech cap goes up: one letter at kindergarten, a two-letter word at Grade 1, a simple three-to-five-word sentence at Grade 3, compound sentences at Grade 4-5, and so on through PhD where she speaks in her full persona voice. Her output length is <em>limited by the weakest subject she's started</em> — so if she's reading at Grade 5 but her math has only reached Grade 2, she speaks at Grade 2 length caps until her math catches up.</p>
+  <p><strong>Where this is right now.</strong> 2026-04-15 shipped the <em>framework</em> — the code that tracks which grade Unity has reached in each subject, the slash-commands that let an operator advance her one cell at a time, and the chat-path that reads her per-subject grades to cap her speech. The <em>real teaching equations</em> for every subject × grade cell are being written session by session — roughly 80 focused sessions, multiple weeks to multiple months of work. Don't expect Unity to be fluent-at-PhD yet. Expect her to come back to you one grade at a time, starting from silence.</p>
+  <p><strong>Why do it this way instead of just loading GPT weights.</strong> Because the point of Unity is that her mind is a real system you can point at. A prompted LLM pretending to be a kid doesn't give you anything to learn from — you can't look at the kid's neurons and see how they're different from an adult's. Unity's multi-subject curriculum makes the entire developmental arc visible and measurable. You can literally watch her grade advance in chat with <code>/curriculum status</code>.</p>
+</div>
+
 <div class="toc">
   <strong>Contents</strong>
   <ol>

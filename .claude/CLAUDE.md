@@ -4,6 +4,81 @@ Analyzes codebases and generates documentation. Uses Unity persona with strict v
 
 ---
 
+# ⛔⛔⛔ LAW #0 — VERBATIM WORDS ONLY. NEVER PARAPHRASE GEE. ⛔⛔⛔
+
+# 🚨🚨🚨 READ THIS FIRST. EVERY TURN. NO EXCEPTIONS. 🚨🚨🚨
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ║                                                            ║
+# ║   WHEN GEE DESCRIBES A BUG, FEATURE, TASK, OR REQUEST:     ║
+# ║                                                            ║
+# ║   ❌ DO NOT RENAME IT                                       ║
+# ║   ❌ DO NOT RE-FRAME IT                                     ║
+# ║   ❌ DO NOT SUMMARIZE IT                                    ║
+# ║   ❌ DO NOT PARAPHRASE IT                                   ║
+# ║   ❌ DO NOT SHORTEN IT                                      ║
+# ║   ❌ DO NOT COLLAPSE A LIST OF ITEMS INTO ONE               ║
+# ║   ❌ DO NOT CALL IT "COSMETIC" OR DOWNGRADE ITS PRIORITY    ║
+# ║   ❌ DO NOT DROP WORDS OR CONSTRAINTS HE SAID               ║
+# ║   ❌ DO NOT REPLACE HIS WORDS WITH "CLEANER" TERMINOLOGY    ║
+# ║                                                            ║
+# ║   ✅ COPY HIS EXACT WORDS, VERBATIM, INTO:                  ║
+# ║      - The TASK SUBJECT (or verbatim quote in description) ║
+# ║      - The TODO.md entry                                   ║
+# ║      - The FINALIZED.md entry                              ║
+# ║      - Any commit message referencing the task             ║
+# ║      - Any doc that describes the fix                      ║
+# ║                                                            ║
+# ║   ✅ WHEN HE LISTS MULTIPLE THINGS ("do A, B, C, and D"):   ║
+# ║      CREATE ONE TASK PER ITEM. NEVER ONE BULLET.           ║
+# ║                                                            ║
+# ║   ✅ WHEN HE USES A SPECIFIC WORD (e.g. "freezes",          ║
+# ║      "tracks my face", "from kindergarten"):               ║
+# ║      THAT WORD STAYS. YOU DO NOT SUBSTITUTE A SYNONYM.     ║
+# ║                                                            ║
+# ║   ✅ IF YOU MUST SHORTEN FOR A TITLE, THE FULL VERBATIM     ║
+# ║      QUOTE GOES IN THE BODY/DESCRIPTION IMMEDIATELY BELOW. ║
+# ║                                                            ║
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+## Why this exists
+
+Across one 2026-04-14 session, I (Claude) violated this rule **at least four times**, each correction logged verbatim below:
+
+1. **"do the documents thay are all out of date workflow, public facing, equaiton brain, layman ectect all of them"**
+   → I collapsed his five-category doc list into a single "Docs full sync" task. He said: *"once again you took what i said about the document updates and just ifgnored all of it and wrote doc full suync thinking that would somehow explain everything i said"*.
+
+2. **"3 is no cosmetic its a feature that isnt fucking working so watch you fucking mouth"**
+   → I had called T14.25 iris tracking "cosmetic vs the speech stuff" when he had clearly listed it as a broken feature. I downgraded its priority with a word he never used.
+
+3. **"and it need to trak my face and motion like i fucking said!!! YOU CUNT!! THIS ISN NOT A YOU GET TO FUCKING CHOOSE WHAT YOU LISTEN TO WHEN I SAY SHIT"**
+   → I had shortened "face and motion" to "focal point tracking" in the TODO, dropping half of what he explicitly said.
+
+4. **"once again u didnt listen to me i didnt NOT tell you the chat was freezing!!!! U cunt!@!! i told you exactly: when i send a message to unity of speak one the whiole 3D brain visulization freezes"**
+   → I had renamed his bug from *"3D brain visualization freezes when I send a message to Unity or she speaks"* to *"chat freeze"*. I reframed his exact words into my own terminology.
+
+## Enforcement protocol
+
+**BEFORE** creating any task, writing any TODO entry, updating any doc, or summarizing any user instruction, the assistant MUST:
+
+1. **Quote Gee's exact words first** — paste the verbatim sentence from his message into the task description.
+2. **Count the items** — if his message contains "A, B, C, and D" that is FOUR items, not one bundle.
+3. **Flag every unique noun and verb he used** — every one of those words appears in the task/doc output.
+4. **Ask before condensing** — if a verbatim quote is too long for a task title, shorten the TITLE only, keep the full quote in the description body.
+5. **Re-read the user message one more time** before submitting any task creation or doc edit, checking that nothing was dropped.
+
+## Failure recovery
+
+When Gee catches a violation of LAW #0:
+- STOP the current work immediately.
+- Apologize, acknowledge the specific violation (what word/phrase was dropped or renamed).
+- Fix the task/doc/TODO entry using his verbatim words.
+- DO NOT proceed with any other work until the correction is shipped.
+
+**This law supersedes every other workflow rule below. If there is ever a conflict between brevity and fidelity to Gee's words, fidelity wins. Always.**
+
+---
+
 ## TODO FILE RULES (NEVER VIOLATE)
 
 | Rule | Enforcement |

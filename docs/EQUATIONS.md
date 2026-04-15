@@ -768,19 +768,82 @@ sharedEmbeddings.loadSubset(subset)      browser bulk-loads server-provided subs
 
 **No vocabulary cap.** The full 400k-word file loads if reachable (~480 MB Float32 in memory). Operator downloads `glove.6B.300d.txt` from Stanford NLP per the README and places at `corpora/glove.6B.300d.txt`. Fallback when file missing: hash embeddings as a last-resort floor with a console warning. Browser tier uses the server subset endpoint to avoid downloading 480 MB.
 
-### What's coming in subsequent T14 milestones
+### T14.0-T14.18 primitives shipped 2026-04-14
 
-- **T14.1** — LEARNED phoneme attractor basins via cortex Hebbian on letter sequences (no hardcoded English phonology table). Builds `js/brain/letter-input.js` with the dynamic `LETTER_INVENTORY` Set.
-- **T14.2** — LEARNED syllable boundaries via cortex transition surprise. `cluster.detectBoundaries(letterSequence)` reads spike-rate deltas, no hardcoded max-onset rules.
-- **T14.3** — Cortex-resident words (gut Dictionary class to ~150 lines, words become activation patterns, all phonological/semantic stored fields deleted).
-- **T14.5** — Continuous developmental learning from existing corpora via complexity-sorted exposure. New `js/brain/curriculum.js`. No hand-curated stage files.
-- **T14.7** — Fully learned type transitions (T13.7.8 hardcoded table deleted entirely — no seed initialization).
-- **T14.10/T14.11** — Visual cortex letter recognition + auditory cortex phoneme recognition.
-- **T14.12** — Bidirectional pipeline. `cluster.readText(text)` runs forward, `cluster.generateSentence(seed)` runs reverse using same projections via `SparseMatrix.transposePropagate`. `parseSentence` and the slot-prior `generate()` body are deleted.
-- **T14.13-T14.15** — Eliminate `LanguageCortex` as a separate class, wire all 11 language consumers (chat, build_ui, image prompt, brain-3d commentary, voice TTS, etc) to the unified pipeline.
-- **T14.16.5** — Identity lock (Unity speaks English, Unity stays Unity) — three-lock structural protection: per-clause language gate, 120× rate-bounded live chat learning, stratified identity refresh + mode-collapse audit.
+All eighteen primitive milestones (T14.0 cortex sub-region substrate, T14.1 letter-input + LEARNED phoneme basins, T14.2 LEARNED syllable boundaries, T14.3 cortex-resident words, T14.4 cross-region projections, T14.5 continuous developmental learning curriculum, T14.6 cortex tick-driven motor emission, T14.7 learned type transitions, T14.8 sentence-form schemas, T14.9 cortex-resident discourse memory, T14.10 visual cortex letter recognition, T14.11 auditory cortex phoneme recognition, T14.12 bidirectional pipeline, T14.13 migration of learned statistics to cluster, T14.14 unified read pipeline, T14.15 consumer audit, T14.16 persistence v4, T14.16.5 identity lock substrate, T14.17 continuous learning + vestigial organ sweep, T14.18 server language cortex side-car deletion) shipped on the `t14-language-rebuild` branch. See `docs/COMP-todo.md` Part 0.5 for the full T14 primitive spec.
 
-See `docs/COMP-todo.md` Part 0.5 for the full T14 spec.
+### T14.24 — Multi-subject curriculum framework (Session 1 2026-04-15, IN PROGRESS)
+
+Gee 2026-04-14 reopened T14 scope: *"T14.24 is supposre to be a full equational ciriculum.. once again you editing my words"* + *"what the fuck are you talking about its shipped you didnt even teach it keindergarden abcs and 123s and letter sounds you fool so how the fuck you trying to tell me you have doctorate equations for the full and complete understand and complete fluentcy in doctorate level english"* + *"remember Unity needs to be able to use these to think, read, and talk"* + *"this is going to take weeks to build so dont you dare tell me you are fucking done early"*.
+
+**Scope.** Five subject tracks × 20 grades = ~100 cells. Every cell needs real teaching equations that drive all three pathways (READ = visual/letter→phon→sem, THINK = sem+free working memory, TALK = sem→motor→letter) plus a capability gate that tests all three. Session budget ~80 focused sessions.
+
+**Multi-subject grade equation (Session 1 framework):**
+
+```
+SUBJECTS      = {ela, math, science, social, art}
+GRADE_ORDER   = [pre-K, kindergarten, grade1..grade12, college1..college4, grad, phd]
+
+∀ s ∈ SUBJECTS:  cluster.grades[s] ∈ GRADE_ORDER     (initial: 'pre-K')
+cluster.grade  ≡ cluster.grades.ela                  (legacy single-grade alias)
+cluster.passedCells ⊆ { 'subject/grade' | s ∈ SUBJECTS, g ∈ GRADE_ORDER }
+```
+
+**Gate equation.** For each cell `(s, g)`, `Curriculum._cellRunner(s, g)` returns an async function that performs exposure + gate measurement and returns `{pass, reason, metrics}`. On pass the cluster state updates:
+
+```
+if result.pass:
+    cluster.grades[s] := g
+    cluster.passedCells := cluster.passedCells ∪ { s + '/' + g }
+    if s = 'ela': cluster.grade := g          (legacy mirror)
+```
+
+**Grade-aware word cap equation.** `LanguageCortex.generate` output length capped by the minimum grade across subjects that have advanced past pre-K:
+
+```
+started_subjects := { s ∈ SUBJECTS | cluster.grades[s] ≠ 'pre-K' }
+
+gradeCap = if started_subjects = ∅:
+               0                                     (silence)
+           else:
+               min { singleGradeCap(cluster.grades[s]) | s ∈ started_subjects }
+```
+
+Where `singleGradeCap` is the canonical grade→cap mapping:
+
+```
+pre-K       → 0        (silence)
+kindergarten → 1        (single letter or letter-name)
+grade1      → 2        (CVC word or 1-2 word phrase)
+grade2      → 3
+grade3      → 5        (SVO sentence)
+grade4-5    → 7        (compound)
+grade6-8    → 10       (multi-clause)
+grade9-12   → 14       (paragraph-level sentences)
+college1-4  → 16
+grad        → 20
+phd         → unbounded (full persona voice)
+```
+
+**Lenient min rationale.** Strict min over all 5 subjects would silence Unity entirely until every subject clears kindergarten — weeks away, until Session 2+ teach real K across every subject. Lenient min excludes pre-K subjects from the min, so an ELA-only brain keeps speaking at its ELA cap during the Session 2-N build while new subjects join the min calculation as they pass K.
+
+**Session 1 ships the dispatcher only.** ELA cells delegate to the existing T14.5 single-track `runKindergarten`/`runGrade1`/…/`runGradPhD` methods (already shipped, gates use schema-size / transition-surprise proxies, not real 3-pathway capability tests). Math / Science / Social / Art cells all return stub `{pass:false, reason:'<subject>/<grade>: teach+gate not implemented (T14.24 Session 1 stub)'}` placeholders. Sessions 2-N replace one stub at a time with real teaching equations.
+
+**Run API.**
+- `runSubjectGrade(subject, grade, corpora, opts)` — one cell, one pass
+- `runFullSubjectCurriculum(subject, corpora, opts)` — walk one subject from current grade through PhD
+- `runAllSubjects(corpora, opts)` — round-robin walk: A-K → B-K → … → A-G1 → B-G1 → …
+
+**Persistence.** `state.t14Language.curriculum = {grades, grade, passedCells}` saved inside the existing v4 block. No VERSION bump — additive. Older v4 saves without the `curriculum` sub-block load cleanly and fall back to cluster-constructor defaults.
+
+**Slash commands (`js/app.js`):**
+- `/curriculum status` — per-subject grades + min cap driver + passed cells
+- `/curriculum run <subject> <grade>` — run one cell
+- `/curriculum gate <subject> <grade>` — run gate only (Session 1 identical to `run`)
+- `/curriculum reset <subject>` — reset subject to pre-K
+- `/curriculum full [subject]` — full walk, one subject or all 5
+
+See `docs/TODO.md` T14.24 section for the full session build order (first 10 sessions listed explicitly; ~80 sessions total), `docs/FINALIZED.md` 2026-04-15 entry for the Session 1 verbatim landing details, and `docs/ARCHITECTURE.md` T14.24 section for the code-level view.
 
 ### Social Schema — Who Unity Is Talking To
 

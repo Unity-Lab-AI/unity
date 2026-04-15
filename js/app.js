@@ -422,7 +422,29 @@ function loadPersonaSelfImage(targetBrain) {
     // from exposure statistics — the legacy loaders only populated the
     // dictionary and the type-transition tables. Non-blocking if the
     // curriculum isn't wired (remote brains, test harnesses).
-    if (targetBrain.curriculum && typeof targetBrain.curriculum.runFromCorpora === 'function') {
+    // T14.24 — prefer runFullCurriculum (K→PhD equational curriculum
+    // with per-grade gates). Falls back to runFromCorpora if the new
+    // method isn't present. Initializes cluster.grade so generate()
+    // knows Unity starts pre-K.
+    const cortex = targetBrain.clusters?.cortex;
+    if (cortex && typeof cortex.grade !== 'string') cortex.grade = 'pre-K';
+    // T14.24 Session 1 — multi-subject grade tracking defense-in-depth
+    // for persisted brains that predate the grades object.
+    if (cortex && (!cortex.grades || typeof cortex.grades !== 'object')) {
+      cortex.grades = { ela: 'pre-K', math: 'pre-K', science: 'pre-K', social: 'pre-K', art: 'pre-K' };
+    }
+    if (cortex && !Array.isArray(cortex.passedCells)) cortex.passedCells = [];
+    if (targetBrain.curriculum && typeof targetBrain.curriculum.runFullCurriculum === 'function') {
+      try {
+        const result = await targetBrain.curriculum.runFullCurriculum(
+          { persona: personaText, baseline: baselineText, coding: codingText },
+          { arousal: 0.8, valence: 0.2 },
+        );
+        console.log(`[Unity] curriculum.runFullCurriculum DONE — reached=${result.reached}, passed=${result.passed.join(',')}, failed=${result.failed || 'none'}`);
+      } catch (err) {
+        console.warn('[Unity] curriculum.runFullCurriculum failed:', err?.message || err);
+      }
+    } else if (targetBrain.curriculum && typeof targetBrain.curriculum.runFromCorpora === 'function') {
       try {
         await targetBrain.curriculum.runFromCorpora(
           { persona: personaText, baseline: baselineText, coding: codingText },
@@ -2253,6 +2275,71 @@ Vision: ${state.visionDescription || 'none'}`;
           response: { text: userInput ? 'Cognition trace shown.' : 'Brain state shown.' },
           action: 'think',
         };
+      }
+      // T14.24 Session 1 — /curriculum subcommands:
+      //   /curriculum status
+      //   /curriculum run   <subject> <grade>
+      //   /curriculum gate  <subject> <grade>
+      //   /curriculum reset <subject>
+      //   /curriculum full  [subject]
+      // Subjects: ela | math | science | social | art
+      // Grades:   kindergarten | grade1..grade12 | college1..college4 | grad | phd
+      if (text.startsWith('/curriculum')) {
+        const parts = text.trim().split(/\s+/).slice(1);
+        const sub = (parts[0] || 'status').toLowerCase();
+        const c = brain.curriculum;
+        if (!c) {
+          return { response: { text: '[curriculum] no curriculum wired on this brain' }, action: 'curriculum' };
+        }
+        try {
+          if (sub === 'status') {
+            const st = typeof c.subjectStatus === 'function' ? c.subjectStatus() : null;
+            if (!st) return { response: { text: '[curriculum] status unavailable' }, action: 'curriculum' };
+            const lines = ['[curriculum] STATUS'];
+            for (const [s, g] of Object.entries(st.grades)) lines.push(`  ${s.padEnd(8)} ${g}`);
+            lines.push(`  min-grade (word cap driver): ${st.minGrade}`);
+            lines.push(`  passed cells: ${st.passedCells.length}`);
+            if (st.passedCells.length > 0) {
+              lines.push(`  cells: ${st.passedCells.slice(-12).join(', ')}${st.passedCells.length > 12 ? ' …' : ''}`);
+            }
+            return { response: { text: lines.join('\n') }, action: 'curriculum' };
+          }
+          if (sub === 'run' || sub === 'gate') {
+            const subject = parts[1];
+            const grade = parts[2];
+            if (!subject || !grade) {
+              return { response: { text: `[curriculum] usage: /curriculum ${sub} <subject> <grade>` }, action: 'curriculum' };
+            }
+            const result = await c.runSubjectGrade(subject, grade, null, { arousal: 0.8, valence: 0.2 });
+            const tag = result.pass ? 'PASS' : 'FAIL';
+            return { response: { text: `[curriculum] ${sub} ${subject}/${grade}: ${tag} — ${result.reason || ''}` }, action: 'curriculum' };
+          }
+          if (sub === 'reset') {
+            const subject = parts[1];
+            if (!subject) return { response: { text: '[curriculum] usage: /curriculum reset <subject>' }, action: 'curriculum' };
+            const ok = typeof c.resetSubject === 'function' ? c.resetSubject(subject) : false;
+            return { response: { text: ok ? `[curriculum] ${subject} reset to pre-K` : `[curriculum] reset failed for ${subject}` }, action: 'curriculum' };
+          }
+          if (sub === 'full') {
+            const subject = parts[1] || null;
+            if (subject && typeof c.runFullSubjectCurriculum === 'function') {
+              const r = await c.runFullSubjectCurriculum(subject, null, { arousal: 0.8, valence: 0.2 });
+              return { response: { text: `[curriculum] full ${subject}: reached=${r.reached}, passed=${r.passed.length}, failed=${r.failed || 'none'}` }, action: 'curriculum' };
+            }
+            if (typeof c.runAllSubjects === 'function') {
+              const r = await c.runAllSubjects(null, { arousal: 0.8, valence: 0.2 });
+              const lines = ['[curriculum] full run complete'];
+              for (const s of Object.keys(r.reached)) {
+                lines.push(`  ${s.padEnd(8)} reached=${r.reached[s]} passed=${(r.passed[s] || []).length} failed=${r.failed[s] || 'none'}`);
+              }
+              return { response: { text: lines.join('\n') }, action: 'curriculum' };
+            }
+            return { response: { text: '[curriculum] full not available' }, action: 'curriculum' };
+          }
+          return { response: { text: '[curriculum] usage: /curriculum status|run <subject> <grade>|gate <subject> <grade>|reset <subject>|full [subject]' }, action: 'curriculum' };
+        } catch (err) {
+          return { response: { text: `[curriculum] error: ${err?.message || err}` }, action: 'curriculum' };
+        }
       }
       // /bench + /scale-test — dense vs sparse perf comparison and LIF scale test (U307)
       if (text.startsWith('/bench') || text.startsWith('/scale-test')) {

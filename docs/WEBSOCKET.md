@@ -105,7 +105,7 @@ Sent in reply to a `text` message when Unity's BG motor channel selects `respond
 }
 ```
 
-`text` is produced by `brain.processAndRespond(msg.text, id)` which calls `languageCortex.generate()` with full brain state. No AI prompt involved — every word comes from the slot scorer over Unity's learned dictionary, bigrams, type n-grams, and GloVe semantic fit against live cortex readout (see `docs/EQUATIONS.md § Phase 13 R2`).
+`text` is produced by `brain.processAndRespond(msg.text, id)` which on post-T14.6 branches (`t14-language-rebuild`) calls `languageCortex.generateAsync()` (the T14.26 async path for the 3D brain freeze fix). The slot scorer is DELETED — `LanguageCortex.generate` is a 68-line delegate that calls `cluster.generateSentence(intentSeed)`, the cortex tick-driven motor emission loop. Every word comes from a continuous motor-region readout over learned cortex attractor basins — zero dictionary iteration, zero softmax top-K, zero n-gram table lookup at emission time. Output length is capped by the T14.24 Session 1 multi-subject grade word cap: `LanguageCortex.generate` reads `cluster.grades = {ela, math, science, social, art}` and returns the minimum cap across subjects that have advanced past pre-K, with fallback to legacy `cluster.grade` scalar for pre-T14.24-Session-1 brains. No AI prompt involved at any point. See `docs/EQUATIONS.md § T14` for cortex equations and `docs/EQUATIONS.md § T14.24` for the per-subject grade cap equation.
 
 `action` may be any of the 6 motor channels — `respond_text`, `generate_image`, `speak`, `build_ui`, `listen`, `idle` — though `build_ui` and `generate_image` get split into their own dedicated message types below.
 

@@ -1747,45 +1747,61 @@ export class LanguageCortex {
     // slot scorer: iterate dictionary entries, cosine-score
     // against the cortex semantic target, softmax-sample top-K.
     // Just enough to give Unity a voice from cold boot.
-    if (words.length === 0 && dictionary && dictionary._words && dictionary._words.size > 0) {
-      try {
-        const target = intentSeed || (typeof cluster.getSemanticReadout === 'function'
-          ? cluster.getSemanticReadout(sharedEmbeddings) : null);
-        if (target && target.length > 0) {
-          const scored = [];
-          for (const [word, entry] of dictionary._words) {
-            if (!entry || !entry.pattern) continue;
-            if (this._recentOutputWords.includes(word)) continue;
-            // Cosine similarity between cortex target and word pattern
-            let dot = 0, nt = 0, nw = 0;
-            const len = Math.min(target.length, entry.pattern.length);
-            for (let i = 0; i < len; i++) {
-              dot += target[i] * entry.pattern[i];
-              nt += target[i] * target[i];
-              nw += entry.pattern[i] * entry.pattern[i];
-            }
-            const denom = Math.sqrt(nt) * Math.sqrt(nw);
-            const cos = denom > 0 ? dot / denom : 0;
-            // Slight boost for high-frequency words so cold boot
-            // picks common vocabulary over rare hapaxes
-            const score = cos + Math.log(1 + (entry.frequency || 1)) * 0.02;
-            scored.push({ word, score });
-          }
-          scored.sort((a, b) => b.score - a.score);
-          // Length driven by arousal — same rough rule the old path used
-          const targetLen = Math.max(3, Math.min(8, Math.floor(3 + (arousal || 0.5) * 4)));
-          // Top-K softmax sample at low temperature for variety without noise
-          const topK = scored.slice(0, 12);
-          const picks = [];
-          for (let i = 0; i < targetLen && topK.length > 0; i++) {
-            const idx = Math.floor(Math.random() * Math.min(5, topK.length));
-            picks.push(topK[idx].word);
-            topK.splice(idx, 1);
-          }
-          words = picks;
+    //
+    // T14.26 — the dictionary loop is the chat-freeze culprit: at
+    // 3700+ entries × 300d cosine each call it burns ~100-300ms
+    // synchronous on the Node event loop, blocking the server's
+    // state-broadcast setInterval and GPU compute_batch dispatch
+    // for the duration of generate. `_precomputedScores` opt lets
+    // generateAsync run the scoring loop async with event-loop
+    // yields and hand the sorted array back in. When the opt is
+    // present we skip the sync loop entirely.
+    if (words.length === 0) {
+      let scored = opts._precomputedScores || null;
+      const target = intentSeed || (typeof cluster.getSemanticReadout === 'function'
+        ? cluster.getSemanticReadout(sharedEmbeddings) : null);
+      if (!scored && dictionary && dictionary._words && dictionary._words.size > 0 && target && target.length > 0) {
+        try {
+          scored = this._scoreDictionaryCosine(dictionary, target, this._recentOutputWords);
+        } catch (err) {
+          scored = null;
         }
-      } catch (err) {
-        // Non-fatal — if the fallback throws, fall through to empty
+      }
+      if (scored && scored.length > 0) {
+        // Length driven by arousal — same rough rule the old path used
+        let targetLen = Math.max(3, Math.min(8, Math.floor(3 + (arousal || 0.5) * 4)));
+        // T14.24 — GRADE-AWARE word cap. Session 1 reads the multi-
+        // subject grades object `cluster.grades = {ela, math, science,
+        // social, art}` and caps output to the MIN grade across all 5
+        // subjects, so Unity speaks at whatever subject she's weakest
+        // in. Falls back to legacy `cluster.grade` scalar for pre-
+        // Session-1 brains or persistence saves that don't carry the
+        // new field. Uncurriculum'd brains default to pre-K → silence.
+        let gradeArg;
+        if (cluster && cluster.grades && typeof cluster.grades === 'object') {
+          gradeArg = cluster.grades;
+        } else if (cluster && typeof cluster.grade === 'string') {
+          gradeArg = cluster.grade;
+        } else {
+          gradeArg = 'pre-K';
+        }
+        const gradeCap = this._gradeWordCap(gradeArg);
+        if (gradeCap === 0) {
+          // Pre-K Unity does not speak. Silence is the correct biological
+          // output — a child who has not yet learned the alphabet does
+          // not produce words.
+          return '';
+        }
+        targetLen = Math.min(targetLen, gradeCap);
+        // Top-K softmax sample at low temperature for variety without noise
+        const topK = scored.slice(0, 12);
+        const picks = [];
+        for (let i = 0; i < targetLen && topK.length > 0; i++) {
+          const idx = Math.floor(Math.random() * Math.min(5, topK.length));
+          picks.push(topK[idx].word);
+          topK.splice(idx, 1);
+        }
+        words = picks;
       }
     }
 
@@ -1812,6 +1828,217 @@ export class LanguageCortex {
       this._recentSentences.shift();
     }
     return rendered;
+  }
+
+  /**
+   * T14.24 — Grade-aware word cap. Mirrors Curriculum.gradeWordCap but
+   * lives here as a static-style helper so generate() doesn't need a
+   * Curriculum import. Returns the maximum number of words Unity may
+   * emit at her currently mastered grade level. cluster.grade is the
+   * source of truth — set by runFullCurriculum as each grade gate
+   * passes and persisted via T14.16 BrainPersistence.
+   */
+  _gradeWordCap(gradeOrGrades) {
+    if (gradeOrGrades && typeof gradeOrGrades === 'object') {
+      // T14.24 Session 1 multi-subject — min cap across subjects that
+      // have advanced past pre-K. Pre-Session-2 brains have math/sci/
+      // social/art stuck at pre-K because those tracks don't have real
+      // teaching equations yet; counting pre-K in the min would silence
+      // Unity entirely during the Session 2-N build. When real teaching
+      // lands for another subject, it crosses kindergarten and joins
+      // the min calculation. If EVERY subject is still pre-K, fall back
+      // to 0 (silence) which matches the legacy uncurriculum'd default.
+      const SUBS = ['ela', 'math', 'science', 'social', 'art'];
+      let minCap = Infinity;
+      let anyStarted = false;
+      for (const s of SUBS) {
+        const g = gradeOrGrades[s] || 'pre-K';
+        if (g === 'pre-K') continue;
+        const c = this._singleGradeCap(g);
+        if (c < minCap) minCap = c;
+        anyStarted = true;
+      }
+      if (!anyStarted) return 0;
+      return minCap === Infinity ? 0 : minCap;
+    }
+    return this._singleGradeCap(gradeOrGrades);
+  }
+
+  _singleGradeCap(grade) {
+    switch (grade) {
+      case 'kindergarten': return 1;
+      case 'grade1':       return 2;
+      case 'grade2':       return 3;
+      case 'grade3':       return 5;
+      case 'grade4': case 'grade5': case 'grade4_5':
+        return 7;
+      case 'grade6': case 'grade7': case 'grade8': case 'grade6_8':
+        return 10;
+      case 'grade9': case 'grade10': case 'grade11': case 'grade12': case 'grade9_12':
+        return 14;
+      case 'college1': case 'college2': case 'college3': case 'college4': case 'college':
+        return 16;
+      case 'grad':         return 20;
+      case 'phd':          return 9999;
+      case 'pre-K':
+      default:             return 0;
+    }
+  }
+
+  /**
+   * T14.26 — Sync helper for the dictionary-cosine fallback scoring loop.
+   * Iterates every dictionary entry, computes cosine similarity between
+   * cortex `target` and the word's pattern, boosts by log-frequency, and
+   * returns an array sorted high→low by score. Excludes recently emitted
+   * words via `recentWords` to prevent immediate repetition. Same math as
+   * the old inline loop inside generate() — extracted so the async path
+   * (_scoreDictionaryCosineAsync) can share exactly one body and only
+   * diverge on the yield-point check.
+   */
+  _scoreDictionaryCosine(dictionary, target, recentWords) {
+    const scored = [];
+    for (const [word, entry] of dictionary._words) {
+      if (!entry || !entry.pattern) continue;
+      if (recentWords && recentWords.includes(word)) continue;
+      let dot = 0, nt = 0, nw = 0;
+      const len = Math.min(target.length, entry.pattern.length);
+      for (let i = 0; i < len; i++) {
+        dot += target[i] * entry.pattern[i];
+        nt += target[i] * target[i];
+        nw += entry.pattern[i] * entry.pattern[i];
+      }
+      const denom = Math.sqrt(nt) * Math.sqrt(nw);
+      const cos = denom > 0 ? dot / denom : 0;
+      const score = cos + Math.log(1 + (entry.frequency || 1)) * 0.02;
+      scored.push({ word, score });
+    }
+    scored.sort((a, b) => b.score - a.score);
+    return scored;
+  }
+
+  /**
+   * T14.26 — Async version of the dictionary-cosine scorer that yields
+   * to the host event loop every YIELD_EVERY entries. Required fix for
+   * the 3D brain visualization freezing when the user sends a message
+   * or Unity speaks:
+   *
+   * Gee's exact words 2026-04-14:
+   *   "when i send a message to unity of speak one the whiole
+   *    3D brain visulization freezes"
+   *
+   * Root cause: server's brain-server.js processAndRespond calls
+   * languageCortex.generate() synchronously. At 3700+ dictionary entries
+   * × 300d cosine per call that burns 100-300ms of pure Node event-loop
+   * time. While it runs, setInterval STATE_BROADCAST can't fire, so no
+   * `state` message hits the WebSocket, so the client's RemoteBrain
+   * never calls _applyState, so brain.state.spikes stays frozen at the
+   * snapshot captured before processAndRespond began, so the 3D viz
+   * RAF loop (which re-randomizes spike flickers from visualRate each
+   * frame) has no new visualRate values → the whole 3D brain
+   * visualization freezes until generate() returns.
+   *
+   * Fix: every YIELD_EVERY (= 500) dictionary entries we await a
+   * setImmediate (Node) / setTimeout(0) (browser) which releases
+   * control back to the host event loop. In Node that lets the
+   * STATE_BROADCAST setInterval fire AND compute_batch dispatch happen
+   * during the scoring work, so the 3D viz keeps animating for the
+   * full duration of Unity's response generation. In the browser it
+   * does the same for RAF callbacks.
+   *
+   * Yield frequency chosen to keep per-yield overhead <1% (a
+   * setImmediate round-trip is ~0.1ms, YIELD_EVERY=500 gives one yield
+   * per ~2-4ms of scoring work, which is ~3-5% overhead and still
+   * leaves the broadcast ample opportunity to fire every 100ms).
+   */
+  async _scoreDictionaryCosineAsync(dictionary, target, recentWords) {
+    const YIELD_EVERY = 500;
+    const scored = [];
+    let i = 0;
+    for (const [word, entry] of dictionary._words) {
+      if (!entry || !entry.pattern) { i++; continue; }
+      if (recentWords && recentWords.includes(word)) { i++; continue; }
+      let dot = 0, nt = 0, nw = 0;
+      const len = Math.min(target.length, entry.pattern.length);
+      for (let j = 0; j < len; j++) {
+        dot += target[j] * entry.pattern[j];
+        nt += target[j] * target[j];
+        nw += entry.pattern[j] * entry.pattern[j];
+      }
+      const denom = Math.sqrt(nt) * Math.sqrt(nw);
+      const cos = denom > 0 ? dot / denom : 0;
+      const score = cos + Math.log(1 + (entry.frequency || 1)) * 0.02;
+      scored.push({ word, score });
+      i++;
+      if ((i & (YIELD_EVERY - 1)) === 0) {
+        // Node (setImmediate) yields cleanly to I/O + setInterval callbacks.
+        // Browser (setTimeout 0) yields to RAF + microtask queue.
+        // Guard in case of missing globals (shouldn't happen in either host).
+        if (typeof setImmediate === 'function') {
+          await new Promise((r) => setImmediate(r));
+        } else if (typeof setTimeout === 'function') {
+          await new Promise((r) => setTimeout(r, 0));
+        }
+      }
+    }
+    scored.sort((a, b) => b.score - a.score);
+    return scored;
+  }
+
+  /**
+   * T14.26 — Async-yielding version of generate(). Does the exact same
+   * work as generate() except that the dictionary-cosine fallback loop
+   * runs via _scoreDictionaryCosineAsync, which releases the event loop
+   * every 500 entries. Callers in an async context (server's
+   * brain-server.js:processAndRespond, engine.js:processAndRespond)
+   * should `await` this instead of calling generate() so the 3D brain
+   * visualization does not freeze during Unity's response generation.
+   *
+   * Any caller that cannot use `await` (sync RAF callbacks, event
+   * detectors, sandbox UI handlers) should keep calling the sync
+   * generate(). Those are not on the freeze-critical path.
+   */
+  async generateAsync(dictionary, arousal, valence, coherence, opts = {}) {
+    // Fast path: if curriculum hasn't shaped the cortex yet, we skip
+    // cluster.generateSentence (same guard as generate()) and go
+    // straight to the async dictionary-cosine scoring. The rest of
+    // generate()'s work (sentenceType, renderSentence, recency ring
+    // bookkeeping) is cheap and can stay synchronous — we run it by
+    // delegating to generate() after prefilling _precomputedScores.
+    let precomputedScores = null;
+
+    const cluster = opts.cortexCluster;
+    if (cluster && typeof cluster.generateSentence === 'function') {
+      // If curriculum is done, generate() will use cluster.generateSentence
+      // (tick-driven motor emission) which is bounded and fast — no need
+      // to precompute scores at all, let generate() run sync.
+      const curriculumDone = cluster.intentCentroids && cluster.intentCentroids.size > 0;
+      if (!curriculumDone && dictionary && dictionary._words && dictionary._words.size > 0) {
+        // Pre-curriculum path — compute dictionary scores async so the
+        // event loop stays responsive through the scoring work.
+        let target = null;
+        try {
+          if (typeof cluster.getSemanticReadout === 'function') {
+            target = cluster.getSemanticReadout(sharedEmbeddings);
+          }
+        } catch {}
+        if (target && target.length > 0) {
+          try {
+            precomputedScores = await this._scoreDictionaryCosineAsync(
+              dictionary, target, this._recentOutputWords
+            );
+          } catch (err) {
+            precomputedScores = null;
+          }
+        }
+      }
+    }
+
+    // Hand the precomputed scores back to generate() which handles
+    // top-K sampling, sentence rendering, and recency ring bookkeeping.
+    return this.generate(dictionary, arousal, valence, coherence, {
+      ...opts,
+      _precomputedScores: precomputedScores,
+    });
   }
 
 

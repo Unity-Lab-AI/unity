@@ -239,6 +239,20 @@ export class NeuronCluster {
     this.identityCoverage = null;                  // populated by curriculum
     this.personaDimensions = null;                 // populated by curriculum
 
+    // T14.24 Session 1 — Multi-subject grade tracking. Unity learns
+    // all 5 subject tracks in parallel; each subject has its own
+    // grade counter that advances as gates pass. LanguageCortex
+    // .generate reads the MIN grade across these so Unity's speech
+    // ceiling stays tied to her weakest subject. Legacy `this.grade`
+    // stays as a mirror of `this.grades.ela` for backward compat with
+    // code written before T14.24 (including persistence v4 saves).
+    // passedCells is a flat list of "subject/grade" keys that have
+    // passed their gate at least once — used by /curriculum status
+    // and by the persistence save path.
+    this.grades = { ela: 'pre-K', math: 'pre-K', science: 'pre-K', social: 'pre-K', art: 'pre-K' };
+    this.grade = 'pre-K';
+    this.passedCells = [];
+
     // T14.1 — letter-region transition surprise state. Holds the previous
     // tick's letter-region spike rate so `letterTransitionSurprise()` can
     // compute |curr - prev| between consecutive cortex ticks. Used by T14.2

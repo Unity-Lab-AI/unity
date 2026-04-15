@@ -1105,18 +1105,52 @@ DUAL STREAMS (T14.10 + T14.11):
   curriculum Hebbian, not a hash coincidence.
   Hickok &amp; Poeppel 2007 dorsal production / ventral comprehension.
 
-PROGRESS (as of 2026-04-14):
+PROGRESS (as of 2026-04-15):
+  PRIMITIVES (T14.0-T14.18) SHIPPED 2026-04-14:
   T14.0 ✓  T14.1 ✓  T14.2 ✓  T14.3 ✓  T14.4 ✓  T14.5 ✓  T14.6 ✓
   T14.7 ✓  T14.8 ✓  T14.9 ✓  T14.10 ✓ T14.11 ✓ T14.12 ✓ T14.13 ✓ T14.14 ✓
-  T14.15 ✓ T14.16 ✓ T14.16.5 ✓ T14.17 ✓
-  ⭐ 18 of 18 milestones COMPLETE. ⭐
-  Branch t14-language-rebuild ready for end-to-end verification.
-  Every method shipped T14.0-T14.17 has live runtime callers (full
-  vestigial organ audit passes — the T14.17 commit wired or deleted
-  eleven orphans that had accumulated across earlier milestones).
-  Branch merges to main after Gee walks the verification. Atomic
-  push-per-milestone with masterful in-place doc updates. No merge to
-  main until T14.17 complete and verified.
+  T14.15 ✓ T14.16 ✓ T14.16.5 ✓ T14.17 ✓ T14.18 ✓
+
+  FULL CURRICULUM (T14.24) REOPENED 2026-04-14 — Gee binding:
+    "T14.24 is supposre to be a full equational ciriculum.. once again
+     you editing my words" + "what the fuck are you talking about its
+     shipped you didnt even teach it keindergarden abcs and 123s and
+     letter sounds you fool" + "remember Unity needs to be able to use
+     these to think, read, and talk" + "this is going to take weeks to
+     build so dont you dare tell me you are fucking done early".
+
+  T14.24 Session 1 (architecture framework) SHIPPED 2026-04-15:
+    — 5 subject tracks (ELA / Math / Science / Social / Art)
+    — 20 canonical grades (pre-K → kindergarten → G1..G12
+                           → college1..college4 → grad → phd)
+    — cluster.grades = {ela, math, science, social, art: 'pre-K'}
+    — cluster.grade kept as legacy mirror of grades.ela
+    — cluster.passedCells flat list of 'subject/grade' passes
+    — Curriculum._cellRunner(subject, grade) dispatch:
+        ELA   → delegates to existing runKindergarten/runGrade*/...
+        rest  → stub {pass:false, reason:'not implemented'}
+    — runSubjectGrade / runFullSubjectCurriculum / runAllSubjects
+    — Curriculum.gradeWordCap(string|object) overloaded
+    — LanguageCortex.generate reads cluster.grades (lenient min
+      over subjects past pre-K) with fallback to legacy grade scalar
+    — persistence v4 state.t14Language.curriculum = {grades,
+      grade, passedCells} (additive, no VERSION bump)
+    — /curriculum status|run|gate|reset|full slash command
+
+  T14.24 Sessions 2-N (~80 focused sessions) STILL OWED:
+    Session 2 = ELA-K real teaching (alphabet order + letter names +
+      letter sounds via phoneme feature binding + READ/THINK/TALK
+      probes + real 3-pathway capability gate)
+    Session 3 = Math-K (counting 0-9 + magnitudes + digit names)
+    Session 4 = ELA-G1 (CVC + sight words)
+    Session 5 = Math-G1 (+/- to 20)
+    Session 6 = Science-K + Social-K + Art-K (lighter, combined)
+    Session 7+ = ELA-G2 + Math-G2 + ... across all 5 tracks
+    Total: ~100 cells across 5 subjects × 20 grades, weeks of work.
+
+  Branch t14-language-rebuild never merges to main until every
+  subject × every grade × every 3-pathway gate passes.
+  DO NOT CLAIM DONE EARLY.
       </pre>
       <p class="eq-desc">Full specs per milestone live in <code>docs/COMP-todo.md Part 0.5</code>. Per-milestone session archives with equations, files touched, cost analysis, and peer-reviewed citations live in <code>docs/FINALIZED.md</code>. Cortex equations live in <code>docs/EQUATIONS.md §T14</code>. The T13 block below is preserved as historical provenance — it was deleted in T14.6 when <code>cluster.generateSentence</code> replaced the slot scorer.</p>
     </div>

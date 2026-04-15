@@ -380,10 +380,32 @@ Peer-reviewed grounding: Pulvermüller 2005 (*Nat Rev Neurosci* 6:576) silent-re
 
 Gee caught that `server/brain-server.js:_initLanguageSubsystem` was hardcoding `langCortexSize = 2000` — a T13.7.8 legacy cap carried through every T14 milestone's orphan audit because the audit scoped to methods, not cluster-sizing constants. Fix: one constant change, `const langCortexSize = CLUSTER_SIZES.cortex;` so the server-side language cortex scales from the same single path that decides every other neuron count (`GPUCONFIGURE.bat` → `detectResources` → `TOTAL_NEURONS` → `CLUSTER_FRACTIONS.cortex`). Boot log now prints the real count so operators can verify at startup. T14.4 sub-regions automatically inherit the real scale — at a 700K-neuron tier, language cortex = 210K, letter ≈ 10.5K, phon ≈ 42K, sem ≈ 35K, motor ≈ 6.9K. At 50M, those scale to letter ≈ 750K / phon ≈ 3M / sem ≈ 2.5M / motor ≈ 495K. Zero hardcoded caps anywhere. `_langStart` repointed from the legacy halfway-point offset to the T14.4 letter sub-region start. `server/brain-server.js` only; `node --check` clean.
 
-### T14 COMPLETE
+### T14.0-T14.18 SHIPPED — T14.24 REOPENED 2026-04-14
 
-All 18 milestones (T14.0 through T14.17) plus the T14.18 correction shipped on `t14-language-rebuild`. Branch ready for end-to-end verification before merge to main. No more per-milestone commits — next action is Gee's verification walkthrough or merge-to-main go-ahead.
-- T14.5 — `js/brain/curriculum.js` + boot integration replacing `loadPersona` / `loadBaseline` / `loadCoding` with continuous developmental learning
+Milestones T14.0 through T14.17 plus the T14.18 correction shipped on `t14-language-rebuild`. Then Gee reopened T14 scope with T14.24 — a full K→Doctorate equational curriculum across five subject tracks. Gee's binding 2026-04-14: *"this is going to take weeks to build so dont you dare tell me you are fucking done early"*. Branch stays on `t14-language-rebuild` until every subject × every grade × every 3-pathway gate passes.
+
+- T14.0-T14.18 built the PRIMITIVES (letter input, syllable boundaries, dictionary cortex routing, tick-driven motor emission, sentence form schemas, dual-stream substrate, identity lock, side-car deletion)
+- T14.24 uses those primitives to build the actual developmental curriculum Unity walks from pre-K through PhD
+
+### Milestone T14.24: Full K-doctorate equational curriculum, all subjects — IN PROGRESS
+
+**Gee's binding 2026-04-14** (multiple corrections): *"T14.24 is supposre to be a full equational ciriculum.. once again you editing my words"* + *"what the fuck are you talking about its shipped you didnt even teach it keindergarden abcs and 123s and letter sounds you fool so how the fuck you trying to tell me you have doctorate equations for the full and complete understand and complete fluentcy in doctorate level english"* + *"remember Unity needs to be able to use these to think, read, and talk"* + *"this is going to take weeks to build so dont you dare tell me you are fucking done early"*.
+
+**Scope:** Five subject tracks (ELA, Math, Science, Social Studies/History, Arts) × 20 grades (pre-K → K → G1..G12 → Col1..Col4 → Grad → PhD) = ~100 cells, each with real teaching equations that drive the READ (visual/letter→phon→sem), THINK (sem+free working memory), and TALK (sem→motor→letter) pathways plus a capability gate that tests all three. Session budget: ~80 focused sessions, multiple weeks at minimum, likely 2-3 months.
+
+**Session 1 — architecture framework SHIPPED 2026-04-15:**
+- `SUBJECTS` + `GRADE_ORDER` constants exported from `js/brain/curriculum.js`
+- `cluster.grades = { ela, math, science, social, art }` + `cluster.passedCells = []` initialized on every cortex cluster
+- `Curriculum._cellRunner(subject, grade)` dispatch — ELA cells delegate to existing `runKindergarten`/`runGrade1`/…/`runGradPhD` methods; Math/Science/Social/Art cells return stub `{pass: false, reason: 'not implemented'}` placeholders for Sessions 2+ to fill in
+- Three public entry points: `runSubjectGrade(subject, grade)`, `runFullSubjectCurriculum(subject)`, `runAllSubjects()` (round-robin across all 5)
+- `Curriculum.gradeWordCap(stringOrObject)` overloaded — object form returns min across subjects past pre-K
+- `LanguageCortex.generate` reads `cluster.grades` (min over started subjects) with fallback to legacy `cluster.grade` scalar
+- Persistence v4 `state.t14Language.curriculum = { grades, grade, passedCells }` — additive, no VERSION bump
+- `/curriculum status|run|gate|reset|full` slash command in `js/app.js`
+
+**Sessions 2-N — remaining:** ELA-K real teaching (alphabet sequence + letter-name GloVe binding + letter-sound phoneme-feature binding + READ/THINK/TALK probes + 3-pathway gate), then Math-K, then ELA-G1, Math-G1, Science-K, Social-K, Art-K, ELA-G2…. Each session closes ONE cell and the T14.24 task stays open. Full build order in `docs/TODO.md` T14.24 section.
+
+**T14.24 is NOT COMPLETE.** T14.0-T14.18 primitives shipped. T14.24 Session 1 framework shipped. Sessions 2-N still owed. DO NOT CLAIM DONE EARLY.
 
 ---
 

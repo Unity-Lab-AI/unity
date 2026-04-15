@@ -324,6 +324,11 @@ export class RemoteBrain extends EventEmitter {
       } catch { /* localStorage unavailable — fall through with null */ }
     }
 
+    // T14.25 — stamp the last-text time so the visual cortex RAF
+    // driver's setAttentionState call sees a small secondsSinceInput
+    // and locks attention toward the user's face for the next ~10s.
+    this._lastTextSendTime = Date.now();
+
     this._ws.send(JSON.stringify({
       type: 'text',
       text,
@@ -405,9 +410,27 @@ export class RemoteBrain extends EventEmitter {
           // real compute work via its own describeInterval and V1
           // update cadence — but RAF is the simplest way to stay in
           // sync with the display's vsync.
+          // T14.25 — drive setAttentionState from live RemoteBrain
+          // state so the visual cortex's top-down attention lock
+          // engages when the user is actively talking to Unity.
+          // Without this, _attentionLock stays at 0 and the face-
+          // tracking saccade's center prior stays weak, so the iris
+          // wanders to whatever high-salience background edge wins
+          // the raw competition. setAttentionState only needs two
+          // numbers (current arousal, seconds since last input),
+          // both of which we can read from local state + lastTextTime.
           const tick = () => {
             if (!this.visualCortex || !this.visualCortex.isActive()) return;
-            try { this.visualCortex.processFrame(); }
+            try {
+              const arousal = this.state?.amygdala?.arousal ?? 0.5;
+              const now = Date.now();
+              const lastInput = this._lastTextSendTime || 0;
+              const secondsSinceInput = lastInput > 0 ? (now - lastInput) / 1000 : 9999;
+              if (typeof this.visualCortex.setAttentionState === 'function') {
+                this.visualCortex.setAttentionState({ arousal, secondsSinceInput });
+              }
+              this.visualCortex.processFrame();
+            }
             catch (err) { console.warn('[RemoteBrain] visualCortex.processFrame threw:', err?.message || err); }
             this._visionRafId = requestAnimationFrame(tick);
           };

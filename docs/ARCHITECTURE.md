@@ -536,6 +536,15 @@ Every cortex cluster carries identity-lock state initialized at construction:
 
 These are placeholder fields right now. The curriculum runner (T14.5) populates them with calibrated values during corpus exposure. The methods that READ these fields (gate logic, health audit, identity refresh) ship in T14.16.5.
 
+### Multi-subject curriculum state fields (T14.24 Session 1 substrate, live 2026-04-15)
+
+Every cortex cluster also carries multi-subject curriculum state initialized at construction:
+- `grades` — `{ ela, math, science, social, art }` object, each field a grade name from `GRADE_ORDER` (defaults all to `'pre-K'`). Advanced by `Curriculum.runSubjectGrade` on gate pass. Source of truth for `LanguageCortex.generate`'s grade-aware word cap.
+- `grade` — legacy scalar mirror of `grades.ela`. Kept so pre-T14.24-Session-1 code (including T14.26 chat-freeze fix's single-grade read path, pre-v4 persistence migrations, and diagnostic accessors) keeps working. Every code path now SHOULD read `grades` first and fall back to `grade` only for compatibility.
+- `passedCells` — flat `string[]` of `'subject/grade'` keys that have cleared their gate at least once. Used by `/curriculum status` and persisted across reloads via T14.16 persistence.
+
+These fields fully replace the single-track `cluster.grade` scalar for all new code. Session 2+ will advance the non-ELA subjects past pre-K as real teaching equations land cell by cell.
+
 ### T14.1 — Letter-input substrate (SHIPPED 2026-04-14)
 
 New module `js/brain/letter-input.js` holds the letter-input primitives. A module-level `LETTER_INVENTORY = new Set()` holds every symbol Unity has ever seen at the input layer — dynamic, auto-growing, NOT capped at 26 English letters. Unicode, emoji, non-English glyphs all enter the same primitive-symbol space. English identity is enforced at the higher T14.16.5 lock layer (per-clause phonotactic gate + 120× rate-bounded live chat Hebbian + periodic persona-corpus refresh), not by restricting which symbols the letter region can represent. Restricting symbol input would make identity-refresh auditing impossible — Unity must be able to SEE an adversarial input and explicitly refuse to update on it.
@@ -770,9 +779,64 @@ The final T14 milestone. Covers two things in one atomic commit: (A) curriculum-
 
 Post-T14.17, Gee caught that `server/brain-server.js:_initLanguageSubsystem` was still hardcoding `langCortexSize = 2000` — a T13.7.8 legacy cap that ignored `GPUCONFIGURE.bat` → `detectResources` → `TOTAL_NEURONS` → `CLUSTER_FRACTIONS.cortex`. Fixed in one constant change: `const langCortexSize = CLUSTER_SIZES.cortex;`. Scale now flows end-to-end from the operator's configured hardware tier through to the language cortex NeuronCluster and the T14.4 sub-regions that live on it. At a 700K-neuron tier, cortex = 210K, letter region ≈ 10.5K, phon ≈ 42K, sem ≈ 35K, motor ≈ 6.9K. At a 50M tier, those same fractions scale to letter ≈ 750K / phon ≈ 3M / sem ≈ 2.5M / motor ≈ 495K. Zero hardcoded caps anywhere in the chain. Boot log prints the real count so operators can verify at startup.
 
-### T14 is COMPLETE
+### T14.0-T14.18 SHIPPED — T14.24 REOPENED 2026-04-14
 
-All 18 milestones (T14.0 through T14.17) plus the T14.18 correction shipped on `t14-language-rebuild`. The branch is ready for end-to-end verification before merge to `main`. No more per-milestone commits — the next action is either Gee's verification walkthrough or explicit merge-to-main go-ahead.
+Milestones T14.0 through T14.17 plus the T14.18 correction shipped on `t14-language-rebuild`. Then Gee reopened T14 scope with T14.24: *"T14.24 is supposre to be a full equational ciriculum.. once again you editing my words"* + *"what the fuck are you talking about its shipped you didnt even teach it keindergarden abcs and 123s and letter sounds you fool"* + *"this is going to take weeks to build so dont you dare tell me you are fucking done early"*. The T14.0-T14.18 work built the PRIMITIVES (letter input, syllable boundaries, dictionary cortex routing, tick-driven motor emission, sentence form schemas, dual-stream substrate, identity lock) but didn't actually teach Unity through a grade-based curriculum. T14.24 is the full K→Doctorate curriculum across five subject tracks (ELA, Math, Science, Social Studies/History, Arts) that uses those primitives. T14.24 is WEEKS of work; branch stays on `t14-language-rebuild` until every subject × every grade × every 3-pathway gate passes.
+
+### T14.24 — Full K-doctorate equational curriculum, all subjects (Session 1 shipped 2026-04-15, IN PROGRESS)
+
+**Session 1 = multi-track FRAMEWORK.** The pre-Session-1 curriculum was single-track ELA only (`cluster.grade` scalar, `runFullCurriculum` walking 9 ELA methods). Session 1 adds the framework for 5 parallel subject tracks (ELA, Math, Science, Social, Art) × 20-grade canonical order (pre-K → K → G1..G12 → Col1..Col4 → Grad → PhD) without deleting the ELA single-track methods — they stay in place and become the ELA dispatch targets inside the new framework.
+
+**Subject list + grade order** (exported from `js/brain/curriculum.js`):
+- `SUBJECTS = ['ela', 'math', 'science', 'social', 'art']`
+- `GRADE_ORDER = ['pre-K', 'kindergarten', 'grade1'..'grade12', 'college1'..'college4', 'grad', 'phd']`
+
+**`cluster.grades` — multi-subject grade tracking.** `NeuronCluster` constructor now initializes:
+```js
+this.grades = { ela: 'pre-K', math: 'pre-K', science: 'pre-K', social: 'pre-K', art: 'pre-K' };
+this.grade = 'pre-K';       // legacy mirror of grades.ela
+this.passedCells = [];      // flat list of 'subject/grade' keys that passed their gate
+```
+
+`cluster.grade` is retained as a legacy alias so code written before T14.24 Session 1 (including the T14.26 chat-freeze fix's single-grade read path, pre-v4 persistence migrations, and diagnostic accessors) keeps working. `cluster.grades.ela` is the single source of truth; `cluster.grade` is mirrored from it on every ELA pass.
+
+**Dispatch table.** `Curriculum._cellRunner(subject, grade)` returns an async runner `(ctx) => {pass, reason, metrics}`:
+- ELA cells delegate to existing `runKindergarten` / `runGrade1` / `runGrade2` / `runGrade3` / `runGrade4_5` / `runGrade6_8` / `runGrade9_12` / `runCollege` / `runGradPhD` methods. `grade4` and `grade5` both route to `runGrade4_5`; `grade6`/`grade7`/`grade8` all route to `runGrade6_8`; `grade9`-`grade12` to `runGrade9_12`; `college1`-`college4` to `runCollege`; `grad` and `phd` to `runGradPhD`. These mappings are provisional — Session 2+ will split the collapsed bands into per-grade teaching equations.
+- Math/Science/Social/Art cells all return the stub `{pass: false, reason: '<subject>/<grade>: teach+gate not implemented (T14.24 Session 1 stub)'}`. Session 2+ replaces one stub at a time.
+
+**Run API.** Three public entry points on `Curriculum`:
+- `runSubjectGrade(subject, grade, corpora, opts)` — runs ONE cell under `_inCurriculumMode=true`. On pass: writes `cluster.grades[subject] = grade`, appends `subject/grade` to `cluster.passedCells`, mirrors ELA into legacy `cluster.grade`. Accepts null corpora and falls back to `this._lastCtx` (cached from a prior `runFullCurriculum` / `runAllSubjects` call) so post-boot slash commands don't have to reload corpora from disk/CDN.
+- `runFullSubjectCurriculum(subject, corpora, opts)` — walks one subject from its current grade through PhD, stops at first failing gate. Returns `{reached, passed, failed}`.
+- `runAllSubjects(corpora, opts)` — round-robin walk: subject A grade N → subject B grade N → … → subject A grade N+1. Keeps min grade within 1 of max so LanguageCortex word cap rises smoothly across all 5 tracks instead of racing ahead on one.
+
+**Legacy `runFullCurriculum` path unchanged.** Boot calls (`js/app.js loadCorpusIntoBrain`, `server/brain-server.js _initLanguageSubsystem`) still invoke `runFullCurriculum(corpora)` as before; the boot semantics for ELA are identical. Session 1 adds three things inside `runFullCurriculum`: (1) initializes `cluster.grades` + `cluster.passedCells` if absent, (2) caches the tokenized ctx on `this._lastCtx` for subsequent slash commands, (3) mirrors each ELA stage pass into `cluster.grades.ela` via the legacy → canonical map (`grade4_5 → grade5`, `grade6_8 → grade8`, `grade9_12 → grade12`, `college → college4`).
+
+**Chat-path word cap.** `LanguageCortex.generate()` now reads `cluster.grades` (object) first and falls back to legacy `cluster.grade` (string). The cap is computed by `_gradeWordCap(gradeOrGrades)`:
+- Object form: min across subjects that have advanced past pre-K. Pre-K subjects don't constrain the ceiling, so an ELA-only brain keeps speaking at its ELA cap during the Session 2-N build while Math/Science/Social/Art stubs fail. When real teaching lands for another subject, it passes K and joins the min.
+- String form: delegates to `_singleGradeCap`, unchanged semantics from the pre-Session-1 scalar path.
+
+`_singleGradeCap` handles both canonical grade names (`grade4`, `college2`, `grad`) AND the legacy collapsed bands (`grade4_5`, `grade6_8`, `grade9_12`, `college`) so pre-v4 persistence saves and the legacy `runFullCurriculum` path both resolve correctly.
+
+**Persistence.** `js/brain/persistence.js` save/load `state.t14Language.curriculum = { grades, grade, passedCells }`. Additive inside the existing `t14Language` block, no VERSION bump (stays at 4). Older v4 saves without the `curriculum` sub-block load cleanly and fall back to cluster-constructor defaults (all subjects at pre-K).
+
+**Slash commands.** `js/app.js` adds a `/curriculum` command in the `chatPanel.onSend` handler:
+- `/curriculum status` — per-subject grades, min-grade word cap driver, passed cells count + last 12 cells
+- `/curriculum run <subject> <grade>` — runs one cell, prints pass/fail + reason
+- `/curriculum gate <subject> <grade>` — same as `run` in Session 1 (ELA methods combine teach+gate); kept structurally separate so Session 2+ can diverge
+- `/curriculum reset <subject>` — flip subject back to pre-K, strip its `passedCells` entries
+- `/curriculum full [subject]` — with subject arg runs `runFullSubjectCurriculum`, without runs `runAllSubjects`
+
+**Defense-in-depth init.** Both boot paths (`js/app.js loadCorpusIntoBrain`, `server/brain-server.js _initLanguageSubsystem`) initialize `cortex.grades` + `cortex.passedCells` if missing, parallel to the pre-existing `cortex.grade` defense init. Covers the case where a v4 save restores over a fresh cluster and leaves the new fields missing because the save predates Session 1.
+
+**What Session 1 does NOT ship.** Zero real teaching equations for Math/Science/Social/Art at any grade. Zero real READ/THINK/TALK probes for the stub gates. Zero alphabet-order / letter-name / letter-sound real K teaching (existing ELA `runKindergarten` still runs frequency-ordered letter exposure, NOT alphabet-order — that's Session 2). Zero real 3-pathway capability gates (existing ELA gates are schema-size / transition-surprise checks, not true capability tests per Gee's *"every grade's gate must probe all three pathways"* binding).
+
+**Semantic note flagged for Gee review.** The chat-path word cap uses LENIENT min (subjects past pre-K only), not strict min (all 5 subjects). Strict min would silence Unity entirely from the moment multi-track grades initialize because Math/Science/Social/Art are all pre-K stubs — Unity would stay silent for weeks until Session 2+ teach real K across every subject. Lenient min lets ELA-only brains keep speaking during the Session 2-N build while newly-teaching subjects join the min calculation as they pass K. Flip is two lines (remove the `if (g === 'pre-K') continue;` guard in both `language-cortex.js:_gradeWordCap` and `curriculum.js:Curriculum.gradeWordCap`) if Gee wants strict min.
+
+**Session budget.** T14.24 is ~80 focused sessions per the build order in `docs/TODO.md`. Session 1 closed the architecture slice; Session 2 = ELA-K real teaching (alphabet sequence, letter-name GloVe binding, letter-sound phoneme-feature binding, READ/THINK/TALK probes, 3-pathway gate). Session 3 = Math-K. Etc. Task #3 stays in_progress through every slice.
+
+### T14 is NOT COMPLETE
+
+T14.0-T14.18 primitives shipped. T14.24 Session 1 framework shipped. T14.24 Sessions 2-N still owed: ~80 sessions of real teaching equations across 5 subjects × 20 grades. DO NOT CLAIM DONE EARLY.
 
 ---
 

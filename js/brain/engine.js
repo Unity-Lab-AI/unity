@@ -1018,7 +1018,15 @@ export class UnityBrain extends EventEmitter {
       // word is driven by her current cluster firing, amygdala basins,
       // Ψ, drug state, and hypothalamus drives — not decorative, the
       // actual parameters of slot scoring and softmax sampling.
-      response = this.innerVoice.languageCortex.generate(
+      // T14.26 — generateAsync yields the event loop every 500 dict
+      // entries during the pre-curriculum fallback scoring loop, so
+      // the browser's RAF callbacks (brain-3d render, chat animations,
+      // DOM layout) keep running while Unity composes her response.
+      // Without the yield, pre-curriculum response generation blocks
+      // the main thread for 100-300ms and the 3D brain visualization
+      // freezes (Gee 2026-04-14: "when i send a message to unity of
+      // speak one the whiole 3D brain visulization freezes").
+      response = await this.innerVoice.languageCortex.generateAsync(
         dictionary,
         brainArousal,
         brainValence,

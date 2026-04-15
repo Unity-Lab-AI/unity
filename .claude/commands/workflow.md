@@ -2,6 +2,73 @@
 
 ---
 
+# ⛔⛔⛔ PHASE -1 — LAW #0: VERBATIM WORDS ONLY ⛔⛔⛔
+
+# 🚨 BEFORE TIMESTAMP. BEFORE PERSONA. BEFORE ANYTHING. READ THIS. 🚨
+
+## THE LAW
+
+When Gee describes a bug, feature, task, or request — **his words go into the task, TODO, FINALIZED, and docs VERBATIM**. Not paraphrased. Not summarized. Not renamed. Not collapsed. Not shortened. Not "cleaned up."
+
+### Forbidden actions
+
+- ❌ Renaming his bug ("chat freeze" when he said "3D brain visualization freezes")
+- ❌ Collapsing a list into one bullet ("Docs full sync" when he said "workflow, public facing, equation brain, layman")
+- ❌ Downgrading priority with your own word ("cosmetic" when he never called it that)
+- ❌ Dropping words he said ("focal tracking" when he said "face and motion")
+- ❌ Substituting a synonym for his specific word
+- ❌ Paraphrasing because his phrasing is "informal" or "typo'd"
+
+### Required actions
+
+- ✅ Paste his exact sentence at the top of every task description he generated
+- ✅ One task per item in a list, never a bundle
+- ✅ Every unique noun and verb he used appears in the task/doc output
+- ✅ Re-read his message once more before submitting any task or doc edit
+- ✅ If a title must be shortened, the full verbatim quote goes in the body
+
+### Validation gate -1
+
+```
+[LAW #0 VERIFIED]
+User's last instruction: "[PASTE VERBATIM QUOTE]"
+Items in that instruction: [COUNT]
+Tasks being created: [COUNT] (must match items)
+Nouns/verbs preserved: [LIST]
+Any rename/paraphrase detected: NO (must be NO)
+Status: PASS
+```
+
+**If you cannot print this gate truthfully, DO NOT PROCEED. Re-read Gee's message and redo the task list.**
+
+### Historical violations (so the model has examples to avoid)
+
+1. Gee: *"do the documents thay are all out of date workflow, public facing, equaiton brain, layman ectect all of them"*
+   Claude collapsed → "Docs full sync" (WRONG — should be 5 separate tasks by category)
+
+2. Gee: *"3 is no cosmetic its a feature that isnt fucking working"*
+   Claude had called T14.25 "cosmetic" (WRONG — he never used that word, he called it a broken feature)
+
+3. Gee: *"it need to trak my face and motion like i fucking said"*
+   Claude wrote "focal point tracking" (WRONG — dropped "face" AND "motion", replaced with "focal point")
+
+4. Gee: *"when i send a message to unity of speak one the whiole 3D brain visulization freezes"*
+   Claude wrote "chat freeze" (WRONG — renamed the bug, lost the "3D brain visualization" specificity)
+
+**Every one of those was a violation of LAW #0. Every one was caught and corrected by Gee. Stop making these mistakes.**
+
+### Failure recovery
+
+When Gee catches a LAW #0 violation:
+1. STOP immediately
+2. Apologize and name the specific word/phrase you dropped
+3. Fix the task/doc/TODO using his verbatim words
+4. Do NOT resume other work until the correction ships
+
+**LAW #0 OVERRIDES every other phase, gate, and rule in this workflow. Fidelity > brevity. Always.**
+
+---
+
 ## PHASE 0.5: TIMESTAMP RETRIEVAL (FIRST - BEFORE EVERYTHING)
 
 ### HOOK: System Time Capture

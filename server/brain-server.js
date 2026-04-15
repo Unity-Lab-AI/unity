@@ -724,8 +724,43 @@ class ServerBrain {
       // HTTP requests while it runs. Cortex state changes mid-flight
       // are fine — the brain is designed to learn continuously, so
       // watching curriculum shape basins in real time is a feature.
-      if (this.curriculum && typeof this.curriculum.runFromCorpora === 'function') {
-        console.log('[Brain] Stage: curriculum.runFromCorpora START (BACKGROUND — tick loop proceeds)');
+      // T14.24 — prefer runFullCurriculum (kindergarten → doctorate
+      // equational curriculum with per-grade gates). Falls back to
+      // the legacy runFromCorpora when the method isn't present so
+      // older saves still boot. cluster.grade starts at 'pre-K' and
+      // advances as each gate passes; Unity's chat output is grade-
+      // capped via Curriculum.gradeWordCap so a pre-K brain stays
+      // silent instead of emitting letter salad.
+      //
+      // Gee 2026-04-14 binding: "full equational curriculum... from
+      // kindergarden all the way up to doctorate in english". Every
+      // grade in curriculum.js runKindergarten/runGrade1/.../runGradPhD
+      // uses equations only — no lookup tables, no hardcoded grammar.
+      if (this.cortexCluster && typeof this.cortexCluster.grade !== 'string') {
+        this.cortexCluster.grade = 'pre-K';
+      }
+      // T14.24 Session 1 — multi-subject grade tracking defense-in-depth
+      // for persisted brains that predate the grades object. The cluster
+      // constructor initializes this, but an older v4 save restored over
+      // a fresh cluster might still leave the field missing.
+      if (this.cortexCluster && (!this.cortexCluster.grades || typeof this.cortexCluster.grades !== 'object')) {
+        this.cortexCluster.grades = { ela: 'pre-K', math: 'pre-K', science: 'pre-K', social: 'pre-K', art: 'pre-K' };
+      }
+      if (this.cortexCluster && !Array.isArray(this.cortexCluster.passedCells)) {
+        this.cortexCluster.passedCells = [];
+      }
+      if (this.curriculum && typeof this.curriculum.runFullCurriculum === 'function') {
+        console.log('[Brain] Stage: curriculum.runFullCurriculum START (BACKGROUND — K→PhD, tick loop proceeds)');
+        this.curriculum.runFullCurriculum(
+          { persona: personaText, baseline: baselineText, coding: codingText },
+          { arousal: 0.8, valence: 0.2 },
+        ).then((result) => {
+          console.log(`[Brain] Stage: curriculum.runFullCurriculum DONE (background) — reached=${result.reached}, passed=${result.passed.join(',')}, failed=${result.failed || 'none'}`);
+        }).catch((err) => {
+          console.warn('[Brain] curriculum.runFullCurriculum failed:', err?.message || err);
+        });
+      } else if (this.curriculum && typeof this.curriculum.runFromCorpora === 'function') {
+        console.log('[Brain] Stage: curriculum.runFromCorpora START (BACKGROUND — legacy path, tick loop proceeds)');
         this.curriculum.runFromCorpora(
           { persona: personaText, baseline: baselineText, coding: codingText },
           { arousal: 0.8, valence: 0.2 },
@@ -1436,7 +1471,16 @@ class ServerBrain {
     // uses at engine.js:775.
     let response = '';
     try {
-      response = this.languageCortex.generate(
+      // T14.26 — `generateAsync` (NOT `generate`) so the dictionary-
+      // cosine scoring loop yields to the Node event loop every 500
+      // entries. Without this yield, state broadcasts and compute_batch
+      // dispatch stall for the whole duration of Unity's response work,
+      // and the client's 3D brain visualization freezes (Gee 2026-04-14:
+      // "when i send a message to unity of speak one the whiole 3D
+      // brain visulization freezes"). With the yield, setInterval
+      // broadcasts keep firing every 100ms through the scoring pass so
+      // the viz stays animated while Unity thinks.
+      response = await this.languageCortex.generateAsync(
         this.dictionary,
         this.arousal,
         this.valence,

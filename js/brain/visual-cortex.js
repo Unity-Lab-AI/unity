@@ -107,6 +107,20 @@ export class VisualCortex {
     // to Unity is the thing that's moving — she should look at them.
     this._motionMap = new Float32Array(V1_COUNT);
 
+    // T14.25 — EMA-smoothed motion map. Raw _motionMap is per-frame
+    // noise-prone (compression artifacts, camera grain, brief lighting
+    // flicker). EMA(0.4) cleans it without dragging the response to
+    // real movement (half-life ~2 frames at 60fps). Used by the face-
+    // tracking saccade centroid instead of raw _motionMap.
+    this._motionMapEMA = new Float32Array(V1_COUNT);
+
+    // T14.25 — skin-tone map for face tracking. HSV-based heuristic:
+    // a pixel scores 1.0 when its RGB falls inside the human skin HSV
+    // box, 0 otherwise. Not ML, not perfect, but robust enough to
+    // bias the saccade centroid toward the user's face+hands instead
+    // of a high-contrast background edge.
+    this._skinMap = new Float32Array(V1_COUNT);
+
     // Top-down attention gate driven by brain state (set from the engine
     // via setAttentionState). When arousal is high AND the user recently
     // spoke, Unity's gaze clamps toward the center of the frame where the
@@ -212,7 +226,10 @@ export class VisualCortex {
     // ── Motion detection ──
     this._computeMotion();
 
-    // ── Salience → Gaze ──
+    // ── T14.25: Skin-tone map for face tracking ──
+    this._computeSkinMap(pixels);
+
+    // ── Salience + motion + skin → Face-tracking Gaze ──
     this._computeGaze();
 
     // ── IT: Object recognition (periodic AI call) ──
@@ -311,28 +328,90 @@ export class VisualCortex {
     for (let i = 0; i < V1_COUNT; i++) {
       const delta = Math.abs(this._currentFrame[i] - this._prevFrame[i]);
       this._motionMap[i] = delta;
+      // T14.25 — EMA smoothing so a single-frame lighting flicker
+      // doesn't spike the saccade. α=0.4 gives half-life ~1.5 frames,
+      // smooth enough to kill noise but fast enough to track real
+      // head/hand movement without visible lag.
+      this._motionMapEMA[i] = this._motionMapEMA[i] * 0.6 + delta * 0.4;
       totalDiff += delta;
     }
     this.motionEnergy = totalDiff / V1_COUNT;
   }
 
-  // ── Saccade generation from salience ─────────────────────────
+  // ── T14.25: Skin-tone map (HSV-based face detection heuristic) ───
   //
-  // Gaze lands on the peak of an EFFECTIVE salience map computed as:
+  // Per-pixel binary skin mask via RGB→HSV conversion and a human-skin
+  // HSV box (H in [0°, 50°] OR [340°, 360°], S in [0.2, 0.7], V in
+  // [0.35, 0.95]). Covers pale to dark skin tones while rejecting blue
+  // walls, green plants, red shirts, saturated posters. Not ML, not
+  // perfect, but robust enough to bias the saccade centroid toward the
+  // user's face+hands instead of a high-contrast background edge.
   //
-  //   eff[x,y] = (edge[x,y] × 0.30 + motion[x,y] × 0.70 × motionGain)
-  //              × centerPrior(x, y)
-  //              × attentionLockMask(x, y)
+  // This is the "face" half of Gee's "track my face and motion"
+  // directive — skinMap marks skin pixels, motionMap marks moving
+  // pixels, their product is face-AND-motion likelihood, which is
+  // what the saccade centroid integrates over.
   //
-  // - Motion dominates static edges when ANY motion is present, so
-  //   the user talking beats static background clutter every time.
-  // - Center Gaussian prior weights frame middle ~2-3× higher, because
-  //   webcam users are almost always center-framed.
-  // - Top-down attention lock (set from engine via setAttentionState)
-  //   tightens the center window when Unity's arousal is high AND the
-  //   user recently spoke. When idle, the lock loosens and gaze
-  //   free-roams the salience map.
+  _computeSkinMap(pixels) {
+    for (let i = 0; i < V1_COUNT; i++) {
+      const pi = i * 4;
+      const r = pixels[pi] / 255;
+      const g = pixels[pi + 1] / 255;
+      const b = pixels[pi + 2] / 255;
 
+      // RGB → HSV (fast, no allocations)
+      const max = Math.max(r, g, b);
+      const min = Math.min(r, g, b);
+      const v = max;
+      const s = max === 0 ? 0 : (max - min) / max;
+      let h = 0;
+      if (max !== min) {
+        const d = max - min;
+        if (max === r) h = ((g - b) / d + (g < b ? 6 : 0));
+        else if (max === g) h = ((b - r) / d + 2);
+        else h = ((r - g) / d + 4);
+        h *= 60; // degrees
+      }
+
+      // Human skin HSV box — covers pale to dark
+      const hueSkin = (h >= 0 && h <= 50) || (h >= 340 && h <= 360);
+      const satSkin = s >= 0.18 && s <= 0.75;
+      const valSkin = v >= 0.30 && v <= 0.97;
+
+      this._skinMap[i] = (hueSkin && satSkin && valSkin) ? 1.0 : 0.0;
+    }
+  }
+
+  // ── T14.25: Face+motion-tracking saccade via weighted centroid ───
+  //
+  // Gaze lands on the weighted CENTROID of an effective attention map
+  // (not the peak — peaks are single noisy pixels and jitter). The
+  // effective map is:
+  //
+  //   face[x,y]   = skin[x,y] × motionSmoothed[x,y]      // face AND moving
+  //   clutter[x,y] = edge[x,y] × 0.15                    // mild edge prior
+  //   motion[x,y] = motionSmoothed[x,y] × motionGain × 0.5  // raw motion
+  //   eff[x,y]    = (face × 3.0 + motion + clutter) × centerPrior(x,y)
+  //
+  // Weights tuned so a face-on-head (high skin × motion) dominates any
+  // pure-motion (hand wave) and any pure-edge (background frame) on
+  // typical webcam framing. Face weight 3× because skin×motion is the
+  // strongest signal we have without a real face detector.
+  //
+  // Gaze target = centroid Σ(x,y) × eff(x,y) / Σ eff(x,y), with
+  // pursuit lerp at `pursuitRate` so the iris moves smoothly rather
+  // than snapping. Micro-saccades add biological jitter.
+  //
+  // Center Gaussian prior biases middle of frame (webcams are always
+  // center-framed). Attention lock (set via setAttentionState from the
+  // brain based on arousal + time since user input) sharpens the
+  // prior when Unity is actively engaged and relaxes it when she's
+  // idle and free to wander.
+  //
+  // Gee 2026-04-14: "it need to trak my face and motion like i
+  // fucking said". Both signals now drive the centroid explicitly —
+  // face (skin×motion) AND raw motion, not one or the other.
+  //
   _computeGaze() {
     const cx = FRAME_W / 2;
     const cy = FRAME_H / 2;
@@ -340,27 +419,32 @@ export class VisualCortex {
     const sigY2 = CENTER_PRIOR_SIGMA_Y * CENTER_PRIOR_SIGMA_Y;
 
     // Motion gain scales with total motion energy so static scenes
-    // don't amplify noise, but active scenes heavily favor movement.
-    // At motionEnergy=0: gain ~0 (pure edge salience).
-    // At motionEnergy=0.05 (noticeable movement): gain ~5.
-    // At motionEnergy=0.2 (lots of movement): gain ~20.
-    const motionGain = Math.min(25, this.motionEnergy * 100);
+    // don't amplify noise. At motionEnergy=0: gain~0 (pure edge salience).
+    // At motionEnergy=0.03 (subtle head turn): gain~3.
+    // At motionEnergy=0.15 (active gesturing): gain~15.
+    const motionGain = Math.min(20, this.motionEnergy * 120);
 
-    // Attention-lock amplifies the center prior when active. At lock=0,
-    // the center prior is the vanilla Gaussian. At lock=1, the prior
-    // steepens so off-center peaks need ~4× more strength to win.
+    // Attention-lock amplifies the center prior when active. At lock=0
+    // the prior is vanilla Gaussian. At lock=1 it steepens ~4×.
     const lockSharpness = 1 + this._attentionLock * 3;
 
-    // Find peak of effective salience
-    let maxSal = 0, maxX = cx, maxY = cy;
+    // Pass 1 — compute effective attention per pixel, accumulate
+    // centroid as Σ(x,y,eff) and total = Σ eff.
+    let sumX = 0, sumY = 0, total = 0;
+    let maxEff = 0, peakX = cx, peakY = cy;
     for (let y = 0; y < FRAME_H; y++) {
       for (let x = 0; x < FRAME_W; x++) {
         const idx = y * FRAME_W + x;
         const edge = this.salienceMap[idx] || 0;
-        const motion = this._motionMap[idx] || 0;
+        const motion = this._motionMapEMA[idx] || 0;
+        const skin = this._skinMap[idx] || 0;
 
-        // Combine: motion is the primary driver when present
-        let combined = edge * 0.30 + motion * 0.70 * motionGain;
+        // Face signal — skin pixels that are moving. This is the
+        // dominant term because it's the strongest face proxy we have.
+        const face = skin * motion;
+
+        // Combined effective attention
+        let eff = face * 3.0 + motion * motionGain * 0.5 + edge * 0.15;
 
         // Center Gaussian prior (amplified by attention lock)
         const dx = x - cx;
@@ -368,19 +452,31 @@ export class VisualCortex {
         const centerWeight = Math.exp(
           -((dx * dx) / (2 * sigX2) + (dy * dy) / (2 * sigY2)) * lockSharpness
         );
-        combined *= centerWeight;
+        eff *= centerWeight;
 
-        if (combined > maxSal) {
-          maxSal = combined;
-          maxX = x;
-          maxY = y;
+        if (eff > 1e-6) {
+          sumX += x * eff;
+          sumY += y * eff;
+          total += eff;
         }
+        if (eff > maxEff) { maxEff = eff; peakX = x; peakY = y; }
       }
     }
 
-    // Target in 0-1 normalized coords
-    const targetX = maxX / FRAME_W;
-    const targetY = maxY / FRAME_H;
+    // Centroid target, with graceful fallback to peak if everything
+    // is zero (dead frame, camera not ready, etc.) and center if even
+    // the peak is zero.
+    let targetX, targetY;
+    if (total > 1e-6) {
+      targetX = (sumX / total) / FRAME_W;
+      targetY = (sumY / total) / FRAME_H;
+    } else if (maxEff > 0) {
+      targetX = peakX / FRAME_W;
+      targetY = peakY / FRAME_H;
+    } else {
+      targetX = 0.5;
+      targetY = 0.5;
+    }
 
     // Smooth pursuit — faster when attention is locked (engaged),
     // slower when free-roaming (idle wandering).
@@ -389,7 +485,7 @@ export class VisualCortex {
     this.gazeY += (targetY - this.gazeY) * pursuitRate;
 
     // Micro-saccades — smaller when locked (fixation), larger when idle.
-    const saccadeAmp = 0.015 * (1 - this._attentionLock * 0.6);
+    const saccadeAmp = 0.012 * (1 - this._attentionLock * 0.6);
     this.gazeX += (Math.random() - 0.5) * saccadeAmp;
     this.gazeY += (Math.random() - 0.5) * saccadeAmp;
 
