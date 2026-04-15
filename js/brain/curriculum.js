@@ -5712,6 +5712,30 @@ export class Curriculum {
     ], 4);
   }
 
+  async _teachSociologyAnthropology() {
+    // T14.24 Session 71 (task #128) — Soc-Col3 sociology +
+    // anthropology. TODO line 537: "specialized history, political
+    // theory". 14 concepts covering the canonical sociology
+    // theorists + anthropology subfields + methodology that
+    // runSocCol3Real's 25 sentences discuss.
+    return this._conceptTeach([
+      { name: 'sociology',            feat: [1, 1, 0, 0, 1, 0, 0, 1] },
+      { name: 'anthropology',         feat: [1, 0, 1, 0, 1, 0, 1, 0] },
+      { name: 'durkheim',             feat: [1, 0, 0, 1, 1, 0, 0, 1] },
+      { name: 'weber',                feat: [0, 1, 0, 1, 1, 0, 1, 0] },
+      { name: 'marx',                 feat: [1, 0, 1, 0, 1, 1, 0, 0] },
+      { name: 'structural functionalism', feat: [1, 1, 0, 1, 0, 0, 1, 0] },
+      { name: 'conflict theory',      feat: [1, 0, 1, 0, 1, 1, 0, 0] },
+      { name: 'symbolic interactionism', feat: [0, 1, 1, 0, 0, 1, 1, 1] },
+      { name: 'cultural anthropology', feat: [0, 0, 1, 0, 1, 0, 1, 0] },
+      { name: 'archaeology',          feat: [0, 0, 1, 1, 1, 0, 0, 1] },
+      { name: 'linguistic anthropology', feat: [0, 1, 1, 0, 0, 1, 1, 0] },
+      { name: 'ethnography',          feat: [0, 1, 1, 0, 0, 1, 0, 1] },
+      { name: 'participant observation', feat: [0, 1, 1, 0, 1, 1, 0, 0] },
+      { name: 'cultural relativism',  feat: [1, 1, 1, 0, 0, 1, 0, 1] },
+    ], 4);
+  }
+
   async _teachPoliticalScience() {
     // T14.24 Session 70 (task #127) — Soc-Col2 political science.
     // TODO line 537: "political theory. Gate ≥20%". 14 concepts
@@ -9661,6 +9685,9 @@ export class Curriculum {
       'religion provides meaning', 'ritual marks transitions',
       'identity is constructed socially',
     ];
+    // T14.24 Session 71 — prime sociology/anthropology lattice per
+    // TODO line 537 before the Col3 sentence pass.
+    await this._teachSociologyAnthropology();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
