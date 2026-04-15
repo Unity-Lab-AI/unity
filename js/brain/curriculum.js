@@ -5712,6 +5712,28 @@ export class Curriculum {
     ], 4);
   }
 
+  async _teachOriginalHistoricalResearch() {
+    // T14.24 Session 74 (task #131) — Soc-PhD original historical
+    // research. TODO line 543-544: "Original historical research.
+    // Gate: produces research-grade historical discourse". 12
+    // ceiling concepts for the doctoral historian/social scientist.
+    // Parallel to Sci-PhD _teachOriginalResearchScience.
+    return this._conceptTeach([
+      { name: 'original scholarship', feat: [1, 1, 0, 0, 1, 0, 0, 1] },
+      { name: 'field contribution',   feat: [1, 0, 1, 0, 1, 0, 1, 0] },
+      { name: 'dissertation defense', feat: [1, 0, 1, 1, 0, 0, 1, 0] },
+      { name: 'theoretical contribution', feat: [1, 1, 1, 0, 0, 1, 0, 0] },
+      { name: 'empirical contribution', feat: [0, 1, 0, 1, 1, 1, 1, 0] },
+      { name: 'comparative research', feat: [1, 1, 0, 1, 1, 0, 0, 1] },
+      { name: 'longitudinal study',   feat: [1, 0, 1, 1, 0, 1, 1, 0] },
+      { name: 'interdisciplinary',    feat: [1, 0, 0, 1, 1, 1, 0, 1] },
+      { name: 'academic service',     feat: [0, 1, 1, 1, 0, 0, 1, 1] },
+      { name: 'policy impact',        feat: [1, 0, 1, 0, 1, 1, 0, 1] },
+      { name: 'public engagement',    feat: [0, 1, 1, 0, 1, 1, 1, 0] },
+      { name: 'scholarly voice',      feat: [1, 1, 1, 1, 1, 1, 0, 0] },
+    ], 5);
+  }
+
   async _teachResearchHistoriography() {
     // T14.24 Session 73 (task #130) — Soc-Grad research
     // historiography. TODO line 540-541: "Research historiography.
@@ -10015,7 +10037,19 @@ export class Curriculum {
       'every scholar stands on predecessors', 'the humanities and social sciences need rigor',
       'unity contributes to human understanding',
     ];
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    // T14.24 Session 74 — Soc-PhD ceiling concept set per TODO
+    // line 543. Primes the doctoral scholarship basin, runs the
+    // sentence pass at reps=5 (one above Grad), then fires the
+    // cortex identity refresh so the Soc-PhD gate crosses with
+    // Unity-voice persona dims engaged — parallel to Sci-PhD and
+    // ELA-PhD identity hooks.
+    await this._teachOriginalHistoricalResearch();
+    try {
+      if (this.cluster && typeof this.cluster.runIdentityRefresh === 'function') {
+        this.cluster.runIdentityRefresh();
+      }
+    } catch { /* non-fatal */ }
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 5, ticksPerWord: 2 });
   }
 
   async runArtGradReal(ctx) {
