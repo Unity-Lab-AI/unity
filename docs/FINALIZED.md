@@ -5,6 +5,54 @@
 
 ---
 
+## 2026-04-15 — T14.24 Session 4: ELA-G1 real teaching equations (CVC + Dolch sight words + word-level 3-pathway gate)
+
+**Gee's binding 2026-04-14:** *"1st grade u start learning how to write sentences ect ect all the way up to doctorate in english"* + *"remember Unity needs to be able to use these to think, read, and talk"*.
+
+Session 4 ships the third real teaching cell of T14.24. Task #20 (ELA-G1) completed. Task #3 parent stays in_progress — 92 cells still owed.
+
+### What landed
+
+**`js/brain/curriculum.js` (+220 lines net, 2191 → 2411):**
+
+- **`runElaG1Real(ctx)`** — real Grade 1 English teaching. Builds on Session 2's ELA-K alphabet + letter-sound basins by teaching WHOLE WORDS through letter-sequence-to-sem binding:
+  - **Word list is DATA not rules** — 20 CVC words (cat/bat/hat/mat/rat/dog/log/hog/fog/jog/pen/hen/men/ten/den/pig/big/dig/fig/wig) + 20 Dolch pre-primer/primer sight words (a/i/is/it/in/to/do/go/no/so/the/and/you/for/of/on/at/he/we/me). Gee's "no lookup tables" binding applies to hardcoded grammar rules, NOT primitive data the brain is being taught — a K-G1 classroom has a sight word chart on the wall; that chart is data, same as the alphabet in Session 2.
+  - **Letter-stream sem binding** — each word rep injects the word's GloVe embedding into the sem region as a semantic anchor, then streams the word's letters one-at-a-time through the letter region with 3 settle ticks per letter. Each letter also re-injects its phoneme feature into phon at strength 0.4 so Session 2's letter-sound basins reinforce on every word walk. `cluster.learn(0)` fires at the END of the letter sequence so sequence Hebbian (T14.4 cross-region + T13.1 intra-cortex) binds the word-level attractor basin.
+  - **Dictionary routing** — every word is also passed through `dictionary.learnWord(word, null, arousal, valence)` so the T14.3 cortex-resident word state (cortexSnapshot, syllables, stressPrimary) populates.
+  - Forward pass: 5 reps × 40 words × ~9 ticks per word avg = ~1800 step calls plus 200 Hebbian fires.
+
+- **`_gateElaG1Real(wordList)`** — real word-level 3-pathway gate. Samples 15 random words from the trained list and probes each:
+  - **READ probe:** stream word letters through letter region → read sem region → cosine against GloVe(word) > 0.10. Threshold is lower than ELA-K's 0.15 because word-level sem binding at biological scale is weaker than single-letter phon binding.
+  - **THINK probe:** stream word → 12 silence ticks → free region variance > 0.0005. Longer silence hold (12 vs 10 for ELA-K) because word-level state should persist longer than single-letter state.
+  - **TALK probe:** inject GloVe(word) into sem region only → 6 ticks → motor argmax via `decodeLetter` → check first letter matches word's first letter. First-letter-match is the simplified TALK probe for Session 4; full-word multi-letter emission is still too hard at biological scale with Session 4 rep budgets. Future cells (G2+) will graduate to full word emission via `cluster.generateSentence(wordEmb)` as the TALK probe once basins are stronger.
+
+  PASS when ≥ 50% of sampled words clear each pathway.
+
+**`Curriculum._cellRunner('ela', 'grade1')`** — dispatch flipped from the pre-Session-4 `runGrade1` (corpus-frequency 1-3 letter word walk via `_phaseWords`) to the new `runElaG1Real`. Pre-Session-4 method retained for reference.
+
+### Why curated word lists over corpus frequency
+
+The pre-Session-4 `runGrade1` walked 1-3 letter words in CORPUS frequency order — so Unity saw "a" and "the" and "is" hundreds of times but might never see "cat" or "dog". That's fine for adult language statistics but WRONG for developmental order. A Grade 1 classroom introduces CVC words systematically so children learn the letter-to-phoneme-to-meaning chain on clean three-letter examples before moving to compound words. The 20 CVC + 20 sight word list is the minimum set that covers every common English vowel sound at the CVC level and every top-20 closed-class word.
+
+Once Session 5+ teaches higher grades, corpus-frequency exposure returns via the T14.5 `runFromCorpora` walk that still runs on boot — the real-teaching cells specifically inject the curated sets during their capability gates, while the raw corpus walk continues to reinforce whatever words actually appear in persona/baseline/coding corpora.
+
+### First-letter TALK probe rationale
+
+A proper TALK probe would use `cluster.generateSentence(wordEmb)` and check the full emitted word matches the target. But that's too hard to pass at biological scale with 5 reps per word — the motor loop would need the letter region to hold a 3-letter sequence across multiple ticks AND the motor↔letter cross-projection to have learned word-level sequence prediction. That's Session 7+ territory (G2/G3 sentence-level emission). Session 4 uses the simplified first-letter-match probe: inject GloVe(word), check that the motor region's first argmax letter matches the word's first letter. Passes if the sem→letter→motor chain fires any signal at all — which is the capability Grade 1 actually needs.
+
+### What Session 4 does NOT ship
+
+- Does NOT teach digraphs (th/sh/ch) — that's Session 7 ELA-G2 (task #9)
+- Does NOT teach tense or morphology — that's Session 8+ ELA-G3 (task #10)
+- Does NOT yet probe full-word motor emission — first-letter-match only
+- Does NOT guarantee gate passes on first run — biological basins form slowly; operator may need `/curriculum run ela grade1` in chat to accumulate Hebbian passes
+
+### Commit status
+
+Committed as part of Session 4 atomic push to `t14-language-rebuild`.
+
+---
+
 ## 2026-04-15 — T14.24 Session 3: Math-K real teaching equations (counting 0-9 + digit names + magnitude features + 3-pathway gate)
 
 **Gee's binding 2026-04-14:** *"you didnt even teach it keindergarden abcs and 123s and letter sounds you fool"* + *"remember Unity needs to be able to use these to think, read, and talk"*.
