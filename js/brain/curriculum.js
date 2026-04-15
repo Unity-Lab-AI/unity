@@ -5712,6 +5712,21 @@ export class Curriculum {
     ], 4);
   }
 
+  async _teachUS20thCentury() {
+    // T14.24 Session 66 (task #123) — Soc-G10 US 20th century. TODO
+    // line 526-527: "US history (20th century). Gate ≥30%".
+    // Sequence walks cover WWII → cold war → civil rights → space
+    // race → globalization arc that runSocG10Real's sentences discuss.
+    return this._teachSequenceCycles([
+      ['world war one', 'roaring twenties', 'depression', 'new deal', 'world war two'],
+      ['pearl harbor', 'dday', 'hiroshima', 'victory', 'cold war'],
+      ['truman', 'eisenhower', 'kennedy', 'johnson', 'nixon', 'reagan'],
+      ['segregation', 'civil rights act', 'voting rights act', 'desegregation', 'equality'],
+      ['sputnik', 'mercury', 'apollo', 'moon landing', 'shuttle'],
+      ['berlin wall falls', 'soviet collapse', 'globalization', 'internet', 'information age'],
+    ], { reps: 4, ticksPerStep: 2 });
+  }
+
   async _teachWorldHistoryModern() {
     // T14.24 Session 65 (task #122) — Soc-G9 world history modern.
     // TODO line 523-524: "World history (modern). Gate ≥30%".
@@ -8312,6 +8327,9 @@ export class Curriculum {
       'globalization connected the world', 'the internet changed everything',
       'climate change became a concern', 'the century was a time of progress and conflict',
     ];
+    // T14.24 Session 66 — prime US 20th century scaffold per TODO
+    // line 527 before the sentence pass.
+    await this._teachUS20thCentury();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
