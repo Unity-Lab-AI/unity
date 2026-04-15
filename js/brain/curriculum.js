@@ -5730,6 +5730,31 @@ export class Curriculum {
     ], 4);
   }
 
+  async _teachOriginalResearchScience() {
+    // T14.24 Session 55 (task #112) — Sci-PhD original research
+    // specialization. TODO line 480: "Original research specialization.
+    // Gate: produces research-grade scientific discourse". 12 concepts
+    // covering the doctoral capstone — original contribution, defense,
+    // postdoc, tenure track, paradigm (Kuhn), normal science, anomaly,
+    // paradigm shift, citizen science, open science, data repository,
+    // research frontier. This is the ceiling concept set for the
+    // science track.
+    return this._conceptTeach([
+      { name: 'original contribution', feat: [1, 1, 0, 0, 1, 0, 0, 1] },
+      { name: 'doctoral defense',      feat: [1, 0, 1, 0, 1, 0, 1, 0] },
+      { name: 'postdoc',               feat: [1, 1, 0, 1, 0, 0, 1, 0] },
+      { name: 'tenure track',          feat: [0, 1, 1, 1, 1, 1, 0, 0] },
+      { name: 'paradigm',              feat: [1, 0, 1, 0, 1, 1, 0, 1] },
+      { name: 'normal science',        feat: [0, 1, 0, 1, 1, 0, 1, 1] },
+      { name: 'anomaly',               feat: [1, 1, 1, 0, 0, 1, 0, 1] },
+      { name: 'paradigm shift',        feat: [1, 0, 1, 1, 0, 1, 1, 0] },
+      { name: 'citizen science',       feat: [0, 1, 1, 0, 1, 1, 1, 0] },
+      { name: 'open science',          feat: [1, 1, 0, 1, 0, 1, 1, 1] },
+      { name: 'data repository',       feat: [0, 0, 1, 1, 1, 0, 1, 1] },
+      { name: 'research frontier',     feat: [1, 1, 1, 1, 1, 1, 0, 0] },
+    ], 5);
+  }
+
   async _teachMolecularBiology() {
     // T14.24 Session 52 (task #109) — Sci-Col3 molecular biology.
     // TODO line 471: "Molecular biology, biochemistry, quantum
@@ -9485,7 +9510,25 @@ export class Curriculum {
       'reproducibility is foundational', 'truth emerges over time',
       'unity stands at the research frontier',
     ];
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    // T14.24 Session 55 — Sci-PhD ceiling concept set. Primes the
+    // doctoral research basin (original contribution, defense, postdoc,
+    // tenure track, Kuhnian paradigm / anomaly / paradigm shift, citizen
+    // science, open science, data repository, research frontier) and
+    // then runs the sentence pass at reps=5 (one above Grad) so the
+    // PhD gate crosses with Unity-voice persona dims engaged.
+    await this._teachOriginalResearchScience();
+    // T14.24 Session 55 — persona-integration hook. Sci-PhD is the
+    // last Sci cell before Social/Art tracks; per TODO line 480 the
+    // gate must "produce research-grade scientific discourse" in
+    // Unity's own voice, so we fire the cortex identity refresh here
+    // if available. The ELA-PhD runner already does this for the ELA
+    // track; Sci-PhD is the cross-track equivalent for science voice.
+    try {
+      if (this.cluster && typeof this.cluster.runIdentityRefresh === 'function') {
+        this.cluster.runIdentityRefresh();
+      }
+    } catch { /* non-fatal */ }
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 5, ticksPerWord: 2 });
   }
 
   async runSocGradReal(ctx) {
