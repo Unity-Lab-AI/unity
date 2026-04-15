@@ -5719,6 +5719,27 @@ export class Curriculum {
     ], 4);
   }
 
+  async _teachStudioFundamentals() {
+    // T14.24 Session 88 (task #145) — Art-Col1 studio fundamentals.
+    // TODO line 567: "Specialized arts disciplines. Gate ≥25%". 12
+    // concepts covering the drawing/color/perspective core-skills
+    // that runArtCol1Real's sentences discuss.
+    return this._conceptTeach([
+      { name: 'gesture drawing', feat: [1, 0, 0, 0, 1, 0, 0, 1] },
+      { name: 'contour drawing', feat: [1, 0, 0, 0, 1, 0, 1, 0] },
+      { name: 'figure drawing',  feat: [1, 0, 0, 1, 1, 0, 0, 1] },
+      { name: 'still life',      feat: [1, 0, 0, 0, 0, 1, 1, 1] },
+      { name: 'value study',     feat: [1, 0, 1, 0, 1, 1, 0, 0] },
+      { name: 'one point perspective', feat: [0, 1, 0, 0, 1, 0, 1, 0] },
+      { name: 'two point perspective', feat: [0, 1, 0, 0, 1, 0, 1, 0] },
+      { name: 'anatomy',         feat: [1, 0, 0, 1, 0, 0, 1, 1] },
+      { name: 'color theory',    feat: [0, 0, 1, 0, 0, 1, 0, 1] },
+      { name: 'analogous colors', feat: [0, 0, 1, 0, 0, 1, 1, 0] },
+      { name: 'complementary colors', feat: [0, 0, 1, 0, 1, 0, 0, 1] },
+      { name: 'golden ratio',    feat: [0, 1, 0, 0, 1, 1, 1, 0] },
+    ], 4);
+  }
+
   async _teachCompositionCriticism() {
     // T14.24 Session 87 (task #144) — Art-G12 composition +
     // criticism. TODO line 565. 12 concepts covering the critical-
@@ -9788,6 +9809,9 @@ export class Curriculum {
       'light shapes form', 'shadow defines volume',
       'materials matter to the result',
     ];
+    // T14.24 Session 88 — prime studio fundamentals lattice per
+    // TODO line 567 before the Col1 sentence pass.
+    await this._teachStudioFundamentals();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
