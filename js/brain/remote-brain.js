@@ -386,6 +386,32 @@ export class RemoteBrain extends EventEmitter {
         if (this.visualCortex && typeof this.visualCortex.init === 'function') {
           this.visualCortex.init(vid);
           console.log('[RemoteBrain] Visual cortex connected to camera');
+
+          // T14.23.5 — self-driving processFrame RAF loop.
+          //
+          // RemoteBrain has no tick loop (the main brain runs server-
+          // side), so nothing was calling visualCortex.processFrame()
+          // on the client side. VisualCortex.init() starts the video
+          // element but the V1 edge + salience + saccade compute only
+          // runs when processFrame() is called externally. Without a
+          // driver, gazeX/gazeY stayed at their default 0.5/0.5 and
+          // the Eye widget's iris rendered frozen in the center.
+          //
+          // Fix: kick off a requestAnimationFrame loop that calls
+          // processFrame() every frame as long as the visual cortex
+          // is active. The loop self-cancels when the cortex goes
+          // inactive (disconnect or destroy). ~60 Hz frame rate is
+          // overkill — visualCortex.processFrame internally gates
+          // real compute work via its own describeInterval and V1
+          // update cadence — but RAF is the simplest way to stay in
+          // sync with the display's vsync.
+          const tick = () => {
+            if (!this.visualCortex || !this.visualCortex.isActive()) return;
+            try { this.visualCortex.processFrame(); }
+            catch (err) { console.warn('[RemoteBrain] visualCortex.processFrame threw:', err?.message || err); }
+            this._visionRafId = requestAnimationFrame(tick);
+          };
+          this._visionRafId = requestAnimationFrame(tick);
         }
       }, 500);
     } catch (err) {

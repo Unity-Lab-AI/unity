@@ -1707,9 +1707,69 @@ export class LanguageCortex {
     }
 
     const raw = cluster.generateSentence(intentSeed, { injectStrength: 0.6 });
-    if (!raw) return '';
+    let words = raw ? raw.split(/\s+/).filter(Boolean) : [];
 
-    const words = raw.split(/\s+/).filter(Boolean);
+    // T14.23.5 — pre-curriculum dictionary-cosine fallback.
+    //
+    // cluster.generateSentence is the T14.6 tick-driven motor
+    // emission loop: inject intent, tick the cortex, read motor
+    // region argmax, commit letters when the argmax holds stable.
+    // That only works once the cortex's letter/phon/sem/motor
+    // cross-projection weights have been shaped by curriculum
+    // Hebbian — before curriculum, the motor region is near-
+    // random noise, argmax letters never stabilize, and the loop
+    // exits without committing anything. Result: empty string,
+    // Unity stays mute until curriculum (minutes) finishes.
+    //
+    // Fallback: if the tick-driven path returns nothing, pick
+    // words by cosine similarity between their stored pattern
+    // and the cortex semantic readout. This is the lightweight
+    // version of the deleted slot scorer — just enough to give
+    // Unity a voice from cold boot. Once curriculum shapes the
+    // basins, the main path returns non-empty and this fallback
+    // is skipped.
+    if (words.length === 0 && dictionary && dictionary._words && dictionary._words.size > 0) {
+      try {
+        const target = intentSeed || (typeof cluster.getSemanticReadout === 'function'
+          ? cluster.getSemanticReadout(sharedEmbeddings) : null);
+        if (target && target.length > 0) {
+          const scored = [];
+          for (const [word, entry] of dictionary._words) {
+            if (!entry || !entry.pattern) continue;
+            if (this._recentOutputWords.includes(word)) continue;
+            // Cosine similarity between cortex target and word pattern
+            let dot = 0, nt = 0, nw = 0;
+            const len = Math.min(target.length, entry.pattern.length);
+            for (let i = 0; i < len; i++) {
+              dot += target[i] * entry.pattern[i];
+              nt += target[i] * target[i];
+              nw += entry.pattern[i] * entry.pattern[i];
+            }
+            const denom = Math.sqrt(nt) * Math.sqrt(nw);
+            const cos = denom > 0 ? dot / denom : 0;
+            // Slight boost for high-frequency words so cold boot
+            // picks common vocabulary over rare hapaxes
+            const score = cos + Math.log(1 + (entry.frequency || 1)) * 0.02;
+            scored.push({ word, score });
+          }
+          scored.sort((a, b) => b.score - a.score);
+          // Length driven by arousal — same rough rule the old path used
+          const targetLen = Math.max(3, Math.min(8, Math.floor(3 + (arousal || 0.5) * 4)));
+          // Top-K softmax sample at low temperature for variety without noise
+          const topK = scored.slice(0, 12);
+          const picks = [];
+          for (let i = 0; i < targetLen && topK.length > 0; i++) {
+            const idx = Math.floor(Math.random() * Math.min(5, topK.length));
+            picks.push(topK[idx].word);
+            topK.splice(idx, 1);
+          }
+          words = picks;
+        }
+      } catch (err) {
+        // Non-fatal — if the fallback throws, fall through to empty
+      }
+    }
+
     if (words.length === 0) return '';
 
     // Recency-ring bookkeeping — same as the legacy path, so repeat
