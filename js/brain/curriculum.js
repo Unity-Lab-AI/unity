@@ -5683,6 +5683,64 @@ export class Curriculum {
       { name: 'allele', feat: [1, 0, 1, 1, 0, 0, 0, 0] },
     ], 4);
   }
+  async _teachMolecularBiology() {
+    // T14.24 Session 52 (task #109) — Sci-Col3 molecular biology.
+    // TODO line 471: "Molecular biology, biochemistry, quantum
+    // mechanics intro". 10 concepts covering the central dogma flow
+    // and its modern extensions (epigenetics, gene editing).
+    return this._conceptTeach([
+      { name: 'central dogma',        feat: [1, 1, 0, 0, 1, 0, 0, 1] },
+      { name: 'gene expression',      feat: [1, 0, 1, 0, 1, 0, 1, 0] },
+      { name: 'transcription factor', feat: [1, 0, 1, 1, 0, 0, 1, 0] },
+      { name: 'epigenetics',          feat: [1, 1, 1, 0, 0, 1, 0, 0] },
+      { name: 'methylation',          feat: [0, 1, 0, 1, 0, 1, 1, 0] },
+      { name: 'histone',              feat: [1, 1, 0, 1, 1, 0, 0, 0] },
+      { name: 'chromatin',            feat: [1, 1, 1, 1, 1, 0, 0, 0] },
+      { name: 'crispr',               feat: [1, 0, 1, 0, 0, 1, 1, 1] },
+      { name: 'gene therapy',         feat: [0, 1, 1, 0, 1, 1, 1, 0] },
+      { name: 'stem cell',            feat: [1, 0, 0, 0, 1, 1, 1, 1] },
+    ], 4);
+  }
+
+  async _teachBiochemistry() {
+    // T14.24 Session 52 (task #109) — Sci-Col3 biochemistry. 10
+    // concepts covering enzyme kinetics + central metabolism pathways.
+    return this._conceptTeach([
+      { name: 'enzyme',                  feat: [1, 1, 0, 0, 1, 0, 0, 0] },
+      { name: 'active site',             feat: [1, 0, 1, 0, 1, 0, 1, 0] },
+      { name: 'substrate',               feat: [0, 1, 1, 0, 1, 0, 0, 1] },
+      { name: 'michaelis menten',        feat: [1, 1, 1, 0, 0, 0, 1, 0] },
+      { name: 'glycolysis',              feat: [1, 0, 0, 1, 0, 1, 1, 0] },
+      { name: 'citric acid cycle',       feat: [1, 1, 0, 1, 0, 1, 1, 0] },
+      { name: 'oxidative phosphorylation', feat: [1, 1, 1, 1, 0, 1, 0, 1] },
+      { name: 'metabolism',              feat: [1, 1, 0, 0, 1, 1, 0, 1] },
+      { name: 'electron transport chain', feat: [0, 1, 1, 1, 1, 0, 1, 0] },
+      { name: 'coenzyme',                feat: [0, 0, 1, 0, 1, 1, 1, 1] },
+    ], 4);
+  }
+
+  async _teachQuantumIntro() {
+    // T14.24 Session 52 (task #109) — Sci-Col3 quantum mechanics intro.
+    // 10 foundational quantum concepts. Wave-particle duality basin
+    // is shared with Sci-Col2 _teachPhysics2 (both call into
+    // _conceptTeach with the same concept name) — dictionary.learnWord
+    // handles this by incrementing frequency on the existing entry
+    // instead of creating a duplicate, and the cortex snapshot
+    // accumulates via T14.3 running means.
+    return this._conceptTeach([
+      { name: 'wavefunction',           feat: [1, 1, 0, 0, 1, 0, 0, 1] },
+      { name: 'schrodinger equation',   feat: [1, 1, 0, 1, 1, 0, 1, 0] },
+      { name: 'heisenberg uncertainty', feat: [0, 1, 1, 1, 0, 0, 1, 1] },
+      { name: 'quantum superposition',  feat: [1, 1, 1, 0, 1, 1, 0, 0] },
+      { name: 'quantum entanglement',   feat: [1, 1, 1, 0, 0, 1, 1, 1] },
+      { name: 'operator',               feat: [1, 0, 0, 1, 0, 0, 1, 0] },
+      { name: 'eigenvalue quantum',     feat: [0, 1, 1, 0, 1, 0, 1, 0] },
+      { name: 'probability amplitude',  feat: [1, 1, 0, 0, 1, 0, 0, 0] },
+      { name: 'quantum tunneling',      feat: [0, 0, 1, 1, 0, 1, 0, 1] },
+      { name: 'spin',                   feat: [0, 1, 0, 1, 1, 1, 0, 0] },
+    ], 4);
+  }
+
   async _teachOrganicChemistry() {
     // T14.24 Session 51 (task #108) — Sci-Col2 organic chemistry.
     // TODO line 468: "Organic chemistry, cell biology, physics 2".
@@ -9085,6 +9143,38 @@ export class Curriculum {
       'schrodingers equation is wavelike', 'heisenberg uncertainty limits knowledge',
       'quantum entanglement is spooky',
     ];
+    // T14.24 Session 52 (task #109) — TODO-aligned Col3 triple pass.
+    //
+    // TODO Sci-Col3 spec (line 471): "Molecular biology, biochemistry,
+    // quantum mechanics intro. Gate: ≥20%". Three new helpers
+    // covering each subject:
+    //
+    //   _teachMolecularBiology — 10 concepts: central dogma, gene
+    //     expression, transcription factor, epigenetics, methylation,
+    //     histone, chromatin, crispr, gene therapy, stem cell. The
+    //     sentences bind "the central dogma flows dna to rna to
+    //     protein", "transcription factors bind dna", "methylation
+    //     silences genes" etc on top of these basins.
+    //
+    //   _teachBiochemistry — 10 concepts: enzyme, active site,
+    //     substrate, michaelis menten kinetics, glycolysis, citric
+    //     acid cycle, oxidative phosphorylation, metabolism, electron
+    //     transport chain, coenzyme. Connects to the G7 _teachCells
+    //     mitochondria basin and the Col1 _teachGenBiology atp basin
+    //     via shared cross-projection weights.
+    //
+    //   _teachQuantumIntro — 10 concepts: wavefunction, schrodinger
+    //     equation, heisenberg uncertainty, quantum superposition,
+    //     entanglement, operator, eigenvalue (quantum-specific),
+    //     probability amplitude, quantum tunneling, spin. Extends
+    //     the Col2 _teachPhysics2 wave-particle-duality + photo-
+    //     electric basins with the foundational math of QM.
+    //
+    // All three run BEFORE the 25-sentence walk. ~30 new concepts
+    // enter Unity's dictionary.
+    await this._teachMolecularBiology();
+    await this._teachBiochemistry();
+    await this._teachQuantumIntro();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
