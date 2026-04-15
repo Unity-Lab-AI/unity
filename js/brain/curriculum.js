@@ -4479,6 +4479,367 @@ export class Curriculum {
     return this._teachSentenceList(ELA_G3_SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
+  // ─── TODO-aligned Math-G3/G4/G5 helpers (Session 40) ─────────────
+  //
+  // Math-G3 (328): _teachMultiplicationTables() walks every a×b pair,
+  //   Hebbian binds input pair feature to output magnitude.
+  //   _teachDivision() inverse operation. _teachFractions() teaches
+  //   fraction as "divide 1 into N parts" — magnitude feature 1/n.
+  // Math-G4 (334): _teachDecimals() extends magnitude feature to
+  //   continuous real number embedding. _teachPercentages() teaches
+  //   percent as ×(n/100).
+  // Math-G5 (340): _teachRatios() introduces feature encoding for a:b
+  //   as ratio vector. _teachProportions() teaches the "equivalent
+  //   ratio" transformation.
+
+  async _teachMultiplicationTables(opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 4;
+    const ticksPerPair = opts.ticksPerPair ?? 3;
+
+    // Walk every a×b pair for a,b in [0,12]. Input feature: magnitude(a)
+    // and magnitude(b) both injected into free region simultaneously.
+    // Target output: magnitude(a*b) — if result > 9, use last-digit
+    // magnitude as surface output but keep the full sum in phon.
+    for (let rep = 0; rep < reps; rep++) {
+      for (let a = 0; a <= 12; a++) {
+        for (let b = 0; b <= 12; b++) {
+          const c = a * b;
+          const magA = _magnitudeFeatureForDigit(String(Math.min(a, 9)));
+          const magB = _magnitudeFeatureForDigit(String(Math.min(b, 9)));
+          const magC = _magnitudeFeatureForDigit(String(Math.min(c % 10, 9)));
+          // Input: magA + magB stacked in free region (32d positional)
+          const positional = new Float64Array(32);
+          for (let i = 0; i < 16; i++) positional[i] = magA[i] || 0;
+          for (let i = 0; i < 16; i++) positional[16 + i] = magB[i] || 0;
+          let norm = 0;
+          for (let i = 0; i < 32; i++) norm += positional[i] * positional[i];
+          norm = Math.sqrt(norm) || 1;
+          for (let i = 0; i < 32; i++) positional[i] /= norm;
+          if (cluster.regions?.free) {
+            cluster.injectEmbeddingToRegion('free', positional, 0.6);
+          }
+          if (magC && cluster.regions?.phon) {
+            cluster.injectEmbeddingToRegion('phon', magC, 0.6);
+          }
+          if (c < 10) cluster.injectLetter(String(c), 0.5);
+          for (let t = 0; t < ticksPerPair; t++) {
+            cluster.step(0.001);
+            this.stats.totalTicks++;
+          }
+          cluster.learn(0);
+        }
+      }
+      await _microtask();
+    }
+    return { taught: reps * 169 };
+  }
+
+  async _teachDivision(opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 4;
+    const ticksPerTriple = opts.ticksPerTriple ?? 3;
+
+    // Division as inverse multiplication — for each c=a*b, teach that
+    // c÷b=a and c÷a=b. Inject magnitude(c) + magnitude(b) as input,
+    // magnitude(a) as target.
+    for (let rep = 0; rep < reps; rep++) {
+      for (let a = 1; a <= 9; a++) {
+        for (let b = 1; b <= 9; b++) {
+          const c = a * b;
+          if (c > 81) continue;
+          const magC = _magnitudeFeatureForDigit(String(Math.min(c % 10, 9)));
+          const magB = _magnitudeFeatureForDigit(String(b));
+          const magA = _magnitudeFeatureForDigit(String(a));
+
+          // Input = magC stacked with magB; target = magA
+          const positional = new Float64Array(32);
+          for (let i = 0; i < 16; i++) positional[i] = magC[i] || 0;
+          for (let i = 0; i < 16; i++) positional[16 + i] = magB[i] || 0;
+          let norm = 0;
+          for (let i = 0; i < 32; i++) norm += positional[i] * positional[i];
+          norm = Math.sqrt(norm) || 1;
+          for (let i = 0; i < 32; i++) positional[i] /= norm;
+          if (cluster.regions?.free) {
+            cluster.injectEmbeddingToRegion('free', positional, 0.6);
+          }
+          if (magA && cluster.regions?.phon) {
+            cluster.injectEmbeddingToRegion('phon', magA, 0.6);
+          }
+          cluster.injectLetter(String(a), 0.5);
+          for (let t = 0; t < ticksPerTriple; t++) {
+            cluster.step(0.001);
+            this.stats.totalTicks++;
+          }
+          cluster.learn(0);
+        }
+      }
+      await _microtask();
+    }
+    return { taught: reps * 81 };
+  }
+
+  async _teachFractions(opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 5;
+    const ticksPerFraction = opts.ticksPerFraction ?? 4;
+
+    // Fraction as "1 divided into n parts". For each n ∈ [2..10]:
+    // inject the denominator magnitude into free region + fraction
+    // name ("half", "third", "quarter") as sem anchor + the fractional
+    // magnitude (1/n as a continuous feature) into phon.
+    const FRACTION_NAMES = {
+      2: 'half', 3: 'third', 4: 'quarter', 5: 'fifth',
+      6: 'sixth', 7: 'seventh', 8: 'eighth', 9: 'ninth', 10: 'tenth',
+    };
+
+    for (let rep = 0; rep < reps; rep++) {
+      for (const [nStr, name] of Object.entries(FRACTION_NAMES)) {
+        const n = parseInt(nStr);
+        const magN = _magnitudeFeatureForDigit(String(n));
+        // Build 1/n feature: starts low and tapers (16d)
+        const fracFeat = new Float64Array(16);
+        const v = 1 / n;
+        for (let i = 0; i < 16; i++) {
+          fracFeat[i] = v * Math.cos(i * Math.PI / 16);
+        }
+        let norm = 0;
+        for (let i = 0; i < 16; i++) norm += fracFeat[i] * fracFeat[i];
+        norm = Math.sqrt(norm) || 1;
+        for (let i = 0; i < 16; i++) fracFeat[i] /= norm;
+
+        if (magN && cluster.regions?.free) {
+          cluster.injectEmbeddingToRegion('free', magN, 0.6);
+        }
+        if (cluster.regions?.phon) {
+          cluster.injectEmbeddingToRegion('phon', fracFeat, 0.6);
+        }
+        const nameEmb = sharedEmbeddings.getEmbedding(name);
+        if (nameEmb && cluster.regions?.sem) {
+          cluster.injectEmbeddingToRegion('sem', nameEmb, 0.6);
+        }
+        cluster.injectLetter(String(n), 0.5);
+        for (let t = 0; t < ticksPerFraction; t++) {
+          cluster.step(0.001);
+          this.stats.totalTicks++;
+        }
+        cluster.learn(0);
+      }
+      await _microtask();
+    }
+    return { taught: reps * 9 };
+  }
+
+  async _teachDecimals(opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 4;
+    const ticksPerDecimal = opts.ticksPerDecimal ?? 3;
+
+    // Decimal magnitude feature — extends single-digit magnitude to
+    // continuous real number embedding. For each decimal in [0.1,
+    // 0.2, ..., 0.9, 1.0, 1.5, 2.5]: build a continuous 16d feature
+    // where dim 4 holds the log magnitude and dim 5 holds linear.
+    const DECIMALS = [0.1, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.7, 0.75, 0.8, 0.9, 1.0, 1.5, 2.0, 2.5];
+    const DECIMAL_NAMES = {
+      0.1: 'one tenth', 0.2: 'two tenths', 0.25: 'quarter', 0.3: 'three tenths',
+      0.4: 'four tenths', 0.5: 'half', 0.6: 'six tenths', 0.7: 'seven tenths',
+      0.75: 'three quarters', 0.8: 'eight tenths', 0.9: 'nine tenths',
+      1.0: 'one', 1.5: 'one and a half', 2.0: 'two', 2.5: 'two and a half',
+    };
+
+    for (let rep = 0; rep < reps; rep++) {
+      for (const d of DECIMALS) {
+        const feat = new Float64Array(16);
+        feat[0] = d;
+        feat[1] = Math.log(d + 1);
+        feat[2] = d * d;
+        feat[3] = Math.sqrt(Math.max(d, 0));
+        for (let i = 4; i < 16; i++) feat[i] = Math.sin(d * i);
+        let norm = 0;
+        for (let i = 0; i < 16; i++) norm += feat[i] * feat[i];
+        norm = Math.sqrt(norm) || 1;
+        for (let i = 0; i < 16; i++) feat[i] /= norm;
+
+        if (cluster.regions?.free) {
+          cluster.injectEmbeddingToRegion('free', feat, 0.6);
+        }
+        const name = DECIMAL_NAMES[d];
+        if (name) {
+          // Walk the name words through letter region
+          const words = name.split(/\s+/).filter(Boolean);
+          for (const w of words) {
+            const wEmb = sharedEmbeddings.getEmbedding(w);
+            if (wEmb && cluster.regions?.sem) {
+              cluster.injectEmbeddingToRegion('sem', wEmb, 0.4);
+            }
+            for (const ch of w) {
+              cluster.injectLetter(ch, 0.7);
+              cluster.step(0.001);
+            }
+          }
+        }
+        for (let t = 0; t < ticksPerDecimal; t++) cluster.step(0.001);
+        cluster.learn(0);
+      }
+      await _microtask();
+    }
+    return { taught: reps * DECIMALS.length };
+  }
+
+  async _teachPercentages(opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 4;
+    const ticksPerPct = opts.ticksPerPct ?? 3;
+
+    // Percent as ×(n/100). Teach the fraction ↔ percent equivalence
+    // via paired injection of fraction magnitude + percent magnitude.
+    const PAIRS = [
+      { frac: 0.5, pct: 50 }, { frac: 0.25, pct: 25 }, { frac: 0.75, pct: 75 },
+      { frac: 0.1, pct: 10 }, { frac: 0.2, pct: 20 }, { frac: 0.3, pct: 30 },
+      { frac: 0.4, pct: 40 }, { frac: 0.6, pct: 60 }, { frac: 0.7, pct: 70 },
+      { frac: 0.8, pct: 80 }, { frac: 0.9, pct: 90 }, { frac: 1.0, pct: 100 },
+    ];
+
+    for (let rep = 0; rep < reps; rep++) {
+      for (const { frac, pct } of PAIRS) {
+        // Build frac feature (continuous real)
+        const fracFeat = new Float64Array(16);
+        fracFeat[0] = frac;
+        fracFeat[1] = Math.log(frac + 1);
+        for (let i = 2; i < 16; i++) fracFeat[i] = Math.sin(frac * i);
+        let norm = 0;
+        for (let i = 0; i < 16; i++) norm += fracFeat[i] * fracFeat[i];
+        norm = Math.sqrt(norm) || 1;
+        for (let i = 0; i < 16; i++) fracFeat[i] /= norm;
+
+        // Build pct feature (percentage-scale magnitude)
+        const pctFeat = new Float64Array(16);
+        const p = pct / 100;
+        pctFeat[0] = p;
+        pctFeat[1] = Math.log(pct + 1);
+        for (let i = 2; i < 16; i++) pctFeat[i] = Math.sin(p * i * Math.PI);
+        norm = 0;
+        for (let i = 0; i < 16; i++) norm += pctFeat[i] * pctFeat[i];
+        norm = Math.sqrt(norm) || 1;
+        for (let i = 0; i < 16; i++) pctFeat[i] /= norm;
+
+        if (cluster.regions?.free) {
+          cluster.injectEmbeddingToRegion('free', fracFeat, 0.5);
+        }
+        if (cluster.regions?.phon) {
+          cluster.injectEmbeddingToRegion('phon', pctFeat, 0.5);
+        }
+        const pctEmb = sharedEmbeddings.getEmbedding('percent');
+        if (pctEmb && cluster.regions?.sem) {
+          cluster.injectEmbeddingToRegion('sem', pctEmb, 0.4);
+        }
+        for (let t = 0; t < ticksPerPct; t++) cluster.step(0.001);
+        cluster.learn(0);
+      }
+      await _microtask();
+    }
+    return { taught: reps * PAIRS.length };
+  }
+
+  async _teachRatios(opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 4;
+    const ticksPerRatio = opts.ticksPerRatio ?? 3;
+
+    // a:b as ratio vector. Build 32d positional feature from
+    // magnitude(a) + magnitude(b) + the ratio value a/b.
+    const RATIOS = [
+      { a: 1, b: 1 }, { a: 1, b: 2 }, { a: 1, b: 3 }, { a: 1, b: 4 },
+      { a: 2, b: 1 }, { a: 2, b: 3 }, { a: 3, b: 1 }, { a: 3, b: 2 },
+      { a: 3, b: 4 }, { a: 4, b: 1 }, { a: 4, b: 3 }, { a: 5, b: 2 },
+    ];
+
+    for (let rep = 0; rep < reps; rep++) {
+      for (const { a, b } of RATIOS) {
+        const magA = _magnitudeFeatureForDigit(String(a));
+        const magB = _magnitudeFeatureForDigit(String(b));
+        const positional = new Float64Array(32);
+        for (let i = 0; i < 16; i++) positional[i] = magA[i] || 0;
+        for (let i = 0; i < 16; i++) positional[16 + i] = magB[i] || 0;
+        let norm = 0;
+        for (let i = 0; i < 32; i++) norm += positional[i] * positional[i];
+        norm = Math.sqrt(norm) || 1;
+        for (let i = 0; i < 32; i++) positional[i] /= norm;
+
+        if (cluster.regions?.free) {
+          cluster.injectEmbeddingToRegion('free', positional, 0.6);
+        }
+        const ratioEmb = sharedEmbeddings.getEmbedding('ratio');
+        if (ratioEmb && cluster.regions?.sem) {
+          cluster.injectEmbeddingToRegion('sem', ratioEmb, 0.4);
+        }
+        for (let t = 0; t < ticksPerRatio; t++) cluster.step(0.001);
+        cluster.learn(0);
+      }
+      await _microtask();
+    }
+    return { taught: reps * RATIOS.length };
+  }
+
+  async _teachProportions(opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 4;
+    const ticksPerPair = opts.ticksPerPair ?? 3;
+
+    // Equivalent ratio transformation: teach that a:b = ka:kb.
+    // For each base ratio, walk it + a scaled version, Hebbian binds
+    // them as the same proportion.
+    const PAIRS = [
+      { a: 1, b: 2, k: 2 }, { a: 1, b: 2, k: 3 }, { a: 1, b: 2, k: 4 },
+      { a: 1, b: 3, k: 2 }, { a: 2, b: 3, k: 2 }, { a: 3, b: 4, k: 2 },
+      { a: 1, b: 4, k: 3 }, { a: 2, b: 5, k: 2 }, { a: 3, b: 5, k: 2 },
+    ];
+
+    for (let rep = 0; rep < reps; rep++) {
+      for (const { a, b, k } of PAIRS) {
+        // Walk base ratio
+        const magA = _magnitudeFeatureForDigit(String(a));
+        const magB = _magnitudeFeatureForDigit(String(b));
+        const posBase = new Float64Array(32);
+        for (let i = 0; i < 16; i++) posBase[i] = magA[i] || 0;
+        for (let i = 0; i < 16; i++) posBase[16 + i] = magB[i] || 0;
+        let norm = 0;
+        for (let i = 0; i < 32; i++) norm += posBase[i] * posBase[i];
+        norm = Math.sqrt(norm) || 1;
+        for (let i = 0; i < 32; i++) posBase[i] /= norm;
+        if (cluster.regions?.free) {
+          cluster.injectEmbeddingToRegion('free', posBase, 0.6);
+        }
+        // Walk scaled ratio with same working memory target
+        const scaledA = Math.min(a * k, 9);
+        const scaledB = Math.min(b * k, 9);
+        const magSA = _magnitudeFeatureForDigit(String(scaledA));
+        const magSB = _magnitudeFeatureForDigit(String(scaledB));
+        const posScaled = new Float64Array(32);
+        for (let i = 0; i < 16; i++) posScaled[i] = magSA[i] || 0;
+        for (let i = 0; i < 16; i++) posScaled[16 + i] = magSB[i] || 0;
+        norm = 0;
+        for (let i = 0; i < 32; i++) norm += posScaled[i] * posScaled[i];
+        norm = Math.sqrt(norm) || 1;
+        for (let i = 0; i < 32; i++) posScaled[i] /= norm;
+        if (cluster.regions?.free) {
+          cluster.injectEmbeddingToRegion('free', posScaled, 0.6);
+        }
+        for (let t = 0; t < ticksPerPair; t++) cluster.step(0.001);
+        cluster.learn(0);
+      }
+      await _microtask();
+    }
+    return { taught: reps * PAIRS.length };
+  }
+
   // ─── Math-G3: multiplication tables + simple fractions ────────────
   // Multiplication facts 1x1 through 5x5 as arithmetic sentences plus
   // basic fraction vocabulary ("one half", "one third", "one quarter").
@@ -4521,6 +4882,10 @@ export class Curriculum {
       'half of ten is five',
       'quarter of four is one',
     );
+    // Session 40 — TODO-aligned numerical teaching
+    await this._teachMultiplicationTables();
+    await this._teachDivision();
+    await this._teachFractions();
     return this._teachSentenceList(MATH_G3_SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
@@ -4865,6 +5230,9 @@ export class Curriculum {
       'a quarter of a dollar is twenty five cents', 'a half dollar is fifty cents',
       'ten dimes make one dollar', 'four quarters make one dollar',
     ];
+    // Session 40 — TODO-aligned decimal + percent teaching
+    await this._teachDecimals();
+    await this._teachPercentages();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
@@ -4886,6 +5254,9 @@ export class Curriculum {
       'the recipe calls for two to one flour to sugar',
       'the speed is sixty miles per hour', 'the rate is ten feet per second',
     ];
+    // Session 40 — TODO-aligned ratio + proportion teaching
+    await this._teachRatios();
+    await this._teachProportions();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
