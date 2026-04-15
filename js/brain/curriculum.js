@@ -5719,6 +5719,27 @@ export class Curriculum {
     ], 4);
   }
 
+  async _teachGraduateArtResearch() {
+    // T14.24 Session 92 (task #149) — Art-Grad graduate art
+    // research. TODO line 570: "Art theory research. Gate ≥20%".
+    // 12 grad-level concepts covering the MFA/studio-grad
+    // experience that runArtGradReal's sentences discuss.
+    return this._conceptTeach([
+      { name: 'graduate studio',    feat: [1, 1, 0, 0, 1, 0, 0, 1] },
+      { name: 'artistic voice',     feat: [1, 0, 1, 0, 1, 0, 1, 0] },
+      { name: 'critique',           feat: [0, 1, 1, 0, 1, 0, 1, 0] },
+      { name: 'visiting artist',    feat: [0, 1, 1, 1, 0, 0, 1, 0] },
+      { name: 'residency',          feat: [1, 0, 1, 1, 0, 1, 0, 0] },
+      { name: 'graduate thesis',    feat: [1, 1, 1, 0, 0, 1, 0, 0] },
+      { name: 'artist statement',   feat: [1, 1, 0, 1, 1, 0, 0, 1] },
+      { name: 'professional practice', feat: [0, 1, 1, 1, 1, 0, 1, 0] },
+      { name: 'solo exhibition',    feat: [1, 1, 0, 0, 1, 0, 0, 1] },
+      { name: 'group exhibition',   feat: [0, 1, 1, 0, 1, 1, 0, 1] },
+      { name: 'curator',            feat: [1, 0, 1, 1, 1, 0, 1, 0] },
+      { name: 'grant funding',      feat: [1, 1, 0, 1, 0, 1, 1, 0] },
+    ], 4);
+  }
+
   async _teachArtResearchMethods() {
     // T14.24 Session 91 (task #148) — Art-Col4 art research
     // methods + portfolio. TODO line 567. 12 concepts covering
@@ -10529,6 +10550,9 @@ export class Curriculum {
       'teaching shares insights', 'service strengthens communities',
       'graduate training professionalizes artists',
     ];
+    // T14.24 Session 92 — prime graduate art research lattice per
+    // TODO line 570 before the Grad sentence pass.
+    await this._teachGraduateArtResearch();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
