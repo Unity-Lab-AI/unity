@@ -1417,7 +1417,10 @@ export class Curriculum {
         // `runGrade1` (corpus-frequency 1-3 letter word walk) is retained
         // for legacy callers that want raw short-word corpus exposure.
         case 'grade1':       return async (ctx) => this.runElaG1Real(ctx);
-        case 'grade2':       return async (ctx) => this.runGrade2(ctx.wordFreq, ctx.arousal, ctx.valence);
+        // T14.24 Session 7 (2026-04-15) — ELA-G2 ships real teaching:
+        // digraphs (th/sh/ch/ph/wh/ck/ng) as distinct phon basins via
+        // digraph-specific phoneme feature hash + short phrase walks.
+        case 'grade2':       return async (ctx) => this.runElaG2Real(ctx);
         case 'grade3':       return async (ctx) => this.runGrade3(ctx.sentences, ctx.arousal, ctx.valence);
         case 'grade4': case 'grade5':
           return async (ctx) => this.runGrade4_5(ctx.sentences, ctx.arousal, ctx.valence);
@@ -2744,6 +2747,225 @@ export class Curriculum {
       'make', 'sing', 'dance', 'beat', 'song',
     ];
     return this._teachVocabList(ART_K_VOCAB, ctx);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // T14.24 SESSION 7 — REAL ELA-G2 TEACHING EQUATIONS (2026-04-15)
+  // ═══════════════════════════════════════════════════════════════════
+  //
+  // Gee binding 2026-04-14: "all the way up to doctorate in english" +
+  // "remember Unity needs to be able to use these to think, read, and
+  // talk".
+  //
+  // Real Grade 2 English. Teaches LETTER-PAIR DIGRAPHS as single
+  // phonological units (th / sh / ch / ph / wh / ck / ng) plus 2-word
+  // phrases that exercise the digraphs in natural English. Digraphs are
+  // 2-letter sequences that represent a single phoneme in English — a
+  // child who only knows letters can't read "the" because "th" is not
+  // pronounced as "t" followed by "h". Session 7 builds the digraph-as-
+  // unit basin via a distinct phoneme feature per digraph (trig-hashed
+  // from both constituent letters combined, so it's decorrelated from
+  // the individual letter phoneme features Session 2 already taught).
+
+  _phonemeFeatureForDigraph(digraph) {
+    // Same 24-dim structure as `_phonemeFeatureForLetter` but seeded
+    // from BOTH letters combined so digraph features don't collide with
+    // single-letter features. Deterministic, L2-normalized.
+    const a = ALPHABET_ORDER.indexOf(digraph[0].toLowerCase());
+    const b = ALPHABET_ORDER.indexOf(digraph[1].toLowerCase());
+    if (a < 0 || b < 0) return new Float64Array(PHONEME_FEATURE_DIM);
+    const out = new Float64Array(PHONEME_FEATURE_DIM);
+    const PRIMES = [29, 31, 37, 41, 43, 47, 53, 59]; // different primes than single-letter
+    for (let i = 0; i < PHONEME_FEATURE_DIM; i++) {
+      const p = PRIMES[i % PRIMES.length];
+      const phase = (i * 0.23) + 0.41;
+      out[i] = Math.sin((a + b * 27) * 0.3819 * p + phase)
+             + Math.cos((a * 27 + b) * 0.6180 * p + phase * 2);
+    }
+    let norm = 0;
+    for (let i = 0; i < PHONEME_FEATURE_DIM; i++) norm += out[i] * out[i];
+    norm = Math.sqrt(norm) || 1;
+    for (let i = 0; i < PHONEME_FEATURE_DIM; i++) out[i] /= norm;
+    return out;
+  }
+
+  async runElaG2Real(ctx) {
+    const cluster = this.cluster;
+    if (!cluster) return { pass: false, reason: 'no cluster wired' };
+
+    // The 7 most common English digraphs — each covers a distinct phoneme
+    const DIGRAPHS = ['th', 'sh', 'ch', 'ph', 'wh', 'ck', 'ng'];
+
+    // Short phrases exercising each digraph in natural English context
+    const PHRASES = [
+      'the dog', 'the cat', 'with them', 'this that',
+      'she ran', 'ship sail', 'shut up', 'fish wish',
+      'chip dip', 'chat back', 'rich much', 'check in',
+      'phone ring', 'graph line',
+      'what why', 'when where', 'which one',
+      'back pack', 'sick duck', 'rock lock',
+      'long song', 'king ring', 'sing along',
+    ];
+
+    const REPS_PER_DIGRAPH = 6;
+    const REPS_PER_PHRASE = 3;
+    const TICKS_PER_LETTER = 3;
+    const arousal = ctx?.arousal ?? 0.8;
+    const valence = ctx?.valence ?? 0.2;
+
+    // Register every letter used in digraphs + phrases
+    const letterSet = new Set();
+    for (const d of DIGRAPHS) for (const ch of d) letterSet.add(ch);
+    for (const p of PHRASES) for (const ch of p) if (/[a-z]/.test(ch)) letterSet.add(ch);
+    ensureLetters(Array.from(letterSet));
+
+    // STEP 1 — Digraph isolation teaching. Each digraph gets reps where
+    // both letters stream through letter region sequentially AND the
+    // digraph-specific phoneme feature goes into phon region at the
+    // SECOND letter's tick. The digraph phon basin forms as a unit-level
+    // attractor distinct from the individual letter basins.
+    for (let rep = 0; rep < REPS_PER_DIGRAPH; rep++) {
+      for (const digraph of DIGRAPHS) {
+        // Inject the digraph-as-word sem anchor if it's in GloVe (many
+        // digraphs are common enough to appear as standalone tokens in
+        // 6B word lists — 'th', 'ch', 'sh' etc — but fall through if not)
+        const digEmb = sharedEmbeddings.getEmbedding(digraph);
+        if (digEmb && digEmb.length > 0 && cluster.regions?.sem) {
+          cluster.injectEmbeddingToRegion('sem', digEmb, 0.4);
+        }
+
+        // First letter → letter region + individual phoneme feature
+        cluster.injectLetter(digraph[0], 1.0);
+        const phon1 = _phonemeFeatureForLetter(digraph[0]);
+        if (phon1 && cluster.regions?.phon) {
+          cluster.injectEmbeddingToRegion('phon', phon1, 0.5);
+        }
+        for (let t = 0; t < TICKS_PER_LETTER; t++) {
+          cluster.step(0.001);
+          this.stats.totalTicks++;
+        }
+
+        // Second letter arrives → NOW inject the DIGRAPH-level phoneme
+        // feature at higher strength than the individual letter feature,
+        // so the cross-projection Hebbian binds the pair to the unit
+        // basin more than to the individual letter basins.
+        cluster.injectLetter(digraph[1], 1.0);
+        const digPhon = this._phonemeFeatureForDigraph(digraph);
+        if (digPhon && cluster.regions?.phon) {
+          cluster.injectEmbeddingToRegion('phon', digPhon, 0.8);
+        }
+        for (let t = 0; t < TICKS_PER_LETTER; t++) {
+          cluster.step(0.001);
+          this.stats.totalTicks++;
+        }
+        cluster.learn(0);
+        this.stats.lettersSeen += 2;
+      }
+      await _microtask();
+    }
+
+    // STEP 2 — Phrase walks. Each phrase is walked through _walkSentence
+    // so the digraphs get reinforced in natural context and the T14.7
+    // type transitions + T14.8 sentence-form schemas pick up phrase-level
+    // structure.
+    for (let rep = 0; rep < REPS_PER_PHRASE; rep++) {
+      for (const phrase of PHRASES) {
+        const words = phrase.split(/\s+/).filter(Boolean);
+        this._walkSentence(words, arousal, valence, 2);
+        this.stats.sentencesSeen++;
+      }
+      await _microtask();
+    }
+
+    return this._gateElaG2Real(DIGRAPHS);
+  }
+
+  _gateElaG2Real(digraphs) {
+    const cluster = this.cluster;
+
+    let readPass = 0;
+    let thinkPass = 0;
+    let talkPass = 0;
+    const perDigraph = [];
+    const READ_COS_MIN = 0.12;
+    const THINK_VAR_MIN = 0.0005;
+
+    for (const digraph of digraphs) {
+      // ─── READ probe: digraph → phon basin distinct from letters ───
+      // Stream both letters with 3 ticks each, then read phon region
+      // and compare against the digraph-level phoneme feature. If
+      // cosine > 0.12, the digraph-as-unit basin has formed.
+      cluster.injectLetter(digraph[0], 1.0);
+      for (let t = 0; t < 3; t++) cluster.step(0.001);
+      cluster.injectLetter(digraph[1], 1.0);
+      for (let t = 0; t < 3; t++) cluster.step(0.001);
+      const phonReadout = cluster.regionReadout('phon', 24);
+      const expectedDigPhon = this._phonemeFeatureForDigraph(digraph);
+      let readCos = 0;
+      if (phonReadout && expectedDigPhon && phonReadout.length > 0 && expectedDigPhon.length > 0) {
+        const L = Math.min(phonReadout.length, expectedDigPhon.length);
+        let dot = 0, np = 0, ne = 0;
+        for (let i = 0; i < L; i++) {
+          dot += phonReadout[i] * expectedDigPhon[i];
+          np += phonReadout[i] * phonReadout[i];
+          ne += expectedDigPhon[i] * expectedDigPhon[i];
+        }
+        const denom = Math.sqrt(np) * Math.sqrt(ne);
+        readCos = denom > 0 ? dot / denom : 0;
+      }
+      const readOk = readCos > READ_COS_MIN;
+      if (readOk) readPass++;
+
+      // ─── THINK probe: digraph state persists across silence ──────
+      cluster.injectLetter(digraph[0], 1.0);
+      for (let t = 0; t < 3; t++) cluster.step(0.001);
+      cluster.injectLetter(digraph[1], 1.0);
+      for (let t = 0; t < 3; t++) cluster.step(0.001);
+      for (let t = 0; t < 10; t++) cluster.step(0.001);
+      const freeReadout = cluster.regionReadout('free', 64);
+      let thinkVar = 0;
+      if (freeReadout && freeReadout.length > 0) {
+        let mean = 0;
+        for (let i = 0; i < freeReadout.length; i++) mean += freeReadout[i];
+        mean /= freeReadout.length;
+        for (let i = 0; i < freeReadout.length; i++) {
+          const d = freeReadout[i] - mean;
+          thinkVar += d * d;
+        }
+        thinkVar /= freeReadout.length;
+      }
+      const thinkOk = thinkVar > THINK_VAR_MIN;
+      if (thinkOk) thinkPass++;
+
+      // ─── TALK probe: digraph phon feature → motor → first letter ─
+      // Inject the digraph phon feature into phon region, tick, check
+      // if motor argmax produces the first letter of the digraph.
+      const digPhon = this._phonemeFeatureForDigraph(digraph);
+      if (digPhon && cluster.regions?.phon) {
+        cluster.injectEmbeddingToRegion('phon', digPhon, 0.8);
+      }
+      for (let t = 0; t < 6; t++) cluster.step(0.001);
+      const invSize = inventorySize();
+      const motorVec = invSize > 0 ? cluster.regionReadout('motor', invSize) : null;
+      const decoded = motorVec ? decodeLetter(motorVec) : null;
+      const talkOk = decoded === digraph[0];
+      if (talkOk) talkPass++;
+
+      perDigraph.push({ digraph, readCos, thinkVar, decoded, readOk, thinkOk, talkOk });
+    }
+
+    const N = digraphs.length;
+    const readRate = N > 0 ? readPass / N : 0;
+    const thinkRate = N > 0 ? thinkPass / N : 0;
+    const talkRate = N > 0 ? talkPass / N : 0;
+    const PATH_MIN = 0.45;  // 3/7 digraphs = 43%, 4/7 = 57% — 45% ≈ 3/7 rounded up
+    const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= PATH_MIN;
+
+    return {
+      pass,
+      reason: `READ ${readPass}/${N} (${(readRate * 100).toFixed(0)}%), THINK ${thinkPass}/${N} (${(thinkRate * 100).toFixed(0)}%), TALK ${talkPass}/${N} (${(talkRate * 100).toFixed(0)}%)`,
+      metrics: { readRate, thinkRate, talkRate, perDigraph },
+    };
   }
 
   /**

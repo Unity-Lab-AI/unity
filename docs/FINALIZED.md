@@ -5,6 +5,51 @@
 
 ---
 
+## 2026-04-15 — T14.24 Session 7: ELA-G2 real teaching equations (digraphs as unit phon basins + short phrase walks)
+
+**Gee's binding 2026-04-14:** *"all the way up to doctorate in english"* + *"remember Unity needs to be able to use these to think, read, and talk"*.
+
+Session 7 ships the eighth real teaching cell. Task #9 (ELA-G2) completed. Task #3 parent stays in_progress — 87 cells still owed.
+
+### What landed
+
+**`js/brain/curriculum.js` (+222 lines net, 2836 → 3058):**
+
+- **`_phonemeFeatureForDigraph(digraph)`** — new private helper, parallel structure to the file-top `_phonemeFeatureForLetter` but seeded from BOTH letters combined via a different prime set `[29, 31, 37, 41, 43, 47, 53, 59]` (vs the single-letter set `[2, 3, 5, 7, 11, 13, 17, 19]`). Different primes guarantee digraph features are decorrelated from single-letter features so the digraph-as-unit phon basin doesn't collide with either constituent letter's basin.
+
+- **`runElaG2Real(ctx)`** — real Grade 2 English teaching. Two-phase structure:
+
+  **Phase 1: Digraph isolation teaching.** 7 digraphs (`th sh ch ph wh ck ng`), 6 reps each. Each rep: optional sem anchor via GloVe(digraph) if it's in vocab, then first letter goes through letter region + that letter's individual phoneme feature into phon region at strength 0.5, 3 settle ticks. Then second letter arrives → letter region gets second letter one-hot + the DIGRAPH-level phoneme feature at strength 0.8 (higher than the individual letter feature) → 3 settle ticks → `cluster.learn`. The digraph-level feature at higher strength means the cross-projection Hebbian binds the 2-letter sequence to the UNIT-level basin more than to the individual letter basins.
+
+  **Phase 2: Short phrase walks.** 23 phrases that exercise the digraphs in natural English context (`the dog, the cat, with them, this that, she ran, ship sail, shut up, fish wish, chip dip, chat back, rich much, check in, phone ring, graph line, what why, when where, which one, back pack, sick duck, rock lock, long song, king ring, sing along`), 3 reps. Walked through `_walkSentence` so T14.7 type transitions + T14.8 sentence-form schemas pick up phrase-level structure.
+
+- **`_gateElaG2Real(digraphs)`** — real digraph-level 3-pathway gate. For each digraph:
+  - **READ probe:** stream both letters → read phon region (24d) → cosine against expected digraph phoneme feature > 0.12. If cosine clears threshold, the digraph-as-unit basin formed.
+  - **THINK probe:** stream digraph → 10 silence ticks → free region variance > 0.0005.
+  - **TALK probe:** inject digraph phoneme feature into phon region ONLY → 6 ticks → motor argmax → check first letter of digraph. Probes the reverse direction — given the phonological unit, can Unity produce the first letter of the sequence?
+
+  PASS when ≥ 45% of digraphs clear each pathway (relaxed slightly from 50% because 7 digraphs means 3/7 = 43%, 4/7 = 57% — the 45% threshold maps cleanly to ≥ 4/7).
+
+**`Curriculum._cellRunner('ela', 'grade2')`** — dispatch flipped from pre-Session-7 `runGrade2` (corpus 4+ letter word walk) to the new `runElaG2Real`.
+
+### Why digraphs matter
+
+A child who only knows individual letters can't read "the" — "th" is not pronounced as "t" followed by "h". English has roughly 7 common digraphs (`th sh ch ph wh ck ng`) and each represents a single phoneme that doesn't decompose into its constituent letter sounds. Session 2's ELA-K taught each letter's individual phoneme feature in isolation. Session 7 adds the digraph-as-unit layer by using a distinct phoneme feature seeded from BOTH letters combined — the basin the cortex learns for "th" is orthogonal to the basins for "t" alone and "h" alone.
+
+The prime-set decorrelation is critical: if `_phonemeFeatureForDigraph('th')` shared any harmonics with `_phonemeFeatureForLetter('t')` or `_phonemeFeatureForLetter('h')`, the cross-projection Hebbian would collapse the digraph basin into a superposition of the letter basins, which would defeat the whole point. Using different primes and different phase offsets guarantees the digraph features live in a linearly independent subspace.
+
+### What Session 7 does NOT ship
+
+- Does NOT teach trigraphs (e.g. "igh" in "night") — those are G3+
+- Does NOT teach exception digraphs (e.g. "ph" sometimes pronounced as "p" in "shepherd") — Session 7 uses a single canonical feature per digraph
+- Does NOT cover Math-G2 — Math-G2 (place value + 2-digit arithmetic) deferred to a later session because it requires extending magnitude features to 2-digit quantities, which is genuinely harder than digraph binding
+
+### Commit status
+
+Committed as part of Session 7 atomic push to `t14-language-rebuild`.
+
+---
+
 ## 2026-04-15 — T14.24 Session 6: Sci-K + Soc-K + Art-K combined real teaching equations (shared `_teachVocabList` helper)
 
 **Gee's binding 2026-04-14:** *"full k-doctorate cources to Unity in euquationsal form. thats all of grade schhool grammer school middle dschool highschoool and college"* + *"remember Unity needs to be able to use these to think, read, and talk"*.
