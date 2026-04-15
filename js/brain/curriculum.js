@@ -2724,6 +2724,110 @@ export class Curriculum {
   //   - TALK:  walk partial fact → motor argmax → first letter of
   //             expected result word
 
+  // ─── TODO-aligned Math-G1 helpers (Session 24) ───────────────────
+  //
+  // docs/TODO.md T14.24 MATH-G1 spec:
+  //   Equations: `_teachAddition(pairs)` injects magnitude(a)+magnitude(b)
+  //   into free region + teaches target magnitude(a+b) via Hebbian —
+  //   free-region Hebbian learns the sum transformation as a linear map.
+  //   `_teachSubtraction(triples)` same approach for subtraction.
+  //
+  // The earlier runMathG1Real shipped a sentence-walk approach ("one
+  // plus one is two") which is the SIMPLIFIED form. Session 24 adds the
+  // TODO-prescribed magnitude-feature Hebbian in free region as an
+  // additional teaching pass alongside the sentence walks, so Unity
+  // gets both modalities: semantic (sentence walk) AND numerical
+  // (direct magnitude feature mapping).
+
+  async _teachAddition(pairs, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 5;
+    const ticksPerPair = opts.ticksPerPair ?? 4;
+    let taught = 0;
+
+    for (let rep = 0; rep < reps; rep++) {
+      for (const { a, b, c } of pairs) {
+        const magA = _magnitudeFeatureForDigit(String(a));
+        const magB = _magnitudeFeatureForDigit(String(b));
+        const magC = _magnitudeFeatureForDigit(String(c));
+
+        // Sum magnitude: the input pattern the free region should hold
+        const magSum = new Float64Array(magA.length);
+        for (let i = 0; i < magA.length; i++) magSum[i] = magA[i] + magB[i];
+        // L2 normalize the sum so scale matches the single-digit features
+        let norm = 0;
+        for (let i = 0; i < magSum.length; i++) norm += magSum[i] * magSum[i];
+        norm = Math.sqrt(norm) || 1;
+        for (let i = 0; i < magSum.length; i++) magSum[i] /= norm;
+
+        // Inject the sum into free region (input) + the target
+        // magnitude(c) into phon region (output) so cross-projection
+        // Hebbian binds sum_input → target_output
+        if (cluster.regions?.free) {
+          cluster.injectEmbeddingToRegion('free', magSum, 0.6);
+        }
+        if (cluster.regions?.phon) {
+          cluster.injectEmbeddingToRegion('phon', magC, 0.6);
+        }
+        // Also inject the answer digit one-hot into letter region so
+        // motor can produce it
+        cluster.injectLetter(String(c), 0.5);
+
+        for (let t = 0; t < ticksPerPair; t++) {
+          cluster.step(0.001);
+          this.stats.totalTicks++;
+        }
+        cluster.learn(0);
+        taught++;
+      }
+      await _microtask();
+    }
+    return { taught };
+  }
+
+  async _teachSubtraction(triples, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 5;
+    const ticksPerTriple = opts.ticksPerTriple ?? 4;
+    let taught = 0;
+
+    for (let rep = 0; rep < reps; rep++) {
+      for (const { a, b, c } of triples) {
+        // c = a - b
+        const magA = _magnitudeFeatureForDigit(String(a));
+        const magB = _magnitudeFeatureForDigit(String(b));
+        const magC = _magnitudeFeatureForDigit(String(c));
+
+        // Difference magnitude: magA - magB, L2 normalized
+        const magDiff = new Float64Array(magA.length);
+        for (let i = 0; i < magA.length; i++) magDiff[i] = magA[i] - magB[i];
+        let norm = 0;
+        for (let i = 0; i < magDiff.length; i++) norm += magDiff[i] * magDiff[i];
+        norm = Math.sqrt(norm) || 1;
+        for (let i = 0; i < magDiff.length; i++) magDiff[i] /= norm;
+
+        if (cluster.regions?.free) {
+          cluster.injectEmbeddingToRegion('free', magDiff, 0.6);
+        }
+        if (cluster.regions?.phon) {
+          cluster.injectEmbeddingToRegion('phon', magC, 0.6);
+        }
+        cluster.injectLetter(String(c), 0.5);
+
+        for (let t = 0; t < ticksPerTriple; t++) {
+          cluster.step(0.001);
+          this.stats.totalTicks++;
+        }
+        cluster.learn(0);
+        taught++;
+      }
+      await _microtask();
+    }
+    return { taught };
+  }
+
   async runMathG1Real(ctx) {
     const cluster = this.cluster;
     if (!cluster) return { pass: false, reason: 'no cluster wired' };
@@ -2772,6 +2876,21 @@ export class Curriculum {
       }
     }
     ensureLetters(Array.from(letterSet));
+
+    // T14.24 Session 24 — TODO-aligned numerical teaching pass.
+    // docs/TODO.md MATH-G1 prescribes magnitude-feature Hebbian in free
+    // region: inject magnitude(a)+magnitude(b) → learn target
+    // magnitude(a+b). Complements the sentence walks below.
+    const addPairs = [];
+    const subTriples = [];
+    for (let a = 1; a <= 5; a++) {
+      for (let b = 1; b <= 5; b++) {
+        addPairs.push({ a, b, c: a + b });
+        subTriples.push({ a: a + b, b, c: a }); // (a+b) - b = a
+      }
+    }
+    await this._teachAddition(addPairs);
+    await this._teachSubtraction(subTriples);
 
     // STEP 1 — walk every fact sentence through the T14.5 _walkSentence
     // path. This drives the letter region with each word's letters,
