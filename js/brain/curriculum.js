@@ -5712,6 +5712,31 @@ export class Curriculum {
     ], 4);
   }
 
+  async _teachSocialScienceResearchMethods() {
+    // T14.24 Session 72 (task #129) — Soc-Col4 social science
+    // research methods. TODO line 537: "Col1-4 historiography,
+    // specialized history, political theory. Gate ≥20%". 12
+    // concepts covering the quant/qual methodology that
+    // runSocCol4Real's 25 sentences discuss. Parallel to
+    // _teachScienceResearchMethods but focused on social-science
+    // methodology where meaning/validity/generalizability matter
+    // alongside significance testing.
+    return this._conceptTeach([
+      { name: 'quantitative methods', feat: [1, 0, 0, 0, 1, 0, 0, 1] },
+      { name: 'qualitative methods',  feat: [0, 1, 0, 0, 1, 0, 1, 0] },
+      { name: 'mixed methods',        feat: [1, 1, 0, 0, 1, 0, 1, 0] },
+      { name: 'survey',               feat: [1, 0, 1, 0, 0, 1, 0, 0] },
+      { name: 'interview',            feat: [0, 1, 1, 0, 0, 1, 1, 0] },
+      { name: 'focus group',          feat: [0, 1, 1, 0, 0, 0, 1, 1] },
+      { name: 'content analysis',     feat: [1, 1, 0, 1, 0, 1, 0, 0] },
+      { name: 'p value',              feat: [1, 0, 0, 1, 1, 0, 0, 1] },
+      { name: 'confidence interval',  feat: [1, 0, 0, 1, 1, 0, 0, 1] },
+      { name: 'validity',             feat: [1, 1, 0, 0, 1, 0, 1, 0] },
+      { name: 'reliability',          feat: [1, 0, 0, 1, 1, 0, 1, 0] },
+      { name: 'generalizability',     feat: [1, 0, 1, 0, 1, 0, 0, 1] },
+    ], 4);
+  }
+
   async _teachSociologyAnthropology() {
     // T14.24 Session 71 (task #128) — Soc-Col3 sociology +
     // anthropology. TODO line 537: "specialized history, political
@@ -9707,6 +9732,9 @@ export class Curriculum {
       'validity is measuring what we claim', 'reliability is consistency',
       'generalizability applies beyond the sample',
     ];
+    // T14.24 Session 72 — prime social science research methods
+    // lattice per TODO line 537 before the Col4 sentence pass.
+    await this._teachSocialScienceResearchMethods();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
