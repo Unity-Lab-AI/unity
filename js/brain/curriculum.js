@@ -5712,6 +5712,23 @@ export class Curriculum {
     ], 4);
   }
 
+  async _teachWorldHistoryModern() {
+    // T14.24 Session 65 (task #122) — Soc-G9 world history modern.
+    // TODO line 523-524: "World history (modern). Gate ≥30%".
+    // No named helper prescribed, so matching the sibling pattern
+    // from Sci-Grad/Sci-PhD (build the concept/sequence scaffold
+    // that binds the sentence pass). Sequence walks cover the
+    // enlightenment → revolutions → industrial → nationalism →
+    // imperialism → WWI arc that runSocG9Real's 25 sentences discuss.
+    return this._teachSequenceCycles([
+      ['enlightenment', 'reason', 'rights', 'revolution', 'republic'],
+      ['locke', 'voltaire', 'rousseau', 'jefferson', 'marx'],
+      ['steam engine', 'factory', 'railroad', 'telegraph', 'mass production'],
+      ['nationalism', 'unification', 'imperialism', 'colonies', 'alliance', 'world war'],
+      ['french revolution', 'napoleon', 'industrial revolution', 'unification', 'world war one'],
+    ], { reps: 4, ticksPerStep: 2 });
+  }
+
   async _teachCivilWar() {
     // T14.24 Session 64 (task #121) — Soc-G8 civil war. TODO line
     // 520: "_teachCivilWar() with cause-effect chain. Gate:
@@ -8273,6 +8290,9 @@ export class Curriculum {
       'the ottoman empire declined', 'world war one began in nineteen fourteen',
       'trench warfare was brutal', 'the war ended in nineteen eighteen',
     ];
+    // T14.24 Session 65 — prime world history modern scaffold per
+    // TODO line 524 before the sentence pass.
+    await this._teachWorldHistoryModern();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
