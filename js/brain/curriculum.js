@@ -1423,8 +1423,10 @@ export class Curriculum {
         case 'grade2':       return async (ctx) => this.runElaG2Real(ctx);
         // T14.24 Session 8 — ELA-G3 ships SVO + tense sentence teaching
         case 'grade3':       return async (ctx) => this.runElaG3Real(ctx);
-        case 'grade4': case 'grade5':
-          return async (ctx) => this.runGrade4_5(ctx.sentences, ctx.arousal, ctx.valence);
+        // T14.24 Session 9 — ELA-G4 + ELA-G5 ship real teaching via
+        // _teachSentenceList with their own hand-crafted sentence sets.
+        case 'grade4':       return async (ctx) => this.runElaG4Real(ctx);
+        case 'grade5':       return async (ctx) => this.runElaG5Real(ctx);
         case 'grade6': case 'grade7': case 'grade8':
           return async (ctx) => this.runGrade6_8(ctx.sentences, ctx.arousal, ctx.valence);
         case 'grade9': case 'grade10': case 'grade11': case 'grade12':
@@ -1454,6 +1456,42 @@ export class Curriculum {
     }
     if (subject === 'math' && grade === 'grade3') {
       return async (ctx) => this.runMathG3Real(ctx);
+    }
+    // T14.24 Session 9 (2026-04-15) — Math-G4/G5, Sci-G1/G2/G3,
+    // Soc-G1/G2/G3, Art-G1/G2/G3 all ship via _teachSentenceList with
+    // hand-crafted domain-specific sentence sets per cell.
+    if (subject === 'math' && grade === 'grade4') {
+      return async (ctx) => this.runMathG4Real(ctx);
+    }
+    if (subject === 'math' && grade === 'grade5') {
+      return async (ctx) => this.runMathG5Real(ctx);
+    }
+    if (subject === 'science' && grade === 'grade1') {
+      return async (ctx) => this.runSciG1Real(ctx);
+    }
+    if (subject === 'science' && grade === 'grade2') {
+      return async (ctx) => this.runSciG2Real(ctx);
+    }
+    if (subject === 'science' && grade === 'grade3') {
+      return async (ctx) => this.runSciG3Real(ctx);
+    }
+    if (subject === 'social' && grade === 'grade1') {
+      return async (ctx) => this.runSocG1Real(ctx);
+    }
+    if (subject === 'social' && grade === 'grade2') {
+      return async (ctx) => this.runSocG2Real(ctx);
+    }
+    if (subject === 'social' && grade === 'grade3') {
+      return async (ctx) => this.runSocG3Real(ctx);
+    }
+    if (subject === 'art' && grade === 'grade1') {
+      return async (ctx) => this.runArtG1Real(ctx);
+    }
+    if (subject === 'art' && grade === 'grade2') {
+      return async (ctx) => this.runArtG2Real(ctx);
+    }
+    if (subject === 'art' && grade === 'grade3') {
+      return async (ctx) => this.runArtG3Real(ctx);
     }
     // T14.24 Session 6 (2026-04-15) — Sci-K / Soc-K / Art-K all ship
     // real vocabulary teaching via the shared _teachVocabList helper.
@@ -3225,6 +3263,282 @@ export class Curriculum {
       'quarter of four is one',
     );
     return this._teachSentenceList(MATH_G3_SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // T14.24 SESSION 9 — MASS CELL SHIP (13 CELLS) (2026-04-15)
+  // ═══════════════════════════════════════════════════════════════════
+  //
+  // Gee 2026-04-15: "keep working each item masterfully and completely
+  // remembr we are makeing a couse for Unity to run oin her own brain
+  // to learn".
+  //
+  // Session 9 leverages the Session 6 _teachVocabList + Session 8
+  // _teachSentenceList helpers to ship 13 cells in one commit:
+  //   ELA-G4, ELA-G5, Math-G4, Math-G5,
+  //   Sci-G1..G3, Soc-G1..G3, Art-G1..G3
+  //
+  // Each cell is a thin wrapper with a hand-crafted domain-specific
+  // corpus (25-40 sentences or 15-25 words). The real teaching
+  // equations live in the shared helpers; the per-cell data is what
+  // makes each subject distinct.
+
+  // ─── ELA-G4: compound sentences + pronouns ────────────────────────
+  async runElaG4Real(ctx) {
+    const SENTENCES = [
+      'the dog runs and the cat sleeps', 'i was happy but you were sad',
+      'she saw him and he saw her', 'we had food so we ate dinner',
+      'they left early because it was late', 'i read the book and she saw the movie',
+      'he was tired so he went home', 'we went to the park but it rained',
+      'she cooked dinner and he washed dishes', 'the kids played and the parents watched',
+      'i like apples and she likes oranges', 'he is tall but she is short',
+      'we were happy and they were too', 'the car stopped and the bus went',
+      'i wanted food but i was full', 'she loves him and he loves her',
+      'the sun rose and the moon set', 'he ran fast and she ran faster',
+      'we played games and sang songs', 'the rain fell and the flowers grew',
+      // Pronoun-focused
+      'he likes her', 'she likes him', 'they like us', 'we like them',
+      'it is mine', 'it is yours', 'it is his', 'it is hers',
+      'i gave him the book', 'she told me the story',
+      'they showed us the way', 'we helped them move',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  // ─── ELA-G5: paragraph structure + reading comprehension ─────────
+  async runElaG5Real(ctx) {
+    // Cohesive multi-sentence "paragraphs" as concatenated sentences
+    // that share topic. Topic persistence via T14.9 working memory is
+    // what makes this a Grade-5 capability rather than G3 SVO.
+    const SENTENCES = [
+      'the dog was hungry', 'he found food', 'he ate it all', 'he was happy',
+      'the cat sat on the mat', 'she saw a bird', 'she chased it', 'the bird flew away',
+      'we went to the beach', 'the sun was hot', 'we swam in the water', 'we built sand castles',
+      'she opened her book', 'she read every page', 'the story was long', 'she loved the ending',
+      'the man planted a seed', 'he watered it daily', 'a plant grew tall', 'the plant made flowers',
+      'i woke up early', 'i brushed my teeth', 'i ate breakfast', 'i went to school',
+      'the bird built a nest', 'she laid three eggs', 'the eggs hatched', 'the baby birds grew',
+      'he packed his bag', 'he walked to the bus', 'the bus was late', 'he waited patiently',
+      'she painted a picture', 'she used bright colors', 'her friends loved it', 'she felt proud',
+      'the class went on a trip', 'they saw the zoo', 'they saw many animals', 'they had fun',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  // ─── Math-G4: decimals + percent ──────────────────────────────────
+  async runMathG4Real(ctx) {
+    const SENTENCES = [
+      'one half is fifty percent', 'one quarter is twenty five percent',
+      'three quarters is seventy five percent', 'one tenth is ten percent',
+      'one fifth is twenty percent', 'two fifths is forty percent',
+      'three fifths is sixty percent', 'four fifths is eighty percent',
+      'one hundred percent is the whole', 'fifty percent is a half',
+      'zero point five is one half', 'zero point two five is a quarter',
+      'zero point one is one tenth', 'zero point seven five is three quarters',
+      'one point zero is one whole', 'two point five is two and one half',
+      'the decimal point is small', 'percent means per hundred',
+      'ten percent of one hundred is ten', 'twenty percent of fifty is ten',
+      'fifty percent of twenty is ten', 'one hundred percent of ten is ten',
+      'a quarter of a dollar is twenty five cents', 'a half dollar is fifty cents',
+      'ten dimes make one dollar', 'four quarters make one dollar',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  // ─── Math-G5: ratios + proportions ────────────────────────────────
+  async runMathG5Real(ctx) {
+    const SENTENCES = [
+      'two to one means two for every one', 'three to one means three for every one',
+      'one to two is a small ratio', 'two to three is less than one',
+      'three to three is equal', 'four to two reduces to two to one',
+      'six to three reduces to two to one', 'the ratio of boys to girls is equal',
+      'for every two cups flour use one cup sugar', 'mix three parts water with one part juice',
+      'the scale is one to ten', 'the map is one to one hundred',
+      'if two cost four then four cost eight', 'if three cost six then six cost twelve',
+      'proportion means the ratios are equal', 'ratio compares two amounts',
+      'half and half is a ratio', 'one third and two thirds make one whole',
+      'if six children share twelve cookies each gets two',
+      'if three children share nine cookies each gets three',
+      'for every one boy there are two girls', 'for every three apples there are two oranges',
+      'the recipe calls for two to one flour to sugar',
+      'the speed is sixty miles per hour', 'the rate is ten feet per second',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  // ─── Sci-G1: living vs non-living ─────────────────────────────────
+  async runSciG1Real(ctx) {
+    const SENTENCES = [
+      'a dog is living', 'a cat is living', 'a bird is living', 'a fish is living',
+      'a tree is living', 'a flower is living', 'grass is living', 'people are living',
+      'a rock is not living', 'a chair is not living', 'a cup is not living', 'a toy is not living',
+      'the sun is not living', 'the moon is not living', 'water is not living', 'air is not living',
+      'living things eat and grow', 'living things breathe air', 'living things make babies',
+      'living things move on their own', 'non living things stay still',
+      'plants need sun and water', 'animals need food and water',
+      'a seed becomes a plant', 'a baby grows into an adult',
+      'a rock does not grow', 'a chair does not grow',
+      'dogs breathe air', 'fish breathe water',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  // ─── Sci-G2: life cycles ──────────────────────────────────────────
+  async runSciG2Real(ctx) {
+    const SENTENCES = [
+      'a seed grows into a plant', 'a plant makes flowers', 'a flower makes seeds', 'the cycle starts again',
+      'an egg hatches into a chick', 'a chick grows into a bird', 'a bird lays eggs', 'the cycle starts again',
+      'a caterpillar forms a cocoon', 'a butterfly comes out', 'the butterfly lays eggs', 'a caterpillar hatches',
+      'a tadpole grows legs', 'a tadpole becomes a frog', 'a frog lays eggs', 'tadpoles hatch',
+      'a baby grows into a child', 'a child grows into an adult', 'an adult has children', 'the cycle continues',
+      'a fish lays eggs in water', 'baby fish hatch from eggs', 'baby fish grow into adults',
+      'a puppy grows into a dog', 'a kitten grows into a cat',
+      'life cycles repeat forever', 'every living thing has a life cycle',
+      'some cycles take days', 'some cycles take years',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  // ─── Sci-G3: ecosystems ───────────────────────────────────────────
+  async runSciG3Real(ctx) {
+    const SENTENCES = [
+      'an ecosystem has plants and animals', 'plants are producers',
+      'animals are consumers', 'bacteria are decomposers',
+      'a forest is an ecosystem', 'a pond is an ecosystem', 'a desert is an ecosystem',
+      'a rabbit eats grass', 'a fox eats rabbits', 'a grass eats sunlight',
+      'the sun gives energy to plants', 'plants give energy to animals',
+      'a food chain shows who eats whom', 'a food web has many chains',
+      'an owl hunts mice', 'a mouse eats seeds', 'a seed grows into a plant',
+      'decomposers break down dead things', 'worms help soil grow plants',
+      'the water cycle moves water around', 'the water goes up and comes down',
+      'ocean ecosystems have fish and plants', 'river ecosystems connect to oceans',
+      'animals adapt to their habitats', 'polar bears live in cold places',
+      'camels live in hot deserts', 'monkeys live in rain forests',
+      'humans depend on ecosystems', 'every living thing matters',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  // ─── Soc-G1: community ────────────────────────────────────────────
+  async runSocG1Real(ctx) {
+    const SENTENCES = [
+      'a community is a group of people', 'people live together in a community',
+      'neighbors help each other', 'a family is part of the community',
+      'teachers work at schools', 'doctors work at hospitals',
+      'police keep us safe', 'firefighters put out fires',
+      'the mayor leads the town', 'the city has many jobs',
+      'we share the library', 'we share the park',
+      'stores sell us food', 'the post office sends mail',
+      'we follow rules in the community', 'rules keep us safe',
+      'every community has helpers', 'everyone can be a helper',
+      'we say please and thank you', 'we take turns and share',
+      'a good neighbor is kind', 'a good neighbor helps',
+      'schools teach children', 'banks keep our money',
+      'restaurants serve food', 'farms grow our food',
+      'trucks bring goods to stores', 'buses take us places',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  // ─── Soc-G2: state ────────────────────────────────────────────────
+  async runSocG2Real(ctx) {
+    const SENTENCES = [
+      'a state is a part of the country', 'every state has a capital',
+      'the governor leads the state', 'the state has its own flag',
+      'states are bigger than cities', 'a state has many cities',
+      'the united states has fifty states', 'each state has a name',
+      'states have borders with other states', 'rivers often form borders',
+      'mountains often form borders', 'some states are on the coast',
+      'coastal states have oceans', 'inland states have no ocean',
+      'the state makes its own laws', 'state laws apply in the state',
+      'state parks are for everyone', 'state highways connect cities',
+      'the state has its own bird', 'the state has its own flower',
+      'people are proud of their state', 'each state has a history',
+      'the state collects taxes', 'the state pays for schools',
+      'the state runs the dmv', 'the state has courts',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  // ─── Soc-G3: US geography ─────────────────────────────────────────
+  async runSocG3Real(ctx) {
+    const SENTENCES = [
+      'the united states is a country', 'it has fifty states',
+      'the capital is washington', 'the country has many regions',
+      'the northeast has small states', 'the south has warm weather',
+      'the midwest has flat farms', 'the west has tall mountains',
+      'the pacific ocean is in the west', 'the atlantic ocean is in the east',
+      'the rocky mountains are tall', 'the appalachian mountains are old',
+      'the mississippi river is long', 'the great lakes are huge',
+      'alaska is the biggest state', 'rhode island is the smallest state',
+      'texas is a big state', 'california has many people',
+      'florida is warm', 'new york has a big city',
+      'the north is cold in winter', 'the south is hot in summer',
+      'the grand canyon is in arizona', 'yellowstone is in wyoming',
+      'the statue of liberty is in new york', 'the white house is in washington',
+      'alaska has glaciers', 'hawaii has volcanoes',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  // ─── Art-G1: color mixing ─────────────────────────────────────────
+  async runArtG1Real(ctx) {
+    const SENTENCES = [
+      'red and yellow make orange', 'yellow and blue make green',
+      'red and blue make purple', 'red yellow and blue are primary',
+      'orange green and purple are secondary', 'primary colors can not be made',
+      'black is the absence of color', 'white is all colors mixed',
+      'light colors are tints', 'dark colors are shades',
+      'adding white makes a tint', 'adding black makes a shade',
+      'warm colors are red orange yellow', 'cool colors are blue green purple',
+      'red is a warm color', 'blue is a cool color',
+      'complementary colors are opposite', 'red and green are complementary',
+      'blue and orange are complementary', 'yellow and purple are complementary',
+      'a color wheel shows all colors', 'the rainbow has seven colors',
+      'mixing paint makes new colors', 'mixing light makes white',
+      'gray is between black and white', 'brown is many colors mixed',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  // ─── Art-G2: rhythm + beat ────────────────────────────────────────
+  async runArtG2Real(ctx) {
+    const SENTENCES = [
+      'a beat is a steady pulse', 'rhythm is a pattern of beats',
+      'music has a beat', 'we clap to the beat',
+      'the drum keeps the beat', 'fast music has a fast beat',
+      'slow music has a slow beat', 'tempo means speed',
+      'a measure has beats', 'four beats in a measure is common',
+      'three beats is a waltz', 'two beats is a march',
+      'loud and soft is dynamics', 'strong and weak beats alternate',
+      'music is organized sound', 'silence is part of music',
+      'notes have different lengths', 'long notes hold the beat',
+      'short notes fit between beats', 'rests are silent beats',
+      'we tap our feet to music', 'we dance to the rhythm',
+      'a song has a chorus and verse', 'the chorus repeats',
+      'music makes us feel things', 'everyone can feel the beat',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  // ─── Art-G3: drawing fundamentals ─────────────────────────────────
+  async runArtG3Real(ctx) {
+    const SENTENCES = [
+      'a line is a path from point to point', 'lines can be straight or curved',
+      'a shape is a closed line', 'circles squares and triangles are shapes',
+      'form is a three dimensional shape', 'a cube has six sides',
+      'space is the area around a shape', 'positive space is the shape',
+      'negative space is around the shape', 'texture is how something feels',
+      'rough and smooth are textures', 'color gives emotion',
+      'value is light and dark', 'shading adds value',
+      'a pencil makes dark lines', 'a soft pencil makes darker lines',
+      'hard pencils make light lines', 'an eraser removes marks',
+      'we draw what we see', 'we draw what we imagine',
+      'start with basic shapes', 'add details later',
+      'practice makes artists better', 'every artist started as a beginner',
+      'paper comes in many sizes', 'paper comes in many colors',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
   /**

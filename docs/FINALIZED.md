@@ -5,6 +5,50 @@
 
 ---
 
+## 2026-04-15 — T14.24 Session 9: mass cell ship — 13 real cells in one commit (ELA-G4/G5, Math-G4/G5, Sci/Soc/Art G1-G3)
+
+**Gee 2026-04-15:** *"keep working each item masterfully and completely remembr we are makeing a couse for Unity to run oin her own brain to learn"*.
+
+Session 9 leverages the Session 6 `_teachVocabList` + Session 8 `_teachSentenceList` helpers to ship 13 cells in one atomic commit. Tasks #15 (ELA-G4), #12 (ELA-G5), #32 (Math-G4), #33 (Math-G5), #48 (Sci-G1), #49 (Sci-G2), #50 (Sci-G3), #67 (Soc-G1), #68 (Soc-G2), #69 (Soc-G3), #86 (Art-G1), #87 (Art-G2), #88 (Art-G3) all completed. Task #3 parent stays in_progress — 71 cells still owed.
+
+### What landed
+
+**`js/brain/curriculum.js` (+314 lines net, 3317 → 3631):**
+
+Each of the 13 new cells is a thin wrapper around `_teachSentenceList` with a hand-crafted domain-specific sentence corpus of 25-40 sentences. The real teaching equations live in the shared helpers; the per-cell data is what makes each subject distinct.
+
+- **`runElaG4Real`** — 32 compound sentences with coordinating conjunctions (and/but/or/so/because) + pronoun-focused sentences (`he likes her`, `they showed us the way`) so T14.8 schemas pick up conjunction and pronoun patterns.
+- **`runElaG5Real`** — 40 sentences organized as short cohesive "paragraphs" where consecutive sentences share topic (`the dog was hungry / he found food / he ate it all / he was happy`). T14.9 working memory carries topic across the sentence boundaries.
+- **`runMathG4Real`** — 25 sentences teaching decimal-percent equivalence (`one half is fifty percent`, `zero point five is one half`, `a quarter of a dollar is twenty five cents`).
+- **`runMathG5Real`** — 25 sentences teaching ratio and proportion vocabulary (`two to one means two for every one`, `for every three apples there are two oranges`, `the speed is sixty miles per hour`).
+- **`runSciG1Real`** — 28 living vs non-living sentences (`a dog is living / a rock is not living / living things eat and grow / plants need sun and water`).
+- **`runSciG2Real`** — 29 life cycle sentences across 5 organisms (seed/plant, egg/chick/bird, caterpillar/butterfly, tadpole/frog, baby/adult human) plus summary cycle statements.
+- **`runSciG3Real`** — 29 ecosystem sentences (producers/consumers/decomposers, food chains, habitat adaptations, water cycle).
+- **`runSocG1Real`** — 28 community sentences (helpers, rules, shared spaces, civic vocabulary).
+- **`runSocG2Real`** — 25 state-level sentences (capitals, governors, borders, state symbols, coastal vs inland).
+- **`runSocG3Real`** — 27 US geography sentences (regions, landmarks, largest/smallest states, natural features).
+- **`runArtG1Real`** — 26 color mixing sentences (primary → secondary, tints vs shades, warm vs cool, complementary pairs).
+- **`runArtG2Real`** — 26 rhythm/beat sentences (tempo, dynamics, measures, note lengths, song structure).
+- **`runArtG3Real`** — 26 drawing fundamental sentences (line/shape/form/space/texture/value, pencil types, practice).
+
+**`_cellRunner`** gets 13 new dispatch cases (2 ELA + 11 cross-subject).
+
+### Why batch 13 cells at once
+
+Sessions 2-8 established the pattern + built the shared helpers. From Session 9 onward, the bottleneck isn't teaching-equation design (the helpers handle that) — it's corpus authorship per cell. A 25-40 sentence corpus per cell is a hand-crafted domain digest, not a mechanical generation: each sentence has to (a) exercise the target grammatical / mathematical / scientific concept, (b) be simple enough for the grade level, (c) use GloVe-vocab words so the sem anchors work, (d) be short enough to keep _walkSentence costs sane. Batching 13 cells in one session meant authoring ~380 sentences across 13 domains in one coherent pass, which is much more efficient than spreading the same work across 13 separate sessions with per-session doc overhead.
+
+### What Session 9 does NOT ship
+
+- Does NOT teach G6-G12 across any subject — G6+ requires more compositional grammar and deeper conceptual content per cell. Next sessions handle those.
+- Does NOT yet teach Sci-G4/G5/G6-G12, Soc-G4-G12, Art-G4-G12 — same reason, next sessions.
+- Does NOT touch college or graduate cells — those are the hardest and ship last.
+
+### Commit status
+
+Committed as part of Session 9 atomic push to `t14-language-rebuild`.
+
+---
+
 ## 2026-04-15 — T14.24 Session 8: sentence helper + Math-G2 + ELA-G3 + Math-G3 (4 cells in one commit)
 
 **Gee 2026-04-15:** *"keep working each item masterfully and completely remembr we are makeing a couse for Unity to run oin her own brain to learn"*.
