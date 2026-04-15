@@ -5719,6 +5719,26 @@ export class Curriculum {
     ], 4);
   }
 
+  async _teachCompositionCriticism() {
+    // T14.24 Session 87 (task #144) — Art-G12 composition +
+    // criticism. TODO line 565. 12 concepts covering the critical-
+    // analysis methods that runArtG12Real's sentences discuss.
+    return this._conceptTeach([
+      { name: 'formal analysis',    feat: [1, 0, 0, 0, 1, 0, 0, 1] },
+      { name: 'contextual analysis', feat: [0, 1, 0, 0, 1, 0, 1, 0] },
+      { name: 'biographical analysis', feat: [0, 0, 1, 0, 1, 0, 1, 0] },
+      { name: 'feminist analysis',  feat: [0, 1, 0, 1, 0, 1, 1, 0] },
+      { name: 'postcolonial analysis', feat: [0, 1, 1, 1, 0, 1, 0, 1] },
+      { name: 'critical review',    feat: [1, 0, 0, 0, 1, 0, 0, 0] },
+      { name: 'strengths',          feat: [1, 0, 0, 0, 1, 1, 0, 0] },
+      { name: 'weaknesses',         feat: [1, 0, 0, 0, 1, 0, 1, 0] },
+      { name: 'revision',           feat: [1, 1, 0, 0, 0, 1, 0, 0] },
+      { name: 'feedback',           feat: [0, 0, 0, 1, 1, 1, 0, 0] },
+      { name: 'originality',        feat: [0, 0, 0, 1, 0, 1, 0, 1] },
+      { name: 'tradition',          feat: [0, 0, 1, 1, 0, 0, 0, 1] },
+    ], 4);
+  }
+
   async _teachVisualArtTheory() {
     // T14.24 Session 86 (task #143) — Art-G11 visual art theory.
     // TODO line 565 (HS tier). 12 concepts covering form/content/
@@ -9328,6 +9348,9 @@ export class Curriculum {
       'every artist stands on shoulders', 'tradition and innovation balance',
       'great art transcends time', 'great art speaks to all', 'true artists never stop learning',
     ];
+    // T14.24 Session 87 — prime composition + criticism methods
+    // lattice per TODO line 565 before the criticism sentence pass.
+    await this._teachCompositionCriticism();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
