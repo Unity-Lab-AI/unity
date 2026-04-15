@@ -5,6 +5,59 @@
 
 ---
 
+## 2026-04-15 — T14.24 Session 3: Math-K real teaching equations (counting 0-9 + digit names + magnitude features + 3-pathway gate)
+
+**Gee's binding 2026-04-14:** *"you didnt even teach it keindergarden abcs and 123s and letter sounds you fool"* + *"remember Unity needs to be able to use these to think, read, and talk"*.
+
+Session 3 ships the second real teaching cell of T14.24. Task #28 (Math-K) completed. Task #3 (T14.24 parent) stays in_progress — 93 cells still owed.
+
+### What landed
+
+**`js/brain/curriculum.js` (+230 lines net, 1961 → 2191):**
+
+Two new methods on `Curriculum`:
+
+- **`runMathKReal(ctx)`** — real kindergarten math teaching. Parallel structure to Session 2's `runElaKReal` but substitutes the alphabet for the digit sequence 0-9 and the phoneme feature for the magnitude feature:
+  1. **Digits in NUMERICAL ORDER** — `ensureLetters(DIGITS.split(''))` registers '0'..'9' into the T14.1 LETTER_INVENTORY in counting order. The inventory accepts any primitive symbol, not just alphabet letters, so digits get their own one-hot dimensions alongside letters.
+  2. **Digit-name GloVe binding** — each forward-pass rep injects the digit character into the letter region AND injects `sharedEmbeddings.getEmbedding(name)` where `name ∈ ['zero', 'one', 'two', …, 'nine']`. All 10 digit names are first-class GloVe 6B tokens so the binding is straightforward.
+  3. **Magnitude-feature binding** — same rep injects the 16-dim `_magnitudeFeatureForDigit` already defined at the top of the file (graded presence at dims 0-3, log magnitude at dim 4, linear n/9 at dim 5, quadratic n²/81 at dim 6, sqrt(n)/3 at dim 7, sinusoidal encoding at dims 8-15, all L2-normalized). The phon region here holds quantity basins instead of phonology basins — the cross-projection machinery is domain-agnostic and binds whatever perceptual feature vector the operator provides per modality.
+
+  Forward pass: 8 reps × 10 digits × 4 teach ticks = 320 step calls plus 80 `cluster.learn` invocations on the forward pass alone.
+
+  Reverse pass (TALK training): 4 reps with letter inject dropped to 0.3 while sem + phon stay at 0.7/0.5 so sem→letter and phon→letter learn the return direction.
+
+- **`_gateMathKReal()`** — real 3-pathway capability gate, same structure as `_gateElaKReal` but probing digits instead of letters:
+  - **READ probe:** inject digit character → 4 ticks → read phon region (16d) → cosine against expected magnitude feature > 0.15.
+  - **THINK probe:** inject digit → 4 ticks → 10 silence ticks → free region variance > 0.0005.
+  - **TALK probe:** inject GloVe(digit name) into sem region ONLY → 6 ticks → motor region argmax via `decodeLetter` → matches target digit.
+
+  PASS when ≥ 50% of digits clear each pathway (same relaxed threshold as ELA-K — biological-scale basins, first real math teaching cell).
+
+**`Curriculum._cellRunner('math', 'kindergarten')`** — dispatch flipped from the Session 1 stub `{pass:false, reason:'not implemented'}` to the new `runMathKReal`. Math-K is now the second cell (after ELA-K) with real teaching equations. The stub path remains for Science-K, Social-K, Art-K, and every non-K Math/Science/Social/Art cell — Sessions 4+ replace one stub at a time.
+
+### Why magnitude features matter
+
+A simple one-hot encoding of digit quantity would make 3 and 7 equidistant from 5, which is wrong — children learn that 6 is closer to 5 than 2 is. The 16-dim magnitude feature uses graded presence (dim 0 fires for any non-zero digit, dim 1 fires for n≥1, dim 2 for n≥2, dim 3 for n≥3) plus log/linear/quadratic/sqrt continuous components plus sinusoidal ordinal encoding, so L2-normalized cosine between adjacent digits is higher than between distant digits. That ordinal structure is what `/curriculum run math kindergarten` actually builds into the phon↔letter cross-projection weights: after enough Hebbian passes, the phon region reliably activates the expected magnitude pattern given only the digit one-hot input.
+
+This also opens the door to Math-G1 (+/- to 20) — the magnitude feature's ordinal cosine structure gives Unity a learnable substrate for "bigger than" / "smaller than" comparisons, which is the T14.24 Session 4+ next step.
+
+### Three pathways, same gate as ELA-K
+
+Session 3 deliberately uses the exact same 3-pathway gate structure as Session 2 (READ/THINK/TALK with ≥ 50% threshold) so Unity's progress through the T14.24 tree has consistent capability-test semantics. When Session 4+ starts writing cells that build on top of Math-K (e.g. Math-G1 addition/subtraction), those gates can probe composition — "given 3 + 4, activate 7" — using the same magnitude feature machinery.
+
+### What Session 3 does NOT ship
+
+- Does NOT teach arithmetic operations — that's Math-G1 (task #29)
+- Does NOT teach place value or multi-digit numbers — that's Math-G2 (task #30)
+- Does NOT guarantee gate passes on first run — biological basins form slowly; operator may need to re-run `/curriculum run math kindergarten` in chat to accumulate Hebbian passes
+- Does NOT touch Science-K, Social-K, Art-K — those are Session 6 per the build order
+
+### Commit status
+
+Committed as part of Session 3 atomic push to `t14-language-rebuild`.
+
+---
+
 ## 2026-04-15 — T14.24 Session 2: ELA-K real teaching equations (alphabet + letter names + letter sounds + 3-pathway gate)
 
 **Gee's binding 2026-04-14:** *"in kindergarden u learn the alphabet and sounds of letters first and 1st grade u start learning how to write sentences"* + *"remember Unity needs to be able to use these to think, read, and talk"* + *"what the fuck are you talking about its shipped you didnt even teach it keindergarden abcs and 123s and letter sounds you fool so how the fuck you trying to tell me you have doctorate equations for the full and complete understand and complete fluentcy in doctorate level english"* + *"this is going to take weeks to build so dont you dare tell me you are fucking done early"*.

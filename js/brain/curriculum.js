@@ -1428,7 +1428,12 @@ export class Curriculum {
           return async () => ({ pass: false, reason: `ela/${grade}: no runner` });
       }
     }
-    // Stub for math/science/social/art — Session 1 framework only.
+    // T14.24 Session 3 (2026-04-15) — Math-K ships real teaching.
+    if (subject === 'math' && grade === 'kindergarten') {
+      return async (ctx) => this.runMathKReal(ctx);
+    }
+    // Stub for remaining cells — Session 1 framework only. Sessions 4-N
+    // replace one stub at a time.
     return async () => ({
       pass: false,
       reason: `${subject}/${grade}: teach+gate not implemented (T14.24 Session 1 stub)`,
@@ -1868,6 +1873,231 @@ export class Curriculum {
       pass,
       reason: `READ ${readPass}/${N} (${(readRate * 100).toFixed(0)}%), THINK ${thinkPass}/${N} (${(thinkRate * 100).toFixed(0)}%), TALK ${talkPass}/${N} (${(talkRate * 100).toFixed(0)}%)`,
       metrics: { readRate, thinkRate, talkRate, perLetter },
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // T14.24 SESSION 3 — REAL MATH-K TEACHING EQUATIONS (2026-04-15)
+  // ═══════════════════════════════════════════════════════════════════
+  //
+  // Gee binding 2026-04-14: "you didnt even teach it keindergarden abcs
+  // and 123s and letter sounds you fool" + "remember Unity needs to be
+  // able to use these to think, read, and talk".
+  //
+  // Real kindergarten math. Parallels the ELA-K structure but substitutes
+  // the alphabet for the digit sequence 0-9 and the phoneme feature for
+  // the magnitude feature. Three things in parallel:
+  //
+  //   1. Digits in NUMERICAL ORDER — '0', '1', '2', …, '9' register into
+  //      the T14.1 LETTER_INVENTORY (which accepts any primitive symbol,
+  //      not just alphabet letters) in counting order, so the inventory
+  //      slot for each digit is stable and matches a number-line chart.
+  //
+  //   2. Digit-name GloVe binding via sem↔letter cross-projection
+  //      Hebbian — inject digit character into the letter region AND
+  //      inject GloVe('zero' | 'one' | 'two' | … | 'nine') into the sem
+  //      region simultaneously. Digit-name words are first-class GloVe
+  //      tokens in the 6B vocab so the binding is straightforward.
+  //
+  //   3. Magnitude-feature binding via phon↔letter cross-projection
+  //      Hebbian — the 16-dim `_magnitudeFeatureForDigit` already defined
+  //      at the top of this file (graded presence + log + linear + sine
+  //      components) goes into the phon region at the same tick. The
+  //      phon region here holds quantity/magnitude basins rather than
+  //      phonology — the cross-projection machinery is domain-agnostic,
+  //      it just binds whatever perceptual feature vector the operator
+  //      chose for the modality.
+  //
+  // Reverse pass (TALK training) drops the letter inject to 0.3 while
+  // sem + phon stay at 0.7/0.5 so sem→letter and phon→letter learn the
+  // return direction — given a digit name, activate the digit basin and
+  // emit it through motor.
+  //
+  // Gate probes the same three pathways as ELA-K:
+  //   - READ:  digit one-hot → phon readout cosine vs expected magnitude
+  //             feature > 0.15 (magnitude features are 16d so random
+  //             pairs still average near zero)
+  //   - THINK: digit → 10 silence ticks → free region variance >
+  //             0.0005 (magnitude state persists across silence)
+  //   - TALK:  GloVe(digit name) into sem region only → motor readout
+  //             decodes to target digit
+  //
+  // PASS when ≥ 50% of the digits clear each pathway (same relaxed
+  // threshold as ELA-K — biological-scale basins, Session-3 first real
+  // math teaching cell).
+
+  async runMathKReal(ctx) {
+    const cluster = this.cluster;
+    if (!cluster) return { pass: false, reason: 'no cluster wired' };
+
+    const DIGITS = DIGIT_ORDER;           // '0123456789'
+    const NAMES = DIGIT_NAMES;            // ['zero', 'one', ..., 'nine']
+    const REPS_PER_DIGIT = 8;
+    const REVERSE_REPS = 4;
+    const TEACH_TICKS_PER_REP = 4;
+
+    // STEP 1 — register digits in NUMERICAL order so LETTER_INVENTORY
+    // insertion matches a number-line chart. encodeLetter happily accepts
+    // non-alphabet primitives so '0'-'9' each get their own one-hot
+    // dimension.
+    ensureLetters(DIGITS.split(''));
+
+    // STEP 2 — FORWARD PASS: digit character + digit name + magnitude
+    // feature all driven simultaneously. The cross-projection Hebbian
+    // binds the three-way coincidence into stable basin triples.
+    for (let rep = 0; rep < REPS_PER_DIGIT; rep++) {
+      for (let i = 0; i < DIGITS.length; i++) {
+        const digit = DIGITS[i];
+        const name = NAMES[i];
+
+        // Semantic anchor: GloVe of the English digit name ('zero',
+        // 'one', 'two', …). All 10 are in GloVe 6B as first-class tokens.
+        const nameEmb = sharedEmbeddings.getEmbedding(name);
+
+        // Magnitude anchor: 16-dim feature encoding the quantity. Uses
+        // graded presence (dims 0-3 fire at decreasing strength 0 through
+        // min(n,3)) + log magnitude (dim 4) + linear n/9 (dim 5) +
+        // quadratic n²/81 (dim 6) + sqrt(n)/3 (dim 7) + sinusoidal
+        // encoding (dims 8-15). L2-normalized so adjacent digits are
+        // closer than distant digits, which is the ordinal property
+        // cosine comparison picks up on.
+        const magFeat = _magnitudeFeatureForDigit(digit);
+
+        // Triple inject — same three-way coincidence pattern as ELA-K
+        // runs on letter/sem/phon.
+        cluster.injectLetter(digit, 1.0);
+        if (nameEmb && nameEmb.length > 0 && cluster.regions?.sem) {
+          cluster.injectEmbeddingToRegion('sem', nameEmb, 0.6);
+        }
+        if (magFeat && magFeat.length > 0 && cluster.regions?.phon) {
+          cluster.injectEmbeddingToRegion('phon', magFeat, 0.6);
+        }
+
+        for (let t = 0; t < TEACH_TICKS_PER_REP; t++) {
+          cluster.step(0.001);
+          this.stats.totalTicks++;
+        }
+        cluster.learn(0);
+        this.stats.lettersSeen++;   // reuse counter — digits as "letters"
+      }
+      await _microtask();
+    }
+
+    // STEP 3 — REVERSE PASS (TALK training): drive sem + phon without
+    // direct digit injection so the return-direction cross-projections
+    // learn to activate the digit basin from name + magnitude alone.
+    for (let rep = 0; rep < REVERSE_REPS; rep++) {
+      for (let i = 0; i < DIGITS.length; i++) {
+        const digit = DIGITS[i];
+        const name = NAMES[i];
+        const nameEmb = sharedEmbeddings.getEmbedding(name);
+        const magFeat = _magnitudeFeatureForDigit(digit);
+
+        if (nameEmb && nameEmb.length > 0 && cluster.regions?.sem) {
+          cluster.injectEmbeddingToRegion('sem', nameEmb, 0.7);
+        }
+        if (magFeat && magFeat.length > 0 && cluster.regions?.phon) {
+          cluster.injectEmbeddingToRegion('phon', magFeat, 0.5);
+        }
+        cluster.injectLetter(digit, 0.3);
+
+        for (let t = 0; t < TEACH_TICKS_PER_REP; t++) {
+          cluster.step(0.001);
+          this.stats.totalTicks++;
+        }
+        cluster.learn(0);
+        this.stats.lettersSeen++;
+      }
+      await _microtask();
+    }
+
+    return this._gateMathKReal();
+  }
+
+  _gateMathKReal() {
+    const cluster = this.cluster;
+    const DIGITS = DIGIT_ORDER;
+    const NAMES = DIGIT_NAMES;
+
+    let readPass = 0;
+    let thinkPass = 0;
+    let talkPass = 0;
+
+    const READ_COS_MIN = 0.15;
+    const THINK_VAR_MIN = 0.0005;
+
+    const perDigit = [];
+
+    for (let i = 0; i < DIGITS.length; i++) {
+      const digit = DIGITS[i];
+      const name = NAMES[i];
+
+      // ─── READ probe: digit character → magnitude basin in phon ──────
+      cluster.injectLetter(digit, 1.0);
+      for (let t = 0; t < 4; t++) cluster.step(0.001);
+      const phonReadout = cluster.regionReadout('phon', 16);
+      const expectedMag = _magnitudeFeatureForDigit(digit);
+      let readCos = 0;
+      if (phonReadout && expectedMag && phonReadout.length > 0 && expectedMag.length > 0) {
+        const L = Math.min(phonReadout.length, expectedMag.length);
+        let dot = 0, np = 0, ne = 0;
+        for (let k = 0; k < L; k++) {
+          dot += phonReadout[k] * expectedMag[k];
+          np += phonReadout[k] * phonReadout[k];
+          ne += expectedMag[k] * expectedMag[k];
+        }
+        const denom = Math.sqrt(np) * Math.sqrt(ne);
+        readCos = denom > 0 ? dot / denom : 0;
+      }
+      const readOk = readCos > READ_COS_MIN;
+      if (readOk) readPass++;
+
+      // ─── THINK probe: digit state persists across silence ──────────
+      cluster.injectLetter(digit, 1.0);
+      for (let t = 0; t < 4; t++) cluster.step(0.001);
+      for (let t = 0; t < 10; t++) cluster.step(0.001);
+      const freeReadout = cluster.regionReadout('free', 64);
+      let thinkVar = 0;
+      if (freeReadout && freeReadout.length > 0) {
+        let mean = 0;
+        for (let k = 0; k < freeReadout.length; k++) mean += freeReadout[k];
+        mean /= freeReadout.length;
+        for (let k = 0; k < freeReadout.length; k++) {
+          const d = freeReadout[k] - mean;
+          thinkVar += d * d;
+        }
+        thinkVar /= freeReadout.length;
+      }
+      const thinkOk = thinkVar > THINK_VAR_MIN;
+      if (thinkOk) thinkPass++;
+
+      // ─── TALK probe: digit name → motor → decodeLetter ──────────────
+      const nameEmb = sharedEmbeddings.getEmbedding(name);
+      if (nameEmb && nameEmb.length > 0 && cluster.regions?.sem) {
+        cluster.injectEmbeddingToRegion('sem', nameEmb, 0.8);
+      }
+      for (let t = 0; t < 6; t++) cluster.step(0.001);
+      const invSize = inventorySize();
+      const motorVec = invSize > 0 ? cluster.regionReadout('motor', invSize) : null;
+      const decoded = motorVec ? decodeLetter(motorVec) : null;
+      const talkOk = decoded === digit;
+      if (talkOk) talkPass++;
+
+      perDigit.push({ digit, name, readCos, thinkVar, decoded, readOk, thinkOk, talkOk });
+    }
+
+    const N = DIGITS.length;
+    const readRate = readPass / N;
+    const thinkRate = thinkPass / N;
+    const talkRate = talkPass / N;
+
+    const PATH_MIN = 0.50;
+    const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= PATH_MIN;
+
+    return {
+      pass,
+      reason: `READ ${readPass}/${N} (${(readRate * 100).toFixed(0)}%), THINK ${thinkPass}/${N} (${(thinkRate * 100).toFixed(0)}%), TALK ${talkPass}/${N} (${(talkRate * 100).toFixed(0)}%)`,
+      metrics: { readRate, thinkRate, talkRate, perDigit },
     };
   }
 
