@@ -5705,6 +5705,31 @@ export class Curriculum {
     ], 4);
   }
 
+  async _teachResearchGradeScience() {
+    // T14.24 Session 54 (task #111) — Sci-Grad research-grade science.
+    // TODO line 477: "Research-grade science. Gate ≥15%". 12 concepts
+    // covering the grad-student research loop — literature mastery,
+    // dissertation arc, funding, peer review cycle, replication,
+    // statistical power, preprints, advisor mentorship, specialization.
+    // Sits one level above Sci-Col4 _teachScienceResearchMethods
+    // (which covered experimental primitives); this set covers the
+    // social + institutional machinery a grad researcher operates in.
+    return this._conceptTeach([
+      { name: 'literature review',    feat: [1, 1, 0, 0, 1, 0, 0, 1] },
+      { name: 'dissertation',         feat: [1, 0, 1, 0, 1, 0, 1, 0] },
+      { name: 'qualifying exam',      feat: [1, 0, 1, 1, 0, 0, 1, 0] },
+      { name: 'grant proposal',       feat: [1, 1, 1, 0, 0, 1, 0, 0] },
+      { name: 'principal investigator', feat: [0, 1, 0, 1, 1, 1, 1, 0] },
+      { name: 'replication study',    feat: [1, 1, 0, 1, 1, 0, 0, 1] },
+      { name: 'statistical power',    feat: [1, 0, 1, 1, 0, 1, 1, 0] },
+      { name: 'effect size',          feat: [1, 0, 0, 1, 1, 1, 0, 1] },
+      { name: 'preprint server',      feat: [0, 1, 1, 0, 1, 1, 1, 0] },
+      { name: 'advisor mentorship',   feat: [0, 1, 1, 1, 0, 0, 1, 1] },
+      { name: 'specialization',       feat: [1, 0, 1, 0, 1, 1, 0, 1] },
+      { name: 'research program',     feat: [1, 1, 0, 0, 0, 1, 1, 1] },
+    ], 4);
+  }
+
   async _teachMolecularBiology() {
     // T14.24 Session 52 (task #109) — Sci-Col3 molecular biology.
     // TODO line 471: "Molecular biology, biochemistry, quantum
@@ -9434,6 +9459,13 @@ export class Curriculum {
       'ethics boards oversee research', 'publication shares results',
       'graduate training prepares researchers',
     ];
+    // T14.24 Session 54 — prime the research-grade science concept
+    // lattice (literature review / dissertation / grant / PI / replication
+    // study / statistical power / preprint / advisor / specialization /
+    // research program) before the sentence pass so SENTENCES attach to
+    // a real grad-research basin instead of drifting into generic
+    // Col4 experimental-method vocabulary.
+    await this._teachResearchGradeScience();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
