@@ -5712,6 +5712,29 @@ export class Curriculum {
     ], 4);
   }
 
+  async _teachPoliticalScience() {
+    // T14.24 Session 70 (task #127) — Soc-Col2 political science.
+    // TODO line 537: "political theory. Gate ≥20%". 14 concepts
+    // covering the subfields + major theories that runSocCol2Real's
+    // sentences discuss.
+    return this._conceptTeach([
+      { name: 'political science',    feat: [1, 1, 0, 0, 1, 0, 0, 1] },
+      { name: 'comparative politics', feat: [1, 0, 1, 0, 1, 0, 1, 0] },
+      { name: 'international relations', feat: [0, 1, 1, 0, 1, 0, 1, 0] },
+      { name: 'political theory',     feat: [1, 0, 0, 1, 0, 1, 0, 1] },
+      { name: 'realism',              feat: [0, 1, 1, 1, 0, 0, 1, 0] },
+      { name: 'liberalism',           feat: [1, 0, 1, 0, 1, 1, 0, 0] },
+      { name: 'constructivism',       feat: [1, 1, 0, 1, 0, 1, 0, 1] },
+      { name: 'democracy',            feat: [1, 0, 0, 0, 1, 0, 1, 0] },
+      { name: 'authoritarianism',     feat: [0, 1, 0, 1, 0, 0, 1, 1] },
+      { name: 'totalitarianism',      feat: [0, 1, 1, 1, 0, 0, 0, 1] },
+      { name: 'federalism',           feat: [1, 0, 0, 0, 1, 1, 0, 0] },
+      { name: 'parliamentary system', feat: [1, 0, 1, 0, 0, 1, 1, 0] },
+      { name: 'presidential system',  feat: [0, 1, 1, 0, 1, 1, 0, 0] },
+      { name: 'political economy',    feat: [1, 1, 0, 0, 1, 0, 0, 1] },
+    ], 4);
+  }
+
   async _teachHistoriography() {
     // T14.24 Session 69 (task #126) — Soc-Col1 historiography. TODO
     // line 537: "Historiography, specialized history, political
@@ -9287,6 +9310,9 @@ export class Curriculum {
       'interest groups influence policy', 'political parties organize competition',
       'elections choose leaders', 'voting behavior varies', 'political economy links politics and economics',
     ];
+    // T14.24 Session 70 — prime political science lattice per TODO
+    // line 537 before the Col2 sentence pass.
+    await this._teachPoliticalScience();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
