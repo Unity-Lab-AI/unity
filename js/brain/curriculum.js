@@ -4432,7 +4432,143 @@ export class Curriculum {
   // equations live in the shared helpers; the per-cell data is what
   // makes each subject distinct.
 
+  // ─── TODO-aligned ELA-G4 helpers (Session 30) ────────────────────
+  //
+  // docs/TODO.md T14.24 ELA-G4 spec (line 170):
+  //   _teachCompoundSentences(compound) walks each compound sentence,
+  //     at the conjunction position fires cluster.injectWorkingMemory
+  //     (prevClauseEmb) so the next clause sees its predecessor in free
+  //     region — binds conjunction to context carry.
+  //   _teachPronouns(pairs) walks noun-sentence THEN pronoun-sentence
+  //     with cluster.injectWorkingMemory carrying the noun's GloVe
+  //     between them — Hebbian on free↔sem binds the pronoun to the
+  //     antecedent meaning.
+
+  async _teachCompoundSentences(compoundList, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 4;
+    const ticksPerWord = opts.ticksPerWord ?? 2;
+    const arousal = opts.arousal ?? 0.8;
+    const valence = opts.valence ?? 0.2;
+
+    const CONJUNCTIONS = new Set(['and', 'but', 'or', 'so', 'because', 'yet']);
+    const letterSet = new Set();
+    for (const s of compoundList) for (const ch of s) if (/[a-z]/.test(ch)) letterSet.add(ch);
+    ensureLetters(Array.from(letterSet));
+
+    for (let rep = 0; rep < reps; rep++) {
+      for (const sentence of compoundList) {
+        const words = sentence.split(/\s+/).filter(Boolean);
+        if (words.length < 3) continue;
+
+        // Find the conjunction position (first one in the sentence)
+        let conjIdx = -1;
+        for (let i = 0; i < words.length; i++) {
+          if (CONJUNCTIONS.has(words[i].toLowerCase())) {
+            conjIdx = i;
+            break;
+          }
+        }
+        if (conjIdx === -1) {
+          // No conjunction detected — fall through to generic walk
+          this._walkSentence(words, arousal, valence, ticksPerWord);
+          continue;
+        }
+
+        // Walk the first clause normally
+        const clauseA = words.slice(0, conjIdx);
+        this._walkSentence(clauseA, arousal, valence, ticksPerWord);
+        // TODO spec: at conjunction position, inject the first clause's
+        // embedding into free region as working memory so the second
+        // clause sees it as context carry
+        const clauseAText = clauseA.join(' ');
+        const prevEmb = sharedEmbeddings.getSentenceEmbedding
+          ? sharedEmbeddings.getSentenceEmbedding(clauseAText)
+          : null;
+        if (prevEmb && prevEmb.length > 0 && typeof cluster.injectWorkingMemory === 'function') {
+          cluster.injectWorkingMemory(prevEmb, 0.7);
+        }
+        // Walk the conjunction word itself (bind it to the context
+        // carry state so it becomes an "attach next clause" marker)
+        const conjWord = [words[conjIdx]];
+        this._walkSentence(conjWord, arousal, valence, ticksPerWord);
+        // Walk the second clause with the working memory still primed
+        const clauseB = words.slice(conjIdx + 1);
+        if (clauseB.length > 0) {
+          this._walkSentence(clauseB, arousal, valence, ticksPerWord);
+        }
+        this.stats.sentencesSeen++;
+      }
+      await _microtask();
+    }
+    return { taught: reps * compoundList.length };
+  }
+
+  async _teachPronouns(opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 5;
+    const ticksPerWord = opts.ticksPerWord ?? 2;
+    const arousal = opts.arousal ?? 0.8;
+    const valence = opts.valence ?? 0.2;
+
+    // Noun-sentence → pronoun-sentence pairs. The noun gets fully
+    // exposed in sentence 1, its embedding carries into working memory
+    // between sentences, sentence 2 uses the pronoun with the antecedent
+    // state still active in the free region. Hebbian binds pronoun ↔
+    // antecedent meaning.
+    const PAIRS = [
+      { noun: 'cat', antecedentSentence: 'the cat ran fast', pronoun: 'he', pronounSentence: 'he was quick' },
+      { noun: 'dog', antecedentSentence: 'the dog barked loud', pronoun: 'he', pronounSentence: 'he wanted food' },
+      { noun: 'bird', antecedentSentence: 'the bird flew high', pronoun: 'it', pronounSentence: 'it sang a song' },
+      { noun: 'girl', antecedentSentence: 'the girl read a book', pronoun: 'she', pronounSentence: 'she loved stories' },
+      { noun: 'boy', antecedentSentence: 'the boy kicked the ball', pronoun: 'he', pronounSentence: 'he was happy' },
+      { noun: 'woman', antecedentSentence: 'the woman cooked dinner', pronoun: 'she', pronounSentence: 'she was tired' },
+      { noun: 'man', antecedentSentence: 'the man fixed the car', pronoun: 'he', pronounSentence: 'he used a wrench' },
+      { noun: 'children', antecedentSentence: 'the children played outside', pronoun: 'they', pronounSentence: 'they had fun' },
+      { noun: 'baby', antecedentSentence: 'the baby slept well', pronoun: 'she', pronounSentence: 'she was peaceful' },
+      { noun: 'fish', antecedentSentence: 'the fish swam away', pronoun: 'it', pronounSentence: 'it was fast' },
+      { noun: 'mother', antecedentSentence: 'the mother hugged her child', pronoun: 'she', pronounSentence: 'she loved them' },
+      { noun: 'father', antecedentSentence: 'the father read a book', pronoun: 'he', pronounSentence: 'he enjoyed it' },
+    ];
+
+    const letterSet = new Set();
+    for (const p of PAIRS) {
+      for (const ch of p.antecedentSentence) if (/[a-z]/.test(ch)) letterSet.add(ch);
+      for (const ch of p.pronounSentence) if (/[a-z]/.test(ch)) letterSet.add(ch);
+    }
+    ensureLetters(Array.from(letterSet));
+
+    for (let rep = 0; rep < reps; rep++) {
+      for (const { noun, antecedentSentence, pronoun, pronounSentence } of PAIRS) {
+        // Walk the antecedent sentence
+        const wordsA = antecedentSentence.split(/\s+/).filter(Boolean);
+        this._walkSentence(wordsA, arousal, valence, ticksPerWord);
+
+        // Between sentences: inject the noun's GloVe into working
+        // memory as the antecedent the pronoun will refer to
+        const nounEmb = sharedEmbeddings.getEmbedding(noun);
+        if (nounEmb && nounEmb.length > 0 && typeof cluster.injectWorkingMemory === 'function') {
+          cluster.injectWorkingMemory(nounEmb, 0.8);
+        }
+
+        // Walk the pronoun sentence — free region still has antecedent
+        // active, so Hebbian binds pronoun ↔ noun meaning via free↔sem
+        // cross-projection
+        const wordsB = pronounSentence.split(/\s+/).filter(Boolean);
+        this._walkSentence(wordsB, arousal, valence, ticksPerWord);
+        this.stats.sentencesSeen += 2;
+      }
+      await _microtask();
+    }
+    return { taught: reps * PAIRS.length * 2 };
+  }
+
   // ─── ELA-G4: compound sentences + pronouns ────────────────────────
+  // Session 9 first ship used _teachSentenceList generically. Session 30
+  // tightens against TODO spec with _teachCompoundSentences +
+  // _teachPronouns called before the generic walk.
   async runElaG4Real(ctx) {
     const SENTENCES = [
       'the dog runs and the cat sleeps', 'i was happy but you were sad',
@@ -4451,6 +4587,11 @@ export class Curriculum {
       'i gave him the book', 'she told me the story',
       'they showed us the way', 'we helped them move',
     ];
+    // Session 30 — TODO-aligned split. Compound sentences get the
+    // working-memory-at-conjunction teach method; pronouns get the
+    // antecedent→pronoun sentence-pair method.
+    await this._teachCompoundSentences(SENTENCES);
+    await this._teachPronouns();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
