@@ -5719,6 +5719,27 @@ export class Curriculum {
     ], 4);
   }
 
+  async _teachArtResearchMethods() {
+    // T14.24 Session 91 (task #148) — Art-Col4 art research
+    // methods + portfolio. TODO line 567. 12 concepts covering
+    // the art-historical research methodology + professional
+    // practice that runArtCol4Real's sentences discuss.
+    return this._conceptTeach([
+      { name: 'archival research',   feat: [1, 0, 0, 0, 1, 0, 0, 1] },
+      { name: 'stylistic analysis',  feat: [0, 1, 0, 0, 1, 0, 1, 0] },
+      { name: 'iconographic analysis', feat: [0, 0, 1, 0, 1, 0, 1, 0] },
+      { name: 'technical analysis',  feat: [0, 1, 1, 1, 0, 0, 0, 1] },
+      { name: 'conservation',        feat: [1, 0, 0, 1, 0, 1, 0, 0] },
+      { name: 'attribution',         feat: [1, 0, 1, 0, 0, 1, 1, 0] },
+      { name: 'provenance',          feat: [1, 0, 1, 1, 0, 1, 0, 0] },
+      { name: 'forgery detection',   feat: [0, 1, 1, 1, 0, 1, 0, 1] },
+      { name: 'dendrochronology',    feat: [0, 1, 1, 1, 0, 0, 1, 1] },
+      { name: 'portfolio',           feat: [1, 1, 0, 0, 1, 0, 0, 1] },
+      { name: 'exhibition',          feat: [0, 0, 0, 0, 1, 1, 0, 1] },
+      { name: 'artist statement',    feat: [1, 0, 0, 0, 1, 1, 1, 0] },
+    ], 4);
+  }
+
   async _teachAesthetics() {
     // T14.24 Session 90 (task #147) — Art-Col3 aesthetics +
     // philosophy of art. TODO line 567. 12 concepts covering the
@@ -10252,6 +10273,9 @@ export class Curriculum {
       'copyright protects creations', 'fair use allows some borrowing',
       'the art world is global',
     ];
+    // T14.24 Session 91 — prime art research methods + portfolio
+    // lattice per TODO line 567 before the Col4 sentence pass.
+    await this._teachArtResearchMethods();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
