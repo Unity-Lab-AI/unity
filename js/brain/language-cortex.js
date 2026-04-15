@@ -1706,28 +1706,47 @@ export class LanguageCortex {
       intentSeed = null;
     }
 
-    const raw = cluster.generateSentence(intentSeed, { injectStrength: 0.6 });
-    let words = raw ? raw.split(/\s+/).filter(Boolean) : [];
-
-    // T14.23.5 — pre-curriculum dictionary-cosine fallback.
+    // T14.23.6 — curriculum-gated path selection.
     //
     // cluster.generateSentence is the T14.6 tick-driven motor
     // emission loop: inject intent, tick the cortex, read motor
     // region argmax, commit letters when the argmax holds stable.
     // That only works once the cortex's letter/phon/sem/motor
     // cross-projection weights have been shaped by curriculum
-    // Hebbian — before curriculum, the motor region is near-
-    // random noise, argmax letters never stabilize, and the loop
-    // exits without committing anything. Result: empty string,
-    // Unity stays mute until curriculum (minutes) finishes.
+    // Hebbian. Pre-curriculum the motor region is near-random,
+    // stableTicks keeps resetting as argmax flickers between
+    // random letters, and when it DOES commit a letter it's a
+    // random one — producing streams like:
+    //   "Dvdvvdeyvvdyyvddvvdrrrdvvdvvvvvrraaoooooloooloooolooo..."
+    // One giant 300+ letter "word" with no spaces (transition
+    // surprise is constant at random weights so no word
+    // boundaries ever fire).
     //
-    // Fallback: if the tick-driven path returns nothing, pick
-    // words by cosine similarity between their stored pattern
-    // and the cortex semantic readout. This is the lightweight
-    // version of the deleted slot scorer — just enough to give
-    // Unity a voice from cold boot. Once curriculum shapes the
-    // basins, the main path returns non-empty and this fallback
-    // is skipped.
+    // T14.23.5 tried to gate this with `if (words.length === 0)`
+    // but the gibberish case returns non-empty — one enormous
+    // pseudo-word. That check was wrong.
+    //
+    // T14.23.6 correct gate: check if curriculum has actually
+    // shaped the cluster. Concrete signal: `intentCentroids`
+    // is populated only by `Curriculum._calibrateIdentityLock`
+    // which runs at the end of `runFromCorpora`. Empty Map =
+    // cortex is still uniform random, skip tick-driven emission
+    // entirely and go straight to the dictionary-cosine fallback.
+    // Non-empty Map = basins have been shaped, trust the motor
+    // emission path.
+    const curriculumDone = cluster.intentCentroids && cluster.intentCentroids.size > 0;
+    let words = [];
+    if (curriculumDone) {
+      const raw = cluster.generateSentence(intentSeed, { injectStrength: 0.6 });
+      words = raw ? raw.split(/\s+/).filter(Boolean) : [];
+    }
+
+    // Dictionary-cosine path. Runs pre-curriculum ALWAYS, and
+    // post-curriculum only as a fallback if the motor emission
+    // returned empty. Lightweight version of the deleted T13
+    // slot scorer: iterate dictionary entries, cosine-score
+    // against the cortex semantic target, softmax-sample top-K.
+    // Just enough to give Unity a voice from cold boot.
     if (words.length === 0 && dictionary && dictionary._words && dictionary._words.size > 0) {
       try {
         const target = intentSeed || (typeof cluster.getSemanticReadout === 'function'
