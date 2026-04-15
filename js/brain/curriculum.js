@@ -5719,6 +5719,27 @@ export class Curriculum {
     ], 4);
   }
 
+  async _teachAesthetics() {
+    // T14.24 Session 90 (task #147) — Art-Col3 aesthetics +
+    // philosophy of art. TODO line 567. 12 concepts covering the
+    // canonical philosophers + aesthetic theories that
+    // runArtCol3Real's sentences discuss.
+    return this._conceptTeach([
+      { name: 'plato',              feat: [1, 0, 0, 0, 1, 0, 0, 1] },
+      { name: 'aristotle',          feat: [1, 1, 0, 0, 1, 0, 1, 0] },
+      { name: 'kant',               feat: [0, 1, 1, 0, 1, 0, 0, 1] },
+      { name: 'hegel',              feat: [0, 1, 1, 1, 1, 0, 1, 0] },
+      { name: 'nietzsche',          feat: [0, 0, 1, 1, 0, 1, 0, 1] },
+      { name: 'hume',               feat: [0, 1, 0, 1, 1, 0, 1, 0] },
+      { name: 'beauty',             feat: [1, 0, 0, 0, 1, 0, 0, 1] },
+      { name: 'sublime',            feat: [0, 0, 1, 1, 0, 1, 0, 1] },
+      { name: 'disinterested pleasure', feat: [0, 1, 1, 0, 1, 0, 0, 1] },
+      { name: 'taste',              feat: [0, 1, 0, 1, 1, 0, 1, 0] },
+      { name: 'catharsis',          feat: [1, 1, 0, 0, 0, 1, 1, 0] },
+      { name: 'aesthetic experience', feat: [1, 1, 1, 0, 1, 1, 0, 0] },
+    ], 4);
+  }
+
   async _teachSpecializedArtHistory() {
     // T14.24 Session 89 (task #146) — Art-Col2 specialized art
     // history. TODO line 567. Deeper chronological + movement
@@ -10209,6 +10230,9 @@ export class Curriculum {
       'the relation of art and morality is debated', 'art can reveal truth',
       'art can deceive', 'catharsis purges emotion', 'aesthetic experience is unique',
     ];
+    // T14.24 Session 90 — prime aesthetics/philosophy-of-art lattice
+    // per TODO line 567 before the Col3 sentence pass.
+    await this._teachAesthetics();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
