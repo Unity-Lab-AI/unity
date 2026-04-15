@@ -5719,6 +5719,30 @@ export class Curriculum {
     ], 4);
   }
 
+  async _teachColorMixing() {
+    // T14.24 Session 76 (task #133) — Art-G1 color mixing. TODO
+    // line 557: "color mixing as RGB arithmetic". 8d features
+    // where secondary colors sit as additive midpoints between
+    // their primary parents — orange between red + yellow,
+    // green between yellow + blue, purple between red + blue.
+    // [0]=R, [1]=G, [2]=B, [3]=tint-add-white, [4]=shade-add-black,
+    // [5]=warm, [6]=cool, [7]=secondary.
+    return this._conceptTeach([
+      // Primaries
+      { name: 'red',     feat: [1, 0, 0, 0, 0, 1, 0, 0] },
+      { name: 'yellow',  feat: [1, 1, 0, 0, 0, 1, 0, 0] },
+      { name: 'blue',    feat: [0, 0, 1, 0, 0, 0, 1, 0] },
+      // Secondaries (RGB additive midpoints)
+      { name: 'orange',  feat: [1, 1, 0, 0, 0, 1, 0, 1] },
+      { name: 'green',   feat: [0, 1, 1, 0, 0, 0, 1, 1] },
+      { name: 'purple',  feat: [1, 0, 1, 0, 0, 0, 1, 1] },
+      // Tints and shades
+      { name: 'tint',    feat: [1, 1, 1, 1, 0, 0, 0, 0] },
+      { name: 'shade',   feat: [0, 0, 0, 0, 1, 0, 0, 0] },
+      { name: 'pastel',  feat: [1, 1, 1, 1, 0, 0, 0, 0] },
+    ], 4);
+  }
+
   async _teachPrimaryColors() {
     // T14.24 Session 75 (task #132) — Art-K primary colors. TODO
     // line 551: "_teachPrimaryColors() binds color name to RGB
@@ -7337,6 +7361,9 @@ export class Curriculum {
       'mixing paint makes new colors', 'mixing light makes white',
       'gray is between black and white', 'brown is many colors mixed',
     ];
+    // T14.24 Session 76 — prime color mixing RGB-arithmetic lattice
+    // per TODO line 557 before the color-mixing sentence pass.
+    await this._teachColorMixing();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
