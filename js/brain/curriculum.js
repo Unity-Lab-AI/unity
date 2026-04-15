@@ -5683,6 +5683,74 @@ export class Curriculum {
       { name: 'allele', feat: [1, 0, 1, 1, 0, 0, 0, 0] },
     ], 4);
   }
+  async _teachOrganicChemistry() {
+    // T14.24 Session 51 (task #108) — Sci-Col2 organic chemistry.
+    // TODO line 468: "Organic chemistry, cell biology, physics 2".
+    //
+    // 12 concepts spanning the standard college-sophomore organic
+    // chem curriculum: hydrocarbon families + isomerism classes +
+    // functional groups + aromatic chemistry. Each feature pattern
+    // is distinct so the cortex forms unique basins the sentence
+    // walk can bind against.
+    return this._conceptTeach([
+      { name: 'alkane',            feat: [1, 0, 0, 0, 0, 0, 0, 1] },
+      { name: 'alkene',            feat: [1, 1, 0, 0, 0, 0, 0, 1] },
+      { name: 'alkyne',            feat: [1, 1, 1, 0, 0, 0, 0, 1] },
+      { name: 'aromatic',          feat: [1, 1, 0, 0, 0, 1, 1, 1] },
+      { name: 'stereoisomer',      feat: [0, 1, 0, 1, 0, 0, 1, 0] },
+      { name: 'chirality',         feat: [0, 0, 1, 1, 0, 0, 1, 0] },
+      { name: 'alcohol',           feat: [1, 0, 0, 1, 1, 0, 0, 0] },
+      { name: 'aldehyde',          feat: [0, 1, 0, 1, 1, 0, 0, 1] },
+      { name: 'ketone',            feat: [0, 0, 1, 1, 1, 0, 0, 1] },
+      { name: 'carboxylic acid',   feat: [1, 0, 1, 1, 1, 0, 1, 0] },
+      { name: 'ester',             feat: [1, 1, 1, 1, 1, 1, 0, 0] },
+      { name: 'amine',             feat: [0, 1, 0, 1, 0, 1, 1, 1] },
+    ], 4);
+  }
+
+  async _teachCellBiologyAdvanced() {
+    // T14.24 Session 51 (task #108) — Sci-Col2 cell biology depth.
+    // Extends the G7 _teachCells intro (7 organelles with generic
+    // features) to 10 college-level concepts covering organelle
+    // mechanism and cellular machinery.
+    return this._conceptTeach([
+      { name: 'endoplasmic reticulum', feat: [1, 0, 0, 1, 1, 0, 0, 0] },
+      { name: 'golgi apparatus',       feat: [1, 1, 0, 1, 0, 1, 0, 0] },
+      { name: 'lysosome',              feat: [0, 1, 1, 1, 0, 0, 1, 0] },
+      { name: 'peroxisome',            feat: [0, 1, 0, 0, 1, 0, 1, 0] },
+      { name: 'vesicle',               feat: [1, 0, 0, 0, 0, 1, 1, 0] },
+      { name: 'cytoskeleton',          feat: [1, 0, 1, 0, 0, 0, 0, 1] },
+      { name: 'microtubule',           feat: [1, 1, 1, 0, 0, 0, 0, 1] },
+      { name: 'actin filament',        feat: [0, 1, 1, 0, 1, 0, 0, 1] },
+      { name: 'cell signaling',        feat: [1, 1, 0, 0, 1, 1, 1, 0] },
+      { name: 'apoptosis',             feat: [0, 0, 1, 1, 0, 1, 0, 1] },
+    ], 4);
+  }
+
+  async _teachPhysics2() {
+    // T14.24 Session 51 (task #108) — Sci-Col2 physics 2 (mandatory
+    // per TODO line 468 even though the current runSciCol2Real
+    // sentence set is organic-chem + cell-bio focused). The concept
+    // basins exist in the cortex even without sentence-walk
+    // reinforcement so future cells can reference them.
+    //
+    // 10 college-physics-2 concepts covering electromagnetism,
+    // waves, thermodynamics depth, optics, and modern physics
+    // foundations (extending G11 _teachKinematics).
+    return this._conceptTeach([
+      { name: 'electric field',       feat: [1, 1, 0, 0, 1, 0, 0, 0] },
+      { name: 'magnetic field',       feat: [1, 0, 1, 0, 1, 0, 0, 0] },
+      { name: 'electromagnetic wave', feat: [1, 1, 1, 0, 1, 0, 1, 0] },
+      { name: 'thermodynamics',       feat: [0, 1, 0, 1, 0, 1, 0, 1] },
+      { name: 'heat engine',          feat: [0, 1, 1, 1, 0, 1, 0, 1] },
+      { name: 'refraction',           feat: [1, 0, 0, 0, 1, 1, 1, 0] },
+      { name: 'diffraction',          feat: [1, 1, 0, 0, 1, 1, 1, 0] },
+      { name: 'interference',         feat: [0, 1, 1, 0, 1, 1, 1, 0] },
+      { name: 'photoelectric effect', feat: [1, 1, 1, 0, 0, 1, 0, 1] },
+      { name: 'wave particle duality', feat: [1, 1, 0, 1, 1, 1, 0, 1] },
+    ], 4);
+  }
+
   async _teachGenBiology() {
     // T14.24 Session 50 (task #107) — Sci-Col1 general biology.
     // TODO line 465 is terse ("General biology, general chemistry"),
@@ -8679,6 +8747,35 @@ export class Curriculum {
       'the endoplasmic reticulum makes proteins', 'the golgi apparatus packages proteins',
       'lysosomes digest waste',
     ];
+    // T14.24 Session 51 (task #108) — TODO-aligned Col2 triple pass.
+    //
+    // TODO Sci-Col2 spec (line 468): "Organic chemistry, cell biology,
+    // physics 2". Three helpers run BEFORE the sentence walk:
+    //
+    //   _teachOrganicChemistry — 12 concepts: alkane, alkene, alkyne,
+    //     aromatic, stereoisomer, chirality, alcohol, aldehyde, ketone,
+    //     carboxylic acid, ester, amine. Covers hydrocarbon families
+    //     + functional groups the sentence walk then binds to their
+    //     natural language form.
+    //
+    //   _teachCellBiologyAdvanced — 10 college-depth cell biology
+    //     concepts extending G7 _teachCells: endoplasmic reticulum,
+    //     golgi apparatus, lysosome, peroxisome, vesicle, cytoskeleton,
+    //     microtubule, actin filament, cell signaling, apoptosis.
+    //
+    //   _teachPhysics2 — 10 physics 2 concepts (electric/magnetic
+    //     fields, EM wave, thermodynamics, heat engine, refraction,
+    //     diffraction, interference, photoelectric effect, wave-
+    //     particle duality). Mandatory per TODO even though current
+    //     sentence walk is org-chem + cell-bio focused — the concept
+    //     basins exist for future cells to reference.
+    //
+    // All three feed through _conceptTeach so every concept word
+    // (~32 new concepts) enters Unity's dictionary via the Session
+    // 46 growth fix.
+    await this._teachOrganicChemistry();
+    await this._teachCellBiologyAdvanced();
+    await this._teachPhysics2();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
