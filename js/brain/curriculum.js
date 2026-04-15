@@ -1441,8 +1441,9 @@ export class Curriculum {
         // T14.24 Session 14 — ELA-Col1/Col2 real teaching
         case 'college1':     return async (ctx) => this.runElaCol1Real(ctx);
         case 'college2':     return async (ctx) => this.runElaCol2Real(ctx);
-        case 'college3': case 'college4':
-          return async (ctx) => this.runCollege(ctx.corpora, ctx.arousal, ctx.valence);
+        // T14.24 Session 15 — ELA-Col3/Col4 real teaching
+        case 'college3':     return async (ctx) => this.runElaCol3Real(ctx);
+        case 'college4':     return async (ctx) => this.runElaCol4Real(ctx);
         case 'grad': case 'phd':
           return async (ctx) => this.runGradPhD(ctx.corpora, ctx.sentences, ctx.arousal, ctx.valence);
         default:
@@ -1634,6 +1635,31 @@ export class Curriculum {
     }
     if (subject === 'art' && grade === 'college2') {
       return async (ctx) => this.runArtCol2Real(ctx);
+    }
+    // T14.24 Session 15 (2026-04-15) — Col3/Col4 batch
+    if (subject === 'math' && grade === 'college3') {
+      return async (ctx) => this.runMathCol3Real(ctx);
+    }
+    if (subject === 'math' && grade === 'college4') {
+      return async (ctx) => this.runMathCol4Real(ctx);
+    }
+    if (subject === 'science' && grade === 'college3') {
+      return async (ctx) => this.runSciCol3Real(ctx);
+    }
+    if (subject === 'science' && grade === 'college4') {
+      return async (ctx) => this.runSciCol4Real(ctx);
+    }
+    if (subject === 'social' && grade === 'college3') {
+      return async (ctx) => this.runSocCol3Real(ctx);
+    }
+    if (subject === 'social' && grade === 'college4') {
+      return async (ctx) => this.runSocCol4Real(ctx);
+    }
+    if (subject === 'art' && grade === 'college3') {
+      return async (ctx) => this.runArtCol3Real(ctx);
+    }
+    if (subject === 'art' && grade === 'college4') {
+      return async (ctx) => this.runArtCol4Real(ctx);
     }
     // T14.24 Session 6 (2026-04-15) — Sci-K / Soc-K / Art-K all ship
     // real vocabulary teaching via the shared _teachVocabList helper.
@@ -4700,6 +4726,198 @@ export class Curriculum {
       'installation art fills spaces', 'video art uses moving images',
       'new media art uses digital tools', 'every movement responds to its time',
       'art reflects culture', 'art shapes culture', 'understanding art needs history',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // T14.24 SESSION 15 — COL3-COL4 BATCH (10 CELLS) (2026-04-15)
+  // ═══════════════════════════════════════════════════════════════════
+
+  async runElaCol3Real(ctx) {
+    const SENTENCES = [
+      'literary theory asks how texts work', 'formalism focuses on form',
+      'new criticism reads closely', 'the text itself holds meaning',
+      'structuralism finds universal patterns', 'poststructuralism questions structure',
+      'derrida deconstructs meaning', 'meaning is unstable',
+      'reader response says readers make meaning', 'different readers find different meanings',
+      'marxist criticism looks at class', 'literature reflects economic conditions',
+      'feminist criticism looks at gender', 'texts can reinforce or resist patriarchy',
+      'postcolonial criticism looks at empire', 'texts carry colonial histories',
+      'psychoanalytic criticism looks at the unconscious', 'freud shaped early theory',
+      'cultural studies connect literature and society', 'historicism reads in context',
+      'new historicism sees all texts as historical', 'queer theory challenges norms',
+      'ecocriticism considers nature', 'disability studies considers bodies',
+      'theory helps us read deeper',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runElaCol4Real(ctx) {
+    const SENTENCES = [
+      'advanced rhetoric studies persuasion deeply', 'classical rhetoric came from greece',
+      'aristotle wrote on rhetoric', 'he defined ethos pathos logos',
+      'cicero developed roman rhetoric', 'quintilian wrote on education',
+      'medieval rhetoric served the church', 'renaissance rhetoric revived classical ideas',
+      'enlightenment rhetoric valued reason', 'the new rhetoric studies audience',
+      'burke saw rhetoric as identification', 'perelman studied the new rhetoric',
+      'stasis theory asks what is at issue', 'kairos is the right moment',
+      'rhetorical situations have constraints', 'rhetorical analysis reveals strategies',
+      'propaganda uses manipulative techniques', 'dog whistles send coded messages',
+      'framing shapes perception', 'agenda setting determines what matters',
+      'narrative transportation moves us', 'ethos builds credibility',
+      'pathos stirs emotion', 'logos presents reasons',
+      'mastery of all three is eloquence',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runMathCol3Real(ctx) {
+    const SENTENCES = [
+      'abstract algebra studies structures', 'a group has an operation',
+      'groups have identity and inverses', 'abelian groups are commutative',
+      'rings have two operations', 'a ring has addition and multiplication',
+      'fields are rings where every non zero element has an inverse',
+      'the integers form a ring', 'the rationals form a field',
+      'the reals form a field', 'polynomial rings are common',
+      'homomorphisms preserve structure', 'isomorphisms are bijective homomorphisms',
+      'real analysis makes calculus rigorous', 'the real numbers are complete',
+      'every cauchy sequence converges', 'continuous functions preserve limits',
+      'differentiation has rigorous foundations', 'the mean value theorem connects derivatives',
+      'integration can be riemann or lebesgue', 'riemann integration uses rectangles',
+      'lebesgue integration uses measures', 'measure theory generalizes length',
+      'borel sets are measurable',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runMathCol4Real(ctx) {
+    const SENTENCES = [
+      'topology studies spaces and continuity', 'an open set is basic in topology',
+      'closed sets complement open sets', 'a topological space has a topology',
+      'continuous functions preserve open sets', 'homeomorphisms are topological isomorphisms',
+      'compactness generalizes finiteness', 'connectedness captures oneness',
+      'the mobius strip has one side', 'the klein bottle has no inside',
+      'metric spaces have distance', 'the triangle inequality holds',
+      'complex analysis studies functions of complex variables', 'complex numbers have real and imaginary parts',
+      'the complex plane is two dimensional', 'analytic functions are differentiable',
+      'cauchys theorem is central', 'the residue theorem computes integrals',
+      'conformal maps preserve angles', 'the riemann mapping theorem is deep',
+      'zeta functions encode primes', 'the riemann hypothesis is famous',
+      'fourier series decompose functions', 'the fourier transform is powerful',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runSciCol3Real(ctx) {
+    const SENTENCES = [
+      'molecular biology studies lifes molecules', 'dna stores information',
+      'the central dogma flows dna to rna to protein', 'transcription makes rna from dna',
+      'translation makes proteins from rna', 'gene regulation controls expression',
+      'transcription factors bind dna', 'epigenetics modifies expression',
+      'methylation silences genes', 'histones package dna',
+      'crispr edits dna precisely', 'biotechnology uses these tools',
+      'biochemistry studies lifes chemistry', 'enzymes catalyze reactions',
+      'the active site binds substrates', 'kinetics describe reaction rates',
+      'metabolism powers cells', 'glycolysis breaks glucose',
+      'the citric acid cycle extracts energy', 'oxidative phosphorylation makes atp',
+      'quantum mechanics explains small scales', 'wave particle duality is fundamental',
+      'schrodingers equation is wavelike', 'heisenberg uncertainty limits knowledge',
+      'quantum entanglement is spooky',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runSciCol4Real(ctx) {
+    const SENTENCES = [
+      'research methods guide inquiry', 'the scientific method is iterative',
+      'hypotheses must be testable', 'experiments need controls',
+      'variables are independent or dependent', 'confounding variables bias results',
+      'sample sizes affect power', 'randomization reduces bias',
+      'blinding prevents expectations', 'statistical significance is not truth',
+      'correlation does not imply causation', 'causal inference is challenging',
+      'replication confirms results', 'reproducibility is a crisis',
+      'peer review screens quality', 'preprints speed dissemination',
+      'open access spreads knowledge', 'data sharing helps others verify',
+      'ethics guide research', 'informed consent is required',
+      'institutional review boards oversee', 'animal research has guidelines',
+      'conflicts of interest must be disclosed', 'retraction corrects errors',
+      'science is self correcting',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runSocCol3Real(ctx) {
+    const SENTENCES = [
+      'sociology studies society scientifically', 'social structures shape behavior',
+      'institutions include family and education', 'socialization internalizes norms',
+      'roles are expected behaviors', 'status is a position in society',
+      'durkheim studied social solidarity', 'weber studied bureaucracy',
+      'marx studied class conflict', 'structural functionalism sees balance',
+      'conflict theory sees struggle', 'symbolic interactionism focuses on meaning',
+      'anthropology studies humans broadly', 'cultural anthropology studies culture',
+      'archaeology studies past material culture', 'linguistic anthropology studies language',
+      'biological anthropology studies evolution', 'ethnography describes cultures',
+      'participant observation is the method', 'cultural relativism suspends judgment',
+      'ethnocentrism judges by ones own culture', 'kinship organizes relationships',
+      'religion provides meaning', 'ritual marks transitions',
+      'identity is constructed socially',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runSocCol4Real(ctx) {
+    const SENTENCES = [
+      'research methods in social science are varied', 'quantitative methods use numbers',
+      'qualitative methods use meanings', 'mixed methods combine both',
+      'surveys collect self reported data', 'experiments test causal hypotheses',
+      'observation watches real behavior', 'interviews explore depth',
+      'focus groups reveal interactions', 'content analysis examines texts',
+      'ethnography immerses the researcher', 'statistical analysis tests patterns',
+      'hypothesis tests use probability', 'p values indicate significance',
+      'confidence intervals show uncertainty', 'regression finds relationships',
+      'correlation measures association', 'causation requires more evidence',
+      'research ethics protect subjects', 'confidentiality is essential',
+      'anonymity removes identifiers', 'research design shapes findings',
+      'validity is measuring what we claim', 'reliability is consistency',
+      'generalizability applies beyond the sample',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runArtCol3Real(ctx) {
+    const SENTENCES = [
+      'aesthetics asks what beauty is', 'plato saw beauty as ideal form',
+      'aristotle saw beauty as proportion', 'kant distinguished beauty from utility',
+      'hegel saw art as spirit expressing itself', 'schopenhauer valued art above philosophy',
+      'nietzsche saw apollonian and dionysian forces', 'hume studied taste',
+      'beauty may be objective or subjective', 'the sublime overwhelms us',
+      'ugliness has its own power', 'art can be beautiful without being pretty',
+      'formalism says beauty is in form', 'expressionism says beauty is in feeling',
+      'institutional theory says art is what experts call art', 'disinterested pleasure defines kant',
+      'functional beauty serves purpose', 'natural beauty differs from artistic',
+      'beauty evokes wonder', 'art philosophy connects to ethics',
+      'the relation of art and morality is debated', 'art can reveal truth',
+      'art can deceive', 'catharsis purges emotion', 'aesthetic experience is unique',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runArtCol4Real(ctx) {
+    const SENTENCES = [
+      'research methods in art are diverse', 'archival research finds primary sources',
+      'stylistic analysis compares works', 'iconographic analysis decodes symbols',
+      'technical analysis examines materials', 'conservation preserves art',
+      'attribution identifies artists', 'provenance traces ownership',
+      'forgery detection uses many methods', 'x ray reveals underdrawings',
+      'infrared imaging shows hidden layers', 'dendrochronology dates wood panels',
+      'portfolio work shows skill', 'a senior project integrates learning',
+      'exhibition displays work publicly', 'artists talks explain the work',
+      'critical feedback shapes growth', 'documentation preserves work',
+      'residencies provide working time', 'grants fund research',
+      'professional practice includes business', 'contracts protect artists',
+      'copyright protects creations', 'fair use allows some borrowing',
+      'the art world is global',
     ];
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
