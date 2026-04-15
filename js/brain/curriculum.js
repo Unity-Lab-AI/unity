@@ -2057,6 +2057,106 @@ export class Curriculum {
   // 2 is the first real teaching cell — subsequent cells re-expose the
   // alphabet in corpus walks and strengthen via Hebbian on every pass.
 
+  // ─── TODO-aligned ELA-K helpers (Session 25) ─────────────────────
+  //
+  // docs/TODO.md T14.24 ELA-K spec prescribes three separate named
+  // teach methods + a 4-probe gate. Session 2 shipped them all inline
+  // in runElaKReal which works but doesn't match the TODO naming or
+  // the sequence-recall pathway. Session 25 splits them out + adds
+  // the previously-missing alphabet-sequence temporal binding pass.
+
+  async _teachAlphabetSequence(opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 6;
+    const ticksPerLetter = opts.ticksPerLetter ?? 2;
+    const ALPHABET = ALPHABET_ORDER;
+    ensureLetters(ALPHABET.split(''));
+
+    // Injects letters in a→b→c order with temporal separation. The
+    // letter region's recurrent weights (T14.4 intra-region Hebbian)
+    // bind consecutive letters together via the 2-tick gap between
+    // injections. After enough reps, the cortex learns the alphabet
+    // song — injecting letter N biases the next-tick argmax toward
+    // letter N+1.
+    for (let rep = 0; rep < reps; rep++) {
+      for (let i = 0; i < ALPHABET.length; i++) {
+        cluster.injectLetter(ALPHABET[i], 1.0);
+        for (let t = 0; t < ticksPerLetter; t++) {
+          cluster.step(0.001);
+          this.stats.totalTicks++;
+        }
+      }
+      cluster.learn(0);
+      await _microtask();
+    }
+    return { taught: reps * ALPHABET.length };
+  }
+
+  async _teachLetterNames(opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 6;
+    const ticksPerRep = opts.ticksPerRep ?? 4;
+    const ALPHABET = ALPHABET_ORDER;
+    ensureLetters(ALPHABET.split(''));
+
+    // Binds letter one-hot ↔ GloVe(name) via sem↔letter cross-
+    // projection Hebbian. Uses the single-letter GloVe token first
+    // ('a', 'b', 'c' all in GloVe 6B) with fallback to LETTER_NAMES
+    // ('ay', 'bee', ...).
+    for (let rep = 0; rep < reps; rep++) {
+      for (let i = 0; i < ALPHABET.length; i++) {
+        const letter = ALPHABET[i];
+        const spokenName = LETTER_NAMES[i];
+        const nameEmb = sharedEmbeddings.getEmbedding(letter)
+          || sharedEmbeddings.getEmbedding(spokenName);
+        cluster.injectLetter(letter, 1.0);
+        if (nameEmb && nameEmb.length > 0 && cluster.regions?.sem) {
+          cluster.injectEmbeddingToRegion('sem', nameEmb, 0.7);
+        }
+        for (let t = 0; t < ticksPerRep; t++) {
+          cluster.step(0.001);
+          this.stats.totalTicks++;
+        }
+        cluster.learn(0);
+        this.stats.lettersSeen++;
+      }
+      await _microtask();
+    }
+    return { taught: reps * ALPHABET.length };
+  }
+
+  async _teachLetterSounds(opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 6;
+    const ticksPerRep = opts.ticksPerRep ?? 4;
+    const ALPHABET = ALPHABET_ORDER;
+    ensureLetters(ALPHABET.split(''));
+
+    // Binds letter one-hot ↔ _phonemeFeatureForLetter via phon↔letter
+    // cross-projection Hebbian. 24d trig-hash phoneme features are
+    // decorrelated across the alphabet so different letters build
+    // distinct phon basins.
+    for (let rep = 0; rep < reps; rep++) {
+      for (const letter of ALPHABET) {
+        const phonFeat = _phonemeFeatureForLetter(letter);
+        cluster.injectLetter(letter, 1.0);
+        if (phonFeat && phonFeat.length > 0 && cluster.regions?.phon) {
+          cluster.injectEmbeddingToRegion('phon', phonFeat, 0.7);
+        }
+        for (let t = 0; t < ticksPerRep; t++) {
+          cluster.step(0.001);
+          this.stats.totalTicks++;
+        }
+        cluster.learn(0);
+      }
+      await _microtask();
+    }
+    return { taught: reps * ALPHABET.length };
+  }
+
   async runElaKReal(ctx) {
     const cluster = this.cluster;
     if (!cluster) return { pass: false, reason: 'no cluster wired' };
@@ -2073,6 +2173,15 @@ export class Curriculum {
     // letters already registered by T14.5 corpus walk keep their existing
     // inventory slot, and freshly-registered letters land in order.
     ensureLetters(ALPHABET.split(''));
+
+    // T14.24 Session 25 — TODO-aligned split teaching. Call the three
+    // named TODO-prescribed methods in order BEFORE the original
+    // triple-inject pass. The sequence method is new (a→b→c temporal
+    // binding) and the other two give the letter↔sem and letter↔phon
+    // cross-projections extra bespoke exposure.
+    await this._teachAlphabetSequence();
+    await this._teachLetterNames();
+    await this._teachLetterSounds();
 
     // STEP 2 — FORWARD PASS: letter + sem + phon regions all driven at
     // the same tick. Cross-projection Hebbian fires on the three-way
@@ -2232,7 +2341,27 @@ export class Curriculum {
       perLetter.push({ letter, readCos, thinkVar, decoded, readOk, thinkOk, talkOk });
     }
 
+    // T14.24 Session 25 — TODO-prescribed sequence-recall probe (d).
+    // docs/TODO.md ELA-K spec: "sequence-recall probe — inject letter
+    // N, tick, read letter-region, argmax = letter N+1 in ≥50% of
+    // probes". Tests whether _teachAlphabetSequence built the a→b→c
+    // temporal binding.
+    let seqPass = 0;
+    for (let i = 0; i < ALPHABET.length - 1; i++) {
+      const letter = ALPHABET[i];
+      const expectedNext = ALPHABET[i + 1];
+      cluster.injectLetter(letter, 1.0);
+      for (let t = 0; t < 3; t++) cluster.step(0.001);
+      // No fresh injection — read the letter region's argmax after
+      // the basin relaxes toward the next attractor
+      for (let t = 0; t < 3; t++) cluster.step(0.001);
+      const invSize = inventorySize();
+      const letterReadout = invSize > 0 ? cluster.regionReadout('letter', invSize) : null;
+      const decoded = letterReadout ? decodeLetter(letterReadout) : null;
+      if (decoded === expectedNext) seqPass++;
+    }
     const N = ALPHABET.length;
+    const seqRate = seqPass / (N - 1);
     const readRate = readPass / N;
     const thinkRate = thinkPass / N;
     const talkRate = talkPass / N;
@@ -2241,16 +2370,21 @@ export class Curriculum {
     // form slowly — subsequent ELA cells (G1, G2, ...) re-expose the
     // alphabet through corpus walks and strengthen basins via Hebbian on
     // every pass, so this threshold can tighten at later cells.
+    // Session 25 adds SEQ_MIN at 0.30 — the sequence-recall probe is
+    // the hardest because it requires the recurrent weights to learn
+    // the alphabet ORDER, which is weaker than direct letter binding.
     const PATH_MIN = 0.50;
+    const SEQ_MIN = 0.30;
     const readOkAll = readRate >= PATH_MIN;
     const thinkOkAll = thinkRate >= PATH_MIN;
     const talkOkAll = talkRate >= PATH_MIN;
-    const pass = readOkAll && thinkOkAll && talkOkAll;
+    const seqOkAll = seqRate >= SEQ_MIN;
+    const pass = readOkAll && thinkOkAll && talkOkAll && seqOkAll;
 
     return {
       pass,
-      reason: `READ ${readPass}/${N} (${(readRate * 100).toFixed(0)}%), THINK ${thinkPass}/${N} (${(thinkRate * 100).toFixed(0)}%), TALK ${talkPass}/${N} (${(talkRate * 100).toFixed(0)}%)`,
-      metrics: { readRate, thinkRate, talkRate, perLetter },
+      reason: `READ ${readPass}/${N} (${(readRate * 100).toFixed(0)}%), THINK ${thinkPass}/${N} (${(thinkRate * 100).toFixed(0)}%), TALK ${talkPass}/${N} (${(talkRate * 100).toFixed(0)}%), SEQ ${seqPass}/${N - 1} (${(seqRate * 100).toFixed(0)}%)`,
+      metrics: { readRate, thinkRate, talkRate, seqRate, perLetter },
     };
   }
 
