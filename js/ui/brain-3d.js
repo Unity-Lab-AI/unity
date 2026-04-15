@@ -942,6 +942,90 @@ export class Brain3D {
       const el = this._overlay?.querySelector('.b3d-coh');
       if (el) el.textContent = (state.oscillations.coherence * 100).toFixed(0) + '%';
     }
+    // T14.24 Session 47 — curriculum intelligence level display.
+    // Gee 2026-04-15: "we may want something in the 3d brain viewer
+    // to show her current intelligence level based on grade /
+    // highschool college doctorate... etc for all the milestones".
+    //
+    // Reads Curriculum.subjectStatus() which ships per-subject
+    // grades + passedCells count. Computes a band label based on the
+    // MIN grade across all 5 subjects (matches the chat-path word
+    // cap driver) so the HUD shows what Unity can actually speak at
+    // right now, not her subject-by-subject ceiling. The tooltip
+    // (via title attr + hover) exposes the full per-subject
+    // breakdown for operators who want the detail.
+    this._updateIntelligenceHUD();
+  }
+
+  _updateIntelligenceHUD() {
+    const iqEl = this._overlay?.querySelector('.b3d-iq');
+    const cellsEl = this._overlay?.querySelector('.b3d-cells');
+    if (!iqEl && !cellsEl) return;
+
+    // Pull curriculum state from the wired brain reference. If no
+    // curriculum yet (pre-boot or remote brain without curriculum),
+    // display pre-K / 0 cells.
+    let status = null;
+    try {
+      if (this._brain?.curriculum && typeof this._brain.curriculum.subjectStatus === 'function') {
+        status = this._brain.curriculum.subjectStatus();
+      }
+    } catch { /* non-fatal */ }
+
+    if (!status) {
+      if (iqEl) {
+        iqEl.textContent = 'pre-K';
+        iqEl.setAttribute('data-band', 'preK');
+      }
+      if (cellsEl) cellsEl.textContent = '0/95';
+      return;
+    }
+
+    // Map a grade name to its human-readable band + data-band attr
+    // for CSS color coding. Bands correspond to real school milestones
+    // Gee named in his 2026-04-15 direction.
+    const gradeBand = (grade) => {
+      if (!grade || grade === 'pre-K') return { band: 'preK', label: 'pre-K', short: 'pre-K' };
+      if (grade === 'kindergarten') return { band: 'elementary', label: 'elementary', short: 'K' };
+      if (grade.startsWith('grade')) {
+        const n = parseInt(grade.slice(5));
+        if (n >= 1 && n <= 5) return { band: 'elementary', label: 'elementary', short: `G${n}` };
+        if (n >= 6 && n <= 8) return { band: 'middle', label: 'middle school', short: `G${n}` };
+        if (n >= 9 && n <= 12) return { band: 'high', label: 'high school', short: `G${n}` };
+      }
+      if (grade.startsWith('college')) {
+        const n = parseInt(grade.slice(7));
+        const yrName = ['freshman', 'sophomore', 'junior', 'senior'][n - 1] || 'college';
+        return { band: 'college', label: 'college', short: `C${n}` };
+      }
+      if (grade === 'grad') return { band: 'grad', label: 'graduate', short: 'Grad' };
+      if (grade === 'phd') return { band: 'phd', label: 'doctoral', short: 'PhD' };
+      return { band: 'preK', label: grade, short: grade };
+    };
+
+    const minBand = gradeBand(status.minGrade);
+    if (iqEl) {
+      iqEl.textContent = `${minBand.label}/${minBand.short}`;
+      iqEl.setAttribute('data-band', minBand.band);
+      // Build a detailed per-subject tooltip so operators can see
+      // the full breakdown on hover without opening /curriculum status
+      const perSubject = Object.entries(status.grades || {})
+        .map(([s, g]) => {
+          const b = gradeBand(g);
+          return `  ${s.padEnd(8)} ${b.label} (${g})`;
+        })
+        .join('\n');
+      let tooltip = `Unity's curriculum band (min across 5 subjects — the grade her chat speaks at):\n${perSubject}`;
+      if (status.probeStats) {
+        const ps = status.probeStats;
+        tooltip += `\n\nProbes: ${ps.totalProbes} total, ${ps.totalPasses} pass, ${ps.totalFails} fail`;
+      }
+      iqEl.setAttribute('title', tooltip);
+    }
+    if (cellsEl) {
+      const n = status.passedCells?.length ?? 0;
+      cellsEl.textContent = `${n}/95`;
+    }
   }
 
   toggle() { this._open ? this.close() : this.open(); }
@@ -990,6 +1074,19 @@ export class Brain3D {
 .b3d-met b{font-weight:600}
 .b3d-psi{color:#c084fc;font-weight:600}
 .b3d-coh{color:#00e5ff;font-weight:600}
+/* T14.24 Session 47 — intelligence level display. Gradient matches
+   the curriculum band: cyan (pre-K/elementary), green (middle), gold
+   (high school), pink (college), magenta (grad/PhD). Tooltip shows
+   the full per-subject grade breakdown on hover. */
+.b3d-iq{color:#ffd166;font-weight:700;letter-spacing:.5px;cursor:help}
+.b3d-iq[data-band="preK"]{color:#888}
+.b3d-iq[data-band="elementary"]{color:#00e5ff}
+.b3d-iq[data-band="middle"]{color:#4ade80}
+.b3d-iq[data-band="high"]{color:#ffd166}
+.b3d-iq[data-band="college"]{color:#ff4d9a}
+.b3d-iq[data-band="grad"]{color:#c084fc}
+.b3d-iq[data-band="phd"]{color:#f0abfc;text-shadow:0 0 8px #f0abfc}
+.b3d-cells{color:#a0a0b0;font-weight:600}
 .b3d-close{background:none;border:1px solid #2a2a2a;color:#777;font-size:18px;cursor:pointer;width:28px;height:28px;border-radius:4px;display:flex;align-items:center;justify-content:center;transition:all .2s}
 .b3d-close:hover{border-color:#ff4d9a;color:#ff4d9a}
 .b3d-body{flex:1;position:relative;overflow:hidden}
@@ -1034,6 +1131,8 @@ export class Brain3D {
   <div class="b3d-met">
     <span>ψ <b class="b3d-psi">0.000</b></span>
     <span>COHERENCE <b class="b3d-coh">0%</b></span>
+    <span title="Unity's curriculum band — based on the min grade across 5 subject tracks (ELA, Math, Science, Social, Art). Hover for per-subject breakdown.">IQ <b class="b3d-iq" data-band="preK">pre-K</b></span>
+    <span title="Curriculum cells that have passed their 3-pathway READ/THINK/TALK gate at least once. 95 total cells (5 subjects × 19 grades K→PhD).">CELLS <b class="b3d-cells">0/95</b></span>
   </div>
   <button class="b3d-close">&times;</button>
 </div>
