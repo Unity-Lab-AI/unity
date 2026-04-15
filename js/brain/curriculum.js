@@ -5683,6 +5683,44 @@ export class Curriculum {
       { name: 'allele', feat: [1, 0, 1, 1, 0, 0, 0, 0] },
     ], 4);
   }
+  async _teachAstronomyIntro() {
+    // T14.24 Session 49 (task #106) — Sci-G12 integration helper.
+    // TODO Sci-G12 spec (line 462) prescribes "deeper integration of
+    // previous grade content + problem-solving". Prior Science cells
+    // cover biology/genetics (G7/G9), chemistry (G10), physics (G11),
+    // but NO prior cell touches astronomy. G12 sentences explicitly
+    // mention stars/galaxies/big bang/black holes, so Session 49
+    // adds this concept list to give those terms real feature basins
+    // rather than just natural-language exposure.
+    //
+    // 9 astronomy concepts, each with a distinct 8d feature pattern
+    // that _conceptTeach expands to 16d. Feature dims roughly encode:
+    //   0 — scale (larger = bigger object)
+    //   1 — luminosity (bright object)
+    //   2 — dense (high density/mass concentration)
+    //   3 — dark (dark matter/black hole)
+    //   4 — spatial structure (extended vs point)
+    //   5 — temporal (evolving over cosmic time)
+    //   6 — observable
+    //   7 — gravitational
+    // These are heuristic feature patterns per concept — the TODO
+    // doesn't prescribe exact numerical features for astronomy the
+    // way it does for kinematics. The point is distinct basins
+    // per concept so sentences like "black holes warp spacetime"
+    // and "dark matter holds galaxies together" have stable anchors.
+    return this._conceptTeach([
+      { name: 'star',        feat: [1, 1, 1, 0, 0, 1, 1, 1] },
+      { name: 'galaxy',      feat: [1, 1, 0, 0, 1, 1, 1, 1] },
+      { name: 'planet',      feat: [0, 0, 1, 0, 0, 1, 1, 1] },
+      { name: 'moon',        feat: [0, 0, 1, 0, 0, 1, 1, 1] },
+      { name: 'big bang',    feat: [1, 1, 0, 0, 1, 1, 0, 1] },
+      { name: 'dark matter', feat: [1, 0, 1, 1, 1, 0, 0, 1] },
+      { name: 'black hole',  feat: [0, 0, 1, 1, 0, 0, 0, 1] },
+      { name: 'nebula',      feat: [1, 1, 0, 0, 1, 1, 1, 0] },
+      { name: 'supernova',   feat: [1, 1, 0, 0, 0, 1, 1, 1] },
+    ], 4);
+  }
+
   async _teachEvolution() {
     // TODO Sci-G9 spec (line 451) prescribes "deeper walks on cell
     // organelles, DNA structure, evolution principles". Cell organelles
@@ -8127,6 +8165,58 @@ export class Curriculum {
       'peer review checks results', 'replication confirms findings',
       'science is always provisional',
     ];
+    // T14.24 Session 49 (task #106) — TODO-aligned G12 integration.
+    //
+    // TODO Sci-G12 spec (line 462): "deeper integration of previous
+    // grade content + problem-solving". No new teach method is
+    // specifically prescribed — the whole point of G12 is that
+    // Unity exercises every prior grade's equational machinery
+    // simultaneously so the cross-subject connections form in the
+    // cortex.
+    //
+    // Integration pass calls every Science helper Unity already has:
+    //
+    //   _teachCells         (G7) → 7 organelles — protein synthesis
+    //                                context for biochem sentences
+    //   _teachGeneticsIntro (G7) → 6 heredity concepts — DNA/RNA/
+    //                                allele context for "dna
+    //                                replicates itself", "rna
+    //                                carries dna information"
+    //   _teachEvolution     (G9) → 8 Darwinian principles — species
+    //                                context for "advanced science
+    //                                integrates disciplines"
+    //   _teachPeriodicTable (G10) → 18 elements with real (group,
+    //                                period) features — chemistry
+    //                                context for "carbon forms four
+    //                                bonds", "functional groups"
+    //   _teachBonding       (G10) → 5 bond types with real chemistry
+    //                                features — molecular bonds
+    //                                context
+    //   _teachKinematics    (G11) → 20 real (u,a,t)→(v,s) kinematic
+    //                                samples — physics context for
+    //                                "scientific method guides
+    //                                discovery"
+    //   _teachAstronomyIntro (NEW G12) → 9 celestial object concepts
+    //                                for "stars are balls of fusing
+    //                                gas", "galaxies", "big bang",
+    //                                "dark matter", "black holes"
+    //
+    // All seven helpers run BEFORE the sentence walk. The sentences
+    // then bind high-level relationships ("biochemistry studies
+    // life molecules", "stereochemistry studies molecular shapes",
+    // "black holes warp spacetime") on top of the rich multi-subject
+    // feature basins the prior passes just refreshed. This matches
+    // the TODO's explicit "deeper integration" prescription — Unity
+    // isn't learning new cells at G12, she's exercising every prior
+    // Science cell in one unified pass so their bindings reinforce
+    // each other via the cross-region Hebbian.
+    await this._teachCells();
+    await this._teachGeneticsIntro();
+    await this._teachEvolution();
+    await this._teachPeriodicTable();
+    await this._teachBonding();
+    await this._teachKinematics();
+    await this._teachAstronomyIntro();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
