@@ -4207,12 +4207,136 @@ export class Curriculum {
     return this._teachVocabList(MATH_G2_VOCAB, ctx);
   }
 
+  // ─── TODO-aligned ELA-G3 helpers (Session 29) ────────────────────
+  //
+  // docs/TODO.md T14.24 ELA-G3 spec (line 161):
+  //   _teachSVO(sentences) walks each SVO sentence word-by-word,
+  //     injecting GloVe per word and firing sequence Hebbian — T14.7
+  //     _typeTransitionLearned and T14.8 _sentenceFormSchemas populate
+  //     automatically from the observation walk.
+  //   _teachTenseMorphology() injects pairs (walk/walked, cat/cats)
+  //     with GloVe of both forms, Hebbian binds the stem+suffix pattern
+  //     via the letter region.
+
+  async _teachSVO(sentences, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 5;
+    const ticksPerWord = opts.ticksPerWord ?? 2;
+    const arousal = opts.arousal ?? 0.8;
+    const valence = opts.valence ?? 0.2;
+
+    const letterSet = new Set();
+    for (const s of sentences) for (const ch of s) if (/[a-z]/.test(ch)) letterSet.add(ch);
+    ensureLetters(Array.from(letterSet));
+
+    // Walk each SVO sentence word-by-word via _walkSentence which
+    // routes through T14.5 (per-word letter stream + sem inject +
+    // cluster.learn after each word) + languageCortex.learnSentence
+    // (which populates T14.7 _typeTransitionLearned for noun→verb→
+    // noun bigrams and T14.8 _sentenceFormSchemas for per-slot
+    // fineType distributions per intent).
+    for (let rep = 0; rep < reps; rep++) {
+      for (const sentence of sentences) {
+        const words = sentence.split(/\s+/).filter(Boolean);
+        if (words.length < 2) continue;
+        this._walkSentence(words, arousal, valence, ticksPerWord);
+        this.stats.sentencesSeen++;
+      }
+      await _microtask();
+    }
+    return { taught: reps * sentences.length };
+  }
+
+  async _teachTenseMorphology(opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 6;
+    const ticksPerPair = opts.ticksPerPair ?? 3;
+    const arousal = opts.arousal ?? 0.8;
+    const valence = opts.valence ?? 0.2;
+
+    // Stem/inflection pairs — past tense and plurals. Each pair
+    // exercises the letter-region sequence Hebbian on the shared stem
+    // + the divergent suffix, so the cortex learns the morphological
+    // rule through exposure alone (not a hardcoded table).
+    const PAIRS = [
+      // Past tense (-ed)
+      ['walk', 'walked'], ['talk', 'talked'], ['look', 'looked'],
+      ['jump', 'jumped'], ['play', 'played'], ['call', 'called'],
+      ['help', 'helped'], ['want', 'wanted'], ['need', 'needed'],
+      ['work', 'worked'],
+      // Irregular past
+      ['run', 'ran'], ['eat', 'ate'], ['see', 'saw'], ['go', 'went'],
+      ['come', 'came'], ['give', 'gave'], ['take', 'took'],
+      // Plurals (-s)
+      ['cat', 'cats'], ['dog', 'dogs'], ['book', 'books'],
+      ['tree', 'trees'], ['bird', 'birds'], ['girl', 'girls'],
+      ['boy', 'boys'], ['car', 'cars'], ['hand', 'hands'],
+      ['foot', 'feet'],
+      // Present 3s (-s)
+      ['walk', 'walks'], ['talk', 'talks'], ['run', 'runs'],
+      ['eat', 'eats'], ['see', 'sees'], ['want', 'wants'],
+    ];
+
+    const letterSet = new Set();
+    for (const [a, b] of PAIRS) {
+      for (const ch of a) letterSet.add(ch);
+      for (const ch of b) letterSet.add(ch);
+    }
+    ensureLetters(Array.from(letterSet));
+
+    for (let rep = 0; rep < reps; rep++) {
+      for (const [stem, inflected] of PAIRS) {
+        const stemEmb = sharedEmbeddings.getEmbedding(stem);
+        const inflEmb = sharedEmbeddings.getEmbedding(inflected);
+
+        // Stream the stem first — binds stem letters to stem meaning
+        if (stemEmb && stemEmb.length > 0 && cluster.regions?.sem) {
+          cluster.injectEmbeddingToRegion('sem', stemEmb, 0.6);
+        }
+        for (const ch of stem) {
+          cluster.injectLetter(ch, 1.0);
+          for (let t = 0; t < ticksPerPair; t++) {
+            cluster.step(0.001);
+            this.stats.totalTicks++;
+          }
+        }
+        cluster.learn(0);
+
+        // Then stream the inflected form — the cortex sees the shared
+        // stem + divergent suffix, and letter-region sequence Hebbian
+        // binds the morphological transformation (stem → inflected)
+        if (inflEmb && inflEmb.length > 0 && cluster.regions?.sem) {
+          cluster.injectEmbeddingToRegion('sem', inflEmb, 0.6);
+        }
+        for (const ch of inflected) {
+          cluster.injectLetter(ch, 1.0);
+          for (let t = 0; t < ticksPerPair; t++) {
+            cluster.step(0.001);
+            this.stats.totalTicks++;
+          }
+        }
+        cluster.learn(0);
+
+        if (this.dictionary && typeof this.dictionary.learnWord === 'function') {
+          try {
+            this.dictionary.learnWord(stem, null, arousal, valence);
+            this.dictionary.learnWord(inflected, null, arousal, valence);
+          } catch {}
+        }
+        this.stats.shortWordsSeen += 2;
+      }
+      await _microtask();
+    }
+    return { taught: reps * PAIRS.length * 2 };
+  }
+
   // ─── ELA-G3: SVO sentences + past/present tense ───────────────────
-  // Generates 40 simple SVO sentences with present + past tense pairs
-  // so the cortex can learn the morphological tense shift via
-  // sentence-form schema observations. Walks through _teachSentenceList
-  // which routes through _walkSentence → languageCortex.learnSentence
-  // so T14.8 sentenceFormSchemas pick up the tense fineType patterns.
+  // Session 8 first ship used _teachSentenceList generically. Session 29
+  // tightens against TODO spec with the two named methods _teachSVO
+  // and _teachTenseMorphology called in sequence before the generic
+  // sentence walk.
   async runElaG3Real(ctx) {
     const ELA_G3_SENTENCES = [
       // Present tense SVO
@@ -4236,6 +4360,12 @@ export class Curriculum {
       'the room is warm',   'the water was cold', 'the food is good',
       'the day was long',
     ];
+    // T14.24 Session 29 — TODO-aligned split. Call _teachSVO for the
+    // sentence-level sequence Hebbian pass + _teachTenseMorphology
+    // for the stem/inflection pair binding BEFORE the generic
+    // _teachSentenceList walk. Matches docs/TODO.md ELA-G3 spec.
+    await this._teachSVO(ELA_G3_SENTENCES);
+    await this._teachTenseMorphology();
     return this._teachSentenceList(ELA_G3_SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
