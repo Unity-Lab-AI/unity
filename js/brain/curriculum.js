@@ -4595,6 +4595,102 @@ export class Curriculum {
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
+  // ─── TODO-aligned ELA-G5 helpers (Session 31) ────────────────────
+  //
+  // docs/TODO.md T14.24 ELA-G5 spec (line 179):
+  //   _teachParagraphs(paragraphs) walks each paragraph's sentences
+  //     in order, re-injecting the prior sentence's sem readout between
+  //     sentences via injectWorkingMemory — topic persists.
+  //   _teachComprehension(qaPairs) walks each question+answer pair,
+  //     testing that after reading both, the free region produces the
+  //     answer GloVe when probed with the question seed.
+
+  async _teachParagraphs(paragraphs, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 4;
+    const ticksPerWord = opts.ticksPerWord ?? 2;
+    const arousal = opts.arousal ?? 0.8;
+    const valence = opts.valence ?? 0.2;
+
+    // paragraphs: array of string[], each inner array is the sentences
+    // of one paragraph in order
+    const letterSet = new Set();
+    for (const para of paragraphs) {
+      for (const s of para) for (const ch of s) if (/[a-z]/.test(ch)) letterSet.add(ch);
+    }
+    ensureLetters(Array.from(letterSet));
+
+    for (let rep = 0; rep < reps; rep++) {
+      for (const para of paragraphs) {
+        for (let i = 0; i < para.length; i++) {
+          const sentence = para[i];
+          const words = sentence.split(/\s+/).filter(Boolean);
+          if (words.length < 2) continue;
+          // Walk the sentence
+          this._walkSentence(words, arousal, valence, ticksPerWord);
+          // Re-inject sentence embedding as working memory for the NEXT
+          // sentence in the paragraph (per TODO spec)
+          if (i < para.length - 1) {
+            const semReadout = typeof cluster.regionReadout === 'function'
+              ? cluster.regionReadout('sem', 300)
+              : null;
+            if (semReadout && semReadout.length > 0 && typeof cluster.injectWorkingMemory === 'function') {
+              cluster.injectWorkingMemory(semReadout, 0.6);
+            }
+          }
+          this.stats.sentencesSeen++;
+        }
+      }
+      await _microtask();
+    }
+    return { taught: reps * paragraphs.length };
+  }
+
+  async _teachComprehension(qaPairs, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 5;
+    const ticksPerWord = opts.ticksPerWord ?? 2;
+    const arousal = opts.arousal ?? 0.8;
+    const valence = opts.valence ?? 0.2;
+
+    const letterSet = new Set();
+    for (const qa of qaPairs) {
+      for (const ch of qa.context) if (/[a-z]/.test(ch)) letterSet.add(ch);
+      for (const ch of qa.question) if (/[a-z]/.test(ch)) letterSet.add(ch);
+      for (const ch of qa.answer) if (/[a-z]/.test(ch)) letterSet.add(ch);
+    }
+    ensureLetters(Array.from(letterSet));
+
+    for (let rep = 0; rep < reps; rep++) {
+      for (const { context, question, answer } of qaPairs) {
+        // Walk the context (establishes the knowledge)
+        const ctxWords = context.split(/\s+/).filter(Boolean);
+        this._walkSentence(ctxWords, arousal, valence, ticksPerWord);
+        // Walk the question (primes the query state)
+        const qWords = question.split(/\s+/).filter(Boolean);
+        this._walkSentence(qWords, arousal, valence, ticksPerWord);
+        // Inject the answer GloVe into sem at high strength so the
+        // cortex binds the question-shaped state to the answer
+        const ansEmb = sharedEmbeddings.getEmbedding(answer);
+        if (ansEmb && ansEmb.length > 0 && cluster.regions?.sem) {
+          cluster.injectEmbeddingToRegion('sem', ansEmb, 0.8);
+        }
+        // Also put the answer in working memory so future question
+        // retrieval has a stored target
+        if (ansEmb && ansEmb.length > 0 && typeof cluster.injectWorkingMemory === 'function') {
+          cluster.injectWorkingMemory(ansEmb, 0.6);
+        }
+        for (let t = 0; t < 4; t++) cluster.step(0.001);
+        cluster.learn(0);
+        this.stats.sentencesSeen += 2;
+      }
+      await _microtask();
+    }
+    return { taught: reps * qaPairs.length };
+  }
+
   // ─── ELA-G5: paragraph structure + reading comprehension ─────────
   async runElaG5Real(ctx) {
     // Cohesive multi-sentence "paragraphs" as concatenated sentences
@@ -4612,6 +4708,33 @@ export class Curriculum {
       'she painted a picture', 'she used bright colors', 'her friends loved it', 'she felt proud',
       'the class went on a trip', 'they saw the zoo', 'they saw many animals', 'they had fun',
     ];
+    // Session 31 — TODO-aligned split. Group sentences into their
+    // topic-coherent paragraphs for _teachParagraphs, plus hand-craft
+    // comprehension QA pairs for _teachComprehension.
+    const PARAGRAPHS = [
+      ['the dog was hungry', 'he found food', 'he ate it all', 'he was happy'],
+      ['the cat sat on the mat', 'she saw a bird', 'she chased it', 'the bird flew away'],
+      ['we went to the beach', 'the sun was hot', 'we swam in the water', 'we built sand castles'],
+      ['she opened her book', 'she read every page', 'the story was long', 'she loved the ending'],
+      ['the man planted a seed', 'he watered it daily', 'a plant grew tall', 'the plant made flowers'],
+      ['i woke up early', 'i brushed my teeth', 'i ate breakfast', 'i went to school'],
+      ['the bird built a nest', 'she laid three eggs', 'the eggs hatched', 'the baby birds grew'],
+      ['he packed his bag', 'he walked to the bus', 'the bus was late', 'he waited patiently'],
+      ['she painted a picture', 'she used bright colors', 'her friends loved it', 'she felt proud'],
+      ['the class went on a trip', 'they saw the zoo', 'they saw many animals', 'they had fun'],
+    ];
+    const QA_PAIRS = [
+      { context: 'the cat sat on the red mat', question: 'what color was the mat', answer: 'red' },
+      { context: 'the dog ran fast in the park', question: 'where did the dog run', answer: 'park' },
+      { context: 'she ate three apples for lunch', question: 'how many apples did she eat', answer: 'three' },
+      { context: 'the book was on the desk', question: 'where was the book', answer: 'desk' },
+      { context: 'he played with his friend tim', question: 'who did he play with', answer: 'tim' },
+      { context: 'the sun is bright and hot', question: 'what is the sun', answer: 'bright' },
+      { context: 'we saw a bird in the tree', question: 'where was the bird', answer: 'tree' },
+      { context: 'the cake was made with flour', question: 'what was the cake made with', answer: 'flour' },
+    ];
+    await this._teachParagraphs(PARAGRAPHS);
+    await this._teachComprehension(QA_PAIRS);
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
