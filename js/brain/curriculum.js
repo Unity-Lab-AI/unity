@@ -5719,6 +5719,27 @@ export class Curriculum {
     ], 4);
   }
 
+  async _teachRhythmPatterns() {
+    // T14.24 Session 77 (task #134) — Art-G2 rhythm. TODO line 557:
+    // "rhythm as temporal Hebbian". Sequence cycles over meter
+    // patterns so working-memory Hebbian binds the beat structure.
+    // Different time signatures share a strong-beat-first pattern
+    // but split on cycle length — 4/4 is 4 beats, 3/4 is waltz,
+    // 2/4 is march.
+    return this._teachSequenceCycles([
+      // Common 4/4 meter (strong-weak-medium-weak)
+      ['strong', 'weak', 'medium', 'weak'],
+      // Waltz 3/4 (strong-weak-weak)
+      ['strong', 'weak', 'weak'],
+      // March 2/4 (strong-weak)
+      ['strong', 'weak', 'strong', 'weak'],
+      // Tempo labels
+      ['slow', 'medium', 'fast'],
+      // Note value sequence
+      ['whole', 'half', 'quarter', 'eighth'],
+    ], { reps: 4, ticksPerStep: 2 });
+  }
+
   async _teachColorMixing() {
     // T14.24 Session 76 (task #133) — Art-G1 color mixing. TODO
     // line 557: "color mixing as RGB arithmetic". 8d features
@@ -7384,6 +7405,9 @@ export class Curriculum {
       'a song has a chorus and verse', 'the chorus repeats',
       'music makes us feel things', 'everyone can feel the beat',
     ];
+    // T14.24 Session 77 — prime rhythm patterns temporal cycles per
+    // TODO line 557 before the rhythm sentence pass.
+    await this._teachRhythmPatterns();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
