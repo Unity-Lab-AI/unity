@@ -5502,6 +5502,84 @@ export class Curriculum {
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
+  // ─── TODO-aligned ELA-G8 helpers (Session 35) ────────────────────
+  // docs/TODO.md ELA-G8 spec (line 206):
+  //   _teachEssayStructure(essays) walks full essays with inter-paragraph
+  //     injectWorkingMemory carrying the thesis sentence through all body paragraphs.
+  //   _teachGrammarAgreement(pairs) pairs correct+incorrect variants,
+  //     Hebbian on the correct form at higher strength.
+
+  async _teachEssayStructure(essays, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 3;
+    const ticksPerWord = opts.ticksPerWord ?? 2;
+    const arousal = opts.arousal ?? 0.8;
+    const valence = opts.valence ?? 0.2;
+
+    const letterSet = new Set();
+    for (const e of essays) {
+      for (const ch of e.thesis) if (/[a-z]/.test(ch)) letterSet.add(ch);
+      for (const para of e.body) for (const ch of para) if (/[a-z]/.test(ch)) letterSet.add(ch);
+    }
+    ensureLetters(Array.from(letterSet));
+
+    for (let rep = 0; rep < reps; rep++) {
+      for (const { thesis, body } of essays) {
+        // Walk thesis sentence
+        const tWords = thesis.split(/\s+/).filter(Boolean);
+        this._walkSentence(tWords, arousal, valence, ticksPerWord);
+        // Capture thesis embedding for inter-paragraph carry
+        const thesisEmb = sharedEmbeddings.getSentenceEmbedding
+          ? sharedEmbeddings.getSentenceEmbedding(thesis)
+          : null;
+        // Walk each body paragraph with thesis re-injected as working memory
+        for (const para of body) {
+          if (thesisEmb && thesisEmb.length > 0 && typeof cluster.injectWorkingMemory === 'function') {
+            cluster.injectWorkingMemory(thesisEmb, 0.7);
+          }
+          const pWords = para.split(/\s+/).filter(Boolean);
+          if (pWords.length >= 2) this._walkSentence(pWords, arousal, valence, ticksPerWord);
+        }
+        this.stats.sentencesSeen++;
+      }
+      await _microtask();
+    }
+    return { taught: reps * essays.length };
+  }
+
+  async _teachGrammarAgreement(pairs, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 5;
+    const ticksPerWord = opts.ticksPerWord ?? 2;
+    const arousal = opts.arousal ?? 0.8;
+    const valence = opts.valence ?? 0.2;
+
+    const letterSet = new Set();
+    for (const p of pairs) {
+      for (const ch of p.correct) if (/[a-z]/.test(ch)) letterSet.add(ch);
+      for (const ch of p.incorrect) if (/[a-z]/.test(ch)) letterSet.add(ch);
+    }
+    ensureLetters(Array.from(letterSet));
+
+    for (let rep = 0; rep < reps; rep++) {
+      for (const { correct, incorrect } of pairs) {
+        // Walk correct form at full strength, fire learn for Hebbian
+        const cWords = correct.split(/\s+/).filter(Boolean);
+        this._walkSentence(cWords, arousal, valence, ticksPerWord);
+        // Walk incorrect form at much lower tick budget (1 tick/word)
+        // so exposure is minimal — just registers it as a "not this"
+        // pattern without building strong basins
+        const iWords = incorrect.split(/\s+/).filter(Boolean);
+        this._walkSentence(iWords, arousal * 0.5, valence, 1);
+        this.stats.sentencesSeen += 2;
+      }
+      await _microtask();
+    }
+    return { taught: reps * pairs.length * 2 };
+  }
+
   async runElaG8Real(ctx) {
     const SENTENCES = [
       // Essay structure
@@ -5526,6 +5604,48 @@ export class Curriculum {
       'nouns name people places things', 'verbs show action or being',
       'prepositions show relationships',
     ];
+    // Session 35 — TODO-aligned split
+    const ESSAYS = [
+      {
+        thesis: 'dogs make the best pets',
+        body: [
+          'dogs are loyal and loving companions',
+          'dogs protect their family from danger',
+          'dogs can be trained to do many tricks',
+          'dogs get you outside for daily walks',
+        ],
+      },
+      {
+        thesis: 'reading books opens your mind',
+        body: [
+          'books take you to new worlds',
+          'books teach you new things every day',
+          'books help you understand other people',
+          'books make you a better thinker',
+        ],
+      },
+      {
+        thesis: 'exercise keeps you healthy',
+        body: [
+          'exercise makes your heart strong',
+          'exercise builds your muscles',
+          'exercise helps you sleep better',
+          'exercise lifts your mood',
+        ],
+      },
+    ];
+    const AGREEMENT_PAIRS = [
+      { correct: 'she runs fast', incorrect: 'she run fast' },
+      { correct: 'they are happy', incorrect: 'they is happy' },
+      { correct: 'the cat sleeps', incorrect: 'the cat sleep' },
+      { correct: 'i am here', incorrect: 'i is here' },
+      { correct: 'the boys play', incorrect: 'the boys plays' },
+      { correct: 'my dog barks', incorrect: 'my dog bark' },
+      { correct: 'we were happy', incorrect: 'we was happy' },
+      { correct: 'the girls laugh', incorrect: 'the girls laughs' },
+    ];
+    await this._teachEssayStructure(ESSAYS);
+    await this._teachGrammarAgreement(AGREEMENT_PAIRS);
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
