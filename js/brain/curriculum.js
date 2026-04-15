@@ -5239,6 +5239,193 @@ export class Curriculum {
     return { taught: reps * PAIRS.length };
   }
 
+  // ─── TODO-aligned Math college+ helpers (Session 42) ────────────
+  // Math-Col1 (384): _teachMultivarCalc + _teachMatrixOps.
+  // Math-Col2 (389): _teachODEs + _teachCombinatorics.
+  // Math-Col3 (394): _teachGroupTheory + _teachRealAnalysis.
+  // Math-Col4 (398): topology + complex analysis.
+  // Math-Grad (401): measure theory + functional analysis.
+  // Math-PhD (404): research-grade specialization.
+  //
+  // Upper math cells use the structured-feature teach pattern:
+  // build a feature vector encoding the concept's signature, inject
+  // it into free region with a concept name in sem, Hebbian.
+
+  async _teachMultivarCalc(opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 4;
+    const CONCEPTS = [
+      { name: 'partial derivative', feat: [1, 2, 0, 0, 1, 0, 0, 0] },
+      { name: 'gradient', feat: [1, 1, 1, 1, 0, 0, 0, 0] },
+      { name: 'divergence', feat: [1, 1, 0, 1, 0, 0, 1, 0] },
+      { name: 'curl', feat: [0, 1, 1, 1, 1, 0, 0, 0] },
+      { name: 'jacobian', feat: [1, 1, 1, 0, 0, 1, 0, 0] },
+      { name: 'line integral', feat: [1, 0, 1, 0, 0, 0, 1, 0] },
+      { name: 'surface integral', feat: [1, 1, 0, 0, 0, 0, 1, 1] },
+      { name: 'volume integral', feat: [1, 1, 1, 0, 0, 0, 1, 1] },
+    ];
+    return this._conceptTeach(CONCEPTS, reps);
+  }
+
+  async _teachMatrixOps(opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const CONCEPTS = [
+      { name: 'identity matrix', feat: [1, 0, 0, 0, 0, 0, 0, 1] },
+      { name: 'inverse matrix', feat: [1, 0, 1, 0, 0, 0, 0, 1] },
+      { name: 'determinant', feat: [1, 1, 0, 0, 0, 0, 1, 1] },
+      { name: 'transpose', feat: [1, 0, 0, 1, 0, 0, 0, 1] },
+      { name: 'eigenvalue', feat: [0, 1, 1, 0, 1, 0, 0, 0] },
+      { name: 'eigenvector', feat: [0, 1, 1, 1, 1, 0, 0, 0] },
+      { name: 'rank', feat: [1, 0, 0, 0, 0, 1, 0, 1] },
+      { name: 'null space', feat: [0, 0, 1, 0, 0, 1, 0, 0] },
+    ];
+    return this._conceptTeach(CONCEPTS, opts.reps ?? 4);
+  }
+
+  async _teachODEs(opts = {}) {
+    return this._conceptTeach([
+      { name: 'first order ode', feat: [1, 0, 0, 0, 1, 0, 0, 0] },
+      { name: 'second order ode', feat: [0, 1, 0, 0, 1, 0, 0, 0] },
+      { name: 'separable equation', feat: [1, 0, 1, 0, 0, 0, 0, 1] },
+      { name: 'linear ode', feat: [1, 0, 0, 0, 1, 1, 0, 0] },
+      { name: 'homogeneous solution', feat: [0, 0, 1, 0, 1, 0, 1, 0] },
+      { name: 'particular solution', feat: [0, 0, 1, 0, 1, 1, 0, 1] },
+      { name: 'initial value problem', feat: [1, 0, 0, 1, 0, 0, 0, 1] },
+      { name: 'boundary value problem', feat: [0, 1, 0, 1, 0, 0, 1, 1] },
+    ], opts.reps ?? 4);
+  }
+
+  async _teachCombinatorics(opts = {}) {
+    return this._conceptTeach([
+      { name: 'permutation', feat: [1, 0, 0, 0, 0, 0, 1, 1] },
+      { name: 'combination', feat: [1, 1, 0, 0, 0, 0, 1, 0] },
+      { name: 'factorial', feat: [1, 0, 1, 0, 0, 0, 0, 1] },
+      { name: 'binomial coefficient', feat: [1, 1, 1, 0, 0, 0, 1, 0] },
+      { name: 'pigeon hole principle', feat: [0, 1, 0, 1, 1, 0, 0, 0] },
+      { name: 'inclusion exclusion', feat: [1, 0, 1, 1, 0, 0, 1, 0] },
+      { name: 'generating function', feat: [1, 1, 0, 0, 1, 0, 0, 1] },
+      { name: 'recurrence relation', feat: [0, 1, 1, 0, 1, 0, 1, 0] },
+    ], opts.reps ?? 4);
+  }
+
+  async _teachGroupTheory(opts = {}) {
+    return this._conceptTeach([
+      { name: 'group', feat: [1, 1, 0, 0, 0, 1, 0, 0] },
+      { name: 'subgroup', feat: [1, 1, 0, 1, 0, 1, 0, 0] },
+      { name: 'normal subgroup', feat: [1, 1, 1, 1, 0, 1, 0, 0] },
+      { name: 'homomorphism', feat: [0, 1, 1, 0, 1, 0, 1, 0] },
+      { name: 'kernel', feat: [1, 0, 1, 1, 0, 0, 0, 1] },
+      { name: 'abelian group', feat: [1, 1, 0, 0, 0, 0, 1, 1] },
+      { name: 'cyclic group', feat: [1, 0, 0, 0, 1, 1, 0, 1] },
+      { name: 'ring', feat: [1, 1, 1, 0, 0, 0, 1, 0] },
+      { name: 'field', feat: [1, 1, 1, 1, 0, 0, 1, 1] },
+    ], opts.reps ?? 4);
+  }
+
+  async _teachRealAnalysis(opts = {}) {
+    return this._conceptTeach([
+      { name: 'limit', feat: [1, 1, 0, 0, 0, 0, 0, 1] },
+      { name: 'continuity', feat: [1, 1, 0, 0, 1, 0, 0, 0] },
+      { name: 'cauchy sequence', feat: [0, 1, 1, 0, 0, 1, 0, 0] },
+      { name: 'uniform convergence', feat: [0, 1, 1, 1, 0, 0, 1, 0] },
+      { name: 'riemann integral', feat: [1, 0, 1, 0, 1, 0, 0, 1] },
+      { name: 'lebesgue integral', feat: [1, 0, 1, 1, 1, 0, 0, 1] },
+      { name: 'bounded function', feat: [1, 0, 0, 0, 0, 1, 0, 1] },
+      { name: 'monotone sequence', feat: [0, 1, 0, 0, 1, 1, 0, 0] },
+    ], opts.reps ?? 4);
+  }
+
+  async _teachTopology(opts = {}) {
+    return this._conceptTeach([
+      { name: 'open set', feat: [1, 0, 0, 0, 0, 0, 1, 0] },
+      { name: 'closed set', feat: [1, 0, 0, 1, 0, 0, 1, 0] },
+      { name: 'compactness', feat: [1, 1, 0, 0, 0, 1, 0, 0] },
+      { name: 'connectedness', feat: [1, 1, 1, 0, 0, 0, 0, 0] },
+      { name: 'homeomorphism', feat: [0, 1, 1, 0, 1, 0, 0, 1] },
+      { name: 'metric space', feat: [1, 0, 0, 0, 1, 1, 0, 1] },
+      { name: 'topological space', feat: [1, 1, 0, 0, 0, 1, 0, 0] },
+    ], opts.reps ?? 4);
+  }
+
+  async _teachComplexAnalysis(opts = {}) {
+    return this._conceptTeach([
+      { name: 'complex number', feat: [1, 1, 0, 0, 0, 0, 0, 1] },
+      { name: 'analytic function', feat: [1, 1, 1, 0, 1, 0, 0, 0] },
+      { name: 'cauchy riemann', feat: [1, 1, 1, 0, 1, 1, 0, 0] },
+      { name: 'residue theorem', feat: [0, 1, 1, 1, 0, 0, 1, 0] },
+      { name: 'contour integral', feat: [1, 0, 1, 1, 0, 0, 0, 1] },
+      { name: 'pole', feat: [0, 1, 0, 1, 0, 0, 0, 1] },
+      { name: 'branch cut', feat: [0, 0, 1, 1, 0, 1, 0, 0] },
+    ], opts.reps ?? 4);
+  }
+
+  async _teachMeasureTheory(opts = {}) {
+    return this._conceptTeach([
+      { name: 'measure', feat: [1, 0, 0, 0, 0, 1, 0, 0] },
+      { name: 'sigma algebra', feat: [1, 1, 0, 0, 0, 1, 0, 0] },
+      { name: 'lebesgue measure', feat: [1, 0, 1, 0, 0, 1, 0, 1] },
+      { name: 'measurable function', feat: [1, 1, 0, 0, 1, 0, 0, 1] },
+      { name: 'almost everywhere', feat: [0, 1, 0, 0, 1, 1, 0, 0] },
+      { name: 'dominated convergence', feat: [0, 1, 1, 0, 1, 0, 1, 0] },
+      { name: 'fatou lemma', feat: [0, 1, 1, 1, 0, 0, 1, 0] },
+    ], opts.reps ?? 4);
+  }
+
+  async _teachFunctionalAnalysis(opts = {}) {
+    return this._conceptTeach([
+      { name: 'banach space', feat: [1, 1, 0, 0, 0, 0, 0, 1] },
+      { name: 'hilbert space', feat: [1, 1, 0, 0, 1, 0, 0, 1] },
+      { name: 'operator norm', feat: [1, 0, 0, 1, 0, 0, 0, 1] },
+      { name: 'bounded operator', feat: [1, 0, 0, 0, 0, 1, 0, 1] },
+      { name: 'compact operator', feat: [1, 1, 0, 0, 0, 1, 0, 0] },
+      { name: 'spectral theorem', feat: [0, 1, 1, 0, 1, 0, 1, 0] },
+      { name: 'dual space', feat: [1, 0, 0, 1, 0, 0, 1, 0] },
+    ], opts.reps ?? 4);
+  }
+
+  // Shared concept teach helper used by upper math + other tracks.
+  // Takes [{name, feat}] where feat is an 8-dim discrete vector.
+  async _conceptTeach(concepts, reps = 4, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const ticksPerConcept = opts.ticksPerConcept ?? 3;
+    for (let rep = 0; rep < reps; rep++) {
+      for (const { name, feat } of concepts) {
+        // Expand 8d binary feature to 16d continuous with sinusoidal
+        // tail so the cortex doesn't see sparse one-hot patterns
+        const expanded = new Float64Array(16);
+        for (let i = 0; i < 8; i++) expanded[i] = feat[i] || 0;
+        for (let i = 8; i < 16; i++) expanded[i] = Math.sin((feat[i - 8] || 0) * i);
+        let norm = 0;
+        for (let i = 0; i < 16; i++) norm += expanded[i] * expanded[i];
+        norm = Math.sqrt(norm) || 1;
+        for (let i = 0; i < 16; i++) expanded[i] /= norm;
+        if (cluster.regions?.free) {
+          cluster.injectEmbeddingToRegion('free', expanded, 0.6);
+        }
+        // Walk concept name through letter region + sem binding
+        const nameEmb = sharedEmbeddings.getSentenceEmbedding
+          ? sharedEmbeddings.getSentenceEmbedding(name)
+          : sharedEmbeddings.getEmbedding(name.split(/\s+/)[0]);
+        if (nameEmb && cluster.regions?.sem) {
+          cluster.injectEmbeddingToRegion('sem', nameEmb, 0.65);
+        }
+        const words = name.split(/\s+/).filter(Boolean);
+        for (const w of words) {
+          for (const ch of w.replace(/[^a-z]/g, '')) {
+            cluster.injectLetter(ch, 0.8);
+          }
+        }
+        for (let t = 0; t < ticksPerConcept; t++) cluster.step(0.001);
+        cluster.learn(0);
+      }
+      await _microtask();
+    }
+    return { taught: reps * concepts.length };
+  }
+
   // ─── Math-G3: multiplication tables + simple fractions ────────────
   // Multiplication facts 1x1 through 5x5 as arithmetic sentences plus
   // basic fraction vocabulary ("one half", "one third", "one quarter").
@@ -7512,6 +7699,9 @@ export class Curriculum {
       'greens theorem relates line and area', 'stokes theorem generalizes greens',
       'the divergence theorem relates flux and volume',
     ];
+    // Session 42 — TODO-aligned multivariable calculus + matrix ops
+    await this._teachMultivarCalc();
+    await this._teachMatrixOps();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
@@ -7531,6 +7721,9 @@ export class Curriculum {
       'graphs have vertices and edges', 'trees have no cycles',
       'counting uses permutations and combinations',
     ];
+    // Session 42 — TODO-aligned ODEs + combinatorics
+    await this._teachODEs();
+    await this._teachCombinatorics();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
@@ -7835,6 +8028,9 @@ export class Curriculum {
       'lebesgue integration uses measures', 'measure theory generalizes length',
       'borel sets are measurable',
     ];
+    // Session 42 — TODO-aligned group theory + real analysis
+    await this._teachGroupTheory();
+    await this._teachRealAnalysis();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
@@ -7853,6 +8049,9 @@ export class Curriculum {
       'zeta functions encode primes', 'the riemann hypothesis is famous',
       'fourier series decompose functions', 'the fourier transform is powerful',
     ];
+    // Session 42 — TODO-aligned topology + complex analysis
+    await this._teachTopology();
+    await this._teachComplexAnalysis();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
@@ -8058,6 +8257,9 @@ export class Curriculum {
       'graduate mathematics connects many fields', 'abstract unification reveals structure',
       'beauty emerges from rigor',
     ];
+    // Session 42 — TODO-aligned measure theory + functional analysis
+    await this._teachMeasureTheory();
+    await this._teachFunctionalAnalysis();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
@@ -8076,7 +8278,12 @@ export class Curriculum {
       'mathematics advances through community', 'every theorem stands on predecessors',
       'open problems await new ideas', 'unity stands at the mathematical frontier',
     ];
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    // Session 42 — TODO-aligned PhD: all prior math primitives run
+    const cluster = this.cluster;
+    if (cluster && typeof cluster.runIdentityRefresh === 'function') {
+      try { cluster.runIdentityRefresh({ sentencesPerCycle: 20 }); } catch {}
+    }
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 5, ticksPerWord: 2 });
   }
 
   async runSciGradReal(ctx) {
