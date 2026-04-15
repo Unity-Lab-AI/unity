@@ -1444,8 +1444,9 @@ export class Curriculum {
         // T14.24 Session 15 — ELA-Col3/Col4 real teaching
         case 'college3':     return async (ctx) => this.runElaCol3Real(ctx);
         case 'college4':     return async (ctx) => this.runElaCol4Real(ctx);
-        case 'grad': case 'phd':
-          return async (ctx) => this.runGradPhD(ctx.corpora, ctx.sentences, ctx.arousal, ctx.valence);
+        // T14.24 Session 16 — ELA-Grad/PhD real teaching
+        case 'grad':         return async (ctx) => this.runElaGradReal(ctx);
+        case 'phd':          return async (ctx) => this.runElaPhDReal(ctx);
         default:
           return async () => ({ pass: false, reason: `ela/${grade}: no runner` });
       }
@@ -1660,6 +1661,33 @@ export class Curriculum {
     }
     if (subject === 'art' && grade === 'college4') {
       return async (ctx) => this.runArtCol4Real(ctx);
+    }
+    // T14.24 Session 16 (2026-04-15) — FINAL BATCH: Grad + PhD for all
+    // 5 subjects. Takes cell coverage to 100% — every subject × grade
+    // cell now has real teaching equations + real 3-pathway gate.
+    if (subject === 'math' && grade === 'grad') {
+      return async (ctx) => this.runMathGradReal(ctx);
+    }
+    if (subject === 'math' && grade === 'phd') {
+      return async (ctx) => this.runMathPhDReal(ctx);
+    }
+    if (subject === 'science' && grade === 'grad') {
+      return async (ctx) => this.runSciGradReal(ctx);
+    }
+    if (subject === 'science' && grade === 'phd') {
+      return async (ctx) => this.runSciPhDReal(ctx);
+    }
+    if (subject === 'social' && grade === 'grad') {
+      return async (ctx) => this.runSocGradReal(ctx);
+    }
+    if (subject === 'social' && grade === 'phd') {
+      return async (ctx) => this.runSocPhDReal(ctx);
+    }
+    if (subject === 'art' && grade === 'grad') {
+      return async (ctx) => this.runArtGradReal(ctx);
+    }
+    if (subject === 'art' && grade === 'phd') {
+      return async (ctx) => this.runArtPhDReal(ctx);
     }
     // T14.24 Session 6 (2026-04-15) — Sci-K / Soc-K / Art-K all ship
     // real vocabulary teaching via the shared _teachVocabList helper.
@@ -4918,6 +4946,205 @@ export class Curriculum {
       'professional practice includes business', 'contracts protect artists',
       'copyright protects creations', 'fair use allows some borrowing',
       'the art world is global',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // T14.24 SESSION 16 — GRAD + PHD BATCH (10 CELLS) (2026-04-15)
+  // ═══════════════════════════════════════════════════════════════════
+  // Graduate + doctoral content across all 5 subjects. FINAL session
+  // that takes T14.24's cell coverage to 100% — every subject × grade
+  // cell now has real teaching equations + real 3-pathway gate via the
+  // shared helpers. T14.24 task #3 stays in_progress per Gee's binding
+  // "DO NOT CLAIM DONE EARLY" until all 95 gates actually PASS on a
+  // full curriculum walk, but the teaching framework itself is complete.
+
+  async runElaGradReal(ctx) {
+    const SENTENCES = [
+      'semiotics studies signs and meaning', 'a sign has a signifier and signified',
+      'saussure founded semiotics', 'peirce developed triadic semiotics',
+      'icons resemble what they represent', 'indexes connect physically',
+      'symbols are arbitrary and conventional', 'culture is a web of signs',
+      'discourse analysis studies language in use', 'conversation has rules',
+      'turn taking organizes speech', 'speech acts do things with words',
+      'performative utterances create reality', 'felicity conditions must hold',
+      'critical discourse analysis reveals power', 'foucault saw discourse as power',
+      'genre shapes meaning', 'intertextuality connects texts',
+      'narrative structures our understanding', 'metaphor shapes thought',
+      'lakoff showed metaphors we live by', 'frames define situations',
+      'positioning locates speakers', 'identity emerges in discourse',
+      'graduate writing integrates all these',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runElaPhDReal(ctx) {
+    const SENTENCES = [
+      'doctoral research fluency integrates everything', 'a dissertation makes original contribution',
+      'the literature review maps the field', 'research questions drive inquiry',
+      'methodology must match the question', 'findings must be rigorously established',
+      'implications connect to broader conversations', 'future research extends the work',
+      'peer reviewed publication disseminates results', 'citations build on predecessors',
+      'academic conferences share work', 'scholars engage across decades',
+      'unity speaks with her full persona', 'every word carries intention',
+      'research fluency means deep understanding', 'teaching spreads knowledge',
+      'mentoring develops new scholars', 'service strengthens the field',
+      'the humanities are complete', 'language is fully inhabited',
+      'meaning flows naturally', 'criticism is second nature',
+      'creativity and rigor unite', 'unity has arrived at fluency',
+      'the journey was worth every grade',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runMathGradReal(ctx) {
+    const SENTENCES = [
+      'measure theory generalizes integration', 'a measure assigns size to sets',
+      'lebesgue measure generalizes length', 'sigma algebras contain measurable sets',
+      'functional analysis studies function spaces', 'banach spaces are complete normed',
+      'hilbert spaces have inner products', 'operators map between spaces',
+      'bounded operators have finite norm', 'compact operators approximate finite rank',
+      'spectral theory studies operator eigenvalues', 'fourier analysis decomposes functions',
+      'distributions generalize functions', 'dirac delta is a distribution',
+      'sobolev spaces combine smoothness and integrability', 'partial differential equations need function spaces',
+      'the laplacian is fundamental', 'the heat equation describes diffusion',
+      'the wave equation describes oscillation', 'variational methods find extrema',
+      'euler lagrange equations arise naturally', 'optimization extends to infinite dimensions',
+      'graduate mathematics connects many fields', 'abstract unification reveals structure',
+      'beauty emerges from rigor',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runMathPhDReal(ctx) {
+    const SENTENCES = [
+      'doctoral mathematics pursues open problems', 'research connects to the frontier',
+      'original theorems extend knowledge', 'proofs must be complete and clear',
+      'the dissertation defends an original claim', 'publication in journals disseminates',
+      'specialization requires depth', 'connections require breadth',
+      'the langlands program unifies number theory', 'p versus np is a millennium problem',
+      'the riemann hypothesis remains open', 'collaboration accelerates discovery',
+      'conferences gather specialists', 'refereeing maintains standards',
+      'mathematical beauty guides intuition', 'counterexamples refine conjectures',
+      'formalization clarifies arguments', 'proof assistants verify complex proofs',
+      'computer assisted proofs have grown', 'the four color theorem was computer verified',
+      'mathematics advances through community', 'every theorem stands on predecessors',
+      'open problems await new ideas', 'unity stands at the mathematical frontier',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runSciGradReal(ctx) {
+    const SENTENCES = [
+      'graduate science deepens specialization', 'research builds on prior work',
+      'a graduate student chooses a field', 'an advisor guides the research',
+      'the qualifying exam tests broad knowledge', 'the dissertation presents original work',
+      'techniques are mastered', 'instruments are understood',
+      'experiments are designed carefully', 'controls eliminate confounds',
+      'data analysis requires statistics', 'models explain patterns',
+      'theory unifies observations', 'hypotheses are tested rigorously',
+      'null results inform the field', 'positive results are celebrated',
+      'collaboration is common', 'multiple authors contribute',
+      'grants fund the work', 'the nsf supports basic research',
+      'industry partnerships apply findings', 'patents protect inventions',
+      'ethics boards oversee research', 'publication shares results',
+      'graduate training prepares researchers',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runSciPhDReal(ctx) {
+    const SENTENCES = [
+      'doctoral science pursues independent research', 'original contribution is required',
+      'the dissertation is the capstone', 'years of work culminate',
+      'the defense tests mastery', 'the degree signals independence',
+      'postdocs continue training', 'tenure track positions are competitive',
+      'research programs span decades', 'cumulative knowledge grows',
+      'paradigms shift when old ones fail', 'kuhn described scientific revolutions',
+      'normal science puzzles within a paradigm', 'anomalies accumulate over time',
+      'new paradigms eventually take over', 'science is a human endeavor',
+      'objectivity is an ideal', 'social factors affect science',
+      'the sociology of science reveals dynamics', 'citizen science engages the public',
+      'open science shares freely', 'data repositories preserve records',
+      'reproducibility is foundational', 'truth emerges over time',
+      'unity stands at the research frontier',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runSocGradReal(ctx) {
+    const SENTENCES = [
+      'graduate social science specializes deeply', 'methodologies are mastered',
+      'theory frameworks are chosen', 'research programs extend for years',
+      'fieldwork immerses the researcher', 'interviews build understanding',
+      'ethnographic writing is an art', 'quantitative analysis reveals patterns',
+      'mixed methods triangulate findings', 'a graduate thesis shows original work',
+      'comprehensive exams test the field', 'advisors mentor students',
+      'committees evaluate progress', 'conferences present work',
+      'publication builds reputation', 'teaching shares knowledge',
+      'academic jobs are scarce', 'applied research exists in industry',
+      'public scholarship engages communities', 'policy research informs decisions',
+      'historical research requires archives', 'political research requires fieldwork',
+      'sociological research uses multiple methods', 'anthropological research takes time',
+      'graduate training transforms scholars',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runSocPhDReal(ctx) {
+    const SENTENCES = [
+      'doctoral social science produces original scholarship', 'a dissertation makes a field contribution',
+      'the literature review establishes gaps', 'the research question is original',
+      'methodology is justified carefully', 'ethical approval is required',
+      'data collection takes time', 'analysis uncovers meaning',
+      'writing is clear and argumentative', 'the defense tests mastery',
+      'postdoctoral work continues research', 'tenure track jobs are competitive',
+      'independent research programs develop', 'grants fund long term projects',
+      'collaborations span institutions', 'international research crosses borders',
+      'theoretical contributions advance fields', 'empirical contributions build knowledge',
+      'policy impact matters', 'public engagement spreads insights',
+      'scholars speak to many audiences', 'academic service sustains fields',
+      'every scholar stands on predecessors', 'the humanities and social sciences need rigor',
+      'unity contributes to human understanding',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runArtGradReal(ctx) {
+    const SENTENCES = [
+      'graduate art study deepens practice', 'a graduate studio is a laboratory',
+      'experimentation drives development', 'materials are explored deeply',
+      'concepts are refined', 'the work develops a voice',
+      'critiques shape the work', 'peers provide perspective',
+      'faculty mentor development', 'visiting artists inspire',
+      'residencies provide focused time', 'exhibitions share work publicly',
+      'artist talks explain the work', 'portfolios document growth',
+      'statements articulate vision', 'graduate theses integrate practice and theory',
+      'writing about art is essential', 'criticism informs practice',
+      'history shapes contemporary work', 'contemporary work responds to history',
+      'professional practice is part of graduate training', 'grants and residencies sustain practice',
+      'teaching shares insights', 'service strengthens communities',
+      'graduate training professionalizes artists',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runArtPhDReal(ctx) {
+    const SENTENCES = [
+      'doctoral art practice integrates research and making', 'practice based research is valid',
+      'the dissertation may include a body of work', 'the written component contextualizes practice',
+      'original contribution is required', 'artistic research methods are diverse',
+      'autoethnography uses personal experience', 'practice as research generates knowledge',
+      'the doctoral exhibition demonstrates achievement', 'the defense articulates the work',
+      'postdoctoral opportunities continue development', 'academic jobs exist in art',
+      'independent practice is another path', 'galleries represent mature artists',
+      'museums acquire significant work', 'criticism engages serious art',
+      'publication builds intellectual standing', 'conferences present research',
+      'residencies provide ongoing development', 'collaborations enrich practice',
+      'teaching mentors new artists', 'community work engages publics',
+      'unity speaks with her full voice', 'art and language are one at this level',
+      'research fluency is complete',
     ];
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
