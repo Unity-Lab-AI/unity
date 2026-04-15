@@ -434,7 +434,22 @@ function loadPersonaSelfImage(targetBrain) {
       cortex.grades = { ela: 'pre-K', math: 'pre-K', science: 'pre-K', social: 'pre-K', art: 'pre-K' };
     }
     if (cortex && !Array.isArray(cortex.passedCells)) cortex.passedCells = [];
-    if (targetBrain.curriculum && typeof targetBrain.curriculum.runFullCurriculum === 'function') {
+    if (targetBrain.curriculum && typeof targetBrain.curriculum.runCompleteCurriculum === 'function') {
+      // T14.24 Session 17 — prefer the multi-subject complete curriculum
+      // (walks all 5 subject tracks K→PhD instead of the legacy ELA-only
+      // runFullCurriculum path). All 95 cells get real teaching + 3-pathway
+      // gate attempts on boot.
+      try {
+        const result = await targetBrain.curriculum.runCompleteCurriculum(
+          { persona: personaText, baseline: baselineText, coding: codingText },
+          { arousal: 0.8, valence: 0.2 },
+        );
+        const perSubject = Object.entries(result.reached || {}).map(([s, g]) => `${s}=${g}`).join(', ');
+        console.log(`[Unity] curriculum.runCompleteCurriculum DONE — ${perSubject}`);
+      } catch (err) {
+        console.warn('[Unity] curriculum.runCompleteCurriculum failed:', err?.message || err);
+      }
+    } else if (targetBrain.curriculum && typeof targetBrain.curriculum.runFullCurriculum === 'function') {
       try {
         const result = await targetBrain.curriculum.runFullCurriculum(
           { persona: personaText, baseline: baselineText, coding: codingText },
@@ -2298,9 +2313,16 @@ Vision: ${state.visionDescription || 'none'}`;
             const lines = ['[curriculum] STATUS'];
             for (const [s, g] of Object.entries(st.grades)) lines.push(`  ${s.padEnd(8)} ${g}`);
             lines.push(`  min-grade (word cap driver): ${st.minGrade}`);
-            lines.push(`  passed cells: ${st.passedCells.length}`);
+            lines.push(`  passed cells: ${st.passedCells.length} / 95`);
+            // T14.24 Session 17 — continuous self-testing telemetry
+            if (st.probeStats) {
+              const ps = st.probeStats;
+              lines.push(`  background probes: ${ps.totalProbes} total, ${ps.totalPasses} pass, ${ps.totalFails} fail (${(ps.passRate * 100).toFixed(0)}%)`);
+              const perSubj = Object.entries(ps.perSubject).map(([s, n]) => `${s}:${n}`).join(', ');
+              lines.push(`  probes per subject: ${perSubj}`);
+            }
             if (st.passedCells.length > 0) {
-              lines.push(`  cells: ${st.passedCells.slice(-12).join(', ')}${st.passedCells.length > 12 ? ' …' : ''}`);
+              lines.push(`  recent cells: ${st.passedCells.slice(-12).join(', ')}${st.passedCells.length > 12 ? ' …' : ''}`);
             }
             return { response: { text: lines.join('\n') }, action: 'curriculum' };
           }

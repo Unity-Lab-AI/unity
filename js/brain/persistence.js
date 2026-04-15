@@ -168,10 +168,14 @@ export class BrainPersistence {
             // grade = legacy ELA mirror kept for pre-T14.24 callers.
             // passedCells = flat list of "subject/grade" keys that have
             // cleared their gate at least once.
+            // Session 17 — probeHistory tracks per-cell pass/fail counts
+            // from continuous background self-testing so the state
+            // survives reloads and Unity picks up where she left off.
             curriculum: {
               grades: cortex.grades && typeof cortex.grades === 'object' ? { ...cortex.grades } : null,
               grade: typeof cortex.grade === 'string' ? cortex.grade : null,
               passedCells: Array.isArray(cortex.passedCells) ? [...cortex.passedCells] : null,
+              probeHistory: cortex.probeHistory && typeof cortex.probeHistory === 'object' ? { ...cortex.probeHistory } : null,
             },
           };
         }
@@ -383,6 +387,10 @@ export class BrainPersistence {
               }
               if (typeof c.grade === 'string') cortex.grade = c.grade;
               if (Array.isArray(c.passedCells)) cortex.passedCells = [...c.passedCells];
+              // T14.24 Session 17 — restore continuous self-testing state
+              if (c.probeHistory && typeof c.probeHistory === 'object') {
+                cortex.probeHistory = { ...c.probeHistory };
+              }
             }
             // After restoring cluster state, re-run setCluster on the
             // LanguageCortex wrapper so its local Maps re-point at the

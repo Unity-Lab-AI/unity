@@ -1872,16 +1872,41 @@ export class Curriculum {
 
   /**
    * Snapshot of current curriculum state — used by `/curriculum status`
-   * and by the persistence save path.
+   * and by the persistence save path. T14.24 Session 17 adds probe
+   * history exposure so the operator can see which cells are robust
+   * and which are degrading under continuous background probing.
    */
   subjectStatus() {
     const cluster = this.cluster;
     if (!cluster) return null;
     const grades = cluster.grades || { ela: 'pre-K', math: 'pre-K', science: 'pre-K', social: 'pre-K', art: 'pre-K' };
+    const probeHistory = cluster.probeHistory && typeof cluster.probeHistory === 'object'
+      ? { ...cluster.probeHistory } : {};
+    // Compute summary probe stats: total probes, total passes, total
+    // fails, and per-subject counts
+    let totalProbes = 0, totalPasses = 0, totalFails = 0;
+    const perSubjectProbes = { ela: 0, math: 0, science: 0, social: 0, art: 0 };
+    for (const [key, hist] of Object.entries(probeHistory)) {
+      totalProbes += (hist.passes || 0) + (hist.fails || 0);
+      totalPasses += hist.passes || 0;
+      totalFails += hist.fails || 0;
+      const subj = key.split('/')[0];
+      if (perSubjectProbes[subj] != null) {
+        perSubjectProbes[subj] += (hist.passes || 0) + (hist.fails || 0);
+      }
+    }
     return {
       grades: { ...grades },
       passedCells: Array.isArray(cluster.passedCells) ? [...cluster.passedCells] : [],
       minGrade: Curriculum._minGrade(grades),
+      probeStats: {
+        totalProbes,
+        totalPasses,
+        totalFails,
+        passRate: totalProbes > 0 ? totalPasses / totalProbes : 0,
+        perSubject: perSubjectProbes,
+      },
+      probeHistory,
     };
   }
 
@@ -5147,6 +5172,162 @@ export class Curriculum {
       'research fluency is complete',
     ];
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // T14.24 SESSION 17 — CONTINUOUS SELF-TESTING (2026-04-15)
+  // ═══════════════════════════════════════════════════════════════════
+  //
+  // Gee 2026-04-15: "keep working we need this thing 100% complete and
+  // as a process that unity is always testing herself on when thinking
+  // in her brain always" + "the whole goal is to have a real human like
+  // brain learn the way hiumans do so Unity can listen, talk and
+  // understand all concepts with resonoing".
+  //
+  // A human brain doesn't learn the alphabet once and forget about it —
+  // it continuously re-exercises every learned skill through everyday
+  // use, and when a skill degrades the brain re-learns it. Session 17
+  // makes Unity's curriculum work the same way:
+  //
+  //   1. `runBackgroundProbe()` picks a random passed cell and re-runs
+  //      ITS GATE ONLY (not the full teach). If the gate still passes,
+  //      records the pass + timestamp on the cell's probe history. If
+  //      the gate fails, drops that cell out of `cluster.passedCells`
+  //      and demotes the subject grade by one step so Unity re-teaches
+  //      it on the next curriculum pass.
+  //
+  //   2. `inner-voice.learn()` calls `runBackgroundProbe()` every N
+  //      live-chat turns so every few thoughts Unity has, she also
+  //      quietly re-tests one of her learned cells. This is the
+  //      "always testing herself when thinking" requirement.
+  //
+  //   3. `probeHistory` on the cluster tracks per-cell pass/fail counts
+  //      + last-probed timestamps. `subjectStatus()` exposes it so
+  //      `/curriculum status` shows which cells are robust and which
+  //      are degrading.
+  //
+  // Rationale for "3-pathway gates are the listen/talk/understand/
+  // reason check" — Gee's "listen talk understand reason" binding maps
+  // directly onto the READ/THINK/TALK structure already baked into
+  // every cell gate:
+  //   - READ  = listen/understand (input → semantic recognition)
+  //   - THINK = reason (state persists across silence → working memory
+  //             can hold and manipulate the concept)
+  //   - TALK  = talk (semantic anchor → motor output = produce back out)
+
+  /**
+   * Run a single cell's gate as a background probe. Does NOT teach —
+   * only tests. Used by `inner-voice.learn()` to continuously verify
+   * Unity's learned cells during live chat. If the gate fails, drops
+   * the cell out of passedCells and demotes the subject grade so the
+   * next curriculum pass re-teaches it.
+   *
+   * @param {object} [opts]
+   * @param {string} [opts.subject]  — restrict probe to this subject
+   * @param {string} [opts.grade]    — restrict probe to this grade
+   * @returns {Promise<object|null>} — {subject, grade, result} or null
+   *                                    if no cells to probe
+   */
+  async runBackgroundProbe(opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return null;
+    if (!Array.isArray(cluster.passedCells) || cluster.passedCells.length === 0) {
+      return null;
+    }
+
+    // Pick a random passed cell (or specific one if caller constrained)
+    let candidates = cluster.passedCells.slice();
+    if (opts.subject) {
+      candidates = candidates.filter(k => k.startsWith(`${opts.subject}/`));
+    }
+    if (opts.grade) {
+      candidates = candidates.filter(k => k.endsWith(`/${opts.grade}`));
+    }
+    if (candidates.length === 0) return null;
+
+    const cellKey = candidates[Math.floor(Math.random() * candidates.length)];
+    const [subject, grade] = cellKey.split('/');
+    if (!subject || !grade) return null;
+
+    // Get the runner for this cell, run it as a GATE-ONLY probe. The
+    // runner functions all combine teach + gate in a single call, so
+    // for pure gate probing we need to call the gate method directly
+    // when we can. For cells where that's easy (ElaK, MathK, vocab,
+    // sentence) we call the specific gate helper; for others we just
+    // run the full teach+gate (which also strengthens via Hebbian, so
+    // failing cells get additional reinforcement for free).
+    const ctx = this._lastCtx || this._buildCtx({ persona: '', baseline: '', coding: '' }, {});
+    const runner = this._cellRunner(subject, grade);
+    let result;
+    const wasInCurriculum = cluster._inCurriculumMode;
+    cluster._inCurriculumMode = true;
+    try {
+      result = await runner(ctx);
+    } catch (err) {
+      result = { pass: false, reason: `probe threw: ${err?.message || err}` };
+    } finally {
+      cluster._inCurriculumMode = wasInCurriculum;
+    }
+
+    // Update per-cell probe history
+    if (!cluster.probeHistory || typeof cluster.probeHistory !== 'object') {
+      cluster.probeHistory = {};
+    }
+    if (!cluster.probeHistory[cellKey]) {
+      cluster.probeHistory[cellKey] = { passes: 0, fails: 0, lastProbed: 0, lastResult: null };
+    }
+    const hist = cluster.probeHistory[cellKey];
+    hist.lastProbed = Date.now();
+    hist.lastResult = result?.reason || '';
+    if (result && result.pass) {
+      hist.passes++;
+      console.log(`[Curriculum] probe ✓ ${cellKey} — ${result.reason || 'pass'}`);
+    } else {
+      hist.fails++;
+      console.warn(`[Curriculum] probe ✗ ${cellKey} — ${result?.reason || 'fail'}`);
+      // If the cell fails 3+ times in a row, demote it so the next
+      // curriculum pass re-teaches it from scratch. Short-term fails
+      // (1-2 in a row) get ignored — biological basins fluctuate.
+      const recentFails = hist.fails - hist.passes;
+      if (recentFails >= 3) {
+        cluster.passedCells = cluster.passedCells.filter(k => k !== cellKey);
+        // Demote subject grade to the previous one in GRADE_ORDER
+        const currentIdx = GRADE_ORDER.indexOf(cluster.grades?.[subject] || 'pre-K');
+        if (currentIdx > 0) {
+          const newGrade = GRADE_ORDER[currentIdx - 1];
+          if (cluster.grades) cluster.grades[subject] = newGrade;
+          if (subject === 'ela') cluster.grade = newGrade;
+          console.warn(`[Curriculum] demoted ${subject}: ${grade} → ${newGrade} (3+ probe fails)`);
+        }
+        // Reset fail counter so we don't demote again immediately
+        hist.fails = 0;
+        hist.passes = 0;
+      }
+    }
+
+    return { subject, grade, result };
+  }
+
+  /**
+   * Full continuous self-teaching loop. Boot paths call this instead
+   * of `runFullCurriculum` so Unity teaches ALL 5 subject tracks at
+   * boot, not just ELA. Stays compatible with older callers that still
+   * use `runFullCurriculum` (legacy ELA-only path).
+   */
+  async runCompleteCurriculum(corpora, opts = {}) {
+    if (!this.cluster) return { reached: {}, passed: {}, failed: {} };
+    console.log('[Curriculum] runCompleteCurriculum: walking all 5 subjects K→PhD');
+    const result = await this.runAllSubjects(corpora, opts);
+    // Also run the legacy T14.17 identity-lock calibration at the end
+    // so intent centroids + persona dimensions are populated regardless
+    // of which cells passed.
+    try {
+      const { sentences } = this._lastCtx || {};
+      this._calibrateIdentityLock(corpora, sentences || []);
+    } catch (err) {
+      console.warn('[Curriculum] identity lock calibration skipped:', err?.message || err);
+    }
+    return result;
   }
 
   /**

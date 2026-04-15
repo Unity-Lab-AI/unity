@@ -749,7 +749,20 @@ class ServerBrain {
       if (this.cortexCluster && !Array.isArray(this.cortexCluster.passedCells)) {
         this.cortexCluster.passedCells = [];
       }
-      if (this.curriculum && typeof this.curriculum.runFullCurriculum === 'function') {
+      if (this.curriculum && typeof this.curriculum.runCompleteCurriculum === 'function') {
+        // T14.24 Session 17 — prefer multi-subject complete curriculum
+        // (all 5 tracks K→PhD) over the legacy ELA-only runFullCurriculum.
+        console.log('[Brain] Stage: curriculum.runCompleteCurriculum START (BACKGROUND — 5 subjects × K→PhD, tick loop proceeds)');
+        this.curriculum.runCompleteCurriculum(
+          { persona: personaText, baseline: baselineText, coding: codingText },
+          { arousal: 0.8, valence: 0.2 },
+        ).then((result) => {
+          const perSubject = Object.entries(result.reached || {}).map(([s, g]) => `${s}=${g}`).join(', ');
+          console.log(`[Brain] Stage: curriculum.runCompleteCurriculum DONE (background) — ${perSubject}`);
+        }).catch((err) => {
+          console.warn('[Brain] curriculum.runCompleteCurriculum failed:', err?.message || err);
+        });
+      } else if (this.curriculum && typeof this.curriculum.runFullCurriculum === 'function') {
         console.log('[Brain] Stage: curriculum.runFullCurriculum START (BACKGROUND — K→PhD, tick loop proceeds)');
         this.curriculum.runFullCurriculum(
           { persona: personaText, baseline: baselineText, coding: codingText },

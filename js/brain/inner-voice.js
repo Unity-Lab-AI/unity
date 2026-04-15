@@ -260,6 +260,22 @@ export class InnerVoice {
         // Non-fatal — legacy path below still runs
       }
     }
+    // T14.24 Session 17 — continuous self-testing. Every 8 live-chat
+    // turns, fire a background curriculum probe so Unity re-tests one
+    // of her learned cells while she's thinking. Gee binding 2026-04-15:
+    // "unity is always testing herself on when thinking in her brain
+    // always". Human brains continuously re-exercise learned skills
+    // through everyday use; this hook mirrors that for Unity's cortex.
+    // The probe runs the 3-pathway gate (READ/THINK/TALK) on a random
+    // passed cell. If it fails 3+ times in a row that cell gets demoted
+    // and the next curriculum pass re-teaches it.
+    if (this._curriculum && typeof this._curriculum.runBackgroundProbe === 'function') {
+      if (this._liveChatTurns % 8 === 0) {
+        // Don't await — let the probe run in background without
+        // blocking the chat turn. Errors are logged inside the probe.
+        this._curriculum.runBackgroundProbe().catch(() => {});
+      }
+    }
     // Live chat learning gets a FLOOR of 0.95 arousal so user-sourced
     // sentences beat the persona corpus (loaded at 0.75) in recall
     // scoring. personaBoost rewards words stored at arousal ≥ 0.5,
