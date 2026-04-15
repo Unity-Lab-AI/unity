@@ -2806,6 +2806,100 @@ export class Curriculum {
   // A K-G1 classroom has a sight word chart on the wall; that chart is
   // data, and so are these lists.
 
+  // ─── TODO-aligned ELA-G1 helpers (Session 27) ────────────────────
+  //
+  // docs/TODO.md T14.24 ELA-G1 spec (line 143):
+  //   Equations: _teachCVCReading(cvcList) streams each word's letters
+  //   one at a time through the letter region with ticksPerLetter=3,
+  //   simultaneously injecting the word's GloVe into sem region — letter
+  //   sequence Hebbian learns to activate sem from streamed letters.
+  //   _teachSightWords(sightList) same pattern at higher exposure count
+  //   for the top-N sight words.
+
+  async _teachCVCReading(cvcList, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 5;
+    const ticksPerLetter = opts.ticksPerLetter ?? 3;
+    const arousal = opts.arousal ?? 0.8;
+    const valence = opts.valence ?? 0.2;
+
+    const letterSet = new Set();
+    for (const w of cvcList) for (const ch of w) letterSet.add(ch);
+    ensureLetters(Array.from(letterSet));
+
+    for (let rep = 0; rep < reps; rep++) {
+      for (const word of cvcList) {
+        const wordEmb = sharedEmbeddings.getEmbedding(word);
+        if (wordEmb && wordEmb.length > 0 && cluster.regions?.sem) {
+          cluster.injectEmbeddingToRegion('sem', wordEmb, 0.6);
+        }
+        for (const ch of word.replace(/[^a-z]/g, '')) {
+          cluster.injectLetter(ch, 1.0);
+          const phonFeat = _phonemeFeatureForLetter(ch);
+          if (phonFeat && phonFeat.length > 0 && cluster.regions?.phon) {
+            cluster.injectEmbeddingToRegion('phon', phonFeat, 0.4);
+          }
+          for (let t = 0; t < ticksPerLetter; t++) {
+            cluster.step(0.001);
+            this.stats.totalTicks++;
+          }
+        }
+        cluster.learn(0);
+        if (this.dictionary && typeof this.dictionary.learnWord === 'function') {
+          try { this.dictionary.learnWord(word, null, arousal, valence); } catch {}
+        }
+        this.stats.shortWordsSeen++;
+      }
+      await _microtask();
+    }
+    return { taught: reps * cvcList.length };
+  }
+
+  async _teachSightWords(sightList, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    // TODO spec prescribes "same pattern at higher exposure count" —
+    // sight words need to be recognized instantly, so we boost reps.
+    const reps = opts.reps ?? 8;
+    const ticksPerLetter = opts.ticksPerLetter ?? 3;
+    const arousal = opts.arousal ?? 0.85;  // slightly higher than CVC
+    const valence = opts.valence ?? 0.25;
+
+    const letterSet = new Set();
+    for (const w of sightList) for (const ch of w) letterSet.add(ch);
+    ensureLetters(Array.from(letterSet));
+
+    for (let rep = 0; rep < reps; rep++) {
+      for (const word of sightList) {
+        const wordEmb = sharedEmbeddings.getEmbedding(word);
+        if (wordEmb && wordEmb.length > 0 && cluster.regions?.sem) {
+          // Slightly stronger sem injection than CVC — sight words
+          // should dominate recognition
+          cluster.injectEmbeddingToRegion('sem', wordEmb, 0.7);
+        }
+        for (const ch of word.replace(/[^a-z]/g, '')) {
+          cluster.injectLetter(ch, 1.0);
+          const phonFeat = _phonemeFeatureForLetter(ch);
+          if (phonFeat && phonFeat.length > 0 && cluster.regions?.phon) {
+            cluster.injectEmbeddingToRegion('phon', phonFeat, 0.4);
+          }
+          for (let t = 0; t < ticksPerLetter; t++) {
+            cluster.step(0.001);
+            this.stats.totalTicks++;
+          }
+        }
+        cluster.learn(0);
+        if (this.dictionary && typeof this.dictionary.learnWord === 'function') {
+          try { this.dictionary.learnWord(word, null, arousal, valence); } catch {}
+        }
+        this.stats.shortWordsSeen++;
+      }
+      await _microtask();
+    }
+    return { taught: reps * sightList.length };
+  }
+
   async runElaG1Real(ctx) {
     const cluster = this.cluster;
     if (!cluster) return { pass: false, reason: 'no cluster wired' };
@@ -2829,6 +2923,13 @@ export class Curriculum {
       'the', 'and', 'you', 'for', 'of',
       'on', 'at', 'he', 'we', 'me',
     ];
+
+    // T14.24 Session 27 — TODO-aligned split teaching. Call the two
+    // named methods BEFORE the original combined loop. CVC and sight
+    // words now use their own exposure schedules (sight words get 8
+    // reps to CVC's 5, per TODO's "higher exposure count" spec).
+    await this._teachCVCReading(CVC_WORDS);
+    await this._teachSightWords(SIGHT_WORDS);
     const ALL_WORDS = [...CVC_WORDS, ...SIGHT_WORDS];
     const REPS_PER_WORD = 5;
     const TICKS_PER_LETTER = 3;
