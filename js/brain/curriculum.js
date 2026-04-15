@@ -4192,6 +4192,106 @@ export class Curriculum {
     };
   }
 
+  // ─── TODO-aligned Math-G2 helpers (Session 32) ───────────────────
+  //
+  // docs/TODO.md T14.24 MATH-G2 spec (line 319):
+  //   _teachPlaceValue() uses a structured feature [tens_digit,
+  //     ones_digit] where each position gets its own magnitude feature.
+  //   _teachMultiplicationIntro(pairs) extends addition Hebbian to
+  //     repeated-addition via magnitude feature addition chains.
+
+  async _teachPlaceValue(opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 5;
+    const ticksPerNumber = opts.ticksPerNumber ?? 5;
+
+    // 2-digit numbers 10-99. Structured feature = magnitude(tens) into
+    // first half of free region + magnitude(ones) into second half so
+    // the cortex learns tens and ones as separate positional bindings.
+    // This builds on Math-K's _teachMagnitudes which put single-digit
+    // magnitudes in the free region.
+    for (let rep = 0; rep < reps; rep++) {
+      for (let n = 10; n <= 99; n++) {
+        const tens = Math.floor(n / 10);
+        const ones = n % 10;
+        const magT = _magnitudeFeatureForDigit(String(tens));
+        const magO = _magnitudeFeatureForDigit(String(ones));
+
+        // Construct a 32d positional feature: first 16 dims are tens
+        // magnitude, second 16 dims are ones magnitude
+        const positional = new Float64Array(32);
+        for (let i = 0; i < 16; i++) positional[i] = magT[i] || 0;
+        for (let i = 0; i < 16; i++) positional[16 + i] = magO[i] || 0;
+        // L2 normalize
+        let norm = 0;
+        for (let i = 0; i < 32; i++) norm += positional[i] * positional[i];
+        norm = Math.sqrt(norm) || 1;
+        for (let i = 0; i < 32; i++) positional[i] /= norm;
+
+        // Inject the positional feature into free region
+        if (cluster.regions?.free) {
+          cluster.injectEmbeddingToRegion('free', positional, 0.6);
+        }
+        // Inject the digit characters through letter region in order
+        cluster.injectLetter(String(tens), 1.0);
+        for (let t = 0; t < 2; t++) cluster.step(0.001);
+        cluster.injectLetter(String(ones), 1.0);
+        for (let t = 0; t < ticksPerNumber; t++) {
+          cluster.step(0.001);
+          this.stats.totalTicks++;
+        }
+        cluster.learn(0);
+      }
+      await _microtask();
+    }
+    return { taught: reps * 90 };
+  }
+
+  async _teachMultiplicationIntro(pairs, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 5;
+    const ticksPerPair = opts.ticksPerPair ?? 4;
+
+    // Multiplication as repeated addition. For each {a, b, c=a*b}:
+    // inject (a copies of magnitude(b)) summed into free region, target
+    // magnitude(c) into phon region. Hebbian learns that a*b = b+b+b+...
+    // via magnitude-feature addition chains.
+    for (let rep = 0; rep < reps; rep++) {
+      for (const { a, b, c } of pairs) {
+        const magB = _magnitudeFeatureForDigit(String(b));
+        const magC = _magnitudeFeatureForDigit(String(Math.min(c, 9))); // cap at single-digit magnitude
+
+        // Build the a-repeated sum of magB
+        const magSum = new Float64Array(magB.length);
+        for (let i = 0; i < magB.length; i++) magSum[i] = a * magB[i];
+        let norm = 0;
+        for (let i = 0; i < magSum.length; i++) norm += magSum[i] * magSum[i];
+        norm = Math.sqrt(norm) || 1;
+        for (let i = 0; i < magSum.length; i++) magSum[i] /= norm;
+
+        if (cluster.regions?.free) {
+          cluster.injectEmbeddingToRegion('free', magSum, 0.6);
+        }
+        if (cluster.regions?.phon && magC) {
+          cluster.injectEmbeddingToRegion('phon', magC, 0.6);
+        }
+        // Inject the answer digit for motor binding
+        if (c < 10) {
+          cluster.injectLetter(String(c), 0.5);
+        }
+        for (let t = 0; t < ticksPerPair; t++) {
+          cluster.step(0.001);
+          this.stats.totalTicks++;
+        }
+        cluster.learn(0);
+      }
+      await _microtask();
+    }
+    return { taught: reps * pairs.length };
+  }
+
   // ─── Math-G2: 2-digit number vocabulary (place value words) ───────
   // Teen numbers, by-10s to 100, plus the word "hundred". True place-
   // value decomposition (carry/borrow, tens↔ones swapping) is deferred
@@ -4204,6 +4304,16 @@ export class Curriculum {
       'twenty', 'thirty', 'forty', 'fifty', 'sixty',
       'seventy', 'eighty', 'ninety', 'hundred',
     ];
+    // T14.24 Session 32 — TODO-aligned split. Teach place value via
+    // structured [tens, ones] positional features + multiplication
+    // intro via repeated-addition magnitude chains.
+    await this._teachPlaceValue();
+    const MULT_PAIRS = [
+      { a: 2, b: 1, c: 2 }, { a: 2, b: 2, c: 4 }, { a: 2, b: 3, c: 6 }, { a: 2, b: 4, c: 8 }, { a: 2, b: 5, c: 10 },
+      { a: 5, b: 1, c: 5 }, { a: 5, b: 2, c: 10 }, { a: 5, b: 3, c: 15 }, { a: 5, b: 4, c: 20 },
+      { a: 10, b: 1, c: 10 }, { a: 10, b: 2, c: 20 }, { a: 10, b: 3, c: 30 }, { a: 10, b: 4, c: 40 },
+    ];
+    await this._teachMultiplicationIntro(MULT_PAIRS);
     return this._teachVocabList(MATH_G2_VOCAB, ctx);
   }
 
