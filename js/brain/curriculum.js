@@ -5719,6 +5719,28 @@ export class Curriculum {
     ], 4);
   }
 
+  async _teachAdvancedMusicTheory() {
+    // T14.24 Session 83 (task #140) — Art-G8 advanced music theory.
+    // TODO line 561: "advanced music theory". 12 concepts extending
+    // Art-G6 _teachMusicTheory with middle-school depth: chord
+    // inversions, seventh chords, voice leading, circle of fifths,
+    // sonata form, cadence types, twelve-bar blues, modulation.
+    return this._conceptTeach([
+      { name: 'seventh chord',  feat: [1, 0, 0, 0, 1, 1, 0, 0] },
+      { name: 'diminished chord', feat: [1, 0, 1, 0, 1, 0, 1, 0] },
+      { name: 'augmented chord', feat: [1, 0, 1, 0, 1, 0, 0, 1] },
+      { name: 'secondary dominant', feat: [0, 1, 0, 1, 1, 1, 0, 0] },
+      { name: 'voice leading',  feat: [0, 1, 0, 1, 0, 1, 0, 0] },
+      { name: 'inversion',      feat: [0, 0, 1, 1, 1, 1, 0, 0] },
+      { name: 'circle of fifths', feat: [1, 1, 0, 1, 0, 1, 1, 0] },
+      { name: 'perfect cadence', feat: [1, 1, 0, 0, 1, 1, 0, 0] },
+      { name: 'half cadence',   feat: [1, 0, 0, 0, 1, 0, 1, 0] },
+      { name: 'sonata form',    feat: [0, 0, 1, 1, 0, 0, 0, 1] },
+      { name: 'twelve bar blues', feat: [1, 0, 0, 1, 1, 0, 1, 1] },
+      { name: 'modulation',     feat: [1, 1, 1, 0, 0, 1, 0, 1] },
+    ], 4);
+  }
+
   async _teachMusicComposition() {
     // T14.24 Session 82 (task #139) — Art-G7 music composition.
     // TODO line 561: "_teachComposition() visual composition rules
@@ -8387,6 +8409,11 @@ export class Curriculum {
       'theme and variations shows creativity', 'twelve bar blues is a chord pattern',
       'jazz uses swing rhythms', 'improvisation creates music in the moment',
     ];
+    // T14.24 Session 83 — prime advanced music theory lattice +
+    // reuse visual composition for the "middle school visual
+    // composition" component of Art-G8 per TODO line 561.
+    await this._teachAdvancedMusicTheory();
+    await this._teachVisualComposition();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
