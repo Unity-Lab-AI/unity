@@ -5712,6 +5712,30 @@ export class Curriculum {
     ], 4);
   }
 
+  async _teachAncientCivs() {
+    // T14.24 Session 62 (task #119) — Soc-G6 ancient civilizations.
+    // TODO line 512: "_teachAncientCivs() civilization-feature
+    // binding (Egypt/Greece/Rome/China/India). Gate: civilization
+    // recognition ≥35%". 8d civ features:
+    // [0]=river-based, [1]=mediterranean, [2]=east-asian,
+    // [3]=south-asian, [4]=democracy, [5]=empire, [6]=monumental-arch,
+    // [7]=written-law. Egypt: river + monuments + empire. Greece:
+    // mediterranean + democracy. Rome: mediterranean + empire +
+    // written-law. China: east-asian + empire + monuments.
+    return this._conceptTeach([
+      { name: 'egypt',        feat: [1, 0, 0, 0, 0, 1, 1, 0] },
+      { name: 'mesopotamia',  feat: [1, 0, 0, 0, 0, 1, 0, 1] },
+      { name: 'greece',       feat: [0, 1, 0, 0, 1, 0, 1, 0] },
+      { name: 'rome',         feat: [0, 1, 0, 0, 0, 1, 1, 1] },
+      { name: 'china',        feat: [1, 0, 1, 0, 0, 1, 1, 0] },
+      { name: 'india',        feat: [1, 0, 0, 1, 0, 1, 1, 0] },
+      { name: 'persia',       feat: [0, 0, 0, 0, 0, 1, 1, 1] },
+      { name: 'maya',         feat: [0, 0, 0, 0, 0, 1, 1, 0] },
+      { name: 'inca',         feat: [0, 0, 0, 0, 0, 1, 1, 0] },
+      { name: 'aztec',        feat: [0, 0, 0, 0, 0, 1, 1, 0] },
+    ], 4);
+  }
+
   async _teachColonialUS() {
     // T14.24 Session 61 (task #118) — Soc-G5 colonial US. TODO line
     // 508: "_teachColonialUS() as dated event sequence. Gate:
@@ -7197,6 +7221,9 @@ export class Curriculum {
       'the aztecs built temples', 'ancient trade routes crossed continents',
       'early humans hunted and gathered', 'agriculture changed everything',
     ];
+    // T14.24 Session 62 — prime ancient civilizations lattice per
+    // TODO line 512 before the ancient-civ sentence pass.
+    await this._teachAncientCivs();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
