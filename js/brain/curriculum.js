@@ -5719,6 +5719,29 @@ export class Curriculum {
     ], 4);
   }
 
+  async _teachDrawingBasics() {
+    // T14.24 Session 78 (task #135) — Art-G3 drawing basics. TODO
+    // line 557: "drawing basics". 8d visual-element features:
+    // [0]=1d-line-element, [1]=2d-shape-element, [2]=3d-form-element,
+    // [3]=light/value, [4]=color, [5]=texture, [6]=space/negative,
+    // [7]=edge/outline. The 7 elements of art organized by
+    // dimensionality then by attribute.
+    return this._conceptTeach([
+      { name: 'line',       feat: [1, 0, 0, 0, 0, 0, 0, 1] },
+      { name: 'shape',      feat: [0, 1, 0, 0, 0, 0, 0, 1] },
+      { name: 'form',       feat: [0, 0, 1, 1, 0, 0, 1, 0] },
+      { name: 'value',      feat: [0, 0, 0, 1, 0, 0, 0, 0] },
+      { name: 'color',      feat: [0, 0, 0, 0, 1, 0, 0, 0] },
+      { name: 'texture',    feat: [0, 0, 0, 0, 0, 1, 0, 0] },
+      { name: 'space',      feat: [0, 0, 1, 0, 0, 0, 1, 0] },
+      { name: 'outline',    feat: [1, 0, 0, 0, 0, 0, 0, 1] },
+      { name: 'shading',    feat: [0, 0, 0, 1, 0, 1, 0, 0] },
+      { name: 'perspective', feat: [0, 0, 1, 1, 0, 0, 1, 0] },
+      { name: 'composition', feat: [0, 1, 1, 0, 0, 0, 1, 0] },
+      { name: 'sketch',     feat: [1, 1, 0, 1, 0, 0, 0, 1] },
+    ], 4);
+  }
+
   async _teachRhythmPatterns() {
     // T14.24 Session 77 (task #134) — Art-G2 rhythm. TODO line 557:
     // "rhythm as temporal Hebbian". Sequence cycles over meter
@@ -7428,6 +7451,9 @@ export class Curriculum {
       'practice makes artists better', 'every artist started as a beginner',
       'paper comes in many sizes', 'paper comes in many colors',
     ];
+    // T14.24 Session 78 — prime drawing basics elements lattice per
+    // TODO line 557 before the drawing sentence pass.
+    await this._teachDrawingBasics();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
