@@ -5,6 +5,36 @@
 
 ---
 
+## 2026-04-15 — T14.24 Session 10: G4-G6 batch — 11 real cells (Sci/Soc/Art G4-G6 + ELA-G6 + Math-G6)
+
+**Gee 2026-04-15:** *"keep working each item masterfully and completely"*.
+
+Session 10 ships 11 more real cells in the G4-G6 range. Tasks #51 (Sci-G4), #52 (Sci-G5), #53 (Sci-G6), #70 (Soc-G4), #71 (Soc-G5), #72 (Soc-G6), #89 (Art-G4), #90 (Art-G5), #91 (Art-G6), #13 (ELA-G6), #34 (Math-G6) all completed. Task #3 parent stays in_progress — 60 cells still owed.
+
+**`js/brain/curriculum.js` (+259 lines net, 3631 → 3890, node --check clean):**
+
+- **Sci-G4** (28 sentences) — force/motion/gravity/friction/simple machines/magnets/Newton's laws
+- **Sci-G5** (29 sentences) — matter states/atoms/energy forms/kinetic/potential/mass/volume/density
+- **Sci-G6** (30 sentences) — earth as planet/seasons/layers of earth/plate tectonics/weather/climate/water cycle
+- **Soc-G4** (27 sentences) — state history (native peoples, explorers, settlers, state founding narratives)
+- **Soc-G5** (28 sentences) — colonial US (13 colonies, pilgrims, Jamestown, Boston Tea Party, Revolutionary War, Constitution)
+- **Soc-G6** (28 sentences) — ancient civilizations (Mesopotamia, Egypt, Greece, Rome, China, Mayans/Incas/Aztecs)
+- **Art-G4** (28 sentences) — melody/pitch/scales/octaves/clefs/sharps/flats/major vs minor
+- **Art-G5** (28 sentences) — visual composition (balance, contrast, emphasis, perspective, focal points, rule of thirds)
+- **Art-G6** (28 sentences) — music theory fundamentals (chords, keys, time signatures, dynamics, articulation, phrases)
+- **ELA-G6** (26 sentences) — subordinate clauses (that/which/when/because/although/while/since/if/unless/whose/where)
+- **Math-G6** (27 sentences) — pre-algebra (variables, equations, solving for x, expressions, integers, absolute value)
+
+All 11 cells dispatch via `_teachSentenceList` with ~27-sentence hand-crafted corpora per cell. ELA-G6 dispatch also partially retires the legacy `runGrade6_8` path — G6 now uses real teaching, G7 and G8 still fall through to the legacy placeholder until Session 11+.
+
+**`_cellRunner`** gets 11 new dispatch cases.
+
+### Commit status
+
+Committed as part of Session 10 atomic push to `t14-language-rebuild`.
+
+---
+
 ## 2026-04-15 — T14.24 Session 9: mass cell ship — 13 real cells in one commit (ELA-G4/G5, Math-G4/G5, Sci/Soc/Art G1-G3)
 
 **Gee 2026-04-15:** *"keep working each item masterfully and completely remembr we are makeing a couse for Unity to run oin her own brain to learn"*.

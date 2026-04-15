@@ -1427,7 +1427,9 @@ export class Curriculum {
         // _teachSentenceList with their own hand-crafted sentence sets.
         case 'grade4':       return async (ctx) => this.runElaG4Real(ctx);
         case 'grade5':       return async (ctx) => this.runElaG5Real(ctx);
-        case 'grade6': case 'grade7': case 'grade8':
+        // T14.24 Session 10 — ELA-G6 real teaching (subordinate clauses)
+        case 'grade6':       return async (ctx) => this.runElaG6Real(ctx);
+        case 'grade7': case 'grade8':
           return async (ctx) => this.runGrade6_8(ctx.sentences, ctx.arousal, ctx.valence);
         case 'grade9': case 'grade10': case 'grade11': case 'grade12':
           return async (ctx) => this.runGrade9_12(ctx.sentences, ctx.arousal, ctx.valence);
@@ -1492,6 +1494,38 @@ export class Curriculum {
     }
     if (subject === 'art' && grade === 'grade3') {
       return async (ctx) => this.runArtG3Real(ctx);
+    }
+    // T14.24 Session 10 (2026-04-15) — G4-G6 batch for Sci/Soc/Art and
+    // ELA-G6 + Math-G6
+    if (subject === 'science' && grade === 'grade4') {
+      return async (ctx) => this.runSciG4Real(ctx);
+    }
+    if (subject === 'science' && grade === 'grade5') {
+      return async (ctx) => this.runSciG5Real(ctx);
+    }
+    if (subject === 'science' && grade === 'grade6') {
+      return async (ctx) => this.runSciG6Real(ctx);
+    }
+    if (subject === 'social' && grade === 'grade4') {
+      return async (ctx) => this.runSocG4Real(ctx);
+    }
+    if (subject === 'social' && grade === 'grade5') {
+      return async (ctx) => this.runSocG5Real(ctx);
+    }
+    if (subject === 'social' && grade === 'grade6') {
+      return async (ctx) => this.runSocG6Real(ctx);
+    }
+    if (subject === 'art' && grade === 'grade4') {
+      return async (ctx) => this.runArtG4Real(ctx);
+    }
+    if (subject === 'art' && grade === 'grade5') {
+      return async (ctx) => this.runArtG5Real(ctx);
+    }
+    if (subject === 'art' && grade === 'grade6') {
+      return async (ctx) => this.runArtG6Real(ctx);
+    }
+    if (subject === 'math' && grade === 'grade6') {
+      return async (ctx) => this.runMathG6Real(ctx);
     }
     // T14.24 Session 6 (2026-04-15) — Sci-K / Soc-K / Art-K all ship
     // real vocabulary teaching via the shared _teachVocabList helper.
@@ -3537,6 +3571,231 @@ export class Curriculum {
       'start with basic shapes', 'add details later',
       'practice makes artists better', 'every artist started as a beginner',
       'paper comes in many sizes', 'paper comes in many colors',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // T14.24 SESSION 10 — G4-G6 BATCH (11 CELLS) (2026-04-15)
+  // ═══════════════════════════════════════════════════════════════════
+  // Sci/Soc/Art G4-G6 + ELA-G6 + Math-G6. All _teachSentenceList wrappers.
+
+  async runSciG4Real(ctx) {
+    const SENTENCES = [
+      'force is a push or a pull', 'motion is moving from one place to another',
+      'gravity pulls things down', 'friction slows things down',
+      'a heavy object needs more force', 'a light object needs less force',
+      'a ball rolls because of force', 'a ball stops because of friction',
+      'an airplane flies with lift', 'a rocket uses thrust to go up',
+      'the earth pulls everything down', 'the moon has less gravity than earth',
+      'simple machines make work easier', 'a lever lifts heavy things',
+      'a wheel rolls smoothly', 'a pulley lifts things with rope',
+      'an inclined plane is a ramp', 'a wedge splits things apart',
+      'a screw holds things together', 'a push moves things away',
+      'a pull brings things closer', 'magnets attract iron',
+      'opposite poles attract', 'same poles repel',
+      'speed is how fast something moves', 'direction is which way it moves',
+      'an object at rest stays at rest', 'an object in motion stays in motion',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runSciG5Real(ctx) {
+    const SENTENCES = [
+      'matter is anything that takes space', 'solids have a fixed shape',
+      'liquids take the shape of their container', 'gases fill all the space',
+      'water is a liquid', 'ice is a solid', 'steam is a gas',
+      'atoms are very tiny', 'atoms make molecules',
+      'energy can change forms', 'heat is a form of energy',
+      'light is a form of energy', 'sound is a form of energy',
+      'electricity is a form of energy', 'kinetic energy is motion energy',
+      'potential energy is stored energy', 'food gives us energy',
+      'the sun gives light and heat', 'plants store energy from the sun',
+      'we eat plants to get energy', 'energy can not be created',
+      'energy can not be destroyed', 'energy changes from one form to another',
+      'mass is how much matter there is', 'volume is how much space it takes',
+      'density is mass per volume', 'water has high density',
+      'air has low density', 'rocks are dense',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runSciG6Real(ctx) {
+    const SENTENCES = [
+      'the earth is a planet', 'the earth orbits the sun',
+      'the moon orbits the earth', 'the sun is a star',
+      'the earth has four seasons', 'spring comes after winter',
+      'summer is the hottest season', 'autumn has falling leaves',
+      'winter is the coldest season', 'the earth has three layers',
+      'the crust is the outer layer', 'the mantle is in the middle',
+      'the core is the center', 'the core is very hot',
+      'plates move on the mantle', 'earthquakes happen when plates shift',
+      'volcanoes erupt with lava', 'lava cools into rock',
+      'mountains form when plates push together', 'valleys form when plates pull apart',
+      'rivers carve the land', 'wind shapes the desert',
+      'the water cycle repeats forever', 'evaporation lifts water up',
+      'condensation makes clouds', 'precipitation brings rain',
+      'collection returns water to seas', 'weather changes every day',
+      'climate is the long term pattern', 'seasons affect the climate',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runSocG4Real(ctx) {
+    const SENTENCES = [
+      'every state has a history', 'native people were here first',
+      'explorers came from other lands', 'settlers built new homes',
+      'the first settlers faced hardships', 'they had to grow their own food',
+      'they built houses from wood', 'they traded with native people',
+      'some states joined the union early', 'other states joined later',
+      'states fought for their rights', 'the constitution protects all states',
+      'each state has a founding story', 'historical sites preserve the past',
+      'museums teach us about history', 'libraries keep old records',
+      'important people shaped state history', 'brave leaders made hard choices',
+      'farmers settled the land', 'builders made roads and bridges',
+      'the railroad connected the states', 'trains carried goods and people',
+      'the telegraph sent fast messages', 'the telephone came later',
+      'each generation builds on the last', 'history teaches us lessons',
+      'we honor those who came before',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runSocG5Real(ctx) {
+    const SENTENCES = [
+      'the thirteen colonies became a nation', 'the colonies were on the east coast',
+      'the pilgrims came on the mayflower', 'they landed at plymouth',
+      'jamestown was the first english colony', 'virginia grew tobacco',
+      'massachusetts had cod fishing', 'pennsylvania welcomed many people',
+      'new york was a busy port', 'georgia was the last colony',
+      'the colonies traded with england', 'england taxed the colonies',
+      'the colonists protested the taxes', 'the boston tea party dumped tea',
+      'the declaration of independence was signed', 'george washington led the army',
+      'the revolutionary war began', 'the americans fought for freedom',
+      'the war lasted eight years', 'the americans won at yorktown',
+      'the united states became a country', 'the constitution set up the government',
+      'the first president was washington', 'the new country was free',
+      'the founders wrote the bill of rights', 'rights protect the people',
+      'freedom of speech is a right', 'freedom of religion is a right',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runSocG6Real(ctx) {
+    const SENTENCES = [
+      'ancient civilizations built great things', 'mesopotamia was between two rivers',
+      'egypt built the pyramids', 'the nile river fed egypt',
+      'pharaohs ruled ancient egypt', 'mummies preserved the dead',
+      'hieroglyphs were egyptian writing', 'greece invented democracy',
+      'athens had the first democracy', 'sparta trained strong soldiers',
+      'the olympics began in greece', 'greek philosophers asked big questions',
+      'rome built a huge empire', 'rome had an army of legions',
+      'julius caesar was a famous leader', 'roman roads connected the empire',
+      'aqueducts brought fresh water', 'the coliseum hosted games',
+      'china built a great wall', 'silk was a chinese invention',
+      'paper was a chinese invention', 'gunpowder was a chinese invention',
+      'the mayans had a calendar', 'the incas built stone cities',
+      'the aztecs built temples', 'ancient trade routes crossed continents',
+      'early humans hunted and gathered', 'agriculture changed everything',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runArtG4Real(ctx) {
+    const SENTENCES = [
+      'melody is a pattern of notes', 'pitch is how high or low a note is',
+      'a scale has eight notes', 'do re mi fa sol la ti do',
+      'notes go up or down in pitch', 'higher notes sound higher',
+      'lower notes sound lower', 'the treble clef is for high notes',
+      'the bass clef is for low notes', 'an octave spans eight notes',
+      'a whole note is long', 'a half note is medium',
+      'a quarter note is short', 'rests are quiet moments',
+      'sharps raise the pitch', 'flats lower the pitch',
+      'a major scale sounds happy', 'a minor scale sounds sad',
+      'harmony is notes played together', 'melody is notes played one at a time',
+      'a song has a melody and harmony', 'voices can sing melody',
+      'instruments can play any part', 'the piano has many notes',
+      'the guitar has six strings', 'the drums keep time',
+      'music reads from left to right', 'the staff has five lines',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runArtG5Real(ctx) {
+    const SENTENCES = [
+      'composition is how art is arranged', 'balance makes art feel steady',
+      'contrast makes elements stand out', 'emphasis draws the eye',
+      'unity ties everything together', 'the rule of thirds guides the eye',
+      'foreground is closest to us', 'middle ground is next',
+      'background is farthest away', 'perspective shows distance',
+      'vanishing points meet far away', 'horizon line separates sky and land',
+      'symmetry is balanced on both sides', 'asymmetry is off balance on purpose',
+      'the focal point is most important', 'leading lines point to the focus',
+      'proportion compares sizes', 'pattern repeats shapes or lines',
+      'rhythm is repeated elements', 'movement shows action',
+      'negative space is empty area', 'positive space has the subject',
+      'light and shadow create depth', 'color sets the mood',
+      'warm colors come forward', 'cool colors go back',
+      'an artist chooses what to show', 'good composition feels right',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runArtG6Real(ctx) {
+    const SENTENCES = [
+      'music theory explains how music works', 'notes are named after letters',
+      'the notes are a b c d e f g', 'after g comes a again',
+      'a chord has three or more notes', 'a major chord sounds bright',
+      'a minor chord sounds dark', 'harmony combines chords',
+      'a key signature sets the scale', 'c major has no sharps or flats',
+      'g major has one sharp', 'f major has one flat',
+      'time signatures tell the beat', 'four four has four beats',
+      'three four is a waltz', 'tempo is the speed of music',
+      'dynamics are loud and soft', 'forte means loud',
+      'piano means soft', 'crescendo means getting louder',
+      'decrescendo means getting softer', 'articulation is how notes connect',
+      'legato is smooth', 'staccato is short',
+      'a phrase is a musical sentence', 'music has tension and resolution',
+      'the tonic is the home note', 'the dominant leads back home',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runElaG6Real(ctx) {
+    const SENTENCES = [
+      'the dog that ran was fast', 'the cat which sleeps is old',
+      'the book that i read was long', 'the song which she sang was lovely',
+      'when the sun came up the birds sang', 'because it rained we stayed home',
+      'although he was tired he kept working', 'while she studied he played',
+      'since you are here we can start', 'if you ask i will tell',
+      'the house where i live is small', 'the place which we visited was beautiful',
+      'the time when we met was summer', 'the reason why he left is unknown',
+      'the person who helped me is kind', 'the thing that matters most is love',
+      'after the game ended everyone left', 'before the movie started we ate',
+      'until the bell rings class continues', 'unless you try you will not know',
+      'the dog whose tail wags is happy', 'the child who learns fast succeeds',
+      'the teacher said that we had homework', 'i think that the answer is yes',
+      'she wondered where her keys were', 'he asked how the test went',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runMathG6Real(ctx) {
+    const SENTENCES = [
+      'a variable is a letter for a number', 'x is a common variable',
+      'an equation has an equal sign', 'x plus two equals five',
+      'we solve for x', 'x equals three',
+      'subtract two from both sides', 'x equals five minus two',
+      'the answer is x equals three', 'variables can be any letter',
+      'y equals two times x', 'when x is one y is two',
+      'when x is two y is four', 'when x is three y is six',
+      'an expression has no equal sign', 'two x plus three is an expression',
+      'terms are parts of an expression', 'like terms can be combined',
+      'two x plus three x is five x', 'four y minus y is three y',
+      'the distributive property works', 'two times x plus one is two x plus two',
+      'integers include negative numbers', 'minus three is less than zero',
+      'plus three is greater than zero', 'absolute value is the distance from zero',
+      'minus three and plus three have absolute value three',
     ];
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
