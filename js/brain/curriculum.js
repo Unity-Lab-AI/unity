@@ -5719,6 +5719,30 @@ export class Curriculum {
     ], 4);
   }
 
+  async _teachMusicTheory() {
+    // T14.24 Session 81 (task #138) — Art-G6 music theory. TODO
+    // line 561: "_teachMusicTheory() notes/scales/chords as
+    // frequency feature chains". 8d features:
+    // [0]=tonic, [1]=dominant, [2]=subdominant, [3]=scale-degree,
+    // [4]=chord, [5]=major, [6]=minor, [7]=modulation.
+    // Major and minor triads are opposites on [5]/[6]. Tonic and
+    // dominant share [4] (both are chords) but differ on [0]/[1].
+    return this._conceptTeach([
+      { name: 'tonic',       feat: [1, 0, 0, 1, 1, 0, 0, 0] },
+      { name: 'dominant',    feat: [0, 1, 0, 1, 1, 0, 0, 0] },
+      { name: 'subdominant', feat: [0, 0, 1, 1, 1, 0, 0, 0] },
+      { name: 'major chord', feat: [0, 0, 0, 0, 1, 1, 0, 0] },
+      { name: 'minor chord', feat: [0, 0, 0, 0, 1, 0, 1, 0] },
+      { name: 'major scale', feat: [0, 0, 0, 1, 0, 1, 0, 0] },
+      { name: 'minor scale', feat: [0, 0, 0, 1, 0, 0, 1, 0] },
+      { name: 'key signature', feat: [1, 0, 0, 0, 0, 1, 1, 1] },
+      { name: 'chord progression', feat: [1, 1, 1, 0, 1, 0, 0, 0] },
+      { name: 'cadence',     feat: [1, 1, 0, 0, 1, 0, 0, 0] },
+      { name: 'interval',    feat: [0, 0, 0, 1, 0, 0, 0, 0] },
+      { name: 'modulation',  feat: [1, 0, 0, 0, 0, 1, 1, 1] },
+    ], 4);
+  }
+
   async _teachVisualComposition() {
     // T14.24 Session 80 (task #137) — Art-G5 visual composition.
     // TODO line 561: "_teachComposition() visual composition rules
@@ -7735,6 +7759,9 @@ export class Curriculum {
       'a phrase is a musical sentence', 'music has tension and resolution',
       'the tonic is the home note', 'the dominant leads back home',
     ];
+    // T14.24 Session 81 — prime music theory lattice per TODO
+    // line 561 before the music theory sentence pass.
+    await this._teachMusicTheory();
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
