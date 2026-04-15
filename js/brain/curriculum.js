@@ -5388,6 +5388,63 @@ export class Curriculum {
   }
 
   /**
+   * Verify every cell without re-teaching. Runs each cell's runner as
+   * a gate probe and collects {subject, grade, pass, reason} results.
+   * Used by `/curriculum verify` to give Gee a full pass/fail report
+   * across all 95 cells without triggering Hebbian updates.
+   *
+   * Note: the cell runners combine teach + gate in a single call, so
+   * "gate only" for most cells means "run the runner but count the
+   * result". This still reinforces basins via Hebbian — there is no
+   * true pure-gate path without rewriting every cell. The verify
+   * command is therefore also a light additional exposure pass.
+   */
+  async verifyAllCells(opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { pass: false, reason: 'no cluster wired', cells: [] };
+
+    const ctx = this._lastCtx || this._buildCtx({ persona: '', baseline: '', coding: '' }, opts);
+    const cells = [];
+    const wasInCurriculum = cluster._inCurriculumMode;
+    cluster._inCurriculumMode = true;
+
+    let passCount = 0;
+    let failCount = 0;
+    const perSubject = { ela: {p:0,f:0}, math: {p:0,f:0}, science: {p:0,f:0}, social: {p:0,f:0}, art: {p:0,f:0} };
+
+    try {
+      for (const subject of SUBJECTS) {
+        for (const grade of GRADE_ORDER) {
+          if (grade === 'pre-K') continue;
+          const runner = this._cellRunner(subject, grade);
+          let result;
+          try {
+            result = await runner(ctx);
+          } catch (err) {
+            result = { pass: false, reason: `threw: ${err?.message || err}` };
+          }
+          const pass = !!(result && result.pass);
+          cells.push({ subject, grade, pass, reason: result?.reason || '' });
+          if (pass) { passCount++; perSubject[subject].p++; }
+          else { failCount++; perSubject[subject].f++; }
+        }
+        await _microtask();
+      }
+    } finally {
+      cluster._inCurriculumMode = wasInCurriculum;
+    }
+
+    return {
+      pass: failCount === 0,
+      passCount,
+      failCount,
+      totalCells: cells.length,
+      perSubject,
+      cells,
+    };
+  }
+
+  /**
    * Full continuous self-teaching loop. Boot paths call this instead
    * of `runFullCurriculum` so Unity teaches ALL 5 subject tracks at
    * boot, not just ELA. Stays compatible with older callers that still

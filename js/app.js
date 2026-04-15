@@ -2349,6 +2349,29 @@ Vision: ${state.visionDescription || 'none'}`;
             const ok = typeof c.resetSubject === 'function' ? c.resetSubject(subject) : false;
             return { response: { text: ok ? `[curriculum] ${subject} reset to pre-K` : `[curriculum] reset failed for ${subject}` }, action: 'curriculum' };
           }
+          if (sub === 'verify') {
+            // T14.24 Session 19 — /curriculum verify walks every cell
+            // through its gate and prints a full pass/fail report across
+            // all 5 subjects × 19 grades = 95 cells.
+            if (typeof c.verifyAllCells !== 'function') {
+              return { response: { text: '[curriculum] verify unavailable' }, action: 'curriculum' };
+            }
+            const v = await c.verifyAllCells({ arousal: 0.8, valence: 0.2 });
+            const lines = [
+              `[curriculum] VERIFY — ${v.passCount}/${v.totalCells} cells pass (${((v.passCount / v.totalCells) * 100).toFixed(0)}%)`,
+            ];
+            for (const [s, stats] of Object.entries(v.perSubject || {})) {
+              lines.push(`  ${s.padEnd(8)} ${stats.p}/${stats.p + stats.f} pass`);
+            }
+            const fails = v.cells.filter(cc => !cc.pass).slice(0, 5);
+            if (fails.length > 0) {
+              lines.push('  recent fails:');
+              for (const f of fails) {
+                lines.push(`    ${f.subject}/${f.grade}: ${f.reason}`);
+              }
+            }
+            return { response: { text: lines.join('\n') }, action: 'curriculum' };
+          }
           if (sub === 'full') {
             const subject = parts[1] || null;
             if (subject && typeof c.runFullSubjectCurriculum === 'function') {
@@ -2365,7 +2388,7 @@ Vision: ${state.visionDescription || 'none'}`;
             }
             return { response: { text: '[curriculum] full not available' }, action: 'curriculum' };
           }
-          return { response: { text: '[curriculum] usage: /curriculum status|run <subject> <grade>|gate <subject> <grade>|reset <subject>|full [subject]' }, action: 'curriculum' };
+          return { response: { text: '[curriculum] usage: /curriculum status|verify|run <subject> <grade>|gate <subject> <grade>|reset <subject>|full [subject]' }, action: 'curriculum' };
         } catch (err) {
           return { response: { text: `[curriculum] error: ${err?.message || err}` }, action: 'curriculum' };
         }
