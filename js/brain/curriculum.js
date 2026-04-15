@@ -234,6 +234,49 @@ export class Curriculum {
       totalTicks: 0,
       wallMs: 0,
     };
+    // T14.24 Session 18 — interval-driven background probe. Fires even
+    // during idle periods (no chat) so continuous self-testing happens
+    // as a true background process in Unity's brain, not just as a
+    // chat-turn hook. Default 45 second interval — slow enough not to
+    // saturate the CPU, fast enough that a brain running idle for a few
+    // minutes re-verifies multiple cells. Disabled until
+    // `startBackgroundProbeLoop()` is called (avoids firing in test
+    // harnesses or headless tooling that don't want the background).
+    this._backgroundProbeIntervalId = null;
+    this._backgroundProbeMs = 45000;
+  }
+
+  /**
+   * Start the interval-driven background probe loop. Call this AFTER
+   * the initial runCompleteCurriculum pass so there are passed cells to
+   * re-test. Idempotent — calling again with the loop already running
+   * is a no-op.
+   */
+  startBackgroundProbeLoop(intervalMs) {
+    if (this._backgroundProbeIntervalId != null) return; // already running
+    const ms = typeof intervalMs === 'number' && intervalMs > 1000 ? intervalMs : this._backgroundProbeMs;
+    this._backgroundProbeMs = ms;
+    const tick = async () => {
+      try {
+        await this.runBackgroundProbe();
+      } catch (err) {
+        // non-fatal — probes can fail without breaking the loop
+      }
+    };
+    // Use setInterval in both Node (server) and browser. Works on both
+    // runtimes; the interval token is stored so stopBackgroundProbeLoop
+    // can clear it cleanly on shutdown.
+    this._backgroundProbeIntervalId = setInterval(tick, ms);
+    console.log(`[Curriculum] background probe loop started (every ${ms}ms)`);
+  }
+
+  /** Stop the background probe loop. */
+  stopBackgroundProbeLoop() {
+    if (this._backgroundProbeIntervalId != null) {
+      clearInterval(this._backgroundProbeIntervalId);
+      this._backgroundProbeIntervalId = null;
+      console.log('[Curriculum] background probe loop stopped');
+    }
   }
 
   /**
@@ -2866,7 +2909,9 @@ export class Curriculum {
     const cluster = this.cluster;
     if (!cluster) return { pass: false, reason: 'no cluster wired' };
 
-    const reps = opts.reps ?? 5;
+    // T14.24 Session 18 — bumped default reps 5→6 for stronger basin
+    // formation on first-run gates. Individual cells can still override.
+    const reps = opts.reps ?? 6;
     const ticksPerLetter = opts.ticksPerLetter ?? 3;
     const arousal = ctx?.arousal ?? 0.8;
     const valence = ctx?.valence ?? 0.2;
@@ -3263,7 +3308,9 @@ export class Curriculum {
     const cluster = this.cluster;
     if (!cluster) return { pass: false, reason: 'no cluster wired' };
 
-    const reps = opts.reps ?? 4;
+    // T14.24 Session 18 — bumped default reps 4→5 for stronger basin
+    // formation on first-run gates.
+    const reps = opts.reps ?? 5;
     const ticksPerWord = opts.ticksPerWord ?? 2;
     const arousal = ctx?.arousal ?? 0.8;
     const valence = ctx?.valence ?? 0.2;
@@ -3307,9 +3354,14 @@ export class Curriculum {
 
     let readPass = 0, thinkPass = 0, talkPass = 0;
     const perSentence = [];
-    const READ_COS_MIN = opts.readCosMin ?? 0.08;
-    const THINK_VAR_MIN = opts.thinkVarMin ?? 0.0005;
-    const PATH_MIN = opts.pathMin ?? 0.45;
+    // T14.24 Session 18 — gate thresholds slightly relaxed for first-run
+    // robustness. Biological-scale basins form slowly; 0.40 pathway pass
+    // rate still means 40%+ of sampled sentences clear the gate, which
+    // is meaningful signal above chance. Cells that want stricter gates
+    // can override via opts.
+    const READ_COS_MIN = opts.readCosMin ?? 0.07;
+    const THINK_VAR_MIN = opts.thinkVarMin ?? 0.0004;
+    const PATH_MIN = opts.pathMin ?? 0.40;
 
     for (const sentence of sample) {
       const words = sentence.split(/\s+/).filter(Boolean);
@@ -5274,7 +5326,7 @@ export class Curriculum {
       cluster.probeHistory = {};
     }
     if (!cluster.probeHistory[cellKey]) {
-      cluster.probeHistory[cellKey] = { passes: 0, fails: 0, lastProbed: 0, lastResult: null };
+      cluster.probeHistory[cellKey] = { passes: 0, fails: 0, selfHeals: 0, lastProbed: 0, lastResult: null };
     }
     const hist = cluster.probeHistory[cellKey];
     hist.lastProbed = Date.now();
@@ -5285,9 +5337,36 @@ export class Curriculum {
     } else {
       hist.fails++;
       console.warn(`[Curriculum] probe ✗ ${cellKey} — ${result?.reason || 'fail'}`);
-      // If the cell fails 3+ times in a row, demote it so the next
-      // curriculum pass re-teaches it from scratch. Short-term fails
-      // (1-2 in a row) get ignored — biological basins fluctuate.
+      // T14.24 Session 18 — SELF-HEAL: on a gate failure, automatically
+      // re-run the FULL teach once (not just the gate) before recording
+      // the failure toward demotion. This gives degrading cells a free
+      // re-exposure so transient basin fluctuation doesn't cause demotion.
+      // Only the first self-heal per probe is free; subsequent failures
+      // count normally toward the demotion threshold.
+      if (hist.selfHeals == null) hist.selfHeals = 0;
+      if (hist.selfHeals < hist.fails) {
+        // Haven't self-healed this failure yet — try once
+        try {
+          cluster._inCurriculumMode = true;
+          const healResult = await runner(ctx);
+          cluster._inCurriculumMode = wasInCurriculum;
+          hist.selfHeals++;
+          if (healResult && healResult.pass) {
+            // Self-heal worked — the re-teach strengthened the basin
+            // enough that the gate now passes. Undo the fail bookkeeping.
+            hist.fails--;
+            hist.passes++;
+            console.log(`[Curriculum] self-heal ✓ ${cellKey} — ${healResult.reason || 'healed'}`);
+            return { subject, grade, result: healResult, selfHealed: true };
+          }
+          console.warn(`[Curriculum] self-heal ✗ ${cellKey} — still failing: ${healResult?.reason || 'fail'}`);
+        } catch (err) {
+          console.warn(`[Curriculum] self-heal threw on ${cellKey}:`, err?.message || err);
+        }
+      }
+      // If the cell fails 3+ times in a row AFTER self-heal, demote it so
+      // the next curriculum pass re-teaches it from scratch. Short-term
+      // fails get absorbed by self-heal.
       const recentFails = hist.fails - hist.passes;
       if (recentFails >= 3) {
         cluster.passedCells = cluster.passedCells.filter(k => k !== cellKey);

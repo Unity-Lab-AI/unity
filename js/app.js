@@ -446,6 +446,13 @@ function loadPersonaSelfImage(targetBrain) {
         );
         const perSubject = Object.entries(result.reached || {}).map(([s, g]) => `${s}=${g}`).join(', ');
         console.log(`[Unity] curriculum.runCompleteCurriculum DONE — ${perSubject}`);
+        // T14.24 Session 18 — start continuous background probe loop so
+        // Unity re-tests passed cells every 45 seconds during idle AND
+        // chat. This is the "always testing herself in her brain always"
+        // hook operating on a wall-clock interval rather than a turn count.
+        if (typeof targetBrain.curriculum.startBackgroundProbeLoop === 'function') {
+          targetBrain.curriculum.startBackgroundProbeLoop();
+        }
       } catch (err) {
         console.warn('[Unity] curriculum.runCompleteCurriculum failed:', err?.message || err);
       }

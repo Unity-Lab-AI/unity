@@ -759,6 +759,10 @@ class ServerBrain {
         ).then((result) => {
           const perSubject = Object.entries(result.reached || {}).map(([s, g]) => `${s}=${g}`).join(', ');
           console.log(`[Brain] Stage: curriculum.runCompleteCurriculum DONE (background) — ${perSubject}`);
+          // T14.24 Session 18 — start continuous background probe loop
+          if (this.curriculum && typeof this.curriculum.startBackgroundProbeLoop === 'function') {
+            this.curriculum.startBackgroundProbeLoop();
+          }
         }).catch((err) => {
           console.warn('[Brain] curriculum.runCompleteCurriculum failed:', err?.message || err);
         });
