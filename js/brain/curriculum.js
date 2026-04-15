@@ -1438,7 +1438,10 @@ export class Curriculum {
         // T14.24 Session 13 — ELA-G11/G12 real teaching
         case 'grade11':      return async (ctx) => this.runElaG11Real(ctx);
         case 'grade12':      return async (ctx) => this.runElaG12Real(ctx);
-        case 'college1': case 'college2': case 'college3': case 'college4':
+        // T14.24 Session 14 — ELA-Col1/Col2 real teaching
+        case 'college1':     return async (ctx) => this.runElaCol1Real(ctx);
+        case 'college2':     return async (ctx) => this.runElaCol2Real(ctx);
+        case 'college3': case 'college4':
           return async (ctx) => this.runCollege(ctx.corpora, ctx.arousal, ctx.valence);
         case 'grad': case 'phd':
           return async (ctx) => this.runGradPhD(ctx.corpora, ctx.sentences, ctx.arousal, ctx.valence);
@@ -1606,6 +1609,31 @@ export class Curriculum {
     }
     if (subject === 'art' && grade === 'grade12') {
       return async (ctx) => this.runArtG12Real(ctx);
+    }
+    // T14.24 Session 14 (2026-04-15) — Col1/Col2 batch
+    if (subject === 'math' && grade === 'college1') {
+      return async (ctx) => this.runMathCol1Real(ctx);
+    }
+    if (subject === 'math' && grade === 'college2') {
+      return async (ctx) => this.runMathCol2Real(ctx);
+    }
+    if (subject === 'science' && grade === 'college1') {
+      return async (ctx) => this.runSciCol1Real(ctx);
+    }
+    if (subject === 'science' && grade === 'college2') {
+      return async (ctx) => this.runSciCol2Real(ctx);
+    }
+    if (subject === 'social' && grade === 'college1') {
+      return async (ctx) => this.runSocCol1Real(ctx);
+    }
+    if (subject === 'social' && grade === 'college2') {
+      return async (ctx) => this.runSocCol2Real(ctx);
+    }
+    if (subject === 'art' && grade === 'college1') {
+      return async (ctx) => this.runArtCol1Real(ctx);
+    }
+    if (subject === 'art' && grade === 'college2') {
+      return async (ctx) => this.runArtCol2Real(ctx);
     }
     // T14.24 Session 6 (2026-04-15) — Sci-K / Soc-K / Art-K all ship
     // real vocabulary teaching via the shared _teachVocabList helper.
@@ -4479,6 +4507,199 @@ export class Curriculum {
       'imitation is part of learning', 'originality comes from imitation',
       'every artist stands on shoulders', 'tradition and innovation balance',
       'great art transcends time', 'great art speaks to all', 'true artists never stop learning',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // T14.24 SESSION 14 — COL1-COL2 BATCH (10 CELLS) (2026-04-15)
+  // ═══════════════════════════════════════════════════════════════════
+  // College year 1 + 2 across all 5 subjects.
+
+  async runElaCol1Real(ctx) {
+    const SENTENCES = [
+      'college composition builds on high school', 'academic writing is formal',
+      'arguments must be supported', 'the thesis statement is crucial',
+      'every sentence serves a purpose', 'clarity comes before cleverness',
+      'research is essential to college writing', 'sources must be evaluated',
+      'credibility matters in academic work', 'plagiarism has serious consequences',
+      'proper citation is ethical', 'the writing process has stages',
+      'prewriting generates ideas', 'drafting puts ideas on paper',
+      'revising reshapes the work', 'editing polishes the text',
+      'proofreading catches errors', 'feedback improves writing',
+      'peer review is valuable', 'writing centers help students',
+      'college writing has conventions', 'each discipline has its style',
+      'the humanities favor narrative', 'the sciences favor data',
+      'every essay has a purpose', 'writing is thinking made visible',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runElaCol2Real(ctx) {
+    const SENTENCES = [
+      'linguistics studies language scientifically', 'phonology studies sounds',
+      'morphology studies word parts', 'syntax studies sentence structure',
+      'semantics studies meaning', 'pragmatics studies language in use',
+      'a phoneme is a meaningful sound', 'a morpheme is a meaningful word part',
+      'prefixes attach to the front', 'suffixes attach to the end',
+      'roots carry the core meaning', 'inflection marks grammar',
+      'derivation creates new words', 'compounds combine words',
+      'universal grammar is debated', 'chomsky proposed innate grammar',
+      'language changes over time', 'historical linguistics traces changes',
+      'proto indo european is a reconstructed language', 'cognates are related words',
+      'borrowing adds words from other languages', 'dialects vary by region',
+      'sociolinguistics studies language and society', 'psycholinguistics studies the mind',
+      'applied linguistics solves problems',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runMathCol1Real(ctx) {
+    const SENTENCES = [
+      'calculus two extends calculus one', 'sequences converge to limits',
+      'series are sums of sequences', 'geometric series converge conditionally',
+      'the ratio test checks convergence', 'power series represent functions',
+      'taylor series expand around a point', 'maclaurin series expand around zero',
+      'linear algebra studies vectors and matrices', 'a vector has magnitude and direction',
+      'a matrix is a rectangular array', 'matrix multiplication is not commutative',
+      'the identity matrix leaves things unchanged', 'the inverse matrix undoes operations',
+      'determinants measure volume', 'eigenvectors have special directions',
+      'eigenvalues scale eigenvectors', 'multivariable calculus adds dimensions',
+      'partial derivatives hold other variables constant', 'the gradient points uphill',
+      'line integrals compute along paths', 'surface integrals compute over surfaces',
+      'greens theorem relates line and area', 'stokes theorem generalizes greens',
+      'the divergence theorem relates flux and volume',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runMathCol2Real(ctx) {
+    const SENTENCES = [
+      'differential equations relate functions to derivatives', 'ordinary equations have one variable',
+      'partial equations have multiple variables', 'first order equations use one derivative',
+      'second order equations use two', 'separable equations isolate variables',
+      'linear equations follow patterns', 'homogeneous equations have simple solutions',
+      'particular solutions match conditions', 'discrete math studies countable things',
+      'logic uses truth values', 'propositions are true or false',
+      'conjunction means and', 'disjunction means or',
+      'implication means if then', 'truth tables list all cases',
+      'proofs establish theorems', 'direct proof follows a chain',
+      'contradiction assumes the opposite', 'induction handles natural numbers',
+      'set theory is the foundation', 'functions map sets to sets',
+      'graphs have vertices and edges', 'trees have no cycles',
+      'counting uses permutations and combinations',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runSciCol1Real(ctx) {
+    const SENTENCES = [
+      'general biology surveys life', 'the cell is the basic unit',
+      'prokaryotes lack a nucleus', 'eukaryotes have a nucleus',
+      'mitosis divides cells equally', 'meiosis halves the chromosomes',
+      'dna replication is semiconservative', 'rna is transcribed from dna',
+      'proteins are translated from rna', 'ribosomes build proteins',
+      'photosynthesis makes glucose', 'cellular respiration breaks glucose',
+      'atp carries cell energy', 'general chemistry covers fundamentals',
+      'atoms have a nucleus and electrons', 'the periodic table shows patterns',
+      'chemical bonds share or transfer electrons', 'molecular geometry follows rules',
+      'vsepr predicts shapes', 'intermolecular forces affect properties',
+      'phase diagrams show states', 'thermodynamics studies energy',
+      'entropy measures disorder', 'reactions follow kinetics',
+      'equilibrium balances forward and reverse',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runSciCol2Real(ctx) {
+    const SENTENCES = [
+      'organic chemistry focuses on carbon', 'carbon forms four bonds',
+      'hydrocarbons contain only carbon and hydrogen', 'alkanes have single bonds',
+      'alkenes have double bonds', 'alkynes have triple bonds',
+      'isomers have the same formula', 'stereoisomers differ in arrangement',
+      'chirality creates mirror images', 'functional groups define reactivity',
+      'alcohols have hydroxyl groups', 'aldehydes have carbonyl groups',
+      'ketones also have carbonyls', 'carboxylic acids donate protons',
+      'esters smell like fruit', 'amines are nitrogen bases',
+      'aromatic compounds have rings', 'benzene is the simplest aromatic',
+      'cell biology studies cellular mechanisms', 'organelles have specific functions',
+      'the nucleus controls the cell', 'mitochondria make atp',
+      'the endoplasmic reticulum makes proteins', 'the golgi apparatus packages proteins',
+      'lysosomes digest waste',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runSocCol1Real(ctx) {
+    const SENTENCES = [
+      'historiography studies how history is written', 'historians interpret the past',
+      'every history has a perspective', 'primary sources are contemporary',
+      'secondary sources analyze primary ones', 'archives preserve documents',
+      'oral history records memories', 'material culture includes objects',
+      'historical context matters', 'anachronism imposes later ideas',
+      'causation is complex', 'multiple factors drive events',
+      'historical actors had limited information', 'hindsight is misleading',
+      'history is not inevitable', 'contingency shapes outcomes',
+      'schools of historiography differ', 'marxist history focuses on class',
+      'annales school studies daily life', 'social history studies ordinary people',
+      'cultural history studies meanings', 'political history studies power',
+      'economic history studies wealth', 'microhistory studies small cases',
+      'history is a conversation with the past',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runSocCol2Real(ctx) {
+    const SENTENCES = [
+      'political science studies power', 'comparative politics compares systems',
+      'international relations studies nations', 'political theory studies ideas',
+      'american government studies the us', 'constitutional law interprets the constitution',
+      'public administration runs governments', 'realism sees states as selfish',
+      'liberalism sees cooperation possible', 'constructivism sees ideas as primary',
+      'democracy requires informed citizens', 'authoritarianism concentrates power',
+      'totalitarianism controls all of life', 'federalism shares power',
+      'unitary systems centralize power', 'parliamentary systems merge branches',
+      'presidential systems separate branches', 'hybrid systems mix both',
+      'political culture shapes behavior', 'political socialization teaches norms',
+      'interest groups influence policy', 'political parties organize competition',
+      'elections choose leaders', 'voting behavior varies', 'political economy links politics and economics',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runArtCol1Real(ctx) {
+    const SENTENCES = [
+      'studio fundamentals build core skills', 'drawing is the foundation',
+      'observation sharpens the eye', 'gesture captures movement',
+      'contour defines edges', 'value creates volume',
+      'perspective creates depth', 'anatomy informs figure drawing',
+      'color theory extends beyond mixing', 'warm and cool create space',
+      'analogous colors harmonize', 'complementary colors contrast',
+      'studio practice demands discipline', 'daily drawing improves skills',
+      'sketchbooks record observations', 'references guide accuracy',
+      'from life is the best practice', 'imagination complements observation',
+      'composition guides the viewer', 'the rule of thirds helps beginners',
+      'the golden ratio is classical', 'negative space is as important',
+      'light shapes form', 'shadow defines volume',
+      'materials matter to the result',
+    ];
+    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+  }
+
+  async runArtCol2Real(ctx) {
+    const SENTENCES = [
+      'advanced art history specializes', 'ancient art includes egypt and greece',
+      'medieval art focuses on religion', 'renaissance art revives classical ideals',
+      'baroque art uses drama', 'neoclassicism returns to simplicity',
+      'romanticism values emotion', 'realism depicts ordinary life',
+      'impressionism captures light', 'post impressionism adds structure',
+      'expressionism shows inner feeling', 'cubism breaks forms',
+      'surrealism explores dreams', 'abstract expressionism focuses on process',
+      'pop art uses commercial imagery', 'minimalism strips away excess',
+      'conceptual art prioritizes ideas', 'performance art uses the body',
+      'installation art fills spaces', 'video art uses moving images',
+      'new media art uses digital tools', 'every movement responds to its time',
+      'art reflects culture', 'art shapes culture', 'understanding art needs history',
     ];
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
