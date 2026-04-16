@@ -11078,19 +11078,25 @@ export class Curriculum {
     // weakened-but-still-structured signal. We still log a one-line
     // warning so Gee knows GloVe isn't loaded, but we DO run the
     // teach pass.
+    // T14.24 Session 100 — embedding source log. Session 99 replaced
+    // the unstructured random-hash fallback with fastText-style subword
+    // n-gram embeddings, so "GloVe not loaded" is no longer a
+    // degraded-quality warning — subword embeddings are the real
+    // default. Just log which source we're using so Gee can tell at
+    // a glance without the scary ⚠️ emoji that implied something was
+    // broken.
     try {
       const status = typeof sharedEmbeddings?.status === 'function'
         ? sharedEmbeddings.status()
         : null;
       const gloveLoaded = status && (status.loaded === true || (status.pretrained || 0) > 1000);
-      if (!gloveLoaded) {
-        console.warn('[Curriculum] ⚠️  GloVe 300d NOT LOADED — training on hash fallback (reduced quality).');
-        console.warn('[Curriculum]    Download glove.6B.300d.txt from https://nlp.stanford.edu/data/glove.6B.zip');
-        console.warn('[Curriculum]    → place at corpora/glove.6B.300d.txt for full semantic quality.');
-        console.warn('[Curriculum]    Continuing teach pass with local deterministic features (phon / magnitude / letter).');
+      if (gloveLoaded) {
+        console.log(`[Curriculum] Embedding source: GloVe 6B.300d (${status.pretrained || 0} pretrained vectors)`);
+      } else {
+        console.log('[Curriculum] Embedding source: fastText-style subword n-grams (built-in, no download needed)');
       }
     } catch (err) {
-      console.warn('[Curriculum] GloVe status check failed:', err?.message || err);
+      console.warn('[Curriculum] Embedding status check failed:', err?.message || err);
     }
 
     console.log('[Curriculum] runCompleteCurriculum: GPU ready, walking all 5 subjects K→PhD');

@@ -209,8 +209,13 @@ export class SemanticEmbeddings {
       console.log(`[Embeddings] Loaded ${count.toLocaleString()} word vectors (${EMBED_DIM}d)`);
       return count;
     } catch (err) {
-      console.warn(`[Embeddings] GloVe ${EMBED_DIM}d load failed: ${err.message}`);
-      console.warn('[Embeddings] Falling back to hash embeddings — reduced semantic quality. Place glove.6B.300d.txt at corpora/glove.6B.300d.txt to enable full GloVe.');
+      // T14.24 Session 100 — softened message. Session 99 replaced
+      // the random-hash fallback with fastText-style subword n-gram
+      // embeddings, so missing GloVe is no longer a degraded state —
+      // it's just "using the built-in subword default". GloVe is an
+      // optional upgrade, not a requirement.
+      console.log(`[Embeddings] GloVe ${EMBED_DIM}d not found — using built-in fastText-style subword embeddings (no download needed).`);
+      console.log('[Embeddings] For real GloVe 6B.300d upgrade, place glove.6B.300d.txt at corpora/glove.6B.300d.txt. Optional.');
       this._loaded = false;
       return 0;
     }
