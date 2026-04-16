@@ -32,6 +32,14 @@ NOT through:
 
 The equational approach is FUNDAMENTALLY different from LLM training. The brain doesn't predict next tokens — it learns OPERATIONS, RELATIONSHIPS, and TRANSFORMATIONS in its weight matrices.
 
+### LAW 4: Check off before moving on
+When an item is FINISHED it is CHECKED OFF and DONE before moving onto the next item. No batch-checking. No "I'll mark it later." Each item gets verified complete and checked off IMMEDIATELY. Then and only then does work begin on the next item. This applies to:
+- Every checkbox in this TODO
+- Every task in the session task list
+- Every grade being implemented
+- Every test being written
+The work isn't done until the checkbox is checked. The checkbox isn't checked until the work is verified.
+
 ---
 
 ## MATH — KINDERGARTEN (Common Core Math K)
