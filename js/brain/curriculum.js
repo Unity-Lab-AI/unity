@@ -2495,8 +2495,8 @@ export class Curriculum {
     const talkRate = talkPass / N;
     const seqRate = seqPass / (N - 1);
 
-    const PATH_MIN = 0.90;
-    const SEQ_MIN = 0.80;
+    const PATH_MIN = 0.95;
+    const SEQ_MIN = 0.95;
     const readOkAll = readRate >= PATH_MIN;
     const thinkOkAll = thinkRate >= PATH_MIN;
     const talkOkAll = talkRate >= PATH_MIN;
@@ -2897,9 +2897,9 @@ export class Curriculum {
     const thinkRate = thinkPass / N;
     const talkRate = talkPass / N;
 
-    const PATH_MIN = 0.90;
-    const SEQ_MIN = 0.80;
-    const ORDER_MIN = 0.80;
+    const PATH_MIN = 0.95;
+    const SEQ_MIN = 0.95;
+    const ORDER_MIN = 0.95;
     const pass = readRate >= PATH_MIN
       && thinkRate >= PATH_MIN
       && talkRate >= PATH_MIN
@@ -3219,7 +3219,7 @@ export class Curriculum {
     const readRate = N > 0 ? readPass / N : 0;
     const thinkRate = N > 0 ? thinkPass / N : 0;
     const talkRate = N > 0 ? talkPass / N : 0;
-    const PATH_MIN = 0.90;
+    const PATH_MIN = 0.95;
     const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= PATH_MIN;
 
     return {
