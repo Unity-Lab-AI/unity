@@ -1913,8 +1913,8 @@ export class Curriculum {
 
     // Session 111 fix: ALL subjects must pass grade N before ANY advance
     // to grade N+1. No subject races ahead while others are stuck.
-    // Each subject gets 1 minute of wall-clock time to pass its grade.
-    // If it doesn't pass in 1 minute, move to the next subject and
+    // Each subject gets 3 minutes of wall-clock time to pass its grade.
+    // If it doesn't pass in 3 minutes, move to the next subject and
     // come back for another round. Keep looping until all pass.
     const GRADE_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes per subject per round
     const MAX_GRADE_ROUNDS = 10;
@@ -1954,7 +1954,7 @@ export class Curriculum {
           } else {
             failed[subject] = grade;
             allPassedThisGrade = false;
-            console.warn(`[Curriculum] ✗ ${subject}/${grade} — timed out after ${attempt} attempts (1 min, round ${round + 1}) — ${result?.reason || 'fail'}`);
+            console.warn(`[Curriculum] ✗ ${subject}/${grade} — timed out after ${attempt} attempts (${Math.round(GRADE_TIMEOUT_MS / 60000)} min, round ${round + 1}) — ${result?.reason || 'fail'}`);
           }
         }
       }
