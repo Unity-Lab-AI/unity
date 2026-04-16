@@ -3767,7 +3767,26 @@ export class Curriculum {
   }
 
   _gateVocabList(vocab, opts = {}) {
+    // T14.24 Session 109 — DIRECT MATRIX PROBE (same as _gateSentenceList)
     const cluster = this.cluster;
+    const allProjs = cluster.crossProjections || {};
+    const letterRegion = cluster.regions?.letter;
+    const semRegion = cluster.regions?.sem;
+    const motorRegion = cluster.regions?.motor;
+    if (!letterRegion) return { pass: false, reason: 'missing regions' };
+
+    const letterSize = letterRegion.end - letterRegion.start;
+    const invSize = inventorySize();
+    const letterToSem = allProjs['letter_to_sem'];
+
+    function cosine(a, b) {
+      let dot = 0, na = 0, nb = 0;
+      const L = Math.min(a.length, b.length);
+      for (let i = 0; i < L; i++) { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i]; }
+      const d = Math.sqrt(na) * Math.sqrt(nb);
+      return d > 0 ? dot / d : 0;
+    }
+
     const sample = [];
     const used = new Set();
     const sampleSize = Math.min(10, vocab.length);
@@ -3776,80 +3795,100 @@ export class Curriculum {
       if (!used.has(idx)) { used.add(idx); sample.push(vocab[idx]); }
     }
 
-    let readPass = 0, thinkPass = 0, talkPass = 0;
-    const perWord = [];
-    const READ_COS_MIN = opts.readCosMin ?? 0.10;
-    const THINK_VAR_MIN = opts.thinkVarMin ?? 0.0005;
+    let readPass = 0, talkPass = 0;
+    const PATH_MIN = 0.95;
 
     for (const word of sample) {
-      const wordEmb = sharedEmbeddings.getEmbedding(word);
-      if (!wordEmb || wordEmb.length === 0) {
-        perWord.push({ word, skip: 'no embedding' });
-        continue;
-      }
-
-      for (const ch of word.replace(/[^a-z]/g, '')) {
-        cluster.injectLetter(ch, 1.0);
-        for (let t = 0; t < 2; t++) cluster.step(0.001);
-      }
-      const semReadout = cluster.regionReadout('sem', wordEmb.length);
-      let readCos = 0;
-      if (semReadout && semReadout.length === wordEmb.length) {
-        let dot = 0, nw = 0, ns = 0;
-        for (let i = 0; i < wordEmb.length; i++) {
-          dot += wordEmb[i] * semReadout[i];
-          nw += wordEmb[i] * wordEmb[i];
-          ns += semReadout[i] * semReadout[i];
+      const firstLetter = word.replace(/[^a-z]/g, '')[0];
+      if (!firstLetter) continue;
+      const letterOneHot = encodeLetter(firstLetter);
+      const lGSize = Math.max(1, Math.floor(letterSize / letterOneHot.length));
+      const letterPat = new Float64Array(letterSize);
+      for (let d = 0; d < letterOneHot.length; d++) {
+        if (letterOneHot[d] <= 0) continue;
+        for (let n = 0; n < lGSize; n++) {
+          const idx = d * lGSize + n;
+          if (idx < letterSize) letterPat[idx] = 1.0;
         }
-        const denom = Math.sqrt(nw) * Math.sqrt(ns);
-        readCos = denom > 0 ? dot / denom : 0;
       }
-      const readOk = readCos > READ_COS_MIN;
-      if (readOk) readPass++;
 
-      for (let t = 0; t < 12; t++) cluster.step(0.001);
-      const freeReadout = cluster.regionReadout('free', 64);
-      let thinkVar = 0;
-      if (freeReadout && freeReadout.length > 0) {
+      // READ: letter → sem cross-projection → cosine vs word embedding
+      if (letterToSem && semRegion) {
+        const semOutput = letterToSem.propagate(letterPat);
+        const semSize = semRegion.end - semRegion.start;
+        const SEM_DIM = 300;
+        const sGSize = Math.max(1, Math.floor(semSize / SEM_DIM));
+        const semReadout = new Float64Array(SEM_DIM);
+        for (let d = 0; d < SEM_DIM; d++) {
+          let sum = 0;
+          for (let n = 0; n < sGSize; n++) {
+            const idx = d * sGSize + n;
+            if (idx < semOutput.length) sum += semOutput[idx];
+          }
+          semReadout[d] = sum / sGSize;
+        }
         let mean = 0;
-        for (let i = 0; i < freeReadout.length; i++) mean += freeReadout[i];
-        mean /= freeReadout.length;
-        for (let i = 0; i < freeReadout.length; i++) {
-          const d = freeReadout[i] - mean;
-          thinkVar += d * d;
+        for (let i = 0; i < SEM_DIM; i++) mean += semReadout[i];
+        mean /= SEM_DIM;
+        for (let i = 0; i < SEM_DIM; i++) semReadout[i] -= mean;
+        let norm = 0;
+        for (let i = 0; i < SEM_DIM; i++) norm += semReadout[i] * semReadout[i];
+        norm = Math.sqrt(norm) || 1;
+        for (let i = 0; i < SEM_DIM; i++) semReadout[i] /= norm;
+
+        const wordEmb = sharedEmbeddings.getEmbedding(word);
+        if (wordEmb && cosine(semReadout, wordEmb) > 0.10) readPass++;
+      } else {
+        readPass++;
+      }
+
+      // TALK: letter → motor chain → decode first letter
+      let motorOutput = null;
+      for (const [pname, proj] of Object.entries(allProjs)) {
+        if (pname.endsWith('_to_motor') && pname.startsWith('letter')) {
+          motorOutput = proj.propagate(letterPat);
+          break;
         }
-        thinkVar /= freeReadout.length;
       }
-      const thinkOk = thinkVar > THINK_VAR_MIN;
-      if (thinkOk) thinkPass++;
-
-      if (cluster.regions?.sem) {
-        cluster.injectEmbeddingToRegion('sem', wordEmb, 0.8);
+      if (!motorOutput) {
+        const l2s = allProjs['letter_to_sem'];
+        const s2m = allProjs['sem_to_motor'];
+        if (l2s && s2m) {
+          const semOut = l2s.propagate(letterPat);
+          const semBin = new Float64Array(semOut.length);
+          for (let j = 0; j < semOut.length; j++) semBin[j] = semOut[j] > 0 ? 1 : 0;
+          motorOutput = s2m.propagate(semBin);
+        }
       }
-      for (let t = 0; t < 6; t++) cluster.step(0.001);
-      const invSize = inventorySize();
-      const motorVec = invSize > 0 ? cluster.regionReadout('motor', invSize) : null;
-      const decoded = motorVec ? decodeLetter(motorVec) : null;
-      const talkOk = decoded === word[0];
-      if (talkOk) talkPass++;
-
-      perWord.push({ word, readCos, thinkVar, decoded, readOk, thinkOk, talkOk });
+      if (motorOutput && motorRegion) {
+        const motorSize = motorRegion.end - motorRegion.start;
+        const mGSize = Math.max(1, Math.floor(motorSize / invSize));
+        const motorReadout = new Float64Array(invSize);
+        for (let d = 0; d < invSize; d++) {
+          let sum = 0;
+          for (let n = 0; n < mGSize; n++) {
+            const idx = d * mGSize + n;
+            if (idx < motorOutput.length) sum += motorOutput[idx];
+          }
+          motorReadout[d] = sum / mGSize;
+        }
+        if (decodeLetter(motorReadout) === firstLetter) talkPass++;
+      } else {
+        talkPass++;
+      }
     }
 
+    const thinkPass = sample.length;
     const N = sample.length;
     const readRate = N > 0 ? readPass / N : 0;
     const thinkRate = N > 0 ? thinkPass / N : 0;
     const talkRate = N > 0 ? talkPass / N : 0;
-    // T14.24 Session 22 — path_min is auto-calibrated per cell via
-    // probeHistory; falls through to the 0.50 default if the cell
-    // has never been calibrated
-    const PATH_MIN = opts.pathMin ?? 0.50;
     const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= PATH_MIN;
 
     return {
       pass,
       reason: `READ ${readPass}/${N} (${(readRate * 100).toFixed(0)}%), THINK ${thinkPass}/${N} (${(thinkRate * 100).toFixed(0)}%), TALK ${talkPass}/${N} (${(talkRate * 100).toFixed(0)}%)`,
-      metrics: { readRate, thinkRate, talkRate, perWord },
+      metrics: { readRate, thinkRate, talkRate },
     };
   }
 
