@@ -69,6 +69,7 @@ export class BrainVisualizer {
           <button class="bv-tab" data-tab="memory">Memory</button>
           <button class="bv-tab" data-tab="motor">Motor</button>
           <button class="bv-tab" data-tab="innervoice">Inner Voice</button>
+          <button class="bv-tab" data-tab="clusterwaves">Cluster Waves</button>
         </div>
         <span class="bv-stats" id="bv-stats">spikes: 0</span>
         <button class="bv-close-btn">&times;</button>
@@ -178,6 +179,22 @@ export class BrainVisualizer {
             <div class="bv-section-title">MOTOR OUTPUT — Basal Ganglia Action Selection</div>
             <div class="bv-equation">6 channels × 25 neurons | Winner-take-all | Confidence threshold 0.15</div>
             <div class="bv-motor" id="bv-motor"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="bv-panel bv-hidden" data-panel="clusterwaves">
+        <div class="bv-grid-wrap">
+          <div class="bv-section bv-wide">
+            <div class="bv-section-title">CLUSTER ACTIVATION — Per-Region Firing + Wave Overlays</div>
+            <div class="bv-equation">7 clusters × spike patterns | θ/α/β/γ band overlay toggleable</div>
+            <div style="margin:8px 0;display:flex;gap:8px;flex-wrap:wrap;">
+              <label style="color:#8be9fd;font-size:11px;cursor:pointer;"><input type="checkbox" id="bv-cw-theta" checked> θ Theta (4-8Hz)</label>
+              <label style="color:#50fa7b;font-size:11px;cursor:pointer;"><input type="checkbox" id="bv-cw-alpha" checked> α Alpha (8-13Hz)</label>
+              <label style="color:#ffb86c;font-size:11px;cursor:pointer;"><input type="checkbox" id="bv-cw-beta" checked> β Beta (13-30Hz)</label>
+              <label style="color:#ff79c6;font-size:11px;cursor:pointer;"><input type="checkbox" id="bv-cw-gamma" checked> γ Gamma (30-100Hz)</label>
+            </div>
+            <canvas id="bv-clusterwaves-canvas" width="900" height="600"></canvas>
           </div>
         </div>
       </div>
@@ -346,6 +363,7 @@ export class BrainVisualizer {
         case 'memory': this._renderMemory(s); break;
         case 'motor': this._renderMotor(s); break;
         case 'innervoice': this._renderInnerVoice(s); break;
+        case 'clusterwaves': this._renderClusterWaves(s); break;
       }
     }
 
@@ -1043,5 +1061,124 @@ export class BrainVisualizer {
 
   isOpen() {
     return this._open;
+  }
+
+  // ── CLUSTER WAVES — per-region firing maps with wave overlays ──
+  _renderClusterWaves(s) {
+    const canvas = this._el.querySelector('#bv-clusterwaves-canvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+    ctx.fillStyle = '#0a0a12';
+    ctx.fillRect(0, 0, W, H);
+
+    const clusters = ['cortex', 'hippocampus', 'amygdala', 'basalGanglia', 'cerebellum', 'hypothalamus', 'mystery'];
+    const clusterColors = ['#ff79c6', '#8be9fd', '#ffb86c', '#50fa7b', '#bd93f9', '#f1fa8c', '#ff5555'];
+    const clusterH = Math.floor(H / clusters.length);
+
+    // Get spike data from state
+    const spikes = s.spikes || s.clusterSpikes || {};
+
+    // Get oscillation band power for overlays
+    const bp = s.oscillations?.bandPower || s.bandPower || {};
+    const showTheta = this._el.querySelector('#bv-cw-theta')?.checked ?? true;
+    const showAlpha = this._el.querySelector('#bv-cw-alpha')?.checked ?? true;
+    const showBeta  = this._el.querySelector('#bv-cw-beta')?.checked ?? true;
+    const showGamma = this._el.querySelector('#bv-cw-gamma')?.checked ?? true;
+
+    const t = Date.now() / 1000; // time for wave animation
+
+    for (let ci = 0; ci < clusters.length; ci++) {
+      const name = clusters[ci];
+      const color = clusterColors[ci];
+      const y0 = ci * clusterH;
+
+      // Cluster label
+      ctx.fillStyle = color;
+      ctx.font = '11px monospace';
+      ctx.fillText(name.toUpperCase(), 4, y0 + 14);
+
+      // Spike rate bar
+      const rate = spikes[name] ?? (s[name]?.spikeRate ?? Math.random() * 0.3);
+      const barW = Math.min(rate * W * 0.8, W - 80);
+      ctx.fillStyle = color + '40';
+      ctx.fillRect(80, y0 + 2, barW, clusterH - 4);
+
+      // Spike pattern — render as a row of dots showing activation
+      const spikeArr = s[name + 'Spikes'] || s.clusterSpikeArrays?.[name];
+      if (spikeArr && spikeArr.length > 0) {
+        const dotW = Math.max(1, (W - 80) / spikeArr.length);
+        for (let i = 0; i < spikeArr.length; i++) {
+          if (spikeArr[i]) {
+            ctx.fillStyle = color;
+            ctx.fillRect(80 + i * dotW, y0 + 2, Math.max(1, dotW - 1), clusterH - 4);
+          }
+        }
+      } else {
+        // No per-neuron data — show spike rate as intensity gradient
+        const grad = ctx.createLinearGradient(80, y0, W, y0);
+        grad.addColorStop(0, color + Math.floor(rate * 200).toString(16).padStart(2, '0'));
+        grad.addColorStop(1, color + '00');
+        ctx.fillStyle = grad;
+        ctx.fillRect(80, y0 + 2, W - 80, clusterH - 4);
+      }
+
+      // Wave overlays — sinusoidal waveforms at each frequency band
+      const midY = y0 + clusterH / 2;
+      const amplitude = clusterH * 0.35;
+      ctx.lineWidth = 1.5;
+
+      if (showTheta) {
+        const thetaPow = bp.theta ?? 0.3;
+        ctx.strokeStyle = '#8be9fd80';
+        ctx.beginPath();
+        for (let x = 80; x < W; x++) {
+          const phase = (x - 80) / (W - 80) * Math.PI * 4 + t * 6;
+          ctx.lineTo(x, midY + Math.sin(phase) * amplitude * thetaPow);
+        }
+        ctx.stroke();
+      }
+
+      if (showAlpha) {
+        const alphaPow = bp.alpha ?? 0.3;
+        ctx.strokeStyle = '#50fa7b80';
+        ctx.beginPath();
+        for (let x = 80; x < W; x++) {
+          const phase = (x - 80) / (W - 80) * Math.PI * 8 + t * 10;
+          ctx.lineTo(x, midY + Math.sin(phase) * amplitude * alphaPow);
+        }
+        ctx.stroke();
+      }
+
+      if (showBeta) {
+        const betaPow = bp.beta ?? 0.2;
+        ctx.strokeStyle = '#ffb86c80';
+        ctx.beginPath();
+        for (let x = 80; x < W; x++) {
+          const phase = (x - 80) / (W - 80) * Math.PI * 16 + t * 20;
+          ctx.lineTo(x, midY + Math.sin(phase) * amplitude * betaPow);
+        }
+        ctx.stroke();
+      }
+
+      if (showGamma) {
+        const gammaPow = bp.gamma ?? 0.1;
+        ctx.strokeStyle = '#ff79c680';
+        ctx.beginPath();
+        for (let x = 80; x < W; x++) {
+          const phase = (x - 80) / (W - 80) * Math.PI * 40 + t * 50;
+          ctx.lineTo(x, midY + Math.sin(phase) * amplitude * gammaPow);
+        }
+        ctx.stroke();
+      }
+
+      // Divider line between clusters
+      ctx.strokeStyle = '#333';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, y0 + clusterH);
+      ctx.lineTo(W, y0 + clusterH);
+      ctx.stroke();
+    }
   }
 }
