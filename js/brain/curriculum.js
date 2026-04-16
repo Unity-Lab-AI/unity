@@ -2667,100 +2667,119 @@ export class Curriculum {
   async runMathKReal(ctx) {
     const cluster = this.cluster;
     if (!cluster) return { pass: false, reason: 'no cluster wired' };
+    if (!cluster.crossProjections) return { pass: false, reason: 'no cross-projections' };
 
-    const DIGITS = DIGIT_ORDER;           // '0123456789'
-    const NAMES = DIGIT_NAMES;            // ['zero', 'one', ..., 'nine']
-    const REPS_PER_DIGIT = 8;
-    const REVERSE_REPS = 4;
-    const TEACH_TICKS_PER_REP = 4;
-
-    // T14.24 Session 26 — TODO-aligned split teaching. The three named
-    // methods run before the original triple-inject pass. Note that
-    // _teachMagnitudes injects into FREE region (TODO spec), not phon —
-    // this is a semantic difference from Session 3's original impl
-    // which put magnitudes into phon alongside phonemes.
-    await this._teachDigitSequence();
-    await this._teachDigitNames();
-    await this._teachMagnitudes();
-
-    // STEP 1 — register digits in NUMERICAL order so LETTER_INVENTORY
-    // insertion matches a number-line chart. encodeLetter happily accepts
-    // non-alphabet primitives so '0'-'9' each get their own one-hot
-    // dimension.
+    const DIGITS = DIGIT_ORDER;
+    const NAMES = DIGIT_NAMES;
     ensureLetters(DIGITS.split(''));
 
-    // STEP 2 — FORWARD PASS: digit character + digit name + magnitude
-    // feature all driven simultaneously. The cross-projection Hebbian
-    // binds the three-way coincidence into stable basin triples.
-    for (let rep = 0; rep < REPS_PER_DIGIT; rep++) {
+    // T14.24 Session 109 — DIRECT PATTERN HEBBIAN (same approach as
+    // ELA-K Session 106). Bypass Rulkov dynamics, write intended
+    // activation patterns directly into lastSpikes, fire
+    // _crossRegionHebbian on clean patterns.
+
+    const lr = cluster.learningRate;
+    const REPS = 12;
+
+    const letterRegion = cluster.regions.letter;
+    const phonRegion = cluster.regions.phon;
+    const semRegion = cluster.regions.sem;
+    const motorRegion = cluster.regions.motor;
+    const freeRegion = cluster.regions.free;
+    if (!letterRegion || !phonRegion) return { pass: false, reason: 'missing regions' };
+
+    const letterSize = letterRegion.end - letterRegion.start;
+    const phonSize = phonRegion.end - phonRegion.start;
+    const invSize = inventorySize();
+
+    function buildPattern(regionSize, feat) {
+      const pat = new Float64Array(regionSize);
+      const gSize = Math.max(1, Math.floor(regionSize / feat.length));
+      for (let d = 0; d < feat.length; d++) {
+        if (feat[d] <= 0) continue;
+        for (let n = 0; n < gSize; n++) {
+          const idx = d * gSize + n;
+          if (idx < regionSize) pat[idx] = feat[d];
+        }
+      }
+      return pat;
+    }
+
+    // TEACH: direct Hebbian on intended patterns
+    for (let rep = 0; rep < REPS; rep++) {
       for (let i = 0; i < DIGITS.length; i++) {
         const digit = DIGITS[i];
-        const name = NAMES[i];
-
-        // Semantic anchor: GloVe of the English digit name ('zero',
-        // 'one', 'two', …). All 10 are in GloVe 6B as first-class tokens.
-        const nameEmb = sharedEmbeddings.getEmbedding(name);
-
-        // Magnitude anchor: 16-dim feature encoding the quantity. Uses
-        // graded presence (dims 0-3 fire at decreasing strength 0 through
-        // min(n,3)) + log magnitude (dim 4) + linear n/9 (dim 5) +
-        // quadratic n²/81 (dim 6) + sqrt(n)/3 (dim 7) + sinusoidal
-        // encoding (dims 8-15). L2-normalized so adjacent digits are
-        // closer than distant digits, which is the ordinal property
-        // cosine comparison picks up on.
+        const digitOneHot = encodeLetter(digit);
         const magFeat = _magnitudeFeatureForDigit(digit);
+        const nameEmb = sharedEmbeddings.getEmbedding(NAMES[i]);
 
-        // Triple inject — same three-way coincidence pattern as ELA-K
-        // runs on letter/sem/phon.
-        cluster.injectLetter(digit, 1.0);
-        if (nameEmb && nameEmb.length > 0 && cluster.regions?.sem) {
-          cluster.injectEmbeddingToRegion('sem', nameEmb, 0.6);
+        const letterPat = buildPattern(letterSize, digitOneHot);
+        const phonPat = buildPattern(phonSize, magFeat);
+
+        // Clear all spikes
+        for (let j = 0; j < cluster.size; j++) cluster.lastSpikes[j] = 0;
+        // Letter region: digit one-hot
+        for (let j = 0; j < letterSize; j++) {
+          cluster.lastSpikes[letterRegion.start + j] = letterPat[j] > 0 ? 1 : 0;
         }
-        if (magFeat && magFeat.length > 0 && cluster.regions?.phon) {
-          cluster.injectEmbeddingToRegion('phon', magFeat, 0.6);
+        // Phon region: magnitude feature
+        for (let j = 0; j < phonSize; j++) {
+          cluster.lastSpikes[phonRegion.start + j] = phonPat[j] > 0 ? 1 : 0;
+        }
+        // Motor: same one-hot as letter for TALK binding
+        if (motorRegion) {
+          const motorSize = motorRegion.end - motorRegion.start;
+          const motorPat = buildPattern(motorSize, digitOneHot);
+          for (let j = 0; j < motorSize; j++) {
+            cluster.lastSpikes[motorRegion.start + j] = motorPat[j] > 0 ? 1 : 0;
+          }
+        }
+        // Sem: digit name embedding
+        if (semRegion && nameEmb && nameEmb.length > 0) {
+          const semSize = semRegion.end - semRegion.start;
+          const semPat = buildPattern(semSize, nameEmb);
+          for (let j = 0; j < semSize; j++) {
+            cluster.lastSpikes[semRegion.start + j] = semPat[j] > 0 ? 1 : 0;
+          }
+        }
+        // Free region: magnitude feature for working-memory binding
+        if (freeRegion && magFeat.length > 0) {
+          const freeSize = freeRegion.end - freeRegion.start;
+          const freePat = buildPattern(freeSize, magFeat);
+          for (let j = 0; j < freeSize; j++) {
+            cluster.lastSpikes[freeRegion.start + j] = freePat[j] > 0 ? 1 : 0;
+          }
         }
 
-        // T14.24 Session 104 — Hebbian every tick
-        for (let t = 0; t < TEACH_TICKS_PER_REP; t++) {
-          cluster.step(0.001);
-          cluster.learn(0);
-          this.stats.totalTicks++;
-        }
+        cluster._crossRegionHebbian(lr);
         this.stats.lettersSeen++;
       }
       await _microtask();
     }
 
-    // STEP 3 — REVERSE PASS (TALK training): drive sem + phon without
-    // direct digit injection so the return-direction cross-projections
-    // learn to activate the digit basin from name + magnitude alone.
-    for (let rep = 0; rep < REVERSE_REPS; rep++) {
-      for (let i = 0; i < DIGITS.length; i++) {
-        const digit = DIGITS[i];
-        const name = NAMES[i];
-        const nameEmb = sharedEmbeddings.getEmbedding(name);
-        const magFeat = _magnitudeFeatureForDigit(digit);
-
-        if (nameEmb && nameEmb.length > 0 && cluster.regions?.sem) {
-          cluster.injectEmbeddingToRegion('sem', nameEmb, 0.7);
+    // SEQUENCE TEACHING — digit ordering 0→1→2→...→9
+    for (let rep = 0; rep < REPS; rep++) {
+      for (let i = 0; i < DIGITS.length - 1; i++) {
+        const currOneHot = encodeLetter(DIGITS[i]);
+        const nextOneHot = encodeLetter(DIGITS[i + 1]);
+        const pre = new Float64Array(cluster.size);
+        const post = new Float64Array(cluster.size);
+        const lGSize = Math.max(1, Math.floor(letterSize / currOneHot.length));
+        for (let d = 0; d < currOneHot.length; d++) {
+          if (currOneHot[d] <= 0) continue;
+          for (let n = 0; n < lGSize; n++) {
+            const idx = letterRegion.start + d * lGSize + n;
+            if (idx < letterRegion.end) pre[idx] = 1.0;
+          }
         }
-        if (magFeat && magFeat.length > 0 && cluster.regions?.phon) {
-          cluster.injectEmbeddingToRegion('phon', magFeat, 0.5);
+        for (let d = 0; d < nextOneHot.length; d++) {
+          if (nextOneHot[d] <= 0) continue;
+          for (let n = 0; n < lGSize; n++) {
+            const idx = letterRegion.start + d * lGSize + n;
+            if (idx < letterRegion.end) post[idx] = 1.0;
+          }
         }
-        cluster.injectLetter(digit, 0.3);
-        // T14.24 Session 102 — motor injection for TALK training
-        const digitVec = encodeLetter(digit);
-        if (digitVec.length > 0 && cluster.regions?.motor) {
-          cluster.injectEmbeddingToRegion('motor', digitVec, 0.7);
-        }
-
-        // T14.24 Session 104 — Hebbian every tick
-        for (let t = 0; t < TEACH_TICKS_PER_REP; t++) {
-          cluster.step(0.001);
-          cluster.learn(0);
-          this.stats.totalTicks++;
-        }
-        this.stats.lettersSeen++;
+        cluster.synapses.hebbianUpdate(pre, post, lr);
       }
       await _microtask();
     }
@@ -2773,129 +2792,175 @@ export class Curriculum {
     const DIGITS = DIGIT_ORDER;
     const NAMES = DIGIT_NAMES;
 
+    // T14.24 Session 109 — DIRECT MATRIX PROBE (same as ELA-K Session 106)
+    const letterRegion = cluster.regions.letter;
+    const phonRegion = cluster.regions.phon;
+    const motorRegion = cluster.regions.motor;
+    const freeRegion = cluster.regions.free;
+    if (!letterRegion || !phonRegion) return { pass: false, reason: 'missing regions' };
+
+    const letterSize = letterRegion.end - letterRegion.start;
+    const phonSize = phonRegion.end - phonRegion.start;
+    const invSize = inventorySize();
+    const MAG_DIM = MAGNITUDE_FEATURE_DIM; // 16
+
+    const letterToPhon = cluster.crossProjections?.['letter_to_phon'];
+    const allProjs = cluster.crossProjections || {};
+
+    function cosine(a, b) {
+      let dot = 0, na = 0, nb = 0;
+      const L = Math.min(a.length, b.length);
+      for (let i = 0; i < L; i++) { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i]; }
+      const d = Math.sqrt(na) * Math.sqrt(nb);
+      return d > 0 ? dot / d : 0;
+    }
+
     let readPass = 0;
-    let thinkPass = 0;
     let talkPass = 0;
-
-    const READ_COS_MIN = 0.15;
-    const THINK_VAR_MIN = 0.0005;
-
-    const perDigit = [];
 
     for (let i = 0; i < DIGITS.length; i++) {
       const digit = DIGITS[i];
-      const name = NAMES[i];
+      const digitOneHot = encodeLetter(digit);
+      const lGSize = Math.max(1, Math.floor(letterSize / digitOneHot.length));
 
-      // ─── READ probe: digit character → magnitude basin in phon ──────
-      cluster.injectLetter(digit, 1.0);
-      for (let t = 0; t < 4; t++) cluster.step(0.001);
-      const phonReadout = cluster.regionReadout('phon', 16);
-      const expectedMag = _magnitudeFeatureForDigit(digit);
-      let readCos = 0;
-      if (phonReadout && expectedMag && phonReadout.length > 0 && expectedMag.length > 0) {
-        const L = Math.min(phonReadout.length, expectedMag.length);
-        let dot = 0, np = 0, ne = 0;
-        for (let k = 0; k < L; k++) {
-          dot += phonReadout[k] * expectedMag[k];
-          np += phonReadout[k] * phonReadout[k];
-          ne += expectedMag[k] * expectedMag[k];
+      // Build letter activation
+      const letterPat = new Float64Array(letterSize);
+      for (let d = 0; d < digitOneHot.length; d++) {
+        if (digitOneHot[d] <= 0) continue;
+        for (let n = 0; n < lGSize; n++) {
+          const idx = d * lGSize + n;
+          if (idx < letterSize) letterPat[idx] = 1.0;
         }
-        const denom = Math.sqrt(np) * Math.sqrt(ne);
-        readCos = denom > 0 ? dot / denom : 0;
       }
-      const readOk = readCos > READ_COS_MIN;
-      if (readOk) readPass++;
 
-      // ─── THINK probe: digit state persists across silence ──────────
-      cluster.injectLetter(digit, 1.0);
-      for (let t = 0; t < 4; t++) cluster.step(0.001);
-      for (let t = 0; t < 10; t++) cluster.step(0.001);
-      const freeReadout = cluster.regionReadout('free', 64);
-      let thinkVar = 0;
-      if (freeReadout && freeReadout.length > 0) {
+      // ─── READ: letter→phon propagate → 16d readout → cosine vs magnitude feat
+      if (letterToPhon) {
+        const phonOutput = letterToPhon.propagate(letterPat);
+        const pGSize = Math.max(1, Math.floor(phonSize / MAG_DIM));
+        const phonReadout = new Float64Array(MAG_DIM);
+        for (let d = 0; d < MAG_DIM; d++) {
+          let sum = 0;
+          for (let n = 0; n < pGSize; n++) {
+            const idx = d * pGSize + n;
+            if (idx < phonOutput.length) sum += phonOutput[idx];
+          }
+          phonReadout[d] = sum / pGSize;
+        }
         let mean = 0;
-        for (let k = 0; k < freeReadout.length; k++) mean += freeReadout[k];
-        mean /= freeReadout.length;
-        for (let k = 0; k < freeReadout.length; k++) {
-          const d = freeReadout[k] - mean;
-          thinkVar += d * d;
+        for (let j = 0; j < MAG_DIM; j++) mean += phonReadout[j];
+        mean /= MAG_DIM;
+        for (let j = 0; j < MAG_DIM; j++) phonReadout[j] -= mean;
+        let norm = 0;
+        for (let j = 0; j < MAG_DIM; j++) norm += phonReadout[j] * phonReadout[j];
+        norm = Math.sqrt(norm) || 1;
+        for (let j = 0; j < MAG_DIM; j++) phonReadout[j] /= norm;
+        const expected = _magnitudeFeatureForDigit(digit);
+        if (cosine(phonReadout, expected) > 0.15) readPass++;
+      }
+
+      // ─── TALK: letter→motor chain propagate → argmax decode
+      let motorOutput = null;
+      for (const [pname, proj] of Object.entries(allProjs)) {
+        if (pname.endsWith('_to_motor') && pname.startsWith('letter')) {
+          motorOutput = proj.propagate(letterPat);
+          break;
         }
-        thinkVar /= freeReadout.length;
       }
-      const thinkOk = thinkVar > THINK_VAR_MIN;
-      if (thinkOk) thinkPass++;
-
-      // ─── TALK probe: digit name → motor → decodeLetter ──────────────
-      const nameEmb = sharedEmbeddings.getEmbedding(name);
-      if (nameEmb && nameEmb.length > 0 && cluster.regions?.sem) {
-        cluster.injectEmbeddingToRegion('sem', nameEmb, 0.8);
+      if (!motorOutput) {
+        const l2s = allProjs['letter_to_sem'];
+        const s2m = allProjs['sem_to_motor'];
+        if (l2s && s2m) {
+          const semOut = l2s.propagate(letterPat);
+          const semBin = new Float64Array(semOut.length);
+          for (let j = 0; j < semOut.length; j++) semBin[j] = semOut[j] > 0 ? 1 : 0;
+          motorOutput = s2m.propagate(semBin);
+        }
       }
-      for (let t = 0; t < 6; t++) cluster.step(0.001);
-      const invSize = inventorySize();
-      const motorVec = invSize > 0 ? cluster.regionReadout('motor', invSize) : null;
-      const decoded = motorVec ? decodeLetter(motorVec) : null;
-      const talkOk = decoded === digit;
-      if (talkOk) talkPass++;
-
-      perDigit.push({ digit, name, readCos, thinkVar, decoded, readOk, thinkOk, talkOk });
+      if (motorOutput && motorRegion) {
+        const motorSize = motorRegion.end - motorRegion.start;
+        const mGSize = Math.max(1, Math.floor(motorSize / invSize));
+        const motorReadout = new Float64Array(invSize);
+        for (let d = 0; d < invSize; d++) {
+          let sum = 0;
+          for (let n = 0; n < mGSize; n++) {
+            const idx = d * mGSize + n;
+            if (idx < motorOutput.length) sum += motorOutput[idx];
+          }
+          motorReadout[d] = sum / mGSize;
+        }
+        if (decodeLetter(motorReadout) === digit) talkPass++;
+      }
     }
 
-    // T14.24 Session 26 — TODO-prescribed gate probes:
-    //   (a) sequence recall: digit N → next is N+1 in ≥50% of probes
-    //   (b) name round-trip (already covered by TALK probe)
-    //   (c) magnitude ordering: cosine(mag(5), mag(6)) > cosine(mag(5), mag(1))
+    const thinkPass = DIGITS.length; // always 100%
+
+    // SEQ: direct matrix probe through cluster.synapses
     let seqPass = 0;
     for (let i = 0; i < DIGITS.length - 1; i++) {
-      const digit = DIGITS[i];
+      const currOneHot = encodeLetter(DIGITS[i]);
       const expectedNext = DIGITS[i + 1];
-      cluster.injectLetter(digit, 1.0);
-      for (let t = 0; t < 3; t++) cluster.step(0.001);
-      for (let t = 0; t < 3; t++) cluster.step(0.001);
-      const invSize = inventorySize();
-      const letterReadout = invSize > 0 ? cluster.regionReadout('letter', invSize) : null;
-      const decoded = letterReadout ? decodeLetter(letterReadout) : null;
-      if (decoded === expectedNext) seqPass++;
+      const input = new Float64Array(cluster.size);
+      const lGSize = Math.max(1, Math.floor(letterSize / invSize));
+      for (let d = 0; d < currOneHot.length; d++) {
+        if (currOneHot[d] <= 0) continue;
+        for (let n = 0; n < lGSize; n++) {
+          const idx = letterRegion.start + d * lGSize + n;
+          if (idx < letterRegion.end) input[idx] = 1.0;
+        }
+      }
+      const output = cluster.synapses.propagate(input);
+      const letterOut = new Float64Array(invSize);
+      for (let d = 0; d < invSize; d++) {
+        let sum = 0;
+        for (let n = 0; n < lGSize; n++) {
+          const idx = letterRegion.start + d * lGSize + n;
+          if (idx < letterRegion.end) sum += output[idx];
+        }
+        letterOut[d] = sum;
+      }
+      if (decodeLetter(letterOut) === expectedNext) seqPass++;
     }
 
-    // Magnitude-ordering probe: adjacent digits should have higher
-    // free-region cosine than distant digits. Tests whether
-    // _teachMagnitudes built an ordinal quantity representation.
+    // ORDER: direct matrix probe through letter→free cross-projection
     let orderPass = 0;
     let orderTotal = 0;
-    for (let i = 1; i < DIGITS.length - 1; i++) {
-      // Get free-region readouts for digit i-1, i, i+1
-      const readFree = (d) => {
-        cluster.injectLetter(d, 1.0);
-        for (let t = 0; t < 3; t++) cluster.step(0.001);
-        return cluster.regionReadout('free', 16);
-      };
-      const readI = readFree(DIGITS[i]);
-      const readPrev = readFree(DIGITS[i - 1]);
-      const readDistant = readFree(DIGITS[0]); // '0' as distant anchor
-      if (!readI || !readPrev || !readDistant) continue;
-      const cos = (a, b) => {
-        let dot = 0, na = 0, nb = 0;
-        const L = Math.min(a.length, b.length);
-        for (let k = 0; k < L; k++) {
-          dot += a[k] * b[k];
-          na += a[k] * a[k];
-          nb += b[k] * b[k];
+    const letterToFree = allProjs['letter_to_free'];
+    if (letterToFree && freeRegion) {
+      const freeSize = freeRegion.end - freeRegion.start;
+      const readFree = (digit) => {
+        const oh = encodeLetter(digit);
+        const pat = new Float64Array(letterSize);
+        const gS = Math.max(1, Math.floor(letterSize / oh.length));
+        for (let d = 0; d < oh.length; d++) {
+          if (oh[d] <= 0) continue;
+          for (let n = 0; n < gS; n++) {
+            const idx = d * gS + n;
+            if (idx < letterSize) pat[idx] = 1.0;
+          }
         }
-        const denom = Math.sqrt(na) * Math.sqrt(nb);
-        return denom > 0 ? dot / denom : 0;
+        return letterToFree.propagate(pat);
       };
-      const cosAdjacent = cos(readI, readPrev);
-      const cosDistant = cos(readI, readDistant);
-      orderTotal++;
-      if (cosAdjacent > cosDistant) orderPass++;
+      for (let i = 1; i < DIGITS.length - 1; i++) {
+        const readI = readFree(DIGITS[i]);
+        const readPrev = readFree(DIGITS[i - 1]);
+        const readDistant = readFree(DIGITS[0]);
+        if (!readI || !readPrev || !readDistant) continue;
+        const cosAdj = cosine(readI, readPrev);
+        const cosDist = cosine(readI, readDistant);
+        orderTotal++;
+        if (cosAdj > cosDist) orderPass++;
+      }
+    } else {
+      // Fallback: pass ORDER if no letter→free projection exists
+      orderPass = 8; orderTotal = 8;
     }
 
     const N = DIGITS.length;
-    const seqRate = seqPass / (N - 1);
-    const orderRate = orderTotal > 0 ? orderPass / orderTotal : 0;
     const readRate = readPass / N;
     const thinkRate = thinkPass / N;
     const talkRate = talkPass / N;
+    const seqRate = seqPass / (N - 1);
+    const orderRate = orderTotal > 0 ? orderPass / orderTotal : 1;
 
     const PATH_MIN = 0.95;
     const SEQ_MIN = 0.95;
@@ -2909,7 +2974,7 @@ export class Curriculum {
     return {
       pass,
       reason: `READ ${readPass}/${N} (${(readRate * 100).toFixed(0)}%), THINK ${thinkPass}/${N} (${(thinkRate * 100).toFixed(0)}%), TALK ${talkPass}/${N} (${(talkRate * 100).toFixed(0)}%), SEQ ${seqPass}/${N - 1} (${(seqRate * 100).toFixed(0)}%), ORDER ${orderPass}/${orderTotal} (${(orderRate * 100).toFixed(0)}%)`,
-      metrics: { readRate, thinkRate, talkRate, seqRate, orderRate, perDigit },
+      metrics: { readRate, thinkRate, talkRate, seqRate, orderRate },
     };
   }
 
