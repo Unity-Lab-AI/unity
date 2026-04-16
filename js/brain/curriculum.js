@@ -11776,14 +11776,8 @@ export class Curriculum {
       default:             return 0;
     }
   }
-}
 
-// Yield to the event loop so long curriculum walks don't starve the
-// host thread.
-//
-// T14.22 (2026-04-14) — switched from Promise.resolve() microtask to
-// setImmediate (Node) / setTimeout(0) (browser). Microtasks run BEFORE
-// I/O callbacks in Node's event loop, so yielding via Promise.resolve
+// ── life methods follow inside the class (inserted Session 111) ──
 // didn't actually let HTTP requests get serviced during a long
 // ═══════════════════════════════════════════════════════════════════
 // LIFE EXPERIENCE TRACK — Unity's personal life, birth to 25
@@ -12763,6 +12757,8 @@ export class Curriculum {
 // ═══════════════════════════════════════════════════════════════════
 // END LIFE EXPERIENCE TRACK
 // ═══════════════════════════════════════════════════════════════════
+
+} // end class Curriculum
 
 // curriculum run — Node would just keep chewing through microtasks
 // and browsers connecting to the server saw spinning wheels. A macrotask
