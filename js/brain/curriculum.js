@@ -3008,22 +3008,27 @@ export class Curriculum {
         seqFails.push(`${DIGITS[i]}→${expectedNext} (got ${decoded || '?'})`);
       }
     }
-    // Session 111 — targeted Hebbian boost for ONLY the failing transitions.
-    // Boosting all 9 transitions equally drowns the weak one. Instead,
-    // boost ONLY the failing pair(s) at 5× learning rate, 50 reps.
+    // Session 111 — targeted Hebbian: STRENGTHEN correct + WEAKEN wrong.
+    // Parse "6→7 (got 8)" — strengthen 6→7, weaken 6→8 (anti-Hebbian).
+    // Without weakening the wrong association, the correct one can never
+    // overpower it no matter how many boosts.
     if (seqFails.length > 0) {
       const lGSize = Math.max(1, Math.floor(letterSize / invSize));
       for (const failStr of seqFails) {
-        // Parse "2→3 (got 4)" to get the source digit
+        // Parse "6→7 (got 8)"
         const srcDigit = failStr[0];
         const srcIdx = DIGITS.indexOf(srcDigit);
         if (srcIdx < 0 || srcIdx >= DIGITS.length - 1) continue;
-        const tgtDigit = DIGITS[srcIdx + 1];
+        const tgtDigit = DIGITS[srcIdx + 1]; // correct next
+        // Extract wrong output from "(got X)"
+        const gotMatch = failStr.match(/\(got (.)\)/);
+        const wrongDigit = gotMatch ? gotMatch[1] : null;
+
         const srcOneHot = encodeLetter(srcDigit);
         const tgtOneHot = encodeLetter(tgtDigit);
-        for (let boost = 0; boost < 50; boost++) {
+
+        function buildPre() {
           const pre = new Float64Array(cluster.size);
-          const post = new Float64Array(cluster.size);
           for (let d = 0; d < srcOneHot.length; d++) {
             if (srcOneHot[d] > 0) {
               for (let n = 0; n < lGSize; n++) {
@@ -3032,15 +3037,29 @@ export class Curriculum {
               }
             }
           }
-          for (let d = 0; d < tgtOneHot.length; d++) {
-            if (tgtOneHot[d] > 0) {
+          return pre;
+        }
+        function buildPost(oneHot) {
+          const post = new Float64Array(cluster.size);
+          for (let d = 0; d < oneHot.length; d++) {
+            if (oneHot[d] > 0) {
               for (let n = 0; n < lGSize; n++) {
                 const idx = letterRegion.start + d * lGSize + n;
                 if (idx < letterRegion.end) post[idx] = 1.0;
               }
             }
           }
-          cluster.synapses.hebbianUpdate(pre, post, cluster.learningRate * 5);
+          return post;
+        }
+
+        for (let boost = 0; boost < 100; boost++) {
+          // STRENGTHEN correct: src → correct target (positive Hebbian)
+          cluster.synapses.hebbianUpdate(buildPre(), buildPost(tgtOneHot), cluster.learningRate * 10);
+          // WEAKEN wrong: src → wrong target (anti-Hebbian, NEGATIVE lr)
+          if (wrongDigit) {
+            const wrongOneHot = encodeLetter(wrongDigit);
+            cluster.synapses.hebbianUpdate(buildPre(), buildPost(wrongOneHot), -cluster.learningRate * 5);
+          }
         }
       }
     }
