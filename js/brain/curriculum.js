@@ -11295,7 +11295,46 @@ export class Curriculum {
     // Session 41 — TODO-aligned geometry basics + quadratics
     await this._teachGeometryBasics();
     await this._teachQuadratics();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── COMMON CORE MATH G8: Pythagorean theorem + functions + irrational numbers + scientific notation ──
+    const MATH_G8_EXTRA = [
+      'irrational numbers cannot be written as fractions',
+      'pi is an irrational number', 'the square root of two is irrational',
+      'every number has a decimal expansion',
+      'scientific notation uses powers of ten',
+      'three point two times ten to the fifth is three hundred twenty thousand',
+      'the pythagorean theorem says a squared plus b squared equals c squared',
+      'the hypotenuse is the longest side', 'a three four five triangle is a right triangle',
+      'the distance between two points uses the pythagorean theorem',
+      'a function assigns exactly one output to each input',
+      'y equals two x is a linear function', 'y equals x squared is not linear',
+      'a scatter plot shows the relationship between two variables',
+      'a positive trend means both variables increase together',
+    ];
+    await this._teachSentenceList(MATH_G8_EXTRA, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ═══════════════════════════════════════════════════════════════
+    // MATH G8 FINAL EXAM
+    // ═══════════════════════════════════════════════════════════════
+    const FINAL = [
+      { prompt: ['pythagorean', 'a', 'squared', 'plus', 'b', 'squared', 'equals'], answer: 'c' },
+      { prompt: ['three', 'four', 'five', 'is', 'a'], answer: 'right' },
+      { prompt: ['pi', 'is', 'an'], answer: 'irrational' },
+      { prompt: ['quadratic', 'has', 'x'], answer: 'squared' },
+      { prompt: ['circumference', 'equals', 'pi', 'times'], answer: 'diameter' },
+      { prompt: ['area', 'circle', 'pi', 'r'], answer: 'squared' },
+      { prompt: ['function', 'assigns', 'one', 'output', 'per'], answer: 'input' },
+      { prompt: ['hypotenuse', 'is', 'the'], answer: 'longest' },
+      { prompt: ['voltage', 'equals', 'current', 'times'], answer: 'resistance' },
+      { prompt: ['scatter', 'plot', 'shows'], answer: 'relationship' },
+    ];
+    const finalResult = this._gateComprehension(FINAL);
+    if (finalResult.pass) return { pass: true, reason: `FINAL: ${finalResult.reason}` };
+    return this._teachVocabList([
+      'pythagorean', 'hypotenuse', 'irrational', 'function', 'quadratic',
+      'discriminant', 'circumference', 'diameter', 'radius', 'scatter',
+    ], ctx, { reps: 3 });
   }
 
   async runSciG7Real(ctx) {
@@ -11366,7 +11405,29 @@ export class Curriculum {
     // to another", "heat flows from hot to cold", "sound travels
     // through air").
     await this._teachEnergyForms();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ═══════════════════════════════════════════════════════════════
+    // SCI G8 FINAL EXAM
+    // ═══════════════════════════════════════════════════════════════
+    const FINAL = [
+      { prompt: ['kinetic', 'energy', 'is'], answer: 'motion' },
+      { prompt: ['potential', 'energy', 'is'], answer: 'stored' },
+      { prompt: ['energy', 'cannot', 'be', 'created', 'or'], answer: 'destroyed' },
+      { prompt: ['heat', 'flows', 'from', 'hot', 'to'], answer: 'cold' },
+      { prompt: ['conduction', 'transfers', 'heat', 'through'], answer: 'solid' },
+      { prompt: ['light', 'is', 'electromagnetic'], answer: 'wave' },
+      { prompt: ['high', 'frequency', 'means', 'high'], answer: 'pitch' },
+      { prompt: ['voltage', 'pushes', 'the'], answer: 'current' },
+      { prompt: ['ohms', 'law', 'voltage', 'equals', 'current', 'times'], answer: 'resistance' },
+      { prompt: ['wavelength', 'is', 'distance', 'between'], answer: 'peaks' },
+    ];
+    const finalResult = this._gateComprehension(FINAL);
+    if (finalResult.pass) return { pass: true, reason: `FINAL: ${finalResult.reason}` };
+    return this._teachVocabList([
+      'kinetic', 'potential', 'conduction', 'convection', 'radiation',
+      'wavelength', 'frequency', 'amplitude', 'voltage', 'resistance',
+    ], ctx, { reps: 3 });
   }
 
   async runSocG7Real(ctx) {
