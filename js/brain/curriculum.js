@@ -5382,12 +5382,11 @@ export class Curriculum {
     // This pass writes ONLY sem (word GloVe) + motor (first letter one-hot)
     // so sem→motor gets clean signal for meaning→production.
     // ═════════════════════════════════════════════════════════════════
-    const semRegion = cluster.regions?.sem;
-    const motorRegion = cluster.regions?.motor;
+    // semRegion + motorRegion already declared above
     if (semRegion && motorRegion) {
-      const semSize = semRegion.end - semRegion.start;
-      const motorSize = motorRegion.end - motorRegion.start;
-      const invSize = inventorySize();
+      const talkSemSize = semRegion.end - semRegion.start;
+      const talkMotorSize = motorRegion.end - motorRegion.start;
+      const talkInvSize = inventorySize();
       for (let talkRep = 0; talkRep < 10; talkRep++) {
         if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) break;
         for (const word of vocab) {
@@ -5399,21 +5398,21 @@ export class Curriculum {
 
           for (let j = 0; j < cluster.size; j++) cluster.lastSpikes[j] = 0;
           // Sem: word MEANING
-          const sGSize = Math.max(1, Math.floor(semSize / wordEmb.length));
+          const sGSize = Math.max(1, Math.floor(talkSemSize / wordEmb.length));
           for (let d = 0; d < wordEmb.length; d++) {
             if (wordEmb[d] <= 0) continue;
             for (let n = 0; n < sGSize; n++) {
               const idx = d * sGSize + n;
-              if (idx < semSize) cluster.lastSpikes[semRegion.start + idx] = 1;
+              if (idx < talkSemSize) cluster.lastSpikes[semRegion.start + idx] = 1;
             }
           }
           // Motor: first letter PRODUCTION
-          const mGSize = Math.max(1, Math.floor(motorSize / letterOneHot.length));
+          const mGSize = Math.max(1, Math.floor(talkMotorSize / letterOneHot.length));
           for (let d = 0; d < letterOneHot.length; d++) {
             if (letterOneHot[d] <= 0) continue;
             for (let n = 0; n < mGSize; n++) {
               const idx = d * mGSize + n;
-              if (idx < motorSize) cluster.lastSpikes[motorRegion.start + idx] = 1;
+              if (idx < talkMotorSize) cluster.lastSpikes[motorRegion.start + idx] = 1;
             }
           }
           cluster._crossRegionHebbian(cluster.learningRate * 2);
@@ -11962,7 +11961,10 @@ export class Curriculum {
     return { taught: reps * passages.length };
   }
 
-  async _teachInference(qaPairs, opts = {}) {
+  async _teachInferenceQA(qaPairs, opts = {}) {
+    // Renamed from _teachInference to avoid collision with the Session 112
+    // equational transitive reasoning method. This is the Session 34 ELA
+    // passage-based inference method.
     const cluster = this.cluster;
     if (!cluster) return { taught: 0 };
     const reps = opts.reps ?? 4;
@@ -12046,7 +12048,7 @@ export class Curriculum {
       { passage: 'the plants were brown and drooping.', question: 'what did they need', answer: 'water' },
     ];
     await this._teachThemeExtraction(PASSAGES);
-    await this._teachInference(INF_PAIRS);
+    await this._teachInferenceQA(INF_PAIRS);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
 
     // ── COMMON CORE ELA G7: text analysis + argumentation ──
