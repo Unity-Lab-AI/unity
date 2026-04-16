@@ -2033,7 +2033,14 @@ export class Brain3D {
 
       const lines = [tag];
       if (readout) lines.push(readout);
-      if (commentary) lines.push(`"${commentary}"`);
+      if (commentary) {
+        lines.push(`"${commentary}"`);
+      } else {
+        // Session 111 — show internal state when Unity can't speak yet.
+        // Raw emotional/cognitive state visible as her mind capacity.
+        const feeling = this._describeInternalState(state);
+        if (feeling) lines.push(feeling);
+      }
       this._addNotification(lines.join('\n'), chosen.cluster);
       return;
     }
@@ -2129,6 +2136,39 @@ export class Brain3D {
       this._lastNotifCluster = pick.cluster;
       this._addNotification(pick.text, pick.cluster);
     }
+  }
+
+  /**
+   * Session 111 — describe Unity's internal state in human-readable
+   * form when she can't speak yet. Shows her emotional/cognitive state
+   * as feelings and sensations, not generated speech.
+   */
+  _describeInternalState(state) {
+    if (!state) return null;
+    const arousal = state.arousal ?? 0.5;
+    const valence = state.valence ?? 0;
+    const fear = state.fear ?? 0;
+    const reward = state.reward ?? 0;
+    const psi = state.psi ?? 0;
+
+    // Map brain state to human-readable feelings
+    const feelings = [];
+    if (arousal > 0.8) feelings.push('alert');
+    else if (arousal > 0.6) feelings.push('aware');
+    else if (arousal < 0.3) feelings.push('drowsy');
+
+    if (valence > 0.3) feelings.push('positive');
+    else if (valence < -0.3) feelings.push('uneasy');
+
+    if (fear > 0.5) feelings.push('anxious');
+    if (reward > 0.5) feelings.push('engaged');
+
+    if (psi > 0.5) feelings.push('focused');
+    else if (psi < 0.1) feelings.push('scattered');
+
+    if (feelings.length === 0) feelings.push('processing');
+
+    return `[ ${feelings.join(' · ')} ]`;
   }
 
   _addNotification(text, clusterIdx) {

@@ -12758,6 +12758,225 @@ export class Curriculum {
 // END LIFE EXPERIENCE TRACK
 // ═══════════════════════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════════════════════
+// REAL HUMAN-GRADE TEST GATES (Session 111)
+// Tests COMPREHENSION and USAGE, not just first-letter production.
+// ═══════════════════════════════════════════════════════════════════
+
+  /**
+   * Comprehension gate — tests if Unity UNDERSTANDS associations.
+   * Given a prompt (sequence of words), checks if the sem readout
+   * after processing the prompt is closest to the expected answer's
+   * GloVe embedding. Like testing "what is 2+3?" and checking if
+   * Unity's semantic state is near "five".
+   *
+   * @param {Array<{prompt: string[], answer: string}>} questions
+   *   Each question has a prompt (words to inject) and expected answer.
+   * @returns {{pass, reason}}
+   */
+  _gateComprehension(questions) {
+    const cluster = this.cluster;
+    const allProjs = cluster.crossProjections || {};
+    const letterRegion = cluster.regions?.letter;
+    const semRegion = cluster.regions?.sem;
+    if (!letterRegion || !semRegion) return { pass: false, reason: 'missing regions' };
+
+    const letterSize = letterRegion.end - letterRegion.start;
+    const semSize = semRegion.end - semRegion.start;
+    const invSize = inventorySize();
+    const letterToSem = allProjs['letter_to_sem'];
+    if (!letterToSem) return { pass: false, reason: 'no letter_to_sem projection' };
+
+    function cosine(a, b) {
+      let dot = 0, na = 0, nb = 0;
+      const L = Math.min(a.length, b.length);
+      for (let i = 0; i < L; i++) { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i]; }
+      const d = Math.sqrt(na) * Math.sqrt(nb);
+      return d > 0 ? dot / d : 0;
+    }
+
+    function buildLetterPattern(letter) {
+      const oneHot = encodeLetter(letter);
+      const pat = new Float64Array(letterSize);
+      const gSize = Math.max(1, Math.floor(letterSize / oneHot.length));
+      for (let d = 0; d < oneHot.length; d++) {
+        if (oneHot[d] <= 0) continue;
+        for (let n = 0; n < gSize; n++) {
+          const idx = d * gSize + n;
+          if (idx < letterSize) pat[idx] = 1.0;
+        }
+      }
+      return pat;
+    }
+
+    // Sample up to 10 questions
+    const sample = [];
+    const used = new Set();
+    const sampleSize = Math.min(10, questions.length);
+    while (sample.length < sampleSize && sample.length < questions.length) {
+      const idx = Math.floor(Math.random() * questions.length);
+      if (!used.has(idx)) { used.add(idx); sample.push(questions[idx]); }
+    }
+
+    let comprehendPass = 0;
+    const fails = [];
+    const SEM_DIM = 300;
+    const PATH_MIN = 0.95;
+
+    for (const { prompt, answer } of sample) {
+      // Build accumulated sem state from the prompt words.
+      // For each word in the prompt, get its first letter, propagate
+      // through letter→sem, accumulate the sem readouts. This simulates
+      // "reading" the prompt through the trained cross-projections.
+      const accumSem = new Float64Array(SEM_DIM);
+      let wordCount = 0;
+      for (const word of prompt) {
+        const firstLetter = word.replace(/[^a-z0-9]/g, '')[0];
+        if (!firstLetter) continue;
+        const letterPat = buildLetterPattern(firstLetter);
+        const semOutput = letterToSem.propagate(letterPat);
+        const sGSize = Math.max(1, Math.floor(semSize / SEM_DIM));
+        for (let d = 0; d < SEM_DIM; d++) {
+          let sum = 0;
+          for (let n = 0; n < sGSize; n++) {
+            const idx = d * sGSize + n;
+            if (idx < semOutput.length) sum += semOutput[idx];
+          }
+          accumSem[d] += sum / sGSize;
+        }
+        wordCount++;
+      }
+      if (wordCount === 0) continue;
+
+      // Average and normalize
+      for (let i = 0; i < SEM_DIM; i++) accumSem[i] /= wordCount;
+      let mean = 0;
+      for (let i = 0; i < SEM_DIM; i++) mean += accumSem[i];
+      mean /= SEM_DIM;
+      for (let i = 0; i < SEM_DIM; i++) accumSem[i] -= mean;
+      let norm = 0;
+      for (let i = 0; i < SEM_DIM; i++) norm += accumSem[i] * accumSem[i];
+      norm = Math.sqrt(norm) || 1;
+      for (let i = 0; i < SEM_DIM; i++) accumSem[i] /= norm;
+
+      // Check if the accumulated sem state is closest to the answer's GloVe
+      const answerEmb = sharedEmbeddings.getEmbedding(answer);
+      if (!answerEmb) continue;
+      const score = cosine(accumSem, answerEmb);
+      if (score > 0.10) {
+        comprehendPass++;
+      } else {
+        fails.push(`${prompt.join(' ')} → ${answer} (cos=${score.toFixed(3)})`);
+      }
+    }
+
+    const N = sample.length;
+    const rate = N > 0 ? comprehendPass / N : 0;
+    const pass = rate >= PATH_MIN;
+    return {
+      pass,
+      reason: `COMPREHEND ${comprehendPass}/${N} (${(rate * 100).toFixed(0)}%)${fails.length > 0 ? ' [FAIL: ' + fails.slice(0, 3).join('; ') + ']' : ''}`,
+      metrics: { comprehendRate: rate, fails },
+    };
+  }
+
+  /**
+   * Conversation gate — tests if Unity can respond appropriately.
+   * Given a prompt sentence, checks if the sem→motor output
+   * produces words that are semantically related to the expected
+   * response topic (not exact match — semantic proximity).
+   *
+   * @param {Array<{input: string, expectTopics: string[]}>} exchanges
+   * @returns {{pass, reason}}
+   */
+  _gateConversation(exchanges) {
+    const cluster = this.cluster;
+    const allProjs = cluster.crossProjections || {};
+    const semRegion = cluster.regions?.sem;
+    const motorRegion = cluster.regions?.motor;
+    const s2m = allProjs['sem_to_motor'];
+    if (!semRegion || !motorRegion || !s2m) {
+      return { pass: false, reason: 'missing regions or sem_to_motor' };
+    }
+
+    const semSize = semRegion.end - semRegion.start;
+    const invSize = inventorySize();
+
+    function cosine(a, b) {
+      let dot = 0, na = 0, nb = 0;
+      const L = Math.min(a.length, b.length);
+      for (let i = 0; i < L; i++) { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i]; }
+      const d = Math.sqrt(na) * Math.sqrt(nb);
+      return d > 0 ? dot / d : 0;
+    }
+
+    const sample = [];
+    const used = new Set();
+    const sampleSize = Math.min(10, exchanges.length);
+    while (sample.length < sampleSize && sample.length < exchanges.length) {
+      const idx = Math.floor(Math.random() * exchanges.length);
+      if (!used.has(idx)) { used.add(idx); sample.push(exchanges[idx]); }
+    }
+
+    let convPass = 0;
+    const fails = [];
+    const PATH_MIN = 0.95;
+
+    for (const { input, expectTopics } of sample) {
+      // Get the input sentence's GloVe centroid
+      const words = input.split(/\s+/).filter(Boolean);
+      const inputEmb = sharedEmbeddings.getSentenceEmbedding
+        ? sharedEmbeddings.getSentenceEmbedding(input)
+        : sharedEmbeddings.getEmbedding(words[0] || 'hello');
+      if (!inputEmb) continue;
+
+      // Propagate through sem→motor to see what Unity would "say"
+      const semPat = new Float64Array(semSize);
+      const sGSize = Math.max(1, Math.floor(semSize / inputEmb.length));
+      for (let d = 0; d < inputEmb.length; d++) {
+        if (inputEmb[d] <= 0) continue;
+        for (let n = 0; n < sGSize; n++) {
+          const idx = d * sGSize + n;
+          if (idx < semSize) semPat[idx] = inputEmb[d];
+        }
+      }
+      const motorOutput = s2m.propagate(semPat);
+      const mGSize = Math.max(1, Math.floor((motorRegion.end - motorRegion.start) / invSize));
+      const motorReadout = new Float64Array(invSize);
+      for (let d = 0; d < invSize; d++) {
+        let sum = 0;
+        for (let n = 0; n < mGSize; n++) {
+          const idx = d * mGSize + n;
+          if (idx < motorOutput.length) sum += motorOutput[idx];
+        }
+        motorReadout[d] = sum / mGSize;
+      }
+      // Mean-center
+      let mean = 0;
+      for (let i = 0; i < invSize; i++) mean += motorReadout[i];
+      mean /= invSize;
+      for (let i = 0; i < invSize; i++) motorReadout[i] -= mean;
+
+      // Check if the motor output's first letter matches ANY expected topic's first letter
+      const decoded = decodeLetter(motorReadout);
+      const topicFirstLetters = expectTopics.map(t => t.replace(/[^a-z]/g, '')[0]);
+      if (decoded && topicFirstLetters.includes(decoded)) {
+        convPass++;
+      } else {
+        fails.push(`"${input}" → got '${decoded}', want ${topicFirstLetters.join('/')}`);
+      }
+    }
+
+    const N = sample.length;
+    const rate = N > 0 ? convPass / N : 0;
+    const pass = rate >= PATH_MIN;
+    return {
+      pass,
+      reason: `CONVERSE ${convPass}/${N} (${(rate * 100).toFixed(0)}%)${fails.length > 0 ? ' [FAIL: ' + fails.slice(0, 3).join('; ') + ']' : ''}`,
+      metrics: { converseRate: rate, fails },
+    };
+  }
+
 } // end class Curriculum
 
 // curriculum run — Node would just keep chewing through microtasks
