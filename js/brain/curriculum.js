@@ -2501,38 +2501,35 @@ export class Curriculum {
 
     // ═════════════════════════════════════════════════════════════════
     // DEDICATED TALK TRAINING for ELA-K letters.
-    // Same fix as Math-K: the all-regions Hebbian drowns sem→motor.
-    // This pass ONLY writes sem (letter name GloVe) + motor (letter
-    // one-hot) so the sem→motor projection gets CLEAN signal.
+    // Updates ONLY sem_to_motor projection directly — NOT _crossRegionHebbian
+    // which would destroy READ by training letter→phon with empty patterns.
     // ═════════════════════════════════════════════════════════════════
-    const TALK_REPS_ELA = 20;
-    for (let rep = 0; rep < TALK_REPS_ELA; rep++) {
-      if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) break;
-      for (const letter of ALPHABET) {
-        const letterOneHot = encodeLetter(letter);
-        const nameEmb = sharedEmbeddings.getEmbedding(letter);
-        if (!nameEmb || nameEmb.length === 0) continue;
-
-        for (let j = 0; j < cluster.size; j++) cluster.lastSpikes[j] = 0;
-        // Sem: letter NAME embedding
-        if (semRegion) {
-          const semSize = semRegion.end - semRegion.start;
-          const semPat = buildPattern(semSize, nameEmb);
-          for (let j = 0; j < semSize; j++) {
-            cluster.lastSpikes[semRegion.start + j] = semPat[j] > 0 ? 1 : 0;
+    const elaS2M = cluster.crossProjections?.['sem_to_motor'];
+    if (elaS2M && semRegion && motorRegion) {
+      const eSemSz = semRegion.end - semRegion.start;
+      const eMotorSz = motorRegion.end - motorRegion.start;
+      for (let rep = 0; rep < 20; rep++) {
+        if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) break;
+        for (const letter of ALPHABET) {
+          const letterOneHot = encodeLetter(letter);
+          const nameEmb = sharedEmbeddings.getEmbedding(letter);
+          if (!nameEmb || nameEmb.length === 0) continue;
+          const semPat = new Float64Array(eSemSz);
+          const sG = Math.max(1, Math.floor(eSemSz / nameEmb.length));
+          for (let d = 0; d < nameEmb.length; d++) {
+            if (nameEmb[d] <= 0) continue;
+            for (let n = 0; n < sG; n++) { const idx = d * sG + n; if (idx < eSemSz) semPat[idx] = 1; }
           }
-        }
-        // Motor: letter one-hot
-        if (motorRegion) {
-          const motorSize = motorRegion.end - motorRegion.start;
-          const motorPat = buildPattern(motorSize, letterOneHot);
-          for (let j = 0; j < motorSize; j++) {
-            cluster.lastSpikes[motorRegion.start + j] = motorPat[j] > 0 ? 1 : 0;
+          const motorPat = new Float64Array(eMotorSz);
+          const mG = Math.max(1, Math.floor(eMotorSz / letterOneHot.length));
+          for (let d = 0; d < letterOneHot.length; d++) {
+            if (letterOneHot[d] <= 0) continue;
+            for (let n = 0; n < mG; n++) { const idx = d * mG + n; if (idx < eMotorSz) motorPat[idx] = 1; }
           }
+          elaS2M.hebbianUpdate(semPat, motorPat, lr * 3);
         }
-        cluster._crossRegionHebbian(lr * 2);
+        await _microtask();
       }
-      await _microtask();
     }
 
     return this._gateElaKReal();
@@ -3106,44 +3103,42 @@ export class Curriculum {
     }
 
     // ═════════════════════════════════════════════════════════════════
-    // DEDICATED TALK TRAINING — sem→motor ONLY, no other regions active.
-    // The all-regions-at-once Hebbian drowns sem→motor because letter→phon
-    // and phon→sem have more neurons and stronger signal. This pass ONLY
-    // writes sem (GloVe name) + motor (digit one-hot) and fires Hebbian
-    // so the sem→motor projection gets CLEAN signal for name→digit.
+    // DEDICATED TALK TRAINING — update ONLY the sem_to_motor projection.
+    // DO NOT use _crossRegionHebbian — it updates ALL 14 projections and
+    // DESTROYS READ by training letter→phon with empty patterns.
+    // Instead: build sem-region and motor-region patterns, call
+    // hebbianUpdate directly on the sem_to_motor SparseMatrix.
     // ═════════════════════════════════════════════════════════════════
-    const TALK_REPS = 20; // More reps than READ because TALK is harder
-    for (let rep = 0; rep < TALK_REPS; rep++) {
-      if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) break;
-      for (let i = 0; i < DIGITS.length; i++) {
-        const digit = DIGITS[i];
-        const digitOneHot = encodeLetter(digit);
-        const nameEmb = sharedEmbeddings.getEmbedding(NAMES[i]);
-        if (!nameEmb || nameEmb.length === 0) continue;
-
-        // ONLY sem + motor — nothing else
-        for (let j = 0; j < cluster.size; j++) cluster.lastSpikes[j] = 0;
-
-        // Sem: digit NAME embedding (the MEANING — "five")
-        if (semRegion) {
-          const semSize = semRegion.end - semRegion.start;
-          const semPat = buildPattern(semSize, nameEmb);
-          for (let j = 0; j < semSize; j++) {
-            cluster.lastSpikes[semRegion.start + j] = semPat[j] > 0 ? 1 : 0;
+    const s2m = cluster.crossProjections?.['sem_to_motor'];
+    if (s2m && semRegion && motorRegion) {
+      const semSz = semRegion.end - semRegion.start;
+      const motorSz = motorRegion.end - motorRegion.start;
+      const TALK_REPS = 20;
+      for (let rep = 0; rep < TALK_REPS; rep++) {
+        if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) break;
+        for (let i = 0; i < DIGITS.length; i++) {
+          const nameEmb = sharedEmbeddings.getEmbedding(NAMES[i]);
+          const digitOneHot = encodeLetter(DIGITS[i]);
+          if (!nameEmb || nameEmb.length === 0) continue;
+          // Build sem pattern (source)
+          const semPat = new Float64Array(semSz);
+          const sG = Math.max(1, Math.floor(semSz / nameEmb.length));
+          for (let d = 0; d < nameEmb.length; d++) {
+            if (nameEmb[d] <= 0) continue;
+            for (let n = 0; n < sG; n++) { const idx = d * sG + n; if (idx < semSz) semPat[idx] = 1; }
           }
-        }
-        // Motor: digit CHARACTER one-hot (the PRODUCTION — "5")
-        if (motorRegion) {
-          const motorSize = motorRegion.end - motorRegion.start;
-          const motorPat = buildPattern(motorSize, digitOneHot);
-          for (let j = 0; j < motorSize; j++) {
-            cluster.lastSpikes[motorRegion.start + j] = motorPat[j] > 0 ? 1 : 0;
+          // Build motor pattern (target)
+          const motorPat = new Float64Array(motorSz);
+          const mG = Math.max(1, Math.floor(motorSz / digitOneHot.length));
+          for (let d = 0; d < digitOneHot.length; d++) {
+            if (digitOneHot[d] <= 0) continue;
+            for (let n = 0; n < mG; n++) { const idx = d * mG + n; if (idx < motorSz) motorPat[idx] = 1; }
           }
+          // Update ONLY sem_to_motor — no other projection touched
+          s2m.hebbianUpdate(semPat, motorPat, lr * 3);
         }
-        // Fire Hebbian — ONLY sem→motor gets signal because only those regions are active
-        cluster._crossRegionHebbian(lr * 2); // 2× lr for TALK emphasis
+        await _microtask();
       }
-      await _microtask();
     }
 
     // ═════════════════════════════════════════════════════════════════
@@ -5377,16 +5372,14 @@ export class Curriculum {
     }
 
     // ═════════════════════════════════════════════════════════════════
-    // DEDICATED TALK TRAINING — sem→motor ONLY for each vocab word.
-    // The all-regions Hebbian above trains READ well but drowns TALK.
-    // This pass writes ONLY sem (word GloVe) + motor (first letter one-hot)
-    // so sem→motor gets clean signal for meaning→production.
+    // DEDICATED TALK TRAINING — update ONLY sem_to_motor projection.
+    // DO NOT use _crossRegionHebbian — it destroys READ by training
+    // letter→phon with empty patterns when only sem+motor are active.
     // ═════════════════════════════════════════════════════════════════
-    // semRegion + motorRegion already declared above
-    if (semRegion && motorRegion) {
-      const talkSemSize = semRegion.end - semRegion.start;
-      const talkMotorSize = motorRegion.end - motorRegion.start;
-      const talkInvSize = inventorySize();
+    const vocabS2M = cluster.crossProjections?.['sem_to_motor'];
+    if (vocabS2M && semRegion && motorRegion) {
+      const vSemSz = semRegion.end - semRegion.start;
+      const vMotorSz = motorRegion.end - motorRegion.start;
       for (let talkRep = 0; talkRep < 10; talkRep++) {
         if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) break;
         for (const word of vocab) {
@@ -5395,27 +5388,22 @@ export class Curriculum {
           const wordEmb = sharedEmbeddings.getEmbedding(word);
           if (!wordEmb || wordEmb.length === 0) continue;
           const letterOneHot = encodeLetter(firstLetter);
-
-          for (let j = 0; j < cluster.size; j++) cluster.lastSpikes[j] = 0;
-          // Sem: word MEANING
-          const sGSize = Math.max(1, Math.floor(talkSemSize / wordEmb.length));
+          // Build sem pattern
+          const sPat = new Float64Array(vSemSz);
+          const sG = Math.max(1, Math.floor(vSemSz / wordEmb.length));
           for (let d = 0; d < wordEmb.length; d++) {
             if (wordEmb[d] <= 0) continue;
-            for (let n = 0; n < sGSize; n++) {
-              const idx = d * sGSize + n;
-              if (idx < talkSemSize) cluster.lastSpikes[semRegion.start + idx] = 1;
-            }
+            for (let n = 0; n < sG; n++) { const idx = d * sG + n; if (idx < vSemSz) sPat[idx] = 1; }
           }
-          // Motor: first letter PRODUCTION
-          const mGSize = Math.max(1, Math.floor(talkMotorSize / letterOneHot.length));
+          // Build motor pattern
+          const mPat = new Float64Array(vMotorSz);
+          const mG = Math.max(1, Math.floor(vMotorSz / letterOneHot.length));
           for (let d = 0; d < letterOneHot.length; d++) {
             if (letterOneHot[d] <= 0) continue;
-            for (let n = 0; n < mGSize; n++) {
-              const idx = d * mGSize + n;
-              if (idx < talkMotorSize) cluster.lastSpikes[motorRegion.start + idx] = 1;
-            }
+            for (let n = 0; n < mG; n++) { const idx = d * mG + n; if (idx < vMotorSz) mPat[idx] = 1; }
           }
-          cluster._crossRegionHebbian(cluster.learningRate * 2);
+          // Update ONLY sem_to_motor
+          vocabS2M.hebbianUpdate(sPat, mPat, cluster.learningRate * 3);
         }
         await _microtask();
       }
