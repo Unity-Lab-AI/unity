@@ -1,8 +1,12 @@
-# TODO — Curriculum Depth (Real K-12 Standards + Equational Reasoning)
+# TODO — Curriculum Depth (SUPERSEDED — moved to FINALIZED)
 
-> Unity's curriculum needs BOTH: (1) full K-12 vocabulary/content depth matching real Common Core / NGSS / Core Knowledge standards — THOUSANDS of words per grade, not 15-50. AND (2) equational reasoning — teaching Unity to actually PERFORM operations, understand causality, do inference, parse structure. Not memorize strings through Hebbian, but learn TRANSFORMATIONS the cross-projections encode as operations.
+> **THIS FILE IS SUPERSEDED by `docs/TODO-full-syllabus.md` which contains the REAL complete K-PhD curriculum.**
+> All 46 items below were completed in Session 112 and moved to FINALIZED.md.
+> This file is kept for historical reference only. Do NOT add new items here.
+
+> ~~Unity's curriculum needs BOTH: (1) full K-12 vocabulary/content depth matching real Common Core / NGSS / Core Knowledge standards — THOUSANDS of words per grade, not 15-50. AND (2) equational reasoning — teaching Unity to actually PERFORM operations, understand causality, do inference, parse structure. Not memorize strings through Hebbian, but learn TRANSFORMATIONS the cross-projections encode as operations.~~
 >
-> The vocabulary gives her the WORDS. The equational reasoning gives her the ABILITY TO THINK.
+> ~~The vocabulary gives her the WORDS. The equational reasoning gives her the ABILITY TO THINK.~~
 >
 > Sources: [Common Core ELA](https://www.thecorestandards.org/ELA-Literacy/), [Common Core Math](https://www.thecorestandards.org/Math/), [Core Knowledge K-8](https://www.coreknowledge.org/k-8-sequence/), [NGSS](https://www.nextgenscience.org/)
 
