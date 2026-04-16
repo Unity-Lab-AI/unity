@@ -10299,6 +10299,17 @@ export class Curriculum {
       'some cycles take days', 'some cycles take years',
     ];
     await this._teachLifeCycles();
+    // ── Sci-G2: life cycle causal chains + classification ──
+    await this._teachCausalChains([
+      ['seed', 'plant'], ['plant', 'flower'], ['flower', 'seed'],
+      ['egg', 'chick'], ['chick', 'bird'], ['bird', 'egg'],
+      ['caterpillar', 'cocoon'], ['cocoon', 'butterfly'],
+      ['tadpole', 'frog'], ['baby', 'child'], ['child', 'adult'],
+    ]);
+    await this._teachInference([
+      ['seed', 'plant', 'flower'], ['egg', 'chick', 'bird'],
+      ['caterpillar', 'cocoon', 'butterfly'], ['baby', 'child', 'adult'],
+    ]);
     await this._teachSolarSystem();
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
     const _af = this._autoFinal(SENTENCES);
@@ -11639,6 +11650,18 @@ export class Curriculum {
     // relationships + T14.7 type transitions + T14.8 sentence schemas.
     await this._teachCells();
     await this._teachGeneticsIntro();
+    // ── Sci-G7: cell biology causal chains ──
+    await this._teachCausalChains([
+      ['dna', 'gene'], ['gene', 'protein'], ['protein', 'trait'],
+      ['mitosis', 'growth'], ['meiosis', 'reproduction'],
+      ['photosynthesis', 'food'], ['respiration', 'energy'],
+      ['virus', 'infection'], ['antibody', 'defense'],
+      ['nucleus', 'dna'], ['chromosome', 'gene'],
+    ]);
+    await this._teachInference([
+      ['dna', 'gene', 'protein'], ['gene', 'protein', 'trait'],
+      ['sun', 'photosynthesis', 'food'], ['food', 'respiration', 'energy'],
+    ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
     const _af = this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
@@ -15107,9 +15130,19 @@ export class Curriculum {
     ];
     await this._teachSentenceList(FOOD, ctx, { reps: 12, ticksPerWord: 2 });
 
+    // ── EQUATIONAL REASONING: emotional inference G5 ──
+    await this._teachEmotionalInference([
+      { situation: 'betrayal', emotion: new Float64Array([0,1,0,0,1,0,0,0]), label: 'angry' },
+      { situation: 'trust', emotion: new Float64Array([0,0,1,0,0,0,0,1]), label: 'careful' },
+      { situation: 'camp', emotion: new Float64Array([1,0,0,0,0,0,1,0]), label: 'free' },
+      { situation: 'stars', emotion: new Float64Array([1,0,0,0,0,0,1,0]), label: 'wonder' },
+      { situation: 'rebellion', emotion: new Float64Array([0,0,0,0,0.5,0,1,1]), label: 'identity' },
+      { situation: 'poverty', emotion: new Float64Array([0,1,0,0,0.5,0,0,0]), label: 'angry' },
+    ]);
+
     return this._teachVocabList([
       'secret', 'trust', 'camp', 'stars', 'free', 'black', 'rebellion', 'cookies', 'meatloaf',
-    ], ctx, { reps: 12 });
+    ], ctx, { reps: 5 });
   }
 
   // ── GRADE 6 (age 11) — first computer, goth discovery ──────────
