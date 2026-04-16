@@ -12497,6 +12497,14 @@ export class Curriculum {
     // T14.24 Session 85 — prime music history chronological scaffold
     // per TODO line 565 before the music history sentence pass.
     await this._teachMusicHistory();
+    await this._teachInference([
+      ['medieval', 'renaissance', 'baroque'], ['baroque', 'classical', 'romantic'],
+      ['romantic', 'modern', 'contemporary'], ['jazz', 'blues', 'rock'],
+    ]);
+    await this._teachCausalChains([
+      ['baroque', 'ornamentation'], ['classical', 'form'], ['romantic', 'emotion'],
+      ['technology', 'recording'], ['recording', 'popular'], ['jazz', 'improvise'],
+    ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
     const _af = this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
@@ -13047,6 +13055,10 @@ export class Curriculum {
     // T14.24 Session 86 — prime visual art theory lattice per TODO
     // line 565 before the theory sentence pass.
     await this._teachVisualArtTheory();
+    await this._teachCausalChains([
+      ['form', 'content'], ['content', 'meaning'], ['context', 'interpret'],
+      ['formalism', 'structure'], ['postmodernism', 'question'],
+    ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
     const _af = this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
@@ -13071,6 +13083,10 @@ export class Curriculum {
     // T14.24 Session 87 — prime composition + criticism methods
     // lattice per TODO line 565 before the criticism sentence pass.
     await this._teachCompositionCriticism();
+    await this._teachCausalChains([
+      ['analyze', 'interpret'], ['interpret', 'evaluate'], ['critique', 'improve'],
+      ['revision', 'stronger'], ['originality', 'voice'],
+    ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
     const _af = this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
@@ -13589,6 +13605,10 @@ export class Curriculum {
     // T14.24 Session 88 — prime studio fundamentals lattice per
     // TODO line 567 before the Col1 sentence pass.
     await this._teachStudioFundamentals();
+    await this._teachCausalChains([
+      ['gesture', 'form'], ['contour', 'edge'], ['value', 'depth'],
+      ['perspective', 'space'], ['anatomy', 'figure'], ['color', 'mood'],
+    ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
     const _af = this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
@@ -13613,6 +13633,10 @@ export class Curriculum {
     // T14.24 Session 89 — prime specialized art history movement
     // chronology per TODO line 567 before the Col2 sentence pass.
     await this._teachSpecializedArtHistory();
+    await this._teachInference([
+      ['impressionism', 'post-impressionism', 'cubism'],
+      ['dada', 'surrealism', 'abstract'], ['bauhaus', 'minimalism', 'contemporary'],
+    ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
     const _af = this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
@@ -14034,6 +14058,10 @@ export class Curriculum {
     // T14.24 Session 90 — prime aesthetics/philosophy-of-art lattice
     // per TODO line 567 before the Col3 sentence pass.
     await this._teachAesthetics();
+    await this._teachCausalChains([
+      ['beauty', 'pleasure'], ['sublime', 'awe'], ['taste', 'judge'],
+      ['kant', 'disinterested'], ['hegel', 'dialectic'], ['nietzsche', 'will'],
+    ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
     const _af = this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
@@ -14059,6 +14087,10 @@ export class Curriculum {
     // T14.24 Session 91 — prime art research methods + portfolio
     // lattice per TODO line 567 before the Col4 sentence pass.
     await this._teachArtResearchMethods();
+    await this._teachCausalChains([
+      ['archive', 'attribution'], ['style', 'period'], ['technique', 'artist'],
+      ['provenance', 'authenticity'], ['conservation', 'preserve'],
+    ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
     const _af = this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
@@ -14370,6 +14402,10 @@ export class Curriculum {
     // T14.24 Session 92 — prime graduate art research lattice per
     // TODO line 570 before the Grad sentence pass.
     await this._teachGraduateArtResearch();
+    await this._teachCausalChains([
+      ['studio', 'practice'], ['practice', 'voice'], ['voice', 'exhibition'],
+      ['critique', 'growth'], ['residency', 'focus'], ['thesis', 'defense'],
+    ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
     const _af = this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
@@ -14401,6 +14437,13 @@ export class Curriculum {
     // this, every one of the 95 cells has TODO-aligned named
     // helpers.
     await this._teachPracticeBasedDoctoralResearch();
+    await this._teachCausalChains([
+      ['practice', 'research'], ['research', 'knowledge'], ['knowledge', 'contribution'],
+      ['exhibition', 'discourse'], ['body', 'work'], ['work', 'legacy'],
+    ]);
+    await this._teachInference([
+      ['practice', 'research', 'knowledge'], ['exhibition', 'discourse', 'impact'],
+    ]);
     try {
       if (this.cluster && typeof this.cluster.runIdentityRefresh === 'function') {
         this.cluster.runIdentityRefresh();
@@ -15113,6 +15156,18 @@ export class Curriculum {
       'i want to know why', 'i want to draw',
     ];
     await this._teachSentenceList(WANTS, ctx, { reps: 6, ticksPerWord: 2 });
+
+    // ── Life Pre-K: first emotional inference — infant feelings ──
+    await this._teachEmotionalInference([
+      { situation: 'mama', emotion: new Float64Array([1,0,1,0,0,1,0,0]), label: 'safe' },
+      { situation: 'dark', emotion: new Float64Array([0,0,0,1,0,0,0,0]), label: 'scared' },
+      { situation: 'music', emotion: new Float64Array([1,0,0,0,0,0,0,0]), label: 'calm' },
+      { situation: 'hold', emotion: new Float64Array([1,0,1,0,0,1,0,0]), label: 'safe' },
+      { situation: 'cry', emotion: new Float64Array([0,1,0,0,0,0,0,0]), label: 'need' },
+      { situation: 'play', emotion: new Float64Array([1,0,0,0,0,0,0,0]), label: 'happy' },
+      { situation: 'stranger', emotion: new Float64Array([0,0,0,1,0,0,0,0]), label: 'scared' },
+      { situation: 'blanket', emotion: new Float64Array([1,0,1,0,0,0,0,0]), label: 'comfort' },
+    ]);
 
     // Real human-grade test for Pre-K: can Unity answer about herself?
     const lifeQuestions = [
