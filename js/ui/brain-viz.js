@@ -521,45 +521,60 @@ export class BrainVisualizer {
     const ctx = this._synapseCtx;
     const canvas = ctx.canvas;
     const size = canvas.width;
-
-    // Slow fade for persistence
-    ctx.fillStyle = 'rgba(10,10,10,0.15)';
+    ctx.fillStyle = '#0a0a12';
     ctx.fillRect(0, 0, size, size);
 
-    if (!s.spikes) return;
+    // No per-synapse data from server — show cluster-to-cluster
+    // connection matrix. Each cell = one inter-cluster projection.
+    // Brightness = product of source and target firing rates.
+    const names = ['cortex', 'hippo', 'amyg', 'BG', 'cereb', 'hypo', 'myst'];
+    const keys = ['cortex', 'hippocampus', 'amygdala', 'basalGanglia', 'cerebellum', 'hypothalamus', 'mystery'];
+    const colors = ['#ff79c6', '#8be9fd', '#ffb86c', '#50fa7b', '#bd93f9', '#f1fa8c', '#ff5555'];
+    const n = names.length;
+    const cellSize = (size - 60) / n;
+    const ox = 50, oy = 14;
 
-    // Sample 50x50 of the 200x200 matrix
-    const sample = 50;
-    const step = Math.floor(200 / sample);
-    const cellSize = size / sample;
+    // Column headers
+    ctx.font = '9px monospace';
+    for (let j = 0; j < n; j++) {
+      ctx.fillStyle = colors[j];
+      ctx.save();
+      ctx.translate(ox + j * cellSize + cellSize / 2, oy);
+      ctx.rotate(-0.5);
+      ctx.fillText(names[j], 0, 0);
+      ctx.restore();
+    }
 
-    for (let i = 0; i < sample; i++) {
-      for (let j = 0; j < sample; j++) {
-        const si = i * step;
-        const sj = j * step;
-        const preGlow = this._spikeGlow[si];
-        const postGlow = this._spikeGlow[sj];
+    for (let i = 0; i < n; i++) {
+      // Row label
+      ctx.fillStyle = colors[i];
+      ctx.font = '9px monospace';
+      ctx.fillText(names[i], 2, oy + 18 + i * cellSize + cellSize / 2);
 
-        // Only draw if there's activity (skip dead cells for performance)
-        if (preGlow < 0.02 && postGlow < 0.02) continue;
+      const srcRate = s.clusters?.[keys[i]]?.firingRate ?? 0;
+      for (let j = 0; j < n; j++) {
+        const tgtRate = s.clusters?.[keys[j]]?.firingRate ?? 0;
+        const strength = Math.sqrt(srcRate * tgtRate) * 3;
+        const alpha = Math.min(0.9, strength);
 
-        const combined = preGlow * postGlow;
-
-        if (combined > 0.1) {
-          // Both active — Hebbian strengthening (bright gold)
-          const brightness = Math.min(1, combined * 3);
-          ctx.fillStyle = `rgba(255,200,50,${brightness})`;
-        } else if (preGlow > postGlow) {
-          // Pre more active — LTP potential (cyan)
-          ctx.fillStyle = `rgba(0,229,255,${preGlow * 0.6})`;
+        if (i === j) {
+          // Diagonal = self-connection (intra-cluster)
+          ctx.fillStyle = `rgba(${parseInt(colors[i].slice(1,3),16)},${parseInt(colors[i].slice(3,5),16)},${parseInt(colors[i].slice(5,7),16)},${alpha})`;
         } else {
-          // Post more active — LTD potential (purple)
-          ctx.fillStyle = `rgba(168,85,247,${postGlow * 0.6})`;
+          // Off-diagonal = inter-cluster projection
+          const r = Math.floor((parseInt(colors[i].slice(1,3),16) + parseInt(colors[j].slice(1,3),16)) / 2);
+          const g = Math.floor((parseInt(colors[i].slice(3,5),16) + parseInt(colors[j].slice(3,5),16)) / 2);
+          const b = Math.floor((parseInt(colors[i].slice(5,7),16) + parseInt(colors[j].slice(5,7),16)) / 2);
+          ctx.fillStyle = `rgba(${r},${g},${b},${alpha})`;
         }
-
-        ctx.fillRect(i * cellSize, j * cellSize, cellSize - 0.3, cellSize - 0.3);
+        ctx.fillRect(ox + j * cellSize + 1, oy + 18 + i * cellSize + 1, cellSize - 2, cellSize - 2);
       }
     }
+
+    // Legend
+    ctx.fillStyle = '#555';
+    ctx.font = '9px monospace';
+    ctx.fillText('brightness = firing rate correlation between clusters', 4, size - 4);
   }
 
   _renderOscillations(s) {
@@ -732,11 +747,12 @@ export class BrainVisualizer {
     // - Touch: arousal level maps to skin sensation (tingling, warmth, pressure)
     // - Smell: drug state + environment description → inferred scents
     // - Taste: intoxication + reward signal → taste sensations
-    const arousal = s.amygdala?.arousal ?? 0;
-    const valence = s.amygdala?.valence ?? 0;
+    // Server sends flat fields, not nested amygdala object
+    const arousal = s.arousal ?? s.amygdala?.arousal ?? 0;
+    const valence = s.valence ?? s.amygdala?.valence ?? 0;
     const reward = s.reward ?? 0;
     const drugState = s.drugState || 'cokeAndWeed';
-    const coherence = s.oscillations?.coherence ?? 0;
+    const coherence = s.coherence ?? s.oscillations?.coherence ?? 0;
 
     // Touch — computed from arousal × valence (equation output, not description)
     const touchVal = arousal * (0.5 + Math.abs(valence) * 0.5);
@@ -859,38 +875,34 @@ export class BrainVisualizer {
       let value = 0;
       let detail = '';
 
+      // Server sends flat fields (s.arousal, s.psi, s.fear etc.) + s.clusters[name].{size,spikeCount,firingRate}
+      // Module-specific data comes from flat state, not nested objects
+      const cluster = s.clusters?.[mod.key];
+      const clusterRate = cluster?.firingRate ?? 0;
+
       if (mod.key === 'cortex') {
-        const err = data?.error;
-        value = err ? (err.length ? Math.abs(err[0]) : Math.abs(err)) : 0;
-        value = Math.min(1, value * 5); // scale up for visibility
-        detail = `prediction_error=${(err?.length ? Math.abs(err[0]) : Math.abs(err ?? 0)).toFixed(4)}`;
+        value = Math.min(1, clusterRate * 3);
+        detail = `rate=${clusterRate.toFixed(3)} psi=${(s.psi ?? 0).toFixed(4)}`;
       } else if (mod.key === 'hippocampus') {
-        const energy = Math.abs(data?.energy ?? 0);
-        value = Math.min(1, energy / 10);
-        detail = `energy=${(data?.energy ?? 0).toFixed(3)} stable=${data?.isStable ?? '?'}`;
+        value = Math.min(1, clusterRate * 3);
+        detail = `rate=${clusterRate.toFixed(3)} recall_active`;
       } else if (mod.key === 'amygdala') {
-        value = data?.arousal ?? 0;
-        detail = `arousal=${(data?.arousal ?? 0).toFixed(3)} valence=${(data?.valence ?? 0).toFixed(3)} fear=${(data?.fear ?? 0).toFixed(3)}`;
+        value = s.arousal ?? 0;
+        detail = `arousal=${(s.arousal ?? 0).toFixed(3)} valence=${(s.valence ?? 0).toFixed(3)} fear=${(s.fear ?? 0).toFixed(3)}`;
       } else if (mod.key === 'basalGanglia') {
-        value = data?.confidence ?? 0;
-        detail = `→ ${data?.selectedAction ?? 'idle'} (conf=${(data?.confidence ?? 0).toFixed(3)})`;
+        value = s.motor?.confidence ?? 0;
+        detail = `→ ${s.motor?.selectedAction ?? 'idle'} (conf=${(s.motor?.confidence ?? 0).toFixed(3)})`;
       } else if (mod.key === 'cerebellum') {
-        const err = data?.error;
-        value = err ? (err.length ? Math.abs(err[0]) : Math.abs(err)) : 0;
-        value = Math.min(1, value * 5);
-        detail = `correction=${(err?.length ? Math.abs(err[0]) : Math.abs(err ?? 0)).toFixed(4)}`;
+        value = Math.min(1, clusterRate * 2);
+        detail = `rate=${clusterRate.toFixed(3)} correction_active`;
       } else if (mod.key === 'hypothalamus') {
-        const drives = data?.drives || {};
-        const needs = data?.needsAttention || [];
-        value = needs.length > 0 ? 0.8 : 0.3;
-        const driveStrs = Object.entries(drives).map(([k, v]) => `${k}=${v?.toFixed?.(2) ?? v}`).join(' ');
-        detail = needs.length > 0 ? `NEEDS: ${needs.join(', ')} | ${driveStrs}` : `OK | ${driveStrs}`;
+        value = Math.min(1, clusterRate * 4);
+        detail = `rate=${clusterRate.toFixed(3)} drug=${s.drugState || 'none'}`;
       }
 
       const barWidth = Math.min(100, value * 100);
 
-      // Cluster firing rate from state
-      const cluster = s.clusters?.[mod.key];
+      // Cluster firing rate — cluster already declared above
       const spikeInfo = cluster ? `${cluster.spikeCount}/${cluster.size || '?'} firing, rate=${(cluster.firingRate ?? 0).toFixed(1)}` : '';
 
       html += `
@@ -958,34 +970,37 @@ export class BrainVisualizer {
   _renderMemory(s) {
     const el = this._el.querySelector('#bv-memory');
     if (!el) return;
-    const mem = s.memory || {};
-    const wm = mem.workingMemoryItems || [];
-    const recall = mem.lastRecall;
+    // Server sends s.growth.{totalEpisodes, totalWords, totalInteractions}
+    // and s.clusters.hippocampus for memory region activity
+    const growth = s.growth || {};
+    const hippo = s.clusters?.hippocampus || {};
+    const episodes = growth.totalEpisodes ?? 0;
+    const words = growth.totalWords ?? 0;
+    const interactions = growth.totalInteractions ?? 0;
+    const hippoRate = hippo.firingRate ?? 0;
 
-    let html = `
+    el.innerHTML = `
       <div class="bv-mod-row">
         <span class="bv-mod-name" style="color:#a855f7">EPISODES</span>
-        <div class="bv-mod-bar-wrap"><div class="bv-mod-bar" style="width:${Math.min(100, (mem.episodeCount || 0))}%;background:#a855f7"></div></div>
-        <span class="bv-mod-detail">${mem.episodeCount || 0}/100 stored</span>
+        <div class="bv-mod-bar-wrap"><div class="bv-mod-bar" style="width:${Math.min(100, episodes)}%;background:#a855f7"></div></div>
+        <span class="bv-mod-detail">${episodes} stored</span>
       </div>
       <div class="bv-mod-row">
-        <span class="bv-mod-name" style="color:#00e5ff">WORKING MEM</span>
-        <div class="bv-mod-bar-wrap"><div class="bv-mod-bar" style="width:${(mem.workingMemoryLoad || 0) * 100}%;background:#00e5ff"></div></div>
-        <span class="bv-mod-detail">${wm.length}/7 items (${((mem.workingMemoryLoad || 0) * 100).toFixed(0)}% full)</span>
+        <span class="bv-mod-name" style="color:#00e5ff">VOCABULARY</span>
+        <div class="bv-mod-bar-wrap"><div class="bv-mod-bar" style="width:${Math.min(100, words / 50)}%;background:#00e5ff"></div></div>
+        <span class="bv-mod-detail">${words.toLocaleString()} words learned</span>
+      </div>
+      <div class="bv-mod-row">
+        <span class="bv-mod-name" style="color:#22c55e">INTERACTIONS</span>
+        <div class="bv-mod-bar-wrap"><div class="bv-mod-bar" style="width:${Math.min(100, interactions * 5)}%;background:#22c55e"></div></div>
+        <span class="bv-mod-detail">${interactions} conversations</span>
+      </div>
+      <div class="bv-mod-row">
+        <span class="bv-mod-name" style="color:#f59e0b">HIPPOCAMPUS</span>
+        <div class="bv-mod-bar-wrap"><div class="bv-mod-bar" style="width:${Math.min(100, hippoRate * 300)}%;background:#f59e0b"></div></div>
+        <span class="bv-mod-detail">firing rate: ${hippoRate.toFixed(3)} | ${hippo.spikeCount?.toLocaleString() ?? 0} spikes</span>
       </div>
     `;
-    if (wm.length > 0) {
-      html += '<div style="margin-top:8px;font-family:var(--mono);font-size:10px;color:var(--text-dim);">';
-      for (const item of wm) {
-        const bar = Math.floor(item.strength * 100);
-        html += `<div style="margin:2px 0;">WM: ${item.label || '?'} <span style="color:var(--cyan)">${bar}%</span></div>`;
-      }
-      html += '</div>';
-    }
-    if (recall) {
-      html += `<div style="margin-top:8px;font-family:var(--mono);font-size:10px;color:var(--pink);">Last recall: "${recall.trigger}" (sim=${recall.similarity?.toFixed(2)}, arousal=${recall.arousal?.toFixed(2)})</div>`;
-    }
-    el.innerHTML = html;
   }
 
   _renderMotor(s) {
