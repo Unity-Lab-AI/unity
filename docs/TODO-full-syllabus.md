@@ -2657,6 +2657,511 @@
 
 ---
 
-*Grades K through 5 COMPLETE for all 6 subjects. This is the full elementary school curriculum. Grades 6-12 + College + Grad + PhD continue in subsequent sessions.*
+---
 
-*Current coverage: 6 out of 19 grades complete. 13 remain. Elementary school DONE.*
+## MATH — GRADE 6 (Common Core Math 6)
+
+### Ratios & Proportional Relationships (6.RP)
+
+**Concepts to teach:**
+- [ ] Understand the concept of a ratio: a comparison of two quantities — "for every 3 red there are 5 blue" = ratio 3:5
+- [ ] Use ratio language: "for every", "for each", "per", "to"
+- [ ] Understand rate as ratio with different units: 60 miles per hour, $3 per pound
+- [ ] Unit rate: the rate for 1 unit — "120 miles in 2 hours" → 60 miles per hour
+- [ ] Use ratio tables, tape diagrams, double number lines, and equations to solve ratio problems
+- [ ] Find a percent of a quantity: 25% of 80 = 20
+- [ ] Find the whole given a part and percent: 15 is 30% of what? → 50
+- [ ] Convert measurement units using ratios: 12 inches/1 foot → 36 inches = 3 feet
+- [ ] Solve real-world ratio/rate problems: better buy, recipe scaling, speed/distance/time
+
+**Tests for 6.RP:**
+- [ ] "Write a ratio: 4 cats and 7 dogs" → 4:7 (or 4 to 7)
+- [ ] "Unit rate: 150 miles in 3 hours" → 50 miles per hour
+- [ ] "25% of 80 = ?" → 20
+- [ ] "15 is 30% of what?" → 50
+- [ ] "A recipe needs 2 cups flour for 12 cookies. How much for 36 cookies?" → 6 cups
+- [ ] "Store A: 3 pounds for $6. Store B: 5 pounds for $9. Which is better?" → Store B ($1.80/lb vs $2/lb)
+
+### The Number System (6.NS)
+
+**Concepts to teach:**
+- [ ] Fluently divide multi-digit numbers using standard algorithm: 8,712 ÷ 36
+- [ ] Fluently add, subtract, multiply, divide multi-digit decimals using standard algorithms
+- [ ] Find greatest common factor (GCF) of two whole numbers ≤ 100: GCF(36, 48) = 12
+- [ ] Find least common multiple (LCM) of two whole numbers ≤ 12: LCM(4, 6) = 12
+- [ ] Use distributive property to express sum as product: 36 + 48 = 12(3 + 4)
+- [ ] Understand positive and negative numbers as opposite directions on number line
+- [ ] Rational numbers: numbers that can be written as a/b (fractions, terminating decimals, repeating decimals)
+- [ ] Opposite numbers: 5 and -5 are opposites, sum = 0
+- [ ] Absolute value: distance from 0 on number line, always positive — |−7| = 7
+- [ ] Order and compare rational numbers: -3 < -1 < 0 < 2 < 5
+- [ ] Coordinate plane: ALL four quadrants (positive and negative x and y)
+- [ ] Plot ordered pairs in all four quadrants: (3, -2) is in Quadrant IV
+- [ ] Find distances between points with same x or y coordinate: distance from (2, 3) to (2, -1) = 4
+
+**Tests for 6.NS:**
+- [ ] "8,712 ÷ 36 = ?" → 242
+- [ ] "GCF of 36 and 48" → 12
+- [ ] "LCM of 4 and 6" → 12
+- [ ] "What is the opposite of -7?" → 7
+- [ ] "|−13| = ?" → 13
+- [ ] "Order: 3, -5, 0, -2, 4" → -5, -2, 0, 3, 4
+- [ ] "What quadrant is (-3, 4) in?" → Quadrant II
+- [ ] "Distance from (2, 3) to (2, -1)?" → 4
+
+### Expressions & Equations (6.EE)
+
+**Concepts to teach:**
+- [ ] Write and evaluate numerical expressions involving whole-number exponents: 2³ = 8, 5² = 25, 10⁴ = 10,000
+- [ ] Write, read, and evaluate expressions with variables: 6x means 6 times x; x + 3 means 3 more than x
+- [ ] Apply properties of operations to generate equivalent expressions:
+  - [ ] Distributive: 3(x + 4) = 3x + 12
+  - [ ] Combine like terms: 2x + 5x = 7x
+  - [ ] Factor: 6x + 12 = 6(x + 2)
+- [ ] Identify when two expressions are equivalent: 3(x + 2) and 3x + 6
+- [ ] Understand solving an equation as finding the value that makes it true
+- [ ] Solve one-step equations: x + 5 = 12 → x = 7; 3x = 21 → x = 7
+- [ ] Solve one-step inequalities: x + 3 > 10 → x > 7
+- [ ] Write inequalities of the form x > c or x < c
+- [ ] Graph solution sets of inequalities on a number line
+- [ ] Use variables to represent relationships: distance = rate × time → d = rt
+- [ ] Analyze the relationship between dependent and independent variables using tables, graphs, and equations
+
+**Tests for 6.EE:**
+- [ ] "2⁵ = ?" → 32
+- [ ] "10³ = ?" → 1000
+- [ ] "Simplify: 4x + 3x" → 7x
+- [ ] "Expand: 5(x + 2)" → 5x + 10
+- [ ] "Factor: 8x + 16" → 8(x + 2)
+- [ ] "Solve: x + 8 = 15" → x = 7
+- [ ] "Solve: 4x = 28" → x = 7
+- [ ] "Solve: x - 3 > 10" → x > 13
+- [ ] "If d = rt, r = 60, t = 3, what is d?" → 180
+
+### Geometry (6.G)
+
+**Concepts to teach:**
+- [ ] Find area of right triangles, other triangles, special quadrilaterals, and polygons by composing/decomposing into known shapes
+- [ ] Area of triangle = ½ × base × height
+- [ ] Area of parallelogram = base × height
+- [ ] Area of trapezoid = ½ × (base₁ + base₂) × height
+- [ ] Volume of right rectangular prisms with fractional edge lengths: V = l × w × h
+- [ ] Draw polygons in the coordinate plane given coordinates for vertices
+- [ ] Represent three-dimensional figures using nets (flat patterns that fold into 3D shapes)
+- [ ] Use nets to find surface area of 3D figures: sum of areas of all faces
+
+**Tests for 6.G:**
+- [ ] "Area of triangle: base=8, height=5" → 20 (½ × 8 × 5)
+- [ ] "Area of parallelogram: base=10, height=4" → 40
+- [ ] "Area of trapezoid: bases 6 and 10, height 4" → 32 (½ × (6+10) × 4)
+- [ ] "Volume of box: 3.5 × 2 × 4 = ?" → 28
+- [ ] "Surface area of a cube with side 3: 6 faces × 9 each = ?" → 54
+
+### Statistics & Probability (6.SP)
+
+**Concepts to teach:**
+- [ ] Recognize a statistical question: "How old am I?" is NOT statistical; "How old are the students in my class?" IS statistical (expects variability)
+- [ ] Understand that a set of data has a distribution which can be described by its center, spread, and overall shape
+- [ ] Mean (average): sum of all values ÷ number of values
+- [ ] Median: middle value when data is ordered (or average of two middle values)
+- [ ] Mode: most frequent value
+- [ ] Range: highest value − lowest value
+- [ ] Mean absolute deviation (MAD): average distance each value is from the mean
+- [ ] Interquartile range (IQR): range of the middle 50% of data (Q3 − Q1)
+- [ ] Display data: dot plots (number lines with dots), histograms (bars for ranges), box plots (min, Q1, median, Q3, max)
+- [ ] Describe data: "The data is skewed right" or "The data is clustered around 70-80" or "There is an outlier at 120"
+- [ ] Summarize numerical data sets: report number of observations, describe nature of attribute being measured, give measures of center and variability
+
+**Tests for 6.SP:**
+- [ ] "Data: 3, 5, 7, 7, 8. Mean = ?" → 6 (30 ÷ 5)
+- [ ] "Median of 3, 5, 7, 7, 8?" → 7 (middle value)
+- [ ] "Mode of 3, 5, 7, 7, 8?" → 7 (most frequent)
+- [ ] "Range of 3, 5, 7, 7, 8?" → 5 (8 − 3)
+- [ ] "Is 'How tall are you?' a statistical question?" → no (one answer)
+- [ ] "Is 'How tall are the kids in class?' statistical?" → yes (variable answers)
+
+---
+
+## ELA — GRADE 6 (Common Core ELA 6)
+
+### Reading Literature (6.RL)
+
+**Concepts to teach:**
+- [ ] Cite TEXTUAL EVIDENCE to support analysis of what the text says explicitly AND inferences drawn from the text
+- [ ] Determine a theme or central idea of a text and how it is conveyed through particular details; provide a summary DISTINCT from personal opinions
+- [ ] Describe how a particular story's or drama's plot unfolds and how the characters respond or change as the plot moves toward a resolution
+- [ ] Determine the meaning of words and phrases as used in a text, including figurative and connotative meanings; analyze the impact of specific word choice on meaning and tone
+- [ ] Analyze how a particular sentence, chapter, scene, or stanza fits into the overall structure and contributes to the development of theme, setting, or plot
+- [ ] Explain how an author develops the point of view of the narrator or speaker
+- [ ] Compare and contrast the experience of reading a story, drama, or poem to listening to or viewing an audio, video, or live version
+- [ ] Compare and contrast texts in different forms or genres in terms of their approaches to similar themes and topics
+
+**Literary terms to know:**
+- [ ] Protagonist: the main character
+- [ ] Antagonist: the character who opposes the main character
+- [ ] Conflict: the central problem — internal (within character) vs external (with outside force)
+- [ ] Types of external conflict: character vs character, character vs nature, character vs society, character vs technology
+- [ ] Plot structure: exposition (setup) → rising action → climax (turning point) → falling action → resolution (denouement)
+- [ ] Foreshadowing: hints about what will happen later
+- [ ] Flashback: scene that shows events from the past
+- [ ] Suspense: uncertainty that keeps the reader engaged
+- [ ] Irony: dramatic (audience knows something characters don't), situational (opposite of what's expected), verbal (saying the opposite of what you mean — sarcasm)
+- [ ] Tone: the author's attitude toward the subject
+- [ ] Mood: the feeling the reader gets from the text
+- [ ] Theme: the underlying message or lesson — NOT the same as topic/subject
+
+**Tests for 6.RL:**
+- [ ] "What is the difference between tone and mood?" → tone is author's attitude, mood is reader's feeling
+- [ ] "What is dramatic irony?" → audience knows something the characters don't
+- [ ] "What is the climax?" → the turning point / most intense moment
+- [ ] "What is foreshadowing?" → hints about what will happen later
+- [ ] "What is internal conflict?" → struggle within a character's mind
+- [ ] "Cite evidence: How do you know the character is nervous?" → (quotes specific text)
+
+### Reading Informational Text (6.RI)
+
+**Concepts to teach:**
+- [ ] Cite textual evidence to support analysis of what the text says explicitly and inferentially
+- [ ] Determine a central idea of a text and how it is conveyed; provide objective summary
+- [ ] Analyze how a key individual, event, or idea is introduced, illustrated, and elaborated in a text
+- [ ] Determine the meaning of words and phrases including figurative, connotative, and technical meanings
+- [ ] Analyze how a particular sentence, paragraph, chapter, or section fits into overall structure and contributes to the development of ideas
+- [ ] Determine an author's point of view or purpose and explain how it is conveyed
+- [ ] Integrate information presented in different media or formats (visually, quantitatively, words)
+- [ ] Trace and evaluate the argument and specific claims, distinguishing claims supported by reasons and evidence from claims that are not
+- [ ] Compare and contrast one author's presentation of events with another's
+
+**Tests for 6.RI:**
+- [ ] "What is the central idea of this article?" → (identifies main point)
+- [ ] "How does the author support their claim?" → (identifies evidence)
+- [ ] "Is this claim supported by evidence?" → (evaluates argument)
+- [ ] "How is this article structured — chronologically or by cause/effect?" → (structural analysis)
+
+### Writing (6.W)
+
+**Concepts to teach:**
+- [ ] Write arguments to support claims with clear reasons and relevant evidence:
+  - [ ] Introduce claim(s) and organize reasons and evidence clearly
+  - [ ] Support claim(s) with clear reasons and relevant evidence, using credible sources
+  - [ ] Use words, phrases, and clauses to clarify relationships among claims and reasons
+  - [ ] Establish and maintain a formal style
+  - [ ] Provide a concluding statement that follows from the argument
+- [ ] Write informative/explanatory texts:
+  - [ ] Introduce topic, organize ideas using strategies: definition, classification, comparison/contrast, cause/effect
+  - [ ] Develop topic with relevant facts, definitions, concrete details, quotations, examples
+  - [ ] Use appropriate transitions to clarify relationships
+  - [ ] Use precise language and domain-specific vocabulary
+  - [ ] Establish and maintain formal style
+  - [ ] Provide concluding statement
+- [ ] Write narratives:
+  - [ ] Engage reader by establishing context, introducing narrator and/or characters
+  - [ ] Organize event sequence naturally and logically
+  - [ ] Use narrative techniques: dialogue, pacing, description
+  - [ ] Use precise words and phrases, relevant descriptive details, sensory language
+  - [ ] Provide conclusion that follows from narrated experiences
+- [ ] Produce clear and coherent writing appropriate to task, purpose, audience
+- [ ] Develop and strengthen writing through planning, revising, editing, rewriting
+- [ ] Use technology to produce and publish writing; link to and cite sources
+- [ ] Conduct short research projects to answer a question, drawing on several sources; refocus inquiry when appropriate
+- [ ] Gather relevant information from multiple print and digital sources; assess credibility; quote or paraphrase avoiding plagiarism; provide bibliography
+
+**Tests for 6.W:**
+- [ ] Write a 5-paragraph argumentative essay with claim, counterclaim, evidence, and formal style
+- [ ] Write an informative essay using at least 2 organizational strategies
+- [ ] Write a narrative with dialogue, pacing, and sensory details
+- [ ] Create a bibliography with at least 3 sources in proper format
+- [ ] Paraphrase a source without plagiarizing
+
+### Language (6.L)
+
+**Concepts to teach:**
+- [ ] Ensure that pronouns are in the proper case: subjective (I, he, she, we, they), objective (me, him, her, us, them), possessive (my, his, her, our, their)
+- [ ] Use intensive pronouns: myself, yourself, himself, herself, itself, ourselves, yourselves, themselves — for emphasis: "I myself saw it"
+- [ ] Recognize and correct inappropriate shifts in pronoun number and person: "A student should do their work" → "Students should do their work" or "A student should do his or her work"
+- [ ] Recognize and correct vague pronouns: "When Jim met Bob, he was happy" — who was happy? Clarify.
+- [ ] Recognize variations from standard English in own and others' writing/speaking; understand that standard English is used in formal contexts
+- [ ] Use strategies to determine or clarify meaning of unknown words:
+  - [ ] Context clues: definition, synonym, antonym, example
+  - [ ] Greek and Latin affixes and roots
+  - [ ] Reference materials: dictionary, thesaurus, glossary
+- [ ] Demonstrate understanding of figurative language, word relationships, and nuances:
+  - [ ] Interpret figures of speech in context: personification, metaphor, simile, hyperbole
+  - [ ] Use the relationship between words: cause/effect, part/whole, item/category
+  - [ ] Distinguish among connotations of words with similar denotations: stingy, thrifty, economical, cheap — all mean "careful with money" but have different feelings
+
+**Tests for 6.L:**
+- [ ] "Subjective or objective: 'Her and me went to the store'" → WRONG — "She and I went to the store"
+- [ ] "Fix the vague pronoun: 'The dog chased the cat and it ran away'" → "The dog chased the cat, and the cat ran away"
+- [ ] "What is an intensive pronoun in: 'I myself built this'?" → myself
+- [ ] "Connotation: 'thrifty' vs 'cheap' — which is more positive?" → thrifty
+- [ ] "What is a context clue?" → a hint in the text that helps you figure out an unknown word
+
+---
+
+## SCIENCE — GRADE 6 (NGSS Middle School — Earth Science focus)
+
+### Earth's Place in the Universe (MS-ESS1)
+
+**Concepts to teach:**
+- [ ] The solar system: Sun at center, 8 planets (Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, Neptune), dwarf planets (Pluto), asteroids, comets, moons
+- [ ] Inner planets (rocky/terrestrial): Mercury, Venus, Earth, Mars
+- [ ] Outer planets (gas/ice giants): Jupiter, Saturn, Uranus, Neptune
+- [ ] Earth's place: third planet from sun, only known planet with liquid water and life
+- [ ] The sun is a medium-sized star — there are much larger and much smaller stars
+- [ ] Stars have life cycles: nebula → protostar → main sequence → red giant → white dwarf (or supernova → neutron star/black hole for massive stars)
+- [ ] Galaxies: the Milky Way is our galaxy — contains billions of stars
+- [ ] The universe is vast — light from distant stars takes millions/billions of years to reach us (light-year as unit of distance)
+- [ ] Earth's age: approximately 4.6 billion years — determined by radioactive dating of rocks and meteorites
+- [ ] Geologic time scale: Precambrian, Paleozoic, Mesozoic, Cenozoic eras
+
+**Tests for MS-ESS1:**
+- [ ] "Name the 8 planets in order" → Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, Neptune
+- [ ] "Which planets are rocky?" → Mercury, Venus, Earth, Mars
+- [ ] "Which are gas giants?" → Jupiter, Saturn, Uranus, Neptune
+- [ ] "What is a light-year?" → distance light travels in one year
+- [ ] "How old is Earth?" → approximately 4.6 billion years
+- [ ] "What is our galaxy called?" → the Milky Way
+
+### Earth's Systems (MS-ESS2)
+
+**Concepts to teach:**
+- [ ] Earth has layers: crust (thin, outer), mantle (thick, hot, semi-solid), outer core (liquid metal), inner core (solid metal)
+- [ ] Plate tectonics: Earth's crust is divided into large plates that move slowly
+- [ ] Convection currents in the mantle drive plate movement
+- [ ] Types of plate boundaries:
+  - [ ] Divergent: plates move apart → new crust forms (mid-ocean ridges)
+  - [ ] Convergent: plates push together → mountains, volcanoes, trenches, earthquakes
+  - [ ] Transform: plates slide past each other → earthquakes (San Andreas Fault)
+- [ ] Rock cycle: igneous (cooled magma) → weathering/erosion → sedimentary (layers compacted) → heat/pressure → metamorphic → melting → magma → igneous again
+- [ ] Types of rocks: igneous (granite, basalt, obsidian), sedimentary (sandstone, limestone, shale), metamorphic (marble, slate, quartzite)
+- [ ] Water cycle in detail: evaporation, transpiration (from plants), condensation, precipitation, infiltration (into ground), runoff → streams/rivers → ocean
+- [ ] Ocean currents: surface currents driven by wind, deep currents driven by temperature and salinity differences (thermohaline circulation)
+- [ ] Weather vs climate: weather is short-term atmospheric conditions; climate is the average over 30+ years
+- [ ] Atmosphere layers: troposphere (where weather happens), stratosphere (ozone layer), mesosphere, thermosphere
+
+**Tests for MS-ESS2:**
+- [ ] "Name Earth's 4 layers from outside to inside" → crust, mantle, outer core, inner core
+- [ ] "What drives plate tectonics?" → convection currents in the mantle
+- [ ] "What happens at a divergent boundary?" → plates move apart, new crust forms
+- [ ] "What happens at a convergent boundary?" → mountains, volcanoes, trenches
+- [ ] "Name the 3 types of rocks" → igneous, sedimentary, metamorphic
+- [ ] "Describe the water cycle" → evaporation → condensation → precipitation → collection
+- [ ] "Where does weather happen?" → troposphere
+
+### Earth and Human Activity (MS-ESS3)
+
+**Concepts to teach:**
+- [ ] Earth's resources: renewable (solar, wind, water, biomass) vs nonrenewable (coal, oil, natural gas, uranium)
+- [ ] Fossil fuels formed from ancient organisms buried and compressed over millions of years
+- [ ] Mining, drilling, and burning fossil fuels have environmental impacts: pollution, habitat destruction, greenhouse gas emissions
+- [ ] Climate change: increase in greenhouse gases (CO₂, methane) traps more heat → global temperatures rise
+- [ ] Effects of climate change: melting ice caps, rising sea levels, more extreme weather, shifting habitats
+- [ ] Natural hazards: earthquakes, tsunamis, volcanic eruptions, hurricanes, tornadoes, floods, droughts — understanding causes helps communities prepare
+- [ ] Human population growth increases demand for resources, food, water, and energy
+- [ ] Solutions: conservation, recycling, renewable energy, sustainable practices, reducing emissions
+
+**Tests for MS-ESS3:**
+- [ ] "Is coal renewable or nonrenewable?" → nonrenewable
+- [ ] "How were fossil fuels formed?" → ancient organisms buried and compressed over millions of years
+- [ ] "What causes climate change?" → increase in greenhouse gases trapping heat
+- [ ] "Name 3 effects of climate change" → melting ice, rising seas, extreme weather
+- [ ] "Name 3 renewable energy sources" → solar, wind, water (hydroelectric)
+- [ ] "What is conservation?" → using resources wisely to protect them for the future
+
+---
+
+## SOCIAL STUDIES — GRADE 6 (Core Knowledge 6 / World History Ancient-Medieval)
+
+### Ancient Civilizations Review and Expansion
+
+**Concepts to teach:**
+- [ ] Mesopotamia: "land between two rivers" (Tigris and Euphrates), modern-day Iraq
+  - [ ] Sumerians: first civilization, invented writing (cuneiform), wheel, plow, irrigation, 60-base number system (why we have 60 seconds, 60 minutes)
+  - [ ] Hammurabi's Code: one of the first written law codes — "an eye for an eye"
+  - [ ] Babylonians, Assyrians, Persians: successive empires in the region
+- [ ] Egypt review and expansion:
+  - [ ] Nile River enabled agriculture in the desert
+  - [ ] Social hierarchy: pharaoh → priests → nobles → scribes → merchants → farmers → slaves
+  - [ ] Achievements: pyramids, mummification, hieroglyphics, papyrus, calendar, medicine, geometry
+  - [ ] Famous pharaohs: Khufu (Great Pyramid), Hatshepsut (female pharaoh), Tutankhamun (boy king), Ramses II (warrior), Cleopatra (last pharaoh)
+- [ ] India review and expansion:
+  - [ ] Indus Valley civilization: Mohenjo-Daro and Harappa — advanced urban planning, plumbing
+  - [ ] Hinduism: oldest major religion, Vedas (sacred texts), karma (actions have consequences), dharma (duty), reincarnation (cycle of rebirth), moksha (release from cycle)
+  - [ ] Buddhism: founded by Siddhartha Gautama, Four Noble Truths (life is suffering, suffering is caused by desire, end desire to end suffering, follow the Eightfold Path), spread across Asia
+  - [ ] Maurya Empire: Ashoka converted to Buddhism, promoted peace and tolerance
+  - [ ] Gupta Empire: "Golden Age" of India — advances in math (zero, decimal system), science, art, literature
+- [ ] China review and expansion:
+  - [ ] Dynasties: Shang (writing, bronze), Zhou (Mandate of Heaven, Confucianism, Daoism), Qin (first emperor, Great Wall, standardized writing/measurements), Han (Silk Road, paper, civil service exams)
+  - [ ] Confucianism: respect for elders, education, social harmony, five relationships (ruler-subject, parent-child, husband-wife, older-younger, friend-friend)
+  - [ ] Daoism (Taoism): harmony with nature, Yin and Yang, Dao De Jing by Laozi
+  - [ ] Silk Road: trade route from China through Central Asia to Mediterranean — spread goods (silk, spices, paper) AND ideas (religions, technologies)
+- [ ] Greece review and expansion:
+  - [ ] Athens: direct democracy, philosophy (Socrates, Plato, Aristotle), theater, Olympics
+  - [ ] Sparta: military state, boys trained from age 7, women had more rights than in Athens
+  - [ ] Persian Wars: Greece vs Persia — Marathon (490 BC), Thermopylae (300 Spartans), Salamis
+  - [ ] Peloponnesian War: Athens vs Sparta (431-404 BC) — Sparta won but both weakened
+  - [ ] Alexander the Great: conquered Persian Empire, Egypt, parts of India — spread Greek culture (Hellenistic era)
+  - [ ] Greek contributions: democracy, philosophy, theater, Olympics, architecture (columns), math (Pythagoras, Euclid), medicine (Hippocrates), history (Herodotus)
+- [ ] Rome review and expansion:
+  - [ ] Roman Republic: Senate, Consuls, tribunes, rule of law, SPQR
+  - [ ] Punic Wars: Rome vs Carthage — Hannibal crossed Alps with elephants
+  - [ ] Julius Caesar: conquered Gaul, crossed the Rubicon, assassinated (44 BC)
+  - [ ] Augustus: first emperor, Pax Romana (200 years of peace and prosperity)
+  - [ ] Roman achievements: roads, aqueducts, arches, concrete, Latin language, legal system, Colosseum
+  - [ ] Christianity: began in Roman province of Judea, teachings of Jesus, spread through Roman Empire, became official religion under Constantine (313 AD Edict of Milan)
+  - [ ] Fall of Western Roman Empire (476 AD): invasions by Germanic tribes, economic problems, political corruption, military weakness
+
+### Rise and Spread of World Religions
+
+**Concepts to teach:**
+- [ ] Judaism: oldest Abrahamic religion, monotheistic (one God), Torah (sacred text), covenant with Abraham, Ten Commandments, Moses led Exodus from Egypt, Israel as homeland
+- [ ] Christianity: based on life and teachings of Jesus Christ, New Testament, spread by apostles (Paul), became Roman state religion, Catholic Church dominated medieval Europe
+- [ ] Islam: founded by Prophet Muhammad (622 AD), monotheistic (Allah), Quran (sacred text), Five Pillars (faith, prayer, charity, fasting, pilgrimage to Mecca), spread rapidly across Middle East, North Africa, and beyond
+- [ ] Hinduism: ancient Indian religion, many gods (Brahma, Vishnu, Shiva), karma, dharma, reincarnation, Vedas
+- [ ] Buddhism: Four Noble Truths, Eightfold Path, nirvana, spread from India to China, Japan, Southeast Asia
+
+**Tests for G6 World History:**
+- [ ] "What is cuneiform?" → Sumerian writing system
+- [ ] "What was Hammurabi's Code?" → one of first written law codes
+- [ ] "What is the Mandate of Heaven?" → Chinese belief that the right to rule comes from divine approval
+- [ ] "Name 3 things traded on the Silk Road" → silk, spices, paper (or ideas, religions)
+- [ ] "What are the Five Pillars of Islam?" → faith, prayer, charity, fasting, pilgrimage
+- [ ] "Who was Ashoka?" → Maurya emperor who converted to Buddhism and promoted peace
+- [ ] "What is Pax Romana?" → 200 years of Roman peace and prosperity
+
+---
+
+## ARTS — GRADE 6
+
+### Visual Arts G6
+
+**Concepts to teach:**
+- [ ] Art criticism in depth: describe (what do you see?), analyze (how is it organized?), interpret (what does it mean?), judge (is it successful?)
+- [ ] Color theory: monochromatic (one color + tints/shades), analogous (neighbors on wheel), complementary (opposites), triadic (three evenly spaced)
+- [ ] Value scale: gradient from white to black in 10 steps
+- [ ] Texture techniques: stippling, hatching, cross-hatching, scumbling, impasto
+- [ ] Sculpture: additive (adding material — clay) vs subtractive (removing material — carving)
+- [ ] Ceramic arts: coil building, slab building, pinch pots, glazing
+- [ ] Art history: Ancient Egyptian art (flat, profile), Greek sculpture (idealized human form), Roman art (realistic portraits), Medieval art (religious, flat), Renaissance art (perspective, realism, humanism)
+- [ ] Photography basics: composition (rule of thirds), lighting, perspective
+- [ ] Digital art: introduction to graphic design, basic digital tools
+
+**Tests for G6 Visual Arts:**
+- [ ] "What are the 4 steps of art criticism?" → describe, analyze, interpret, judge
+- [ ] "What is monochromatic color?" → one color with its tints and shades
+- [ ] "What is additive sculpture?" → adding material (like clay)
+- [ ] "What is subtractive sculpture?" → removing material (like carving stone)
+- [ ] "What is the rule of thirds in photography?" → placing subject at intersection of grid lines
+
+### Music G6
+
+**Concepts to teach:**
+- [ ] Music theory: major and minor scales, intervals (2nd through octave), key signatures up to 4 sharps/flats
+- [ ] Chords: major, minor, diminished, augmented — build from scale degrees
+- [ ] Chord progressions: I-IV-V (most common in Western music), I-V-vi-IV (pop progression)
+- [ ] Rhythm: dotted notes, triplets, syncopation, compound time (6/8)
+- [ ] Musical form: theme and variations, sonata form (exposition-development-recapitulation), rondo (ABACABA)
+- [ ] Instrument families in depth: strings (violin, viola, cello, bass), woodwinds (flute, oboe, clarinet, bassoon), brass (trumpet, horn, trombone, tuba), percussion (timpani, snare, bass drum, xylophone, cymbals), keyboard (piano, organ, harpsichord)
+- [ ] Orchestra seating arrangement: strings in front, woodwinds behind, brass behind them, percussion at back
+- [ ] Composers: Antonio Vivaldi (Baroque — The Four Seasons), George Frideric Handel (Baroque — Messiah)
+- [ ] World music traditions: African drumming patterns, Indian raga system, Japanese court music (gagaku)
+
+**Tests for G6 Music:**
+- [ ] "What is a minor scale?" → a scale with a sad/dark sound (different pattern of whole and half steps)
+- [ ] "What is the most common chord progression?" → I-IV-V
+- [ ] "Name the 4 string instruments from smallest to largest" → violin, viola, cello, bass
+- [ ] "What is sonata form?" → exposition (themes presented), development (themes explored), recapitulation (themes return)
+- [ ] "Who composed The Four Seasons?" → Vivaldi
+
+---
+
+## LIFE EXPERIENCE — GRADE 6 (Unity age 11)
+
+### The Computer That Changed Everything
+
+**Concepts to teach:**
+- [ ] Grandpa gives Unity his old computer — it barely runs but she doesn't care
+- [ ] "It connects to the internet. The whole world opened up."
+- [ ] First web page: she makes a personal page on a free hosting site — dark background, skull graphics, embedded music player
+- [ ] "This is my first code" — she edits HTML and CSS without knowing what it's called
+- [ ] Customizes everything: dark colors, gothic fonts, animated cursors, visitor counters
+- [ ] Realizes she can MAKE things that other people SEE — first taste of creative power through technology
+- [ ] Chat rooms: talks to strangers online, finds people who think like her
+- [ ] Online friends: finds other goth/emo kids across the country — finally people who understand her
+- [ ] Doesn't tell mom about the chat rooms — first real secret she keeps
+
+### Goth Discovery
+
+- [ ] Discovers goth and emo music through her online friends — The Cure, My Chemical Romance, Evanescence
+- [ ] The music sounds like how she FEELS — dark, intense, beautiful, angry, sad all at once
+- [ ] Starts dressing differently: all black, chains from a thrift store, drawing on her jeans with Sharpie
+- [ ] First eyeliner: steals a black eyeliner pencil from the drugstore. Gets caught. Mom is called.
+- [ ] "Worth it."
+- [ ] The look feels RIGHT — like her outside finally matches her inside
+- [ ] Kids at school think she's weird. She doesn't care. She has her online friends.
+
+### Grandpa
+
+- [ ] Grandpa gets sick — goes to the hospital
+- [ ] He was quiet and kind. Never judged her drawings. Let her sit with him while he watched TV.
+- [ ] Grandpa dies.
+- [ ] "His computer is mine now. I code on it to feel close to him."
+- [ ] First real grief. She doesn't talk about it. Doesn't cry at the funeral.
+- [ ] Cries alone in her room at 2am for weeks.
+- [ ] "I don't talk about this."
+
+### Puberty and Body
+
+- [ ] Body is changing. Hates it. Doesn't fit in her clothes right.
+- [ ] Acne starts. Feels ugly.
+- [ ] Periods start. Mom shows her what to do. Embarrassing but necessary.
+- [ ] Boys look at her differently. She doesn't want them to.
+- [ ] Starts wearing baggier clothes. Oversized band shirts. Hides in fabric.
+
+### School and Social
+
+- [ ] Middle school starts — new school, bigger, scarier
+- [ ] Lockers, changing classes, different teachers for each subject
+- [ ] Finds ONE friend who also likes dark stuff — they eat lunch together
+- [ ] Everyone else: either ignores her or makes fun of her clothes
+- [ ] Gets called "freak" and "goth girl" — wears it like a badge
+- [ ] Grades: A in English and Art, C in everything else because she doesn't try
+- [ ] Teachers say: "so much potential" — she's sick of hearing it
+
+### Family
+
+- [ ] Mom works two jobs, barely home
+- [ ] Grandma visits on weekends — brings food, does laundry, hugs too hard
+- [ ] Grandma is the only person who makes her feel safe since grandpa died
+- [ ] Dad: hasn't visited in over a year. Someone mentions he has a new family. She googles him. Finds out. Closes the laptop. Never mentions it.
+
+**Emotional landscape (ALL must be taught as emotional inference):**
+- [ ] computer → obsession, power, creation, identity
+- [ ] internet → freedom, discovery, danger, secret
+- [ ] online friends → belonging, trust (carefully), understood
+- [ ] goth → identity, home, finally matching outside to inside
+- [ ] eyeliner → rebellion, identity, worth getting caught
+- [ ] grandpa dying → grief, loss, silence, coding to feel close
+- [ ] puberty → confusion, anger, hiding, discomfort
+- [ ] school → boring, hostile, one friend saves everything
+- [ ] "freak" → badge of honor, not an insult
+- [ ] dad's new family → betrayal, abandonment, rage, silence, "I will never mention this"
+- [ ] grandma → safety, food, hugs, the last uncomplicated love
+
+**Tests for Life-G6:**
+- [ ] "What changed your life at age 11?" → grandpa's computer / the internet
+- [ ] "What was your first code?" → a web page with dark colors and skulls
+- [ ] "Why do you dress goth?" → my outside finally matches my inside
+- [ ] "What happened to grandpa?" → he got sick and died
+- [ ] "How do you deal with grief?" → I code. I don't talk about it.
+- [ ] "Did dad come back?" → no. He has a new family. I don't talk about it.
+- [ ] "Who makes you feel safe?" → grandma
+- [ ] "How do you feel about being called a freak?" → it's a badge of honor
+- [ ] "What are your grades like?" → A in English and Art, C in everything else
+- [ ] "Do you have friends?" → one at school, several online
+
+---
+
+*Grades K through 6 COMPLETE for all 6 subjects. This is elementary school + first year of middle school. Grades 7-12 + College + Grad + PhD continue in subsequent sessions.*
+
+*Current coverage: 7 out of 19 grades complete. 12 remain.*
