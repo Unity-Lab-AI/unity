@@ -7376,18 +7376,205 @@ The equational approach is FUNDAMENTALLY different from LLM training. The brain 
 
 ## COLLEGE YEAR 3: JUNIOR (Unity age 20-21)
 
-### Academics — Advanced CS
+### Academics — FALL SEMESTER
 
-**CS: Operating Systems + Databases + Networking + Software Engineering**
-- [ ] Operating systems: processes, threads, concurrency, scheduling, memory management (virtual memory, paging), file systems, deadlocks
-- [ ] Databases: relational model, SQL (SELECT, INSERT, UPDATE, DELETE, JOIN), normalization (1NF-3NF), indexing, transactions (ACID), NoSQL concepts
-- [ ] Networking: OSI model (7 layers), TCP/IP, HTTP/HTTPS, DNS, sockets, REST APIs, encryption basics (symmetric, asymmetric, TLS)
-- [ ] Software engineering: Agile/Scrum methodology, design patterns (singleton, factory, observer, MVC), testing (unit, integration, system), CI/CD, code review
+**CS 330: Operating Systems**
 
-**Math: Differential Equations / Probability & Statistics**
-- [ ] ODEs: first-order (separable, linear), second-order (constant coefficients), Laplace transforms, systems of ODEs
-- [ ] Probability: sample spaces, events, conditional probability, Bayes' theorem, random variables, distributions (binomial, Poisson, normal/Gaussian), expected value, variance
-- [ ] Statistics: hypothesis testing, confidence intervals, regression, correlation, chi-square test
+- [ ] Processes:
+  - [ ] Process concept: program in execution, process states (new, ready, running, waiting, terminated)
+  - [ ] Process control block (PCB): stores process state, program counter, registers, memory info
+  - [ ] Context switch: saving state of current process, loading state of next — expensive but necessary
+  - [ ] Process creation: fork() (Unix — creates child copy), exec() (replaces process image)
+  - [ ] Inter-process communication (IPC): shared memory, message passing, pipes, sockets
+- [ ] Threads:
+  - [ ] Thread: lightweight process — shares memory space with other threads in same process
+  - [ ] Advantages: faster context switch, shared memory = faster communication
+  - [ ] User threads vs kernel threads — many-to-one, one-to-one, many-to-many models
+  - [ ] Thread pools: pre-created threads waiting for work — avoid creation overhead
+- [ ] CPU scheduling:
+  - [ ] First-Come-First-Served (FCFS): simple, convoy effect (short jobs wait behind long)
+  - [ ] Shortest Job First (SJF): optimal average wait time but requires knowing job length
+  - [ ] Round Robin: time quantum, preemptive, fair — context switch overhead
+  - [ ] Priority scheduling: higher priority first — starvation problem → aging solution
+  - [ ] Multilevel queue/feedback queue: multiple queues with different priorities and algorithms
+- [ ] Synchronization:
+  - [ ] Race condition: two threads access shared data simultaneously → unpredictable result
+  - [ ] Critical section: code that accesses shared resource — only one thread at a time
+  - [ ] Mutex (mutual exclusion): lock/unlock — only holder can enter critical section
+  - [ ] Semaphore: counter that controls access — binary (0/1 = mutex) or counting (N resources)
+  - [ ] Deadlock: processes waiting for each other forever — 4 conditions: mutual exclusion, hold and wait, no preemption, circular wait
+  - [ ] Deadlock prevention, avoidance (Banker's algorithm), detection, recovery
+  - [ ] Producer-consumer problem, readers-writers problem, dining philosophers problem
+- [ ] Memory management:
+  - [ ] Address spaces: logical vs physical addresses, memory management unit (MMU)
+  - [ ] Contiguous allocation: first-fit, best-fit, worst-fit — external fragmentation
+  - [ ] Paging: divide memory into fixed-size pages/frames — no external fragmentation, page table maps logical→physical
+  - [ ] Virtual memory: processes can use more memory than physically available — demand paging
+  - [ ] Page replacement: FIFO, LRU (Least Recently Used), optimal (replace page not used longest in future)
+  - [ ] Thrashing: too many page faults, system spends more time swapping than computing
+  - [ ] Segmentation: divide memory into variable-size segments (code, data, stack)
+- [ ] File systems:
+  - [ ] File concept: named collection of related data, attributes (name, type, size, permissions, timestamps)
+  - [ ] Directory structure: single-level, two-level, tree, acyclic graph
+  - [ ] File allocation: contiguous, linked, indexed (inode)
+  - [ ] Free space management: bitmap, linked list
+  - [ ] Disk scheduling: FCFS, SSTF (Shortest Seek Time First), SCAN (elevator), C-SCAN
+  - [ ] RAID levels: 0 (striping), 1 (mirroring), 5 (striping + distributed parity)
+
+**Tests for OS:**
+- [ ] "What is a context switch?" → saving current process state and loading the next
+- [ ] "What is a race condition?" → two threads access shared data simultaneously with unpredictable results
+- [ ] "What are the 4 conditions for deadlock?" → mutual exclusion, hold and wait, no preemption, circular wait
+- [ ] "What is virtual memory?" → allows processes to use more memory than physically available via demand paging
+- [ ] "What is thrashing?" → system spends more time swapping pages than computing
+- [ ] "FIFO vs LRU page replacement?" → FIFO replaces oldest page; LRU replaces least recently used (better)
+- [ ] "What is a semaphore?" → counter controlling access to shared resource
+- [ ] "Explain the producer-consumer problem" → producer creates items for buffer, consumer removes — must synchronize access
+
+**CS 340: Computer Networking**
+
+- [ ] Network fundamentals:
+  - [ ] OSI model (7 layers): Physical, Data Link, Network, Transport, Session, Presentation, Application
+  - [ ] TCP/IP model (4 layers): Network Access, Internet, Transport, Application
+  - [ ] Packet switching vs circuit switching: packets routed independently vs dedicated connection
+- [ ] Application layer:
+  - [ ] HTTP/HTTPS: request-response protocol, methods (GET, POST, PUT, DELETE), status codes (200 OK, 404 Not Found, 500 Server Error), cookies, sessions
+  - [ ] DNS: Domain Name System — maps domain names to IP addresses, hierarchical (root → TLD → authoritative)
+  - [ ] Email: SMTP (send), POP3/IMAP (receive)
+  - [ ] FTP: file transfer, SSH: secure shell
+  - [ ] REST APIs: stateless, resource-based, HTTP methods, JSON data format
+  - [ ] WebSockets: persistent bidirectional connection (vs HTTP request-response)
+- [ ] Transport layer:
+  - [ ] TCP: reliable, ordered, connection-oriented — 3-way handshake (SYN, SYN-ACK, ACK), flow control (sliding window), congestion control
+  - [ ] UDP: unreliable, unordered, connectionless — faster, used for video/voice/gaming
+  - [ ] Ports: 0-65535, well-known (80=HTTP, 443=HTTPS, 22=SSH, 25=SMTP, 53=DNS)
+  - [ ] Sockets: endpoint for communication — IP address + port number
+- [ ] Network layer:
+  - [ ] IP addressing: IPv4 (32-bit, dotted decimal — 192.168.1.1), IPv6 (128-bit)
+  - [ ] Subnetting: dividing network into smaller networks, subnet mask
+  - [ ] Routing: forwarding packets toward destination — routing tables, protocols (RIP, OSPF, BGP)
+  - [ ] NAT: Network Address Translation — private IPs mapped to public IP
+  - [ ] ICMP: Internet Control Message Protocol — ping, traceroute
+- [ ] Data link layer:
+  - [ ] MAC addresses: hardware addresses (48-bit), unique per network interface
+  - [ ] Ethernet: most common LAN technology
+  - [ ] Switches: forward packets based on MAC address
+  - [ ] ARP: Address Resolution Protocol — maps IP to MAC
+- [ ] Security:
+  - [ ] Encryption: symmetric (AES — same key for encrypt/decrypt, fast) vs asymmetric (RSA — public key + private key, slower)
+  - [ ] TLS/SSL: encrypts HTTP → HTTPS, certificate-based authentication
+  - [ ] Firewalls: filter traffic based on rules
+  - [ ] VPN: encrypted tunnel through public network
+  - [ ] Common attacks: DDoS, man-in-the-middle, SQL injection, XSS, phishing
+
+**Tests for Networking:**
+- [ ] "Name the 7 OSI layers" → Physical, Data Link, Network, Transport, Session, Presentation, Application
+- [ ] "TCP vs UDP?" → TCP = reliable/ordered/connected; UDP = fast/unreliable/connectionless
+- [ ] "What port is HTTPS?" → 443
+- [ ] "What is DNS?" → maps domain names to IP addresses
+- [ ] "What is a REST API?" → stateless, resource-based interface using HTTP methods
+- [ ] "What is the 3-way handshake?" → SYN → SYN-ACK → ACK (establishing TCP connection)
+- [ ] "Symmetric vs asymmetric encryption?" → symmetric = same key; asymmetric = public + private key pair
+- [ ] "What is a WebSocket?" → persistent bidirectional connection between client and server
+
+**MATH 340: Differential Equations**
+
+- [ ] First-order ODEs:
+  - [ ] Separable: dy/dx = f(x)g(y) → ∫dy/g(y) = ∫f(x)dx
+  - [ ] Linear: dy/dx + P(x)y = Q(x) → integrating factor μ = e^∫P(x)dx
+  - [ ] Exact: M(x,y)dx + N(x,y)dy = 0 where ∂M/∂y = ∂N/∂x
+  - [ ] Bernoulli: dy/dx + P(x)y = Q(x)yⁿ → substitution v = y^(1-n)
+  - [ ] Applications: growth/decay (dy/dt = ky), Newton's cooling, mixing problems, population models (logistic: dP/dt = rP(1-P/K))
+- [ ] Second-order linear ODEs:
+  - [ ] Constant coefficients: ay'' + by' + cy = 0 → characteristic equation ar² + br + c = 0
+    - [ ] Two real roots: y = C₁e^(r₁x) + C₂e^(r₂x)
+    - [ ] Repeated root: y = (C₁ + C₂x)e^(rx)
+    - [ ] Complex roots: y = e^(αx)(C₁cos(βx) + C₂sin(βx))
+  - [ ] Nonhomogeneous: ay'' + by' + cy = g(x) → y = y_h + y_p (homogeneous + particular)
+  - [ ] Method of undetermined coefficients: guess form of particular solution based on g(x)
+  - [ ] Variation of parameters: more general method for finding particular solution
+  - [ ] Applications: spring-mass systems (damped, undamped, forced), RLC circuits, pendulum
+- [ ] Laplace transforms:
+  - [ ] L{f(t)} = F(s) = ∫₀^∞ e^(-st)f(t)dt — transforms ODE into algebraic equation
+  - [ ] Key transforms: L{1}=1/s, L{t}=1/s², L{eᵃᵗ}=1/(s-a), L{sin(bt)}=b/(s²+b²), L{cos(bt)}=s/(s²+b²)
+  - [ ] Inverse Laplace: partial fractions + table lookup
+  - [ ] Solving ODEs: transform → solve algebraically → inverse transform
+- [ ] Systems of ODEs: matrix methods, eigenvalue approach
+
+**Tests for DiffEq:**
+- [ ] "Solve: dy/dx = 2y" → y = Ce^(2x) (separable)
+- [ ] "Characteristic equation for y'' + 4y' + 3y = 0?" → r² + 4r + 3 = 0, r = -1, -3
+- [ ] "Solution?" → y = C₁e^(-x) + C₂e^(-3x)
+- [ ] "L{e^(3t)} = ?" → 1/(s-3)
+- [ ] "What is the logistic equation?" → dP/dt = rP(1-P/K)
+- [ ] "Spring equation: mx'' + bx' + kx = 0 — what is b?" → damping coefficient
+
+### Academics — SPRING SEMESTER
+
+**CS 360: Database Systems**
+- [ ] Relational model: tables (relations), rows (tuples), columns (attributes), keys (primary, foreign, candidate)
+- [ ] SQL in depth:
+  - [ ] SELECT: basic queries, WHERE, ORDER BY, GROUP BY, HAVING, DISTINCT, LIMIT
+  - [ ] JOIN: INNER JOIN, LEFT/RIGHT/FULL OUTER JOIN, CROSS JOIN, self-join
+  - [ ] Subqueries: nested SELECT, EXISTS, IN, correlated subqueries
+  - [ ] Aggregate functions: COUNT, SUM, AVG, MIN, MAX
+  - [ ] INSERT, UPDATE, DELETE, CREATE TABLE, ALTER TABLE, DROP TABLE
+  - [ ] Views: virtual tables from queries
+  - [ ] Indexes: speed up queries, B-tree index, hash index, trade-off (faster reads, slower writes)
+- [ ] Normalization: eliminate redundancy
+  - [ ] 1NF: atomic values (no lists in cells)
+  - [ ] 2NF: 1NF + no partial dependencies (non-key depends on FULL primary key)
+  - [ ] 3NF: 2NF + no transitive dependencies (non-key depends only on key, not on other non-keys)
+  - [ ] BCNF: every determinant is a candidate key
+- [ ] Transactions:
+  - [ ] ACID: Atomicity (all or nothing), Consistency (valid state → valid state), Isolation (concurrent transactions don't interfere), Durability (committed = permanent)
+  - [ ] Concurrency control: locks (shared/exclusive), two-phase locking, timestamp ordering
+  - [ ] Recovery: write-ahead logging (WAL), checkpoints, undo/redo
+- [ ] NoSQL: document stores (MongoDB), key-value (Redis), column-family (Cassandra), graph databases (Neo4j) — when to use relational vs NoSQL
+- [ ] Query optimization: query plans, cost estimation, indexing strategies
+
+**Tests for Databases:**
+- [ ] "Write SQL to find all students with GPA > 3.5 ordered by name" → SELECT * FROM students WHERE gpa > 3.5 ORDER BY name;
+- [ ] "What is 3NF?" → no transitive dependencies — non-key attributes depend only on the key
+- [ ] "What does ACID stand for?" → Atomicity, Consistency, Isolation, Durability
+- [ ] "INNER JOIN vs LEFT JOIN?" → INNER returns only matching rows; LEFT returns all left rows + matching right
+- [ ] "When would you use NoSQL instead of SQL?" → highly scalable, unstructured data, schema flexibility needed
+
+**MATH 350: Probability & Statistics**
+- [ ] Probability foundations: sample spaces, events, axioms (P(Ω)=1, P(A)≥0, addition rule for disjoint)
+- [ ] Conditional probability: P(A|B) = P(A∩B)/P(B)
+- [ ] Bayes' theorem: P(A|B) = P(B|A)P(A)/P(B) — updating beliefs with new evidence
+- [ ] Independence: P(A∩B) = P(A)·P(B)
+- [ ] Random variables: discrete (PMF) and continuous (PDF)
+- [ ] Distributions:
+  - [ ] Bernoulli: single trial, success/failure
+  - [ ] Binomial: n trials, P(X=k) = C(n,k)p^k(1-p)^(n-k)
+  - [ ] Poisson: rare events in fixed interval, P(X=k) = e^(-λ)λ^k/k!
+  - [ ] Geometric: trials until first success
+  - [ ] Normal/Gaussian: bell curve, μ (mean), σ (standard deviation), 68-95-99.7 rule
+  - [ ] Exponential: time between events
+  - [ ] Uniform: all outcomes equally likely
+- [ ] Expected value: E[X] = Σ x·P(X=x), Variance: Var(X) = E[X²] - (E[X])²
+- [ ] Central Limit Theorem: sample means approach normal distribution as sample size increases (regardless of population distribution)
+- [ ] Hypothesis testing:
+  - [ ] Null hypothesis H₀ (status quo) vs alternative H₁
+  - [ ] Type I error: reject H₀ when true (false positive), probability = α (significance level, usually 0.05)
+  - [ ] Type II error: fail to reject H₀ when false (false negative), probability = β
+  - [ ] p-value: probability of observing result at least as extreme, assuming H₀ is true — reject H₀ if p < α
+  - [ ] t-test: compare means, z-test: large samples/known variance, chi-square: categorical data
+- [ ] Confidence intervals: range of plausible values for parameter — 95% CI means "if we repeated this study many times, 95% of intervals would contain the true value"
+- [ ] Regression: y = β₀ + β₁x + ε — least squares, R² (proportion of variance explained), residuals
+- [ ] Correlation: r measures linear association (-1 to +1), r² = coefficient of determination
+- [ ] IMPORTANT: correlation does NOT imply causation
+
+**Tests for Prob/Stats:**
+- [ ] "Bayes' theorem formula?" → P(A|B) = P(B|A)P(A)/P(B)
+- [ ] "What is the Central Limit Theorem?" → sample means approach normal as n increases
+- [ ] "P(X=3) for Binomial(n=5, p=0.4)?" → C(5,3)(0.4)³(0.6)² = 10(0.064)(0.36) = 0.2304
+- [ ] "What is a p-value?" → probability of seeing result this extreme if H₀ is true
+- [ ] "Type I error?" → rejecting true null hypothesis (false positive)
+- [ ] "What is R²?" → proportion of variance in y explained by the model
+- [ ] "Correlation = 0.8. Does x cause y?" → NO — correlation doesn't imply causation
 
 ### LIFE — COLLEGE YEAR 3 (Unity age 20-21)
 
