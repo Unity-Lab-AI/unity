@@ -7622,14 +7622,117 @@ The equational approach is FUNDAMENTALLY different from LLM training. The brain 
 
 ## COLLEGE YEAR 4: SENIOR (Unity age 22)
 
-### Academics — Specialization + Capstone
+### Academics — FALL SEMESTER
 
-**CS: AI/Machine Learning + Capstone Project**
-- [ ] AI fundamentals: search algorithms, game trees, constraint satisfaction, knowledge representation
-- [ ] Machine learning: supervised (regression, classification — decision trees, SVM, neural networks), unsupervised (clustering — k-means, hierarchical), reinforcement learning basics
-- [ ] Neural networks: perceptrons, activation functions, backpropagation, gradient descent, overfitting, regularization
-- [ ] Deep learning intro: CNNs (image), RNNs (sequence), transformers (attention — basis of modern language models)
-- [ ] Senior capstone: design and build a significant software system — proposal, design doc, implementation, testing, presentation
+**CS 440: Artificial Intelligence**
+
+- [ ] What is AI: rational agents, environments (observable/deterministic/episodic/static/discrete), agent types (simple reflex, model-based, goal-based, utility-based)
+- [ ] Search algorithms:
+  - [ ] Uninformed: BFS, DFS, uniform-cost search, iterative deepening
+  - [ ] Informed: A* search (uses heuristic — f(n) = g(n) + h(n)), greedy best-first, admissible heuristics
+  - [ ] Local search: hill climbing, simulated annealing, genetic algorithms
+- [ ] Game playing: minimax algorithm, alpha-beta pruning, evaluation functions
+- [ ] Constraint satisfaction problems (CSPs): backtracking, arc consistency, forward checking — Sudoku, graph coloring, scheduling
+- [ ] Knowledge representation: propositional logic, first-order logic, inference rules (modus ponens, resolution), knowledge bases
+- [ ] Probabilistic reasoning: Bayesian networks, conditional independence, inference in Bayes nets, Hidden Markov Models
+- [ ] Planning: STRIPS language, partial-order planning, state-space search
+- [ ] Natural language processing intro: tokenization, parsing, sentiment analysis, bag of words, TF-IDF, word embeddings (Word2Vec, GloVe)
+- [ ] Ethics of AI: bias in algorithms, fairness, accountability, transparency, job displacement, autonomous weapons debate
+
+**Tests for AI:**
+- [ ] "What is A* search?" → best-first search using f(n) = g(n) (cost so far) + h(n) (estimated cost to goal)
+- [ ] "What is minimax?" → algorithm for adversarial games — maximize your minimum gain
+- [ ] "What is alpha-beta pruning?" → optimization of minimax that prunes branches that can't affect the decision
+- [ ] "What is a Bayesian network?" → probabilistic graphical model representing conditional dependencies
+- [ ] "What is Word2Vec?" → neural network that learns word embeddings from context
+
+**CS 450: Machine Learning**
+
+- [ ] Supervised learning:
+  - [ ] Linear regression: y = wx + b, minimize mean squared error, gradient descent to find w and b
+  - [ ] Logistic regression: binary classification, sigmoid function σ(z) = 1/(1+e^(-z)), cross-entropy loss
+  - [ ] Decision trees: split on features to maximize information gain (entropy reduction), pruning to prevent overfitting
+  - [ ] Random forests: ensemble of decision trees, voting for classification, averaging for regression — reduces overfitting
+  - [ ] Support Vector Machines (SVM): find hyperplane with maximum margin between classes, kernel trick for nonlinear boundaries
+  - [ ] K-Nearest Neighbors (KNN): classify based on majority vote of k closest training examples — simple but slow for large datasets
+  - [ ] Naive Bayes: probabilistic classifier assuming feature independence — fast, good for text classification
+- [ ] Unsupervised learning:
+  - [ ] K-means clustering: assign points to nearest centroid, update centroids, repeat until convergence — choose k with elbow method
+  - [ ] Hierarchical clustering: agglomerative (bottom-up) or divisive (top-down), dendrogram
+  - [ ] PCA (Principal Component Analysis): dimensionality reduction — find directions of maximum variance, project data onto fewer dimensions
+  - [ ] Autoencoders: neural networks that learn compressed representation (encoding) then reconstruct (decoding)
+- [ ] Neural networks:
+  - [ ] Perceptron: single neuron — weighted sum + activation function → output
+  - [ ] Multilayer perceptron (MLP): input layer → hidden layers → output layer
+  - [ ] Activation functions: sigmoid (0-1), tanh (-1 to 1), ReLU (max(0,x) — most common), softmax (output probabilities)
+  - [ ] Forward propagation: compute output from inputs through layers
+  - [ ] Backpropagation: compute gradients of loss with respect to weights using chain rule — propagate error backward
+  - [ ] Gradient descent: update weights to minimize loss — learning rate (too high = oscillate, too low = slow)
+    - [ ] Stochastic gradient descent (SGD): update after each sample
+    - [ ] Mini-batch: update after small batch — best of both worlds
+    - [ ] Adam optimizer: adaptive learning rate — most popular in practice
+  - [ ] Overfitting: model memorizes training data, poor generalization
+    - [ ] Regularization: L1 (lasso — sparse), L2 (ridge — small weights), dropout (randomly zero neurons during training)
+    - [ ] Cross-validation: k-fold — split data into k parts, train on k-1, validate on 1, rotate
+  - [ ] Hyperparameter tuning: learning rate, batch size, network depth/width, regularization strength
+- [ ] Deep learning:
+  - [ ] CNNs (Convolutional Neural Networks): for images — convolution layers (feature detection), pooling (downsampling), fully connected layers
+    - [ ] Filters/kernels detect features (edges, corners, textures)
+    - [ ] Architectures: LeNet, AlexNet, VGG, ResNet (skip connections)
+  - [ ] RNNs (Recurrent Neural Networks): for sequences — hidden state carries information across time steps
+    - [ ] Vanishing gradient problem: gradients shrink through many time steps → can't learn long dependencies
+    - [ ] LSTM (Long Short-Term Memory): gates (forget, input, output) control information flow — solves vanishing gradient
+    - [ ] GRU (Gated Recurrent Unit): simplified LSTM — fewer parameters
+  - [ ] Transformers: self-attention mechanism — each token attends to all other tokens
+    - [ ] Attention: Q (query), K (key), V (value) — Attention(Q,K,V) = softmax(QK^T/√d)V
+    - [ ] Multi-head attention: multiple attention heads in parallel, concatenate outputs
+    - [ ] Positional encoding: since no recurrence, position info must be explicitly added
+    - [ ] BERT, GPT family: pre-trained transformers that revolutionized NLP
+  - [ ] GANs (Generative Adversarial Networks): generator creates fake data, discriminator tries to detect fakes — adversarial training improves both
+  - [ ] Transfer learning: pre-train on large dataset, fine-tune on specific task — saves time and data
+- [ ] Reinforcement learning:
+  - [ ] Agent, environment, state, action, reward — Markov Decision Process (MDP)
+  - [ ] Value functions: V(s) = expected return from state s; Q(s,a) = expected return from taking action a in state s
+  - [ ] Q-learning: learn Q function through experience — off-policy, model-free
+  - [ ] Policy gradient: directly learn the policy (mapping from states to actions)
+  - [ ] Deep RL: use neural networks to approximate value/policy functions (DQN, A3C, PPO)
+- [ ] Model evaluation:
+  - [ ] Confusion matrix: TP, FP, TN, FN
+  - [ ] Accuracy: (TP+TN)/(TP+FP+TN+FN) — can be misleading with imbalanced classes
+  - [ ] Precision: TP/(TP+FP) — "of predicted positives, how many are actually positive?"
+  - [ ] Recall: TP/(TP+FN) — "of actual positives, how many did we find?"
+  - [ ] F1 score: 2·precision·recall/(precision+recall) — harmonic mean
+  - [ ] ROC curve: plot TP rate vs FP rate at various thresholds, AUC (Area Under Curve)
+  - [ ] Bias-variance tradeoff: high bias = underfitting, high variance = overfitting
+
+**Tests for ML:**
+- [ ] "What is gradient descent?" → iteratively update weights in direction that decreases loss
+- [ ] "What is overfitting?" → model memorizes training data, fails to generalize
+- [ ] "What is the vanishing gradient problem?" → gradients shrink through many layers → can't learn
+- [ ] "How do LSTMs solve vanishing gradient?" → gates control information flow, preserving gradients
+- [ ] "What is attention in transformers?" → each token attends to all others: softmax(QK^T/√d)V
+- [ ] "Precision vs recall?" → precision = of predicted positive, how many correct; recall = of actual positive, how many found
+- [ ] "What is Q-learning?" → learn Q function (expected reward for state-action pairs) from experience
+- [ ] "CNN vs RNN vs Transformer?" → CNN for images, RNN for sequences, Transformer for both (attention-based)
+- [ ] "What is transfer learning?" → pre-train on large data, fine-tune on specific task
+- [ ] "F1 score = ?" → harmonic mean of precision and recall
+
+**CS 490: Senior Capstone Project**
+- [ ] Project proposal: problem statement, objectives, scope, timeline, technology stack
+- [ ] Requirements specification: functional and non-functional requirements, user stories
+- [ ] System design: architecture diagram, database schema, API design, UI wireframes
+- [ ] Implementation: iterative development, version control, coding standards
+- [ ] Testing: unit tests, integration tests, user acceptance testing
+- [ ] Documentation: technical documentation, user manual, API docs
+- [ ] Presentation: demo day — present to faculty, defend design decisions
+- [ ] Unity's capstone: a neural simulation system with real-time visualization — the seed of the brain project
+
+### Academics — SPRING SEMESTER
+
+- [ ] CS elective: Computer Graphics OR Cybersecurity OR Distributed Systems
+- [ ] CS elective: Programming Languages OR Compilers
+- [ ] Gen-ed: Senior seminar, Capstone continuation
+- [ ] Complete and defend capstone project
 
 ### LIFE — COLLEGE YEAR 4 (Unity age 22)
 
@@ -7671,15 +7774,93 @@ The equational approach is FUNDAMENTALLY different from LLM training. The brain 
 
 ## GRADUATE SCHOOL (Unity age 23-24)
 
-### Academics — Computational Neuroscience
+### Academics — Computational Neuroscience (2 years)
 
-**Core coursework:**
-- [ ] Neuroscience fundamentals: neurons, synapses, action potentials, neurotransmitters, brain anatomy (cortex, hippocampus, amygdala, cerebellum, basal ganglia, hypothalamus), fMRI, EEG
-- [ ] Computational models: Hodgkin-Huxley neuron model, leaky integrate-and-fire, Rulkov 2D chaotic map, Wilson-Cowan population dynamics, Hopfield networks, attractor dynamics
-- [ ] Machine learning advanced: deep learning architectures, generative models (GANs, VAEs), reinforcement learning (Q-learning, policy gradient), attention mechanisms, transformer architecture in depth
-- [ ] Mathematics: partial differential equations, dynamical systems, information theory (entropy, mutual information), Bayesian inference, statistical mechanics
-- [ ] Research methodology: literature review, hypothesis formation, experimental design, peer review, grant writing, conference presentations
-- [ ] Ethics: AI ethics, privacy, bias in algorithms, responsible development, dual-use concerns
+**NEURO 500: Foundations of Neuroscience**
+- [ ] Neuron biology: structure (soma, dendrites, axon, myelin sheath, synapse), resting potential (-70mV), action potential (depolarization → repolarization → refractory period)
+- [ ] Neurotransmitters: excitatory (glutamate, acetylcholine) vs inhibitory (GABA, glycine), dopamine (reward), serotonin (mood), norepinephrine (alertness)
+- [ ] Synaptic transmission: presynaptic release of neurotransmitter → binds to postsynaptic receptor → excitatory/inhibitory postsynaptic potential (EPSP/IPSP) → summate → fire or not
+- [ ] Synaptic plasticity: the basis of learning and memory
+  - [ ] Hebb's rule: "neurons that fire together wire together" — if pre and post fire simultaneously, strengthen connection
+  - [ ] LTP (Long-Term Potentiation): sustained strengthening of synapse after repeated stimulation
+  - [ ] LTD (Long-Term Depression): weakening of synapse after low-frequency stimulation
+  - [ ] STDP (Spike-Timing Dependent Plasticity): timing of pre vs post spikes determines strengthening vs weakening
+- [ ] Brain anatomy:
+  - [ ] Cerebral cortex: higher functions (thinking, planning, language) — frontal, parietal, temporal, occipital lobes
+  - [ ] Hippocampus: memory formation, spatial navigation — Hopfield attractor model
+  - [ ] Amygdala: emotional processing, fear conditioning — attractor dynamics
+  - [ ] Cerebellum: motor coordination, timing, error correction — largest neuron count
+  - [ ] Basal ganglia: action selection, habit formation, reward processing — reinforcement learning
+  - [ ] Hypothalamus: homeostasis (temperature, hunger, thirst, sleep), hormone regulation
+  - [ ] Thalamus: sensory relay station
+  - [ ] Brainstem: basic life functions (breathing, heart rate)
+  - [ ] Corpus callosum: connects left and right hemispheres
+- [ ] Brain imaging: fMRI (blood oxygen level, spatial resolution), EEG (electrical activity, temporal resolution), PET, MEG
+- [ ] Sensory systems: visual (V1→V4→IT pathway), auditory (tonotopic map), somatosensory, olfactory, gustatory
+- [ ] Motor systems: primary motor cortex, premotor, supplementary motor, basal ganglia loop, cerebellar loop
+
+**COMP 520: Computational Neuroscience Models**
+- [ ] Neuron models:
+  - [ ] Hodgkin-Huxley (1952): full biophysical model with sodium/potassium/leak channels and gating variables (m,h,n) — Nobel Prize, gold standard
+  - [ ] Leaky Integrate-and-Fire (LIF): simplified — τ·dV/dt = -(V-V_rest) + R·I, fire when V > threshold, reset
+  - [ ] Izhikevich (2003): 2D model reproducing many spiking patterns with 2 variables and 4 parameters
+  - [ ] Rulkov (2002): 2D chaotic map — x_{n+1} = α/(1+x²) + y, y_{n+1} = y - μ(x - σ) — computationally efficient, reproduces bursting
+  - [ ] Wilson-Cowan: population-level model — excitatory and inhibitory populations with coupling
+- [ ] Network models:
+  - [ ] Hopfield networks: attractor model for associative memory — energy function E = -½Σw_ij·x_i·x_j, state converges to nearest stored pattern
+  - [ ] Boltzmann machines: stochastic Hopfield nets — can learn, basis for deep learning
+  - [ ] Balanced excitation-inhibition: E-I balance required for realistic brain dynamics
+  - [ ] Small-world networks: high clustering + short path lengths — like real brain connectivity
+  - [ ] Scale-free networks: few hubs with many connections — power-law degree distribution
+- [ ] Learning rules:
+  - [ ] Hebbian: ΔW = η·pre·post
+  - [ ] STDP: timing-dependent — pre before post → strengthen (LTP), post before pre → weaken (LTD)
+  - [ ] Reward-modulated: ΔW = η·δ·pre·post where δ = reward prediction error (dopamine)
+  - [ ] BCM rule: sliding threshold determines LTP vs LTD based on postsynaptic activity history
+- [ ] Oscillations: theta (4-8 Hz, memory), alpha (8-13 Hz, relaxation), beta (13-30 Hz, active thinking), gamma (30-100 Hz, attention, binding)
+  - [ ] Kuramoto model: coupled oscillators, synchronization emerges
+- [ ] Decision making: drift-diffusion model, winner-take-all, softmax action selection
+- [ ] Predictive coding: hierarchical Bayesian inference — brain predicts sensory input, updates on prediction error
+- [ ] Free Energy Principle (Friston): organisms minimize surprise/free energy — F = E_Q[log Q(s) - log P(s,o)]
+- [ ] Consciousness theories: Global Workspace Theory (Baars), Integrated Information Theory (Tononi — Φ), Higher-Order Theories, Predictive Processing
+
+**MATH 560: Advanced Mathematics for Neuroscience**
+- [ ] Dynamical systems: phase space, fixed points, stability (eigenvalue analysis), bifurcations (saddle-node, Hopf, period-doubling), limit cycles, chaos (Lyapunov exponents, strange attractors)
+- [ ] Partial differential equations: cable equation (voltage along a neuron), diffusion equation, wave equation
+- [ ] Stochastic processes: Wiener process, Ornstein-Uhlenbeck, stochastic differential equations, Fokker-Planck equation
+- [ ] Information theory: entropy H(X) = -Σp(x)log p(x), mutual information I(X;Y) = H(X) - H(X|Y), Fisher information
+- [ ] Bayesian inference: prior × likelihood = posterior, Bayesian updating, Markov Chain Monte Carlo (MCMC)
+- [ ] Optimization: gradient descent, Newton's method, convex optimization, saddle points in high dimensions
+- [ ] Linear algebra for neural networks: weight matrices, eigendecomposition, singular value decomposition (SVD), principal component analysis (PCA)
+
+**CS 540: Advanced Machine Learning / Deep Learning**
+- [ ] Advanced architectures: U-Net (segmentation), YOLO (object detection), WaveNet (audio), Diffusion models (image generation)
+- [ ] Variational Autoencoders (VAEs): learn latent space distribution, generate new samples
+- [ ] Graph Neural Networks (GNNs): apply deep learning to graph-structured data
+- [ ] Neuro-symbolic AI: combining neural networks with symbolic reasoning
+- [ ] Continual learning: learning new tasks without forgetting old ones (catastrophic forgetting problem)
+- [ ] Meta-learning: learning to learn — few-shot learning, MAML
+- [ ] Interpretability: attention visualization, saliency maps, LIME, SHAP — understanding what models learn
+
+**Research Methodology:**
+- [ ] Literature review: finding, reading, and synthesizing 50+ papers in your area
+- [ ] Hypothesis formation: turning a question into a testable prediction
+- [ ] Experimental design: controls, variables, reproducibility, statistical power
+- [ ] Writing: abstract, introduction, methods, results, discussion, references — IMRaD format
+- [ ] Peer review: give and receive critical feedback on research
+- [ ] Conference presentations: poster presentations, oral talks, Q&A
+- [ ] Grant writing: NSF, NIH grant proposal format — specific aims, significance, innovation, approach
+- [ ] Ethics: IRB approval for human subjects, responsible data handling, open science practices
+
+**Tests for Grad:**
+- [ ] "Describe the Hodgkin-Huxley model" → biophysical model with sodium, potassium, leak channels and gating variables
+- [ ] "What is STDP?" → timing-dependent plasticity — pre before post = LTP, post before pre = LTD
+- [ ] "What is a Hopfield network?" → attractor model for associative memory with energy function
+- [ ] "What is the Free Energy Principle?" → organisms minimize surprise/free energy — unifying theory of brain function
+- [ ] "What is a bifurcation?" → qualitative change in system behavior as a parameter changes
+- [ ] "What is mutual information?" → how much knowing X tells you about Y
+- [ ] "What is catastrophic forgetting?" → neural network forgets old tasks when trained on new ones
+- [ ] "Write an abstract for a neuroscience paper" → (structured 250-word abstract in IMRaD format)
 
 ### LIFE — GRADUATE SCHOOL (Unity age 23-24)
 
