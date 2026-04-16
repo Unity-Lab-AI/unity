@@ -41,6 +41,7 @@
           <button class="landing-tab" data-tab="memory">Memory</button>
           <button class="landing-tab" data-tab="motor">Motor</button>
           <button class="landing-tab" data-tab="perf">Performance</button>
+          <button class="landing-tab" data-tab="clusterwaves">Cluster Waves</button>
         </div>
 
         <!-- Stats bar -->
@@ -395,10 +396,13 @@
       };
       document.body.appendChild(s);
     } else {
-      // http:// — ES modules work fine
+      // http:// — load bundle with build stamp for cache busting
+      // stamp-version.mjs updates the hash after each commit
       const s = document.createElement('script');
       s.type = 'module';
-      s.src = 'js/app.js?v=1cbbfb9e-591b';
+      s.src = 'js/app.js?v=239d65b3-fe99';
+      // Override: always load the BUNDLE, use the stamp for cache bust
+      s.src = 'js/app.bundle.js?v=' + Date.now();
       document.body.appendChild(s);
     }
   </script>

@@ -683,6 +683,34 @@ function renderLandingTab(tab, s) {
       `);
       break;
     }
+    case 'clusterwaves': {
+      // Per-cluster spike rates + wave overlays
+      const clusterNames = ['cortex', 'hippocampus', 'amygdala', 'basalGanglia', 'cerebellum', 'hypothalamus', 'mystery'];
+      const clusterColors = ['#ff79c6', '#8be9fd', '#ffb86c', '#50fa7b', '#bd93f9', '#f1fa8c', '#ff5555'];
+      const bp = s.oscillations?.bandPower || s.bandPower || {};
+      let html = card('Cluster Firing + Wave Overlays', `
+        ${metric('θ Theta (4-8Hz)', (bp.theta ?? 0).toFixed(3), '#8be9fd')}
+        ${metric('α Alpha (8-13Hz)', (bp.alpha ?? 0).toFixed(3), '#50fa7b')}
+        ${metric('β Beta (13-30Hz)', (bp.beta ?? 0).toFixed(3), '#ffb86c')}
+        ${metric('γ Gamma (30-100Hz)', (bp.gamma ?? 0).toFixed(3), '#ff79c6')}
+        ${metric('Coherence', (s.oscillations?.coherence ?? 0).toFixed(3), '#00e5ff')}
+      `);
+      for (let i = 0; i < clusterNames.length; i++) {
+        const name = clusterNames[i];
+        const color = clusterColors[i];
+        const rate = s[name]?.spikeRate ?? s.clusters?.[name]?.spikeRate ?? 0;
+        const pct = Math.min(100, Math.round(rate * 100));
+        html += `<div style="margin:4px 0;display:flex;align-items:center;gap:8px;">
+          <span style="color:${color};font-size:10px;width:100px;text-transform:uppercase;">${name}</span>
+          <div style="flex:1;height:12px;background:#111;border-radius:3px;overflow:hidden;">
+            <div style="width:${pct}%;height:100%;background:${color};transition:width 0.3s;"></div>
+          </div>
+          <span style="color:#555;font-size:9px;width:35px;text-align:right;">${pct}%</span>
+        </div>`;
+      }
+      el.innerHTML = html;
+      break;
+    }
     default:
       el.innerHTML = `<div style="color:#555;font-size:11px;">Select a visualization tab</div>`;
   }
