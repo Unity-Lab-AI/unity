@@ -12730,7 +12730,21 @@ export class Curriculum {
       },
     ];
     await this._teachMultiSourceSynthesis(MULTI_ESSAYS);
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    // ═══ ELA COL1 FINAL ═══
+    const FINAL = [
+      { prompt: ['thesis', 'statement', 'is'], answer: 'crucial' },
+      { prompt: ['plagiarism', 'has', 'serious'], answer: 'consequences' },
+      { prompt: ['sources', 'must', 'be'], answer: 'evaluated' },
+      { prompt: ['prewriting', 'generates'], answer: 'ideas' },
+      { prompt: ['revising', 'reshapes', 'the'], answer: 'work' },
+      { prompt: ['climate', 'change', 'ipcc', 'rising'], answer: 'temperature' },
+      { prompt: ['humanities', 'favor'], answer: 'narrative' },
+      { prompt: ['sciences', 'favor'], answer: 'data' },
+    ];
+    const finalResult = this._gateComprehension(FINAL);
+    if (finalResult.pass) return { pass: true, reason: `FINAL: ${finalResult.reason}` };
+    return { pass: false, reason: `FINAL: ${finalResult.reason}` };
   }
 
   async runElaCol2Real(ctx) {
