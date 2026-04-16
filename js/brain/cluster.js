@@ -396,7 +396,36 @@ export class NeuronCluster {
       }
       out[d] = count > 0 ? sum / count : 0;
     }
-    // L2 normalize
+    // T14.24 Session 101 — MEAN-CENTER before L2 normalization so
+    // cosine similarity against signed target features gives
+    // mathematically meaningful results.
+    //
+    // Pre-fix: spike-rate-based readout was ALWAYS non-negative
+    // (spiking cells +1.0, non-spiking near 0.0-0.25 from voltage).
+    // Cosine against signed balanced features like the 24d trig-hash
+    // _phonemeFeatureForLetter gave near-zero random correlation
+    // because positive × signed-balanced ≈ 0. Cosine against
+    // positive-biased features like the 16d graded magnitude
+    // _magnitudeFeatureForDigit gave high scores FOR ANY STATE
+    // INCLUDING UNTRAINED NOISE — false positive, not real training.
+    // That's why math/K READ hit 100% and ela/K READ hit 4% chance
+    // level on Gee's live runs: neither was real training, just
+    // different failure modes of the cosine math.
+    //
+    // Fix: subtract the mean across all dim components before L2
+    // normalizing. The readout becomes a SIGNED deviation-from-
+    // baseline vector instead of an always-positive spike-rate
+    // vector. Now cosine against signed features like phoneme
+    // trig-hashes returns real correlation (high when trained basin
+    // matches, low when random), AND cosine against positive-biased
+    // features like magnitudes no longer gives structural false
+    // positives. Biological analog: fMRI BOLD contrast analysis
+    // always measures deviation from baseline, never absolute rate.
+    let mean = 0;
+    for (let i = 0; i < dim; i++) mean += out[i];
+    mean /= dim;
+    for (let i = 0; i < dim; i++) out[i] -= mean;
+    // L2 normalize the centered vector.
     let norm = 0;
     for (let i = 0; i < dim; i++) norm += out[i] * out[i];
     norm = Math.sqrt(norm) || 1;
