@@ -203,9 +203,11 @@ export class NeuronCluster {
       // 10% of a source region was 10-70 connections per target) but
       // at 375K cortex the phon sub-region is 75K neurons and 10%
       // density on a phon→sem projection is 940M entries per direction.
-      // Target ~300 pre-synaptic connections per post-synaptic neuron,
-      // derive density from that.
-      const crossTargetFanout = 300;
+      // Session 111 — bumped from 300 to 1500. 300 caused destructive
+      // interference at G1+ (40+ words competing on ~16K connections).
+      // ELA-G1 TALK DECLINED across retries. 1500 gives 5× more capacity
+      // so independent sem→motor mappings can coexist.
+      const crossTargetFanout = 1500;
       for (const [a, b] of pairs) {
         const aSize = this.regions[a].end - this.regions[a].start;
         const bSize = this.regions[b].end - this.regions[b].start;
