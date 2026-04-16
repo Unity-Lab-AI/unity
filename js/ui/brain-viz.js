@@ -78,8 +78,14 @@ export class BrainVisualizer {
       <div class="bv-panel" data-panel="neurons">
         <div class="bv-grid-wrap">
           <div class="bv-section bv-wide">
-            <div class="bv-section-title">NEURAL CLUSTERS — 1000 LIF neurons across 7 brain regions</div>
-            <div class="bv-equation">τ·dV/dt = -(V - V<sub>rest</sub>) + R·I &nbsp;|&nbsp; <span id="bv-spike-count">0</span> active</div>
+            <div class="bv-section-title">NEURAL CLUSTERS — <span id="bv-neuron-total">N</span> Rulkov neurons across 7 brain regions</div>
+            <div class="bv-equation">x<sub>n+1</sub> = α/(1+x²) + y &nbsp;|&nbsp; <span id="bv-spike-count">0</span> active</div>
+            <div style="margin:4px 0;display:flex;gap:6px;flex-wrap:wrap;font-size:9px;">
+              <label style="color:#8be9fd;cursor:pointer;"><input type="checkbox" id="bv-n-theta" checked> θ</label>
+              <label style="color:#50fa7b;cursor:pointer;"><input type="checkbox" id="bv-n-alpha" checked> α</label>
+              <label style="color:#ffb86c;cursor:pointer;"><input type="checkbox" id="bv-n-beta"> β</label>
+              <label style="color:#ff79c6;cursor:pointer;"><input type="checkbox" id="bv-n-gamma"> γ</label>
+            </div>
             <canvas id="bv-neuron-canvas" width="800" height="500"></canvas>
           </div>
         </div>
@@ -384,83 +390,132 @@ export class BrainVisualizer {
   _renderNeurons(s) {
     const ctx = this._neuronCtx;
     const canvas = ctx.canvas;
-    const w = canvas.width;
-    const h = canvas.height;
+    const W = canvas.width;
+    const H = canvas.height;
 
-    // Gentle fade — slower trails, less seizure-inducing
-    ctx.fillStyle = 'rgba(10,10,10,0.6)';
-    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#0a0a12';
+    ctx.fillRect(0, 0, W, H);
 
-    const spikes = s.spikes;
-    const voltages = s.voltages;
-    if (!voltages || voltages.length < TOTAL_NEURONS) return;
+    // Update total neuron count in header
+    const totalEl = this._el.querySelector('#bv-neuron-total');
+    if (totalEl) totalEl.textContent = (s.totalNeurons ?? 677710000).toLocaleString();
 
-    // Render each cluster as a labeled block
-    let globalIdx = 0;
-    const padding = 6;
-    const labelH = 14;
-    let cursorY = 4;
+    // 2D brain map — clusters laid out spatially like a flattened brain
+    // Each cluster is a rectangular grid region with cells showing
+    // activation intensity. Wave overlays drawn on top.
+    const clusters = [
+      // { name, label, color, x, y, w, h } — positioned like a flat brain
+      { name: 'cortex',       label: 'CORTEX',       color: '#ff79c6', x: 0.15, y: 0.02, w: 0.70, h: 0.22 },
+      { name: 'hippocampus',  label: 'HIPPO',        color: '#8be9fd', x: 0.30, y: 0.26, w: 0.40, h: 0.14 },
+      { name: 'amygdala',     label: 'AMYG',         color: '#ffb86c', x: 0.05, y: 0.26, w: 0.22, h: 0.14 },
+      { name: 'basalGanglia', label: 'BG',           color: '#50fa7b', x: 0.73, y: 0.26, w: 0.22, h: 0.14 },
+      { name: 'cerebellum',   label: 'CEREBELLUM',   color: '#bd93f9', x: 0.10, y: 0.55, w: 0.80, h: 0.25 },
+      { name: 'hypothalamus', label: 'HYPO',         color: '#f1fa8c', x: 0.05, y: 0.42, w: 0.20, h: 0.11 },
+      { name: 'mystery',      label: 'Ψ MYSTERY',    color: '#ff5555', x: 0.75, y: 0.42, w: 0.20, h: 0.11 },
+    ];
 
-    for (const layout of CLUSTER_LAYOUT) {
-      const { name, size, cols, color, label } = layout;
-      const rows = Math.ceil(size / cols);
-      const cellW = Math.min((w - padding * 2) / cols, 12);
-      const cellH = cellW;
-      const blockW = cols * cellW;
-      const blockH = rows * cellH + labelH;
+    const bp = s.oscillations?.bandPower || s.bandPower || {};
+    const showTheta = this._el.querySelector('#bv-n-theta')?.checked ?? true;
+    const showAlpha = this._el.querySelector('#bv-n-alpha')?.checked ?? true;
+    const showBeta  = this._el.querySelector('#bv-n-beta')?.checked ?? false;
+    const showGamma = this._el.querySelector('#bv-n-gamma')?.checked ?? false;
+    const t = Date.now() / 1000;
 
-      // Cluster label
-      ctx.fillStyle = color;
-      ctx.font = '9px monospace';
-      ctx.fillText(label, padding, cursorY + 10);
+    for (const cl of clusters) {
+      const px = Math.floor(cl.x * W);
+      const py = Math.floor(cl.y * H);
+      const pw = Math.floor(cl.w * W);
+      const ph = Math.floor(cl.h * H);
 
-      // Cluster firing rate
-      const clusterState = s.clusters?.[name];
-      if (clusterState) {
-        const rateText = `${clusterState.spikeCount}/${size} firing  rate:${clusterState.firingRate?.toFixed(1) || '0'}`;
-        ctx.fillStyle = 'rgba(255,255,255,0.3)';
-        ctx.fillText(rateText, padding + blockW - ctx.measureText(rateText).width - 4, cursorY + 10);
+      // Get cluster activation
+      const rate = s[cl.name]?.spikeRate ?? s.clusters?.[cl.name]?.spikeRate ?? Math.random() * 0.3;
+      const neurons = s[cl.name]?.size ?? s.clusters?.[cl.name]?.size ?? 1000;
+
+      // Draw grid cells — 8×8 grid per cluster, each cell's brightness = activation
+      const gridCols = 12;
+      const gridRows = Math.max(3, Math.floor(ph / (pw / gridCols)));
+      const cellW = pw / gridCols;
+      const cellH = ph / gridRows;
+
+      for (let gy = 0; gy < gridRows; gy++) {
+        for (let gx = 0; gx < gridCols; gx++) {
+          // Each cell gets a slightly randomized activation based on cluster rate
+          // This simulates per-neuron-group activity without needing 677M data points
+          const cellRate = Math.max(0, Math.min(1, rate + (Math.random() - 0.5) * rate * 0.6));
+          const r = parseInt(cl.color.slice(1,3), 16);
+          const g = parseInt(cl.color.slice(3,5), 16);
+          const b = parseInt(cl.color.slice(5,7), 16);
+          const alpha = 0.05 + cellRate * 0.85;
+          ctx.fillStyle = `rgba(${r},${g},${b},${alpha})`;
+          ctx.fillRect(px + gx * cellW + 0.5, py + gy * cellH + 0.5, cellW - 1, cellH - 1);
+        }
       }
-
-      cursorY += labelH;
 
       // Cluster border
-      ctx.strokeStyle = color.replace(')', ',0.2)').replace('rgb', 'rgba').replace('#', '');
-      // Use hex to rgba conversion
-      ctx.strokeStyle = `${color}33`;
+      ctx.strokeStyle = cl.color + '55';
       ctx.lineWidth = 1;
-      ctx.strokeRect(padding - 1, cursorY - 1, blockW + 2, rows * cellH + 2);
+      ctx.strokeRect(px, py, pw, ph);
 
-      // Render neurons
-      for (let n = 0; n < size; n++) {
-        const i = globalIdx + n;
-        const col = n % cols;
-        const row = Math.floor(n / cols);
-        const x = padding + col * cellW;
-        const y = cursorY + row * cellH;
-        const glow = this._spikeGlow[i] || 0;
+      // Label
+      ctx.fillStyle = cl.color;
+      ctx.font = 'bold 10px monospace';
+      ctx.fillText(cl.label, px + 3, py + 11);
 
-        if (glow > 0.5) {
-          ctx.fillStyle = color;
-          ctx.shadowColor = color;
-          ctx.shadowBlur = 8 * glow;
-        } else if (glow > 0.05) {
-          const g = glow;
-          ctx.fillStyle = `rgba(${parseInt(color.slice(1,3),16)},${parseInt(color.slice(3,5),16)},${parseInt(color.slice(5,7),16)},${g})`;
-          ctx.shadowBlur = 0;
-        } else {
-          const v = voltages[i];
-          const norm = Math.max(0, Math.min(1, (v + 70) / 20));
-          ctx.fillStyle = `rgba(255,255,255,${0.03 + norm * 0.12})`;
-          ctx.shadowBlur = 0;
+      // Activation % and neuron count
+      const pct = Math.round(rate * 100);
+      ctx.fillStyle = '#888';
+      ctx.font = '9px monospace';
+      ctx.fillText(`${pct}% · ${neurons.toLocaleString()}n`, px + 3, py + ph - 4);
+
+      // Wave overlays on this cluster region
+      const midY = py + ph / 2;
+      const amp = ph * 0.3;
+      ctx.lineWidth = 1.5;
+
+      if (showTheta) {
+        ctx.strokeStyle = '#8be9fd60';
+        ctx.beginPath();
+        for (let x = px; x < px + pw; x++) {
+          const phase = (x - px) / pw * Math.PI * 4 + t * 6;
+          ctx.lineTo(x, midY + Math.sin(phase) * amp * (bp.theta ?? 0.3));
         }
-
-        ctx.fillRect(x + 0.5, y + 0.5, cellW - 1, cellH - 1);
+        ctx.stroke();
       }
-      ctx.shadowBlur = 0;
+      if (showAlpha) {
+        ctx.strokeStyle = '#50fa7b60';
+        ctx.beginPath();
+        for (let x = px; x < px + pw; x++) {
+          const phase = (x - px) / pw * Math.PI * 8 + t * 10;
+          ctx.lineTo(x, midY + Math.sin(phase) * amp * (bp.alpha ?? 0.3));
+        }
+        ctx.stroke();
+      }
+      if (showBeta) {
+        ctx.strokeStyle = '#ffb86c60';
+        ctx.beginPath();
+        for (let x = px; x < px + pw; x++) {
+          const phase = (x - px) / pw * Math.PI * 16 + t * 20;
+          ctx.lineTo(x, midY + Math.sin(phase) * amp * (bp.beta ?? 0.2));
+        }
+        ctx.stroke();
+      }
+      if (showGamma) {
+        ctx.strokeStyle = '#ff79c660';
+        ctx.beginPath();
+        for (let x = px; x < px + pw; x++) {
+          const phase = (x - px) / pw * Math.PI * 40 + t * 50;
+          ctx.lineTo(x, midY + Math.sin(phase) * amp * (bp.gamma ?? 0.1));
+        }
+        ctx.stroke();
+      }
+    }
 
-      globalIdx += size;
-      cursorY += rows * cellH + padding;
+    // Update spike count
+    const spikeEl = this._el.querySelector('#bv-spike-count');
+    if (spikeEl) spikeEl.textContent = (s.totalSpikes ?? s.spikeCount ?? 0).toLocaleString();
+
+    // No per-neuron data needed — this view works with aggregate cluster data
+    return;
     }
   }
 
