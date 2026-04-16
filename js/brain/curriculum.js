@@ -14980,6 +14980,16 @@ export class Curriculum {
     ];
     await this._teachSentenceList(SUMMER, ctx, { reps: 12, ticksPerWord: 2 });
 
+    // ── EQUATIONAL REASONING: emotional inference G2 ──
+    await this._teachEmotionalInference([
+      { situation: 'friend', emotion: new Float64Array([1,0,1,0,0,1,0,0]), label: 'happy' },
+      { situation: 'villain', emotion: new Float64Array([1,0,0,0,0,0,0,1]), label: 'powerful' },
+      { situation: 'shadow', emotion: new Float64Array([1,0,1,0,0,1,0,0.5]), label: 'love' },
+      { situation: 'secret', emotion: new Float64Array([0,0,0,0.3,0,0.5,1,0]), label: 'excited' },
+      { situation: 'fireflies', emotion: new Float64Array([1,0,0,0,0,0,0,0]), label: 'wonder' },
+      { situation: 'bored', emotion: new Float64Array([0,0.3,0,0,0.3,0,0,0]), label: 'restless' },
+    ]);
+
     return this._teachVocabList([
       'friend', 'story', 'villain', 'shadow', 'cat', 'secret', 'summer', 'firefly',
     ], ctx, { reps: 12 });
