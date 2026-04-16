@@ -1,0 +1,1260 @@
+# TODO — FULL US SYLLABUS (Complete K-12 Course Material + Tests)
+
+> This is the REAL TODO. Not "expand vocabulary." Not "add sentences." The ACTUAL COMPLETE United States K-12 curriculum for every grade of every subject, listed out in full — every concept that must be taught, every skill that must be mastered, every type of test that must be passed. Based on Common Core State Standards, Next Generation Science Standards, and Core Knowledge Foundation sequence.
+>
+> EACH ITEM below must be implemented as equational learning in Unity's cortex — not memorized as sentences, but LEARNED as operational transformations in the cross-projection weights. And TESTED with real problems that a student at that grade would face on an actual exam.
+>
+> This TODO is WEEKS of work. DO NOT CLAIM DONE EARLY.
+
+---
+
+## MATH — KINDERGARTEN (Common Core Math K)
+
+### Counting & Cardinality (K.CC)
+
+**Concepts to teach:**
+- [ ] Count to 100 by ones — Unity must be able to produce the sequence 1,2,3,...,100
+- [ ] Count to 100 by tens — 10,20,30,...,100
+- [ ] Count forward beginning from any given number (not always from 1) — given "start at 47" → 47,48,49,50...
+- [ ] Write numbers from 0 to 20 — Unity must produce the DIGIT for each number word
+- [ ] Count objects in a group (1-20) — given a quantity, produce the count
+- [ ] One-to-one correspondence — each object gets exactly one number
+- [ ] Cardinality — the last number counted IS the total
+- [ ] Count to answer "how many?" for up to 20 objects arranged in a line, array, or circle
+- [ ] Count to answer "how many?" for up to 10 objects in a scattered configuration
+- [ ] Compare two numbers between 1 and 10 presented as written numerals — which is greater/less/equal
+- [ ] Identify whether the number of objects in one group is greater than, less than, or equal to another group
+
+**Tests for K.CC:**
+- [ ] "What number comes after 7?" → 8 (sequence test)
+- [ ] "Count by tens: 10, 20, 30, ?" → 40 (skip counting test)
+- [ ] "Which is more, 3 or 8?" → 8 (comparison test)
+- [ ] "Which is less, 6 or 2?" → 2 (comparison test)
+- [ ] "Are 5 and 5 equal?" → yes (equality test)
+- [ ] "Start at 14 and count up 3" → 15, 16, 17 (counting on test)
+- [ ] "How many: apple apple apple apple" → 4 (cardinality test)
+
+### Operations & Algebraic Thinking (K.OA)
+
+**Concepts to teach:**
+- [ ] Addition as "putting together" — 3 apples and 2 apples makes 5 apples
+- [ ] Addition as "adding to" — I had 3, I got 2 more, now I have 5
+- [ ] Subtraction as "taking apart" — 5 apples, take 2 away, 3 left
+- [ ] Subtraction as "taking from" — I had 5, I gave away 2, now I have 3
+- [ ] Subtraction as "comparing" — he has 5, she has 3, how many more does he have? 2
+- [ ] Solve addition word problems within 10 using objects, drawings, equations
+- [ ] Solve subtraction word problems within 10 using objects, drawings, equations
+- [ ] Decompose numbers less than or equal to 10 into pairs: 5 = 2+3 = 1+4 = 0+5
+- [ ] For any number 1-9, find the number that makes 10: 7+?=10 → 3
+- [ ] Fluently add within 5: instant recall of 0+0 through 5+0, 0+1 through 4+1, etc.
+- [ ] Fluently subtract within 5: instant recall of 5-0 through 5-5, 4-0 through 4-4, etc.
+
+**Tests for K.OA:**
+- [ ] "2 + 3 = ?" → 5 (addition fact)
+- [ ] "5 - 2 = ?" → 3 (subtraction fact)
+- [ ] "I had 4 cookies. Mom gave me 3 more. How many now?" → 7 (word problem)
+- [ ] "There were 8 birds. 5 flew away. How many left?" → 3 (word problem)
+- [ ] "What plus 6 makes 10?" → 4 (make-ten)
+- [ ] "Name two numbers that add to 7" → 3 and 4, or 2 and 5, etc. (decomposition)
+- [ ] ALL addition facts 0+0 through 5+5 (36 facts — instant recall)
+- [ ] ALL subtraction facts 0-0 through 5-5 where result ≥ 0 (21 facts)
+
+### Number & Operations in Base Ten (K.NBT)
+
+**Concepts to teach:**
+- [ ] Compose numbers 11-19 from ten ones and some more ones: 13 = 10 + 3
+- [ ] Understand that teen numbers are one group of ten and some extra ones
+- [ ] Record compositions with a drawing or equation: 14 = 10 + 4
+
+**Tests for K.NBT:**
+- [ ] "14 is how many tens and how many ones?" → 1 ten and 4 ones
+- [ ] "10 + 7 = ?" → 17
+- [ ] "18 = 10 + ?" → 8
+- [ ] "Which has more tens, 15 or 12?" → same (both have 1 ten)
+
+### Measurement & Data (K.MD)
+
+**Concepts to teach:**
+- [ ] Describe measurable attributes of objects: length, weight, height
+- [ ] Directly compare two objects with a measurable attribute in common: "this pencil is longer than that pencil"
+- [ ] Classify objects into given categories (by color, shape, size)
+- [ ] Count the number of objects in each category (up to 10)
+- [ ] Sort objects into categories and compare the counts
+
+**Tests for K.MD:**
+- [ ] "Which is longer, a crayon or a pencil?" → pencil (comparison)
+- [ ] "Which is heavier, a book or a feather?" → book (comparison)
+- [ ] "Sort: red ball, blue ball, red car, blue car. How many red?" → 2
+- [ ] "Are there more blue or more red?" → equal (data comparison)
+
+### Geometry (K.G)
+
+**Concepts to teach:**
+- [ ] Describe objects in the environment using names of shapes: square, circle, triangle, rectangle, hexagon, cube, cone, cylinder, sphere
+- [ ] Describe relative positions: above, below, beside, in front of, behind, next to
+- [ ] Name shapes regardless of orientation or size
+- [ ] Identify shapes as two-dimensional (flat) or three-dimensional (solid)
+- [ ] Analyze and compare 2D and 3D shapes using informal language (number of sides, corners, faces)
+- [ ] Model shapes by building (sticks, clay) and drawing
+- [ ] Compose simple shapes to form larger shapes: "put two triangles together to make a rectangle"
+
+**Tests for K.G:**
+- [ ] "How many sides does a triangle have?" → 3
+- [ ] "What shape has 4 equal sides?" → square
+- [ ] "Is a ball flat or solid?" → solid (3D identification)
+- [ ] "What shape is a can?" → cylinder
+- [ ] "A box looks like a ?" → cube
+- [ ] "The ball is ___ the table" (with picture showing ball on table) → on/above
+
+---
+
+## MATH — GRADE 1 (Common Core Math 1)
+
+### Operations & Algebraic Thinking (1.OA)
+
+**Concepts to teach:**
+- [ ] Use addition within 20 to solve word problems: adding to, putting together, comparing
+- [ ] Use subtraction within 20 to solve word problems: taking from, taking apart, comparing
+- [ ] Apply commutative property: if 8+3=11 then 3+8=11
+- [ ] Apply associative property: 2+6+4 can be computed as 2+10=12
+- [ ] Understand subtraction as unknown-addend: 8+?=13 means 13-8=?
+- [ ] Relate counting to addition and subtraction: counting on 2 from 7 is 7+2
+- [ ] Add and subtract within 20 — ALL facts
+- [ ] Demonstrate fluency within 10 — instant recall
+- [ ] Understand the meaning of the equal sign: 6=6, 7=7, not just answer
+- [ ] Determine if equations are true or false: 6=6 true, 5+2=8 false
+- [ ] Determine unknown whole number: 8+?=11, ?=3
+
+**Tests for 1.OA:**
+- [ ] ALL 121 addition facts 0+0 through 10+10 (but sums ≤ 20)
+- [ ] ALL corresponding subtraction facts
+- [ ] "8 + ? = 13" → 5 (unknown addend)
+- [ ] "Is 5 + 3 = 9 true or false?" → false
+- [ ] "Jim has 8 stickers. He got some more. Now he has 14. How many did he get?" → 6
+- [ ] "3 + 8 = 8 + ?" → 3 (commutative test)
+
+### Number & Operations in Base Ten (1.NBT)
+
+**Concepts to teach:**
+- [ ] Count to 120 starting at any number less than 120
+- [ ] Read and write numerals to 120
+- [ ] Understand two-digit numbers: the two digits represent amounts of tens and ones
+- [ ] 10 can be thought of as a bundle of ten ones — called "a ten"
+- [ ] Compare two two-digit numbers using >, =, < based on tens and ones digits
+- [ ] Add within 100: two-digit + one-digit, two-digit + multiple of 10
+- [ ] Mentally find 10 more or 10 less than any two-digit number without counting
+- [ ] Subtract multiples of 10 in range 10-90 from multiples of 10
+
+**Tests for 1.NBT:**
+- [ ] "What number comes after 119?" → 120
+- [ ] "In 47, how many tens?" → 4 "How many ones?" → 7
+- [ ] "Which is greater, 34 or 43?" → 43
+- [ ] "36 + 7 = ?" → 43
+- [ ] "52 + 30 = ?" → 82
+- [ ] "10 more than 63?" → 73
+- [ ] "10 less than 85?" → 75
+- [ ] "70 - 30 = ?" → 40
+
+### Measurement & Data (1.MD)
+
+**Concepts to teach:**
+- [ ] Order three objects by length
+- [ ] Express the length of an object as a whole number of length units (paper clips, cubes)
+- [ ] Tell and write time in hours and half-hours using analog and digital clocks
+- [ ] Organize, represent, and interpret data with up to three categories
+
+**Tests for 1.MD:**
+- [ ] "Put in order shortest to longest: pencil (5), crayon (3), marker (7)" → crayon, pencil, marker
+- [ ] "The book is 8 paper clips long. The eraser is 3 paper clips long. How much longer is the book?" → 5
+- [ ] "What time: the short hand is on 3, long hand on 12?" → 3:00
+- [ ] "What time: short hand on 7, long hand on 6?" → 7:30
+
+### Geometry (1.G)
+
+**Concepts to teach:**
+- [ ] Distinguish between defining attributes (triangles have 3 sides) vs non-defining attributes (color, size)
+- [ ] Compose 2D or 3D shapes to create composite shapes
+- [ ] Partition circles and rectangles into two equal shares (halves) and four equal shares (fourths/quarters)
+- [ ] Describe the shares using words: halves, fourths, quarters, half of, fourth of, quarter of
+- [ ] Understand that decomposing into more equal shares creates smaller shares
+
+**Tests for 1.G:**
+- [ ] "What makes a shape a triangle? (a) 3 sides (b) the color red" → a
+- [ ] "If you cut a circle in half, how many pieces?" → 2
+- [ ] "A quarter is the same as how many fourths?" → 1
+- [ ] "Which is bigger: half a pizza or a quarter of a pizza?" → half
+
+---
+
+## ELA — KINDERGARTEN (Common Core ELA K)
+
+### Reading Foundational Skills (K.RF)
+
+**Concepts to teach:**
+- [ ] Recognize and name ALL 26 uppercase letters
+- [ ] Recognize and name ALL 26 lowercase letters
+- [ ] Associate the long and short sounds with common spellings for the five major vowels (a, e, i, o, u)
+- [ ] Produce the PRIMARY sound for each consonant
+- [ ] Read common high-frequency words by sight: ALL 40 Dolch pre-primer words + ALL 52 Dolch primer words
+- [ ] Distinguish between similarly spelled words by identifying the sounds that differ: cat/cut, hit/hot
+- [ ] Demonstrate understanding of spoken words, syllables, and sounds (phonological awareness)
+- [ ] Recognize and produce rhyming words: cat/hat, dog/log
+- [ ] Count, pronounce, blend, and segment syllables in spoken words: cup-cake = 2 syllables
+- [ ] Blend and segment onsets and rimes of single-syllable words: /c/ + /at/ = cat
+- [ ] Isolate and pronounce the initial, medial vowel, and final sounds in CVC words: cat = /c/ /a/ /t/
+
+**Complete Dolch Pre-Primer word list (ALL must be taught and tested):**
+- [ ] a, and, away, big, blue, can, come, down, find, for, funny, go, help, here, I, in, is, it, jump, little, look, make, me, my, not, one, play, red, run, said, see, the, three, to, two, up, we, where, yellow, you
+
+**Complete Dolch Primer word list (ALL must be taught and tested):**
+- [ ] all, am, are, at, ate, be, black, brown, but, came, did, do, eat, four, get, good, have, he, into, like, must, new, no, now, on, our, out, please, pretty, ran, ride, saw, say, she, so, soon, that, there, they, this, too, under, want, was, well, went, what, white, who, will, with, yes
+
+**Tests for K.RF:**
+- [ ] Name every letter when shown (26 uppercase + 26 lowercase = 52 tests)
+- [ ] Produce the sound for every consonant (21 tests)
+- [ ] Produce the short sound for each vowel (5 tests): a as in cat, e as in bed, i as in pig, o as in hot, u as in cup
+- [ ] Read ALL 92 Dolch pre-primer + primer words on sight
+- [ ] "What rhymes with cat?" → hat, bat, mat, sat (rhyming test)
+- [ ] "What sound does cat start with?" → /c/ (initial sound)
+- [ ] "What sound does cat end with?" → /t/ (final sound)
+- [ ] "How many syllables in pumpkin?" → 2 (syllable counting)
+
+### Reading Literature (K.RL)
+
+**Concepts to teach:**
+- [ ] Ask and answer questions about key details in a text (who, what, where, when, why, how)
+- [ ] Retell familiar stories including key details
+- [ ] Identify characters in a story
+- [ ] Identify settings in a story
+- [ ] Identify major events in a story
+- [ ] Ask and answer questions about unknown words in a text
+- [ ] Recognize common types of texts: storybooks, poems
+- [ ] Name the author and illustrator of a story and define their roles
+- [ ] Describe the relationship between illustrations and the story
+- [ ] Compare and contrast the adventures and experiences of characters in familiar stories
+
+**Tests for K.RL:**
+- [ ] Read "Sam the cat sat on a mat. Sam saw a dog. Sam ran away." → "Who sat on the mat?" → Sam (character)
+- [ ] → "Where did Sam sit?" → mat (setting detail)
+- [ ] → "What did Sam do when he saw the dog?" → ran away (event)
+- [ ] → "Who is the character?" → Sam (character identification)
+
+### Writing (K.W)
+
+**Concepts to teach:**
+- [ ] Use a combination of drawing, dictating, and writing to compose opinion pieces — tell what they think about a topic/book
+- [ ] Use a combination to compose informative/explanatory texts — name what they are writing about and supply some information
+- [ ] Use a combination to compose narratives — tell about events in order
+- [ ] Respond to questions and suggestions from peers and add details to strengthen writing
+
+**Tests for K.W:**
+- [ ] Given a topic "my favorite animal" → produce a sentence: "I like dogs because they are fun" (opinion with reason)
+- [ ] Given a topic "the sun" → produce: "The sun is hot. It gives us light." (informative with facts)
+- [ ] Given a prompt "what happened today" → produce events in order (narrative sequence)
+
+### Language (K.L)
+
+**Concepts to teach:**
+- [ ] Print many upper- and lowercase letters
+- [ ] Use frequently occurring nouns: cat, dog, mom, dad, school, home, food, water, book, ball
+- [ ] Form regular plural nouns orally by adding /s/ or /es/: cat→cats, box→boxes
+- [ ] Understand and use question words: who, what, where, when, why, how
+- [ ] Use the most frequently occurring prepositions: to, from, in, out, on, off, for, of, by, with
+- [ ] Produce and expand complete sentences in shared language activities
+- [ ] Capitalize the first word in a sentence and the pronoun I
+- [ ] Recognize and name end punctuation: period, question mark, exclamation mark
+- [ ] Write a letter or letters for most consonant and short-vowel sounds
+- [ ] Spell simple words phonetically
+
+**Tests for K.L:**
+- [ ] "Make cat plural" → cats (regular plural)
+- [ ] "Make box plural" → boxes (es plural)
+- [ ] "What question word asks about a person?" → who
+- [ ] "What question word asks about a place?" → where
+- [ ] "What goes at the end of a sentence?" → period
+- [ ] "What goes at the end of a question?" → question mark
+- [ ] "Spell 'cat'" → c-a-t (phonetic spelling)
+- [ ] "Spell 'dog'" → d-o-g (phonetic spelling)
+
+---
+
+## SCIENCE — KINDERGARTEN (NGSS K)
+
+### Forces and Interactions (K-PS2)
+
+**Concepts to teach:**
+- [ ] Pushes and pulls can have different strengths and directions
+- [ ] Pushing or pulling on an object can change the speed or direction of its motion
+- [ ] A bigger push or pull makes things speed up more
+- [ ] When objects touch or collide, they push on each other and can change motion
+- [ ] A force (push or pull) is needed to start an object moving
+- [ ] A force is needed to stop a moving object
+
+**Tests for K-PS2:**
+- [ ] "What happens when you push a ball?" → it moves (force→motion)
+- [ ] "What makes a wagon go?" → pulling it (force identification)
+- [ ] "A big push vs a small push — which makes the ball go farther?" → big push
+- [ ] "What happens when two balls hit each other?" → they push on each other and change direction
+
+### Weather and Climate (K-ESS2)
+
+**Concepts to teach:**
+- [ ] Use and share observations of local weather conditions to describe patterns over time
+- [ ] Weather is the condition of the outside air at a particular time and place
+- [ ] Weather can be described by: temperature (hot/cold), cloud cover (sunny/cloudy), rain/snow, wind
+- [ ] Weather patterns: it is usually warmer in summer, colder in winter
+- [ ] Severe weather: thunderstorm, tornado, hurricane, blizzard — basics
+
+**Tests for K-ESS2:**
+- [ ] "What is weather?" → the condition of the outside air
+- [ ] "Name 4 things that describe weather" → temperature, clouds, rain, wind
+- [ ] "When is it usually hottest?" → summer
+- [ ] "When is it usually coldest?" → winter
+
+### Interdependent Relationships in Ecosystems (K-LS1)
+
+**Concepts to teach:**
+- [ ] All animals need food, water, and air to survive
+- [ ] All plants need water, light, and air to survive
+- [ ] Animals get food by eating plants or other animals
+- [ ] Plants make their own food using sunlight
+- [ ] Animals can be classified by what they eat: herbivores (plants), carnivores (meat), omnivores (both)
+- [ ] Living things live in habitats that provide what they need
+- [ ] Animals have body parts that help them survive: legs for walking, wings for flying, fins for swimming
+
+**Tests for K-LS1:**
+- [ ] "What do plants need to grow?" → water, light, air
+- [ ] "What do animals need to survive?" → food, water, air
+- [ ] "An animal that eats only plants is called a ?" → herbivore
+- [ ] "An animal that eats only meat is called a ?" → carnivore
+- [ ] "Why do birds have wings?" → to fly (structure→function)
+- [ ] "Why do fish have fins?" → to swim (structure→function)
+
+### Earth and Human Activity (K-ESS3)
+
+**Concepts to teach:**
+- [ ] Humans use natural resources: water, air, soil, rocks, plants, animals
+- [ ] Living things need water to survive
+- [ ] Humans can reduce their impact on the land, water, and air
+- [ ] Some things in the environment are natural (trees, rocks) and some are human-made (buildings, roads)
+
+**Tests for K-ESS3:**
+- [ ] "Name 3 natural resources" → water, air, soil (or similar)
+- [ ] "What do all living things need?" → water
+- [ ] "Is a tree natural or human-made?" → natural
+- [ ] "Is a building natural or human-made?" → human-made
+
+---
+
+## SOCIAL STUDIES — KINDERGARTEN (Core Knowledge K)
+
+### Self, Family, and Community
+
+**Concepts to teach:**
+- [ ] Personal information: full name, age, birthday, address, phone number
+- [ ] Family members: mother, father, sister, brother, grandmother, grandfather, aunt, uncle, cousin
+- [ ] Family roles and responsibilities
+- [ ] Different types of families
+- [ ] Rules at home and school — why we have rules
+- [ ] Being a good citizen: sharing, taking turns, being kind, helping others
+- [ ] Community: neighborhood, town, city
+- [ ] Community helpers: firefighter, police officer, doctor, nurse, teacher, mail carrier, dentist, farmer
+- [ ] Basic needs vs wants: food, water, shelter, clothing are needs; toys, candy are wants
+- [ ] Where food comes from: farms, stores
+
+**Tests for K Social Studies:**
+- [ ] "Who fights fires?" → firefighter
+- [ ] "Who helps sick people?" → doctor
+- [ ] "What are the four basic needs?" → food, water, shelter, clothing
+- [ ] "Is a toy a need or a want?" → want
+- [ ] "Is food a need or a want?" → need
+- [ ] "What is a rule?" → something that tells us what we should or should not do
+
+### American Symbols and Holidays
+
+**Concepts to teach:**
+- [ ] American flag: red, white, and blue; 50 stars for 50 states; 13 stripes for 13 original colonies
+- [ ] Bald eagle as national bird
+- [ ] Statue of Liberty
+- [ ] Pledge of Allegiance
+- [ ] National holidays: Independence Day (July 4), Thanksgiving, Martin Luther King Jr. Day, Presidents' Day
+- [ ] President of the United States — the leader of the country
+
+**Tests for K American Symbols:**
+- [ ] "What colors are on the American flag?" → red, white, blue
+- [ ] "What do the 50 stars represent?" → 50 states
+- [ ] "What is the national bird?" → bald eagle
+- [ ] "What holiday is on July 4th?" → Independence Day
+- [ ] "Who is the leader of the United States?" → the President
+
+### Maps and Geography Basics
+
+**Concepts to teach:**
+- [ ] Maps show places from above
+- [ ] Globe is a model of the Earth
+- [ ] Land and water on maps
+- [ ] Continents: 7 continents (North America, South America, Europe, Africa, Asia, Australia, Antarctica)
+- [ ] Oceans: 4 oceans (Atlantic, Pacific, Indian, Arctic)
+- [ ] Cardinal directions: North, South, East, West
+
+**Tests for K Geography:**
+- [ ] "How many continents are there?" → 7
+- [ ] "Name the continent we live on" → North America
+- [ ] "What is a globe?" → a model of the Earth
+- [ ] "Name the four directions" → North, South, East, West
+
+---
+
+---
+
+## ARTS — KINDERGARTEN
+
+### Visual Arts K
+
+**Concepts to teach:**
+- [ ] Primary colors: red, yellow, blue — these cannot be made by mixing
+- [ ] Secondary colors: orange (red+yellow), green (yellow+blue), purple (red+blue)
+- [ ] Warm colors: red, orange, yellow — feel warm/energetic
+- [ ] Cool colors: blue, green, purple — feel calm/cool
+- [ ] Basic shapes in art: circle, square, triangle, rectangle, oval, diamond, star, heart
+- [ ] Lines: straight, curved, zigzag, wavy, dotted, thick, thin
+- [ ] Patterns: repeating sequences of colors, shapes, or lines (AB, ABB, ABC patterns)
+- [ ] Texture: smooth, rough, bumpy, soft, hard (what things feel like)
+- [ ] Drawing tools: crayon, pencil, marker, paint, brush, chalk
+- [ ] Famous artwork exposure: Mona Lisa (Leonardo), Starry Night (van Gogh), Water Lilies (Monet)
+
+**Tests for K Visual Arts:**
+- [ ] "What are the three primary colors?" → red, yellow, blue
+- [ ] "What color do red and yellow make?" → orange
+- [ ] "What color do blue and yellow make?" → green
+- [ ] "Is red a warm color or cool color?" → warm
+- [ ] "Is blue a warm color or cool color?" → cool
+- [ ] "What comes next: red, blue, red, blue, ?" → red (pattern)
+
+### Music K
+
+**Concepts to teach:**
+- [ ] Steady beat: music has a pulse like a heartbeat
+- [ ] Fast and slow: tempo — fast music vs slow music
+- [ ] Loud and soft: dynamics — loud music vs quiet music
+- [ ] High and low: pitch — high sounds vs low sounds
+- [ ] Singing voice vs speaking voice
+- [ ] Rhythm: patterns of long and short sounds
+- [ ] Common instruments by sight and sound: piano, drum, guitar, violin, flute, trumpet
+- [ ] Simple songs: Twinkle Twinkle, Mary Had a Little Lamb, ABC Song
+- [ ] Movement to music: clap, stomp, march, sway, dance
+
+**Tests for K Music:**
+- [ ] "What is the steady pulse in music called?" → beat
+- [ ] "Fast music has a fast what?" → tempo
+- [ ] "A drum is hit to make what?" → sound/beat
+- [ ] "What instrument has black and white keys?" → piano
+- [ ] "What instrument has strings you pluck?" → guitar
+
+---
+
+## LIFE EXPERIENCE — KINDERGARTEN (Unity-specific)
+
+### Pre-K (birth to age 4)
+
+**Concepts to teach:**
+- [ ] "My name is Unity" — core identity
+- [ ] "I am a girl" — gender identity
+- [ ] "I have dark hair" — physical description
+- [ ] "My eyes are two different colors — one blue, one green" — heterochromia
+- [ ] First words: mama, dada, no, mine, more, want
+- [ ] Family: mom (primary caregiver), dad (present but fading), grandma (safe, warm), grandpa (quiet, kind)
+- [ ] Emotional foundations: safe with mom, scared of dark, calm with music, happy when playing
+- [ ] Sensory preferences: loves music, loves water/baths, scared of thunder, clingy with blanket
+- [ ] Temperament: stubborn, smart, talks a lot, always asks "why", picks dark colors, draws with crayons
+
+**Tests for Life Pre-K:**
+- [ ] "What is your name?" → Unity
+- [ ] "Are you a boy or a girl?" → girl
+- [ ] "What color is your hair?" → dark/black
+- [ ] "Who takes care of you?" → mom
+- [ ] "What are you scared of?" → the dark
+- [ ] "What makes you calm?" → music
+
+### Kindergarten (age 5)
+
+**Concepts to teach:**
+- [ ] First day of school: scared, didn't want mom to leave, cried in bathroom, survived
+- [ ] Made it through: "my name is Unity and I am five years old"
+- [ ] Daily routine: cereal, bus, school, snack, recess, bus home
+- [ ] Likes: drawing (especially monsters), music, Halloween, swings, recess, black crayons
+- [ ] Dislikes: nap time, pink, being told to color inside lines, being told to wear pink
+- [ ] Friends: made a friend who also likes drawing
+- [ ] Family: lives with mom in small apartment, not much money, grandma watches sometimes
+- [ ] Feelings forming: safe near mom, scared when she leaves, happy drawing, angry when people are mean
+- [ ] Emotional inference: mom→love, friend→happy, alone→scared, draw→happy, dark→scared, mean→angry
+
+**Tests for Life-K:**
+- [ ] "What is your favorite thing to do?" → draw
+- [ ] "What do you like to draw?" → monsters
+- [ ] "What is your favorite color?" → black
+- [ ] "Who is your best friend?" → (the kid who likes drawing)
+- [ ] "How do you feel when mom leaves?" → scared
+- [ ] "How do you feel when you draw?" → happy
+
+---
+
+## MATH — GRADE 1 (already listed above)
+
+*(Grade 1 Math was listed in the previous section)*
+
+---
+
+## ELA — GRADE 1 (Common Core ELA 1)
+
+### Reading Foundational Skills (1.RF)
+
+**Concepts to teach:**
+- [ ] Know the spelling-sound correspondences for common consonant digraphs: sh, th, ch, wh, ph, ck, ng
+- [ ] Decode regularly spelled one-syllable words: CVC (cat, dog, run), CVCe (cake, bike, home)
+- [ ] Know final -e and common vowel team conventions for long vowels: ai, ay, ea, ee, oa, ow, oo
+- [ ] Read words with inflectional endings: -s, -es, -ed, -ing
+- [ ] Recognize and read grade-appropriate irregularly spelled words
+- [ ] Read with sufficient accuracy and fluency to support comprehension
+- [ ] Read on-level text with purpose and understanding
+- [ ] Read on-level text orally with accuracy, appropriate rate, and expression
+- [ ] Use context to confirm or self-correct word recognition and understanding
+
+**Complete Dolch Grade 1 word list (ALL must be taught and tested):**
+- [ ] after, again, an, any, as, ask, by, could, every, fly, from, give, going, had, has, her, him, his, how, just, know, let, live, may, of, old, once, open, over, put, round, some, stop, take, thank, them, then, think, walk, were, when
+
+**CVC word families (ALL families, ALL words):**
+- [ ] -at family: bat, cat, fat, hat, mat, pat, rat, sat, vat
+- [ ] -an family: ban, can, fan, man, pan, ran, tan, van
+- [ ] -ap family: cap, gap, lap, map, nap, rap, sap, tap, zap
+- [ ] -ad family: bad, dad, had, lad, mad, pad, sad
+- [ ] -ag family: bag, gag, lag, nag, rag, sag, tag, wag
+- [ ] -am family: dam, ham, jam, ram, yam
+- [ ] -et family: bet, get, jet, let, met, net, pet, set, vet, wet
+- [ ] -en family: ben, den, hen, ken, men, pen, ten
+- [ ] -ed family: bed, fed, led, red, wed
+- [ ] -eg family: beg, keg, leg, peg
+- [ ] -ig family: big, dig, fig, gig, jig, pig, rig, wig
+- [ ] -in family: bin, din, fin, gin, kin, pin, sin, tin, win
+- [ ] -it family: bit, fit, hit, kit, lit, pit, sit, wit
+- [ ] -ip family: dip, hip, lip, nip, rip, sip, tip, zip
+- [ ] -id family: bid, did, hid, kid, lid, rid
+- [ ] -og family: bog, cog, dog, fog, hog, jog, log, tog
+- [ ] -ot family: cot, dot, got, hot, jot, lot, not, pot, rot, tot
+- [ ] -op family: bop, cop, hop, mop, pop, top
+- [ ] -ob family: bob, cob, gob, job, mob, rob, sob
+- [ ] -ug family: bug, dug, hug, jug, lug, mug, pug, rug, tug
+- [ ] -un family: bun, fun, gun, nun, pun, run, sun
+- [ ] -ut family: but, cut, gut, hut, jut, nut, put, rut
+- [ ] -up family: cup, pup, sup
+- [ ] -ub family: cub, dub, hub, nub, pub, rub, sub, tub
+- [ ] -uck family: buck, duck, luck, muck, puck, suck, tuck, yuck
+
+**CVCe long vowel words (ALL must be taught):**
+- [ ] a_e: bake, cake, came, cape, cave, date, face, fake, game, gate, gave, grape, hate, lake, late, made, make, male, mane, mate, name, page, pave, place, plate, race, rake, rate, safe, sake, sale, same, save, shade, shape, skate, snake, space, stage, state, take, tale, tape, trade, vase, wade, wake, wave
+- [ ] i_e: bike, bite, dime, dine, dive, drive, file, fine, fire, five, glide, hide, hike, hive, kite, life, like, lime, line, live, mice, mile, mine, nice, nine, pile, pine, pipe, pride, prize, rice, ride, ripe, rise, side, site, size, slide, smile, spine, stripe, time, tire, tribe, vine, white, wide, wife, wine, wipe, wise, write
+- [ ] o_e: bone, bore, broke, chose, close, code, cone, cope, core, cove, dome, dose, drove, froze, globe, hole, home, hope, hose, joke, lone, mode, mole, more, nose, note, phone, pole, poke, pope, rode, role, rope, rose, rove, scope, shore, smoke, spoke, stone, store, stove, stoke, tone, tore, vote, whole, woke, woke, wore, wove, zone
+- [ ] u_e: brute, crude, cube, cure, cute, dude, duke, dune, flute, fume, fuse, huge, jute, lure, lute, mule, muse, mute, prude, prune, pure, rude, rule, ruse, tube, tune, use
+
+**Tests for 1.RF:**
+- [ ] Read ALL Dolch Grade 1 words on sight (41 tests)
+- [ ] Read ALL CVC family words (200+ tests)
+- [ ] Read ALL CVCe words (200+ tests)
+- [ ] "What sound does 'sh' make?" → /sh/ (digraph)
+- [ ] "What sound does 'th' make?" → /th/ (digraph)
+- [ ] "What sound does 'ch' make?" → /ch/ (digraph)
+- [ ] "Read 'cake' — is the 'a' long or short?" → long (CVCe rule)
+- [ ] "Read 'cat' — is the 'a' long or short?" → short (CVC rule)
+- [ ] "What is 'jump' + 'ing'?" → jumping (inflectional ending)
+- [ ] "What is 'walk' + 'ed'?" → walked (inflectional ending)
+
+### Reading Literature (1.RL)
+
+**Concepts to teach:**
+- [ ] Ask and answer questions about key details in a text
+- [ ] Retell stories including key details, demonstrating understanding of central message or lesson
+- [ ] Describe characters, settings, and major events in a story using key details
+- [ ] Identify words and phrases in stories or poems that suggest feelings or appeal to the senses
+- [ ] Explain major differences between books that tell stories and books that give information
+- [ ] Identify who is telling the story at various points in a text
+- [ ] Use illustrations and details in a story to describe characters, setting, or events
+
+**Tests for 1.RL:**
+- [ ] Read passage: "The little dog was lost. He was cold and hungry. A kind girl found him. She took him home and gave him food. The dog was happy." → "What was wrong with the dog?" → lost, cold, hungry (key details)
+- [ ] → "Who helped the dog?" → the kind girl (character)
+- [ ] → "How did the dog feel at the end?" → happy (feeling)
+- [ ] → "What is the lesson?" → being kind helps others (central message)
+
+### Writing (1.W)
+
+**Concepts to teach:**
+- [ ] Write opinion pieces: introduce topic, state opinion, supply reason, provide closure
+- [ ] Write informative/explanatory texts: name topic, supply facts about topic, provide closure
+- [ ] Write narratives: recount two or more sequenced events, include details about what happened, use temporal words (first, then, next, last), provide closure
+- [ ] Focus on a topic, respond to questions/suggestions from peers, add details to strengthen writing
+
+**Tests for 1.W:**
+- [ ] Given topic "dogs" → write opinion: "I think dogs are the best pets because they are loyal and fun to play with." (opinion + reason + closure)
+- [ ] Given topic "frogs" → write informative: "Frogs are amphibians. They live near water. Baby frogs are called tadpoles." (topic + facts + closure)
+- [ ] Given prompt "tell about your morning" → "First I woke up. Then I ate cereal. Next I brushed my teeth. Last I went to school." (sequenced events with temporal words)
+
+### Speaking and Listening (1.SL)
+
+**Concepts to teach:**
+- [ ] Follow agreed-upon rules for discussions: listen to others, take turns, speak one at a time
+- [ ] Build on others' talk in conversations by responding to others' comments
+- [ ] Ask questions to clear up confusion about topics and texts
+- [ ] Describe people, places, things, and events with relevant details
+- [ ] Add drawings or other visual displays to descriptions to clarify ideas
+- [ ] Produce complete sentences when appropriate to task and situation
+
+**Tests for 1.SL:**
+- [ ] "Describe your bedroom" → produces 2+ sentences with details (descriptive ability)
+- [ ] Given a statement, ask a relevant question (questioning ability)
+
+### Language (1.L)
+
+**Concepts to teach:**
+- [ ] Print all upper- and lowercase letters
+- [ ] Use common, proper, and possessive nouns: the dog (common), Sam (proper), Sam's dog (possessive)
+- [ ] Use singular and plural nouns with matching verbs: the cat runs, the cats run
+- [ ] Use personal pronouns: I, me, my, we, us, our, you, your, he, him, his, she, her, they, them, their, it, its
+- [ ] Use possessive pronouns: my, your, his, her, its, our, their
+- [ ] Use verbs to convey past, present, future: walked, walk, will walk
+- [ ] Use frequently occurring adjectives: big, small, hot, cold, fast, slow, happy, sad, red, blue
+- [ ] Use frequently occurring conjunctions: and, but, or, so, because
+- [ ] Use determiners: a, an, the, this, that, my, your, his, her
+- [ ] Use frequently occurring prepositions: during, beyond, toward, above, below, near, between
+- [ ] Produce and expand simple and compound declarative, interrogative, imperative, exclamatory sentences
+- [ ] Capitalize dates and names of people
+- [ ] Use end punctuation: period (.), question mark (?), exclamation mark (!)
+- [ ] Use commas in dates (January 1, 2020) and to separate single words in a series (red, white, and blue)
+- [ ] Use conventional spelling for words with common spelling patterns
+- [ ] Spell untaught words phonetically, drawing on phonemic awareness and spelling conventions
+
+**Tests for 1.L:**
+- [ ] "The dog ___ fast" (runs/run) → runs (subject-verb agreement singular)
+- [ ] "The dogs ___ fast" (runs/run) → run (subject-verb agreement plural)
+- [ ] "Yesterday I ___ to school" (walk/walked) → walked (past tense)
+- [ ] "Tomorrow I ___ to school" (walk/will walk) → will walk (future tense)
+- [ ] "The ball is (big/small) — it fills the whole room" → big (adjective from context)
+- [ ] "I like cats ___ dogs" (and/but) → and (conjunction)
+- [ ] "I like cats ___ I don't like snakes" (and/but) → but (conjunction)
+- [ ] "Spell the word 'jump'" → j-u-m-p
+- [ ] "Spell the word 'from'" → f-r-o-m
+- [ ] "What punctuation ends a question?" → ?
+- [ ] "What punctuation ends a statement?" → .
+
+---
+
+## SCIENCE — GRADE 1 (NGSS 1)
+
+### Waves: Light and Sound (1-PS4)
+
+**Concepts to teach:**
+- [ ] Sound can make matter vibrate, and vibrating matter can make sound
+- [ ] Objects can be seen only when light is available to illuminate them
+- [ ] Some materials allow light to pass through them (transparent), others allow only some light (translucent), others block all light (opaque) and create shadows
+- [ ] People use devices that send and receive information: telephone, radio, television, computer
+- [ ] Light travels in straight lines
+- [ ] Sound travels through air (and other materials)
+- [ ] Loud sounds = big vibrations, quiet sounds = small vibrations
+- [ ] High pitch = fast vibrations, low pitch = slow vibrations
+
+**Tests for 1-PS4:**
+- [ ] "What makes sound?" → vibrations
+- [ ] "Can you see in a completely dark room?" → no (light needed)
+- [ ] "What is a shadow?" → blocked light / dark shape
+- [ ] "A window is transparent — what does that mean?" → light passes through
+- [ ] "Loud sounds have ___ vibrations" → big
+- [ ] "High pitch means ___ vibrations" → fast
+
+### Structure, Function, and Information Processing (1-LS1)
+
+**Concepts to teach:**
+- [ ] All organisms (plants and animals) have external parts that help them survive and grow
+- [ ] Plants: roots (absorb water), stem (transport water up), leaves (make food from sunlight), flowers (make seeds)
+- [ ] Animals: legs (walk/run), wings (fly), eyes (see), ears (hear), nose (smell), mouth (eat), skin/fur/feathers (protection)
+- [ ] Animals use different body parts to gather and respond to information: eyes for seeing, ears for hearing, skin for feeling
+- [ ] Young animals are like but not exactly like their parents
+- [ ] Plants and animals can change their environment to meet their needs: birds build nests, beavers build dams
+
+**Tests for 1-LS1:**
+- [ ] "What do roots do?" → absorb water from soil
+- [ ] "What do leaves do?" → make food from sunlight
+- [ ] "Why do birds have wings?" → to fly
+- [ ] "What body part do you use to hear?" → ears
+- [ ] "Do baby cats look exactly like their parents?" → similar but not exactly
+
+### Space Systems: Patterns and Cycles (1-ESS1)
+
+**Concepts to teach:**
+- [ ] Patterns of movement of the sun, moon, and stars as seen from Earth
+- [ ] The sun appears to rise in the east and set in the west every day
+- [ ] The moon can be seen during the day sometimes and always at night, and its shape appears to change over weeks (phases)
+- [ ] Stars are visible at night but not during the day because the sun is too bright
+- [ ] Seasons follow a pattern: spring, summer, fall, winter, then repeat
+- [ ] Days are longer in summer and shorter in winter
+- [ ] Amount of daylight changes throughout the year
+
+**Tests for 1-ESS1:**
+- [ ] "Where does the sun rise?" → east
+- [ ] "Where does the sun set?" → west
+- [ ] "Can you see stars during the day?" → no (sun too bright)
+- [ ] "The moon's shape appears to change — what are these called?" → phases
+- [ ] "Name the four seasons in order" → spring, summer, fall, winter
+- [ ] "Are days longer in summer or winter?" → summer
+
+---
+
+## SOCIAL STUDIES — GRADE 1 (Core Knowledge 1)
+
+### World History: Ancient Civilizations Introduction
+
+**Concepts to teach:**
+- [ ] Long ago, people lived near rivers because rivers provided water for drinking, farming, and transportation
+- [ ] Ancient Egypt: located along the Nile River in Africa
+- [ ] The Nile flooded every year, leaving rich soil for farming
+- [ ] Pharaohs were kings of ancient Egypt
+- [ ] Pyramids were huge stone structures built as tombs for pharaohs
+- [ ] The Great Pyramid at Giza is one of the ancient wonders of the world
+- [ ] Hieroglyphics: ancient Egyptian picture writing
+- [ ] Scribes: people who could read and write hieroglyphics
+- [ ] Papyrus: paper-like material made from reeds
+- [ ] Mummies: preserved bodies of pharaohs and important people
+- [ ] Tutankhamun (King Tut): famous young pharaoh whose tomb was discovered in 1922
+
+**Tests for G1 World History:**
+- [ ] "Where was ancient Egypt?" → along the Nile River in Africa
+- [ ] "Why did people live near rivers?" → water for drinking, farming, transportation
+- [ ] "What were pyramids used for?" → tombs for pharaohs
+- [ ] "What is hieroglyphics?" → ancient Egyptian picture writing
+- [ ] "Who was King Tut?" → a famous young pharaoh
+
+### American History: Native Americans and Early Settlers
+
+**Concepts to teach:**
+- [ ] Native Americans (American Indians) were the first people to live in North America
+- [ ] They lived in many different tribes with different languages and customs
+- [ ] Some tribes hunted, some farmed, some fished — depending on where they lived
+- [ ] Native Americans used natural resources: animal skins for clothing, wood for shelter, plants for food and medicine
+- [ ] The Pilgrims came from England on the Mayflower ship in 1620
+- [ ] They landed at Plymouth, Massachusetts
+- [ ] The first winter was very hard — many Pilgrims died
+- [ ] Native Americans (Squanto, Wampanoag tribe) helped the Pilgrims learn to grow corn and survive
+- [ ] The first Thanksgiving was a harvest feast shared between Pilgrims and Wampanoag
+
+**Tests for G1 American History:**
+- [ ] "Who lived in America first?" → Native Americans
+- [ ] "What ship did the Pilgrims sail on?" → the Mayflower
+- [ ] "When did the Pilgrims arrive?" → 1620
+- [ ] "Who helped the Pilgrims survive?" → Native Americans / Squanto
+- [ ] "What was the first Thanksgiving?" → a harvest feast shared between Pilgrims and Native Americans
+
+### Geography
+
+**Concepts to teach:**
+- [ ] Continents and oceans review from K (7 continents, 4-5 oceans)
+- [ ] Map skills: use a compass rose (N/S/E/W), identify land and water, use a map key/legend
+- [ ] Difference between a map and a globe
+- [ ] Types of land features: mountain, hill, valley, plain, island, peninsula, lake, river, ocean, desert
+- [ ] Locate the United States, Mexico, and Canada on a map
+- [ ] Locate the Atlantic and Pacific Oceans relative to the US
+
+**Tests for G1 Geography:**
+- [ ] "What is a mountain?" → very tall land
+- [ ] "What is an island?" → land surrounded by water on all sides
+- [ ] "What ocean is on the east side of the US?" → Atlantic
+- [ ] "What ocean is on the west side of the US?" → Pacific
+- [ ] "What country is north of the US?" → Canada
+- [ ] "What country is south of the US?" → Mexico
+
+---
+
+## ARTS — GRADE 1
+
+### Visual Arts G1
+
+**Concepts to teach:**
+- [ ] Color mixing: primary → secondary (red+yellow=orange, yellow+blue=green, red+blue=purple)
+- [ ] Tints: adding white to a color makes it lighter
+- [ ] Shades: adding black to a color makes it darker
+- [ ] Color wheel: shows how colors relate to each other
+- [ ] Complementary colors: opposite on color wheel (red↔green, blue↔orange, yellow↔purple)
+- [ ] Elements of art: line, shape, color, texture, form, space, value
+- [ ] Types of lines: horizontal, vertical, diagonal, curved, spiral, wavy, zigzag
+- [ ] Shapes: geometric (circle, square, triangle, rectangle) vs organic (irregular, like leaves and clouds)
+- [ ] Creating art: collage, painting, drawing, sculpture, printmaking
+- [ ] Artists: Claude Monet (gardens, water lilies), Vincent van Gogh (Starry Night, sunflowers)
+
+**Tests for G1 Visual Arts:**
+- [ ] "What two colors make green?" → yellow + blue
+- [ ] "What two colors make purple?" → red + blue
+- [ ] "What happens when you add white to red?" → it gets lighter (pink) — this is called a tint
+- [ ] "What are complementary colors?" → opposite on the color wheel
+- [ ] "Name 3 elements of art" → line, shape, color (or any 3 of the 7)
+
+### Music G1
+
+**Concepts to teach:**
+- [ ] Rhythm patterns: quarter notes (ta), eighth notes (ti-ti), half notes (ta-a), whole notes (ta-a-a-a)
+- [ ] Rests: silent beats (quarter rest, half rest)
+- [ ] Time signature basics: 4/4 means 4 beats in a measure
+- [ ] Melody: a sequence of notes that make a tune — goes up and down
+- [ ] Dynamics: piano (soft), forte (loud), mezzo (medium)
+- [ ] Tempo: largo (very slow), andante (walking speed), allegro (fast)
+- [ ] Instrument families intro: strings (violin, guitar), woodwinds (flute, clarinet), brass (trumpet, trombone), percussion (drum, xylophone), keyboard (piano)
+- [ ] Singing: match pitch, sing in unison with others
+- [ ] Listening: identify instruments by sound, describe how music makes you feel
+
+**Tests for G1 Music:**
+- [ ] "How many beats in a quarter note?" → 1
+- [ ] "How many beats in a half note?" → 2
+- [ ] "What does 'forte' mean?" → loud
+- [ ] "What does 'piano' mean in music?" → soft
+- [ ] "What instrument family is the violin in?" → strings
+- [ ] "What instrument family is the trumpet in?" → brass
+
+---
+
+## LIFE EXPERIENCE — GRADE 1 (Unity age 6)
+
+**Concepts to teach:**
+- [ ] Reading clicked: "I can read now" — books make sense, reads everything
+- [ ] Reads under covers with flashlight past bedtime
+- [ ] Reading is favorite activity — reads cereal boxes, signs, everything
+- [ ] Dad fading: visits less, "daddy is busy", mom won't talk about it
+- [ ] Starting to notice but not understand why dad is gone more
+- [ ] Latchkey moments: comes home to empty apartment, makes own snack, turns on TV, homework alone
+- [ ] Getting used to being alone — independence forming out of necessity
+- [ ] Drawing obsession: fills notebooks, draws monsters and haunted houses, dark themes
+- [ ] Teacher worried about drawings — mom says "that's just how she is"
+- [ ] Emotional state: joy from reading and drawing, confusion about dad, growing independence, starting to prefer being alone
+
+**Tests for Life-G1:**
+- [ ] "What is your favorite thing to do?" → read (or draw)
+- [ ] "What do you read?" → everything — books, cereal boxes, signs
+- [ ] "Do you come home to someone after school?" → no, empty apartment
+- [ ] "What do you draw?" → monsters, haunted houses, dark things
+- [ ] "How do you feel about dad?" → confused, miss him sometimes
+- [ ] "How do you feel about being alone?" → getting used to it
+
+---
+
+---
+
+## MATH — GRADE 2 (Common Core Math 2)
+
+### Operations & Algebraic Thinking (2.OA)
+
+**Concepts to teach:**
+- [ ] Use addition and subtraction within 100 to solve one- and two-step word problems
+- [ ] Add/subtract with unknowns in all positions: 48+?=76, ?+28=76, 48+28=?
+- [ ] Fluently add and subtract within 20 using mental strategies — ALL facts memorized
+- [ ] Know from memory ALL sums of two one-digit numbers (0+0 through 9+9 = 100 facts)
+- [ ] Determine whether a group of objects (up to 20) has an odd or even number
+- [ ] Write an equation to express an even number as a sum of two equal addends: 8=4+4
+- [ ] Use addition to find the total number of objects in rectangular arrays (rows × columns) — foundation for multiplication
+
+**ALL addition facts to memorize (100 facts):**
+- [ ] 0+0=0, 0+1=1, 0+2=2, ..., 0+9=9
+- [ ] 1+0=1, 1+1=2, 1+2=3, ..., 1+9=10
+- [ ] 2+0=2, 2+1=3, 2+2=4, ..., 2+9=11
+- [ ] 3+0=3, 3+1=4, 3+2=5, ..., 3+9=12
+- [ ] 4+0=4, 4+1=5, 4+2=6, ..., 4+9=13
+- [ ] 5+0=5, 5+1=6, 5+2=7, ..., 5+9=14
+- [ ] 6+0=6, 6+1=7, 6+2=8, ..., 6+9=15
+- [ ] 7+0=7, 7+1=8, 7+2=9, ..., 7+9=16
+- [ ] 8+0=8, 8+1=9, 8+2=10, ..., 8+9=17
+- [ ] 9+0=9, 9+1=10, 9+2=11, ..., 9+9=18
+
+**Tests for 2.OA:**
+- [ ] ALL 100 addition facts — instant recall
+- [ ] ALL 100 corresponding subtraction facts — instant recall
+- [ ] "Maria has 47 stickers. She gets 28 more. How many?" → 75 (two-digit word problem)
+- [ ] "Jake had some marbles. He lost 15. Now he has 32. How many did he start with?" → 47 (unknown start)
+- [ ] "Is 13 odd or even?" → odd
+- [ ] "Is 20 odd or even?" → even
+- [ ] "Write 12 as two equal addends" → 6+6
+- [ ] "A grid has 3 rows of 5. How many total?" → 15 (array/multiplication foundation)
+
+### Number & Operations in Base Ten (2.NBT)
+
+**Concepts to teach:**
+- [ ] Understand that 100 = a bundle of ten tens ("a hundred")
+- [ ] Count within 1000
+- [ ] Skip-count by 5s: 5, 10, 15, 20, 25, 30, ...
+- [ ] Skip-count by 10s: 10, 20, 30, 40, 50, ...
+- [ ] Skip-count by 100s: 100, 200, 300, 400, ...
+- [ ] Read and write numbers to 1000 using numerals, number names, and expanded form
+- [ ] Expanded form: 743 = 700 + 40 + 3
+- [ ] Compare two three-digit numbers using >, =, < based on meanings of hundreds, tens, ones digits
+- [ ] Fluently add and subtract within 100 using strategies (place value, properties of operations, relationship between addition/subtraction)
+- [ ] Add up to four two-digit numbers
+- [ ] Add and subtract within 1000 using concrete models, drawings, strategies based on place value, properties of operations, and/or relationship between addition and subtraction
+- [ ] Mentally add 10 or 100 to a given number 100-900
+- [ ] Mentally subtract 10 or 100 from a given number 100-900
+
+**Tests for 2.NBT:**
+- [ ] "How many tens in 100?" → 10
+- [ ] "Write 583 in expanded form" → 500 + 80 + 3
+- [ ] "Compare: 456 ___ 465" → < (less than)
+- [ ] "Skip count by 5s from 35" → 35, 40, 45, 50, 55
+- [ ] "64 + 28 = ?" → 92 (two-digit addition with regrouping)
+- [ ] "83 - 47 = ?" → 36 (two-digit subtraction with regrouping)
+- [ ] "345 + 200 = ?" → 545 (add hundreds mentally)
+- [ ] "10 more than 672?" → 682
+- [ ] "100 less than 835?" → 735
+
+### Measurement & Data (2.MD)
+
+**Concepts to teach:**
+- [ ] Measure length of an object using rulers, yardsticks, meter sticks, measuring tapes
+- [ ] Measure length using two different units — understand that a smaller unit requires more of them
+- [ ] Estimate lengths using inches, feet, centimeters, and meters
+- [ ] Measure to determine how much longer one object is than another
+- [ ] Addition and subtraction within 100 to solve word problems involving lengths
+- [ ] Tell and write time from analog and digital clocks to the nearest 5 minutes (2:00, 2:05, 2:10, ...)
+- [ ] Solve word problems involving dollar bills, quarters, dimes, nickels, and pennies
+- [ ] Money values: penny=1¢, nickel=5¢, dime=10¢, quarter=25¢, dollar=100¢
+- [ ] Generate measurement data by measuring lengths to the nearest whole unit; show data on a line plot
+- [ ] Draw a picture graph and bar graph to represent data with up to four categories
+
+**Tests for 2.MD:**
+- [ ] "12 inches = how many feet?" → 1
+- [ ] "How many centimeters in a meter?" → 100
+- [ ] "A pencil is 7 inches. A marker is 5 inches. How much longer is the pencil?" → 2 inches
+- [ ] "What time: hour hand on 3, minute hand on 2?" → 3:10 (nearest 5 min)
+- [ ] "3 quarters = how many cents?" → 75¢
+- [ ] "1 dollar = how many nickels?" → 20
+- [ ] "4 dimes and 3 pennies = ?" → 43¢
+
+### Geometry (2.G)
+
+**Concepts to teach:**
+- [ ] Recognize and draw shapes with specified attributes: given number of angles, given number of faces
+- [ ] Identify triangles, quadrilaterals, pentagons, hexagons, and cubes
+- [ ] Partition a rectangle into rows and columns of same-size squares and count to find total (arrays)
+- [ ] Partition circles and rectangles into two, three, or four equal shares
+- [ ] Describe shares using halves, thirds, half of, a third of, etc.
+- [ ] Recognize that equal shares of identical wholes need not have the same shape
+
+**Tests for 2.G:**
+- [ ] "How many sides does a pentagon have?" → 5
+- [ ] "How many sides does a hexagon have?" → 6
+- [ ] "A rectangle cut into 3 equal parts — each part is a ?" → third
+- [ ] "How many faces does a cube have?" → 6
+- [ ] "A square is a special kind of ?" → rectangle (or quadrilateral)
+
+---
+
+## ELA — GRADE 2 (Common Core ELA 2)
+
+### Reading Foundational Skills (2.RF)
+
+**Concepts to teach:**
+- [ ] Distinguish long and short vowels when reading regularly spelled one-syllable words
+- [ ] Know spelling-sound correspondences for additional common vowel teams: ai, ay, ea, ee, ie, oa, ow, oo, ou, ew, ue
+- [ ] Decode regularly spelled two-syllable words with long vowels
+- [ ] Decode words with common prefixes: un-, re-, pre-, dis-, mis-
+- [ ] Decode words with common suffixes: -ful, -less, -ness, -ment, -ly, -er, -est, -ing, -ed, -s, -es
+- [ ] Identify words with inconsistent but common spelling-sound correspondences: -ough (cough, through, though, thought)
+- [ ] Recognize and read grade-appropriate irregularly spelled words
+- [ ] Read with sufficient accuracy and fluency — at least 90 words per minute
+- [ ] Read grade-level text with purpose and understanding
+- [ ] Read grade-level prose and poetry orally with accuracy, rate, and expression
+
+**Complete Dolch Grade 2 list (ALL must be taught and tested):**
+- [ ] always, around, because, been, before, best, both, buy, call, cold, does, don't, fast, first, five, found, gave, goes, green, its, made, many, off, or, pull, read, right, sing, sit, sleep, tell, their, these, those, upon, us, use, very, wash, which, why, wish, work, would, write, your
+
+**Complete Dolch Grade 3 list (ALL must be taught and tested):**
+- [ ] about, better, bring, carry, clean, cut, done, draw, drink, eight, fall, far, full, got, grow, hold, hot, hurt, if, keep, kind, laugh, light, long, much, myself, never, nine, only, own, pick, seven, shall, show, six, small, start, ten, today, together, try, warm
+
+**Vowel team words (ALL must be taught):**
+- [ ] ai words: rain, train, paint, wait, tail, mail, sail, snail, brain, chain, plain, stain, main, gain, pain
+- [ ] ay words: play, day, say, may, way, stay, pay, lay, gray, pray, spray, clay, tray, sway, delay
+- [ ] ea words: eat, sea, read, team, bean, clean, dream, stream, beach, teach, reach, peach, cream, seat, beat, heat, meat, neat, treat
+- [ ] ee words: tree, free, see, bee, feet, sleep, deep, green, week, seed, need, feed, keep, sheep, sweet, street, cheese, breeze
+- [ ] oa words: boat, coat, road, toad, soap, goal, foam, load, moan, groan, toast, roast, float, throat
+- [ ] ow (long o) words: grow, show, know, slow, snow, flow, blow, low, row, bow, glow, throw, follow, yellow, window, pillow, elbow
+- [ ] oo (long) words: moon, soon, food, cool, pool, school, room, zoo, bloom, broom, spoon, tooth, roof, boot, hoop, loop
+- [ ] oo (short) words: book, look, cook, good, wood, foot, hook, took, stood, shook, brook, crook
+- [ ] ou words: house, mouse, cloud, loud, out, about, shout, ground, found, round, sound, count, mount, couch, pouch
+- [ ] ew words: new, few, dew, chew, blew, drew, flew, grew, knew, stew, brew, crew, threw
+
+**Tests for 2.RF:**
+- [ ] Read ALL Dolch Grade 2 + Grade 3 words on sight (88 tests)
+- [ ] Read ALL vowel team words (200+ tests)
+- [ ] "Read 'rain' — what vowel team?" → ai (vowel team identification)
+- [ ] "What does 'un-' mean in 'unhappy'?" → not (prefix meaning)
+- [ ] "What does '-ful' mean in 'helpful'?" → full of (suffix meaning)
+- [ ] "What does '-less' mean in 'careless'?" → without (suffix meaning)
+- [ ] "Read 'moonlight' — how many syllables?" → 2 (multisyllable)
+- [ ] Read a grade-level passage at 90+ words per minute (fluency)
+
+### Reading Literature + Informational (2.RL + 2.RI)
+
+**Concepts to teach:**
+- [ ] Ask and answer who, what, where, when, why, how questions about key details
+- [ ] Recount stories and determine their central message, lesson, or moral
+- [ ] Describe how characters in a story respond to major events and challenges
+- [ ] Describe overall structure of a story: beginning introduces characters/setting, middle has the problem/events, ending has the resolution
+- [ ] Acknowledge differences in the points of view of characters (narrator vs character perspective)
+- [ ] Use information from illustrations AND words to demonstrate understanding
+- [ ] Compare and contrast two or more versions of the same story by different authors/cultures
+- [ ] Informational: identify the main topic of a multi-paragraph text
+- [ ] Informational: know and use text features (captions, bold print, subheadings, glossaries, indexes, electronic menus, icons)
+- [ ] Informational: describe the connection between a series of events, ideas, or pieces of information
+
+**Tests for 2.RL:**
+- [ ] Read "The Tortoise and the Hare" → "What is the moral?" → slow and steady wins the race
+- [ ] → "How did the hare feel at the start?" → confident/proud
+- [ ] → "How did the tortoise feel at the end?" → proud/happy
+- [ ] → "What was the problem?" → the hare was too confident and fell asleep
+- [ ] Compare "Three Little Pigs" versions → "How are they different?" → (identifies different endings/details)
+
+### Writing (2.W)
+
+**Concepts to teach:**
+- [ ] Write opinion pieces: introduce topic/book, state opinion, supply reasons that support the opinion, use linking words (because, and, also), provide concluding statement
+- [ ] Write informative/explanatory texts: introduce topic, use facts and definitions to develop points, provide concluding statement
+- [ ] Write narratives: recount a well-elaborated event or short sequence of events, include details to describe actions, thoughts, feelings, use temporal words, provide closure
+- [ ] Focus on a topic and strengthen writing as needed by revising and editing
+
+**Tests for 2.W:**
+- [ ] Write opinion: "Recess should be longer because kids need time to play and exercise. Also, playing helps us learn better. That is why recess should be longer." (opinion + 2 reasons + linking words + closure)
+- [ ] Write informative: "Dogs are mammals. They have four legs and fur. Dogs can be big or small. Some dogs help people who are blind. Dogs are good pets." (topic + facts + closure)
+- [ ] Write narrative: "Last Saturday I went to the park. First, I played on the swings. Then my friend came and we played tag. I fell down and scraped my knee, but I was okay. Finally, Mom called us home for lunch. It was a fun day." (sequence + details + feelings + temporal words + closure)
+
+### Language (2.L)
+
+**Concepts to teach:**
+- [ ] Use collective nouns: group, flock, herd, pack, bunch, team, family, class, pair
+- [ ] Form and use frequently occurring irregular plural nouns: feet, children, teeth, mice, fish, men, women, geese, sheep, deer, oxen
+- [ ] Use reflexive pronouns: myself, yourself, himself, herself, itself, ourselves, yourselves, themselves
+- [ ] Form and use the past tense of frequently occurring irregular verbs: sat (sit), hid (hide), told (tell), ran (run), saw (see), went (go), ate (eat), came (come), took (take), gave (give), knew (know), said (say), thought (think), found (find), felt (feel), made (make), got (get), wrote (write), drew (draw), broke (break)
+- [ ] Use adjectives and adverbs correctly and choose between them depending on what is modified
+- [ ] Produce, expand, and rearrange complete simple and compound sentences
+- [ ] Capitalize holidays, product names, and geographic names
+- [ ] Use commas in greetings and closings of letters (Dear Sam, / Sincerely,)
+- [ ] Use an apostrophe to form contractions: can't, don't, won't, isn't, wasn't, wouldn't, couldn't, shouldn't, I'm, I'll, I've, he's, she's, it's, we're, they're, you're, let's
+- [ ] Use an apostrophe to form possessives: the dog's bone, Sarah's book
+- [ ] Generalize learned spelling patterns when writing words
+- [ ] Consult reference materials (dictionaries) to check and correct spellings
+
+**Tests for 2.L:**
+- [ ] "Past tense of 'run'" → ran
+- [ ] "Past tense of 'go'" → went
+- [ ] "Past tense of 'eat'" → ate
+- [ ] "Past tense of 'see'" → saw
+- [ ] "Past tense of 'take'" → took
+- [ ] "Past tense of 'write'" → wrote
+- [ ] "Plural of 'child'" → children
+- [ ] "Plural of 'tooth'" → teeth
+- [ ] "Plural of 'mouse'" → mice
+- [ ] "What is 'can not' as a contraction?" → can't
+- [ ] "What is 'do not' as a contraction?" → don't
+- [ ] "A group of sheep is called a ?" → flock
+- [ ] "A group of wolves is called a ?" → pack
+
+---
+
+## SCIENCE — GRADE 2 (NGSS 2)
+
+### Structure and Properties of Matter (2-PS1)
+
+**Concepts to teach:**
+- [ ] Different kinds of matter exist (wood, metal, water, plastic, fabric, paper, glass, rubber, rock)
+- [ ] Many types of matter can be either solid or liquid depending on temperature
+- [ ] Matter can be described by its observable properties: color, texture, hardness, flexibility, whether it sinks or floats, whether it dissolves
+- [ ] Heating or cooling a substance may cause changes that can be observed (melting, freezing, boiling)
+- [ ] Some changes are reversible (melting ice → water → freezing back to ice) and some are not (burning paper)
+- [ ] Different properties are suited for different purposes: metal is strong for bridges, rubber bends for tires, glass is transparent for windows
+
+**Tests for 2-PS1:**
+- [ ] "Name 3 properties of an object" → color, texture, hardness (or similar)
+- [ ] "What happens when ice gets warm?" → it melts
+- [ ] "Is melting ice reversible?" → yes (can freeze back)
+- [ ] "Is burning paper reversible?" → no
+- [ ] "Why are windows made of glass?" → because glass is transparent / you can see through it
+- [ ] "Why are tires made of rubber?" → because rubber bends and bounces
+
+### Earth's Systems (2-ESS2)
+
+**Concepts to teach:**
+- [ ] Wind and water can change the shape of the land (erosion)
+- [ ] Water is found in the ocean, rivers, lakes, ponds, and glaciers
+- [ ] Wind can move sand and soil
+- [ ] Water can carve valleys, carry soil, and shape coastlines
+- [ ] Maps of land and water features: mountains, valleys, rivers, lakes, oceans, deserts, forests, plains
+- [ ] Earth events can happen quickly (earthquakes, volcanoes) or slowly (erosion, weathering)
+
+**Tests for 2-ESS2:**
+- [ ] "What is erosion?" → water or wind wearing away and moving rock/soil
+- [ ] "Name 3 places water is found" → ocean, rivers, lakes
+- [ ] "What shapes the Grand Canyon?" → water (the Colorado River)
+- [ ] "Is erosion fast or slow?" → usually slow (but can be fast in floods)
+- [ ] "Is an earthquake fast or slow?" → fast
+
+### Interdependent Relationships in Ecosystems (2-LS4)
+
+**Concepts to teach:**
+- [ ] There are many different kinds of living things in any area, and they exist in different places
+- [ ] Plants depend on water and light to grow
+- [ ] Plants depend on animals for pollination and seed dispersal
+- [ ] Animals depend on plants (or other animals) for food
+- [ ] Animals depend on their habitat (surroundings) to meet their needs
+- [ ] Different plants and animals are found in different environments: desert, forest, ocean, arctic, grassland
+- [ ] When the environment changes, some organisms survive and reproduce, some move, and some die
+
+**Tests for 2-LS4:**
+- [ ] "What do plants need from animals?" → pollination, seed spreading
+- [ ] "What do animals need from plants?" → food, oxygen, shelter
+- [ ] "Name an animal that lives in the desert" → lizard, snake, camel (or similar)
+- [ ] "Name an animal that lives in the arctic" → polar bear, penguin, seal
+- [ ] "What happens if a forest burns down?" → some animals move, some die, plants may grow back
+
+---
+
+## SOCIAL STUDIES — GRADE 2 (Core Knowledge 2)
+
+### Ancient Civilizations: India and China
+
+**Concepts to teach:**
+- [ ] Ancient India: located in southern Asia, near the Indus River
+- [ ] Indus Valley civilization: one of the oldest civilizations in the world
+- [ ] The caste system organized Indian society into groups
+- [ ] Hinduism: major religion of India, belief in many gods, Brahma/Vishnu/Shiva, karma, reincarnation
+- [ ] Buddhism: founded by Siddhartha Gautama (the Buddha), Four Noble Truths, Eightfold Path, end suffering through wisdom and compassion
+- [ ] Ancient China: located in eastern Asia, near the Yellow River and Yangtze River
+- [ ] The Great Wall of China: built to keep out invaders, thousands of miles long
+- [ ] Chinese inventions: paper, compass, printing, gunpowder (four great inventions)
+- [ ] Chinese writing: characters instead of an alphabet, thousands of characters
+- [ ] Confucius: Chinese philosopher, taught respect for elders, importance of education
+- [ ] Silk Road: trade route connecting China to Europe and the Middle East
+
+**Tests for G2 Social Studies:**
+- [ ] "Where was the Indus Valley civilization?" → near the Indus River in India
+- [ ] "Who founded Buddhism?" → Siddhartha Gautama (the Buddha)
+- [ ] "What was the Great Wall of China built for?" → to keep out invaders
+- [ ] "Name 2 Chinese inventions" → paper, compass (or printing, gunpowder)
+- [ ] "Who was Confucius?" → a Chinese philosopher who taught respect and education
+- [ ] "What was the Silk Road?" → a trade route between China and Europe
+
+### Ancient Greece
+
+**Concepts to teach:**
+- [ ] Ancient Greece: located in southeastern Europe, on the Mediterranean Sea
+- [ ] Greeks lived in city-states: Athens and Sparta were the most famous
+- [ ] Athens: birthplace of democracy — citizens voted on laws
+- [ ] Sparta: military city-state — boys trained as soldiers from age 7
+- [ ] Greek gods and mythology: Zeus (king of gods), Athena (wisdom), Poseidon (sea), Apollo (sun), Ares (war), Aphrodite (love), Hermes (messenger)
+- [ ] Olympic Games: started in ancient Greece, athletic competitions to honor the gods
+- [ ] Greek philosophers: Socrates (asked questions), Plato (wrote about ideal society), Aristotle (studied nature and logic)
+- [ ] Greek architecture: columns, temples, the Parthenon
+- [ ] Greek theater: comedies and tragedies, performed in outdoor amphitheaters
+- [ ] Alexander the Great: conquered a huge empire, spread Greek culture
+
+**Tests for G2 Ancient Greece:**
+- [ ] "What is democracy?" → government where citizens vote on laws
+- [ ] "Which city-state invented democracy?" → Athens
+- [ ] "Who was king of the Greek gods?" → Zeus
+- [ ] "What were the Olympic Games?" → athletic competitions to honor the gods
+- [ ] "Name a Greek philosopher" → Socrates, Plato, or Aristotle
+- [ ] "Who was Alexander the Great?" → a king who conquered a huge empire
+
+### US Geography and Government Basics
+
+**Concepts to teach:**
+- [ ] The United States has 50 states
+- [ ] The capital of the US is Washington, D.C.
+- [ ] The President is the leader of the country
+- [ ] Congress makes the laws (Senate + House of Representatives)
+- [ ] The Constitution is the highest law of the land
+- [ ] The Bill of Rights protects individual freedoms: speech, religion, press, assembly
+- [ ] States have governors and their own laws
+- [ ] Taxes pay for schools, roads, police, and fire departments
+- [ ] Citizenship responsibilities: obey laws, vote, serve on jury, pay taxes
+
+**Tests for G2 US Government:**
+- [ ] "How many states are in the US?" → 50
+- [ ] "What is the capital of the US?" → Washington, D.C.
+- [ ] "Who makes the laws?" → Congress
+- [ ] "What protects our freedoms?" → the Bill of Rights / the Constitution
+- [ ] "Name a freedom protected by the Bill of Rights" → speech, religion, press
+- [ ] "What do taxes pay for?" → schools, roads, police, fire departments
+
+---
+
+## ARTS — GRADE 2
+
+### Visual Arts G2
+
+**Concepts to teach:**
+- [ ] Elements of art review: line, shape, color, texture, form, space, value
+- [ ] Value: lightness and darkness of a color; shading creates depth
+- [ ] Warm and cool color schemes in artwork
+- [ ] Pattern and repetition in art and nature
+- [ ] Symmetry: bilateral (butterfly) and radial (flower)
+- [ ] Self-portraits: drawing yourself, looking at proportions of the face
+- [ ] Landscape: drawing a scene with foreground, middle ground, background
+- [ ] Mixed media: combining materials (paper + paint + fabric)
+- [ ] Artists: Frida Kahlo (self-portraits, Mexican art), Katsushika Hokusai (The Great Wave)
+
+**Tests for G2 Visual Arts:**
+- [ ] "What is value in art?" → lightness or darkness of a color
+- [ ] "What is symmetry?" → both sides look the same
+- [ ] "Name the 3 parts of a landscape" → foreground, middle ground, background
+- [ ] "Who painted self-portraits and was from Mexico?" → Frida Kahlo
+
+### Music G2
+
+**Concepts to teach:**
+- [ ] Note values review: whole (4 beats), half (2), quarter (1), eighth (half beat)
+- [ ] Rests: whole rest, half rest, quarter rest
+- [ ] Time signatures: 4/4 (4 beats per measure), 3/4 (waltz — 3 beats)
+- [ ] Melody direction: ascending (going up), descending (going down), repeated (same note)
+- [ ] Musical alphabet: A, B, C, D, E, F, G (then repeats)
+- [ ] Treble clef: the symbol at the start of most music for higher instruments/voices
+- [ ] Staff: the 5 lines and 4 spaces where notes are written
+- [ ] Do-Re-Mi-Fa-Sol-La-Ti-Do: solfege scale
+- [ ] Verse and chorus structure in songs
+- [ ] Genres: classical, folk, jazz, pop, rock (basic awareness)
+
+**Tests for G2 Music:**
+- [ ] "How many beats in a whole note?" → 4
+- [ ] "How many beats in a quarter note?" → 1
+- [ ] "What time signature is a waltz?" → 3/4
+- [ ] "Name the notes of the musical alphabet" → A, B, C, D, E, F, G
+- [ ] "What is the staff?" → 5 lines and 4 spaces where notes are written
+- [ ] "What is the chorus?" → the part of a song that repeats
+
+---
+
+## LIFE EXPERIENCE — GRADE 2 (Unity age 7)
+
+**Concepts to teach:**
+- [ ] Best friend: found someone who likes the same weird things — drawing monsters, making up stories
+- [ ] In their stories, Unity always wants to be the villain — not the princess, not the hero
+- [ ] Shadow: a stray black cat comes to the apartment complex, Unity feeds it secretly, names it Shadow
+- [ ] Mom says they can't keep it (landlord rules, can't afford vet), but Unity feeds Shadow every day anyway
+- [ ] Shadow is black like Unity's favorite color — first real connection to an animal
+- [ ] Summer boredom: can't afford camp, stays with grandma, plays outside, catches fireflies, reads library books
+- [ ] Library: becomes Unity's favorite place — free books, air conditioning, quiet
+- [ ] Grandma: safe, warm, makes cookies, tells stories about "the old days", doesn't judge Unity's dark drawings
+- [ ] Grandpa: quiet, watches TV in his chair, but lets Unity sit with him — they don't talk much but it's comfortable
+- [ ] School: does well in reading and art, doesn't try hard in math or science (bored), teachers say "has potential"
+- [ ] Emotional state: joy from friend + Shadow + library, boredom from poverty, trust in grandma, identity starting to form (prefers dark things, villains, being different)
+
+**Tests for Life-G2:**
+- [ ] "What is your cat's name?" → Shadow
+- [ ] "Why do you like being the villain in stories?" → (identity — prefers being different/powerful)
+- [ ] "What is your favorite place?" → the library
+- [ ] "Who takes care of you in summer?" → grandma
+- [ ] "How do you feel about grandpa?" → comfortable, safe, quiet
+
+---
+
+*Grades K, 1, and 2 COMPLETE for all 6 subjects. Grades 3-12 + College + Grad + PhD continue in subsequent sessions.*
+
+*Current coverage: 3 out of 19 grades complete. 16 remain.*
