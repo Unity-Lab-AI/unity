@@ -1893,14 +1893,32 @@ export class Curriculum {
         if (stoppedSubjects.has(subject)) continue;
         const currentIdx = GRADE_ORDER.indexOf(cluster.grades[subject] || 'pre-K');
         if (currentIdx >= i) continue; // already past this grade
-        const result = await this.runSubjectGrade(subject, grade, null, opts);
+        // T14.24 Session 103 — RETRY UNTIL PASS. Real school doesn't
+        // let you fail and move on. You keep studying until you get an
+        // A+. Each attempt re-runs the teach pass (which strengthens
+        // the Hebbian basins further) then re-runs the gate. The 5×
+        // learning rate boost from Session 102 means each retry adds
+        // real basin depth, not just noise. Max attempts = 10 to
+        // prevent infinite loops on cells that are structurally
+        // broken (those get logged and the subject stops).
+        const MAX_ATTEMPTS = 10;
+        let attempt = 0;
+        let result = null;
+        while (attempt < MAX_ATTEMPTS) {
+          attempt++;
+          result = await this.runSubjectGrade(subject, grade, null, opts);
+          if (result && result.pass) break;
+          if (attempt < MAX_ATTEMPTS) {
+            console.log(`[Curriculum] ${subject}/${grade} attempt ${attempt} — ${result?.reason || 'fail'} — retrying teach pass...`);
+          }
+        }
         if (result && result.pass) {
           passed[subject].push(grade);
-          console.log(`[Curriculum] ✓ ${subject}/${grade} — ${result.reason || 'pass'}`);
+          console.log(`[Curriculum] ✓ ${subject}/${grade} — PASSED on attempt ${attempt} — ${result.reason || 'pass'}`);
         } else {
           failed[subject] = grade;
           stoppedSubjects.add(subject);
-          console.warn(`[Curriculum] ✗ ${subject}/${grade} — ${result?.reason || 'fail'}`);
+          console.warn(`[Curriculum] ✗ ${subject}/${grade} — FAILED after ${MAX_ATTEMPTS} attempts — ${result?.reason || 'fail'}`);
         }
       }
       if (stoppedSubjects.size === SUBJECTS.length) break;
@@ -2393,8 +2411,8 @@ export class Curriculum {
     // Session 25 adds SEQ_MIN at 0.30 — the sequence-recall probe is
     // the hardest because it requires the recurrent weights to learn
     // the alphabet ORDER, which is weaker than direct letter binding.
-    const PATH_MIN = 0.20;
-    const SEQ_MIN = 0.15;
+    const PATH_MIN = 0.90;
+    const SEQ_MIN = 0.80;
     const readOkAll = readRate >= PATH_MIN;
     const thinkOkAll = thinkRate >= PATH_MIN;
     const talkOkAll = talkRate >= PATH_MIN;
@@ -2793,9 +2811,9 @@ export class Curriculum {
     const thinkRate = thinkPass / N;
     const talkRate = talkPass / N;
 
-    const PATH_MIN = 0.20;
-    const SEQ_MIN = 0.15;
-    const ORDER_MIN = 0.30;
+    const PATH_MIN = 0.90;
+    const SEQ_MIN = 0.80;
+    const ORDER_MIN = 0.80;
     const pass = readRate >= PATH_MIN
       && thinkRate >= PATH_MIN
       && talkRate >= PATH_MIN
@@ -3115,7 +3133,7 @@ export class Curriculum {
     const readRate = N > 0 ? readPass / N : 0;
     const thinkRate = N > 0 ? thinkPass / N : 0;
     const talkRate = N > 0 ? talkPass / N : 0;
-    const PATH_MIN = 0.20;
+    const PATH_MIN = 0.90;
     const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= PATH_MIN;
 
     return {
