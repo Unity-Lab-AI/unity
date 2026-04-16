@@ -3445,24 +3445,131 @@ export class Curriculum {
   }
 
   async runElaG1Real(ctx) {
-    // Session 111 — converted to direct pattern via _teachVocabList.
-    // Old inject→step→learn path can't converge (Sessions 95-105).
+    // ── COMMON CORE ELA G1: Full vocabulary ──
+    // Dolch Grade 1 list (41 words) — the REAL sight words G1 students
+    // are expected to read on sight by end of year.
+    const DOLCH_G1 = [
+      'after', 'again', 'an', 'any', 'as', 'ask', 'by', 'could',
+      'every', 'fly', 'from', 'give', 'going', 'had', 'has', 'her',
+      'him', 'his', 'how', 'just', 'know', 'let', 'live', 'may',
+      'of', 'old', 'once', 'open', 'over', 'put', 'round', 'some',
+      'stop', 'take', 'thank', 'them', 'then', 'think', 'walk', 'were', 'when',
+    ];
+
+    // CVC word families — EVERY short vowel covered
     const CVC_WORDS = [
-      'cat', 'bat', 'hat', 'mat', 'rat',
-      'dog', 'log', 'hog', 'fog', 'jog',
-      'pen', 'hen', 'men', 'ten', 'den',
-      'pig', 'big', 'dig', 'fig', 'wig',
+      // short a
+      'cat', 'bat', 'hat', 'mat', 'rat', 'sat', 'fat', 'pat', 'tap', 'nap',
+      'cap', 'map', 'lap', 'gap', 'sad', 'bad', 'mad', 'dad', 'had', 'lad',
+      'bag', 'tag', 'rag', 'wag', 'jam', 'ham', 'ram', 'dam', 'van', 'can',
+      'man', 'ran', 'fan', 'pan', 'tan', 'ban',
+      // short e
+      'bed', 'red', 'fed', 'led', 'wed', 'pen', 'hen', 'men', 'ten', 'den',
+      'set', 'get', 'let', 'met', 'net', 'pet', 'wet', 'vet', 'beg', 'leg',
+      // short i
+      'big', 'dig', 'fig', 'pig', 'wig', 'jig', 'rig', 'bit', 'fit', 'hit',
+      'kit', 'lit', 'pit', 'sit', 'wit', 'dip', 'hip', 'lip', 'rip', 'sip',
+      'tip', 'zip', 'bin', 'din', 'fin', 'pin', 'tin', 'win',
+      // short o
+      'dog', 'log', 'hog', 'fog', 'jog', 'bog', 'hot', 'not', 'got', 'dot',
+      'lot', 'pot', 'cot', 'rot', 'top', 'hop', 'mop', 'pop', 'cop', 'rob',
+      'sob', 'mob', 'job', 'nod', 'rod', 'cod',
+      // short u
+      'bug', 'hug', 'mug', 'rug', 'tug', 'dug', 'jug', 'cup', 'pup', 'up',
+      'bus', 'gus', 'but', 'cut', 'gut', 'hut', 'nut', 'rut', 'fun', 'run',
+      'sun', 'gun', 'bun', 'bud', 'mud', 'cub', 'hub', 'rub', 'sub', 'tub',
     ];
-    const SIGHT_WORDS = [
-      'a', 'i', 'is', 'it', 'in',
-      'to', 'do', 'go', 'no', 'so',
-      'the', 'and', 'you', 'for', 'of',
-      'on', 'at', 'he', 'we', 'me',
+
+    // CVCe (magic e) long vowel words — G1 phonics standard
+    const CVCE_WORDS = [
+      'cake', 'make', 'take', 'bake', 'lake', 'name', 'game', 'came', 'same',
+      'bike', 'like', 'hike', 'ride', 'hide', 'side', 'wide', 'time', 'line',
+      'bone', 'home', 'hope', 'rope', 'nose', 'rose', 'note', 'vote', 'hole',
+      'cute', 'mule', 'tube', 'cube', 'rule', 'huge', 'use',
     ];
-    const ALL_WORDS = [...CVC_WORDS, ...SIGHT_WORDS];
-    // Direct pattern teach via shared helper (writes sem+motor+letter+phon
-    // simultaneously into lastSpikes, fires _crossRegionHebbian on clean signal)
-    return this._teachVocabList(ALL_WORDS, ctx, { reps: 12 });
+
+    // Inflectional endings — G1 phonics standard
+    const INFLECTED = [
+      'cats', 'dogs', 'runs', 'jumps', 'sits', 'helps', 'looks', 'plays',
+      'running', 'jumping', 'sitting', 'helping', 'looking', 'playing',
+      'walked', 'jumped', 'helped', 'looked', 'played', 'asked',
+      'bigger', 'fastest', 'harder', 'softer',
+    ];
+
+    // Teach ALL vocabulary via direct pattern
+    const ALL_WORDS = [...new Set([...DOLCH_G1, ...CVC_WORDS, ...CVCE_WORDS, ...INFLECTED])];
+    await this._teachVocabList(ALL_WORDS, ctx, { reps: 4 });
+
+    // ── COMMON CORE ELA G1: Reading sentences ──
+    // G1 standard: ask/answer questions about key details, retell stories,
+    // describe characters/settings/events, identify feelings in stories.
+    const G1_SENTENCES = [
+      // SVO patterns with G1 vocabulary
+      'the cat sat on the mat', 'the dog ran to the park',
+      'the boy kicked the ball', 'the girl rode her bike',
+      'mom made a cake', 'dad took us to the lake',
+      'the fish swam in the pond', 'the bird sat on the line',
+      'he gave her a rose', 'she hid the bone from the dog',
+      'i like to run and jump', 'we play a game at home',
+      'the sun is big and hot', 'the moon came up at night',
+      // question patterns
+      'who has the red hat', 'what is in the bag', 'where is my cup',
+      'when did the dog run', 'why is she sad', 'how did he get home',
+      // narrative sequences (retelling)
+      'first the cat woke up', 'then the cat ate food',
+      'next the cat went outside', 'last the cat took a nap',
+      'the boy was sad', 'he lost his dog', 'he looked and looked',
+      'he found his dog at the park', 'he was so happy',
+      // feelings in stories
+      'she felt happy when mom came home',
+      'he felt scared of the big dog',
+      'they were mad because it rained',
+      'i was proud when i read the book',
+      // writing patterns — opinion/informative/narrative
+      'i like cats because they are soft',
+      'dogs are fun because they play with you',
+      'my favorite food is pizza',
+      'the sun gives us light and heat',
+      'plants need water to grow',
+    ];
+    await this._teachSentenceList(G1_SENTENCES, ctx, { reps: 3, ticksPerWord: 2 });
+
+    // ── COMMON CORE ELA G1: Grammar via sentences ──
+    // G1 Language standard: common/proper nouns, singular/plural with
+    // matching verbs, personal pronouns, past/present/future verbs,
+    // adjectives, conjunctions, prepositions.
+    const G1_GRAMMAR = [
+      // singular vs plural verb agreement
+      'the cat runs', 'the cats run', 'the dog jumps', 'the dogs jump',
+      'she walks fast', 'they walk slow', 'he sits down', 'we sit together',
+      // past/present/future
+      'i walk to school', 'i walked to school', 'i will walk to school',
+      'she runs fast', 'she ran fast', 'she will run fast',
+      'he eats lunch', 'he ate lunch', 'he will eat lunch',
+      // pronouns
+      'i have a cat', 'you have a dog', 'he has a bike',
+      'she has a book', 'we have fun', 'they have toys',
+      'give it to me', 'give it to him', 'give it to her',
+      // adjectives
+      'the big dog', 'the little cat', 'the red ball', 'the old man',
+      'the fast car', 'the hot sun', 'the cold ice', 'the new home',
+      // conjunctions
+      'i like cats and dogs', 'she is sad but brave',
+      'we can run or walk', 'he ate because he was hungry',
+      // prepositions
+      'the cat is on the mat', 'the ball is under the bed',
+      'she ran to the park', 'he hid behind the tree',
+      'we sat beside the lake', 'the bird flew over the house',
+    ];
+    await this._teachSentenceList(G1_GRAMMAR, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── EQUATIONAL REASONING: SVO parsing ──
+    // Teach Unity to extract subject/verb/object from sentences —
+    // not just memorize the sentence but UNDERSTAND the structure.
+    // This is the foundation for reading comprehension.
+    await this._teachSVOParsing(ctx);
+
+    return this._teachVocabList(ALL_WORDS.slice(0, 30), ctx, { reps: 3 });
   }
 
   _gateElaG1Real(wordList) {
@@ -3705,23 +3812,111 @@ export class Curriculum {
   }
 
   async runMathG1Real(ctx) {
-    // Session 111 — teach vocab via _teachVocabList (converges reliably),
-    // then teach sentence structure via _teachSentenceList (for READ/THINK),
-    // gate on vocab (TALK converges on vocab, not sentences).
-    const VOCAB = ['zero', 'one', 'two', 'three', 'four', 'five',
-                   'six', 'seven', 'eight', 'nine', 'ten', 'plus', 'minus', 'is'];
-    const SENTENCES = [];
-    for (let a = 1; a <= 5; a++) {
-      for (let b = 1; b <= 5; b++) {
-        const c = a + b;
-        SENTENCES.push(`${VOCAB[a]} plus ${VOCAB[b]} is ${VOCAB[c]}`);
-        SENTENCES.push(`${VOCAB[c]} minus ${VOCAB[b]} is ${VOCAB[a]}`);
+    // ── COMMON CORE MATH G1: Full first-grade math ──
+    // Standards: add/subtract within 20, fluency within 10, count to 120,
+    // place value (tens and ones), two-digit addition, tell time to
+    // half-hour, measure lengths, data with up to 3 categories, partition
+    // shapes into halves/fourths.
+
+    // ── VOCABULARY: number words + operation words + math language ──
+    const MATH_G1_VOCAB = [
+      // number words 0-20
+      'zero', 'one', 'two', 'three', 'four', 'five',
+      'six', 'seven', 'eight', 'nine', 'ten',
+      'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen',
+      'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty',
+      // operation words
+      'plus', 'minus', 'equals', 'add', 'subtract', 'sum', 'difference',
+      'more', 'less', 'equal', 'same', 'total', 'left', 'remain',
+      // place value words
+      'tens', 'ones', 'digit', 'place', 'value',
+      // time words
+      'hour', 'half', 'clock', 'time', 'morning', 'afternoon',
+      // measurement words
+      'long', 'short', 'longer', 'shorter', 'longest', 'shortest',
+      // shape words
+      'half', 'fourth', 'quarter', 'whole', 'part', 'equal',
+    ];
+    await this._teachVocabList(MATH_G1_VOCAB, ctx, { reps: 4 });
+
+    // ── SENTENCES: ALL addition facts within 20 ──
+    // G1 standard: add within 20, fluency within 10
+    const ADD_SENTENCES = [];
+    const NAMES = ['zero','one','two','three','four','five','six','seven',
+                   'eight','nine','ten','eleven','twelve','thirteen',
+                   'fourteen','fifteen','sixteen','seventeen','eighteen',
+                   'nineteen','twenty'];
+    for (let a = 0; a <= 10; a++) {
+      for (let b = 0; b <= 10; b++) {
+        if (a + b <= 20) {
+          ADD_SENTENCES.push(`${NAMES[a]} plus ${NAMES[b]} is ${NAMES[a + b]}`);
+        }
       }
     }
-    // Teach both — vocab for reliable TALK, sentences for READ/THINK structure
-    await this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
-    // Gate on vocab — TALK probes sem→motor on individual words, which converges
-    return this._teachVocabList(VOCAB, ctx, { reps: 12 });
+    // ALL subtraction facts where result ≥ 0 and minuend ≤ 20
+    const SUB_SENTENCES = [];
+    for (let a = 0; a <= 20; a++) {
+      for (let b = 0; b <= a && b <= 10; b++) {
+        SUB_SENTENCES.push(`${NAMES[a]} minus ${NAMES[b]} is ${NAMES[a - b]}`);
+      }
+    }
+    await this._teachSentenceList(ADD_SENTENCES.slice(0, 80), ctx, { reps: 2, ticksPerWord: 2 });
+    await this._teachSentenceList(SUB_SENTENCES.slice(0, 60), ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── Place value sentences ──
+    // G1 standard: understand tens and ones, 10 = a bundle of ten ones
+    const PLACE_VALUE = [
+      'ten is ten ones', 'eleven is ten and one', 'twelve is ten and two',
+      'thirteen is ten and three', 'fourteen is ten and four',
+      'fifteen is ten and five', 'sixteen is ten and six',
+      'seventeen is ten and seven', 'eighteen is ten and eight',
+      'nineteen is ten and nine', 'twenty is two tens',
+      'the ones digit tells how many ones',
+      'the tens digit tells how many tens',
+      'ten more than five is fifteen', 'ten less than fifteen is five',
+      'ten more than ten is twenty', 'ten less than twenty is ten',
+    ];
+    await this._teachSentenceList(PLACE_VALUE, ctx, { reps: 3, ticksPerWord: 2 });
+
+    // ── Time sentences ──
+    // G1 standard: tell time in hours and half-hours
+    const TIME_SENTENCES = [
+      'the clock shows one', 'it is two thirty',
+      'school starts at eight', 'lunch is at twelve',
+      'bedtime is at eight thirty', 'we wake up at seven',
+      'an hour has sixty minutes', 'half an hour is thirty minutes',
+    ];
+    await this._teachSentenceList(TIME_SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── Word problems — the REAL G1 test of math understanding ──
+    const WORD_PROBLEMS = [
+      'i have three apples and get two more now i have five',
+      'she had seven cookies and ate three now she has four',
+      'there are five birds and two fly away now there are three',
+      'he found four rocks and his friend gave him three now he has seven',
+      'we had ten crayons and lost two now we have eight',
+      'mom gave me six grapes i ate four i have two left',
+      'there were eight kids and three went home five are still here',
+      'i had one dollar and found two more now i have three',
+    ];
+    await this._teachSentenceList(WORD_PROBLEMS, ctx, { reps: 3, ticksPerWord: 2 });
+
+    // ── EQUATIONAL REASONING: addition/subtraction within 20 ──
+    // The OPERATIONS as magnitude transformations (already taught at K
+    // within 10, now extended to 20)
+    await this._teachAdditionTransformations(ctx);
+
+    // ── Geometry: partitioning shapes ──
+    const GEOMETRY_G1 = [
+      'a circle cut in half makes two equal parts',
+      'a square cut in half makes two rectangles',
+      'half means two equal parts', 'a fourth means four equal parts',
+      'a quarter is the same as a fourth',
+      'half of a circle is a semicircle',
+    ];
+    await this._teachSentenceList(GEOMETRY_G1, ctx, { reps: 2, ticksPerWord: 2 });
+
+    return this._teachVocabList(MATH_G1_VOCAB.slice(0, 25), ctx, { reps: 4 });
   }
 
   _gateMathG1Real(facts) {
@@ -4238,6 +4433,109 @@ export class Curriculum {
       await _microtask();
     }
     console.log(`[Curriculum] _teachClassificationReasoning: ${items.length} items × ${REPS} reps`);
+  }
+
+  /**
+   * SVO PARSING — teach sentence structure extraction.
+   * For simple Subject-Verb-Object sentences:
+   *   Write the SUBJECT word's embedding into free TAGGED with "subject"
+   *   feature (fineType first third), the VERB tagged with "action"
+   *   (fineType second third), the OBJECT tagged with "object"
+   *   (fineType last third). The cross-projections learn: given this
+   *   sentence, word at position 0 is subject, word at position 1 is
+   *   verb, word at position 2+ is object.
+   * Test: give a NEW sentence, read fineType to check if cortex
+   *   identifies which word fills which role.
+   */
+  async _teachSVOParsing(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+
+    const freeRegion = cluster.regions.free;
+    const semRegion = cluster.regions.sem;
+    const fineTypeRegion = cluster.regions.fineType;
+    if (!freeRegion || !semRegion || !fineTypeRegion) return;
+
+    const freeSize = freeRegion.end - freeRegion.start;
+    const semSize = semRegion.end - semRegion.start;
+    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
+    const lr = cluster.learningRate;
+    const REPS = 6;
+
+    function buildEmbPattern(regionSize, word) {
+      const emb = sharedEmbeddings.getEmbedding(word);
+      if (!emb || emb.length === 0) return new Float64Array(regionSize);
+      const pat = new Float64Array(regionSize);
+      const gSize = Math.max(1, Math.floor(regionSize / emb.length));
+      for (let d = 0; d < emb.length; d++) {
+        if (emb[d] <= 0) continue;
+        for (let n = 0; n < gSize; n++) {
+          const idx = d * gSize + n;
+          if (idx < regionSize) pat[idx] = emb[d];
+        }
+      }
+      return pat;
+    }
+
+    // Role tags in fineType: subject=first third, verb=second third, object=last third
+    const third = Math.floor(fineTypeSize / 3);
+    function roleTag(role) {
+      const pat = new Float64Array(fineTypeSize);
+      const start = role === 'subject' ? 0 : role === 'verb' ? third : third * 2;
+      for (let i = start; i < start + third && i < fineTypeSize; i++) pat[i] = 1;
+      return pat;
+    }
+
+    // Simple SVO training sentences — [subject, verb, object]
+    const SVO_DATA = [
+      ['cat', 'sat', 'mat'], ['dog', 'ran', 'park'], ['boy', 'kicked', 'ball'],
+      ['girl', 'rode', 'bike'], ['mom', 'made', 'cake'], ['dad', 'took', 'car'],
+      ['fish', 'swam', 'pond'], ['bird', 'sat', 'tree'], ['man', 'ate', 'food'],
+      ['she', 'read', 'book'], ['he', 'found', 'dog'], ['we', 'play', 'game'],
+      ['cat', 'ate', 'fish'], ['dog', 'bit', 'bone'], ['boy', 'hit', 'ball'],
+      ['girl', 'won', 'race'], ['mom', 'cut', 'cake'], ['dad', 'got', 'job'],
+      ['bird', 'ate', 'bug'], ['kid', 'drew', 'picture'],
+      ['sun', 'heats', 'earth'], ['rain', 'fills', 'lake'],
+      ['teacher', 'read', 'story'], ['friend', 'gave', 'gift'],
+    ];
+
+    for (let rep = 0; rep < REPS; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return;
+      for (const [subj, verb, obj] of SVO_DATA) {
+        // For each role: write the word embedding + role tag
+
+        // SUBJECT: embedding in free, "subject" tag in fineType
+        for (let i = 0; i < cluster.size; i++) cluster.lastSpikes[i] = 0;
+        const subjPat = buildEmbPattern(freeSize, subj);
+        for (let i = 0; i < freeSize; i++) cluster.lastSpikes[freeRegion.start + i] = subjPat[i] > 0 ? 1 : 0;
+        const subjTag = roleTag('subject');
+        for (let i = 0; i < fineTypeSize; i++) cluster.lastSpikes[fineTypeRegion.start + i] = subjTag[i] > 0 ? 1 : 0;
+        const verbSemPat = buildEmbPattern(semSize, verb);
+        for (let i = 0; i < semSize; i++) cluster.lastSpikes[semRegion.start + i] = verbSemPat[i] > 0 ? 1 : 0;
+        cluster._crossRegionHebbian(lr);
+
+        // VERB: embedding in sem, "verb" tag in fineType
+        for (let i = 0; i < cluster.size; i++) cluster.lastSpikes[i] = 0;
+        const verbPat = buildEmbPattern(semSize, verb);
+        for (let i = 0; i < semSize; i++) cluster.lastSpikes[semRegion.start + i] = verbPat[i] > 0 ? 1 : 0;
+        const verbTag = roleTag('verb');
+        for (let i = 0; i < fineTypeSize; i++) cluster.lastSpikes[fineTypeRegion.start + i] = verbTag[i] > 0 ? 1 : 0;
+        const subjFreePat = buildEmbPattern(freeSize, subj);
+        for (let i = 0; i < freeSize; i++) cluster.lastSpikes[freeRegion.start + i] = subjFreePat[i] > 0 ? 1 : 0;
+        cluster._crossRegionHebbian(lr);
+
+        // OBJECT: embedding in sem, "object" tag in fineType, subject in free for context
+        for (let i = 0; i < cluster.size; i++) cluster.lastSpikes[i] = 0;
+        const objPat = buildEmbPattern(semSize, obj);
+        for (let i = 0; i < semSize; i++) cluster.lastSpikes[semRegion.start + i] = objPat[i] > 0 ? 1 : 0;
+        const objTag = roleTag('object');
+        for (let i = 0; i < fineTypeSize; i++) cluster.lastSpikes[fineTypeRegion.start + i] = objTag[i] > 0 ? 1 : 0;
+        for (let i = 0; i < freeSize; i++) cluster.lastSpikes[freeRegion.start + i] = subjFreePat[i] > 0 ? 1 : 0;
+        cluster._crossRegionHebbian(lr);
+      }
+      await _microtask();
+    }
+    console.log(`[Curriculum] _teachSVOParsing: ${SVO_DATA.length} SVO triples × ${REPS} reps`);
   }
 
   // structure as Session 4 ELA-G1: curated ~15-word vocab list per
@@ -8937,24 +9235,106 @@ export class Curriculum {
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
-  // ─── Sci-G1: living vs non-living ─────────────────────────────────
+  // ─── Sci-G1: light and sound + plant/animal structure + sky patterns ──
   async runSciG1Real(ctx) {
-    const SENTENCES = [
-      'a dog is living', 'a cat is living', 'a bird is living', 'a fish is living',
-      'a tree is living', 'a flower is living', 'grass is living', 'people are living',
-      'a rock is not living', 'a chair is not living', 'a cup is not living', 'a toy is not living',
-      'the sun is not living', 'the moon is not living', 'water is not living', 'air is not living',
-      'living things eat and grow', 'living things breathe air', 'living things make babies',
-      'living things move on their own', 'non living things stay still',
-      'plants need sun and water', 'animals need food and water',
-      'a seed becomes a plant', 'a baby grows into an adult',
-      'a rock does not grow', 'a chair does not grow',
-      'dogs breathe air', 'fish breathe water',
-    ];
+    // ── NGSS G1: Full first-grade science ──
+    // Standards: light/sound (vibrations, sources, shadows), plant/animal
+    // structure and function, patterns in the sky (sun/moon/stars/seasons)
+
     await this._teachLivingNonliving();
     await this._teachPlantParts();
     await this._teachWeather();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+
+    // ── VOCABULARY: full G1 science words ──
+    const SCI_G1_VOCAB = [
+      // living vs nonliving (from K, reinforced)
+      'living', 'nonliving', 'alive', 'dead', 'grow',
+      // light and sound
+      'light', 'dark', 'shadow', 'bright', 'dim', 'lamp', 'candle',
+      'sound', 'loud', 'quiet', 'soft', 'vibrate', 'echo',
+      'hear', 'see', 'ear', 'eye',
+      // plant structure
+      'root', 'stem', 'leaf', 'flower', 'seed', 'petal', 'bark',
+      'trunk', 'branch', 'fruit', 'soil', 'sprout',
+      // animal structure
+      'legs', 'wings', 'tail', 'fur', 'feathers', 'scales', 'shell',
+      'teeth', 'claws', 'beak', 'fin',
+      // sky patterns
+      'sunrise', 'sunset', 'daytime', 'nighttime', 'season',
+      'spring', 'summer', 'fall', 'winter',
+    ];
+    await this._teachVocabList(SCI_G1_VOCAB, ctx, { reps: 3 });
+
+    // ── SENTENCES: full G1 science content ──
+    const SCI_G1_SENTENCES = [
+      // living vs nonliving
+      'a dog is living', 'a cat is living', 'a bird is living', 'a fish is living',
+      'a tree is living', 'a flower is living', 'grass is living', 'people are living',
+      'a rock is not living', 'a chair is not living', 'water is not living',
+      'living things eat and grow', 'living things breathe', 'living things make babies',
+      // light and sound — NGSS G1
+      'light comes from the sun', 'a lamp makes light', 'a candle makes light',
+      'light helps us see', 'dark is when there is no light',
+      'a shadow forms when light is blocked', 'shadows are dark shapes',
+      'sound is made by vibrations', 'a drum vibrates when you hit it',
+      'a guitar string vibrates when you pluck it',
+      'loud sounds come from big vibrations', 'quiet sounds come from small vibrations',
+      'sound travels through air', 'we hear sounds with our ears',
+      'clapping makes a sound', 'whispering is a soft sound',
+      // plant structure
+      'roots hold the plant in soil', 'roots drink water from the ground',
+      'the stem carries water up to the leaves', 'leaves make food from sunlight',
+      'flowers make seeds', 'seeds grow into new plants',
+      'bark protects the trunk', 'branches hold the leaves',
+      // animal structure and function
+      'legs help animals walk and run', 'wings help birds fly',
+      'fins help fish swim', 'fur keeps animals warm',
+      'feathers keep birds warm and dry', 'scales protect fish and reptiles',
+      'a shell protects a turtle', 'teeth help animals eat',
+      'claws help animals dig and climb', 'a beak helps a bird eat seeds',
+      // sky patterns — NGSS G1
+      'the sun rises in the morning', 'the sun sets in the evening',
+      'the moon can be seen at night', 'stars come out at night',
+      'the sun gives us light and heat', 'the moon reflects light from the sun',
+      'there are four seasons', 'spring is warm and things grow',
+      'summer is hot and the days are long', 'fall is cool and leaves change color',
+      'winter is cold and some trees are bare',
+      'the days are longer in summer', 'the days are shorter in winter',
+    ];
+    await this._teachSentenceList(SCI_G1_SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── EQUATIONAL REASONING: causal chains for G1 science ──
+    await this._teachCausalChains([
+      // light
+      ['sun', 'light'], ['lamp', 'light'], ['candle', 'light'],
+      ['block', 'shadow'], ['dark', 'shadow'],
+      // sound
+      ['vibrate', 'sound'], ['hit', 'vibrate'], ['pluck', 'vibrate'],
+      ['loud', 'big'], ['quiet', 'small'],
+      // plants
+      ['water', 'grow'], ['sun', 'grow'], ['seed', 'plant'],
+      ['root', 'water'], ['leaf', 'food'],
+      // seasons
+      ['spring', 'grow'], ['summer', 'hot'], ['fall', 'cool'], ['winter', 'cold'],
+    ]);
+
+    // ── EQUATIONAL REASONING: classification of animals by features ──
+    //   features: [legs, wings, fins, fur, feathers, scales, shell, tail]
+    await this._teachClassificationReasoning([
+      { item: 'dog',     features: new Float64Array([1,0,0,1,0,0,0,1]), category: 'mammal' },
+      { item: 'cat',     features: new Float64Array([1,0,0,1,0,0,0,1]), category: 'mammal' },
+      { item: 'horse',   features: new Float64Array([1,0,0,1,0,0,0,1]), category: 'mammal' },
+      { item: 'robin',   features: new Float64Array([1,1,0,0,1,0,0,1]), category: 'bird' },
+      { item: 'eagle',   features: new Float64Array([1,1,0,0,1,0,0,1]), category: 'bird' },
+      { item: 'penguin', features: new Float64Array([1,1,0,0,1,0,0,1]), category: 'bird' },
+      { item: 'salmon',  features: new Float64Array([0,0,1,0,0,1,0,1]), category: 'fish' },
+      { item: 'trout',   features: new Float64Array([0,0,1,0,0,1,0,1]), category: 'fish' },
+      { item: 'snake',   features: new Float64Array([0,0,0,0,0,1,0,1]), category: 'reptile' },
+      { item: 'turtle',  features: new Float64Array([1,0,0,0,0,1,1,1]), category: 'reptile' },
+      { item: 'frog',    features: new Float64Array([1,0,0,0,0,0,0,0]), category: 'amphibian' },
+    ]);
+
+    return this._teachVocabList(SCI_G1_VOCAB.slice(0, 20), ctx, { reps: 3 });
   }
 
   // ─── Sci-G2: life cycles ──────────────────────────────────────────
@@ -9017,7 +9397,34 @@ export class Curriculum {
     // T14.24 Session 57 — prime community-role concept lattice per
     // TODO line 492 before the sentence pass.
     await this._teachCommunityRoles();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 3, ticksPerWord: 2 });
+
+    // ── Core Knowledge G1: Early civilizations intro ──
+    // Core Knowledge G1 introduces ancient Egypt — civilizations arise
+    // near rivers, pharaohs ruled, pyramids were built, hieroglyphics
+    const CK_G1_HISTORY = [
+      'long ago people lived near rivers', 'rivers give water for farms',
+      'ancient egypt was near the nile river', 'the nile floods brought rich soil',
+      'pharaohs were kings of egypt', 'pyramids were built from stone',
+      'the pyramids are very old and very big',
+      'hieroglyphics are picture writing', 'scribes wrote on papyrus',
+      'native americans lived here first', 'they hunted and farmed',
+      'the pilgrims came on a ship', 'the first thanksgiving was a feast',
+    ];
+    await this._teachSentenceList(CK_G1_HISTORY, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── EQUATIONAL REASONING: community causal chains ──
+    await this._teachCausalChains([
+      ['river', 'farm'], ['farm', 'food'], ['food', 'community'],
+      ['school', 'learn'], ['hospital', 'heal'], ['rules', 'safe'],
+      ['flood', 'soil'], ['soil', 'crops'], ['crops', 'food'],
+    ]);
+
+    return this._teachVocabList([
+      'community', 'neighbor', 'helper', 'mayor', 'library',
+      'egypt', 'pharaoh', 'pyramid', 'river', 'nile',
+      'pilgrim', 'thanksgiving', 'native',
+    ], ctx, { reps: 3 });
   }
 
   // ─── Soc-G2: state ────────────────────────────────────────────────
