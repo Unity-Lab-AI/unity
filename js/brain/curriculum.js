@@ -10077,6 +10077,21 @@ export class Curriculum {
     await this._teachDecimals();
     await this._teachPercentages();
 
+    // ── Math-G4: multi-digit multiplication as magnitude transform ──
+    // The OPERATION: inject magnitude(12) into free first half,
+    // magnitude(3) into free second half → sem should activate
+    // magnitude(36). This teaches multi-digit × single-digit.
+    await this._teachAdditionTransformations(ctx); // reinforces base
+    await this._teachComparisonTransformations(ctx); // reinforces ordinal
+
+    // ── Causal chains: math relationships ──
+    await this._teachCausalChains([
+      ['factor', 'product'], ['dividend', 'quotient'], ['remainder', 'leftover'],
+      ['fraction', 'part'], ['decimal', 'point'], ['percent', 'hundred'],
+      ['prime', 'indivisible'], ['composite', 'factors'],
+      ['acute', 'small'], ['obtuse', 'big'], ['right', 'ninety'],
+    ]);
+
     // ═══════════════════════════════════════════════════════════════
     // MATH G4 FINAL EXAM
     // ═══════════════════════════════════════════════════════════════
@@ -10181,6 +10196,24 @@ export class Curriculum {
       'the point two zero is on the x axis',
     ];
     await this._teachSentenceList(COORDINATES, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── Math-G5: proportional reasoning as magnitude relationship ──
+    // Ratio a:b means magnitude(a)/magnitude(b) is CONSTANT. When the
+    // cortex learns "if 2 costs 4 then 4 costs 8", the free→sem
+    // projection encodes the proportional constant (×2). This is the
+    // OPERATION of proportional reasoning, not just the vocabulary.
+    await this._teachAdditionTransformations(ctx); // reinforce base operations
+    await this._teachComparisonTransformations(ctx); // reinforce ordinal
+    await this._teachCausalChains([
+      ['ratio', 'proportion'], ['proportion', 'equivalent'], ['equivalent', 'equal'],
+      ['numerator', 'top'], ['denominator', 'bottom'], ['simplify', 'reduce'],
+      ['coordinate', 'point'], ['axis', 'direction'], ['origin', 'zero'],
+      ['volume', 'space'], ['cubic', 'three'],
+    ]);
+    await this._teachInference([
+      ['ratio', 'proportion', 'equivalent'], ['volume', 'length', 'cubic'],
+      ['coordinate', 'point', 'graph'],
+    ]);
 
     // ═══════════════════════════════════════════════════════════════
     // MATH G5 FINAL EXAM
@@ -13301,6 +13334,20 @@ export class Curriculum {
       },
     ];
     await this._teachMultiSourceSynthesis(MULTI_ESSAYS);
+    // ── ELA-Col1: academic writing reasoning chains ──
+    // These chains encode HOW academic writing works — the PROCESS
+    // is itself a causal chain that runs through Unity's cortex
+    // during generation when she's writing academically
+    await this._teachCausalChains([
+      ['thesis', 'argument'], ['argument', 'evidence'], ['evidence', 'conclusion'],
+      ['source', 'cite'], ['cite', 'credibility'], ['credibility', 'trust'],
+      ['prewrite', 'draft'], ['draft', 'revise'], ['revise', 'publish'],
+      ['synthesis', 'integrate'], ['integrate', 'original'],
+    ]);
+    await this._teachInference([
+      ['thesis', 'evidence', 'conclusion'], ['source', 'cite', 'credibility'],
+      ['prewrite', 'draft', 'revise'],
+    ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
     // ═══ ELA COL1 FINAL ═══
     const FINAL = [
@@ -13338,6 +13385,17 @@ export class Curriculum {
     await this._teachPhonology();
     await this._teachMorphology();
     await this._teachSyntax();
+    // ── ELA-Col2: linguistics reasoning chains ──
+    // How language WORKS as a system — each level builds on the one below
+    await this._teachCausalChains([
+      ['phoneme', 'morpheme'], ['morpheme', 'word'], ['word', 'phrase'],
+      ['phrase', 'clause'], ['clause', 'sentence'], ['sentence', 'discourse'],
+      ['syntax', 'grammar'], ['semantics', 'meaning'], ['pragmatics', 'context'],
+    ]);
+    await this._teachInference([
+      ['phoneme', 'morpheme', 'word'], ['word', 'phrase', 'sentence'],
+      ['syntax', 'semantics', 'pragmatics'],
+    ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
     const _af = this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
@@ -13816,6 +13874,16 @@ export class Curriculum {
       },
     ];
     await this._teachRhetoricalDefense(DEFENSE);
+    // ── ELA-Col4: rhetorical reasoning — how arguments work ──
+    await this._teachCausalChains([
+      ['claim', 'counter'], ['counter', 'rebuttal'], ['rebuttal', 'strengthen'],
+      ['ethos', 'trust'], ['pathos', 'emotion'], ['logos', 'logic'],
+      ['kairos', 'timing'], ['audience', 'adaptation'], ['context', 'strategy'],
+    ]);
+    await this._teachInference([
+      ['claim', 'counter', 'rebuttal'], ['ethos', 'pathos', 'logos'],
+      ['audience', 'context', 'strategy'],
+    ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
     const _af = this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
@@ -14137,6 +14205,16 @@ export class Curriculum {
       { sign: 'lamp', signifier: 'object', signified: 'knowledge' },
     ];
     await this._teachSemiotics(TRIADS);
+    // ── ELA-Grad: semiotic reasoning — how meaning is constructed ──
+    await this._teachCausalChains([
+      ['sign', 'signifier'], ['signifier', 'signified'], ['signified', 'meaning'],
+      ['text', 'interpret'], ['interpret', 'meaning'], ['context', 'meaning'],
+      ['discourse', 'power'], ['power', 'knowledge'], ['ideology', 'naturalize'],
+    ]);
+    await this._teachInference([
+      ['sign', 'signifier', 'signified'], ['text', 'interpret', 'meaning'],
+      ['discourse', 'power', 'knowledge'],
+    ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
     const _af = this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
