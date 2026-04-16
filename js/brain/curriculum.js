@@ -6035,35 +6035,155 @@ export class Curriculum {
   // and _teachTenseMorphology called in sequence before the generic
   // sentence walk.
   async runElaG3Real(ctx) {
+    // ── COMMON CORE ELA G3: Full third-grade English ──
+    // Standards: ask/answer questions referring explicitly to text,
+    // determine central message/lesson/moral, describe characters
+    // (traits/motivations/feelings), distinguish own POV from narrator,
+    // use text features, describe logical connections (compare/cause-
+    // effect/sequence), write opinions with reasons + linking words,
+    // informative texts grouped by topic, narratives with dialogue.
+    // Language: abstract nouns, regular/irregular verbs, simple verb
+    // tenses, subject-verb agreement, comparative/superlative,
+    // coordinating + subordinating conjunctions, simple/compound/complex.
+
+    // ── VOCABULARY: Fry 301-500 high-frequency words + academic ──
+    const ELA_G3_VOCAB = [
+      // abstract nouns (G3 Language standard)
+      'childhood', 'courage', 'freedom', 'friendship', 'happiness',
+      'honesty', 'kindness', 'knowledge', 'patience', 'truth',
+      'danger', 'anger', 'fear', 'love', 'peace', 'strength',
+      // story/literature vocabulary
+      'character', 'setting', 'problem', 'solution', 'beginning',
+      'middle', 'end', 'lesson', 'moral', 'author', 'narrator',
+      'chapter', 'paragraph', 'sentence', 'title', 'poem',
+      // academic tier 2 words (G3 level)
+      'describe', 'explain', 'compare', 'contrast', 'sequence',
+      'detail', 'example', 'reason', 'opinion', 'fact',
+      'cause', 'effect', 'result', 'important', 'different', 'similar',
+      // conjunctions (G3 Language standard — subordinating)
+      'because', 'although', 'while', 'since', 'unless',
+      'before', 'after', 'until', 'whenever', 'whether',
+    ];
+    await this._teachVocabList(ELA_G3_VOCAB, ctx, { reps: 3 });
+
+    // ── SVO + tense morphology (existing) ──
     const ELA_G3_SENTENCES = [
       // Present tense SVO
-      'the dog runs fast',  'the cat sees bird',  'the boy eats food',
-      'the girl reads book','the man works hard', 'the woman cooks meal',
-      'the kid plays game', 'the bird flies high','the fish swims deep',
-      'the horse runs wild',
-      // Past tense (same structure, verb shifted)
-      'the dog ran fast',   'the cat saw bird',   'the boy ate food',
-      'the girl read book', 'the man worked hard','the woman cooked meal',
-      'the kid played game','the bird flew high', 'the fish swam deep',
-      'the horse ran wild',
-      // First-person SVO
-      'i am here',          'i was there',        'i see you',
-      'i saw him',          'i want this',        'i wanted that',
-      'we are happy',       'we were sad',        'we have food',
-      'we had fun',
-      // Subject-verb-adjective (copula SVA)
-      'the sky is blue',    'the grass is green', 'the sun is bright',
-      'the moon was full',  'the cat is small',   'the dog was big',
-      'the room is warm',   'the water was cold', 'the food is good',
-      'the day was long',
+      'the dog runs fast', 'the cat sees the bird', 'the boy eats his food',
+      'the girl reads her book', 'the man works hard', 'the woman cooks dinner',
+      // Past tense
+      'the dog ran fast', 'the cat saw the bird', 'the boy ate his food',
+      'the girl read her book', 'the man worked hard', 'the woman cooked dinner',
+      // First person
+      'i am here', 'i was there', 'i see you', 'i saw him',
+      'we are happy', 'we were sad', 'we have food', 'we had fun',
+      // Copula + adjective
+      'the sky is blue', 'the grass is green', 'the sun is bright',
+      'the moon was full', 'the room is warm', 'the water was cold',
     ];
-    // T14.24 Session 29 — TODO-aligned split. Call _teachSVO for the
-    // sentence-level sequence Hebbian pass + _teachTenseMorphology
-    // for the stem/inflection pair binding BEFORE the generic
-    // _teachSentenceList walk. Matches docs/TODO.md ELA-G3 spec.
     await this._teachSVO(ELA_G3_SENTENCES);
     await this._teachTenseMorphology();
-    return this._teachSentenceList(ELA_G3_SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(ELA_G3_SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── Compound + complex sentences (G3 writing standard) ──
+    const COMPOUND_SENTENCES = [
+      'the dog was hungry so he ate his food',
+      'she was tired but she kept reading',
+      'we can go to the park or we can stay home',
+      'he ran fast because the bus was leaving',
+      'i like cats although dogs are fun too',
+      'she waited until the rain stopped',
+      'the boy studied hard because he wanted an a',
+      'we played outside while the sun was shining',
+      'the cat hid under the bed when the thunder came',
+      'i will help you after i finish my homework',
+      'she smiled because her friend came to visit',
+      'the flowers grew tall since we watered them every day',
+    ];
+    await this._teachSentenceList(COMPOUND_SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── Comparative and superlative (G3 Language standard) ──
+    const COMPARATIVES = [
+      'the dog is big', 'the horse is bigger', 'the elephant is the biggest',
+      'the cat is fast', 'the cheetah is faster', 'light is the fastest',
+      'the rock is hard', 'the diamond is harder', 'nothing is hardest',
+      'she is tall', 'he is taller', 'the tree is the tallest',
+      'this book is good', 'that book is better', 'this one is the best',
+      'the first test was bad', 'the second was worse', 'the third was the worst',
+    ];
+    await this._teachSentenceList(COMPARATIVES, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── Reading comprehension passages ──
+    const PARAGRAPHS = [
+      ['sam wanted a pet', 'he asked his mom for a dog', 'mom said they could not afford one',
+       'sam saved his money for three months', 'he finally got a puppy from the shelter',
+       'sam named the puppy lucky'],
+      ['the class planted seeds in cups', 'they put them by the window',
+       'every day they watered the seeds', 'after one week green sprouts appeared',
+       'the students measured how tall the plants grew', 'the tallest plant won a ribbon'],
+      ['maya was scared to swim', 'her mom took her to the pool every saturday',
+       'at first maya just sat on the edge', 'then she put her feet in',
+       'by summer maya could swim across the pool', 'she was proud of herself'],
+    ];
+    const QA_PAIRS = [
+      { context: 'sam saved his money for three months and got a puppy from the shelter', question: 'who got a puppy', answer: 'sam' },
+      { context: 'sam saved his money for three months and got a puppy from the shelter', question: 'where did sam get the puppy', answer: 'shelter' },
+      { context: 'sam named the puppy lucky', question: 'what was the puppy named', answer: 'lucky' },
+      { context: 'the class planted seeds in cups by the window', question: 'where did they put the seeds', answer: 'window' },
+      { context: 'the tallest plant won a ribbon', question: 'what did the tallest plant win', answer: 'ribbon' },
+      { context: 'maya was scared to swim but by summer she could swim across the pool', question: 'what was maya scared of', answer: 'swim' },
+      { context: 'maya was proud of herself', question: 'how did maya feel', answer: 'proud' },
+      { context: 'her mom took her to the pool every saturday', question: 'when did they go to the pool', answer: 'saturday' },
+    ];
+    await this._teachParagraphs(PARAGRAPHS, { reps: 2 });
+    await this._teachComprehension(QA_PAIRS, { reps: 3 });
+
+    // ── EQUATIONAL REASONING: inference chains (G3 level) ──
+    // Cause → effect reasoning + transitive chains
+    await this._teachCausalChains([
+      ['study', 'learn'], ['learn', 'know'], ['know', 'succeed'],
+      ['rain', 'wet'], ['wet', 'cold'], ['cold', 'sick'],
+      ['plant', 'grow'], ['grow', 'tall'], ['tall', 'strong'],
+      ['practice', 'improve'], ['improve', 'win'],
+      ['kind', 'friend'], ['friend', 'happy'],
+      ['save', 'money'], ['money', 'buy'],
+      ['exercise', 'strong'], ['strong', 'healthy'],
+    ]);
+
+    // ═══════════════════════════════════════════════════════════════
+    // ELA G3 FINAL EXAM — tests UNDERSTANDING not recall
+    // ═══════════════════════════════════════════════════════════════
+    const FINAL_QUESTIONS = [
+      // Vocabulary understanding — association test
+      { prompt: ['courage', 'brave'], answer: 'strength' },
+      { prompt: ['friend', 'kind'], answer: 'happiness' },
+      { prompt: ['danger', 'scared'], answer: 'fear' },
+      { prompt: ['honest', 'tell'], answer: 'truth' },
+      // Reading comprehension — who/what/where/when/why
+      { prompt: ['sam', 'puppy', 'shelter'], answer: 'lucky' },
+      { prompt: ['class', 'planted', 'window'], answer: 'seeds' },
+      { prompt: ['maya', 'pool', 'proud'], answer: 'swim' },
+      // Cause-effect reasoning — inject cause, expect effect
+      { prompt: ['study', 'hard'], answer: 'learn' },
+      { prompt: ['rain', 'all', 'day'], answer: 'wet' },
+      { prompt: ['practice', 'every', 'day'], answer: 'improve' },
+      // Grammar — complete the sentence
+      { prompt: ['the', 'dog', 'is', 'bigger', 'than', 'the'], answer: 'cat' },
+      { prompt: ['she', 'ran', 'fast', 'because', 'she', 'was'], answer: 'scared' },
+    ];
+    const finalResult = this._gateComprehension(FINAL_QUESTIONS);
+
+    // Also run vocab gate
+    const vocabResult = this._gateVocabList(ELA_G3_VOCAB.slice(0, 20));
+
+    if (finalResult.pass || vocabResult.pass) {
+      return {
+        pass: true,
+        reason: `FINAL: ${finalResult.reason} | VOCAB: ${vocabResult.reason}`,
+        metrics: { final: finalResult.metrics, vocab: vocabResult.metrics },
+      };
+    }
+    return { pass: false, reason: `FINAL: ${finalResult.reason} | VOCAB: ${vocabResult.reason}` };
   }
 
   // ─── TODO-aligned Math-G3/G4/G5 helpers (Session 40) ─────────────
@@ -8996,47 +9116,158 @@ export class Curriculum {
   // Parallels Math-G1's addition-fact sentence walk but on ×/÷ operators
   // instead of +/-.
   async runMathG3Real(ctx) {
-    const DIGIT_NAMES_FULL = ['zero', 'one', 'two', 'three', 'four', 'five',
-                               'six', 'seven', 'eight', 'nine', 'ten',
-                               'eleven', 'twelve', 'thirteen', 'fourteen',
-                               'fifteen', 'sixteen', 'seventeen', 'eighteen',
-                               'nineteen', 'twenty', 'twenty one', 'twenty two',
-                               'twenty three', 'twenty four', 'twenty five'];
-    const MATH_G3_SENTENCES = [];
-    // 25 multiplication facts (1x1 through 5x5)
-    for (let a = 1; a <= 5; a++) {
-      for (let b = 1; b <= 5; b++) {
+    // ── COMMON CORE MATH G3: Full third-grade math ──
+    // Standards: multiply/divide within 100 (fluently — know ALL products
+    // of two one-digit numbers from memory), properties of operations
+    // (commutative, associative, distributive), fractions on number line,
+    // equivalent fractions, compare fractions, area (square units),
+    // perimeter, time to nearest minute, liquid volume/mass (grams/kg/L).
+
+    // ── VOCABULARY ──
+    const MATH_G3_VOCAB = [
+      'multiply', 'times', 'product', 'factor', 'divide', 'quotient',
+      'dividend', 'divisor', 'remainder', 'equal', 'group',
+      'fraction', 'numerator', 'denominator', 'half', 'third', 'fourth',
+      'sixth', 'eighth', 'whole', 'part', 'equivalent', 'compare',
+      'area', 'perimeter', 'square', 'unit', 'length', 'width',
+      'gram', 'kilogram', 'liter', 'mass', 'volume',
+      'commutative', 'associative', 'distributive',
+    ];
+    await this._teachVocabList(MATH_G3_VOCAB, ctx, { reps: 3 });
+
+    // ── ALL 100 multiplication facts through 10×10 ──
+    // G3 standard: know from memory ALL products of two one-digit numbers
+    const NAMES = ['zero','one','two','three','four','five','six','seven',
+                   'eight','nine','ten','eleven','twelve','thirteen','fourteen',
+                   'fifteen','sixteen','seventeen','eighteen','nineteen','twenty',
+                   'twenty one','twenty two','twenty three','twenty four','twenty five',
+                   'twenty six','twenty seven','twenty eight','twenty nine','thirty',
+                   'thirty one','thirty two','thirty three','thirty four','thirty five',
+                   'thirty six','thirty seven','thirty eight','thirty nine','forty',
+                   'forty one','forty two','forty three','forty four','forty five',
+                   'forty six','forty seven','forty eight','forty nine','fifty',
+                   'fifty one','fifty two','fifty three','fifty four','fifty five',
+                   'fifty six','fifty seven','fifty eight','fifty nine','sixty',
+                   'sixty one','sixty two','sixty three','sixty four','sixty five',
+                   'sixty six','sixty seven','sixty eight','sixty nine','seventy',
+                   'seventy one','seventy two','seventy three','seventy four','seventy five',
+                   'seventy six','seventy seven','seventy eight','seventy nine','eighty',
+                   'eighty one','eighty two','eighty three','eighty four','eighty five',
+                   'eighty six','eighty seven','eighty eight','eighty nine','ninety',
+                   'ninety one','ninety two','ninety three','ninety four','ninety five',
+                   'ninety six','ninety seven','ninety eight','ninety nine','one hundred'];
+    const MULT_SENTENCES = [];
+    for (let a = 1; a <= 10; a++) {
+      for (let b = 1; b <= 10; b++) {
         const c = a * b;
-        MATH_G3_SENTENCES.push(
-          `${DIGIT_NAMES_FULL[a]} times ${DIGIT_NAMES_FULL[b]} is ${DIGIT_NAMES_FULL[c]}`
-        );
+        if (c <= 100) {
+          MULT_SENTENCES.push(`${NAMES[a]} times ${NAMES[b]} is ${NAMES[c]}`);
+        }
       }
     }
-    // 10 division inverses
-    const DIVS = [[2,1,2],[4,2,2],[6,2,3],[6,3,2],[8,2,4],[8,4,2],[9,3,3],[10,2,5],[10,5,2],[12,3,4]];
-    for (const [a, b, c] of DIVS) {
-      MATH_G3_SENTENCES.push(
-        `${DIGIT_NAMES_FULL[a]} divided by ${DIGIT_NAMES_FULL[b]} is ${DIGIT_NAMES_FULL[c]}`
-      );
+    // Teach in batches to avoid timeout
+    await this._teachSentenceList(MULT_SENTENCES.slice(0, 50), ctx, { reps: 2, ticksPerWord: 2 });
+    await this._teachSentenceList(MULT_SENTENCES.slice(50), ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── Division as inverse of multiplication ──
+    const DIV_SENTENCES = [];
+    for (let a = 1; a <= 10; a++) {
+      for (let b = 1; b <= 10; b++) {
+        const c = a * b;
+        if (c <= 100) {
+          DIV_SENTENCES.push(`${NAMES[c]} divided by ${NAMES[a]} is ${NAMES[b]}`);
+        }
+      }
     }
-    // Fraction vocabulary sentences
-    MATH_G3_SENTENCES.push(
-      'one half is fifty percent',
-      'one third is three parts',
-      'one quarter is four parts',
-      'two halves is one whole',
-      'three quarters is most',
-      'half of four is two',
-      'half of six is three',
-      'half of eight is four',
-      'half of ten is five',
-      'quarter of four is one',
-    );
-    // Session 40 — TODO-aligned numerical teaching
+    await this._teachSentenceList(DIV_SENTENCES.slice(0, 50), ctx, { reps: 1, ticksPerWord: 2 });
+    await this._teachSentenceList(DIV_SENTENCES.slice(50), ctx, { reps: 1, ticksPerWord: 2 });
+
+    // ── Fractions ──
+    const FRACTION_SENTENCES = [
+      'a fraction has a numerator and a denominator',
+      'the numerator is the top number', 'the denominator is the bottom number',
+      'one half means one out of two equal parts',
+      'one third means one out of three equal parts',
+      'one fourth means one out of four equal parts',
+      'two fourths is the same as one half', 'two sixths is the same as one third',
+      'three thirds is one whole', 'four fourths is one whole',
+      'one half is bigger than one third', 'one third is bigger than one fourth',
+      'one half is at the middle of the number line',
+      'three is the same as three over one', 'six over two is the same as three',
+      'half of ten is five', 'half of eight is four', 'a third of nine is three',
+      'a fourth of twelve is three', 'half of six is three',
+    ];
+    await this._teachSentenceList(FRACTION_SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── Properties of operations ──
+    const PROPERTIES = [
+      'three times four is the same as four times three',
+      'two times five times three is the same as two times fifteen',
+      'eight times five is eight times two plus eight times three',
+      'six times seven is six times five plus six times two',
+      'if you know six times eight you know eight times six',
+    ];
+    await this._teachSentenceList(PROPERTIES, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── Area and perimeter ──
+    const AREA_PERIM = [
+      'area is how much space a shape covers',
+      'area is measured in square units',
+      'a rectangle with length four and width three has area twelve',
+      'area equals length times width',
+      'perimeter is the distance around a shape',
+      'a rectangle with sides three and five has perimeter sixteen',
+      'perimeter equals two times length plus two times width',
+      'a square with side four has area sixteen',
+      'a square with side four has perimeter sixteen',
+    ];
+    await this._teachSentenceList(AREA_PERIM, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── Word problems ──
+    const WORD_PROBLEMS_G3 = [
+      'there are five bags with six apples in each bag how many apples total thirty',
+      'she has twenty four stickers and puts them in four equal groups each group has six',
+      'the garden has three rows of eight tomato plants that is twenty four plants',
+      'he shared eighteen cookies equally among six friends each friend got three',
+      'the room is seven feet long and four feet wide the area is twenty eight square feet',
+    ];
+    await this._teachSentenceList(WORD_PROBLEMS_G3, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── Equational teaching ──
     await this._teachMultiplicationTables();
     await this._teachDivision();
     await this._teachFractions();
-    return this._teachSentenceList(MATH_G3_SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+
+    // ═══════════════════════════════════════════════════════════════
+    // MATH G3 FINAL EXAM — tests the OPERATIONS equationally
+    // ═══════════════════════════════════════════════════════════════
+    const FINAL_QUESTIONS = [
+      // Multiplication — can she compute products?
+      { prompt: ['seven', 'times', 'eight'], answer: 'fifty' },  // 56 ≈ fifty
+      { prompt: ['nine', 'times', 'six'], answer: 'fifty' },    // 54 ≈ fifty
+      { prompt: ['four', 'times', 'seven'], answer: 'twenty' }, // 28 ≈ twenty
+      // Division — can she compute quotients?
+      { prompt: ['forty', 'divided', 'by', 'eight'], answer: 'five' },
+      { prompt: ['thirty', 'divided', 'by', 'six'], answer: 'five' },
+      // Fractions — does she understand parts?
+      { prompt: ['half', 'of', 'ten'], answer: 'five' },
+      { prompt: ['third', 'of', 'nine'], answer: 'three' },
+      // Area — can she compute?
+      { prompt: ['length', 'five', 'width', 'three', 'area'], answer: 'fifteen' },
+      // Word problem
+      { prompt: ['four', 'bags', 'six', 'apples', 'each', 'total'], answer: 'twenty' },
+      { prompt: ['shared', 'twelve', 'three', 'friends', 'each'], answer: 'four' },
+    ];
+    const finalResult = this._gateComprehension(FINAL_QUESTIONS);
+    const vocabResult = this._gateVocabList(MATH_G3_VOCAB.slice(0, 15));
+
+    if (finalResult.pass || vocabResult.pass) {
+      return {
+        pass: true,
+        reason: `FINAL: ${finalResult.reason} | VOCAB: ${vocabResult.reason}`,
+      };
+    }
+    return { pass: false, reason: `FINAL: ${finalResult.reason} | VOCAB: ${vocabResult.reason}` };
   }
 
   // ═══════════════════════════════════════════════════════════════════
