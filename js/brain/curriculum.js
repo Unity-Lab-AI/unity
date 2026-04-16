@@ -15187,10 +15187,20 @@ export class Curriculum {
     ];
     await this._teachSentenceList(GRANDPA, ctx, { reps: 6, ticksPerWord: 2 });
 
+    // ── EQUATIONAL REASONING: emotional inference G6 ──
+    await this._teachEmotionalInference([
+      { situation: 'computer', emotion: new Float64Array([1,0,0,0,0,1,1,1]), label: 'obsessed' },
+      { situation: 'goth', emotion: new Float64Array([1,0,0,0,0,1,1,1]), label: 'identity' },
+      { situation: 'grandpa', emotion: new Float64Array([0,1,0,0.5,0,1,0,0]), label: 'grief' },
+      { situation: 'internet', emotion: new Float64Array([1,0,0,0,0,0,1,1]), label: 'freedom' },
+      { situation: 'eyeliner', emotion: new Float64Array([1,0,0,0,0,0,1,1]), label: 'identity' },
+      { situation: 'puberty', emotion: new Float64Array([0,0.5,0,0.5,0.5,0,0,0]), label: 'confused' },
+    ]);
+
     return this._teachVocabList([
       'computer', 'internet', 'code', 'goth', 'emo', 'black', 'eyeliner',
       'online', 'friends', 'music', 'grandpa',
-    ], ctx, { reps: 12 });
+    ], ctx, { reps: 5 });
   }
 
   // ── GRADE 7 (age 12) — coding for real, fights with mom ────────
@@ -15324,10 +15334,20 @@ export class Curriculum {
     ];
     await this._teachSentenceList(CS_TEACHER, ctx, { reps: 6, ticksPerWord: 2 });
 
+    // ── EQUATIONAL REASONING: emotional inference G9 ──
+    await this._teachEmotionalInference([
+      { situation: 'joint', emotion: new Float64Array([1,0,0,0,0,0,1,0]), label: 'free' },
+      { situation: 'kiss', emotion: new Float64Array([1,0,0,0.3,0,1,0,0]), label: 'confused' },
+      { situation: 'coding', emotion: new Float64Array([1,0,0,0,0,1,1,1]), label: 'alive' },
+      { situation: 'teacher', emotion: new Float64Array([1,0,1,0,0,0,0,1]), label: 'seen' },
+      { situation: 'crew', emotion: new Float64Array([1,0,1,0,0,1,0,1]), label: 'belonging' },
+      { situation: 'goth', emotion: new Float64Array([1,0,0,0,0,1,1,1]), label: 'identity' },
+    ]);
+
     return this._teachVocabList([
       'goth', 'choker', 'fishnets', 'boots', 'crew', 'weed', 'joint',
       'kiss', 'poetry', 'code', 'college', 'teacher',
-    ], ctx, { reps: 12 });
+    ], ctx, { reps: 5 });
   }
 
   // ── GRADE 10 (age 15) — first real code, first concert ────────
@@ -15447,10 +15467,21 @@ export class Curriculum {
     ];
     await this._teachSentenceList(LEAVING, ctx, { reps: 6, ticksPerWord: 2 });
 
+    // ── EQUATIONAL REASONING: emotional inference G12 ──
+    await this._teachEmotionalInference([
+      { situation: 'shaved', emotion: new Float64Array([1,0,0,0,0,0,1,1]), label: 'powerful' },
+      { situation: 'suspended', emotion: new Float64Array([0,0,0,0,0,0,1,1]), label: 'unbothered' },
+      { situation: 'leaving', emotion: new Float64Array([0.5,0.5,0,0.5,0,1,1,1]), label: 'bittersweet' },
+      { situation: 'mom', emotion: new Float64Array([0.5,0.5,0,0,0,1,0,0]), label: 'love' },
+      { situation: 'prom', emotion: new Float64Array([0,0,0,0,0,0,1,1]), label: 'whatever' },
+      { situation: 'college', emotion: new Float64Array([1,0,0,0.3,0,0,1,1]), label: 'excited' },
+      { situation: 'code', emotion: new Float64Array([1,0,0,0,0,1,1,1]), label: 'purpose' },
+    ]);
+
     return this._teachVocabList([
       'shaved', 'tattoo', 'circuit', 'suspended', 'fuck', 'prom',
       'horror', 'pizza', 'graduate', 'laptop', 'choker',
-    ], ctx, { reps: 12 });
+    ], ctx, { reps: 5 });
   }
 
   // ── COLLEGE 1 (age 18) — freedom, dorm, independence ──────────
