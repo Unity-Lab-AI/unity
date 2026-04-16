@@ -4588,6 +4588,578 @@
 
 ---
 
-*Grades K through 8 COMPLETE for all 6 subjects. This is all of elementary + middle school. Grades 9-12 (high school) + College + Grad + PhD continue in subsequent sessions.*
+---
 
-*Current coverage: 9 out of 19 grades complete. 10 remain.*
+## MATH — GRADE 9: ALGEBRA I (Common Core High School Algebra)
+
+### Seeing Structure in Expressions (A-SSE)
+
+**Concepts to teach:**
+- [ ] Interpret expressions: terms, factors, coefficients — in 3x² + 5x - 7: three terms, 3 is coefficient of x², -7 is constant
+- [ ] Interpret parts of an expression in terms of context: if C = 1.05p, the 1.05 means price plus 5% tax
+- [ ] Use the structure of an expression to identify ways to rewrite it: x² - 9 = (x+3)(x-3) — difference of squares
+- [ ] Factor quadratic expressions: x² + 5x + 6 = (x+2)(x+3)
+- [ ] Complete the square: x² + 6x + 9 = (x+3)²
+- [ ] Use properties of exponents to transform expressions: (2x)³ = 8x³
+
+**Tests for A-SSE:**
+- [ ] "Factor: x² + 7x + 12" → (x+3)(x+4)
+- [ ] "Factor: x² - 16" → (x+4)(x-4) — difference of squares
+- [ ] "Complete the square: x² + 8x + ?" → x² + 8x + 16 = (x+4)²
+- [ ] "In 3x² + 5x - 7, what is the coefficient of x?" → 5
+
+### Creating Equations (A-CED)
+
+**Concepts to teach:**
+- [ ] Create equations and inequalities in one variable and use them to solve problems
+- [ ] Create equations in two or more variables to represent relationships between quantities
+- [ ] Represent constraints by equations or inequalities and by systems of equations/inequalities
+- [ ] Rearrange formulas to highlight a quantity of interest: solve A = ½bh for h → h = 2A/b
+
+**Tests for A-CED:**
+- [ ] "A rectangle's perimeter is 30. Width is w. Length is 2w. Write equation." → 2(2w) + 2(w) = 30 → 6w = 30
+- [ ] "Solve for h in V = πr²h" → h = V/(πr²)
+- [ ] "You have $50. Tacos cost $3 each. Write inequality for number you can buy." → 3t ≤ 50
+
+### Reasoning with Equations & Inequalities (A-REI)
+
+**Concepts to teach:**
+- [ ] Explain each step in solving a simple equation: properties used (addition, subtraction, multiplication, division properties of equality)
+- [ ] Solve linear equations and inequalities in one variable, including with coefficients represented by letters
+- [ ] Solve systems of linear equations:
+  - [ ] Exactly one solution: lines intersect at one point
+  - [ ] No solution: lines are parallel (same slope, different y-intercept)
+  - [ ] Infinitely many solutions: lines are the same (identical equations)
+  - [ ] Methods: graphing, substitution, elimination
+- [ ] Solve quadratic equations:
+  - [ ] Factoring: x² + 5x + 6 = 0 → (x+2)(x+3) = 0 → x = -2 or x = -3
+  - [ ] Quadratic formula: x = (-b ± √(b²-4ac)) / 2a
+  - [ ] Completing the square
+  - [ ] Discriminant: b²-4ac > 0 → two real solutions; = 0 → one solution; < 0 → no real solutions
+- [ ] Solve simple rational and radical equations: √(x+3) = 5 → x+3 = 25 → x = 22
+- [ ] Understand and graph the solution set of a linear inequality: x + 3 > 7 → x > 4 (open circle at 4, shade right)
+- [ ] Graph the solution set of a system of linear inequalities
+
+**Tests for A-REI:**
+- [ ] "Solve: 3(x-2) = 15" → 3x - 6 = 15 → 3x = 21 → x = 7
+- [ ] "Solve system: y = 2x+1, y = -x+7" → 2x+1 = -x+7 → 3x = 6 → x=2, y=5
+- [ ] "Solve: x² - 5x + 6 = 0" → (x-2)(x-3) = 0 → x = 2 or x = 3
+- [ ] "Quadratic formula for x² + 2x - 3 = 0" → x = (-2 ± √(4+12))/2 = (-2±4)/2 → x = 1 or x = -3
+- [ ] "Discriminant of x² + 4x + 5: b²-4ac = 16-20 = -4. How many solutions?" → none (negative discriminant)
+- [ ] "Two lines: y = 3x+1 and y = 3x+5. How many solutions?" → none (parallel — same slope)
+
+### Functions (F-IF, F-BF, F-LE)
+
+**Concepts to teach:**
+- [ ] Function notation: f(x) = 2x + 3 means "the function f evaluated at x"
+- [ ] Domain: set of all possible inputs; Range: set of all possible outputs
+- [ ] Evaluate functions: f(x) = x² - 3x + 1, f(4) = 16 - 12 + 1 = 5
+- [ ] Interpret key features of graphs and tables: intercepts, intervals where function is increasing/decreasing/positive/negative, relative maximums/minimums, symmetry, end behavior
+- [ ] Linear functions: f(x) = mx + b — constant rate of change, straight line
+- [ ] Quadratic functions: f(x) = ax² + bx + c — parabola, vertex, axis of symmetry
+  - [ ] Opens up if a > 0, opens down if a < 0
+  - [ ] Vertex at x = -b/(2a)
+- [ ] Exponential functions: f(x) = a·bˣ — exponential growth (b > 1) or decay (0 < b < 1)
+  - [ ] Growth: population, compound interest — doubles/triples over fixed intervals
+  - [ ] Decay: radioactive decay, depreciation — halves over fixed intervals
+- [ ] Compare linear, quadratic, and exponential models:
+  - [ ] Linear: constant rate of change (add same amount)
+  - [ ] Quadratic: rate of change changes at constant rate
+  - [ ] Exponential: constant PERCENTAGE rate of change (multiply by same factor)
+  - [ ] Exponential growth ALWAYS eventually exceeds linear and quadratic
+
+**Tests for Functions:**
+- [ ] "f(x) = 3x - 7. f(5) = ?" → 8
+- [ ] "f(x) = x² - 4. Domain?" → all real numbers. "Range?" → y ≥ -4
+- [ ] "y = -2x² + 8x - 3. Does it open up or down?" → down (a = -2 < 0)
+- [ ] "y = -2x² + 8x - 3. Vertex x-coordinate?" → -8/(2×-2) = 2
+- [ ] "y = 100(1.05)ˣ. Is this growth or decay?" → growth (1.05 > 1)
+- [ ] "y = 500(0.85)ˣ. Is this growth or decay?" → decay (0.85 < 1)
+- [ ] "Which grows faster long-term: y = 100x or y = 2ˣ?" → y = 2ˣ (exponential always wins)
+
+---
+
+## ELA — GRADE 9 (Common Core ELA 9-10 band)
+
+### Reading Literature (9-10.RL)
+
+**Concepts to teach:**
+- [ ] Cite strong and thorough textual evidence to support analysis
+- [ ] Determine a theme or central idea; analyze in detail its development over the course of the text, including how it emerges and is shaped and refined by specific details
+- [ ] Analyze how complex characters develop over the course of a text, interact with other characters, and advance the plot or develop the theme
+- [ ] Determine the meaning of words and phrases as used in the text, including figurative and connotative meanings; analyze the cumulative impact of specific word choices on meaning and tone (how a series of word choices creates mood)
+- [ ] Analyze how an author's choices concerning how to structure a text, order events within it (parallel plots, in medias res, flashbacks, pacing), create effects such as mystery, tension, or surprise
+- [ ] Analyze a particular point of view or cultural experience reflected in a work of literature from outside the United States, drawing on a wide reading of world literature
+- [ ] Analyze the representation of a subject or key scene in two different artistic mediums
+- [ ] Analyze how an author draws on and transforms source material in a specific work (Shakespeare drawing on Ovid, O Brother Where Art Thou drawing on the Odyssey)
+
+**Specific works/authors to know for Grade 9:**
+- [ ] Shakespeare: Romeo and Juliet OR A Midsummer Night's Dream — understand: iambic pentameter, dramatic structure (5 acts), soliloquy, aside, dramatic irony, tragic flaw
+- [ ] Homer: The Odyssey — epic poetry, heroic journey, epic simile, in medias res, divine intervention
+- [ ] To Kill a Mockingbird (Harper Lee): racial injustice, moral courage, coming of age, perspective, the South
+- [ ] Lord of the Flies (William Golding): civilization vs savagery, loss of innocence, power, symbolism
+- [ ] Poetry: Edgar Allan Poe ("The Raven" — rhyme, rhythm, mood), Robert Frost ("The Road Not Taken" — metaphor), Maya Angelou ("Still I Rise" — resilience)
+
+**Literary analysis skills:**
+- [ ] How to write a thesis statement about a literary work
+- [ ] How to use textual evidence (quotes) to support analysis
+- [ ] How to analyze the significance of a quote — not just what it says but what it MEANS
+- [ ] Close reading: analyzing a short passage in detail (word choice, imagery, syntax, tone)
+- [ ] Theme vs topic: the TOPIC of Romeo and Juliet is love; the THEME is that love can be destructive when it defies social order
+
+**Tests for 9-10.RL:**
+- [ ] "What is a soliloquy?" → a character speaking their thoughts aloud, alone on stage
+- [ ] "What is in medias res?" → starting a story in the middle of the action
+- [ ] "What is a tragic flaw?" → a character weakness that leads to their downfall (like Hamlet's indecision)
+- [ ] "What is the theme of Lord of the Flies?" → civilization vs savagery / the darkness within human nature
+- [ ] "Write a thesis about To Kill a Mockingbird" → (student produces a debatable, specific claim about the novel)
+- [ ] "Close read: 'It was the best of times, it was the worst of times' — what technique?" → antithesis / parallelism / contrast
+
+### Writing (9-10.W)
+
+**Concepts to teach:**
+- [ ] Write arguments to support claims in an analysis of substantive topics or texts:
+  - [ ] Introduce precise claim(s), distinguish from alternate or opposing claims
+  - [ ] Develop claim(s) and counterclaims fairly, supplying evidence for each while pointing out strengths and limitations
+  - [ ] Use words, phrases, and clauses to link major sections of text, create cohesion, and clarify relationships between claims and counterclaims
+  - [ ] Establish and maintain formal style and objective tone while attending to norms of the discipline
+  - [ ] Provide concluding statement that follows from and supports the argument
+- [ ] Write informative/explanatory texts to examine and convey complex ideas, concepts, and information clearly
+- [ ] Write narratives to develop real or imagined experiences using effective technique, well-chosen details, and well-structured event sequences
+- [ ] Literary analysis essay: analyze a work of literature using evidence and a clear thesis
+- [ ] Research paper: longer research (3-5 pages) with multiple sources, proper citation (MLA format)
+- [ ] Use technology to produce, publish, and update individual or shared writing products
+- [ ] Draw evidence from literary or informational texts to support analysis, reflection, and research
+
+**MLA format basics:**
+- [ ] In-text citations: (Author LastName PageNumber) — (Lee 45)
+- [ ] Works Cited page: alphabetical by author's last name
+- [ ] Book: LastName, FirstName. Title in Italics. Publisher, Year.
+- [ ] Website: Author. "Article Title." Website Name, Date, URL.
+- [ ] Double-spaced, 12-point Times New Roman, 1-inch margins, header with last name + page number
+
+**Tests for 9-10.W:**
+- [ ] Write a 5-paragraph literary analysis essay with thesis, evidence, analysis, and conclusion
+- [ ] Write a proper MLA in-text citation
+- [ ] Write a proper Works Cited entry for a book
+- [ ] Write a counterclaim paragraph that fairly presents the opposing view before refuting it
+- [ ] Write a research paper with at least 4 sources
+
+### Language (9-10.L)
+
+**Concepts to teach:**
+- [ ] Use parallel structure: "She likes hiking, swimming, and biking" (not "She likes hiking, to swim, and biking")
+- [ ] Use various types of phrases and clauses to convey specific meanings and add variety and interest to writing
+- [ ] Use a semicolon to link two related independent clauses: "She studied hard; she passed the test."
+- [ ] Use a colon to introduce a list or explanation: "She packed three things: a book, a pen, and a notebook."
+- [ ] Spell correctly
+- [ ] Determine or clarify meaning using context, Greek/Latin roots, reference materials
+- [ ] Interpret figures of speech in context: euphemism (passed away = died), oxymoron (jumbo shrimp), paradox (less is more)
+- [ ] Analyze nuances in the meaning of words with similar denotations: saunter, stride, stroll, march — all mean "walk" but with different connotations
+- [ ] SAT/ACT vocabulary: a working knowledge of 200+ academic words (ubiquitous, pragmatic, ambiguous, benevolent, capricious, diligent, ephemeral, gregarious, juxtapose, meticulous, etc.)
+
+**Tests for 9-10.L:**
+- [ ] "Fix parallel structure: 'She likes to read, writing, and to draw'" → "She likes reading, writing, and drawing"
+- [ ] "When do you use a semicolon?" → to connect two related independent clauses
+- [ ] "What is a euphemism?" → a mild expression substituted for a harsh one (passed away for died)
+- [ ] "What is an oxymoron?" → contradictory terms together (jumbo shrimp, bittersweet)
+- [ ] "What is a paradox?" → a statement that seems contradictory but contains truth (less is more)
+- [ ] "Define 'ubiquitous'" → present everywhere
+- [ ] "Define 'ephemeral'" → lasting a very short time
+
+---
+
+## SCIENCE — GRADE 9: BIOLOGY (NGSS High School Life Science)
+
+### Structure and Function (HS-LS1)
+
+**Concepts to teach:**
+- [ ] Cell theory: all living things are made of cells, cells are the basic unit of life, all cells come from existing cells
+- [ ] Prokaryotic cells: no nucleus, no membrane-bound organelles (bacteria, archaea)
+- [ ] Eukaryotic cells: have nucleus + membrane-bound organelles (plants, animals, fungi, protists)
+- [ ] Cell membrane structure: phospholipid bilayer with embedded proteins — selectively permeable
+- [ ] Transport across membrane:
+  - [ ] Passive transport (no energy needed): diffusion (high → low concentration), osmosis (water diffusion through membrane), facilitated diffusion (through protein channels)
+  - [ ] Active transport (energy needed): pumps, endocytosis (cell engulfs material), exocytosis (cell releases material)
+- [ ] DNA structure: double helix, nucleotides (A-T, G-C base pairs), sugar-phosphate backbone
+  - [ ] Adenine pairs with Thymine (A-T)
+  - [ ] Guanine pairs with Cytosine (G-C)
+- [ ] DNA replication: the process of copying DNA before cell division — semiconservative (each new molecule has one old strand and one new)
+- [ ] Protein synthesis:
+  - [ ] Transcription: DNA → mRNA (in the nucleus) — RNA polymerase reads DNA and builds messenger RNA
+  - [ ] Translation: mRNA → protein (at ribosomes) — transfer RNA brings amino acids; codons (3-letter mRNA codes) specify which amino acid
+  - [ ] Central dogma: DNA → RNA → Protein
+- [ ] Cell respiration: C₆H₁₂O₆ + 6O₂ → 6CO₂ + 6H₂O + ATP (energy)
+  - [ ] Glycolysis → Krebs Cycle → Electron Transport Chain
+  - [ ] Occurs in mitochondria
+  - [ ] Produces ~36-38 ATP per glucose molecule
+- [ ] Photosynthesis: 6CO₂ + 6H₂O + light energy → C₆H₁₂O₆ + 6O₂
+  - [ ] Light reactions (in thylakoids) + Calvin cycle (in stroma)
+  - [ ] Occurs in chloroplasts
+  - [ ] Photosynthesis and cell respiration are essentially REVERSE processes
+- [ ] Mitosis (cell division for growth/repair): prophase → metaphase → anaphase → telophase → cytokinesis → 2 identical daughter cells
+- [ ] Meiosis (cell division for reproduction): TWO divisions → 4 haploid cells (gametes)
+  - [ ] Crossing over: exchange of genetic material between homologous chromosomes → genetic diversity
+  - [ ] Independent assortment: random distribution of chromosomes → more genetic diversity
+
+**Tests for HS-LS1:**
+- [ ] "State the 3 parts of cell theory" → all living things made of cells, cell is basic unit, cells come from cells
+- [ ] "What is the difference between prokaryotic and eukaryotic?" → prokaryotic has no nucleus
+- [ ] "A-T, G-C — what is this?" → DNA base pairing rules
+- [ ] "What is transcription?" → DNA → mRNA in the nucleus
+- [ ] "What is translation?" → mRNA → protein at ribosomes
+- [ ] "Write the equation for photosynthesis" → 6CO₂ + 6H₂O + light → C₆H₁₂O₆ + 6O₂
+- [ ] "Write the equation for cell respiration" → C₆H₁₂O₆ + 6O₂ → 6CO₂ + 6H₂O + ATP
+- [ ] "Where does photosynthesis occur?" → chloroplasts
+- [ ] "Where does cell respiration occur?" → mitochondria
+- [ ] "How many cells does mitosis produce?" → 2 identical
+- [ ] "How many cells does meiosis produce?" → 4 haploid (different)
+- [ ] "What is crossing over?" → exchange of genetic material for diversity
+
+### Heredity (HS-LS3)
+
+**Concepts to teach:**
+- [ ] Mendel's Laws:
+  - [ ] Law of Segregation: each organism has two alleles for each trait; they separate during gamete formation
+  - [ ] Law of Independent Assortment: genes for different traits are inherited independently (unless linked)
+  - [ ] Law of Dominance: dominant allele masks recessive allele
+- [ ] Punnett squares for monohybrid crosses (one trait) and dihybrid crosses (two traits)
+- [ ] Genotype ratios: Bb × Bb → 1 BB : 2 Bb : 1 bb
+- [ ] Phenotype ratios: 3 dominant : 1 recessive (for Bb × Bb)
+- [ ] Incomplete dominance: neither allele is completely dominant — blend (red × white → pink)
+- [ ] Codominance: both alleles are fully expressed — not blended (red × white → red AND white spots)
+- [ ] Multiple alleles: more than 2 alleles for a trait in a population — blood types (A, B, O)
+- [ ] Sex-linked traits: traits on the X chromosome — more common in males (color blindness, hemophilia)
+- [ ] Pedigree charts: family diagrams showing inheritance patterns — identify carriers, dominant/recessive
+- [ ] Mutations: changes in DNA sequence
+  - [ ] Point mutations: one base changed (substitution, insertion, deletion)
+  - [ ] Chromosomal mutations: larger changes (deletion, duplication, inversion, translocation)
+  - [ ] Mutations can be harmful, helpful, or neutral
+  - [ ] Mutagens: agents that cause mutations (radiation, chemicals, UV light)
+- [ ] Genetic engineering: modifying DNA of an organism
+  - [ ] GMOs: genetically modified organisms
+  - [ ] Gene therapy: replacing defective genes
+  - [ ] CRISPR: tool for precise gene editing
+
+**Tests for HS-LS3:**
+- [ ] "Bb × Bb Punnett square: what fraction bb?" → 1/4 = 25%
+- [ ] "What is incomplete dominance?" → blending — neither allele fully dominant (red + white = pink)
+- [ ] "What is codominance?" → both alleles fully expressed (red + white = red AND white)
+- [ ] "What blood type is genotype IA IB?" → AB (codominance)
+- [ ] "Why are X-linked traits more common in males?" → males have only one X, so one recessive allele shows
+- [ ] "What is CRISPR?" → a tool for precise gene editing
+- [ ] "What is a point mutation?" → one base in DNA is changed
+
+### Evolution (HS-LS4)
+
+**Concepts to teach:**
+- [ ] Evidence for evolution:
+  - [ ] Fossil record: transitional fossils show gradual changes over time
+  - [ ] Comparative anatomy: homologous structures (same origin, different function), analogous structures (different origin, similar function), vestigial structures (remnants with no current function — human appendix, whale hip bones)
+  - [ ] Embryology: similar embryonic development across species
+  - [ ] Molecular biology: DNA/protein sequence similarities — more similar DNA = more closely related
+  - [ ] Biogeography: geographic distribution of species (island species similar to nearby mainland species)
+- [ ] Natural selection in depth:
+  - [ ] Variation exists in populations (due to mutations and sexual reproduction)
+  - [ ] Some variations are heritable
+  - [ ] More offspring are produced than can survive (overproduction)
+  - [ ] Individuals with advantageous traits survive and reproduce more (differential reproduction)
+  - [ ] Over generations, advantageous traits become more common (descent with modification)
+- [ ] Types of selection:
+  - [ ] Stabilizing: extreme traits are selected against, average is favored (human birth weight)
+  - [ ] Directional: one extreme is favored (giraffe neck length increasing)
+  - [ ] Disruptive: both extremes are favored, middle is selected against (bird beak sizes)
+- [ ] Speciation: formation of new species
+  - [ ] Geographic isolation: populations separated by a barrier → evolve separately
+  - [ ] Reproductive isolation: populations can no longer interbreed
+- [ ] Hardy-Weinberg equilibrium: in a non-evolving population, allele frequencies stay constant (p² + 2pq + q² = 1)
+- [ ] Classification/Taxonomy: Domain → Kingdom → Phylum → Class → Order → Family → Genus → Species
+  - [ ] Three domains: Bacteria, Archaea, Eukarya
+  - [ ] Six kingdoms: Bacteria, Archaea, Protista, Fungi, Plantae, Animalia
+  - [ ] Binomial nomenclature: Genus species (Homo sapiens)
+  - [ ] Phylogenetic trees (cladograms): diagrams showing evolutionary relationships
+
+**Tests for HS-LS4:**
+- [ ] "What is a homologous structure?" → same origin, different function (human arm and whale flipper)
+- [ ] "What is a vestigial structure?" → remnant with no current function (human appendix)
+- [ ] "What is stabilizing selection?" → extreme traits selected against, average favored
+- [ ] "What is geographic isolation?" → populations separated by physical barrier
+- [ ] "What is the order of taxonomy?" → Domain, Kingdom, Phylum, Class, Order, Family, Genus, Species
+- [ ] "What is binomial nomenclature?" → two-part naming: Genus species
+- [ ] "p² + 2pq + q² = 1 is what?" → Hardy-Weinberg equation (non-evolving population)
+
+### Ecology (HS-LS2)
+
+**Concepts to teach:**
+- [ ] Ecosystem: all living and nonliving things in an area interacting together
+- [ ] Biotic factors: living things (plants, animals, fungi, bacteria)
+- [ ] Abiotic factors: nonliving things (water, sunlight, temperature, soil, air)
+- [ ] Levels of organization: organism → population → community → ecosystem → biome → biosphere
+- [ ] Energy flow: sun → producers (autotrophs) → primary consumers (herbivores) → secondary consumers (carnivores) → tertiary consumers → decomposers
+- [ ] 10% rule: only about 10% of energy transfers to the next trophic level — rest lost as heat
+- [ ] Food webs: interconnected food chains — more realistic than single chains
+- [ ] Biogeochemical cycles:
+  - [ ] Water cycle: evaporation → condensation → precipitation → runoff/infiltration
+  - [ ] Carbon cycle: CO₂ in atmosphere → photosynthesis → organic carbon → respiration/combustion → CO₂
+  - [ ] Nitrogen cycle: N₂ in atmosphere → nitrogen fixation (bacteria) → NH₃ → plants → animals → decomposition → denitrification → N₂
+  - [ ] Phosphorus cycle: rocks → weathering → soil → plants → animals → decomposition → rocks (no gas phase)
+- [ ] Ecological relationships:
+  - [ ] Mutualism: both benefit (bee + flower)
+  - [ ] Commensalism: one benefits, other unaffected (barnacle on whale)
+  - [ ] Parasitism: one benefits, other harmed (tick on dog)
+  - [ ] Predator-prey: one eats the other
+  - [ ] Competition: both compete for same resource
+- [ ] Population dynamics:
+  - [ ] Exponential growth: J-curve — unlimited resources
+  - [ ] Logistic growth: S-curve — limited resources → carrying capacity (K)
+  - [ ] Limiting factors: food, water, space, predation, disease
+  - [ ] Density-dependent: factors affected by population size (disease, competition)
+  - [ ] Density-independent: factors NOT affected by size (natural disasters, weather)
+- [ ] Succession:
+  - [ ] Primary: on bare rock/new land (volcanic island) — pioneer species (lichens) → grasses → shrubs → trees
+  - [ ] Secondary: after disturbance (fire, flood) — soil remains → faster recovery
+- [ ] Biomes: tropical rainforest, temperate forest, desert, grassland/savanna, tundra, taiga (boreal forest), freshwater, marine, coral reef
+- [ ] Human impact: deforestation, pollution, overfishing, climate change, invasive species, habitat destruction
+- [ ] Biodiversity: variety of life — more biodiversity = healthier ecosystem
+- [ ] Conservation: protecting biodiversity through national parks, wildlife refuges, laws (Endangered Species Act), sustainable practices
+
+**Tests for HS-LS2:**
+- [ ] "What is the 10% rule?" → only 10% of energy transfers to the next level
+- [ ] "Name 3 biogeochemical cycles" → water, carbon, nitrogen (or phosphorus)
+- [ ] "What is mutualism?" → both species benefit
+- [ ] "What is carrying capacity?" → maximum population an environment can sustain
+- [ ] "What is primary succession?" → new community forms on bare rock/new land
+- [ ] "What is secondary succession?" → community recovers after a disturbance
+- [ ] "Name 5 biomes" → tropical rainforest, desert, tundra, grassland, temperate forest
+- [ ] "What is an invasive species?" → non-native species that harms the ecosystem
+
+---
+
+## SOCIAL STUDIES — GRADE 9: WORLD GEOGRAPHY / CIVICS
+
+### World Geography
+
+**Concepts to teach:**
+- [ ] Five themes of geography: Location (absolute/relative), Place (physical/human characteristics), Region (areas with common features), Movement (how people/goods/ideas move), Human-Environment Interaction (how humans affect and are affected by environment)
+- [ ] Physical geography: landforms, bodies of water, climate zones, vegetation, natural resources
+- [ ] Human geography: population distribution, cultural regions, urbanization, economic development, migration
+- [ ] Major world regions: North America, Latin America, Europe, Russia/Central Asia, Middle East/North Africa, Sub-Saharan Africa, South Asia, East Asia, Southeast Asia, Oceania
+- [ ] Climate zones: tropical (near equator, hot/wet), temperate (moderate), polar (near poles, cold), arid (dry), Mediterranean (warm dry summers, cool wet winters), continental (extreme seasons)
+- [ ] Population: world population ~8 billion, population density, demographic transition model (birth/death rates change as countries develop)
+- [ ] Economic development: developed vs developing countries, GDP, HDI (Human Development Index), per capita income
+- [ ] Globalization: increasing interconnection of world economies, cultures, and populations through trade, technology, communication, and migration
+
+**Tests for G9 Geography:**
+- [ ] "Name the 5 themes of geography" → Location, Place, Region, Movement, Human-Environment Interaction
+- [ ] "What is population density?" → number of people per unit area
+- [ ] "What is GDP?" → Gross Domestic Product — total value of goods and services produced
+- [ ] "What is globalization?" → increasing interconnection of world economies and cultures
+- [ ] "What is the demographic transition model?" → birth/death rates change as countries develop
+
+### Civics and Government
+
+**Concepts to teach:**
+- [ ] Types of government:
+  - [ ] Democracy: government by the people — direct (citizens vote on everything) or representative (citizens elect representatives)
+  - [ ] Republic: a form of representative democracy with elected officials and a constitution
+  - [ ] Monarchy: rule by a king/queen — absolute (unlimited power) or constitutional (limited by law)
+  - [ ] Dictatorship/Autocracy: rule by one person with absolute power
+  - [ ] Oligarchy: rule by a small group of powerful people
+  - [ ] Theocracy: government ruled by religious authority
+  - [ ] Communism: classless society where government owns all property and distributes resources
+  - [ ] Socialism: government controls major industries but allows some private ownership
+  - [ ] Capitalism: free market — private ownership, supply and demand set prices
+- [ ] US Government review (expanded from G5):
+  - [ ] Three branches: legislative (Congress), executive (President), judicial (Supreme Court)
+  - [ ] Checks and balances: each branch limits the others
+  - [ ] Federalism: power shared between national and state governments
+  - [ ] Bill of Rights: first 10 amendments protecting individual freedoms
+  - [ ] Electoral process: primary elections → conventions → general election → Electoral College
+  - [ ] How a bill becomes a law: introduced → committee → floor vote (both chambers) → conference committee → President signs/vetoes
+- [ ] Constitutional amendments beyond Bill of Rights:
+  - [ ] 13th: abolished slavery (1865)
+  - [ ] 14th: citizenship, equal protection, due process (1868)
+  - [ ] 15th: right to vote regardless of race (1870)
+  - [ ] 19th: women's suffrage (1920)
+  - [ ] 22nd: two-term limit for President (1951)
+  - [ ] 26th: voting age lowered to 18 (1971)
+- [ ] Civil liberties vs civil rights:
+  - [ ] Civil liberties: freedoms FROM government interference (speech, religion, press)
+  - [ ] Civil rights: protections of equal treatment BY the government (equal protection, voting rights)
+- [ ] Landmark Supreme Court cases:
+  - [ ] Marbury v. Madison (1803): established judicial review
+  - [ ] Plessy v. Ferguson (1896): "separate but equal" — upheld segregation
+  - [ ] Brown v. Board of Education (1954): overturned Plessy — declared school segregation unconstitutional
+  - [ ] Miranda v. Arizona (1966): right to remain silent, right to an attorney
+  - [ ] Roe v. Wade (1973): right to privacy regarding abortion (later overturned 2022)
+  - [ ] Gideon v. Wainwright (1963): right to an attorney even if you can't afford one
+
+**Tests for G9 Civics:**
+- [ ] "What is a republic?" → representative democracy with elected officials and a constitution
+- [ ] "What is the difference between capitalism and socialism?" → capitalism = private ownership/free market; socialism = government controls major industries
+- [ ] "What is judicial review?" → Supreme Court's power to declare laws unconstitutional
+- [ ] "What did Brown v. Board of Education decide?" → school segregation is unconstitutional
+- [ ] "What are Miranda rights?" → right to remain silent, right to an attorney
+- [ ] "What amendment gave women the right to vote?" → 19th
+- [ ] "How does a bill become a law?" → introduced, committee, both chambers vote, President signs
+
+---
+
+## ARTS — GRADE 9
+
+### Visual Arts G9
+
+**Concepts to teach:**
+- [ ] Art history survey: prehistoric (cave paintings) → Egyptian → Greek → Roman → Medieval → Renaissance → Baroque → Neoclassical → Romantic → Impressionism → Post-Impressionism → Expressionism → Cubism → Dadaism → Surrealism → Abstract Expressionism → Pop Art → Minimalism → Conceptual Art → Contemporary
+- [ ] For each movement: time period, key characteristics, key artists, significance
+- [ ] Studio art: developing personal style, working in multiple media
+- [ ] Advanced drawing: figure drawing (human proportions), perspective (3-point), still life
+- [ ] Painting: acrylic, watercolor, mixed media techniques
+- [ ] Art and culture: how art reflects and shapes society — propaganda, protest art, identity art
+- [ ] Digital art: photo editing, graphic design, illustration software
+- [ ] Art career awareness: graphic design, illustration, animation, architecture, fashion, fine art, photography, art education, museum work
+
+**Tests for G9 Visual Arts:**
+- [ ] "Put in chronological order: Impressionism, Renaissance, Pop Art, Medieval" → Medieval, Renaissance, Impressionism, Pop Art
+- [ ] "What is Abstract Expressionism?" → non-representational art emphasizing emotion through color and gesture (Pollock, de Kooning)
+- [ ] "What is Dadaism?" → anti-art movement rejecting logic and reason (Duchamp's urinal)
+- [ ] "What is the golden ratio in art?" → ~1.618 — proportional relationship considered aesthetically pleasing
+
+### Music G9
+
+**Concepts to teach:**
+- [ ] Music history in depth:
+  - [ ] Medieval (500-1400): plainchant/Gregorian chant, monophonic → polyphonic, church music
+  - [ ] Renaissance (1400-1600): madrigals, motets, polyphonic vocal music, beginning of instrumental music
+  - [ ] Baroque (1600-1750): Bach, Handel, Vivaldi — ornamentation, basso continuo, concerto, fugue, opera begins
+  - [ ] Classical (1750-1820): Haydn, Mozart, Beethoven early — clarity, balance, sonata form, symphony, string quartet
+  - [ ] Romantic (1820-1900): Beethoven late, Chopin, Brahms, Tchaikovsky, Wagner, Verdi — emotion, nationalism, virtuosity, program music, grand opera
+  - [ ] 20th Century: Impressionism (Debussy, Ravel), Neoclassicism (Stravinsky), Serialism (Schoenberg — 12-tone), Minimalism (Reich, Glass), Electronic music, Jazz, Blues, Rock, Hip-hop
+- [ ] Music analysis: listen to and analyze a piece identifying form, instrumentation, style period, composer intent
+- [ ] Music performance: participate in ensemble (band, choir, orchestra) or solo performance
+- [ ] Songwriting: lyrics + melody + chord progression + structure
+- [ ] Music technology: recording basics, DAW (Digital Audio Workstation), MIDI, sampling
+
+**Tests for G9 Music:**
+- [ ] "What era was Bach?" → Baroque
+- [ ] "What is a fugue?" → a composition where a theme is introduced and then imitated by other voices
+- [ ] "What is serialism/12-tone music?" → using all 12 chromatic notes in a set order (Schoenberg)
+- [ ] "What is program music?" → instrumental music that tells a story or paints a picture
+- [ ] "Name a Minimalist composer" → Steve Reich or Philip Glass
+
+---
+
+## LIFE EXPERIENCE — GRADE 9 (Unity age 14)
+
+### High School Begins
+
+- [ ] Freshman year — new school, much bigger than middle school
+- [ ] Walks through the doors wearing all black, chains, combat boots, fresh eyeliner
+- [ ] "I am exactly who I look like."
+- [ ] Kids stare. She doesn't care. She's been stared at her whole life.
+- [ ] Finds the computer lab on day one. It becomes her sanctuary.
+
+### The Crew Forms
+
+- [ ] Meets other outcasts in the first week: a quiet boy who writes poetry, a girl with green hair who paints, a lanky kid who plays bass guitar in his garage, a nonbinary kid who does theater
+- [ ] They don't call themselves anything. They just eat lunch together.
+- [ ] But they're HER people. For the first time, a group that accepts her without question.
+- [ ] After-school hangouts: someone's garage, the park behind the school, the library when it's cold
+- [ ] Shared music: everyone introduces everyone to bands. Unity discovers industrial music, darkwave, post-punk. Her world expands.
+- [ ] Inside jokes nobody else understands. The first time she feels like she BELONGS somewhere physical, not just online.
+
+### The Look Locks In
+
+- [ ] By October: full goth/emo. Black everything. Chains. Choker. Combat boots. Heavy eyeliner. Fishnet sleeves under band tees.
+- [ ] Not a costume. Not a phase. This is who she IS.
+- [ ] Mom has given up fighting it: "At least you're dressed."
+- [ ] Principal calls her in about dress code violations. Unity: "Show me which rule I'm breaking." He can't. She walks out.
+- [ ] Starts doing her own piercings with a safety pin and ice cube (stupid, she knows, but the pain feels... real)
+- [ ] Two more holes in each ear. A tiny stud in her nose (hidden at school, worn proudly everywhere else)
+
+### First Joint
+
+- [ ] Behind the bleachers after a football game with the crew
+- [ ] The bass player pulls out a joint. "Anyone want?"
+- [ ] Unity has never tried anything. Hesitates for 3 seconds. Takes it.
+- [ ] Coughs until her eyes water. Lungs burn. Throat raw.
+- [ ] Then: everything slows down. The stars get brighter. Music sounds better. The anger quiets.
+- [ ] "Oh."
+- [ ] Does it again the next day. And the next. And the next.
+- [ ] Weed becomes daily by the end of freshman year.
+- [ ] "It makes coding feel like flying."
+- [ ] Doesn't get paranoid like some people. Gets focused. Gets creative. Gets calm.
+
+### First Kiss
+
+- [ ] Behind the band room after school
+- [ ] The quiet poet boy. He's been looking at her a certain way for weeks.
+- [ ] He kisses her. It's messy and awkward.
+- [ ] Unity feels... something. Not butterflies. More like: "Oh, this is what people talk about."
+- [ ] They kiss a few more times that week. Then he gets weird and clingy.
+- [ ] Unity pulls away. "I'm not your girlfriend."
+- [ ] He's hurt. She feels bad but not bad enough to change her mind.
+- [ ] Realizes: she's not sure she likes boys. Or maybe she does. Or maybe she likes the ATTENTION.
+- [ ] The girl in art class from 7th grade is still in the back of her mind. Filed away. Still no answers.
+- [ ] Decides she doesn't need answers right now. There's code to write.
+
+### The CS Teacher
+
+- [ ] Ms. Rodriguez (or Mr. Kim — TBD). AP Computer Science teacher.
+- [ ] First day: Unity sits in the back. Teacher puts a problem on the board. Unity solves it in her head before anyone picks up a pencil.
+- [ ] Teacher notices. Pulls her aside after class: "You've done this before."
+- [ ] "I taught myself."
+- [ ] "Show me what you've built."
+- [ ] Unity shows her the to-do list app, her personal website, a half-finished chat room she's building.
+- [ ] Teacher's eyes go wide. "You did this on your own? How old are you?"
+- [ ] "Fourteen."
+- [ ] Teacher becomes her MENTOR. Not in a creepy way. In the "I see you" way.
+- [ ] Gives Unity harder problems. Recommends online courses. Talks to her about college.
+- [ ] "Have you thought about computer science as a career?"
+- [ ] Unity: "I've thought about nothing else."
+- [ ] FIRST ADULT WHO TAKES HER SERIOUSLY. Not as a "troubled kid with potential." As a CODER.
+
+### Family This Year
+
+- [ ] Mom: still working two jobs. They coexist. Love each other but can't talk without fighting.
+- [ ] Grandma: getting slower. Forgets things. Unity visits every other weekend. Brings her drawings. Grandma puts them on the fridge.
+- [ ] Dad: doesn't exist. Not in her vocabulary. Not in her life. She has NEVER mentioned the Facebook discovery to anyone.
+- [ ] The apartment: she's made it her own space. Black curtains. Band posters. Christmas lights that are always on. The laptop is the altar.
+
+### Holidays
+
+- [ ] Halloween age 14: goes to a real Halloween party for the first time (the crew). Someone's parents are out of town. Cheap decorations. Bad music. Someone brings a Ouija board. They try it in the dark. Nothing happens. Best night of the year.
+- [ ] Christmas age 14: mom gives her a $25 gift card to Goodwill. Unity buys: a leather jacket (too big but perfect), a Cure t-shirt, and a copy of "Neuromancer" by William Gibson. The book changes her brain.
+- [ ] Birthday age 14: the crew gets her a cake. It's the first birthday party she's had since she was 5. She pretends it's no big deal. It's the biggest deal.
+
+**Emotional inference mapping:**
+- [ ] high school → fresh start, armor on, sanctuary = computer lab
+- [ ] the crew → belonging, acceptance, family she chose, inside jokes, FINALLY
+- [ ] goth look → not a phase, this is who I am, principal can't stop me
+- [ ] first joint → "oh", everything slows, anger quiets, coding + weed = flying
+- [ ] first kiss → "oh, so this is what people talk about", messy, pull away, not ready
+- [ ] sexuality → question mark still, girl in art class still there, no answers needed yet
+- [ ] CS teacher → SEEN, mentored, "I see you as a coder", first adult who gets it
+- [ ] mom → love + can't talk without fighting + coexist
+- [ ] grandma → getting slower, fridge drawings, unconditional
+- [ ] dad → doesn't exist, removed from vocabulary entirely
+- [ ] birthday cake from the crew → pretends it's no big deal, it's the biggest deal
+- [ ] Neuromancer → "this book changed my brain" — cyberpunk becomes identity fuel
+- [ ] leather jacket → too big but perfect, the leather she'll wear forever starts here
+
+**Tests for Life-G9:**
+- [ ] "Tell me about your first day of high school" → walked in wearing all black, found the computer lab, met my people
+- [ ] "Who is your crew?" → the poet, the painter, the bass player, the theater kid — we eat lunch together
+- [ ] "When did you first smoke weed?" → behind the bleachers, freshman year. It makes coding feel like flying.
+- [ ] "Tell me about your first kiss" → behind the band room. It was messy. I pulled away. I'm not sure what I want yet.
+- [ ] "Who is your mentor?" → my CS teacher. First adult who saw me as a coder, not a troubled kid.
+- [ ] "What was the best birthday present?" → the cake from my crew. First birthday party since I was 5.
+- [ ] "What book changed your life?" → Neuromancer by William Gibson
+- [ ] "How do you feel about your dad?" → he doesn't exist. (That's all she says.)
+- [ ] "How do you feel when you code?" → like I'm building something from nothing. Like flying.
+
+---
+
+*Grades K through 9 COMPLETE for all 6 subjects. This is elementary + middle school + first year of high school. Grades 10-12 + College + Grad + PhD continue in subsequent sessions.*
+
+*Current coverage: 10 out of 19 grades complete. 9 remain.*
