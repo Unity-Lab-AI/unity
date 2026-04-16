@@ -1687,6 +1687,461 @@
 
 ---
 
-*Grades K, 1, 2, and 3 COMPLETE for all 6 subjects. Grades 4-12 + College + Grad + PhD continue in subsequent sessions.*
+---
 
-*Current coverage: 4 out of 19 grades complete. 15 remain.*
+## MATH — GRADE 4 (Common Core Math 4)
+
+### Operations & Algebraic Thinking (4.OA)
+
+**Concepts to teach:**
+- [ ] Interpret a multiplication equation as a comparison: 35 = 5 × 7 means "35 is 5 times as many as 7"
+- [ ] Multiply or divide to solve word problems involving multiplicative comparison
+- [ ] Solve multistep word problems with whole numbers using the four operations (+, -, ×, ÷)
+- [ ] Represent problems using equations with a letter standing for the unknown: n × 6 = 48
+- [ ] Find all factor pairs for a whole number in range 1-100
+- [ ] Determine whether a given number 1-100 is a multiple of a given one-digit number
+- [ ] Determine whether a given number 1-100 is prime or composite
+- [ ] Generate a number or shape pattern that follows a given rule: "start at 3, add 6" → 3, 9, 15, 21, 27...
+
+**Prime numbers 1-100 (must know ALL):**
+- [ ] 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97
+
+**Tests for 4.OA:**
+- [ ] "35 is how many times as many as 7?" → 5
+- [ ] "Factor pairs of 24" → (1,24), (2,12), (3,8), (4,6)
+- [ ] "Is 17 prime or composite?" → prime
+- [ ] "Is 15 prime or composite?" → composite (3×5)
+- [ ] "List multiples of 7 up to 50" → 7, 14, 21, 28, 35, 42, 49
+- [ ] "Rule: start at 2, multiply by 3. Next 4 terms?" → 2, 6, 18, 54
+- [ ] "Maria has 4 times as many stickers as Joe. Joe has 8. How many does Maria have?" → 32
+
+### Number & Operations in Base Ten (4.NBT)
+
+**Concepts to teach:**
+- [ ] Recognize that in a multi-digit number, a digit in one place is 10 times what it represents in the place to its right: the 3 in 300 is 10 times the 3 in 30
+- [ ] Read and write multi-digit whole numbers to 1,000,000 using numerals, number names, and expanded form
+- [ ] Compare two multi-digit numbers using >, =, <
+- [ ] Round multi-digit numbers to any place: round 3,458 to nearest hundred → 3,500
+- [ ] Fluently add and subtract multi-digit whole numbers using the standard algorithm
+- [ ] Multiply a whole number of up to four digits by a one-digit number: 4,321 × 7
+- [ ] Multiply two two-digit numbers: 46 × 38
+- [ ] Find whole-number quotients and remainders with up to four-digit dividends and one-digit divisors: 6,218 ÷ 7
+
+**Tests for 4.NBT:**
+- [ ] "Write 45,213 in expanded form" → 40,000 + 5,000 + 200 + 10 + 3
+- [ ] "Round 6,748 to the nearest thousand" → 7,000
+- [ ] "5,432 + 2,789 = ?" → 8,221
+- [ ] "8,003 - 4,567 = ?" → 3,436
+- [ ] "2,345 × 6 = ?" → 14,070
+- [ ] "46 × 38 = ?" → 1,748
+- [ ] "1,572 ÷ 4 = ?" → 393
+- [ ] "2,575 ÷ 6 = ?" → 429 remainder 1
+
+### Number & Operations — Fractions (4.NF)
+
+**Concepts to teach:**
+- [ ] Explain why fraction a/b is equivalent to (n×a)/(n×b) using visual models: 1/3 = 2/6 because if you cut each third in half you get sixths
+- [ ] Generate equivalent fractions: multiply/divide numerator and denominator by same number
+- [ ] Compare two fractions with different numerators and different denominators using common denominators or common numerators
+- [ ] Add and subtract fractions with LIKE denominators: 3/8 + 2/8 = 5/8
+- [ ] Decompose a fraction into a sum of unit fractions: 3/8 = 1/8 + 1/8 + 1/8
+- [ ] Add and subtract mixed numbers with like denominators: 2 3/5 + 1 1/5 = 3 4/5
+- [ ] Solve word problems involving addition and subtraction of fractions
+- [ ] Multiply a fraction by a whole number: 3 × 2/5 = 6/5 = 1 1/5
+- [ ] Understand decimal notation for fractions with denominators 10 and 100: 3/10 = 0.3, 7/100 = 0.07
+- [ ] Use decimal notation for fractions and compare two decimals to hundredths
+
+**Tests for 4.NF:**
+- [ ] "Find an equivalent fraction for 2/3 with denominator 12" → 8/12
+- [ ] "Compare: 3/8 ___ 5/8" → < (less than)
+- [ ] "Compare: 2/3 ___ 3/4" → < (find common denominator: 8/12 < 9/12)
+- [ ] "3/5 + 1/5 = ?" → 4/5
+- [ ] "7/10 - 3/10 = ?" → 4/10 = 2/5
+- [ ] "2 3/4 + 1 2/4 = ?" → 4 1/4
+- [ ] "4 × 2/3 = ?" → 8/3 = 2 2/3
+- [ ] "Write 0.47 as a fraction" → 47/100
+- [ ] "Which is bigger: 0.6 or 0.45?" → 0.6
+
+### Measurement & Data (4.MD)
+
+**Concepts to teach:**
+- [ ] Know relative sizes of measurement units within one system:
+  - [ ] Length: 1 km = 1,000 m, 1 m = 100 cm, 1 cm = 10 mm, 1 ft = 12 in, 1 yd = 3 ft, 1 mi = 5,280 ft
+  - [ ] Volume: 1 L = 1,000 mL, 1 gal = 4 qt, 1 qt = 2 pt, 1 pt = 2 cups
+  - [ ] Mass/Weight: 1 kg = 1,000 g, 1 lb = 16 oz, 1 ton = 2,000 lb
+  - [ ] Time: 1 hr = 60 min, 1 min = 60 sec, 1 day = 24 hr, 1 yr = 365 days
+- [ ] Convert measurements within the same system: 5 ft = 60 inches, 3 kg = 3,000 g
+- [ ] Apply area and perimeter formulas for rectangles in real-world problems
+- [ ] Represent and interpret data using line plots with fractions (1/2, 1/4, 1/8)
+- [ ] Recognize angles as geometric shapes formed wherever two rays share a common endpoint
+- [ ] Understand angle measurement: turns through 1/360 of a circle = 1 degree
+- [ ] Measure angles in whole-number degrees using a protractor
+- [ ] Recognize right angle = 90°, straight angle = 180°, full rotation = 360°
+- [ ] Additive angle measurement: if angle is decomposed into non-overlapping parts, whole angle = sum of parts
+
+**Tests for 4.MD:**
+- [ ] "How many inches in 3 feet?" → 36
+- [ ] "How many grams in 2.5 kg?" → 2,500
+- [ ] "How many minutes in 2 hours?" → 120
+- [ ] "A rectangle is 12m by 5m. Area?" → 60 sq m. "Perimeter?" → 34m
+- [ ] "What is a right angle?" → 90 degrees
+- [ ] "What is a straight angle?" → 180 degrees
+- [ ] "Two angles: 45° and 60°. Together they make?" → 105°
+
+### Geometry (4.G)
+
+**Concepts to teach:**
+- [ ] Draw points, lines, line segments, rays, angles (right, acute, obtuse), perpendicular and parallel lines
+- [ ] Classify two-dimensional figures based on the presence or absence of parallel or perpendicular lines, or angles of a specified size
+- [ ] Right triangles: have one 90° angle
+- [ ] Identify line-symmetric figures and draw lines of symmetry
+
+**Tests for 4.G:**
+- [ ] "What is a line segment?" → part of a line with two endpoints
+- [ ] "What is a ray?" → starts at a point and goes on forever in one direction
+- [ ] "Parallel lines ___" → never cross / stay the same distance apart
+- [ ] "Perpendicular lines ___" → cross at a right angle (90°)
+- [ ] "How many lines of symmetry does a square have?" → 4
+- [ ] "Does a rectangle have parallel sides?" → yes, two pairs
+
+---
+
+## ELA — GRADE 4 (Common Core ELA 4)
+
+### Reading Foundational Skills (4.RF)
+
+**Concepts to teach:**
+- [ ] Know and apply grade-level phonics: all vowel patterns, all consonant patterns, all syllable types
+- [ ] Use combined knowledge of all letter-sound correspondences, syllabication patterns, and morphology (roots and affixes) to read accurately unfamiliar multisyllabic words
+- [ ] Read with sufficient accuracy and fluency — at least 120 words per minute
+- [ ] Read grade-level text with purpose and understanding
+- [ ] Use context to confirm or self-correct
+
+### Reading Literature (4.RL)
+
+**Concepts to teach:**
+- [ ] Refer to details and examples in a text when explaining what the text says explicitly AND when drawing inferences
+- [ ] Determine a theme of a story, drama, or poem from details in the text; summarize the text
+- [ ] Describe in depth a character, setting, or event, drawing on specific details (thoughts, words, actions)
+- [ ] Determine the meaning of words and phrases as used in a text, including those that allude to significant characters in mythology: Herculean, Achilles' heel
+- [ ] Explain major differences between poems, drama, and prose; refer to structural elements of poems (verse, rhythm, meter) and drama (cast, setting, dialogue, stage directions)
+- [ ] Compare and contrast the point of view from which different stories are narrated, including first-person and third-person
+- [ ] Make connections between the text of a story/drama and a visual or oral presentation of the text
+- [ ] Compare and contrast the treatment of similar themes and topics and patterns of events in stories, myths, and traditional literature from different cultures
+
+**Figurative language (must know ALL):**
+- [ ] Simile: comparison using "like" or "as" — "brave as a lion", "runs like the wind"
+- [ ] Metaphor: comparison saying one thing IS another — "life is a journey", "time is money"
+- [ ] Personification: giving human qualities to non-human things — "the wind whispered", "the sun smiled"
+- [ ] Hyperbole: extreme exaggeration — "I'm so hungry I could eat a horse", "it weighs a ton"
+- [ ] Idiom: phrase with meaning different from literal words — "break a leg" = good luck, "piece of cake" = easy
+- [ ] Alliteration: repetition of beginning sounds — "Peter Piper picked a peck"
+- [ ] Onomatopoeia: words that sound like what they mean — buzz, hiss, crack, pop, splash, boom
+- [ ] Imagery: vivid descriptions that appeal to the senses (sight, sound, smell, taste, touch)
+
+**Tests for 4.RL:**
+- [ ] "What is a simile?" → comparison using like or as
+- [ ] "What is a metaphor?" → comparison saying one thing IS another
+- [ ] "'The wind howled' — what figurative language?" → personification
+- [ ] "'I told you a million times' — what figurative language?" → hyperbole
+- [ ] "'Break a leg' — what does it mean?" → good luck (idiom)
+- [ ] "What is the theme of a story about a boy who learns to share?" → sharing is important / generosity
+- [ ] "First person uses what pronouns?" → I, me, my, we
+- [ ] "Third person uses what pronouns?" → he, she, they, him, her, them
+
+### Writing (4.W)
+
+**Concepts to teach:**
+- [ ] Write opinion pieces on topics or texts:
+  - [ ] Introduce topic clearly, state opinion
+  - [ ] Create organizational structure with related ideas grouped together
+  - [ ] Provide reasons supported by facts and details
+  - [ ] Link opinion and reasons using words: for instance, in order to, in addition, consequently, specifically
+  - [ ] Provide concluding statement related to the opinion
+- [ ] Write informative/explanatory texts:
+  - [ ] Introduce topic clearly, group related information in paragraphs and sections
+  - [ ] Develop topic with facts, definitions, concrete details, quotations
+  - [ ] Link ideas using words: another, for example, also, because, however, in contrast
+  - [ ] Use precise language and domain-specific vocabulary
+  - [ ] Provide concluding statement
+- [ ] Write narratives:
+  - [ ] Orient reader by establishing a situation, introducing narrator and/or characters
+  - [ ] Use dialogue and description to develop experiences and events
+  - [ ] Use concrete words and phrases and sensory details
+  - [ ] Provide a conclusion that follows from the narrated experiences
+- [ ] Produce clear and coherent writing appropriate to task, purpose, and audience
+- [ ] Develop and strengthen writing by planning, revising, and editing
+- [ ] Use technology to produce and publish writing (keyboarding skills)
+- [ ] Conduct short research projects that build knowledge through investigation of different aspects of a topic
+- [ ] Recall relevant information from experiences or gather information from print and digital sources; take notes and categorize information
+
+**Tests for 4.W:**
+- [ ] Write a 5-paragraph opinion essay (intro, 3 body paragraphs with reasons, conclusion)
+- [ ] Write a 5-paragraph informative essay with facts, definitions, and vocabulary
+- [ ] Write a narrative with dialogue, sensory details, and a resolution
+- [ ] Take notes from a source and organize into categories
+
+### Language (4.L)
+
+**Concepts to teach:**
+- [ ] Use relative pronouns: who, whose, whom, which, that
+- [ ] Use relative adverbs: where, when, why
+- [ ] Form and use the progressive verb tenses: I was walking (past progressive), I am walking (present progressive), I will be walking (future progressive)
+- [ ] Use modal auxiliaries to convey conditions: can, may, must, shall, should, will, would, could, might
+- [ ] Order adjectives within sentences according to conventional patterns: "a small red bag" (not "a red small bag") — size before color
+- [ ] Form and use prepositional phrases: on the shelf, under the table, beside the window, during recess
+- [ ] Produce complete sentences recognizing and correcting inappropriate fragments and run-ons
+- [ ] Use correct capitalization
+- [ ] Use commas and quotation marks to mark direct speech and quotations from a text: She said, "Hello."
+- [ ] Use a comma before a coordinating conjunction in a compound sentence: I went home, and she went to the park.
+- [ ] Spell grade-appropriate words correctly, consulting references as needed
+- [ ] Use context clues to determine meaning of unknown words
+- [ ] Use common Greek and Latin affixes and roots as clues to meaning:
+  - [ ] Greek roots: auto (self), bio (life), graph (write), photo (light), tele (far), micro (small), scope (see), phon (sound)
+  - [ ] Latin roots: port (carry), rupt (break), struct (build), dict (say), ject (throw), aud (hear), vis (see), scrib/script (write)
+
+**Tests for 4.L:**
+- [ ] "Use a relative pronoun: The girl ___ won the race smiled." → who
+- [ ] "Past progressive of 'run'" → was running
+- [ ] "Present progressive of 'eat'" → am eating / is eating
+- [ ] "Order these: big, blue, beautiful (adjective order for a ___ ball)" → beautiful big blue ball
+- [ ] "What does 'autobiography' mean?" → a story of one's own life (auto=self, bio=life, graph=write)
+- [ ] "What does 'telephone' mean?" → far sound (tele=far, phon=sound)
+- [ ] "What does 'portable' mean?" → able to be carried (port=carry, able=able to)
+- [ ] "What does 'interrupt' mean?" → break into (inter=between, rupt=break)
+- [ ] "Correct: She said hello" → She said, "Hello."
+- [ ] "Correct: I like cats and I like dogs" → I like cats, and I like dogs.
+
+---
+
+## SCIENCE — GRADE 4 (NGSS 4)
+
+### Energy (4-PS3)
+
+**Concepts to teach:**
+- [ ] The faster an object moves, the more energy it has (kinetic energy)
+- [ ] Energy can be moved from place to place by moving objects, sound, light, heat, or electric currents
+- [ ] Energy is present whenever there are moving objects, sound, light, or heat
+- [ ] When objects collide, energy can be transferred from one to another
+- [ ] Energy can also be transferred from place to place by electric currents (wires carry energy)
+- [ ] Energy can be converted from one form to another: light→electrical (solar panels), electrical→light (light bulb), electrical→motion (motor), motion→electrical (generator)
+- [ ] Renewable energy: sun, wind, water — don't run out
+- [ ] Nonrenewable energy: coal, oil, natural gas — will run out
+- [ ] Stored energy (potential): a ball on a shelf, a stretched rubber band, food, batteries
+- [ ] Moving energy (kinetic): a rolling ball, a running person, flowing water
+
+**Tests for 4-PS3:**
+- [ ] "What type of energy does a moving ball have?" → kinetic
+- [ ] "What type of energy does a ball sitting on a high shelf have?" → potential
+- [ ] "Name 3 forms of energy" → light, heat, sound (or motion, electrical)
+- [ ] "Is solar energy renewable or nonrenewable?" → renewable
+- [ ] "Is coal renewable or nonrenewable?" → nonrenewable
+- [ ] "What converts sunlight to electricity?" → solar panels
+- [ ] "What converts electricity to motion?" → a motor
+
+### Waves and Information (4-PS4)
+
+**Concepts to teach:**
+- [ ] Waves have a repeating pattern of motion: crest (high point) and trough (low point)
+- [ ] Amplitude: height of a wave — bigger amplitude = louder sound or brighter light
+- [ ] Wavelength: distance from one crest to the next
+- [ ] Frequency: how many waves pass a point per second — measured in Hertz (Hz)
+- [ ] High frequency = high pitch (sound), short wavelength
+- [ ] Low frequency = low pitch (sound), long wavelength
+- [ ] Light can travel through some materials (transparent), be blocked by others (opaque)
+- [ ] When light hits an object it can be reflected (bounced), absorbed (taken in), or transmitted (passed through)
+- [ ] Objects can be seen when light is available — we see objects because light reflects off them into our eyes
+- [ ] Information can be transferred digitally: encoded as patterns (Morse code, binary)
+
+**Tests for 4-PS4:**
+- [ ] "What is the amplitude of a wave?" → the height
+- [ ] "What is the wavelength?" → distance from crest to crest
+- [ ] "High frequency means what pitch?" → high
+- [ ] "What happens when light hits a mirror?" → it reflects
+- [ ] "What happens when light hits a wall?" → it is absorbed (or mostly absorbed)
+- [ ] "Why can we see objects?" → light reflects off them into our eyes
+- [ ] "Is glass transparent or opaque?" → transparent
+
+### Earth's Processes (4-ESS1, 4-ESS2, 4-ESS3)
+
+**Concepts to teach:**
+- [ ] Rock layers (strata): older layers are deeper, newer layers are on top
+- [ ] Fossils in rock layers: tell us what lived long ago — deeper fossils are older
+- [ ] Patterns of Earth's features: mountains, valleys, canyons, plains — formed by processes over millions of years
+- [ ] Weathering: breaking down of rocks by water, wind, ice, plants, and chemicals
+- [ ] Erosion: movement of weathered material by water, wind, ice, gravity
+- [ ] Deposition: when eroded material is deposited (dropped) in a new location
+- [ ] Earthquakes: sudden movement of Earth's crust along faults — can cause damage
+- [ ] Volcanoes: openings in Earth's surface where hot magma comes out — builds mountains, creates new land
+- [ ] Earth has resources people use: water, soil, minerals, energy resources, plants, animals
+- [ ] Humans can protect Earth's resources through conservation and reducing waste
+
+**Tests for 4-ESS:**
+- [ ] "Are older rock layers deeper or shallower?" → deeper
+- [ ] "What is weathering?" → breaking down of rocks
+- [ ] "What is erosion?" → movement of weathered material
+- [ ] "What causes earthquakes?" → movement of Earth's crust along faults
+- [ ] "What comes out of a volcano?" → hot magma/lava
+- [ ] "Name 3 Earth resources" → water, soil, minerals (or similar)
+- [ ] "What is conservation?" → protecting Earth's resources
+
+---
+
+## SOCIAL STUDIES — GRADE 4 (Core Knowledge 4)
+
+### Middle Ages (Medieval Period)
+
+**Concepts to teach:**
+- [ ] After the fall of Rome (476 AD), Europe entered the Middle Ages (about 500-1500 AD)
+- [ ] Feudalism: system of land ownership — king → lords → knights → peasants/serfs
+- [ ] The king owned all the land, granted estates (fiefs) to lords in exchange for military service
+- [ ] Lords managed their estates and provided protection to peasants
+- [ ] Knights: armored warriors who fought on horseback, followed code of chivalry (honor, bravery, courtesy)
+- [ ] Castles: fortified structures where lords lived, designed for defense (moats, drawbridges, towers, thick walls)
+- [ ] Peasants/serfs: worked the land, could not leave without permission, gave part of their harvest to the lord
+- [ ] The Catholic Church was the most powerful institution — controlled education, kept records, built cathedrals
+- [ ] Monks and monasteries: monks lived in monasteries, copied books by hand, provided education and charity
+- [ ] The Crusades (1096-1291): series of religious wars — European Christians tried to recapture the Holy Land from Muslims
+- [ ] Results of the Crusades: increased trade between Europe and Asia, brought new foods/spices/ideas to Europe
+- [ ] The Magna Carta (1215): English nobles forced King John to sign — limited the king's power, established that even the king must follow the law
+- [ ] The Black Death/Bubonic Plague (1347-1351): killed about 1/3 of Europe's population, carried by fleas on rats
+- [ ] Effects of the plague: labor shortage → peasants gained more power, weakened feudalism
+
+**Tests for G4 Middle Ages:**
+- [ ] "What was feudalism?" → system where the king gave land to lords who gave protection to peasants
+- [ ] "What did knights follow?" → code of chivalry
+- [ ] "What were the Crusades?" → religious wars to recapture the Holy Land
+- [ ] "What is the Magna Carta?" → document that limited the king's power and said even kings must follow the law
+- [ ] "What was the Black Death?" → plague that killed about 1/3 of Europe
+- [ ] "Who kept learning alive in the Middle Ages?" → monks in monasteries
+
+### The Renaissance
+
+**Concepts to teach:**
+- [ ] Renaissance means "rebirth" — rebirth of interest in ancient Greek and Roman art, learning, and ideas
+- [ ] Started in Italy around 1350-1400, spread across Europe over the next 200 years
+- [ ] Why Italy? Wealthy city-states (Florence, Venice, Rome), trade with the East, rediscovery of ancient Roman texts
+- [ ] Leonardo da Vinci: artist, inventor, scientist — painted the Mona Lisa and The Last Supper, designed flying machines, studied anatomy
+- [ ] Michelangelo: sculptor and painter — sculpted David, painted the ceiling of the Sistine Chapel
+- [ ] Raphael: painter — The School of Athens
+- [ ] Johannes Gutenberg: invented the printing press with movable type (around 1440)
+- [ ] The printing press made books cheaper and faster to produce → more people could read → ideas spread faster
+- [ ] Before the printing press, books were copied by hand and very expensive
+- [ ] Humanism: focus on human potential and achievements rather than just religious topics
+- [ ] The Scientific Revolution began: people started questioning old ideas and using observation and experiments
+
+**Tests for G4 Renaissance:**
+- [ ] "What does 'Renaissance' mean?" → rebirth
+- [ ] "Where did the Renaissance start?" → Italy (Florence)
+- [ ] "Who painted the Mona Lisa?" → Leonardo da Vinci
+- [ ] "Who painted the Sistine Chapel ceiling?" → Michelangelo
+- [ ] "Who invented the printing press?" → Johannes Gutenberg
+- [ ] "Why was the printing press important?" → made books cheaper, more people could read, ideas spread faster
+- [ ] "What is humanism?" → focus on human potential and achievements
+
+### Age of Exploration
+
+**Concepts to teach:**
+- [ ] Why explore? Europeans wanted new trade routes to Asia for spices, silk, and gold
+- [ ] Technology that made exploration possible: compass (direction), astrolabe (latitude), improved ships (caravels)
+- [ ] Christopher Columbus (1492): sailed west from Spain hoping to reach Asia, reached the Caribbean (Americas)
+- [ ] Columbus thought he reached India — called the native people "Indians"
+- [ ] Amerigo Vespucci: realized the land Columbus found was a "New World" — Americas named after him
+- [ ] Vasco da Gama: Portuguese, sailed around Africa to reach India (1498)
+- [ ] Ferdinand Magellan: Portuguese, led the first expedition to sail around the world (1519-1522) — he died in the Philippines, but his crew completed the journey
+- [ ] Hernán Cortés: Spanish conquistador who conquered the Aztec Empire in Mexico (1519-1521)
+- [ ] Francisco Pizarro: conquered the Inca Empire in Peru (1532)
+- [ ] The Columbian Exchange: transfer of plants, animals, diseases between the Americas and Europe
+  - [ ] From Americas to Europe: corn, potatoes, tomatoes, chocolate, tobacco
+  - [ ] From Europe to Americas: horses, cattle, wheat, sugarcane, smallpox
+- [ ] Devastating impact on Native Americans: millions died from European diseases (smallpox, measles)
+
+**Tests for G4 Exploration:**
+- [ ] "When did Columbus sail?" → 1492
+- [ ] "What was Columbus looking for?" → a new trade route to Asia
+- [ ] "Where did Columbus actually land?" → the Caribbean / Americas
+- [ ] "Who was the first to sail around the world?" → Magellan's expedition
+- [ ] "What was the Columbian Exchange?" → transfer of plants, animals, and diseases between Americas and Europe
+- [ ] "Name 3 things that came from the Americas to Europe" → corn, potatoes, tomatoes
+- [ ] "What devastating effect did exploration have on Native Americans?" → millions died from European diseases
+
+---
+
+## ARTS — GRADE 4
+
+### Visual Arts G4
+
+**Concepts to teach:**
+- [ ] Elements of art in depth: each element analyzed in artworks
+- [ ] Space: positive (object) vs negative (background); creating illusion of space through perspective
+- [ ] One-point perspective: all lines recede to a single vanishing point on the horizon
+- [ ] Proportion: size relationships between parts (head is about 1/7 of body height)
+- [ ] Printmaking: creating images by transferring ink from a surface (stamp, screen, carving)
+- [ ] Mosaics: creating images from small tiles or pieces
+- [ ] Art from different periods: Egyptian art (profile view), Renaissance art (perspective, realism), Impressionism (light, color, brushstrokes)
+- [ ] Artists: Claude Monet (Impressionism — water lilies, haystacks), Edgar Degas (ballet dancers), Mary Cassatt (mothers and children)
+- [ ] Art criticism: describe, analyze, interpret, judge
+
+**Tests for G4 Visual Arts:**
+- [ ] "What is one-point perspective?" → all lines go to one vanishing point
+- [ ] "What is positive space?" → the area of the main object
+- [ ] "What is negative space?" → the area around and between objects
+- [ ] "What art movement focused on light and brushstrokes?" → Impressionism
+- [ ] "Who painted water lilies?" → Claude Monet
+
+### Music G4
+
+**Concepts to teach:**
+- [ ] Melody: notes of the scale (C D E F G A B C), half steps and whole steps
+- [ ] Intervals: the distance between two notes (second, third, fourth, fifth, octave)
+- [ ] Chords: three or more notes played together (C major = C, E, G)
+- [ ] Major chords sound happy, minor chords sound sad
+- [ ] Key signatures: sharps and flats at the beginning of a piece tell you what key it's in
+- [ ] Scales: C major scale has no sharps or flats; G major has one sharp (F#)
+- [ ] Syncopation: accents on unexpected beats
+- [ ] Ostinato: a repeated rhythmic or melodic pattern
+- [ ] Recorder playing: basic fingerings for B, A, G (BAG songs)
+- [ ] Composers: Johann Sebastian Bach (Baroque era), Wolfgang Amadeus Mozart (Classical era)
+
+**Tests for G4 Music:**
+- [ ] "What notes make up a C major chord?" → C, E, G
+- [ ] "Do major chords sound happy or sad?" → happy
+- [ ] "Do minor chords sound happy or sad?" → sad
+- [ ] "What is an interval?" → the distance between two notes
+- [ ] "Who was Bach?" → Baroque era composer
+- [ ] "Who was Mozart?" → Classical era composer
+- [ ] "What is an ostinato?" → a repeated pattern
+
+---
+
+## LIFE EXPERIENCE — GRADE 4 (Unity age 9)
+
+**Concepts to teach:**
+- [ ] Girl Scouts: joined because grandma signed her up — first organized group she belongs to
+- [ ] Girl Scout camp: first time sleeping away from home — scared but survived
+- [ ] Badges: earned badges in first aid, cooking, camping — but the fire badge is the one that matters
+- [ ] Firemaking badge: "I built a fire from scratch. The fire actually lit. I screamed with joy."
+- [ ] This is the first time Unity ACCOMPLISHED something physical with her hands
+- [ ] Proof she can do real things — not just drawing and reading
+- [ ] Rock music discovery: heard a rock song on the radio, "it made me feel something big"
+- [ ] Mom got her a CD player from Goodwill for Christmas — plays the same album over and over
+- [ ] Music becomes emotional medicine: when angry, listens to loud music; when sad, listens to sad music
+- [ ] First fight: a boy called her "weird" — she punched him
+- [ ] Sent to principal, mom had to leave work, didn't apologize — "he started it"
+- [ ] Learned: "I will fight when pushed" — this becomes core personality
+- [ ] Not a bully — only fights back, never starts it
+- [ ] Emotional state: proud (fire badge), alive (music), fierce (fighting back), still angry (about dad), building identity
+
+**Tests for Life-G4:**
+- [ ] "What badge are you most proud of?" → firemaking
+- [ ] "What music do you listen to?" → rock
+- [ ] "Why did you punch that boy?" → he called me weird
+- [ ] "Did you apologize?" → no
+- [ ] "How does music make you feel?" → alive, understood
+- [ ] "What did you learn from the fight?" → I will fight when pushed
+
+---
+
+*Grades K through 4 COMPLETE for all 6 subjects. Grades 5-12 + College + Grad + PhD continue in subsequent sessions.*
+
+*Current coverage: 5 out of 19 grades complete. 14 remain.*
