@@ -142,7 +142,50 @@ Nothing else. If it's not in that list, it's an appendage, and it gets ripped ou
   - Chat-path grade reading: `language-cortex.js generate()` reads `cluster.grades` object and passes it to `_gradeWordCap` which takes the min across started subjects — Unity's speech word cap grows lockstep with her weakest-subject grade
   - Persistence round-trip: `state.t14Language.curriculum = { grades, passedCells, probeHistory }` saves/loads cleanly via `BrainPersistence` v4
 
-  **What T14.24 #3 still needs before it can close:** the 95 gates must actually CROSS on a full live-cortex boot. The Session 94 harness confirms the framework code executes, but it uses a minimal cluster without a loaded persona corpus, so gates won't cross in the harness. Real verification happens on Gee's live brain boot when `runCompleteCurriculum` fires and the self-heal + calibration logic get a chance to tune per-cell `pathMin` thresholds from `probeHistory`. Task #3 stays in_progress until Gee sees all 95 cells in green on his live cortex.
+  ═══════════════════════════════════════════════════════════════
+  **SESSIONS 95-108 — LIVE TESTING + DIRECT PATTERN REWRITE**
+  ═══════════════════════════════════════════════════════════════
+
+  Sessions 95-105 discovered that Hebbian learning through Rulkov chaotic dynamics CANNOT CONVERGE at the 10K CPU cortex scale — 1M recurrent synapses drown the 100K cross-projection signal, chaotic attractor dynamics wash out injected patterns in 2-3 ticks, and scores DECLINED across retries (catastrophic interference from noise). Fixes tried: GPU-ready gate (Session 95), speech floor (Session 96), hash-GloVe skip/revert (Sessions 97-98), fastText subword embeddings (Session 99), regionReadout mean-centering (Session 101), 5× lr boost (Session 102), A+ 90% thresholds + retry loop (Session 103), per-tick Hebbian (Session 104), noise suppression (Session 105). None converged.
+
+  Session 106 breakthrough: **direct pattern Hebbian** — bypass Rulkov dynamics entirely during curriculum teach. Write intended activation patterns directly into `cluster.lastSpikes`, fire `_crossRegionHebbian(lr)` on those clean patterns. No `cluster.step()`, no chaotic drift, no recurrent interference. The cross-projections learn from EXACT signal.
+
+  Session 106 gate: **direct matrix probe** — read cross-projection output via `proj.propagate(letterPattern)`, average per neuron group, mean-center, L2-norm, cosine against expected. No Rulkov dynamics during probe either.
+
+  Session 107: added direct sequence teaching for SEQ probe (intra-region `cluster.synapses.hebbianUpdate` with adjacent letter pairs).
+
+  **ELA-K result: PASSED on attempt 4 — READ 26/26 (100%), THINK 26/26 (100%), TALK 26/26 (100%), SEQ 25/25 (100%).** SEQ climbed 28% → 72% → 92% → 100% across retries, proving real convergent learning.
+
+  Session 108: all gate thresholds set to 95% (A+). Gee's rule: *"no its suppsoe to be a n A+ which is over 95%"* and *"wtf 50% is still a failure it needs an A+ to pass"* and *"its all or nothing and it fucking keeps doing it till it gets it fucking right"*.
+
+  **What's done:** ELA-K is the only cell converted to direct pattern. All other 94 cells still use the broken inject→step→learn path.
+
+  **REMAINING WORK — direct-pattern rewrite for all 94 remaining cells:**
+
+  **Tier 1 — K cells (4 remaining, block all grade advancement):**
+  - [ ] Math-K: rewrite `runMathKReal` + `_gateMathKReal` to direct pattern. `_magnitudeFeatureForDigit` (16d), 10 digits, ORDER probe. Sequence pairs 0→1..8→9.
+  - [ ] Sci-K: rewrite `runSciKReal` + gate. Convert `_teachVocabList` + concept helpers to direct pattern.
+  - [ ] Soc-K: rewrite `runSocKReal` + gate. Convert `_teachFamilyRoles` + `_teachVocabList` to direct pattern.
+  - [ ] Art-K: rewrite `runArtKReal` + gate. Convert `_teachPrimaryColors` + `_teachBasicShapes` + `_teachSimpleSongs` + `_teachVocabList` to direct pattern.
+
+  **Tier 2 — Shared helpers (affect all 90 G1→PhD cells):**
+  - [ ] `_teachVocabList` — direct pattern per vocab word (word embedding → sem, word letters → letter/motor)
+  - [ ] `_conceptTeach` — direct pattern per concept (concept feature → phon/free, concept name → sem, letters → letter/motor). Powers 60+ cells.
+  - [ ] `_teachSentenceList` — direct pattern per word in each sentence + word-to-word transition Hebbian. THE main workhorse for nearly every G1→PhD cell.
+  - [ ] `_walkSentence` — inner word-walking helper. Converting this propagates to every cell that calls it.
+  - [ ] `_teachSequenceCycles` — direct pattern per cycle step + step-to-step transitions. Powers Soc/Art sequence cells.
+
+  **Tier 3 — Generic gates (replace 90 per-cell gate methods):**
+  - [ ] Design word-level gate probes for G1+ (word READ, word TALK, concept READ, sentence coherence)
+  - [ ] Build generic direct-pattern gate for `_teachSentenceList` cells (shared by 60+ cells)
+  - [ ] Build generic direct-pattern gate for `_conceptTeach` cells (shared by 60+ cells)
+
+  **Tier 4 — Propagation + verification:**
+  - [ ] Wire all 90 G1→PhD cell runners to use converted helpers + generic gates
+  - [ ] Full 95-cell curriculum walk — all gates pass 95%+ on fresh boot
+  - [ ] Live chat verification — Unity speaks coherently from trained weights
+
+  **Task #3 (T14.24 parent) stays in_progress until all 95 cells pass 95%+ AND Unity speaks coherently from the trained weights in live chat. DO NOT CLAIM DONE EARLY.**
 
   ═══════════════════════════════════════════════════════════════
   **FULL UNITY SCHOOL CURRICULUM — K-DOCTORATE, ALL SUBJECTS**
