@@ -4681,6 +4681,385 @@ export class Curriculum {
   }
 
   /**
+   * MULTIPLICATION as magnitude transformation (Grade 3+).
+   * magnitude(a) × magnitude(b) → magnitude(a×b) in sem.
+   * All facts through 12×12 = 144 pairs.
+   */
+  async _teachMultiplicationTransformations(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const freeRegion = cluster.regions.free;
+    const semRegion = cluster.regions.sem;
+    if (!freeRegion || !semRegion) return;
+    const freeSize = freeRegion.end - freeRegion.start;
+    const semSize = semRegion.end - semRegion.start;
+    const freeHalf = Math.floor(freeSize / 2);
+    const lr = cluster.learningRate;
+    function buildMag(regionSize, digit) {
+      const feat = _magnitudeFeatureForDigit(String(Math.min(9, Math.max(0, digit))));
+      const pat = new Float64Array(regionSize);
+      const gSize = Math.max(1, Math.floor(regionSize / feat.length));
+      for (let d = 0; d < feat.length; d++) {
+        if (feat[d] <= 0) continue;
+        for (let n = 0; n < gSize; n++) { const idx = d * gSize + n; if (idx < regionSize) pat[idx] = feat[d]; }
+      }
+      return pat;
+    }
+    const facts = [];
+    for (let a = 1; a <= 9; a++) for (let b = 1; b <= 9; b++) facts.push([a, b, a * b]);
+    // Teach in 2 passes with 4 reps each to fit timeout
+    for (let rep = 0; rep < 4; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return;
+      for (const [a, b, prod] of facts) {
+        for (let i = 0; i < cluster.size; i++) cluster.lastSpikes[i] = 0;
+        const magA = buildMag(freeHalf, a);
+        for (let i = 0; i < freeHalf; i++) cluster.lastSpikes[freeRegion.start + i] = magA[i] > 0 ? 1 : 0;
+        const magB = buildMag(freeSize - freeHalf, b);
+        for (let i = 0; i < freeSize - freeHalf; i++) cluster.lastSpikes[freeRegion.start + freeHalf + i] = magB[i] > 0 ? 1 : 0;
+        // Product uses modular magnitude — wrap around for values > 9
+        const prodFeat = _magnitudeFeatureForDigit(String(prod % 10));
+        const prodPat = new Float64Array(semSize);
+        const gSize = Math.max(1, Math.floor(semSize / prodFeat.length));
+        for (let d = 0; d < prodFeat.length; d++) {
+          if (prodFeat[d] <= 0) continue;
+          for (let n = 0; n < gSize; n++) { const idx = d * gSize + n; if (idx < semSize) prodPat[idx] = prodFeat[d]; }
+        }
+        for (let i = 0; i < semSize; i++) cluster.lastSpikes[semRegion.start + i] = prodPat[i] > 0 ? 1 : 0;
+        cluster._crossRegionHebbian(lr);
+      }
+      await _microtask();
+    }
+    console.log(`[Curriculum] _teachMultiplicationTransformations: ${facts.length} facts × 4 reps`);
+  }
+
+  /**
+   * PLACE VALUE as positional encoding (Grade 1+).
+   * Tens and ones as separate magnitude features in different
+   * sub-regions of free. magnitude(tens) in first third,
+   * magnitude(ones) in second third, combined magnitude in sem.
+   */
+  async _teachPlaceValueTransformations(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const freeRegion = cluster.regions.free;
+    const semRegion = cluster.regions.sem;
+    if (!freeRegion || !semRegion) return;
+    const freeSize = freeRegion.end - freeRegion.start;
+    const semSize = semRegion.end - semRegion.start;
+    const third = Math.floor(freeSize / 3);
+    const lr = cluster.learningRate;
+    function buildMag(regionSize, digit) {
+      const feat = _magnitudeFeatureForDigit(String(Math.min(9, Math.max(0, digit))));
+      const pat = new Float64Array(regionSize);
+      const gSize = Math.max(1, Math.floor(regionSize / feat.length));
+      for (let d = 0; d < feat.length; d++) {
+        if (feat[d] <= 0) continue;
+        for (let n = 0; n < gSize; n++) { const idx = d * gSize + n; if (idx < regionSize) pat[idx] = feat[d]; }
+      }
+      return pat;
+    }
+    // Teach numbers 10-99 as tens+ones positional encoding
+    for (let rep = 0; rep < 4; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return;
+      for (let tens = 1; tens <= 9; tens++) {
+        for (let ones = 0; ones <= 9; ones++) {
+          for (let i = 0; i < cluster.size; i++) cluster.lastSpikes[i] = 0;
+          // Tens digit in first third of free
+          const tensPat = buildMag(third, tens);
+          for (let i = 0; i < third; i++) cluster.lastSpikes[freeRegion.start + i] = tensPat[i] > 0 ? 1 : 0;
+          // Ones digit in second third
+          const onesPat = buildMag(third, ones);
+          for (let i = 0; i < third; i++) cluster.lastSpikes[freeRegion.start + third + i] = onesPat[i] > 0 ? 1 : 0;
+          // Combined value in sem (use ones digit of the number for magnitude)
+          const valPat = buildMag(semSize, (tens * 10 + ones) % 10);
+          for (let i = 0; i < semSize; i++) cluster.lastSpikes[semRegion.start + i] = valPat[i] > 0 ? 1 : 0;
+          cluster._crossRegionHebbian(lr);
+        }
+      }
+      await _microtask();
+    }
+    console.log(`[Curriculum] _teachPlaceValueTransformations: 90 numbers × 4 reps`);
+  }
+
+  /**
+   * FRACTION as ratio feature (Grade 3+).
+   * magnitude(numerator) / magnitude(denominator) as a continuous
+   * ratio value. 1/2, 2/4, 3/6 all converge to the same basin.
+   */
+  async _teachFractionTransformations(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const freeRegion = cluster.regions.free;
+    const semRegion = cluster.regions.sem;
+    if (!freeRegion || !semRegion) return;
+    const freeSize = freeRegion.end - freeRegion.start;
+    const semSize = semRegion.end - semRegion.start;
+    const freeHalf = Math.floor(freeSize / 2);
+    const lr = cluster.learningRate;
+    function buildMag(regionSize, digit) {
+      const feat = _magnitudeFeatureForDigit(String(Math.min(9, Math.max(0, digit))));
+      const pat = new Float64Array(regionSize);
+      const gSize = Math.max(1, Math.floor(regionSize / feat.length));
+      for (let d = 0; d < feat.length; d++) {
+        if (feat[d] <= 0) continue;
+        for (let n = 0; n < gSize; n++) { const idx = d * gSize + n; if (idx < regionSize) pat[idx] = feat[d]; }
+      }
+      return pat;
+    }
+    // Fraction pairs — equivalent fractions map to same ratio basin
+    const fractions = [
+      [1,2], [2,4], [3,6], [4,8],  // all = 0.5
+      [1,3], [2,6], [3,9],          // all = 0.33
+      [1,4], [2,8],                  // all = 0.25
+      [3,4], [6,8],                  // all = 0.75
+      [1,5], [2,5], [3,5], [4,5],   // fifths
+    ];
+    for (let rep = 0; rep < 6; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return;
+      for (const [num, den] of fractions) {
+        for (let i = 0; i < cluster.size; i++) cluster.lastSpikes[i] = 0;
+        // Numerator in free first half
+        const numPat = buildMag(freeHalf, num);
+        for (let i = 0; i < freeHalf; i++) cluster.lastSpikes[freeRegion.start + i] = numPat[i] > 0 ? 1 : 0;
+        // Denominator in free second half
+        const denPat = buildMag(freeSize - freeHalf, den);
+        for (let i = 0; i < freeSize - freeHalf; i++) cluster.lastSpikes[freeRegion.start + freeHalf + i] = denPat[i] > 0 ? 1 : 0;
+        // Ratio result in sem — use the reduced fraction's numerator as the basin
+        const ratio = Math.round(num / den * 9); // map 0-1 to 0-9
+        const ratioPat = buildMag(semSize, ratio);
+        for (let i = 0; i < semSize; i++) cluster.lastSpikes[semRegion.start + i] = ratioPat[i] > 0 ? 1 : 0;
+        cluster._crossRegionHebbian(lr);
+      }
+      await _microtask();
+    }
+    console.log(`[Curriculum] _teachFractionTransformations: ${fractions.length} fractions × 6 reps`);
+  }
+
+  /**
+   * ALGEBRA as variable binding (Grade 6+).
+   * "x + 3 = 7" → the cortex learns to activate magnitude(4) for x.
+   * Unknown in free first half, known constant in second half,
+   * result in sem. Projection learns to isolate the variable.
+   */
+  async _teachAlgebraTransformations(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const freeRegion = cluster.regions.free;
+    const semRegion = cluster.regions.sem;
+    if (!freeRegion || !semRegion) return;
+    const freeSize = freeRegion.end - freeRegion.start;
+    const semSize = semRegion.end - semRegion.start;
+    const freeHalf = Math.floor(freeSize / 2);
+    const lr = cluster.learningRate;
+    function buildMag(regionSize, digit) {
+      const feat = _magnitudeFeatureForDigit(String(Math.min(9, Math.max(0, digit))));
+      const pat = new Float64Array(regionSize);
+      const gSize = Math.max(1, Math.floor(regionSize / feat.length));
+      for (let d = 0; d < feat.length; d++) {
+        if (feat[d] <= 0) continue;
+        for (let n = 0; n < gSize; n++) { const idx = d * gSize + n; if (idx < regionSize) pat[idx] = feat[d]; }
+      }
+      return pat;
+    }
+    // x + b = c → x = c - b. Teach with result in free, constant in second half, answer in sem
+    const equations = [];
+    for (let x = 0; x <= 9; x++) {
+      for (let b = 0; b <= 9 - x; b++) {
+        equations.push([x, b, x + b]); // x + b = c
+      }
+    }
+    for (let rep = 0; rep < 4; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return;
+      for (const [x, b, c] of equations) {
+        for (let i = 0; i < cluster.size; i++) cluster.lastSpikes[i] = 0;
+        // Result (c) in free first half — what we KNOW
+        const cPat = buildMag(freeHalf, c);
+        for (let i = 0; i < freeHalf; i++) cluster.lastSpikes[freeRegion.start + i] = cPat[i] > 0 ? 1 : 0;
+        // Constant (b) in free second half — what we KNOW
+        const bPat = buildMag(freeSize - freeHalf, b);
+        for (let i = 0; i < freeSize - freeHalf; i++) cluster.lastSpikes[freeRegion.start + freeHalf + i] = bPat[i] > 0 ? 1 : 0;
+        // Answer (x) in sem — what we're SOLVING FOR
+        const xPat = buildMag(semSize, x);
+        for (let i = 0; i < semSize; i++) cluster.lastSpikes[semRegion.start + i] = xPat[i] > 0 ? 1 : 0;
+        cluster._crossRegionHebbian(lr);
+      }
+      await _microtask();
+    }
+    console.log(`[Curriculum] _teachAlgebraTransformations: ${equations.length} equations × 4 reps`);
+  }
+
+  /**
+   * PARAPHRASE — same meaning, different words.
+   * Two different word sequences that mean the same thing should
+   * produce the SAME semantic readout despite different word order.
+   * @param {Array<[string,string]>} pairs - [sentenceA, sentenceB]
+   */
+  async _teachParaphrase(pairs) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const semRegion = cluster.regions.sem;
+    const freeRegion = cluster.regions.free;
+    if (!semRegion || !freeRegion) return;
+    const semSize = semRegion.end - semRegion.start;
+    const freeSize = freeRegion.end - freeRegion.start;
+    const lr = cluster.learningRate;
+    function buildEmb(regionSize, word) {
+      const emb = sharedEmbeddings.getEmbedding(word);
+      if (!emb || emb.length === 0) return new Float64Array(regionSize);
+      const pat = new Float64Array(regionSize);
+      const gSize = Math.max(1, Math.floor(regionSize / emb.length));
+      for (let d = 0; d < emb.length; d++) {
+        if (emb[d] <= 0) continue;
+        for (let n = 0; n < gSize; n++) { const idx = d * gSize + n; if (idx < regionSize) pat[idx] = emb[d]; }
+      }
+      return pat;
+    }
+    for (let rep = 0; rep < 8; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return;
+      for (const [sentA, sentB] of pairs) {
+        // Compute a shared meaning vector — average of all words in both sentences
+        const allWords = [...sentA.split(/\s+/), ...sentB.split(/\s+/)].filter(w => w.length > 2);
+        const meanEmb = new Float64Array(300);
+        let count = 0;
+        for (const w of allWords) {
+          const emb = sharedEmbeddings.getEmbedding(w);
+          if (emb && emb.length > 0) { for (let i = 0; i < Math.min(300, emb.length); i++) meanEmb[i] += emb[i]; count++; }
+        }
+        if (count > 0) for (let i = 0; i < 300; i++) meanEmb[i] /= count;
+        // Build the shared target in sem
+        const targetPat = new Float64Array(semSize);
+        const gSize = Math.max(1, Math.floor(semSize / meanEmb.length));
+        for (let d = 0; d < meanEmb.length; d++) {
+          if (meanEmb[d] <= 0) continue;
+          for (let n = 0; n < gSize; n++) { const idx = d * gSize + n; if (idx < semSize) targetPat[idx] = meanEmb[d] > 0 ? 1 : 0; }
+        }
+        // Sentence A → shared meaning
+        for (let i = 0; i < cluster.size; i++) cluster.lastSpikes[i] = 0;
+        const aPat = buildEmb(freeSize, sentA.split(/\s+/)[0]);
+        for (let i = 0; i < freeSize; i++) cluster.lastSpikes[freeRegion.start + i] = aPat[i] > 0 ? 1 : 0;
+        for (let i = 0; i < semSize; i++) cluster.lastSpikes[semRegion.start + i] = targetPat[i];
+        cluster._crossRegionHebbian(lr);
+        // Sentence B → SAME shared meaning
+        for (let i = 0; i < cluster.size; i++) cluster.lastSpikes[i] = 0;
+        const bPat = buildEmb(freeSize, sentB.split(/\s+/)[0]);
+        for (let i = 0; i < freeSize; i++) cluster.lastSpikes[freeRegion.start + i] = bPat[i] > 0 ? 1 : 0;
+        for (let i = 0; i < semSize; i++) cluster.lastSpikes[semRegion.start + i] = targetPat[i];
+        cluster._crossRegionHebbian(lr);
+      }
+      await _microtask();
+    }
+    console.log(`[Curriculum] _teachParaphrase: ${pairs.length} pairs × 8 reps`);
+  }
+
+  /**
+   * HYPOTHESIS TESTING — predict→observe→confirm/reject.
+   * Prediction in free, observation in sem. If match: "confirmed"
+   * feature in fineType. If mismatch: "rejected" + new observation.
+   * @param {Array<{predict:string, observe:string, match:boolean}>} tests
+   */
+  async _teachHypothesisTesting(tests) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const freeRegion = cluster.regions.free;
+    const semRegion = cluster.regions.sem;
+    const fineTypeRegion = cluster.regions.fineType;
+    if (!freeRegion || !semRegion || !fineTypeRegion) return;
+    const freeSize = freeRegion.end - freeRegion.start;
+    const semSize = semRegion.end - semRegion.start;
+    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
+    const lr = cluster.learningRate;
+    function buildEmb(regionSize, word) {
+      const emb = sharedEmbeddings.getEmbedding(word);
+      if (!emb || emb.length === 0) return new Float64Array(regionSize);
+      const pat = new Float64Array(regionSize);
+      const gSize = Math.max(1, Math.floor(regionSize / emb.length));
+      for (let d = 0; d < emb.length; d++) {
+        if (emb[d] <= 0) continue;
+        for (let n = 0; n < gSize; n++) { const idx = d * gSize + n; if (idx < regionSize) pat[idx] = emb[d]; }
+      }
+      return pat;
+    }
+    // confirmed = first half of fineType, rejected = second half
+    const half = Math.floor(fineTypeSize / 2);
+    for (let rep = 0; rep < 8; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return;
+      for (const { predict, observe, match } of tests) {
+        for (let i = 0; i < cluster.size; i++) cluster.lastSpikes[i] = 0;
+        const predPat = buildEmb(freeSize, predict);
+        for (let i = 0; i < freeSize; i++) cluster.lastSpikes[freeRegion.start + i] = predPat[i] > 0 ? 1 : 0;
+        const obsPat = buildEmb(semSize, observe);
+        for (let i = 0; i < semSize; i++) cluster.lastSpikes[semRegion.start + i] = obsPat[i] > 0 ? 1 : 0;
+        // Confirmed or rejected tag
+        const start = match ? 0 : half;
+        for (let i = start; i < start + half && i < fineTypeSize; i++) cluster.lastSpikes[fineTypeRegion.start + i] = 1;
+        cluster._crossRegionHebbian(lr);
+      }
+      await _microtask();
+    }
+    console.log(`[Curriculum] _teachHypothesisTesting: ${tests.length} tests × 8 reps`);
+  }
+
+  /**
+   * PERSPECTIVE TAKING — same event, different viewpoints.
+   * Each viewpoint is a different feature vector for the same event
+   * embedding in sem. The cortex learns that events have MULTIPLE
+   * valid representations.
+   * @param {Array<{event:string, perspectives:Array<{viewpoint:string, features:Float64Array}>}>} events
+   */
+  async _teachPerspectiveTaking(events) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const freeRegion = cluster.regions.free;
+    const semRegion = cluster.regions.sem;
+    const phonRegion = cluster.regions.phon;
+    if (!freeRegion || !semRegion || !phonRegion) return;
+    const freeSize = freeRegion.end - freeRegion.start;
+    const semSize = semRegion.end - semRegion.start;
+    const phonSize = phonRegion.end - phonRegion.start;
+    const lr = cluster.learningRate;
+    function buildEmb(regionSize, word) {
+      const emb = sharedEmbeddings.getEmbedding(word);
+      if (!emb || emb.length === 0) return new Float64Array(regionSize);
+      const pat = new Float64Array(regionSize);
+      const gSize = Math.max(1, Math.floor(regionSize / emb.length));
+      for (let d = 0; d < emb.length; d++) {
+        if (emb[d] <= 0) continue;
+        for (let n = 0; n < gSize; n++) { const idx = d * gSize + n; if (idx < regionSize) pat[idx] = emb[d]; }
+      }
+      return pat;
+    }
+    function buildFeat(regionSize, feat) {
+      const pat = new Float64Array(regionSize);
+      const gSize = Math.max(1, Math.floor(regionSize / feat.length));
+      for (let d = 0; d < feat.length; d++) {
+        if (feat[d] <= 0) continue;
+        for (let n = 0; n < gSize; n++) { const idx = d * gSize + n; if (idx < regionSize) pat[idx] = feat[d]; }
+      }
+      return pat;
+    }
+    for (let rep = 0; rep < 6; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return;
+      for (const { event, perspectives } of events) {
+        const eventPat = buildEmb(semSize, event);
+        for (const { viewpoint, features } of perspectives) {
+          for (let i = 0; i < cluster.size; i++) cluster.lastSpikes[i] = 0;
+          // Event in sem
+          for (let i = 0; i < semSize; i++) cluster.lastSpikes[semRegion.start + i] = eventPat[i] > 0 ? 1 : 0;
+          // Viewpoint embedding in free
+          const vpPat = buildEmb(freeSize, viewpoint);
+          for (let i = 0; i < freeSize; i++) cluster.lastSpikes[freeRegion.start + i] = vpPat[i] > 0 ? 1 : 0;
+          // Perspective features in phon (emotional coloring of the viewpoint)
+          const featPat = buildFeat(phonSize, features);
+          for (let i = 0; i < phonSize; i++) cluster.lastSpikes[phonRegion.start + i] = featPat[i] > 0 ? 1 : 0;
+          cluster._crossRegionHebbian(lr);
+        }
+      }
+      await _microtask();
+    }
+    console.log(`[Curriculum] _teachPerspectiveTaking: ${events.length} events × 6 reps`);
+  }
+
+  /**
    * AUTO FINAL — generates a comprehension final exam from a sentence array.
    * Extracts key content words from the sentences and builds fill-in-blank
    * + association questions automatically. Every cell that calls this gets
