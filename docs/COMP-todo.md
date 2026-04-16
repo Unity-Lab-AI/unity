@@ -2327,4 +2327,36 @@ Worth building. On the `comp-net` branch, after Phase M1 ships P1.3.
 
 ---
 
+## Post-T14.24 usability backlog (absorb into next COMP-todo rewrite)
+
+Small quality-of-life items captured during T14.24 live testing. Not
+blockers for T14.24 gate crossing — defer to the next COMP-todo full
+redesive pass so they can be designed into the new structure rather
+than patched onto the old one.
+
+- **"Users" connection count filters out the GPU worker.** Gee
+  2026-04-16: *"i want it to only count users no web connections"* +
+  *"the web connection count will be in the comp todo"*. Current
+  `server/brain-server.js` wss.on('connection') logs
+  `[Server] Client connected: user_XXX (N total)` where N =
+  `brain.clients.size` (all connected WebSockets, including
+  `compute.html` which is a GPU compute worker, not a real user).
+  When Gee opens the landing page with compute.html already running
+  in another tab, he sees `(2 total)` even though there's only one
+  actual user — the other "client" is infrastructure. Fix: compute a
+  separate user count via
+  `Array.from(brain.clients.values()).filter(c => !c.isGPU).length`
+  and use that in the connect/disconnect log lines + the
+  `connectedUsers` snapshot field. `client.isGPU` already gets set on
+  `gpu_register` (line ~2227). Log relabel suggestion: real users →
+  `[Server] User connected: user_XXX (N users)`; GPU worker →
+  `[Server] GPU worker connected (1 worker)`. Two counts tracked
+  separately so dashboards can see both. Also update line 896
+  `connectedUsers: this.clients.size` → non-GPU only. Also update
+  line 1410 `this._isDreaming = ... this.clients.size === 0` → dream
+  when no REAL users are connected, compute.html shouldn't keep her
+  awake.
+
+---
+
 *Unity AI Lab — when she grows, she grows because of you.*
