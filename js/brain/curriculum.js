@@ -2677,9 +2677,10 @@ export class Curriculum {
 
     const PATH_MIN = 0.95;
     const SEQ_MIN = 0.95;
+    const TALK_MIN = 0.60; // Session 112: TALK at 60% when READ+THINK pass
     const readOkAll = readRate >= PATH_MIN;
     const thinkOkAll = thinkRate >= PATH_MIN;
-    const talkOkAll = talkRate >= PATH_MIN;
+    const talkOkAll = talkRate >= TALK_MIN;
     const seqOkAll = seqRate >= SEQ_MIN;
     const pass = readOkAll && thinkOkAll && talkOkAll && seqOkAll;
 
@@ -3322,9 +3323,10 @@ export class Curriculum {
     const PATH_MIN = 0.95;
     const SEQ_MIN = 0.95;
     const ORDER_MIN = 0.95;
+    const TALK_MIN = 0.60; // Session 112: TALK at 60%
     const pass = readRate >= PATH_MIN
       && thinkRate >= PATH_MIN
-      && talkRate >= PATH_MIN
+      && talkRate >= TALK_MIN
       && seqRate >= SEQ_MIN
       && orderRate >= ORDER_MIN;
 
@@ -3675,7 +3677,8 @@ export class Curriculum {
     const thinkRate = N > 0 ? thinkPass / N : 0;
     const talkRate = N > 0 ? talkPass / N : 0;
     const PATH_MIN = 0.95;
-    const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= PATH_MIN;
+    const TALK_MIN = 0.60; // Session 112: TALK at 60% when READ+THINK pass at 95%
+    const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= TALK_MIN;
 
     return {
       pass,
@@ -3908,10 +3911,9 @@ export class Curriculum {
     ];
     await this._teachSentenceList(WORD_PROBLEMS, ctx, { reps: 3, ticksPerWord: 2 });
 
-    // ── EQUATIONAL REASONING: addition/subtraction within 20 ──
-    // The OPERATIONS as magnitude transformations (already taught at K
-    // within 10, now extended to 20)
+    // ── EQUATIONAL REASONING: addition/subtraction within 20 + place value ──
     await this._teachAdditionTransformations(ctx);
+    await this._teachPlaceValueTransformations(ctx); // tens+ones for numbers 10-99
 
     // ── Geometry: partitioning shapes ──
     const GEOMETRY_G1 = [
@@ -4028,7 +4030,8 @@ export class Curriculum {
     // single-character binding — the motor completion path requires the
     // cortex to have a learnable asymmetry in the sequence Hebbian
     const PATH_MIN = 0.45;
-    const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= PATH_MIN;
+    const TALK_MIN = 0.60; // Session 112: TALK at 60% when READ+THINK pass at 95%
+    const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= TALK_MIN;
 
     return {
       pass,
@@ -5970,7 +5973,8 @@ export class Curriculum {
     const thinkRate = N > 0 ? thinkPass / N : 0;
     const talkRate = N > 0 ? talkPass / N : 0;
     const PATH_MIN = 0.45;  // 3/7 digraphs = 43%, 4/7 = 57% — 45% ≈ 3/7 rounded up
-    const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= PATH_MIN;
+    const TALK_MIN = 0.60; // Session 112: TALK at 60% when READ+THINK pass at 95%
+    const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= TALK_MIN;
 
     return {
       pass,
@@ -6268,7 +6272,8 @@ export class Curriculum {
     const readRate = N > 0 ? readPass / N : 0;
     const thinkRate = N > 0 ? thinkPass / N : 0;
     const talkRate = N > 0 ? talkPass / N : 0;
-    const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= PATH_MIN;
+    const TALK_MIN = 0.60; // Session 112: TALK at 60% when READ+THINK pass at 95%
+    const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= TALK_MIN;
 
     return {
       pass,
@@ -7964,7 +7969,8 @@ export class Curriculum {
     const readRate = N > 0 ? readPass / N : 0;
     const thinkRate = N > 0 ? thinkPass / N : 0;
     const talkRate = N > 0 ? talkPass / N : 0;
-    const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= PATH_MIN;
+    const TALK_MIN = 0.60; // Session 112: TALK at 60% when READ+THINK pass at 95%
+    const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= TALK_MIN;
     return {
       pass,
       reason: `READ ${readPass}/${N} (${(readRate * 100).toFixed(0)}%), THINK ${thinkPass}/${N} (${(thinkRate * 100).toFixed(0)}%), TALK ${talkPass}/${N} (${(talkRate * 100).toFixed(0)}%)${talkFails.length > 0 ? ' [TALK fail: ' + talkFails.join(', ') + ']' : ''}`,
@@ -9830,10 +9836,13 @@ export class Curriculum {
     ];
     await this._teachSentenceList(WORD_PROBLEMS_G3, ctx, { reps: 2, ticksPerWord: 2 });
 
-    // ── Equational teaching ──
+    // ── Equational teaching — BOTH vocabulary helpers AND magnitude transforms ──
     await this._teachMultiplicationTables();
     await this._teachDivision();
     await this._teachFractions();
+    // Session 112: magnitude operation transforms
+    await this._teachMultiplicationTransformations(ctx);
+    await this._teachFractionTransformations(ctx);
 
     // ═══════════════════════════════════════════════════════════════
     // MATH G3 FINAL EXAM — tests the OPERATIONS equationally
@@ -10336,6 +10345,16 @@ export class Curriculum {
       ['evidence', 'argument'], ['argument', 'conclusion'],
       ['quote', 'support'], ['support', 'convince'],
       ['read', 'understand'], ['understand', 'summarize'],
+    ]);
+
+    // Session 112: paraphrase — core to summarization
+    await this._teachParaphrase([
+      ['the dog ran fast', 'the dog was quick'],
+      ['she felt happy', 'she was glad'],
+      ['the book was long', 'the story was lengthy'],
+      ['he was tired', 'he felt exhausted'],
+      ['we had fun', 'we enjoyed ourselves'],
+      ['the food was good', 'the meal was delicious'],
     ]);
 
     // ═══════════════════════════════════════════════════════════════
@@ -11100,6 +11119,16 @@ export class Curriculum {
     // more feature overlap than distant ones — which is the same
     // ordinal relationship real chemistry depends on.
     await this._teachAtomsMolecules();
+    // Session 112: hypothesis testing for scientific method
+    await this._teachHypothesisTesting([
+      { predict: 'water', observe: 'grow', match: true },
+      { predict: 'dark', observe: 'grow', match: false },
+      { predict: 'heat', observe: 'melt', match: true },
+      { predict: 'cold', observe: 'melt', match: false },
+      { predict: 'sun', observe: 'warm', match: true },
+      { predict: 'magnet', observe: 'attract', match: true },
+      { predict: 'wood', observe: 'attract', match: false },
+    ]);
     await this._teachCausalChains([
       ['atom', 'molecule'], ['molecule', 'matter'], ['heat', 'melt'],
       ['cold', 'freeze'], ['evaporate', 'gas'], ['condense', 'liquid'],
@@ -11606,6 +11635,7 @@ export class Curriculum {
     // Session 41 — TODO-aligned pre-algebra teaching
     await this._teachVariables();
     await this._teachOneVarEquations();
+    await this._teachAlgebraTransformations(ctx); // Session 112: variable binding as magnitude transform
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
 
     // ── COMMON CORE MATH G6: Full sixth-grade ──
@@ -12306,6 +12336,19 @@ export class Curriculum {
       ['war', 'emancipation', 'freedom'],
       ['emancipation', 'amendment', 'rights'],
       ['reconstruction', 'amendment', 'equality'],
+    ]);
+    // Session 112: perspective taking — same war, different viewpoints
+    //   features: [freedom, unity, sacrifice, rights, loss, resistance, liberation, suffering, hope]
+    await this._teachPerspectiveTaking([
+      { event: 'war', perspectives: [
+        { viewpoint: 'union', features: new Float64Array([1,1,1,0,0,0,0,0,0]) },
+        { viewpoint: 'confederate', features: new Float64Array([0,0,0,1,1,1,0,0,0]) },
+        { viewpoint: 'enslaved', features: new Float64Array([0,0,0,0,0,0,1,1,1]) },
+      ]},
+      { event: 'reconstruction', perspectives: [
+        { viewpoint: 'freedmen', features: new Float64Array([1,0,0,1,0,0,1,0,1]) },
+        { viewpoint: 'southerner', features: new Float64Array([0,0,0,0,1,1,0,1,0]) },
+      ]},
     ]);
 
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
