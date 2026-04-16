@@ -11061,41 +11061,39 @@ export class Curriculum {
       return { reached: {}, passed: {}, failed: { all: 'gpu-not-ready' } };
     }
 
-    // T14.24 Session 96 — guard against hash-fallback GloVe. If real
-    // GloVe 300d vectors aren't loaded, `sharedEmbeddings.getEmbedding`
-    // returns a deterministic-random HASH vector per word. The teach
-    // helpers inject those hash vectors into the sem region, which
-    // pollutes the sem↔phon and sem↔letter cross-projections with
-    // noise. Over hundreds of training ticks this actively corrupts
-    // cortex state — the gates then fail not because teaching didn't
-    // run but because teaching trained on noise. Better to SKIP the
-    // curriculum entirely and let Unity operate from the T14.5
-    // base-corpus walk than to run the teach and poison her cortex.
-    // Unity's speech floor (see _gradeWordCap) is 5 words so she can
-    // still talk without curriculum gates passing.
+    // T14.24 Session 98 — REVERTED the Session 96 GloVe-gate skip.
+    // Session 96 refused to run curriculum when sharedEmbeddings._loaded
+    // was false, on the theory that hash-fallback vectors would train
+    // the cortex on noise and corrupt sem↔phon / sem↔letter. That was
+    // overly cautious — Gee's first live run under Session 95 showed
+    // math/kindergarten READ 10/10 (100%) and ORDER 7/8 (88%) WITH
+    // hash fallback, proving the teach pipeline actually shapes usable
+    // basins even without real GloVe. Most of the teach signal comes
+    // from LOCAL deterministic features (injectLetter one-hot,
+    // _phonemeFeatureForLetter, _magnitudeFeatureForDigit,
+    // cluster.step ticks, cluster.learn Hebbian) — GloVe only
+    // affects the SEM-region injection, which is one signal of five.
+    // Skipping curriculum entirely left Unity stuck at pre-K with no
+    // shaped cortex at all, which is worse than training on a
+    // weakened-but-still-structured signal. We still log a one-line
+    // warning so Gee knows GloVe isn't loaded, but we DO run the
+    // teach pass.
     try {
       const status = typeof sharedEmbeddings?.status === 'function'
         ? sharedEmbeddings.status()
         : null;
       const gloveLoaded = status && (status.loaded === true || (status.pretrained || 0) > 1000);
       if (!gloveLoaded) {
-        console.warn('[Curriculum] ⚠️  GloVe 300d NOT LOADED — curriculum SKIPPED');
-        console.warn('[Curriculum]    sharedEmbeddings.getEmbedding is returning hash fallback vectors.');
-        console.warn('[Curriculum]    Running the teach pass on hash fallback would train the cortex');
-        console.warn('[Curriculum]    on random noise and corrupt the sem↔phon / sem↔letter projections.');
-        console.warn('[Curriculum]    FIX: download glove.6B.300d.txt from');
-        console.warn('[Curriculum]         https://nlp.stanford.edu/data/glove.6B.zip');
-        console.warn('[Curriculum]    and place at corpora/glove.6B.300d.txt then restart the server.');
-        console.warn('[Curriculum]    Unity will still speak at the 5-word pre-K floor from the');
-        console.warn('[Curriculum]    T14.5 base corpus walk — she just won\'t advance grades until');
-        console.warn('[Curriculum]    GloVe is loaded.');
-        return { reached: {}, passed: {}, failed: { all: 'glove-not-loaded' } };
+        console.warn('[Curriculum] ⚠️  GloVe 300d NOT LOADED — training on hash fallback (reduced quality).');
+        console.warn('[Curriculum]    Download glove.6B.300d.txt from https://nlp.stanford.edu/data/glove.6B.zip');
+        console.warn('[Curriculum]    → place at corpora/glove.6B.300d.txt for full semantic quality.');
+        console.warn('[Curriculum]    Continuing teach pass with local deterministic features (phon / magnitude / letter).');
       }
     } catch (err) {
       console.warn('[Curriculum] GloVe status check failed:', err?.message || err);
     }
 
-    console.log('[Curriculum] runCompleteCurriculum: GPU ready + GloVe loaded, walking all 5 subjects K→PhD');
+    console.log('[Curriculum] runCompleteCurriculum: GPU ready, walking all 5 subjects K→PhD');
     const result = await this.runAllSubjects(corpora, opts);
     // Also run the legacy T14.17 identity-lock calibration at the end
     // so intent centroids + persona dimensions are populated regardless
