@@ -12070,10 +12070,12 @@ export class Curriculum {
     ];
     await this._teachSentenceList(FEELINGS_K, ctx, { reps: 15, ticksPerWord: 2 });
 
-    return this._gateVocabList([
+    // Teach AND gate on the same vocab — _teachVocabList does both
+    // (direct pattern teach + comprehension gate + focused retry)
+    return this._teachVocabList([
       'school', 'friend', 'draw', 'mom', 'bus', 'cereal', 'recess',
       'black', 'monster', 'music', 'story', 'halloween', 'witch',
-    ]);
+    ], ctx, { reps: 15 });
   }
 
   // ── GRADE 1 (age 6) — reading clicks, dad fading ────────────────
@@ -12114,9 +12116,9 @@ export class Curriculum {
     ];
     await this._teachSentenceList(DRAWING, ctx, { reps: 12, ticksPerWord: 2 });
 
-    return this._gateVocabList([
+    return this._teachVocabList([
       'read', 'book', 'flashlight', 'alone', 'snack', 'draw', 'monster', 'dark',
-    ]);
+    ], ctx, { reps: 12 });
   }
 
   // ── GRADE 2 (age 7) — best friend, Shadow the cat ───────────────
@@ -12150,9 +12152,9 @@ export class Curriculum {
     ];
     await this._teachSentenceList(SUMMER, ctx, { reps: 12, ticksPerWord: 2 });
 
-    return this._gateVocabList([
+    return this._teachVocabList([
       'friend', 'story', 'villain', 'shadow', 'cat', 'secret', 'summer', 'firefly',
-    ]);
+    ], ctx, { reps: 12 });
   }
 
   // ── GRADE 3 (age 8) — dad leaving starts ────────────────────────
@@ -12201,9 +12203,9 @@ export class Curriculum {
     ];
     await this._teachSentenceList(INNER_G3, ctx, { reps: 20, ticksPerWord: 2 });
 
-    return this._gateVocabList([
+    return this._teachVocabList([
       'angry', 'sad', 'alone', 'tired', 'lunch', 'laundry', 'smart', 'potential',
-    ]);
+    ], ctx, { reps: 12 });
   }
 
   // ── GRADE 4 (age 9) — Girl Scouts, music, first fight ──────────
@@ -12240,9 +12242,9 @@ export class Curriculum {
     ];
     await this._teachSentenceList(FIGHT, ctx, { reps: 20, ticksPerWord: 2 });
 
-    return this._gateVocabList([
+    return this._teachVocabList([
       'fire', 'badge', 'proud', 'music', 'rock', 'album', 'fight', 'weird', 'punch',
-    ]);
+    ], ctx, { reps: 12 });
   }
 
   // ── GRADE 5 (age 10) — betrayal, summer camp, clothes ──────────
@@ -12287,9 +12289,9 @@ export class Curriculum {
     ];
     await this._teachSentenceList(FOOD, ctx, { reps: 12, ticksPerWord: 2 });
 
-    return this._gateVocabList([
+    return this._teachVocabList([
       'secret', 'trust', 'camp', 'stars', 'free', 'black', 'rebellion', 'cookies', 'meatloaf',
-    ]);
+    ], ctx, { reps: 12 });
   }
 
   // ── GRADE 6 (age 11) — first computer, goth discovery ──────────
@@ -12334,10 +12336,10 @@ export class Curriculum {
     ];
     await this._teachSentenceList(GRANDPA, ctx, { reps: 20, ticksPerWord: 2 });
 
-    return this._gateVocabList([
+    return this._teachVocabList([
       'computer', 'internet', 'code', 'goth', 'emo', 'black', 'eyeliner',
       'online', 'friends', 'music', 'grandpa',
-    ]);
+    ], ctx, { reps: 12 });
   }
 
   // ── GRADE 7 (age 12) — coding for real, fights with mom ────────
@@ -12378,10 +12380,10 @@ export class Curriculum {
     ];
     await this._teachSentenceList(IDENTITY, ctx, { reps: 15, ticksPerWord: 2 });
 
-    return this._gateVocabList([
+    return this._teachVocabList([
       'website', 'code', 'tutorials', 'hello', 'world', 'eyeliner',
       'hair', 'tattoo', 'notebook', 'doodle',
-    ]);
+    ], ctx, { reps: 12 });
   }
 
   // ── GRADE 8 (age 13) — saving up, missing dad, paper route ─────
@@ -12414,9 +12416,9 @@ export class Curriculum {
     ];
     await this._teachSentenceList(SCHOOL_DONT_CARE, ctx, { reps: 12, ticksPerWord: 2 });
 
-    return this._gateVocabList([
+    return this._teachVocabList([
       'money', 'save', 'laptop', 'dollar', 'family', 'boring', 'coding',
-    ]);
+    ], ctx, { reps: 12 });
   }
 
   // ── GRADE 9 (age 14) — full goth, the crew, first joint ───────
@@ -12471,10 +12473,10 @@ export class Curriculum {
     ];
     await this._teachSentenceList(CS_TEACHER, ctx, { reps: 20, ticksPerWord: 2 });
 
-    return this._gateVocabList([
+    return this._teachVocabList([
       'goth', 'choker', 'fishnets', 'boots', 'crew', 'weed', 'joint',
       'kiss', 'poetry', 'code', 'college', 'teacher',
-    ]);
+    ], ctx, { reps: 12 });
   }
 
   // ── GRADE 10 (age 15) — first real code, first concert ────────
@@ -12513,10 +12515,10 @@ export class Curriculum {
     ];
     await this._teachSentenceList(INTENSITY, ctx, { reps: 15, ticksPerWord: 2 });
 
-    return this._gateVocabList([
+    return this._teachVocabList([
       'application', 'chat', 'server', 'concert', 'mosh', 'loyal',
       'blog', 'intense', 'bridge', 'burn',
-    ]);
+    ], ctx, { reps: 12 });
   }
 
   // ── GRADE 11 (age 16) — first real relationship ───────────────
@@ -12551,10 +12553,10 @@ export class Curriculum {
     ];
     await this._teachSentenceList(PORTFOLIO, ctx, { reps: 15, ticksPerWord: 2 });
 
-    return this._gateVocabList([
+    return this._teachVocabList([
       'relationship', 'intense', 'coke', 'rush', 'speed', 'portfolio',
       'project', 'talent', 'recommendation',
-    ]);
+    ], ctx, { reps: 12 });
   }
 
   // ── GRADE 12 (age 17) — personality locked, leaving home ──────
@@ -12594,10 +12596,10 @@ export class Curriculum {
     ];
     await this._teachSentenceList(LEAVING, ctx, { reps: 20, ticksPerWord: 2 });
 
-    return this._gateVocabList([
+    return this._teachVocabList([
       'shaved', 'tattoo', 'circuit', 'suspended', 'fuck', 'prom',
       'horror', 'pizza', 'graduate', 'laptop', 'choker',
-    ]);
+    ], ctx, { reps: 12 });
   }
 
   // ── COLLEGE 1 (age 18) — freedom, dorm, independence ──────────
@@ -12625,9 +12627,9 @@ export class Curriculum {
     ];
     await this._teachSentenceList(ALLNIGHTER, ctx, { reps: 20, ticksPerWord: 2 });
 
-    return this._gateVocabList([
+    return this._teachVocabList([
       'freedom', 'dorm', 'roommate', 'sunrise', 'monitor', 'keyboard', 'joint',
-    ]);
+    ], ctx, { reps: 12 });
   }
 
   // ── COLLEGE 2 (age 19) — coke regular, heartbreak ─────────────
@@ -12653,9 +12655,9 @@ export class Curriculum {
     ];
     await this._teachSentenceList(HEARTBREAK, ctx, { reps: 20, ticksPerWord: 2 });
 
-    return this._gateVocabList([
+    return this._teachVocabList([
       'coke', 'weed', 'manic', 'heartbreak', 'sharper', 'meaner',
-    ]);
+    ], ctx, { reps: 12 });
   }
 
   // ── COLLEGE 3 (age 20-21) — transfers, tattoos, hackathon ────
@@ -12699,10 +12701,10 @@ export class Curriculum {
     ];
     await this._teachSentenceList(HACKATHON, ctx, { reps: 20, ticksPerWord: 2 });
 
-    return this._gateVocabList([
+    return this._teachVocabList([
       'transfer', 'professor', 'tattoo', 'circuit', 'led', 'monitor',
       'keyboard', 'hackathon', 'won', 'scream',
-    ]);
+    ], ctx, { reps: 12 });
   }
 
   // ── COLLEGE 4 (age 21-22) — devotion, collar, graduation ─────
@@ -12749,10 +12751,10 @@ export class Curriculum {
     ];
     await this._teachSentenceList(GRANDMA, ctx, { reps: 20, ticksPerWord: 2 });
 
-    return this._gateVocabList([
+    return this._teachVocabList([
       'devotion', 'collar', 'harness', 'fishnets', 'boots', 'rings',
       'humor', 'twisted', 'proud', 'diploma', 'grandma', 'hospital',
-    ]);
+    ], ctx, { reps: 12 });
   }
 
   // ── GRAD (age 23-24) — research, full chemical state ──────────
@@ -12792,10 +12794,10 @@ export class Curriculum {
     ];
     await this._teachSentenceList(EMOTIONAL, ctx, { reps: 15, ticksPerWord: 2 });
 
-    return this._gateVocabList([
+    return this._teachVocabList([
       'neuroscience', 'brain', 'simulation', 'experiment', 'coke', 'weed',
       'molly', 'acid', 'volatile', 'devoted', 'dangerous',
-    ]);
+    ], ctx, { reps: 12 });
   }
 
   // ── PhD (age 25) — full Unity persona ─────────────────────────
@@ -12860,7 +12862,7 @@ export class Curriculum {
       try { this.cluster.runIdentityRefresh({ sentencesPerCycle: 'all' }); } catch {}
     }
 
-    return this._gateVocabList(UNITY_VOCAB);
+    return this._teachVocabList(UNITY_VOCAB, ctx, { reps: 12 });
   }
 
 // ═══════════════════════════════════════════════════════════════════
