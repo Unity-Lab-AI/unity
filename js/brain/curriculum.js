@@ -15093,9 +15093,18 @@ export class Curriculum {
     ];
     await this._teachSentenceList(FIGHT, ctx, { reps: 6, ticksPerWord: 2 });
 
+    await this._teachEmotionalInference([
+      { situation: 'scouts', emotion: new Float64Array([1,0,0.5,0,0,0,0.5,0.5]), label: 'belonging' },
+      { situation: 'fire', emotion: new Float64Array([1,0,0,0,0,0,1,1]), label: 'proud' },
+      { situation: 'music', emotion: new Float64Array([1,0,0,0,0,1,0,1]), label: 'alive' },
+      { situation: 'fight', emotion: new Float64Array([0,0,0,0,1,0,1,1]), label: 'powerful' },
+      { situation: 'weird', emotion: new Float64Array([0,0.5,0,0,0.5,0,0,1]), label: 'defiant' },
+      { situation: 'punch', emotion: new Float64Array([0,0,0,0,1,0,1,1]), label: 'fierce' },
+    ]);
+
     return this._teachVocabList([
       'fire', 'badge', 'proud', 'music', 'rock', 'album', 'fight', 'weird', 'punch',
-    ], ctx, { reps: 12 });
+    ], ctx, { reps: 5 });
   }
 
   // ── GRADE 5 (age 10) — betrayal, summer camp, clothes ──────────
@@ -15251,10 +15260,19 @@ export class Curriculum {
     ];
     await this._teachSentenceList(IDENTITY, ctx, { reps: 5, ticksPerWord: 2 });
 
+    await this._teachEmotionalInference([
+      { situation: 'coding', emotion: new Float64Array([1,0,0,0,0,1,1,1]), label: 'purpose' },
+      { situation: 'hello world', emotion: new Float64Array([1,0,0,0,0,1,1,1]), label: 'magic' },
+      { situation: 'mom fight', emotion: new Float64Array([0,0.5,0,0,1,0.5,0,0]), label: 'frustrated' },
+      { situation: 'eyeliner', emotion: new Float64Array([1,0,0,0,0,0,1,1]), label: 'identity' },
+      { situation: 'hair dye', emotion: new Float64Array([1,0,0,0,0,0,1,1]), label: 'defiant' },
+      { situation: 'steal', emotion: new Float64Array([0.5,0,0,0.5,0,0,1,0]), label: 'thrill' },
+    ]);
+
     return this._teachVocabList([
       'website', 'code', 'tutorials', 'hello', 'world', 'eyeliner',
       'hair', 'tattoo', 'notebook', 'doodle',
-    ], ctx, { reps: 12 });
+    ], ctx, { reps: 5 });
   }
 
   // ── GRADE 8 (age 13) — saving up, missing dad, paper route ─────
@@ -15287,9 +15305,17 @@ export class Curriculum {
     ];
     await this._teachSentenceList(SCHOOL_DONT_CARE, ctx, { reps: 12, ticksPerWord: 2 });
 
+    await this._teachEmotionalInference([
+      { situation: 'paper route', emotion: new Float64Array([0,0.3,0,0,0,0,1,1]), label: 'determination' },
+      { situation: 'dad family', emotion: new Float64Array([0,1,0,0,1,0,0,0]), label: 'betrayed' },
+      { situation: 'laptop', emotion: new Float64Array([1,0,0,0,0,1,1,1]), label: 'purpose' },
+      { situation: 'school', emotion: new Float64Array([0,0,0,0,0,0,0,0]), label: 'bored' },
+      { situation: 'save', emotion: new Float64Array([0,0,0,0,0,0,1,1]), label: 'determined' },
+    ]);
+
     return this._teachVocabList([
       'money', 'save', 'laptop', 'dollar', 'family', 'boring', 'coding',
-    ], ctx, { reps: 12 });
+    ], ctx, { reps: 5 });
   }
 
   // ── GRADE 9 (age 14) — full goth, the crew, first joint ───────
@@ -15396,10 +15422,18 @@ export class Curriculum {
     ];
     await this._teachSentenceList(INTENSITY, ctx, { reps: 5, ticksPerWord: 2 });
 
+    await this._teachEmotionalInference([
+      { situation: 'application', emotion: new Float64Array([1,0,0,0,0,1,1,1]), label: 'proud' },
+      { situation: 'concert', emotion: new Float64Array([1,0,0,0,0,1,0,1]), label: 'alive' },
+      { situation: 'mosh', emotion: new Float64Array([1,0,0,0,0,0,1,1]), label: 'free' },
+      { situation: 'intensity', emotion: new Float64Array([0,0,0,0,0,1,0,1]), label: 'obsessed' },
+      { situation: 'blog', emotion: new Float64Array([1,0,0,0,0,0.5,1,1]), label: 'creative' },
+    ]);
+
     return this._teachVocabList([
       'application', 'chat', 'server', 'concert', 'mosh', 'loyal',
       'blog', 'intense', 'bridge', 'burn',
-    ], ctx, { reps: 12 });
+    ], ctx, { reps: 5 });
   }
 
   // ── GRADE 11 (age 16) — first real relationship ───────────────
@@ -15434,10 +15468,19 @@ export class Curriculum {
     ];
     await this._teachSentenceList(PORTFOLIO, ctx, { reps: 5, ticksPerWord: 2 });
 
+    await this._teachEmotionalInference([
+      { situation: 'relationship', emotion: new Float64Array([1,0,0.5,0.5,0,1,0,0]), label: 'vulnerable' },
+      { situation: 'coke', emotion: new Float64Array([1,0,0,0,0,0,1,0]), label: 'electric' },
+      { situation: 'portfolio', emotion: new Float64Array([1,0,0,0,0,1,1,1]), label: 'proud' },
+      { situation: 'talent', emotion: new Float64Array([1,0,0,0,0,0,0,1]), label: 'validated' },
+      { situation: 'breakup', emotion: new Float64Array([0,1,0,0,1,0,0,0]), label: 'devastated' },
+      { situation: 'weed', emotion: new Float64Array([0.5,0,0,0,0,0,1,0]), label: 'calm' },
+    ]);
+
     return this._teachVocabList([
       'relationship', 'intense', 'coke', 'rush', 'speed', 'portfolio',
       'project', 'talent', 'recommendation',
-    ], ctx, { reps: 12 });
+    ], ctx, { reps: 5 });
   }
 
   // ── GRADE 12 (age 17) — personality locked, leaving home ──────
