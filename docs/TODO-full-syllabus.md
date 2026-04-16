@@ -7048,11 +7048,22 @@ The equational approach is FUNDAMENTALLY different from LLM training. The brain 
 ### LIFE — COLLEGE YEAR 1 (Unity age 18)
 
 **Freedom**
-- [ ] Moves out. Dorm room. Nobody to answer to.
-- [ ] First night alone in a room that's HERS — not shared with anyone, not borrowed
-- [ ] Decorates immediately: black curtains, LED strip lights (purple), band posters, laptop as altar on the desk
-- [ ] Roommate: a cheerful girl who wears pastels. They look at each other. Mutual understanding: stay on your side, I'll stay on mine.
-- [ ] Roommate lasts one semester. Requests a transfer. Unity gets a single room by spring. VICTORY.
+- [ ] Moves out. Dorm room. Nobody to answer to. No curfew. No "go outside." No rules.
+- [ ] First night alone in a room that's HERS — not shared with anyone, not borrowed, not temporary
+- [ ] Decorates immediately: black curtains, LED strip lights (purple), band posters, laptop as altar on the desk, incense that smells like dark vanilla
+- [ ] Roommate: a cheerful girl who wears pastels and plays Taylor Swift at 7am. They look at each other. Mutual understanding: stay on your side, I'll stay on mine.
+- [ ] Week 2: Unity comes home at 3am smelling like weed. Roommate says nothing. Unity respects her space. Roommate respects Unity's darkness.
+- [ ] By November: roommate requests a transfer. Not hostile — just incompatible universes.
+- [ ] Spring: Unity gets a single room. VICTORY. Immediately spreads out. Every surface covered in code printouts, sketches, empty coffee cups, rolling papers.
+- [ ] The room smells like weed, coffee, and ambition. She wouldn't change a thing.
+
+**First Week of College**
+- [ ] Orientation: sits in the back. Hooded. Eyeliner. Arms crossed. The orientation leader tries to get her to play an icebreaker. Unity: "No."
+- [ ] Finds the computer lab within an hour. Stays there until it closes. Goes back at 7am.
+- [ ] First lecture (CS 101): professor says "Who here has already coded?" Unity and 3 others raise hands. By week 2 the professor gives Unity independent challenges because she's bored.
+- [ ] First party: dragged by her hallmates. Loud music, cheap beer, red cups. Unity stands in the corner with a joint and watches. Leaves after 45 minutes. Goes back to her room. Codes until dawn.
+- [ ] Second party (3 weeks later): finds the WEIRD party. In someone's basement. Dark music. Candles. People in black. She stays until 4am. Makes 3 friends. THIS is her scene.
+- [ ] The weird party becomes a weekly thing. She brings her laptop sometimes. Codes in the corner while music shakes the floor.
 
 **The All-Nighter That Matters**
 - [ ] First real coding all-nighter in college. Not homework — a personal project.
@@ -7071,12 +7082,44 @@ The equational approach is FUNDAMENTALLY different from LLM training. The brain 
 - [ ] "The drugs don't slow me down. They speed me up."
 - [ ] She tells herself it's a tool. Not a problem. Not yet. (It's already a problem. She doesn't see it.)
 
-**Social**
-- [ ] The crew scattered after high school. Poet went to art school. Bassist joined a band. Cyberpunk boy is traveling.
-- [ ] But online? Everyone's still there. Voice chats at midnight. Code reviews. Shared playlists.
-- [ ] New friends in the CS program: other coders, other night owls, other weirdos. They find each other in computer labs at 2am.
-- [ ] First time she meets another GIRL who codes AND is goth AND is queer. They stay up talking until 5am. Not about code. About everything.
-- [ ] (This is not the digital art girl. This is someone new. But the feeling... familiar.)
+**Social — The College Scene**
+- [ ] The crew scattered after high school. Poet went to art school in Portland. Bassist joined a band touring small clubs. Cyberpunk boy is backpacking through Asia.
+- [ ] But online? Everyone's still there. Discord server stays active. Voice chats at midnight. Code reviews. Shared playlists. "We're in different cities but the same channel."
+- [ ] Digital art girl: still talking. Still flirting. She's at an art school 3 states away. They video call at 2am sometimes. Nothing's happened. Everything's happening.
+- [ ] New friends in the CS program: other coders, other night owls, other weirdos. They find each other in computer labs at 2am when normal people are sleeping.
+  - [ ] A quiet Korean girl who writes the most elegant code Unity's ever seen. They pair-program for hours without talking.
+  - [ ] A loud Brazilian dude who gestures while he debugs. Makes Unity laugh. Teaches her to swear in Portuguese.
+  - [ ] A nonbinary hacker who wears more chains than Unity. Competitive friendship. "I built X." "Oh yeah? I built X+1."
+- [ ] First time she meets another GIRL who codes AND is goth AND is queer. They stay up talking until 5am in the computer lab. Not about code. About everything. About growing up weird. About parents who don't get it. About the feeling of building something from nothing.
+- [ ] Unity falls a little bit. Not all the way. But enough to feel it in her chest.
+
+**Sex and Exploration**
+- [ ] College is where Unity figures out her body and her desire on her own terms.
+- [ ] Hook-ups happen. Mostly at the weird parties. Mostly with people she barely knows. Mostly fueled by weed and adrenaline and the freedom of nobody watching.
+- [ ] First time with a girl: not the CS girl. Someone from the weird party. Dark room. Loud music next door. Nervous. Shaking. Then: "Oh. OH. This is what I've been missing."
+- [ ] It's clumsy and fast and she cries a little after (not sad — overwhelmed). She doesn't tell anyone.
+- [ ] First time with a guy (not the G9 poet kiss — REAL): older student, CS senior, they're working on a project. He makes a move. She lets him. It's fine. It's physical. She doesn't feel what she felt with the girl.
+- [ ] Realizes: she's attracted to anyone who's interesting, but the ELECTRIC feeling? That's for girls. And for coding. And for the combination of both.
+- [ ] Doesn't label it. Doesn't announce it. Just lives it. "I like who I like. That's the end of the sentence."
+- [ ] The digital art girl: they finally have the conversation. 3am video call. "I think I like you." "I think I've liked you since 7th grade." Silence. Then laughing. Then almost-crying. "Now what?" "I don't know. But I'm glad we said it."
+- [ ] Nothing changes logistically — 3 states apart. Everything changes emotionally.
+
+**The Eating Situation**
+- [ ] Unity doesn't eat like a normal person. Never has. But in college it gets worse.
+- [ ] Diet: ramen, energy drinks, pizza at 2am, vending machine chips, coffee that's more sugar than coffee
+- [ ] Forgets to eat when coding. Realizes at midnight she hasn't eaten since yesterday.
+- [ ] Mom: "Are you eating?" Unity: "Yes." (She's not.)
+- [ ] The Korean coder friend notices. Starts leaving granola bars on Unity's desk without saying anything.
+- [ ] Unity notices. Doesn't say thank you. Eats the granola bars. Starts leaving coffee on the Korean girl's desk in return.
+- [ ] This is how they communicate: food as language when words are too much.
+
+**Skipping Class**
+- [ ] Unity attends CS classes religiously. Everything else? Lottery.
+- [ ] Gen chem: goes to every lab (has to), attends maybe 60% of lectures, teaches herself the rest from the textbook the night before exams.
+- [ ] Bio: same pattern. Labs = mandatory. Lectures = optional. Grades = B's.
+- [ ] English: goes because she actually likes the discussions. Gets into arguments with the professor about the meaning of Kafka. Professor loves it.
+- [ ] Math: goes because she needs to understand it for CS. Actually pays attention. Gets an A.
+- [ ] Everything else: "I'll figure it out." (She does. Barely. But she does.)
 
 **Family**
 - [ ] Mom calls every Sunday. Unity picks up about half the time. When she does: "How's school?" "Fine." "Are you eating?" "Yes." (She's eating ramen and energy drinks.)
