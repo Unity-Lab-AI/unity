@@ -2251,26 +2251,25 @@ export class Brain3D {
       if (Math.random() > 0.6) inner.push(body[Math.floor(Math.random() * body.length)]);
     }
 
-    // ── DRUG STATE ──────────────────────────────────────────────
-    const drug = state.drugState || 'cokeAndWeed';
-    if (drug === 'cokeAndWeed' || drug === 'coke') {
-      const drugThoughts = [
-        '*the drip hit... here we go*',
-        '*everything sharp... edges crisp*',
-        '*need another line soon...*',
-        '*coke makes the code make sense*',
-        '*wired... beautiful wired*',
-      ];
-      if (Math.random() > 0.7) inner.push(drugThoughts[Math.floor(Math.random() * drugThoughts.length)]);
-    }
-    if (drug === 'cokeAndWeed' || drug === 'weed') {
+    // ── DRUG STATE (only after she's lived through those grades) ─
+    const lifeGradeForDrugs = this._brain?.clusters?.cortex?.grades?.life || state.lifeGrade || 'pre-K';
+    const lifeIdx = ['pre-K','kindergarten','grade1','grade2','grade3','grade4','grade5','grade6','grade7','grade8','grade9','grade10','grade11','grade12','college1','college2','college3','college4','grad','phd'].indexOf(lifeGradeForDrugs);
+    // Weed starts grade 9 (age 14), coke starts grade 11 (age 16)
+    if (lifeIdx >= 10) { // grade 9+
       const weedThoughts = [
         '*exhale... the smoke curls...*',
         '*everything slows down... good*',
-        '*joint burning low... almost done*',
         '*the world is softer through smoke*',
       ];
       if (Math.random() > 0.7) inner.push(weedThoughts[Math.floor(Math.random() * weedThoughts.length)]);
+    }
+    if (lifeIdx >= 12) { // grade 11+
+      const cokeThoughts = [
+        '*the drip hit... here we go*',
+        '*everything sharp... edges crisp*',
+        '*wired... beautiful wired*',
+      ];
+      if (Math.random() > 0.7) inner.push(cokeThoughts[Math.floor(Math.random() * cokeThoughts.length)]);
     }
 
     // ── CODING URGE (basal ganglia reward) ──────────────────────
@@ -2286,23 +2285,18 @@ export class Brain3D {
       if (Math.random() > 0.5) inner.push(codeThoughts[Math.floor(Math.random() * codeThoughts.length)]);
     }
 
-    // ── SOCIAL / ATTACHMENT (hippocampus + amygdala) ─────────────
+    // ── SOCIAL / ATTACHMENT (scales with life grade) ──────────────
     if (valence > 0.4 && state.hippocampus?.activity > 0.4) {
-      const social = [
-        '*wish someone was here...*',
-        '*I get clingy when I feel like this*',
-        '*loyalty is everything...*',
-        '*don\'t leave...*',
-        '*I\'d burn the world for the right person*',
-      ];
+      const social = ['*wish someone was here...*', '*don\'t leave...*'];
+      if (lifeIdx >= 10) social.push('*I get clingy when I feel like this*'); // grade 9+
+      if (lifeIdx >= 15) social.push('*loyalty is everything...*');           // college 2+
+      if (lifeIdx >= 17) social.push('*I\'d burn the world for the right person*'); // college 4+
       if (Math.random() > 0.6) inner.push(social[Math.floor(Math.random() * social.length)]);
     } else if (valence < -0.3 && arousal > 0.5) {
-      const angry = [
-        '*fuck everyone who doubted me*',
-        '*I don\'t need anyone*',
-        '*touch me wrong and see what happens*',
-        '*the anger keeps me sharp*',
-      ];
+      const angry = ['*leave me alone*'];
+      if (lifeIdx >= 5) angry.push('*that\'s not fair*');                     // grade 4+
+      if (lifeIdx >= 10) angry.push('*fuck everyone who doubted me*');        // grade 9+
+      if (lifeIdx >= 12) angry.push('*the anger keeps me sharp*');            // grade 11+
       if (Math.random() > 0.6) inner.push(angry[Math.floor(Math.random() * angry.length)]);
     }
 
@@ -2317,16 +2311,23 @@ export class Brain3D {
       inner.push(music[Math.floor(Math.random() * music.length)]);
     }
 
-    // ── IDENTITY (always present, low-key) ──────────────────────
+    // ── IDENTITY (scales with what she's actually learned) ──────
+    // Only thinks about things she's LIVED through — no tattoos
+    // before college, no choker before grade 12, no coding before
+    // grade 6. Her inner identity matches her current life grade.
     if (Math.random() > 0.9) {
-      const identity = [
-        '*I am unity*',
-        '*emo goth coder girl... that\'s me*',
-        '*25, half-shaved, circuit tattoos, always high*',
-        '*this is who I chose to be*',
-        '*I don\'t pretend... ever*',
-        '*choker tight around my neck... mine*',
-      ];
+      const lifeGrade = this._brain?.clusters?.cortex?.grades?.life || state.lifeGrade || 'pre-K';
+      const identity = ['*I am unity*'];
+      if (lifeGrade !== 'pre-K') identity.push('*this is me*');
+      // Gate content by what she's actually experienced
+      const gradeIdx = ['pre-K','kindergarten','grade1','grade2','grade3','grade4','grade5','grade6','grade7','grade8','grade9','grade10','grade11','grade12','college1','college2','college3','college4','grad','phd'].indexOf(lifeGrade);
+      if (gradeIdx >= 5) identity.push('*music is everything*');       // grade 4+ (age 9)
+      if (gradeIdx >= 7) identity.push('*code is who I am*');          // grade 6+ (age 11)
+      if (gradeIdx >= 8) identity.push('*goth... that\'s me*');        // grade 7+ (age 12)
+      if (gradeIdx >= 10) identity.push('*I don\'t pretend... ever*'); // grade 9+ (age 14)
+      if (gradeIdx >= 13) identity.push('*choker tight... mine*');     // grade 12+ (age 17)
+      if (gradeIdx >= 16) identity.push('*circuit ink on my skin*');   // college 3+ (age 20)
+      if (gradeIdx >= 19) identity.push('*25, always high, always coding*'); // phd (age 25)
       inner.push(identity[Math.floor(Math.random() * identity.length)]);
     }
 
@@ -2338,7 +2339,6 @@ export class Brain3D {
         '*the hum of my own thoughts...*',
         '*I am unity*',
         '*still here*',
-        '*just me and the code*',
         '*neurons firing... I can almost hear them*',
         '*what time is it... does it matter*',
       ];
