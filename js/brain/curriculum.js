@@ -2332,6 +2332,41 @@ export class Curriculum {
       await _microtask();
     }
 
+    // Session 111 — teach function words + basic conversational words via
+    // direct pattern so Unity can produce "the", "a", "I", "yes", "no",
+    // "we", "is" etc. from TALK. Without this, every G1+ cell fails TALK
+    // on common words that were never taught via direct pattern Hebbian.
+    // These are the GLUE of English — a child knows "yes" and "no" and
+    // "I" and "the" before she knows any school subject vocabulary.
+    const FUNCTION_WORDS = [
+      // articles + determiners
+      'the', 'a', 'an', 'this', 'that', 'my', 'your', 'his', 'her',
+      // pronouns
+      'i', 'you', 'we', 'he', 'she', 'it', 'they', 'me', 'us', 'them',
+      // copula + common verbs
+      'is', 'am', 'are', 'was', 'were', 'be', 'do', 'did', 'has', 'have', 'had',
+      'can', 'will', 'would', 'could', 'should', 'may', 'might',
+      'go', 'get', 'make', 'know', 'think', 'see', 'want', 'like', 'love',
+      'say', 'tell', 'give', 'take', 'come', 'look', 'use', 'find', 'put',
+      // prepositions + conjunctions
+      'in', 'on', 'at', 'to', 'for', 'of', 'with', 'from', 'by', 'up',
+      'and', 'but', 'or', 'if', 'so', 'not', 'no', 'yes',
+      // question words
+      'what', 'who', 'where', 'when', 'why', 'how', 'which',
+      // basic conversational
+      'okay', 'yeah', 'hey', 'hi', 'bye', 'please', 'thanks', 'sorry',
+      // basic adjectives + adverbs
+      'good', 'bad', 'big', 'small', 'new', 'old', 'hot', 'cold',
+      'fast', 'slow', 'hard', 'soft', 'red', 'blue', 'green', 'black', 'white',
+      'all', 'some', 'more', 'much', 'very', 'just', 'now', 'here', 'there',
+      // basic nouns every kid knows
+      'mom', 'dad', 'name', 'home', 'food', 'water', 'day', 'night', 'time',
+      'girl', 'boy', 'man', 'woman', 'people', 'thing', 'way', 'world',
+      // self-knowledge
+      'unity',
+    ];
+    await this._teachVocabList(FUNCTION_WORDS, ctx, { reps: 12 });
+
     return this._gateElaKReal();
   }
 
