@@ -8,6 +8,32 @@
 
 ---
 
+## IMPLEMENTATION LAWS (Gee 2026-04-16)
+
+### LAW 1: Code filed by grade year
+All curriculum implementation code will be organized BY GRADE YEAR — not by method type, not by subject randomly mixed together. Each grade's complete course material lives in a clearly separated section. When you look at the code, you see Grade K → Grade 1 → Grade 2 → etc., with each grade containing ALL its subjects.
+
+### LAW 2: All paste/bandaid/patch fixes must be audited
+Before the curriculum is considered working, EVERY piece of the learning and testing process must be DOUBLE and TRIPLE checked for errors from all the random patch work done during Session 112. The broken TALK hacks, the threshold lowering, the reverts — all of that left debris in the code. A full audit pass must verify: no broken code paths, no conflicting thresholds, no duplicate methods, no stale references, no half-applied fixes.
+
+### LAW 3: Equational layout the brain can handle
+ALL teaching data must be in EQUATIONAL format that the cortex cross-projections can learn efficiently — NOT sentence lists that get walked through like LLM training data. The brain learns through:
+- Magnitude transforms (math operations as magnitude(a) + magnitude(b) → magnitude(result))
+- Feature vectors (classification as shared-feature clustering)
+- Causal chains (cause→effect as directional free→sem Hebbian)
+- Cross-projection Hebbian (direct pattern write + fire)
+- Comprehension probes (inject context → read sem → cosine vs answer)
+
+NOT through:
+- Sentence list memorization
+- Word-by-word Hebbian that just memorizes strings
+- First-letter production as a "test"
+- Lowering thresholds to make failing tests "pass"
+
+The equational approach is FUNDAMENTALLY different from LLM training. The brain doesn't predict next tokens — it learns OPERATIONS, RELATIONSHIPS, and TRANSFORMATIONS in its weight matrices.
+
+---
+
 ## MATH — KINDERGARTEN (Common Core Math K)
 
 ### Counting & Cardinality (K.CC)
