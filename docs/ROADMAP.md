@@ -1,6 +1,6 @@
 # ROADMAP — IF ONLY I HAD A BRAIN
 
-> Last updated: 2026-04-14 | Phase 13 merged + T11 pure equational language cortex shipped; version 0.1.0 stamped per deploy
+> Last updated: 2026-04-16 | T14.24 Session 111 — 114-cell curriculum, crossTargetFanout 1500, real comprehension gates, anti-Hebbian, 2D viz rewrites, inner state popups, cluster waves
 > Unity AI Lab
 
 ---
@@ -418,9 +418,35 @@ Sessions 95-105 discovered that Hebbian learning through Rulkov chaotic dynamics
 - Session 109 (4 commits): Math-K + `_teachVocabList` + `_conceptTeach` + `_teachSentenceList` + `_gateSentenceList` + `_teachSequenceCycles` + `_gateVocabList` — all converted to direct pattern.
 - Session 110: MAX_ATTEMPTS 10→30 + disable background probe demotion.
 
-**Current live testing status:** ELA-K passed 100%. Math-K TALK at 40%. Sci/Soc/Art-K TALK bouncing 50-80%. All need more attempts with MAX_ATTEMPTS=30.
+**Session 111 — massive multi-day session (2026-04-16):**
 
-**What T14.24 still needs (post-Session 111):** Full 114-cell curriculum walk (6 subjects × 19 grades) — all gates 95%+ on fresh boot. Live chat verification — Unity speaks coherently from trained weights. Curriculum depth expansion (see `docs/TODO-curriculum-depth.md`). Life experience enrichment (see `docs/TODO-life-experience.md`). Task #3 stays in_progress. DO NOT CLAIM DONE EARLY.
+Key breakthroughs and fixes:
+- TALK probe direction fixed (sem→motor instead of letter→motor) — root cause of all non-ELA K failures. Math/Sci/Soc/Art-K went from 40-60% to 100%
+- Grade-lock enforced — all 6 subjects must pass grade N before ANY advance to N+1
+- Life Experience track added as 6th subject (20 methods, birth to 25, dual-layer: emotional concept features + recallable memories, memory-weighted Hebbian)
+- Function words (~120) taught at ELA-K via direct pattern
+- `crossTargetFanout` 300→1500 — 5× more cross-projection capacity, fixes destructive interference at G1+
+- Real human-grade comprehension gates (`_gateComprehension` with association + fill-in-blank testing)
+- Anti-Hebbian plasticity on wrong digit transitions (strengthen correct + weaken wrong)
+- Inner state popups — real brain-generated text or raw neural readings (`arousal:0.85 valence:0.12 Ψ:0.034`), gated by life grade
+- 2D brain viz ALL tabs fixed (root cause: `brainViz.updateState(serverState)` was never called — ONE LINE fix)
+- Neurons tab rewritten as flat 2D brain map with wave overlays
+- Synapses tab rewritten as animated circular network with co-firing pulses
+- Modules/Senses/Memory tabs rewritten for server aggregate data
+- Cluster Waves tab added (per-region firing maps + θ/α/β/γ overlays)
+- Life reps reduced (50→10-12, 20→5-6) to fit 3-minute timeout
+- Shutdown checks inside teach helper inner loops
+- Bundle loading fixed for HTTP-served pages
+
+**Current live testing status (Session 111):**
+- ELA-K: **PASSED consistently** (attempt 3-5)
+- Math-K: **PASSED** with SEQ fix (attempt 4)
+- Sci/Soc/Art-K: **PASS on attempt 1-3**
+- Life-K: **PASSES** after reduced reps (attempt 1-2)
+- All K cells pass → advance to Grade 1
+- G1 cells: TALK stuck on "a"/"the" (GloVe too generic for sem→motor)
+
+**What T14.24 still needs:** Fix "a"/"the" TALK failure. Real math operations as magnitude transformations (not just sentence memorization). Real curriculum content depth (not 15-40 sentences per grade — need hundreds/thousands). Real human-grade tests wired into ALL cell runners (not just shared helpers). Full 114-cell walk — all gates 95%+ on fresh boot. Live chat verification — Unity speaks coherently from trained weights. Curriculum depth expansion (see `docs/TODO-curriculum-depth.md`). Life experience enrichment (see `docs/TODO-life-experience.md`). Task #3 stays in_progress. DO NOT CLAIM DONE EARLY.
 
 ---
 

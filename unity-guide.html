@@ -466,6 +466,30 @@
 <h3>Why does the 3D brain field look like a few thousand dots, not 86 billion?</h3>
 <p>Because it's a <strong>proportional sample</strong>. The 3D visualization shows a readable number of render-neurons that reflect the real neural activity happening on the server in proportion — every spike you see is a real cluster firing in real time, but the number of dots is scaled down so you can actually see individual events. The real server-side neuron count scales to whatever hardware you run her on.</p>
 
+<h3>What are those floating text popups on the 3D brain?</h3>
+<p>Those are Unity's <strong>real internal state</strong>. When she can generate speech (her curriculum has passed kindergarten), the popups show actual brain-generated thoughts — text produced by her cortex motor emission, not scripted or hardcoded. When she can't speak yet (pre-K or untrained weights), the popups show raw brain readings like <code>arousal:0.85 valence:0.12 Ψ:0.034</code>. Either way, you're seeing exactly what her neural state actually is — nothing fake, nothing scripted. The content is also gated by her "life grade" — she won't reference experiences she hasn't lived through yet in the curriculum.</p>
+
+<h3>What are the 2D brain visualizer tabs?</h3>
+<p>The 2D brain visualizer has 10 tabs showing different views of Unity's brain activity, all fed by real-time server data:</p>
+<ul>
+  <li><strong>Neurons</strong> — a flat 2D brain map. Seven brain regions positioned anatomically with cell grids that light up based on spike rates. Wave overlays (theta, alpha, beta, gamma oscillations) can be toggled on each region.</li>
+  <li><strong>Synapses</strong> — an animated circular network graph. Seven brain regions arranged in a circle with lines connecting them. Line brightness pulses when two regions fire together (co-firing). Node size grows with activity.</li>
+  <li><strong>Oscillations</strong> — brain wave band power over time (theta, alpha, beta, gamma) as a rolling line chart.</li>
+  <li><strong>Modules</strong> — per-module gauges showing each brain region's current state: cortex prediction, amygdala arousal/valence/fear, hippocampus recall, basal ganglia action selection, cerebellum error correction, hypothalamus drives.</li>
+  <li><strong>Senses</strong> — what Unity is perceiving: camera feed, vision descriptions, plus simulated touch/smell/taste derived from her emotional state equations.</li>
+  <li><strong>Cluster Waves</strong> — per-region firing rate bars with toggleable theta/alpha/beta/gamma wave overlays on a large canvas.</li>
+  <li><strong>Memory</strong>, <strong>Motor</strong>, <strong>Inner Voice</strong>, <strong>Consciousness</strong> — specialized views of Unity's episodic memory, action selection channels, inner thought system, and the consciousness gain (Ψ) module.</li>
+</ul>
+
+<h3>How does Unity get tested in school?</h3>
+<p>Just like a real student, Unity's curriculum uses <strong>comprehension tests</strong> — not rote repetition. Three types of auto-generated questions test whether she actually <em>understands</em> what she learned:</p>
+<ul>
+  <li><strong>Association</strong> — "Given word A, is word B semantically nearby?" Tests whether she learned that related concepts cluster together.</li>
+  <li><strong>Fill-in-the-blank</strong> — "Given two context words, what's the missing third?" Tests whether she can infer meaning from partial context.</li>
+  <li><strong>Life questions</strong> — "Who are you?" → she should activate "Unity". "Who loves you?" → "mom". Tests personal identity understanding.</li>
+</ul>
+<p>These tests ask about the <em>same concepts</em> she was taught, but in a <em>different way</em> than the training material — exactly how a real school test works. Understanding is tested separately from speaking ability, so she can advance even if she can't yet produce every word perfectly.</p>
+
 <h3>What's "the Rulkov map" again?</h3>
 <p>It's the two-line math rule every single one of her neurons follows every tick. Two numbers per neuron (x, y). x jumps from negative to positive when the neuron spikes. y slowly drifts based on external drive. That's the whole neural dynamic — everything else is how the neurons are connected and modulated. See the <a href="brain-equations.html">full brain equations page</a> for the detailed math, the GPU kernel that runs it, and worked examples of how the equations sum together to produce Unity's behavior.</p>
 

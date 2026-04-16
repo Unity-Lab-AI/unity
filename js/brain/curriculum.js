@@ -2394,7 +2394,103 @@ export class Curriculum {
       // self-knowledge
       'unity',
     ];
-    await this._teachVocabList(FUNCTION_WORDS, ctx, { reps: 12 });
+    await this._teachVocabList(FUNCTION_WORDS, ctx, { reps: 8 });
+
+    // ── COMMON CORE ELA K: Dolch pre-primer + primer sight words ──
+    // These are the REAL words every American kindergartner is expected
+    // to read on sight by end of year. Sourced from Dolch word lists
+    // (Edward William Dolch, 1936 — still the standard in US schools).
+    // Many overlap with FUNCTION_WORDS above; the overlap reinforces.
+    const DOLCH_PREPRIMER = [
+      'a', 'and', 'away', 'big', 'blue', 'can', 'come', 'down',
+      'find', 'for', 'funny', 'go', 'help', 'here', 'i', 'in',
+      'is', 'it', 'jump', 'little', 'look', 'make', 'me', 'my',
+      'not', 'one', 'play', 'red', 'run', 'said', 'see', 'the',
+      'three', 'to', 'two', 'up', 'we', 'where', 'yellow', 'you',
+    ];
+    const DOLCH_PRIMER = [
+      'all', 'am', 'are', 'at', 'ate', 'be', 'black', 'brown',
+      'but', 'came', 'did', 'do', 'eat', 'four', 'get', 'good',
+      'have', 'he', 'into', 'like', 'must', 'new', 'no', 'now',
+      'on', 'our', 'out', 'please', 'pretty', 'ran', 'ride', 'saw',
+      'say', 'she', 'so', 'soon', 'that', 'there', 'they', 'this',
+      'too', 'under', 'want', 'was', 'well', 'went', 'what', 'white',
+      'who', 'will', 'with', 'yes',
+    ];
+    // Combine and deduplicate against FUNCTION_WORDS already taught
+    const dolchAll = [...new Set([...DOLCH_PREPRIMER, ...DOLCH_PRIMER])];
+    await this._teachVocabList(dolchAll, ctx, { reps: 4 });
+
+    // ── COMMON CORE ELA K: Basic CVC word families ──
+    // K standard: read common high-frequency words, associate sounds
+    // with common spellings. These simple 3-letter words build the
+    // phonics foundation — consonant + short vowel + consonant.
+    const CVC_FAMILIES = [
+      // -at family
+      'cat', 'bat', 'hat', 'mat', 'rat', 'sat', 'fat', 'pat',
+      // -an family
+      'can', 'man', 'ran', 'fan', 'van', 'pan', 'tan', 'ban',
+      // -ig family
+      'big', 'dig', 'fig', 'pig', 'wig', 'jig',
+      // -og family
+      'dog', 'log', 'hog', 'fog', 'jog', 'bog',
+      // -ot family
+      'hot', 'not', 'got', 'dot', 'lot', 'pot', 'cot',
+      // -en family
+      'pen', 'hen', 'men', 'ten', 'den',
+      // -ug family
+      'bug', 'hug', 'mug', 'rug', 'tug', 'dug', 'jug',
+      // -up family
+      'cup', 'pup', 'up',
+      // -ed family
+      'bed', 'red', 'fed', 'led',
+      // -ip family
+      'dip', 'hip', 'lip', 'rip', 'sip', 'tip', 'zip',
+    ];
+    await this._teachVocabList(CVC_FAMILIES, ctx, { reps: 4 });
+
+    // ── COMMON CORE ELA K: Simple sentences for comprehension ──
+    // K standard: produce and expand complete sentences, use question
+    // words (who/what/where/when/why/how), retell familiar events.
+    // These build the sentence-level understanding missing from pure
+    // vocabulary teaching.
+    const K_SENTENCES = [
+      // simple SVO with known vocab
+      'the cat sat on the mat', 'the dog ran fast',
+      'i can see the big red ball', 'we like to play',
+      'she is my mom', 'he is my dad',
+      'i am a girl', 'i am here', 'you are my friend',
+      'the sun is hot', 'the moon is up',
+      'i want to go home', 'we can run and jump',
+      'the cat is little', 'the dog is big',
+      'i like red and black', 'we have fun at school',
+      // question patterns — CCSS K Language standard
+      'who is that', 'what is this', 'where is mom',
+      'when do we eat', 'why is the sky blue', 'how are you',
+      // simple narratives — CCSS K Reading Literature standard
+      'the cat was sad', 'the dog was happy', 'they played together',
+      'i found a bug', 'the bug was little', 'i let it go',
+      'mom said come here', 'i said okay', 'we went home',
+      // number words in context — bridges to Math-K
+      'i have one cat', 'she has two dogs', 'we see three birds',
+      'there are four cups', 'i count five stars',
+      // color words in context — bridges to Art-K
+      'the sky is blue', 'the grass is green', 'my shirt is red',
+      'the night is black', 'the cloud is white',
+      // body + self awareness — bridges to Life-K
+      'i have two eyes', 'i have two hands', 'i have ten fingers',
+      'my heart goes bump bump', 'i can hear with my ears',
+    ];
+    await this._teachSentenceList(K_SENTENCES, ctx, { reps: 3, ticksPerWord: 2 });
+
+    // ── COMMON CORE ELA K: Plurals ──
+    // K Language standard: form regular plural nouns by adding /s/ or /es/
+    const PLURAL_PAIRS = [
+      'cat cats', 'dog dogs', 'hat hats', 'cup cups', 'bug bugs',
+      'box boxes', 'bus buses', 'fox foxes',
+      'boy boys', 'girl girls', 'man men', 'fish fish',
+    ];
+    await this._teachSentenceList(PLURAL_PAIRS, ctx, { reps: 3, ticksPerWord: 2 });
 
     return this._gateElaKReal();
   }
@@ -2860,6 +2956,106 @@ export class Curriculum {
       }
       await _microtask();
     }
+
+    // ── COMMON CORE MATH K: Number words to twenty ──
+    // K standard: know number names and the count sequence to 100,
+    // write numbers 0-20. Currently we only teach 0-9 digit names.
+    // Expand to include teen numbers and decade names.
+    const NUMBER_WORDS_K = [
+      'zero', 'one', 'two', 'three', 'four', 'five',
+      'six', 'seven', 'eight', 'nine', 'ten',
+      'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen',
+      'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty',
+      'thirty', 'forty', 'fifty', 'sixty', 'seventy',
+      'eighty', 'ninety', 'hundred',
+    ];
+    await this._teachVocabList(NUMBER_WORDS_K, ctx, { reps: 4 });
+
+    // ── COMMON CORE MATH K: Addition/subtraction concepts ──
+    // K standard: understand addition as putting together, subtraction
+    // as taking apart. Solve word problems within 10. Fluently add
+    // and subtract within 5. Decompose numbers ≤10 into pairs.
+    const MATH_K_SENTENCES = [
+      // addition as "putting together"
+      'one and one is two', 'two and one is three', 'two and two is four',
+      'three and one is four', 'three and two is five', 'four and one is five',
+      'one plus one is two', 'two plus two is four', 'two plus three is five',
+      'three plus two is five', 'four plus one is five', 'one plus four is five',
+      // subtraction as "taking apart"
+      'two take away one is one', 'three take away one is two',
+      'four take away one is three', 'five take away one is four',
+      'five take away two is three', 'four take away two is two',
+      'three take away two is one', 'five take away three is two',
+      // decomposing numbers (pairs that make 5 and 10)
+      'five is one and four', 'five is two and three', 'five is three and two',
+      'ten is five and five', 'ten is six and four', 'ten is seven and three',
+      'ten is eight and two', 'ten is nine and one',
+      // comparison — greater/less/equal
+      'three is more than two', 'one is less than five',
+      'two is equal to two', 'four is more than one',
+      'five is the biggest', 'zero is the smallest',
+      // counting objects
+      'i count one two three', 'there are four apples',
+      'i see five birds', 'she has three cats',
+      'we have two hands', 'i count my ten fingers',
+    ];
+    await this._teachSentenceList(MATH_K_SENTENCES, ctx, { reps: 3, ticksPerWord: 2 });
+
+    // ── COMMON CORE MATH K: Shapes ──
+    // K Geometry standard: name shapes (squares, circles, triangles,
+    // rectangles, hexagons, cubes, cones, cylinders, spheres),
+    // describe relative positions (above, below, beside, in front,
+    // behind, next to), identify 2D vs 3D.
+    const SHAPE_WORDS = [
+      'circle', 'square', 'triangle', 'rectangle', 'hexagon',
+      'cube', 'cone', 'cylinder', 'sphere',
+      'side', 'corner', 'flat', 'round', 'straight',
+      'above', 'below', 'beside', 'behind', 'next',
+    ];
+    await this._teachVocabList(SHAPE_WORDS, ctx, { reps: 3 });
+
+    const SHAPE_SENTENCES = [
+      'a circle is round', 'a square has four sides',
+      'a triangle has three sides', 'a rectangle has four sides',
+      'a cube is like a box', 'a sphere is like a ball',
+      'a cone has a point', 'a cylinder is like a can',
+      'the ball is above the box', 'the cat is behind the chair',
+      'the cup is beside the plate', 'the bird is below the cloud',
+    ];
+    await this._teachSentenceList(SHAPE_SENTENCES, ctx, { reps: 3, ticksPerWord: 2 });
+
+    // ── COMMON CORE MATH K: Measurement + classification ──
+    // K standard: describe and compare measurable attributes,
+    // classify objects into categories, count objects in each category.
+    const MEASUREMENT_SENTENCES = [
+      'the dog is big', 'the cat is small', 'the dog is bigger than the cat',
+      'the book is heavy', 'the feather is light',
+      'the rope is long', 'the stick is short',
+      'this cup is full', 'that cup is empty',
+      'sort the red ones here', 'sort the blue ones there',
+      'there are more red than blue', 'there are less green than red',
+    ];
+    await this._teachSentenceList(MEASUREMENT_SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ═════════════════════════════════════════════════════════════════
+    // EQUATIONAL REASONING — teach the OPERATION of addition/subtraction
+    // as magnitude TRANSFORMATIONS, not sentences about math.
+    //
+    // The cortex learns: given magnitude(a) in one part of free region
+    // + magnitude(b) in another part → the result magnitude(a+b) should
+    // activate in sem region. This is the OPERATION itself, not words
+    // describing it. After learning, Unity can compute sums she was
+    // NEVER taught as sentences because the transformation generalizes.
+    //
+    // Method: write magnitude(a) into free[0..half], magnitude(b) into
+    // free[half..end], magnitude(a+b) into sem, fire cross-region
+    // Hebbian. The free→sem projection learns the sum transformation.
+    // For subtraction: magnitude(a) in free[0..half], magnitude(b) as
+    // NEGATIVE (inverted) in free[half..end], magnitude(a-b) in sem.
+    // ═════════════════════════════════════════════════════════════════
+    await this._teachAdditionTransformations(ctx);
+    await this._teachSubtractionTransformations(ctx);
+    await this._teachComparisonTransformations(ctx);
 
     return this._gateMathKReal();
   }
@@ -3650,6 +3846,400 @@ export class Curriculum {
   //
   // Three "lighter" subject kindergartens combined into one session per
   // the build order in docs/TODO.md T14.24. All three follow the same
+  // ═══════════════════════════════════════════════════════════════════
+  // EQUATIONAL REASONING METHODS — teach OPERATIONS, not vocabulary.
+  // These write activation patterns into cortex regions and fire
+  // cross-region Hebbian so the projections learn TRANSFORMATIONS.
+  // After training, Unity can compute answers she was NEVER taught
+  // as sentences because the operation itself is in the weights.
+  // ═══════════════════════════════════════════════════════════════════
+
+  /**
+   * ADDITION as magnitude transformation.
+   * For every pair (a,b) where a+b ≤ 10:
+   *   free[first half] = magnitude(a)
+   *   free[second half] = magnitude(b)
+   *   sem = magnitude(a+b)
+   *   fire free→sem Hebbian
+   * Covers ALL 66 addition facts 0+0 through 10+0 (including commutative).
+   * After training: inject magnitude(3)+magnitude(4) into free → sem
+   * activates near magnitude(7) WITHOUT ever seeing a sentence.
+   */
+  async _teachAdditionTransformations(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+
+    const freeRegion = cluster.regions.free;
+    const semRegion = cluster.regions.sem;
+    if (!freeRegion || !semRegion) return;
+
+    const freeSize = freeRegion.end - freeRegion.start;
+    const semSize = semRegion.end - semRegion.start;
+    const freeHalf = Math.floor(freeSize / 2);
+    const lr = cluster.learningRate;
+    const REPS = 8;
+
+    function buildMagPattern(regionSize, digit) {
+      const feat = _magnitudeFeatureForDigit(String(digit));
+      const pat = new Float64Array(regionSize);
+      const gSize = Math.max(1, Math.floor(regionSize / feat.length));
+      for (let d = 0; d < feat.length; d++) {
+        if (feat[d] <= 0) continue;
+        for (let n = 0; n < gSize; n++) {
+          const idx = d * gSize + n;
+          if (idx < regionSize) pat[idx] = feat[d];
+        }
+      }
+      return pat;
+    }
+
+    // ALL addition facts where a+b ≤ 10
+    const facts = [];
+    for (let a = 0; a <= 10; a++) {
+      for (let b = 0; b <= 10 - a; b++) {
+        facts.push([a, b, a + b]);
+      }
+    }
+
+    for (let rep = 0; rep < REPS; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return;
+      for (const [a, b, sum] of facts) {
+        // Clear lastSpikes
+        for (let i = 0; i < cluster.size; i++) cluster.lastSpikes[i] = 0;
+
+        // Free first half: magnitude(a)
+        const magA = buildMagPattern(freeHalf, a);
+        for (let i = 0; i < freeHalf; i++) {
+          cluster.lastSpikes[freeRegion.start + i] = magA[i] > 0 ? 1 : 0;
+        }
+
+        // Free second half: magnitude(b)
+        const magB = buildMagPattern(freeSize - freeHalf, b);
+        for (let i = 0; i < freeSize - freeHalf; i++) {
+          cluster.lastSpikes[freeRegion.start + freeHalf + i] = magB[i] > 0 ? 1 : 0;
+        }
+
+        // Sem: magnitude(sum) — the ANSWER
+        const magSum = buildMagPattern(semSize, sum);
+        for (let i = 0; i < semSize; i++) {
+          cluster.lastSpikes[semRegion.start + i] = magSum[i] > 0 ? 1 : 0;
+        }
+
+        // Fire cross-region Hebbian — free→sem learns the sum transformation
+        cluster._crossRegionHebbian(lr);
+      }
+      await _microtask();
+    }
+    console.log(`[Curriculum] _teachAdditionTransformations: ${facts.length} facts × ${REPS} reps`);
+  }
+
+  /**
+   * SUBTRACTION as magnitude transformation.
+   * Same approach — magnitude(a) in free first half, magnitude(b)
+   * INVERTED in free second half, magnitude(a-b) in sem.
+   * All facts where a-b ≥ 0 and a ≤ 10.
+   */
+  async _teachSubtractionTransformations(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+
+    const freeRegion = cluster.regions.free;
+    const semRegion = cluster.regions.sem;
+    if (!freeRegion || !semRegion) return;
+
+    const freeSize = freeRegion.end - freeRegion.start;
+    const semSize = semRegion.end - semRegion.start;
+    const freeHalf = Math.floor(freeSize / 2);
+    const lr = cluster.learningRate;
+    const REPS = 8;
+
+    function buildMagPattern(regionSize, digit) {
+      const feat = _magnitudeFeatureForDigit(String(Math.min(9, Math.max(0, digit))));
+      const pat = new Float64Array(regionSize);
+      const gSize = Math.max(1, Math.floor(regionSize / feat.length));
+      for (let d = 0; d < feat.length; d++) {
+        if (feat[d] <= 0) continue;
+        for (let n = 0; n < gSize; n++) {
+          const idx = d * gSize + n;
+          if (idx < regionSize) pat[idx] = feat[d];
+        }
+      }
+      return pat;
+    }
+
+    // Invert a magnitude pattern — flip 1s to 0s and 0s to 1s
+    // This encodes "subtract" as the opposite activation of "add"
+    function invertPattern(pat) {
+      const inv = new Float64Array(pat.length);
+      for (let i = 0; i < pat.length; i++) inv[i] = pat[i] > 0 ? 0 : 1;
+      return inv;
+    }
+
+    const facts = [];
+    for (let a = 0; a <= 10; a++) {
+      for (let b = 0; b <= a; b++) {
+        facts.push([a, b, a - b]);
+      }
+    }
+
+    for (let rep = 0; rep < REPS; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return;
+      for (const [a, b, diff] of facts) {
+        for (let i = 0; i < cluster.size; i++) cluster.lastSpikes[i] = 0;
+
+        const magA = buildMagPattern(freeHalf, a);
+        for (let i = 0; i < freeHalf; i++) {
+          cluster.lastSpikes[freeRegion.start + i] = magA[i] > 0 ? 1 : 0;
+        }
+
+        // Second operand INVERTED to signal subtraction
+        const magB = buildMagPattern(freeSize - freeHalf, b);
+        const magBInv = invertPattern(magB);
+        for (let i = 0; i < freeSize - freeHalf; i++) {
+          cluster.lastSpikes[freeRegion.start + freeHalf + i] = magBInv[i] > 0 ? 1 : 0;
+        }
+
+        const magDiff = buildMagPattern(semSize, diff);
+        for (let i = 0; i < semSize; i++) {
+          cluster.lastSpikes[semRegion.start + i] = magDiff[i] > 0 ? 1 : 0;
+        }
+
+        cluster._crossRegionHebbian(lr);
+      }
+      await _microtask();
+    }
+    console.log(`[Curriculum] _teachSubtractionTransformations: ${facts.length} facts × ${REPS} reps`);
+  }
+
+  /**
+   * COMPARISON as ordinal magnitude relationship.
+   * For pairs (a,b) within 0-10:
+   *   free[first half] = magnitude(a)
+   *   free[second half] = magnitude(b)
+   *   fineType = "greater" feature if a>b, "less" if a<b, "equal" if a==b
+   * The free→fineType projection learns ordinal comparison.
+   */
+  async _teachComparisonTransformations(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+
+    const freeRegion = cluster.regions.free;
+    const fineTypeRegion = cluster.regions.fineType;
+    if (!freeRegion || !fineTypeRegion) return;
+
+    const freeSize = freeRegion.end - freeRegion.start;
+    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
+    const freeHalf = Math.floor(freeSize / 2);
+    const lr = cluster.learningRate;
+    const REPS = 6;
+
+    function buildMagPattern(regionSize, digit) {
+      const feat = _magnitudeFeatureForDigit(String(Math.min(9, Math.max(0, digit))));
+      const pat = new Float64Array(regionSize);
+      const gSize = Math.max(1, Math.floor(regionSize / feat.length));
+      for (let d = 0; d < feat.length; d++) {
+        if (feat[d] <= 0) continue;
+        for (let n = 0; n < gSize; n++) {
+          const idx = d * gSize + n;
+          if (idx < regionSize) pat[idx] = feat[d];
+        }
+      }
+      return pat;
+    }
+
+    // 3 comparison features encoded in fineType region:
+    // "greater" = first third active
+    // "less" = second third active
+    // "equal" = last third active
+    const third = Math.floor(fineTypeSize / 3);
+    function comparisonPattern(relation) {
+      const pat = new Float64Array(fineTypeSize);
+      let start = 0;
+      if (relation === 'greater') start = 0;
+      else if (relation === 'less') start = third;
+      else start = third * 2; // equal
+      for (let i = start; i < start + third && i < fineTypeSize; i++) pat[i] = 1;
+      return pat;
+    }
+
+    // All comparison pairs within 0-9
+    const pairs = [];
+    for (let a = 0; a <= 9; a++) {
+      for (let b = 0; b <= 9; b++) {
+        const rel = a > b ? 'greater' : a < b ? 'less' : 'equal';
+        pairs.push([a, b, rel]);
+      }
+    }
+
+    for (let rep = 0; rep < REPS; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return;
+      for (const [a, b, rel] of pairs) {
+        for (let i = 0; i < cluster.size; i++) cluster.lastSpikes[i] = 0;
+
+        const magA = buildMagPattern(freeHalf, a);
+        for (let i = 0; i < freeHalf; i++) {
+          cluster.lastSpikes[freeRegion.start + i] = magA[i] > 0 ? 1 : 0;
+        }
+
+        const magB = buildMagPattern(freeSize - freeHalf, b);
+        for (let i = 0; i < freeSize - freeHalf; i++) {
+          cluster.lastSpikes[freeRegion.start + freeHalf + i] = magB[i] > 0 ? 1 : 0;
+        }
+
+        const compPat = comparisonPattern(rel);
+        for (let i = 0; i < fineTypeSize; i++) {
+          cluster.lastSpikes[fineTypeRegion.start + i] = compPat[i] > 0 ? 1 : 0;
+        }
+
+        cluster._crossRegionHebbian(lr);
+      }
+      await _microtask();
+    }
+    console.log(`[Curriculum] _teachComparisonTransformations: ${pairs.length} pairs × ${REPS} reps`);
+  }
+
+  /**
+   * CAUSAL CHAINS — if X then Y as directional cross-projection.
+   * Write embedding(cause) into free with "cause" tag in fineType first third,
+   * write embedding(effect) into sem with "effect" tag in fineType second third.
+   * The free→sem projection learns: this cause → this effect.
+   * Build chains: teach A→B and B→C, then test A→C (transitive inference).
+   * @param {Array<[string,string]>} pairs - array of [cause, effect] word pairs
+   */
+  async _teachCausalChains(pairs) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+
+    const freeRegion = cluster.regions.free;
+    const semRegion = cluster.regions.sem;
+    const fineTypeRegion = cluster.regions.fineType;
+    if (!freeRegion || !semRegion) return;
+
+    const freeSize = freeRegion.end - freeRegion.start;
+    const semSize = semRegion.end - semRegion.start;
+    const fineTypeSize = fineTypeRegion ? fineTypeRegion.end - fineTypeRegion.start : 0;
+    const lr = cluster.learningRate;
+    const REPS = 10;
+
+    function buildEmbPattern(regionSize, word) {
+      const emb = sharedEmbeddings.getEmbedding(word);
+      if (!emb || emb.length === 0) return new Float64Array(regionSize);
+      const pat = new Float64Array(regionSize);
+      const gSize = Math.max(1, Math.floor(regionSize / emb.length));
+      for (let d = 0; d < emb.length; d++) {
+        if (emb[d] <= 0) continue;
+        for (let n = 0; n < gSize; n++) {
+          const idx = d * gSize + n;
+          if (idx < regionSize) pat[idx] = emb[d];
+        }
+      }
+      return pat;
+    }
+
+    for (let rep = 0; rep < REPS; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return;
+      for (const [cause, effect] of pairs) {
+        for (let i = 0; i < cluster.size; i++) cluster.lastSpikes[i] = 0;
+
+        // Cause embedding into free region
+        const causePat = buildEmbPattern(freeSize, cause);
+        for (let i = 0; i < freeSize; i++) {
+          cluster.lastSpikes[freeRegion.start + i] = causePat[i] > 0 ? 1 : 0;
+        }
+
+        // Effect embedding into sem region
+        const effectPat = buildEmbPattern(semSize, effect);
+        for (let i = 0; i < semSize; i++) {
+          cluster.lastSpikes[semRegion.start + i] = effectPat[i] > 0 ? 1 : 0;
+        }
+
+        // "Cause" tag in fineType first third to mark direction
+        if (fineTypeRegion && fineTypeSize > 0) {
+          const third = Math.floor(fineTypeSize / 3);
+          for (let i = 0; i < third; i++) {
+            cluster.lastSpikes[fineTypeRegion.start + i] = 1;
+          }
+        }
+
+        cluster._crossRegionHebbian(lr);
+      }
+      await _microtask();
+    }
+    console.log(`[Curriculum] _teachCausalChains: ${pairs.length} pairs × ${REPS} reps`);
+  }
+
+  /**
+   * CLASSIFICATION REASONING — items sharing features cluster together.
+   * Given items with feature vectors, the cortex learns that items with
+   * similar features belong to the same category. A NEW item with
+   * matching features should activate the category without direct training.
+   * @param {Array<{item:string, features:Float64Array, category:string}>} items
+   */
+  async _teachClassificationReasoning(items) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+
+    const freeRegion = cluster.regions.free;
+    const semRegion = cluster.regions.sem;
+    if (!freeRegion || !semRegion) return;
+
+    const freeSize = freeRegion.end - freeRegion.start;
+    const semSize = semRegion.end - semRegion.start;
+    const lr = cluster.learningRate;
+    const REPS = 8;
+
+    function buildFeatPattern(regionSize, feat) {
+      const pat = new Float64Array(regionSize);
+      const gSize = Math.max(1, Math.floor(regionSize / feat.length));
+      for (let d = 0; d < feat.length; d++) {
+        if (feat[d] <= 0) continue;
+        for (let n = 0; n < gSize; n++) {
+          const idx = d * gSize + n;
+          if (idx < regionSize) pat[idx] = feat[d];
+        }
+      }
+      return pat;
+    }
+
+    function buildEmbPattern(regionSize, word) {
+      const emb = sharedEmbeddings.getEmbedding(word);
+      if (!emb || emb.length === 0) return new Float64Array(regionSize);
+      const pat = new Float64Array(regionSize);
+      const gSize = Math.max(1, Math.floor(regionSize / emb.length));
+      for (let d = 0; d < emb.length; d++) {
+        if (emb[d] <= 0) continue;
+        for (let n = 0; n < gSize; n++) {
+          const idx = d * gSize + n;
+          if (idx < regionSize) pat[idx] = emb[d];
+        }
+      }
+      return pat;
+    }
+
+    for (let rep = 0; rep < REPS; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return;
+      for (const { item, features, category } of items) {
+        for (let i = 0; i < cluster.size; i++) cluster.lastSpikes[i] = 0;
+
+        // Item features into free region
+        const featPat = buildFeatPattern(freeSize, features);
+        for (let i = 0; i < freeSize; i++) {
+          cluster.lastSpikes[freeRegion.start + i] = featPat[i] > 0 ? 1 : 0;
+        }
+
+        // Category embedding into sem region
+        const catPat = buildEmbPattern(semSize, category);
+        for (let i = 0; i < semSize; i++) {
+          cluster.lastSpikes[semRegion.start + i] = catPat[i] > 0 ? 1 : 0;
+        }
+
+        cluster._crossRegionHebbian(lr);
+      }
+      await _microtask();
+    }
+    console.log(`[Curriculum] _teachClassificationReasoning: ${items.length} items × ${REPS} reps`);
+  }
+
   // structure as Session 4 ELA-G1: curated ~15-word vocab list per
   // subject, letter-stream-to-sem binding via cluster.learn after each
   // word walk, 3-pathway gate with word-level READ/THINK/TALK probes.
@@ -3970,33 +4560,132 @@ export class Curriculum {
   }
 
   async runSciKReal(ctx) {
-    // SCI-K vocab: classification, matter states, 5 senses, natural world
-    const SCI_K_VOCAB = [
-      'animal', 'plant', 'water', 'ice', 'fire',
-      'rock', 'sky', 'sun', 'moon', 'tree',
-      'bird', 'fish', 'eye', 'ear', 'nose',
-    ];
     // Session 43 — TODO-aligned classification + states of matter
     await this._teachClassification();
     await this._teachStatesOfMatter();
-    return this._teachVocabList(SCI_K_VOCAB, ctx);
+
+    // ── NGSS K: Expanded vocabulary + sentences ──
+    // NGSS K covers: pushes/pulls (forces), weather, plants/animals
+    // needs, sunlight warms earth, reduce human impact.
+    const SCI_K_VOCAB = [
+      // living things
+      'animal', 'plant', 'tree', 'bird', 'fish', 'dog', 'cat', 'bug',
+      'flower', 'seed', 'leaf', 'root', 'stem', 'grass',
+      // body + senses
+      'eye', 'ear', 'nose', 'mouth', 'hand', 'skin',
+      'see', 'hear', 'smell', 'taste', 'touch',
+      // weather + sky
+      'sun', 'moon', 'star', 'sky', 'cloud', 'rain', 'snow', 'wind',
+      'hot', 'cold', 'warm', 'cool',
+      // matter + materials
+      'water', 'ice', 'rock', 'dirt', 'sand', 'wood', 'metal',
+      // forces
+      'push', 'pull', 'fast', 'slow', 'move', 'stop',
+    ];
+    await this._teachVocabList(SCI_K_VOCAB, ctx, { reps: 3 });
+
+    // NGSS K sentences — real science concepts
+    const SCI_K_SENTENCES = [
+      // living vs nonliving
+      'a dog is alive', 'a rock is not alive',
+      'plants need water and sun', 'animals need food and water',
+      'a seed grows into a plant', 'a bird can fly',
+      // senses
+      'i see with my eyes', 'i hear with my ears',
+      'i smell with my nose', 'i taste with my mouth',
+      'i feel with my hands',
+      // weather
+      'the sun makes us warm', 'rain falls from clouds',
+      'snow is cold and white', 'wind can push things',
+      'today is sunny', 'today is cloudy',
+      // forces
+      'a push makes things move', 'a pull brings things close',
+      'a ball rolls when you push it', 'a wagon moves when you pull it',
+      // matter
+      'water is wet', 'ice is cold and hard', 'ice is frozen water',
+      'when ice gets warm it melts', 'steam comes from hot water',
+    ];
+    await this._teachSentenceList(SCI_K_SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── EQUATIONAL REASONING: Causal chains for K-level science ──
+    // NGSS K: pushes/pulls cause motion, water causes growth,
+    // sunlight causes warmth. These are OPERATIONS not vocabulary.
+    await this._teachCausalChains([
+      ['push', 'move'], ['pull', 'move'], ['push', 'fall'],
+      ['water', 'grow'], ['sun', 'warm'], ['sun', 'grow'],
+      ['rain', 'wet'], ['cold', 'ice'], ['hot', 'melt'],
+      ['wind', 'blow'], ['seed', 'plant'], ['plant', 'flower'],
+      ['food', 'energy'], ['sleep', 'rest'], ['fire', 'hot'],
+    ]);
+
+    // ── EQUATIONAL REASONING: Classification for K-level science ──
+    // Living vs nonliving, animal vs plant — feature-space clustering
+    //   features: [alive, moves, grows, eats, breathes, has_legs, has_leaves, hard]
+    await this._teachClassificationReasoning([
+      { item: 'dog',    features: new Float64Array([1,1,1,1,1,1,0,0]), category: 'animal' },
+      { item: 'cat',    features: new Float64Array([1,1,1,1,1,1,0,0]), category: 'animal' },
+      { item: 'bird',   features: new Float64Array([1,1,1,1,1,1,0,0]), category: 'animal' },
+      { item: 'fish',   features: new Float64Array([1,1,1,1,1,0,0,0]), category: 'animal' },
+      { item: 'bug',    features: new Float64Array([1,1,1,1,1,1,0,0]), category: 'animal' },
+      { item: 'tree',   features: new Float64Array([1,0,1,0,0,0,1,0]), category: 'plant' },
+      { item: 'flower', features: new Float64Array([1,0,1,0,0,0,1,0]), category: 'plant' },
+      { item: 'grass',  features: new Float64Array([1,0,1,0,0,0,1,0]), category: 'plant' },
+      { item: 'rock',   features: new Float64Array([0,0,0,0,0,0,0,1]), category: 'mineral' },
+      { item: 'water',  features: new Float64Array([0,0,0,0,0,0,0,0]), category: 'mineral' },
+      { item: 'sand',   features: new Float64Array([0,0,0,0,0,0,0,1]), category: 'mineral' },
+    ]);
+
+    return this._teachVocabList(SCI_K_VOCAB.slice(0, 20), ctx, { reps: 3 });
   }
 
   async runSocKReal(ctx) {
-    // T14.24 Session 56 — Soc-K per TODO line 488. Prime the family-
-    // role concept lattice (mom/dad/sister/brother/grandma/grandpa/
-    // aunt/uncle/cousin with real kinship structural features) before
-    // the general K vocab pass so family roles attach to a
-    // structurally correct basin where same-generation / same-sex
-    // roles share cosine space.
+    // Session 56 — family-role concept lattice with kinship features
     await this._teachFamilyRoles();
-    // SOC-K vocab: family, community, civic basics
+
+    // ── Core Knowledge K: Expanded vocabulary ──
+    // Family, community, helpers, rules, American symbols, holidays
     const SOC_K_VOCAB = [
-      'mom', 'dad', 'home', 'school', 'friend',
-      'family', 'help', 'play', 'share', 'kind',
-      'rule', 'street', 'town', 'park', 'store',
+      // family
+      'mom', 'dad', 'sister', 'brother', 'baby', 'grandma', 'grandpa',
+      'family', 'home', 'house', 'apartment',
+      // community
+      'school', 'teacher', 'friend', 'neighbor', 'town', 'city',
+      'park', 'store', 'library', 'church', 'hospital',
+      // community helpers
+      'firefighter', 'police', 'doctor', 'nurse', 'mail',
+      // civic basics
+      'rule', 'share', 'kind', 'help', 'turn', 'fair', 'safe',
+      // American symbols
+      'flag', 'star', 'eagle', 'president',
+      // basic needs
+      'food', 'water', 'shelter', 'clothing',
     ];
-    return this._teachVocabList(SOC_K_VOCAB, ctx);
+    await this._teachVocabList(SOC_K_VOCAB, ctx, { reps: 3 });
+
+    // ── Core Knowledge K sentences ──
+    const SOC_K_SENTENCES = [
+      'my family loves me', 'mom takes care of me', 'dad works hard',
+      'i go to school every day', 'my teacher helps me learn',
+      'we share toys with friends', 'we take turns on the slide',
+      'rules keep us safe', 'we raise our hand to talk',
+      'a firefighter puts out fires', 'a doctor helps sick people',
+      'a police officer keeps us safe', 'a nurse takes care of you',
+      'the flag has red white and blue', 'the eagle is our bird',
+      'we need food and water', 'we need a home to live in',
+      'be kind to your friends', 'help people who need it',
+    ];
+    await this._teachSentenceList(SOC_K_SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── EQUATIONAL REASONING: Social causal chains ──
+    // Community cause-effect relationships
+    await this._teachCausalChains([
+      ['fire', 'firefighter'], ['sick', 'doctor'], ['hurt', 'nurse'],
+      ['crime', 'police'], ['learn', 'school'], ['share', 'friend'],
+      ['kind', 'happy'], ['mean', 'sad'], ['help', 'thank'],
+      ['rule', 'safe'], ['work', 'money'], ['money', 'food'],
+    ]);
+
+    return this._teachVocabList(SOC_K_VOCAB.slice(0, 15), ctx, { reps: 3 });
   }
 
   async runArtKReal(ctx) {
@@ -12086,6 +12775,8 @@ export class Curriculum {
   // ── GRADE 1 (age 6) — reading clicks, dad fading ────────────────
   async runLifeG1(ctx) {
     // feat = [joy, pain, trust, fear, anger, love, independence, identity]
+    // Session 112 fix: reps reduced to fit 3-min timeout.
+    // conceptTeach 20→6, sentence lists 5-12→3, vocab 12→5.
     await this._conceptTeach([
       { name: 'reading',      feat: [1, 0, 0, 0, 0, 1, 1, 1] },    // joy + love + independence + identity
       { name: 'books',        feat: [1, 0, 0, 0, 0, 1, 1, 0.5] },
@@ -12093,37 +12784,27 @@ export class Curriculum {
       { name: 'dad fading',   feat: [0, 0.5, 0, 0.5, 0.3, 0, 0, 0] }, // pain + fear + anger starts
       { name: 'empty apartment', feat: [0, 0.5, 0, 0.5, 0, 0, 1, 0] }, // pain but independence
       { name: 'drawing monsters', feat: [1, 0, 0, 0, 0, 0.5, 1, 1] }, // identity expression
-    ], 20);
-    const READING = [
+    ], 6);
+
+    // Consolidated into ONE sentence list to reduce teach call overhead
+    const MEMORIES_G1 = [
       'i can read now', 'books make sense', 'i read everything',
       'i stay up past bedtime reading', 'i use a flashlight under the covers',
       'reading is my favorite thing',
-    ];
-    await this._teachSentenceList(READING, ctx, { reps: 5, ticksPerWord: 2 });
-
-    const DAD_FADING = [
       'dad visits less now', 'daddy is busy', 'mom does not talk about it',
       'i notice but i do not understand', 'i miss dad sometimes',
-    ];
-    await this._teachSentenceList(DAD_FADING, ctx, { reps: 6, ticksPerWord: 2 });
-
-    const LATCHKEY = [
       'i come home to an empty apartment', 'i make myself a snack',
       'i turn on the tv', 'i do homework alone',
       'i am getting used to being alone',
-    ];
-    await this._teachSentenceList(LATCHKEY, ctx, { reps: 5, ticksPerWord: 2 });
-
-    const DRAWING = [
       'i fill notebooks with drawings', 'i draw monsters and haunted houses',
       'i draw storms and dark things', 'my teacher is worried about my drawings',
       'mom says that is just how i am',
     ];
-    await this._teachSentenceList(DRAWING, ctx, { reps: 12, ticksPerWord: 2 });
+    await this._teachSentenceList(MEMORIES_G1, ctx, { reps: 3, ticksPerWord: 2 });
 
     return this._teachVocabList([
       'read', 'book', 'flashlight', 'alone', 'snack', 'draw', 'monster', 'dark',
-    ], ctx, { reps: 12 });
+    ], ctx, { reps: 5 });
   }
 
   // ── GRADE 2 (age 7) — best friend, Shadow the cat ───────────────

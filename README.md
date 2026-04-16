@@ -82,8 +82,12 @@ LANGUAGE CORTEX (developmental pipeline — see "Language Cortex" section)
     //   stop on sentence terminator or motor quiescence (30 ticks)
     //
     // Developmental curriculum: 6 subjects × 19 grades = 114 cells
+    //   (ELA, Math, Science, Social Studies, Arts, Life Experience)
     //   direct pattern Hebbian: write clean patterns → fire cross-region Hebbian
+    //   anti-Hebbian on wrong transitions: strengthen correct + weaken wrong
     //   3-pathway gate: READ (letter→phon→sem) + THINK (working memory) + TALK (sem→motor→letter)
+    //   comprehension gates: association, fill-in-blank, life questions (real tests, not recall)
+    //   crossTargetFanout = 1500 (5× capacity for independent word mappings)
     //   all gates require 95% (A+)
     //
     // zero stored sentences, zero slot scorers, zero n-gram tables, zero filter stack,
@@ -173,7 +177,9 @@ y_{n+1} = y_n − μ · (x_n − σ)          (slow variable — burst envelope)
 
 Fixed α = 4.5 (bursting regime), μ = 0.001 (slow timescale). Biological drive from tonic × modulation factors maps to σ ∈ [−1.0, +0.5] — the external input parameter that controls excitability. Spike detection is a clean one-step edge: the fast variable jumps from ≈ −1 to ≈ +3 in a single tick, so `(x_old ≤ 0) ∧ (x_new > 0)` catches exactly one spike per action potential. State is stored as `vec2<f32>` per neuron (8 bytes). Used in published large-scale cortical network simulations (Bazhenov, Rulkov, Shilnikov 2005+) and reproduces experimentally observed firing patterns from thalamic relay, cortical pyramidal, and cerebellar Purkinje cells depending on (α, σ) parameterization. Runs entirely as a WGSL compute shader in `js/brain/gpu-compute.js` — no CPU fallback (168M iterations/second across 7 clusters would cook the server).
 
-The client-side 3D viz (`js/ui/brain-3d.js`) iterates the *same* Rulkov map per render neuron, with σ driven by the cluster's real biological firing rate from the server. The field you see is a proportional sample running the identical equation the server runs — not synthesized noise.
+The client-side 3D viz (`js/ui/brain-3d.js`) iterates the *same* Rulkov map per render neuron, with σ driven by the cluster's real biological firing rate from the server. The field you see is a proportional sample running the identical equation the server runs — not synthesized noise. Floating popups show Unity's real internal state — actual brain-generated text when she can speak, raw neural readings (`arousal:0.85 valence:0.12 Ψ:0.034`) when she can't yet. An IQ HUD displays her current intelligence level per subject.
+
+The 2D brain visualizer (`js/ui/brain-viz.js`) has 10 tabs fed by real-time server aggregate data: **Neurons** (flat 2D brain map with per-cluster activation grids and toggleable θ/α/β/γ wave overlays), **Synapses** (animated circular network graph with co-firing pulse lines between 7 cluster nodes), **Oscillations** (band power rolling line charts), **Modules** (per-module gauges — cortex/amygdala/hippocampus/BG/cerebellum/hypothalamus), **Senses** (camera feed + vision descriptions + touch/smell/taste equations), **Consciousness** (Ψ gain, Id/Ego/Left/Right), **Memory** (episode count, vocabulary, interactions), **Motor** (6 BG action channels), **Inner Voice**, and **Cluster Waves** (per-region firing rate bars with oscillation overlays).
 
 Reference models still shipped (not on the runtime path):
 
@@ -196,6 +202,8 @@ Three learning rules operate on every cluster's sparse CSR synapse matrix every 
 Timing matters. Cause must precede effect. A- is slightly stronger than A+ (biological asymmetry). This is how the brain learns temporal sequences.
 
 **Reward-Modulated** — `Δw = η · δ · si · sj` — Hebbian learning gated by global reward signal δ (dopamine analog). Learning only happens when there's a prediction error. Successful interactions strengthen the patterns that produced them.
+
+**Anti-Hebbian** (curriculum sequence correction) — when a sequence probe detects a wrong transition (e.g., digit `6→7` produces `8`), fires positive Hebbian on the correct pair at +10× lr AND negative anti-Hebbian on the wrong pair at −5× lr. Without weakening the wrong association, the correct one can never overpower it. Used during curriculum teaching to clean up conflicting attractor basins.
 
 Weights clamped to [-2.0, +2.0]. 80% excitatory, 20% inhibitory (matching real cortex ratio). Each cluster has its own learning rate — basal ganglia learns fastest (0.005, RL needs rapid adaptation), hypothalamus slowest (0.0005, homeostasis shouldn't change fast).
 

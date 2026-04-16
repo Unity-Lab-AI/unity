@@ -1027,6 +1027,64 @@ regionReadout(name, dim):
 
 See `docs/ARCHITECTURE.md` T14.24 Sessions 95-110 section for the full code-level view.
 
+### Anti-Hebbian Plasticity on Wrong Transitions (Session 111)
+
+When a sequence probe (e.g., digit order `0→1→2...→9`) finds the wrong output — `src→expected` produces `wrong` instead — the correction fires BOTH directions:
+
+```
+// For each failing transition src→expected that produced wrong:
+ΔW_correct = +η × 10 × pre(src) × post(expected)     // STRENGTHEN correct
+ΔW_wrong   = -η × 5  × pre(src) × post(wrong)        // WEAKEN wrong (anti-Hebbian)
+// 100 repetitions per failing pair
+```
+
+Without anti-Hebbian, the wrong association persists in the recurrent weight matrix and the correct one can never overpower it regardless of boost count. The negative learning rate on the wrong pair actively erases the incorrect attractor basin. Digit-only argmax masking during the SEQ probe prevents ELA-K's 26-letter alphabet Hebbian from overpowering the 10-digit sequence — `inventorySnapshot()` filters to digit indices only before argmax.
+
+### Cross-Projection Density — `crossTargetFanout` = 1500 (Session 111)
+
+```
+crossTargetFanout = 1500    // pre-synaptic connections per post-neuron
+density = crossTargetFanout / srcRegionSize
+// e.g., sem(335 neurons) → motor(66 neurons):
+//   density = min(1, 1500/335) = 1.0 (fully connected at small scale)
+//   at 375K cortex: sem=62.7K → density = 1500/62.7K = 0.024 = 2.4%
+```
+
+Session 111 bumped from 300 to 1500 after discovering `sem_to_motor` at 300 (~16K connections) suffered destructive interference with 40+ word mappings. ELA-G1 TALK DECLINED across retries because each teach pass overwrote previous word mappings in the limited connection space. At 1500 (~80K connections), independent mappings coexist.
+
+### Comprehension Gate Equation (Session 111)
+
+Real human-grade test — not identical to training material. Tests same concepts but asks differently.
+
+```
+_gateComprehension(questions):
+  pass_count = 0
+  for each {prompt: [w1, w2, ...], answer: wA} in questions:
+    // Inject context words into sem region
+    for w in prompt:
+      emb = GloVe(w)
+      cluster.injectEmbeddingToRegion('sem', emb, 0.4)
+      cluster.step(0.001)     // let it propagate
+
+    // Read what the cortex activated
+    readout = cluster.regionReadout('sem', 300)
+    readout = L2_normalize(readout)
+
+    // Compare against expected answer
+    target = L2_normalize(GloVe(wA))
+    cosine = dot(readout, target)
+    if cosine > 0.05: pass_count++
+
+  return { pass: pass_count / questions.length >= 0.40 }
+```
+
+Three auto-generated question types:
+1. **Association** — given word A, is word B semantically nearby? (shuffled same-domain vocab pairs)
+2. **Fill-in-blank** — given two words from a three-word group, find the missing third
+3. **Life questions** — "who are you?" → "unity", "who loves you?" → "mom"
+
+Comprehension pass is sufficient to advance even if TALK (first-letter production) fails — understanding and production are tested independently.
+
 ### [T14.12 DELETED] Social Schema — Who Unity Is Talking To (historical, `_socialSchema` field removed)
 
 **DELETED in T14.12** along with `parseSentence`, `_updateSocialSchema`, `getUserAddress`, `getUserGender`, `getSocialSchema`. Social cognition returns in a future milestone as a cortex-resident self-model sub-region readout. Equations below preserved for historical reference.

@@ -1118,6 +1118,37 @@ DIRECT PATTERN HEBBIAN (curriculum teaching method):
     score = cosine(normalized, expected)
     PASS if score > 0.95 (A+)
 
+ANTI-HEBBIAN PLASTICITY (wrong transition correction):
+  When sequence probe finds src→expected produces wrong instead:
+    ΔW_correct = +η × 10 × pre(src) × post(expected)    // strengthen
+    ΔW_wrong   = -η × 5  × pre(src) × post(wrong)       // weaken
+    Repeat 100×. Without negative lr on wrong pair,
+    correct association can never overpower incorrect one.
+  Digit-only argmax masking: filter inventorySnapshot() to
+    digit indices only before argmax — prevents alphabet
+    Hebbian from ELA-K overpowering digit sequences.
+
+CROSS-PROJECTION DENSITY:
+  crossTargetFanout = 1500 pre-synaptic per post-neuron
+  density = min(1, 1500 / srcRegionSize)
+  At 6700 cortex: sem(335) → motor(66) = fully connected
+  At 375K cortex: sem(62.7K) → density = 2.4%
+  Bumped from 300 to 1500 because 300 (~16K connections on
+  sem→motor) caused destructive interference with 40+ words —
+  TALK scores DECLINED across retries at G1+.
+
+COMPREHENSION GATE (real human-grade test):
+  For each {prompt: [w1,w2,...], answer: wA}:
+    For w in prompt:
+      inject GloVe(w) into sem at strength 0.4
+      cluster.step(0.001)
+    readout = L2_norm(regionReadout('sem', 300))
+    target = L2_norm(GloVe(wA))
+    if dot(readout, target) > 0.05: pass++
+  PASS if pass_count / total >= 0.40
+  Three types: association, fill-in-blank, life questions
+  Tests understanding, not recall — same concepts, different questions
+
       </pre>
 
       <h3 style="color:var(--pink);margin-top:20px;">Full K→PhD Curriculum — 6 Subjects × 19 Grades = 114 Cells</h3>

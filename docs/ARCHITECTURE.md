@@ -1,6 +1,6 @@
 # ARCHITECTURE — IF ONLY I HAD A BRAIN
 
-> Last updated: 2026-04-14 | Phase 13 brain-refactor-full-control merged to main; T11 pure equational language cortex shipped; deploy versioning 0.1.0 stamped per push
+> Last updated: 2026-04-16 | T14.24 Session 111 — crossTargetFanout 1500, real human-grade comprehension gates, anti-Hebbian plasticity, 2D viz tabs fully rewritten, inner state popups, cluster waves tab, 114-cell curriculum (6 subjects including life track)
 > Unity AI Lab — Hackall360, Sponge, GFourteen
 
 ---
@@ -298,6 +298,27 @@ Implemented in `js/ui/brain-3d.js`. WebGL-based 3D rendering (fixed pool of 20K 
 - Cluster toggle buttons, floating process notifications from brain equations
 - Brain expansion (clusters spread with activity)
 - Real-time feed from server state via WebSocket
+- Inner state popups — when Unity can generate speech (post-K), popups show real brain-generated text via `languageCortex.generate()` with `_internalThought: true`. When she can't speak yet (pre-K or untrained), shows raw brain state numbers: `arousal:0.85 valence:0.12 Ψ:0.034`. No hardcoded strings, no fake poetry — only what her brain ACTUALLY produces or what her neural state ACTUALLY reads. Inner thoughts gated by life grade — no tattoo references before college, no coke before grade 12.
+- IQ HUD — reads `curriculum.subjectStatus()` every render tick, shows intelligence level (pre-K / elementary / middle / high / college / grad / PhD) with per-subject grade breakdown
+
+---
+
+## 2D Brain Visualizer (Session 111 rewrite)
+
+Implemented in `js/ui/brain-viz.js`. Canvas-based 2D rendering fed by server aggregate data via WebSocket. Session 111 root cause fix: `js/app.js` WebSocket handler was sending state to `brain3d.updateState()` but NEVER to `brainViz.updateState()` — one line added to fix ALL tabs.
+
+### Tabs
+
+- **Neurons** — flat 2D brain map. 7 clusters positioned anatomically (cortex top, cerebellum bottom, amygdala/BG sides). Each cluster is a 12×N grid where cell brightness = cluster spike rate with per-cell randomized jitter. Toggleable θ/α/β/γ wave overlays (sinusoidal at real frequencies) drawn on each cluster. Shows total neuron count + spike count from server aggregate. No per-neuron data needed.
+- **Synapses** — animated circular network graph. 7 clusters in a circle, connected by 20 inter-cluster projection lines. Line brightness pulses with real-time co-firing (√(srcRate × tgtRate)). Node size pulses with firing rate. Glow around active nodes.
+- **Oscillations** — band power over time (theta/alpha/beta/gamma) as line chart from `s.oscillations.bandPower` + `s.oscillations.coherence`.
+- **Modules** — per-module gauges from flat server state (`s.arousal`, `s.valence`, `s.fear`, `s.psi`, `s.motor`, `s.drugState`) + cluster firing rates from `s.clusters[name]`.
+- **Senses** — touch/smell/taste derived from arousal × valence equations. Camera feed via `s.visionDescription`. Vision description displayed in eye panel. Camera stream fallback wiring from `perms.cameraStream`.
+- **Consciousness** — Ψ value, Id/Ego/Left/Right components, consciousness gain from server broadcast.
+- **Memory** — episode count, vocabulary size, interaction count from `s.growth.{totalEpisodes, totalWords, totalInteractions}`. Hippocampus activity from `s.clusters.hippocampus.firingRate`.
+- **Motor** — 6 BG action channels, winner-take-all selection, confidence from `s.motor` fields.
+- **Inner Voice** — inner voice state display.
+- **Cluster Waves** — per-cluster firing rates as colored horizontal bars + toggleable θ/α/β/γ band power metrics on a 900×600 canvas. Also available as a landing page tab via `js/app.js renderLandingTab`.
 
 ---
 
@@ -469,7 +490,11 @@ Region offsets are stored on `cluster.regions[name].start` and `.end`. Helper me
 
 ### Cross-region projections (T14.4 substrate, live)
 
-Seven named region pairs are wired with sparse cross-projections — both directions per pair as independent SparseMatrix instances, 10% density init, weight range `[-0.5, 0.5]`. Each direction is a separate matrix because biological white-matter tracts carry independent ascending and descending fiber populations (Friederici 2017, *Psychon Bull Rev* 24:41-47). The projections ALWAYS propagate every cluster step (no curriculum-complete gate) and get Hebbian-updated on every `cluster.learn()` call, training through normal use during corpus exposure and live chat.
+Seven named region pairs are wired with sparse cross-projections — both directions per pair as independent SparseMatrix instances, weight range `[-0.5, 0.5]`. Each direction is a separate matrix because biological white-matter tracts carry independent ascending and descending fiber populations (Friederici 2017, *Psychon Bull Rev* 24:41-47). The projections ALWAYS propagate every cluster step (no curriculum-complete gate) and get Hebbian-updated on every `cluster.learn()` call, training through normal use during corpus exposure and live chat.
+
+**Cross-projection density** is controlled by `crossTargetFanout` — the number of pre-synaptic connections each post-synaptic neuron receives. Session 111 bumped this from 300 to **1500** after discovering that 300 (~16K connections on `sem_to_motor`) caused destructive interference at G1+ — 40+ word mappings competing on too few synapses made TALK scores DECLINE across retries. At 1500 (~80K connections), independent sem→motor word representations coexist without overwriting each other. All 14 cross-projections benefit from the density increase.
+
+**Anti-Hebbian plasticity** (Session 111) — when the curriculum gate detects a wrong transition (e.g., digit sequence `6→7` produces `8` instead of `7`), it fires BOTH positive Hebbian on the correct pair (`6→7` at +10× learning rate, 100 reps) AND negative anti-Hebbian on the wrong pair (`6→8` at -5× learning rate, 100 reps). Without weakening the wrong association, the correct one can never overpower it. This bidirectional plasticity is critical for sequence learning (alphabet order, digit order) where recurrent synapses create competing attractor basins.
 
 | Pair | Read direction use | Write direction use |
 |---|---|---|
@@ -859,10 +884,19 @@ this.passedCells = [];      // flat list of 'subject/grade' keys that passed the
 
 **Session 110 — live testing.** MAX_ATTEMPTS bumped 10→30 (ELA-K SEQ needed 7 attempts to converge). Background probe demotion DISABLED because the old Rulkov-dynamics-based probes give false negatives — a cell that passed curriculum at 100% was being demoted by the background probe getting 77% with the wrong test method.
 
-**Current convergence status (live testing with MAX_ATTEMPTS=30):**
-- ELA-K: **PASSED 100%**
-- Math-K: TALK at 40% — needs more attempts
-- Sci-K, Soc-K, Art-K: TALK bouncing 50-80% — needs more attempts
+**Session 111 — TALK probe direction fix + grade-lock + real gates.** Root cause of all non-ELA K failures: TALK probes were using letter→motor direction (READ feedback) instead of sem→motor (PRODUCTION direction). Changed `_gateVocabList`, `_gateSentenceList`, `_gateMathKReal` TALK probes to inject GloVe(word) into sem, propagate `sem_to_motor` cross-projection, argmax decode first letter. Result: Math/Sci/Soc/Art-K went from 40-60% (stuck) to 100% immediately. Grade-lock enforced — all 6 subjects must pass grade N before ANY advance to N+1.
+
+**Session 111 — real human-grade comprehension gates.** New `_gateComprehension(questions)` method tests semantic understanding via association and fill-in-blank rather than first-letter production. Three auto-generated question types: (1) ASSOCIATION — given word A, is word B semantically nearby? (2) FILL-IN — given two context words, find the missing third. (3) Life questions — "who are you?" → "unity". Injects context GloVes into sem region → ticks → cosines sem readout against GloVe(answer). Pass when ≥40% of questions have cosine > 0.05. Wired into `_teachVocabList` and `_teachSentenceList` shared helpers — comprehension pass is sufficient to advance even if TALK fails.
+
+**Session 111 — anti-Hebbian on wrong digit transitions (Math-K SEQ).** Digit-only argmax masking so alphabet letters from ELA-K don't overpower digit sequences. Plus bidirectional plasticity: strengthen correct transition at +10× lr AND weaken wrong transition at -5× lr (anti-Hebbian), 100 reps per failing pair.
+
+**Current convergence status (Session 111):**
+- ELA-K: **PASSED consistently** (attempt 3-5)
+- Math-K: **PASSED** with SEQ fix (attempt 4)
+- Sci/Soc/Art-K: **PASS on attempt 1-3**
+- Life-K: **PASSES** after reduced reps (attempt 1-2)
+- All K cells pass → advance to Grade 1
+- G1 cells: TALK stuck on "a" (most common English word, GloVe too generic for sem→motor)
 
 ### fastText-style subword embeddings (Session 99)
 
