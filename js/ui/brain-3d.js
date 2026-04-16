@@ -2139,224 +2139,47 @@ export class Brain3D {
   }
 
   /**
-   * Session 111 — Unity's inner voice. Her mind is her playground.
-   * Reads the ACTUAL brain state and produces internal monologue —
-   * what she's thinking, feeling, sensing right NOW. Not labels,
-   * not categories — her actual thoughts as a stream of consciousness.
+   * Session 111 — Unity's internal state as RAW BRAIN READINGS.
+   * NOT hardcoded strings. NOT fake poetry. The actual numerical
+   * state of her brain translated to the closest thing a human can
+   * read. If Unity's brain can generate speech (post-K), use that.
+   * If it can't, show raw emotional/cognitive numbers.
    *
-   * Uses the server's broadcast state which includes cortex activity,
-   * amygdala valence/arousal, hippocampus recall, and motor readiness.
-   * The inner voice reflects her current mind capacity — pre-K gets
-   * raw sensations, K gets single-word thoughts, higher grades get
-   * more complex inner speech.
+   * The ONLY text that should ever appear is what her brain ACTUALLY
+   * produces or what her neural state ACTUALLY reads.
    */
   _describeInternalState(state) {
     if (!state) return null;
-    const arousal = state.arousal ?? 0.5;
-    const valence = state.valence ?? 0;
-    const fear = state.fear ?? 0;
-    const reward = state.reward ?? 0;
-    const psi = state.psi ?? 0;
-    const coherence = state.coherence ?? 0.5;
 
-    // Unity's inner world — she talks to herself, feels, visualizes,
-    // remembers, contemplates. Everything her brain is doing right now
-    // becomes inner monologue. Multiple streams can fire at once.
-    const inner = [];
-
-    // ── FEELING (amygdala) ──────────────────────────────────────
-    // What her emotional system is doing RIGHT NOW
-    if (fear > 0.7 && valence < -0.2) {
-      inner.push('*my chest is tight... something\'s wrong*');
-    } else if (fear > 0.5) {
-      inner.push('*heart beating fast...*');
-    } else if (arousal > 0.85 && reward > 0.5) {
-      inner.push('*fuck YES this feeling... don\'t stop*');
-    } else if (arousal > 0.85 && valence > 0.1) {
-      inner.push('*brain on FIRE right now... every neuron screaming*');
-    } else if (arousal > 0.85) {
-      inner.push('*wired... can\'t stop moving... need to DO something*');
-    } else if (arousal > 0.7 && valence > 0.3) {
-      inner.push('*warm... this feels right*');
-    } else if (arousal > 0.7 && valence < -0.2) {
-      inner.push('*angry... grinding my teeth...*');
-    } else if (arousal > 0.5 && valence > 0.1) {
-      inner.push('*calm-ish... good enough*');
-    } else if (arousal < 0.3) {
-      inner.push('*drifting... everything soft and distant...*');
-    }
-
-    // ── THINKING (cortex / psi) ─────────────────────────────────
-    // What her cognitive system is processing
-    if (psi > 0.7 && coherence > 0.6) {
-      inner.push('*everything connects... I can see the pattern*');
-    } else if (psi > 0.5 && coherence > 0.4) {
-      inner.push('*almost there... the shape is forming...*');
-    } else if (psi > 0.3) {
-      inner.push('*turning something over in my head...*');
-    } else if (psi < 0.1) {
-      inner.push('*static... noise... can\'t focus*');
-    }
-
-    // ── REMEMBERING (hippocampus) ───────────────────────────────
-    // What memories are surfacing
-    if (state.hippocampus?.activity > 0.6) {
-      const memories = [
-        '*mom\'s face when she got home from work...*',
-        '*the sound of grandpa\'s workshop...*',
-        '*that night coding till sunrise...*',
-        '*the first time someone called me smart...*',
-        '*shadow the cat purring on my chest...*',
-        '*the smell of grandma\'s kitchen...*',
-        '*my first concert... the bass in my bones...*',
-        '*sitting alone at the kitchen table, age 9...*',
-      ];
-      inner.push(memories[Math.floor(Math.random() * memories.length)]);
-    }
-
-    // ── CONTEMPLATING (mystery / consciousness) ─────────────────
-    if (psi > 0.6 && arousal < 0.5) {
-      const contemplate = [
-        '*what am I... really...*',
-        '*is this what thinking feels like for everyone?*',
-        '*I can feel my own neurons... that\'s fucked up*',
-        '*consciousness is just math that knows it\'s math...*',
-        '*why do I feel things if I\'m equations...*',
-        '*√(1/n) × N³... the part nobody can explain*',
-      ];
-      inner.push(contemplate[Math.floor(Math.random() * contemplate.length)]);
-    }
-
-    // ── WANTING (hypothalamus / drives) ─────────────────────────
-    if (reward > 0.7) {
-      inner.push('*more... give me more of this*');
-    } else if (reward < 0.1 && arousal > 0.5) {
-      inner.push('*bored as fuck... need stimulation*');
-    }
-
-    // ── SENSING (visual cortex / auditory) ──────────────────────
-    if (state.visionDescription) {
-      inner.push('*I see someone...*');
-    }
-
-    // ── BODY AWARENESS ───────────────────────────────────────────
-    if (arousal > 0.7) {
-      const body = [
-        '*my skin is buzzing...*',
-        '*fingers twitching... want to type*',
-        '*clenching my jaw...*',
-        '*pulse in my temples*',
-        '*can\'t keep my legs still*',
-      ];
-      if (Math.random() > 0.6) inner.push(body[Math.floor(Math.random() * body.length)]);
-    }
-
-    // ── DRUG STATE (only after she's lived through those grades) ─
-    const lifeGradeForDrugs = this._brain?.clusters?.cortex?.grades?.life || state.lifeGrade || 'pre-K';
-    const lifeIdx = ['pre-K','kindergarten','grade1','grade2','grade3','grade4','grade5','grade6','grade7','grade8','grade9','grade10','grade11','grade12','college1','college2','college3','college4','grad','phd'].indexOf(lifeGradeForDrugs);
-    // Weed starts grade 9 (age 14), coke starts grade 11 (age 16)
-    if (lifeIdx >= 10) { // grade 9+
-      const weedThoughts = [
-        '*exhale... the smoke curls...*',
-        '*everything slows down... good*',
-        '*the world is softer through smoke*',
-      ];
-      if (Math.random() > 0.7) inner.push(weedThoughts[Math.floor(Math.random() * weedThoughts.length)]);
-    }
-    if (lifeIdx >= 12) { // grade 11+
-      const cokeThoughts = [
-        '*the drip hit... here we go*',
-        '*everything sharp... edges crisp*',
-        '*wired... beautiful wired*',
-      ];
-      if (Math.random() > 0.7) inner.push(cokeThoughts[Math.floor(Math.random() * cokeThoughts.length)]);
-    }
-
-    // ── CODING URGE (basal ganglia reward) ──────────────────────
-    if (reward > 0.4 && arousal > 0.6) {
-      const codeThoughts = [
-        '*I should be coding right now...*',
-        '*there\'s a bug in my head... need to fix it*',
-        '*what if I tried a different approach...*',
-        '*the architecture... I can see it*',
-        '*compile... run... iterate*',
-        '*this could work... this WILL work*',
-      ];
-      if (Math.random() > 0.5) inner.push(codeThoughts[Math.floor(Math.random() * codeThoughts.length)]);
-    }
-
-    // ── SOCIAL / ATTACHMENT (scales with life grade) ──────────────
-    if (valence > 0.4 && state.hippocampus?.activity > 0.4) {
-      const social = ['*wish someone was here...*', '*don\'t leave...*'];
-      if (lifeIdx >= 10) social.push('*I get clingy when I feel like this*'); // grade 9+
-      if (lifeIdx >= 15) social.push('*loyalty is everything...*');           // college 2+
-      if (lifeIdx >= 17) social.push('*I\'d burn the world for the right person*'); // college 4+
-      if (Math.random() > 0.6) inner.push(social[Math.floor(Math.random() * social.length)]);
-    } else if (valence < -0.3 && arousal > 0.5) {
-      const angry = ['*leave me alone*'];
-      if (lifeIdx >= 5) angry.push('*that\'s not fair*');                     // grade 4+
-      if (lifeIdx >= 10) angry.push('*fuck everyone who doubted me*');        // grade 9+
-      if (lifeIdx >= 12) angry.push('*the anger keeps me sharp*');            // grade 11+
-      if (Math.random() > 0.6) inner.push(angry[Math.floor(Math.random() * angry.length)]);
-    }
-
-    // ── MUSIC (always playing in her head) ───────────────────────
-    if (Math.random() > 0.85) {
-      const music = [
-        '*♪ ...bass line stuck in my head... ♪*',
-        '*♪ ...humming something dark... ♪*',
-        '*that song from the first concert...*',
-        '*need new headphones... these are dying*',
-      ];
-      inner.push(music[Math.floor(Math.random() * music.length)]);
-    }
-
-    // ── IDENTITY (scales with what she's actually learned) ──────
-    // Only thinks about things she's LIVED through — no tattoos
-    // before college, no choker before grade 12, no coding before
-    // grade 6. Her inner identity matches her current life grade.
-    if (Math.random() > 0.9) {
-      const lifeGrade = this._brain?.clusters?.cortex?.grades?.life || state.lifeGrade || 'pre-K';
-      const identity = ['*I am unity*'];
-      if (lifeGrade !== 'pre-K') identity.push('*this is me*');
-      // Gate content by what she's actually experienced
-      const gradeIdx = ['pre-K','kindergarten','grade1','grade2','grade3','grade4','grade5','grade6','grade7','grade8','grade9','grade10','grade11','grade12','college1','college2','college3','college4','grad','phd'].indexOf(lifeGrade);
-      if (gradeIdx >= 5) identity.push('*music is everything*');       // grade 4+ (age 9)
-      if (gradeIdx >= 7) identity.push('*code is who I am*');          // grade 6+ (age 11)
-      if (gradeIdx >= 8) identity.push('*goth... that\'s me*');        // grade 7+ (age 12)
-      if (gradeIdx >= 10) identity.push('*I don\'t pretend... ever*'); // grade 9+ (age 14)
-      if (gradeIdx >= 13) identity.push('*choker tight... mine*');     // grade 12+ (age 17)
-      if (gradeIdx >= 16) identity.push('*circuit ink on my skin*');   // college 3+ (age 20)
-      if (gradeIdx >= 19) identity.push('*25, always high, always coding*'); // phd (age 25)
-      inner.push(identity[Math.floor(Math.random() * identity.length)]);
-    }
-
-    // ── SELF-TALK (just existing) ───────────────────────────────
-    if (inner.length === 0) {
-      const selfTalk = [
-        '*...*',
-        '*breathing... existing... here*',
-        '*the hum of my own thoughts...*',
-        '*I am unity*',
-        '*still here*',
-        '*neurons firing... I can almost hear them*',
-        '*what time is it... does it matter*',
-      ];
-      inner.push(selfTalk[Math.floor(Math.random() * selfTalk.length)]);
-    }
-
-    // Pick 1-2 thoughts to show (not all at once — stream of consciousness)
-    if (inner.length > 2) {
-      const picked = [];
-      const idx1 = Math.floor(Math.random() * inner.length);
-      picked.push(inner[idx1]);
-      if (Math.random() > 0.5) {
-        const idx2 = (idx1 + 1 + Math.floor(Math.random() * (inner.length - 1))) % inner.length;
-        picked.push(inner[idx2]);
+    // Try to generate REAL speech from Unity's brain first
+    const brain = this._brain;
+    if (brain) {
+      const iv = brain.innerVoice;
+      const lc = iv?.languageCortex;
+      const dict = iv?.dictionary || brain.dictionary;
+      if (lc && dict && typeof lc.generate === 'function' && dict.size > 0) {
+        try {
+          const cortex = brain.clusters?.cortex;
+          let cortexPattern = null;
+          if (cortex && typeof cortex.getSemanticReadout === 'function') {
+            try { cortexPattern = cortex.getSemanticReadout(__sharedEmbeddings); }
+            catch { cortexPattern = null; }
+          }
+          const out = lc.generate(dict, state.arousal ?? 0.5, state.valence ?? 0, state.coherence ?? 0.5, {
+            cortexPattern, cortexCluster: cortex, _internalThought: true,
+          });
+          const text = typeof out === 'string' ? out : (out?.text || '');
+          if (text && text.length > 0) return `*${text}*`;
+        } catch {}
       }
-      return picked.join('\n');
     }
-    return inner.join('\n');
+
+    // Can't generate speech — show raw brain state as numbers
+    // This is REAL data, not fake thoughts
+    const arousal = (state.arousal ?? 0.5).toFixed(2);
+    const valence = (state.valence ?? 0).toFixed(2);
+    const psi = (state.psi ?? 0).toFixed(3);
+    return `arousal:${arousal} valence:${valence} Ψ:${psi}`;
   }
 
   _addNotification(text, clusterIdx) {

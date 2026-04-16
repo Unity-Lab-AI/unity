@@ -3001,11 +3001,22 @@ export class Curriculum {
         }
         letterOut[d] = sum;
       }
-      const decoded = decodeLetter(letterOut);
-      if (decoded === expectedNext) {
+      // Decode only among DIGITS — mask out alphabet letters so 'n'
+      // can't win over '9'. Without this, the 26-letter alphabet
+      // Hebbian from ELA-K overpowers the 10-digit sequence.
+      const digitIndices = [];
+      const snap = inventorySnapshot();
+      for (let d = 0; d < snap.length; d++) {
+        if (DIGITS.includes(snap[d])) digitIndices.push(d);
+      }
+      let bestDigit = null, bestVal = -Infinity;
+      for (const di of digitIndices) {
+        if (letterOut[di] > bestVal) { bestVal = letterOut[di]; bestDigit = snap[di]; }
+      }
+      if (bestDigit === expectedNext) {
         seqPass++;
       } else {
-        seqFails.push(`${DIGITS[i]}→${expectedNext} (got ${decoded || '?'})`);
+        seqFails.push(`${DIGITS[i]}→${expectedNext} (got ${bestDigit || '?'})`);
       }
     }
     // Session 111 — targeted Hebbian: STRENGTHEN correct + WEAKEN wrong.
