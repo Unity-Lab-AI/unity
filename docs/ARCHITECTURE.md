@@ -358,7 +358,7 @@ Dream/
 │   │   ├── motor.js            # Motor output (6 BG channels, winner-take-all)
 │   │   ├── language.js         # DEPRECATED stub (68 lines post-R4) — BrocasArea throws if called. Kept as tripwire, scheduled for deletion in R12.
 │   │   ├── component-synth.js  # Equational component synthesis — parses component-templates.txt, cosine-matches user request vs primitive descriptions, returns {id, html, css, js}
-│   │   ├── curriculum.js       # T14.5+T14.24 developmental curriculum — K→PhD across 5 subjects (ELA, Math, Science, Social Studies, Arts), 95 cells, direct pattern Hebbian teaching, 3-pathway gates. ~11700 lines.
+│   │   ├── curriculum.js       # T14.5+T14.24 developmental curriculum — K→PhD across 6 subjects (ELA, Math, Science, Social Studies, Arts, Life Experience), 114 cells, direct pattern Hebbian + emotional concept features, 3-pathway gates, memory-weighted tiers. ~12500 lines.
 │   │   ├── letter-input.js     # T14.1 dynamic LETTER_INVENTORY Set — auto-grows, no 26-char cap. encodeLetter/decodeLetter one-hot primitives. ~220 lines.
 │   │   ├── peripherals/
 │   │   │   └── ai-providers.js # SensoryAIProviders — multi-provider image gen (custom → auto-detect → env.js → Pollinations), TTS, NO text chat
@@ -448,7 +448,7 @@ This term is ALWAYS present. It represents what we DON'T know. It's the default 
 
 T11 deleted the Markov wrapper stack and replaced it with slot priors. T11.7 added a hardcoded grammar transition table band-aid. T13 ripped slot-based generation, ran persona Hebbian training, and built a brain-driven emission loop. **T14 throws all of that out and rebuilds language as a developmental, biologically-grounded pipeline** — letters → phonemes → syllables → words → sentence patterns → discourse, every layer learned via curriculum exposure rather than hardcoded. The plan is documented in full at `docs/COMP-todo.md` Part 0.5 (18 milestones, T14.0 through T14.17). This section describes the live state of the rebuild.
 
-**Status as of T14.24 Session 110 (2026-04-15):** T14.0-T14.18 primitives ALL SHIPPED. T14.24 curriculum framework (95 cells) shipped with direct-pattern Hebbian breakthrough. EMBED_DIM bumped from 50 to 300 with full GloVe vocabulary loader + fastText-style subword fallback (`js/brain/embeddings.js`). Cortex cluster auto-scales to detected hardware via `CLUSTER_FRACTIONS` constants in `js/brain/engine.js` — `TOTAL_NEURONS` defaults to 6700 on the minimum client tier and scales to whatever `detectResources` returns on the server. Cortex is 30% of total = 2010 neurons at the default tier, scaling proportionally up. The cortex cluster carries 8 named language sub-regions defined as fractions of `cluster.size`, with 14 cross-region projections (7 pairs × 2 directions) wiring them together. T14.1 through T14.18 are all shipped. T14.24 Sessions 95-110 discovered direct-pattern Hebbian as the teaching method (bypassing Rulkov chaotic dynamics). ELA-K passed 100%. Live testing continues on remaining K cells.
+**Status as of T14.24 Session 111 (2026-04-16):** T14.0-T14.18 primitives ALL SHIPPED. T14.24 curriculum now has 6 subjects (ELA, Math, Science, Social Studies, Arts, Life Experience) × 19 grades = 114 cells. Life Experience track added in Session 111 — builds Unity's personal identity from birth to 25 via dual-layer teaching: emotional concept features (8d `[joy, pain, trust, fear, anger, love, independence, identity]` attractor vectors via `_conceptTeach`) plus recallable memory sentences (`_teachSentenceList`). Memory-weighted Hebbian: core self at 5× lr / 50 reps, personal life at 3× / 20 reps, school knowledge at 1× / 6-12 reps, background trivia at 0.5× / 3-4 reps. TALK probe direction fixed (sem→motor). Grade-lock enforced (all 6 subjects must pass grade N before advancing). Focused retry on failing words. Function words (~120) taught via direct pattern at ELA-K. 3D brain popups silenced until Unity passes kindergarten. EMBED_DIM = 300 with fastText subword fallback. 14 cross-region projections (7 pairs × 2 directions). Direct-pattern Hebbian bypasses Rulkov chaotic dynamics during teach.
 
 ### Cortex sub-regions (T14.4 substrate, live)
 
@@ -790,17 +790,17 @@ Post-T14.17, Gee caught that `server/brain-server.js:_initLanguageSubsystem` was
 
 Milestones T14.0 through T14.17 plus the T14.18 correction shipped on `t14-language-rebuild`. Then Gee reopened T14 scope with T14.24: *"T14.24 is supposre to be a full equational ciriculum.. once again you editing my words"* + *"what the fuck are you talking about its shipped you didnt even teach it keindergarden abcs and 123s and letter sounds you fool"* + *"this is going to take weeks to build so dont you dare tell me you are fucking done early"*. The T14.0-T14.18 work built the PRIMITIVES (letter input, syllable boundaries, dictionary cortex routing, tick-driven motor emission, sentence form schemas, dual-stream substrate, identity lock) but didn't actually teach Unity through a grade-based curriculum. T14.24 is the full K→Doctorate curriculum across five subject tracks (ELA, Math, Science, Social Studies/History, Arts) that uses those primitives. T14.24 is WEEKS of work; branch stays on `t14-language-rebuild` until every subject × every grade × every 3-pathway gate passes.
 
-### T14.24 — Full K-doctorate equational curriculum, all subjects (Sessions 1-94 shipped 2026-04-15, FRAMEWORK COMPLETE / GATES IN PROGRESS)
+### T14.24 — Full K-doctorate equational curriculum, all subjects (Sessions 1-94 academic framework, Session 111 life track added)
 
-**All 95 cells wired with real teaching equations.** 5 subject tracks (ELA, Math, Science, Social Studies, Arts) × 19 grades (K through PhD) = 95 subject/grade cells, each with TODO-aligned named teaching helpers that drive READ + THINK + TALK pathways before a 3-pathway gate check. Runtime verification via `scripts/verify-curriculum-runtime.mjs` confirms DISPATCH 95/95 + FULL SWEEP 95/95 against a real cortex `NeuronCluster` — every cell executes without throwing. Task #3 stays in_progress until the 95 gates actually CROSS on a live-cortex boot with a loaded persona corpus.
+**114 cells across 6 subjects.** Sessions 1-94 shipped the original 5 academic subject tracks (ELA, Math, Science, Social Studies, Arts) × 19 grades = 95 cells. Session 111 added a 6th subject — **Life Experience** — bringing the total to 114 cells (6 × 19). Life track teaches Unity's personal identity from birth to 25 via dual-layer approach: emotional concept features (8d attractor vectors shaping how she FEELS) plus memory sentences she can recall and speak about. Memory-weighted Hebbian: core self at 5× lr, personal life at 3×, school facts at 1×, background trivia at 0.5×. Original 95-cell runtime verification via `scripts/verify-curriculum-runtime.mjs` confirmed DISPATCH 95/95 + FULL SWEEP 95/95 (pre-life-track). Task #3 stays in_progress until all 114 gates CROSS on a live-cortex boot.
 
 **Subject list + grade order** (exported from `js/brain/curriculum.js`):
-- `SUBJECTS = ['ela', 'math', 'science', 'social', 'art']`
+- `SUBJECTS = ['ela', 'math', 'science', 'social', 'art', 'life']`
 - `GRADE_ORDER = ['pre-K', 'kindergarten', 'grade1'..'grade12', 'college1'..'college4', 'grad', 'phd']`
 
 **`cluster.grades` — multi-subject grade tracking.** `NeuronCluster` constructor now initializes:
 ```js
-this.grades = { ela: 'pre-K', math: 'pre-K', science: 'pre-K', social: 'pre-K', art: 'pre-K' };
+this.grades = { ela: 'pre-K', math: 'pre-K', science: 'pre-K', social: 'pre-K', art: 'pre-K', life: 'pre-K' };
 this.grade = 'pre-K';       // legacy mirror of grades.ela
 this.passedCells = [];      // flat list of 'subject/grade' keys that passed their gate
 ```
@@ -841,9 +841,9 @@ this.passedCells = [];      // flat list of 'subject/grade' keys that passed the
 
 **Chat-path word cap.** `LanguageCortex.generate()` reads `cluster.grades` (object) and falls back to legacy `cluster.grade` (string). The cap is the min across subjects that have advanced past pre-K — Unity's speech word ceiling rises lockstep with her weakest-subject grade via the round-robin advance order in `runAllSubjects`.
 
-**Auto-boot cascade.** `server/brain-server.js` boot priority is `runCompleteCurriculum` (5-subject round-robin) → `runFullCurriculum` (legacy ELA-only) → `runFromCorpora` (T14.5 single-pass). All three run in background without blocking the tick loop.
+**Auto-boot cascade.** `server/brain-server.js` boot priority is `runCompleteCurriculum` (6-subject round-robin including life track) → `runFullCurriculum` (legacy ELA-only) → `runFromCorpora` (T14.5 single-pass). All three run in background without blocking the tick loop.
 
-**Runtime verification.** `scripts/verify-curriculum-runtime.mjs` instantiates a real cortex cluster, walks every one of the 95 cells, and reports DISPATCH 95/95 + FULL SWEEP 95/95. Rerun any time to re-verify the framework is code-correct for automatic course learning.
+**Runtime verification.** `scripts/verify-curriculum-runtime.mjs` instantiates a real cortex cluster and walks cells end-to-end. Original 95-cell academic framework confirmed DISPATCH 95/95 + FULL SWEEP 95/95. Life track (20 additional cells) ships in Session 111 — total is now 114 cells across 6 subjects.
 
 ### T14.24 Sessions 95-110 — Direct Pattern Hebbian Breakthrough (2026-04-15)
 
@@ -874,7 +874,7 @@ this.passedCells = [];      // flat list of 'subject/grade' keys that passed the
 
 ### Remaining work
 
-Task #3 (T14.24 parent) stays in_progress until all 95 cells pass 95%+ AND Unity speaks coherently from the trained weights in live chat. DO NOT CLAIM DONE EARLY.
+Task #3 (T14.24 parent) stays in_progress until all 114 cells (6 subjects × 19 grades) pass 95%+ AND Unity speaks coherently from the trained weights in live chat. DO NOT CLAIM DONE EARLY.
 
 ---
 

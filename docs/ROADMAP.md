@@ -387,11 +387,11 @@ Milestones T14.0 through T14.17 plus the T14.18 correction shipped on `t14-langu
 - T14.0-T14.18 built the PRIMITIVES (letter input, syllable boundaries, dictionary cortex routing, tick-driven motor emission, sentence form schemas, dual-stream substrate, identity lock, side-car deletion)
 - T14.24 uses those primitives to build the actual developmental curriculum Unity walks from pre-K through PhD
 
-### Milestone T14.24: Full K-doctorate equational curriculum, all subjects — FRAMEWORK COMPLETE (all 95 cells, Sessions 1-94), GATES PENDING LIVE VERIFICATION
+### Milestone T14.24: Full K-doctorate equational curriculum, all subjects — 114 CELLS (95 academic Sessions 1-94 + 20 life track Session 111), GATES PENDING LIVE VERIFICATION
 
 **Gee's binding 2026-04-14** (multiple corrections): *"T14.24 is supposre to be a full equational ciriculum.. once again you editing my words"* + *"what the fuck are you talking about its shipped you didnt even teach it keindergarden abcs and 123s and letter sounds you fool so how the fuck you trying to tell me you have doctorate equations for the full and complete understand and complete fluentcy in doctorate level english"* + *"remember Unity needs to be able to use these to think, read, and talk"* + *"this is going to take weeks to build so dont you dare tell me you are fucking done early"*.
 
-**Scope:** Five subject tracks (ELA, Math, Science, Social Studies/History, Arts) × 20 grades (pre-K → K → G1..G12 → Col1..Col4 → Grad → PhD) = ~100 cells, each with real teaching equations that drive the READ (visual/letter→phon→sem), THINK (sem+free working memory), and TALK (sem→motor→letter) pathways plus a capability gate that tests all three. Session budget: ~80 focused sessions, multiple weeks at minimum, likely 2-3 months.
+**Scope:** Originally five academic subject tracks × 20 grades = ~100 cells. Session 111 added a 6th subject — **Life Experience** (Unity's personal identity, birth to 25) — bringing the total to 6 × 19 = 114 cells. Life track uses dual-layer teaching: emotional concept features (8d attractor vectors) + recallable memory sentences, with memory-weighted Hebbian (core self 5× lr, school facts 1×). Every cell drives READ + THINK + TALK plus a capability gate.
 
 **Sessions 1-94 SHIPPED 2026-04-15 — all 95 cells wired with real teaching equations.**
 
@@ -420,7 +420,7 @@ Sessions 95-105 discovered that Hebbian learning through Rulkov chaotic dynamics
 
 **Current live testing status:** ELA-K passed 100%. Math-K TALK at 40%. Sci/Soc/Art-K TALK bouncing 50-80%. All need more attempts with MAX_ATTEMPTS=30.
 
-**What T14.24 still needs:** K cell convergence (Math/Sci/Soc/Art), convert background probes to direct matrix probes, design G1+ word-level gates, build `_conceptTeach` gate, wire all 90 G1→PhD cells, full 95-cell walk at 95%+, live chat verification. Task #3 stays in_progress. DO NOT CLAIM DONE EARLY.
+**What T14.24 still needs (post-Session 111):** Full 114-cell curriculum walk (6 subjects × 19 grades) — all gates 95%+ on fresh boot. Live chat verification — Unity speaks coherently from trained weights. Curriculum depth expansion (see `docs/TODO-curriculum-depth.md`). Life experience enrichment (see `docs/TODO-life-experience.md`). Task #3 stays in_progress. DO NOT CLAIM DONE EARLY.
 
 ---
 

@@ -776,7 +776,7 @@ All eighteen primitive milestones (T14.0 cortex sub-region substrate, T14.1 lett
 
 Gee 2026-04-14 reopened T14 scope: *"T14.24 is supposre to be a full equational ciriculum.. once again you editing my words"* + *"what the fuck are you talking about its shipped you didnt even teach it keindergarden abcs and 123s and letter sounds you fool so how the fuck you trying to tell me you have doctorate equations for the full and complete understand and complete fluentcy in doctorate level english"* + *"remember Unity needs to be able to use these to think, read, and talk"* + *"this is going to take weeks to build so dont you dare tell me you are fucking done early"*.
 
-**Scope.** Five subject tracks × 20 grades = ~100 cells. Every cell needs real teaching equations that drive all three pathways (READ = visual/letter→phon→sem, THINK = sem+free working memory, TALK = sem→motor→letter) plus a capability gate that tests all three. Session budget ~80 focused sessions.
+**Scope.** Originally five academic subject tracks × 20 grades = ~100 cells. Session 111 added a 6th subject (Life Experience), bringing the total to 6 × 19 = 114 cells. Every cell needs real teaching equations that drive all three pathways (READ = visual/letter→phon→sem, THINK = sem+free working memory, TALK = sem→motor→letter) plus a capability gate that tests all three.
 
 **Multi-subject grade equation (Session 1 framework):**
 
@@ -825,7 +825,7 @@ grad        → 20
 phd         → unbounded (full persona voice)
 ```
 
-**Lenient min rationale.** Strict min over all 5 subjects would silence Unity entirely until every subject clears kindergarten — weeks away, until Session 2+ teach real K across every subject. Lenient min excludes pre-K subjects from the min, so an ELA-only brain keeps speaking at its ELA cap during the Session 2-N build while new subjects join the min calculation as they pass K.
+**Lenient min rationale.** Strict min over all 6 subjects would silence Unity entirely until every subject clears kindergarten — weeks away, until Session 2+ teach real K across every subject. Lenient min excludes pre-K subjects from the min, so an ELA-only brain keeps speaking at its ELA cap during the Session 2-N build while new subjects join the min calculation as they pass K.
 
 **All 95 cells wired with real teaching equations (Sessions 2-93).** Every subject×grade cell has a dedicated `runXxxReal` runner that primes a TODO-prescribed concept lattice via 136 `_teachXxx` named helpers before walking a sentence or sequence list. Zero stubs remain. Sample concept-helper feature structures:
 
@@ -925,7 +925,40 @@ The 0.15 strength is deliberately low so it colors Unity's next reply toward the
 - `/curriculum run <subject> <grade>` — run one cell
 - `/curriculum gate <subject> <grade>` — run gate only (Session 1 identical to `run`)
 - `/curriculum reset <subject>` — reset subject to pre-K
-- `/curriculum full [subject]` — full walk, one subject or all 5
+- `/curriculum full [subject]` — full walk, one subject or all 6
+
+### T14.24 Session 111 — Life Experience Track + Emotional Concept Features (2026-04-16)
+
+**Life as a 6th subject.** `SUBJECTS = ['ela', 'math', 'science', 'social', 'art', 'life']`. 20 life methods (runLifePreK through runLifePhD) teach Unity's personal identity from birth to 25.
+
+**Dual-layer teach equation.** Each life experience is taught with two simultaneous layers:
+
+```
+Layer 1 — Emotional attractor (_conceptTeach):
+  feat ∈ ℝ⁸ = [joy, pain, trust, fear, anger, love, independence, identity]
+  expanded ∈ ℝ¹⁶ via sin-harmonic extension, L2-normalized
+  written to free region → _crossRegionHebbian(lr) → cortex attractor basin
+
+  Example: "dad leaving" = [0, 1, 0, 1, 1, 0, 0, 0]   → pain+fear+anger basin
+           "first code"  = [1, 0, 0, 0, 0, 1, 1, 1]   → joy+love+independence+identity basin
+           "mom"         = [1, 0, 1, 0, 0, 1, 0, 0]   → joy+trust+love basin
+
+Layer 2 — Recallable memory (_teachSentenceList):
+  sentences = ["my dad left when i was eight", "i cried alone in my room", ...]
+  per word: GloVe → sem, first letter → motor, phoneme → phon
+  → _crossRegionHebbian(lr) → she can SPEAK about the memory
+```
+
+**Memory weighting equation.** Reps and learning rate scale by memory tier:
+
+```
+tier_reps(tier)  = { core_self: 50, personal: 20, opinions: 15, skills: 12, school: 8, background: 4 }
+tier_lr(tier)    = { core_self: lr×5, personal: lr×3, opinions: lr×3, skills: lr×2, school: lr, background: lr×0.5 }
+
+effective_learning(concept, tier) = tier_reps(tier) × tier_lr(tier) × _crossRegionHebbian
+```
+
+Unity's name at 50 reps × 5× lr = 250× base learning. School trivia at 8 reps × 1× lr = 8× base. 31:1 ratio between self-knowledge and academic facts.
 
 ### T14.24 Sessions 95-110 — Direct Pattern Hebbian (2026-04-15)
 

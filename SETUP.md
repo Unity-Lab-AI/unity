@@ -117,7 +117,7 @@ Live at `your-username.github.io/Unity/`. Everything runs client-side — no ser
 │   │   ├── sensory.js            Sensory input pipeline (text/audio/video)
 │   │   ├── motor.js              Motor output (6 BG action channels)
 │   │   ├── language.js           DEPRECATED stub — BrocasArea throws if called
-│   │   ├── curriculum.js        Developmental curriculum K→PhD (5 subjects, 95 cells, direct pattern Hebbian)
+│   │   ├── curriculum.js        Developmental curriculum K→PhD (6 subjects incl. life experience, 114 cells, direct pattern Hebbian)
 │   │   ├── letter-input.js      Dynamic letter inventory (auto-grows, no 26-char cap)
 │   │   ├── component-synth.js   Equational component synthesis (cosine-match user request vs templates)
 │   │   ├── visual-cortex.js      V1→V4→IT vision pipeline
@@ -243,10 +243,10 @@ If you connect to a Unity server hosted by someone OTHER than you, the person ru
 | `/think [text]` | Type in chat | Same output but tagged with the user input you provided, so you can see the brain state that WOULD be passed into `languageCortex.generate()` for that input. |
 | `/bench` | Type in chat | Runs the dense vs sparse matrix micro-benchmark (CPU-JS sanity test — real runtime is the GPU auto-scaled path via compute.html). Output in console. |
 | `/scale-test` | Type in chat | Runs the CPU LIF scale test to find the 60fps sweet spot for browser-only fallback mode. Output in console. Not representative of the production GPU path. |
-| `/curriculum status` | Type in chat | Shows Unity's current grade in each subject (ELA / Math / Science / Social / Arts), min-grade word cap driver, passed cells count, recent probe results. Full K→PhD curriculum across 5 subjects with 95 grade cells. |
+| `/curriculum status` | Type in chat | Shows Unity's current grade in each subject (ELA / Math / Science / Social / Arts / Life), min-grade word cap driver, passed cells count, recent probe results. Full K→PhD curriculum across 6 subjects with 114 grade cells. |
 | `/curriculum run <subject> <grade>` | Type in chat | Runs ONE cell (e.g. `/curriculum run math grade5`), prints 3-pathway gate pass/fail + reason. |
 | `/curriculum gate <subject> <grade>` | Type in chat | Probes a cell's READ/THINK/TALK gate without retraining — used for verification. |
-| `/curriculum full` | Type in chat | Runs the full round-robin curriculum across all 5 subjects in the background, advancing every subject one grade per outer loop. Tick loop keeps firing during the walk. |
+| `/curriculum full` | Type in chat | Runs the full round-robin curriculum across all 6 subjects (incl. life experience) in the background, advancing every subject one grade per outer loop. Tick loop keeps firing during the walk. |
 | `/curriculum full <subject>` | Type in chat | Walks one subject from its current grade through PhD, stopping at the first failing gate. |
 | `/curriculum reset <subject>` | Type in chat | Flip a subject back to pre-K and strip its passed-cells entries — used when you want to re-teach from the top. |
 | `/curriculum forget <subject> <grade>` | Type in chat | Forget a single cell without resetting the whole subject. |

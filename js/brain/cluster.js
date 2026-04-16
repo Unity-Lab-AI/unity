@@ -249,7 +249,7 @@ export class NeuronCluster {
     // passedCells is a flat list of "subject/grade" keys that have
     // passed their gate at least once — used by /curriculum status
     // and by the persistence save path.
-    this.grades = { ela: 'pre-K', math: 'pre-K', science: 'pre-K', social: 'pre-K', art: 'pre-K' };
+    this.grades = { ela: 'pre-K', math: 'pre-K', science: 'pre-K', social: 'pre-K', art: 'pre-K', life: 'pre-K' };
     this.grade = 'pre-K';
     this.passedCells = [];
 

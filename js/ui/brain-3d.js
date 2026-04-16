@@ -1567,6 +1567,15 @@ export class Brain3D {
       }
       return null;
     }
+    // Session 111 — don't speak for Unity if her brain hasn't learned
+    // to speak yet. If she hasn't passed at least kindergarten ELA,
+    // the cross-projection weights are untrained and generate() produces
+    // word salad. Show nothing until she's actually learned language.
+    const cortexGrades = brain.clusters?.cortex?.grades;
+    if (cortexGrades) {
+      const elaGrade = cortexGrades.ela || 'pre-K';
+      if (elaGrade === 'pre-K') return null; // hasn't learned to talk yet
+    }
     const iv = brain.innerVoice;
     const lc = iv?.languageCortex;
     const dict = iv?.dictionary || brain.dictionary;

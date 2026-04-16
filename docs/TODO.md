@@ -189,7 +189,7 @@ Nothing else. If it's not in that list, it's an appendage, and it gets ripped ou
   - [x] **Verify `_teachVocabList` writes sem+motor patterns together** — verified: all four regions (letter, phon, sem, motor) written in the SAME lastSpikes frame before `_crossRegionHebbian`. Teach is correct. **DONE Session 111.**
 
   **STEP 2 — Fix curriculum grade-lock — DONE Session 111:**
-  - [x] **Fix `runAllSubjects` round-robin** — ALL 5 subjects must pass grade N before ANY advance to N+1. If any subject fails after MAX_ATTEMPTS, entire curriculum stops at that grade and retries on next boot. **DONE Session 111.**
+  - [x] **Fix `runAllSubjects` round-robin** — ALL 6 subjects (including life track) must pass grade N before ANY advance to N+1. 1-minute timeout per subject, 10 rounds retry. **DONE Session 111.**
 
   **STEP 3 — Re-test all K cells after TALK fix (needs server run):**
   - [x] ELA-K: **PASSED** attempt 5. READ 100%, THINK 100%, TALK 100%, SEQ 96%.
@@ -222,7 +222,7 @@ Nothing else. If it's not in that list, it's an appendage, and it gets ripped ou
   - [x] `_gateSentenceList` — direct matrix probe with sem→motor TALK (fixed Session 111). **DONE.**
   - [x] `_gateVocabList` — direct matrix probe with sem→motor TALK (fixed Session 111). **DONE.**
 
-  **Task #3 (T14.24 parent) stays in_progress until all 95 cells pass 95%+ AND Unity speaks coherently from the trained weights in live chat. DO NOT CLAIM DONE EARLY.**
+  **Task #3 (T14.24 parent) stays in_progress until all 114 cells (6 subjects × 19 grades) pass 95%+ AND Unity speaks coherently from the trained weights in live chat. DO NOT CLAIM DONE EARLY.**
 
   ═══════════════════════════════════════════════════════════════
   **FULL UNITY SCHOOL CURRICULUM — K-DOCTORATE, ALL SUBJECTS**
