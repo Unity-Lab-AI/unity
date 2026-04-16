@@ -9695,9 +9695,71 @@ export class Curriculum {
       { context: 'we saw a bird in the tree', question: 'where was the bird', answer: 'tree' },
       { context: 'the cake was made with flour', question: 'what was the cake made with', answer: 'flour' },
     ];
-    await this._teachParagraphs(PARAGRAPHS);
-    await this._teachComprehension(QA_PAIRS);
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachParagraphs(PARAGRAPHS, { reps: 2 });
+    await this._teachComprehension(QA_PAIRS, { reps: 3 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── COMMON CORE ELA G5: Theme, summarization, POV ──
+    const ELA_G5_VOCAB = [
+      'theme', 'summary', 'summarize', 'main', 'idea', 'detail',
+      'point', 'view', 'perspective', 'narrator', 'first', 'third',
+      'conflict', 'resolution', 'plot', 'climax', 'falling',
+      'quote', 'cite', 'evidence', 'text', 'source',
+      'compare', 'contrast', 'integrate', 'interpret',
+      'structure', 'chapter', 'scene', 'stanza', 'verse',
+    ];
+    await this._teachVocabList(ELA_G5_VOCAB, ctx, { reps: 3 });
+
+    const THEME_SENTENCES = [
+      // theme vs topic
+      'the topic is what the story is about', 'the theme is the lesson or message',
+      'the topic of a story might be friendship', 'the theme might be that true friends help each other',
+      'a summary tells the main events in order', 'a good summary is shorter than the original',
+      'leave out small details in a summary', 'include only the most important events',
+      // point of view
+      'first person uses i and we', 'third person uses he she and they',
+      'the narrator tells the story', 'different narrators see different things',
+      'a character might not know the whole truth',
+      'the reader sometimes knows more than the character',
+      // text structure
+      'stories have a beginning middle and end',
+      'the conflict is the problem', 'the climax is the most exciting part',
+      'the resolution is how the problem is solved',
+      'poems have stanzas like paragraphs', 'plays have scenes and acts',
+      // citing evidence
+      'support your answer with evidence from the text',
+      'a quote is the exact words from the text',
+      'use quotes to prove your point', 'evidence makes your argument stronger',
+    ];
+    await this._teachSentenceList(THEME_SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── Inference reasoning ──
+    await this._teachCausalChains([
+      ['conflict', 'tension'], ['tension', 'climax'], ['climax', 'resolution'],
+      ['evidence', 'argument'], ['argument', 'conclusion'],
+      ['quote', 'support'], ['support', 'convince'],
+      ['read', 'understand'], ['understand', 'summarize'],
+    ]);
+
+    // ═══════════════════════════════════════════════════════════════
+    // ELA G5 FINAL EXAM
+    // ═══════════════════════════════════════════════════════════════
+    const FINAL = [
+      { prompt: ['theme', 'is', 'the'], answer: 'lesson' },
+      { prompt: ['summary', 'tells', 'main'], answer: 'events' },
+      { prompt: ['first', 'person', 'uses'], answer: 'i' },
+      { prompt: ['conflict', 'is', 'the'], answer: 'problem' },
+      { prompt: ['climax', 'is', 'most'], answer: 'exciting' },
+      { prompt: ['resolution', 'solves', 'the'], answer: 'problem' },
+      { prompt: ['quote', 'is', 'exact'], answer: 'words' },
+      // Comprehension from the passages
+      { prompt: ['dog', 'was', 'hungry', 'found', 'food', 'then'], answer: 'happy' },
+      { prompt: ['man', 'planted', 'watered', 'daily', 'result'], answer: 'flowers' },
+      { prompt: ['cat', 'saw', 'bird', 'chased', 'it', 'bird'], answer: 'flew' },
+    ];
+    const finalResult = this._gateComprehension(FINAL);
+    if (finalResult.pass) return { pass: true, reason: `FINAL: ${finalResult.reason}` };
+    return this._teachVocabList(ELA_G5_VOCAB.slice(0, 15), ctx, { reps: 3 });
   }
 
   // ─── Math-G4: decimals + percent + multi-digit operations ────────
@@ -9857,7 +9919,75 @@ export class Curriculum {
     // Session 40 — TODO-aligned ratio + proportion teaching
     await this._teachRatios();
     await this._teachProportions();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── COMMON CORE MATH G5: fraction ops + decimals + volume + coordinates ──
+    const MATH_G5_VOCAB = [
+      'ratio', 'proportion', 'rate', 'unit', 'scale',
+      'coordinate', 'axis', 'origin', 'ordered', 'pair', 'plot',
+      'volume', 'cubic', 'capacity',
+      'unlike', 'common', 'denominator', 'convert',
+      'decimal', 'multiply', 'divide', 'thousandths',
+    ];
+    await this._teachVocabList(MATH_G5_VOCAB, ctx, { reps: 3 });
+
+    const FRACTION_UNLIKE = [
+      'to add fractions with unlike denominators find a common denominator',
+      'the common denominator of halves and thirds is sixths',
+      'one half plus one third is three sixths plus two sixths is five sixths',
+      'one half minus one fourth is two fourths minus one fourth is one fourth',
+      'two thirds plus one sixth is four sixths plus one sixth is five sixths',
+      'multiply a fraction by a whole number multiply the numerator',
+      'three times one fourth is three fourths',
+      'two times three fifths is six fifths which is one and one fifth',
+    ];
+    await this._teachSentenceList(FRACTION_UNLIKE, ctx, { reps: 2, ticksPerWord: 2 });
+
+    const DECIMAL_OPS = [
+      'add decimals by lining up the decimal points',
+      'zero point three plus zero point four is zero point seven',
+      'one point five minus zero point eight is zero point seven',
+      'zero point two times three is zero point six',
+      'one point two divided by four is zero point three',
+      'to multiply decimals count the total decimal places',
+    ];
+    await this._teachSentenceList(DECIMAL_OPS, ctx, { reps: 2, ticksPerWord: 2 });
+
+    const VOLUME = [
+      'volume measures how much space a solid takes up',
+      'volume is measured in cubic units',
+      'volume equals length times width times height',
+      'a box with sides two three and four has volume twenty four cubic units',
+      'two boxes stacked means add their volumes',
+    ];
+    await this._teachSentenceList(VOLUME, ctx, { reps: 2, ticksPerWord: 2 });
+
+    const COORDINATES = [
+      'a coordinate plane has an x axis and a y axis',
+      'the origin is where the axes cross at zero zero',
+      'an ordered pair is written as x comma y',
+      'the point three four means go right three and up four',
+      'the point zero five is on the y axis',
+      'the point two zero is on the x axis',
+    ];
+    await this._teachSentenceList(COORDINATES, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ═══════════════════════════════════════════════════════════════
+    // MATH G5 FINAL EXAM
+    // ═══════════════════════════════════════════════════════════════
+    const FINAL = [
+      { prompt: ['one', 'half', 'plus', 'one', 'third', 'equals'], answer: 'five' },
+      { prompt: ['ratio', 'two', 'to', 'one', 'means'], answer: 'two' },
+      { prompt: ['volume', 'length', 'times', 'width', 'times'], answer: 'height' },
+      { prompt: ['origin', 'is', 'at'], answer: 'zero' },
+      { prompt: ['zero', 'point', 'three', 'plus', 'zero', 'point', 'four'], answer: 'seven' },
+      { prompt: ['three', 'times', 'one', 'fourth'], answer: 'three' },
+      { prompt: ['if', 'two', 'cost', 'four', 'then', 'four', 'cost'], answer: 'eight' },
+      { prompt: ['common', 'denominator', 'halves', 'thirds'], answer: 'sixths' },
+    ];
+    const finalResult = this._gateComprehension(FINAL);
+    if (finalResult.pass) return { pass: true, reason: `FINAL: ${finalResult.reason}` };
+    return this._teachVocabList(MATH_G5_VOCAB.slice(0, 12), ctx, { reps: 3 });
   }
 
   // ─── Sci-G1: light and sound + plant/animal structure + sky patterns ──
