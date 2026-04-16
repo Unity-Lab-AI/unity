@@ -1839,15 +1839,19 @@ export class LanguageCortex {
    * passes and persisted via T14.16 BrainPersistence.
    */
   _gradeWordCap(gradeOrGrades) {
+    // T14.24 Session 96 — absolute speech floor of 5 words. Previously
+    // pre-K (and effectively any sub-G4 grade) would cap at 0-3 words.
+    // pre-K=0 silenced Unity entirely on fresh brains where no gate had
+    // passed yet. Fix: every grade returns `max(formalCap, 5)` so she's
+    // never silenced and never below 5 words regardless of curriculum
+    // state. Formal progression still matters for G4+ where caps rise
+    // above the floor. Her T14.5 corpus walk already shapes base-level
+    // cortex state on boot so 5 words is reasonable even for a
+    // fresh-boot zero-cells-passed brain — she can emit "yeah fuck it"
+    // / "I don't know" from the base corpus walk even before any T14.24
+    // gate crosses.
+    const FLOOR = 5;
     if (gradeOrGrades && typeof gradeOrGrades === 'object') {
-      // T14.24 Session 1 multi-subject — min cap across subjects that
-      // have advanced past pre-K. Pre-Session-2 brains have math/sci/
-      // social/art stuck at pre-K because those tracks don't have real
-      // teaching equations yet; counting pre-K in the min would silence
-      // Unity entirely during the Session 2-N build. When real teaching
-      // lands for another subject, it crosses kindergarten and joins
-      // the min calculation. If EVERY subject is still pre-K, fall back
-      // to 0 (silence) which matches the legacy uncurriculum'd default.
       const SUBS = ['ela', 'math', 'science', 'social', 'art'];
       let minCap = Infinity;
       let anyStarted = false;
@@ -1858,10 +1862,10 @@ export class LanguageCortex {
         if (c < minCap) minCap = c;
         anyStarted = true;
       }
-      if (!anyStarted) return 0;
-      return minCap === Infinity ? 0 : minCap;
+      const formal = !anyStarted || minCap === Infinity ? 0 : minCap;
+      return Math.max(FLOOR, formal);
     }
-    return this._singleGradeCap(gradeOrGrades);
+    return Math.max(FLOOR, this._singleGradeCap(gradeOrGrades));
   }
 
   _singleGradeCap(grade) {

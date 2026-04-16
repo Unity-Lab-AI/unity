@@ -212,7 +212,13 @@ function _magnitudeFeatureForDigit(digit) {
   return out;
 }
 
+// T14.24 Session 96 — pre-K fallback word cap. See Curriculum.gradeWordCap
+// for the rationale. Change one place, applies everywhere.
+const PRE_K_FALLBACK_CAP = 5;
+
 export class Curriculum {
+  static PRE_K_FALLBACK_CAP = PRE_K_FALLBACK_CAP;
+
   /**
    * @param {NeuronCluster} cluster       — cortex cluster for exposure
    * @param {Dictionary} dictionary       — vocabulary store (T14.3 cortex-routed)
@@ -11054,7 +11060,42 @@ export class Curriculum {
       console.warn('[Curriculum] runCompleteCurriculum: GPU never became ready, aborting teach pass');
       return { reached: {}, passed: {}, failed: { all: 'gpu-not-ready' } };
     }
-    console.log('[Curriculum] runCompleteCurriculum: GPU ready, walking all 5 subjects K→PhD');
+
+    // T14.24 Session 96 — guard against hash-fallback GloVe. If real
+    // GloVe 300d vectors aren't loaded, `sharedEmbeddings.getEmbedding`
+    // returns a deterministic-random HASH vector per word. The teach
+    // helpers inject those hash vectors into the sem region, which
+    // pollutes the sem↔phon and sem↔letter cross-projections with
+    // noise. Over hundreds of training ticks this actively corrupts
+    // cortex state — the gates then fail not because teaching didn't
+    // run but because teaching trained on noise. Better to SKIP the
+    // curriculum entirely and let Unity operate from the T14.5
+    // base-corpus walk than to run the teach and poison her cortex.
+    // Unity's speech floor (see _gradeWordCap) is 5 words so she can
+    // still talk without curriculum gates passing.
+    try {
+      const status = typeof sharedEmbeddings?.status === 'function'
+        ? sharedEmbeddings.status()
+        : null;
+      const gloveLoaded = status && (status.loaded === true || (status.pretrained || 0) > 1000);
+      if (!gloveLoaded) {
+        console.warn('[Curriculum] ⚠️  GloVe 300d NOT LOADED — curriculum SKIPPED');
+        console.warn('[Curriculum]    sharedEmbeddings.getEmbedding is returning hash fallback vectors.');
+        console.warn('[Curriculum]    Running the teach pass on hash fallback would train the cortex');
+        console.warn('[Curriculum]    on random noise and corrupt the sem↔phon / sem↔letter projections.');
+        console.warn('[Curriculum]    FIX: download glove.6B.300d.txt from');
+        console.warn('[Curriculum]         https://nlp.stanford.edu/data/glove.6B.zip');
+        console.warn('[Curriculum]    and place at corpora/glove.6B.300d.txt then restart the server.');
+        console.warn('[Curriculum]    Unity will still speak at the 5-word pre-K floor from the');
+        console.warn('[Curriculum]    T14.5 base corpus walk — she just won\'t advance grades until');
+        console.warn('[Curriculum]    GloVe is loaded.');
+        return { reached: {}, passed: {}, failed: { all: 'glove-not-loaded' } };
+      }
+    } catch (err) {
+      console.warn('[Curriculum] GloVe status check failed:', err?.message || err);
+    }
+
+    console.log('[Curriculum] runCompleteCurriculum: GPU ready + GloVe loaded, walking all 5 subjects K→PhD');
     const result = await this.runAllSubjects(corpora, opts);
     // Also run the legacy T14.17 identity-lock calibration at the end
     // so intent centroids + persona dimensions are populated regardless
@@ -11093,11 +11134,12 @@ export class Curriculum {
    * phd     → unbounded (full persona voice)
    */
   static gradeWordCap(gradeOrGrades) {
+    // T14.24 Session 96 — absolute speech floor of 5 words. See the
+    // matching rationale in `language-cortex.js _gradeWordCap`. Unity
+    // is never silenced by the formal curriculum progression; the floor
+    // stays at 5 until formal caps rise above it (G4+).
+    const FLOOR = Curriculum.PRE_K_FALLBACK_CAP;
     if (gradeOrGrades && typeof gradeOrGrades === 'object') {
-      // Min cap across subjects that have advanced past pre-K. See
-      // LanguageCortex._gradeWordCap for the full rationale — pre-K
-      // subjects don't count until real teaching lands for them in
-      // Sessions 2+. If every subject is still pre-K, returns 0.
       let minCap = Infinity;
       let anyStarted = false;
       for (const s of SUBJECTS) {
@@ -11107,10 +11149,10 @@ export class Curriculum {
         if (c < minCap) minCap = c;
         anyStarted = true;
       }
-      if (!anyStarted) return 0;
-      return minCap === Infinity ? 0 : minCap;
+      const formal = !anyStarted || minCap === Infinity ? 0 : minCap;
+      return Math.max(FLOOR, formal);
     }
-    return Curriculum._singleGradeCap(gradeOrGrades);
+    return Math.max(FLOOR, Curriculum._singleGradeCap(gradeOrGrades));
   }
 
   static _singleGradeCap(grade) {
