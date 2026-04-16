@@ -11662,7 +11662,28 @@ export class Curriculum {
       { literal: 'the wind was loud', figurative: 'the wind howled', device: 'personification' },
     ];
     await this._teachFigurativeLanguage(FIG_PAIRS);
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ═══════════════════════════════════════════════════════════════
+    // ELA G9 FINAL EXAM
+    // ════════��══════════════════════════════════════════════════════
+    const FINAL = [
+      { prompt: ['life', 'is', 'a', 'journey', 'device'], answer: 'metaphor' },
+      { prompt: ['brave', 'as', 'a', 'lion', 'device'], answer: 'simile' },
+      { prompt: ['wind', 'howled', 'device'], answer: 'personification' },
+      { prompt: ['could', 'eat', 'a', 'horse', 'device'], answer: 'hyperbole' },
+      { prompt: ['peter', 'piper', 'picked', 'device'], answer: 'alliteration' },
+      { prompt: ['buzz', 'hiss', 'crack', 'device'], answer: 'onomatopoeia' },
+      { prompt: ['dove', 'symbolizes'], answer: 'peace' },
+      { prompt: ['foreshadowing', 'hints', 'at'], answer: 'future' },
+      { prompt: ['imagery', 'appeals', 'to'], answer: 'senses' },
+    ];
+    const finalResult = this._gateComprehension(FINAL);
+    if (finalResult.pass) return { pass: true, reason: `FINAL: ${finalResult.reason}` };
+    return this._teachVocabList([
+      'metaphor', 'simile', 'personification', 'hyperbole', 'alliteration',
+      'onomatopoeia', 'symbolism', 'irony', 'foreshadowing', 'imagery',
+    ], ctx, { reps: 3 });
   }
 
   async runElaG10Real(ctx) {
@@ -11715,7 +11736,28 @@ export class Curriculum {
     ];
     await this._teachRhetoricalDevices(DEVICES);
     await this._teachArgumentStructure(ARGS);
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ═══════════════════════════════════════════════════════════════
+    // ELA G10 FINAL EXAM
+    // ══════════════════════════════════��════════════════════════════
+    const FINAL = [
+      { prompt: ['ethos', 'appeals', 'to'], answer: 'credibility' },
+      { prompt: ['pathos', 'appeals', 'to'], answer: 'emotion' },
+      { prompt: ['logos', 'appeals', 'to'], answer: 'logic' },
+      { prompt: ['claim', 'is', 'the', 'main'], answer: 'argument' },
+      { prompt: ['evidence', 'supports', 'the'], answer: 'claim' },
+      { prompt: ['ad', 'hominem', 'attacks', 'the'], answer: 'person' },
+      { prompt: ['straw', 'man', 'misrepresents'], answer: 'opposition' },
+      { prompt: ['anaphora', 'repeats', 'the', 'beginning'], answer: 'phrase' },
+      { prompt: ['reading', 'makes', 'you', 'smarter', 'because'], answer: 'vocabulary' },
+    ];
+    const finalResult = this._gateComprehension(FINAL);
+    if (finalResult.pass) return { pass: true, reason: `FINAL: ${finalResult.reason}` };
+    return this._teachVocabList([
+      'ethos', 'pathos', 'logos', 'claim', 'evidence', 'warrant',
+      'rebuttal', 'fallacy', 'anaphora', 'antithesis',
+    ], ctx, { reps: 3 });
   }
 
   async runMathG9Real(ctx) {
