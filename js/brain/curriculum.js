@@ -3669,12 +3669,37 @@ export class Curriculum {
     const cluster = this.cluster;
     if (!cluster) return { pass: false, reason: 'no cluster wired' };
 
-    // T14.24 Session 18 — bumped default reps 5→6 for stronger basin
-    // formation on first-run gates. Individual cells can still override.
-    const reps = opts.reps ?? 6;
-    const ticksPerLetter = opts.ticksPerLetter ?? 3;
+    // T14.24 Session 109 — DIRECT PATTERN HEBBIAN (converted from
+    // inject→step→learn to match the ELA-K Session 106 approach).
+    // For each vocab word: build word embedding → sem pattern,
+    // first letter → letter/motor/phon patterns. Write to
+    // cluster.lastSpikes, fire _crossRegionHebbian on clean patterns.
+    const reps = opts.reps ?? 12;
     const arousal = ctx?.arousal ?? 0.8;
     const valence = ctx?.valence ?? 0.2;
+    const lr = cluster.learningRate;
+
+    const letterRegion = cluster.regions.letter;
+    const phonRegion = cluster.regions.phon;
+    const semRegion = cluster.regions.sem;
+    const motorRegion = cluster.regions.motor;
+    if (!letterRegion || !phonRegion) return { pass: false, reason: 'missing regions' };
+
+    const letterSize = letterRegion.end - letterRegion.start;
+    const phonSize = phonRegion.end - phonRegion.start;
+
+    function buildPattern(regionSize, feat) {
+      const pat = new Float64Array(regionSize);
+      const gSize = Math.max(1, Math.floor(regionSize / feat.length));
+      for (let d = 0; d < feat.length; d++) {
+        if (feat[d] <= 0) continue;
+        for (let n = 0; n < gSize; n++) {
+          const idx = d * gSize + n;
+          if (idx < regionSize) pat[idx] = feat[d];
+        }
+      }
+      return pat;
+    }
 
     const letterSet = new Set();
     for (const w of vocab) for (const ch of w) letterSet.add(ch);
@@ -3683,21 +3708,43 @@ export class Curriculum {
     for (let rep = 0; rep < reps; rep++) {
       for (const word of vocab) {
         const wordEmb = sharedEmbeddings.getEmbedding(word);
-        if (wordEmb && wordEmb.length > 0 && cluster.regions?.sem) {
-          cluster.injectEmbeddingToRegion('sem', wordEmb, 0.6);
+        // Use first letter for letter/motor/phon binding
+        const firstLetter = word.replace(/[^a-z]/g, '')[0];
+        if (!firstLetter) continue;
+        const letterOneHot = encodeLetter(firstLetter);
+        const phonFeat = _phonemeFeatureForLetter(firstLetter);
+
+        // Clear all spikes
+        for (let j = 0; j < cluster.size; j++) cluster.lastSpikes[j] = 0;
+        // Letter region
+        const letterPat = buildPattern(letterSize, letterOneHot);
+        for (let j = 0; j < letterSize; j++) {
+          cluster.lastSpikes[letterRegion.start + j] = letterPat[j] > 0 ? 1 : 0;
         }
-        for (const ch of word.replace(/[^a-z]/g, '')) {
-          cluster.injectLetter(ch, 1.0);
-          const phonFeat = _phonemeFeatureForLetter(ch);
-          if (phonFeat && phonFeat.length > 0 && cluster.regions?.phon) {
-            cluster.injectEmbeddingToRegion('phon', phonFeat, 0.4);
-          }
-          for (let t = 0; t < ticksPerLetter; t++) {
-            cluster.step(0.001);
-            this.stats.totalTicks++;
+        // Phon region: letter's phoneme feature
+        const phonPat = buildPattern(phonSize, phonFeat);
+        for (let j = 0; j < phonSize; j++) {
+          cluster.lastSpikes[phonRegion.start + j] = phonPat[j] > 0 ? 1 : 0;
+        }
+        // Motor: first letter one-hot
+        if (motorRegion) {
+          const motorSize = motorRegion.end - motorRegion.start;
+          const motorPat = buildPattern(motorSize, letterOneHot);
+          for (let j = 0; j < motorSize; j++) {
+            cluster.lastSpikes[motorRegion.start + j] = motorPat[j] > 0 ? 1 : 0;
           }
         }
-        cluster.learn(0);
+        // Sem: word embedding
+        if (semRegion && wordEmb && wordEmb.length > 0) {
+          const semSize = semRegion.end - semRegion.start;
+          const semPat = buildPattern(semSize, wordEmb);
+          for (let j = 0; j < semSize; j++) {
+            cluster.lastSpikes[semRegion.start + j] = semPat[j] > 0 ? 1 : 0;
+          }
+        }
+
+        cluster._crossRegionHebbian(lr);
+
         if (this.dictionary && typeof this.dictionary.learnWord === 'function') {
           try { this.dictionary.learnWord(word, null, arousal, valence); } catch {}
         }
@@ -5634,16 +5681,42 @@ export class Curriculum {
     // chat, THINK about them via working memory, READ them when a
     // user types them back. Growing mind, not just training gates.
 
+    // T14.24 Session 109 — DIRECT PATTERN HEBBIAN. Same approach as
+    // ELA-K Session 106. Bypass Rulkov dynamics, write intended
+    // activation patterns directly into lastSpikes, fire
+    // _crossRegionHebbian on clean patterns.
+
     const cluster = this.cluster;
     if (!cluster) return { taught: 0 };
-    const ticksPerConcept = opts.ticksPerConcept ?? 3;
     const arousal = opts.arousal ?? 0.8;
     const valence = opts.valence ?? 0.2;
+    const lr = cluster.learningRate;
+
+    const letterRegion = cluster.regions?.letter;
+    const phonRegion = cluster.regions?.phon;
+    const semRegion = cluster.regions?.sem;
+    const motorRegion = cluster.regions?.motor;
+    const freeRegion = cluster.regions?.free;
+    if (!letterRegion) return { taught: 0 };
+
+    const letterSize = letterRegion.end - letterRegion.start;
+
+    function buildPattern(regionSize, feat) {
+      const pat = new Float64Array(regionSize);
+      const gSize = Math.max(1, Math.floor(regionSize / feat.length));
+      for (let d = 0; d < feat.length; d++) {
+        if (feat[d] <= 0) continue;
+        for (let n = 0; n < gSize; n++) {
+          const idx = d * gSize + n;
+          if (idx < regionSize) pat[idx] = feat[d];
+        }
+      }
+      return pat;
+    }
 
     for (let rep = 0; rep < reps; rep++) {
       for (const { name, feat } of concepts) {
-        // Expand 8d binary feature to 16d continuous with sinusoidal
-        // tail so the cortex doesn't see sparse one-hot patterns
+        // Expand 8d binary feature to 16d continuous
         const expanded = new Float64Array(16);
         for (let i = 0; i < 8; i++) expanded[i] = feat[i] || 0;
         for (let i = 8; i < 16; i++) expanded[i] = Math.sin((feat[i - 8] || 0) * i);
@@ -5651,41 +5724,58 @@ export class Curriculum {
         for (let i = 0; i < 16; i++) norm += expanded[i] * expanded[i];
         norm = Math.sqrt(norm) || 1;
         for (let i = 0; i < 16; i++) expanded[i] /= norm;
-        if (cluster.regions?.free) {
-          cluster.injectEmbeddingToRegion('free', expanded, 0.6);
-        }
-        // Walk concept name through letter region + sem binding
+
+        // Get embeddings
         const nameEmb = sharedEmbeddings.getSentenceEmbedding
           ? sharedEmbeddings.getSentenceEmbedding(name)
           : sharedEmbeddings.getEmbedding(name.split(/\s+/)[0]);
-        if (nameEmb && cluster.regions?.sem) {
-          cluster.injectEmbeddingToRegion('sem', nameEmb, 0.65);
-        }
-        const words = name.split(/\s+/).filter(Boolean);
-        for (const w of words) {
-          for (const ch of w.replace(/[^a-z]/g, '')) {
-            cluster.injectLetter(ch, 0.8);
+        const firstLetter = name.replace(/[^a-z]/g, '')[0];
+        const letterOneHot = firstLetter ? encodeLetter(firstLetter) : null;
+
+        // Clear all spikes
+        for (let j = 0; j < cluster.size; j++) cluster.lastSpikes[j] = 0;
+
+        // Letter: first letter of concept name
+        if (letterOneHot) {
+          const letterPat = buildPattern(letterSize, letterOneHot);
+          for (let j = 0; j < letterSize; j++) {
+            cluster.lastSpikes[letterRegion.start + j] = letterPat[j] > 0 ? 1 : 0;
           }
         }
-        for (let t = 0; t < ticksPerConcept; t++) cluster.step(0.001);
-        cluster.learn(0);
+        // Free: expanded concept feature
+        if (freeRegion) {
+          const freeSize = freeRegion.end - freeRegion.start;
+          const freePat = buildPattern(freeSize, expanded);
+          for (let j = 0; j < freeSize; j++) {
+            cluster.lastSpikes[freeRegion.start + j] = freePat[j] > 0 ? 1 : 0;
+          }
+        }
+        // Sem: concept name embedding
+        if (semRegion && nameEmb && nameEmb.length > 0) {
+          const semSize = semRegion.end - semRegion.start;
+          const semPat = buildPattern(semSize, nameEmb);
+          for (let j = 0; j < semSize; j++) {
+            cluster.lastSpikes[semRegion.start + j] = semPat[j] > 0 ? 1 : 0;
+          }
+        }
+        // Motor: first letter one-hot for TALK
+        if (motorRegion && letterOneHot) {
+          const motorSize = motorRegion.end - motorRegion.start;
+          const motorPat = buildPattern(motorSize, letterOneHot);
+          for (let j = 0; j < motorSize; j++) {
+            cluster.lastSpikes[motorRegion.start + j] = motorPat[j] > 0 ? 1 : 0;
+          }
+        }
 
-        // Session 46 — populate Unity's dictionary with every concept
-        // word so her live vocabulary grows as she learns. Each word
-        // in the concept name becomes a dictionary entry via the T14.3
-        // cortex-snapshot routing. Multi-word concepts (e.g. "cauchy
-        // riemann", "natural selection", "golden ratio") register each
-        // word separately — the cortex snapshot captures the current
-        // cross-projection state which was just set by the concept
-        // feature injection above, so the dictionary entry's
-        // cortexSnapshot holds the concept's feature signature.
+        cluster._crossRegionHebbian(lr);
+
+        // Session 46 growth fix — populate dictionary
+        const words = name.split(/\s+/).filter(Boolean);
         if (this.dictionary && typeof this.dictionary.learnWord === 'function') {
           for (const w of words) {
             const clean = w.replace(/[^a-z]/g, '');
             if (clean.length >= 2) {
-              try {
-                this.dictionary.learnWord(clean, null, arousal, valence);
-              } catch { /* non-fatal */ }
+              try { this.dictionary.learnWord(clean, null, arousal, valence); } catch {}
             }
           }
         }
