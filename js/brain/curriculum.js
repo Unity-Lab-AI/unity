@@ -11147,19 +11147,40 @@ export class Curriculum {
     }
 
     console.log('[Curriculum] runCompleteCurriculum: GPU ready, walking all 5 subjects K→PhD');
-    // T14.24 Session 102 — boost Hebbian learning rate 5× during the
-    // curriculum teach pass. Default cluster.learningRate is 0.002
-    // which produces ~0.016 total weight shift per basin over 8 reps.
-    // On random initial weights [-0.5, +0.5] that's a 1.6% perturbation
-    // — not enough for cross-projection basins to form at K level.
-    // Bump to 0.01 for the duration of the curriculum pass so the
-    // letter→phon, letter→motor, sem→motor projections converge in
-    // a single teach cycle. Restored after so live-chat learning
-    // stays at the 0.002 default (further capped to 0.0001 by Lock 2).
+    // T14.24 Session 102+104 — boost Hebbian + suppress cortex noise
+    // during curriculum teach.
+    //
+    // Session 102: lr boosted from 0.002 to 0.01 (5×). Necessary but
+    // not sufficient — the signal was still buried in noise.
+    //
+    // Session 104: Hebbian fires every tick (4× more updates per item).
+    // Still not enough — scores plateaued at 31% and started DROPPING
+    // by attempt 5 because noise-dominated Hebbian overwrote earlier
+    // basins (catastrophic interference from noise).
+    //
+    // Session 105: the REAL fix. The cortex's noiseAmplitude is 7 —
+    // a LIVE BRAIN setting for generating chaotic dynamics during
+    // thinking. The injection strength is 8 (emb × 8 × 1.0). SNR =
+    // 8/7 = 1.1 — TERRIBLE. The injection barely exceeds the noise.
+    // Half the target neurons don't spike because noise pushes them
+    // below threshold. Hebbian fires on whatever random neurons
+    // happened to spike from noise, not on the injected signal.
+    //
+    // A real brain suppresses noise during focused learning — that's
+    // what attentional gating does. During curriculum teach, drop
+    // noise to near-zero so the injection COMPLETELY dominates the
+    // spike pattern. Every neuron in the target group WILL spike.
+    // Every Hebbian update captures clean signal, not chaos.
+    // SNR = 8 / 0.5 = 16 — injection wins by 16×.
+    //
+    // Restored to 7 after teach so live-chat dynamics stay chaotic.
     const savedLR = this.cluster.learningRate;
+    const savedNoise = this.cluster.noiseAmplitude;
     this.cluster.learningRate = 0.01;
+    this.cluster.noiseAmplitude = 0.5;
     const result = await this.runAllSubjects(corpora, opts);
     this.cluster.learningRate = savedLR;
+    this.cluster.noiseAmplitude = savedNoise;
     // Also run the legacy T14.17 identity-lock calibration at the end
     // so intent centroids + persona dimensions are populated regardless
     // of which cells passed.
