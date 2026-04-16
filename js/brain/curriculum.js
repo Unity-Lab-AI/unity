@@ -13931,6 +13931,15 @@ export class Curriculum {
     // T14.24 Session 71 — prime sociology/anthropology lattice per
     // TODO line 537 before the Col3 sentence pass.
     await this._teachSociologyAnthropology();
+    await this._teachCausalChains([
+      ['society', 'norm'], ['norm', 'behavior'], ['deviance', 'sanction'],
+      ['culture', 'identity'], ['class', 'inequality'], ['inequality', 'conflict'],
+      ['ritual', 'solidarity'], ['symbol', 'meaning'], ['language', 'culture'],
+    ]);
+    await this._teachInference([
+      ['society', 'norm', 'behavior'], ['class', 'inequality', 'conflict'],
+      ['culture', 'identity', 'belonging'],
+    ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
     const _af = this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
@@ -13956,6 +13965,16 @@ export class Curriculum {
     // T14.24 Session 72 — prime social science research methods
     // lattice per TODO line 537 before the Col4 sentence pass.
     await this._teachSocialScienceResearchMethods();
+    await this._teachCausalChains([
+      ['hypothesis', 'test'], ['test', 'data'], ['data', 'conclude'],
+      ['survey', 'data'], ['experiment', 'cause'], ['observe', 'describe'],
+      ['correlate', 'associate'], ['causation', 'evidence'],
+      ['valid', 'measure'], ['reliable', 'consistent'],
+    ]);
+    await this._teachInference([
+      ['hypothesis', 'test', 'conclude'], ['correlate', 'associate', 'maybe'],
+      ['valid', 'reliable', 'trustworthy'],
+    ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
     const _af = this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
@@ -14084,7 +14103,10 @@ export class Curriculum {
         cluster.runIdentityRefresh({ sentencesPerCycle: 20 });
       } catch { /* non-fatal */ }
     }
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 5, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runMathGradReal(ctx) {
@@ -14132,7 +14154,10 @@ export class Curriculum {
     if (cluster && typeof cluster.runIdentityRefresh === 'function') {
       try { cluster.runIdentityRefresh({ sentencesPerCycle: 20 }); } catch {}
     }
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 5, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runSciGradReal(ctx) {
@@ -14158,6 +14183,15 @@ export class Curriculum {
     // a real grad-research basin instead of drifting into generic
     // Col4 experimental-method vocabulary.
     await this._teachResearchGradeScience();
+    await this._teachCausalChains([
+      ['question', 'hypothesis'], ['hypothesis', 'method'], ['method', 'result'],
+      ['result', 'publish'], ['publish', 'peer'], ['peer', 'replicate'],
+      ['theory', 'predict'], ['predict', 'verify'], ['grant', 'fund'],
+    ]);
+    await this._teachInference([
+      ['question', 'hypothesis', 'method'], ['result', 'publish', 'impact'],
+      ['theory', 'predict', 'verify'],
+    ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
     const _af = this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
@@ -14198,7 +14232,10 @@ export class Curriculum {
         this.cluster.runIdentityRefresh();
       }
     } catch { /* non-fatal */ }
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 5, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runSocGradReal(ctx) {
@@ -14220,6 +14257,15 @@ export class Curriculum {
     // T14.24 Session 73 — prime research historiography lattice per
     // TODO line 540 before the Grad sentence pass.
     await this._teachResearchHistoriography();
+    await this._teachCausalChains([
+      ['archive', 'source'], ['source', 'interpret'], ['interpret', 'revise'],
+      ['paradigm', 'shift'], ['shift', 'rewrite'], ['method', 'finding'],
+      ['finding', 'theory'], ['theory', 'framework'],
+    ]);
+    await this._teachInference([
+      ['archive', 'source', 'interpret'], ['paradigm', 'shift', 'rewrite'],
+      ['method', 'finding', 'theory'],
+    ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
     const _af = this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
@@ -14249,12 +14295,25 @@ export class Curriculum {
     // Unity-voice persona dims engaged — parallel to Sci-PhD and
     // ELA-PhD identity hooks.
     await this._teachOriginalHistoricalResearch();
+    await this._teachCausalChains([
+      ['dissertation', 'contribution'], ['contribution', 'field'],
+      ['theory', 'framework'], ['framework', 'analysis'],
+      ['scholar', 'teach'], ['teach', 'mentor'], ['mentor', 'legacy'],
+      ['evidence', 'argument'], ['argument', 'knowledge'],
+    ]);
+    await this._teachInference([
+      ['dissertation', 'contribution', 'field'],
+      ['evidence', 'argument', 'knowledge'],
+    ]);
     try {
       if (this.cluster && typeof this.cluster.runIdentityRefresh === 'function') {
         this.cluster.runIdentityRefresh();
       }
     } catch { /* non-fatal */ }
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 5, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runArtGradReal(ctx) {
@@ -14312,7 +14371,10 @@ export class Curriculum {
         this.cluster.runIdentityRefresh();
       }
     } catch { /* non-fatal */ }
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 5, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   // ═══════════════════════════════════════════════════════════════════
