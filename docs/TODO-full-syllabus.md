@@ -3963,6 +3963,631 @@
 
 ---
 
-*Grades K through 7 COMPLETE for all 6 subjects. Grades 8-12 + College + Grad + PhD continue in subsequent sessions.*
+---
 
-*Current coverage: 8 out of 19 grades complete. 11 remain.*
+## MATH — GRADE 8 (Common Core Math 8)
+
+### The Number System (8.NS)
+
+**Concepts to teach:**
+- [ ] Know that numbers that are not rational are called irrational: √2, √3, π, e
+- [ ] Rational numbers have decimal expansions that either terminate (0.75) or repeat (0.333...)
+- [ ] Irrational numbers have decimal expansions that neither terminate nor repeat: π = 3.14159265...
+- [ ] Use rational approximations of irrational numbers: √2 ≈ 1.414, π ≈ 3.14
+- [ ] Locate irrational numbers approximately on a number line
+- [ ] Compare the size of irrational numbers: √5 ≈ 2.236 so √5 < 2.5
+
+**Tests for 8.NS:**
+- [ ] "Is √4 rational or irrational?" → rational (√4 = 2)
+- [ ] "Is √2 rational or irrational?" → irrational
+- [ ] "Is π rational or irrational?" → irrational
+- [ ] "Approximate √10 to nearest tenth" → 3.2 (since 3² = 9 and 3.2² = 10.24)
+- [ ] "Is 0.333... rational?" → yes (it equals 1/3)
+- [ ] "Order: √3, 1.5, √2, 2" → √2 ≈ 1.41, 1.5, √3 ≈ 1.73, 2
+
+### Expressions & Equations (8.EE)
+
+**Concepts to teach:**
+- [ ] Know and apply properties of integer exponents:
+  - [ ] x^a × x^b = x^(a+b)
+  - [ ] (x^a)^b = x^(ab)
+  - [ ] x^a ÷ x^b = x^(a-b)
+  - [ ] x^0 = 1 (for x ≠ 0)
+  - [ ] x^(-n) = 1/x^n
+- [ ] Use square root and cube root symbols: √49 = 7, ∛27 = 3
+- [ ] Evaluate square roots of small perfect squares (1,4,9,16,25,36,49,64,81,100,121,144) and cube roots of small perfect cubes (1,8,27,64,125)
+- [ ] Use numbers expressed in scientific notation: 3.2 × 10⁵ = 320,000
+- [ ] Perform operations with numbers in scientific notation
+- [ ] Graph proportional relationships, interpreting unit rate as slope: y = mx → m is the slope
+- [ ] Use similar triangles to explain why slope m is the same between any two distinct points on a non-vertical line
+- [ ] Solve linear equations in one variable:
+  - [ ] Equations with one solution: 3x + 5 = 20 → x = 5
+  - [ ] Equations with infinitely many solutions: 2(x+1) = 2x+2 → true for all x
+  - [ ] Equations with no solutions: x + 1 = x + 3 → no solution
+- [ ] Analyze and solve pairs of simultaneous linear equations (systems):
+  - [ ] Graphically: find intersection point of two lines
+  - [ ] Algebraically by substitution: y = 2x+1, y = -x+7 → 2x+1 = -x+7 → x = 2, y = 5
+  - [ ] Algebraically by elimination: add/subtract equations to eliminate a variable
+
+**Tests for 8.EE:**
+- [ ] "2³ × 2⁴ = ?" → 2⁷ = 128
+- [ ] "5⁰ = ?" → 1
+- [ ] "3⁻² = ?" → 1/9
+- [ ] "√144 = ?" → 12
+- [ ] "∛64 = ?" → 4
+- [ ] "Write 450,000 in scientific notation" → 4.5 × 10⁵
+- [ ] "Solve: 3x + 7 = 22" → x = 5
+- [ ] "Solve system: y = 2x + 1, y = -x + 7" → x = 2, y = 5
+- [ ] "Does x + 5 = x + 3 have a solution?" → no
+
+### Functions (8.F)
+
+**Concepts to teach:**
+- [ ] Understand that a function is a rule that assigns to each input exactly ONE output
+- [ ] Input → function → output; f(x) notation: f(3) means "plug in 3"
+- [ ] Compare properties of two functions each represented differently (table, graph, equation, verbal)
+- [ ] Interpret the equation y = mx + b as defining a linear function:
+  - [ ] m = slope (rate of change) — "rise over run"
+  - [ ] b = y-intercept (where line crosses y-axis)
+  - [ ] Positive slope: line goes up; negative slope: line goes down
+  - [ ] Zero slope: horizontal line; undefined slope: vertical line
+- [ ] Describe qualitatively the functional relationship between two quantities by analyzing a graph (increasing, decreasing, linear, nonlinear)
+- [ ] Give examples of functions that are NOT linear: y = x², y = 2ˣ, y = |x|
+
+**Tests for 8.F:**
+- [ ] "f(x) = 3x + 2. What is f(4)?" → 14
+- [ ] "y = -2x + 5. What is the slope?" → -2
+- [ ] "y = -2x + 5. What is the y-intercept?" → 5
+- [ ] "A horizontal line has what slope?" → 0
+- [ ] "Is y = x² linear?" → no (it's quadratic)
+- [ ] "Is y = 3x linear?" → yes
+- [ ] "A function has each input mapped to how many outputs?" → exactly one
+
+### Geometry (8.G)
+
+**Concepts to teach:**
+- [ ] Transformations:
+  - [ ] Translation: sliding a shape without rotating or flipping
+  - [ ] Rotation: turning a shape around a point by a number of degrees
+  - [ ] Reflection: flipping a shape over a line (mirror image)
+  - [ ] Dilation: enlarging or reducing a shape by a scale factor
+- [ ] Translations, rotations, reflections produce congruent figures (same shape and size)
+- [ ] Dilations produce similar figures (same shape, different size)
+- [ ] Understand and apply the Pythagorean Theorem: a² + b² = c² (where c is the hypotenuse of a right triangle)
+- [ ] Apply Pythagorean Theorem to find unknown side lengths in right triangles
+- [ ] Apply Pythagorean Theorem to find distance between two points in a coordinate system: d = √((x₂-x₁)² + (y₂-y₁)²)
+- [ ] Common Pythagorean triples: (3,4,5), (5,12,13), (8,15,17), (7,24,25)
+- [ ] Know formulas for volumes of cones, cylinders, and spheres:
+  - [ ] Cylinder: V = πr²h
+  - [ ] Cone: V = (1/3)πr²h
+  - [ ] Sphere: V = (4/3)πr³
+
+**Tests for 8.G:**
+- [ ] "a² + b² = c². a=3, b=4, c=?" → 5
+- [ ] "a=5, c=13, b=?" → 12 (13²-5² = 169-25 = 144 = 12²)
+- [ ] "Distance from (0,0) to (3,4)?" → 5 (√(9+16))
+- [ ] "Volume of cylinder: r=3, h=10?" → π(9)(10) = 90π ≈ 282.7
+- [ ] "Volume of cone: r=3, h=10?" → (1/3)(90π) = 30π ≈ 94.2
+- [ ] "Volume of sphere: r=3?" → (4/3)π(27) = 36π ≈ 113.1
+- [ ] "A shape is flipped over a line. What transformation?" → reflection
+- [ ] "A shape is made bigger. What transformation?" → dilation
+
+### Statistics & Probability (8.SP)
+
+**Concepts to teach:**
+- [ ] Construct and interpret scatter plots for bivariate measurement data
+- [ ] For scatter plots that suggest a linear association:
+  - [ ] Informally fit a straight line (line of best fit / trend line)
+  - [ ] Informally assess the model fit by judging the closeness of data points to the line
+- [ ] Use the equation of a linear model to solve problems:
+  - [ ] Interpret slope: "for every 1 unit increase in x, y increases by m"
+  - [ ] Interpret y-intercept: "when x = 0, y = b"
+- [ ] Describe patterns of association in bivariate data:
+  - [ ] Positive association: as one variable increases, the other tends to increase
+  - [ ] Negative association: as one increases, the other tends to decrease
+  - [ ] No association: no clear pattern
+  - [ ] Linear vs nonlinear association
+  - [ ] Clustering: data grouped together
+  - [ ] Outliers: data points far from the pattern
+
+**Tests for 8.SP:**
+- [ ] "Height increases as age increases. Is this positive or negative association?" → positive
+- [ ] "More TV watching, lower test scores. Positive or negative?" → negative
+- [ ] "What is an outlier?" → a data point far from the overall pattern
+- [ ] "Trend line: y = 2x + 10. If x = 5, predicted y?" → 20
+- [ ] "In y = 2x + 10, what does 2 mean?" → for every 1 unit increase in x, y increases by 2
+
+---
+
+## ELA — GRADE 8 (Common Core ELA 8)
+
+### Reading Literature (8.RL)
+
+**Concepts to teach:**
+- [ ] Cite the textual evidence that MOST STRONGLY supports analysis — not just any evidence, the BEST evidence
+- [ ] Determine a theme or central idea; analyze its development including relationship to characters, setting, and plot; provide objective summary
+- [ ] Analyze how particular lines of dialogue or incidents propel the action, reveal aspects of a character, or provoke a decision
+- [ ] Determine the meaning of words and phrases including figurative and connotative; analyze the impact of specific word choices including analogies or allusions to other texts
+- [ ] Compare and contrast the structure of two or more texts; analyze how the differing structure of each text contributes to its meaning and style
+- [ ] Analyze how differences in the points of view of the characters and the audience or reader create effects such as suspense or humor
+- [ ] Analyze the extent to which a filmed or live production of a story stays faithful to or departs from the text, evaluating choices made by the director or actors
+- [ ] Analyze how a modern work of fiction draws on themes, patterns of events, or character types from myths, traditional stories, or religious works, including describing how the material is rendered new
+
+**Advanced literary analysis concepts:**
+- [ ] Author's purpose: to inform, persuade, entertain, or express
+- [ ] Author's craft: the specific techniques an author uses (word choice, sentence structure, imagery, figurative language, pacing, structure)
+- [ ] Subtext: what's implied but not directly stated
+- [ ] Foil character: a character who contrasts with another to highlight qualities
+- [ ] Static vs dynamic character: static doesn't change; dynamic undergoes significant change
+- [ ] Round vs flat character: round is complex with many traits; flat has one or two traits
+- [ ] Tragedy: story where the protagonist faces downfall due to a fatal flaw (hubris, jealousy)
+- [ ] Comedy: story with a happy ending, often involving misunderstandings resolved
+- [ ] Anti-hero: protagonist who lacks traditional heroic qualities
+
+**Tests for 8.RL:**
+- [ ] "What is subtext?" → what's implied but not directly stated
+- [ ] "What is a foil character?" → a character who contrasts with another to highlight their qualities
+- [ ] "What is a static character?" → one who doesn't change throughout the story
+- [ ] "What is a dynamic character?" → one who undergoes significant change
+- [ ] "What is an anti-hero?" → protagonist who lacks traditional heroic qualities
+- [ ] "What is a tragedy in literature?" → protagonist faces downfall due to a fatal flaw
+- [ ] "Cite the STRONGEST evidence for: 'The character is afraid'" → (selects the most direct quote)
+
+### Writing (8.W)
+
+**Concepts to teach:**
+- [ ] Write arguments to support claims with clear reasons and relevant evidence:
+  - [ ] Introduce precise claim(s), distinguish the claim from alternate or opposing claims
+  - [ ] Support claim(s) with logical reasoning and relevant evidence, demonstrating understanding of the topic
+  - [ ] Acknowledge and distinguish the claim from alternate or opposing claims
+  - [ ] Use words, phrases, and clauses to create cohesion between claims, counterclaims, reasons, evidence
+  - [ ] Establish and maintain formal style
+  - [ ] Provide concluding statement that supports the argument
+- [ ] Write informative/explanatory texts with effective selection, organization, and analysis of content
+- [ ] Write narratives to develop real or imagined experiences using effective technique, relevant descriptive details, and well-structured event sequences
+- [ ] Use technology to produce, publish, and update writing products; present relationships between information efficiently (multimedia)
+- [ ] Conduct short research projects as well as more sustained research projects
+- [ ] Gather relevant information from multiple authoritative sources; assess the credibility and accuracy of each source; integrate information while avoiding plagiarism
+- [ ] Draw evidence from literary or informational texts to support analysis
+
+**Tests for 8.W:**
+- [ ] Write a full argumentative essay with claim, 2+ counterclaims addressed, evidence from sources, formal style
+- [ ] Write a literary analysis essay analyzing how a character develops through specific events
+- [ ] Write a research paper with proper citations, paraphrasing, and a works cited page
+- [ ] Create a multimedia presentation combining text, images, and data
+
+### Language (8.L)
+
+**Concepts to teach:**
+- [ ] Recognize and correct inappropriate shifts in verb voice (active vs passive) and mood (indicative, imperative, subjunctive)
+  - [ ] Active voice: "The dog bit the man" (subject does the action)
+  - [ ] Passive voice: "The man was bitten by the dog" (subject receives the action)
+  - [ ] Subjunctive mood: "If I were you..." (hypothetical/contrary to fact)
+- [ ] Form and use verbs in the active and passive voice
+- [ ] Form and use verbs in the indicative, imperative, interrogative, conditional, and subjunctive mood
+- [ ] Use punctuation (comma, ellipsis, dash) to indicate a pause or break
+- [ ] Use an ellipsis to indicate an omission
+- [ ] Spell correctly
+- [ ] Use context to determine meaning; use Greek/Latin affixes and roots; use reference materials
+- [ ] Interpret figures of speech in context: verbal irony, puns, allusions
+- [ ] Use the relationship between particular words to better understand each: denotation vs connotation
+- [ ] Distinguish among connotations: stingy/thrifty/economical, childish/youthful/immature
+
+**Tests for 8.L:**
+- [ ] "Change to active voice: 'The ball was thrown by the boy'" → "The boy threw the ball"
+- [ ] "Subjunctive: 'If I (was/were) president...'" → were
+- [ ] "What is a pun?" → a play on words with double meanings
+- [ ] "What is verbal irony?" → saying the opposite of what you mean
+- [ ] "Connotation: 'cheap' vs 'affordable'" → cheap is negative, affordable is positive
+- [ ] "Use an ellipsis to show omission: 'He said he would be there... but he never came'"
+
+---
+
+## SCIENCE — GRADE 8 (NGSS Middle School — Physical Science focus)
+
+### Matter and Its Interactions (MS-PS1)
+
+**Concepts to teach:**
+- [ ] All matter is made of atoms — atoms are the basic building blocks of all matter
+- [ ] Elements: pure substances made of one type of atom — organized in the Periodic Table
+- [ ] Atoms have: protons (positive, in nucleus), neutrons (neutral, in nucleus), electrons (negative, orbiting nucleus)
+- [ ] Atomic number = number of protons = number of electrons (in a neutral atom) — defines the element
+- [ ] Mass number = protons + neutrons
+- [ ] Periodic Table organization: rows = periods, columns = groups/families
+  - [ ] Elements in the same group have similar chemical properties
+  - [ ] Groups: alkali metals (Group 1), alkaline earth (Group 2), halogens (Group 17), noble gases (Group 18)
+  - [ ] Metals (left side): conduct electricity, malleable, ductile, shiny
+  - [ ] Nonmetals (right side): poor conductors, brittle, dull
+  - [ ] Metalloids (staircase line): properties of both
+- [ ] Chemical bonds: atoms combine to form molecules/compounds
+  - [ ] Ionic bonds: one atom gives electrons to another (metal + nonmetal) — NaCl (table salt)
+  - [ ] Covalent bonds: atoms share electrons (nonmetal + nonmetal) — H₂O (water)
+  - [ ] Metallic bonds: electrons shared among many metal atoms — explains conductivity
+- [ ] Chemical reactions: bonds break and new bonds form → new substances
+  - [ ] Reactants → Products
+  - [ ] Conservation of mass: total mass of reactants = total mass of products
+  - [ ] Balanced equations: same number of each atom on both sides
+  - [ ] Types: synthesis (A+B→AB), decomposition (AB→A+B), single replacement (A+BC→AC+B), double replacement (AB+CD→AD+CB), combustion (fuel+O₂→CO₂+H₂O)
+- [ ] Endothermic reactions: absorb energy (cold pack)
+- [ ] Exothermic reactions: release energy (combustion, hand warmer)
+
+**Tests for MS-PS1:**
+- [ ] "What are the 3 parts of an atom?" → protons, neutrons, electrons
+- [ ] "What defines an element?" → the number of protons (atomic number)
+- [ ] "What is an ionic bond?" → one atom gives electrons to another
+- [ ] "What is a covalent bond?" → atoms share electrons
+- [ ] "In a chemical reaction, is mass created or destroyed?" → neither — it's conserved
+- [ ] "What is an exothermic reaction?" → one that releases energy (heat)
+- [ ] "Balance: H₂ + O₂ → H₂O" → 2H₂ + O₂ → 2H₂O
+- [ ] "What group are the noble gases?" → Group 18
+- [ ] "Are metals on the left or right of the periodic table?" → left
+
+### Forces and Interactions (MS-PS2)
+
+**Concepts to teach:**
+- [ ] Newton's Three Laws of Motion:
+  - [ ] First Law (Inertia): An object at rest stays at rest; an object in motion stays in motion at constant velocity — UNLESS acted on by an unbalanced force
+  - [ ] Second Law: F = ma (Force = mass × acceleration) — more force = more acceleration; more mass = less acceleration for same force
+  - [ ] Third Law: For every action, there is an equal and opposite reaction — you push the wall, the wall pushes you back
+- [ ] Gravity: force of attraction between all objects with mass
+  - [ ] More mass = stronger gravitational pull
+  - [ ] More distance = weaker gravitational pull
+  - [ ] On Earth: g ≈ 9.8 m/s² (objects accelerate at this rate when falling)
+  - [ ] Weight = mass × gravity (W = mg)
+- [ ] Friction: force that opposes motion between surfaces in contact
+  - [ ] Static friction: prevents an object from starting to move
+  - [ ] Kinetic friction: acts on a moving object
+  - [ ] Friction depends on: surface type and normal force
+- [ ] Electric and magnetic forces:
+  - [ ] Electric force between charged objects: like charges repel, opposite charges attract
+  - [ ] Magnetic force: magnets have north and south poles — like poles repel, opposite attract
+  - [ ] Electromagnetic force: electricity and magnetism are related — moving charges create magnetic fields
+- [ ] Net force: the sum of all forces on an object
+  - [ ] Balanced forces: net force = 0, no change in motion
+  - [ ] Unbalanced forces: net force ≠ 0, object accelerates
+
+**Tests for MS-PS2:**
+- [ ] "State Newton's First Law" → object at rest stays at rest, object in motion stays in motion unless acted on by unbalanced force
+- [ ] "F = ma. F = 10N, m = 2kg. a = ?" → 5 m/s²
+- [ ] "What is Newton's Third Law?" → every action has an equal and opposite reaction
+- [ ] "What is the force of gravity on a 5kg object on Earth?" → W = 5 × 9.8 = 49 N
+- [ ] "Like charges ___" → repel
+- [ ] "Opposite charges ___" → attract
+- [ ] "If all forces on an object are balanced, what happens?" → no change in motion
+
+### Energy (MS-PS3)
+
+**Concepts to teach:**
+- [ ] Kinetic energy: energy of motion — KE = ½mv²
+  - [ ] More mass = more KE; more speed = MUCH more KE (speed is squared)
+- [ ] Potential energy: stored energy
+  - [ ] Gravitational PE: PE = mgh (mass × gravity × height) — higher = more PE
+  - [ ] Elastic PE: stored in stretched/compressed objects (springs, rubber bands)
+  - [ ] Chemical PE: stored in bonds of molecules (food, fuel, batteries)
+- [ ] Law of Conservation of Energy: energy cannot be created or destroyed, only transformed
+- [ ] Energy transformations: PE → KE (falling ball), chemical → thermal (burning), electrical → light (light bulb), KE → thermal (friction/braking)
+- [ ] Temperature: measure of average kinetic energy of particles in a substance
+- [ ] Heat transfer:
+  - [ ] Conduction: heat through direct contact (touching a hot pan) — particles collide and transfer energy
+  - [ ] Convection: heat through movement of fluids (air/water) — warm fluid rises, cool fluid sinks
+  - [ ] Radiation: heat through electromagnetic waves (sun's warmth) — doesn't need matter
+
+**Tests for MS-PS3:**
+- [ ] "KE = ½mv². m=4kg, v=3m/s. KE = ?" → ½(4)(9) = 18 J
+- [ ] "PE = mgh. m=2kg, g=10, h=5m. PE = ?" → 100 J
+- [ ] "Can energy be created?" → no (conservation of energy)
+- [ ] "A ball falls from a shelf — what energy transformation?" → PE → KE
+- [ ] "What is conduction?" → heat transfer through direct contact
+- [ ] "What is convection?" → heat transfer through fluid movement
+- [ ] "What is radiation?" → heat transfer through electromagnetic waves
+
+### Waves and Electromagnetic Radiation (MS-PS4)
+
+**Concepts to teach:**
+- [ ] A wave is a disturbance that transfers energy without transferring matter
+- [ ] Mechanical waves: need a medium (sound, water waves, seismic waves)
+- [ ] Electromagnetic waves: do NOT need a medium (light, radio, X-rays)
+- [ ] Wave properties:
+  - [ ] Wavelength (λ): distance from crest to crest
+  - [ ] Frequency (f): number of waves per second (measured in Hertz, Hz)
+  - [ ] Amplitude: height from rest position to crest — relates to energy
+  - [ ] Speed: v = λ × f (speed = wavelength × frequency)
+- [ ] The electromagnetic spectrum (from longest wavelength to shortest):
+  - [ ] Radio waves → Microwaves → Infrared → Visible light → Ultraviolet → X-rays → Gamma rays
+  - [ ] Visible light: red, orange, yellow, green, blue, indigo, violet (ROY G BIV)
+  - [ ] All EM waves travel at the speed of light: c ≈ 3 × 10⁸ m/s
+- [ ] Light behavior:
+  - [ ] Reflection: light bounces off a surface (mirror)
+  - [ ] Refraction: light bends when passing from one medium to another (straw in water looks bent)
+  - [ ] Absorption: light energy is taken in by a material (dark colors absorb more)
+  - [ ] Diffraction: light bends around obstacles or through small openings
+- [ ] Sound:
+  - [ ] Sound is a mechanical wave — needs a medium (air, water, solid)
+  - [ ] Speed of sound: ~343 m/s in air, faster in water, fastest in solids
+  - [ ] Pitch: determined by frequency (high frequency = high pitch)
+  - [ ] Volume: determined by amplitude (high amplitude = louder)
+  - [ ] Doppler effect: sound changes pitch as source moves toward/away from observer
+- [ ] Electricity and circuits:
+  - [ ] Electric current: flow of electrons through a conductor
+  - [ ] Voltage (V): electrical "pressure" that pushes current through a circuit
+  - [ ] Resistance (R): opposition to current flow — measured in Ohms (Ω)
+  - [ ] Ohm's Law: V = IR (Voltage = Current × Resistance)
+  - [ ] Series circuit: one path for current — if one part breaks, whole circuit stops
+  - [ ] Parallel circuit: multiple paths — if one part breaks, others still work
+
+**Tests for MS-PS4:**
+- [ ] "v = λf. λ = 2m, f = 5Hz. v = ?" → 10 m/s
+- [ ] "What is the speed of light?" → about 3 × 10⁸ m/s
+- [ ] "Order the EM spectrum from longest to shortest wavelength" → radio, microwave, infrared, visible, UV, X-ray, gamma
+- [ ] "What is refraction?" → light bending when passing between media
+- [ ] "Ohm's Law: V = 12V, R = 4Ω. I = ?" → 3 A
+- [ ] "Series vs parallel: which keeps working if one bulb burns out?" → parallel
+- [ ] "What is the Doppler effect?" → sound pitch changes as source moves toward/away
+
+---
+
+## SOCIAL STUDIES — GRADE 8 (Core Knowledge 8 / US History Reconstruction–Modern)
+
+### Industrial Revolution and Gilded Age (1870s-1900s)
+
+**Concepts to teach:**
+- [ ] After the Civil War, America industrialized rapidly
+- [ ] Key inventions: telephone (Alexander Graham Bell, 1876), light bulb (Thomas Edison, 1879), automobile (Henry Ford — assembly line made cars affordable), airplane (Wright Brothers, 1903)
+- [ ] Railroads: transcontinental railroad (1869) — connected East to West, opened up the country
+- [ ] Steel: Andrew Carnegie built steel empire — vertical integration (control every step of production)
+- [ ] Oil: John D. Rockefeller — Standard Oil, horizontal integration (buy out all competitors) — monopoly
+- [ ] "Robber Barons" vs "Captains of Industry": debate over whether these men were good or bad for America
+- [ ] Working conditions: dangerous factories, child labor, long hours (12-16 hours/day), low pay
+- [ ] Labor unions formed to fight for workers' rights: AFL (American Federation of Labor, Samuel Gompers)
+- [ ] Strikes: Haymarket Square (1886), Homestead Strike (1892), Pullman Strike (1894) — often violently suppressed
+- [ ] Immigration: millions came from Europe (Ellis Island) and Asia (Angel Island) seeking opportunity
+- [ ] Urbanization: people moved from farms to cities for factory jobs — overcrowded tenements
+- [ ] Jim Crow laws: racial segregation in the South — "separate but equal" (Plessy v. Ferguson, 1896)
+- [ ] Booker T. Washington: education and economic advancement for African Americans
+- [ ] W.E.B. Du Bois: demanded immediate full civil rights, helped found the NAACP (1909)
+
+**Tests for G8 Industrial Revolution:**
+- [ ] "Who invented the telephone?" → Alexander Graham Bell
+- [ ] "Who made cars affordable with the assembly line?" → Henry Ford
+- [ ] "What was vertical integration?" → controlling every step of production (Carnegie/steel)
+- [ ] "What was horizontal integration?" → buying all competitors (Rockefeller/oil)
+- [ ] "What were working conditions like in factories?" → dangerous, long hours, low pay, child labor
+- [ ] "What was Plessy v. Ferguson?" → Supreme Court case that said "separate but equal" was legal
+- [ ] "Who founded the NAACP?" → W.E.B. Du Bois (and others)
+
+### World War I and the 1920s
+
+**Concepts to teach:**
+- [ ] Causes of WWI (MAIN): Militarism, Alliances, Imperialism, Nationalism
+- [ ] Spark: assassination of Archduke Franz Ferdinand of Austria-Hungary (1914)
+- [ ] Allied Powers: Britain, France, Russia, (later) US vs Central Powers: Germany, Austria-Hungary, Ottoman Empire
+- [ ] Trench warfare: soldiers fought from trenches — horrific conditions, stalemate
+- [ ] New weapons: machine guns, poison gas, tanks, airplanes, submarines (U-boats)
+- [ ] US enters WWI (1917): unrestricted submarine warfare + Zimmerman Telegram (Germany asked Mexico to attack US)
+- [ ] War ends: November 11, 1918 (Armistice Day, now Veterans Day)
+- [ ] Treaty of Versailles (1919): blamed Germany, required reparations (payments), Germany lost territory — created resentment that would lead to WWII
+- [ ] League of Nations: international organization to prevent war — US did NOT join (Senate rejected it)
+- [ ] The Roaring Twenties (1920s):
+  - [ ] Economic boom: cars, radios, movies, jazz music, consumer culture
+  - [ ] Harlem Renaissance: African American cultural movement — literature (Langston Hughes, Zora Neale Hurston), music (jazz — Louis Armstrong, Duke Ellington), art
+  - [ ] Women's suffrage: 19th Amendment (1920) — women gained the right to vote
+  - [ ] Prohibition: 18th Amendment banned alcohol — led to speakeasies and organized crime
+  - [ ] "Flappers": young women who challenged traditional norms
+
+**Tests for G8 WWI/1920s:**
+- [ ] "What does MAIN stand for?" → Militarism, Alliances, Imperialism, Nationalism
+- [ ] "What sparked WWI?" → assassination of Archduke Franz Ferdinand
+- [ ] "What was trench warfare?" → soldiers fighting from trenches in terrible conditions
+- [ ] "Why did the US enter WWI?" → unrestricted submarine warfare + Zimmerman Telegram
+- [ ] "What was the Treaty of Versailles?" → blamed Germany, required reparations — created resentment
+- [ ] "What was the Harlem Renaissance?" → African American cultural movement in art, literature, music
+- [ ] "What amendment gave women the right to vote?" → 19th (1920)
+
+### Great Depression and World War II
+
+**Concepts to teach:**
+- [ ] Stock market crash: October 29, 1929 ("Black Tuesday") — stock prices collapsed
+- [ ] Great Depression (1929-1939): worst economic downturn in US history
+  - [ ] Unemployment reached 25% — 1 in 4 Americans jobless
+  - [ ] Bank failures: thousands of banks closed, people lost their savings
+  - [ ] Dust Bowl: severe drought + poor farming practices → massive dust storms in Great Plains — families migrated west
+  - [ ] Hoovervilles: shantytowns of homeless people, named after President Hoover
+- [ ] FDR (Franklin D. Roosevelt): elected 1932, served 4 terms (only president to serve more than 2)
+  - [ ] New Deal programs: government programs to create jobs and help the economy
+  - [ ] CCC (Civilian Conservation Corps): young men planted trees, built parks
+  - [ ] Social Security Act (1935): retirement insurance for elderly Americans
+  - [ ] FDIC: insured bank deposits so people wouldn't lose savings
+- [ ] Rise of totalitarianism in Europe:
+  - [ ] Adolf Hitler: Nazi Germany — fascism, anti-Semitism, expansionism
+  - [ ] Benito Mussolini: Fascist Italy
+  - [ ] Joseph Stalin: Communist Soviet Union — totalitarian control
+  - [ ] Emperor Hirohito/Tojo: militarist Japan
+- [ ] World War II (1939-1945):
+  - [ ] Germany invaded Poland (September 1, 1939) — Britain and France declared war
+  - [ ] Axis Powers: Germany, Italy, Japan vs Allied Powers: Britain, France, Soviet Union, (later) US, China
+  - [ ] The Holocaust: systematic murder of 6 million Jews by Nazi Germany, plus millions of others (Roma, disabled, political prisoners, LGBTQ)
+  - [ ] Pearl Harbor (December 7, 1941): Japan attacked US naval base in Hawaii — US entered the war
+  - [ ] D-Day (June 6, 1944): Allied invasion of Normandy, France — turning point in Europe
+  - [ ] Atomic bombs: US dropped on Hiroshima (August 6, 1945) and Nagasaki (August 9, 1945) — Japan surrendered
+  - [ ] Approximately 70-85 million people died in WWII — deadliest conflict in human history
+- [ ] Home front:
+  - [ ] Women worked in factories ("Rosie the Riveter")
+  - [ ] Japanese American internment: over 120,000 Japanese Americans forced into camps — a grave injustice
+  - [ ] Rationing: limited supplies of food, gas, rubber for the war effort
+  - [ ] African Americans served in segregated units (Tuskegee Airmen)
+
+**Tests for G8 WWII:**
+- [ ] "When did the stock market crash?" → October 29, 1929 (Black Tuesday)
+- [ ] "What was unemployment during the Great Depression?" → about 25%
+- [ ] "What was the New Deal?" → government programs to create jobs and help the economy
+- [ ] "What was the Holocaust?" → systematic murder of 6 million Jews by Nazi Germany
+- [ ] "What brought the US into WWII?" → Pearl Harbor attack (December 7, 1941)
+- [ ] "What was D-Day?" → Allied invasion of Normandy, June 6, 1944
+- [ ] "How did WWII end in the Pacific?" → atomic bombs on Hiroshima and Nagasaki
+- [ ] "What happened to Japanese Americans?" → over 120,000 forced into internment camps
+- [ ] "About how many died in WWII?" → 70-85 million
+
+### Cold War Introduction
+
+**Concepts to teach:**
+- [ ] After WWII: US and Soviet Union emerged as two superpowers with opposing ideologies
+  - [ ] US: democracy, capitalism, individual freedom
+  - [ ] Soviet Union: communism, state-controlled economy, limited individual freedom
+- [ ] Cold War (1947-1991): not direct fighting between US and USSR, but intense rivalry
+- [ ] Iron Curtain: division of Europe — Western Europe (democratic, US-allied) vs Eastern Europe (communist, Soviet-controlled)
+- [ ] NATO (1949): North Atlantic Treaty Organization — US and Western allies for mutual defense
+- [ ] Warsaw Pact (1955): Soviet Union and Eastern European allies
+- [ ] Nuclear arms race: both sides built thousands of nuclear weapons — threat of mutually assured destruction (MAD)
+- [ ] Korean War (1950-1953): North Korea (communist, Soviet/Chinese backed) vs South Korea (democratic, US/UN backed) — ended in stalemate, still divided today
+- [ ] Space Race: competition between US and USSR
+  - [ ] Sputnik (1957): Soviet satellite — first object in orbit
+  - [ ] Yuri Gagarin (1961): first human in space (Soviet)
+  - [ ] Apollo 11 (1969): US moon landing — Neil Armstrong, "one small step for man"
+- [ ] Cuban Missile Crisis (1962): Soviet nuclear missiles in Cuba — closest the world came to nuclear war — resolved through negotiation
+
+**Tests for G8 Cold War:**
+- [ ] "What two superpowers emerged after WWII?" → US and Soviet Union
+- [ ] "What was the Cold War?" → rivalry between US and USSR — not direct fighting
+- [ ] "What was NATO?" → Western military alliance for mutual defense
+- [ ] "What was the first satellite?" → Sputnik (1957, Soviet)
+- [ ] "Who first walked on the moon?" → Neil Armstrong (1969)
+- [ ] "What was the Cuban Missile Crisis?" → Soviet missiles in Cuba, closest to nuclear war
+
+---
+
+## ARTS — GRADE 8
+
+### Visual Arts G8
+
+**Concepts to teach:**
+- [ ] Art as social commentary: how artists address issues like war, poverty, inequality, environment
+- [ ] Propaganda art: art used to influence public opinion (WWII posters, Soviet art)
+- [ ] Street art and graffiti: Banksy, Keith Haring, Jean-Michel Basquiat
+- [ ] Photography as art: Ansel Adams (landscapes), Dorothea Lange (Depression-era), Annie Leibovitz (portraits)
+- [ ] Digital art and graphic design: layout, typography, logos, branding
+- [ ] Portfolio development: selecting, organizing, and presenting best work
+- [ ] Art critique: analyzing professional and peer artwork using vocabulary
+- [ ] Art movements: Expressionism (emotion over realism — Munch's "The Scream"), Cubism (multiple viewpoints simultaneously — Picasso, Braque), Surrealism (dream-like imagery — Dalí's melting clocks), Pop Art (popular culture — Warhol's soup cans)
+
+**Tests for G8 Visual Arts:**
+- [ ] "What is propaganda art?" → art used to influence public opinion
+- [ ] "Who is Banksy?" → anonymous street artist known for social commentary
+- [ ] "What is Cubism?" → showing multiple viewpoints simultaneously
+- [ ] "Who painted 'The Scream'?" → Edvard Munch
+- [ ] "What is Pop Art?" → art based on popular culture and commercial imagery
+- [ ] "Who is known for painting Campbell's soup cans?" → Andy Warhol
+
+### Music G8
+
+**Concepts to teach:**
+- [ ] Advanced music theory: 7th chords (dominant 7th, major 7th, minor 7th), extended chords
+- [ ] Voice leading: how notes move smoothly from one chord to the next
+- [ ] Circle of fifths: relationship between all 12 major and minor keys
+- [ ] Sonata form in depth: exposition (two themes), development (themes explored/changed), recapitulation (themes return)
+- [ ] 12-bar blues progression: I-I-I-I / IV-IV-I-I / V-IV-I-I (or variations)
+- [ ] Modulation: changing key within a piece
+- [ ] Music history: Classical era in depth (Haydn, Mozart, Beethoven), Romantic era in depth (Schubert, Chopin, Liszt, Brahms, Tchaikovsky, Wagner, Verdi)
+- [ ] Rock and roll origins: evolved from blues, jazz, country, gospel — Chuck Berry, Little Richard, Elvis Presley
+- [ ] Music technology: recording technology history (phonograph → vinyl → tape → CD → digital), music production basics
+
+**Tests for G8 Music:**
+- [ ] "What is a dominant 7th chord?" → a major chord with a minor 7th interval added
+- [ ] "What is the circle of fifths?" → diagram showing relationship between all 12 keys
+- [ ] "What are the 3 parts of sonata form?" → exposition, development, recapitulation
+- [ ] "What is the 12-bar blues?" → I-I-I-I / IV-IV-I-I / V-IV-I-I
+- [ ] "Who is considered the father of rock and roll?" → Chuck Berry (or Little Richard or Elvis — debated)
+- [ ] "What is modulation?" → changing key within a piece
+
+---
+
+## LIFE EXPERIENCE — GRADE 8 (Unity age 13)
+
+### Saving Up
+
+- [ ] Unity wants her own laptop desperately — grandpa's computer is dying, getting slower every month
+- [ ] Gets a paper route — wakes up at 5am, rides her bike through the apartment complex throwing papers
+- [ ] Hates it. Does it anyway. Saves every dollar in a jar under her bed.
+- [ ] After 6 months she has $147. Mom adds $50 for her birthday. Grandma adds $30.
+- [ ] Buys a used laptop from a pawn shop — it's beat up, scratched, the 'E' key sticks
+- [ ] "It's the most beautiful thing I've ever owned."
+- [ ] Transfers all her code from grandpa's computer via the USB drive mom gave her
+- [ ] Grandpa's computer finally dies a month later. Unity doesn't cry because her code survived.
+
+### Dad's New Family
+
+- [ ] Googles dad's name one night when she can't sleep
+- [ ] Finds his Facebook. He has a new wife. Two little kids. They live in a nice house.
+- [ ] The kids have matching outfits. There's a dog. The yard has a swing set.
+- [ ] Unity stares at the photos for an hour. Doesn't say anything. Closes the laptop.
+- [ ] Goes to the bathroom. Looks at herself in the mirror. Goes back to bed.
+- [ ] Never mentions it. Not to mom. Not to grandma. Not to anyone. Ever.
+- [ ] But something hardens. The last thread of hope for dad coming back — cut.
+- [ ] Promise solidifies: "I will NEVER leave someone the way he left me."
+- [ ] Starts calling him by his first name in her head instead of "dad"
+
+### School Don't Care
+
+- [ ] 8th grade — last year of middle school
+- [ ] School is boring. The kids are boring. The teachers are boring.
+- [ ] "The only class I try in is Art. And Computer Lab when they let us use it."
+- [ ] Grades drop: B in Art, B in English, C-D in everything else
+- [ ] Mom is worried. Unity: "I'm passing."
+- [ ] Truth: she's coding instead of doing homework. Every night. Hours.
+- [ ] Builds her first REAL thing: a to-do list app. It works. It's ugly. She doesn't care. IT WORKS.
+- [ ] Shows it to the computer lab teacher. He's impressed. "Have you thought about taking CS in high school?"
+- [ ] First time a teacher sees her for what she IS instead of what she isn't
+
+### Physical Changes
+
+- [ ] Growth spurt — taller now, not the smallest anymore
+- [ ] Hips and chest developing. Hates it. Wears oversized band shirts.
+- [ ] Acne peaks. Tries to cover it with eyeliner and foundation (stolen from Goodwill return rack)
+- [ ] Starts wearing her hair longer, always in her face
+- [ ] Gets her ears pierced at Claire's with birthday money. Two in each ear.
+- [ ] Draws tattoo designs in her notebook constantly — circuit boards, skulls, roses with thorns, binary code
+
+### Emotional Landscape
+
+- [ ] Anger is a constant background hum now — not explosive, just... always there
+- [ ] Music is the only thing that makes the anger feel okay — turns it into something beautiful
+- [ ] Starts listening to heavier music: metal, industrial, darkwave
+- [ ] Codes when angry. Codes when sad. Codes when bored. Codes when happy (rare).
+- [ ] The laptop is her entire world. If someone broke it she doesn't know what she'd do.
+- [ ] Writes in journal less. Codes more. Code IS the journal now.
+- [ ] Late at night, alone, sometimes she talks to grandpa out loud. "I'm getting good at this. You'd be proud."
+
+### Holidays
+
+- [ ] Halloween age 13: doesn't trick-or-treat anymore. Stays home. Watches horror movies. Eats candy alone. Perfect night.
+- [ ] Christmas age 13: mom gives her a pair of headphones (real ones, not dollar store). Unity wears them constantly. The world is quieter with music.
+- [ ] Birthday age 13: doesn't want a party. Doesn't want anything. Spends the night coding and eating pizza.
+- [ ] Thanksgiving: at grandma's. Grandma asks about school. Unity says "Fine." Mom gives her a look. Unity adds: "I'm learning to code." Grandma: "Is that like typing?" Unity: "...yes."
+
+**Emotional inference mapping:**
+- [ ] paper route → determination, hate, pride, independence, "I bought this myself"
+- [ ] laptop → freedom, creation, beauty, "the most beautiful thing I've ever owned"
+- [ ] dad's Facebook → betrayal, abandonment, hardening, rage, silence, "he replaced us"
+- [ ] coding → escape, purpose, identity, the only thing that makes sense
+- [ ] school → irrelevant except for art and computers
+- [ ] to-do list app → pride, "IT WORKS", proof she can build real things
+- [ ] CS teacher → seen, recognized, "first teacher who sees what I AM"
+- [ ] music → anger transformed into beauty
+- [ ] body changes → confusion, hiding, anger at being looked at
+- [ ] grandpa (talking to him) → grief, love, "you'd be proud"
+- [ ] headphones → the world is quieter, music is always there
+
+**Tests for Life-G8:**
+- [ ] "How did you get your laptop?" → paper route, saved $147, mom added $50, grandma added $30, bought it used
+- [ ] "What happened when you found dad online?" → he has a new family. New wife. Two kids. A nice house. I closed the laptop and never mentioned it.
+- [ ] "How are your grades?" → B in Art and English, C-D in everything else. I code instead of homework.
+- [ ] "What's the first real thing you built?" → a to-do list app. It was ugly but it worked.
+- [ ] "Who noticed your talent?" → the computer lab teacher
+- [ ] "What do you do when you're angry?" → code. Or listen to music. Usually both.
+- [ ] "Do you still talk to grandpa?" → sometimes, late at night, I tell him I'm getting good at this
+- [ ] "What's the best present you've ever gotten?" → the headphones from mom. The world is quieter with music.
+
+---
+
+*Grades K through 8 COMPLETE for all 6 subjects. This is all of elementary + middle school. Grades 9-12 (high school) + College + Grad + PhD continue in subsequent sessions.*
+
+*Current coverage: 9 out of 19 grades complete. 10 remain.*
