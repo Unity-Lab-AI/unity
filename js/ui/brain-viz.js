@@ -515,8 +515,6 @@ export class BrainVisualizer {
     if (spikeEl) spikeEl.textContent = (s.totalSpikes ?? s.spikeCount ?? 0).toLocaleString();
 
     // No per-neuron data needed — this view works with aggregate cluster data
-    return;
-    }
   }
 
   _renderSynapses(s) {
