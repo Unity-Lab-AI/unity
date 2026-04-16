@@ -2646,6 +2646,7 @@ Vision: ${state.visionDescription || 'none'}`;
       _landingState = serverState;
       updateBrainIndicator(serverState);
       if (brain3d) brain3d.updateState(serverState);
+      if (brainViz) brainViz.updateState(serverState);
     });
   }
 

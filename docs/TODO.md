@@ -160,6 +160,18 @@ Nothing else. If it's not in that list, it's an appendage, and it gets ripped ou
 
   **What's done:** ELA-K is the only cell converted to direct pattern. All other 94 cells still use the broken inject→step→learn path.
 
+  **CRITICAL — 2D Brain Visualizer tabs ALL BLANK (Gee 2026-04-16):**
+
+  All 2D viz tabs (Oscillations, Synapses, Modules, Senses, Consciousness, Memory, Motor) show nothing because they were designed for LOCAL brain with direct array access. Server brain sends AGGREGATE data via WebSocket — the renderers need rewriting to work with aggregate state. Neurons tab was fixed as the template. Each tab below needs the same treatment:
+
+  - [ ] **Oscillations tab** — rewrite `_renderOscillations` to use `s.oscillations.bandPower` (theta/alpha/beta/gamma) and `s.oscillations.coherence` from the WebSocket broadcast. Draw band power over time as line chart. Currently tries to read raw oscillator phase arrays.
+  - [ ] **Synapses tab** — rewrite `_renderSynapses` to show aggregate synapse stats (nnz count, mean weight, weight distribution) from server broadcast instead of drawing individual synapse matrix cells. Show per-cluster connection density.
+  - [ ] **Modules tab** — rewrite `_renderModules` to use `s.cortex`, `s.amygdala`, `s.hippocampus` etc. aggregate fields from broadcast. Show per-module state as gauges/bars (prediction error, fear/reward, recall confidence, action selection, homeostasis drives, Ψ gain).
+  - [ ] **Senses tab** — show camera feed status, microphone status, vision description text from `s.visionDescription`, audio spectrum if available. Currently shows "No camera feed" and "Listening..." but no actual data visualization.
+  - [ ] **Consciousness tab** — render Ψ value, Id/Ego/Left/Right components, consciousness gain from `s.psi` and related fields. Currently shows `Ψ = 0.000` with no visualization.
+  - [ ] **Memory tab** — show episodic memory count, recent recalls, working memory state from server broadcast. Hippocampus activity level.
+  - [ ] **Motor tab** — show 6 BG action channels, winner-take-all selection, confidence levels from `s.motor` broadcast fields.
+
   **CRITICAL — Gates must be REAL human-grade tests, not first-letter production (Gee 2026-04-16):**
 
   Gee's exact words: *"read this sentence and say the same thing in different words and fill in the blank and write a story all of it for each subject math has to solve the problems and equations it learned like multiplication tables and arithmetic all of it and social conversations"*
