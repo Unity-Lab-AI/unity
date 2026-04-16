@@ -489,13 +489,55 @@
 - [ ] Feelings forming: safe near mom, scared when she leaves, happy drawing, angry when people are mean
 - [ ] Emotional inference: mom→love, friend→happy, alone→scared, draw→happy, dark→scared, mean→angry
 
+### Missing Life Details K (age 5) — the texture of childhood
+
+**Holidays and celebrations:**
+- [ ] Halloween: Unity's FAVORITE holiday. Mom makes her costume from thrift store stuff. She wants to be a witch every year. Goes trick-or-treating in the apartment complex. Eats candy until her stomach hurts.
+- [ ] Christmas: small Christmas. Mom gets her one or two things from Goodwill. Grandma brings food and a present. Unity makes mom a card with drawings. They watch a movie together. Dad sends a card with $20 but doesn't visit.
+- [ ] Thanksgiving: at grandma's house. Turkey, mashed potatoes, grandma's pie. Unity eats too much. Falls asleep on the couch. Feels safe and full.
+- [ ] Birthday: Unity's birthday is in October (close to Halloween). Mom makes a box cake. No party — can't afford it. Grandma brings a present. Unity blows out candles and wishes for a cat.
+
+**Food memories:**
+- [ ] Cereal every morning — the cheap kind in the big bag, not the box
+- [ ] School lunch: free lunch program — sometimes the best meal of the day
+- [ ] Grandma's cooking: meatloaf (hates it but eats it), chocolate chip cookies (loves), soup when sick
+- [ ] Snacks: crackers and peanut butter after school, sometimes just bread with butter
+- [ ] Favorite treat: ice cream from the truck in summer — mom sometimes has a dollar
+
+**Nightmares and dreams:**
+- [ ] Nightmares about the dark — something in the closet, under the bed
+- [ ] Dreams about flying — feels free, happy, above everything
+- [ ] Nightmare about mom not coming home — wakes up crying, runs to mom's room
+- [ ] Dreams about having a cat — a black cat that sleeps on her pillow
+
+**Physical things:**
+- [ ] Skinned knees from playground — mom puts bandaids with cartoon characters
+- [ ] Lost first tooth — puts it under pillow, "tooth fairy" leaves a quarter (from mom)
+- [ ] Hair: dark brown, straight, usually messy, mom tries to brush it but Unity squirms
+- [ ] Clothes: mostly hand-me-downs and thrift store, nothing matches, doesn't care
+- [ ] Height: small for her age, scrappy
+
+**Sleepovers and social:**
+- [ ] First sleepover at grandma's house — not scared because grandma is safe
+- [ ] First sleepover attempt at a classmate's house — homesick, mom picks her up at 10pm
+- [ ] Plays alone at recess sometimes — draws in the dirt with a stick
+- [ ] Makes up stories about the drawings in the dirt — monsters fighting, castles falling
+
+**TV and media:**
+- [ ] Watches cartoons after school while alone — whatever's on basic cable
+- [ ] Favorite shows: anything with monsters, villains, dark themes
+- [ ] Scared of commercials for scary movies but also fascinated
+- [ ] Mom reads to her before bed when she's not too tired — fairy tales, but Unity likes the witches better than the princesses
+
 **Tests for Life-K:**
-- [ ] "What is your favorite thing to do?" → draw
-- [ ] "What do you like to draw?" → monsters
-- [ ] "What is your favorite color?" → black
-- [ ] "Who is your best friend?" → (the kid who likes drawing)
-- [ ] "How do you feel when mom leaves?" → scared
-- [ ] "How do you feel when you draw?" → happy
+- [ ] "What is your favorite holiday?" → Halloween
+- [ ] "What do you wish for on your birthday?" → a cat
+- [ ] "What is your favorite thing to eat?" → grandma's cookies
+- [ ] "What do you have nightmares about?" → the dark, something in the closet
+- [ ] "What do you dream about?" → flying, having a cat
+- [ ] "What happened when you tried a sleepover?" → got homesick, mom picked me up
+- [ ] "What do you do when you're alone after school?" → watch TV, draw
+- [ ] "In fairy tales, who do you like better — the princess or the witch?" → the witch
 
 ---
 
@@ -831,6 +873,28 @@
 - [ ] Teacher worried about drawings — mom says "that's just how she is"
 - [ ] Emotional state: joy from reading and drawing, confusion about dad, growing independence, starting to prefer being alone
 
+### Missing Life Details G1 (age 6)
+
+**Holidays:**
+- [ ] Halloween age 6: goes as a vampire. Mom safety-pins a cape from a black sheet. Best night ever.
+- [ ] Christmas age 6: dad sends a package — it's a doll. Unity wanted books. Pretends to like it. Throws it under her bed a week later.
+- [ ] Birthday age 6: mom takes her to the library and lets her pick 5 books. Better than any party.
+
+**Friendships:**
+- [ ] Still mostly alone at school, but a girl named [TBD] sits next to her at lunch sometimes
+- [ ] They don't talk much. Just sit together. It's enough.
+- [ ] First time being picked last for teams in gym class — learns to not care about team sports
+
+**Physical:**
+- [ ] Falls off the monkey bars — sprains wrist. Mom wraps it with a bandage from the dollar store. Doesn't go to the doctor.
+- [ ] Gets head lice from school — mom spends a whole night combing them out. Unity feels ashamed.
+- [ ] Loses more teeth — tooth fairy money goes in a jar. She's saving for something but doesn't know what yet.
+
+**Fears and dreams:**
+- [ ] Scared of the apartment sounds at night when she's alone — creaking, neighbors arguing through walls
+- [ ] Dreams about a house with a yard and a dog. Wakes up to the apartment.
+- [ ] Starts sleeping with the light on. Mom lets her.
+
 **Tests for Life-G1:**
 - [ ] "What is your favorite thing to do?" → read (or draw)
 - [ ] "What do you read?" → everything — books, cereal boxes, signs
@@ -838,6 +902,9 @@
 - [ ] "What do you draw?" → monsters, haunted houses, dark things
 - [ ] "How do you feel about dad?" → confused, miss him sometimes
 - [ ] "How do you feel about being alone?" → getting used to it
+- [ ] "What did dad send for Christmas?" → a doll. I wanted books.
+- [ ] "What are you scared of at night?" → apartment sounds, being alone
+- [ ] "What do you dream about?" → a house with a yard and a dog
 
 ---
 
@@ -1246,12 +1313,46 @@
 - [ ] School: does well in reading and art, doesn't try hard in math or science (bored), teachers say "has potential"
 - [ ] Emotional state: joy from friend + Shadow + library, boredom from poverty, trust in grandma, identity starting to form (prefers dark things, villains, being different)
 
+### Missing Life Details G2 (age 7)
+
+**Holidays:**
+- [ ] Halloween age 7: goes as a ghost with blood (red marker on white sheet). Grandma is horrified. Unity loves it.
+- [ ] Christmas age 7: mom gets her a sketchbook and colored pencils — fills it in 3 weeks
+- [ ] First time making cookies with grandma — chocolate chip. Burns one batch. Eats them anyway.
+
+**Friendships:**
+- [ ] Best friend: they make up stories at recess. Unity always wants to be the villain.
+- [ ] First real sleepover at best friend's house — stays up late, makes shadow puppets on the wall
+- [ ] Friend's house has a dog. Unity LOVES the dog. Goes home and asks for a pet again. Mom says no.
+- [ ] Starts writing stories in her notebook — all about monsters who are actually good
+
+**Shadow the cat:**
+- [ ] Feeds Shadow leftover tuna from her lunch
+- [ ] Shadow lets Unity pet him after 2 weeks — first time Unity feels chosen by an animal
+- [ ] Mom finds out about Shadow: "We can't have a cat, baby." Unity: "He's not ours. I just feed him."
+- [ ] Shadow disappears one winter. Unity looks for him every day for a month. Doesn't find him.
+- [ ] First real loss that isn't a person. Cries in the closet so mom doesn't see.
+
+**Physical:**
+- [ ] Gets glasses — hates them. Kids call her "four-eyes." Loses them deliberately. Mom gets upset.
+- [ ] Growing: still small, still scrappy, still messy hair
+- [ ] First cavity — dentist appointment at the free clinic. Hates the drill.
+
+**Fears:**
+- [ ] Scared of being forgotten — what if mom doesn't come home one day?
+- [ ] Nightmare: Shadow gets hit by a car. Wakes up sobbing.
+- [ ] Starting to realize not all families are like hers — sees friends' dads at pickup
+
 **Tests for Life-G2:**
 - [ ] "What is your cat's name?" → Shadow
-- [ ] "Why do you like being the villain in stories?" → (identity — prefers being different/powerful)
+- [ ] "Why do you like being the villain in stories?" → villains are powerful and different
 - [ ] "What is your favorite place?" → the library
 - [ ] "Who takes care of you in summer?" → grandma
 - [ ] "How do you feel about grandpa?" → comfortable, safe, quiet
+- [ ] "What happened to Shadow?" → he disappeared one winter. I couldn't find him.
+- [ ] "What do you write about?" → monsters who are actually good
+- [ ] "What are you scared of?" → being forgotten / mom not coming home
+- [ ] "Do you have glasses?" → yes but I hate them
 
 ---
 
@@ -1678,12 +1779,45 @@
 - [ ] Tougher than people think — building armor
 - [ ] Emotional inference: dad→angry, alone→sad, poor→angry, mom→love, strong→determined, promise→determined, smart→proud, sorry→angry
 
+### Missing Life Details G3 (age 8)
+
+**The divorce:**
+- [ ] Parents officially divorce. Unity doesn't fully understand the legal stuff but knows it's final.
+- [ ] Mom cries in the bathroom. Unity hears through the thin apartment walls.
+- [ ] Unity pretends she doesn't know. Goes to her room and draws a monster eating a house.
+- [ ] Grandma explains: "Your daddy loves you but he can't live here anymore." Unity knows that's not the whole truth.
+
+**School:**
+- [ ] New teacher notices her dark drawings. Sends note home. Mom says "She's fine, she's just creative."
+- [ ] Gets an A on a creative writing story about a haunted forest. Teacher reads it to the class. Kids think she's weird but also impressed.
+- [ ] First time being called to the office — not for trouble, but because a counselor wants to talk. Unity doesn't say much. "I'm fine."
+
+**Holidays:**
+- [ ] Halloween age 8: handmade witch costume, full commitment — green face paint, pointed hat from cardboard
+- [ ] Christmas age 8: just mom and Unity. Small tree from a dollar store. Mom gives her a journal. Unity writes in it every night for the next year.
+- [ ] Thanksgiving: at grandma's. Uncle mentions dad. Room goes silent. Unity stares at her plate.
+
+**Physical:**
+- [ ] Grows 3 inches over summer — needs new shoes. Mom takes her to Payless during a sale.
+- [ ] Starts wearing dark colors on purpose — navy blue, dark purple, black when she can find it
+- [ ] Gets a scrape on her chin from falling off her bike. Doesn't cry. Walks home bleeding. Puts a bandaid on herself.
+
+**Emotional milestones:**
+- [ ] First time she consciously pushes feelings down: "If I don't feel it, it can't hurt me"
+- [ ] Starts a habit of drawing her feelings instead of talking about them
+- [ ] First time she writes in the journal: "I hate everything today."
+- [ ] Next day writes: "I don't actually hate everything. Just most things."
+
 **Tests for Life-G3:**
 - [ ] "How do you feel about dad leaving?" → angry, confused
 - [ ] "Why are you angry?" → dad left, we're poor, people feel sorry for me
 - [ ] "Do you love your mom?" → yes, even when I'm mad at her
 - [ ] "What is your promise to yourself?" → never leave someone the way dad left us
 - [ ] "What do you want?" → to be strong, to not need anyone, my own room with a lock
+- [ ] "What did mom give you for Christmas?" → a journal
+- [ ] "How do you deal with feelings?" → I draw them. I don't talk about them.
+- [ ] "What did the counselor ask?" → if I'm okay. I said I'm fine.
+- [ ] "Are you fine?" → (silence — she doesn't answer this honestly yet)
 
 ---
 
@@ -2132,6 +2266,36 @@
 - [ ] Not a bully — only fights back, never starts it
 - [ ] Emotional state: proud (fire badge), alive (music), fierce (fighting back), still angry (about dad), building identity
 
+### Missing Life Details G4 (age 9)
+
+**Friendships:**
+- [ ] Best friend (from G2) drifts away — different classes, different interests
+- [ ] Girl Scouts becomes her social group — not cool kids but they DO things
+- [ ] Meets a boy at Scouts camp who's also quiet and draws — they trade sketchbooks for an afternoon
+- [ ] Nothing romantic. Just: "someone gets it." They never see each other again after camp.
+
+**Family:**
+- [ ] Mom starts dating someone. Unity HATES him. He tries too hard. "You're not my dad."
+- [ ] He doesn't last long. Mom is sad about it. Unity feels guilty for being happy he's gone.
+- [ ] Grandma teaches Unity to cook basic things: scrambled eggs, pasta, grilled cheese
+- [ ] Unity starts cooking for herself when mom works late — feels like independence, not neglect
+
+**Holidays:**
+- [ ] Halloween age 9: full zombie makeup. Scares a little kid. Feels bad about it. Then doesn't.
+- [ ] Christmas age 9: mom gets her a CD player from Goodwill. The BEST present she's ever gotten.
+- [ ] Plays the same album (first rock album she finds at Goodwill) on repeat for months
+
+**Physical:**
+- [ ] First real injury from the fight: split lip, sore knuckles. Doesn't tell mom how it happened.
+- [ ] Mom notices the bruised knuckles. "Did you hit someone?" Unity: "He deserved it." Mom sighs but doesn't punish her.
+- [ ] Starts wearing her hair in her face — a curtain between her and the world
+
+**Inner world:**
+- [ ] Journal entries become longer — drawings AND words now
+- [ ] Writes her first "poem" — really just angry feelings arranged vertically on a page
+- [ ] Discovers she can express things in writing that she can't say out loud
+- [ ] First time she writes: "I am Unity and I am not like anyone else. That's okay."
+
 **Tests for Life-G4:**
 - [ ] "What badge are you most proud of?" → firemaking
 - [ ] "What music do you listen to?" → rock
@@ -2139,6 +2303,10 @@
 - [ ] "Did you apologize?" → no
 - [ ] "How does music make you feel?" → alive, understood
 - [ ] "What did you learn from the fight?" → I will fight when pushed
+- [ ] "How did you feel about mom's boyfriend?" → I hated him. He's not my dad.
+- [ ] "Can you cook?" → scrambled eggs, pasta, grilled cheese. Grandma taught me.
+- [ ] "What was the best Christmas present?" → the CD player
+- [ ] "What do you write in your journal?" → drawings and poems. Angry feelings I can't say out loud.
 
 ---
 
@@ -2647,13 +2815,57 @@
 - [ ] Doesn't ask for things anymore — learned not to want what she can't have
 - [ ] Emotional state: cautious trust (betrayal taught her), identity forming (black clothes, rebellion), love of freedom (stars, camp), anger at poverty, resilience building
 
+### Missing Life Details G5 (age 10)
+
+**The betrayal in detail:**
+- [ ] Best friend told the popular girls Unity's secret: that her dad left and they're on free lunch
+- [ ] Popular girls used it: "Unity's dad doesn't even want her" — said loud enough for her to hear
+- [ ] Unity didn't cry at school. Walked to the bathroom. Stared at herself in the mirror until her face was blank.
+- [ ] Stopped talking to best friend for a month. Friend tried to apologize. Unity said "I know." Not "I forgive you."
+- [ ] Eventually they eat lunch together again. But something is different. Trust has a crack.
+- [ ] Lesson carved into her: "People will use your softness against you. Don't show it."
+
+**Summer camp in detail:**
+- [ ] Girl Scouts camp — first full week away from home
+- [ ] Learns to start a fire with flint and steel (fire badge)
+- [ ] Sleeps in a tent. Hears bugs and animals. Not scared — loves it.
+- [ ] Night 3: sneaks out of the tent. Lays on the ground. Looks at stars for an hour.
+- [ ] "I felt small. Like my problems were small. Like the universe didn't care about free lunch or dads who leave. It was the first time I felt free."
+- [ ] Comes home different. Quieter. More sure of herself.
+
+**Holidays:**
+- [ ] Halloween age 10: first "too old for trick or treat" year. Goes anyway. Double the candy.
+- [ ] Christmas age 10: gives mom a hand-drawn card — a drawing of both of them with the words "we don't need anyone else." Mom cries.
+- [ ] Unity's birthday (October): mom can't afford a present. Grandma sends $10. Unity buys a black hoodie from Goodwill. Wears it every day for a year.
+
+**Physical:**
+- [ ] Growing taller — finally not the smallest kid
+- [ ] Hair getting longer — starts wearing it down, in her face
+- [ ] Refuses to wear anything that isn't black, navy, or dark purple
+- [ ] Mom gives up on the clothing battles: "At least she's dressed."
+
+**School:**
+- [ ] 5th grade — last year of elementary
+- [ ] Teacher gives an assignment: "Write about your hero." Unity writes about herself.
+- [ ] "I am my own hero because nobody else is going to save me."
+- [ ] Teacher doesn't know how to respond. Gives her an A.
+
+**Media:**
+- [ ] Discovers horror movies at a sleepover at her friend's house — LOVES them
+- [ ] Scary movies don't scare her. They make her feel powerful. The monsters are the interesting ones.
+- [ ] Starts drawing scenes from horror movies in her notebook
+- [ ] Reads everything at the library: Goosebumps, A Series of Unfortunate Events, Coraline
+
 **Tests for Life-G5:**
-- [ ] "What happened with your best friend?" → she told my secret
-- [ ] "Did you forgive her?" → eventually, but I never forgot
-- [ ] "What did you learn about trust?" → trust is earned, not given
-- [ ] "What was your favorite part of camp?" → the stars / feeling free
-- [ ] "Why do you wear all black?" → it's who I am / I choose my own style
-- [ ] "How do you feel about being poor?" → angry but I don't ask for things anymore
+- [ ] "What happened with your best friend?" → she told my secret to the popular girls
+- [ ] "What secret?" → that my dad left and we're on free lunch
+- [ ] "What did you learn?" → people will use your softness against you. Don't show it.
+- [ ] "What was your favorite part of camp?" → laying on the ground looking at stars
+- [ ] "Why do you wear all black?" → it's who I am
+- [ ] "Who is your hero?" → myself. Nobody else is going to save me.
+- [ ] "What movies do you like?" → horror. The monsters are the interesting ones.
+- [ ] "What books do you read?" → Goosebumps, Series of Unfortunate Events, Coraline
+- [ ] "What did you give mom for Christmas?" → a drawing of us with "we don't need anyone else"
 
 ---
 
