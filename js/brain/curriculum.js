@@ -5211,10 +5211,87 @@ export class Curriculum {
       'back pack', 'sick duck', 'rock lock',
       'long song', 'king ring', 'sing along',
     ];
-    await this._teachVocabList(ALL_VOCAB, ctx, { reps: 12 });
-    return this._teachSentenceList(PHRASES, ctx, { reps: 6, ticksPerWord: 2 });
-    // Old bespoke inject→step→learn body removed in Session 111.
-    // _teachVocabList + _teachSentenceList handle everything via direct pattern.
+    await this._teachVocabList(ALL_VOCAB, ctx, { reps: 6 });
+    await this._teachSentenceList(PHRASES, ctx, { reps: 3, ticksPerWord: 2 });
+
+    // ── COMMON CORE ELA G2: Vowel teams ──
+    // G2 phonics standard: know spelling-sound correspondences for
+    // additional common vowel teams.
+    const VOWEL_TEAM_WORDS = [
+      // ai/ay (long a)
+      'rain', 'train', 'paint', 'wait', 'tail', 'mail', 'sail', 'snail',
+      'play', 'day', 'say', 'may', 'way', 'stay', 'pay', 'lay',
+      // ea/ee (long e)
+      'eat', 'sea', 'read', 'team', 'bean', 'clean', 'dream', 'stream',
+      'tree', 'free', 'see', 'bee', 'feet', 'sleep', 'deep', 'green',
+      // oa/ow (long o)
+      'boat', 'coat', 'road', 'toad', 'soap', 'goal',
+      'grow', 'show', 'know', 'slow', 'snow', 'flow', 'blow', 'low',
+      // oo (two sounds)
+      'moon', 'soon', 'food', 'cool', 'pool', 'school', 'room', 'zoo',
+      'book', 'look', 'cook', 'good', 'wood', 'foot', 'hook',
+    ];
+    await this._teachVocabList(VOWEL_TEAM_WORDS, ctx, { reps: 3 });
+
+    // ── COMMON CORE ELA G2: Prefixes and suffixes ──
+    const PREFIX_SUFFIX_WORDS = [
+      // un- prefix
+      'unhappy', 'unkind', 'unsafe', 'unfair', 'unlock', 'untie',
+      // re- prefix
+      'redo', 'reread', 'rewrite', 'rebuild', 'return', 'replay',
+      // -ful suffix
+      'helpful', 'careful', 'thankful', 'beautiful', 'joyful', 'hopeful',
+      // -less suffix
+      'careless', 'helpless', 'homeless', 'hopeless', 'endless', 'useless',
+      // -ness suffix
+      'kindness', 'sadness', 'darkness', 'happiness', 'illness', 'weakness',
+      // -ly suffix
+      'quickly', 'slowly', 'loudly', 'quietly', 'happily', 'sadly',
+    ];
+    await this._teachVocabList(PREFIX_SUFFIX_WORDS, ctx, { reps: 3 });
+
+    // ── COMMON CORE ELA G2: Reading comprehension sentences ──
+    const G2_READING = [
+      // stories with beginning/middle/end
+      'a frog sat on a log in the pond',
+      'a fly flew by and the frog jumped to catch it',
+      'the frog missed and fell in the water with a big splash',
+      'the boy lost his dog in the rain',
+      'he looked behind every tree and under every bush',
+      'he found his dog sleeping under the porch',
+      // different points of view
+      'the cat thinks the dog is too loud',
+      'the dog thinks the cat is too quiet',
+      'they both like napping in the sun',
+      // comparing versions
+      'the three bears found someone in their house',
+      'goldilocks ate their food and broke a chair',
+      'the bears were upset but goldilocks ran away',
+      // informational text
+      'bees make honey from flower nectar',
+      'bees live together in a hive',
+      'the queen bee lays all the eggs',
+      'worker bees collect food for the hive',
+    ];
+    await this._teachSentenceList(G2_READING, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── COMMON CORE ELA G2: Grammar ──
+    // Irregular plurals, reflexive pronouns, irregular verbs
+    const G2_GRAMMAR = [
+      // irregular plurals
+      'one child two children', 'one foot two feet', 'one tooth two teeth',
+      'one mouse two mice', 'one man two men', 'one woman two women',
+      // irregular past tense
+      'i run i ran', 'i see i saw', 'i go i went', 'i eat i ate',
+      'i come i came', 'i take i took', 'i give i gave', 'i know i knew',
+      'i say i said', 'i think i thought', 'i find i found', 'i tell i told',
+      // reflexive pronouns
+      'i did it myself', 'she dressed herself',
+      'he taught himself to read', 'we did it ourselves',
+    ];
+    await this._teachSentenceList(G2_GRAMMAR, ctx, { reps: 2, ticksPerWord: 2 });
+
+    return this._teachVocabList([...ALL_VOCAB, ...VOWEL_TEAM_WORDS.slice(0, 20)], ctx, { reps: 3 });
   }
 
   _gateElaG2Real(digraphs) {
@@ -5709,23 +5786,121 @@ export class Curriculum {
   // to Math-G3+ when sentence-level completion is stronger; Grade 2
   // just memorizes the number vocabulary.
   async runMathG2Real(ctx) {
+    // ── COMMON CORE MATH G2: Full second-grade math ──
+    // Standards: add/subtract within 100 fluently, within 1000 using
+    // strategies. Skip-count by 5s/10s/100s. Read/write numbers to
+    // 1000. Compare three-digit numbers. Odd/even. Rectangular arrays
+    // (multiplication foundation). Measurement (inches/feet/cm/m).
+    // Money. Time to nearest 5 minutes. Data on line plots/bar graphs.
+
     const MATH_G2_VOCAB = [
+      // number words to 1000
       'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen',
       'sixteen', 'seventeen', 'eighteen', 'nineteen',
       'twenty', 'thirty', 'forty', 'fifty', 'sixty',
-      'seventy', 'eighty', 'ninety', 'hundred',
+      'seventy', 'eighty', 'ninety', 'hundred', 'thousand',
+      // operation words
+      'add', 'subtract', 'plus', 'minus', 'sum', 'difference',
+      'regroup', 'borrow', 'carry',
+      // comparison
+      'greater', 'less', 'equal', 'compare', 'order',
+      'odd', 'even',
+      // money
+      'penny', 'nickel', 'dime', 'quarter', 'dollar', 'cent', 'coin',
+      // measurement
+      'inch', 'foot', 'centimeter', 'meter', 'ruler', 'measure',
+      // time
+      'minute', 'hour', 'clock', 'half', 'quarter',
+      // data
+      'graph', 'chart', 'bar', 'tally', 'count', 'data',
+      // multiplication intro
+      'array', 'row', 'column', 'group', 'times',
     ];
-    // T14.24 Session 32 — TODO-aligned split. Teach place value via
-    // structured [tens, ones] positional features + multiplication
-    // intro via repeated-addition magnitude chains.
+    await this._teachVocabList(MATH_G2_VOCAB, ctx, { reps: 3 });
+
+    // ── Place value + skip counting ──
     await this._teachPlaceValue();
+    const PLACE_VALUE_G2 = [
+      'one hundred is ten tens', 'two hundred is twenty tens',
+      'three hundred and forty five has 3 hundreds 4 tens 5 ones',
+      'skip count by fives five ten fifteen twenty twenty five',
+      'skip count by tens ten twenty thirty forty fifty',
+      'skip count by hundreds one hundred two hundred three hundred',
+      'seven hundred eighty nine is 789',
+      'the hundreds digit tells how many hundreds',
+      'compare 456 and 478 using the hundreds first',
+      '456 is less than 478', '901 is greater than 899',
+    ];
+    await this._teachSentenceList(PLACE_VALUE_G2, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── Two-digit addition and subtraction sentences ──
+    const TWO_DIGIT_MATH = [
+      'twenty plus thirty is fifty', 'forty plus ten is fifty',
+      'sixty minus twenty is forty', 'eighty minus thirty is fifty',
+      'thirty five plus ten is forty five', 'fifty two minus ten is forty two',
+      'ten plus ten is twenty', 'twenty plus twenty is forty',
+      'fifty plus fifty is one hundred', 'one hundred minus fifty is fifty',
+      'forty seven plus three is fifty', 'sixty two minus two is sixty',
+      'twenty five plus twenty five is fifty',
+      'seventy three minus thirteen is sixty',
+    ];
+    await this._teachSentenceList(TWO_DIGIT_MATH, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── Odd and even ──
+    const ODD_EVEN = [
+      'two is even', 'three is odd', 'four is even', 'five is odd',
+      'six is even', 'seven is odd', 'eight is even', 'nine is odd',
+      'ten is even', 'eleven is odd', 'twelve is even',
+      'even numbers end in zero two four six eight',
+      'odd numbers end in one three five seven nine',
+      'even plus even is even', 'odd plus odd is even', 'even plus odd is odd',
+    ];
+    await this._teachSentenceList(ODD_EVEN, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── Money sentences ──
+    const MONEY = [
+      'a penny is one cent', 'a nickel is five cents',
+      'a dime is ten cents', 'a quarter is twenty five cents',
+      'a dollar is one hundred cents', 'two quarters make fifty cents',
+      'four quarters make one dollar', 'ten dimes make one dollar',
+      'twenty nickels make one dollar', 'one hundred pennies make one dollar',
+      'i have three dimes that is thirty cents',
+      'she has two quarters that is fifty cents',
+    ];
+    await this._teachSentenceList(MONEY, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── Measurement sentences ──
+    const MEASUREMENT_G2 = [
+      'an inch is a small unit', 'a foot is twelve inches',
+      'a centimeter is very small', 'a meter is one hundred centimeters',
+      'use a ruler to measure inches', 'the pencil is six inches long',
+      'the desk is three feet long', 'my arm is about one foot',
+      'the door is about two meters tall',
+    ];
+    await this._teachSentenceList(MEASUREMENT_G2, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── Multiplication foundation — arrays ──
     const MULT_PAIRS = [
-      { a: 2, b: 1, c: 2 }, { a: 2, b: 2, c: 4 }, { a: 2, b: 3, c: 6 }, { a: 2, b: 4, c: 8 }, { a: 2, b: 5, c: 10 },
-      { a: 5, b: 1, c: 5 }, { a: 5, b: 2, c: 10 }, { a: 5, b: 3, c: 15 }, { a: 5, b: 4, c: 20 },
-      { a: 10, b: 1, c: 10 }, { a: 10, b: 2, c: 20 }, { a: 10, b: 3, c: 30 }, { a: 10, b: 4, c: 40 },
+      { a: 2, b: 1, c: 2 }, { a: 2, b: 2, c: 4 }, { a: 2, b: 3, c: 6 },
+      { a: 2, b: 4, c: 8 }, { a: 2, b: 5, c: 10 },
+      { a: 5, b: 1, c: 5 }, { a: 5, b: 2, c: 10 }, { a: 5, b: 3, c: 15 },
+      { a: 5, b: 4, c: 20 }, { a: 5, b: 5, c: 25 },
+      { a: 10, b: 1, c: 10 }, { a: 10, b: 2, c: 20 }, { a: 10, b: 3, c: 30 },
     ];
     await this._teachMultiplicationIntro(MULT_PAIRS);
-    return this._teachVocabList(MATH_G2_VOCAB, ctx);
+    const ARRAY_SENTENCES = [
+      'two rows of three is six', 'three rows of two is six',
+      'four rows of five is twenty', 'five rows of four is twenty',
+      'two groups of five is ten', 'five groups of two is ten',
+      'arrays show equal groups', 'rows go across and columns go down',
+    ];
+    await this._teachSentenceList(ARRAY_SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── EQUATIONAL REASONING: addition/subtraction extended to 100 ──
+    await this._teachAdditionTransformations(ctx);
+    await this._teachComparisonTransformations(ctx);
+
+    return this._teachVocabList(MATH_G2_VOCAB.slice(0, 20), ctx, { reps: 3 });
   }
 
   // ─── TODO-aligned ELA-G3 helpers (Session 29) ────────────────────
