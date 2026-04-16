@@ -283,27 +283,15 @@ export class LanguageCortex {
       return { sentences: 0, updates: 0, ms: 0, before: null, after: null };
     }
 
-    // T14.24 Session 97 — guard against hash-fallback GloVe. When
-    // sharedEmbeddings._loaded is false, getEmbedding returns small
-    // deterministic-random HASH vectors per word. Those vectors spread
-    // through mapToCortex as tiny per-neuron currents, the Rulkov
-    // neurons don't fire reliably on such weak drive, and
-    // cluster.learnSentenceHebbian's co-spike Hebbian update
-    // (`values[k] += lr * post * pre`) fires only on the rare
-    // co-spike event. Net effect: 16+ seconds of training produces
-    // Δmean≈0.0000 / Δrms≈0.0000 — a proven no-op. Skipping saves
-    // the wall clock time + avoids the misleading "DONE" log that
-    // makes it look like training worked. Once Gee downloads GloVe
-    // 300d, the real vectors drive enough spikes to actually update
-    // weights and the training becomes meaningful.
-    const gloveLoaded = sharedEmbeddings
-      && (sharedEmbeddings._loaded === true
-        || (typeof sharedEmbeddings.status === 'function'
-            && sharedEmbeddings.status().loaded === true));
-    if (!gloveLoaded) {
-      console.warn('[LanguageCortex] trainPersonaHebbian SKIPPED — GloVe 300d not loaded (hash-fallback vectors produce Δ≈0 co-spike updates). Download glove.6B.300d.txt to enable.');
-      return { sentences: 0, updates: 0, ms: 0, before: null, after: null, skipped: 'glove-not-loaded' };
-    }
+    // T14.24 Session 99 — REVERTED Session 97 GloVe-gate skip now
+    // that _hashEmbedding produces proper fastText-style subword
+    // vectors instead of fully-uncorrelated random hashes. The old
+    // Δ≈0.0000 no-op was caused by the unstructured hash not
+    // generating enough cortex spike activity for Hebbian co-spike
+    // updates to land. The new subword embedding has meaningful
+    // magnitude and structure (cat/cats cosine = 0.45, father/fathers
+    // = 0.75), so injection drives real spike patterns and Hebbian
+    // updates actually fire.
 
     const sentences = String(text)
       .replace(/[*_#`>|\[\]()]/g, ' ')

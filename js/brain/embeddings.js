@@ -481,21 +481,73 @@ export class SemanticEmbeddings {
    * Distributes uniformly in embedding space.
    */
   _hashEmbedding(word) {
+    // T14.24 Session 99 — fastText-style subword embedding as the
+    // GloVe-free default. Previously this was a single-hash-per-word
+    // function that produced fully-uncorrelated vectors for every
+    // word, meaning "cat" and "cats" were as orthogonal as "cat" and
+    // "xyzabc". No semantic structure AT ALL. That's why ELA-K READ
+    // stayed at 8% chance level on Gee's live runs — the sem-region
+    // injection during teach was pure noise with no learnable
+    // structure, and the letter↔sem cross-projection couldn't converge.
+    //
+    // New approach: sum N-gram hashes (N = 3, 4, 5) from the word,
+    // then normalize. Words that share character N-grams (stem +
+    // inflection, plural, compound parts) share feature dimensions
+    // naturally. "cat" ∩ "cats" = {'ca', 'at', 'cat'} — high cosine.
+    // "red" ∩ "blue" = {} — low cosine. "run" ∩ "running" = {'run',
+    // 'unn'} — medium cosine. This is the same idea as Facebook's
+    // fastText subword embeddings (Bojanowski et al. 2017, Enriching
+    // Word Vectors with Subword Information, TACL 5:135) minus the
+    // learned component.
+    //
+    // Each character n-gram hashes to EMBED_DIM sparse positive
+    // components via a modulo map. Summing positive n-gram hashes
+    // gives every word a non-zero vector with the same magnitude
+    // scale as real GloVe after L2 normalization, so injection
+    // strength stays calibrated against the same reference.
+    //
+    // This replaces the old hash fallback entirely — no external file,
+    // no 1 GB download, works out of the box. Real GloVe 300d still
+    // beats it for semantic quality (it has real co-occurrence
+    // statistics from a billion-word corpus), but fastText-style
+    // subword hashing is dramatically better than the prior
+    // unstructured random hash for cases where GloVe isn't available.
     const vec = new Float32Array(EMBED_DIM);
-    let hash = this._hashSeed;
+    const w = `<${word}>`; // boundary markers so prefixes/suffixes distinct
+    const MIN_N = 3;
+    const MAX_N = 5;
 
-    for (let c = 0; c < word.length; c++) {
-      hash = ((hash << 5) - hash + word.charCodeAt(c)) | 0;
+    // Walk every character n-gram in the word at multiple n sizes.
+    // Each n-gram contributes to a set of EMBED_DIM components via a
+    // deterministic hash → index mapping. Multiple n-grams overlap
+    // different dims, so the word's final vector is a superposition
+    // that preserves subword structure.
+    for (let n = MIN_N; n <= MAX_N; n++) {
+      if (w.length < n) continue;
+      for (let i = 0; i <= w.length - n; i++) {
+        const gram = w.slice(i, i + n);
+        // Hash the n-gram to a 32-bit integer — djb2 variant.
+        let h = 5381;
+        for (let c = 0; c < gram.length; c++) {
+          h = ((h << 5) + h + gram.charCodeAt(c)) | 0;
+        }
+        // Spread the n-gram contribution across 4 EMBED_DIM slots so
+        // each n-gram touches multiple dims (denser representation).
+        for (let k = 0; k < 4; k++) {
+          h = ((h << 13) ^ h) | 0;
+          h = ((h >> 17) ^ h) | 0;
+          h = ((h << 5) ^ h) | 0;
+          const idx = ((h >>> 0) % EMBED_DIM);
+          // Sign bit from h determines direction, magnitude fixed to 1
+          // per contribution. Summing many contributions gives a
+          // roughly Gaussian distribution per dim.
+          const sign = ((h >>> 16) & 1) === 0 ? 1 : -1;
+          vec[idx] += sign;
+        }
+      }
     }
 
-    for (let i = 0; i < EMBED_DIM; i++) {
-      hash = ((hash << 13) ^ hash) | 0;
-      hash = ((hash >> 17) ^ hash) | 0;
-      hash = ((hash << 5) ^ hash) | 0;
-      vec[i] = (hash & 0xFFFF) / 32768 - 1; // [-1, 1]
-    }
-
-    // Normalize
+    // L2 normalize to unit length to match real GloVe scale.
     let norm = 0;
     for (let i = 0; i < EMBED_DIM; i++) norm += vec[i] * vec[i];
     norm = Math.sqrt(norm) || 1;
