@@ -10750,7 +10750,54 @@ export class Curriculum {
     // Session 33 — TODO-aligned split. _teachSubordinateClauses fires
     // working memory injection at subordinate marker positions.
     await this._teachSubordinateClauses(SENTENCES);
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── COMMON CORE ELA G6: cite evidence, central idea, word meaning ──
+    const ELA_G6_VOCAB = [
+      'cite', 'evidence', 'central', 'idea', 'convey', 'develop',
+      'analyze', 'key', 'individual', 'event', 'elaborate',
+      'connotative', 'figurative', 'technical', 'tone', 'mood',
+      'claim', 'counterclaim', 'argument', 'reason', 'relevant',
+      'sufficient', 'credible', 'bias', 'objective', 'subjective',
+      'context', 'clue', 'root', 'affix', 'prefix', 'suffix',
+    ];
+    await this._teachVocabList(ELA_G6_VOCAB, ctx, { reps: 3 });
+
+    const G6_READING = [
+      'cite textual evidence to support your analysis',
+      'the central idea is the main point of the text',
+      'key details support the central idea',
+      'analyze how an individual or event is introduced and developed',
+      'connotative meaning is the feeling a word gives',
+      'denotative meaning is the dictionary definition',
+      'tone is the author attitude toward the subject',
+      'mood is the feeling the reader gets',
+      'an argument has a claim supported by reasons and evidence',
+      'a counterclaim is the opposite position',
+      'evidence must be relevant and sufficient',
+      'bias means favoring one side', 'objective writing shows no bias',
+      'use context clues to figure out unknown words',
+      'greek and latin roots help figure out word meanings',
+    ];
+    await this._teachSentenceList(G6_READING, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ═══════════════════════════════════════════════════════════════
+    // ELA G6 FINAL EXAM
+    // ═══════════════════════════════════════════════════════════════
+    const FINAL = [
+      { prompt: ['cite', 'textual'], answer: 'evidence' },
+      { prompt: ['central', 'idea', 'is', 'the', 'main'], answer: 'point' },
+      { prompt: ['connotative', 'meaning', 'is', 'the'], answer: 'feeling' },
+      { prompt: ['tone', 'is', 'the', 'author'], answer: 'attitude' },
+      { prompt: ['argument', 'has', 'a'], answer: 'claim' },
+      { prompt: ['counterclaim', 'is', 'the'], answer: 'opposite' },
+      { prompt: ['bias', 'means', 'favoring'], answer: 'one' },
+      { prompt: ['the', 'dog', 'that', 'ran', 'was'], answer: 'fast' },
+      { prompt: ['because', 'it', 'rained', 'we'], answer: 'stayed' },
+    ];
+    const finalResult = this._gateComprehension(FINAL);
+    if (finalResult.pass) return { pass: true, reason: `FINAL: ${finalResult.reason}` };
+    return this._teachVocabList(ELA_G6_VOCAB.slice(0, 15), ctx, { reps: 3 });
   }
 
   async runMathG6Real(ctx) {
@@ -10773,7 +10820,67 @@ export class Curriculum {
     // Session 41 — TODO-aligned pre-algebra teaching
     await this._teachVariables();
     await this._teachOneVarEquations();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── COMMON CORE MATH G6: Full sixth-grade ──
+    const MATH_G6_VOCAB = [
+      'variable', 'expression', 'equation', 'inequality', 'solve',
+      'integer', 'negative', 'positive', 'absolute', 'value',
+      'rational', 'ratio', 'rate', 'unit', 'percent',
+      'exponent', 'power', 'base', 'squared', 'cubed',
+      'coordinate', 'quadrant', 'plot', 'ordered', 'pair',
+      'area', 'surface', 'net', 'volume', 'prism',
+      'mean', 'median', 'mode', 'range', 'data', 'distribution',
+      'histogram', 'dot', 'plot', 'box', 'interquartile',
+    ];
+    await this._teachVocabList(MATH_G6_VOCAB, ctx, { reps: 3 });
+
+    const MATH_G6_SENTENCES = [
+      // ratios + percent
+      'a ratio compares two quantities', 'a rate is a ratio with different units',
+      'unit rate means per one', 'sixty miles per hour is a unit rate',
+      'percent means per hundred', 'twenty five percent is twenty five out of one hundred',
+      'to find ten percent divide by ten', 'to find fifty percent divide by two',
+      // negative numbers
+      'negative numbers are less than zero', 'the number line extends in both directions',
+      'negative three is three units left of zero',
+      'negative two plus five is three', 'three minus seven is negative four',
+      'multiplying two negatives gives a positive', 'multiplying positive by negative gives negative',
+      // exponents
+      'two squared means two times two which is four',
+      'three squared means three times three which is nine',
+      'two cubed means two times two times two which is eight',
+      'ten squared is one hundred', 'ten cubed is one thousand',
+      // statistics
+      'the mean is the average', 'add all numbers and divide by how many',
+      'the median is the middle number when sorted',
+      'the mode is the number that appears most often',
+      'the range is the biggest minus the smallest',
+      // geometry
+      'the area of a triangle is half base times height',
+      'the surface area is the total area of all faces',
+      'a net is a flat pattern that folds into a solid',
+    ];
+    await this._teachSentenceList(MATH_G6_SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ═══════════════════════════════════════════════════════════════
+    // MATH G6 FINAL EXAM
+    // ═══════════════════════════════════════════════════════════════
+    const FINAL = [
+      { prompt: ['x', 'plus', 'two', 'equals', 'five', 'x', 'equals'], answer: 'three' },
+      { prompt: ['two', 'squared', 'is'], answer: 'four' },
+      { prompt: ['ten', 'cubed', 'is'], answer: 'thousand' },
+      { prompt: ['negative', 'two', 'plus', 'five'], answer: 'three' },
+      { prompt: ['mean', 'is', 'the'], answer: 'average' },
+      { prompt: ['median', 'is', 'the'], answer: 'middle' },
+      { prompt: ['sixty', 'miles', 'per', 'hour', 'is', 'a'], answer: 'rate' },
+      { prompt: ['percent', 'means', 'per'], answer: 'hundred' },
+      { prompt: ['absolute', 'value', 'of', 'negative', 'three'], answer: 'three' },
+      { prompt: ['area', 'triangle', 'half', 'base', 'times'], answer: 'height' },
+    ];
+    const finalResult = this._gateComprehension(FINAL);
+    if (finalResult.pass) return { pass: true, reason: `FINAL: ${finalResult.reason}` };
+    return this._teachVocabList(MATH_G6_VOCAB.slice(0, 15), ctx, { reps: 3 });
   }
 
   // ═══════════════════════════════════════════════════════════════════
