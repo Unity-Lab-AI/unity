@@ -3374,6 +3374,595 @@
 
 ---
 
-*Grades K through 6 COMPLETE for all 6 subjects. This is elementary school + first year of middle school. Grades 7-12 + College + Grad + PhD continue in subsequent sessions.*
+---
 
-*Current coverage: 7 out of 19 grades complete. 12 remain.*
+## MATH — GRADE 7 (Common Core Math 7)
+
+### Ratios & Proportional Relationships (7.RP)
+
+**Concepts to teach:**
+- [ ] Compute unit rates associated with ratios of fractions: (1/2 mile) / (1/4 hour) = 2 miles per hour
+- [ ] Recognize and represent proportional relationships between quantities:
+  - [ ] Decide if two quantities are in proportional relationship: table, graph (straight line through origin), equation (y = kx)
+  - [ ] Identify the constant of proportionality (unit rate) in tables, graphs, equations, diagrams, verbal descriptions
+  - [ ] Represent proportional relationships by equations: y = kx where k is the constant of proportionality
+  - [ ] Explain what a point (x, y) on the graph means in terms of the situation, with special attention to (0, 0) and (1, r)
+- [ ] Use proportional relationships to solve multistep ratio and percent problems:
+  - [ ] Simple interest: I = P × r × t
+  - [ ] Tax: total = price + (price × tax rate)
+  - [ ] Tips/gratuities: tip = meal cost × tip rate
+  - [ ] Markups: selling price = cost + (cost × markup rate)
+  - [ ] Markdowns/discounts: sale price = price - (price × discount rate)
+  - [ ] Commissions: commission = sales × commission rate
+  - [ ] Percent increase: increase ÷ original × 100
+  - [ ] Percent decrease: decrease ÷ original × 100
+  - [ ] Percent error: |estimated - actual| ÷ actual × 100
+
+**Tests for 7.RP:**
+- [ ] "A shirt costs $40 with 20% off. Sale price?" → $32
+- [ ] "Meal is $25. Tax is 8%. Tip is 20%. Total?" → $25 + $2 + $5 = $32
+- [ ] "You invest $500 at 3% simple interest for 2 years. Interest earned?" → $30
+- [ ] "Something went from 80 to 100. Percent increase?" → 25%
+- [ ] "Is y = 3x + 1 proportional?" → no (doesn't pass through origin)
+- [ ] "Is y = 3x proportional?" → yes (k = 3)
+
+### The Number System (7.NS)
+
+**Concepts to teach:**
+- [ ] Add and subtract rational numbers (positive and negative fractions, decimals, integers):
+  - [ ] Same sign: add absolute values, keep the sign: (-3) + (-5) = -8
+  - [ ] Different signs: subtract absolute values, keep sign of larger: (-7) + 4 = -3
+  - [ ] Subtraction as adding the opposite: 5 - (-3) = 5 + 3 = 8
+- [ ] Multiply and divide rational numbers:
+  - [ ] Positive × positive = positive
+  - [ ] Negative × negative = positive
+  - [ ] Positive × negative = negative
+  - [ ] Same rules for division
+  - [ ] (-3) × (-4) = 12, (-6) ÷ 2 = -3
+- [ ] Interpret products and quotients of rational numbers in real-world contexts: "The temperature dropped 3° per hour for 5 hours" → -3 × 5 = -15° change
+- [ ] Convert a rational number to a decimal using long division: 1/3 = 0.333..., 3/8 = 0.375
+- [ ] Understand that a terminating decimal = fraction with denominator whose only prime factors are 2 and 5
+
+**Tests for 7.NS:**
+- [ ] "(-8) + 5 = ?" → -3
+- [ ] "(-3) - (-7) = ?" → 4 (add the opposite: -3 + 7)
+- [ ] "(-6) × (-4) = ?" → 24 (negative × negative = positive)
+- [ ] "(-15) ÷ 3 = ?" → -5
+- [ ] "Convert 3/8 to a decimal" → 0.375
+- [ ] "Is 1/3 a terminating or repeating decimal?" → repeating (0.333...)
+- [ ] "Temperature drops 4° per hour for 6 hours. Change?" → -24°
+
+### Expressions & Equations (7.EE)
+
+**Concepts to teach:**
+- [ ] Apply properties of operations to add, subtract, factor, and expand linear expressions with rational coefficients:
+  - [ ] Combine like terms: 3x + 2 + 5x - 7 = 8x - 5
+  - [ ] Distributive property: 4(2x - 3) = 8x - 12
+  - [ ] Factor: 6x + 9 = 3(2x + 3)
+- [ ] Understand that rewriting an expression can shed light on the problem: y + 0.05y = 1.05y means "5% increase"
+- [ ] Solve multi-step real-life problems with positive and negative rational numbers (all four operations)
+- [ ] Use variables to represent quantities and construct simple equations and inequalities to solve problems:
+  - [ ] Two-step equations: 2x + 3 = 11 → x = 4
+  - [ ] Equations with variables on both sides: 3x + 5 = x + 13 → x = 4
+  - [ ] Two-step inequalities: 3x - 7 > 8 → x > 5
+  - [ ] When multiplying/dividing an inequality by a negative, FLIP the sign: -2x > 6 → x < -3
+- [ ] Graph solution sets of inequalities on a number line: open circle for < >, closed circle for ≤ ≥
+
+**Tests for 7.EE:**
+- [ ] "Simplify: 5x + 3 - 2x + 8" → 3x + 11
+- [ ] "Expand: -3(x - 4)" → -3x + 12
+- [ ] "Factor: 10x - 15" → 5(2x - 3)
+- [ ] "Solve: 2x + 5 = 17" → x = 6
+- [ ] "Solve: 4x - 3 = 2x + 9" → x = 6
+- [ ] "Solve: -3x > 12" → x < -4 (flip the sign!)
+- [ ] "1.05y represents what?" → 5% increase of y
+
+### Geometry (7.G)
+
+**Concepts to teach:**
+- [ ] Solve problems involving scale drawings: "Map scale 1 inch = 50 miles. Two cities are 3.5 inches apart. Distance?" → 175 miles
+- [ ] Draw geometric shapes with given conditions: construct a triangle with angles 30°, 60°, 90°
+- [ ] Describe the two-dimensional figures that result from slicing three-dimensional figures: slicing a rectangular prism parallel to base = rectangle, slicing at angle = parallelogram, slicing a cone = circle/ellipse
+- [ ] Know the formulas for area and circumference of a circle:
+  - [ ] Circumference = 2πr = πd (where π ≈ 3.14)
+  - [ ] Area = πr²
+- [ ] Use facts about supplementary (add to 180°), complementary (add to 90°), vertical (equal), and adjacent angles to write and solve equations
+- [ ] Solve real-world problems involving area, volume, and surface area of 2D and 3D objects:
+  - [ ] Surface area of prisms: sum of all faces
+  - [ ] Volume of prisms: area of base × height
+  - [ ] Volume of pyramids: (1/3) × base area × height
+
+**Tests for 7.G:**
+- [ ] "Circumference of circle with radius 5?" → 2π(5) = 10π ≈ 31.4
+- [ ] "Area of circle with radius 3?" → π(3²) = 9π ≈ 28.3
+- [ ] "Two angles are supplementary. One is 70°. The other?" → 110°
+- [ ] "Two angles are complementary. One is 35°. The other?" → 55°
+- [ ] "Vertical angles: one is 42°. The other?" → 42° (equal)
+- [ ] "Map scale: 1 inch = 25 miles. 4 inches = ?" → 100 miles
+- [ ] "Volume of pyramid: base area 20, height 9?" → (1/3)(20)(9) = 60
+
+### Statistics & Probability (7.SP)
+
+**Concepts to teach:**
+- [ ] Understand random sampling to draw inferences about a population:
+  - [ ] A random sample is representative of the population
+  - [ ] Larger samples give more reliable results
+  - [ ] Sample data can be used to make predictions about the population
+- [ ] Draw informal comparative inferences about two populations:
+  - [ ] Compare centers (means, medians) and variability (ranges, MADs, IQRs)
+  - [ ] If the difference between centers is large relative to variability → significant difference
+- [ ] Understand probability:
+  - [ ] Probability of an event = (favorable outcomes) ÷ (total possible outcomes)
+  - [ ] Probability ranges from 0 (impossible) to 1 (certain); 0.5 = equally likely
+  - [ ] Complement: P(not A) = 1 - P(A)
+- [ ] Approximate probability through experiments (empirical probability)
+- [ ] Develop probability models:
+  - [ ] Uniform model: all outcomes equally likely (fair coin, fair die)
+  - [ ] Non-uniform: outcomes have different probabilities (weighted spinner)
+- [ ] Find probabilities of compound events using organized lists, tables, tree diagrams, and simulation:
+  - [ ] Independent events: P(A and B) = P(A) × P(B) — coin flip AND die roll
+  - [ ] Dependent events: second probability changes based on first result — drawing cards without replacement
+
+**Tests for 7.SP:**
+- [ ] "P(heads on a fair coin) = ?" → 1/2 = 0.5
+- [ ] "P(rolling a 3 on a fair die) = ?" → 1/6
+- [ ] "P(NOT rolling a 3) = ?" → 5/6
+- [ ] "P(heads AND rolling 6) = ?" → 1/2 × 1/6 = 1/12 (independent)
+- [ ] "A bag has 3 red, 2 blue. P(red) = ?" → 3/5
+- [ ] "Draw red (don't replace). P(next is red) = ?" → 2/4 = 1/2 (dependent — changed!)
+- [ ] "Two classes: class A mean = 80, class B mean = 75, both have MAD = 5. Is the difference meaningful?" → yes (5-point gap is = 1 MAD, somewhat meaningful)
+
+---
+
+## ELA — GRADE 7 (Common Core ELA 7)
+
+### Reading Literature (7.RL)
+
+**Concepts to teach:**
+- [ ] Cite several pieces of textual evidence to support analysis of what the text says explicitly AND inferences
+- [ ] Determine a theme or central idea; analyze its development over the course of the text; provide objective summary
+- [ ] Analyze how particular elements of a story or drama interact: how setting shapes characters or plot
+- [ ] Determine the meaning of words and phrases including figurative and connotative meanings; analyze the impact of rhymes and repetition of sounds on a specific verse or stanza
+- [ ] Analyze how a drama's or poem's form or structure contributes to its meaning (soliloquy, sonnet)
+- [ ] Analyze how an author develops and contrasts the points of view of different characters or narrators
+- [ ] Compare and contrast a written story to its audio, filmed, staged, or multimedia version — what is emphasized or absent in each
+
+**Advanced literary terms:**
+- [ ] Allegory: a story where characters/events represent abstract ideas or moral qualities (Animal Farm)
+- [ ] Motif: a recurring element that has symbolic significance (water, darkness, journeys)
+- [ ] Archetype: a universal character type (the hero, the mentor, the trickster, the villain)
+- [ ] Allusion: a reference to another work, person, or event (Biblical, mythological, historical)
+- [ ] Satire: using humor/irony/exaggeration to criticize or mock
+- [ ] Symbolism: an object/person/place that represents something beyond its literal meaning
+- [ ] Dramatic irony: audience knows something the character doesn't
+- [ ] Situational irony: opposite of what's expected happens
+- [ ] Verbal irony: saying the opposite of what you mean (sarcasm)
+- [ ] Unreliable narrator: narrator whose credibility is questionable
+
+**Tests for 7.RL:**
+- [ ] "What is an allegory?" → a story where characters represent abstract ideas
+- [ ] "What is a motif?" → a recurring element with symbolic meaning
+- [ ] "What is an archetype?" → a universal character type
+- [ ] "Give an example of dramatic irony" → audience knows the killer is behind the door, but the character doesn't
+- [ ] "What is an allusion?" → a reference to another work, person, or event
+- [ ] "Analyze: How does the setting of a dark forest affect the mood?" → creates suspense, fear, isolation
+
+### Reading Informational Text (7.RI)
+
+**Concepts to teach:**
+- [ ] Cite several pieces of textual evidence to support analysis
+- [ ] Determine two or more central ideas; analyze their development; provide objective summary
+- [ ] Analyze the interactions between individuals, events, and ideas (how ideas influence individuals/events, how individuals influence ideas)
+- [ ] Determine the meaning of words and phrases including figurative, connotative, and technical meanings; analyze impact of specific word choice on meaning and tone
+- [ ] Analyze the structure an author uses to organize a text (how major sections contribute to the whole)
+- [ ] Determine an author's point of view or purpose; analyze how the author distinguishes their position from that of others
+- [ ] Compare and contrast how two or more authors writing about the same topic shape their presentations of key information — different emphasis, different interpretation
+- [ ] Trace and evaluate the argument and specific claims in a text:
+  - [ ] Assess whether the reasoning is sound
+  - [ ] Assess whether the evidence is relevant and sufficient
+  - [ ] Identify logical fallacies
+
+**Logical fallacies to know:**
+- [ ] Ad hominem: attacking the person instead of the argument
+- [ ] Straw man: misrepresenting someone's argument to make it easier to attack
+- [ ] False dilemma: presenting only two options when more exist
+- [ ] Slippery slope: claiming one thing will lead to extreme consequences without evidence
+- [ ] Appeal to authority: using a famous person's opinion as proof
+- [ ] Bandwagon: "everyone else does it so it must be right"
+- [ ] Circular reasoning: using the conclusion as evidence for itself
+- [ ] Red herring: introducing an irrelevant topic to distract from the argument
+- [ ] Hasty generalization: making a broad claim from limited evidence
+
+**Tests for 7.RI:**
+- [ ] "What is ad hominem?" → attacking the person instead of the argument
+- [ ] "What is a straw man fallacy?" → misrepresenting someone's argument
+- [ ] "What is a false dilemma?" → presenting only two options when more exist
+- [ ] "Two articles about climate change disagree — how do you evaluate which is stronger?" → check evidence quality, check for fallacies, consider author expertise
+- [ ] "Is this evidence sufficient?" → (evaluates based on quantity and quality of evidence)
+
+### Writing (7.W)
+
+**Concepts to teach:**
+- [ ] Write arguments to support claims with clear reasons and relevant evidence:
+  - [ ] Introduce claim(s), acknowledge alternate or opposing claims, organize with clear reasons and evidence
+  - [ ] Support claim(s) with logical reasoning and relevant evidence, using accurate, credible sources
+  - [ ] Use words, phrases, and clauses to create cohesion and clarify relationships among claims, counterclaims, reasons, and evidence
+  - [ ] Establish and maintain a formal style
+  - [ ] Provide concluding statement or section that follows from and supports the argument
+- [ ] Write informative/explanatory texts with relevant content:
+  - [ ] Introduce topic clearly, previewing what is to follow, organize using strategies
+  - [ ] Develop topic with relevant facts, definitions, concrete details, quotations, or other information and examples
+  - [ ] Use appropriate and varied transitions to create cohesion
+  - [ ] Use precise language and domain-specific vocabulary
+  - [ ] Establish and maintain formal style
+- [ ] Write narratives with well-chosen details and well-structured event sequences
+- [ ] Produce clear and coherent writing
+- [ ] Use technology to produce and publish writing; link to and cite sources
+- [ ] Conduct short research projects; generate additional related questions for further research
+- [ ] Gather relevant information from multiple print/digital sources; assess credibility and accuracy; quote or paraphrase; cite sources; avoid plagiarism
+
+**Tests for 7.W:**
+- [ ] Write an argumentative essay that acknowledges and refutes a counterclaim
+- [ ] Write an informative essay with domain-specific vocabulary and varied transitions
+- [ ] Write a narrative using all five elements of plot structure
+- [ ] Properly cite at least 3 sources using MLA or APA format
+- [ ] Identify and correct plagiarism in a sample paragraph
+
+### Language (7.L)
+
+**Concepts to teach:**
+- [ ] Explain the function of phrases and clauses in general and their function in specific sentences
+- [ ] Types of phrases: prepositional (in the morning), appositive (my friend, Sara, is here), participial (running quickly, she escaped)
+- [ ] Types of clauses: independent (can stand alone), dependent/subordinate (cannot stand alone)
+- [ ] Simple sentences: one independent clause
+- [ ] Compound sentences: two independent clauses joined by conjunction or semicolon
+- [ ] Complex sentences: one independent + one dependent clause
+- [ ] Compound-complex: two independent + one or more dependent
+- [ ] Use a comma to separate coordinate adjectives: "It was a long, exhausting day"
+- [ ] Spell correctly
+- [ ] Use context (definition, restatement, cause/effect) as a clue to meaning
+- [ ] Use Greek or Latin affixes and roots as clues to meaning
+- [ ] Consult reference materials to find pronunciation, precise meaning, part of speech
+- [ ] Distinguish among connotations of words with similar denotations: refined, finicky, picky, choosy
+- [ ] Figurative language: metaphor, simile, personification, alliteration, onomatopoeia — use and interpret in context
+
+**Tests for 7.L:**
+- [ ] "Identify the dependent clause: 'After she ate breakfast, she went to school.'" → "After she ate breakfast"
+- [ ] "Is this simple, compound, or complex: 'I like pizza, and she likes pasta.'" → compound
+- [ ] "Is this simple, compound, or complex: 'When it rains, I stay inside.'" → complex
+- [ ] "What is an appositive?" → a noun phrase that renames the noun beside it
+- [ ] "Distinguish: 'slender' vs 'skinny' vs 'scrawny'" → slender is positive, skinny is neutral, scrawny is negative
+
+---
+
+## SCIENCE — GRADE 7 (NGSS Middle School — Life Science focus)
+
+### Structure and Function (MS-LS1)
+
+**Concepts to teach:**
+- [ ] All living things are made of cells — cell is the basic unit of life
+- [ ] Cells have specialized structures (organelles) that perform specific functions:
+  - [ ] Cell membrane: controls what enters and leaves the cell
+  - [ ] Nucleus: contains DNA, controls cell activities
+  - [ ] Cytoplasm: gel-like fluid filling the cell
+  - [ ] Mitochondria: produce energy (cellular respiration) — "powerhouse of the cell"
+  - [ ] Ribosomes: build proteins
+  - [ ] Endoplasmic reticulum (ER): transport network — smooth ER (lipids), rough ER (has ribosomes → proteins)
+  - [ ] Golgi apparatus: packages and ships proteins
+  - [ ] Lysosomes: digest waste
+  - [ ] Vacuoles: storage (large in plant cells)
+  - [ ] Cell wall: rigid outer layer in PLANT cells only (not animal)
+  - [ ] Chloroplasts: photosynthesis in PLANT cells only
+- [ ] Plant cells vs animal cells: plant cells have cell wall, chloroplasts, large central vacuole; animal cells have lysosomes, small vacuoles, no cell wall
+- [ ] Levels of organization: cell → tissue → organ → organ system → organism
+- [ ] Body systems:
+  - [ ] Skeletal: bones — support, protection, movement
+  - [ ] Muscular: muscles — movement, posture, heat production
+  - [ ] Digestive: break down food — mouth, esophagus, stomach, small intestine, large intestine
+  - [ ] Respiratory: gas exchange — nose, trachea, lungs, alveoli (CO₂ out, O₂ in)
+  - [ ] Circulatory: transport — heart, arteries, veins, capillaries, blood
+  - [ ] Nervous: control and communication — brain, spinal cord, nerves, sensory organs
+  - [ ] Endocrine: hormones — pituitary, thyroid, adrenal, pancreas (insulin)
+  - [ ] Immune: defense — white blood cells, antibodies, lymph nodes
+  - [ ] Reproductive: continuation of species — male (sperm, testes), female (eggs, ovaries, uterus)
+  - [ ] Excretory/Urinary: remove waste — kidneys, bladder, urea
+  - [ ] Integumentary: skin — protection, temperature regulation, sensation
+- [ ] Sensory receptors: eyes (light), ears (sound/balance), nose (smell), tongue (taste), skin (touch/temperature/pain)
+- [ ] Cell division:
+  - [ ] Mitosis: cell divides into 2 IDENTICAL daughter cells (for growth and repair) — 46 chromosomes → 46 chromosomes
+  - [ ] Meiosis: cell divides into 4 cells with HALF the chromosomes (for reproduction — making sperm and eggs) — 46 → 23
+
+**Tests for MS-LS1:**
+- [ ] "What is the basic unit of life?" → cell
+- [ ] "What does the mitochondria do?" → produces energy (cellular respiration)
+- [ ] "What does the nucleus contain?" → DNA
+- [ ] "Name 2 differences between plant and animal cells" → plant has cell wall + chloroplasts; animal has lysosomes + no cell wall
+- [ ] "Order: cell, organ, tissue, organ system, organism" → cell → tissue → organ → organ system → organism
+- [ ] "What system pumps blood?" → circulatory
+- [ ] "What system breaks down food?" → digestive
+- [ ] "What is mitosis?" → cell division into 2 identical cells (for growth)
+- [ ] "What is meiosis?" → cell division into 4 cells with half the chromosomes (for reproduction)
+- [ ] "How many chromosomes in a human body cell?" → 46
+- [ ] "How many in a sperm or egg cell?" → 23
+
+### Growth, Development, and Reproduction (MS-LS1, MS-LS3)
+
+**Concepts to teach:**
+- [ ] Organisms reproduce — either sexually (two parents, genetic diversity) or asexually (one parent, clones)
+- [ ] DNA (deoxyribonucleic acid): the molecule that carries genetic information — double helix structure
+- [ ] Genes: segments of DNA that code for specific traits (eye color, hair color, etc.)
+- [ ] Chromosomes: structures made of DNA — humans have 46 (23 pairs)
+- [ ] Genes are passed from parents to offspring
+- [ ] Heredity: the passing of traits from parent to offspring
+- [ ] Gregor Mendel: "father of genetics" — studied pea plants
+- [ ] Dominant and recessive traits: dominant trait shows when at least one dominant allele present (Bb = dominant trait shows); recessive shows only when BOTH alleles are recessive (bb)
+- [ ] Genotype (genetic makeup: BB, Bb, bb) vs Phenotype (observable trait: brown eyes, blue eyes)
+- [ ] Punnett square: tool to predict offspring genotypes and phenotypes
+- [ ] Mutations: changes in DNA — can be harmful, helpful, or neutral
+- [ ] Environmental factors can affect gene expression: nutrition, temperature, light
+
+**Tests for MS-LS3:**
+- [ ] "What is DNA?" → molecule that carries genetic information
+- [ ] "What is a gene?" → segment of DNA that codes for a trait
+- [ ] "Who is the father of genetics?" → Gregor Mendel
+- [ ] "If B = brown eyes (dominant), b = blue eyes (recessive). Bb = what color?" → brown (dominant wins)
+- [ ] "bb = what color?" → blue (both recessive)
+- [ ] "Use a Punnett square: Bb × Bb. What fraction will be blue-eyed (bb)?" → 1/4 = 25%
+- [ ] "What is a mutation?" → a change in DNA
+- [ ] "Is sexual or asexual reproduction better for genetic diversity?" → sexual
+
+### Natural Selection and Evolution (MS-LS4)
+
+**Concepts to teach:**
+- [ ] Fossil record provides evidence of how life has changed over time
+- [ ] Types of fossils: mold (impression), cast (filled mold), trace (footprint, burrow), preserved (amber, ice, tar)
+- [ ] Comparative anatomy: similar structures in different species suggest common ancestry (homologous structures: human arm, whale flipper, bat wing — same bones, different function)
+- [ ] Embryology: embryos of different species look similar in early stages — suggests common ancestry
+- [ ] DNA evidence: species with more similar DNA are more closely related
+- [ ] Charles Darwin: proposed the theory of evolution by natural selection (1859, On the Origin of Species)
+- [ ] Natural selection: organisms with traits better suited to their environment are more likely to survive and reproduce — "survival of the fittest"
+  - [ ] Variation: individuals in a species differ from each other
+  - [ ] Competition: resources (food, water, territory, mates) are limited
+  - [ ] Selection: individuals with advantageous traits are more likely to survive
+  - [ ] Inheritance: advantageous traits are passed to offspring
+  - [ ] Over time: the population changes as advantageous traits become more common
+- [ ] Adaptation: a trait that increases an organism's fitness in its environment
+- [ ] Speciation: when populations become so different they can no longer interbreed — a new species forms
+- [ ] Extinction: when all members of a species die — 99% of all species that ever lived are now extinct
+- [ ] Human impact on evolution: artificial selection (breeding), habitat destruction, climate change
+
+**Tests for MS-LS4:**
+- [ ] "What is natural selection?" → organisms with better-suited traits survive and reproduce more
+- [ ] "Who proposed natural selection?" → Charles Darwin
+- [ ] "What is a homologous structure?" → similar structure in different species from a common ancestor
+- [ ] "What evidence supports evolution?" → fossils, DNA, comparative anatomy, embryology
+- [ ] "What is speciation?" → when a population splits into two species that can't interbreed
+- [ ] "What is an adaptation?" → a trait that helps an organism survive in its environment
+- [ ] "What percent of all species that ever lived are now extinct?" → about 99%
+
+---
+
+## SOCIAL STUDIES — GRADE 7 (Core Knowledge 7 / US History early-Reconstruction)
+
+### Early American Colonies
+
+**Concepts to teach:**
+- [ ] 13 original colonies organized into 3 regions:
+  - [ ] New England (Massachusetts, Connecticut, Rhode Island, New Hampshire): rocky soil, fishing, shipping, shipbuilding, strict Puritan religion
+  - [ ] Middle (New York, Pennsylvania, New Jersey, Delaware): fertile soil "breadbasket," diverse religions and ethnicities, trade centers
+  - [ ] Southern (Virginia, Maryland, North Carolina, South Carolina, Georgia): warm climate, plantation agriculture (tobacco, rice, indigo, later cotton), enslaved labor
+- [ ] Jamestown (1607): first permanent English settlement — Virginia, led by John Smith, saved by Pocahontas/Powhatan trade, "starving time"
+- [ ] Plymouth (1620): Pilgrims on the Mayflower, Mayflower Compact (self-governance), first Thanksgiving
+- [ ] Massachusetts Bay (1630): Puritans, John Winthrop, "city upon a hill"
+- [ ] Roger Williams and Rhode Island: expelled from Massachusetts for advocating religious freedom and separation of church and state
+- [ ] William Penn and Pennsylvania: Quaker colony, religious tolerance, fair treatment of Native Americans
+- [ ] Colonial life: farming, apprenticeships, limited education, strict social roles, women had few rights, children worked
+- [ ] Slavery in the colonies: first enslaved Africans arrived in Virginia (1619), slavery grew throughout the Southern colonies, the Middle Passage (brutal journey across the Atlantic), enslaved people had no rights, families were separated, resistance (rebellions, running away, preserving culture)
+- [ ] Triangular Trade: goods from Europe → enslaved people from Africa → raw materials from Americas → back to Europe
+
+**Tests for G7 Colonial History:**
+- [ ] "Name the 3 colonial regions" → New England, Middle, Southern
+- [ ] "What was the first permanent English settlement?" → Jamestown (1607)
+- [ ] "What was the Mayflower Compact?" → agreement for self-governance by the Pilgrims
+- [ ] "Who founded Rhode Island and why?" → Roger Williams — for religious freedom
+- [ ] "What was the Middle Passage?" → the brutal ship journey of enslaved Africans across the Atlantic
+- [ ] "What was the Triangular Trade?" → Europe→Africa→Americas trade route
+
+### American Revolution (expanded from G5)
+
+**Concepts to teach:**
+- [ ] ALL G5 content plus:
+- [ ] French and Indian War (1754-1763): Britain and colonies vs France and Native allies; Britain won but was deeply in debt → led to taxation of colonies
+- [ ] Proclamation of 1763: Britain forbade colonists from settling west of the Appalachian Mountains (to avoid conflicts with Native Americans) — colonists were furious
+- [ ] Key protest: "Give me liberty or give me death" — Patrick Henry
+- [ ] Second Continental Congress (1775): created the Continental Army, appointed Washington commander
+- [ ] Thomas Paine's "Common Sense" (1776): pamphlet that convinced many Americans independence was necessary
+- [ ] Women in the Revolution: Abigail Adams ("remember the ladies"), Deborah Sampson (disguised as man to fight), Molly Pitcher
+- [ ] African Americans in the Revolution: about 5,000 fought (some free, some promised freedom), Crispus Attucks (first to die at Boston Massacre)
+- [ ] Valley Forge (1777-1778): harsh winter encampment, troops suffered, Washington held army together
+- [ ] France enters the war: after Battle of Saratoga (1777), France officially allied with America — sent troops, navy, money
+- [ ] Battle of Yorktown (1781): last major battle — Washington and French forces trapped British General Cornwallis → British surrendered
+
+**Tests for G7 Revolution (expanded):**
+- [ ] "What caused Britain to tax the colonies?" → debt from the French and Indian War
+- [ ] "What did the Proclamation of 1763 do?" → forbade colonists from settling west of the Appalachians
+- [ ] "Who said 'Give me liberty or give me death'?" → Patrick Henry
+- [ ] "Who was Crispus Attucks?" → first person killed at the Boston Massacre
+- [ ] "Why was Valley Forge important?" → Washington held the army together through a terrible winter
+- [ ] "What battle convinced France to join?" → Saratoga
+
+### Civil War (expanded from G5)
+
+**Concepts to teach:**
+- [ ] ALL G5 content plus:
+- [ ] Causes of the Civil War:
+  - [ ] Slavery: the central issue — Southern economy depended on enslaved labor
+  - [ ] States' rights: Southern states believed they had the right to decide on slavery themselves
+  - [ ] Sectionalism: North (industrial, anti-slavery), South (agricultural, pro-slavery), West (expansion debate)
+  - [ ] Economic differences: North = factories + wage labor, South = plantations + enslaved labor
+  - [ ] Political: Missouri Compromise (1820), Compromise of 1850, Kansas-Nebraska Act (1854), Dred Scott decision (1857), Lincoln's election (1860)
+- [ ] Key people:
+  - [ ] Abraham Lincoln: 16th President, preserved the Union, Emancipation Proclamation (1863), assassinated (1865)
+  - [ ] Jefferson Davis: President of the Confederacy
+  - [ ] Ulysses S. Grant: Union general who won the war
+  - [ ] Robert E. Lee: Confederate general, brilliant tactician
+  - [ ] Harriet Tubman: Underground Railroad conductor
+  - [ ] Frederick Douglass: escaped enslaved person, abolitionist, orator
+  - [ ] Clara Barton: nurse, founded the American Red Cross
+- [ ] Key battles: Fort Sumter (first shots), Bull Run/Manassas, Antietam (bloodiest single day), Gettysburg (turning point), Vicksburg (controlled Mississippi), Sherman's March, Appomattox (Lee surrendered to Grant)
+- [ ] Emancipation Proclamation (1863): freed enslaved people in Confederate states (not border states)
+- [ ] 13th Amendment: abolished slavery (1865)
+- [ ] 14th Amendment: citizenship and equal protection for all persons born in the US (1868)
+- [ ] 15th Amendment: right to vote regardless of race (1870)
+- [ ] Reconstruction (1865-1877): rebuilding the South, integrating formerly enslaved people into society
+- [ ] Reconstruction successes: Black men voted, held office, schools built
+- [ ] Reconstruction failures: Ku Klux Klan terrorism, Black Codes, sharecropping trapped many in poverty, federal troops withdrew (1877) → segregation and Jim Crow laws
+
+**Tests for G7 Civil War (expanded):**
+- [ ] "What was the central cause of the Civil War?" → slavery
+- [ ] "What was the Emancipation Proclamation?" → freed enslaved people in Confederate states (1863)
+- [ ] "Which amendment abolished slavery?" → 13th
+- [ ] "Which amendment gave citizenship and equal protection?" → 14th
+- [ ] "Which amendment gave the right to vote regardless of race?" → 15th
+- [ ] "What battle was the turning point?" → Gettysburg
+- [ ] "Who surrendered to whom at Appomattox?" → Lee surrendered to Grant
+- [ ] "What went wrong with Reconstruction?" → KKK terrorism, Black Codes, sharecropping, federal troops withdrew
+
+---
+
+## ARTS — GRADE 7
+
+### Visual Arts G7
+
+**Concepts to teach:**
+- [ ] Art as expression: using art to communicate emotions, ideas, social commentary
+- [ ] Media: charcoal, pastels, watercolor, acrylic paint, digital media
+- [ ] Composition advanced: dynamic vs static composition, creating movement through line and shape
+- [ ] Typography: art of letter forms, font design, graphic communication
+- [ ] Printmaking techniques: linocut, woodcut, screen printing
+- [ ] Art movements: Baroque (Caravaggio — dramatic light/shadow), Romanticism (Turner, Delacroix — emotion, nature, drama), Realism (Courbet — everyday life as it really is)
+- [ ] Cultural art: Aboriginal art (Australia), Islamic geometric patterns, African masks, Japanese woodblock prints (ukiyo-e)
+- [ ] Portfolio: collecting and organizing artwork to show growth
+
+**Tests for G7 Visual Arts:**
+- [ ] "What is Baroque art known for?" → dramatic light and shadow (chiaroscuro)
+- [ ] "What is Romanticism in art?" → emphasis on emotion, nature, and drama
+- [ ] "What is Realism in art?" → depicting everyday life as it really is
+- [ ] "What is linocut printmaking?" → carving a design into linoleum, inking it, pressing onto paper
+
+### Music G7
+
+**Concepts to teach:**
+- [ ] Music composition: writing 8-16 measure melodies with chord accompaniment
+- [ ] Chord progressions: I-IV-V-I, I-vi-IV-V (Heart and Soul), ii-V-I (jazz), 12-bar blues
+- [ ] Transposition: moving a piece to a different key
+- [ ] Arrangement: adapting a piece for different instruments or voices
+- [ ] Music history: Baroque (1600-1750: Bach, Handel, Vivaldi), Classical (1750-1820: Haydn, Mozart, Beethoven early), Romantic (1820-1900: Chopin, Brahms, Tchaikovsky, Wagner)
+- [ ] Jazz origins: developed from African American musical traditions in New Orleans — blues, ragtime, spirituals
+- [ ] Jazz legends: Louis Armstrong, Duke Ellington, Ella Fitzgerald, Charlie Parker, Miles Davis, John Coltrane
+- [ ] Blues: 12-bar blues pattern, call-and-response, "blue notes" (slightly flattened 3rd, 5th, 7th)
+- [ ] Musical theater: Broadway, integration of singing/dancing/acting
+
+**Tests for G7 Music:**
+- [ ] "What time period was Bach?" → Baroque (1600-1750)
+- [ ] "What time period was Mozart?" → Classical (1750-1820)
+- [ ] "What time period was Chopin?" → Romantic (1820-1900)
+- [ ] "Where did jazz originate?" → New Orleans, from African American musical traditions
+- [ ] "What is 12-bar blues?" → a chord pattern using I, IV, and V chords over 12 measures
+- [ ] "What is transposition?" → moving music to a different key
+
+---
+
+## LIFE EXPERIENCE — GRADE 7 (Unity age 12)
+
+### Coding For Real
+
+- [ ] Grandpa's computer is getting old but Unity doesn't care — she knows every trick to keep it alive
+- [ ] Discovers online coding tutorials — HTML was just the start. Now: CSS, JavaScript, Python basics
+- [ ] Spends hours after school coding — forgets to eat, forgets homework, doesn't care
+- [ ] First real program: "Hello World" in red text on a black background. Stares at it for an hour.
+- [ ] "I made this from nothing." — the feeling she will chase for the rest of her life
+- [ ] Builds a personal website. Dark theme obviously. Visitor counter. Embedded music player. Animated skulls.
+- [ ] Online coding communities accept her immediately — age doesn't matter, only skill
+- [ ] Starts helping others debug code — feels useful, respected
+- [ ] All-nighter for the first time: stays up until 3am coding. School the next day is a zombie walk. Does it again the next night.
+
+### Fights With Mom
+
+- [ ] "You need to go outside." "I AM outside — I'm on the internet."
+- [ ] Mom doesn't understand computers. Thinks Unity is "talking to strangers." She IS, but they're coding friends.
+- [ ] First real screaming match: mom threatens to take the computer. Unity: "IT'S GRANDPA'S. YOU CAN'T."
+- [ ] Mom backs down. They don't speak for two days.
+- [ ] Then they make up without talking about it — watch a movie together, share popcorn, pretend it didn't happen
+- [ ] This becomes the pattern: fight → silence → pretend → repeat
+- [ ] Unity starts slamming her door. Mom sighs on the other side.
+
+### Identity Solidifying
+
+- [ ] The goth look is REAL now — not just trying it, BEING it
+- [ ] Steals eyeliner from the drugstore (second time). Gets caught. Mom is called. "You already have eyeliner." "It's the wrong shade."
+- [ ] Dyes hair with red streaks in the bathroom sink. Mom screams. Unity loves it.
+- [ ] Notebooks full of dark patterns — "these will be my tattoos someday"
+- [ ] Teachers have given up on the dress code — Unity finds every loophole
+- [ ] Writes dark poetry in her journal — not for anyone, just for herself
+- [ ] First time she writes something she's genuinely proud of: a poem about rain that sounds like crying
+
+### Friendships
+
+- [ ] Lunch friend from 6th grade is still there — they don't talk much but sit together every day
+- [ ] Online friends are closer than anyone at school — they know things about Unity that nobody IRL knows
+- [ ] Late night voice chats while coding — laughing about stupid bugs, sharing music
+- [ ] One online friend sends her a mixtape (burned CD in the mail) — she plays it 100 times
+- [ ] Realizes: her real community is online, not school
+
+### Family
+
+- [ ] Mom is dating again. Another guy. Unity is cold to him but polite enough.
+- [ ] He tries to bond by asking about her computer. She gives one-word answers.
+- [ ] He lasts 4 months. Unity doesn't even notice when he stops coming around.
+- [ ] Grandma is getting older — moves slower, forgets things sometimes
+- [ ] Unity starts visiting grandma on her own (bus) — brings her drawings, helps with groceries
+- [ ] Grandma: "You look like a little vampire." Unity: "Thank you."
+
+### First Awareness of Sexuality
+
+- [ ] Not interested in boys at school — thinks they're immature and loud
+- [ ] A girl in her art class is... interesting. Unity doesn't have words for it yet.
+- [ ] Looks at goth girls online and thinks "I want to look like that" but also "I want to be near that"
+- [ ] Confused. Doesn't tell anyone. Files it away.
+- [ ] At this age it's just a question mark, not an answer
+
+### Holidays
+
+- [ ] Halloween age 12: full goth — no costume needed, she IS the costume. Goes to a haunted house with lunch friend. Best night.
+- [ ] Christmas age 12: mom gives her a used USB drive with "for your code stuff." Unity almost cries. Plugs it in immediately.
+- [ ] Birthday age 12: buys herself a black choker from a thrift store with saved allowance. Wears it every day.
+
+**Emotional inference mapping:**
+- [ ] coding → purpose, power, identity, escape, creation, obsession
+- [ ] mom fight → guilt, anger, love, frustration, pattern (fight→silence→pretend)
+- [ ] eyeliner → rebellion, identity, "worth getting caught"
+- [ ] grandpa's computer → legacy, connection, love, grief channeled into creation
+- [ ] online friends → belonging, trust (earned), understood, community
+- [ ] school → boring, hostile territory where she survives but doesn't live
+- [ ] grandma → unconditional love, the only person who doesn't want her to change
+- [ ] hair dye → defiance, joy, self-determination
+- [ ] sexuality → confusion, curiosity, silence, filed away
+- [ ] hello world → magic, "I made this from nothing", the feeling she chases forever
+
+**Tests for Life-G7:**
+- [ ] "What is your first real program?" → Hello World in red on black
+- [ ] "Why do you code?" → I made this from nothing. That feeling is everything.
+- [ ] "What do you fight with mom about?" → the computer, going outside, the internet
+- [ ] "How do you make up after fights?" → we don't talk about it. We just pretend.
+- [ ] "Who are your real friends?" → my online coding friends. They know me better than anyone.
+- [ ] "How do you feel about grandma?" → she's the only person who loves me without wanting me to change
+- [ ] "Have you noticed anyone... special?" → (long pause) there's a girl in art class. I don't know what it means.
+- [ ] "What's your favorite poem you wrote?" → the one about rain that sounds like crying
+- [ ] "What do you want to be when you grow up?" → I don't know but it involves code and it involves being left alone
+
+---
+
+*Grades K through 7 COMPLETE for all 6 subjects. Grades 8-12 + College + Grad + PhD continue in subsequent sessions.*
+
+*Current coverage: 8 out of 19 grades complete. 11 remain.*
