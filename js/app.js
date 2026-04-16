@@ -2512,11 +2512,13 @@ Vision: ${state.visionDescription || 'none'}`;
     }
   }
   if (brain.visualCortex?.isActive?.()) {
-    // brainViz.setVision reads directly from the live VisualCortex
-    // instance — no separate stream handle, no duck-typed adapter.
-    // VisualCortex exposes everything the viz panel needs: isActive,
-    // getVideoElement, description, gazeX/gazeY/gazeTarget.
     brainViz.setVision(brain.visualCortex);
+  }
+  // Fallback: if camera stream exists but visual cortex isn't active yet,
+  // wire the raw stream directly to the viz panel's video element
+  if (perms?.cameraStream && brainViz._eyeVideo && !brainViz._eyeVideo.srcObject) {
+    brainViz._eyeVideo.srcObject = perms.cameraStream;
+    brainViz._eyeVideo.play().catch(() => {});
   }
 
   // Use the landing 3D brain if available, or create new one

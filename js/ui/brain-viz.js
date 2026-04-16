@@ -323,6 +323,12 @@ export class BrainVisualizer {
     this._coherenceHistory.push(coh);
     if (this._coherenceHistory.length > this._maxBandHistory) this._coherenceHistory.shift();
 
+    // Update eye description from server vision if available
+    if (state.visionDescription) {
+      const descEl = this._el?.querySelector('#bv-eye-desc');
+      if (descEl) descEl.textContent = state.visionDescription;
+    }
+
     // Always track spike afterglow
     if (state.spikes) {
       const len = Math.min(state.spikes.length, this._spikeGlow.length);
@@ -520,61 +526,78 @@ export class BrainVisualizer {
   _renderSynapses(s) {
     const ctx = this._synapseCtx;
     const canvas = ctx.canvas;
-    const size = canvas.width;
-    ctx.fillStyle = '#0a0a12';
-    ctx.fillRect(0, 0, size, size);
+    const W = canvas.width;
+    const H = canvas.height;
 
-    // No per-synapse data from server — show cluster-to-cluster
-    // connection matrix. Each cell = one inter-cluster projection.
-    // Brightness = product of source and target firing rates.
-    const names = ['cortex', 'hippo', 'amyg', 'BG', 'cereb', 'hypo', 'myst'];
+    // Gentle fade for trail persistence
+    ctx.fillStyle = 'rgba(10,10,18,0.15)';
+    ctx.fillRect(0, 0, W, H);
+
+    // 20 inter-cluster projection pathways shown as animated connection lines
+    // Brightness pulses with real-time co-firing between source and target
     const keys = ['cortex', 'hippocampus', 'amygdala', 'basalGanglia', 'cerebellum', 'hypothalamus', 'mystery'];
+    const labels = ['CTX', 'HPC', 'AMG', 'BG', 'CRB', 'HYP', 'Ψ'];
     const colors = ['#ff79c6', '#8be9fd', '#ffb86c', '#50fa7b', '#bd93f9', '#f1fa8c', '#ff5555'];
-    const n = names.length;
-    const cellSize = (size - 60) / n;
-    const ox = 50, oy = 14;
 
-    // Column headers
-    ctx.font = '9px monospace';
-    for (let j = 0; j < n; j++) {
-      ctx.fillStyle = colors[j];
-      ctx.save();
-      ctx.translate(ox + j * cellSize + cellSize / 2, oy);
-      ctx.rotate(-0.5);
-      ctx.fillText(names[j], 0, 0);
-      ctx.restore();
-    }
+    // Position clusters in a circle
+    const cx = W / 2, cy = H / 2, radius = Math.min(W, H) * 0.35;
+    const positions = keys.map((_, i) => ({
+      x: cx + Math.cos(i * Math.PI * 2 / 7 - Math.PI / 2) * radius,
+      y: cy + Math.sin(i * Math.PI * 2 / 7 - Math.PI / 2) * radius,
+    }));
 
-    for (let i = 0; i < n; i++) {
-      // Row label
-      ctx.fillStyle = colors[i];
-      ctx.font = '9px monospace';
-      ctx.fillText(names[i], 2, oy + 18 + i * cellSize + cellSize / 2);
-
+    // Draw connection lines between all pairs — brightness = co-firing
+    const t = Date.now() / 1000;
+    for (let i = 0; i < keys.length; i++) {
       const srcRate = s.clusters?.[keys[i]]?.firingRate ?? 0;
-      for (let j = 0; j < n; j++) {
+      for (let j = i + 1; j < keys.length; j++) {
         const tgtRate = s.clusters?.[keys[j]]?.firingRate ?? 0;
-        const strength = Math.sqrt(srcRate * tgtRate) * 3;
-        const alpha = Math.min(0.9, strength);
-
-        if (i === j) {
-          // Diagonal = self-connection (intra-cluster)
-          ctx.fillStyle = `rgba(${parseInt(colors[i].slice(1,3),16)},${parseInt(colors[i].slice(3,5),16)},${parseInt(colors[i].slice(5,7),16)},${alpha})`;
-        } else {
-          // Off-diagonal = inter-cluster projection
-          const r = Math.floor((parseInt(colors[i].slice(1,3),16) + parseInt(colors[j].slice(1,3),16)) / 2);
-          const g = Math.floor((parseInt(colors[i].slice(3,5),16) + parseInt(colors[j].slice(3,5),16)) / 2);
-          const b = Math.floor((parseInt(colors[i].slice(5,7),16) + parseInt(colors[j].slice(5,7),16)) / 2);
-          ctx.fillStyle = `rgba(${r},${g},${b},${alpha})`;
-        }
-        ctx.fillRect(ox + j * cellSize + 1, oy + 18 + i * cellSize + 1, cellSize - 2, cellSize - 2);
+        const coFire = Math.sqrt(srcRate * tgtRate);
+        if (coFire < 0.001) continue;
+        const pulse = 0.5 + 0.5 * Math.sin(t * 3 + i * 1.7 + j * 2.3);
+        const alpha = Math.min(0.8, coFire * 3 * pulse);
+        const r = Math.floor((parseInt(colors[i].slice(1,3),16) + parseInt(colors[j].slice(1,3),16)) / 2);
+        const g = Math.floor((parseInt(colors[i].slice(3,5),16) + parseInt(colors[j].slice(3,5),16)) / 2);
+        const b = Math.floor((parseInt(colors[i].slice(5,7),16) + parseInt(colors[j].slice(5,7),16)) / 2);
+        ctx.strokeStyle = `rgba(${r},${g},${b},${alpha})`;
+        ctx.lineWidth = 1 + coFire * 4;
+        ctx.beginPath();
+        ctx.moveTo(positions[i].x, positions[i].y);
+        ctx.lineTo(positions[j].x, positions[j].y);
+        ctx.stroke();
       }
     }
 
-    // Legend
+    // Draw cluster nodes — size pulses with firing rate
+    for (let i = 0; i < keys.length; i++) {
+      const rate = s.clusters?.[keys[i]]?.firingRate ?? 0;
+      const nodeR = 12 + rate * 40;
+      const pulse = 0.7 + 0.3 * Math.sin(t * 2 + i);
+
+      // Glow
+      ctx.beginPath();
+      ctx.arc(positions[i].x, positions[i].y, nodeR + 4, 0, Math.PI * 2);
+      ctx.fillStyle = colors[i] + Math.floor(rate * pulse * 80).toString(16).padStart(2, '0');
+      ctx.fill();
+
+      // Node
+      ctx.beginPath();
+      ctx.arc(positions[i].x, positions[i].y, nodeR, 0, Math.PI * 2);
+      ctx.fillStyle = colors[i] + 'cc';
+      ctx.fill();
+
+      // Label
+      ctx.fillStyle = '#000';
+      ctx.font = 'bold 9px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(labels[i], positions[i].x, positions[i].y + 3);
+    }
+    ctx.textAlign = 'start';
+
+    // Bottom info
     ctx.fillStyle = '#555';
     ctx.font = '9px monospace';
-    ctx.fillText('brightness = firing rate correlation between clusters', 4, size - 4);
+    ctx.fillText('line brightness = Hebbian co-firing · node size = spike rate', 4, H - 4);
   }
 
   _renderOscillations(s) {
