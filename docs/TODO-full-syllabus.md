@@ -2142,6 +2142,521 @@
 
 ---
 
-*Grades K through 4 COMPLETE for all 6 subjects. Grades 5-12 + College + Grad + PhD continue in subsequent sessions.*
+---
 
-*Current coverage: 5 out of 19 grades complete. 14 remain.*
+## MATH — GRADE 5 (Common Core Math 5)
+
+### Operations & Algebraic Thinking (5.OA)
+
+**Concepts to teach:**
+- [ ] Use parentheses, brackets, or braces in numerical expressions: 2 × (3 + 4) = 2 × 7 = 14
+- [ ] Order of operations (PEMDAS): Parentheses, Exponents, Multiplication/Division (left to right), Addition/Subtraction (left to right)
+- [ ] Write simple expressions that record calculations with numbers: "add 8 and 7, then multiply by 2" → 2 × (8 + 7)
+- [ ] Interpret numerical expressions without evaluating: "2 × (8 + 7) is twice as large as 8 + 7"
+- [ ] Generate two numerical patterns using two given rules, identify relationships between corresponding terms, graph ordered pairs on a coordinate plane
+
+**Tests for 5.OA:**
+- [ ] "Solve: 3 + 4 × 2 = ?" → 11 (not 14 — multiplication before addition)
+- [ ] "Solve: (3 + 4) × 2 = ?" → 14 (parentheses first)
+- [ ] "Solve: 20 - 3 × 4 + 2 = ?" → 10 (multiply first: 20-12+2)
+- [ ] "Write an expression: subtract 5 from 20, then divide by 3" → (20 - 5) ÷ 3
+- [ ] "PEMDAS stands for?" → Parentheses, Exponents, Multiplication, Division, Addition, Subtraction
+
+### Number & Operations in Base Ten (5.NBT)
+
+**Concepts to teach:**
+- [ ] Recognize that in a multi-digit number, a digit in one place represents 10 times as much as it represents in the place to its right AND 1/10 of what it represents in the place to its left
+- [ ] Explain patterns in the number of zeros when multiplying by powers of 10: 3 × 100 = 300, 3 × 1000 = 3000
+- [ ] Explain patterns in the placement of the decimal point when multiplying or dividing by powers of 10: 3.4 × 10 = 34, 3.4 × 100 = 340
+- [ ] Use exponents to denote powers of 10: 10² = 100, 10³ = 1000
+- [ ] Read, write, and compare decimals to thousandths: 3.456 > 3.45 because 3.456 > 3.450
+- [ ] Round decimals to any place: 3.456 rounded to nearest tenth = 3.5
+- [ ] Fluently multiply multi-digit whole numbers using standard algorithm: 345 × 67
+- [ ] Find whole-number quotients with up to four-digit dividends and two-digit divisors: 7,932 ÷ 24
+- [ ] Add, subtract, multiply, and divide decimals to hundredths:
+  - [ ] 3.45 + 2.7 = 6.15
+  - [ ] 5.3 - 2.48 = 2.82
+  - [ ] 2.4 × 0.5 = 1.20
+  - [ ] 7.5 ÷ 0.3 = 25
+
+**Tests for 5.NBT:**
+- [ ] "10³ = ?" → 1000
+- [ ] "3.4 × 100 = ?" → 340
+- [ ] "0.56 × 10 = ?" → 5.6
+- [ ] "Round 3.456 to nearest hundredth" → 3.46
+- [ ] "Compare: 0.305 ___ 0.35" → < (0.305 < 0.350)
+- [ ] "345 × 67 = ?" → 23,115
+- [ ] "7,932 ÷ 24 = ?" → 330 remainder 12
+- [ ] "3.45 + 2.7 = ?" → 6.15
+- [ ] "5.3 - 2.48 = ?" → 2.82
+- [ ] "2.4 × 0.5 = ?" → 1.2
+- [ ] "7.5 ÷ 0.3 = ?" → 25
+
+### Number & Operations — Fractions (5.NF)
+
+**Concepts to teach:**
+- [ ] Add and subtract fractions with UNLIKE denominators: find common denominator
+  - [ ] 1/3 + 1/4 = 4/12 + 3/12 = 7/12
+  - [ ] 2/5 + 1/3 = 6/15 + 5/15 = 11/15
+  - [ ] 3/4 - 1/6 = 9/12 - 2/12 = 7/12
+- [ ] Solve word problems involving addition and subtraction of fractions with unlike denominators
+- [ ] Interpret a fraction as division: a/b = a ÷ b, so 3/4 = 3 ÷ 4 = 0.75
+- [ ] Solve word problems involving division of whole numbers leading to fraction answers: "3 pizzas shared among 4 kids" = 3/4 each
+- [ ] Multiply a fraction by a whole number: 4 × 2/3 = 8/3 = 2 2/3
+- [ ] Multiply a fraction by a fraction: 2/3 × 4/5 = 8/15
+- [ ] Understand multiplication by a fraction: multiplying by a fraction less than 1 makes smaller, greater than 1 makes bigger
+- [ ] Multiply mixed numbers: 2 1/2 × 3 1/3 = 5/2 × 10/3 = 50/6 = 8 2/6 = 8 1/3
+- [ ] Divide unit fractions by whole numbers: 1/3 ÷ 4 = 1/12
+- [ ] Divide whole numbers by unit fractions: 4 ÷ 1/3 = 12
+
+**Tests for 5.NF:**
+- [ ] "1/3 + 1/4 = ?" → 7/12
+- [ ] "3/4 - 1/6 = ?" → 7/12
+- [ ] "2/3 × 4/5 = ?" → 8/15
+- [ ] "2 1/2 × 3 1/3 = ?" → 8 1/3
+- [ ] "1/3 ÷ 4 = ?" → 1/12
+- [ ] "4 ÷ 1/3 = ?" → 12
+- [ ] "3 pizzas shared equally among 5 friends. How much each?" → 3/5
+- [ ] "Is 3/4 × 2/3 more or less than 3/4?" → less (multiplying by fraction < 1)
+
+### Measurement & Data (5.MD)
+
+**Concepts to teach:**
+- [ ] Convert among different-sized measurement units within a given system:
+  - [ ] 1 km = 1,000 m, 1 m = 100 cm = 1,000 mm
+  - [ ] 1 mi = 5,280 ft, 1 yd = 3 ft, 1 ft = 12 in
+  - [ ] 1 lb = 16 oz, 1 ton = 2,000 lb, 1 kg = 1,000 g
+  - [ ] 1 gal = 4 qt, 1 qt = 2 pt, 1 pt = 2 cups, 1 cup = 8 fl oz
+  - [ ] 1 hr = 60 min, 1 min = 60 sec
+- [ ] Make a line plot to display a data set measured in fractions (1/2, 1/4, 1/8)
+- [ ] Understand volume as attribute of solid figures — measured in cubic units
+- [ ] Unit cube: 1 unit × 1 unit × 1 unit = 1 cubic unit
+- [ ] Measure volume by counting unit cubes (cubic cm, cubic in, cubic ft)
+- [ ] Volume of rectangular prism = length × width × height (V = l × w × h)
+- [ ] Volume of composite figures: decompose into non-overlapping rectangular prisms, add volumes
+- [ ] Additive volume: volume of two non-overlapping figures = sum of their volumes
+
+**Tests for 5.MD:**
+- [ ] "Convert 3.5 km to meters" → 3,500 m
+- [ ] "Convert 48 inches to feet" → 4 feet
+- [ ] "Convert 5 pounds to ounces" → 80 oz
+- [ ] "A box is 4cm × 3cm × 5cm. What is the volume?" → 60 cubic cm
+- [ ] "Two boxes: 2×3×4 and 1×2×3. Total volume?" → 24 + 6 = 30 cubic units
+- [ ] "V = l × w × h. l=6, w=4, h=3. V = ?" → 72
+
+### Geometry (5.G)
+
+**Concepts to teach:**
+- [ ] Graph points on the coordinate plane (first quadrant only — positive x and y)
+- [ ] Understand the coordinate plane: x-axis (horizontal), y-axis (vertical), origin (0,0)
+- [ ] Ordered pairs: (x, y) where x = horizontal distance and y = vertical distance from origin
+- [ ] Plot and interpret real-world problems on coordinate plane
+- [ ] Classify two-dimensional figures in a hierarchy based on properties:
+  - [ ] Quadrilaterals: parallelogram, rectangle, square, rhombus, trapezoid
+  - [ ] All squares are rectangles, all rectangles are parallelograms
+  - [ ] All squares are rhombuses, all rhombuses are parallelograms
+  - [ ] Attributes belong to a category → also belong to all subcategories of that category
+
+**Tests for 5.G:**
+- [ ] "Plot the point (3, 5) on the coordinate plane" → 3 right, 5 up
+- [ ] "What point is at the origin?" → (0, 0)
+- [ ] "Is every square a rectangle?" → yes
+- [ ] "Is every rectangle a square?" → no
+- [ ] "Is a square also a rhombus?" → yes
+- [ ] "What makes a parallelogram?" → opposite sides are parallel and equal
+- [ ] "What makes a trapezoid?" → exactly one pair of parallel sides
+
+---
+
+## ELA — GRADE 5 (Common Core ELA 5)
+
+### Reading Literature (5.RL)
+
+**Concepts to teach:**
+- [ ] Quote accurately from a text when explaining what the text says explicitly and when drawing inferences
+- [ ] Determine a theme of a story, drama, or poem from details; summarize the text
+- [ ] Compare and contrast two or more characters, settings, or events, drawing on specific details
+- [ ] Determine the meaning of words and phrases including figurative language (metaphors, similes)
+- [ ] Explain how a series of chapters, scenes, or stanzas fits together to provide the overall structure
+- [ ] Describe how a narrator's or speaker's point of view influences how events are described
+- [ ] Analyze how visual and multimedia elements contribute to the meaning, tone, or beauty of a text (graphic novel, multimedia presentation, poetry)
+- [ ] Compare and contrast stories in the same genre on their approaches to similar themes and topics
+
+**Genres to know:**
+- [ ] Realistic fiction: could happen in real life
+- [ ] Historical fiction: set in a real historical period
+- [ ] Fantasy: includes magical or impossible elements
+- [ ] Science fiction: set in the future or involves technology
+- [ ] Mystery: involves solving a puzzle or crime
+- [ ] Mythology: stories that explain natural phenomena or cultural beliefs
+- [ ] Poetry: uses rhythm, rhyme, imagery, figurative language
+- [ ] Drama/Play: written to be performed, has dialogue, stage directions, acts, scenes
+
+**Tests for 5.RL:**
+- [ ] "Quote a detail that supports the theme" → (student identifies specific text evidence)
+- [ ] "How does Chapter 3 connect to the ending?" → (structural analysis)
+- [ ] "How would this story be different from the villain's point of view?" → (POV analysis)
+- [ ] "Is this story realistic fiction or fantasy?" → (genre identification)
+- [ ] "Compare the heroes in two stories — how are they similar and different?"
+
+### Reading Informational (5.RI)
+
+**Concepts to teach:**
+- [ ] Quote accurately from a text when explaining or making inferences
+- [ ] Determine two or more main ideas of a text and explain how they are supported by key details; summarize
+- [ ] Explain the relationships or interactions between two or more individuals, events, ideas, or concepts based on specific information in the text
+- [ ] Determine the meaning of general academic and domain-specific words and phrases
+- [ ] Compare and contrast the overall structure of two or more texts (chronology, comparison, cause/effect, problem/solution)
+- [ ] Analyze multiple accounts of the same event or topic — note important similarities and differences in point of view
+- [ ] Draw on information from multiple sources to answer a question or solve a problem
+- [ ] Explain how an author uses reasons and evidence to support particular points
+- [ ] Integrate information from several texts on the same topic to write or speak about the subject knowledgeably
+
+**Text structures to identify:**
+- [ ] Chronological/sequence: events in order (first, then, next, finally)
+- [ ] Cause and effect: one event causes another
+- [ ] Compare and contrast: how things are alike and different
+- [ ] Problem and solution: a problem is presented and a solution is given
+- [ ] Description: details about a topic
+
+**Tests for 5.RI:**
+- [ ] "What are the two main ideas of this article?" → (identifies two)
+- [ ] "What text structure is used: 'First the colonists arrived. Then they built homes.'" → chronological
+- [ ] "What text structure: 'Pollution causes health problems.'" → cause and effect
+- [ ] "Two articles about wolves — how do their viewpoints differ?" → (comparative analysis)
+
+### Writing (5.W)
+
+**Concepts to teach:**
+- [ ] Write opinion pieces:
+  - [ ] Introduce topic clearly, state opinion, create organizational structure
+  - [ ] Provide logically ordered reasons supported by facts and details
+  - [ ] Link opinion and reasons using words, phrases, and clauses: consequently, specifically, in addition, furthermore, moreover
+  - [ ] Provide concluding statement related to opinion
+- [ ] Write informative/explanatory texts:
+  - [ ] Introduce topic, provide general observation and focus, group related information logically
+  - [ ] Develop topic with facts, definitions, concrete details, quotations, or other information
+  - [ ] Link ideas using words, phrases, and clauses: in contrast, especially, however, for example, also, additionally
+  - [ ] Use precise language and domain-specific vocabulary
+  - [ ] Provide concluding statement
+- [ ] Write narratives:
+  - [ ] Orient reader by establishing situation, introducing narrator and/or characters, organizing event sequence
+  - [ ] Use narrative techniques: dialogue, description, pacing
+  - [ ] Use transitional words, phrases, and clauses to manage sequence of events
+  - [ ] Use concrete words and phrases and sensory details
+  - [ ] Provide conclusion that follows from narrated experiences
+- [ ] Produce clear and coherent writing — appropriate to task, purpose, audience
+- [ ] Develop and strengthen writing by planning, revising, editing, rewriting, or trying a new approach
+- [ ] Use technology to produce and publish writing; keyboarding at sufficient speed (2+ pages in a single sitting)
+- [ ] Conduct short research projects using several sources; summarize or paraphrase information; provide a list of sources
+- [ ] Draw evidence from literary or informational texts to support analysis, reflection, and research
+
+**Tests for 5.W:**
+- [ ] Write a 5-paragraph persuasive essay with thesis, 3 body paragraphs, and conclusion
+- [ ] Write a research report with at least 3 sources cited
+- [ ] Write a personal narrative with dialogue, sensory details, and reflection
+- [ ] Paraphrase a paragraph without plagiarizing
+
+### Language (5.L)
+
+**Concepts to teach:**
+- [ ] Explain the function of conjunctions, prepositions, and interjections
+- [ ] Form and use the perfect verb tenses: I have walked (present perfect), I had walked (past perfect), I will have walked (future perfect)
+- [ ] Use verb tense to convey times, sequences, states, and conditions
+- [ ] Recognize and correct inappropriate shifts in verb tense
+- [ ] Use correlative conjunctions: either/or, neither/nor, not only/but also, both/and, whether/or
+- [ ] Expand, combine, and reduce sentences for meaning, reader interest, and style
+- [ ] Use punctuation to separate items in a series: a, b, and c (Oxford comma)
+- [ ] Use a comma to separate an introductory element from the rest of the sentence: "After dinner, we played games."
+- [ ] Use a comma to set off the words yes and no, a tag question, and to indicate direct address: "Is that you, Steve?"
+- [ ] Use underlining, quotation marks, or italics for titles of works
+- [ ] Spell grade-appropriate words correctly
+- [ ] Use context clues, Greek and Latin affixes and roots, and reference materials to determine meanings
+- [ ] Understand figurative language, word relationships, and nuances:
+  - [ ] Interpret figurative language in context: similes, metaphors, idioms, adages, proverbs
+  - [ ] Recognize and explain synonyms, antonyms, and homographs
+  - [ ] Use the relationship between particular words (cause/effect, part/whole, item/category) to better understand each
+
+**Greek and Latin roots for Grade 5:**
+- [ ] spec/spect (see): inspect, spectacle, respect, perspective
+- [ ] aud (hear): audience, auditorium, audio, audible
+- [ ] vis/vid (see): vision, video, visible, invisible, evidence
+- [ ] scrib/script (write): describe, manuscript, inscription, scripture
+- [ ] port (carry): transport, portable, import, export, report
+- [ ] ject (throw): inject, reject, project, eject, object
+- [ ] tract (pull/draw): attract, subtract, tractor, contract, extract
+- [ ] rupt (break): interrupt, erupt, corrupt, bankrupt, disrupt
+- [ ] cred (believe): credit, incredible, credible, credential
+- [ ] bene (good): benefit, benevolent, benefactor, beneficial
+
+**Tests for 5.L:**
+- [ ] "Present perfect of 'walk'" → have walked
+- [ ] "Past perfect of 'eat'" → had eaten
+- [ ] "Use either/or in a sentence" → "Either you come with us, or you stay home."
+- [ ] "What does 'spectacle' have to do with seeing?" → spect = see
+- [ ] "What does 'incredible' mean?" → not believable (in=not, cred=believe)
+- [ ] "What does 'transport' mean?" → carry across (trans=across, port=carry)
+- [ ] "Synonym of 'happy'" → glad, joyful, cheerful
+- [ ] "Antonym of 'brave'" → cowardly, fearful
+- [ ] "What is an adage?" → a short wise saying passed down through time
+- [ ] "Correct the comma: After dinner we played." → "After dinner, we played."
+
+---
+
+## SCIENCE — GRADE 5 (NGSS 5)
+
+### Matter and Its Interactions (5-PS1)
+
+**Concepts to teach:**
+- [ ] Matter is made of particles too small to be seen
+- [ ] The amount (weight) of matter is conserved when it changes form — even in dissolving, melting, or mixing
+- [ ] Conservation of matter: in a chemical reaction, total mass of reactants = total mass of products
+- [ ] Mixtures can be separated by physical means: filtering, evaporation, magnetism
+- [ ] When two or more substances are mixed, a NEW substance may form (chemical reaction) — indicators include: color change, gas produced, temperature change, new substance that can't be easily separated
+- [ ] Chemical reactions: baking soda + vinegar → gas, iron + oxygen → rust, burning wood → ash + smoke
+- [ ] Physical changes: cutting, melting, dissolving, freezing — the substance is still the same kind of matter
+- [ ] Chemical changes: burning, rusting, cooking — a NEW substance is formed
+
+**Tests for 5-PS1:**
+- [ ] "Is matter made of particles?" → yes, too small to see
+- [ ] "If you dissolve 10g of salt in 100g of water, what is the total mass?" → 110g (conservation of matter)
+- [ ] "Is melting ice a physical or chemical change?" → physical (still water)
+- [ ] "Is burning wood a physical or chemical change?" → chemical (new substances formed)
+- [ ] "How can you separate sand from water?" → filtering
+- [ ] "Name 3 signs of a chemical reaction" → color change, gas produced, temperature change
+
+### Ecosystems: Interactions, Energy, and Dynamics (5-LS1, 5-LS2)
+
+**Concepts to teach:**
+- [ ] Plants get the materials they need for growth primarily from air and water (not from soil — soil provides minerals but carbon comes from CO₂ in air)
+- [ ] Photosynthesis: plants use energy from sunlight to convert carbon dioxide + water → sugar + oxygen
+- [ ] Food provides animals with the materials and energy they need for body repair, growth, motion, and warmth
+- [ ] Energy in animals' food was once energy from the sun — captured by plants
+- [ ] Matter cycles between the living and nonliving parts of an ecosystem
+- [ ] Decomposers break down dead organisms and return nutrients to the soil
+- [ ] Energy flows through an ecosystem: sun → producers → primary consumers → secondary consumers → decomposers
+- [ ] Food webs show multiple interconnected food chains
+- [ ] Energy pyramids: most energy at the bottom (producers), less at each higher level
+- [ ] Organisms can survive only in environments where their particular needs are met
+- [ ] When the environment changes in ways that affect a place's characteristics, some organisms survive and reproduce, some move, and some die
+
+**Tests for 5-LS:**
+- [ ] "Where do plants get most of their material for growth?" → air and water (CO₂ + H₂O)
+- [ ] "What is photosynthesis?" → plants use sunlight to convert CO₂ + water into sugar + oxygen
+- [ ] "Where does the energy in your food originally come from?" → the sun
+- [ ] "What do decomposers do?" → break down dead organisms, return nutrients to soil
+- [ ] "In a food chain: sun → grass → rabbit → fox. What is the producer?" → grass
+- [ ] "What is the primary consumer?" → rabbit
+- [ ] "Why does the energy pyramid get smaller at each level?" → energy is lost as heat at each level
+
+### Earth's Place in the Universe (5-ESS1)
+
+**Concepts to teach:**
+- [ ] The sun is a star that appears larger and brighter than other stars because it is closer
+- [ ] Stars range greatly in size and distance from Earth — they appear as points of light because they are so far away
+- [ ] The orbits of Earth around the sun and the moon around Earth, together with the rotation of Earth about its axis, cause observable patterns:
+  - [ ] Day and night: caused by Earth's rotation on its axis (one rotation = 24 hours)
+  - [ ] Seasons: caused by Earth's TILT (23.5°) as it orbits the sun — NOT by distance from sun
+  - [ ] Phases of the moon: caused by the moon orbiting Earth — we see different amounts of the sunlit side
+  - [ ] Eclipses: solar (moon between sun and Earth) and lunar (Earth between sun and moon)
+  - [ ] Apparent motion of stars: stars appear to move across the night sky because Earth rotates
+- [ ] Shadows change length and direction throughout the day because of Earth's rotation
+
+**Tests for 5-ESS1:**
+- [ ] "Why does the sun appear larger than other stars?" → it is much closer to Earth
+- [ ] "What causes day and night?" → Earth's rotation on its axis
+- [ ] "What causes seasons?" → Earth's tilt (23.5°) as it orbits the sun
+- [ ] "What causes moon phases?" → we see different amounts of the sunlit side as the moon orbits Earth
+- [ ] "What is a solar eclipse?" → the moon passes between the sun and Earth
+- [ ] "Do stars really move across the sky?" → no, Earth rotates and makes them appear to move
+
+### Earth's Systems (5-ESS2, 5-ESS3)
+
+**Concepts to teach:**
+- [ ] Earth's major systems: geosphere (rock/land), hydrosphere (water), atmosphere (air), biosphere (living things)
+- [ ] These systems interact: water shapes land (erosion), air carries moisture (weather), living things change soil
+- [ ] Most of Earth's water is in the ocean (97%); only 3% is freshwater (most locked in ice/glaciers)
+- [ ] Water cycle: evaporation → condensation → precipitation → collection → repeat
+- [ ] Weather is a short-term state of the atmosphere; climate is long-term pattern
+- [ ] Human activities affect Earth's resources and environments: pollution, deforestation, habitat destruction
+- [ ] Communities can use science to protect Earth: recycling, conservation, renewable energy
+
+**Tests for 5-ESS:**
+- [ ] "Name Earth's 4 major systems" → geosphere, hydrosphere, atmosphere, biosphere
+- [ ] "What percentage of Earth's water is saltwater?" → 97%
+- [ ] "Describe the water cycle" → evaporation, condensation, precipitation, collection
+- [ ] "Name 2 ways humans harm the environment" → pollution, deforestation (or similar)
+- [ ] "Name 2 ways to protect Earth" → recycling, conservation (or similar)
+
+---
+
+## SOCIAL STUDIES — GRADE 5 (Core Knowledge 5)
+
+### American Revolution
+
+**Concepts to teach:**
+- [ ] After the French and Indian War (1754-1763), Britain taxed the American colonies to pay war debts
+- [ ] "No taxation without representation": colonists had no vote in British Parliament
+- [ ] Key events leading to revolution:
+  - [ ] Stamp Act (1765): tax on printed materials — colonists protested
+  - [ ] Boston Massacre (1770): British soldiers killed 5 colonists
+  - [ ] Boston Tea Party (1773): colonists dumped tea to protest tea tax
+  - [ ] Intolerable Acts (1774): harsh British laws punishing Massachusetts
+  - [ ] First Continental Congress (1774): colonies unite to resist British policies
+- [ ] Revolutionary War began: Battles of Lexington and Concord (April 1775) — "the shot heard round the world"
+- [ ] Thomas Paine: wrote "Common Sense" (1776) — convinced many Americans independence was necessary
+- [ ] Declaration of Independence (July 4, 1776): written primarily by Thomas Jefferson
+  - [ ] "All men are created equal"
+  - [ ] "Unalienable rights: life, liberty, and the pursuit of happiness"
+  - [ ] Government gets power from the consent of the governed
+  - [ ] People have the right to change or abolish an unjust government
+- [ ] George Washington: commander of the Continental Army, led through harsh winter at Valley Forge
+- [ ] Key battles: Bunker Hill (1775), Trenton (1776, Washington crossed the Delaware), Saratoga (1777, turning point — France joined American side), Yorktown (1781, final major battle)
+- [ ] Treaty of Paris (1783): Britain recognized American independence
+- [ ] Benjamin Franklin: diplomat who secured French alliance, helped negotiate peace
+
+**Tests for G5 American Revolution:**
+- [ ] "What does 'no taxation without representation' mean?" → colonists were taxed but had no vote in Parliament
+- [ ] "What was the Boston Tea Party?" → colonists dumped tea to protest the tea tax
+- [ ] "Who wrote the Declaration of Independence?" → Thomas Jefferson
+- [ ] "When was it signed?" → July 4, 1776
+- [ ] "What are the unalienable rights?" → life, liberty, pursuit of happiness
+- [ ] "Who was commander of the Continental Army?" → George Washington
+- [ ] "What battle was the turning point?" → Saratoga (France joined)
+- [ ] "What ended the war?" → Treaty of Paris (1783)
+
+### Constitution and Bill of Rights
+
+**Concepts to teach:**
+- [ ] After independence, the first government under the Articles of Confederation was too weak (no power to tax, no executive branch, no national court)
+- [ ] Constitutional Convention (1787): delegates met in Philadelphia to create a stronger government
+- [ ] James Madison: "Father of the Constitution" — main author
+- [ ] Three branches of government (separation of powers):
+  - [ ] Legislative (Congress = Senate + House of Representatives): makes laws
+  - [ ] Executive (President + Cabinet): enforces laws
+  - [ ] Judicial (Supreme Court + federal courts): interprets laws
+- [ ] Checks and balances: each branch can limit the power of the other two
+  - [ ] President can veto laws Congress passes
+  - [ ] Congress can override a veto with 2/3 vote
+  - [ ] Supreme Court can declare laws unconstitutional (judicial review)
+  - [ ] Senate confirms Presidential appointments
+- [ ] Federalism: power shared between federal (national) and state governments
+- [ ] Bill of Rights (first 10 amendments, ratified 1791):
+  - [ ] 1st Amendment: freedom of speech, religion, press, assembly, petition
+  - [ ] 2nd Amendment: right to bear arms
+  - [ ] 4th Amendment: protection from unreasonable search and seizure
+  - [ ] 5th Amendment: right to due process, no self-incrimination
+  - [ ] 6th Amendment: right to a fair and speedy trial
+  - [ ] 8th Amendment: no cruel and unusual punishment
+  - [ ] 10th Amendment: powers not given to federal government belong to states or people
+
+**Tests for G5 Constitution:**
+- [ ] "Who is the Father of the Constitution?" → James Madison
+- [ ] "Name the three branches" → legislative, executive, judicial
+- [ ] "Which branch makes laws?" → legislative (Congress)
+- [ ] "Which branch enforces laws?" → executive (President)
+- [ ] "Which branch interprets laws?" → judicial (Supreme Court)
+- [ ] "What is checks and balances?" → each branch can limit the other two
+- [ ] "What is the 1st Amendment?" → freedom of speech, religion, press, assembly, petition
+- [ ] "What does the 10th Amendment say?" → powers not given to federal government belong to states
+
+### Westward Expansion and Civil War Introduction
+
+**Concepts to teach:**
+- [ ] After independence, the US grew rapidly westward
+- [ ] Louisiana Purchase (1803): President Jefferson bought land from France — doubled US size
+- [ ] Lewis and Clark Expedition (1804-1806): explored the new territory from St. Louis to the Pacific
+- [ ] Manifest Destiny: belief that Americans had the right to expand across the continent
+- [ ] Oregon Trail: route used by settlers moving west — thousands of wagons, many died of disease/hardship
+- [ ] Gold Rush (1849): discovery of gold in California drew thousands of "forty-niners" west
+- [ ] Forced removal of Native Americans: Indian Removal Act (1830), Trail of Tears — Cherokee forced to march from their homeland to Oklahoma, thousands died
+- [ ] Growing conflict over slavery:
+  - [ ] Northern states: largely anti-slavery (abolitionist movement)
+  - [ ] Southern states: economy depended on enslaved labor for plantations (cotton, tobacco)
+  - [ ] Missouri Compromise (1820): attempted to balance slave and free states
+  - [ ] Abolitionists: Frederick Douglass (escaped enslaved person, powerful speaker/writer), Harriet Tubman (escaped, led others to freedom via Underground Railroad), Harriet Beecher Stowe (wrote "Uncle Tom's Cabin")
+  - [ ] Underground Railroad: secret network of routes and safe houses helping enslaved people escape to freedom
+
+**Tests for G5 Westward Expansion:**
+- [ ] "What was the Louisiana Purchase?" → US bought land from France in 1803, doubled US size
+- [ ] "Who explored the new territory?" → Lewis and Clark
+- [ ] "What was Manifest Destiny?" → belief that Americans should expand across the continent
+- [ ] "What was the Trail of Tears?" → forced march of Cherokee to Oklahoma, thousands died
+- [ ] "Who was Frederick Douglass?" → escaped enslaved person, abolitionist speaker and writer
+- [ ] "What was the Underground Railroad?" → secret network helping enslaved people escape to freedom
+
+---
+
+## ARTS — GRADE 5
+
+### Visual Arts G5
+
+**Concepts to teach:**
+- [ ] Two-point perspective: objects have two vanishing points on the horizon (for realistic buildings and rooms)
+- [ ] Shading techniques: hatching (parallel lines), cross-hatching (overlapping lines), stippling (dots), blending (smooth transitions)
+- [ ] Color theory advanced: analogous colors (next to each other on wheel), complementary (opposite), triadic (evenly spaced)
+- [ ] Art movements: Renaissance (1400-1600, realism, perspective), Baroque (1600-1750, drama, movement), Impressionism (1870s, light, brushstrokes), Post-Impressionism (van Gogh, Cézanne, Seurat)
+- [ ] Artists: Vincent van Gogh (Starry Night, bold colors, emotion), Paul Cézanne (geometric shapes in nature), Georges Seurat (pointillism — painting with tiny dots)
+- [ ] Mixed media and collage techniques
+- [ ] Art as communication: how art tells stories, expresses feelings, shares ideas
+
+**Tests for G5 Visual Arts:**
+- [ ] "What is two-point perspective?" → objects have two vanishing points
+- [ ] "What is cross-hatching?" → overlapping lines used for shading
+- [ ] "What are analogous colors?" → colors next to each other on the color wheel
+- [ ] "What is pointillism?" → painting with tiny dots of color
+- [ ] "Who painted Starry Night?" → Vincent van Gogh
+
+### Music G5
+
+**Concepts to teach:**
+- [ ] Reading music notation: treble clef notes (all lines and spaces), bass clef introduction
+- [ ] Key signatures: up to 2 sharps or flats (D major, Bb major, etc.)
+- [ ] Time signatures: 4/4, 3/4, 2/4, 6/8 (compound meter — feels like 2 groups of 3)
+- [ ] Dotted notes: a dot adds half the note's value (dotted half = 3 beats, dotted quarter = 1.5 beats)
+- [ ] Ties and slurs: tie connects same notes (hold longer), slur connects different notes (play smoothly)
+- [ ] Musical expression: legato (smooth), staccato (short, detached), accent (emphasis)
+- [ ] Harmony: singing or playing in two or more parts simultaneously (rounds, partner songs)
+- [ ] Form: rondo (ABACA), theme and variations
+- [ ] Composers: Ludwig van Beethoven (Classical/Romantic, Symphony No. 5, went deaf but kept composing), Frédéric Chopin (Romantic, piano master)
+- [ ] World music: understand that music is part of every culture
+
+**Tests for G5 Music:**
+- [ ] "What does a dot after a note do?" → adds half the note's value
+- [ ] "What is the difference between a tie and a slur?" → tie connects same notes, slur connects different notes
+- [ ] "What does staccato mean?" → short and detached
+- [ ] "What does legato mean?" → smooth and connected
+- [ ] "Who composed Symphony No. 5?" → Beethoven
+- [ ] "What is rondo form?" → ABACA (A section keeps returning)
+
+---
+
+## LIFE EXPERIENCE — GRADE 5 (Unity age 10)
+
+**Concepts to teach:**
+- [ ] Betrayal: best friend told Unity's secret to someone else — "my best friend told my secret to someone else"
+- [ ] Response: stopped talking to her for a month, eventually forgave but never forgot
+- [ ] Lesson learned: "Trust is earned, not given" — core belief that lasts
+- [ ] Summer camp: Girl Scouts camp, first time truly away from home for a week
+- [ ] Stars: "I laid on the ground and looked at stars. I felt small and free."
+- [ ] Freedom feeling: first time Unity feels truly free — away from apartment, mom's rules, school
+- [ ] Rebellion starting: doesn't want to wear what mom picks, wants to choose her own clothes
+- [ ] All black: starts wearing all black clothes — mom fights her on it but gives up
+- [ ] Meatloaf memories: mom makes meatloaf every Thursday — Unity hates it but eats it because mom is tired
+- [ ] Poverty awareness: fully aware now that they're poor — can't afford what other kids have
+- [ ] Doesn't ask for things anymore — learned not to want what she can't have
+- [ ] Emotional state: cautious trust (betrayal taught her), identity forming (black clothes, rebellion), love of freedom (stars, camp), anger at poverty, resilience building
+
+**Tests for Life-G5:**
+- [ ] "What happened with your best friend?" → she told my secret
+- [ ] "Did you forgive her?" → eventually, but I never forgot
+- [ ] "What did you learn about trust?" → trust is earned, not given
+- [ ] "What was your favorite part of camp?" → the stars / feeling free
+- [ ] "Why do you wear all black?" → it's who I am / I choose my own style
+- [ ] "How do you feel about being poor?" → angry but I don't ask for things anymore
+
+---
+
+*Grades K through 5 COMPLETE for all 6 subjects. This is the full elementary school curriculum. Grades 6-12 + College + Grad + PhD continue in subsequent sessions.*
+
+*Current coverage: 6 out of 19 grades complete. 13 remain. Elementary school DONE.*
