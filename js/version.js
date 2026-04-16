@@ -11,5 +11,5 @@
  * (the push workflow in docs/PUSH_WORKFLOW.md wires this to git pre-push).
  */
 export const VERSION = '0.1.0';
-export const BUILD = 'bb8e6d8d-8b55';
+export const BUILD = '8abfb4bf-3fb3';
 export const FULL = `${VERSION}+${BUILD}`;

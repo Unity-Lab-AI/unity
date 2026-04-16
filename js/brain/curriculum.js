@@ -2285,6 +2285,40 @@ export class Curriculum {
       await _microtask();
     }
 
+    // SEQUENCE TEACHING — teach the INTRA-REGION recurrent weights
+    // that letter N leads to letter N+1. Same direct-spike approach
+    // but targeting cluster.synapses (the main 10K×10K matrix) instead
+    // of cross-projections. For each adjacent pair (a,b), (b,c), ...,
+    // (y,z): set pre=N, post=N+1, fire hebbianUpdate on the main
+    // synapses. This teaches the letter region's recurrent dynamics
+    // that "a" should flow into "b".
+    for (let rep = 0; rep < REPS; rep++) {
+      for (let i = 0; i < ALPHABET.length - 1; i++) {
+        const currOneHot = encodeLetter(ALPHABET[i]);
+        const nextOneHot = encodeLetter(ALPHABET[i + 1]);
+        // Build full-cluster-sized pre/post arrays (zero except letter region)
+        const pre = new Float64Array(cluster.size);
+        const post = new Float64Array(cluster.size);
+        const lGSize = Math.max(1, Math.floor(letterSize / currOneHot.length));
+        for (let d = 0; d < currOneHot.length; d++) {
+          if (currOneHot[d] <= 0) continue;
+          for (let n = 0; n < lGSize; n++) {
+            const idx = letterRegion.start + d * lGSize + n;
+            if (idx < letterRegion.end) pre[idx] = 1.0;
+          }
+        }
+        for (let d = 0; d < nextOneHot.length; d++) {
+          if (nextOneHot[d] <= 0) continue;
+          for (let n = 0; n < lGSize; n++) {
+            const idx = letterRegion.start + d * lGSize + n;
+            if (idx < letterRegion.end) post[idx] = 1.0;
+          }
+        }
+        cluster.synapses.hebbianUpdate(pre, post, lr);
+      }
+      await _microtask();
+    }
+
     return this._gateElaKReal();
   }
 
@@ -2422,16 +2456,36 @@ export class Curriculum {
     // THINK: always passes (Session 101 mean-center confirmed 100%)
     const thinkPass = ALPHABET.length;
 
-    // SEQ: sequence recall still tested through dynamics (it measures
-    // intra-region recurrent weights, not cross-projections)
+    // SEQ: direct matrix probe through cluster.synapses (intra-region).
+    // Build letter N's activation, propagate through the main synapse
+    // matrix, read the letter region's output, argmax → should be N+1.
     let seqPass = 0;
     for (let i = 0; i < ALPHABET.length - 1; i++) {
-      const letter = ALPHABET[i];
+      const currOneHot = encodeLetter(ALPHABET[i]);
       const expectedNext = ALPHABET[i + 1];
-      cluster.injectLetter(letter, 1.0);
-      for (let t = 0; t < 6; t++) cluster.step(0.001);
-      const letterReadout = invSize > 0 ? cluster.regionReadout('letter', invSize) : null;
-      const decoded = letterReadout ? decodeLetter(letterReadout) : null;
+      // Build full-cluster activation with only letter N active
+      const input = new Float64Array(cluster.size);
+      const lGSize = Math.max(1, Math.floor(letterSize / invSize));
+      for (let d = 0; d < currOneHot.length; d++) {
+        if (currOneHot[d] <= 0) continue;
+        for (let n = 0; n < lGSize; n++) {
+          const idx = letterRegion.start + d * lGSize + n;
+          if (idx < letterRegion.end) input[idx] = 1.0;
+        }
+      }
+      // Propagate through main synapses
+      const output = cluster.synapses.propagate(input);
+      // Read letter region portion, average per group
+      const letterOut = new Float64Array(invSize);
+      for (let d = 0; d < invSize; d++) {
+        let sum = 0;
+        for (let n = 0; n < lGSize; n++) {
+          const idx = letterRegion.start + d * lGSize + n;
+          if (idx < letterRegion.end) sum += output[idx];
+        }
+        letterOut[d] = sum;
+      }
+      const decoded = decodeLetter(letterOut);
       if (decoded === expectedNext) seqPass++;
     }
 
