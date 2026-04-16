@@ -10657,6 +10657,16 @@ export class Curriculum {
     // more feature overlap than distant ones — which is the same
     // ordinal relationship real chemistry depends on.
     await this._teachAtomsMolecules();
+    await this._teachCausalChains([
+      ['atom', 'molecule'], ['molecule', 'matter'], ['heat', 'melt'],
+      ['cold', 'freeze'], ['evaporate', 'gas'], ['condense', 'liquid'],
+      ['food', 'energy'], ['sun', 'light'], ['light', 'photosynthesis'],
+      ['photosynthesis', 'oxygen'], ['gravity', 'orbit'],
+    ]);
+    await this._teachInference([
+      ['atom', 'molecule', 'matter'], ['heat', 'melt', 'liquid'],
+      ['sun', 'photosynthesis', 'oxygen'], ['cold', 'freeze', 'solid'],
+    ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
     const _af = this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
@@ -10695,6 +10705,16 @@ export class Curriculum {
     // "condensation" not as an isolated fact but as an active cortex
     // state carried into the next letter-stream.
     await this._teachEarthCycles();
+    await this._teachCausalChains([
+      ['evaporate', 'cloud'], ['cloud', 'rain'], ['rain', 'river'],
+      ['tilt', 'season'], ['rotation', 'day'], ['orbit', 'year'],
+      ['erosion', 'sediment'], ['sediment', 'rock'], ['heat', 'magma'],
+      ['earthquake', 'tsunami'], ['volcano', 'lava'], ['lava', 'rock'],
+    ]);
+    await this._teachInference([
+      ['evaporate', 'cloud', 'rain'], ['rain', 'river', 'ocean'],
+      ['tilt', 'season', 'weather'], ['heat', 'magma', 'volcano'],
+    ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
     const _af = this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
@@ -10853,6 +10873,16 @@ export class Curriculum {
     // T14.24 Session 62 — prime ancient civilizations lattice per
     // TODO line 512 before the ancient-civ sentence pass.
     await this._teachAncientCivs();
+    await this._teachCausalChains([
+      ['river', 'civilization'], ['farming', 'surplus'], ['surplus', 'city'],
+      ['writing', 'record'], ['trade', 'wealth'], ['wealth', 'empire'],
+      ['democracy', 'vote'], ['republic', 'senate'], ['law', 'order'],
+      ['religion', 'temple'], ['silk', 'trade'], ['compass', 'navigation'],
+    ]);
+    await this._teachInference([
+      ['river', 'farming', 'civilization'], ['writing', 'record', 'history'],
+      ['trade', 'wealth', 'empire'], ['democracy', 'vote', 'freedom'],
+    ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
     const _af = this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
@@ -11696,6 +11726,16 @@ export class Curriculum {
     // to another", "heat flows from hot to cold", "sound travels
     // through air").
     await this._teachEnergyForms();
+    await this._teachCausalChains([
+      ['vibrate', 'sound'], ['heat', 'expand'], ['cold', 'contract'],
+      ['current', 'magnetic'], ['voltage', 'current'], ['resistance', 'heat'],
+      ['conduction', 'heat'], ['convection', 'circulation'], ['radiation', 'heat'],
+      ['frequency', 'pitch'], ['amplitude', 'volume'],
+    ]);
+    await this._teachInference([
+      ['vibrate', 'sound', 'hear'], ['voltage', 'current', 'heat'],
+      ['light', 'reflect', 'see'], ['heat', 'expand', 'crack'],
+    ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
 
     // ═══════════════════════════════════════════════════════════════
@@ -11740,6 +11780,16 @@ export class Curriculum {
     // T14.24 Session 63 — prime medieval period sequence walks per
     // TODO line 516 before the medieval sentence pass.
     await this._teachMedievalPeriod();
+    await this._teachCausalChains([
+      ['feudalism', 'lord'], ['plague', 'death'], ['death', 'labor'],
+      ['labor', 'freedom'], ['printing', 'books'], ['books', 'renaissance'],
+      ['reformation', 'split'], ['exploration', 'colony'],
+      ['trade', 'wealth'], ['wealth', 'power'],
+    ]);
+    await this._teachInference([
+      ['feudalism', 'plague', 'freedom'], ['printing', 'books', 'renaissance'],
+      ['exploration', 'colony', 'empire'],
+    ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
     const _af = this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
@@ -12162,6 +12212,31 @@ export class Curriculum {
     await this._teachCells();
     await this._teachGeneticsIntro();
     await this._teachEvolution();
+    // ── Sci-G9: biology causal chains + inference ──
+    await this._teachCausalChains([
+      ['dna', 'rna'], ['rna', 'protein'], ['protein', 'trait'],
+      ['mutation', 'variation'], ['variation', 'selection'], ['selection', 'evolution'],
+      ['dominant', 'phenotype'], ['recessive', 'hidden'],
+      ['producer', 'consumer'], ['herbivore', 'carnivore'],
+      ['adapt', 'survive'], ['fossil', 'evidence'],
+    ]);
+    await this._teachInference([
+      ['dna', 'rna', 'protein'], ['mutation', 'variation', 'evolution'],
+      ['producer', 'herbivore', 'carnivore'],
+      ['adapt', 'survive', 'reproduce'],
+    ]);
+    // ── Classification: living kingdom hierarchy ──
+    await this._teachClassificationReasoning([
+      { item: 'dog',    features: new Float64Array([1,1,0,0,1,0,0,0]), category: 'mammal' },
+      { item: 'whale',  features: new Float64Array([1,1,0,0,1,0,0,0]), category: 'mammal' },
+      { item: 'eagle',  features: new Float64Array([1,0,1,0,0,1,0,0]), category: 'bird' },
+      { item: 'salmon', features: new Float64Array([1,0,0,1,0,0,1,0]), category: 'fish' },
+      { item: 'frog',   features: new Float64Array([1,0,0,0,0,0,0,1]), category: 'amphibian' },
+      { item: 'snake',  features: new Float64Array([1,0,0,0,0,0,1,0]), category: 'reptile' },
+      { item: 'oak',    features: new Float64Array([0,0,0,0,0,0,0,0]), category: 'plant' },
+      { item: 'mushroom', features: new Float64Array([0,0,0,0,0,0,0,0]), category: 'fungi' },
+      { item: 'bacteria', features: new Float64Array([0,0,0,0,0,0,0,0]), category: 'prokaryote' },
+    ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
     const _af = this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
@@ -12217,6 +12292,17 @@ export class Curriculum {
     // top of the stable feature basins.
     await this._teachPeriodicTable();
     await this._teachBonding();
+    // ── Sci-G10: chemistry causal chains + classification ──
+    await this._teachCausalChains([
+      ['atom', 'bond'], ['bond', 'molecule'], ['molecule', 'compound'],
+      ['ionic', 'transfer'], ['covalent', 'share'], ['metal', 'conduct'],
+      ['acid', 'dissolve'], ['base', 'neutralize'], ['react', 'product'],
+      ['catalyst', 'speed'], ['energy', 'reaction'],
+    ]);
+    await this._teachInference([
+      ['atom', 'bond', 'molecule'], ['react', 'product', 'energy'],
+      ['acid', 'base', 'neutral'], ['metal', 'electron', 'conduct'],
+    ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
     const _af = this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
@@ -12267,6 +12353,24 @@ export class Curriculum {
     // T14.24 Session 66 — prime US 20th century scaffold per TODO
     // line 527 before the sentence pass.
     await this._teachUS20thCentury();
+    // ── Soc-G9/G10: world + US history causal chains ──
+    await this._teachCausalChains([
+      ['enlightenment', 'revolution'], ['revolution', 'democracy'],
+      ['industry', 'factory'], ['factory', 'urbanization'],
+      ['imperialism', 'colony'], ['nationalism', 'war'],
+      ['alliances', 'world war'], ['treaty', 'resentment'],
+      ['depression', 'poverty'], ['fascism', 'war'],
+      ['holocaust', 'genocide'], ['atomic', 'surrender'],
+      ['cold war', 'arms race'], ['segregation', 'protest'],
+      ['protest', 'rights'], ['technology', 'globalization'],
+    ]);
+    await this._teachInference([
+      ['enlightenment', 'revolution', 'democracy'],
+      ['industry', 'factory', 'urbanization'],
+      ['alliances', 'assassination', 'world war'],
+      ['depression', 'fascism', 'war'],
+      ['segregation', 'protest', 'rights'],
+    ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
     const _af = this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
