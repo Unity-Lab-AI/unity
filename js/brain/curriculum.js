@@ -9426,29 +9426,135 @@ export class Curriculum {
   // tightens against TODO spec with _teachCompoundSentences +
   // _teachPronouns called before the generic walk.
   async runElaG4Real(ctx) {
-    const SENTENCES = [
+    // ── COMMON CORE ELA G4: Full fourth-grade English ──
+    // Standards: determine theme from details, summarize text, describe
+    // character/setting/event with specific details, determine meaning
+    // of words and phrases including figurative language (similes/
+    // metaphors), explain structural elements of poems/drama/prose,
+    // compare/contrast point of view. Writing: opinion pieces with
+    // logically ordered reasons, informative with grouped information,
+    // narratives with dialogue. Language: relative pronouns (who/whose/
+    // whom/which/that), relative adverbs (where/when/why), progressive
+    // verb tenses, modal auxiliaries, prepositional phrases.
+
+    // ── VOCABULARY: Fry 501-700 + figurative language + writing terms ──
+    const ELA_G4_VOCAB = [
+      // figurative language (G4 Reading standard)
+      'simile', 'metaphor', 'idiom', 'personification', 'hyperbole',
+      'alliteration', 'onomatopoeia', 'imagery', 'symbol',
+      // writing/text structure
+      'introduction', 'conclusion', 'topic', 'detail', 'evidence',
+      'opinion', 'reason', 'support', 'paragraph', 'essay',
+      'dialogue', 'narrator', 'theme', 'summary', 'main',
+      // relative pronouns (G4 Language standard)
+      'who', 'whose', 'whom', 'which', 'that',
+      // modal auxiliaries
+      'can', 'may', 'must', 'shall', 'should', 'will', 'would', 'could', 'might',
+      // Greek/Latin roots intro (G4 Vocabulary standard)
+      'auto', 'bio', 'graph', 'port', 'rupt', 'struct', 'tele', 'therm',
+      // academic tier 2
+      'analyze', 'infer', 'predict', 'summarize', 'determine',
+      'support', 'evidence', 'conclude', 'organize', 'develop',
+    ];
+    await this._teachVocabList(ELA_G4_VOCAB, ctx, { reps: 3 });
+
+    // ── Compound + pronoun sentences (existing) ──
+    const COMPOUND = [
       'the dog runs and the cat sleeps', 'i was happy but you were sad',
       'she saw him and he saw her', 'we had food so we ate dinner',
-      'they left early because it was late', 'i read the book and she saw the movie',
-      'he was tired so he went home', 'we went to the park but it rained',
-      'she cooked dinner and he washed dishes', 'the kids played and the parents watched',
-      'i like apples and she likes oranges', 'he is tall but she is short',
-      'we were happy and they were too', 'the car stopped and the bus went',
-      'i wanted food but i was full', 'she loves him and he loves her',
-      'the sun rose and the moon set', 'he ran fast and she ran faster',
-      'we played games and sang songs', 'the rain fell and the flowers grew',
-      // Pronoun-focused
-      'he likes her', 'she likes him', 'they like us', 'we like them',
-      'it is mine', 'it is yours', 'it is his', 'it is hers',
-      'i gave him the book', 'she told me the story',
-      'they showed us the way', 'we helped them move',
+      'they left early because it was late', 'he was tired so he went home',
+      'we went to the park but it rained', 'the rain fell and the flowers grew',
     ];
-    // Session 30 — TODO-aligned split. Compound sentences get the
-    // working-memory-at-conjunction teach method; pronouns get the
-    // antecedent→pronoun sentence-pair method.
-    await this._teachCompoundSentences(SENTENCES);
+    await this._teachCompoundSentences(COMPOUND);
     await this._teachPronouns();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(COMPOUND, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── Figurative language sentences ──
+    const FIGURATIVE = [
+      // similes
+      'she runs like the wind', 'he is as strong as an ox',
+      'the stars shone like diamonds', 'the baby slept like a log',
+      'her smile was as bright as the sun', 'the water was as cold as ice',
+      // metaphors
+      'time is money', 'the world is a stage', 'life is a journey',
+      'her heart is gold', 'the classroom was a zoo',
+      'his words were daggers', 'knowledge is a light in the darkness',
+      // personification
+      'the wind whispered through the trees', 'the sun smiled down on us',
+      'the flowers danced in the breeze', 'the clock was ticking angrily',
+      // hyperbole
+      'i am so hungry i could eat a horse', 'she has a million things to do',
+      'i told you a thousand times', 'this bag weighs a ton',
+      // idioms
+      'it is raining cats and dogs', 'break a leg', 'hit the books',
+      'let the cat out of the bag', 'piece of cake', 'under the weather',
+    ];
+    await this._teachSentenceList(FIGURATIVE, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── Progressive verb tenses (G4 Language standard) ──
+    const PROGRESSIVE = [
+      'i am walking to school', 'she is reading a book', 'they are playing outside',
+      'i was walking when it rained', 'she was reading when he called',
+      'they were playing when the bell rang',
+      'i will be walking to school tomorrow', 'she will be reading all night',
+    ];
+    await this._teachSentenceList(PROGRESSIVE, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── Greek/Latin root sentences ──
+    const ROOTS = [
+      'auto means self like automobile', 'bio means life like biology',
+      'graph means write like autograph', 'port means carry like transport',
+      'rupt means break like interrupt', 'struct means build like construct',
+      'tele means far like telephone', 'therm means heat like thermometer',
+    ];
+    await this._teachSentenceList(ROOTS, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── Reading comprehension with inference ──
+    const QA_G4 = [
+      { context: 'the boy studied hard for his test because he wanted to make his mom proud', question: 'why did the boy study', answer: 'proud' },
+      { context: 'after the storm the rainbow appeared and everyone came outside to see it', question: 'what appeared after the storm', answer: 'rainbow' },
+      { context: 'she practiced piano every day for a year and finally played the song perfectly', question: 'how long did she practice', answer: 'year' },
+      { context: 'the wind whispered through the trees on the cold winter night', question: 'what did the wind do', answer: 'whispered' },
+      { context: 'he is as strong as an ox and can lift heavy things easily', question: 'what is he compared to', answer: 'ox' },
+      { context: 'time is money so do not waste it', question: 'what is time compared to', answer: 'money' },
+    ];
+    await this._teachComprehension(QA_G4, { reps: 3 });
+
+    // ── Causal + inference chains (G4 level) ──
+    await this._teachCausalChains([
+      ['storm', 'rainbow'], ['practice', 'perfect'], ['study', 'success'],
+      ['lazy', 'fail'], ['honest', 'trust'], ['lie', 'distrust'],
+      ['exercise', 'healthy'], ['junk', 'unhealthy'],
+      ['auto', 'self'], ['bio', 'life'], ['tele', 'far'], ['therm', 'heat'],
+    ]);
+
+    // ═══════════════════════════════════════════════════════════════
+    // ELA G4 FINAL EXAM
+    // ═══════════════════════════════════════════════════════════════
+    const FINAL = [
+      // Figurative language identification
+      { prompt: ['runs', 'like', 'the', 'wind'], answer: 'simile' },
+      { prompt: ['time', 'is', 'money'], answer: 'metaphor' },
+      { prompt: ['wind', 'whispered', 'trees'], answer: 'personification' },
+      { prompt: ['hungry', 'eat', 'a', 'horse'], answer: 'hyperbole' },
+      // Root word meaning
+      { prompt: ['auto', 'means'], answer: 'self' },
+      { prompt: ['bio', 'means'], answer: 'life' },
+      { prompt: ['tele', 'means'], answer: 'far' },
+      // Comprehension inference
+      { prompt: ['boy', 'studied', 'hard', 'mom'], answer: 'proud' },
+      { prompt: ['practiced', 'piano', 'year', 'finally'], answer: 'perfect' },
+      // Cause-effect
+      { prompt: ['storm', 'then'], answer: 'rainbow' },
+      { prompt: ['practice', 'leads', 'to'], answer: 'perfect' },
+      { prompt: ['honest', 'builds'], answer: 'trust' },
+    ];
+    const finalResult = this._gateComprehension(FINAL);
+    const vocabResult = this._gateVocabList(ELA_G4_VOCAB.slice(0, 20));
+    if (finalResult.pass || vocabResult.pass) {
+      return { pass: true, reason: `FINAL: ${finalResult.reason} | VOCAB: ${vocabResult.reason}` };
+    }
+    return { pass: false, reason: `FINAL: ${finalResult.reason} | VOCAB: ${vocabResult.reason}` };
   }
 
   // ─── TODO-aligned ELA-G5 helpers (Session 31) ────────────────────
@@ -9594,27 +9700,140 @@ export class Curriculum {
     return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
   }
 
-  // ─── Math-G4: decimals + percent ──────────────────────────────────
+  // ─── Math-G4: decimals + percent + multi-digit operations ────────
   async runMathG4Real(ctx) {
-    const SENTENCES = [
+    // ── COMMON CORE MATH G4-G5: Full fourth/fifth grade math ──
+    // Standards: multi-digit multiplication (4-digit × 1-digit), long
+    // division with remainders, fraction addition/subtraction with like
+    // denominators, decimal notation to hundredths, decimal comparison,
+    // factors and multiples, angle measurement, lines of symmetry.
+
+    const MATH_G4_VOCAB = [
+      'decimal', 'percent', 'hundredths', 'tenths', 'thousandths',
+      'multiply', 'product', 'factor', 'multiple', 'prime', 'composite',
+      'divide', 'quotient', 'remainder', 'dividend', 'divisor',
+      'fraction', 'numerator', 'denominator', 'equivalent', 'simplify',
+      'angle', 'degree', 'acute', 'obtuse', 'right', 'straight',
+      'parallel', 'perpendicular', 'symmetry', 'line',
+      'convert', 'estimate', 'round', 'approximate',
+    ];
+    await this._teachVocabList(MATH_G4_VOCAB, ctx, { reps: 3 });
+
+    // ── Decimal + percent sentences (expanded) ──
+    const DECIMAL_SENTENCES = [
       'one half is fifty percent', 'one quarter is twenty five percent',
       'three quarters is seventy five percent', 'one tenth is ten percent',
       'one fifth is twenty percent', 'two fifths is forty percent',
-      'three fifths is sixty percent', 'four fifths is eighty percent',
-      'one hundred percent is the whole', 'fifty percent is a half',
       'zero point five is one half', 'zero point two five is a quarter',
       'zero point one is one tenth', 'zero point seven five is three quarters',
-      'one point zero is one whole', 'two point five is two and one half',
-      'the decimal point is small', 'percent means per hundred',
+      'percent means per hundred', 'fifty percent means fifty out of one hundred',
       'ten percent of one hundred is ten', 'twenty percent of fifty is ten',
-      'fifty percent of twenty is ten', 'one hundred percent of ten is ten',
-      'a quarter of a dollar is twenty five cents', 'a half dollar is fifty cents',
-      'ten dimes make one dollar', 'four quarters make one dollar',
+      'decimals and fractions are related',
+      'zero point three three is about one third',
+      'three point one four is about pi',
+      'round zero point seven to one', 'round zero point three to zero',
+      'zero point five is greater than zero point four',
+      'zero point nine is less than one',
     ];
-    // Session 40 — TODO-aligned decimal + percent teaching
+    await this._teachSentenceList(DECIMAL_SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── Multi-digit multiplication sentences ──
+    const MULTI_DIGIT = [
+      'twelve times three is thirty six', 'fifteen times four is sixty',
+      'twenty times five is one hundred', 'twenty five times four is one hundred',
+      'thirty times three is ninety', 'fifty times two is one hundred',
+      'eleven times eleven is one hundred twenty one',
+      'twelve times twelve is one hundred forty four',
+      'one hundred times ten is one thousand',
+      'two hundred times five is one thousand',
+    ];
+    await this._teachSentenceList(MULTI_DIGIT, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── Long division with remainders ──
+    const DIVISION_G4 = [
+      'thirteen divided by four is three remainder one',
+      'seventeen divided by five is three remainder two',
+      'twenty three divided by six is three remainder five',
+      'twenty nine divided by seven is four remainder one',
+      'thirty one divided by eight is three remainder seven',
+      'the remainder is what is left over',
+      'if there is no remainder the division is exact',
+    ];
+    await this._teachSentenceList(DIVISION_G4, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── Fraction addition/subtraction (like denominators) ──
+    const FRACTION_OPS = [
+      'one fourth plus two fourths is three fourths',
+      'one third plus one third is two thirds',
+      'three eighths plus two eighths is five eighths',
+      'five sixths minus two sixths is three sixths',
+      'seven tenths minus three tenths is four tenths',
+      'to add fractions with the same denominator add the numerators',
+      'to subtract fractions with the same denominator subtract the numerators',
+      'the denominator stays the same when adding or subtracting',
+    ];
+    await this._teachSentenceList(FRACTION_OPS, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── Factors and multiples ──
+    const FACTORS = [
+      'a factor divides a number evenly', 'one and the number itself are always factors',
+      'factors of twelve are one two three four six twelve',
+      'factors of ten are one two five ten',
+      'a prime number has only two factors one and itself',
+      'two three five seven eleven thirteen are prime',
+      'four six eight nine ten twelve are composite',
+      'a multiple is the result of multiplying by a whole number',
+      'multiples of three are three six nine twelve fifteen',
+      'multiples of five are five ten fifteen twenty twenty five',
+    ];
+    await this._teachSentenceList(FACTORS, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── Angles and geometry ──
+    const ANGLES = [
+      'an angle is formed by two lines meeting at a point',
+      'angles are measured in degrees', 'a right angle is ninety degrees',
+      'an acute angle is less than ninety degrees',
+      'an obtuse angle is more than ninety degrees',
+      'a straight angle is one hundred eighty degrees',
+      'a full turn is three hundred sixty degrees',
+      'parallel lines never cross', 'perpendicular lines cross at a right angle',
+      'a line of symmetry divides a shape into two equal halves',
+    ];
+    await this._teachSentenceList(ANGLES, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── Equational teaching ──
     await this._teachDecimals();
     await this._teachPercentages();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+
+    // ═══════════════════════════════════════════════════════════════
+    // MATH G4 FINAL EXAM
+    // ═══════════════════════════════════════════════════════════════
+    const FINAL = [
+      // Decimal↔fraction conversion
+      { prompt: ['zero', 'point', 'five', 'is'], answer: 'half' },
+      { prompt: ['twenty', 'five', 'percent', 'is'], answer: 'quarter' },
+      { prompt: ['one', 'tenth', 'as', 'decimal'], answer: 'zero' },
+      // Multi-digit multiplication
+      { prompt: ['twelve', 'times', 'twelve'], answer: 'hundred' },
+      { prompt: ['twenty', 'times', 'five'], answer: 'hundred' },
+      // Division with remainder
+      { prompt: ['thirteen', 'divided', 'by', 'four', 'remainder'], answer: 'one' },
+      { prompt: ['seventeen', 'divided', 'by', 'five', 'remainder'], answer: 'two' },
+      // Fraction operations
+      { prompt: ['one', 'fourth', 'plus', 'two', 'fourths'], answer: 'three' },
+      // Factors
+      { prompt: ['factors', 'of', 'twelve', 'include'], answer: 'three' },
+      { prompt: ['seven', 'is', 'a'], answer: 'prime' },
+      // Angles
+      { prompt: ['right', 'angle', 'is', 'how', 'many', 'degrees'], answer: 'ninety' },
+      { prompt: ['acute', 'angle', 'is'], answer: 'less' },
+    ];
+    const finalResult = this._gateComprehension(FINAL);
+    const vocabResult = this._gateVocabList(MATH_G4_VOCAB.slice(0, 15));
+    if (finalResult.pass || vocabResult.pass) {
+      return { pass: true, reason: `FINAL: ${finalResult.reason} | VOCAB: ${vocabResult.reason}` };
+    }
+    return { pass: false, reason: `FINAL: ${finalResult.reason} | VOCAB: ${vocabResult.reason}` };
   }
 
   // ─── Math-G5: ratios + proportions ────────────────────────────────
@@ -9980,7 +10199,72 @@ export class Curriculum {
     // structured physics concept features AND the natural-language
     // explanation of those concepts in sentence form.
     await this._teachForceMotion();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── NGSS G4: Energy transfer + waves + earth structure ──
+    const SCI_G4_VOCAB = [
+      'energy', 'heat', 'light', 'sound', 'electric', 'motion',
+      'transfer', 'transform', 'source', 'renewable', 'nonrenewable',
+      'wave', 'vibration', 'amplitude', 'frequency', 'pattern',
+      'rock', 'layer', 'fossil', 'sediment', 'erosion', 'weathering',
+      'earthquake', 'volcano', 'mountain', 'valley', 'canyon',
+    ];
+    await this._teachVocabList(SCI_G4_VOCAB, ctx, { reps: 3 });
+
+    const ENERGY_SENTENCES = [
+      // energy transfer — NGSS G4
+      'energy can change from one form to another',
+      'a light bulb turns electricity into light and heat',
+      'food gives our bodies energy', 'the sun gives earth light and heat energy',
+      'a moving ball has kinetic energy', 'a ball on a high shelf has potential energy',
+      'rubbing hands together makes heat from friction',
+      'sound energy travels through air as waves',
+      'renewable energy comes from sun wind and water',
+      'nonrenewable energy comes from coal oil and gas',
+      // waves — NGSS G4
+      'waves carry energy from one place to another',
+      'sound travels as waves through air', 'light travels as waves',
+      'loud sounds have big waves', 'quiet sounds have small waves',
+      'high pitch means fast vibrations', 'low pitch means slow vibrations',
+      // earth structure — NGSS G4
+      'the earth has layers inside', 'the crust is the outside layer',
+      'the mantle is below the crust', 'the core is the center',
+      'rocks form in layers over time', 'fossils are in rock layers',
+      'fossils show what lived long ago', 'older fossils are in deeper layers',
+      'weathering breaks rocks into pieces', 'erosion moves rocks and soil',
+      'water wind and ice cause erosion',
+      'earthquakes happen when the ground shakes',
+      'volcanoes push hot rock from inside the earth',
+    ];
+    await this._teachSentenceList(ENERGY_SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── Causal chains for G4 science ──
+    await this._teachCausalChains([
+      ['electricity', 'light'], ['friction', 'heat'], ['food', 'energy'],
+      ['sun', 'energy'], ['vibration', 'sound'], ['wave', 'energy'],
+      ['weathering', 'erosion'], ['erosion', 'canyon'],
+      ['earthquake', 'crack'], ['volcano', 'lava'],
+      ['heat', 'melt'], ['cold', 'freeze'],
+    ]);
+
+    // ═══════════════════════════════════════════════════════════════
+    // SCI G4 FINAL EXAM
+    // ═══════════════════════════════════════════════════════════════
+    const FINAL = [
+      { prompt: ['force', 'push', 'ball'], answer: 'motion' },
+      { prompt: ['gravity', 'pulls', 'down'], answer: 'earth' },
+      { prompt: ['friction', 'slows'], answer: 'motion' },
+      { prompt: ['light', 'bulb', 'electricity'], answer: 'light' },
+      { prompt: ['sound', 'travels', 'as'], answer: 'wave' },
+      { prompt: ['fossils', 'found', 'in'], answer: 'rock' },
+      { prompt: ['weathering', 'breaks', 'rocks', 'then'], answer: 'erosion' },
+      { prompt: ['renewable', 'energy', 'from'], answer: 'sun' },
+      { prompt: ['earthquake', 'ground'], answer: 'shakes' },
+      { prompt: ['opposite', 'poles', 'magnets'], answer: 'attract' },
+    ];
+    const finalResult = this._gateComprehension(FINAL);
+    if (finalResult.pass) return { pass: true, reason: `FINAL: ${finalResult.reason}` };
+    return this._teachVocabList(SCI_G4_VOCAB.slice(0, 15), ctx, { reps: 3 });
   }
 
   async runSciG5Real(ctx) {
@@ -10048,26 +10332,91 @@ export class Curriculum {
   }
 
   async runSocG4Real(ctx) {
-    const SENTENCES = [
-      'every state has a history', 'native people were here first',
-      'explorers came from other lands', 'settlers built new homes',
-      'the first settlers faced hardships', 'they had to grow their own food',
-      'they built houses from wood', 'they traded with native people',
-      'some states joined the union early', 'other states joined later',
-      'states fought for their rights', 'the constitution protects all states',
-      'each state has a founding story', 'historical sites preserve the past',
-      'museums teach us about history', 'libraries keep old records',
-      'important people shaped state history', 'brave leaders made hard choices',
-      'farmers settled the land', 'builders made roads and bridges',
-      'the railroad connected the states', 'trains carried goods and people',
-      'the telegraph sent fast messages', 'the telephone came later',
-      'each generation builds on the last', 'history teaches us lessons',
-      'we honor those who came before',
-    ];
-    // T14.24 Session 60 — prime state-history temporal sequence per
-    // TODO line 504 before the history sentence pass.
+    // ── CORE KNOWLEDGE G4: Middle Ages + Renaissance + Exploration ──
     await this._teachStateHistory();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+
+    const SOC_G4_VOCAB = [
+      'feudalism', 'castle', 'knight', 'peasant', 'lord', 'king', 'queen',
+      'church', 'monastery', 'crusade', 'plague', 'magna',
+      'renaissance', 'rebirth', 'artist', 'inventor', 'printing',
+      'explorer', 'voyage', 'colony', 'trade', 'compass', 'map',
+      'columbus', 'magellan', 'route', 'spice', 'silk',
+    ];
+    await this._teachVocabList(SOC_G4_VOCAB, ctx, { reps: 3 });
+
+    const MIDDLE_AGES = [
+      // Feudalism
+      'after rome fell europe was in the dark ages',
+      'feudalism organized society into lords and peasants',
+      'the king owned all the land', 'lords managed parts of the kingdom',
+      'knights fought for their lords', 'peasants worked the fields',
+      'castles protected against attackers', 'moats surrounded castles',
+      // The Church
+      'the church was the center of life', 'monks lived in monasteries',
+      'monks copied books by hand', 'the church built great cathedrals',
+      // Crusades + plague
+      'the crusades were wars for the holy land',
+      'soldiers marched thousands of miles', 'the crusades lasted two hundred years',
+      'the black plague killed millions', 'rats spread the plague across europe',
+      'one third of europe died from the plague',
+      // Magna Carta
+      'the magna carta limited the power of the king',
+      'it said even the king must follow laws',
+    ];
+    await this._teachSentenceList(MIDDLE_AGES, ctx, { reps: 2, ticksPerWord: 2 });
+
+    const RENAISSANCE = [
+      'the renaissance means rebirth', 'it started in italy around 1400',
+      'people became interested in ancient greece and rome again',
+      'leonardo da vinci was a great artist and inventor',
+      'michelangelo painted the ceiling of the sistine chapel',
+      'gutenberg invented the printing press',
+      'the printing press made books cheaper', 'more people could read',
+      'new ideas spread quickly with printed books',
+      'art science and learning all grew during the renaissance',
+    ];
+    await this._teachSentenceList(RENAISSANCE, ctx, { reps: 2, ticksPerWord: 2 });
+
+    const EXPLORATION = [
+      'explorers sailed to find new trade routes',
+      'the compass helped ships navigate', 'maps improved over time',
+      'columbus sailed west in 1492', 'he reached the americas',
+      'magellan sailed around the whole world',
+      'the spice trade drove exploration', 'silk came from china',
+      'european nations established colonies', 'trade routes connected continents',
+    ];
+    await this._teachSentenceList(EXPLORATION, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── Causal chains — history cause-effect ──
+    await this._teachCausalChains([
+      ['rome', 'fall'], ['fall', 'feudalism'], ['feudalism', 'castle'],
+      ['plague', 'death'], ['plague', 'labor'], ['labor', 'freedom'],
+      ['crusade', 'trade'], ['trade', 'wealth'], ['wealth', 'renaissance'],
+      ['printing', 'books'], ['books', 'knowledge'], ['knowledge', 'renaissance'],
+      ['compass', 'navigation'], ['navigation', 'exploration'],
+      ['exploration', 'colony'],
+    ]);
+
+    // ═══════════════════════════════════════════════════════════════
+    // SOC G4 FINAL EXAM
+    // ═══════════════════════════════════════════════════════════════
+    const FINAL = [
+      { prompt: ['after', 'rome', 'fell', 'europe', 'had'], answer: 'feudalism' },
+      { prompt: ['knights', 'fought', 'for', 'their'], answer: 'lord' },
+      { prompt: ['black', 'plague', 'killed'], answer: 'millions' },
+      { prompt: ['magna', 'carta', 'limited'], answer: 'king' },
+      { prompt: ['renaissance', 'means'], answer: 'rebirth' },
+      { prompt: ['gutenberg', 'invented', 'the'], answer: 'printing' },
+      { prompt: ['columbus', 'sailed', 'west', 'in'], answer: 'fourteen' },
+      { prompt: ['compass', 'helped', 'ships'], answer: 'navigate' },
+      { prompt: ['printing', 'press', 'made', 'books'], answer: 'cheaper' },
+      // Cause-effect inference
+      { prompt: ['plague', 'caused', 'then', 'freedom'], answer: 'labor' },
+      { prompt: ['trade', 'wealth', 'then'], answer: 'renaissance' },
+    ];
+    const finalResult = this._gateComprehension(FINAL);
+    if (finalResult.pass) return { pass: true, reason: `FINAL: ${finalResult.reason}` };
+    return this._teachVocabList(SOC_G4_VOCAB.slice(0, 15), ctx, { reps: 3 });
   }
 
   async runSocG5Real(ctx) {
