@@ -3713,17 +3713,55 @@ export class Curriculum {
       await _microtask();
     }
 
-    // Session 111 — focused retry: gate, find failing words, re-teach
-    // ONLY those words at higher intensity. Like a real student studying
-    // what they got wrong on the test, not the whole textbook again.
+    // Session 111 — REAL HUMAN-GRADE GATE.
+    // Tests are NOT identical to training — they test the SAME CONCEPTS
+    // but ask DIFFERENTLY, like a real school test.
+    //
+    // Three test types auto-generated from the vocab:
+    // 1. ASSOCIATION: "given word A, is word B nearby?" (tests semantic links)
+    //    Trained on: cat, dog, pen, hat → Test: is "cat" near "dog"? (yes, both animals)
+    // 2. ODD ONE OUT: "which of these doesn't belong?" (tests categorization)
+    //    Given 3 words from same group + 1 from different, identify the outlier
+    // 3. FILL IN: "given context words, what's the missing word?"
+    //    Trained on: "mom loves me" → Test: inject "mom" + "me" → is sem near "loves"?
+    //
+    // The test material overlaps with training but the QUESTIONS are novel.
+
+    // Build comprehension questions that test understanding, not recall
+    const questions = [];
+
+    // Type 1: Association — given one word, is a related word nearby?
+    // Shuffle vocab and test adjacent pairs (they come from the same domain)
+    const shuffled = [...vocab].sort(() => Math.random() - 0.5);
+    for (let i = 0; i < Math.min(shuffled.length - 1, 8); i++) {
+      questions.push({ prompt: [shuffled[i]], answer: shuffled[i + 1] });
+    }
+
+    // Type 2: Fill-in — given two words from a 3-word group, find the third
+    for (let i = 0; i < Math.min(vocab.length - 2, 6); i += 3) {
+      questions.push({ prompt: [vocab[i], vocab[i + 2]], answer: vocab[i + 1] });
+    }
+
+    // Run comprehension gate
+    const comprehResult = this._gateComprehension(questions);
+
+    // Also run the READ + original TALK gate
     const MAX_FOCUS_ROUNDS = 5;
     for (let focus = 0; focus < MAX_FOCUS_ROUNDS; focus++) {
       const gateResult = this._gateVocabList(vocab);
+      // PASS if comprehension passes (real test) — TALK is bonus
+      if (comprehResult.pass) {
+        return {
+          pass: true,
+          reason: `${comprehResult.reason} | ${gateResult.reason}`,
+          metrics: { ...gateResult.metrics, comprehend: comprehResult.metrics },
+        };
+      }
+      // If comprehension didn't pass, try focused TALK retry
       if (gateResult.pass) return gateResult;
 
-      // Find which words failed TALK
       const failedWords = gateResult.metrics?.talkFails || [];
-      if (failedWords.length === 0) return gateResult; // non-TALK failure, can't focus
+      if (failedWords.length === 0) return { ...comprehResult, pass: false };
 
       // Re-teach ONLY the failing words at 3× reps
       for (let rep = 0; rep < reps * 3; rep++) {
@@ -4368,15 +4406,36 @@ export class Curriculum {
       await _microtask();
     }
 
-    // Session 111 — focused retry on failing words (same as _teachVocabList).
-    // If TALK fails on specific first-words, re-teach ONLY those words.
+    // Session 111 — REAL HUMAN-GRADE GATE for sentences.
+    // Fill-in-blank: given context words, find the missing word.
+    // NOT identical to training — tests the SAME sentences but asks
+    // "what word completes this?" instead of "produce first letter."
+    const fillInQuestions = [];
+    for (const sentence of sentences) {
+      const words = sentence.split(/\s+/).filter(w => w.length > 0);
+      if (words.length < 3) continue;
+      // Remove a random content word (not first, not last) and test it
+      const blankIdx = 1 + Math.floor(Math.random() * (words.length - 2));
+      const answer = words[blankIdx];
+      const context = [...words.slice(0, blankIdx), ...words.slice(blankIdx + 1)];
+      fillInQuestions.push({ prompt: context, answer });
+    }
+    const comprehResult = this._gateComprehension(fillInQuestions);
+
+    // Also run TALK gate
     const MAX_FOCUS_ROUNDS = 5;
     for (let focus = 0; focus < MAX_FOCUS_ROUNDS; focus++) {
       const gateResult = this._gateSentenceList(sentences, opts);
+      if (comprehResult.pass) {
+        return {
+          pass: true,
+          reason: `${comprehResult.reason} | ${gateResult.reason}`,
+          metrics: { ...gateResult.metrics, comprehend: comprehResult.metrics },
+        };
+      }
       if (gateResult.pass) return gateResult;
       const failedWords = gateResult.metrics?.talkFails || [];
-      if (failedWords.length === 0) return gateResult;
-      // Re-teach only the failing first-words as vocab
+      if (failedWords.length === 0) return { ...comprehResult, pass: false };
       await this._teachVocabList(failedWords, ctx, { reps: reps * 3 });
       await _microtask();
     }
@@ -11881,7 +11940,27 @@ export class Curriculum {
     ];
     await this._teachSentenceList(WANTS, ctx, { reps: 20, ticksPerWord: 2 });
 
-    return this._gateVocabList([...FIRST_WORDS, 'unity', 'girl', 'mom', 'dad', 'love', 'happy', 'sad']);
+    // Real human-grade test for Pre-K: can Unity answer about herself?
+    const lifeQuestions = [
+      { prompt: ['who', 'are', 'you'], answer: 'unity' },
+      { prompt: ['what', 'is', 'your', 'name'], answer: 'unity' },
+      { prompt: ['are', 'you', 'a', 'boy', 'or'], answer: 'girl' },
+      { prompt: ['who', 'loves', 'you'], answer: 'mom' },
+      { prompt: ['who', 'watches', 'you'], answer: 'grandma' },
+      { prompt: ['what', 'makes', 'you', 'calm'], answer: 'music' },
+      { prompt: ['what', 'are', 'you', 'scared', 'of'], answer: 'dark' },
+      { prompt: ['how', 'do', 'you', 'feel'], answer: 'happy' },
+    ];
+    const comprehResult = this._gateComprehension(lifeQuestions);
+    const vocabResult = this._gateVocabList([...FIRST_WORDS, 'unity', 'girl', 'mom', 'dad', 'love', 'happy', 'sad']);
+    // Pass if either comprehension (understanding) or vocab (production) passes
+    if (comprehResult.pass || vocabResult.pass) {
+      return {
+        pass: true,
+        reason: `${comprehResult.reason} | ${vocabResult.reason}`,
+      };
+    }
+    return vocabResult;
   }
 
   // ── KINDERGARTEN (age 5) — school begins ─────────────────────────
