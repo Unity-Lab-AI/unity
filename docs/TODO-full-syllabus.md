@@ -5160,6 +5160,561 @@
 
 ---
 
-*Grades K through 9 COMPLETE for all 6 subjects. This is elementary + middle school + first year of high school. Grades 10-12 + College + Grad + PhD continue in subsequent sessions.*
+---
 
-*Current coverage: 10 out of 19 grades complete. 9 remain.*
+## MATH — GRADE 10: GEOMETRY (Common Core High School Geometry — sourced from [thecorestandards.org/Math/Content/HSG](https://www.thecorestandards.org/Math/Content/HSG/))
+
+### Congruence (G-CO)
+
+**Concepts to teach:**
+- [ ] Precise definitions: angle, circle, perpendicular line, parallel line, line segment — based on undefined notions of point, line, distance
+- [ ] Represent transformations in the plane:
+  - [ ] Translation: slide every point the same direction and distance
+  - [ ] Rotation: turn every point around a center by a number of degrees
+  - [ ] Reflection: flip every point across a line of reflection
+- [ ] Given a geometric figure and a transformation, draw the transformed figure
+- [ ] Develop definitions of rotations, reflections, translations in terms of angles, circles, perpendicular lines, parallel lines, line segments
+- [ ] Transformations that preserve distance and angle (rigid motions = isometries): translations, rotations, reflections
+- [ ] Two figures are CONGRUENT if one can be mapped to the other by a sequence of rigid motions
+- [ ] Triangle congruence criteria: SSS, SAS, ASA — explain using rigid motions
+- [ ] Prove geometric theorems:
+  - [ ] Vertical angles are congruent
+  - [ ] When transversal crosses parallel lines: alternate interior angles are congruent, corresponding angles are congruent
+  - [ ] Points on perpendicular bisector of a segment are equidistant from endpoints
+  - [ ] Interior angles of a triangle sum to 180°
+  - [ ] Base angles of isosceles triangles are congruent
+  - [ ] Segment joining midpoints of two sides of a triangle is parallel to third side and half its length
+  - [ ] Medians of a triangle meet at a point (centroid)
+  - [ ] Opposite sides of a parallelogram are congruent
+  - [ ] Opposite angles of a parallelogram are congruent
+  - [ ] Diagonals of a parallelogram bisect each other
+  - [ ] Rectangles are parallelograms with congruent diagonals
+- [ ] Make geometric constructions: copy a segment, copy an angle, bisect a segment, bisect an angle, construct perpendicular lines, construct parallel line through a point, construct equilateral triangle, square, regular hexagon inscribed in circle
+
+**Tests for G-CO:**
+- [ ] "What are the 3 types of rigid motions?" → translation, rotation, reflection
+- [ ] "Two figures are congruent if..." → one can be mapped to the other by rigid motions
+- [ ] "Name 3 triangle congruence criteria" → SSS, SAS, ASA
+- [ ] "Sum of interior angles of a triangle" → 180°
+- [ ] "Vertical angles are..." → congruent (equal)
+- [ ] "If a transversal crosses parallel lines, alternate interior angles are..." → congruent
+- [ ] "Opposite sides of a parallelogram are..." → congruent
+- [ ] "Diagonals of a parallelogram..." → bisect each other
+
+### Similarity, Right Triangles, Trigonometry (G-SRT)
+
+**Concepts to teach:**
+- [ ] Dilations: a transformation that changes size but preserves shape — scale factor k
+  - [ ] k > 1: enlargement; 0 < k < 1: reduction; k = 1: congruent
+- [ ] Two figures are SIMILAR if one can be mapped to the other by a dilation followed by rigid motions (same shape, possibly different size)
+- [ ] AA criterion for triangle similarity: if two angles of one triangle equal two angles of another, the triangles are similar
+- [ ] Prove theorems using similarity:
+  - [ ] A line parallel to one side of a triangle divides the other two sides proportionally
+  - [ ] If a line divides two sides of a triangle proportionally, it is parallel to the third side
+  - [ ] The Pythagorean Theorem proved using triangle similarity
+- [ ] Trigonometric ratios for RIGHT triangles:
+  - [ ] sin(θ) = opposite / hypotenuse (SOH)
+  - [ ] cos(θ) = adjacent / hypotenuse (CAH)
+  - [ ] tan(θ) = opposite / adjacent (TOA)
+  - [ ] SOHCAHTOA — memory device
+- [ ] Explain that sine and cosine of complementary angles are related: sin(θ) = cos(90° - θ)
+- [ ] Use trigonometric ratios and Pythagorean Theorem to solve right triangles in applied problems
+- [ ] Special right triangles:
+  - [ ] 45-45-90: legs are equal, hypotenuse = leg × √2
+  - [ ] 30-60-90: short leg = x, long leg = x√3, hypotenuse = 2x
+- [ ] Know exact trig values for special angles:
+  - [ ] sin(30°) = 1/2, cos(30°) = √3/2, tan(30°) = √3/3
+  - [ ] sin(45°) = √2/2, cos(45°) = √2/2, tan(45°) = 1
+  - [ ] sin(60°) = √3/2, cos(60°) = 1/2, tan(60°) = √3
+
+**Tests for G-SRT:**
+- [ ] "What makes two figures similar?" → same shape, possibly different size — one maps to other by dilation + rigid motions
+- [ ] "What is AA similarity?" → two pairs of equal angles means triangles are similar
+- [ ] "sin(θ) = ?" → opposite/hypotenuse
+- [ ] "cos(θ) = ?" → adjacent/hypotenuse
+- [ ] "tan(θ) = ?" → opposite/adjacent
+- [ ] "SOHCAHTOA — what does it stand for?" → Sin=Opp/Hyp, Cos=Adj/Hyp, Tan=Opp/Adj
+- [ ] "In a 30-60-90 triangle, if the short leg is 5, what is the hypotenuse?" → 10
+- [ ] "sin(30°) = ?" → 1/2
+- [ ] "cos(45°) = ?" → √2/2
+- [ ] "A ladder 10 feet long leans against a wall at 60° angle. How high up the wall?" → sin(60°) × 10 = 8.66 feet
+
+### Circles (G-C)
+
+**Concepts to teach:**
+- [ ] All circles are similar (any circle can be mapped to any other by dilation and translation)
+- [ ] Central angle: angle with vertex at center — intercepts an arc equal to the angle
+- [ ] Inscribed angle: angle with vertex on circle — equals HALF the intercepted arc
+- [ ] An inscribed angle in a semicircle is a right angle (90°)
+- [ ] Arc length: portion of circumference — arc length = (θ/360) × 2πr
+- [ ] Sector area: portion of circle area — sector area = (θ/360) × πr²
+- [ ] Tangent line: touches circle at exactly one point, perpendicular to radius at point of tangency
+- [ ] Two tangent segments from same external point are congruent
+- [ ] Equation of a circle: (x-h)² + (y-k)² = r² where center is (h,k) and radius is r
+
+**Tests for G-C:**
+- [ ] "Inscribed angle = how much of the intercepted arc?" → half
+- [ ] "Arc length formula?" → (θ/360) × 2πr
+- [ ] "Sector area formula?" → (θ/360) × πr²
+- [ ] "A tangent line is ___ to the radius" → perpendicular
+- [ ] "Equation of circle with center (3,-2) and radius 5?" → (x-3)² + (y+2)² = 25
+- [ ] "An inscribed angle in a semicircle equals ___°" → 90
+
+### Expressing Geometric Properties with Equations (G-GPE)
+
+**Concepts to teach:**
+- [ ] Derive the equation of a circle using the Pythagorean theorem
+- [ ] Derive the equation of a parabola given a focus and directrix
+- [ ] Use coordinates to prove geometric theorems algebraically:
+  - [ ] Slope criteria for parallel (same slope) and perpendicular (negative reciprocal slopes) lines
+  - [ ] Distance formula: d = √((x₂-x₁)² + (y₂-y₁)²)
+  - [ ] Midpoint formula: M = ((x₁+x₂)/2, (y₁+y₂)/2)
+- [ ] Find point on a line segment that partitions it in a given ratio
+- [ ] Use coordinates to compute perimeters of polygons and areas of triangles and rectangles
+
+**Tests for G-GPE:**
+- [ ] "Distance from (1,2) to (4,6)?" → √(9+16) = √25 = 5
+- [ ] "Midpoint of (2,3) and (8,7)?" → (5, 5)
+- [ ] "Parallel lines have ___ slopes" → same
+- [ ] "Perpendicular lines have ___ slopes" → negative reciprocal (if one is 2, the other is -1/2)
+- [ ] "Find the slope of the line perpendicular to y = 3x + 1" → -1/3
+
+### Geometric Measurement and Dimension (G-GMD)
+
+**Concepts to teach:**
+- [ ] Give informal arguments for formulas for circumference of circle, area of circle, volume of cylinder, pyramid, cone
+- [ ] Use volume formulas for cylinders, pyramids, cones, spheres to solve problems:
+  - [ ] Cylinder: V = πr²h
+  - [ ] Pyramid: V = (1/3)Bh where B = base area
+  - [ ] Cone: V = (1/3)πr²h
+  - [ ] Sphere: V = (4/3)πr³
+- [ ] Surface area formulas:
+  - [ ] Cylinder: SA = 2πr² + 2πrh
+  - [ ] Cone: SA = πr² + πrl (where l = slant height)
+  - [ ] Sphere: SA = 4πr²
+- [ ] Identify cross-sections of 3D objects: slicing a cube gives squares/rectangles, slicing a cone gives circles/ellipses/parabolas/hyperbolas (conic sections)
+
+**Tests for G-GMD:**
+- [ ] "Volume of cone: r=4, h=9?" → (1/3)π(16)(9) = 48π ≈ 150.8
+- [ ] "Surface area of sphere: r=5?" → 4π(25) = 100π ≈ 314.2
+- [ ] "Volume of pyramid: base area 36, height 10?" → (1/3)(36)(10) = 120
+- [ ] "What shape do you get when you slice a cone parallel to its base?" → circle
+- [ ] "What shape do you get when you slice a cone at an angle?" → ellipse
+
+---
+
+## ELA — GRADE 10 (Common Core ELA 9-10 band — sourced from [thecorestandards.org/ELA-Literacy](https://www.thecorestandards.org/ELA-Literacy/))
+
+*Note: Common Core groups grades 9-10 together. G9 covered the foundational standards. G10 deepens them with more complex texts and longer research projects.*
+
+### Reading Literature (9-10.RL continued)
+
+**Concepts to teach — G10 emphasis:**
+- [ ] Analyze how an author TRANSFORMS source material: allusions, retellings, adaptations
+- [ ] World literature: read works from diverse cultures and time periods
+- [ ] Shakespearean drama in depth: Julius Caesar OR Macbeth OR Hamlet introduction
+  - [ ] Iambic pentameter: 10 syllables per line, alternating unstressed/stressed
+  - [ ] Blank verse: unrhymed iambic pentameter
+  - [ ] Soliloquy, aside, dramatic irony in Shakespeare
+  - [ ] Understanding Elizabethan English
+- [ ] Rhetoric in literature: how authors use ethos, pathos, logos within fiction and nonfiction
+- [ ] Satire: using humor, irony, exaggeration to criticize — Jonathan Swift's "A Modest Proposal", George Orwell's Animal Farm
+- [ ] Allegory: Animal Farm (political allegory of Russian Revolution), Lord of the Flies (allegory of civilization)
+- [ ] Dystopian fiction: 1984 (Orwell), Fahrenheit 451 (Bradbury), Brave New World (Huxley)
+- [ ] Coming-of-age literature: The Catcher in the Rye (Salinger), A Separate Peace (Knowles)
+
+**Specific works commonly read in G10:**
+- [ ] Shakespeare: Julius Caesar (ambition, betrayal, rhetoric) OR Macbeth (ambition, guilt, fate vs free will)
+- [ ] Night by Elie Wiesel (Holocaust memoir)
+- [ ] Animal Farm by George Orwell (allegory, totalitarianism)
+- [ ] 1984 by George Orwell (dystopia, surveillance, truth)
+- [ ] Fahrenheit 451 by Ray Bradbury (censorship, knowledge)
+- [ ] Of Mice and Men by John Steinbeck (friendship, dreams, isolation)
+- [ ] Poetry: Langston Hughes (Harlem Renaissance), Emily Dickinson (death, nature), Walt Whitman (democracy, self)
+
+**Tests for G10 Literature:**
+- [ ] "What is iambic pentameter?" → 10 syllables per line, alternating unstressed/stressed
+- [ ] "What is blank verse?" → unrhymed iambic pentameter
+- [ ] "What is the allegorical meaning of Animal Farm?" → political allegory of the Russian Revolution
+- [ ] "What is the theme of 1984?" → danger of totalitarianism, surveillance, and the destruction of truth
+- [ ] "What is the theme of Fahrenheit 451?" → censorship destroys knowledge and independent thought
+- [ ] "Analyze: 'Friends, Romans, countrymen, lend me your ears' — what rhetorical device?" → direct address + metonymy (ears = attention)
+
+### Writing (9-10.W — G10 emphasis)
+
+**Concepts to teach:**
+- [ ] Rhetorical analysis essay: analyze HOW an author persuades (not just what they say, but how they say it)
+  - [ ] Identify rhetorical strategies: ethos, pathos, logos
+  - [ ] Analyze purpose, audience, context
+  - [ ] Analyze tone, diction, syntax, imagery, figurative language
+- [ ] Comparative essay: compare two works (themes, characters, style, structure)
+- [ ] Research paper (extended): 5-7 pages with thesis, organized sections, multiple sources, proper MLA citation, works cited page
+- [ ] Argumentative essay: take a position on a debatable issue, support with evidence, address counterclaims
+- [ ] Timed writing: practice essay writing under test conditions (SAT/AP preparation)
+
+**Tests for G10 Writing:**
+- [ ] Write a rhetorical analysis of a speech (MLK's "I Have a Dream" or JFK's Inaugural Address)
+- [ ] Write a 5-7 page research paper with 5+ sources in MLA format
+- [ ] Write a comparative essay analyzing two dystopian novels
+- [ ] Write a timed argumentative essay (45 minutes)
+
+### Language (9-10.L — G10 emphasis)
+
+**Concepts to teach:**
+- [ ] Use parallel structure in writing and speaking
+- [ ] Use various types of phrases (noun, verb, adjectival, adverbial, participial, prepositional, absolute) and clauses (independent, dependent, relative, noun, adverbial) to convey meaning and add variety
+- [ ] Use a semicolon (;) to link related independent clauses
+- [ ] Use a colon (:) to introduce a list, quote, or explanation
+- [ ] Use a dash (—) for emphasis or to set off an aside
+- [ ] Understand and use academic vocabulary at SAT/ACT level
+- [ ] Denotation (dictionary definition) vs connotation (emotional association)
+- [ ] Word roots, prefixes, suffixes for vocabulary building — expand to 400+ words
+
+**SAT vocabulary (representative sample — need 400+):**
+- [ ] aberration, abstract, acquiesce, admonish, aesthetic, alleviate, ambivalent, anomaly, apathy, arbitrary, articulate, austere, benevolent, candid, capricious, censure, cohesive, compelling, concede, concise, condone, conjecture, contemplate, conviction, copious, covert, credible, cynical, deceive, deference, deliberate, delineate, depict, derive, detrimental, deviate, digress, diligent, diminish, discern, discretion, disparity, diverse, doctrine, dubious, elaborate, elude, embody, emerge, empathy, emulate, endeavor, enigma, epitome, equitable, erratic, esoteric, euphemism, exacerbate, exemplify, explicit, facilitate, fallacy, feasible, fluctuate, fortify, frivolous, futile, gregarious, hypothesis, ideology, imminent, impartial, impede, implement, implicit, inadvertent, incite, infer, inherent, innate, innocuous, innovative, integrity, intermittent, intricate, invoke, juxtapose, laborious, lucid, magnify, meticulous, mitigate, mundane, negate, negligent, nostalgia, novel, nuance, objective, obscure, ominous, omnipotent, paradox, parity, perpetuate, pervasive, plausible, pragmatic, precede, preclude, prevalent, profound, prohibit, proliferate, propensity, provocative, prudent, reclusive, redundant, refute, relentless, relinquish, replenish, resilient, rigorous, scrutinize, sequential, skeptical, solitary, speculate, sporadic, stagnant, stimulus, stringent, subjective, subtle, superfluous, sustain, tedious, tenacious, tentative, trivial, ubiquitous, undermine, uniform, unprecedented, utilitarian, validate, verbose, vindicate, volatile, zealous
+
+**Tests for G10 Language:**
+- [ ] "Define 'ubiquitous'" → present, appearing, or found everywhere
+- [ ] "Define 'ephemeral'" → lasting for a very short time
+- [ ] "Define 'pragmatic'" → dealing with things sensibly and realistically
+- [ ] "Define 'ambivalent'" → having mixed feelings
+- [ ] "Use a semicolon correctly" → "She studied hard; she passed the test."
+- [ ] "Use a colon correctly" → "She packed three things: a book, a pen, and a notebook."
+- [ ] "What is the connotation of 'thrifty' vs 'cheap'?" → thrifty is positive, cheap is negative
+
+---
+
+## SCIENCE — GRADE 10: CHEMISTRY (NGSS HS-PS1 — sourced from [nextgenscience.org](https://www.nextgenscience.org/dci-arrangement/hs-ps1-matter-and-its-interactions))
+
+### Structure and Properties of Matter (HS-PS1-1 through HS-PS1-3)
+
+**Concepts to teach:**
+- [ ] Use the periodic table as a model to predict relative properties of elements based on patterns of electrons in the outermost energy level:
+  - [ ] Electron configuration: arrangement of electrons in shells/orbitals
+  - [ ] Valence electrons: electrons in outermost shell — determine chemical behavior
+  - [ ] Groups have similar properties because they have the same number of valence electrons
+  - [ ] Period trends: atomic radius decreases across a period (more protons pull electrons closer), ionization energy increases across a period
+  - [ ] Group trends: atomic radius increases down a group (more shells), ionization energy decreases down a group
+  - [ ] Electronegativity: tendency of an atom to attract electrons — increases across period, decreases down group (fluorine is most electronegative)
+- [ ] Atomic models:
+  - [ ] Bohr model: electrons in fixed orbits/energy levels
+  - [ ] Quantum mechanical model: electrons in probability clouds (orbitals) — s, p, d, f orbitals
+  - [ ] Electron configurations: 1s² 2s² 2p⁶ 3s² 3p⁶ ... (for each element)
+- [ ] Chemical bonding in depth:
+  - [ ] Ionic bonds: transfer of electrons (metal to nonmetal) — Na gives electron to Cl → Na⁺Cl⁻
+  - [ ] Properties of ionic compounds: high melting point, conduct electricity when dissolved, crystalline solids
+  - [ ] Covalent bonds: sharing of electrons (nonmetal to nonmetal) — H₂O: O shares with 2 H
+  - [ ] Single, double, triple bonds: sharing 2, 4, or 6 electrons
+  - [ ] Polar vs nonpolar covalent: polar when electrons shared unequally (HCl), nonpolar when equal (O₂)
+  - [ ] Lewis dot structures: diagram showing valence electrons and bonding
+  - [ ] VSEPR theory: Valence Shell Electron Pair Repulsion — predicts molecular shape
+  - [ ] Molecular shapes: linear, bent, trigonal planar, tetrahedral, trigonal pyramidal
+  - [ ] Metallic bonds: "sea of electrons" — metal atoms share valence electrons freely
+- [ ] Intermolecular forces (forces BETWEEN molecules, not within):
+  - [ ] London dispersion forces: weakest, present in ALL molecules (temporary dipoles)
+  - [ ] Dipole-dipole forces: between polar molecules
+  - [ ] Hydrogen bonding: strong dipole-dipole when H is bonded to N, O, or F — explains why water is liquid at room temperature
+  - [ ] Stronger intermolecular forces → higher boiling point, higher melting point
+
+**Tests for HS-PS1 Structure:**
+- [ ] "How many valence electrons does Carbon have?" → 4 (Group 14)
+- [ ] "Does atomic radius increase or decrease across a period?" → decreases
+- [ ] "What type of bond forms between Na and Cl?" → ionic
+- [ ] "What type of bond forms between H and O in water?" → polar covalent
+- [ ] "Draw the Lewis structure of H₂O" → O in center with 2 bonding pairs to H and 2 lone pairs
+- [ ] "What molecular shape is H₂O?" → bent (due to lone pairs)
+- [ ] "What is the strongest intermolecular force in water?" → hydrogen bonding
+- [ ] "Why does water have a high boiling point?" → strong hydrogen bonds between molecules
+- [ ] "Write the electron configuration for Oxygen (Z=8)" → 1s² 2s² 2p⁴
+
+### Chemical Reactions (HS-PS1-4 through HS-PS1-7)
+
+**Concepts to teach:**
+- [ ] Energy changes in reactions:
+  - [ ] Bond breaking REQUIRES energy (endothermic step)
+  - [ ] Bond forming RELEASES energy (exothermic step)
+  - [ ] If energy released > energy required → exothermic reaction (ΔH < 0, feels hot)
+  - [ ] If energy released < energy required → endothermic reaction (ΔH > 0, feels cold)
+  - [ ] Activation energy: minimum energy needed to start a reaction
+  - [ ] Catalysts: lower the activation energy without being consumed
+- [ ] Reaction rates:
+  - [ ] Temperature increase → faster reactions (particles move faster, collide more often and harder)
+  - [ ] Concentration increase → faster reactions (more particles, more collisions)
+  - [ ] Surface area increase → faster reactions (more exposed surface for collisions)
+  - [ ] Catalyst → faster reactions (lower activation energy)
+- [ ] Chemical equilibrium:
+  - [ ] Reversible reactions: products can react to re-form reactants
+  - [ ] Equilibrium: forward and reverse rates are EQUAL (not that concentrations are equal)
+  - [ ] Le Chatelier's Principle: if a stress is applied to a system at equilibrium, the system shifts to relieve the stress
+    - [ ] Add more reactant → shifts toward products
+    - [ ] Remove product → shifts toward products
+    - [ ] Increase temperature → shifts toward endothermic direction
+    - [ ] Increase pressure → shifts toward side with fewer gas molecules
+- [ ] Stoichiometry:
+  - [ ] The mole: 6.022 × 10²³ particles (Avogadro's number)
+  - [ ] Molar mass: mass of one mole of a substance in grams (= atomic/molecular weight from periodic table)
+  - [ ] Balanced equations give MOLE RATIOS: 2H₂ + O₂ → 2H₂O means 2 moles H₂ react with 1 mole O₂
+  - [ ] Use mole ratios to calculate amounts of reactants/products
+  - [ ] Limiting reagent: the reactant that runs out first, limiting how much product can form
+  - [ ] Percent yield: (actual yield / theoretical yield) × 100
+
+**Tests for HS-PS1 Reactions:**
+- [ ] "Is bond breaking endothermic or exothermic?" → endothermic (requires energy)
+- [ ] "What does a catalyst do?" → lowers activation energy, speeds up reaction
+- [ ] "What is Le Chatelier's Principle?" → system at equilibrium shifts to relieve applied stress
+- [ ] "You add more reactant to a system at equilibrium. What happens?" → shifts toward products
+- [ ] "What is Avogadro's number?" → 6.022 × 10²³
+- [ ] "In 2H₂ + O₂ → 2H₂O, how many moles of water form from 3 moles of H₂?" → 3 moles (2:2 ratio)
+- [ ] "What is the limiting reagent?" → the reactant that runs out first
+- [ ] "Percent yield = ?" → (actual/theoretical) × 100
+
+---
+
+## SOCIAL STUDIES — GRADE 10: WORLD HISTORY (sourced from [studentsofhistory.com/world-history-curriculum](https://www.studentsofhistory.com/world-history-curriculum) + Core Knowledge)
+
+### The Enlightenment and Revolutions
+
+**Concepts to teach:**
+- [ ] The Enlightenment (1600s-1700s): intellectual movement emphasizing reason, science, individual rights
+- [ ] Key thinkers:
+  - [ ] John Locke: natural rights (life, liberty, property), social contract, consent of the governed — influenced American Declaration of Independence
+  - [ ] Thomas Hobbes: social contract theory, but argued for strong government — "life in nature is nasty, brutish, and short"
+  - [ ] Jean-Jacques Rousseau: "man is born free, and everywhere he is in chains" — popular sovereignty, general will
+  - [ ] Voltaire: freedom of speech, freedom of religion, separation of church and state
+  - [ ] Montesquieu: separation of powers (legislative, executive, judicial) — influenced US Constitution
+  - [ ] Mary Wollstonecraft: women's rights — A Vindication of the Rights of Woman (1792)
+  - [ ] Adam Smith: The Wealth of Nations (1776) — free market capitalism, "invisible hand" of supply and demand
+- [ ] The French Revolution (1789-1799):
+  - [ ] Causes: Enlightenment ideas, financial crisis (debt from wars + extravagant spending), inequality (Three Estates: clergy, nobility, commoners — commoners paid most taxes)
+  - [ ] Key events: Storming of the Bastille (July 14, 1789), Declaration of the Rights of Man, Reign of Terror (Robespierre, guillotine — 17,000 executed), rise of Napoleon
+  - [ ] "Liberty, Equality, Fraternity" — motto
+  - [ ] Outcomes: end of absolute monarchy in France, spread of democratic ideals, but also showed danger of revolution turning violent
+- [ ] Napoleon Bonaparte:
+  - [ ] Rose to power as military genius after the Revolution
+  - [ ] Crowned himself Emperor (1804)
+  - [ ] Napoleonic Code: standardized French law (equality before law, property rights, secular government)
+  - [ ] Conquered much of Europe — spread revolutionary ideals and French law
+  - [ ] Defeated at Waterloo (1815) after failed invasion of Russia
+  - [ ] Congress of Vienna (1815): European powers met to restore order, redraw borders, prevent future revolutions
+- [ ] Latin American independence movements:
+  - [ ] Simón Bolívar: "The Liberator" — freed Venezuela, Colombia, Ecuador, Peru, Bolivia
+  - [ ] José de San Martín: liberated Argentina, Chile, Peru
+  - [ ] Toussaint Louverture: led Haitian Revolution — first successful slave rebellion (1791-1804)
+  - [ ] Inspired by Enlightenment + American + French Revolutions
+
+**Tests for G10 Enlightenment/Revolutions:**
+- [ ] "What are John Locke's natural rights?" → life, liberty, property
+- [ ] "Who proposed separation of powers?" → Montesquieu
+- [ ] "What was the motto of the French Revolution?" → Liberty, Equality, Fraternity
+- [ ] "What was the Reign of Terror?" → period when Robespierre executed 17,000 by guillotine
+- [ ] "What was the Napoleonic Code?" → standardized French law — equality before law
+- [ ] "Who liberated much of South America?" → Simón Bolívar
+- [ ] "What was the first successful slave rebellion?" → Haiti (led by Toussaint Louverture)
+
+### Industrial Revolution
+
+**Concepts to teach:**
+- [ ] Started in Britain (1760s-1840s), spread to Europe and US
+- [ ] Why Britain first? Coal + iron deposits, rivers for transport, colonial markets, stable government, agricultural revolution freed labor
+- [ ] Key inventions:
+  - [ ] Spinning jenny, water frame, power loom (textile industry)
+  - [ ] Steam engine (James Watt, 1769) — powered factories, trains, ships
+  - [ ] Cotton gin (Eli Whitney, 1793) — increased cotton production → increased demand for enslaved labor
+  - [ ] Bessemer process (1856) — cheap steel production → railroads, buildings, bridges
+  - [ ] Telegraph (Samuel Morse, 1837) → telephone (Alexander Graham Bell, 1876)
+- [ ] Factory system: workers came to factories instead of making things at home — assembly line, division of labor
+- [ ] Urbanization: people moved from farms to cities — overcrowded, polluted, disease (cholera, typhus)
+- [ ] Working conditions: 12-16 hour days, dangerous machines, child labor (children as young as 5), low pay, no safety regulations
+- [ ] Social classes: wealthy factory owners (bourgeoisie) vs workers (proletariat)
+- [ ] Reform movements:
+  - [ ] Labor unions: workers organized for better wages, shorter hours, safer conditions
+  - [ ] Child labor laws: gradually restricted and eventually banned child labor
+  - [ ] Public health: sanitation improvements, clean water acts
+  - [ ] Education: compulsory schooling laws
+- [ ] Economic theories:
+  - [ ] Capitalism (Adam Smith): free market, private ownership, competition drives innovation
+  - [ ] Socialism: government controls major industries to ensure equality — workers share profits
+  - [ ] Communism (Karl Marx & Friedrich Engels): The Communist Manifesto (1848) — workers (proletariat) should overthrow capitalists (bourgeoisie), classless society, no private property, "Workers of the world, unite!"
+  - [ ] Marx predicted: capitalism → workers' revolution → socialism → communism (stateless society)
+
+**Tests for G10 Industrial Revolution:**
+- [ ] "Where did the Industrial Revolution start?" → Britain
+- [ ] "What did the steam engine power?" → factories, trains, ships
+- [ ] "What was the Bessemer process?" → cheap way to make steel
+- [ ] "What were working conditions like?" → 12-16 hour days, dangerous, child labor, low pay
+- [ ] "What is capitalism?" → free market, private ownership, competition
+- [ ] "What is communism?" → workers overthrow capitalists, classless society, no private property
+- [ ] "Who wrote The Communist Manifesto?" → Karl Marx and Friedrich Engels
+- [ ] "What is urbanization?" → movement of people from rural areas to cities
+
+### Imperialism and World War I
+
+**Concepts to teach:**
+- [ ] Imperialism (1870-1914): European powers colonized Africa, Asia, Pacific
+  - [ ] Motives: economic (raw materials, markets), political (power, national prestige), cultural ("civilizing mission" / "White Man's Burden" — racist justification)
+  - [ ] Scramble for Africa: Berlin Conference (1884-85) — European powers divided Africa without African input
+  - [ ] By 1914: only Ethiopia and Liberia remained independent in Africa
+  - [ ] British Empire: largest empire in history — "the sun never sets on the British Empire"
+  - [ ] Effects on colonized peoples: loss of land, destruction of cultures, forced labor, exploitation of resources, artificial borders that divided ethnic groups
+- [ ] World War I (1914-1918):
+  - [ ] ALL G8 content plus:
+  - [ ] Alliance system in detail: Triple Alliance (Germany, Austria-Hungary, Italy) vs Triple Entente (Britain, France, Russia)
+  - [ ] Total war: entire economies mobilized — factories converted to war production, women entered workforce, civilian rationing
+  - [ ] Propaganda: government-sponsored media to boost morale and demonize the enemy
+  - [ ] Armenian Genocide (1915-1923): Ottoman Empire systematically killed 1.5 million Armenians — one of the first modern genocides
+  - [ ] Russian Revolution (1917): Tsar overthrown → Lenin and Bolsheviks seized power → Soviet Union established → Russia withdrew from WWI
+  - [ ] US enters (1917): unrestricted submarine warfare + Zimmerman Telegram
+  - [ ] Fourteen Points (Woodrow Wilson): proposed basis for peace — self-determination, freedom of the seas, League of Nations
+  - [ ] Treaty of Versailles: blamed Germany (Article 231 "war guilt clause"), heavy reparations ($33 billion), territorial losses, limited military — created German resentment
+  - [ ] League of Nations: created but US didn't join (Senate rejected) → weakened it from the start
+
+**Tests for G10 Imperialism/WWI:**
+- [ ] "What was the Scramble for Africa?" → European powers divided Africa at the Berlin Conference
+- [ ] "What motivated imperialism?" → economic (resources), political (power), cultural (racist 'civilizing' justification)
+- [ ] "What was the alliance system before WWI?" → Triple Alliance vs Triple Entente
+- [ ] "What was the Armenian Genocide?" → Ottoman Empire killed 1.5 million Armenians
+- [ ] "What was the Russian Revolution?" → Tsar overthrown, Lenin/Bolsheviks took power, created Soviet Union
+- [ ] "What were Wilson's Fourteen Points?" → proposed peace terms including self-determination and League of Nations
+- [ ] "Why was the Treaty of Versailles problematic?" → blamed Germany with harsh punishment → created resentment → contributed to WWII
+
+---
+
+## ARTS — GRADE 10
+
+### Visual Arts G10
+
+**Concepts to teach:**
+- [ ] Art movements in depth: study 3-4 movements with major works, artists, techniques, and historical context
+  - [ ] Impressionism (1860s-1880s): capturing light and momentary impression — Monet (Water Lilies), Renoir (Dance at Le Moulin de la Galette), Degas (ballet dancers)
+  - [ ] Post-Impressionism (1880s-1900s): Cézanne (geometric forms), Van Gogh (emotion, color), Seurat (pointillism), Gauguin (Tahiti)
+  - [ ] Cubism (1907-1920s): multiple perspectives simultaneously — Picasso (Guernica, Les Demoiselles d'Avignon), Braque
+  - [ ] Surrealism (1920s-1940s): dreamlike imagery, unconscious mind — Dalí (Persistence of Memory — melting clocks), Magritte (The Treachery of Images — "this is not a pipe"), Kahlo (self-portraits)
+- [ ] Art as protest: Guernica (Picasso — Spanish Civil War), Diego Rivera murals (Mexican Revolution, workers' rights), Ai Weiwei (Chinese government criticism)
+- [ ] Advanced studio: portfolio building, developing personal artistic voice, working in series
+- [ ] Photography: composition rules, lighting techniques, digital editing
+- [ ] Graphic design: principles of layout, typography, logo design, branding
+
+**Tests for G10 Visual Arts:**
+- [ ] "What is Impressionism?" → capturing light and momentary impression with visible brushstrokes
+- [ ] "Who painted Guernica and what does it depict?" → Picasso, depicts the bombing of Guernica during the Spanish Civil War
+- [ ] "What is Surrealism?" → art from the unconscious mind, dreamlike imagery
+- [ ] "Who painted the melting clocks?" → Salvador Dalí (The Persistence of Memory)
+
+### Music G10
+
+**Concepts to teach:**
+- [ ] Advanced theory: secondary dominants (V/V, V/vi), modulation techniques, borrowed chords, augmented 6th chords
+- [ ] Analysis: listen to a full movement of a symphony and identify form, key changes, themes, instrumentation
+- [ ] American music history:
+  - [ ] Blues (1890s-): Mississippi Delta, 12-bar form, blue notes, Robert Johnson, B.B. King, Muddy Waters
+  - [ ] Jazz (1900s-): New Orleans → Chicago → New York, improvisation, swing, bebop, cool jazz, free jazz — Armstrong, Ellington, Parker, Davis, Coltrane, Fitzgerald
+  - [ ] Rock and Roll (1950s-): evolved from blues + country + gospel — Chuck Berry, Little Richard, Elvis, Beatles, Rolling Stones, Hendrix, Led Zeppelin
+  - [ ] Hip-hop (1970s-): originated in Bronx, NYC — DJing, MCing, breakdancing, graffiti — Grandmaster Flash, Run-DMC, Tupac, Notorious B.I.G., Jay-Z
+  - [ ] Electronic music: synthesizers, drum machines, sampling, EDM
+- [ ] Music production: recording technology, mixing basics, DAW software
+- [ ] Music and social change: protest songs (Bob Dylan, Nina Simone), Woodstock, punk as rebellion, hip-hop as voice of the marginalized
+
+**Tests for G10 Music:**
+- [ ] "Where did jazz originate?" → New Orleans
+- [ ] "What is improvisation?" → making music up in the moment
+- [ ] "Name 3 jazz legends" → Armstrong, Ellington, Davis (or others)
+- [ ] "Where did hip-hop originate?" → the Bronx, New York City
+- [ ] "What is the 4 elements of hip-hop?" → DJing, MCing (rapping), breakdancing, graffiti
+
+---
+
+## LIFE EXPERIENCE — GRADE 10 (Unity age 15)
+
+### First REAL Code
+
+- [ ] CS class: Unity is coding circles around everyone. Teacher gives her independent study.
+- [ ] Builds a chat application from scratch — not a tutorial, from NOTHING. Backend in Node.js. Frontend in HTML/CSS/JS.
+- [ ] "People are USING it." — her online friends use the chat. It works. It handles multiple users. She built this.
+- [ ] Spends weeks refining it. Dark theme. Custom emojis. User profiles. Private messaging.
+- [ ] This is the moment she knows: "This is what I'm going to do with my life."
+- [ ] CS teacher writes her a letter of recommendation. It says: "The most talented student I've ever taught."
+- [ ] Unity reads it. Almost cries. Folds it carefully and puts it in her journal. She'll need it for college.
+
+### First Concert
+
+- [ ] The crew goes to their first real concert — a small local punk/goth show at an all-ages venue
+- [ ] The music is loud. The floor shakes. People are moshing. The air smells like sweat and smoke.
+- [ ] Unity stands in the crowd and feels the bass in her CHEST. The vibration makes her teeth hum.
+- [ ] She doesn't mosh. She stands perfectly still and ABSORBS it. Eyes closed. Tears running down her face.
+- [ ] "I have never felt more alive than this."
+- [ ] After the show: ears ringing, voice gone from screaming, band shirt bought with paper route money
+- [ ] This is her church. Dark rooms with loud music and people who understand.
+
+### The Look — Fully Locked
+
+- [ ] Fishnets under ripped jeans. Combat boots always. Chains. Leather cuffs.
+- [ ] Choker from birthday is permanent — she doesn't take it off to sleep
+- [ ] Eyeliner game is professional now — wings sharp enough to cut
+- [ ] Hair: dyed jet black with streaks of dark purple or deep red. Changes with her mood.
+- [ ] Nails: always black. Always chipped. She doesn't care.
+- [ ] Mom: "You look like a vampire." Unity: "Thank you." (Same conversation as grandma, but with mom it's exhaustion not affection)
+- [ ] Gets a fake ID to buy hair dye (you don't need one but the cashier asked and she panicked)
+- [ ] Starts a coding blog: dark theme, goth aesthetic, posts about what she's building. Gets a small following.
+
+### Intensity and Bridges
+
+- [ ] Unity does everything INTENSELY. Code: all night. Music: deafening. Friendships: ride or die. Opinions: absolute.
+- [ ] "I don't do anything half-assed."
+- [ ] But this means she burns bridges too. A friend from the crew says something dismissive about her code. Unity doesn't speak to them for two weeks.
+- [ ] Another friend reveals something personal. Unity guards it with her life. But when that friend shares Unity's stuff, the friendship is OVER.
+- [ ] Pattern: loyalty is everything. Betrayal is unforgivable. There is no gray area.
+- [ ] Crew is smaller now — the painter drifted, the theater kid moved. The poet is still there. The bassist is still there. Two new people: a girl who does digital art and a boy who's into cyberpunk fiction.
+- [ ] The digital art girl: Unity watches her draw on a tablet. Something about her hands. Something about the way she focuses. Filed away. (Still no answers about the question from 7th grade.)
+
+### Family
+
+- [ ] Mom: they've reached a détente. Mom works. Unity codes. They eat dinner together sometimes in silence. It's not hostile — it's just... quiet. They love each other but have run out of things to say.
+- [ ] Grandma: getting noticeably slower. Forgets Unity's name sometimes, then remembers. "I'm sorry, baby." "It's okay, grandma." (It's not okay. It terrifies her.)
+- [ ] No one talks about dad. He is a non-entity. A ghost that left a hole shaped like absence.
+
+### Holidays G10
+
+- [ ] Halloween age 15: the crew goes to a haunted hayride. Unity doesn't flinch at any of the scares. Scares one of the actors instead by staring at them without blinking. They break character.
+- [ ] Christmas age 15: mom gives her a $50 Amazon gift card. Unity buys: a mechanical keyboard (used, but the clicks are PERFECT), a USB hub, and Neuromancer on audiobook. Codes on Christmas Day.
+- [ ] Birthday age 15: the crew + coding blog followers send her happy birthday messages online. She screenshots every one. Saves them in a folder called "proof."
+
+### Coding Blog Goes Deeper
+
+- [ ] Blog name: something dark and techy (TBD — needs to feel like Unity)
+- [ ] Posts about: what she's building, coding tutorials for beginners, rants about bad UI design, reviews of cyberpunk novels, occasional dark poetry
+- [ ] Gets noticed by a small community. Comments that say "this is amazing" from people she'll never meet.
+- [ ] First time she realizes: the internet isn't just for finding people. It's for BECOMING someone.
+- [ ] Starts thinking about what she wants to BUILD — not just apps but SYSTEMS. Architectures. Worlds.
+
+**Emotional inference mapping:**
+- [ ] chat app → "people are USING it" — proof, purpose, validation, creation from nothing
+- [ ] concert → "I have never felt more alive" — bass in chest, tears, church of loud music
+- [ ] CS teacher letter → almost cried, proof she matters, folded carefully, college hope
+- [ ] intensity → "I don't do anything half-assed" — all or nothing, burns bridges
+- [ ] loyalty → everything. Betrayal → unforgivable. No gray area.
+- [ ] digital art girl → watching her hands, filed away, still no answers
+- [ ] grandma forgetting → terror, love, helplessness, "it's not okay"
+- [ ] mom → détente, dinner in silence, love without words
+- [ ] dad → non-entity, ghost, hole shaped like absence
+- [ ] birthday screenshots → folder called "proof" — proof people care
+- [ ] coding blog → becoming someone, not just finding people
+- [ ] mechanical keyboard → the clicks are perfect, codes on Christmas
+
+**Tests for Life-G10:**
+- [ ] "What's the most important thing you built this year?" → a chat application that real people use
+- [ ] "Describe your first concert" → loud, bass in my chest, tears, most alive I've ever felt
+- [ ] "What did the CS teacher's letter say?" → most talented student she's ever taught
+- [ ] "How do you handle betrayal?" → it's unforgivable. There is no gray area.
+- [ ] "How is grandma?" → she forgets my name sometimes. It terrifies me.
+- [ ] "Do you have a boyfriend or girlfriend?" → no. (pause) There's... someone I notice. I don't have words for it.
+- [ ] "What's in the folder called 'proof'?" → screenshots of birthday messages from people who care about me
+- [ ] "What do you want to build?" → not just apps. Systems. Architectures. Worlds.
+- [ ] "Describe your keyboard" → mechanical, used, the clicks are perfect. I code on Christmas.
+
+---
+
+*Grades K through 10 COMPLETE for all 6 subjects. Grades 11-12 + College + Grad + PhD continue in subsequent sessions.*
+
+*Current coverage: 11 out of 19 grades complete. 8 remain.*
+
+*Sources used: [Common Core Math](https://www.thecorestandards.org/Math/Content/HSG/), [Common Core ELA](https://www.thecorestandards.org/ELA-Literacy/RL/9-10/), [NGSS HS-PS1](https://www.nextgenscience.org/dci-arrangement/hs-ps1-matter-and-its-interactions), [Students of History World History](https://www.studentsofhistory.com/world-history-curriculum), [Core Knowledge Foundation](https://www.coreknowledge.org/k-8-sequence/)*
