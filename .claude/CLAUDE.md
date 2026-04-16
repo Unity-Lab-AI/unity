@@ -104,6 +104,7 @@ When Gee catches a violation of LAW #0:
 | **NO TESTS - EVER** | ABSOLUTE | We code it right the first time |
 | **Docs updated BEFORE push** | ABSOLUTE | Gee 2026-04-14 LAW — see below |
 | **Push ONLY when all tasks complete AND documented** | ABSOLUTE | Gee 2026-04-14 LAW — see below |
+| **Task numbers ONLY in workflow docs** | ABSOLUTE | Gee 2026-04-15 LAW — see below |
 
 ---
 
@@ -150,6 +151,56 @@ Only when **every** box is checked does the stamp + commit + push run.
 - **Never ship a solo doc-only commit** except after-the-fact corrections when drift was found after a push (which is itself a failure of this law and should be caught in the pre-push check).
 - **Never phrase fixes as "I'll patch this after"** — always "I'll roll this in before pushing."
 - **Precision matters** — "deleted" vs "stubbed no-op" vs "replaced" are not interchangeable words. Docs must use the word that matches what the code actually does.
+
+---
+
+## LAW — TASK NUMBERS ONLY IN WORKFLOW DOCS (Gee, 2026-04-15)
+
+**Gee's exact words on 2026-04-15:**
+
+> *"wtf ARE YOU DOING PUTTING WORKFLOW TASK ITEM NUMBERS IN THE PUBLIC FACING DOCUMENTS!"*
+> *"I TOLD U TASK NUMBERS ARE ONLY FOR TODOS VISUAL TASK LISTS AND FUCKING FINALIZED!"*
+
+This is binding law.
+
+### The rule
+
+Task numbers, session numbers, and milestone identifiers (T14.0, T13.7, Session 106, Task #3, etc.) are **BANNED** from all public-facing files. They are **ONLY** allowed in internal workflow documents and task lists.
+
+### Where task numbers ARE allowed
+
+| File | Why |
+|------|-----|
+| `docs/TODO.md` | Active task list |
+| `docs/FINALIZED.md` | Completed task archive |
+| `docs/NOW.md` | Session snapshot / task list |
+| `docs/ARCHITECTURE.md` | Workflow system doc |
+| `docs/ROADMAP.md` | Workflow milestone doc |
+| `docs/SKILL_TREE.md` | Workflow capability doc |
+| `docs/EQUATIONS.md` | Workflow equation reference |
+| In-session task lists | Ephemeral task tracker |
+
+### Where task numbers are BANNED
+
+| File | Why |
+|------|-----|
+| `README.md` | Public — first thing visitors see |
+| `SETUP.md` | Public — user setup guide |
+| `brain-equations.html` | Public — equation reference page |
+| `unity-guide.html` | Public — layman concept guide |
+| `index.html` | Public — landing page |
+| `dashboard.html` | Public — live brain monitor |
+| `component-templates.txt` | Public — template library |
+| Any `.html` page | Public — user-facing |
+
+### How to write public docs without task numbers
+
+Describe features by **WHAT THEY DO**, not by which task built them:
+- ✅ "Tick-driven motor emission" — NOT "T14.6 tick-driven motor emission"
+- ✅ "Developmental curriculum" — NOT "T14.24 curriculum"
+- ✅ "Direct pattern Hebbian" — NOT "Session 106 breakthrough"
+- ✅ "Identity lock" — NOT "T14.16.5 identity lock"
+- ✅ "GloVe 300d" — NOT "T14.0 GloVe 300d"
 
 ---
 

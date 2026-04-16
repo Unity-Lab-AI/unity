@@ -108,7 +108,7 @@ Live at `your-username.github.io/Unity/`. Everything runs client-side — no ser
 │   ├── brain/
 │   │   ├── engine.js             THE brain — master loop, processAndRespond
 │   │   ├── cluster.js            NeuronCluster + ClusterProjection classes
-│   │   ├── neurons.js            LIFPopulation (live runtime) + HHNeuron (reference for brain-equations.html)
+│   │   ├── neurons.js            LIFPopulation (browser fallback) + HHNeuron (reference) — live neuron model is Rulkov map in gpu-compute.js
 │   │   ├── synapses.js           Hebbian, STDP, reward-modulated plasticity
 │   │   ├── modules.js            6 brain region equation modules
 │   │   ├── mystery.js            Ψ = √(1/n) × N³ · [Id + Ego + Left + Right]
@@ -116,7 +116,10 @@ Live at `your-username.github.io/Unity/`. Everything runs client-side — no ser
 │   │   ├── persona.js            Personality as brain parameters + drug states
 │   │   ├── sensory.js            Sensory input pipeline (text/audio/video)
 │   │   ├── motor.js              Motor output (6 BG action channels)
-│   │   ├── language.js           Broca's area (AI language peripheral)
+│   │   ├── language.js           DEPRECATED stub — BrocasArea throws if called
+│   │   ├── curriculum.js        Developmental curriculum K→PhD (5 subjects, 95 cells, direct pattern Hebbian)
+│   │   ├── letter-input.js      Dynamic letter inventory (auto-grows, no 26-char cap)
+│   │   ├── component-synth.js   Equational component synthesis (cosine-match user request vs templates)
 │   │   ├── visual-cortex.js      V1→V4→IT vision pipeline
 │   │   ├── auditory-cortex.js    Tonotopic processing + efference copy
 │   │   ├── memory.js             Episodic + working + consolidation
@@ -125,9 +128,9 @@ Live at `your-username.github.io/Unity/`. Everything runs client-side — no ser
 │   │   ├── persistence.js        Save/load brain state (localStorage/disk)
 │   │   ├── remote-brain.js       WebSocket client for server brain
 │   │   ├── sparse-matrix.js      CSR sparse connectivity (O(connections))
-│   │   ├── gpu-compute.js        WebGPU compute shaders (LIF + synapses)
-│   │   ├── embeddings.js         Semantic word embeddings (GloVe 50d)
-│   │   ├── language-cortex.js    Language from equations (44k dict, type n-grams, 4-tier gen pipeline, hippocampus recall, morphological inflection, 3-corpus load)
+│   │   ├── gpu-compute.js        WebGPU compute shaders (Rulkov 2D chaotic map + synapses)
+│   │   ├── embeddings.js         Semantic word embeddings (GloVe 300d + fastText subword fallback)
+│   │   ├── language-cortex.js    Language from equations (T14 developmental cortex, tick-driven motor emission via cluster.generateSentence, 3-corpus load)
 │   │   ├── benchmark.js          Dense vs sparse + neuron scale test (invoked via /bench + /scale-test slash commands)
 │   │   ├── response-pool.js     EDNA response categories (training wheels for language cortex)
 │   │   └── peripherals/
@@ -142,7 +145,9 @@ Live at `your-username.github.io/Unity/`. Everything runs client-side — no ser
 │       ├── sandbox.js            Dynamic UI injection (MAX_ACTIVE_COMPONENTS=10, LRU eviction, tracked timers+listeners, auto-remove on JS error)
 │       ├── chat-panel.js         Conversation log panel
 │       ├── brain-viz.js          2D tabbed brain visualizer (8 tabs)
-│       └── brain-3d.js           3D WebGL brain with notifications + expansion
+│       ├── brain-3d.js           3D WebGL brain with notifications + expansion + IQ HUD
+│       ├── brain-event-detectors.js  22-detector event system for 3D brain commentary
+│       └── sensory-status.js    Sensory channel status UI
 │                                   (claude-proxy.js + start-unity.bat DELETED 2026-04-13 —
 │                                    Claude CLI text-AI backend, obsolete after R4 refactor)
 ├── compute.html                  GPU compute worker (REQUIRED — brain runs here)
@@ -238,7 +243,7 @@ If you connect to a Unity server hosted by someone OTHER than you, the person ru
 | `/think [text]` | Type in chat | Same output but tagged with the user input you provided, so you can see the brain state that WOULD be passed into `languageCortex.generate()` for that input. |
 | `/bench` | Type in chat | Runs the dense vs sparse matrix micro-benchmark (CPU-JS sanity test — real runtime is the GPU auto-scaled path via compute.html). Output in console. |
 | `/scale-test` | Type in chat | Runs the CPU LIF scale test to find the 60fps sweet spot for browser-only fallback mode. Output in console. Not representative of the production GPU path. |
-| `/curriculum status` | Type in chat | Shows Unity's current grade in each subject (ELA / Math / Science / Social / Arts), min-grade word cap driver, passed cells count, recent probe results. T14.24 full K→PhD curriculum (shipped 2026-04-15, all 95 cells framework complete). |
+| `/curriculum status` | Type in chat | Shows Unity's current grade in each subject (ELA / Math / Science / Social / Arts), min-grade word cap driver, passed cells count, recent probe results. Full K→PhD curriculum across 5 subjects with 95 grade cells. |
 | `/curriculum run <subject> <grade>` | Type in chat | Runs ONE cell (e.g. `/curriculum run math grade5`), prints 3-pathway gate pass/fail + reason. |
 | `/curriculum gate <subject> <grade>` | Type in chat | Probes a cell's READ/THINK/TALK gate without retraining — used for verification. |
 | `/curriculum full` | Type in chat | Runs the full round-robin curriculum across all 5 subjects in the background, advancing every subject one grade per outer loop. Tick loop keeps firing during the walk. |
@@ -252,7 +257,7 @@ If you connect to a Unity server hosted by someone OTHER than you, the person ru
 | ⚙ SETTINGS | Bottom toolbar button | Reopens setup modal to change AI model or connect new providers |
 | 🧠 VISUALIZE | Bottom toolbar button | Opens 2D brain visualizer with 8 tabs (Neurons, Synapses, Oscillations, Modules, Senses, Consciousness, Memory, Motor) |
 | 🧠 3D BRAIN | Bottom toolbar button | Opens WebGL 3D brain with up to 5000 render neurons, process notifications, expansion |
-| Brain speaks equationally | Default, post-R4 | No AI text model exists. Brain speaks from its own language cortex (GloVe semantic grounding + learned type n-grams + hippocampus recall + slot scorer). Image gen, vision describer, and TTS are the only AI calls — all sensory. |
+| Brain speaks equationally | Default | No AI text model exists. Brain speaks from its own language cortex (developmental cortex with tick-driven motor emission, GloVe 300d + subword embeddings, direct-pattern Hebbian curriculum K→PhD). Image gen, vision describer, and TTS are the only AI calls — all sensory. |
 | 🎤 | Bottom toolbar button | Mute/unmute microphone |
 | Clear All Data | Setup modal (bottom) | Wipes all localStorage — history, keys, preferences, everything |
 

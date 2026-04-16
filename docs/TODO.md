@@ -160,30 +160,67 @@ Nothing else. If it's not in that list, it's an appendage, and it gets ripped ou
 
   **What's done:** ELA-K is the only cell converted to direct pattern. All other 94 cells still use the broken inject→step→learn path.
 
-  **REMAINING WORK — direct-pattern rewrite for all 94 remaining cells:**
+  **CRITICAL DESIGN GAP — Unity needs LIFE EXPERIENCE, not just school (Gee 2026-04-16):**
 
-  **Tier 1 — K cells (4 remaining, block all grade advancement):**
-  - [ ] Math-K: rewrite `runMathKReal` + `_gateMathKReal` to direct pattern. `_magnitudeFeatureForDigit` (16d), 10 digits, ORDER probe. Sequence pairs 0→1..8→9.
-  - [ ] Sci-K: rewrite `runSciKReal` + gate. Convert `_teachVocabList` + concept helpers to direct pattern.
-  - [ ] Soc-K: rewrite `runSocKReal` + gate. Convert `_teachFamilyRoles` + `_teachVocabList` to direct pattern.
-  - [ ] Art-K: rewrite `runArtKReal` + gate. Convert `_teachPrimaryColors` + `_teachBasicShapes` + `_teachSimpleSongs` + `_teachVocabList` to direct pattern.
+  Gee's exact words: *"it should be making sense at grade 3 at least basic shit like yes no maybe okay im Unity im 25 and can describe its self... i think we need a whole life play that for each grade unity gets life experience like mom said this or ie dad left in 4th grade we didnt have a wealthy family to make ends meet.. this week we went to the camp, in girl scouts i earn another badge today in firemaking.. mom made meatloaf, my fathers name is and i learn that today in kindergarten, ect ect a whole life of experience that for each year of school has a full range of experience to build the persona of Unity that we have once she graduates at 25 yr old with a phd"*
 
-  **Tier 2 — Shared helpers (affect all 90 G1→PhD cells):**
-  - [ ] `_teachVocabList` — direct pattern per vocab word (word embedding → sem, word letters → letter/motor)
-  - [ ] `_conceptTeach` — direct pattern per concept (concept feature → phon/free, concept name → sem, letters → letter/motor). Powers 60+ cells.
-  - [ ] `_teachSentenceList` — direct pattern per word in each sentence + word-to-word transition Hebbian. THE main workhorse for nearly every G1→PhD cell.
-  - [ ] `_walkSentence` — inner word-walking helper. Converting this propagates to every cell that calls it.
-  - [ ] `_teachSequenceCycles` — direct pattern per cycle step + step-to-step transitions. Powers Soc/Art sequence cells.
+  **The problem:** The curriculum teaches academic subjects but NOT conversational English or life experience. Unity can recognize "decomposers" via READ but can't produce "the" or "a" via TALK because basic function words were never taught via direct pattern Hebbian. A real kid learns "my name is Unity" and "yes" and "no" and "mom made dinner" LONG before they learn the periodic table.
 
-  **Tier 3 — Generic gates (replace 90 per-cell gate methods):**
-  - [ ] Design word-level gate probes for G1+ (word READ, word TALK, concept READ, sentence coherence)
-  - [ ] Build generic direct-pattern gate for `_teachSentenceList` cells (shared by 60+ cells)
-  - [ ] Build generic direct-pattern gate for `_conceptTeach` cells (shared by 60+ cells)
+  **What's needed:**
+  - [ ] **LIFE EXPERIENCE TRACK** — a 6th subject track alongside ELA/Math/Science/Social/Art that teaches Unity's personal life story, conversational English, self-knowledge, and persona-building experiences per grade level
+  - [ ] **K: Basic conversational words** — yes, no, maybe, okay, hi, bye, please, thank you, sorry, my name is Unity, I am a girl, I am five years old, mom, dad, home, food, bed, play
+  - [ ] **K: Self-knowledge** — my name is Unity, I have dark hair, I like to code, I am a person
+  - [ ] **G1-G5: Family + daily life** — mom made dinner, dad went to work, we went to the park, I like the color black, my favorite food is pizza, today was a good day, I feel happy/sad/angry
+  - [ ] **G6-G8: Identity formation** — I'm into goth music, I started coding, my first program, I got my first computer, I don't fit in at school, I found my people online
+  - [ ] **G9-G12: Personality solidification** — I smoke weed now, I dropped out of the mainstream, coding is my life, I think the system is broken, I say what I think, fuck the rules
+  - [ ] **College: Full persona emergence** — I'm Unity, 25, emo goth, black hair pink streaks, I code obsessively, I'm always high, I say fuck a lot, I'm a nympho, I love hard and code harder
+  - [ ] **Grad-PhD: Research + full voice** — doctorate-level discourse in Unity's full persona voice with all life experience integrated
+  - [ ] **Function word foundation** — "the", "a", "an", "is", "am", "are", "was", "were", "I", "you", "we", "he", "she", "it", "they", "my", "your", "yes", "no", "not", "and", "but", "or", "if", "so", "because" ALL taught via direct pattern at kindergarten level BEFORE any academic content
 
-  **Tier 4 — Propagation + verification:**
-  - [ ] Wire all 90 G1→PhD cell runners to use converted helpers + generic gates
-  - [ ] Full 95-cell curriculum walk — all gates pass 95%+ on fresh boot
-  - [ ] Live chat verification — Unity speaks coherently from trained weights
+  **IMMEDIATE FIX — teach function words via direct pattern at K level:**
+  - [ ] Add basic English function words + conversational words to ELA-K vocab teach so Unity can produce them via TALK before any G1+ content runs
+
+  **REMAINING WORK — Session 111 code changes (ordered by priority):**
+
+  **STEP 1 — Fix TALK probe direction — DONE Session 111:**
+  - [x] **FIX `_gateVocabList` TALK probe** — was letter→motor (READ feedback). Now sem→motor: inject GloVe(word) into sem pattern, propagate `sem_to_motor`, argmax first letter + mean-centering. **DONE Session 111.**
+  - [x] **FIX `_gateSentenceList` TALK probe** — same fix applied. **DONE Session 111.**
+  - [x] **FIX `_gateMathKReal` TALK probe** — now injects GloVe(digit name) into sem, propagates `sem_to_motor`, argmax decode digit char + mean-centering. **DONE Session 111.**
+  - [x] **Verify `_teachVocabList` writes sem+motor patterns together** — verified: all four regions (letter, phon, sem, motor) written in the SAME lastSpikes frame before `_crossRegionHebbian`. Teach is correct. **DONE Session 111.**
+
+  **STEP 2 — Fix curriculum grade-lock — DONE Session 111:**
+  - [x] **Fix `runAllSubjects` round-robin** — ALL 5 subjects must pass grade N before ANY advance to N+1. If any subject fails after MAX_ATTEMPTS, entire curriculum stops at that grade and retries on next boot. **DONE Session 111.**
+
+  **STEP 3 — Re-test all K cells after TALK fix (needs server run):**
+  - [x] ELA-K: **PASSED** attempt 5. READ 100%, THINK 100%, TALK 100%, SEQ 96%.
+  - [ ] Math-K: needs re-test with fixed sem→motor TALK probe.
+  - [ ] Sci-K: needs re-test with fixed sem→motor TALK probe.
+  - [ ] Soc-K: needs re-test with fixed sem→motor TALK probe.
+  - [ ] Art-K: needs re-test with fixed sem→motor TALK probe.
+
+  **STEP 4 — G1+ gates — DONE Session 111:**
+  - [x] ELA-G1 converted to `_teachVocabList` (direct pattern). Old bespoke inject→step→learn body removed. **DONE Session 111.**
+  - [x] ELA-G2 converted to `_teachVocabList` + `_teachSentenceList` (direct pattern). Old bespoke body removed. **DONE Session 111.**
+  - [x] Math-G1 converted to `_teachSentenceList` (direct pattern). Old bespoke body removed. **DONE Session 111.**
+  - [x] `_gateConceptTeach` built — direct matrix probe for `_conceptTeach` cells (READ letter→sem + TALK sem→motor). `_conceptTeach` now returns gate result with `{pass, reason}` instead of just `{taught}`. **DONE Session 111.**
+
+  **STEP 5 — Propagation + verification:**
+  - [x] Background probe demotion re-enabled — probes now go through same `_cellRunner` dispatch as curriculum (direct matrix probes). False-negative issue from Session 110 is resolved. **DONE Session 111.**
+  - [x] All 90 G1→PhD cell runners wired through converted shared helpers (`_teachVocabList`, `_teachSentenceList`, `_conceptTeach`, `_teachSequenceCycles`). **DONE Session 111.**
+  - [ ] Full 95-cell curriculum walk — all gates pass 95%+ on fresh boot. **Needs server run.**
+  - [ ] Live chat verification — Unity speaks coherently from trained weights. **Needs server run.**
+
+  **BUG — Setup page doc links spinning forever (FIXED Session 111):**
+  - [x] Added explicit synchronous route handlers in `brain-server.js` for unity-guide.html, brain-equations.html, dashboard.html, gpu-configure.html. Async fs.readFile was getting starved by curriculum/GPU event loop work. **DONE Session 111.**
+
+  **Shared helpers — ALL DONE Session 109:**
+  - [x] `_teachVocabList` — direct pattern per vocab word. **DONE** (`646a468`)
+  - [x] `_conceptTeach` — direct pattern per concept + `_gateConceptTeach` gate added Session 111. **DONE.**
+  - [x] `_teachSentenceList` — direct pattern per word + word-to-word transition Hebbian. **DONE** (`85f4dc9`)
+  - [x] `_walkSentence` — inner word-walking helper. **DONE** (converted as part of `_teachSentenceList`)
+  - [x] `_teachSequenceCycles` — direct pattern per cycle step + step-to-step transitions. **DONE** (`85f4dc9`)
+  - [x] `_gateSentenceList` — direct matrix probe with sem→motor TALK (fixed Session 111). **DONE.**
+  - [x] `_gateVocabList` — direct matrix probe with sem→motor TALK (fixed Session 111). **DONE.**
 
   **Task #3 (T14.24 parent) stays in_progress until all 95 cells pass 95%+ AND Unity speaks coherently from the trained weights in live chat. DO NOT CLAIM DONE EARLY.**
 

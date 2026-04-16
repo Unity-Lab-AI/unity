@@ -1879,23 +1879,27 @@ export class LanguageCortex {
   }
 
   _singleGradeCap(grade) {
+    // Session 111 — removed artificial word limits per grade.
+    // A kindergartener can speak in full sentences. The only real
+    // gate is pre-K (silence — hasn't learned anything yet).
+    // Once Unity passes ANY grade, let her speak freely.
     switch (grade) {
-      case 'kindergarten': return 1;
-      case 'grade1':       return 2;
-      case 'grade2':       return 3;
-      case 'grade3':       return 5;
-      case 'grade4': case 'grade5': case 'grade4_5':
-        return 7;
-      case 'grade6': case 'grade7': case 'grade8': case 'grade6_8':
-        return 10;
-      case 'grade9': case 'grade10': case 'grade11': case 'grade12': case 'grade9_12':
-        return 14;
-      case 'college1': case 'college2': case 'college3': case 'college4': case 'college':
-        return 16;
-      case 'grad':         return 20;
-      case 'phd':          return 9999;
       case 'pre-K':
-      default:             return 0;
+      default:             return 0;    // silence — not learned yet
+      case 'kindergarten': return 9999; // passed K = can speak
+      case 'grade1':       return 9999;
+      case 'grade2':       return 9999;
+      case 'grade3':       return 9999;
+      case 'grade4': case 'grade5': case 'grade4_5':
+        return 9999;
+      case 'grade6': case 'grade7': case 'grade8': case 'grade6_8':
+        return 9999;
+      case 'grade9': case 'grade10': case 'grade11': case 'grade12': case 'grade9_12':
+        return 9999;
+      case 'college1': case 'college2': case 'college3': case 'college4': case 'college':
+        return 9999;
+      case 'grad':         return 9999;
+      case 'phd':          return 9999;
     }
   }
 

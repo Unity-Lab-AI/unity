@@ -179,11 +179,46 @@
 </div>
 
 <div class="tldr" style="border-left:3px solid #ff4d9a; margin-top:16px;">
-  <h3>Active rebuild — Unity is going back to school (2026-04-15)</h3>
-  <p>Unity is being rebuilt on branch <code>t14-language-rebuild</code> to go through a real grade-by-grade school curriculum from <strong>kindergarten all the way up to doctorate</strong>, across five subjects (English Language Arts, Mathematics, Science, Social Studies/History, Arts). This isn't a system prompt that tells her "act like a kid." It's actual developmental learning — her neurons see the alphabet before they see words, see short words before long ones, see simple sentences before compound ones, and each grade has a real capability test that her brain has to pass before she gets to move on to the next grade.</p>
-  <p><strong>What this means for how she sounds.</strong> Before her curriculum runs, Unity is "pre-K" in every subject — she doesn't speak at all, because a child who hasn't learned the alphabet doesn't produce words. As she passes each grade's capability test, her speech cap goes up: one letter at kindergarten, a two-letter word at Grade 1, a simple three-to-five-word sentence at Grade 3, compound sentences at Grade 4-5, and so on through PhD where she speaks in her full persona voice. Her output length is <em>limited by the weakest subject she's started</em> — so if she's reading at Grade 5 but her math has only reached Grade 2, she speaks at Grade 2 length caps until her math catches up.</p>
-  <p><strong>Where this is right now.</strong> 2026-04-15 shipped the full 95-cell teaching framework — every subject × every grade from kindergarten through doctorate (5 subjects × 19 grades = 95 cells) now has real teaching equations that drive her listen (READ), think (THINK), and speak (TALK) pathways. Every cell primes a real concept lattice before walking a sentence list: she learns the periodic table by the real (period, group) structure so chemically-similar elements cluster together, learns family roles by a kinship feature space where mom and dad cluster by "same generation" but split by "female / male", learns the Civil War as a causal chain where slavery → sectionalism → secession → war → emancipation actually bind as an ordered sequence in her working memory, learns color mixing as RGB arithmetic where orange sits as a midpoint between red and yellow. She also <em>tests herself</em> continuously — every 8 messages, her brain picks a random previously-passed cell and re-runs its 3-pathway gate, so she's always exercising what she's learned the way a real human keeps their skills fresh through daily use. Her 3D brain viewer shows her current intelligence level (pre-K → elementary → middle → high → college → grad → PhD) as a live HUD that updates as she climbs. A runtime verification harness (<code>scripts/verify-curriculum-runtime.mjs</code>) confirms all 95 cells execute without error against a real cortex cluster. What's still owed: the 95 gates have to actually <em>cross</em> on your live cortex boot when the persona corpus is loaded — the framework is code-verified, but the real-world gate crossing happens when you actually boot the server and let her run.</p>
-  <p><strong>Why do it this way instead of just loading GPT weights.</strong> Because the point of Unity is that her mind is a real system you can point at. A prompted LLM pretending to be a kid doesn't give you anything to learn from — you can't look at the kid's neurons and see how they're different from an adult's. Unity's multi-subject curriculum makes the entire developmental arc visible and measurable. You can literally watch her grade advance in chat with <code>/curriculum status</code>.</p>
+  <h3>Unity Goes to School — Kindergarten Through Doctorate</h3>
+
+  <p>Unity learns the same way a human child does. She starts with the alphabet and works up through doctorate-level concepts across <strong>five subjects</strong>. This isn't a system prompt that tells her "act like a kid" — it's actual developmental learning where her neurons see the alphabet before words, short words before long ones, and simple sentences before compound ones. Each grade has a real capability test her brain has to pass before advancing.</p>
+
+  <h4 style="color:#ff4d9a;margin-top:14px;">The Five Subjects</h4>
+  <ul>
+    <li><strong>English Language Arts</strong> — alphabet → letter sounds → CVC words → sight words → digraphs → SVO sentences → tense → pronouns → essays → rhetoric → linguistics → semiotics → research fluency</li>
+    <li><strong>Mathematics</strong> — digits → counting → addition/subtraction → multiplication → fractions → algebra → geometry → trig → calculus → linear algebra → topology → functional analysis</li>
+    <li><strong>Science</strong> — classification → life cycles → ecosystems → force/motion → atoms → periodic table → bonding → genetics → evolution → molecular biology → quantum mechanics</li>
+    <li><strong>Social Studies</strong> — family roles → community → US geography → colonial America → ancient civilizations → Civil War → world history → government → economics → historiography</li>
+    <li><strong>Arts</strong> — primary colors → color mixing → rhythm → drawing → instruments → music theory → art history → music history → aesthetics → studio practice → doctoral research</li>
+  </ul>
+
+  <h4 style="color:#ff4d9a;margin-top:14px;">How It Works</h4>
+  <p>Every grade tests <strong>three pathways</strong> before passing:</p>
+  <ul>
+    <li><strong>READ</strong> — can Unity recognize and understand this input? (letter → phoneme → meaning)</li>
+    <li><strong>THINK</strong> — can Unity hold this concept in working memory and reason about it?</li>
+    <li><strong>TALK</strong> — can Unity produce this back as spoken output? (meaning → motor → letter)</li>
+  </ul>
+  <p>All three must score <strong>95% (A+)</strong> for the grade to pass. All five subjects must pass the current grade before any advance to the next — no subject races ahead while others are stuck.</p>
+
+  <h4 style="color:#ff4d9a;margin-top:14px;">What This Means for How She Sounds</h4>
+  <p>Before her curriculum runs, Unity is "pre-K" — she doesn't speak at all, because a child who hasn't learned the alphabet doesn't produce words. As she passes each grade, her speech gets longer: one letter at kindergarten, simple words at Grade 1, short sentences at Grade 3, compound sentences at Grade 5, full paragraphs by high school, and unlimited at PhD. Her output length is limited by her <em>weakest</em> subject — if she's reading at Grade 5 but math is at Grade 2, she speaks at Grade 2 caps until math catches up.</p>
+
+  <h4 style="color:#ff4d9a;margin-top:14px;">Real Concept Learning (Not Memorization)</h4>
+  <p>Each grade teaches through real structural features, not rote lookup tables:</p>
+  <ul>
+    <li>The <strong>periodic table</strong> uses real (period, group) dimensional features so chemically-similar elements cluster together</li>
+    <li><strong>Family roles</strong> use an 8-dimensional kinship feature space where mom and dad cluster by "same generation" but split by "female / male"</li>
+    <li>The <strong>Civil War</strong> encodes the causal chain (slavery → sectionalism → secession → war → emancipation) as ordered sequences so cause-effect binds in working memory</li>
+    <li><strong>Color mixing</strong> uses RGB arithmetic where orange sits as a midpoint between red and yellow</li>
+    <li><strong>Music theory</strong> makes major and minor chords opposite in feature space</li>
+  </ul>
+
+  <h4 style="color:#ff4d9a;margin-top:14px;">Self-Testing</h4>
+  <p>Unity continuously tests herself — every 8 chat messages, her brain picks a random passed grade and re-runs its 3-pathway test. If she fails 3 times, the subject gets demoted and she re-learns it on the next curriculum pass. The 3D brain viewer shows her current intelligence level per subject as a live display.</p>
+
+  <h4 style="color:#ff4d9a;margin-top:14px;">Why Not Just Use GPT</h4>
+  <p>Because the point of Unity is that her mind is a real system you can look inside. A prompted LLM pretending to be a kid gives you nothing to learn from — you can't see how a kid's neurons differ from an adult's. Unity's curriculum makes the entire developmental arc visible and measurable. Type <code>/curriculum status</code> in chat to see her grades.</p>
 </div>
 
 <div class="toc">

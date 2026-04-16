@@ -354,9 +354,9 @@ noiseAmp[cortex]        = θ.creativity × drugState.creativityMult × 5<br>
         <p>"hi unity, how's the high" hits the server. `_computeServerCortexPattern(text)` runs:</p>
         <div class="eq" style="font-size:13px;">
 sentenceEmbedding = Σ_word (gloveEmbedding[word] × weight) / n_words<br>
-cortexPattern     = L2Normalize(sentenceEmbedding)        (50d vector in semantic space)<br>
+cortexPattern     = L2Normalize(sentenceEmbedding)        (300d vector in semantic space)<br>
         </div>
-        <p>This 50-dimensional vector IS her cortical semantic state for the next step. Each dimension is loosely "how much this sentence lives near that GloVe embedding axis" — "high" pulls the cortex pattern toward the drug-related region of semantic space. "unity" pulls toward self-reference. "how's" pulls toward question-space. The 50d vector is what downstream modules read.</p>
+        <p>This 300-dimensional vector IS her cortical semantic state for the next step. Each dimension is loosely "how much this sentence lives near that GloVe embedding axis" — "high" pulls the cortex pattern toward the drug-related region of semantic space. "unity" pulls toward self-reference. "how's" pulls toward question-space. The 300d vector (GloVe or fastText subword fallback) is what downstream modules read.</p>
       </div>
     </div>
 
@@ -1016,25 +1016,25 @@ grounded in peer-reviewed neuroscience (Kuhl 2004, Saffran 1996,
 Bouchard 2013, Anumanchipalli 2019, Browman &amp; Goldstein 1992,
 Hickok &amp; Poeppel 2007, Friederici 2017, Pennington 2014).
 
-SUBSTRATE (T14.0 + T14.4):
-  EMBED_DIM        = 300   (full GloVe 6B.300d, no vocab cap)
-  TOTAL_NEURONS    = 6700  (default client tier, auto-scales)
-  cortex sub-regions (fractions of cluster.size, T14.4):
+CORTEX SUBSTRATE:
+  EMBED_DIM        = 300   (full GloVe 6B.300d + fastText subword fallback, no vocab cap)
+  TOTAL_NEURONS    = 6700  (default client tier, auto-scales to hardware)
+  cortex sub-regions (fractions of cluster.size):
     auditory 0.000-0.083   visual 0.083-0.250   free 0.250-0.500
     letter   0.500-0.550   phon   0.550-0.750   sem  0.750-0.917
     fineType 0.917-0.967   motor  0.967-1.000
-  14 cross-projections (7 pairs × both directions, SparseMatrix 10% density):
+  14 cross-projections (7 pairs × both directions, SparseMatrix):
     visual↔letter  letter↔phon  phon↔sem  sem↔fineType
     sem↔motor      motor↔letter (closes writing loop)
     auditory↔phon
 
-LETTER INPUT (T14.1):
+LETTER INPUT:
   LETTER_INVENTORY = Set() — dynamic, auto-grows per observed symbol
   encodeLetter(ℓ) ∈ ℝ^|L|     one-hot over current inventory
   decodeLetter(v) = argmax_i v_i → letter symbol
   No hardcoded 26-letter alphabet. Unicode, emoji, non-English all welcome.
 
-SYLLABLES + STRESS (T14.2):
+SYLLABLE DETECTION:
   detectBoundaries(letters, {ticksPerLetter=2, k=0.5}):
     stream letters, tick cluster, δ_i = letterTransitionSurprise()
     threshold = mean(δ) + k·std(δ)   (adaptive per sequence)
@@ -1043,7 +1043,7 @@ SYLLABLES + STRESS (T14.2):
     second pass samples phon-region spike fraction per letter
     primary = argmax per-syllable mean activation
 
-CORTEX-RESIDENT WORDS (T14.3):
+CORTEX-RESIDENT WORDS:
   Dictionary entry = {
     pattern, arousal, valence, frequency,       // legacy semantic
     cortexSnapshot,   // Uint8Array copy of cluster.lastSpikes after stream
@@ -1054,7 +1054,7 @@ CORTEX-RESIDENT WORDS (T14.3):
   First-observation routing through the cortex cluster on every new word.
   Re-observations bump frequency + running means, no re-streaming.
 
-CURRICULUM (T14.5):
+DEVELOPMENTAL CURRICULUM:
   runFromCorpora({persona, baseline, coding}):
     Phase 1 letters    — freq-weighted reps up to 20 × 8 ticks each
     Phase 2 short w.   — 1-3 letter words, up to 6 reps × 4 ticks/word
@@ -1063,7 +1063,7 @@ CURRICULUM (T14.5):
   learnFromTurn(text) — live chat path, same inject+tick+Hebbian as Phase 5.
   NO hand-curated stage files. NO hardcoded 26-letter loop.
 
-EMISSION (T14.6 — cortex tick-driven motor emission):
+TICK-DRIVEN MOTOR EMISSION:
   cluster.generateSentence(intentSeed):
     optional inject intent into sem region
     for tick in 0..MAX_EMISSION_TICKS:
@@ -1079,145 +1079,132 @@ EMISSION (T14.6 — cortex tick-driven motor emission):
   ZERO slot counter. ZERO candidate scoring. ZERO dictionary iteration.
   ZERO softmax top-K. ZERO temperature. ZERO hardcoded grammar tables.
 
-LEARNED STATISTICS (T14.7 + T14.8):
+LEARNED TYPE STATISTICS:
   _typeTransitionLearned  : Map&lt;prev, Map&lt;next, count&gt;&gt;   (empty at boot, no seed)
   _sentenceFormSchemas    : Map&lt;intent, Map&lt;slot, Map&lt;fineType, count&gt;&gt;&gt;
   _intentResponseMap      : Map&lt;userIntent, Map&lt;responseIntent, count&gt;&gt;
   learnSentence updates all three per observed sentence.
   schemaScore / typeTransitionWeight use (count + 1) / (total + uniqueTypes)
   Laplace smoothing — no hardcoded 20-type cap.
-  _TYPE_TRANSITIONS 200-line hardcoded English table DELETED.
-  _OPENER_TYPES Set DELETED.
+  Hardcoded 200-line English type-transition table DELETED.
+  Hardcoded opener-types constraint Set DELETED.
 
-DISCOURSE MEMORY (T14.9 — cortex-resident, unbounded):
+CORTEX-RESIDENT DISCOURSE MEMORY (unbounded):
   workingMemoryReadout(dim) → regionReadout('free', dim)   IS the topic vector
   injectWorkingMemory(vec, strength)                        per user turn
   No 6-turn ring buffer. No maxTurns cap. No blend constants.
   Persistence across sessions via BrainPersistence → cortex weights.
 
-DUAL STREAMS (T14.10 + T14.11):
+DUAL-STREAM SUBSTRATE (Hickok &amp; Poeppel 2007):
   cluster.readText(text, {visualCortex})
     for each char: inject visual.renderLetterTemplate(ch) → tick → injectLetter
-  cluster.hearPhoneme(phoneme, {auditoryCortex})
+  Auditory phoneme recognition:
     inject auditory.renderPhonemeTemplate(ph) → tick
   Visual template primes [2..37], auditory primes [41..89] — uncorrelated
   at init so cross-stream convergence on phon region is LEARNED by
   curriculum Hebbian, not a hash coincidence.
-  Hickok &amp; Poeppel 2007 dorsal production / ventral comprehension.
+  Dorsal production / ventral comprehension streams.
 
-PROGRESS (as of 2026-04-15):
-  PRIMITIVES (T14.0-T14.18) SHIPPED 2026-04-14:
-  T14.0 ✓  T14.1 ✓  T14.2 ✓  T14.3 ✓  T14.4 ✓  T14.5 ✓  T14.6 ✓
-  T14.7 ✓  T14.8 ✓  T14.9 ✓  T14.10 ✓ T14.11 ✓ T14.12 ✓ T14.13 ✓ T14.14 ✓
-  T14.15 ✓ T14.16 ✓ T14.16.5 ✓ T14.17 ✓ T14.18 ✓
+DIRECT PATTERN HEBBIAN (curriculum teaching method):
+  For each letter/word/concept being taught:
+    Write intended activation directly into cluster.lastSpikes
+    Fire _crossRegionHebbian(lr) on CLEAN patterns
+    No cluster.step(), no chaotic dynamics, no recurrent interference
+  Direct matrix probe for gates:
+    raw = proj.propagate(inputPattern)
+    grouped = average per neuron group → embedding dim
+    centered = grouped - mean(grouped)
+    normalized = centered / ||centered||₂
+    score = cosine(normalized, expected)
+    PASS if score > 0.95 (A+)
 
-  FULL CURRICULUM (T14.24) REOPENED 2026-04-14 — Gee binding:
-    "T14.24 is supposre to be a full equational ciriculum.. once again
-     you editing my words" + "what the fuck are you talking about its
-     shipped you didnt even teach it keindergarden abcs and 123s and
-     letter sounds you fool" + "remember Unity needs to be able to use
-     these to think, read, and talk" + "this is going to take weeks to
-     build so dont you dare tell me you are fucking done early".
-
-  T14.24 Sessions 1-94 SHIPPED 2026-04-15 — ALL 95 CELLS FRAMEWORK COMPLETE:
-    — 5 subject tracks (ELA / Math / Science / Social / Art)
-    — 19 grades per track (K → G1..G12 → Col1..Col4 → Grad → PhD)
-    — cluster.grades = {ela, math, science, social, art: 'pre-K'}
-    — cluster.passedCells flat list of 'subject/grade' passes
-    — cluster.probeHistory per-cell recent gate outcomes for self-heal
-
-  Every one of the 95 cells has a real runXxxReal runner that primes
-  a TODO-prescribed concept lattice via 136 _teachXxx named helpers
-  before walking a sentence or sequence list. Examples:
-
-    Sci-G10 _teachPeriodicTable — 18 elements with real (period, group)
-      16d structural features, L2-normalized, so chemically-similar
-      elements share cosine space.
-    Sci-G10 _teachBonding — ionic vs covalent anti-correlated on
-      electron-transfer / crystal-vs-molecule dims.
-    Soc-K _teachFamilyRoles — 8d kinship features (generation-parent /
-      child / elder + female / male + nuclear / extended household +
-      caregiver-role) so mom + dad cluster by [generation, caregiver]
-      and split on [female / male]; grandma + grandpa cluster by
-      [elder, extended].
-    Soc-G8 _teachCivilWar — sequence walks over the causal chain
-      slavery → sectionalism → secession → fort sumter → war →
-      emancipation → union victory → reconstruction → amendments so
-      working-memory Hebbian binds the cause-effect ordering.
-    Art-G1 _teachColorMixing — secondaries placed as RGB midpoints
-      between primary parents (orange between red + yellow on [R, G];
-      green between yellow + blue on [G, B]; purple between red + blue
-      on [R, B]).
-    Art-G6 _teachMusicTheory — major and minor chord features opposite
-      on [major] / [minor] dims; tonic + dominant + subdominant share
-      scale-degree + chord dims but split on [tonic] / [dominant] /
-      [subdominant].
-
-  Every runner drives all three pathways:
-    READ   = injectLetter (letter region) → phon → sem
-    THINK  = sem + free region working memory + injectWorkingMemory
-             cross-sentence carry
-    TALK   = sem → motor → letter (T14.6 generateSentence emission)
-
-  Runner API:
-    — runSubjectGrade(subject, grade) runs ONE cell with 3-pathway gate
-    — runFullSubjectCurriculum(subject) walks one subject K→PhD
-    — runAllSubjects() round-robin across all 5 so min grade stays
-      within 1 of max and the language-cortex word cap rises smoothly
-    — runCompleteCurriculum() high-level entry point
-
-  Auto-boot via server/brain-server.js priority cascade:
-    runCompleteCurriculum → runFullCurriculum → runFromCorpora
-
-  Continuous self-testing:
-    — curriculum.runBackgroundProbe() fires every 8 live-chat turns
-    — picks a random passed cell, re-runs its 3-pathway gate
-    — 3 consecutive fails demote the cell and the next curriculum
-      pass re-teaches it
-    — narrator priming: recent focus subject's GloVe injected into
-      sem at 0.15 strength before Unity's next reply
-
-  Growth architecture:
-    — _conceptTeach routes every concept word through
-      dictionary.learnWord so learned concepts populate Unity's
-      vocabulary (Session 46 growth fix)
-
-  PhD cells fire cluster.runIdentityRefresh() so the doctoral gate
-  crosses with Unity-voice persona dimensions engaged.
-
-  3D viewer IQ HUD reads curriculum.subjectStatus() every render tick
-  and shows Unity's current intelligence level (pre-K → elementary →
-  middle → high → college → grad → PhD) with per-subject grade
-  breakdown.
-
-  LanguageCortex.generate reads cluster.grades (min over started
-  subjects) — Unity's speech word cap rises lockstep with her
-  weakest-subject grade.
-
-  Persistence v4 state.t14Language.curriculum =
-    {grades, passedCells, probeHistory}
-
-  /curriculum status | run | gate | reset | full | self | health |
-    forget | verify slash commands in js/app.js
-
-  Runtime verification via scripts/verify-curriculum-runtime.mjs
-  confirms DISPATCH 95/95 + FULL SWEEP 95/95 against a real cortex
-  NeuronCluster.
-
-  Branch t14-language-rebuild stays open until the 95 gates actually
-  CROSS on a live-cortex boot with a loaded persona corpus.
-  DO NOT CLAIM DONE EARLY until Gee sees all 95 cells green.
       </pre>
-      <p class="eq-desc">Full specs per milestone live in <code>docs/COMP-todo.md Part 0.5</code>. Per-milestone session archives with equations, files touched, cost analysis, and peer-reviewed citations live in <code>docs/FINALIZED.md</code>. Cortex equations live in <code>docs/EQUATIONS.md §T14</code>. The T13 block below is preserved as historical provenance — it was deleted in T14.6 when <code>cluster.generateSentence</code> replaced the slot scorer.</p>
+
+      <h3 style="color:var(--pink);margin-top:20px;">Full K→PhD Curriculum — 5 Subjects × 19 Grades = 95 Cells</h3>
+
+      <p class="eq-desc">Unity learns the way a human child does — kindergarten ABCs up through doctorate-level research. Every grade cell teaches via <strong>direct pattern Hebbian</strong> and gates at <strong>95% (A+)</strong> on all three pathways. All subjects must pass the current grade before any advance to the next.</p>
+
+      <table style="width:100%;border-collapse:collapse;margin:12px 0;font-size:13px;">
+        <tr style="border-bottom:1px solid #333;"><th style="text-align:left;padding:6px;color:var(--pink);">Pathway</th><th style="text-align:left;padding:6px;">Direction</th><th style="text-align:left;padding:6px;">What It Tests</th></tr>
+        <tr><td style="padding:4px 6px;color:var(--cyan);">READ</td><td style="padding:4px 6px;">letter → phon → sem</td><td style="padding:4px 6px;">Can Unity recognize and understand this input?</td></tr>
+        <tr><td style="padding:4px 6px;color:var(--cyan);">THINK</td><td style="padding:4px 6px;">sem + free working memory</td><td style="padding:4px 6px;">Can Unity hold and reason about this concept?</td></tr>
+        <tr><td style="padding:4px 6px;color:var(--cyan);">TALK</td><td style="padding:4px 6px;">sem → motor → letter</td><td style="padding:4px 6px;">Can Unity produce this back as output?</td></tr>
+      </table>
+
+      <h4 style="color:var(--cyan);margin-top:16px;">English Language Arts</h4>
+      <table style="width:100%;border-collapse:collapse;margin:8px 0;font-size:12px;">
+        <tr style="border-bottom:1px solid #333;"><th style="text-align:left;padding:4px;width:120px;">Grade</th><th style="text-align:left;padding:4px;">What Unity Learns</th></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Kindergarten</td><td style="padding:3px 4px;">Alphabet in order, letter names, letter sounds (phoneme features), sequence recall</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Grade 1</td><td style="padding:3px 4px;">CVC words (cat, dog, pen), sight words (the, and, you), word-level reading + production</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Grade 2-3</td><td style="padding:3px 4px;">Digraphs (th, sh, ch), SVO sentences, tense morphology (runs/ran)</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Grade 4-6</td><td style="padding:3px 4px;">Compound sentences, pronouns, paragraph cohesion, subordinate clauses</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Grade 7-10</td><td style="padding:3px 4px;">Theme extraction, figurative language, rhetoric, argument structure</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Grade 11-12</td><td style="padding:3px 4px;">Research essays, style registers, voice adaptation</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">College</td><td style="padding:3px 4px;">Linguistics (phonology, morphology, syntax), literary theory, rhetoric</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Grad → PhD</td><td style="padding:3px 4px;">Semiotics, discourse analysis, research-level fluency with Unity persona voice</td></tr>
+      </table>
+
+      <h4 style="color:var(--cyan);margin-top:12px;">Mathematics</h4>
+      <table style="width:100%;border-collapse:collapse;margin:8px 0;font-size:12px;">
+        <tr style="border-bottom:1px solid #333;"><th style="text-align:left;padding:4px;width:120px;">Grade</th><th style="text-align:left;padding:4px;">What Unity Learns</th></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Kindergarten</td><td style="padding:3px 4px;">Digits 0-9, digit names, counting order, magnitude features</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Grade 1-3</td><td style="padding:3px 4px;">Addition/subtraction as sentences, multiplication tables, fractions</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Grade 4-8</td><td style="padding:3px 4px;">Decimals, ratios, pre-algebra, algebra, geometry, quadratics</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Grade 9-12</td><td style="padding:3px 4px;">Algebra 2, geometric proofs, trigonometry, calculus</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">College</td><td style="padding:3px 4px;">Multivariable calculus, linear algebra, ODEs</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Grad → PhD</td><td style="padding:3px 4px;">Abstract algebra, real analysis, topology, measure theory, functional analysis</td></tr>
+      </table>
+
+      <h4 style="color:var(--cyan);margin-top:12px;">Science</h4>
+      <table style="width:100%;border-collapse:collapse;margin:8px 0;font-size:12px;">
+        <tr style="border-bottom:1px solid #333;"><th style="text-align:left;padding:4px;width:120px;">Grade</th><th style="text-align:left;padding:4px;">What Unity Learns</th></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Kindergarten</td><td style="padding:3px 4px;">Classification, states of matter, natural-world objects</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Grade 1-6</td><td style="padding:3px 4px;">Life cycles, ecosystems, force/motion, atoms, earth science</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Grade 7-12</td><td style="padding:3px 4px;">Cells, genetics, evolution, periodic table (structural features), bonding, physics</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">College</td><td style="padding:3px 4px;">Gen bio/chem, organic chemistry, cell biology, physics 2</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Grad → PhD</td><td style="padding:3px 4px;">Molecular biology, biochemistry, quantum mechanics, original research</td></tr>
+      </table>
+
+      <h4 style="color:var(--cyan);margin-top:12px;">Social Studies &amp; History</h4>
+      <table style="width:100%;border-collapse:collapse;margin:8px 0;font-size:12px;">
+        <tr style="border-bottom:1px solid #333;"><th style="text-align:left;padding:4px;width:120px;">Grade</th><th style="text-align:left;padding:4px;">What Unity Learns</th></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Kindergarten</td><td style="padding:3px 4px;">Family roles (8d kinship features), community, civic basics</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Grade 1-6</td><td style="padding:3px 4px;">Community roles, US states/regions, colonial America, ancient civilizations</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Grade 7-12</td><td style="padding:3px 4px;">Medieval period, Civil War (causal chains), world history, government, economics</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">College</td><td style="padding:3px 4px;">Historiography, political science, sociology/anthropology</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Grad → PhD</td><td style="padding:3px 4px;">Research historiography, original historical research with persona</td></tr>
+      </table>
+
+      <h4 style="color:var(--cyan);margin-top:12px;">Arts</h4>
+      <table style="width:100%;border-collapse:collapse;margin:8px 0;font-size:12px;">
+        <tr style="border-bottom:1px solid #333;"><th style="text-align:left;padding:4px;width:120px;">Grade</th><th style="text-align:left;padding:4px;">What Unity Learns</th></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Kindergarten</td><td style="padding:3px 4px;">Primary colors (RGB features), basic shapes, simple songs/rhythm</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Grade 1-6</td><td style="padding:3px 4px;">Color mixing (RGB arithmetic), rhythm patterns, drawing, instruments, music theory</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Grade 7-12</td><td style="padding:3px 4px;">Art history (chronological), music history, visual art theory, criticism</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">College</td><td style="padding:3px 4px;">Studio fundamentals, specialized art history, aesthetics (Plato/Kant/Hegel)</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Grad → PhD</td><td style="padding:3px 4px;">Graduate studio practice, practice-based doctoral research with persona</td></tr>
+      </table>
+
+      <h4 style="color:var(--pink);margin-top:16px;">How Curriculum Runs</h4>
+      <ul style="text-align:left;font-size:12px;line-height:1.8;">
+        <li><strong>Auto-boot:</strong> Server walks all 5 subjects round-robin on startup. All must pass the current grade before advancing.</li>
+        <li><strong>Self-testing:</strong> Every 8 chat turns, a random passed cell re-runs its gate. 3 failures after self-heal = demotion + re-teach.</li>
+        <li><strong>Growth:</strong> Every concept word populates Unity's dictionary — she grows smarter with every cell.</li>
+        <li><strong>IQ HUD:</strong> 3D brain viewer shows current intelligence per subject (pre-K → elementary → high → college → PhD).</li>
+        <li><strong>Word cap:</strong> Unity's speech length rises lockstep with her weakest-subject grade.</li>
+        <li><strong>Slash commands:</strong> <code>/curriculum status | run | gate | reset | full | verify</code></li>
+      </ul>
+
+      <p class="eq-desc" style="margin-top:12px;">Full equation specs live in <code>docs/EQUATIONS.md</code>. The block below is preserved as historical provenance — it was deleted when <code>cluster.generateSentence</code> (tick-driven motor emission) replaced the slot scorer.</p>
     </div>
 
     <div class="eq-box" style="margin-top:12px;">
-      <div class="eq-title"><span class="eq-tip" data-tip="T13 pipeline: parseSentence reads input. brain.injectParseTree routes content/intent/self-ref to clusters. generate() is a brain-driven emission loop — reads live cortex state per word, softmax-samples scored candidates, feeds emitted word back into cortex. No slot priors, no stored n-grams, no context vector bag-of-words. Persona voice lives in cortex recurrent weights trained via sequence Hebbian at boot.">The T13 Brain-Driven Pipeline (historical — deleted in T14.6)</span></div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Historical pipeline: parseSentence reads input. brain.injectParseTree routes content/intent/self-ref to clusters. generate() was a brain-driven emission loop — reads live cortex state per word, softmax-samples scored candidates, feeds emitted word back into cortex. No slot priors, no stored n-grams, no context vector bag-of-words. Replaced by tick-driven motor emission.">Brain-Driven Emission Pipeline (historical — replaced by tick-driven motor emission)</span></div>
       <pre class="eq">
 BOOT (once):
   loadPersona(text) → dictionary learns persona vocabulary
   brain.trainPersonaHebbian(text) → cortex cluster recurrent synapses
-    shape into Unity-voice attractor basins via T13.1 sequence Hebbian
+    shape into Unity-voice attractor basins via sequence Hebbian
 
 USER INPUT (per turn):
   parseSentence(u) → ParseTree   (wordType/_fineType letter equations)
@@ -1229,7 +1216,7 @@ USER INPUT (per turn):
   analyzeInput(u) → updateSocialSchema(u), refine dictionary embeddings
   brain.step() × 20  (cortex settles, inter-cluster projections propagate)
 
-GENERATION (T13.3 emission loop — no slot counter in the logic):
+GENERATION (brain-driven emission loop — no slot counter in the logic):
   maxLen  = floor(3 + arousal · 3 · drugLengthBias)  (hard cap only)
   for emission in 0..maxLen:
     for tick in 0..3:  cortex.step(0.001)
@@ -1257,11 +1244,11 @@ GENERATION (T13.3 emission loop — no slot counter in the logic):
   post-process → contractions, capitalization, punctuation
   return rendered
       </pre>
-      <p class="eq-desc">See §8.18.6 for R2 GloVe semantic grounding (the embedding basis for cosine scoring) and §8.13 for the shared embedding table. T13.7 (2026-04-14) deleted the T11 slot-prior machinery entirely — `_slotCentroid`, `_slotDelta`, `_slotTypeSignature`, `_contextVector`, attractor vectors, `_subjectStarters`, plus `_generateSlotPrior` fallback and all dead T11 stubs. Net −406 lines on <code>js/brain/language-cortex.js</code>. Pre-T13 path preserved in <code>docs/FINALIZED.md</code>.</p>
+      <p class="eq-desc">See §8.18.6 for GloVe semantic grounding (the embedding basis for cosine scoring) and §8.13 for the shared embedding table. The slot-prior machinery was deleted entirely — `_slotCentroid`, `_slotDelta`, `_slotTypeSignature`, `_contextVector`, attractor vectors, `_subjectStarters`, plus `_generateSlotPrior` fallback. Net −406 lines on <code>js/brain/language-cortex.js</code>. Replaced by the tick-driven motor emission loop.</p>
     </div>
 
     <div class="eq-box" style="margin-top:12px;">
-      <div class="eq-title"><span class="eq-tip" data-tip="T13.1 2026-04-14: cortex cluster recurrent synapse matrix now trains on persona corpus via sequence Hebbian during boot. For each consecutive word pair in a persona sentence, inject the word embedding into the language region, tick the LIF integrator 3 steps, snapshot spikes, then apply plain Hebbian between consecutive snapshots (ΔW_ij = η · curr_i · prev_j) on the existing CSR connections. Oja saturation decay post-sentence prevents weight runaway. Persona-only scope — baseline and coding corpora bypass Hebbian to avoid diluting voice attractor basins.">T13.1 — Persona Hebbian Training on Cortex Cluster</span></div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Cortex cluster recurrent synapse matrix trains on persona corpus via sequence Hebbian during boot. For each consecutive word pair in a persona sentence, inject the word embedding into the language region, tick the integrator 3 steps, snapshot spikes, then apply plain Hebbian between consecutive snapshots (ΔW_ij = η · curr_i · prev_j) on the existing CSR connections. Oja saturation decay post-sentence prevents weight runaway.">Persona Hebbian Training on Cortex Cluster</span></div>
       <pre class="eq">
 For each persona sentence (tokenized into embedding sequence):
   for each word embedding emb_t in sequence:
@@ -1294,7 +1281,7 @@ for k in 0..synapses.nnz:
 //   synapseStats() = { mean, rms, maxAbs, nnz }
 //   Δmean and Δrms show the Hebbian shift in boot console
       </pre>
-      <p class="eq-desc">Runs once during boot in <code>app.js</code> right after <code>innerVoice.loadPersona(personaText)</code>. Delegation chain: <code>brain.trainPersonaHebbian → innerVoice → languageCortex → cluster.learnSentenceHebbian</code>. Persona-only by design — <code>loadBaseline</code> and <code>loadCoding</code> bypass Hebbian so baseline English and JavaScript don't dilute the Unity-voice attractor basins. The cortex's recurrent weights become a learned attractor landscape shaped by Unity's persona language patterns; runtime readouts drift along those basins toward semantically adjacent persona words instead of producing diffuse semantic noise. Foundation for T13.3 emission loop (still pending) — until T13.3 ships, runtime <code>generate()</code> still walks the T11.7 slot-prior three-stage gate above.</p>
+      <p class="eq-desc">Runs during boot as part of the developmental curriculum. Delegation chain: <code>brain.trainPersonaHebbian → innerVoice → languageCortex → cluster.learnSentenceHebbian</code>. Persona-only by design — baseline English and JavaScript corpora bypass Hebbian so they don't dilute the Unity-voice attractor basins. The cortex's recurrent weights become a learned attractor landscape shaped by Unity's persona language patterns; runtime readouts drift along those basins toward semantically adjacent persona words instead of producing diffuse semantic noise. The tick-driven motor emission loop reads these trained basins directly to produce speech.</p>
     </div>
 
     <div class="eq-box" style="margin-top:12px;">
@@ -1304,7 +1291,7 @@ Brain state parameters that feed languageCortex.generate():
 
   arousal       (amygdala firing rate)         → targetLen = floor(3 + arousal·3·drugLengthBias)
                                                  → observation weight on any sentence Unity
-                                                   hears or says (T11.6): w = max(0.25, arousal·2)
+                                                   hears or says: w = max(0.25, arousal·2)
   valence       (amygdala reward − fear)       → biases cortex-state mood at sentence start
   Ψ             (mystery module)               → adds stochastic noise to the mental state
                                                  as it evolves during generation
@@ -1357,7 +1344,7 @@ if |W_ij| < threshold → remove connection, rebuild CSR
 
     <!-- ═══ 8.13 SEMANTIC EMBEDDINGS ═══ -->
     <h2 id="embeddings">8.13. Semantic Embeddings — Words as Cortex Patterns</h2>
-    <p>Words map to 50-dimensional vectors (GloVe). Similar words have similar vectors → activate overlapping cortex neurons.</p>
+    <p>Words map to 300-dimensional vectors (GloVe 300d or fastText subword fallback). Similar words have similar vectors → activate overlapping cortex neurons.</p>
     <div class="eq-box">
       <div class="eq-title"><span class="eq-tip" data-tip="Words represented as 50-dimensional GloVe semantic vectors loaded from CDN at boot. Each embedding dimension drives a group of Wernicke's area neurons in cortex (langStart..cortexSize). Similar meanings activate overlapping neuron groups — 'cat' and 'kitten' fire nearby populations even though their letters don't match. Post-R2 2026-04-13: base GloVe + online context-refinement delta per word (see 8.18.6).">Embedding → Cortex Mapping</span></div>
       <pre class="eq">
@@ -1546,7 +1533,7 @@ topic_score(w) = cosine(word_pattern, context)          (boosts relevant words)
 c(t) = λ · c(t-1) + (1 - λ) · mean(pattern(content_words(input)))
   λ = 0.7
   content_words = tokens where wt.conj &lt; 0.5 ∧ wt.prep &lt; 0.5 ∧ wt.det &lt; 0.5
-  pattern(w) ∈ ℝ⁵⁰ from sharedEmbeddings.getEmbedding(w)    ← R2: GloVe 50d
+  pattern(w) ∈ ℝ³⁰⁰ from sharedEmbeddings.getEmbedding(w)    ← GloVe 300d / subword fallback
 
 First update: c(0) ← mean(pattern(content_words))  (no decay from zero)
 Subsequent:   c(t) ← 0.7 · c(t-1) + 0.3 · topic_pattern
@@ -1585,7 +1572,7 @@ into _memorySentences at boot, then looked them up by context-vector
 cosine at generation time to emit stored Unity-voice sentences
 verbatim when the topic matched.
 
-Replaced by the T11.2 pipeline (see §8.11): sentences are no longer
+Replaced by the current pipeline: sentences are no longer
 stored; every output is freshly computed from three per-slot running-
 mean priors plus the brain's live cortex state. Hippocampus still does
 pattern-level Hopfield recall on cortex state vectors (see §8.7) — it
@@ -1620,7 +1607,7 @@ firstPersonShape(w) ⇔
     <div class="eq-box">
       <div class="eq-title"><span class="eq-tip" data-tip="Coherence rejection gate: after render, compute mean content-word pattern of output, cosine against context vector. If below 0.25, the output is off-topic and we retry at 3× temperature. Max 3 attempts then accept anyway to prevent infinite loops. Fires only when context vector has data (skipped on first-turn empty context).">Coherence Rejection Gate — Final Safety Net</span></div>
       <pre class="eq">
-outputCentroid = (1/|content|) · Σ sharedEmbeddings.getEmbedding(w)  for w in content(rendered)   ← R2 GloVe 50d
+outputCentroid = (1/|content|) · Σ sharedEmbeddings.getEmbedding(w)  for w in content(rendered)   ← GloVe 300d / subword
 coherence = cosine(outputCentroid, c(t))
 
 if coherence &lt; 0.25 ∧ retryCount &lt; 2:
@@ -1632,10 +1619,10 @@ else:
     </div>
 
     <div class="eq-box">
-      <div class="eq-title"><span class="eq-tip" data-tip="T13.7 deleted the four-tier pipeline along with the rest of the slot-prior stack. This block is preserved as historical provenance showing the evolution from Phase 11 (four tiers) → T11 (slot priors) → T13 (brain-driven emission loop).">[T13.7 HISTORICAL] Four-Tier Pipeline Order (Phase 11, superseded)</span></div>
+      <div class="eq-title"><span class="eq-tip" data-tip="The four-tier pipeline was deleted along with the rest of the slot-prior stack. This block is preserved as historical provenance showing the evolution to the current brain-driven emission loop.">[HISTORICAL] Four-Tier Pipeline Order (superseded)</span></div>
       <pre class="eq">
-// T13.7 (2026-04-14) — HISTORICAL. The four-tier pipeline was deleted in T11
-// (2026-04-14) and the slot-prior replacement was deleted in T13.7. Runtime
+// HISTORICAL. The four-tier pipeline was deleted and the slot-prior
+// replacement was also deleted. Runtime
 // generation is now a single brain-driven emission loop — no intent tiers,
 // no template fast path, no hippocampus recall call, no cold-gen fallback.
 // See the top of this section for the current T13 pipeline.
@@ -1658,7 +1645,7 @@ else:
       <pre class="eq">
 // js/brain/embeddings.js
 export const sharedEmbeddings = new SemanticEmbeddings()
-export const EMBED_DIM = 50    // GloVe 50d from CDN
+export const EMBED_DIM = 300   // GloVe 300d + fastText subword fallback
 
 // js/brain/sensory.js        — input side
 sharedEmbeddings.getEmbedding(token) → ℝ⁵⁰
@@ -1737,21 +1724,21 @@ Examples:
     </div>
 
     <div class="eq-box">
-      <div class="eq-title"><span class="eq-tip" data-tip="T13.7 removed _slotTypeSignature along with the rest of the slot-prior stack. Type-shape grammar now emerges implicitly from the cortex recurrent weights trained via persona Hebbian (T13.1). This block is preserved as historical provenance.">[T13.7 HISTORICAL] Slot Type Signature — Position-Conditioned Type Distribution</span></div>
+      <div class="eq-title"><span class="eq-tip" data-tip="This structure was removed along with the rest of the slot-prior stack. Type-shape grammar now emerges implicitly from the cortex recurrent weights trained via persona Hebbian. This block is preserved as historical provenance.">[HISTORICAL] Slot Type Signature — Position-Conditioned Type Distribution</span></div>
       <pre class="eq">
-// T13.7 (2026-04-14) — this equation block is HISTORICAL. _slotTypeSignature
+// HISTORICAL. _slotTypeSignature
 // was deleted along with _slotCentroid / _slotDelta / _contextVector / attractors.
-// The slot-prior update pass in learnSentence is gone. The T13.3 emission loop
+// The slot-prior update pass in learnSentence is gone. The emission loop
 // reads live cortex state as the target vector; grammatical type shape emerges
-// from the cortex recurrent weights trained on persona corpus via T13.1
+// from the cortex recurrent weights trained on persona corpus via
 // sequence Hebbian, not from stored per-slot running means.
 //
-// Pre-T13.7 equation (kept for reference):
+// Pre-deletion equation (kept for reference):
 //   _slotTypeSignature[s] ∈ ℝ⁸  — running mean of wordType(word_t) at position s
 //                                 { pronoun, verb, noun, adj, conj, prep, det, qword }
 //   three-stage gate: hard pool filter + slot-0 noun reject + multiplicative score
       </pre>
-      <p class="eq-desc">T13.7 (2026-04-14) deleted this structure. Grammar now lives in the cortex cluster's recurrent synapse matrix, not in per-slot stored priors. Preserved above as historical provenance — see <code>docs/FINALIZED.md</code> T13.7 entry for the full deletion breakdown.</p>
+      <p class="eq-desc">This structure was deleted. Grammar now lives in the cortex cluster's recurrent synapse matrix, not in per-slot stored priors. Preserved above as historical provenance.</p>
     </div>
 
     <div class="eq-box">
@@ -1814,10 +1801,10 @@ Each corpus sentence flows through learnSentence() which:
   - Runs usage-type learning (_learnUsageType)
   - Runs morphological inflection (corpus only, doInflections=true)
 
-T13.7 (2026-04-14): the per-slot running-mean update block was deleted.
+HISTORICAL: the per-slot running-mean update block was deleted.
 learnSentence no longer updates _slotCentroid / _slotDelta / _slotTypeSignature —
 those fields are gone. Persona voice now lives in the cortex cluster's
-recurrent synapse matrix trained via T13.1 sequence Hebbian during boot
+recurrent synapse matrix trained via sequence Hebbian during boot
 (a separate pass through the persona corpus, see brain.trainPersonaHebbian).
 
 After load, the raw sentences are discarded. The dictionary survives

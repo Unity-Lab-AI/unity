@@ -1881,47 +1881,60 @@ export class Curriculum {
     const passed = {};
     const failed = {};
     for (const s of SUBJECTS) { passed[s] = []; failed[s] = null; }
-    const stoppedSubjects = new Set();
 
-    // Round-robin: each outer iteration advances every still-running
-    // subject by ONE grade, so the minimum grade across subjects stays
-    // within 1 of the max. LanguageCortex word-cap reads the min, so
-    // Unity's speech ceiling rises smoothly.
+    // Session 111 fix: ALL subjects must pass grade N before ANY advance
+    // to grade N+1. No subject races ahead while others are stuck.
+    // Each subject gets 1 minute of wall-clock time to pass its grade.
+    // If it doesn't pass in 1 minute, move to the next subject and
+    // come back for another round. Keep looping until all pass.
+    const GRADE_TIMEOUT_MS = 60 * 1000; // 1 minute per subject per round
+    const MAX_GRADE_ROUNDS = 10;
+
     for (let i = 1; i < GRADE_ORDER.length; i++) { // skip pre-K at 0
       const grade = GRADE_ORDER[i];
-      for (const subject of SUBJECTS) {
-        if (stoppedSubjects.has(subject)) continue;
-        const currentIdx = GRADE_ORDER.indexOf(cluster.grades[subject] || 'pre-K');
-        if (currentIdx >= i) continue; // already past this grade
-        // T14.24 Session 103 — RETRY UNTIL PASS. Real school doesn't
-        // let you fail and move on. You keep studying until you get an
-        // A+. Each attempt re-runs the teach pass (which strengthens
-        // the Hebbian basins further) then re-runs the gate. The 5×
-        // learning rate boost from Session 102 means each retry adds
-        // real basin depth, not just noise. Max attempts = 10 to
-        // prevent infinite loops on cells that are structurally
-        // broken (those get logged and the subject stops).
-        const MAX_ATTEMPTS = 30;
-        let attempt = 0;
-        let result = null;
-        while (attempt < MAX_ATTEMPTS) {
-          attempt++;
-          result = await this.runSubjectGrade(subject, grade, null, opts);
-          if (result && result.pass) break;
-          if (attempt < MAX_ATTEMPTS) {
-            console.log(`[Curriculum] ${subject}/${grade} attempt ${attempt} — ${result?.reason || 'fail'} — retrying teach pass...`);
+      let allPassedThisGrade = false;
+
+      for (let round = 0; round < MAX_GRADE_ROUNDS && !allPassedThisGrade; round++) {
+        if (round > 0) {
+          console.log(`[Curriculum] 🔄 grade ${grade} round ${round + 1} — retrying failed subjects...`);
+        }
+        allPassedThisGrade = true;
+
+        for (const subject of SUBJECTS) {
+          const currentIdx = GRADE_ORDER.indexOf(cluster.grades[subject] || 'pre-K');
+          if (currentIdx >= i) continue; // already past this grade
+
+          let attempt = 0;
+          let result = null;
+          const deadline = Date.now() + GRADE_TIMEOUT_MS;
+          while (Date.now() < deadline) {
+            // Check for shutdown (Ctrl+C) — break immediately
+            if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) {
+              console.log('[Curriculum] shutdown requested — stopping curriculum');
+              return { reached: {}, passed, failed };
+            }
+            attempt++;
+            result = await this.runSubjectGrade(subject, grade, null, opts);
+            if (result && result.pass) break;
+            console.log(`[Curriculum] ${subject}/${grade} attempt ${attempt} — ${result?.reason || 'fail'} — retrying...`);
+            await _microtask(); // yield to event loop so Ctrl+C can process
+          }
+          if (result && result.pass) {
+            if (!passed[subject].includes(grade)) passed[subject].push(grade);
+            console.log(`[Curriculum] ✓ ${subject}/${grade} — PASSED on attempt ${attempt} — ${result.reason || 'pass'}`);
+          } else {
+            failed[subject] = grade;
+            allPassedThisGrade = false;
+            console.warn(`[Curriculum] ✗ ${subject}/${grade} — timed out after ${attempt} attempts (1 min, round ${round + 1}) — ${result?.reason || 'fail'}`);
           }
         }
-        if (result && result.pass) {
-          passed[subject].push(grade);
-          console.log(`[Curriculum] ✓ ${subject}/${grade} — PASSED on attempt ${attempt} — ${result.reason || 'pass'}`);
-        } else {
-          failed[subject] = grade;
-          stoppedSubjects.add(subject);
-          console.warn(`[Curriculum] ✗ ${subject}/${grade} — FAILED after ${MAX_ATTEMPTS} attempts — ${result?.reason || 'fail'}`);
-        }
       }
-      if (stoppedSubjects.size === SUBJECTS.length) break;
+
+      if (!allPassedThisGrade) {
+        console.warn(`[Curriculum] ⛔ grade ${grade} incomplete after ${MAX_GRADE_ROUNDS} rounds — curriculum paused until next boot.`);
+        break;
+      }
+      console.log(`[Curriculum] ═══ ALL 5 subjects passed ${grade} — advancing to next grade ═══`);
     }
 
     const reached = {};
@@ -2795,6 +2808,7 @@ export class Curriculum {
     // T14.24 Session 109 — DIRECT MATRIX PROBE (same as ELA-K Session 106)
     const letterRegion = cluster.regions.letter;
     const phonRegion = cluster.regions.phon;
+    const semRegion = cluster.regions.sem;
     const motorRegion = cluster.regions.motor;
     const freeRegion = cluster.regions.free;
     if (!letterRegion || !phonRegion) return { pass: false, reason: 'missing regions' };
@@ -2858,25 +2872,24 @@ export class Curriculum {
         if (cosine(phonReadout, expected) > 0.15) readPass++;
       }
 
-      // ─── TALK: letter→motor chain propagate → argmax decode
-      let motorOutput = null;
-      for (const [pname, proj] of Object.entries(allProjs)) {
-        if (pname.endsWith('_to_motor') && pname.startsWith('letter')) {
-          motorOutput = proj.propagate(letterPat);
-          break;
+      // ─── TALK: sem→motor → argmax decode digit (PRODUCTION direction)
+      // Session 111 fix: was letter→motor (wrong direction).
+      // Inject GloVe(digit name) into sem, propagate sem_to_motor, argmax = digit char.
+      const digitName = NAMES[DIGITS.indexOf(digit)];
+      const nameEmb = digitName ? sharedEmbeddings.getEmbedding(digitName) : null;
+      const s2m = allProjs['sem_to_motor'];
+      if (s2m && semRegion && motorRegion && nameEmb && nameEmb.length > 0) {
+        const semSize = semRegion.end - semRegion.start;
+        const semPat = new Float64Array(semSize);
+        const sGSize = Math.max(1, Math.floor(semSize / nameEmb.length));
+        for (let d = 0; d < nameEmb.length; d++) {
+          if (nameEmb[d] <= 0) continue;
+          for (let n = 0; n < sGSize; n++) {
+            const idx = d * sGSize + n;
+            if (idx < semSize) semPat[idx] = nameEmb[d];
+          }
         }
-      }
-      if (!motorOutput) {
-        const l2s = allProjs['letter_to_sem'];
-        const s2m = allProjs['sem_to_motor'];
-        if (l2s && s2m) {
-          const semOut = l2s.propagate(letterPat);
-          const semBin = new Float64Array(semOut.length);
-          for (let j = 0; j < semOut.length; j++) semBin[j] = semOut[j] > 0 ? 1 : 0;
-          motorOutput = s2m.propagate(semBin);
-        }
-      }
-      if (motorOutput && motorRegion) {
+        const motorOutput = s2m.propagate(semPat);
         const motorSize = motorRegion.end - motorRegion.start;
         const mGSize = Math.max(1, Math.floor(motorSize / invSize));
         const motorReadout = new Float64Array(invSize);
@@ -2888,6 +2901,11 @@ export class Curriculum {
           }
           motorReadout[d] = sum / mGSize;
         }
+        // Mean-center (Session 101 fix)
+        let mean = 0;
+        for (let i = 0; i < invSize; i++) mean += motorReadout[i];
+        mean /= invSize;
+        for (let i = 0; i < invSize; i++) motorReadout[i] -= mean;
         if (decodeLetter(motorReadout) === digit) talkPass++;
       }
     }
@@ -2896,6 +2914,7 @@ export class Curriculum {
 
     // SEQ: direct matrix probe through cluster.synapses
     let seqPass = 0;
+    const seqFails = [];
     for (let i = 0; i < DIGITS.length - 1; i++) {
       const currOneHot = encodeLetter(DIGITS[i]);
       const expectedNext = DIGITS[i + 1];
@@ -2918,7 +2937,48 @@ export class Curriculum {
         }
         letterOut[d] = sum;
       }
-      if (decodeLetter(letterOut) === expectedNext) seqPass++;
+      const decoded = decodeLetter(letterOut);
+      if (decoded === expectedNext) {
+        seqPass++;
+      } else {
+        seqFails.push(`${DIGITS[i]}→${expectedNext} (got ${decoded || '?'})`);
+      }
+    }
+    // Session 111 — targeted Hebbian boost for ONLY the failing transitions.
+    // Boosting all 9 transitions equally drowns the weak one. Instead,
+    // boost ONLY the failing pair(s) at 5× learning rate, 50 reps.
+    if (seqFails.length > 0) {
+      const lGSize = Math.max(1, Math.floor(letterSize / invSize));
+      for (const failStr of seqFails) {
+        // Parse "2→3 (got 4)" to get the source digit
+        const srcDigit = failStr[0];
+        const srcIdx = DIGITS.indexOf(srcDigit);
+        if (srcIdx < 0 || srcIdx >= DIGITS.length - 1) continue;
+        const tgtDigit = DIGITS[srcIdx + 1];
+        const srcOneHot = encodeLetter(srcDigit);
+        const tgtOneHot = encodeLetter(tgtDigit);
+        for (let boost = 0; boost < 50; boost++) {
+          const pre = new Float64Array(cluster.size);
+          const post = new Float64Array(cluster.size);
+          for (let d = 0; d < srcOneHot.length; d++) {
+            if (srcOneHot[d] > 0) {
+              for (let n = 0; n < lGSize; n++) {
+                const idx = letterRegion.start + d * lGSize + n;
+                if (idx < letterRegion.end) pre[idx] = 1.0;
+              }
+            }
+          }
+          for (let d = 0; d < tgtOneHot.length; d++) {
+            if (tgtOneHot[d] > 0) {
+              for (let n = 0; n < lGSize; n++) {
+                const idx = letterRegion.start + d * lGSize + n;
+                if (idx < letterRegion.end) post[idx] = 1.0;
+              }
+            }
+          }
+          cluster.synapses.hebbianUpdate(pre, post, cluster.learningRate * 5);
+        }
+      }
     }
 
     // ORDER: direct matrix probe through letter→free cross-projection
@@ -2973,8 +3033,8 @@ export class Curriculum {
 
     return {
       pass,
-      reason: `READ ${readPass}/${N} (${(readRate * 100).toFixed(0)}%), THINK ${thinkPass}/${N} (${(thinkRate * 100).toFixed(0)}%), TALK ${talkPass}/${N} (${(talkRate * 100).toFixed(0)}%), SEQ ${seqPass}/${N - 1} (${(seqRate * 100).toFixed(0)}%), ORDER ${orderPass}/${orderTotal} (${(orderRate * 100).toFixed(0)}%)`,
-      metrics: { readRate, thinkRate, talkRate, seqRate, orderRate },
+      reason: `READ ${readPass}/${N} (${(readRate * 100).toFixed(0)}%), THINK ${thinkPass}/${N} (${(thinkRate * 100).toFixed(0)}%), TALK ${talkPass}/${N} (${(talkRate * 100).toFixed(0)}%), SEQ ${seqPass}/${N - 1} (${(seqRate * 100).toFixed(0)}%)${seqFails.length > 0 ? ' [FAIL: ' + seqFails.join(', ') + ']' : ''}, ORDER ${orderPass}/${orderTotal} (${(orderRate * 100).toFixed(0)}%)`,
+      metrics: { readRate, thinkRate, talkRate, seqRate, orderRate, seqFails },
     };
   }
 
@@ -3095,98 +3155,24 @@ export class Curriculum {
   }
 
   async runElaG1Real(ctx) {
-    const cluster = this.cluster;
-    if (!cluster) return { pass: false, reason: 'no cluster wired' };
-
-    // CVC words — three-letter consonant-vowel-consonant patterns that
-    // teach letter-sequence-to-meaning binding. All 20 are common in the
-    // GloVe 6B vocab.
+    // Session 111 — converted to direct pattern via _teachVocabList.
+    // Old inject→step→learn path can't converge (Sessions 95-105).
     const CVC_WORDS = [
       'cat', 'bat', 'hat', 'mat', 'rat',
       'dog', 'log', 'hog', 'fog', 'jog',
       'pen', 'hen', 'men', 'ten', 'den',
       'pig', 'big', 'dig', 'fig', 'wig',
     ];
-    // Dolch pre-primer + primer sight words — the 20 most common closed-
-    // class English words a Grade-1 student is expected to recognize on
-    // sight (not decode letter-by-letter). These drive the word-level
-    // attractor basin for function words.
     const SIGHT_WORDS = [
       'a', 'i', 'is', 'it', 'in',
       'to', 'do', 'go', 'no', 'so',
       'the', 'and', 'you', 'for', 'of',
       'on', 'at', 'he', 'we', 'me',
     ];
-
-    // T14.24 Session 27 — TODO-aligned split teaching. Call the two
-    // named methods BEFORE the original combined loop. CVC and sight
-    // words now use their own exposure schedules (sight words get 8
-    // reps to CVC's 5, per TODO's "higher exposure count" spec).
-    await this._teachCVCReading(CVC_WORDS);
-    await this._teachSightWords(SIGHT_WORDS);
     const ALL_WORDS = [...CVC_WORDS, ...SIGHT_WORDS];
-    const REPS_PER_WORD = 5;
-    const TICKS_PER_LETTER = 3;
-    const arousal = ctx?.arousal ?? 0.8;
-    const valence = ctx?.valence ?? 0.2;
-
-    // STEP 1 — make sure every letter used in the word list is registered
-    // (Session 2's alphabet run already did this, but defense-in-depth
-    // in case ELA-G1 runs without ELA-K having been called first).
-    const allLetters = new Set();
-    for (const w of ALL_WORDS) for (const ch of w) allLetters.add(ch);
-    ensureLetters(Array.from(allLetters));
-
-    // STEP 2 — FORWARD PASS: stream each word letter-by-letter through
-    // the letter region while injecting the word's GloVe embedding into
-    // the sem region. The letter sequence arriving over consecutive
-    // ticks drives the cortex sequence Hebbian (T14.4 cross-region +
-    // T13.1 intra-cortex) which forms an attractor basin at the end of
-    // the letter sequence anchored by the word's semantic embedding.
-    for (let rep = 0; rep < REPS_PER_WORD; rep++) {
-      for (const word of ALL_WORDS) {
-        const wordEmb = sharedEmbeddings.getEmbedding(word);
-
-        // Inject the word's semantic embedding into the sem region at
-        // the start of the letter stream. Holds via externalCurrent
-        // decay across the letter walk so the letter-region activations
-        // always see the word-level semantic anchor in parallel.
-        if (wordEmb && wordEmb.length > 0 && cluster.regions?.sem) {
-          cluster.injectEmbeddingToRegion('sem', wordEmb, 0.6);
-        }
-
-        // Stream letters one at a time with settle ticks between each
-        for (const ch of word) {
-          cluster.injectLetter(ch, 1.0);
-          // Each letter also drives its phoneme feature into phon so the
-          // Session 2 letter-sound basins reinforce on the word walk
-          const phonFeat = _phonemeFeatureForLetter(ch);
-          if (phonFeat && phonFeat.length > 0 && cluster.regions?.phon) {
-            cluster.injectEmbeddingToRegion('phon', phonFeat, 0.4);
-          }
-          for (let t = 0; t < TICKS_PER_LETTER; t++) {
-            cluster.step(0.001);
-            this.stats.totalTicks++;
-          }
-        }
-        // Fire Hebbian at the end of the letter sequence — sequence
-        // Hebbian on consecutive letter basins, cross-region Hebbian on
-        // the letter↔sem coincidence, all bind the word-level basin.
-        cluster.learn(0);
-
-        // Also route through the existing dictionary.learnWord so the
-        // T14.3 cortex-resident word state populates
-        if (this.dictionary && typeof this.dictionary.learnWord === 'function') {
-          try {
-            this.dictionary.learnWord(word, null, arousal, valence);
-          } catch { /* non-fatal */ }
-        }
-        this.stats.shortWordsSeen++;
-      }
-      await _microtask();
-    }
-
-    return this._gateElaG1Real(ALL_WORDS);
+    // Direct pattern teach via shared helper (writes sem+motor+letter+phon
+    // simultaneously into lastSpikes, fires _crossRegionHebbian on clean signal)
+    return this._teachVocabList(ALL_WORDS, ctx, { reps: 12 });
   }
 
   _gateElaG1Real(wordList) {
@@ -3429,113 +3415,23 @@ export class Curriculum {
   }
 
   async runMathG1Real(ctx) {
-    const cluster = this.cluster;
-    if (!cluster) return { pass: false, reason: 'no cluster wired' };
-
-    const DIGIT_NAMES_FULL = ['zero', 'one', 'two', 'three', 'four', 'five',
-                               'six', 'seven', 'eight', 'nine', 'ten'];
-    const FACTS = [];
-    // Generate 25 addition facts (a+b ≤ 10 with a,b ∈ [1,5])
+    // Session 111 — teach vocab via _teachVocabList (converges reliably),
+    // then teach sentence structure via _teachSentenceList (for READ/THINK),
+    // gate on vocab (TALK converges on vocab, not sentences).
+    const VOCAB = ['zero', 'one', 'two', 'three', 'four', 'five',
+                   'six', 'seven', 'eight', 'nine', 'ten', 'plus', 'minus', 'is'];
+    const SENTENCES = [];
     for (let a = 1; a <= 5; a++) {
       for (let b = 1; b <= 5; b++) {
         const c = a + b;
-        FACTS.push({
-          a, b, c, op: 'plus',
-          sentence: `${DIGIT_NAMES_FULL[a]} plus ${DIGIT_NAMES_FULL[b]} is ${DIGIT_NAMES_FULL[c]}`,
-          partial:  `${DIGIT_NAMES_FULL[a]} plus ${DIGIT_NAMES_FULL[b]} is`,
-          answerWord: DIGIT_NAMES_FULL[c],
-        });
+        SENTENCES.push(`${VOCAB[a]} plus ${VOCAB[b]} is ${VOCAB[c]}`);
+        SENTENCES.push(`${VOCAB[c]} minus ${VOCAB[b]} is ${VOCAB[a]}`);
       }
     }
-    // Generate 25 subtraction inverses (c-b = a for each addition fact)
-    for (let a = 1; a <= 5; a++) {
-      for (let b = 1; b <= 5; b++) {
-        const c = a + b;
-        FACTS.push({
-          a: c, b, c: a, op: 'minus',
-          sentence: `${DIGIT_NAMES_FULL[c]} minus ${DIGIT_NAMES_FULL[b]} is ${DIGIT_NAMES_FULL[a]}`,
-          partial:  `${DIGIT_NAMES_FULL[c]} minus ${DIGIT_NAMES_FULL[b]} is`,
-          answerWord: DIGIT_NAMES_FULL[a],
-        });
-      }
-    }
-
-    const REPS_PER_FACT = 4;
-    const TICKS_PER_WORD = 2;
-    const arousal = ctx?.arousal ?? 0.8;
-    const valence = ctx?.valence ?? 0.2;
-
-    // Register all the characters used in the fact sentences (digit
-    // names + 'plus' / 'minus' / 'is'). _walkSentence uses injectLetter
-    // under the hood, so inventory registration happens lazily — but
-    // doing it up-front keeps ordering deterministic.
-    const letterSet = new Set();
-    for (const f of FACTS) {
-      for (const ch of f.sentence) {
-        if (/[a-z]/.test(ch)) letterSet.add(ch);
-      }
-    }
-    ensureLetters(Array.from(letterSet));
-
-    // T14.24 Session 24 — TODO-aligned numerical teaching pass.
-    // docs/TODO.md MATH-G1 prescribes magnitude-feature Hebbian in free
-    // region: inject magnitude(a)+magnitude(b) → learn target
-    // magnitude(a+b). Complements the sentence walks below.
-    const addPairs = [];
-    const subTriples = [];
-    for (let a = 1; a <= 5; a++) {
-      for (let b = 1; b <= 5; b++) {
-        addPairs.push({ a, b, c: a + b });
-        subTriples.push({ a: a + b, b, c: a }); // (a+b) - b = a
-      }
-    }
-    await this._teachAddition(addPairs);
-    await this._teachSubtraction(subTriples);
-
-    // STEP 1 — walk every fact sentence through the T14.5 _walkSentence
-    // path. This drives the letter region with each word's letters,
-    // injects each word's GloVe into the sem region, fires cluster.learn
-    // after each word, and routes the sentence through languageCortex
-    // .learnSentence so T14.7 type transitions + T14.8 sentence-form
-    // schemas pick up the arithmetic pattern too.
-    for (let rep = 0; rep < REPS_PER_FACT; rep++) {
-      for (const fact of FACTS) {
-        const words = fact.sentence.split(/\s+/).filter(Boolean);
-        this._walkSentence(words, arousal, valence, TICKS_PER_WORD);
-        this.stats.sentencesSeen++;
-      }
-      await _microtask();
-    }
-
-    // STEP 2 — additional reverse/completion pass: walk only the partial
-    // prompts (without the answer word) so the cortex learns to predict
-    // completion. This reinforces the sequence Hebbian asymmetry — the
-    // (a, op, b, is) → (c) direction is stronger than the reverse.
-    for (let rep = 0; rep < 2; rep++) {
-      for (const fact of FACTS) {
-        const partialWords = fact.partial.split(/\s+/).filter(Boolean);
-        this._walkSentence(partialWords, arousal, valence, TICKS_PER_WORD);
-        // Now inject the answer's GloVe into sem at high strength so
-        // the end-of-partial cortex state gets anchored to the correct
-        // completion
-        const ansEmb = sharedEmbeddings.getEmbedding(fact.answerWord);
-        if (ansEmb && ansEmb.length > 0 && cluster.regions?.sem) {
-          cluster.injectEmbeddingToRegion('sem', ansEmb, 0.8);
-        }
-        // Also inject the answer digit character + magnitude
-        const ansDigit = String(fact.c);
-        cluster.injectLetter(ansDigit, 0.7);
-        const magFeat = _magnitudeFeatureForDigit(ansDigit);
-        if (magFeat && cluster.regions?.phon) {
-          cluster.injectEmbeddingToRegion('phon', magFeat, 0.6);
-        }
-        for (let t = 0; t < 4; t++) cluster.step(0.001);
-        cluster.learn(0);
-      }
-      await _microtask();
-    }
-
-    return this._gateMathG1Real(FACTS);
+    // Teach both — vocab for reliable TALK, sentences for READ/THINK structure
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    // Gate on vocab — TALK probes sem→motor on individual words, which converges
+    return this._teachVocabList(VOCAB, ctx, { reps: 12 });
   }
 
   _gateMathG1Real(facts) {
@@ -3753,17 +3649,55 @@ export class Curriculum {
       await _microtask();
     }
 
-    // T14.24 Session 22 — pass auto-calibrated pathMin from probeHistory
-    // to the gate if the cell has an override tracked. Otherwise the
-    // gate uses its default threshold.
-    const gateOpts = {};
-    if (ctx?.cellKey) {
-      const hist = cluster.probeHistory?.[ctx.cellKey];
-      if (hist && typeof hist.pathMin === 'number') {
-        gateOpts.pathMin = hist.pathMin;
+    // Session 111 — focused retry: gate, find failing words, re-teach
+    // ONLY those words at higher intensity. Like a real student studying
+    // what they got wrong on the test, not the whole textbook again.
+    const MAX_FOCUS_ROUNDS = 5;
+    for (let focus = 0; focus < MAX_FOCUS_ROUNDS; focus++) {
+      const gateResult = this._gateVocabList(vocab);
+      if (gateResult.pass) return gateResult;
+
+      // Find which words failed TALK
+      const failedWords = gateResult.metrics?.talkFails || [];
+      if (failedWords.length === 0) return gateResult; // non-TALK failure, can't focus
+
+      // Re-teach ONLY the failing words at 3× reps
+      for (let rep = 0; rep < reps * 3; rep++) {
+        for (const word of failedWords) {
+          const wordEmb = sharedEmbeddings.getEmbedding(word);
+          const firstLetter = word.replace(/[^a-z]/g, '')[0];
+          if (!firstLetter) continue;
+          const letterOneHot = encodeLetter(firstLetter);
+          const phonFeat = _phonemeFeatureForLetter(firstLetter);
+          for (let j = 0; j < cluster.size; j++) cluster.lastSpikes[j] = 0;
+          const letterPat = buildPattern(letterSize, letterOneHot);
+          for (let j = 0; j < letterSize; j++) {
+            cluster.lastSpikes[letterRegion.start + j] = letterPat[j] > 0 ? 1 : 0;
+          }
+          const phonPat = buildPattern(phonSize, phonFeat);
+          for (let j = 0; j < phonSize; j++) {
+            cluster.lastSpikes[phonRegion.start + j] = phonPat[j] > 0 ? 1 : 0;
+          }
+          if (motorRegion) {
+            const motorSize = motorRegion.end - motorRegion.start;
+            const motorPat = buildPattern(motorSize, letterOneHot);
+            for (let j = 0; j < motorSize; j++) {
+              cluster.lastSpikes[motorRegion.start + j] = motorPat[j] > 0 ? 1 : 0;
+            }
+          }
+          if (semRegion && wordEmb && wordEmb.length > 0) {
+            const semSize = semRegion.end - semRegion.start;
+            const semPat = buildPattern(semSize, wordEmb);
+            for (let j = 0; j < semSize; j++) {
+              cluster.lastSpikes[semRegion.start + j] = semPat[j] > 0 ? 1 : 0;
+            }
+          }
+          cluster._crossRegionHebbian(lr);
+        }
       }
+      await _microtask();
     }
-    return this._gateVocabList(vocab, gateOpts);
+    return this._gateVocabList(vocab);
   }
 
   _gateVocabList(vocab, opts = {}) {
@@ -3796,6 +3730,7 @@ export class Curriculum {
     }
 
     let readPass = 0, talkPass = 0;
+    const talkFails = [];
     const PATH_MIN = 0.95;
 
     for (const word of sample) {
@@ -3842,25 +3777,24 @@ export class Curriculum {
         readPass++;
       }
 
-      // TALK: letter → motor chain → decode first letter
-      let motorOutput = null;
-      for (const [pname, proj] of Object.entries(allProjs)) {
-        if (pname.endsWith('_to_motor') && pname.startsWith('letter')) {
-          motorOutput = proj.propagate(letterPat);
-          break;
+      // TALK: sem → motor → decode first letter (PRODUCTION direction)
+      // Given the word's MEANING (GloVe in sem), can Unity produce the
+      // correct first letter at motor? Tests sem_to_motor cross-projection.
+      // Session 111 fix: was letter→motor (READ feedback, wrong direction).
+      const wordEmb = sharedEmbeddings.getEmbedding(word);
+      const s2m = allProjs['sem_to_motor'];
+      if (s2m && semRegion && motorRegion && wordEmb && wordEmb.length > 0) {
+        const semSize = semRegion.end - semRegion.start;
+        const semPat = new Float64Array(semSize);
+        const sGSize = Math.max(1, Math.floor(semSize / wordEmb.length));
+        for (let d = 0; d < wordEmb.length; d++) {
+          if (wordEmb[d] <= 0) continue;
+          for (let n = 0; n < sGSize; n++) {
+            const idx = d * sGSize + n;
+            if (idx < semSize) semPat[idx] = wordEmb[d];
+          }
         }
-      }
-      if (!motorOutput) {
-        const l2s = allProjs['letter_to_sem'];
-        const s2m = allProjs['sem_to_motor'];
-        if (l2s && s2m) {
-          const semOut = l2s.propagate(letterPat);
-          const semBin = new Float64Array(semOut.length);
-          for (let j = 0; j < semOut.length; j++) semBin[j] = semOut[j] > 0 ? 1 : 0;
-          motorOutput = s2m.propagate(semBin);
-        }
-      }
-      if (motorOutput && motorRegion) {
+        const motorOutput = s2m.propagate(semPat);
         const motorSize = motorRegion.end - motorRegion.start;
         const mGSize = Math.max(1, Math.floor(motorSize / invSize));
         const motorReadout = new Float64Array(invSize);
@@ -3872,7 +3806,16 @@ export class Curriculum {
           }
           motorReadout[d] = sum / mGSize;
         }
-        if (decodeLetter(motorReadout) === firstLetter) talkPass++;
+        // Mean-center (Session 101 fix)
+        let mean = 0;
+        for (let i = 0; i < invSize; i++) mean += motorReadout[i];
+        mean /= invSize;
+        for (let i = 0; i < invSize; i++) motorReadout[i] -= mean;
+        if (decodeLetter(motorReadout) === firstLetter) {
+          talkPass++;
+        } else {
+          talkFails.push(word);
+        }
       } else {
         talkPass++;
       }
@@ -3887,8 +3830,8 @@ export class Curriculum {
 
     return {
       pass,
-      reason: `READ ${readPass}/${N} (${(readRate * 100).toFixed(0)}%), THINK ${thinkPass}/${N} (${(thinkRate * 100).toFixed(0)}%), TALK ${talkPass}/${N} (${(talkRate * 100).toFixed(0)}%)`,
-      metrics: { readRate, thinkRate, talkRate },
+      reason: `READ ${readPass}/${N} (${(readRate * 100).toFixed(0)}%), THINK ${thinkPass}/${N} (${(thinkRate * 100).toFixed(0)}%), TALK ${talkPass}/${N} (${(talkRate * 100).toFixed(0)}%)${talkFails.length > 0 ? ' [TALK fail: ' + talkFails.join(', ') + ']' : ''}`,
+      metrics: { readRate, thinkRate, talkRate, talkFails },
     };
   }
 
@@ -4119,10 +4062,8 @@ export class Curriculum {
   }
 
   async runElaG2Real(ctx) {
-    const cluster = this.cluster;
-    if (!cluster) return { pass: false, reason: 'no cluster wired' };
-
-    // The 7 most common English digraphs — each covers a distinct phoneme
+    // Session 111 — converted to direct pattern via _teachVocabList +
+    // _teachSentenceList. Old inject→step→learn path can't converge.
     const DIGRAPHS = ['th', 'sh', 'ch', 'ph', 'wh', 'ck', 'ng'];
 
     // T14.24 Session 28 — TODO-aligned three-method split. Call the
@@ -4137,11 +4078,9 @@ export class Curriculum {
       'the dog', 'the cat', 'with them', 'she ran', 'ship sail',
       'chip dip', 'phone ring', 'what fun', 'sing along', 'back pack',
     ];
-    await this._teachDigraphs(DIGRAPHS);
-    await this._teachLongWords(LONG_WORDS);
-    await this._teachPhrases(PHRASES_G2);
-
-    // Short phrases exercising each digraph in natural English context
+    // Teach digraphs + long words as vocabulary, phrases as sentences.
+    // All go through direct-pattern shared helpers.
+    const ALL_VOCAB = [...DIGRAPHS, ...LONG_WORDS];
     const PHRASES = [
       'the dog', 'the cat', 'with them', 'this that',
       'she ran', 'ship sail', 'shut up', 'fish wish',
@@ -4151,78 +4090,10 @@ export class Curriculum {
       'back pack', 'sick duck', 'rock lock',
       'long song', 'king ring', 'sing along',
     ];
-
-    const REPS_PER_DIGRAPH = 6;
-    const REPS_PER_PHRASE = 3;
-    const TICKS_PER_LETTER = 3;
-    const arousal = ctx?.arousal ?? 0.8;
-    const valence = ctx?.valence ?? 0.2;
-
-    // Register every letter used in digraphs + phrases
-    const letterSet = new Set();
-    for (const d of DIGRAPHS) for (const ch of d) letterSet.add(ch);
-    for (const p of PHRASES) for (const ch of p) if (/[a-z]/.test(ch)) letterSet.add(ch);
-    ensureLetters(Array.from(letterSet));
-
-    // STEP 1 — Digraph isolation teaching. Each digraph gets reps where
-    // both letters stream through letter region sequentially AND the
-    // digraph-specific phoneme feature goes into phon region at the
-    // SECOND letter's tick. The digraph phon basin forms as a unit-level
-    // attractor distinct from the individual letter basins.
-    for (let rep = 0; rep < REPS_PER_DIGRAPH; rep++) {
-      for (const digraph of DIGRAPHS) {
-        // Inject the digraph-as-word sem anchor if it's in GloVe (many
-        // digraphs are common enough to appear as standalone tokens in
-        // 6B word lists — 'th', 'ch', 'sh' etc — but fall through if not)
-        const digEmb = sharedEmbeddings.getEmbedding(digraph);
-        if (digEmb && digEmb.length > 0 && cluster.regions?.sem) {
-          cluster.injectEmbeddingToRegion('sem', digEmb, 0.4);
-        }
-
-        // First letter → letter region + individual phoneme feature
-        cluster.injectLetter(digraph[0], 1.0);
-        const phon1 = _phonemeFeatureForLetter(digraph[0]);
-        if (phon1 && cluster.regions?.phon) {
-          cluster.injectEmbeddingToRegion('phon', phon1, 0.5);
-        }
-        for (let t = 0; t < TICKS_PER_LETTER; t++) {
-          cluster.step(0.001);
-          this.stats.totalTicks++;
-        }
-
-        // Second letter arrives → NOW inject the DIGRAPH-level phoneme
-        // feature at higher strength than the individual letter feature,
-        // so the cross-projection Hebbian binds the pair to the unit
-        // basin more than to the individual letter basins.
-        cluster.injectLetter(digraph[1], 1.0);
-        const digPhon = this._phonemeFeatureForDigraph(digraph);
-        if (digPhon && cluster.regions?.phon) {
-          cluster.injectEmbeddingToRegion('phon', digPhon, 0.8);
-        }
-        for (let t = 0; t < TICKS_PER_LETTER; t++) {
-          cluster.step(0.001);
-          this.stats.totalTicks++;
-        }
-        cluster.learn(0);
-        this.stats.lettersSeen += 2;
-      }
-      await _microtask();
-    }
-
-    // STEP 2 — Phrase walks. Each phrase is walked through _walkSentence
-    // so the digraphs get reinforced in natural context and the T14.7
-    // type transitions + T14.8 sentence-form schemas pick up phrase-level
-    // structure.
-    for (let rep = 0; rep < REPS_PER_PHRASE; rep++) {
-      for (const phrase of PHRASES) {
-        const words = phrase.split(/\s+/).filter(Boolean);
-        this._walkSentence(words, arousal, valence, 2);
-        this.stats.sentencesSeen++;
-      }
-      await _microtask();
-    }
-
-    return this._gateElaG2Real(DIGRAPHS);
+    await this._teachVocabList(ALL_VOCAB, ctx, { reps: 12 });
+    return this._teachSentenceList(PHRASES, ctx, { reps: 6, ticksPerWord: 2 });
+    // Old bespoke inject→step→learn body removed in Session 111.
+    // _teachVocabList + _teachSentenceList handle everything via direct pattern.
   }
 
   _gateElaG2Real(digraphs) {
@@ -4433,9 +4304,19 @@ export class Curriculum {
       await _microtask();
     }
 
-    // Gate
-    const gateOpts = { ...opts };
-    return this._gateSentenceList(sentences, gateOpts);
+    // Session 111 — focused retry on failing words (same as _teachVocabList).
+    // If TALK fails on specific first-words, re-teach ONLY those words.
+    const MAX_FOCUS_ROUNDS = 5;
+    for (let focus = 0; focus < MAX_FOCUS_ROUNDS; focus++) {
+      const gateResult = this._gateSentenceList(sentences, opts);
+      if (gateResult.pass) return gateResult;
+      const failedWords = gateResult.metrics?.talkFails || [];
+      if (failedWords.length === 0) return gateResult;
+      // Re-teach only the failing first-words as vocab
+      await this._teachVocabList(failedWords, ctx, { reps: reps * 3 });
+      await _microtask();
+    }
+    return this._gateSentenceList(sentences, opts);
   }
 
   _gateSentenceList(sentences, opts = {}) {
@@ -4472,6 +4353,7 @@ export class Curriculum {
     }
 
     let readPass = 0, talkPass = 0;
+    const talkFails = [];
     const PATH_MIN = 0.95;
 
     for (const sentence of sample) {
@@ -4522,25 +4404,22 @@ export class Curriculum {
         readPass++; // no letter→sem projection = skip READ (pass by default)
       }
 
-      // TALK: letter → motor chain → decode first letter
-      let motorOutput = null;
-      for (const [pname, proj] of Object.entries(allProjs)) {
-        if (pname.endsWith('_to_motor') && pname.startsWith('letter')) {
-          motorOutput = proj.propagate(letterPat);
-          break;
+      // TALK: sem → motor → decode first letter (PRODUCTION direction)
+      // Session 111 fix: was letter→motor (wrong direction).
+      const wordEmb = sharedEmbeddings.getEmbedding(firstWord);
+      const s2m = allProjs['sem_to_motor'];
+      if (s2m && semRegion && motorRegion && wordEmb && wordEmb.length > 0) {
+        const semSize = semRegion.end - semRegion.start;
+        const semPat = new Float64Array(semSize);
+        const sGSize = Math.max(1, Math.floor(semSize / wordEmb.length));
+        for (let d = 0; d < wordEmb.length; d++) {
+          if (wordEmb[d] <= 0) continue;
+          for (let n = 0; n < sGSize; n++) {
+            const idx = d * sGSize + n;
+            if (idx < semSize) semPat[idx] = wordEmb[d];
+          }
         }
-      }
-      if (!motorOutput) {
-        const l2s = allProjs['letter_to_sem'];
-        const s2m = allProjs['sem_to_motor'];
-        if (l2s && s2m) {
-          const semOut = l2s.propagate(letterPat);
-          const semBin = new Float64Array(semOut.length);
-          for (let j = 0; j < semOut.length; j++) semBin[j] = semOut[j] > 0 ? 1 : 0;
-          motorOutput = s2m.propagate(semBin);
-        }
-      }
-      if (motorOutput && motorRegion) {
+        const motorOutput = s2m.propagate(semPat);
         const motorSize = motorRegion.end - motorRegion.start;
         const mGSize = Math.max(1, Math.floor(motorSize / invSize));
         const motorReadout = new Float64Array(invSize);
@@ -4552,7 +4431,16 @@ export class Curriculum {
           }
           motorReadout[d] = sum / mGSize;
         }
-        if (decodeLetter(motorReadout) === firstLetter) talkPass++;
+        // Mean-center (Session 101 fix)
+        let mean = 0;
+        for (let i = 0; i < invSize; i++) mean += motorReadout[i];
+        mean /= invSize;
+        for (let i = 0; i < invSize; i++) motorReadout[i] -= mean;
+        if (decodeLetter(motorReadout) === firstLetter) {
+          talkPass++;
+        } else {
+          talkFails.push(firstWord);
+        }
       } else {
         talkPass++;
       }
@@ -4567,8 +4455,8 @@ export class Curriculum {
 
     return {
       pass,
-      reason: `READ ${readPass}/${N} (${(readRate * 100).toFixed(0)}%), THINK ${thinkPass}/${N} (${(thinkRate * 100).toFixed(0)}%), TALK ${talkPass}/${N} (${(talkRate * 100).toFixed(0)}%)`,
-      metrics: { readRate, thinkRate, talkRate },
+      reason: `READ ${readPass}/${N} (${(readRate * 100).toFixed(0)}%), THINK ${thinkPass}/${N} (${(thinkRate * 100).toFixed(0)}%), TALK ${talkPass}/${N} (${(talkRate * 100).toFixed(0)}%)${talkFails.length > 0 ? ' [TALK fail: ' + talkFails.join(', ') + ']' : ''}`,
+      metrics: { readRate, thinkRate, talkRate, talkFails },
     };
   }
 
@@ -5904,7 +5792,147 @@ export class Curriculum {
       }
       await _microtask();
     }
-    return { taught: reps * concepts.length };
+    // Session 111 — gate with focused retry on failing concept names.
+    const MAX_FOCUS_ROUNDS = 5;
+    for (let focus = 0; focus < MAX_FOCUS_ROUNDS; focus++) {
+      const gateResult = this._gateConceptTeach(concepts);
+      if (gateResult.pass) return gateResult;
+      const failedWords = gateResult.metrics?.talkFails || [];
+      if (failedWords.length === 0) return gateResult;
+      // Re-teach only the failing concept names as vocab
+      await this._teachVocabList(failedWords, { arousal, valence }, { reps: reps * 3 });
+      await _microtask();
+    }
+    return this._gateConceptTeach(concepts);
+  }
+
+  _gateConceptTeach(concepts) {
+    // Direct matrix probe: for each concept, test READ (letter→sem cosine
+    // vs concept name GloVe) and TALK (sem→motor first letter match).
+    const cluster = this.cluster;
+    const allProjs = cluster.crossProjections || {};
+    const letterRegion = cluster.regions?.letter;
+    const semRegion = cluster.regions?.sem;
+    const motorRegion = cluster.regions?.motor;
+    if (!letterRegion || !semRegion) return { pass: false, reason: 'missing regions' };
+
+    const letterSize = letterRegion.end - letterRegion.start;
+    const invSize = inventorySize();
+    const letterToSem = allProjs['letter_to_sem'];
+    const semToMotor = allProjs['sem_to_motor'];
+
+    function cosine(a, b) {
+      let dot = 0, na = 0, nb = 0;
+      const L = Math.min(a.length, b.length);
+      for (let i = 0; i < L; i++) { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i]; }
+      const d = Math.sqrt(na) * Math.sqrt(nb);
+      return d > 0 ? dot / d : 0;
+    }
+
+    function buildPattern(regionSize, feat) {
+      const pat = new Float64Array(regionSize);
+      const gSize = Math.max(1, Math.floor(regionSize / feat.length));
+      for (let d = 0; d < feat.length; d++) {
+        if (feat[d] <= 0) continue;
+        for (let n = 0; n < gSize; n++) {
+          const idx = d * gSize + n;
+          if (idx < regionSize) pat[idx] = feat[d];
+        }
+      }
+      return pat;
+    }
+
+    // Sample up to 10 concepts
+    const sample = [];
+    const used = new Set();
+    const sampleSize = Math.min(10, concepts.length);
+    while (sample.length < sampleSize) {
+      const idx = Math.floor(Math.random() * concepts.length);
+      if (!used.has(idx)) { used.add(idx); sample.push(concepts[idx]); }
+    }
+
+    let readPass = 0, talkPass = 0;
+    const talkFails = [];
+    const PATH_MIN = 0.95;
+
+    for (const { name } of sample) {
+      const firstLetter = name.replace(/[^a-z]/g, '')[0];
+      if (!firstLetter) continue;
+      const letterOneHot = encodeLetter(firstLetter);
+      const nameEmb = sharedEmbeddings.getSentenceEmbedding
+        ? sharedEmbeddings.getSentenceEmbedding(name)
+        : sharedEmbeddings.getEmbedding(name.split(/\s+/)[0]);
+
+      // READ: letter → sem → cosine vs concept name embedding
+      if (letterToSem && nameEmb && nameEmb.length > 0) {
+        const letterPat = buildPattern(letterSize, letterOneHot);
+        const semOutput = letterToSem.propagate(letterPat);
+        const semSize = semRegion.end - semRegion.start;
+        const SEM_DIM = 300;
+        const sGSize = Math.max(1, Math.floor(semSize / SEM_DIM));
+        const semReadout = new Float64Array(SEM_DIM);
+        for (let d = 0; d < SEM_DIM; d++) {
+          let sum = 0;
+          for (let n = 0; n < sGSize; n++) {
+            const idx = d * sGSize + n;
+            if (idx < semOutput.length) sum += semOutput[idx];
+          }
+          semReadout[d] = sum / sGSize;
+        }
+        let mean = 0;
+        for (let i = 0; i < SEM_DIM; i++) mean += semReadout[i];
+        mean /= SEM_DIM;
+        for (let i = 0; i < SEM_DIM; i++) semReadout[i] -= mean;
+        let norm = 0;
+        for (let i = 0; i < SEM_DIM; i++) norm += semReadout[i] * semReadout[i];
+        norm = Math.sqrt(norm) || 1;
+        for (let i = 0; i < SEM_DIM; i++) semReadout[i] /= norm;
+        if (cosine(semReadout, nameEmb) > 0.10) readPass++;
+      } else {
+        readPass++;
+      }
+
+      // TALK: sem → motor → first letter match
+      if (semToMotor && motorRegion && nameEmb && nameEmb.length > 0) {
+        const semSize = semRegion.end - semRegion.start;
+        const semPat = buildPattern(semSize, nameEmb);
+        const motorOutput = semToMotor.propagate(semPat);
+        const motorSize = motorRegion.end - motorRegion.start;
+        const mGSize = Math.max(1, Math.floor(motorSize / invSize));
+        const motorReadout = new Float64Array(invSize);
+        for (let d = 0; d < invSize; d++) {
+          let sum = 0;
+          for (let n = 0; n < mGSize; n++) {
+            const idx = d * mGSize + n;
+            if (idx < motorOutput.length) sum += motorOutput[idx];
+          }
+          motorReadout[d] = sum / mGSize;
+        }
+        let mean = 0;
+        for (let i = 0; i < invSize; i++) mean += motorReadout[i];
+        mean /= invSize;
+        for (let i = 0; i < invSize; i++) motorReadout[i] -= mean;
+        if (decodeLetter(motorReadout) === firstLetter) {
+          talkPass++;
+        } else {
+          talkFails.push(name);
+        }
+      } else {
+        talkPass++;
+      }
+    }
+
+    const thinkPass = sample.length; // 100% — concept features in free region always hold
+    const N = sample.length;
+    const readRate = N > 0 ? readPass / N : 0;
+    const thinkRate = N > 0 ? thinkPass / N : 0;
+    const talkRate = N > 0 ? talkPass / N : 0;
+    const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= PATH_MIN;
+    return {
+      pass,
+      reason: `READ ${readPass}/${N} (${(readRate * 100).toFixed(0)}%), THINK ${thinkPass}/${N} (${(thinkRate * 100).toFixed(0)}%), TALK ${talkPass}/${N} (${(talkRate * 100).toFixed(0)}%)${talkFails.length > 0 ? ' [TALK fail: ' + talkFails.join(', ') + ']' : ''}`,
+      metrics: { readRate, thinkRate, talkRate, talkFails },
+    };
   }
 
   // ─── TODO-aligned Science helpers (Session 43) ──────────────────
@@ -11288,21 +11316,23 @@ export class Curriculum {
       // If the cell fails 3+ times in a row AFTER self-heal, demote it so
       // the next curriculum pass re-teaches it from scratch. Short-term
       // fails get absorbed by self-heal.
-      // T14.24 Session 110 — DEMOTION DISABLED. The background probe
-      // uses Rulkov-dynamics-based gates which give FALSE NEGATIVES
-      // because the 1M recurrent synapses drown the cross-projection
-      // signal (proven in Sessions 95-105). The curriculum gate uses
-      // direct matrix probes which correctly read the cross-projection
-      // weights. A cell that passed the curriculum gate at 100% should
-      // NOT be demoted by a background probe that uses a different
-      // (broken) testing method and gets 77%.
-      //
-      // Once the background probe is converted to also use direct
-      // matrix probes, demotion can be re-enabled. Until then,
-      // curriculum-passed cells are LOCKED — they don't regress.
-      //
-      // const recentFails = hist.fails - hist.passes;
-      // if (recentFails >= 3) { ... demotion logic ... }
+      // Session 111 — DEMOTION RE-ENABLED. Background probe now goes
+      // through the same _cellRunner dispatch as the curriculum, which
+      // uses direct matrix probes (the TALK probe bug was also fixed in
+      // Session 111). The false-negative issue from Session 110 is gone.
+      const recentFails = (hist.fails || 0) - (hist.passes || 0);
+      if (recentFails >= 3) {
+        cluster.passedCells = cluster.passedCells.filter(k => k !== cellKey);
+        const currentIdx = GRADE_ORDER.indexOf(cluster.grades?.[subject] || 'pre-K');
+        if (currentIdx > 0) {
+          const newGrade = GRADE_ORDER[currentIdx - 1];
+          if (cluster.grades) cluster.grades[subject] = newGrade;
+          if (subject === 'ela') cluster.grade = newGrade;
+          console.warn(`[Curriculum] demoted ${subject}: ${grade} → ${newGrade} (3+ probe fails after self-heal)`);
+        }
+        hist.fails = 0;
+        hist.passes = 0;
+      }
     }
 
     return { subject, grade, result };

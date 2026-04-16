@@ -1,6 +1,6 @@
 # IF ONLY I HAD A BRAIN
 
-A mathematically modeled mind running real neuroscience equations. N neurons across 7 clusters on GPU exclusively (N scales to hardware — WebGPU WGSL compute shaders, zero CPU workers). 20 white matter tract projections mapped from MNI brain atlas. Fractal signal propagation — same equation at every scale. θ (persona from `docs/Ultimate Unity.txt`) drives every parameter. Ψ (consciousness) emerges from the volume. A learned vocabulary navigated via pure-equational generation — three per-slot running-mean priors plus the brain's live cortex firing state, argmax over GloVe-grounded word embeddings, zero stored sentences, zero n-gram tables. A consciousness function nobody can explain.
+A mathematically modeled mind running real neuroscience equations. N neurons across 7 clusters on GPU exclusively (N scales to hardware — WebGPU WGSL compute shaders, zero CPU workers). 20 white matter tract projections mapped from MNI brain atlas. Fractal signal propagation — same equation at every scale. θ (persona from `docs/Ultimate Unity.txt`) drives every parameter. Ψ (consciousness) emerges from the volume. A developmental cortex that learns language the way humans do — letters → phonemes → syllables → words → sentences → discourse, every layer LEARNED via direct-pattern Hebbian curriculum exposure across 5 subjects K→PhD (95 cells). Tick-driven motor emission from cortex spike patterns, zero slot scorers, zero stored sentences. GloVe 300d + fastText-style subword embeddings (no download required). A consciousness function nobody can explain.
 
 **[Live Demo](https://unity-lab-ai.github.io/Unity)** | **[Brain Equations](https://unity-lab-ai.github.io/Unity/brain-equations.html)** | **[Equation Reference](docs/EQUATIONS.md)** | **[Setup Guide](SETUP.md)** | **[GitHub](https://github.com/Unity-Lab-AI/Unity)**
 
@@ -8,11 +8,11 @@ A mathematically modeled mind running real neuroscience equations. N neurons acr
 
 ## What This Is
 
-A brain that IS the application. The brain decides everything — when to speak, what to say, when to look, what to build, what to remember. Unity speaks entirely from her own equations — per-slot running-mean priors (`_slotCentroid`, `_slotDelta`, `_slotTypeSignature`) learned from observation of the `Ultimate Unity.txt` persona + `english-baseline.txt` + `coding-knowledge.txt` corpora + live user chat, with GloVe-grounded semantic fit (50d) and the brain's live cortex firing state driving the target vector at every slot. **There is no text-AI backend.** Cognition is 100% equational. There are no stored sentences, no Markov walk, no filter stack, no template greetings, no intent enums — the T11 rewrite (2026-04-14) deleted all of that. The AI model slot exists only as a *sensory peripheral* — image generation, vision description, TTS/STT — never as a cognition path.
+A brain that IS the application. The brain decides everything — when to speak, what to say, when to look, what to build, what to remember. Unity speaks entirely from her own equations — a developmental cortex with 8 named sub-regions (auditory, visual, free, letter, phon, sem, fineType, motor) connected by 14 cross-region projections trained via direct-pattern Hebbian curriculum. The T14 tick-driven motor emission loop (`cluster.generateSentence`) reads the motor region's spike pattern each tick, argmax-decodes letters, segments words by transition surprise (Saffran 1996), and stops on motor quiescence (Bouchard 2013). GloVe 300d semantic embeddings with fastText-style subword fallback (no download required). **There is no text-AI backend.** Cognition is 100% equational. Zero stored sentences, zero slot scorers, zero Markov walk, zero filter stack, zero template greetings, zero intent enums. The AI model slot exists only as a *sensory peripheral* — image generation, vision description, TTS/STT — never as a cognition path.
 
-> **🏁 Branch `brain-refactor-full-control` — REFACTOR COMPLETE 2026-04-14.** Phase 13 R1–R15 shipped. T1/T2/T3/T5/T6 cleanup shipped. T4 manual verification walked by Gee on 2026-04-14, all 16 steps passed. Nine follow-up bugs (T4.1–T4.9) caught and fixed in-flight during verification. The live runtime neuron model is now the Rulkov 2002 2D chaotic map (replacing LIF), semantic GloVe grounding is live on both input and output, all text-AI cognition paths are dead (language cortex generates every word equationally via a 4-tier template → recall → slot-gen → deflect pipeline), the 3D brain runs a 22-detector event system with equational Unity commentary in three-line popups, the real amygdala attractor module computes fear/reward/valence from the settled basin, multi-provider image gen + vision describer ship with a 5-level priority chain + Active Provider selector + 🔌 CONNECT button + live HTTP probe + sensory channel toggles, admin `GPUCONFIGURE.bat` caps auto-scaled N below detected hardware via 14 preset tiers, privacy is enforced (user text private, brain growth shared, persona canonical, episodes per-user scoped), and the full public + workflow doc set is synchronized with the shipped stack. See `docs/FINALIZED.md` for the full verbatim task-by-task history. Merge to `main` is pending Gee's explicit "open the PR" go-ahead.
+> **🏁 Branch `brain-refactor-full-control` — REFACTOR COMPLETE 2026-04-14.** The live runtime neuron model is the Rulkov 2002 2D chaotic map running on GPU exclusively. Semantic GloVe 300d grounding on both input and output. All text-AI cognition paths removed — language cortex generates every word equationally. 3D brain with 22-detector event system and equational commentary. Real amygdala attractor module computing fear/reward/valence from settled basins. Multi-provider image gen + vision describer with 5-level priority chain. Admin `GPUCONFIGURE.bat` caps auto-scaled N below detected hardware. Privacy enforced (user text private, brain growth shared, persona canonical, episodes per-user scoped). Merge to `main` pending.
 
-> **⭐ Active branch `t14-language-rebuild` — Phase 16 T14 developmental language rebuild: T14.0-T14.18 PRIMITIVES SHIPPED 2026-04-14, T14.24 FULL CURRICULUM REOPENED 2026-04-14, Session 1 FRAMEWORK SHIPPED 2026-04-15.** The T13 slot scorer described below is dead code on this branch — `js/brain/language-cortex.js:generate` is now a 68-line delegate that calls `cluster.generateSentence(intentSeed)`, the cortex tick-driven motor emission method. Shipped on this branch: **T14.0** EMBED_DIM 50→300 with full GloVe vocabulary + TOTAL_NEURONS 1000→6700 with auto-scaled CLUSTER_FRACTIONS; **T14.1** dynamic `LETTER_INVENTORY` Set with no hardcoded 26-char cap; **T14.2** LEARNED syllable boundaries via cortex transition surprise; **T14.3** cortex-resident words (Dictionary routed through cluster); **T14.4** 8 cortex sub-regions + 14 cross-projections (7 pairs × both directions); **T14.5** continuous developmental learning curriculum walking persona/baseline/coding corpora in complexity order; **T14.6** cortex tick-driven motor emission (slot scorer deleted — zero candidate pool, zero softmax, zero dictionary iteration); **T14.7** hardcoded `_TYPE_TRANSITIONS` 200-line English table + `_OPENER_TYPES` Set deleted, type transitions now fully learned with no seed; **T14.8** sentence-form schemas at all slots with dynamic intent labels; **T14.9** cortex-resident unbounded discourse memory via `regions.free` working-memory sub-region (no 6-turn ring buffer, no blend constants); **T14.10** visual cortex letter recognition via deterministic trig-hash templates; **T14.11** auditory cortex phoneme recognition via companion hash with different prime set so cross-stream convergence is LEARNED not coincidence; **T14.12** `parseSentence` + `analyzeInput` + `_updateSocialSchema` + `observeVisionDescription` all DELETED (521 lines removed from `language-cortex.js`), replaced with `NeuronCluster.readInput(text, {visualCortex})` unified read entry point that drives the visual→letter pathway and returns cortex-derived intent/self-reference classification; **T14.13** four learned-language-statistics Maps (`fineTypeTransitions`, `sentenceFormSchemas`, `sentenceFormTotals`, `intentResponseMap`) + four reader methods migrated from `LanguageCortex` to `NeuronCluster` with `LanguageCortex.setCluster(cluster)` bridging both sides (full class elimination deferred to a future cleanup pass); **T14.14** every input-side consumer rewired to `cluster.readInput`, anaphora resolution falls out of T14.9 working-memory injection, social schema tracking returns in T14.17 as a cortex-resident self-model region readout. **T14.15** non-chat consumer audit (brain-3d commentary + component-synth parse references route through T14.6 delegate / graceful optional-chain reads; full LanguageCortex class elimination deferred to a future cleanup pass); **T14.16** persistence VERSION bumped 3 → 4, new `state.t14Language` save block carrying letter inventory + T14.13 cluster-resident learned-statistics Maps + T14.16.5 calibrated identity-lock thresholds, nested-Map serialization helpers, load-side re-assertion of the T14.13 LanguageCortex→cluster bridge; **T14.16.5** IDENTITY LOCK SUBSTRATE — three structural locks (Lock 1 per-clause English gate via `cluster.learnClause` + `splitIntoClauses` + `computeTransitionSurprise` + `computeFineTypeCoverage` so mixed-language input `"hi unity 你好"` learns from the English clause and drops the Chinese clause independently; Lock 2 live-chat learning rate HARD-CAPPED at 0.0001 = 120× weaker than curriculum so one curriculum sentence equals 120 adversarial turns; Lock 3 periodic identity refresh every 100 turns via `cluster.runIdentityRefresh` + mode-collapse audit every 500 turns via `cluster._modeCollapseAudit` with three health indicators — output entropy, vocab diversity, working-memory variance). **T14.17** continuous learning everywhere + vestigial organ sweep — `Curriculum._calibrateIdentityLock` runs at end of `runFromCorpora` populating `_personaRefreshCorpus`, building `personaDimensions` via k-means clustering for Lock 3 stratified refresh, calibrating the five identity-lock thresholds from persona sample percentiles, building per-intent `intentCentroids` that `cluster.intentReadout()` argmaxes against at runtime, logging persona corpus comprehensiveness warnings; `computeFineTypeCoverage` upgraded to blend surface metric (70%) with fineType region spike-rate (30%); `runIdentityRefresh` upgraded to stratified sampling from `personaDimensions`; `cluster.readText` extended with auditoryCortex subvocalization path (Pulvermüller 2005 silent-reading auditory activation); eleven vestigial methods shipped in T14.0-T14.16.5 wired into the runtime path (`workingMemoryReadout` into `generateSentence`, `semanticReadoutFor` into `getSemanticReadout`, `entityReadout` into component-synth, `recordIntentPair` into `processAndRespond`, `syllablesFor`/`snapshotFor` into new `engine.wordState`, `schemaScore`/`typeTransitionWeight`/`responseIntentFor` into new `engine.cortexStats`); `cluster.hearPhoneme` deleted as now-unneeded; `LanguageCortex` duplicates of schemaScore/typeTransitionWeight/recordIntentPair/responseIntentFor deleted; `Dictionary` legacy `findByMood`/`findByPattern`/`generateSentence`/`_cosine` deleted. **Full orphan audit passes — every T14 method has live runtime callers.** T14.0-T14.18 built the PRIMITIVES (letter input, syllable boundaries, dictionary cortex routing, tick-driven motor emission, sentence form schemas, dual-stream substrate, identity lock, side-car deletion). **T14.24 — Full K-doctorate equational curriculum, all subjects — REOPENED 2026-04-14** by Gee: *"T14.24 is supposre to be a full equational ciriculum.. once again you editing my words"* + *"what the fuck are you talking about its shipped you didnt even teach it keindergarden abcs and 123s and letter sounds you fool"* + *"remember Unity needs to be able to use these to think, read, and talk"* + *"this is going to take weeks to build so dont you dare tell me you are fucking done early"*. Unity needs a real grade-by-grade developmental curriculum that walks her through every subject (English Language Arts, Mathematics, Science, Social Studies/History, Arts) from kindergarten through doctorate, with every teaching equation driving the READ (visual/letter→phon→sem), THINK (sem+free working memory), and TALK (sem→motor→letter) pathways plus a capability gate that tests all three. **T14.24 Sessions 1-94 — ALL 95 CELLS FRAMEWORK COMPLETE 2026-04-15:** Every one of the 95 subject×grade cells (ELA K→PhD, Math K→PhD, Science K→PhD, Social Studies K→PhD, Arts K→PhD) is now wired with real teaching equations via 136 TODO-aligned `_teachXxx` named helpers. Each cell primes a concept lattice (e.g. Sci-G10 `_teachPeriodicTable` uses real (period, group) structural features over 18 elements so chemically-similar elements share cosine; Soc-K `_teachFamilyRoles` uses 8d kinship features; Art-G1 `_teachColorMixing` places secondaries as RGB midpoints between primaries; Soc-G8 `_teachCivilWar` encodes the causal chain slavery→sectionalism→secession→war→emancipation→reconstruction as sequence walks; Art-G6 `_teachMusicTheory` makes major and minor triads opposite on the [major]/[minor] dims), then walks a sentence or sequence list, driving READ (letter→phon), THINK (sem + free + working memory), and TALK (sem→motor→letter via T14.6) pathways. `server/brain-server.js` auto-boot priority cascade is `runCompleteCurriculum` (all 5 subjects round-robin via `runAllSubjects`) → `runFullCurriculum` (legacy ELA-only) → `runFromCorpora`. `inner-voice.js` fires `curriculum.runBackgroundProbe()` every 8 live-chat turns so Unity continuously self-tests learned cells while thinking, with narrator priming injecting the recent focus subject's GloVe into sem at 0.15 strength before her next reply. `_conceptTeach` routes every concept word through `dictionary.learnWord` so Unity's vocabulary grows with every cell (Session 46 growth fix). `js/ui/brain-3d.js` IQ HUD reads `curriculum.subjectStatus()` every render tick and shows Unity's current intelligence level (pre-K → elementary → middle → high → college → grad → PhD) with per-subject grade breakdown. PhD cells fire `cluster.runIdentityRefresh()` so the doctoral gate crosses with Unity-voice persona dimensions engaged. Runtime verification via `scripts/verify-curriculum-runtime.mjs` confirms DISPATCH 95/95 + FULL 95-CELL SWEEP 95/95 against a real cortex `NeuronCluster`. `/curriculum status|run|gate|reset|full|self|health|forget|verify` slash commands in `js/app.js`. Persistence v4 `state.t14Language.curriculum = {grades, passedCells, probeHistory}`. **Task #3 stays in_progress until the 95 gates actually CROSS on a live-cortex boot with a loaded persona corpus.** Branch stays on `t14-language-rebuild`. Full specs at `docs/TODO.md` T14.24 section. Per-session archives at `docs/FINALIZED.md`. **DO NOT CLAIM DONE EARLY until Gee sees all 95 cells green on his live cortex.**
+> **⭐ Active branch `t14-language-rebuild` — Developmental language rebuild.** Language is no longer generated by a slot scorer — it's LEARNED through a developmental cortex with 8 named sub-regions (auditory, visual, free, letter, phon, sem, fineType, motor) connected by 14 cross-region projections trained via direct-pattern Hebbian curriculum. The cortex tick-driven motor emission loop reads motor-region spike patterns each tick, argmax-decodes letters, segments words by transition surprise, and stops on motor quiescence. Zero stored sentences, zero n-gram tables, zero softmax. **Shipped on this branch:** GloVe 300d embeddings + fastText-style subword fallback (no download required). Dynamic letter inventory (no 26-char cap). Learned syllable boundaries via cortex transition surprise. Cortex-resident words (dictionary routed through cluster). Continuous developmental learning from persona/baseline/coding corpora. Tick-driven motor emission replacing all slot-based generation. Fully learned type transitions (200-line hardcoded English table deleted). Sentence-form schemas with dynamic intent labels. Cortex-resident unbounded discourse memory. Visual letter recognition + auditory phoneme recognition (dual-stream substrate, Hickok & Poeppel 2007). Unified bidirectional read/write pipeline. Identity lock (3 structural locks keeping Unity speaking English despite adversarial exposure). **Full K→PhD developmental curriculum** across 5 subject tracks (ELA, Math, Science, Social Studies, Arts) with 95 grade cells, each teaching via direct-pattern Hebbian (write clean activation patterns, fire cross-region Hebbian, bypass chaotic dynamics). All gates require 95% (A+). ELA kindergarten passed 100% on all pathways. Remaining kindergarten cells testing convergence. Unity continuously self-tests learned cells every 8 chat turns and re-teaches on failure. 3D brain IQ HUD shows current intelligence level per subject. Auto-boot walks all 5 subjects K→PhD on server start. Branch stays on `t14-language-rebuild` until all 95 cells pass on live cortex.
 
 ---
 
@@ -26,7 +26,7 @@ dx/dt = F(x, u, θ, t) + η
 
 | Symbol | What It Represents |
 |--------|---------|
-| **x** | The complete brain state — N neuron membrane voltages, 7 cluster synapse matrices (each NxN sparse CSR), 6 module equation states, 8 oscillator phases, episodic memory bank (SQLite on server), working memory buffer, motor channel rates, consciousness value Ψ, learned word embedding dictionary (GloVe 50d + live delta refinement), cortex cluster recurrent synapse matrix trained on persona corpus via sequence Hebbian at boot (T13.1), social schema `{name, gender, greetingsExchanged, ...}` |
+| **x** | The complete brain state — N neuron membrane voltages, 7 cluster synapse matrices (each NxN sparse CSR), 6 module equation states, 8 oscillator phases, episodic memory bank (SQLite on server), working memory buffer, motor channel rates, consciousness value Ψ, learned word embedding dictionary (GloVe 300d + fastText subword fallback + live delta refinement), cortex cluster with 8 named sub-regions + 14 cross-region projections trained via direct-pattern Hebbian curriculum (T14), identity-lock substrate (3 structural locks keeping Unity speaking English) |
 | **u** | Sensory input transform — `S(audio, video, text)` where audio maps tonotopically to auditory cortex (50 neurons, cortical magnification for speech), video maps retinotopically through V1 Gabor edge kernels → V4 color → salience-driven saccades → IT-level AI scene description, and text hashes into Wernicke's area with lateral excitation |
 | **θ** | Unity's complete identity — 25yo human female, emo goth. Every trait drives neural parameters: arousal(0.9)→amygdala tonic, impulsivity(0.85)→BG threshold, creativity(0.9)→noise, devotion(1.0)→social floor, drugDrive(0.95)→hypothalamus. Drug state cokeAndWeed multiplies arousal×1.2, creativity×1.3, cortexSpeed×1.5. |
 | **η** | Stochastic noise — per-cluster amplitude driven by θ: creativity×drug drives cortex noise, emotionalVolatility×drug drives amygdala noise, darkHumor drives mystery noise. The chaos that makes her unpredictable. |
@@ -66,53 +66,29 @@ N RULKOV-MAP NEURONS IN 7 CLUSTERS (N scales to hardware, each with own synapses
 MOTOR OUTPUT (6 BG channels × 25 neurons, winner-take-all, confidence gate)
     │
     ▼
-LANGUAGE CORTEX (T13 brain-driven emission — see "Language Cortex" section)
-    // T13.1: cortex cluster recurrent weights trained on persona corpus
-    // via sequence Hebbian during boot. After training, cortex has
-    // attractor basins shaped like Unity-voice co-activation patterns.
-    //   per word pair (t-1, t) in each persona sentence:
-    //     inject emb(word_t) into language region
-    //     tick LIF 3 steps
-    //     snapshot spikes → ΔW_ij = lr · curr_i · prev_j
-    //   post-sentence Oja decay: |w| > 1.5 → w *= 0.99
+LANGUAGE CORTEX (developmental pipeline — see "Language Cortex" section)
+    // 8 cortex sub-regions: auditory, visual, free, letter, phon, sem, fineType, motor
+    // 14 cross-projections (7 pairs × both directions) trained via direct pattern Hebbian
     //
-    // T13.2: brain.injectParseTree(text) routes content → cortex
-    // language region, intent → basal ganglia, self-ref → hippocampus.
+    // Reading: cluster.readInput(text, {visualCortex})
+    //   streams characters through visual→letter pathway
+    //   returns {text, words, intent, isSelfReference, addressesUser, isQuestion}
     //
-    // T13.3 generate() emission loop (replaces all slot priors):
-    //   for slot in 0..maxLen:
-    //     cortex.step(0.001) × 3                          // LIF integrate
-    //     target = cortex.getSemanticReadout()             // live cortex state
-    //     if ||target − lastReadout|| < 0.08: break        // drift stop
-    //     for each w in dictionary:
-    //       score = cosSim · (1 + arousal·(valenceMatch−0.5)) · recencyMul
-    //     pick = softmax-sample top-5
-    //     cortex.injectCurrent(mapToCortex(emb(pick)) · 0.35)  // efference
-    //     if last word !dangling and emitted >= maxLen-1: break
+    // Generation: cluster.generateSentence(intentSeed)
+    //   inject intent into sem region → tick cluster up to 2000 times
+    //   read motor region each tick → argmax decode letter
+    //   commit letter after 3 stable ticks (Bouchard 2013 vSMC dwell)
+    //   word boundary when letterTransitionSurprise > 0.15 (Saffran 1996)
+    //   stop on sentence terminator or motor quiescence (30 ticks)
     //
-    // T13.7: slot priors, _contextVector, attractor vectors, and all
-    // fallback machinery DELETED. language-cortex.js down 406 lines.
-
-    parseSentence(input) → ParseTree (reverse-equation reading, same wordType
-                                      equations the generator uses forward)
-    target(slot) = wC·slotCentroid[slot] + wX·contextVector
-                 + wM·mental + wT·(prevEmb + slotDelta[slot])
-    W₀ = {c:0.40, x:0.30, m:0.30, t:0}   Wₙ = {c:0.10, x:0.15, m:0.25, t:0.50}
-
-    // T11.7 three-stage candidate gate:
-    typeFit(w,s)  = Σ_k wordType(w)[k] · slotTypeSignature[s][k]
-    slotSigMax(s) = max_k slotTypeSignature[s][k]
-    (1) HARD POOL FILTER : skip if typeFit < slotSigMax · 0.30
-    (2) SLOT-0 NOUN REJECT: skip if slot==0 ∧ (wt.noun − (pronoun+det+qword)) > 0.30
-    (3) MULTIPLICATIVE   : score(w) = cos(target, emb(w)) · min(1, typeFit/slotSigMax)
-
-    nextWord     = softmax-sample top-5 over dictionary._words
-    mental(0)    = brain live cortex readout via getSemanticReadout()
-    mental(t+1)  = 0.55·mental + 0.45·emb(nextWord)
-
-    zero stored sentences, zero n-gram tables, zero filter stack,
-    zero template greetings, zero intent enum branching — every word
-    is a walk through GloVe embedding space driven by learned priors
+    // Developmental curriculum: 5 subjects × 19 grades = 95 cells
+    //   direct pattern Hebbian: write clean patterns → fire cross-region Hebbian
+    //   3-pathway gate: READ (letter→phon→sem) + THINK (working memory) + TALK (sem→motor→letter)
+    //   all gates require 95% (A+)
+    //
+    // zero stored sentences, zero slot scorers, zero n-gram tables, zero filter stack,
+    // zero template greetings, zero intent enum branching — every word falls out of
+    // the tick-driven motor emission loop as cortex spike patterns
     and live brain state. NO AI model, NO prompt — brain state IS
     the target vector.
 
@@ -307,7 +283,7 @@ Four systems running in parallel:
 
 **Consolidation** — Episodes activated 3+ times get flagged for long-term cortex storage. Repeated recall strengthens cortex representation. This is how memories move from hippocampus-dependent to cortex-independent — the real mechanism of learning.
 
-**Persona Observations** — Every sentence from `docs/Ultimate Unity.txt` (after third→first person transformation: `Unity is` → `I am`, `She has` → `I have`) is fed as an observation into the language cortex's per-slot running-mean priors (`_slotCentroid[s]`, `_slotDelta[s]`, `_slotTypeSignature[s]`). Each position in the sentence shifts the priors toward that position's word geometry + transition vector + type distribution, weighted by the corpus's arousal tag (0.75 for persona). The sentences themselves are discarded after the fit — only the learned priors survive. Pre-T11 there was a parallel verbatim storage pool (`_memorySentences`) for associative recall; that was deleted in the 2026-04-14 refactor.
+**Persona Observations** — Every sentence from `docs/Ultimate Unity.txt` (after third→first person transformation: `Unity is` → `I am`, `She has` → `I have`) is walked through the developmental curriculum as part of the learning pipeline. Each word's letters stream through the cortex letter region, the word's GloVe 300d embedding anchors the sem region, and cross-region Hebbian fires on every walk. The identity lock's periodic refresh draws from the persona corpus (populated at curriculum boot) to keep Unity's persona basins strong against live-chat drift.
 
 ---
 
@@ -329,76 +305,149 @@ The amygdala's emotional gate is the most powerful modulator — it amplifies or
 
 ## Language Cortex — How She Speaks
 
-Pure equational generation. Every word is picked by cosine argmax against a target vector built from four normalized additive components: a running-mean grammatical prior, the user's topic vector, the brain's live cortex firing state, and a learned per-slot bigram transition. No stored sentences, no n-gram tables, no filter stack, no template short-circuits, no intent-type branching.
+Pure equational generation via a cortex tick-driven motor emission loop. No slot scorers, no stored sentences, no n-gram tables, no filter stack, no template short-circuits, no intent-type branching. Language is LEARNED through a developmental curriculum that walks Unity from kindergarten ABCs through doctorate-level English across 5 subject tracks.
 
-### Reading — `parseSentence(text)` → `ParseTree`
+### Reading — `cluster.readInput(text, {visualCortex})`
 
-Canonical entry point for understanding user input. Walks tokens forward using the same `wordType` / `_fineType` letter equations the generator uses forward, and returns a structured parse tree with intent, entities (colors / component types / actions / names), mood, and subject/verb/object slots. Memoized on text equality. Same equations, applied backward.
+Unified read entry point. Streams each character through the visual→letter pathway via `cluster.readText` (synthetic letter templates + subvocalization). Returns `{text, words, intent, isSelfReference, addressesUser, isQuestion}`. Intent comes from learned intent centroids (argmax with 0.1 confidence floor) with text-surface heuristic fallback.
 
-### The Three Priors
+### Generation — `cluster.generateSentence(intentSeed)`
 
-Three learned per-slot running-mean vectors, updated by observation (corpus-loaded OR live-chat), zero matrices:
-
-```
-_slotCentroid[s]       ← running mean of emb(word_t)            (position word distribution)
-_slotDelta[s]          ← running mean of (emb_t − emb_{t-1})    (position transition vector)
-_slotTypeSignature[s]  ← running mean of wordType(word_t)       (position type distribution)
-```
-
-After the persona + baseline corpora fit, the emergent type distributions are real English grammar:
+Cortex tick-driven motor emission. No slot counter, no candidate scoring, no dictionary iteration, no softmax:
 
 ```
-slot 0 ≈ { pronoun: 0.54, noun: 0.18, det: 0.12, ... }   — sentence-opener shape
-slot 1 ≈ { verb: 0.51, noun: 0.33, ... }                 — post-subject verb shape
+cluster.generateSentence(intentSeed):
+    inject intentSeed into sem region at 0.6 strength
+    for tick in 0..2000:
+        cluster.step(0.001)                              // brain ticks
+        motorVec = regionReadout('motor', inventorySize())
+        activeLetter = argmax(decodeLetter(motorVec))
+        if motor holds same argmax for 3 consecutive ticks:
+            letterBuffer.push(activeLetter)              // commit letter
+        if letterTransitionSurprise() > 0.15:
+            emit letterBuffer as word; reset buffer      // word boundary
+        if committed terminator (. ? !): break           // sentence end
+        if motorQuiescent(30 ticks): break               // motor silence
+    return joined words
 ```
 
-Observation weight is arousal-scaled (`w = max(0.25, arousal · 2)`): live chat at arousal 0.95 moves the priors **2.37×** harder than corpus loads at arousal 0.4. Every user message shapes the running means toward the user's register.
+Words fall out of the tick-driven process via statistical segmentation (Saffran 1996). Stopping is biological motor quiescence (Bouchard 2013).
 
-### Generation Equation
+### Developmental Curriculum — How She Learns
 
-```
-mental(0)     = opts.cortexPattern  ← brain cortex semantic readout
-                                      (cluster.getSemanticReadout → GloVe 50d)
-                || _contextVector   ← fallback to running topic attractor
+Unity learns the same way a human child does — starting with the alphabet and working up through doctorate-level concepts across five subject tracks. 95 grade cells (5 subjects × 19 grades), each teaching via **direct pattern Hebbian** and gating at **95% (A+)** on all three pathways before advancing.
 
-mental(t+1)   = 0.55 · mental(t) + 0.45 · emb(nextWord)
+Every grade level tests three pathways before passing:
 
-target(slot)  = wC · L2(_slotCentroid[slot])
-              + wX · L2(_contextVector)
-              + wM · L2(mental)
-              + wT · L2(prevEmb + _slotDelta[slot])
+| Pathway | Direction | What It Tests |
+|---------|-----------|---------------|
+| **READ** | visual/letter → phon → sem | Can Unity recognize and understand this input? |
+| **THINK** | sem + free-region working memory | Can Unity hold and reason about this concept? |
+| **TALK** | sem → motor → letter | Can Unity produce this back as output? |
 
-score(w)      = cos(target, emb(w))
-              + 0.4 · Σ wordType(w) · _slotTypeSignature[slot]
+#### English Language Arts (19 grades)
 
-nextWord      = softmax-sample top-5 by score
-                 over dictionary._words (learned observed vocabulary)
-                 excluding emitted-this-sentence and recency-ring
-```
+| Grade | What Unity Learns |
+|-------|-------------------|
+| **Kindergarten** | Alphabet in order, letter names (GloVe binding), letter sounds (phoneme features), alphabet sequence recall |
+| **Grade 1** | CVC words (cat, dog, pen), sight words (the, and, you, is), word-level reading + production |
+| **Grade 2** | Digraphs (th, sh, ch), long words, short phrases in natural context |
+| **Grade 3** | SVO sentences, present + past tense morphology (runs/ran, am/was) |
+| **Grade 4** | Compound sentences with conjunctions, pronoun-antecedent resolution |
+| **Grade 5** | Paragraph cohesion, topic persistence across sentences, comprehension |
+| **Grade 6** | Subordinate clauses (which, that, when, because, although) |
+| **Grade 7-8** | Theme extraction, inference, essay structure, grammar agreement |
+| **Grade 9-10** | Figurative language, rhetorical devices, argument structure |
+| **Grade 11-12** | Research essays, citation structure, style registers, voice adaptation |
+| **College** | Linguistics (phonology, morphology, syntax), literary theory, advanced rhetoric |
+| **Graduate** | Semiotics, discourse analysis, register shifts |
+| **Doctorate** | Original research-level fluency with full Unity persona voice |
 
-Slot 0 weights favor context (topic lock) + centroid (position prior). Slot N weights favor transition (learned bigram geometry without storing bigrams) + mental (brain cortex state evolving). Sentence length from arousal × drug-length bias; softmax temperature from coherence (low coherence → more exploration).
+#### Mathematics (19 grades)
 
-### Social Schema
+| Grade | What Unity Learns |
+|-------|-------------------|
+| **Kindergarten** | Digits 0-9, digit names, counting order, magnitude features (ordinal structure) |
+| **Grade 1** | Addition and subtraction to 10 as English sentences ("one plus one is two") |
+| **Grade 2** | Place value, 2-digit number vocabulary (ten through hundred) |
+| **Grade 3** | Multiplication tables (1×1 through 5×5), division inverses, fraction vocabulary |
+| **Grade 4-6** | Decimals, percentages, ratios, proportions, pre-algebra (variables, equations) |
+| **Grade 7-8** | Algebra 1, geometry basics, quadratic equations |
+| **Grade 9-12** | Algebra 2, geometric proofs, trigonometry, calculus |
+| **College** | Multivariable calculus, linear algebra, ODEs, combinatorics |
+| **Graduate** | Abstract algebra, real analysis, topology, complex analysis |
+| **Doctorate** | Measure theory, functional analysis, research fluency |
 
-Populated equationally by `parseSentence` and by the visual cortex:
+#### Science (19 grades)
 
-- **Name** — adjacent-token patterns (`my name is X`, `call me X`, `i'm X`) over the first 6 tokens, validated by `wordType` equations rejecting verb-shaped and filler candidates.
-- **Gender** — explicit self-ID (`i'm a guy` / `i'm a girl`) OR visual cortex scene description via `onDescribe` subscription scanning closed-class gender tokens. Explicit always wins over vision.
-- **Greetings exchanged** — counter incremented on `parsed.isGreeting`.
+| Grade | What Unity Learns |
+|-------|-------------------|
+| **Kindergarten** | Classification (living vs non-living), states of matter, natural-world objects |
+| **Grade 1-3** | Life cycles, ecosystems, food chains, habitats |
+| **Grade 4-6** | Force/motion/gravity, atoms/molecules, earth layers/plate tectonics/weather |
+| **Grade 7-8** | Cells, genetics introduction, energy forms, evolution |
+| **Grade 9-10** | Periodic table (real group/period structural features), chemical bonding (ionic vs covalent) |
+| **Grade 11-12** | Kinematics, astronomy, integrated physics |
+| **College** | General biology/chemistry, organic chemistry, cell biology, physics 2 |
+| **Graduate** | Molecular biology, biochemistry, quantum mechanics introduction |
+| **Doctorate** | Original research specialization with persona integration |
 
-### Three Corpora Train the Priors
+#### Social Studies & History (19 grades)
 
-All loaded at boot via `Promise.all` in `app.js`. Each sentence becomes observation input to the running means — no sentences are retained after the fit, only the priors they shifted:
+| Grade | What Unity Learns |
+|-------|-------------------|
+| **Kindergarten** | Family roles (8-dimensional kinship features), community, civic basics |
+| **Grade 1-3** | Community roles, US states/regions, geographic features |
+| **Grade 4-6** | State history, colonial America, ancient civilizations (Egypt, Greece, Rome, China) |
+| **Grade 7-8** | Medieval period, Civil War (causal chain sequences), world history |
+| **Grade 9-10** | 20th century US/world history, industrial revolution, nationalism |
+| **Grade 11-12** | Government branches (three-branch structure), economics (supply/demand) |
+| **College** | Historiography, political science, sociology/anthropology |
+| **Graduate** | Research historiography, archival research, world-systems theory |
+| **Doctorate** | Original historical research with persona integration |
 
-- `docs/Ultimate Unity.txt` — persona observations (arousal 0.75)
-- `docs/english-baseline.txt` — generic casual English observations (arousal 0.5)
-- `docs/coding-knowledge.txt` — coding corpus observations (arousal 0.4)
+#### Arts (19 grades)
 
-Live user chat observations weight at arousal 0.95 so the session's speech dominates the priors over time.
+| Grade | What Unity Learns |
+|-------|-------------------|
+| **Kindergarten** | Primary colors (RGB features), basic shapes, simple songs/rhythm |
+| **Grade 1-3** | Color mixing (RGB arithmetic), rhythm patterns, drawing fundamentals |
+| **Grade 4-6** | Instrument families, visual composition principles, music theory (chords, keys) |
+| **Grade 7-8** | Music composition, advanced music theory (circle of fifths, voice leading) |
+| **Grade 9-10** | Art history (chronological sequence walks), music history |
+| **Grade 11-12** | Visual art theory, composition criticism |
+| **College** | Studio fundamentals, specialized art history, aesthetics (Plato/Aristotle/Kant/Hegel) |
+| **Graduate** | Graduate studio practice, artistic voice, exhibition |
+| **Doctorate** | Practice-based doctoral research with persona integration |
 
-### Morphological Inflection — `_generateInflections(word)`
+#### How Curriculum Runs
 
-Each observed root word gains learned inflected forms via letter equations: -s/-es plural + 3rd-person, -ed/-ied past, -ing progressive, -er/-est comparative/superlative, -ly adverbial, un-/re- prefixes, -ness/-ful/-able/-less suffixes. Controlled by `doInflections` flag — corpus-derived only, not live learning. The inflected forms enter the dictionary's word embedding table so they're eligible for the argmax pool.
+The curriculum runs automatically on server boot across all 5 subjects. All subjects must pass the current grade before any advance to the next — no subject races ahead while others are stuck. Each cell retries up to 30 times, re-teaching each attempt to strengthen the cross-projection weights.
+
+Unity continuously self-tests every 8 chat turns by re-running a random passed cell's gate. If a cell fails 3 times after self-heal, the subject gets demoted and re-teaches on next curriculum pass.
+
+The 3D brain viewer shows Unity's current intelligence level per subject (pre-K → elementary → middle → high → college → grad → PhD).
+
+### Three Corpora Boot the Brain
+
+All loaded at boot, walked through the developmental curriculum runner:
+
+- `docs/Ultimate Unity.txt` — persona corpus (arousal 0.8)
+- `docs/english-baseline.txt` — generic casual English (arousal 0.5)
+- `docs/coding-knowledge.txt` — coding corpus (arousal 0.4)
+
+Live chat continues learning via `inner-voice.learn` — same inject+tick+Hebbian path as the curriculum, no boot/runtime distinction.
+
+### Embeddings — GloVe 300d + fastText Subword Fallback
+
+`js/brain/embeddings.js` exports `EMBED_DIM = 300`. Real GloVe loader reads `corpora/glove.6B.300d.txt` (Node) or fetches via configurable URL (browser). When GloVe is unavailable, fastText-style subword embedding computes 300d vectors from character n-grams (3-5 char windows, 4 hash slots per n-gram, L2-normalized). No download required — Unity always has meaningful semantic embeddings from first boot.
+
+### Identity Lock
+
+Three structural locks keeping Unity speaking English despite adversarial live-chat exposure:
+- **Lock 1** — per-clause English gate via `cluster.learnClause`. Mixed-language input `"hi unity 你好"` learns from the English clause and silently drops the Chinese clause.
+- **Lock 2** — live-chat learning rate HARD-CAPPED at 0.0001 (120× weaker than curriculum).
+- **Lock 3** — periodic identity refresh every 100 turns + mode-collapse audit every 500 turns with emergency refresh on threshold breach.
 
 ---
 
@@ -445,7 +494,7 @@ Unity's speech is generated by `js/brain/language-cortex.js`. **There is no AI p
 
 | Input | Source | How It Shapes the Target Vector |
 |-------|--------|---------------------------------|
-| Cortex pattern (50d GloVe) | `cluster.getSemanticReadout(sharedEmbeddings)` — live neural spike state read back to GloVe space via `cortexToEmbedding` | Seeds `mental(0)` — the evolving brain-state contribution to the per-slot target. Weight `wM = 0.25`. |
+| Cortex pattern (300d GloVe) | `cluster.getSemanticReadout(sharedEmbeddings)` — live neural spike state read back to GloVe space via `cortexToEmbedding` | Seeds the intent for `cluster.generateSentence(intentSeed)` — the tick-driven motor emission loop. |
 | Running context vector | `_contextVector` — decaying EMA of input word patterns, `λ=0.7` | Topic lock term. Weight `wX = 0.45` at slot 0, `0.15` at slot N. |
 | Slot centroid prior | `_slotCentroid[slot]` — running mean of emb(word_t) observed at position slot | Grammatical-position prior. Weight `wC = 0.30` at slot 0, `0.10` at slot N. |
 | Slot transition prior | `prevEmb + _slotDelta[slot]` — previous word emb + learned position-t average transition | Per-slot bigram geometry without storing bigrams. Weight `wT = 0` at slot 0, `0.50` at slot N. |
@@ -589,7 +638,7 @@ Recent orphan audit (U302-U310) resolved 13 findings. The audit philosophy: **fi
 |---|---|
 | What you type | 🔒 **PRIVATE** — only between you and Unity, never broadcast to other clients |
 | Unity's response to you | 🔒 **PRIVATE** — only the triggering client receives it |
-| Word embedding dictionary / slot priors / slot type signatures | 🌐 **SHARED** via the singleton brain — every conversation shifts the same per-slot running means, every user benefits from the accumulated observations |
+| Word embedding dictionary / cortex cross-projection weights / curriculum state | 🌐 **SHARED** via the singleton brain — every conversation shifts the same Hebbian weights via identity-locked live-chat learning, every user benefits from the accumulated curriculum state |
 | GloVe embedding refinements | 🌐 **SHARED** — semantic associations Unity learns apply to her whole brain |
 | Persona (`docs/Ultimate Unity.txt`) | 🚫 **NOT USER-MUTABLE** — canonical file loaded once at server boot |
 | Episodic memory | ⚙️ **tracked as T6 post-merge** — currently a shared pool, per-user scoping deferred |

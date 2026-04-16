@@ -2080,6 +2080,31 @@ const httpServer = http.createServer((req, res) => {
     return;
   }
 
+  // ── Explicit routes for public HTML pages (prevent hanging) ──
+  // These pages are pure static HTML — serve them immediately without
+  // going through the generic fs.readFile path which can stall when
+  // the event loop is busy with curriculum/GPU work.
+  const PUBLIC_PAGES = {
+    '/unity-guide.html': path.join(__dirname, '..', 'unity-guide.html'),
+    '/brain-equations.html': path.join(__dirname, '..', 'brain-equations.html'),
+    '/dashboard.html': path.join(__dirname, '..', 'dashboard.html'),
+    '/gpu-configure.html': path.join(__dirname, '..', 'gpu-configure.html'),
+  };
+  if (req.method === 'GET' && PUBLIC_PAGES[req.url]) {
+    const pagePath = PUBLIC_PAGES[req.url];
+    try {
+      const content = fs.readFileSync(pagePath, 'utf8');
+      res.writeHead(200, {
+        'Content-Type': 'text/html',
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+      });
+      res.end(content);
+    } catch (e) {
+      res.writeHead(404); res.end('Not found');
+    }
+    return;
+  }
+
   if (req.method === 'OPTIONS') {
     res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET,POST,OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type,Authorization' });
     res.end();
@@ -2360,12 +2385,27 @@ httpServer.listen(PORT, () => {
 });
 
 // Graceful shutdown
+// Session 111 — force exit on Ctrl+C. The curriculum's tight async
+// loops can starve the event loop so a graceful SIGINT never processes.
+// First Ctrl+C sets the shutdown flag (curriculum checks this and
+// breaks). Second Ctrl+C force-kills immediately.
+let _shutdownRequested = false;
+global._brainShutdownRequested = false;
+
 process.on('SIGINT', () => {
-  console.log('\n[Brain] Shutting down — saving everything...');
-  brain.saveWeights();
-  brain.saveConversations();
-  if (brain._db) brain._db.close();
-  brain.stop();
+  if (_shutdownRequested) {
+    console.log('\n[Brain] FORCE KILL — second Ctrl+C received.');
+    process.exit(1);
+  }
+  _shutdownRequested = true;
+  global._brainShutdownRequested = true;
+  console.log('\n[Brain] Shutting down — saving everything... (press Ctrl+C again to force kill)');
+  try {
+    brain.saveWeights();
+    brain.saveConversations();
+    if (brain._db) brain._db.close();
+    brain.stop();
+  } catch {}
   process.exit(0);
 });
 process.on('SIGTERM', () => {
