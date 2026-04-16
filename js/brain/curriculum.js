@@ -2103,15 +2103,17 @@ export class Curriculum {
     // injections. After enough reps, the cortex learns the alphabet
     // song — injecting letter N biases the next-tick argmax toward
     // letter N+1.
+    // T14.24 Session 104 — learn EVERY TICK per letter, not once
+    // after the entire alphabet walk (where only 'z' state survived).
     for (let rep = 0; rep < reps; rep++) {
       for (let i = 0; i < ALPHABET.length; i++) {
         cluster.injectLetter(ALPHABET[i], 1.0);
         for (let t = 0; t < ticksPerLetter; t++) {
           cluster.step(0.001);
+          cluster.learn(0);
           this.stats.totalTicks++;
         }
       }
-      cluster.learn(0);
       await _microtask();
     }
     return { taught: reps * ALPHABET.length };
@@ -2139,11 +2141,12 @@ export class Curriculum {
         if (nameEmb && nameEmb.length > 0 && cluster.regions?.sem) {
           cluster.injectEmbeddingToRegion('sem', nameEmb, 0.7);
         }
+        // T14.24 Session 104 — Hebbian every tick
         for (let t = 0; t < ticksPerRep; t++) {
           cluster.step(0.001);
+          cluster.learn(0);
           this.stats.totalTicks++;
         }
-        cluster.learn(0);
         this.stats.lettersSeen++;
       }
       await _microtask();
@@ -2170,11 +2173,12 @@ export class Curriculum {
         if (phonFeat && phonFeat.length > 0 && cluster.regions?.phon) {
           cluster.injectEmbeddingToRegion('phon', phonFeat, 0.7);
         }
+        // T14.24 Session 104 — Hebbian every tick
         for (let t = 0; t < ticksPerRep; t++) {
           cluster.step(0.001);
+          cluster.learn(0);
           this.stats.totalTicks++;
         }
-        cluster.learn(0);
       }
       await _microtask();
     }
@@ -2233,18 +2237,21 @@ export class Curriculum {
           cluster.injectEmbeddingToRegion('phon', phonFeat, 0.6);
         }
 
-        // Tick the cortex so the injection propagates through the
-        // recurrent weights and the cross-projections reach steady state
+        // T14.24 Session 104 — Hebbian fires EVERY TICK, not once
+        // after 4 ticks of settling. The injection's effect is strongest
+        // in the spike pattern on tick 1; by tick 4 chaotic recurrent
+        // dynamics have washed out the signal. Firing Hebbian on every
+        // tick captures the clean co-activation from the injection
+        // while it's still fresh, then reinforces the emerging basin
+        // on subsequent ticks. Real neurons wire together AT THE TIME
+        // they fire together, not 4 ticks later.
         for (let t = 0; t < TEACH_TICKS_PER_REP; t++) {
           cluster.step(0.001);
+          cluster.learn(0);
           this.stats.totalTicks++;
         }
-
-        // Unrewarded Hebbian on every cross-projection via cluster.learn
-        cluster.learn(0);
         this.stats.lettersSeen++;
       }
-      // Yield every rep so event loop breathes during the walk
       await _microtask();
     }
 
@@ -2285,11 +2292,12 @@ export class Curriculum {
           cluster.injectEmbeddingToRegion('motor', letterVec, 0.7);
         }
 
+        // T14.24 Session 104 — Hebbian every tick (same as forward)
         for (let t = 0; t < TEACH_TICKS_PER_REP; t++) {
           cluster.step(0.001);
+          cluster.learn(0);
           this.stats.totalTicks++;
         }
-        cluster.learn(0);
         this.stats.lettersSeen++;
       }
       await _microtask();
@@ -2636,12 +2644,13 @@ export class Curriculum {
           cluster.injectEmbeddingToRegion('phon', magFeat, 0.6);
         }
 
+        // T14.24 Session 104 — Hebbian every tick
         for (let t = 0; t < TEACH_TICKS_PER_REP; t++) {
           cluster.step(0.001);
+          cluster.learn(0);
           this.stats.totalTicks++;
         }
-        cluster.learn(0);
-        this.stats.lettersSeen++;   // reuse counter — digits as "letters"
+        this.stats.lettersSeen++;
       }
       await _microtask();
     }
@@ -2669,11 +2678,12 @@ export class Curriculum {
           cluster.injectEmbeddingToRegion('motor', digitVec, 0.7);
         }
 
+        // T14.24 Session 104 — Hebbian every tick
         for (let t = 0; t < TEACH_TICKS_PER_REP; t++) {
           cluster.step(0.001);
+          cluster.learn(0);
           this.stats.totalTicks++;
         }
-        cluster.learn(0);
         this.stats.lettersSeen++;
       }
       await _microtask();
