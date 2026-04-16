@@ -11024,7 +11024,42 @@ export class Curriculum {
     ];
     await this._teachThemeExtraction(PASSAGES);
     await this._teachInference(INF_PAIRS);
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── COMMON CORE ELA G7: text analysis + argumentation ──
+    const ELA_G7_VOCAB = [
+      'inference', 'imply', 'explicit', 'implicit', 'analyze',
+      'structure', 'contribute', 'interact', 'develop', 'advance',
+      'plot', 'subplot', 'dramatic', 'irony', 'verbal', 'situational',
+      'propaganda', 'rhetoric', 'persuade', 'convince', 'credibility',
+      'pronoun', 'case', 'subjective', 'objective', 'possessive',
+      'intensive', 'vague', 'shift', 'variation', 'dialect', 'register',
+    ];
+    await this._teachVocabList(ELA_G7_VOCAB, ctx, { reps: 3 });
+
+    // ═══════════════════════════════════════════════════════════════
+    // ELA G7 FINAL EXAM
+    // ═══════════════════════════════════════════════════════════════
+    const FINAL = [
+      // Inference — draw conclusions from evidence
+      { prompt: ['cold', 'wind', 'shiver', 'feeling'], answer: 'cold' },
+      { prompt: ['empty', 'plate', 'he', 'was'], answer: 'hungry' },
+      { prompt: ['packed', 'umbrella', 'weather'], answer: 'rain' },
+      { prompt: ['plants', 'brown', 'drooping', 'need'], answer: 'water' },
+      // Theme extraction
+      { prompt: ['team', 'lost', 'trained', 'harder', 'won', 'theme'], answer: 'perseverance' },
+      { prompt: ['saved', 'money', 'gift', 'mom', 'happy', 'theme'], answer: 'generosity' },
+      { prompt: ['told', 'truth', 'grateful', 'trust', 'theme'], answer: 'honesty' },
+      // Literary devices
+      { prompt: ['sun', 'smiled', 'garden', 'device'], answer: 'personification' },
+      { prompt: ['heart', 'was', 'a', 'drum', 'device'], answer: 'metaphor' },
+      // Vocabulary
+      { prompt: ['implicit', 'means'], answer: 'implied' },
+      { prompt: ['irony', 'when', 'opposite'], answer: 'expected' },
+    ];
+    const finalResult = this._gateComprehension(FINAL);
+    if (finalResult.pass) return { pass: true, reason: `FINAL: ${finalResult.reason}` };
+    return this._teachVocabList(ELA_G7_VOCAB.slice(0, 15), ctx, { reps: 3 });
   }
 
   // ─── TODO-aligned ELA-G8 helpers (Session 35) ────────────────────
@@ -11192,7 +11227,51 @@ export class Curriculum {
     ];
     // Session 41 — TODO-aligned linear equation teaching
     await this._teachLinearEquations();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── COMMON CORE MATH G7: proportional relationships + probability ──
+    const MATH_G7_EXTRA = [
+      // proportional relationships
+      'a proportional relationship has a constant ratio',
+      'the constant of proportionality is k in y equals kx',
+      'simple interest is principal times rate times time',
+      'tax is a percent of the price', 'tip is a percent of the meal',
+      'markup is how much a store adds to the price',
+      'discount is how much the price is reduced',
+      'percent increase means the new value is bigger',
+      'percent decrease means the new value is smaller',
+      // probability
+      'probability is how likely an event is',
+      'probability near zero means unlikely', 'probability near one means likely',
+      'probability of one half means equally likely',
+      'a tree diagram shows all outcomes',
+      'compound probability multiplies the individual probabilities',
+      'the sample space is all possible outcomes',
+      'random sampling means every item has an equal chance',
+    ];
+    await this._teachSentenceList(MATH_G7_EXTRA, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ═══════════════════════════════════════════════════════════════
+    // MATH G7 FINAL EXAM
+    // ═══════════════════════════════════════════════════════════════
+    const FINAL = [
+      { prompt: ['y', 'equals', 'm', 'x', 'plus', 'b', 'm', 'is'], answer: 'slope' },
+      { prompt: ['positive', 'slope', 'line', 'goes'], answer: 'up' },
+      { prompt: ['parallel', 'lines', 'have', 'equal'], answer: 'slope' },
+      { prompt: ['flip', 'sign', 'multiply', 'negative'], answer: 'inequality' },
+      { prompt: ['function', 'maps', 'input', 'to'], answer: 'output' },
+      { prompt: ['domain', 'is', 'all'], answer: 'inputs' },
+      { prompt: ['probability', 'near', 'zero', 'means'], answer: 'unlikely' },
+      { prompt: ['simple', 'interest', 'principal', 'times', 'rate', 'times'], answer: 'time' },
+      { prompt: ['tax', 'is', 'percent', 'of'], answer: 'price' },
+      { prompt: ['diameter', 'is', 'twice', 'the'], answer: 'radius' },
+    ];
+    const finalResult = this._gateComprehension(FINAL);
+    if (finalResult.pass) return { pass: true, reason: `FINAL: ${finalResult.reason}` };
+    return this._teachVocabList([
+      'slope', 'intercept', 'linear', 'function', 'domain', 'range',
+      'probability', 'sample', 'outcome', 'proportion', 'percent',
+    ], ctx, { reps: 3 });
   }
 
   async runMathG8Real(ctx) {
