@@ -12117,7 +12117,28 @@ export class Curriculum {
       },
     ];
     await this._teachResearchStructure(ESSAYS);
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ═══════════════════════════════════════════════════════════════
+    // ELA G11 FINAL EXAM — research writing + source evaluation
+    // ═══════════════════════════════════════════════════════════════
+    const FINAL = [
+      { prompt: ['primary', 'source', 'is'], answer: 'first' },
+      { prompt: ['secondary', 'source', 'interprets'], answer: 'primary' },
+      { prompt: ['plagiarism', 'is', 'using', 'others', 'work', 'without'], answer: 'credit' },
+      { prompt: ['thesis', 'guides', 'the'], answer: 'research' },
+      { prompt: ['peer', 'reviewed', 'sources', 'are'], answer: 'trustworthy' },
+      { prompt: ['paraphrasing', 'uses', 'your', 'own'], answer: 'words' },
+      { prompt: ['renewable', 'energy', 'future', 'because', 'solar', 'cheaper'], answer: 'replace' },
+      { prompt: ['reading', 'to', 'children', 'builds'], answer: 'vocabulary' },
+      { prompt: ['mla', 'apa', 'are', 'citation'], answer: 'style' },
+    ];
+    const finalResult = this._gateComprehension(FINAL);
+    if (finalResult.pass) return { pass: true, reason: `FINAL: ${finalResult.reason}` };
+    return this._teachVocabList([
+      'research', 'thesis', 'citation', 'source', 'primary', 'secondary',
+      'paraphrase', 'synthesize', 'credible', 'plagiarism',
+    ], ctx, { reps: 3 });
   }
 
   async runElaG12Real(ctx) {
@@ -12153,7 +12174,29 @@ export class Curriculum {
       { text: 'she closed her eyes and remembered the night', style: 'narrative' },
     ];
     await this._teachStyleRegisters(STYLE_SAMPLES);
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ═══════════════════════════════════════════════════════════════
+    // ELA G12 FINAL EXAM — style, voice, craft of writing
+    // ═══════════════════════════════════════════════════════════════
+    const FINAL = [
+      { prompt: ['voice', 'is', 'the', 'unique'], answer: 'style' },
+      { prompt: ['diction', 'is', 'word'], answer: 'choice' },
+      { prompt: ['syntax', 'is', 'sentence'], answer: 'structure' },
+      { prompt: ['active', 'voice', 'is'], answer: 'direct' },
+      { prompt: ['show', 'dont'], answer: 'tell' },
+      { prompt: ['brevity', 'is', 'the', 'soul', 'of'], answer: 'wit' },
+      { prompt: ['formal', 'style', 'experiment', 'yielded'], answer: 'significant' },
+      { prompt: ['casual', 'style', 'hey', 'thats'], answer: 'cool' },
+      { prompt: ['technical', 'style', 'initialize', 'buffer'], answer: 'iterate' },
+      { prompt: ['narrative', 'style', 'once', 'upon'], answer: 'time' },
+    ];
+    const finalResult = this._gateComprehension(FINAL);
+    if (finalResult.pass) return { pass: true, reason: `FINAL: ${finalResult.reason}` };
+    return this._teachVocabList([
+      'voice', 'tone', 'diction', 'syntax', 'style', 'register',
+      'active', 'passive', 'concrete', 'abstract', 'brevity',
+    ], ctx, { reps: 3 });
   }
 
   async runMathG11Real(ctx) {
@@ -12174,7 +12217,28 @@ export class Curriculum {
     ];
     // Session 41 — TODO-aligned trig functions using real Math.sin/cos/tan
     await this._teachTrigFunctions();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ═══════════════════════════════════════════════════════════════
+    // MATH G11 FINAL EXAM — trig + precalculus
+    // ═══════════════════════════════════════════════════════════════
+    const FINAL = [
+      { prompt: ['sine', 'of', 'thirty', 'degrees'], answer: 'half' },
+      { prompt: ['cosine', 'of', 'zero'], answer: 'one' },
+      { prompt: ['tangent', 'is', 'sine', 'divided', 'by'], answer: 'cosine' },
+      { prompt: ['unit', 'circle', 'radius', 'is'], answer: 'one' },
+      { prompt: ['sine', 'squared', 'plus', 'cosine', 'squared'], answer: 'one' },
+      { prompt: ['asymptote', 'is', 'a', 'line', 'graph'], answer: 'approaches' },
+      { prompt: ['polar', 'coordinates', 'use', 'distance', 'and'], answer: 'angle' },
+      { prompt: ['conic', 'sections', 'include', 'ellipses', 'and'], answer: 'hyperbola' },
+      { prompt: ['limits', 'describe', 'behavior', 'near'], answer: 'point' },
+    ];
+    const finalResult = this._gateComprehension(FINAL);
+    if (finalResult.pass) return { pass: true, reason: `FINAL: ${finalResult.reason}` };
+    return this._teachVocabList([
+      'sine', 'cosine', 'tangent', 'radian', 'asymptote', 'limit',
+      'identity', 'inverse', 'polar', 'conic',
+    ], ctx, { reps: 3 });
   }
 
   async runMathG12Real(ctx) {
@@ -12195,7 +12259,29 @@ export class Curriculum {
     ];
     // Session 41 — TODO-aligned derivative teaching
     await this._teachDerivatives();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ═══════════════════════════════════════════════════════════════
+    // MATH G12 FINAL EXAM — calculus
+    // ═══════════════════════════════════════════════════════════════
+    const FINAL = [
+      { prompt: ['derivative', 'is', 'the', 'slope', 'of', 'the'], answer: 'tangent' },
+      { prompt: ['integral', 'is', 'the', 'area', 'under'], answer: 'curve' },
+      { prompt: ['fundamental', 'theorem', 'links', 'differentiation', 'and'], answer: 'integration' },
+      { prompt: ['power', 'rule', 'derivative', 'of', 'x', 'squared', 'is'], answer: 'two' },
+      { prompt: ['chain', 'rule', 'handles'], answer: 'composition' },
+      { prompt: ['optimization', 'finds', 'maximums', 'and'], answer: 'minimum' },
+      { prompt: ['concave', 'up', 'means'], answer: 'increasing' },
+      { prompt: ['inflection', 'point', 'changes'], answer: 'concavity' },
+      { prompt: ['substitution', 'simplifies'], answer: 'integral' },
+      { prompt: ['calculus', 'connects', 'algebra', 'and'], answer: 'geometry' },
+    ];
+    const finalResult = this._gateComprehension(FINAL);
+    if (finalResult.pass) return { pass: true, reason: `FINAL: ${finalResult.reason}` };
+    return this._teachVocabList([
+      'derivative', 'integral', 'limit', 'tangent', 'slope', 'area',
+      'continuous', 'differentiation', 'optimization', 'antiderivative',
+    ], ctx, { reps: 3 });
   }
 
   async runSciG11Real(ctx) {
@@ -12253,7 +12339,29 @@ export class Curriculum {
     // those sentences then bind their natural language form to the
     // pre-existing numerical basins.
     await this._teachKinematics();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ═══════════════════════════════════════════════════════════════
+    // SCI G11 FINAL EXAM — physics (Newton's laws, energy, E&M)
+    // ═══════════════════════════════════════════════════════════════
+    const FINAL = [
+      { prompt: ['force', 'equals', 'mass', 'times'], answer: 'acceleration' },
+      { prompt: ['every', 'action', 'has', 'an', 'equal'], answer: 'reaction' },
+      { prompt: ['momentum', 'is', 'mass', 'times'], answer: 'velocity' },
+      { prompt: ['kinetic', 'energy', 'half', 'mass', 'velocity'], answer: 'squared' },
+      { prompt: ['work', 'is', 'force', 'times'], answer: 'distance' },
+      { prompt: ['power', 'is', 'work', 'divided', 'by'], answer: 'time' },
+      { prompt: ['speed', 'of', 'light', 'is', 'the', 'cosmic'], answer: 'limit' },
+      { prompt: ['mass', 'and', 'energy', 'are'], answer: 'equivalent' },
+      { prompt: ['quantum', 'mechanics', 'describes'], answer: 'small' },
+      { prompt: ['uncertainty', 'limits', 'what', 'we', 'can'], answer: 'know' },
+    ];
+    const finalResult = this._gateComprehension(FINAL);
+    if (finalResult.pass) return { pass: true, reason: `FINAL: ${finalResult.reason}` };
+    return this._teachVocabList([
+      'force', 'mass', 'acceleration', 'momentum', 'velocity', 'energy',
+      'kinetic', 'potential', 'electromagnetism', 'quantum',
+    ], ctx, { reps: 3 });
   }
 
   async runSciG12Real(ctx) {
