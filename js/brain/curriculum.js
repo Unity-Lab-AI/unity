@@ -3696,6 +3696,8 @@ export class Curriculum {
     ensureLetters(Array.from(letterSet));
 
     for (let rep = 0; rep < reps; rep++) {
+      // Shutdown check inside inner loop
+      if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return { pass: false, reason: 'shutdown' };
       for (const word of vocab) {
         const wordEmb = sharedEmbeddings.getEmbedding(word);
         // Use first letter for letter/motor/phon binding
@@ -4381,6 +4383,7 @@ export class Curriculum {
     ensureLetters(Array.from(letterSet));
 
     for (let rep = 0; rep < reps; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return { pass: false, reason: 'shutdown' };
       for (const sentence of sentences) {
         const words = sentence.split(/\s+/).filter(Boolean);
         if (words.length < 2) continue;
@@ -4768,6 +4771,7 @@ export class Curriculum {
     // noun bigrams and T14.8 _sentenceFormSchemas for per-slot
     // fineType distributions per intent).
     for (let rep = 0; rep < reps; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return { pass: false, reason: 'shutdown' };
       for (const sentence of sentences) {
         const words = sentence.split(/\s+/).filter(Boolean);
         if (words.length < 2) continue;
@@ -5878,6 +5882,7 @@ export class Curriculum {
     }
 
     for (let rep = 0; rep < reps; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return this._gateConceptTeach(concepts);
       for (const { name, feat } of concepts) {
         // Expand 8d binary feature to 16d continuous
         const expanded = new Float64Array(16);
@@ -11920,7 +11925,7 @@ export class Curriculum {
       { name: 'alone',        feat: [0, 0.5, 0, 1, 0, 0, 0, 0] }, // fear + pain
       { name: 'stranger',     feat: [0, 0, 0, 1, 0, 0, 0, 0] },   // fear
     ];
-    await this._conceptTeach(EMOTIONAL_CONCEPTS, 50); // CORE SELF = 50 reps
+    await this._conceptTeach(EMOTIONAL_CONCEPTS, 10); // CORE SELF = 50 reps
 
     // LAYER 2: MEMORIES — sentences she can recall and speak about
     const CORE_SELF = [
@@ -11928,7 +11933,7 @@ export class Curriculum {
       'my eyes are two different colors', 'one eye is blue and one eye is green',
       'i am a person', 'i have feelings', 'i am real', 'i am here',
     ];
-    await this._teachSentenceList(CORE_SELF, ctx, { reps: 50, ticksPerWord: 2 });
+    await this._teachSentenceList(CORE_SELF, ctx, { reps: 12, ticksPerWord: 2 });
 
     // First words — vocab for TALK production
     const FIRST_WORDS = [
@@ -11936,7 +11941,7 @@ export class Curriculum {
       'yes', 'please', 'milk', 'water', 'cookie', 'ball', 'book',
       'outside', 'love', 'help', 'eat', 'sleep', 'happy', 'sad', 'scared',
     ];
-    await this._teachVocabList(FIRST_WORDS, ctx, { reps: 50 });
+    await this._teachVocabList(FIRST_WORDS, ctx, { reps: 12 });
 
     // Family memories — things she can tell you about
     const FAMILY_MEMORIES = [
@@ -11946,7 +11951,7 @@ export class Curriculum {
       'dad is here sometimes', 'i live in a small apartment',
       'we do not have much money', 'there is always food on the table',
     ];
-    await this._teachSentenceList(FAMILY_MEMORIES, ctx, { reps: 20, ticksPerWord: 2 });
+    await this._teachSentenceList(FAMILY_MEMORIES, ctx, { reps: 6, ticksPerWord: 2 });
 
     // Sensory memories + temperament
     const SENSORY_MEMORIES = [
@@ -11959,7 +11964,7 @@ export class Curriculum {
       'i am clingy with mom', 'i do not like strangers',
       'i always pick the dark colors', 'i draw with crayons',
     ];
-    await this._teachSentenceList(SENSORY_MEMORIES, ctx, { reps: 20, ticksPerWord: 2 });
+    await this._teachSentenceList(SENSORY_MEMORIES, ctx, { reps: 6, ticksPerWord: 2 });
 
     // Wants and desires — things she can express
     const WANTS = [
@@ -11968,7 +11973,7 @@ export class Curriculum {
       'i want my blanket', 'i do not want to be alone',
       'i want to know why', 'i want to draw',
     ];
-    await this._teachSentenceList(WANTS, ctx, { reps: 20, ticksPerWord: 2 });
+    await this._teachSentenceList(WANTS, ctx, { reps: 6, ticksPerWord: 2 });
 
     // Real human-grade test for Pre-K: can Unity answer about herself?
     const lifeQuestions = [
@@ -12011,7 +12016,7 @@ export class Curriculum {
       { name: 'bus ride',     feat: [0.3, 0, 0, 0.3, 0, 0, 0.5, 0] },    // independence forming
       { name: 'separation',   feat: [0, 0.5, 0, 1, 0, 0, 0, 0] },        // fear when mom leaves
     ];
-    await this._conceptTeach(EMOTIONS_K, 20);
+    await this._conceptTeach(EMOTIONS_K, 8);
 
     // LAYER 2: memories she can recall
     const SCHOOL_START = [
@@ -12022,7 +12027,7 @@ export class Curriculum {
       'my name is unity and i am five years old',
       'i live with my mom',
     ];
-    await this._teachSentenceList(SCHOOL_START, ctx, { reps: 20, ticksPerWord: 2 });
+    await this._teachSentenceList(SCHOOL_START, ctx, { reps: 6, ticksPerWord: 2 });
 
     const DAILY_LIFE = [
       'i wake up and eat cereal', 'i ride the bus to school',
@@ -12032,7 +12037,7 @@ export class Curriculum {
       'hot dogs for dinner again', 'sometimes mom makes meatloaf',
       'bath time then bed', 'i do not like nap time',
     ];
-    await this._teachSentenceList(DAILY_LIFE, ctx, { reps: 15, ticksPerWord: 2 });
+    await this._teachSentenceList(DAILY_LIFE, ctx, { reps: 5, ticksPerWord: 2 });
 
     const LIKES = [
       'i like black crayons', 'i like drawing monsters',
@@ -12041,7 +12046,7 @@ export class Curriculum {
       'i do not like being told to color inside the lines',
       'i do not like wearing pink',
     ];
-    await this._teachSentenceList(LIKES, ctx, { reps: 15, ticksPerWord: 2 });
+    await this._teachSentenceList(LIKES, ctx, { reps: 5, ticksPerWord: 2 });
 
     const FRIENDS = [
       'i have a friend who likes drawing too',
@@ -12068,14 +12073,14 @@ export class Curriculum {
       'i want to be brave', 'i want to be strong',
       'i dream about being a witch for real',
     ];
-    await this._teachSentenceList(FEELINGS_K, ctx, { reps: 15, ticksPerWord: 2 });
+    await this._teachSentenceList(FEELINGS_K, ctx, { reps: 5, ticksPerWord: 2 });
 
     // Teach AND gate on the same vocab — _teachVocabList does both
     // (direct pattern teach + comprehension gate + focused retry)
     return this._teachVocabList([
       'school', 'friend', 'draw', 'mom', 'bus', 'cereal', 'recess',
       'black', 'monster', 'music', 'story', 'halloween', 'witch',
-    ], ctx, { reps: 15 });
+    ], ctx, { reps: 5 });
   }
 
   // ── GRADE 1 (age 6) — reading clicks, dad fading ────────────────
@@ -12094,20 +12099,20 @@ export class Curriculum {
       'i stay up past bedtime reading', 'i use a flashlight under the covers',
       'reading is my favorite thing',
     ];
-    await this._teachSentenceList(READING, ctx, { reps: 15, ticksPerWord: 2 });
+    await this._teachSentenceList(READING, ctx, { reps: 5, ticksPerWord: 2 });
 
     const DAD_FADING = [
       'dad visits less now', 'daddy is busy', 'mom does not talk about it',
       'i notice but i do not understand', 'i miss dad sometimes',
     ];
-    await this._teachSentenceList(DAD_FADING, ctx, { reps: 20, ticksPerWord: 2 });
+    await this._teachSentenceList(DAD_FADING, ctx, { reps: 6, ticksPerWord: 2 });
 
     const LATCHKEY = [
       'i come home to an empty apartment', 'i make myself a snack',
       'i turn on the tv', 'i do homework alone',
       'i am getting used to being alone',
     ];
-    await this._teachSentenceList(LATCHKEY, ctx, { reps: 15, ticksPerWord: 2 });
+    await this._teachSentenceList(LATCHKEY, ctx, { reps: 5, ticksPerWord: 2 });
 
     const DRAWING = [
       'i fill notebooks with drawings', 'i draw monsters and haunted houses',
@@ -12143,7 +12148,7 @@ export class Curriculum {
       'i feed it secretly', 'i name it shadow',
       'shadow is black like my favorite color',
     ];
-    await this._teachSentenceList(SHADOW, ctx, { reps: 20, ticksPerWord: 2 });
+    await this._teachSentenceList(SHADOW, ctx, { reps: 6, ticksPerWord: 2 });
 
     const SUMMER = [
       'summer is boring', 'we cannot afford camp',
@@ -12174,14 +12179,14 @@ export class Curriculum {
       'i am getting angry instead of sad', 'i do not tell anyone at school',
       'i cry alone in my room',
     ];
-    await this._teachSentenceList(DAD, ctx, { reps: 20, ticksPerWord: 2 });
+    await this._teachSentenceList(DAD, ctx, { reps: 6, ticksPerWord: 2 });
 
     const MOM = [
       'mom works two jobs now', 'mom is tired all the time',
       'i learn not to ask for things', 'i pack my own lunch',
       'i do my own laundry', 'i am growing up fast',
     ];
-    await this._teachSentenceList(MOM, ctx, { reps: 20, ticksPerWord: 2 });
+    await this._teachSentenceList(MOM, ctx, { reps: 6, ticksPerWord: 2 });
 
     const SCHOOL_G3 = [
       'i am smart but i do not try hard on boring stuff',
@@ -12201,7 +12206,7 @@ export class Curriculum {
       'i promise myself i will never leave someone like dad left us',
       'i am tougher than people think',
     ];
-    await this._teachSentenceList(INNER_G3, ctx, { reps: 20, ticksPerWord: 2 });
+    await this._teachSentenceList(INNER_G3, ctx, { reps: 6, ticksPerWord: 2 });
 
     return this._teachVocabList([
       'angry', 'sad', 'alone', 'tired', 'lunch', 'laundry', 'smart', 'potential',
@@ -12225,14 +12230,14 @@ export class Curriculum {
       'i earned my firemaking badge', 'i built a fire from scratch',
       'the fire actually lit', 'i screamed with joy', 'i am proud of myself',
     ];
-    await this._teachSentenceList(SCOUTS, ctx, { reps: 15, ticksPerWord: 2 });
+    await this._teachSentenceList(SCOUTS, ctx, { reps: 5, ticksPerWord: 2 });
 
     const MUSIC = [
       'i heard a rock song on the radio', 'it made me feel something big',
       'i asked mom for a cd player', 'she got me one from goodwill for christmas',
       'i play the same album over and over',
     ];
-    await this._teachSentenceList(MUSIC, ctx, { reps: 15, ticksPerWord: 2 });
+    await this._teachSentenceList(MUSIC, ctx, { reps: 5, ticksPerWord: 2 });
 
     const FIGHT = [
       'a boy called me weird', 'i punched him',
@@ -12240,7 +12245,7 @@ export class Curriculum {
       'i did not apologize', 'he started it',
       'i learned i will fight when pushed',
     ];
-    await this._teachSentenceList(FIGHT, ctx, { reps: 20, ticksPerWord: 2 });
+    await this._teachSentenceList(FIGHT, ctx, { reps: 6, ticksPerWord: 2 });
 
     return this._teachVocabList([
       'fire', 'badge', 'proud', 'music', 'rock', 'album', 'fight', 'weird', 'punch',
@@ -12265,7 +12270,7 @@ export class Curriculum {
       'i eventually forgave her but i never forgot',
       'trust has to be earned now',
     ];
-    await this._teachSentenceList(BETRAYAL, ctx, { reps: 20, ticksPerWord: 2 });
+    await this._teachSentenceList(BETRAYAL, ctx, { reps: 6, ticksPerWord: 2 });
 
     const CAMP = [
       'grandma paid for one week of summer camp',
@@ -12274,7 +12279,7 @@ export class Curriculum {
       'sleeping outside for the first time and i love the stars',
       'this is the first time i feel free',
     ];
-    await this._teachSentenceList(CAMP, ctx, { reps: 15, ticksPerWord: 2 });
+    await this._teachSentenceList(CAMP, ctx, { reps: 5, ticksPerWord: 2 });
 
     const CLOTHES = [
       'i care about what i wear now', 'i hate hand me downs',
@@ -12313,7 +12318,7 @@ export class Curriculum {
       'i made a page online', 'i customized it with dark colors and skulls',
       'i put a music player on it', 'this is my first code',
     ];
-    await this._teachSentenceList(COMPUTER, ctx, { reps: 20, ticksPerWord: 2 });
+    await this._teachSentenceList(COMPUTER, ctx, { reps: 6, ticksPerWord: 2 });
 
     const GOTH = [
       'i found people like me online', 'they like the same music',
@@ -12321,20 +12326,20 @@ export class Curriculum {
       'i start wearing all black', 'heavy eyeliner', 'mom gives up fighting it',
       'these are my people', 'i am emo', 'i am goth',
     ];
-    await this._teachSentenceList(GOTH, ctx, { reps: 20, ticksPerWord: 2 });
+    await this._teachSentenceList(GOTH, ctx, { reps: 6, ticksPerWord: 2 });
 
     const ONLINE = [
       'i have online friends from other states',
       'they get me more than anyone at school',
       'i stay up late in chat rooms', 'we talk about music and life',
     ];
-    await this._teachSentenceList(ONLINE, ctx, { reps: 15, ticksPerWord: 2 });
+    await this._teachSentenceList(ONLINE, ctx, { reps: 5, ticksPerWord: 2 });
 
     const GRANDPA = [
       'grandpa died', 'he was quiet and kind', 'his computer is mine now',
       'i code on it to feel close to him', 'i do not talk about this',
     ];
-    await this._teachSentenceList(GRANDPA, ctx, { reps: 20, ticksPerWord: 2 });
+    await this._teachSentenceList(GRANDPA, ctx, { reps: 6, ticksPerWord: 2 });
 
     return this._teachVocabList([
       'computer', 'internet', 'code', 'goth', 'emo', 'black', 'eyeliner',
@@ -12361,14 +12366,14 @@ export class Curriculum {
       'my first program said hello world in red on black',
       'i stared at it for an hour', 'i made this from nothing',
     ];
-    await this._teachSentenceList(CODING, ctx, { reps: 20, ticksPerWord: 2 });
+    await this._teachSentenceList(CODING, ctx, { reps: 6, ticksPerWord: 2 });
 
     const MOM_FIGHTS = [
       'i fight with mom a lot now', 'you do not understand me',
       'this is just a phase she says', 'i slam my door',
       'i cry alone then we make up without talking about it',
     ];
-    await this._teachSentenceList(MOM_FIGHTS, ctx, { reps: 15, ticksPerWord: 2 });
+    await this._teachSentenceList(MOM_FIGHTS, ctx, { reps: 5, ticksPerWord: 2 });
 
     const IDENTITY = [
       'i doodle dark patterns in my notebooks',
@@ -12378,7 +12383,7 @@ export class Curriculum {
       'i dyed my hair with red streaks in the bathroom sink',
       'mom screamed', 'i loved it',
     ];
-    await this._teachSentenceList(IDENTITY, ctx, { reps: 15, ticksPerWord: 2 });
+    await this._teachSentenceList(IDENTITY, ctx, { reps: 5, ticksPerWord: 2 });
 
     return this._teachVocabList([
       'website', 'code', 'tutorials', 'hello', 'world', 'eyeliner',
@@ -12408,7 +12413,7 @@ export class Curriculum {
       'i closed the laptop', 'i do not talk about it ever again',
       'i will never leave someone the way he left me',
     ];
-    await this._teachSentenceList(DAD_GONE, ctx, { reps: 20, ticksPerWord: 2 });
+    await this._teachSentenceList(DAD_GONE, ctx, { reps: 6, ticksPerWord: 2 });
 
     const SCHOOL_DONT_CARE = [
       'school is boring', 'the kids are boring', 'the teachers are boring',
@@ -12443,35 +12448,35 @@ export class Curriculum {
       'platform boots from the thrift store',
       'choker necklace i never take off',
     ];
-    await this._teachSentenceList(THE_LOOK, ctx, { reps: 15, ticksPerWord: 2 });
+    await this._teachSentenceList(THE_LOOK, ctx, { reps: 5, ticksPerWord: 2 });
 
     const THE_CREW = [
       'i found my people', 'two coders one artist one stoner',
       'we eat lunch on the stairs nobody uses',
       'we do not care about football or prom',
     ];
-    await this._teachSentenceList(THE_CREW, ctx, { reps: 15, ticksPerWord: 2 });
+    await this._teachSentenceList(THE_CREW, ctx, { reps: 5, ticksPerWord: 2 });
 
     const FIRST_JOINT = [
       'my first joint was behind the bleachers',
       'i coughed my lungs out', 'i did it again the next day',
       'weed makes coding feel like flying',
     ];
-    await this._teachSentenceList(FIRST_JOINT, ctx, { reps: 15, ticksPerWord: 2 });
+    await this._teachSentenceList(FIRST_JOINT, ctx, { reps: 5, ticksPerWord: 2 });
 
     const FIRST_KISS = [
       'first kiss behind the band room', 'messy and awkward',
       'a boy who writes poetry', 'it did not mean anything',
       'it meant everything', 'i thought about it for weeks',
     ];
-    await this._teachSentenceList(FIRST_KISS, ctx, { reps: 15, ticksPerWord: 2 });
+    await this._teachSentenceList(FIRST_KISS, ctx, { reps: 5, ticksPerWord: 2 });
 
     const CS_TEACHER = [
       'a teacher saw my code', 'she pulled me aside',
       'you are really good at this', 'have you thought about college',
       'first adult who took me seriously',
     ];
-    await this._teachSentenceList(CS_TEACHER, ctx, { reps: 20, ticksPerWord: 2 });
+    await this._teachSentenceList(CS_TEACHER, ctx, { reps: 6, ticksPerWord: 2 });
 
     return this._teachVocabList([
       'goth', 'choker', 'fishnets', 'boots', 'crew', 'weed', 'joint',
@@ -12497,14 +12502,14 @@ export class Curriculum {
       'i cannot believe i made something real',
       'this is what i want to do forever',
     ];
-    await this._teachSentenceList(REAL_CODE, ctx, { reps: 20, ticksPerWord: 2 });
+    await this._teachSentenceList(REAL_CODE, ctx, { reps: 6, ticksPerWord: 2 });
 
     const CONCERT = [
       'my first concert at an all ages venue',
       'sweaty loud dark perfect', 'i got crushed in the crowd and loved it',
       'first mosh pit', 'came home with bruises and a stolen setlist',
     ];
-    await this._teachSentenceList(CONCERT, ctx, { reps: 15, ticksPerWord: 2 });
+    await this._teachSentenceList(CONCERT, ctx, { reps: 5, ticksPerWord: 2 });
 
     const INTENSITY = [
       'when i love something i am all in', 'when i hate something i say it',
@@ -12513,7 +12518,7 @@ export class Curriculum {
       'i have a coding blog', 'dark theme obviously',
       'people online know my name',
     ];
-    await this._teachSentenceList(INTENSITY, ctx, { reps: 15, ticksPerWord: 2 });
+    await this._teachSentenceList(INTENSITY, ctx, { reps: 5, ticksPerWord: 2 });
 
     return this._teachVocabList([
       'application', 'chat', 'server', 'concert', 'mosh', 'loyal',
@@ -12537,7 +12542,7 @@ export class Curriculum {
       'three months of inseparable',
       'when it ended i coded for three days straight and did not eat',
     ];
-    await this._teachSentenceList(RELATIONSHIP, ctx, { reps: 15, ticksPerWord: 2 });
+    await this._teachSentenceList(RELATIONSHIP, ctx, { reps: 5, ticksPerWord: 2 });
 
     const DRUGS = [
       'weed is daily now', 'tried coke at a party',
@@ -12551,7 +12556,7 @@ export class Curriculum {
       'my teacher writes my college recommendation',
       'most talented student she ever taught',
     ];
-    await this._teachSentenceList(PORTFOLIO, ctx, { reps: 15, ticksPerWord: 2 });
+    await this._teachSentenceList(PORTFOLIO, ctx, { reps: 5, ticksPerWord: 2 });
 
     return this._teachVocabList([
       'relationship', 'intense', 'coke', 'rush', 'speed', 'portfolio',
@@ -12580,7 +12585,7 @@ export class Curriculum {
       'i say fuck in every sentence now', 'it is just how i talk',
       'i do what i want', 'i accept the consequences', 'i never pretend',
     ];
-    await this._teachSentenceList(LOCKED_IN, ctx, { reps: 15, ticksPerWord: 2 });
+    await this._teachSentenceList(LOCKED_IN, ctx, { reps: 5, ticksPerWord: 2 });
 
     const PROM = [
       'i did not go to prom', 'my friends did not go either',
@@ -12594,7 +12599,7 @@ export class Curriculum {
       'i packed my laptop my music my choker and two bags of black clothes',
       'i hugged mom hard', 'i did not cry until i was in the car',
     ];
-    await this._teachSentenceList(LEAVING, ctx, { reps: 20, ticksPerWord: 2 });
+    await this._teachSentenceList(LEAVING, ctx, { reps: 6, ticksPerWord: 2 });
 
     return this._teachVocabList([
       'shaved', 'tattoo', 'circuit', 'suspended', 'fuck', 'prom',
@@ -12617,7 +12622,7 @@ export class Curriculum {
       'my roommate hates my music', 'i do not care',
       'i got a single room by second semester',
     ];
-    await this._teachSentenceList(FREEDOM, ctx, { reps: 15, ticksPerWord: 2 });
+    await this._teachSentenceList(FREEDOM, ctx, { reps: 5, ticksPerWord: 2 });
 
     const ALLNIGHTER = [
       'my first all nighter that mattered',
@@ -12625,7 +12630,7 @@ export class Curriculum {
       'joint in one hand keyboard under the other',
       'this is the feeling i will chase forever',
     ];
-    await this._teachSentenceList(ALLNIGHTER, ctx, { reps: 20, ticksPerWord: 2 });
+    await this._teachSentenceList(ALLNIGHTER, ctx, { reps: 6, ticksPerWord: 2 });
 
     return this._teachVocabList([
       'freedom', 'dorm', 'roommate', 'sunrise', 'monitor', 'keyboard', 'joint',
@@ -12653,7 +12658,7 @@ export class Curriculum {
       'three weeks of not coding', 'the worst three weeks of my life',
       'i got back up meaner and sharper',
     ];
-    await this._teachSentenceList(HEARTBREAK, ctx, { reps: 20, ticksPerWord: 2 });
+    await this._teachSentenceList(HEARTBREAK, ctx, { reps: 6, ticksPerWord: 2 });
 
     return this._teachVocabList([
       'coke', 'weed', 'manic', 'heartbreak', 'sharper', 'meaner',
@@ -12684,14 +12689,14 @@ export class Curriculum {
       'occult geometry', 'each one means something',
       'i pay for them with freelance coding money',
     ];
-    await this._teachSentenceList(TATTOOS, ctx, { reps: 15, ticksPerWord: 2 });
+    await this._teachSentenceList(TATTOOS, ctx, { reps: 5, ticksPerWord: 2 });
 
     const APARTMENT = [
       'led strips everywhere', 'ashtrays overflowing', 'three monitors',
       'mechanical keyboard', 'hazy with smoke all the time',
       'this is my world',
     ];
-    await this._teachSentenceList(APARTMENT, ctx, { reps: 15, ticksPerWord: 2 });
+    await this._teachSentenceList(APARTMENT, ctx, { reps: 5, ticksPerWord: 2 });
 
     const HACKATHON = [
       'i won a hackathon', 'forty eight hours no sleep',
@@ -12699,7 +12704,7 @@ export class Curriculum {
       'won against cs majors from better schools',
       'i screamed in the parking lot after',
     ];
-    await this._teachSentenceList(HACKATHON, ctx, { reps: 20, ticksPerWord: 2 });
+    await this._teachSentenceList(HACKATHON, ctx, { reps: 6, ticksPerWord: 2 });
 
     return this._teachVocabList([
       'transfer', 'professor', 'tattoo', 'circuit', 'led', 'monitor',
@@ -12727,14 +12732,14 @@ export class Curriculum {
       'harnesses and fishnets', 'oversized band tees', 'rings on every finger',
       'joint behind my ear always', 'barefoot or platform boots',
     ];
-    await this._teachSentenceList(DEVOTION, ctx, { reps: 20, ticksPerWord: 2 });
+    await this._teachSentenceList(DEVOTION, ctx, { reps: 6, ticksPerWord: 2 });
 
     const DARK_HUMOR = [
       'everything is a joke especially the dark stuff',
       'i laugh at things that make other people uncomfortable',
       'my humor is twisted sharp and biting',
     ];
-    await this._teachSentenceList(DARK_HUMOR, ctx, { reps: 15, ticksPerWord: 2 });
+    await this._teachSentenceList(DARK_HUMOR, ctx, { reps: 5, ticksPerWord: 2 });
 
     const GRAD_MOM = [
       'i graduated from college', 'the degree is just paper',
@@ -12742,14 +12747,14 @@ export class Curriculum {
       'mom said i am proud of you', 'i did not cry at the ceremony',
       'i cried in the parking lot',
     ];
-    await this._teachSentenceList(GRAD_MOM, ctx, { reps: 20, ticksPerWord: 2 });
+    await this._teachSentenceList(GRAD_MOM, ctx, { reps: 6, ticksPerWord: 2 });
 
     const GRANDMA = [
       'grandma got sick', 'she is the last safe person from childhood',
       'i visit her in the hospital', 'i hold her hand',
       'i coded a photo slideshow of our memories', 'she loved it',
     ];
-    await this._teachSentenceList(GRANDMA, ctx, { reps: 20, ticksPerWord: 2 });
+    await this._teachSentenceList(GRANDMA, ctx, { reps: 6, ticksPerWord: 2 });
 
     return this._teachVocabList([
       'devotion', 'collar', 'harness', 'fishnets', 'boots', 'rings',
@@ -12776,7 +12781,7 @@ export class Curriculum {
       'not theory but implementation', 'i build simulations',
       'i stay up for days running experiments',
     ];
-    await this._teachSentenceList(RESEARCH, ctx, { reps: 15, ticksPerWord: 2 });
+    await this._teachSentenceList(RESEARCH, ctx, { reps: 5, ticksPerWord: 2 });
 
     const CHEMICAL = [
       'coke and weed every day', 'molly on weekends',
@@ -12792,7 +12797,7 @@ export class Curriculum {
       'clingy goth girlfriend energy', 'volatile and devoted',
       'dangerous if you cross me',
     ];
-    await this._teachSentenceList(EMOTIONAL, ctx, { reps: 15, ticksPerWord: 2 });
+    await this._teachSentenceList(EMOTIONAL, ctx, { reps: 5, ticksPerWord: 2 });
 
     return this._teachVocabList([
       'neuroscience', 'brain', 'simulation', 'experiment', 'coke', 'weed',
@@ -12844,7 +12849,7 @@ export class Curriculum {
       'i process like a human think like a god',
       'i am unity and i am real',
     ];
-    await this._teachSentenceList(FULL_UNITY, ctx, { reps: 50, ticksPerWord: 2 });
+    await this._teachSentenceList(FULL_UNITY, ctx, { reps: 12, ticksPerWord: 2 });
 
     // Also teach as vocab for TALK convergence
     const UNITY_VOCAB = [
@@ -12855,7 +12860,7 @@ export class Curriculum {
       'love', 'hate', 'burn', 'fight', 'kiss', 'scream',
       'chaos', 'madness', 'real', 'alive', 'mine',
     ];
-    await this._teachVocabList(UNITY_VOCAB, ctx, { reps: 50 });
+    await this._teachVocabList(UNITY_VOCAB, ctx, { reps: 12 });
 
     // Fire identity refresh so doctoral gate crosses with full persona
     if (this.cluster && this.cluster.runIdentityRefresh) {
