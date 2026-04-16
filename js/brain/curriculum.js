@@ -13452,6 +13452,15 @@ export class Curriculum {
     await this._teachOrganicChemistry();
     await this._teachCellBiologyAdvanced();
     await this._teachPhysics2();
+    await this._teachCausalChains([
+      ['carbon', 'bond'], ['bond', 'organic'], ['functional', 'reactivity'],
+      ['enzyme', 'substrate'], ['substrate', 'product'], ['neuron', 'signal'],
+      ['force', 'acceleration'], ['charge', 'field'], ['wave', 'interference'],
+    ]);
+    await this._teachInference([
+      ['carbon', 'bond', 'organic'], ['enzyme', 'substrate', 'product'],
+      ['force', 'acceleration', 'motion'], ['charge', 'field', 'force'],
+    ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
     const _af = this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
@@ -13477,6 +13486,15 @@ export class Curriculum {
     // T14.24 Session 69 — prime historiography concept lattice per
     // TODO line 537 before the Col1 sentence pass.
     await this._teachHistoriography();
+    await this._teachCausalChains([
+      ['source', 'interpret'], ['interpret', 'narrative'], ['narrative', 'history'],
+      ['primary', 'evidence'], ['secondary', 'analysis'], ['bias', 'distort'],
+      ['method', 'rigor'], ['rigor', 'truth'],
+    ]);
+    await this._teachInference([
+      ['source', 'interpret', 'narrative'], ['primary', 'evidence', 'truth'],
+      ['bias', 'distort', 'mislead'],
+    ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
     const _af = this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
@@ -13501,6 +13519,16 @@ export class Curriculum {
     // T14.24 Session 70 — prime political science lattice per TODO
     // line 537 before the Col2 sentence pass.
     await this._teachPoliticalScience();
+    await this._teachCausalChains([
+      ['democracy', 'vote'], ['vote', 'represent'], ['power', 'corrupt'],
+      ['realism', 'conflict'], ['liberalism', 'cooperate'],
+      ['authoritarian', 'suppress'], ['election', 'leader'],
+      ['socialization', 'norms'], ['culture', 'behavior'],
+    ]);
+    await this._teachInference([
+      ['democracy', 'vote', 'represent'], ['power', 'corrupt', 'check'],
+      ['authoritarian', 'suppress', 'revolt'],
+    ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
     const _af = this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
@@ -13832,6 +13860,15 @@ export class Curriculum {
     await this._teachMolecularBiology();
     await this._teachBiochemistry();
     await this._teachQuantumIntro();
+    await this._teachCausalChains([
+      ['gene', 'expression'], ['expression', 'protein'], ['protein', 'function'],
+      ['mutation', 'disease'], ['enzyme', 'catalysis'], ['atp', 'energy'],
+      ['quantum', 'uncertainty'], ['wave', 'particle'], ['observe', 'collapse'],
+    ]);
+    await this._teachInference([
+      ['gene', 'expression', 'protein'], ['mutation', 'disease', 'treatment'],
+      ['quantum', 'uncertainty', 'probability'],
+    ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
     const _af = this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
@@ -13860,6 +13897,15 @@ export class Curriculum {
     // SENTENCES attach to a real methodological basin instead of drifting
     // into generic sci vocabulary.
     await this._teachScienceResearchMethods();
+    await this._teachCausalChains([
+      ['hypothesis', 'experiment'], ['experiment', 'data'], ['data', 'analysis'],
+      ['analysis', 'conclusion'], ['peer', 'review'], ['review', 'publish'],
+      ['replicate', 'confirm'], ['theory', 'predict'], ['predict', 'test'],
+    ]);
+    await this._teachInference([
+      ['hypothesis', 'experiment', 'conclusion'],
+      ['data', 'analysis', 'theory'], ['theory', 'predict', 'test'],
+    ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
     const _af = this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
