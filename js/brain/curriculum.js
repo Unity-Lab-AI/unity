@@ -1916,7 +1916,7 @@ export class Curriculum {
     // Each subject gets 1 minute of wall-clock time to pass its grade.
     // If it doesn't pass in 1 minute, move to the next subject and
     // come back for another round. Keep looping until all pass.
-    const GRADE_TIMEOUT_MS = 60 * 1000; // 1 minute per subject per round
+    const GRADE_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes per subject per round
     const MAX_GRADE_ROUNDS = 10;
 
     for (let i = 1; i < GRADE_ORDER.length; i++) { // skip pre-K at 0
