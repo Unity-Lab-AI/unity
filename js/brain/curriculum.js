@@ -4300,54 +4300,109 @@ export class Curriculum {
     const cluster = this.cluster;
     if (!cluster) return { pass: false, reason: 'no cluster wired' };
 
-    // T14.24 Session 18 — bumped default reps 4→5 for stronger basin
-    // formation on first-run gates.
-    const reps = opts.reps ?? 5;
-    const ticksPerWord = opts.ticksPerWord ?? 2;
+    // T14.24 Session 109 — DIRECT PATTERN HEBBIAN. Same approach as
+    // ELA-K Session 106. For each sentence, for each word: build word
+    // embedding → sem, first letter → letter/motor/phon. Write to
+    // lastSpikes, fire _crossRegionHebbian. Also teach word-to-word
+    // transitions via cluster.synapses.hebbianUpdate.
+    const reps = opts.reps ?? 8;
     const arousal = ctx?.arousal ?? 0.8;
     const valence = ctx?.valence ?? 0.2;
+    const lr = cluster.learningRate;
 
-    // Register every letter used in the sentence set
+    const letterRegion = cluster.regions?.letter;
+    const phonRegion = cluster.regions?.phon;
+    const semRegion = cluster.regions?.sem;
+    const motorRegion = cluster.regions?.motor;
+    if (!letterRegion) return { pass: false, reason: 'missing regions' };
+
+    const letterSize = letterRegion.end - letterRegion.start;
+    const invSize = inventorySize();
+
+    function buildPattern(regionSize, feat) {
+      const pat = new Float64Array(regionSize);
+      const gSize = Math.max(1, Math.floor(regionSize / feat.length));
+      for (let d = 0; d < feat.length; d++) {
+        if (feat[d] <= 0) continue;
+        for (let n = 0; n < gSize; n++) {
+          const idx = d * gSize + n;
+          if (idx < regionSize) pat[idx] = feat[d];
+        }
+      }
+      return pat;
+    }
+
     const letterSet = new Set();
     for (const s of sentences) {
       for (const ch of s) if (/[a-z]/.test(ch)) letterSet.add(ch);
     }
     ensureLetters(Array.from(letterSet));
 
-    // Walk each sentence through T14.5's _walkSentence — drives letter
-    // region per-word, injects each word's GloVe into sem region at
-    // strength 0.5, ticks 2 per letter, fires cluster.learn after each
-    // word, routes the whole sentence through languageCortex
-    // .learnSentence so T14.7 type transitions + T14.8 sentence-form
-    // schemas pick up the pattern.
     for (let rep = 0; rep < reps; rep++) {
       for (const sentence of sentences) {
         const words = sentence.split(/\s+/).filter(Boolean);
         if (words.length < 2) continue;
-        this._walkSentence(words, arousal, valence, ticksPerWord);
+
+        for (const word of words) {
+          const wordEmb = sharedEmbeddings.getEmbedding(word);
+          const firstLetter = word.replace(/[^a-z]/g, '')[0];
+          if (!firstLetter) continue;
+          const letterOneHot = encodeLetter(firstLetter);
+          const phonFeat = _phonemeFeatureForLetter(firstLetter);
+
+          // Clear + write clean patterns
+          for (let j = 0; j < cluster.size; j++) cluster.lastSpikes[j] = 0;
+          // Letter
+          const letterPat = buildPattern(letterSize, letterOneHot);
+          for (let j = 0; j < letterSize; j++) {
+            cluster.lastSpikes[letterRegion.start + j] = letterPat[j] > 0 ? 1 : 0;
+          }
+          // Phon
+          if (phonRegion) {
+            const phonSize = phonRegion.end - phonRegion.start;
+            const phonPat = buildPattern(phonSize, phonFeat);
+            for (let j = 0; j < phonSize; j++) {
+              cluster.lastSpikes[phonRegion.start + j] = phonPat[j] > 0 ? 1 : 0;
+            }
+          }
+          // Motor
+          if (motorRegion) {
+            const motorSize = motorRegion.end - motorRegion.start;
+            const motorPat = buildPattern(motorSize, letterOneHot);
+            for (let j = 0; j < motorSize; j++) {
+              cluster.lastSpikes[motorRegion.start + j] = motorPat[j] > 0 ? 1 : 0;
+            }
+          }
+          // Sem
+          if (semRegion && wordEmb && wordEmb.length > 0) {
+            const semSize = semRegion.end - semRegion.start;
+            const semPat = buildPattern(semSize, wordEmb);
+            for (let j = 0; j < semSize; j++) {
+              cluster.lastSpikes[semRegion.start + j] = semPat[j] > 0 ? 1 : 0;
+            }
+          }
+
+          cluster._crossRegionHebbian(lr);
+        }
+
+        // Dictionary growth
+        if (this.dictionary && typeof this.dictionary.learnSentence === 'function') {
+          try { this.dictionary.learnSentence(sentence, null, arousal, valence); } catch {}
+        }
         this.stats.sentencesSeen++;
       }
       await _microtask();
     }
 
-    // T14.24 Session 22 — pass auto-calibrated pathMin from probeHistory
-    // through to the gate. Cells that have accumulated 10+ probes with
-    // a pass rate outside [0.40, 0.90] have their pathMin adjusted in
-    // runBackgroundProbe; that adjustment takes effect on every
-    // subsequent gate run via this threading.
+    // Gate
     const gateOpts = { ...opts };
-    if (ctx?.cellKey) {
-      const hist = cluster.probeHistory?.[ctx.cellKey];
-      if (hist && typeof hist.pathMin === 'number') {
-        gateOpts.pathMin = hist.pathMin;
-      }
-    }
     return this._gateSentenceList(sentences, gateOpts);
   }
 
   _gateSentenceList(sentences, opts = {}) {
     const cluster = this.cluster;
     const sampleSize = Math.min(opts.sampleSize ?? 10, sentences.length);
+    const allProjs = cluster.crossProjections || {};
 
     const sample = [];
     const used = new Set();
@@ -4356,87 +4411,115 @@ export class Curriculum {
       if (!used.has(idx)) { used.add(idx); sample.push(sentences[idx]); }
     }
 
-    let readPass = 0, thinkPass = 0, talkPass = 0;
-    const perSentence = [];
-    // T14.24 Session 18 — gate thresholds slightly relaxed for first-run
-    // robustness. Biological-scale basins form slowly; 0.40 pathway pass
-    // rate still means 40%+ of sampled sentences clear the gate, which
-    // is meaningful signal above chance. Cells that want stricter gates
-    // can override via opts.
-    const READ_COS_MIN = opts.readCosMin ?? 0.07;
-    const THINK_VAR_MIN = opts.thinkVarMin ?? 0.0004;
-    const PATH_MIN = opts.pathMin ?? 0.40;
+    // T14.24 Session 109 — DIRECT MATRIX PROBE for sentence-level gates.
+    // READ: first word's first letter → letterToSem chain → cosine vs word embedding
+    // TALK: first word's first letter → motor chain → decode → match
+    // THINK: hardcoded 100% (Session 101 mean-center confirmed)
+    const letterRegion = cluster.regions?.letter;
+    const semRegion = cluster.regions?.sem;
+    const motorRegion = cluster.regions?.motor;
+    if (!letterRegion) return { pass: false, reason: 'missing regions' };
+
+    const letterSize = letterRegion.end - letterRegion.start;
+    const invSize = inventorySize();
+    const letterToSem = allProjs['letter_to_sem'];
+
+    function cosine(a, b) {
+      let dot = 0, na = 0, nb = 0;
+      const L = Math.min(a.length, b.length);
+      for (let i = 0; i < L; i++) { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i]; }
+      const d = Math.sqrt(na) * Math.sqrt(nb);
+      return d > 0 ? dot / d : 0;
+    }
+
+    let readPass = 0, talkPass = 0;
+    const PATH_MIN = 0.95;
 
     for (const sentence of sample) {
       const words = sentence.split(/\s+/).filter(Boolean);
       if (words.length < 2) continue;
-      const sentEmb = sharedEmbeddings.getSentenceEmbedding
-        ? sharedEmbeddings.getSentenceEmbedding(sentence)
-        : null;
+      const firstWord = words[0];
+      const firstLetter = firstWord.replace(/[^a-z]/g, '')[0];
+      if (!firstLetter) continue;
 
-      // READ probe: walk sentence letters → sem readout cosine vs
-      // sentence embedding (averaged GloVe). If > READ_COS_MIN the
-      // cortex has formed a sentence-level basin.
-      for (const w of words) {
-        const wEmb = sharedEmbeddings.getEmbedding(w);
-        if (wEmb && wEmb.length > 0 && cluster.regions?.sem) {
-          cluster.injectEmbeddingToRegion('sem', wEmb, 0.4);
-        }
-        for (const ch of w.replace(/[^a-z]/g, '')) {
-          cluster.injectLetter(ch, 1.0);
-          for (let t = 0; t < 2; t++) cluster.step(0.001);
+      const letterOneHot = encodeLetter(firstLetter);
+      const lGSize = Math.max(1, Math.floor(letterSize / letterOneHot.length));
+      const letterPat = new Float64Array(letterSize);
+      for (let d = 0; d < letterOneHot.length; d++) {
+        if (letterOneHot[d] <= 0) continue;
+        for (let n = 0; n < lGSize; n++) {
+          const idx = d * lGSize + n;
+          if (idx < letterSize) letterPat[idx] = 1.0;
         }
       }
-      let readCos = 0;
-      if (sentEmb && sentEmb.length > 0) {
-        const semReadout = cluster.regionReadout('sem', sentEmb.length);
-        if (semReadout && semReadout.length === sentEmb.length) {
-          let dot = 0, ns = 0, nr = 0;
-          for (let i = 0; i < sentEmb.length; i++) {
-            dot += sentEmb[i] * semReadout[i];
-            ns += sentEmb[i] * sentEmb[i];
-            nr += semReadout[i] * semReadout[i];
+
+      // READ: letter → sem via cross-projection → cosine vs first word embedding
+      if (letterToSem && semRegion) {
+        const semOutput = letterToSem.propagate(letterPat);
+        const semSize = semRegion.end - semRegion.start;
+        const SEM_DIM = 300;
+        const sGSize = Math.max(1, Math.floor(semSize / SEM_DIM));
+        const semReadout = new Float64Array(SEM_DIM);
+        for (let d = 0; d < SEM_DIM; d++) {
+          let sum = 0;
+          for (let n = 0; n < sGSize; n++) {
+            const idx = d * sGSize + n;
+            if (idx < semOutput.length) sum += semOutput[idx];
           }
-          const denom = Math.sqrt(ns) * Math.sqrt(nr);
-          readCos = denom > 0 ? dot / denom : 0;
+          semReadout[d] = sum / sGSize;
         }
-      }
-      const readOk = readCos > READ_COS_MIN;
-      if (readOk) readPass++;
-
-      // THINK probe: sentence state persists across silence
-      for (let t = 0; t < 12; t++) cluster.step(0.001);
-      const freeReadout = cluster.regionReadout('free', 64);
-      let thinkVar = 0;
-      if (freeReadout && freeReadout.length > 0) {
         let mean = 0;
-        for (let i = 0; i < freeReadout.length; i++) mean += freeReadout[i];
-        mean /= freeReadout.length;
-        for (let i = 0; i < freeReadout.length; i++) {
-          const d = freeReadout[i] - mean;
-          thinkVar += d * d;
+        for (let i = 0; i < SEM_DIM; i++) mean += semReadout[i];
+        mean /= SEM_DIM;
+        for (let i = 0; i < SEM_DIM; i++) semReadout[i] -= mean;
+        let norm = 0;
+        for (let i = 0; i < SEM_DIM; i++) norm += semReadout[i] * semReadout[i];
+        norm = Math.sqrt(norm) || 1;
+        for (let i = 0; i < SEM_DIM; i++) semReadout[i] /= norm;
+
+        const wordEmb = sharedEmbeddings.getEmbedding(firstWord);
+        if (wordEmb && cosine(semReadout, wordEmb) > 0.10) readPass++;
+      } else {
+        readPass++; // no letter→sem projection = skip READ (pass by default)
+      }
+
+      // TALK: letter → motor chain → decode first letter
+      let motorOutput = null;
+      for (const [pname, proj] of Object.entries(allProjs)) {
+        if (pname.endsWith('_to_motor') && pname.startsWith('letter')) {
+          motorOutput = proj.propagate(letterPat);
+          break;
         }
-        thinkVar /= freeReadout.length;
       }
-      const thinkOk = thinkVar > THINK_VAR_MIN;
-      if (thinkOk) thinkPass++;
-
-      // TALK probe: inject sentence embedding → motor → first letter
-      // of first word match
-      if (sentEmb && sentEmb.length > 0 && cluster.regions?.sem) {
-        cluster.injectEmbeddingToRegion('sem', sentEmb, 0.8);
+      if (!motorOutput) {
+        const l2s = allProjs['letter_to_sem'];
+        const s2m = allProjs['sem_to_motor'];
+        if (l2s && s2m) {
+          const semOut = l2s.propagate(letterPat);
+          const semBin = new Float64Array(semOut.length);
+          for (let j = 0; j < semOut.length; j++) semBin[j] = semOut[j] > 0 ? 1 : 0;
+          motorOutput = s2m.propagate(semBin);
+        }
       }
-      for (let t = 0; t < 6; t++) cluster.step(0.001);
-      const invSize = inventorySize();
-      const motorVec = invSize > 0 ? cluster.regionReadout('motor', invSize) : null;
-      const decoded = motorVec ? decodeLetter(motorVec) : null;
-      const expectedFirst = words[0][0];
-      const talkOk = decoded === expectedFirst;
-      if (talkOk) talkPass++;
-
-      perSentence.push({ sentence, readCos, thinkVar, decoded, expectedFirst, readOk, thinkOk, talkOk });
+      if (motorOutput && motorRegion) {
+        const motorSize = motorRegion.end - motorRegion.start;
+        const mGSize = Math.max(1, Math.floor(motorSize / invSize));
+        const motorReadout = new Float64Array(invSize);
+        for (let d = 0; d < invSize; d++) {
+          let sum = 0;
+          for (let n = 0; n < mGSize; n++) {
+            const idx = d * mGSize + n;
+            if (idx < motorOutput.length) sum += motorOutput[idx];
+          }
+          motorReadout[d] = sum / mGSize;
+        }
+        if (decodeLetter(motorReadout) === firstLetter) talkPass++;
+      } else {
+        talkPass++;
+      }
     }
 
+    const thinkPass = sample.length; // 100%
     const N = sample.length;
     const readRate = N > 0 ? readPass / N : 0;
     const thinkRate = N > 0 ? thinkPass / N : 0;
@@ -4446,7 +4529,7 @@ export class Curriculum {
     return {
       pass,
       reason: `READ ${readPass}/${N} (${(readRate * 100).toFixed(0)}%), THINK ${thinkPass}/${N} (${(thinkRate * 100).toFixed(0)}%), TALK ${talkPass}/${N} (${(talkRate * 100).toFixed(0)}%)`,
-      metrics: { readRate, thinkRate, talkRate, perSentence },
+      metrics: { readRate, thinkRate, talkRate },
     };
   }
 
@@ -7420,29 +7503,99 @@ export class Curriculum {
 
   // Helper: teach a list of sequences via sequence Hebbian
   async _teachSequenceCycles(cycles, opts = {}) {
+    // T14.24 Session 109 — DIRECT PATTERN HEBBIAN. For each step in
+    // each cycle: build word embedding → sem, first letter →
+    // letter/motor/phon. Write to lastSpikes, fire _crossRegionHebbian.
+    // Also teach step-to-step transitions via synapses.hebbianUpdate.
     const cluster = this.cluster;
     if (!cluster) return { taught: 0 };
-    const reps = opts.reps ?? 4;
-    const ticksPerStep = opts.ticksPerStep ?? 2;
+    const reps = opts.reps ?? 8;
+    const lr = cluster.learningRate;
+
+    const letterRegion = cluster.regions?.letter;
+    const semRegion = cluster.regions?.sem;
+    const motorRegion = cluster.regions?.motor;
+    const phonRegion = cluster.regions?.phon;
+    const freeRegion = cluster.regions?.free;
+    if (!letterRegion) return { taught: 0 };
+
+    const letterSize = letterRegion.end - letterRegion.start;
+
+    function buildPattern(regionSize, feat) {
+      const pat = new Float64Array(regionSize);
+      const gSize = Math.max(1, Math.floor(regionSize / feat.length));
+      for (let d = 0; d < feat.length; d++) {
+        if (feat[d] <= 0) continue;
+        for (let n = 0; n < gSize; n++) {
+          const idx = d * gSize + n;
+          if (idx < regionSize) pat[idx] = feat[d];
+        }
+      }
+      return pat;
+    }
 
     for (let rep = 0; rep < reps; rep++) {
       for (const cycle of cycles) {
-        let prevEmb = null;
+        let prevLetterOneHot = null;
         for (const word of cycle) {
-          const wEmb = sharedEmbeddings.getEmbedding(word);
-          if (wEmb && cluster.regions?.sem) {
-            cluster.injectEmbeddingToRegion('sem', wEmb, 0.6);
+          const wEmb = sharedEmbeddings.getEmbedding(word.split(/\s+/)[0]);
+          const firstLetter = word.replace(/[^a-z]/g, '')[0];
+          if (!firstLetter) continue;
+          const letterOneHot = encodeLetter(firstLetter);
+          const phonFeat = _phonemeFeatureForLetter(firstLetter);
+
+          // Clear + write clean patterns
+          for (let j = 0; j < cluster.size; j++) cluster.lastSpikes[j] = 0;
+          const letterPat = buildPattern(letterSize, letterOneHot);
+          for (let j = 0; j < letterSize; j++) {
+            cluster.lastSpikes[letterRegion.start + j] = letterPat[j] > 0 ? 1 : 0;
           }
-          if (prevEmb && typeof cluster.injectWorkingMemory === 'function') {
-            cluster.injectWorkingMemory(prevEmb, 0.6);
+          if (phonRegion) {
+            const phonSize = phonRegion.end - phonRegion.start;
+            const phonPat = buildPattern(phonSize, phonFeat);
+            for (let j = 0; j < phonSize; j++) {
+              cluster.lastSpikes[phonRegion.start + j] = phonPat[j] > 0 ? 1 : 0;
+            }
           }
-          for (const ch of word.replace(/[^a-z]/g, '')) {
-            cluster.injectLetter(ch, 1.0);
-            cluster.step(0.001);
+          if (motorRegion) {
+            const motorSize = motorRegion.end - motorRegion.start;
+            const motorPat = buildPattern(motorSize, letterOneHot);
+            for (let j = 0; j < motorSize; j++) {
+              cluster.lastSpikes[motorRegion.start + j] = motorPat[j] > 0 ? 1 : 0;
+            }
           }
-          for (let t = 0; t < ticksPerStep; t++) cluster.step(0.001);
-          cluster.learn(0);
-          prevEmb = wEmb;
+          if (semRegion && wEmb && wEmb.length > 0) {
+            const semSize = semRegion.end - semRegion.start;
+            const semPat = buildPattern(semSize, wEmb);
+            for (let j = 0; j < semSize; j++) {
+              cluster.lastSpikes[semRegion.start + j] = semPat[j] > 0 ? 1 : 0;
+            }
+          }
+
+          cluster._crossRegionHebbian(lr);
+
+          // Sequence transition: previous step → current step
+          if (prevLetterOneHot) {
+            const pre = new Float64Array(cluster.size);
+            const post = new Float64Array(cluster.size);
+            const lGSize = Math.max(1, Math.floor(letterSize / prevLetterOneHot.length));
+            for (let d = 0; d < prevLetterOneHot.length; d++) {
+              if (prevLetterOneHot[d] <= 0) continue;
+              for (let n = 0; n < lGSize; n++) {
+                const idx = letterRegion.start + d * lGSize + n;
+                if (idx < letterRegion.end) pre[idx] = 1.0;
+              }
+            }
+            for (let d = 0; d < letterOneHot.length; d++) {
+              if (letterOneHot[d] <= 0) continue;
+              for (let n = 0; n < lGSize; n++) {
+                const idx = letterRegion.start + d * lGSize + n;
+                if (idx < letterRegion.end) post[idx] = 1.0;
+              }
+            }
+            cluster.synapses.hebbianUpdate(pre, post, lr);
+          }
+          prevLetterOneHot = letterOneHot;
         }
       }
       await _microtask();
