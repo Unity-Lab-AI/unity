@@ -2492,6 +2492,13 @@ export class Curriculum {
     ];
     await this._teachSentenceList(PLURAL_PAIRS, ctx, { reps: 3, ticksPerWord: 2 });
 
+    // ── ELA-K: causal chains for basic language reasoning ──
+    await this._teachCausalChains([
+      ['letter', 'word'], ['word', 'sentence'], ['sentence', 'story'],
+      ['read', 'learn'], ['write', 'express'], ['listen', 'understand'],
+      ['question', 'answer'], ['name', 'person'], ['color', 'describe'],
+    ]);
+
     return this._gateElaKReal();
   }
 
@@ -5483,6 +5490,16 @@ export class Curriculum {
       'he taught himself to read', 'we did it ourselves',
     ];
     await this._teachSentenceList(G2_GRAMMAR, ctx, { reps: 2, ticksPerWord: 2 });
+
+    // ── ELA-G2: language reasoning chains ──
+    await this._teachCausalChains([
+      ['digraph', 'sound'], ['prefix', 'meaning'], ['suffix', 'change'],
+      ['vowel', 'long'], ['vowel', 'short'], ['read', 'comprehend'],
+      ['irregular', 'memorize'], ['plural', 'many'],
+    ]);
+    await this._teachInference([
+      ['prefix', 'meaning', 'change'], ['read', 'comprehend', 'learn'],
+    ]);
 
     return this._teachVocabList([...ALL_VOCAB, ...VOWEL_TEAM_WORDS.slice(0, 20)], ctx, { reps: 3 });
   }
@@ -10990,6 +11007,14 @@ export class Curriculum {
     // T14.24 Session 81 — prime music theory lattice per TODO
     // line 561 before the music theory sentence pass.
     await this._teachMusicTheory();
+    await this._teachCausalChains([
+      ['scale', 'key'], ['key', 'chord'], ['chord', 'harmony'],
+      ['tonic', 'home'], ['dominant', 'tension'], ['resolve', 'tonic'],
+      ['major', 'happy'], ['minor', 'sad'],
+    ]);
+    await this._teachInference([
+      ['scale', 'key', 'chord'], ['dominant', 'tension', 'resolve'],
+    ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
     const _af = this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
@@ -11081,6 +11106,16 @@ export class Curriculum {
     // Session 33 — TODO-aligned split. _teachSubordinateClauses fires
     // working memory injection at subordinate marker positions.
     await this._teachSubordinateClauses(SENTENCES);
+    // ── ELA-G6: reasoning about text analysis ──
+    await this._teachCausalChains([
+      ['evidence', 'support'], ['support', 'claim'], ['claim', 'argument'],
+      ['bias', 'distort'], ['context', 'meaning'], ['tone', 'mood'],
+      ['connotation', 'feeling'], ['denotation', 'definition'],
+    ]);
+    await this._teachInference([
+      ['evidence', 'support', 'claim'], ['bias', 'distort', 'mislead'],
+      ['context', 'meaning', 'understand'],
+    ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
 
     // ── COMMON CORE ELA G6: cite evidence, central idea, word meaning ──
