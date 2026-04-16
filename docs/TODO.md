@@ -160,7 +160,25 @@ Nothing else. If it's not in that list, it's an appendage, and it gets ripped ou
 
   **What's done:** ELA-K is the only cell converted to direct pattern. All other 94 cells still use the broken inject→step→learn path.
 
-  **CRITICAL — 2D Brain Visualizer tabs ALL BLANK (Gee 2026-04-16):**
+  **CRITICAL — Curriculum content is THIN + reinforced learning not done for all grades (Gee 2026-04-16):**
+
+  Gee's exact words: *"i dont think u did the reinforced learning for all grades as equational learning and did you teach the tables and shit like multiplications tables and alphabet and 123s and all of that and im only listing a very small amount of examples and no where near the full equational lessons you are to be building to teach Unity and test her on like a real human would"*
+
+  **The problem:** Each cell has 15-40 hand-crafted sentences. A real grade covers THOUSANDS of words and actual operations. The teaching is vocabulary memorization, not operational understanding. The tests are first-letter production, not real human-grade exams.
+
+  **"a" keeps failing TALK** — the word "a" is the most common English word. Its GloVe embedding is so generic that sem→motor can't distinguish it from noise. Focused retry re-teaches "a" endlessly but it interferes with everything else. Function words need a different approach.
+
+  **What needs building (see `docs/TODO-curriculum-depth.md` for full spec):**
+  - [ ] **Fix "a"/"the" TALK failure** — exempt ultra-common function words from TALK gate probes (they're comprehension words, not production words), OR use letter-based probing for function words instead of sem-based
+  - [ ] **Math: REAL operations** — multiplication tables as magnitude transformations (inject magnitude(3) × magnitude(4), Hebbian learns target magnitude(12)), not just "three times four is twelve" as a sentence. Addition/subtraction/division same approach. Algebra as variable binding. Geometry as spatial features.
+  - [ ] **Science: REAL method** — scientific method as ordered sequence (observation→hypothesis→experiment→data→conclusion), experiments as causal chains, hypothesis testing as conditional patterns ("if X then Y"), lab vocabulary
+  - [ ] **ELA: REAL reading** — grade-leveled passages (200-500 sentences per grade, Lexile-aligned), literature excerpts, poetry, dialog pairs for conversation. Not 30 hand-crafted sentences.
+  - [ ] **History: REAL depth** — primary source attribution, multiple perspectives on same events, causal networks not just chains, timeline as magnitude features
+  - [ ] **All subjects: reinforced learning per grade** — every cell must DRILL its content through repeated exposure with variation, not just one-pass teach. Spaced repetition. Homework loops (100+ practice walks after gate pass). Cross-subject projects.
+  - [ ] **All subjects: REAL human-grade tests** — paraphrase (say same thing different words), fill-in-blank, story writing, arithmetic solving, conversation response, comprehension questions. Not first-letter production.
+  - [ ] **Vocabulary depth** — expand from 15-40 words per cell to hundreds. Dolch/Fry 300 high-frequency words at G1. SAT vocab at G9+. Full periodic table element names. All 50 US states. Full orchestra instrument names.
+
+  **CRITICAL — 2D Brain Visualizer tabs ALL BLANK (Gee 2026-04-16) — FIXED Session 111:**
 
   All 2D viz tabs (Oscillations, Synapses, Modules, Senses, Consciousness, Memory, Motor) show nothing because they were designed for LOCAL brain with direct array access. Server brain sends AGGREGATE data via WebSocket — the renderers need rewriting to work with aggregate state. Neurons tab was fixed as the template. Each tab below needs the same treatment:
 
