@@ -2508,7 +2508,7 @@ export class Curriculum {
     if (elaS2M && semRegion && motorRegion) {
       const eSemSz = semRegion.end - semRegion.start;
       const eMotorSz = motorRegion.end - motorRegion.start;
-      for (let rep = 0; rep < 20; rep++) {
+      for (let rep = 0; rep < 8; rep++) { // 8 reps at 1× lr — reinforce, don't overwhelm
         if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) break;
         for (const letter of ALPHABET) {
           const letterOneHot = encodeLetter(letter);
@@ -2526,7 +2526,7 @@ export class Curriculum {
             if (letterOneHot[d] <= 0) continue;
             for (let n = 0; n < mG; n++) { const idx = d * mG + n; if (idx < eMotorSz) motorPat[idx] = 1; }
           }
-          elaS2M.hebbianUpdate(semPat, motorPat, lr * 3);
+          elaS2M.hebbianUpdate(semPat, motorPat, lr);
         }
         await _microtask();
       }
@@ -3113,7 +3113,7 @@ export class Curriculum {
     if (s2m && semRegion && motorRegion) {
       const semSz = semRegion.end - semRegion.start;
       const motorSz = motorRegion.end - motorRegion.start;
-      const TALK_REPS = 20;
+      const TALK_REPS = 8; // 8 reps at 1× lr — reinforce, don't overwhelm
       for (let rep = 0; rep < TALK_REPS; rep++) {
         if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) break;
         for (let i = 0; i < DIGITS.length; i++) {
@@ -3135,7 +3135,7 @@ export class Curriculum {
             for (let n = 0; n < mG; n++) { const idx = d * mG + n; if (idx < motorSz) motorPat[idx] = 1; }
           }
           // Update ONLY sem_to_motor — no other projection touched
-          s2m.hebbianUpdate(semPat, motorPat, lr * 3);
+          s2m.hebbianUpdate(semPat, motorPat, lr);
         }
         await _microtask();
       }
@@ -5403,7 +5403,7 @@ export class Curriculum {
             for (let n = 0; n < mG; n++) { const idx = d * mG + n; if (idx < vMotorSz) mPat[idx] = 1; }
           }
           // Update ONLY sem_to_motor
-          vocabS2M.hebbianUpdate(sPat, mPat, cluster.learningRate * 3);
+          vocabS2M.hebbianUpdate(sPat, mPat, cluster.learningRate);
         }
         await _microtask();
       }
