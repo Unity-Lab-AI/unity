@@ -10500,6 +10500,12 @@ export class Curriculum {
     // T14.24 Session 77 — prime rhythm patterns temporal cycles per
     // TODO line 557 before the rhythm sentence pass.
     await this._teachRhythmPatterns();
+    // ── Art-G2: music causal chains ──
+    await this._teachCausalChains([
+      ['beat', 'rhythm'], ['rhythm', 'music'], ['tempo', 'speed'],
+      ['loud', 'forte'], ['soft', 'piano'], ['fast', 'allegro'],
+      ['slow', 'adagio'], ['drum', 'beat'], ['silence', 'rest'],
+    ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
     const _af = this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
@@ -10910,6 +10916,23 @@ export class Curriculum {
     // TODO line 557 before the melody/pitch sentence pass. Sentences
     // reference piano/guitar/drums so the basins need to exist first.
     await this._teachInstruments();
+    // ── Art-G4: instrument classification by family ──
+    //   features: [string, wind, percussion, keyboard, brass, pitched, polyphonic, melodic]
+    await this._teachClassificationReasoning([
+      { item: 'violin',  features: new Float64Array([1,0,0,0,0,1,0,1]), category: 'string' },
+      { item: 'guitar',  features: new Float64Array([1,0,0,0,0,1,1,1]), category: 'string' },
+      { item: 'cello',   features: new Float64Array([1,0,0,0,0,1,0,1]), category: 'string' },
+      { item: 'flute',   features: new Float64Array([0,1,0,0,0,1,0,1]), category: 'woodwind' },
+      { item: 'clarinet',features: new Float64Array([0,1,0,0,0,1,0,1]), category: 'woodwind' },
+      { item: 'trumpet', features: new Float64Array([0,0,0,0,1,1,0,1]), category: 'brass' },
+      { item: 'trombone',features: new Float64Array([0,0,0,0,1,1,0,1]), category: 'brass' },
+      { item: 'drum',    features: new Float64Array([0,0,1,0,0,0,0,0]), category: 'percussion' },
+      { item: 'piano',   features: new Float64Array([0,0,0,1,0,1,1,1]), category: 'keyboard' },
+    ]);
+    await this._teachCausalChains([
+      ['note', 'melody'], ['melody', 'song'], ['scale', 'key'],
+      ['key', 'chord'], ['chord', 'harmony'], ['rhythm', 'groove'],
+    ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
     const _af = this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
@@ -10936,6 +10959,11 @@ export class Curriculum {
     // T14.24 Session 80 — prime visual composition principles
     // lattice per TODO line 561 before the composition sentence pass.
     await this._teachVisualComposition();
+    await this._teachCausalChains([
+      ['contrast', 'attention'], ['emphasis', 'focus'], ['balance', 'harmony'],
+      ['perspective', 'depth'], ['proportion', 'realism'],
+      ['pattern', 'rhythm'], ['movement', 'energy'], ['color', 'emotion'],
+    ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
     const _af = this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
@@ -12396,6 +12424,19 @@ export class Curriculum {
     // T14.24 Session 84 — prime art history chronological scaffold
     // per TODO line 565 before the art history sentence pass.
     await this._teachArtHistory();
+    // ── Art-G9: art movement progression as inference chains ──
+    await this._teachInference([
+      ['renaissance', 'baroque', 'rococo'],
+      ['romantic', 'impressionism', 'post-impressionism'],
+      ['cubism', 'abstract', 'contemporary'],
+      ['realism', 'naturalism', 'impressionism'],
+    ]);
+    await this._teachCausalChains([
+      ['renaissance', 'realism'], ['realism', 'impressionism'],
+      ['impressionism', 'expressionism'], ['expressionism', 'abstract'],
+      ['camera', 'impressionism'], ['war', 'expressionism'],
+      ['technology', 'digital'], ['rebellion', 'modern'],
+    ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
     const _af = this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
@@ -12898,6 +12939,17 @@ export class Curriculum {
     // T14.24 Session 67 — prime three-branch structure per TODO
     // line 530 before the civics sentence pass.
     await this._teachGovBranches();
+    // ── Soc-G11: government causal chains + checks-and-balances inference ──
+    await this._teachCausalChains([
+      ['vote', 'elect'], ['elect', 'represent'], ['represent', 'law'],
+      ['law', 'enforce'], ['enforce', 'order'], ['constitution', 'rights'],
+      ['abuse', 'check'], ['check', 'balance'], ['media', 'inform'],
+      ['inform', 'opinion'], ['opinion', 'policy'],
+    ]);
+    await this._teachInference([
+      ['vote', 'elect', 'represent'], ['represent', 'law', 'enforce'],
+      ['abuse', 'check', 'balance'], ['media', 'inform', 'opinion'],
+    ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
     const _af = this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
@@ -12923,6 +12975,18 @@ export class Curriculum {
     // T14.24 Session 68 — prime economics concept lattice per TODO
     // line 534 before the economics sentence pass.
     await this._teachEconomics();
+    // ── Soc-G12: economics causal chains + inference ──
+    await this._teachCausalChains([
+      ['scarcity', 'choice'], ['choice', 'cost'], ['supply', 'price'],
+      ['demand', 'price'], ['competition', 'lower'], ['monopoly', 'higher'],
+      ['inflation', 'less'], ['unemployment', 'poverty'],
+      ['trade', 'efficiency'], ['tariff', 'protect'],
+      ['interest', 'borrow'], ['invest', 'growth'],
+    ]);
+    await this._teachInference([
+      ['scarcity', 'choice', 'cost'], ['supply', 'demand', 'price'],
+      ['competition', 'lower', 'consumer'], ['invest', 'growth', 'wealth'],
+    ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
     const _af = this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
@@ -13325,6 +13389,18 @@ export class Curriculum {
     // sentence-form schemas continue to populate from the walk.
     await this._teachGenBiology();
     await this._teachGenChemistry();
+    // ── Sci-Col1: college bio + chem causal chains ──
+    await this._teachCausalChains([
+      ['dna', 'rna'], ['rna', 'protein'], ['ribosome', 'protein'],
+      ['photosynthesis', 'glucose'], ['glucose', 'atp'], ['atp', 'energy'],
+      ['mitosis', 'growth'], ['meiosis', 'gamete'], ['gamete', 'offspring'],
+      ['bond', 'molecule'], ['electron', 'bond'], ['entropy', 'disorder'],
+      ['catalyst', 'rate'], ['equilibrium', 'balance'],
+    ]);
+    await this._teachInference([
+      ['dna', 'rna', 'protein'], ['photosynthesis', 'glucose', 'atp'],
+      ['electron', 'bond', 'molecule'], ['entropy', 'disorder', 'equilibrium'],
+    ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
     const _af = this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
