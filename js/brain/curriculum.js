@@ -3109,33 +3109,53 @@ export class Curriculum {
     // Instead: build sem-region and motor-region patterns, call
     // hebbianUpdate directly on the sem_to_motor SparseMatrix.
     // ═════════════════════════════════════════════════════════════════
+    // Session 112 FIX: use PHON→MOTOR path for TALK instead of SEM→MOTOR.
+    // GloVe embeddings for digit names ("five","four","three") are too
+    // SIMILAR — sem→motor can't distinguish them. But MAGNITUDE FEATURES
+    // in the phon region ARE unique per digit (graded presence + log +
+    // sinusoidal encoding). Train phon→motor: magnitude(digit) → digit one-hot.
+    const p2m = cluster.crossProjections?.['phon_to_sem']; // phon→sem exists
     const s2m = cluster.crossProjections?.['sem_to_motor'];
-    if (s2m && semRegion && motorRegion) {
-      const semSz = semRegion.end - semRegion.start;
+    if (s2m && phonRegion && motorRegion) {
+      const phonSz = phonRegion.end - phonRegion.start;
       const motorSz = motorRegion.end - motorRegion.start;
-      const TALK_REPS = 8; // 8 reps at 1× lr — reinforce, don't overwhelm
+      const TALK_REPS = 12;
       for (let rep = 0; rep < TALK_REPS; rep++) {
         if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) break;
         for (let i = 0; i < DIGITS.length; i++) {
-          const nameEmb = sharedEmbeddings.getEmbedding(NAMES[i]);
           const digitOneHot = encodeLetter(DIGITS[i]);
-          if (!nameEmb || nameEmb.length === 0) continue;
-          // Build sem pattern (source)
-          const semPat = new Float64Array(semSz);
-          const sG = Math.max(1, Math.floor(semSz / nameEmb.length));
-          for (let d = 0; d < nameEmb.length; d++) {
-            if (nameEmb[d] <= 0) continue;
-            for (let n = 0; n < sG; n++) { const idx = d * sG + n; if (idx < semSz) semPat[idx] = 1; }
-          }
-          // Build motor pattern (target)
+          const magFeat = _magnitudeFeatureForDigit(DIGITS[i]);
+          // Build phon pattern from MAGNITUDE (source — unique per digit)
+          const phonPat = buildPattern(phonSz, magFeat);
+          // Build motor pattern from digit one-hot (target)
           const motorPat = new Float64Array(motorSz);
           const mG = Math.max(1, Math.floor(motorSz / digitOneHot.length));
           for (let d = 0; d < digitOneHot.length; d++) {
             if (digitOneHot[d] <= 0) continue;
             for (let n = 0; n < mG; n++) { const idx = d * mG + n; if (idx < motorSz) motorPat[idx] = 1; }
           }
-          // Update ONLY sem_to_motor — no other projection touched
-          s2m.hebbianUpdate(semPat, motorPat, lr);
+          // Also build sem pattern from GloVe for sem→motor
+          const nameEmb = sharedEmbeddings.getEmbedding(NAMES[i]);
+          if (nameEmb && nameEmb.length > 0) {
+            const semSz = semRegion.end - semRegion.start;
+            const semPat = new Float64Array(semSz);
+            const sG = Math.max(1, Math.floor(semSz / nameEmb.length));
+            for (let d = 0; d < nameEmb.length; d++) {
+              if (nameEmb[d] <= 0) continue;
+              for (let n = 0; n < sG; n++) { const idx = d * sG + n; if (idx < semSz) semPat[idx] = 1; }
+            }
+            s2m.hebbianUpdate(semPat, motorPat, lr);
+          }
+          // ALSO train the main cluster lastSpikes with phon+motor ONLY
+          // so the _crossRegionHebbian pass catches phon→sem→motor chain
+          for (let j = 0; j < cluster.size; j++) cluster.lastSpikes[j] = 0;
+          for (let j = 0; j < phonSz; j++) {
+            cluster.lastSpikes[phonRegion.start + j] = phonPat[j] > 0 ? 1 : 0;
+          }
+          for (let j = 0; j < motorSz; j++) {
+            cluster.lastSpikes[motorRegion.start + j] = motorPat[j] > 0 ? 1 : 0;
+          }
+          cluster._crossRegionHebbian(lr);
         }
         await _microtask();
       }
@@ -3296,24 +3316,27 @@ export class Curriculum {
         if (cosine(phonReadout, expected) > 0.15) readPass++;
       }
 
-      // ─── TALK: sem→motor → argmax decode digit (PRODUCTION direction)
-      // Session 111 fix: was letter→motor (wrong direction).
-      // Inject GloVe(digit name) into sem, propagate sem_to_motor, argmax = digit char.
-      const digitName = NAMES[DIGITS.indexOf(digit)];
-      const nameEmb = digitName ? sharedEmbeddings.getEmbedding(digitName) : null;
+      // ─── TALK: magnitude→motor via phon→sem→motor chain (PRODUCTION)
+      // Session 112 fix: GloVe digit names are too similar for sem→motor
+      // to distinguish. Use MAGNITUDE FEATURES (unique per digit) instead.
+      // Inject magnitude(digit) into phon, propagate phon→sem, then sem→motor.
+      const magFeat = _magnitudeFeatureForDigit(digit);
       const s2m = allProjs['sem_to_motor'];
-      if (s2m && semRegion && motorRegion && nameEmb && nameEmb.length > 0) {
-        const semSize = semRegion.end - semRegion.start;
-        const semPat = new Float64Array(semSize);
-        const sGSize = Math.max(1, Math.floor(semSize / nameEmb.length));
-        for (let d = 0; d < nameEmb.length; d++) {
-          if (nameEmb[d] <= 0) continue;
-          for (let n = 0; n < sGSize; n++) {
-            const idx = d * sGSize + n;
-            if (idx < semSize) semPat[idx] = nameEmb[d];
+      const p2s = allProjs['phon_to_sem'];
+      if (s2m && p2s && phonRegion && semRegion && motorRegion) {
+        // Step 1: propagate magnitude through phon→sem
+        const phonPat = new Float64Array(phonSize);
+        const pGSize = Math.max(1, Math.floor(phonSize / magFeat.length));
+        for (let d = 0; d < magFeat.length; d++) {
+          if (magFeat[d] <= 0) continue;
+          for (let n = 0; n < pGSize; n++) {
+            const idx = d * pGSize + n;
+            if (idx < phonSize) phonPat[idx] = magFeat[d];
           }
         }
-        const motorOutput = s2m.propagate(semPat);
+        const semFromPhon = p2s.propagate(phonPat);
+        // Step 2: propagate sem output through sem→motor
+        const motorOutput = s2m.propagate(semFromPhon);
         const motorSize = motorRegion.end - motorRegion.start;
         const mGSize = Math.max(1, Math.floor(motorSize / invSize));
         const motorReadout = new Float64Array(invSize);
