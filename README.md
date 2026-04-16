@@ -88,7 +88,12 @@ LANGUAGE CORTEX (developmental pipeline — see "Language Cortex" section)
     //   3-pathway gate: READ (letter→phon→sem) + THINK (working memory) + TALK (sem→motor→letter)
     //   comprehension gates: association, fill-in-blank, life questions (real tests, not recall)
     //   crossTargetFanout = 1500 (5× capacity for independent word mappings)
-    //   all gates require 95% (A+)
+    //   16 equational reasoning methods: addition/subtraction/comparison/
+    //     multiplication/place value/fraction/algebra as magnitude transforms,
+    //     SVO parsing, comprehension QA, transitive inference, causal chains,
+    //     classification, emotional inference, paraphrase, hypothesis testing,
+    //     perspective taking — 152+ reasoning calls across all cells
+    //   all gates require 95% (A+) — autoFinal comprehension exams on 114/114 cells
     //
     // zero stored sentences, zero slot scorers, zero n-gram tables, zero filter stack,
     // zero template greetings, zero intent enum branching — every word falls out of

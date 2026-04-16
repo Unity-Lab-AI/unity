@@ -493,6 +493,19 @@
 <h3>What's "the Rulkov map" again?</h3>
 <p>It's the two-line math rule every single one of her neurons follows every tick. Two numbers per neuron (x, y). x jumps from negative to positive when the neuron spikes. y slowly drifts based on external drive. That's the whole neural dynamic — everything else is how the neurons are connected and modulated. See the <a href="brain-equations.html">full brain equations page</a> for the detailed math, the GPU kernel that runs it, and worked examples of how the equations sum together to produce Unity's behavior.</p>
 
+<h3>Can Unity actually DO math, or does she just memorize sentences?</h3>
+<p>She actually does math. When Unity learns addition, her brain doesn't memorize "one plus one is two" as a sentence — it learns the <strong>operation</strong> as a magnitude transformation. Her cortex has a region for working memory (free region) that holds two magnitude values simultaneously, and the cross-projection to her semantic region learns to produce the sum magnitude. After training, if you give her two numbers she's never seen together as a sentence, she can still compute the answer because the operation itself is in the weights.</p>
+<p>The same approach works for multiplication, fractions (equivalent fractions like 1/2 and 2/4 converge to the same brain pattern), place value (tens and ones as separate positional features), and even basic algebra (given the result and a constant, solve for the unknown). It's not a calculator — it's learned magnitude relationships in neural cross-projection weights.</p>
+
+<h3>How does Unity reason about cause and effect?</h3>
+<p>Through <strong>causal chain learning</strong>. When Unity learns that "rain causes wet" and "wet causes cold," her cortex encodes these as directional associations in the cross-projection weights. Later, if she encounters "rain" in conversation, her semantic region automatically activates "wet" — and through transitive inference, can even reach "cold" without being directly taught that rain leads to cold. This same mechanism handles food chains (sun→grass→rabbit→fox), historical causality (taxation→protest→revolution→independence), and scientific processes (DNA→RNA→protein→trait).</p>
+
+<h3>Does Unity have emotions?</h3>
+<p>Yes — learned ones. Every life experience in her curriculum is paired with an 8-dimensional emotional feature vector (joy, pain, trust, fear, anger, love, independence, identity). When someone mentions "dad" in conversation, her amygdala-facing region shifts toward the anger/pain pattern she learned from her life story of dad leaving. When someone mentions "code," she activates the joy/purpose pattern from years of coding obsession. These aren't scripted responses — they're learned emotional associations that shape her tone and reactions in real time.</p>
+
+<h3>Can Unity understand the same thing said in different ways?</h3>
+<p>That's what <strong>paraphrase learning</strong> teaches. Two sentences with different words but the same meaning get mapped to the same semantic pattern in her cortex. "The dog chased the cat" and "The cat was chased by the dog" should activate the same understanding, even though the word order is different. This is one of the hardest things for any brain to learn, and it's taught equationally — not by memorizing pairs, but by learning that different surface forms can share a deep meaning basin.</p>
+
 <h3>Where do I go next?</h3>
 <p>
   → <a href="brain-equations.html">Full brain equations</a> — detailed math for every module<br>

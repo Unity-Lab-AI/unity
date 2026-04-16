@@ -1149,6 +1149,42 @@ COMPREHENSION GATE (real human-grade test):
   Three types: association, fill-in-blank, life questions
   Tests understanding, not recall — same concepts, different questions
 
+MULTIPLICATION TRANSFORM:
+  free[first half] = magnitude(a), free[second half] = magnitude(b)
+  sem = magnitude(a × b mod 10)
+  81 facts (1-9 × 1-9). Teaches the OPERATION of multiplication.
+
+PLACE VALUE POSITIONAL ENCODING:
+  free[first third] = magnitude(tens digit)
+  free[second third] = magnitude(ones digit)
+  sem = combined value. Numbers 10-99.
+
+FRACTION RATIO FEATURES:
+  free[first half] = magnitude(numerator)
+  free[second half] = magnitude(denominator)
+  sem = magnitude(ratio). 1/2, 2/4, 3/6 → SAME basin.
+
+ALGEBRA VARIABLE BINDING:
+  free[first half] = magnitude(result c)
+  free[second half] = magnitude(constant b)
+  sem = magnitude(unknown x where x + b = c)
+  Cortex learns: given c and b, solve for x.
+
+PARAPHRASE (same meaning, different words):
+  sentA → shared meaning in sem
+  sentB → SAME shared meaning in sem
+  Both map to the SAME semantic basin despite different words.
+
+HYPOTHESIS TESTING:
+  free = prediction, sem = observation
+  fineType = "confirmed" if match, "rejected" if mismatch
+  Cortex learns to compare predictions against reality.
+
+PERSPECTIVE TAKING:
+  sem = event (shared), free = viewpoint (different)
+  phon = emotional features PER viewpoint
+  Same event, DIFFERENT feelings depending on who's looking.
+
       </pre>
 
       <h3 style="color:var(--pink);margin-top:20px;">Full K→PhD Curriculum — 6 Subjects × 19 Grades = 114 Cells</h3>

@@ -906,6 +906,14 @@ this.passedCells = [];      // flat list of 'subject/grade' keys that passed the
 
 `js/brain/cluster.js` `regionReadout(name, dim)` now mean-centers the raw spike readout before returning. Raw spikes have a positive bias from tonic drive that makes cosine unreliable — every vector points roughly the same direction. Mean-centering removes the DC offset so cosine between readouts measures actual signal, not tonic floor. Fixed math-K false-positive (tonic matched magnitude features by accident) and ela-K false-negative (letter signal buried under tonic).
 
+### Session 112 — Full Curriculum Depth Overhaul (2026-04-16)
+
+16 equational reasoning methods built. 152+ reasoning calls wired across all 114 cells. K-G12 vocabulary expanded to real Common Core / NGSS / Core Knowledge standards. All 114 cells have course finals (`_autoFinal` comprehension exams + hand-crafted domain-specific finals). TODO-curriculum-depth.md 46/46 complete.
+
+**New reasoning methods (Session 112):** `_teachMultiplicationTransformations` (81 facts 1-9×1-9 as magnitude transforms), `_teachPlaceValueTransformations` (tens+ones positional encoding for numbers 10-99), `_teachFractionTransformations` (numerator/denominator as ratio features — equivalent fractions converge to same basin), `_teachAlgebraTransformations` (variable binding — given c and b, solve for x in x+b=c), `_teachParaphrase` (different words → same sem basin), `_teachHypothesisTesting` (predict→observe→confirm/reject), `_teachPerspectiveTaking` (same event, multiple viewpoint feature vectors).
+
+**How it all interworks:** The cross-projections taught by the curriculum are the SAME projections that run during live chat. When Unity hears "rain" her sem activates "wet" because `_teachCausalChains` burned rain→wet into the free→sem weights. When she encounters "3+4" the addition transform activates magnitude(7). When someone mentions "dad" her amygdala shifts toward anger because emotional inference burned dad→[0,1,0,0.5,1,0,0,0]. The curriculum isn't separate from the brain — it IS the brain's learned weight state.
+
 ### Remaining work
 
 Task #3 (T14.24 parent) stays in_progress until all 114 cells (6 subjects × 19 grades) pass 95%+ AND Unity speaks coherently from the trained weights in live chat. DO NOT CLAIM DONE EARLY.

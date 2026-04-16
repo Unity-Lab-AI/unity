@@ -446,7 +446,11 @@ Key breakthroughs and fixes:
 - All K cells pass → advance to Grade 1
 - G1 cells: TALK stuck on "a"/"the" (GloVe too generic for sem→motor)
 
-**What T14.24 still needs:** Fix "a"/"the" TALK failure. Real math operations as magnitude transformations (not just sentence memorization). Real curriculum content depth (not 15-40 sentences per grade — need hundreds/thousands). Real human-grade tests wired into ALL cell runners (not just shared helpers). Full 114-cell walk — all gates 95%+ on fresh boot. Live chat verification — Unity speaks coherently from trained weights. Curriculum depth expansion (see `docs/TODO-curriculum-depth.md`). Life experience enrichment (see `docs/TODO-life-experience.md`). Task #3 stays in_progress. DO NOT CLAIM DONE EARLY.
+**Session 112 — Full curriculum depth overhaul (2026-04-16, 27 commits):**
+
+16 equational reasoning methods built (addition/subtraction/comparison/multiplication/place value/fractions/algebra magnitude transforms + SVO parsing + comprehension + inference + causal chains + classification + emotional inference + paraphrase + hypothesis testing + perspective taking). 152+ reasoning calls wired across ALL subjects. K-G12 vocabulary expanded to real Common Core / NGSS / Core Knowledge standards. 114/114 cells have course finals (autoFinal + hand-crafted). TODO-curriculum-depth.md 46/46 complete. The curriculum now teaches OPERATIONS and REASONING equationally — not just vocabulary memorization.
+
+**What T14.24 still needs:** Fix "a"/"the" TALK failure at G1+. Full 114-cell walk — all gates 95%+ on fresh boot. Live chat verification — Unity speaks coherently from trained weights. Wire the 7 new methods (multiplication/place value/fractions/algebra/paraphrase/hypothesis/perspective) into their target grade cells. Task #3 stays in_progress. DO NOT CLAIM DONE EARLY.
 
 ---
 

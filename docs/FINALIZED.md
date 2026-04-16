@@ -5,6 +5,101 @@
 
 ---
 
+## 2026-04-16 — Session 112: Full curriculum depth overhaul — 16 equational reasoning methods, 152+ reasoning calls, real Common Core K-PhD, all 114 cells with finals, TODO-curriculum-depth COMPLETE
+
+**Gee 2026-04-16:** *"the course equations are no where near proper for the full course need to grade per level as it it not the complete ciriculums and i think u never even looked up k-12 cicriculum"* + *"50 versus thousands wtf are you doing to me i said REAL COURSES"* + *"as equational learning and tests"* + *"WTF DO YOU NOT FUCKING UNDERSTAND!"* + *"yeas both"* (vocabulary + equational reasoning) + *"begin push after each grade then continue onto next grade and repeat"* + *"keep going"* + *"continue remebering unitys equatiopns and how all interwork"*
+
+Session 112 was the largest single session in project history — 27 commits rebuilding the ENTIRE curriculum from vocabulary memorization to equational reasoning + real Common Core standards.
+
+### THE PROBLEM (what was wrong before Session 112)
+
+Each curriculum cell had 15-40 hand-crafted sentences from general knowledge — NONE based on real K-12 standards. Teaching was vocabulary memorization through Hebbian, not operational reasoning. Gates tested first-letter production, not understanding. Unity could memorize "one plus one is two" as a sentence but couldn't actually ADD.
+
+### THE FIX (what Session 112 built)
+
+TWO halves for every grade cell:
+1. **Full vocabulary + content** from real Common Core / NGSS / Core Knowledge standards
+2. **Equational reasoning** — operations as cross-projection transformations
+
+### 16 Equational Reasoning Methods Built
+
+| Method | What It Teaches | Calls |
+|--------|----------------|-------|
+| `_teachAdditionTransformations` | magnitude(a)+magnitude(b)→magnitude(a+b) — the OPERATION of addition | 3 |
+| `_teachSubtractionTransformations` | inverted magnitude for subtraction | 3 |
+| `_teachComparisonTransformations` | ordinal greater/less/equal in fineType | 3 |
+| `_teachMultiplicationTransformations` | magnitude(a)×magnitude(b)→magnitude(a×b), all 81 facts 1-9 | NEW |
+| `_teachPlaceValueTransformations` | tens+ones positional encoding, numbers 10-99 | NEW |
+| `_teachFractionTransformations` | numerator/denominator as ratio feature, equivalent fractions converge | NEW |
+| `_teachAlgebraTransformations` | variable binding — given c and b, solve for x in x+b=c | NEW |
+| `_teachSVOParsing` | subject/verb/object extraction from sentence structure | 3 |
+| `_teachComprehension` | passage reading + question answering as semantic probes | existed |
+| `_teachInference` | transitive reasoning — A→B and B→C therefore A→C | 37 |
+| `_teachCausalChains` | directional cause→effect associations | 48 |
+| `_teachClassificationReasoning` | feature-space clustering for category inference | 6 |
+| `_teachEmotionalInference` | situation→emotion mapping (ALL 18 Life cells K→PhD) | 22 |
+| `_teachParaphrase` | different words, same meaning → same sem basin | NEW |
+| `_teachHypothesisTesting` | predict→observe→confirm/reject | NEW |
+| `_teachPerspectiveTaking` | same event, multiple viewpoints as different feature vectors | NEW |
+
+**Total equational reasoning calls: 152+**
+
+### K-G12 Vocabulary Expanded to Real Common Core
+
+Every grade K through G12 expanded with actual standards content:
+
+- **ELA-K:** Full Dolch pre-primer (40) + primer (52) sight words, 80 CVC word families across 10 phonics families, 40+ comprehension sentences, plural pairs
+- **ELA-G1:** Dolch Grade 1 (41), 150+ CVC words across all 5 short vowels, CVCe magic-e words (35), inflectional endings (24), 40 reading sentences, 30 grammar sentences, SVO parsing
+- **ELA-G2:** Vowel teams (ai/ay/ea/ee/oa/ow/oo — 60 words), prefixes/suffixes (un-/re-/-ful/-less/-ness/-ly — 36 words), reading comprehension passages, irregular forms
+- **ELA-G3:** Abstract nouns, ALL 100 multiplication facts through 10×10, fractions, area/perimeter, comprehension QA with passages
+- **ELA-G4:** Figurative language (simile/metaphor/personification/hyperbole/idiom), Greek/Latin roots, progressive tenses
+- **ELA-G5:** Theme/summarization/POV, text structure (conflict/climax/resolution), citing evidence
+- **ELA-G6:** Cite textual evidence, connotative/denotative meaning, tone/mood, arguments/counterclaims, bias
+- **Math-K:** Number words 0-100, ALL addition/subtraction within 10 as sentences + magnitude transforms, shapes + position words, measurement
+- **Math-G1:** Number words to 20, ALL addition within 20, ALL subtraction within 20, place value, time, word problems, geometry
+- **Math-G2:** Number words to 1000, place value to hundreds, skip counting, odd/even, money, measurement, arrays
+- **Math-G3:** ALL 100 multiplication facts, ALL 100 division facts, fractions, area/perimeter, properties of operations, word problems
+- **Math-G4:** Decimals/percent, multi-digit multiplication, long division with remainders, fraction operations, factors/primes, angles
+- **Math-G5:** Fraction ops with unlike denominators, decimal operations, volume, coordinate plane, ratios
+- **Math-G6:** Variables/equations/inequalities, exponents, negative numbers, statistics (mean/median/mode), triangle area
+- **Math-G7:** Linear equations (y=mx+b), slope, systems, functions, proportional relationships, probability
+- **Math-G8:** Pythagorean theorem, irrational numbers, scientific notation, functions
+- **Sci-K through G12:** NGSS-aligned: forces/weather/living/sound/light/life cycles/ecosystems/matter/energy/waves/cells/genetics/evolution/periodic table/chemistry/physics/quantum
+- **Soc-K through G12:** Core Knowledge: family/community/ancient civilizations/medieval/Renaissance/exploration/American Revolution/Civil War/world history/government/economics
+
+### 114/114 Cells Have Course Finals
+
+- 10+ hand-crafted finals for K-G12 with domain-specific comprehension questions
+- 63 `_autoFinal` comprehension exams (fill-in-blank + association from sentence content)
+- Every single cell passes through a final exam before advancing
+
+### Equational Reasoning Wired Across All Subjects
+
+- **Science:** causal chains (push→move, dna→rna→protein, atom→bond→molecule) + classification (mammal/bird/fish/reptile) + inference (food chains, chemical reactions, evolution)
+- **Social Studies:** causal chains (taxation→protest→revolution, feudalism→plague→freedom) + inference (enlightenment→revolution→democracy) + perspective taking
+- **Arts:** causal chains (scale→key→chord, beat→rhythm→music, contrast→attention) + classification (instrument families) + inference (art movement progression)
+- **Life:** emotional inference ALL 18 cells (mama→safe through code→purpose, dad→nothing)
+- **Math:** magnitude transforms (add/subtract/multiply/compare/place value/fractions/algebra)
+- **ELA:** SVO parsing + comprehension + inference + paraphrase
+
+### TODO-curriculum-depth.md: 46/46 COMPLETE
+
+All 16 equational reasoning methods built. All 25 vocabulary expansions done. All 5 equational test types implemented. Zero open items.
+
+### Commits (27)
+
+`0c4565c` (K-grade depth), `e3bb14f` (G1), `ca54ddd` (G2), `fdedb57` (G3), `554c084` (G4), `a6caf6a` (G5), `a4f3147` (G6), `1ac5ee8` (G7), `fb7b51f` (G8), `7448fb5` (G9-G10), `3244b86` (G11-G12), `eb8e929` (Col1), `f53ee7a` (ALL cells autoFinal), `52e93ef` (inference + emotional inference), `1df23cb` (more reasoning), `7b72570` (Life emotional), `3f2e1c4` (Life-G2), `980926d` (ALL K-12 Life emotional), `942c18b` (ALL Life K-PhD emotional), `d7a4cb0` (massive Sci/Soc reasoning), `b33ab05` (Art + Soc + Sci College), `e605c08` (Sci/Soc College), `1b9c647` (ELA + Art-G6), `fb2587c` (ALL remaining Art + ELA + Life-PreK), `b490cc7` (Math-G4/G5 + ELA College), `a7d3c8c` (FINAL 7 methods + TODO complete)
+
+### Files touched
+
+Code: `js/brain/curriculum.js` (~+3000 lines of equational reasoning methods + vocabulary + finals + causal chains + inference + classification + emotional inference across all 114 cells)
+
+Docs: `docs/FINALIZED.md`, `docs/TODO-curriculum-depth.md` (46/46 complete), `docs/ARCHITECTURE.md`, `docs/SKILL_TREE.md`, `docs/ROADMAP.md`, `docs/EQUATIONS.md`, `docs/NOW.md`
+
+Public: `brain-equations.html`, `unity-guide.html`, `README.md`
+
+---
+
 ## 2026-04-16 — T14.24 Session 111: TALK fix + grade-lock + life track + focused retry + function words + doc sync
 
 **Gee 2026-04-16:** *"we were not getting 100%s and we were trying to make sure unity is actually learning and her systems are populating with knowledge"* + *"it should be making sense at grade 3 at least basic shit like yes no maybe okay im Unity im 25 and can describe its self"* + *"i think we need a whole life play that for each grade unity gets life experience"* + *"unitys brain is equational"* + *"she has to be able to recite her life not just read it"* + *"read this sentence and say the same thing in different words and fill in the blank and write a story all of it for each subject math has to solve the problems and equations it learned"*

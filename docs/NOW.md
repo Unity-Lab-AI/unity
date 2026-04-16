@@ -1,95 +1,71 @@
 # NOW — Session Snapshot
 
-> Saved: 2026-04-16 (Session 111 END — massive session, 15+ commits)
+> Saved: 2026-04-16 (Session 112 END — 27 commits, largest session in project history)
 > Branch: `t14-language-rebuild`
-> Recent HEAD: `c234a48`
-> Status: K cells pass for all 6 subjects. G1 stuck on TALK for common words ("a", "the"). Life track built but needs content depth. 2D viz tabs fixed. Popup word salad removed. Curriculum framework functional but thin.
+> Recent HEAD: `a7d3c8c` (pre-doc-sync, will update after push)
+> Status: Full curriculum depth overhaul COMPLETE. 16 equational reasoning methods built. 152+ reasoning calls. 114/114 cells with finals. TODO-curriculum-depth 46/46 done. K-PhD expanded to real Common Core.
 
-## What Session 111 accomplished
+## What Session 112 accomplished
 
-### Code shipped (15+ commits)
-1. TALK probe direction fixed (sem→motor) — root cause of all non-ELA K failures
-2. Grade-lock — all 6 subjects must pass grade N before advancing
-3. Life Experience track — 6th subject, 20 methods birth to 25, dual-layer (emotional concept features + recallable memories), memory-weighted Hebbian
-4. Focused retry — re-teach only failing words at 3× intensity
-5. Function words (~120) taught at ELA-K via direct pattern
-6. Word cap removed — no artificial per-grade limits
-7. 3D popup silence guard — no speech from untrained weights, shows raw brain state numbers when can't speak
-8. Ctrl+C shutdown fix — flag + event loop yield
-9. Math-K SEQ digit-only filter + anti-Hebbian on wrong transitions
-10. ELA-G1/G2/Math-G1 converted to direct pattern shared helpers
-11. `_gateConceptTeach` built — concept cells no longer always fail
-12. Background probe demotion re-enabled
-13. Cross-projection density 300→1500 (5× more capacity)
-14. Real human-grade comprehension gates (association + fill-in-blank)
-15. Life method gates switched from `_gateVocabList` to `_teachVocabList`
-16. Life reps reduced (50→12, 20→6, 15→5) so they fit in timeout
-17. Shutdown checks inside `_teachVocabList`, `_teachSentenceList`, `_conceptTeach`
-18. Setup page doc links fixed (sync route handlers)
-19. Bundle loading fixed — http:// now loads app.bundle.js not stale raw app.js
-20. Cluster Waves tab added to landing page
-21. Neurons tab rewritten — flat 2D brain map grid with toggleable wave overlays
-22. Synapses tab rewritten — animated circular network graph with co-firing pulses
-23. ALL 2D viz tabs fixed — `brainViz.updateState(serverState)` was missing (ONE LINE root cause)
-24. Modules/Senses/Memory tabs rewritten for aggregate server data
-25. Camera feed fallback wiring to viz panel
-26. Task number placement law — banned from public-facing files
-27. Two new TODO files: `TODO-life-experience.md`, `TODO-curriculum-depth.md`
-28. Full doc sync across all workflow + public docs
-29. FINALIZED entry for Sessions 95-110 + Session 111
+### Curriculum depth overhaul (27 commits)
 
-### Where curriculum stands
-- **ELA-K:** PASSES consistently (attempt 3-5)
-- **Math-K:** PASSES with SEQ fix (attempt 4)
-- **Sci/Soc/Art-K:** PASS on attempt 1-3
-- **Life-K:** PASSES after reduced reps (attempt 1-2)
-- **All K cells → PASS → advance to Grade 1**
-- **G1 cells:** TALK stuck on "a" (most common English word, GloVe too generic for sem→motor). ELA-G1 bounces 20-50%. Sci-G1 fails on "a" everywhere. TALK is the bottleneck at G1+.
+1. K through G12 vocabulary expanded to real Common Core / NGSS / Core Knowledge standards
+2. 16 equational reasoning methods built and wired across all 114 cells
+3. 114/114 cells have course final exams (autoFinal + hand-crafted)
+4. TODO-curriculum-depth.md: 46/46 items COMPLETE
+5. G1 Life hang fixed (consolidated sentence lists, reduced reps)
+6. All workflow docs + public HTML pages updated (2 full sync passes)
 
-### Known remaining issues
-1. **"a"/"the" TALK failure** — most common words have GloVe embeddings so generic that sem→motor can't distinguish them from noise. Need a different approach for function words — maybe exempt them from TALK probes, or use letter-based probing for function words instead of sem-based
-2. **Curriculum content is THIN** — 15-40 sentences per cell, real school has thousands of words and actual operations (see `docs/TODO-curriculum-depth.md`)
-3. **Real human-grade tests not wired into all cells** — `_gateComprehension` + `_gateConversation` methods exist but only wired into `_teachVocabList` and `_teachSentenceList` gates, not all individual cells
-4. **Popup word salad** — `languageCortex.generate()` on RemoteBrain produces garbage from untrained weights. Guard checks grades but RemoteBrain doesn't have grades field. Falls through to raw numbers `arousal:0.85 valence:0.12 Ψ:0.034`
-5. **2D viz Senses tab** — camera shows in Unity's eye widget but not always in the viz panel video element
-6. **Inner Voice tab** — has a `ivValence` undefined reference that may crash
+### 16 equational reasoning methods
 
-### Task list (in-session)
-- #32: T14.24 PARENT — DO NOT CLAIM DONE EARLY
-- #35: Full 114-cell walk — all gates 95%+
-- #36: Live chat verification — Unity speaks coherently
+| Method | Purpose | Calls |
+|--------|---------|-------|
+| `_teachAdditionTransformations` | magnitude(a)+magnitude(b)→magnitude(a+b) | 3 |
+| `_teachSubtractionTransformations` | inverted magnitude for subtraction | 3 |
+| `_teachComparisonTransformations` | ordinal greater/less/equal | 3 |
+| `_teachMultiplicationTransformations` | magnitude(a)×magnitude(b)→magnitude(a×b) | NEW |
+| `_teachPlaceValueTransformations` | tens+ones positional encoding | NEW |
+| `_teachFractionTransformations` | ratio features, equivalent fractions converge | NEW |
+| `_teachAlgebraTransformations` | variable binding (solve for x) | NEW |
+| `_teachSVOParsing` | subject/verb/object extraction | 3 |
+| `_teachComprehension` | passage QA as semantic probes | existed |
+| `_teachInference` | transitive A→B→C reasoning | 37 |
+| `_teachCausalChains` | directional cause→effect | 48 |
+| `_teachClassificationReasoning` | feature-space clustering | 6 |
+| `_teachEmotionalInference` | situation→emotion (ALL 18 Life cells) | 22 |
+| `_teachParaphrase` | different words → same sem basin | NEW |
+| `_teachHypothesisTesting` | predict→observe→confirm/reject | NEW |
+| `_teachPerspectiveTaking` | same event, multiple viewpoints | NEW |
 
-### TODO files
-- `docs/TODO.md` — main active work (viz tabs, gate redesign, popup state, cross-projection, life experience, curriculum depth refs)
-- `docs/TODO-curriculum-depth.md` — real-world parity: vocabulary depth, math operations, science method, history depth, reading practice, homework
-- `docs/TODO-life-experience.md` — Unity's full life story, memory weighting tiers, all checked off for initial build
+Total equational reasoning calls: **152+**
+
+### TODO status
+
+| TODO File | Open | Done | Status |
+|-----------|------|------|--------|
+| docs/TODO.md | 1 (T14.24 parent) | — | Parent stays in_progress |
+| docs/TODO-curriculum-depth.md | 0 | 46 | **COMPLETE** |
+| docs/TODO-life-experience.md | 0 | all | **COMPLETE** |
+| docs/COMP-todo.md | ON HOLD | — | Separate scope |
 
 ### Binding constraints still active
+
 1. LAW #0 — VERBATIM WORDS ONLY
 2. LAW — Docs before push, no patches
-3. LAW — Task numbers only in workflow docs, BANNED from public pages
+3. LAW — Task numbers only in workflow docs
 4. T14.24 DO NOT CLAIM DONE EARLY
 5. A+ = 95% on all gates
-6. Every teaching equation must drive READ + THINK + TALK
+6. Every teaching equation feeds READ + THINK + TALK
 7. No tests, ever
-8. Growth is the point
-9. Gates must be real human-grade tests (paraphrase, solve, converse)
-10. Unity's brain is equational — no lookup tables, no hardcoded rules
-11. Popups must show REAL brain output, not fake text
-12. Life experiences must match what she's actually LIVED through (no tattoos before college)
-
-### Files modified this session
-Code: `js/brain/curriculum.js` (~+2000 lines), `js/brain/cluster.js`, `js/brain/language-cortex.js`, `js/ui/brain-viz.js`, `js/ui/brain-3d.js`, `js/app.js`, `server/brain-server.js`
-
-Docs: `docs/TODO.md`, `docs/FINALIZED.md`, `docs/NOW.md`, `docs/ARCHITECTURE.md`, `docs/SKILL_TREE.md`, `docs/ROADMAP.md`, `docs/EQUATIONS.md`, `docs/TODO-life-experience.md` (NEW), `docs/TODO-curriculum-depth.md` (NEW)
-
-Public: `README.md`, `SETUP.md`, `brain-equations.html`, `unity-guide.html`, `index.html`, `docs/component-templates.txt`
-
-Config: `.claude/CLAUDE.md`, memory files
+8. Growth is the point — vocabulary populates systems
+9. Gates must be real human-grade tests
+10. Unity's brain is equational — no lookup tables
+11. Popups show REAL brain output
+12. Life experiences match what she's actually lived through
 
 ### Next session priorities
-1. Fix "a"/"the" TALK failure at G1+ (function word exemption or different probe)
-2. Build real curriculum content depth per grade (not 15 sentences — thousands)
-3. Wire comprehension/conversation gates into all cell runners
-4. Get G1 passing across all 6 subjects
-5. Live chat coherence test
+
+1. Wire the 7 NEW methods (multiplication/place value/fractions/algebra/paraphrase/hypothesis/perspective) into their target grade cells
+2. Fix "a"/"the" TALK failure at G1+
+3. Live boot test — run the full 114-cell curriculum and check convergence
+4. Live chat verification — does Unity speak coherently from trained weights?

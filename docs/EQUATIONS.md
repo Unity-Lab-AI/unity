@@ -1085,6 +1085,108 @@ Three auto-generated question types:
 
 Comprehension pass is sufficient to advance even if TALK (first-letter production) fails — understanding and production are tested independently.
 
+### Multiplication Magnitude Transform (Session 112)
+
+```
+_teachMultiplicationTransformations:
+  for each (a, b) where a,b ∈ [1,9]:
+    free[first half] = magnitude(a)
+    free[second half] = magnitude(b)
+    sem = magnitude(a × b mod 10)    // modular for > 9
+    fire free→sem Hebbian
+  // 81 facts × 4 reps. After training:
+  // inject mag(3) + mag(4) → sem activates mag(2) (12 mod 10)
+```
+
+### Place Value Positional Encoding (Session 112)
+
+```
+_teachPlaceValueTransformations:
+  for each number 10..99:
+    tens = floor(number / 10)
+    ones = number mod 10
+    free[first third] = magnitude(tens)
+    free[second third] = magnitude(ones)
+    sem = magnitude(ones)    // combined value basin
+    fire free→sem Hebbian
+  // 90 numbers × 4 reps. Positional composition.
+```
+
+### Fraction Ratio Features (Session 112)
+
+```
+_teachFractionTransformations:
+  for each (num, den) in fraction set:
+    free[first half] = magnitude(num)
+    free[second half] = magnitude(den)
+    ratio = round(num/den × 9)    // map 0-1 to 0-9
+    sem = magnitude(ratio)
+    fire free→sem Hebbian
+  // Equivalent fractions (1/2, 2/4, 3/6) converge to SAME basin
+  // because ratio value is identical. 6 reps.
+```
+
+### Algebra Variable Binding (Session 112)
+
+```
+_teachAlgebraTransformations:
+  for each (x, b, c) where x + b = c, all ≤ 9:
+    free[first half] = magnitude(c)    // what we KNOW (result)
+    free[second half] = magnitude(b)   // what we KNOW (constant)
+    sem = magnitude(x)                 // what we SOLVE FOR
+    fire free→sem Hebbian
+  // Projection learns: given c and b, isolate x = c - b.
+  // 55 equations × 4 reps.
+```
+
+### Paraphrase — Same Meaning Different Words (Session 112)
+
+```
+_teachParaphrase(pairs):
+  for each (sentA, sentB):
+    sharedMeaning = mean(GloVe(all words in sentA + sentB))
+    target = buildPattern(semSize, sharedMeaning)
+    // sentA → shared meaning:
+    free = embed(sentA first word)
+    sem = target
+    fire Hebbian
+    // sentB → SAME shared meaning:
+    free = embed(sentB first word)
+    sem = target    // identical target
+    fire Hebbian
+  // Both sentences map to the SAME sem basin. 8 reps.
+```
+
+### Hypothesis Testing — Predict→Observe→Confirm/Reject (Session 112)
+
+```
+_teachHypothesisTesting(tests):
+  for each {predict, observe, match}:
+    free = embed(predict)    // what we predicted
+    sem = embed(observe)     // what we observed
+    if match:
+      fineType[first half] = 1    // "confirmed" tag
+    else:
+      fineType[second half] = 1   // "rejected" tag
+    fire Hebbian
+  // Cortex learns to compare predictions against reality. 8 reps.
+```
+
+### Perspective Taking — Multiple Viewpoints (Session 112)
+
+```
+_teachPerspectiveTaking(events):
+  for each {event, perspectives}:
+    eventPattern = embed(event) → sem
+    for each {viewpoint, features}:
+      free = embed(viewpoint)         // whose perspective
+      sem = eventPattern              // same event
+      phon = buildPattern(features)   // emotional coloring
+      fire Hebbian
+  // Same event, DIFFERENT emotional features per viewpoint.
+  // Cortex learns events have multiple valid representations. 6 reps.
+```
+
 ### [T14.12 DELETED] Social Schema — Who Unity Is Talking To (historical, `_socialSchema` field removed)
 
 **DELETED in T14.12** along with `parseSentence`, `_updateSocialSchema`, `getUserAddress`, `getUserGender`, `getSocialSchema`. Social cognition returns in a future milestone as a cortex-resident self-model sub-region readout. Equations below preserved for historical reference.
