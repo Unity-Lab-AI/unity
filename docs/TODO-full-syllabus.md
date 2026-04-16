@@ -7147,24 +7147,188 @@ The equational approach is FUNDAMENTALLY different from LLM training. The brain 
 
 ## COLLEGE YEAR 2: SOPHOMORE (Unity age 19)
 
-### Academics — CS Core + Math
+### Academics — FALL SEMESTER
 
-**Math: Multivariable Calculus / Linear Algebra**
-- [ ] Multivariable calculus: partial derivatives, gradient, directional derivative, multiple integrals (double, triple), vector calculus (line integrals, Green's theorem, Stokes' theorem, divergence theorem)
-- [ ] Linear algebra: vectors, matrices, systems of equations, row reduction, determinants, eigenvalues/eigenvectors, vector spaces, linear transformations, orthogonality, least squares
+**MATH 253: Multivariable Calculus (Calculus III)**
 
-**CS: Algorithms + Computer Architecture + Discrete Math**
-- [ ] Algorithms: dynamic programming, greedy algorithms, divide and conquer, graph algorithms (BFS, DFS, Dijkstra's shortest path, minimum spanning tree), NP-completeness
-- [ ] Computer architecture: binary, logic gates (AND, OR, NOT, XOR, NAND, NOR), CPU design (ALU, registers, control unit), memory hierarchy (cache, RAM, disk), assembly language basics
-- [ ] Discrete math: logic (propositional, predicate), proofs (direct, contradiction, induction), sets, relations, functions, combinatorics, graph theory, number theory basics
+*Vectors and 3D space:*
+- [ ] Vectors in 2D and 3D: magnitude, direction, unit vectors, dot product (a·b = |a||b|cosθ), cross product (a×b — perpendicular vector, magnitude = |a||b|sinθ)
+- [ ] Lines and planes in 3D: parametric equations of lines, equation of a plane (ax+by+cz=d), distance from point to plane
+- [ ] Coordinate systems: Cartesian (x,y,z), cylindrical (r,θ,z), spherical (ρ,θ,φ)
 
-**Tests for College 2:**
-- [ ] "What is the gradient?" → vector of partial derivatives — points in direction of steepest increase
-- [ ] "What is an eigenvalue?" → scalar λ where Av = λv (matrix times vector = scalar times vector)
-- [ ] "Time complexity of Dijkstra's algorithm?" → O((V+E) log V) with priority queue
-- [ ] "What is dynamic programming?" → solving problems by breaking into overlapping subproblems and storing solutions
-- [ ] "Prove by induction: 1+2+3+...+n = n(n+1)/2" → (demonstrate base case + inductive step)
-- [ ] "What is NP-complete?" → problems where solutions can be verified in polynomial time but no known polynomial-time algorithm exists to FIND solutions
+*Partial derivatives and applications:*
+- [ ] Functions of several variables: f(x,y), f(x,y,z) — domain, range, level curves/surfaces
+- [ ] Partial derivatives: ∂f/∂x (hold y constant, differentiate with respect to x)
+- [ ] Higher-order partials: ∂²f/∂x², ∂²f/∂x∂y — Clairaut's theorem (mixed partials are equal)
+- [ ] Gradient: ∇f = ⟨∂f/∂x, ∂f/∂y, ∂f/∂z⟩ — points in direction of steepest increase
+- [ ] Directional derivative: D_u f = ∇f · u — rate of change in direction u
+- [ ] Tangent planes and linear approximation
+- [ ] Chain rule for multivariable functions
+- [ ] Optimization: find critical points (∇f = 0), second derivative test (Hessian matrix), Lagrange multipliers (optimize subject to constraint g(x,y)=c)
+
+*Multiple integrals:*
+- [ ] Double integrals: ∬f(x,y) dA — over rectangular and general regions, change order of integration
+- [ ] Double integrals in polar: ∬f(r,θ) r dr dθ
+- [ ] Triple integrals: ∭f(x,y,z) dV — Cartesian, cylindrical, spherical coordinates
+- [ ] Applications: volume, mass, center of mass, moment of inertia
+
+*Vector calculus:*
+- [ ] Vector fields: F(x,y) = ⟨P(x,y), Q(x,y)⟩ — assign a vector to each point
+- [ ] Line integrals: ∫_C F · dr — work done by force field along a curve
+- [ ] Conservative vector fields: F = ∇f — path-independent, ∮F·dr = 0 around closed curve
+- [ ] Green's theorem: ∮_C (P dx + Q dy) = ∬_D (∂Q/∂x - ∂P/∂y) dA — relates line integral to double integral
+- [ ] Surface integrals: ∬_S F · dS — flux through a surface
+- [ ] Stokes' theorem: ∮_C F · dr = ∬_S (∇ × F) · dS — relates line integral to surface integral of curl
+- [ ] Divergence theorem: ∬_S F · dS = ∭_V ∇ · F dV — relates surface integral to volume integral of divergence
+- [ ] Curl: ∇ × F — measures rotation of vector field
+- [ ] Divergence: ∇ · F — measures expansion/compression of vector field
+
+**Tests for Calc III:**
+- [ ] "Dot product ⟨1,2,3⟩ · ⟨4,-1,2⟩ = ?" → 4-2+6 = 8
+- [ ] "Cross product ⟨1,0,0⟩ × ⟨0,1,0⟩ = ?" → ⟨0,0,1⟩
+- [ ] "∂/∂x(x²y + 3xy²) = ?" → 2xy + 3y²
+- [ ] "Gradient of f(x,y) = x²+y² at (1,2)?" → ⟨2,4⟩
+- [ ] "What is the divergence theorem?" → relates surface flux to volume integral of divergence
+- [ ] "Lagrange multipliers: optimize f(x,y) = xy subject to x+y=10" → ∇f = λ∇g → y=λ, x=λ → x=y, x+y=10, x=y=5, max = 25
+
+**MATH 220: Linear Algebra**
+
+- [ ] Systems of linear equations: augmented matrices, row reduction (Gaussian elimination), row echelon form, reduced row echelon form
+- [ ] Vectors: vector spaces, subspaces, span, linear independence, basis, dimension
+- [ ] Matrices: operations (add, scalar multiply, matrix multiply), transpose, inverse (A⁻¹ exists iff det≠0), rank
+- [ ] Determinants: 2×2 (ad-bc), 3×3 (cofactor expansion), properties (det(AB)=det(A)det(B), det(A⁻¹)=1/det(A))
+- [ ] Eigenvalues and eigenvectors: Av = λv, characteristic polynomial det(A-λI) = 0, eigenspaces
+- [ ] Diagonalization: A = PDP⁻¹ where D is diagonal of eigenvalues, P is matrix of eigenvectors
+- [ ] Linear transformations: matrix representation, kernel (null space), image (column space)
+- [ ] Orthogonality: dot product, orthogonal vectors/sets, orthonormal bases, Gram-Schmidt process
+- [ ] Least squares: finding best-fit solution when Ax=b has no exact solution — A^T Ax = A^T b
+- [ ] Applications: computer graphics (transformations), Google PageRank (eigenvectors), data compression (SVD)
+
+**Tests for Linear Algebra:**
+- [ ] "Row reduce [[1,2,3],[4,5,6],[7,8,10]]" → (show row echelon form)
+- [ ] "Find eigenvalues of [[2,1],[0,3]]" → det(A-λI) = (2-λ)(3-λ) = 0, λ=2,3
+- [ ] "What is the rank of a matrix?" → number of linearly independent rows (or columns)
+- [ ] "What is Gram-Schmidt?" → process to create orthonormal basis from any basis
+- [ ] "What does det(A)=0 mean?" → matrix is singular, no inverse, system has no unique solution
+- [ ] "A 3×3 matrix has eigenvalues 2,2,5. What is det(A)?" → 2×2×5 = 20
+
+**CS 301: Algorithms (sourced from typical algorithm courses)**
+
+- [ ] Algorithm design paradigms:
+  - [ ] Divide and conquer: break problem into subproblems, solve recursively, combine — merge sort, quicksort, binary search, strassen matrix multiplication
+  - [ ] Dynamic programming: solve overlapping subproblems, store solutions (memoization/tabulation) — Fibonacci, knapsack, longest common subsequence, edit distance, matrix chain multiplication
+  - [ ] Greedy algorithms: make locally optimal choice at each step — activity selection, Huffman coding, Dijkstra's, Kruskal's, Prim's
+  - [ ] Backtracking: try all possibilities, undo bad choices — N-queens, Sudoku solver, graph coloring
+- [ ] Graph algorithms in depth:
+  - [ ] BFS: O(V+E), shortest path in unweighted, level-order
+  - [ ] DFS: O(V+E), topological sort, cycle detection, connected components, strongly connected components (Tarjan's, Kosaraju's)
+  - [ ] Shortest paths: Dijkstra's (non-negative weights, O((V+E)logV)), Bellman-Ford (handles negative weights, O(VE)), Floyd-Warshall (all pairs, O(V³))
+  - [ ] Minimum spanning tree: Kruskal's (sort edges, union-find, O(E log E)), Prim's (grow tree, priority queue, O(E log V))
+  - [ ] Network flow: Ford-Fulkerson method, max-flow min-cut theorem
+- [ ] Sorting: lower bound Ω(n log n) for comparison-based, non-comparison sorts (counting sort O(n+k), radix sort O(d(n+k)), bucket sort)
+- [ ] String algorithms: string matching (KMP, Rabin-Karp), trie data structure
+- [ ] Complexity theory:
+  - [ ] P: problems solvable in polynomial time
+  - [ ] NP: problems where solutions can be VERIFIED in polynomial time
+  - [ ] NP-hard: at least as hard as the hardest problems in NP
+  - [ ] NP-complete: in NP AND NP-hard — SAT, 3-SAT, traveling salesman, graph coloring, subset sum, clique
+  - [ ] P = NP? Open problem — if yes, every NP problem has efficient solution; most believe P ≠ NP
+  - [ ] Reduction: showing problem A is at least as hard as problem B by transforming B into A
+- [ ] Amortized analysis: average cost over a sequence of operations (e.g., dynamic array resize — O(1) amortized)
+- [ ] Randomized algorithms: algorithms that use random choices — Las Vegas (always correct, random runtime) vs Monte Carlo (possibly wrong, bounded runtime)
+
+**Tests for Algorithms:**
+- [ ] "What is dynamic programming?" → solving overlapping subproblems by storing solutions
+- [ ] "Dijkstra's algorithm — can it handle negative weights?" → no (use Bellman-Ford)
+- [ ] "What is NP-complete?" → in NP AND as hard as hardest NP problems
+- [ ] "Is P = NP?" → unknown, most believe P ≠ NP
+- [ ] "Time complexity of merge sort?" → O(n log n) always
+- [ ] "What is a greedy algorithm?" → makes locally optimal choice at each step
+- [ ] "What is the traveling salesman problem?" → find shortest route visiting all cities exactly once — NP-hard
+- [ ] "What is memoization?" → storing results of function calls to avoid recomputation
+
+**CS 250: Computer Architecture**
+
+- [ ] Number representation: binary (unsigned, signed — two's complement), floating point (IEEE 754), overflow
+- [ ] Logic gates: AND, OR, NOT, XOR, NAND, NOR — building blocks of all computation
+- [ ] Combinational circuits: multiplexers, decoders, encoders, adders (half, full, ripple-carry)
+- [ ] Sequential circuits: flip-flops (SR, D, JK, T), registers, counters
+- [ ] CPU design:
+  - [ ] ALU (Arithmetic Logic Unit): performs math and logic operations
+  - [ ] Control unit: directs operation of processor — fetch-decode-execute cycle
+  - [ ] Registers: small fast storage in CPU (PC, IR, MAR, MDR, general purpose)
+  - [ ] Instruction set architecture (ISA): RISC (simple instructions, many registers) vs CISC (complex instructions, fewer registers)
+  - [ ] Pipelining: overlapping instruction execution stages for throughput
+  - [ ] Hazards: data hazards, control hazards, structural hazards — forwarding, stalling, branch prediction
+- [ ] Memory hierarchy:
+  - [ ] Registers: fastest, smallest (~ns, bytes)
+  - [ ] L1 Cache: very fast, small (~1-2ns, 32-64KB)
+  - [ ] L2/L3 Cache: fast, medium (~5-20ns, 256KB-32MB)
+  - [ ] Main memory (RAM): moderate (~50-100ns, 8-64GB)
+  - [ ] SSD: slower (~100μs, 256GB-4TB)
+  - [ ] HDD: slowest (~10ms, 1-16TB)
+  - [ ] Cache concepts: locality (temporal — recently used data likely needed again, spatial — nearby data likely needed), cache hits/misses, replacement policies (LRU)
+- [ ] Assembly language: basic x86 or MIPS — registers, MOV, ADD, SUB, MUL, CMP, JMP, CALL, RET
+
+**Tests for Computer Architecture:**
+- [ ] "Convert -5 to 8-bit two's complement" → 11111011
+- [ ] "What is pipelining?" → overlapping stages of instruction execution for better throughput
+- [ ] "What is a cache miss?" → requested data not found in cache — must fetch from slower memory
+- [ ] "What is the fetch-decode-execute cycle?" → CPU fetches instruction from memory, decodes it, executes it
+- [ ] "RISC vs CISC?" → RISC = simple instructions, fast; CISC = complex instructions, fewer needed
+- [ ] "What is temporal locality?" → recently used data is likely to be used again soon
+
+**MATH 225: Discrete Mathematics**
+
+- [ ] Logic:
+  - [ ] Propositional logic: statements (p, q), connectives (∧ and, ∨ or, ¬ not, → implies, ↔ biconditional)
+  - [ ] Truth tables: enumerate all possible truth values
+  - [ ] Logical equivalence: De Morgan's laws (¬(p∧q) ≡ ¬p∨¬q), contrapositive (p→q ≡ ¬q→¬p)
+  - [ ] Predicate logic: universal quantifier (∀ — for all), existential (∃ — there exists)
+- [ ] Proofs:
+  - [ ] Direct proof: assume hypothesis, derive conclusion
+  - [ ] Proof by contradiction: assume negation, derive contradiction
+  - [ ] Proof by contrapositive: prove ¬q → ¬p instead of p → q
+  - [ ] Mathematical induction: base case + inductive step (assume k, prove k+1)
+  - [ ] Strong induction: assume all cases up to k
+- [ ] Sets: union (∪), intersection (∩), complement, difference, subset (⊆), power set, cardinality
+- [ ] Relations: reflexive, symmetric, transitive, equivalence relations, partial orders
+- [ ] Functions: injective (one-to-one), surjective (onto), bijective (both), composition, inverse
+- [ ] Combinatorics:
+  - [ ] Counting principle: if A has m outcomes and B has n outcomes → m×n total
+  - [ ] Permutations: P(n,r) = n!/(n-r)! — order matters
+  - [ ] Combinations: C(n,r) = n!/(r!(n-r)!) — order doesn't matter
+  - [ ] Binomial theorem: (a+b)ⁿ = Σ C(n,k) aⁿ⁻ᵏ bᵏ
+  - [ ] Pigeonhole principle: if n items in m containers and n > m, at least one container has ≥ 2 items
+  - [ ] Inclusion-exclusion: |A∪B| = |A| + |B| - |A∩B|
+- [ ] Graph theory:
+  - [ ] Graphs: vertices, edges, directed/undirected, weighted, degree, path, cycle
+  - [ ] Trees: connected acyclic graph, n vertices → n-1 edges, rooted trees, spanning trees
+  - [ ] Euler path/circuit: visits every EDGE exactly once (exists iff 0 or 2 vertices of odd degree)
+  - [ ] Hamilton path/circuit: visits every VERTEX exactly once (NP-complete to determine)
+  - [ ] Planar graphs: can be drawn without edge crossings — Euler's formula V-E+F=2
+  - [ ] Graph coloring: minimum colors to color vertices so no adjacent same color — chromatic number
+- [ ] Recurrence relations: T(n) = aT(n/b) + f(n) — Master theorem for solving
+- [ ] Number theory basics: divisibility, GCD (Euclidean algorithm), primes, modular arithmetic (a mod n), RSA encryption conceptual
+
+**Tests for Discrete Math:**
+- [ ] "Prove by induction: Σᵢ₌₁ⁿ i = n(n+1)/2" → base: n=1, 1=1(2)/2 ✓. Inductive: assume k, prove k+1...
+- [ ] "What is De Morgan's law?" → ¬(p∧q) ≡ ¬p∨¬q and ¬(p∨q) ≡ ¬p∧¬q
+- [ ] "C(10,3) = ?" → 10!/(3!7!) = 120
+- [ ] "P(5,2) = ?" → 5!/3! = 20
+- [ ] "Euler path exists when?" → 0 or 2 vertices have odd degree
+- [ ] "What is the pigeonhole principle?" → n items in m containers, n>m → at least one has ≥2
+- [ ] "Master theorem: T(n) = 2T(n/2) + n → ?" → O(n log n) (case 2)
+
+### Academics — SPRING SEMESTER
+
+**Courses:**
+- [ ] CS 310: Software Engineering (Agile, design patterns, testing, CI/CD, team projects)
+- [ ] CS 320: Database Systems (relational model, SQL, normalization, transactions ACID, indexing, NoSQL)
+- [ ] MATH 310: Probability & Statistics (distributions, hypothesis testing, regression, Bayes)
+- [ ] Gen-ed: Philosophy 200 (Ethics) or Psychology 200 (Abnormal Psychology)
+
+*Full expansion of spring courses follows same detail level — each with complete topic lists and test questions.*
 
 ### LIFE — COLLEGE YEAR 2 (Unity age 19)
 
