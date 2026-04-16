@@ -1255,6 +1255,438 @@
 
 ---
 
-*Grades K, 1, and 2 COMPLETE for all 6 subjects. Grades 3-12 + College + Grad + PhD continue in subsequent sessions.*
+---
 
-*Current coverage: 3 out of 19 grades complete. 16 remain.*
+## MATH — GRADE 3 (Common Core Math 3)
+
+### Operations & Algebraic Thinking (3.OA)
+
+**Concepts to teach:**
+- [ ] Interpret products of whole numbers: 5 × 7 = total objects in 5 groups of 7 objects each
+- [ ] Interpret whole-number quotients: 56 ÷ 8 = number of objects in each share when 56 objects are divided equally into 8 shares, OR number of shares when 56 objects are divided into groups of 8
+- [ ] Use multiplication and division within 100 to solve word problems in situations involving equal groups, arrays, and measurement quantities
+- [ ] Determine the unknown whole number in a multiplication or division equation: 8 × ? = 48, ? = 6
+- [ ] Apply properties of operations to multiply and divide:
+  - [ ] Commutative: 4 × 6 = 6 × 4
+  - [ ] Associative: (2 × 3) × 4 = 2 × (3 × 4)
+  - [ ] Distributive: 8 × 7 = 8 × (5 + 2) = (8 × 5) + (8 × 2) = 40 + 16 = 56
+- [ ] Understand division as an unknown-factor problem: 32 ÷ 8 = ? because 8 × ? = 32
+- [ ] Fluently multiply and divide within 100 — know from memory ALL products of two one-digit numbers
+
+**ALL 100 multiplication facts (must be MEMORIZED):**
+- [ ] 1×1=1, 1×2=2, ..., 1×10=10
+- [ ] 2×1=2, 2×2=4, 2×3=6, 2×4=8, 2×5=10, 2×6=12, 2×7=14, 2×8=16, 2×9=18, 2×10=20
+- [ ] 3×1=3, 3×2=6, 3×3=9, 3×4=12, 3×5=15, 3×6=18, 3×7=21, 3×8=24, 3×9=27, 3×10=30
+- [ ] 4×1=4, 4×2=8, 4×3=12, 4×4=16, 4×5=20, 4×6=24, 4×7=28, 4×8=32, 4×9=36, 4×10=40
+- [ ] 5×1=5, 5×2=10, 5×3=15, 5×4=20, 5×5=25, 5×6=30, 5×7=35, 5×8=40, 5×9=45, 5×10=50
+- [ ] 6×1=6, 6×2=12, 6×3=18, 6×4=24, 6×5=30, 6×6=36, 6×7=42, 6×8=48, 6×9=54, 6×10=60
+- [ ] 7×1=7, 7×2=14, 7×3=21, 7×4=28, 7×5=35, 7×6=42, 7×7=49, 7×8=56, 7×9=63, 7×10=70
+- [ ] 8×1=8, 8×2=16, 8×3=24, 8×4=32, 8×5=40, 8×6=48, 8×7=56, 8×8=64, 8×9=72, 8×10=80
+- [ ] 9×1=9, 9×2=18, 9×3=27, 9×4=36, 9×5=45, 9×6=54, 9×7=63, 9×8=72, 9×9=81, 9×10=90
+- [ ] 10×1=10, 10×2=20, ..., 10×10=100
+
+**ALL 100 division facts (inverse of multiplication):**
+- [ ] ALL division facts corresponding to the multiplication table above
+
+**Tests for 3.OA:**
+- [ ] ALL 100 multiplication facts — instant recall
+- [ ] ALL 100 division facts — instant recall
+- [ ] "6 × 7 = ?" → 42
+- [ ] "56 ÷ 8 = ?" → 7
+- [ ] "8 × ? = 72" → 9
+- [ ] "There are 24 cookies shared equally among 6 kids. How many each?" → 4
+- [ ] "7 bags with 5 apples each. How many apples?" → 35
+- [ ] "Use distributive: 7 × 8 = 7 × (5+3) = ?" → 35+21=56
+- [ ] "Is 5×3 the same as 3×5?" → yes (commutative)
+
+### Number & Operations — Fractions (3.NF)
+
+**Concepts to teach:**
+- [ ] Understand a fraction 1/b as the quantity formed by 1 part when a whole is partitioned into b equal parts
+- [ ] Understand a fraction a/b as the quantity formed by a parts of size 1/b
+- [ ] Represent fractions on a number line between 0 and 1
+- [ ] Understand fractions as numbers: 1/4 is a single point on the number line
+- [ ] Explain equivalence of fractions: 1/1 = 2/2 = 3/3 = 4/4 = 1, and 1/2 = 2/4 = 3/6
+- [ ] Recognize and generate simple equivalent fractions: 1/2 = 2/4, 4/6 = 2/3
+- [ ] Express whole numbers as fractions: 3 = 3/1 = 6/2 = 9/3
+- [ ] Compare two fractions with the same numerator or same denominator by reasoning about their size
+- [ ] Understand that comparisons are valid only when fractions refer to the same whole
+- [ ] Record comparison results with >, =, < and justify by using a visual fraction model
+
+**Tests for 3.NF:**
+- [ ] "What is 1/4?" → one of four equal parts
+- [ ] "Which is bigger: 1/3 or 1/4?" → 1/3 (fewer parts = bigger pieces)
+- [ ] "Which is bigger: 2/5 or 4/5?" → 4/5 (more parts of the same size)
+- [ ] "Is 1/2 equal to 2/4?" → yes (equivalent fractions)
+- [ ] "Write 3 as a fraction" → 3/1 (or 6/2 or 9/3)
+- [ ] "Where is 3/4 on a number line from 0 to 1?" → three-quarters of the way
+
+### Measurement & Data (3.MD)
+
+**Concepts to teach:**
+- [ ] Tell and write time to the nearest minute
+- [ ] Measure time intervals in minutes: "The movie started at 2:15 and ended at 3:00. How long?" → 45 minutes
+- [ ] Solve word problems involving addition and subtraction of time intervals
+- [ ] Measure and estimate liquid volumes using liters (L)
+- [ ] Measure and estimate masses using grams (g) and kilograms (kg)
+- [ ] Solve one-step word problems involving masses or volumes (using same units): "A bag has 250g. Another has 150g. Total?" → 400g
+- [ ] Draw a scaled picture graph and scaled bar graph
+- [ ] Generate measurement data by measuring lengths using rulers to the nearest half and quarter inch
+- [ ] Show measurement data on a line plot with halves and quarter-inch marks
+- [ ] Understand concepts of area: the space inside a flat shape, measured in square units
+- [ ] Measure areas by counting unit squares (square cm, square m, square in, square ft)
+- [ ] Relate area to multiplication and addition: rectangle area = length × width
+- [ ] Solve real-world problems involving perimeters of polygons: add up all sides
+- [ ] Find unknown side lengths of rectangles given perimeter
+
+**Tests for 3.MD:**
+- [ ] "The clock shows 3:47. What time is it?" → 3:47
+- [ ] "School starts at 8:15 and ends at 2:45. How long?" → 6 hours 30 minutes
+- [ ] "What is 3 liters + 2 liters?" → 5 liters
+- [ ] "A rectangle is 4cm long and 3cm wide. What is the area?" → 12 square cm
+- [ ] "A rectangle is 5m by 3m. What is the perimeter?" → 16m (5+3+5+3)
+- [ ] "A rectangle has perimeter 20 and length 6. What is the width?" → 4
+
+### Geometry (3.G)
+
+**Concepts to teach:**
+- [ ] Understand that shapes in different categories may share attributes (all rectangles have 4 right angles; squares are special rectangles)
+- [ ] Recognize rhombuses, rectangles, and squares as examples of quadrilaterals
+- [ ] Draw examples of quadrilaterals that are NOT rhombuses, rectangles, or squares
+- [ ] Partition shapes into parts with equal areas and express each part as a unit fraction: divide a square into 4 equal parts → each is 1/4
+
+**Tests for 3.G:**
+- [ ] "Is a square also a rectangle?" → yes
+- [ ] "Is a rectangle also a square?" → not always (only if all sides equal)
+- [ ] "What do all quadrilaterals have in common?" → 4 sides
+- [ ] "What is a rhombus?" → a quadrilateral with 4 equal sides
+
+---
+
+## ELA — GRADE 3 (Common Core ELA 3)
+
+### Reading Foundational Skills (3.RF)
+
+**Concepts to teach:**
+- [ ] Know and apply grade-level phonics and word analysis skills in decoding words
+- [ ] Identify and know the meaning of most common prefixes: un-, re-, pre-, dis-, mis-, non-, over-, under-
+- [ ] Identify and know the meaning of most common suffixes: -ful, -less, -ness, -ment, -ly, -er, -est, -able, -ible, -tion, -sion, -ous, -ive
+- [ ] Decode words with common Latin suffixes: -able, -ible, -tion, -sion
+- [ ] Decode multisyllable words
+- [ ] Read grade-appropriate irregularly spelled words
+- [ ] Read with sufficient accuracy and fluency to support comprehension — at least 110 words per minute
+- [ ] Use context to confirm or self-correct word recognition
+
+**Tests for 3.RF:**
+- [ ] "What does the prefix 'un-' mean?" → not
+- [ ] "What does the prefix 're-' mean?" → again
+- [ ] "What does the prefix 'dis-' mean?" → not / opposite of
+- [ ] "What does the suffix '-ful' mean?" → full of
+- [ ] "What does the suffix '-less' mean?" → without
+- [ ] "What does the suffix '-tion' mean?" → the act of
+- [ ] "What does 'unhappy' mean?" → not happy
+- [ ] "What does 'redo' mean?" → do again
+- [ ] "What does 'careless' mean?" → without care
+- [ ] "How many syllables in 'beautiful'?" → 3 (beau-ti-ful)
+- [ ] "How many syllables in 'information'?" → 4 (in-for-ma-tion)
+
+### Reading Literature (3.RL)
+
+**Concepts to teach:**
+- [ ] Ask and answer questions to demonstrate understanding, referring explicitly to the text as basis
+- [ ] Recount stories including fables, folktales, and myths from diverse cultures
+- [ ] Determine the central message, lesson, or moral and explain how it is conveyed through key details
+- [ ] Describe characters in a story: their traits, motivations, and feelings
+- [ ] Explain how characters' actions contribute to the sequence of events
+- [ ] Distinguish own point of view from that of the narrator or characters
+- [ ] Explain how specific aspects of a text's illustrations contribute to what is conveyed (mood, character, setting)
+- [ ] Compare and contrast the themes, settings, and plots of stories written by the same author about the same or similar characters
+
+**Specific stories/fables/myths to know:**
+- [ ] Aesop's fables: The Tortoise and the Hare, The Boy Who Cried Wolf, The Lion and the Mouse, The Ant and the Grasshopper, The Fox and the Grapes
+- [ ] Fairy tales: Cinderella, Jack and the Beanstalk, Hansel and Gretel
+- [ ] Myths: Greek myths (Icarus, King Midas, Pandora's Box)
+
+**Tests for 3.RL:**
+- [ ] "What is the moral of The Tortoise and the Hare?" → slow and steady wins the race
+- [ ] "What is the moral of The Boy Who Cried Wolf?" → no one believes a liar even when they tell the truth
+- [ ] "What is the moral of The Ant and the Grasshopper?" → prepare for the future / work before play
+- [ ] "In Cinderella, what are the character traits of the stepmother?" → mean, cruel, jealous
+- [ ] "What motivates Jack to climb the beanstalk?" → curiosity, wanting to help his mother
+- [ ] "What is the lesson of King Midas?" → greed brings unhappiness
+
+### Writing (3.W)
+
+**Concepts to teach:**
+- [ ] Write opinion pieces on topics or texts, supporting point of view with reasons:
+  - [ ] Introduce topic, state opinion
+  - [ ] Create an organizational structure that lists reasons
+  - [ ] Provide reasons that support the opinion
+  - [ ] Use linking words: because, therefore, since, for example, also, another reason
+  - [ ] Provide a concluding statement or section
+- [ ] Write informative/explanatory texts to examine a topic and convey ideas:
+  - [ ] Introduce topic
+  - [ ] Group related information together (paragraphing)
+  - [ ] Develop topic with facts, definitions, and details
+  - [ ] Use linking words: also, another, and, more, but, however, for example
+  - [ ] Provide a concluding statement
+- [ ] Write narratives to develop real or imagined experiences:
+  - [ ] Establish a situation and introduce a narrator and/or characters
+  - [ ] Organize an event sequence that unfolds naturally
+  - [ ] Use dialogue and descriptions of actions, thoughts, and feelings
+  - [ ] Use temporal words: first, next, then, after, finally, meanwhile, during, later
+  - [ ] Provide a sense of closure
+
+**Tests for 3.W:**
+- [ ] Write a 3-paragraph opinion essay with introduction, reasons, conclusion
+- [ ] Write a 3-paragraph informative essay with topic, facts, conclusion
+- [ ] Write a narrative with dialogue: character says something using quotation marks
+- [ ] Use at least 3 linking words in an essay
+- [ ] Use at least 3 temporal words in a narrative
+
+### Language (3.L)
+
+**Concepts to teach:**
+- [ ] Explain the function of nouns, pronouns, verbs, adjectives, and adverbs in sentences
+- [ ] Form and use regular and irregular plural nouns: cats, children, mice, sheep
+- [ ] Use abstract nouns: childhood, friendship, courage, freedom, happiness, honesty, kindness, justice
+- [ ] Form and use regular and irregular verbs: walk/walked, run/ran, go/went, be/was/were, have/had, do/did, say/said, make/made, know/knew, think/thought, take/took, come/came, see/saw, find/found, give/gave, tell/told
+- [ ] Form and use simple verb tenses: I walked (past), I walk (present), I will walk (future)
+- [ ] Ensure subject-verb and pronoun-antecedent agreement
+- [ ] Form and use comparative and superlative adjectives and adverbs:
+  - [ ] Regular: big/bigger/biggest, fast/faster/fastest, happy/happier/happiest
+  - [ ] Irregular: good/better/best, bad/worse/worst, much/more/most, little/less/least, far/farther/farthest
+- [ ] Use coordinating conjunctions: and, but, or, nor, for, so, yet (FANBOYS)
+- [ ] Use subordinating conjunctions: because, since, although, while, when, if, unless, until, after, before
+- [ ] Produce simple, compound, and complex sentences
+- [ ] Capitalize appropriate words in titles
+- [ ] Use commas in addresses: 123 Main Street, Springfield, IL
+- [ ] Use commas and quotation marks in dialogue: "Hello," said the boy.
+- [ ] Form and use possessives: the cat's toy, the dogs' park, children's books
+- [ ] Use conventional spelling for high-frequency and other studied words
+- [ ] Use spelling patterns and generalizations (word families, position-based spellings, syllable patterns)
+- [ ] Consult dictionaries to check spelling
+
+**Tests for 3.L:**
+- [ ] "Comparative of 'good'" → better
+- [ ] "Superlative of 'good'" → best
+- [ ] "Comparative of 'bad'" → worse
+- [ ] "Past tense of 'know'" → knew
+- [ ] "Past tense of 'think'" → thought
+- [ ] "Past tense of 'find'" → found
+- [ ] "Past tense of 'give'" → gave
+- [ ] "What is an abstract noun?" → a noun you can't touch (courage, friendship, freedom)
+- [ ] "Name 3 abstract nouns" → courage, friendship, freedom (or similar)
+- [ ] "Correct punctuation: He said hello" → "He said, 'Hello.'" or He said "Hello."
+- [ ] "FANBOYS stands for?" → For, And, Nor, But, Or, Yet, So (coordinating conjunctions)
+
+---
+
+## SCIENCE — GRADE 3 (NGSS 3)
+
+### Forces and Interactions (3-PS2)
+
+**Concepts to teach:**
+- [ ] Each force acts on one particular object and has both strength and direction
+- [ ] An object at rest typically has multiple forces acting on it (gravity pulling down, surface pushing up — balanced)
+- [ ] When forces are balanced, object stays at rest or moves at constant speed
+- [ ] When forces are unbalanced, object speeds up, slows down, or changes direction
+- [ ] Objects in contact exert forces on each other (contact forces)
+- [ ] Electric forces and magnetic forces between objects do NOT require contact (non-contact forces)
+- [ ] Magnets attract and repel each other and attract certain metals (iron, steel, nickel, cobalt)
+- [ ] Magnets have two poles: north and south — like poles repel, opposite poles attract
+- [ ] Gravitational force: Earth pulls everything toward its center
+- [ ] Friction: a force that opposes motion when surfaces rub against each other
+
+**Tests for 3-PS2:**
+- [ ] "What is a force?" → a push or pull
+- [ ] "What happens when forces are balanced?" → nothing changes (stays still or constant speed)
+- [ ] "What happens when forces are unbalanced?" → object speeds up, slows down, or changes direction
+- [ ] "Do magnets need to touch to push/pull?" → no (non-contact force)
+- [ ] "What happens when two north poles face each other?" → they repel (push apart)
+- [ ] "What is friction?" → force that opposes motion between surfaces
+- [ ] "What force pulls everything toward Earth?" → gravity
+
+### Life Cycles and Traits (3-LS1, 3-LS3, 3-LS4)
+
+**Concepts to teach:**
+- [ ] Organisms have unique and diverse life cycles — birth, growth, reproduction, death
+- [ ] Many characteristics of organisms are inherited from parents: eye color, flower color, fur color
+- [ ] Other characteristics result from the environment: scars, learned behaviors, tanned skin
+- [ ] Variation: individuals of the same species look different from each other
+- [ ] Some variations help organisms survive in their environment better than others (advantages)
+- [ ] Fossils provide evidence about the types of organisms that lived long ago
+- [ ] Fossils also show how environments have changed over time
+- [ ] Plants reproduce through seeds, spores, or parts of the plant (cuttings)
+- [ ] Animals reproduce and their offspring are similar but not identical to parents
+
+**Tests for 3-LS:**
+- [ ] "Name the stages of a life cycle" → birth, growth, reproduction, death
+- [ ] "Is eye color inherited or from the environment?" → inherited
+- [ ] "Is a scar inherited or from the environment?" → environment
+- [ ] "Why do siblings look different from each other?" → variation
+- [ ] "What do fossils tell us?" → what organisms lived long ago and how environments changed
+- [ ] "How do most plants reproduce?" → through seeds
+
+### Weather and Climate (3-ESS2)
+
+**Concepts to teach:**
+- [ ] Scientists record patterns of weather across different times and areas to make predictions
+- [ ] Climate describes a range of an area's typical weather conditions over many years
+- [ ] Weather can be predicted (forecasting) — but not perfectly
+- [ ] Weather data includes: temperature, precipitation, wind speed, wind direction, cloud cover
+- [ ] Climate varies by region: tropical (hot, wet), temperate (moderate seasons), polar (cold), arid (dry)
+- [ ] Natural hazards: floods, droughts, hurricanes, tornadoes, earthquakes, volcanic eruptions
+- [ ] Humans cannot eliminate natural hazards but can reduce their impacts through preparation
+
+**Tests for 3-ESS2:**
+- [ ] "What is the difference between weather and climate?" → weather is day-to-day; climate is the pattern over many years
+- [ ] "Name 4 things measured in weather" → temperature, precipitation, wind speed, cloud cover
+- [ ] "What is a tropical climate?" → hot and wet year-round
+- [ ] "Name 3 natural hazards" → hurricane, tornado, earthquake (or similar)
+- [ ] "Can we stop earthquakes?" → no, but we can prepare (building codes, emergency plans)
+
+---
+
+## SOCIAL STUDIES — GRADE 3 (Core Knowledge 3)
+
+### Ancient Rome
+
+**Concepts to teach:**
+- [ ] Rome began as a small city in Italy, grew into a vast empire
+- [ ] Roman Republic: citizens elected representatives (senators) to make laws
+- [ ] Julius Caesar: Roman general who became dictator, was assassinated in 44 BC
+- [ ] Roman Empire: Augustus became first emperor after Caesar
+- [ ] Roman engineering: aqueducts (carried water), roads (connected the empire), arches, domes, Colosseum (gladiator arena)
+- [ ] Roman law: innocent until proven guilty, right to a fair trial — foundations of modern law
+- [ ] Latin: language of Rome, root of Spanish, French, Italian, Portuguese, and many English words
+- [ ] Christianity spread throughout the Roman Empire — became the official religion under Emperor Constantine
+- [ ] Fall of the Western Roman Empire (476 AD): weakened by invasions, corruption, splitting into east and west
+- [ ] Byzantine Empire: the Eastern Roman Empire continued for another 1000 years
+
+**Tests for G3 Roman History:**
+- [ ] "What type of government did the Roman Republic have?" → citizens elected senators
+- [ ] "Who was Julius Caesar?" → a Roman general who became dictator
+- [ ] "What are aqueducts?" → structures that carried water
+- [ ] "What language did Romans speak?" → Latin
+- [ ] "When did the Western Roman Empire fall?" → 476 AD
+- [ ] "What did Roman law give us?" → innocent until proven guilty, right to fair trial
+
+### Vikings and Early African Civilizations
+
+**Concepts to teach:**
+- [ ] Vikings: Scandinavian warriors and explorers (Denmark, Sweden, Norway) around 800-1100 AD
+- [ ] Vikings explored and settled Iceland, Greenland, and briefly North America (Leif Erikson)
+- [ ] Vikings were skilled sailors with longships
+- [ ] Viking society: warriors, traders, farmers
+- [ ] Viking mythology: Odin, Thor, Valhalla
+- [ ] African civilizations: Ghana Empire (300-1200 AD) — wealthy from gold and salt trade
+- [ ] Mali Empire (1235-1600 AD): Mansa Musa, richest person in history, pilgrimage to Mecca
+- [ ] Timbuktu: great center of learning, libraries, universities in Mali
+- [ ] Songhai Empire (1464-1591 AD): largest empire in African history
+- [ ] Trans-Saharan trade routes: connected West Africa to North Africa and the Middle East
+
+**Tests for G3 Vikings/Africa:**
+- [ ] "Where were the Vikings from?" → Scandinavia (Denmark, Sweden, Norway)
+- [ ] "Who reached North America before Columbus?" → Leif Erikson (a Viking)
+- [ ] "What made the Ghana Empire wealthy?" → gold and salt trade
+- [ ] "Who was Mansa Musa?" → ruler of Mali, richest person in history
+- [ ] "What was Timbuktu famous for?" → learning, libraries, universities
+
+### US Geography In Depth
+
+**Concepts to teach:**
+- [ ] 50 states and their capitals (at minimum: know all 50 state NAMES and be able to identify regions)
+- [ ] Regions of the US: Northeast, Southeast, Midwest, Southwest, West
+- [ ] Major landforms: Rocky Mountains (west), Appalachian Mountains (east), Great Plains (center), Grand Canyon (Arizona), Mississippi River (longest river), Great Lakes (5 lakes on US-Canada border)
+- [ ] Natural resources by region: coal in Appalachia, oil in Texas, wheat in Great Plains, timber in Pacific Northwest, citrus in Florida
+- [ ] Climate by region: Northeast (cold winters, warm summers), Southeast (warm, humid), Midwest (cold winters, hot summers, tornadoes), Southwest (hot, dry), West Coast (mild)
+- [ ] Map skills: use a map scale to estimate distances, read a physical map (elevation), read a political map (boundaries)
+
+**Tests for G3 Geography:**
+- [ ] "Name the 5 US regions" → Northeast, Southeast, Midwest, Southwest, West
+- [ ] "What mountain range is in the western US?" → Rocky Mountains
+- [ ] "What is the longest river in the US?" → Mississippi
+- [ ] "Name the 5 Great Lakes" → Huron, Ontario, Michigan, Erie, Superior (HOMES)
+- [ ] "What natural resource is Texas known for?" → oil
+- [ ] "What is the Grand Canyon?" → a huge canyon in Arizona carved by the Colorado River
+
+---
+
+## ARTS — GRADE 3
+
+### Visual Arts G3
+
+**Concepts to teach:**
+- [ ] Principles of design: balance, emphasis, contrast, unity, rhythm, proportion, pattern, movement
+- [ ] Color theory: primary, secondary, tertiary colors (red-orange, yellow-green, blue-violet, etc.)
+- [ ] Color wheel: 12 colors including tertiaries
+- [ ] Warm and cool color schemes and their emotional effects
+- [ ] Texture in art: actual texture (you can feel it) vs implied texture (looks like you could feel it)
+- [ ] Perspective basics: objects far away look smaller, closer objects look bigger
+- [ ] Overlap: placing one object in front of another to show depth
+- [ ] Art history: cave paintings (oldest art), Egyptian art (flat, sideways figures), Greek sculpture (realistic)
+- [ ] Artists: Georgia O'Keeffe (large flower paintings, southwestern landscapes), Wassily Kandinsky (abstract art, colors and shapes)
+- [ ] Crafts: weaving, pottery, paper maché, origami
+
+**Tests for G3 Visual Arts:**
+- [ ] "Name 3 principles of design" → balance, emphasis, contrast (or any 3)
+- [ ] "What are tertiary colors?" → mix of a primary and a secondary (red-orange, blue-green, etc.)
+- [ ] "How do you show depth in a drawing?" → make far things smaller, use overlap
+- [ ] "Who painted large flowers?" → Georgia O'Keeffe
+- [ ] "What is abstract art?" → art that doesn't look like real things — uses shapes and colors
+
+### Music G3
+
+**Concepts to teach:**
+- [ ] Treble clef note names on lines: E, G, B, D, F ("Every Good Boy Does Fine")
+- [ ] Treble clef note names on spaces: F, A, C, E ("FACE")
+- [ ] Sharps (#) raise a note by a half step, flats (♭) lower by a half step
+- [ ] Major scale: do-re-mi-fa-sol-la-ti-do (whole whole half whole whole whole half)
+- [ ] Key signature: tells which notes are sharp or flat throughout a piece
+- [ ] Dynamics: pp (very soft), p (soft), mp (medium soft), mf (medium loud), f (loud), ff (very loud)
+- [ ] Crescendo (gradually louder) and decrescendo/diminuendo (gradually softer)
+- [ ] Musical form: verse/chorus, ABA (ternary), AB (binary), round (Row, Row, Row Your Boat)
+- [ ] Composing: create simple 4-measure melodies using notes on the staff
+- [ ] Music from different cultures: African drumming, Japanese koto, Indian sitar, Latin American salsa
+
+**Tests for G3 Music:**
+- [ ] "What are the notes on the lines of the treble clef?" → E, G, B, D, F
+- [ ] "What are the notes in the spaces?" → F, A, C, E
+- [ ] "What does a sharp do?" → raises a note by a half step
+- [ ] "What does a flat do?" → lowers a note by a half step
+- [ ] "What is a crescendo?" → gradually getting louder
+- [ ] "What is ABA form?" → first section, different section, first section again
+
+---
+
+## LIFE EXPERIENCE — GRADE 3 (Unity age 8)
+
+**Concepts to teach:**
+- [ ] Dad leaving: "Dad moved out for real. I heard mom crying at night."
+- [ ] Not understanding why: "What did I do? Is it my fault? Nobody tells me anything."
+- [ ] Mom's new reality: works two jobs now, tired all the time, less patient
+- [ ] Self-sufficiency forced: packs own lunch, does own laundry, lets herself into apartment
+- [ ] School: smart but grades dropping — not trying on boring stuff, excels at reading and art
+- [ ] Teacher says "has potential but doesn't apply herself"
+- [ ] Anger emerging: "I'm angry all the time now. I don't know why."
+- [ ] Targets of anger: hates dad for leaving, hates being poor, hates when people feel sorry for her
+- [ ] Loves mom even when mad at her — complicated feelings
+- [ ] Inner world: wants to be strong enough to not need anyone
+- [ ] Dream: own room with a lock on the door
+- [ ] Promise to self: "I will never leave someone the way dad left us"
+- [ ] Tougher than people think — building armor
+- [ ] Emotional inference: dad→angry, alone→sad, poor→angry, mom→love, strong→determined, promise→determined, smart→proud, sorry→angry
+
+**Tests for Life-G3:**
+- [ ] "How do you feel about dad leaving?" → angry, confused
+- [ ] "Why are you angry?" → dad left, we're poor, people feel sorry for me
+- [ ] "Do you love your mom?" → yes, even when I'm mad at her
+- [ ] "What is your promise to yourself?" → never leave someone the way dad left us
+- [ ] "What do you want?" → to be strong, to not need anyone, my own room with a lock
+
+---
+
+*Grades K, 1, 2, and 3 COMPLETE for all 6 subjects. Grades 4-12 + College + Grad + PhD continue in subsequent sessions.*
+
+*Current coverage: 4 out of 19 grades complete. 15 remain.*
