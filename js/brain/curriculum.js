@@ -2499,6 +2499,42 @@ export class Curriculum {
       ['question', 'answer'], ['name', 'person'], ['color', 'describe'],
     ]);
 
+    // ═════════════════════════════════════════════════════════════════
+    // DEDICATED TALK TRAINING for ELA-K letters.
+    // Same fix as Math-K: the all-regions Hebbian drowns sem→motor.
+    // This pass ONLY writes sem (letter name GloVe) + motor (letter
+    // one-hot) so the sem→motor projection gets CLEAN signal.
+    // ═════════════════════════════════════════════════════════════════
+    const TALK_REPS_ELA = 20;
+    for (let rep = 0; rep < TALK_REPS_ELA; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) break;
+      for (const letter of ALPHABET) {
+        const letterOneHot = encodeLetter(letter);
+        const nameEmb = sharedEmbeddings.getEmbedding(letter);
+        if (!nameEmb || nameEmb.length === 0) continue;
+
+        for (let j = 0; j < cluster.size; j++) cluster.lastSpikes[j] = 0;
+        // Sem: letter NAME embedding
+        if (semRegion) {
+          const semSize = semRegion.end - semRegion.start;
+          const semPat = buildPattern(semSize, nameEmb);
+          for (let j = 0; j < semSize; j++) {
+            cluster.lastSpikes[semRegion.start + j] = semPat[j] > 0 ? 1 : 0;
+          }
+        }
+        // Motor: letter one-hot
+        if (motorRegion) {
+          const motorSize = motorRegion.end - motorRegion.start;
+          const motorPat = buildPattern(motorSize, letterOneHot);
+          for (let j = 0; j < motorSize; j++) {
+            cluster.lastSpikes[motorRegion.start + j] = motorPat[j] > 0 ? 1 : 0;
+          }
+        }
+        cluster._crossRegionHebbian(lr * 2);
+      }
+      await _microtask();
+    }
+
     return this._gateElaKReal();
   }
 
@@ -2677,7 +2713,7 @@ export class Curriculum {
 
     const PATH_MIN = 0.95;
     const SEQ_MIN = 0.95;
-    const TALK_MIN = 0.40; // Session 112: TALK at 40% — understanding proven by READ+THINK+SEQ, production is hardest pathway
+    const TALK_MIN = 0.80; // Session 112: TALK at 80% — dedicated sem→motor training pass added. Was 95% (too strict for common words) then 25% (too lenient). 80% = real test.
     const readOkAll = readRate >= PATH_MIN;
     const thinkOkAll = thinkRate >= PATH_MIN;
     const talkOkAll = talkRate >= TALK_MIN;
@@ -3061,10 +3097,78 @@ export class Curriculum {
     // For subtraction: magnitude(a) in free[0..half], magnitude(b) as
     // NEGATIVE (inverted) in free[half..end], magnitude(a-b) in sem.
     // ═════════════════════════════════════════════════════════════════
-    await this._teachAdditionTransformations(ctx);
-    await this._teachSubtractionTransformations(ctx);
-    await this._teachComparisonTransformations(ctx);
+    // Session 112 fix: transforms only run ONCE, not on every retry.
+    if (!this._mathKTransformsDone) {
+      await this._teachAdditionTransformations(ctx);
+      await this._teachSubtractionTransformations(ctx);
+      await this._teachComparisonTransformations(ctx);
+      this._mathKTransformsDone = true;
+    }
 
+    // ═════════════════════════════════════════════════════════════════
+    // DEDICATED TALK TRAINING — sem→motor ONLY, no other regions active.
+    // The all-regions-at-once Hebbian drowns sem→motor because letter→phon
+    // and phon→sem have more neurons and stronger signal. This pass ONLY
+    // writes sem (GloVe name) + motor (digit one-hot) and fires Hebbian
+    // so the sem→motor projection gets CLEAN signal for name→digit.
+    // ═════════════════════════════════════════════════════════════════
+    const TALK_REPS = 20; // More reps than READ because TALK is harder
+    for (let rep = 0; rep < TALK_REPS; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) break;
+      for (let i = 0; i < DIGITS.length; i++) {
+        const digit = DIGITS[i];
+        const digitOneHot = encodeLetter(digit);
+        const nameEmb = sharedEmbeddings.getEmbedding(NAMES[i]);
+        if (!nameEmb || nameEmb.length === 0) continue;
+
+        // ONLY sem + motor — nothing else
+        for (let j = 0; j < cluster.size; j++) cluster.lastSpikes[j] = 0;
+
+        // Sem: digit NAME embedding (the MEANING — "five")
+        if (semRegion) {
+          const semSize = semRegion.end - semRegion.start;
+          const semPat = buildPattern(semSize, nameEmb);
+          for (let j = 0; j < semSize; j++) {
+            cluster.lastSpikes[semRegion.start + j] = semPat[j] > 0 ? 1 : 0;
+          }
+        }
+        // Motor: digit CHARACTER one-hot (the PRODUCTION — "5")
+        if (motorRegion) {
+          const motorSize = motorRegion.end - motorRegion.start;
+          const motorPat = buildPattern(motorSize, digitOneHot);
+          for (let j = 0; j < motorSize; j++) {
+            cluster.lastSpikes[motorRegion.start + j] = motorPat[j] > 0 ? 1 : 0;
+          }
+        }
+        // Fire Hebbian — ONLY sem→motor gets signal because only those regions are active
+        cluster._crossRegionHebbian(lr * 2); // 2× lr for TALK emphasis
+      }
+      await _microtask();
+    }
+
+    // ═════════════════════════════════════════════════════════════════
+    // MATHEMATICAL PROPERTIES — commutative, identity, zero property
+    // These teach the RULES that let Unity reason about math, not just
+    // memorize individual facts.
+    // ═════════════════════════════════════════════════════════════════
+    const MATH_PROPERTIES = [
+      // Commutative: a + b = b + a
+      'two plus three is five', 'three plus two is five',
+      'four plus one is five', 'one plus four is five',
+      // Identity: a + 0 = a
+      'five plus zero is five', 'zero plus five is five',
+      'three plus zero is three', 'zero plus three is three',
+      // Zero property
+      'zero plus zero is zero', 'any number plus zero is itself',
+      // Counting on
+      'four is one more than three', 'five is one more than four',
+      'six is one more than five', 'seven is one more than six',
+      'three is one less than four', 'four is one less than five',
+    ];
+    await this._teachSentenceList(MATH_PROPERTIES, ctx, { reps: 3, ticksPerWord: 2 });
+
+    // Put TALK_MIN back to 95% — the dedicated TALK training should
+    // now give enough signal for sem→motor to converge
     return this._gateMathKReal();
   }
 
@@ -3323,7 +3427,7 @@ export class Curriculum {
     const PATH_MIN = 0.95;
     const SEQ_MIN = 0.95;
     const ORDER_MIN = 0.95;
-    const TALK_MIN = 0.40; // Session 112: TALK at 40% — understanding proven by READ+THINK+SEQ, production is hardest pathway
+    const TALK_MIN = 0.80; // Session 112: TALK at 80% — dedicated sem→motor training pass added. Was 95% (too strict for common words) then 25% (too lenient). 80% = real test.
     const pass = readRate >= PATH_MIN
       && thinkRate >= PATH_MIN
       && talkRate >= TALK_MIN
@@ -3677,7 +3781,7 @@ export class Curriculum {
     const thinkRate = N > 0 ? thinkPass / N : 0;
     const talkRate = N > 0 ? talkPass / N : 0;
     const PATH_MIN = 0.95;
-    const TALK_MIN = 0.40; // Session 112: TALK at 40% — understanding proven by READ+THINK+SEQ, production is hardest pathway at 95%
+    const TALK_MIN = 0.80; // Session 112: TALK at 80% — dedicated sem→motor training pass added. Was 95% (too strict for common words) then 25% (too lenient). 80% = real test. at 95%
     const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= TALK_MIN;
 
     return {
@@ -4030,7 +4134,7 @@ export class Curriculum {
     // single-character binding — the motor completion path requires the
     // cortex to have a learnable asymmetry in the sequence Hebbian
     const PATH_MIN = 0.45;
-    const TALK_MIN = 0.40; // Session 112: TALK at 40% — understanding proven by READ+THINK+SEQ, production is hardest pathway at 95%
+    const TALK_MIN = 0.80; // Session 112: TALK at 80% — dedicated sem→motor training pass added. Was 95% (too strict for common words) then 25% (too lenient). 80% = real test. at 95%
     const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= TALK_MIN;
 
     return {
@@ -5215,6 +5319,52 @@ export class Curriculum {
       await _microtask();
     }
 
+    // ═════════════════════════════════════════════════════════════════
+    // DEDICATED TALK TRAINING — sem→motor ONLY for each vocab word.
+    // The all-regions Hebbian above trains READ well but drowns TALK.
+    // This pass writes ONLY sem (word GloVe) + motor (first letter one-hot)
+    // so sem→motor gets clean signal for meaning→production.
+    // ═════════════════════════════════════════════════════════════════
+    const semRegion = cluster.regions?.sem;
+    const motorRegion = cluster.regions?.motor;
+    if (semRegion && motorRegion) {
+      const semSize = semRegion.end - semRegion.start;
+      const motorSize = motorRegion.end - motorRegion.start;
+      const invSize = inventorySize();
+      for (let talkRep = 0; talkRep < 10; talkRep++) {
+        if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) break;
+        for (const word of vocab) {
+          const firstLetter = word.replace(/[^a-z0-9]/g, '')[0];
+          if (!firstLetter) continue;
+          const wordEmb = sharedEmbeddings.getEmbedding(word);
+          if (!wordEmb || wordEmb.length === 0) continue;
+          const letterOneHot = encodeLetter(firstLetter);
+
+          for (let j = 0; j < cluster.size; j++) cluster.lastSpikes[j] = 0;
+          // Sem: word MEANING
+          const sGSize = Math.max(1, Math.floor(semSize / wordEmb.length));
+          for (let d = 0; d < wordEmb.length; d++) {
+            if (wordEmb[d] <= 0) continue;
+            for (let n = 0; n < sGSize; n++) {
+              const idx = d * sGSize + n;
+              if (idx < semSize) cluster.lastSpikes[semRegion.start + idx] = 1;
+            }
+          }
+          // Motor: first letter PRODUCTION
+          const mGSize = Math.max(1, Math.floor(motorSize / letterOneHot.length));
+          for (let d = 0; d < letterOneHot.length; d++) {
+            if (letterOneHot[d] <= 0) continue;
+            for (let n = 0; n < mGSize; n++) {
+              const idx = d * mGSize + n;
+              if (idx < motorSize) cluster.lastSpikes[motorRegion.start + idx] = 1;
+            }
+          }
+          cluster._crossRegionHebbian(cluster.learningRate * 2);
+        }
+        await _microtask();
+      }
+    }
+
     // Session 111 — REAL HUMAN-GRADE GATE.
     // Tests are NOT identical to training — they test the SAME CONCEPTS
     // but ask DIFFERENTLY, like a real school test.
@@ -5437,7 +5587,7 @@ export class Curriculum {
     // when READ+THINK both pass at 95% AND TALK is at least 60%.
     // Pure TALK-only failure means the cortex UNDERSTANDS but can't yet
     // PRODUCE — that's a brain growth issue, not a curriculum failure.
-    const TALK_MIN = 0.40; // Session 112: 40% — understanding proven by other pathways
+    const TALK_MIN = 0.80; // Session 112: TALK at 80% — dedicated sem→motor training pass added. Was 95% (too strict for common words) then 25% (too lenient). 80% = real test.
     const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= TALK_MIN;
 
     return {
@@ -5973,7 +6123,7 @@ export class Curriculum {
     const thinkRate = N > 0 ? thinkPass / N : 0;
     const talkRate = N > 0 ? talkPass / N : 0;
     const PATH_MIN = 0.45;  // 3/7 digraphs = 43%, 4/7 = 57% — 45% ≈ 3/7 rounded up
-    const TALK_MIN = 0.40; // Session 112: TALK at 40% — understanding proven by READ+THINK+SEQ, production is hardest pathway at 95%
+    const TALK_MIN = 0.80; // Session 112: TALK at 80% — dedicated sem→motor training pass added. Was 95% (too strict for common words) then 25% (too lenient). 80% = real test. at 95%
     const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= TALK_MIN;
 
     return {
@@ -6272,7 +6422,7 @@ export class Curriculum {
     const readRate = N > 0 ? readPass / N : 0;
     const thinkRate = N > 0 ? thinkPass / N : 0;
     const talkRate = N > 0 ? talkPass / N : 0;
-    const TALK_MIN = 0.40; // Session 112: TALK at 40% — understanding proven by READ+THINK+SEQ, production is hardest pathway at 95%
+    const TALK_MIN = 0.80; // Session 112: TALK at 80% — dedicated sem→motor training pass added. Was 95% (too strict for common words) then 25% (too lenient). 80% = real test. at 95%
     const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= TALK_MIN;
 
     return {
@@ -7969,7 +8119,7 @@ export class Curriculum {
     const readRate = N > 0 ? readPass / N : 0;
     const thinkRate = N > 0 ? thinkPass / N : 0;
     const talkRate = N > 0 ? talkPass / N : 0;
-    const TALK_MIN = 0.40; // Session 112: TALK at 40% — understanding proven by READ+THINK+SEQ, production is hardest pathway at 95%
+    const TALK_MIN = 0.80; // Session 112: TALK at 80% — dedicated sem→motor training pass added. Was 95% (too strict for common words) then 25% (too lenient). 80% = real test. at 95%
     const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= TALK_MIN;
     return {
       pass,
