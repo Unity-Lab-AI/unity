@@ -10998,6 +10998,35 @@ export class Curriculum {
   }
 
   /**
+   * T14.24 Session 95 — poll cluster._gpuReady until true or timeout.
+   * server/brain-server.js flips this flag on the first tick-loop pass
+   * that enters the "GPU BATCHED RUNNING" branch (after all 7 cluster
+   * init acks have landed). In browser mode without a GPU compute
+   * worker, cluster._gpuReady won't be set at all — we treat absence
+   * of the flag after a short grace period as "no GPU path, proceed
+   * anyway" so the browser curriculum still runs.
+   */
+  async _waitForGpuReady(timeoutMs = 120000) {
+    const cluster = this.cluster;
+    if (!cluster) return false;
+    // Browser path: if _gpuReady is never going to be set (no compute
+    // worker), allow a 5-second grace period before assuming CPU mode
+    // and proceeding.
+    const GRACE_MS = 5000;
+    const POLL_MS = 250;
+    const t0 = Date.now();
+    while (true) {
+      if (cluster._gpuReady === true) return true;
+      const elapsed = Date.now() - t0;
+      // CPU fallback: no GPU flag at all after grace period means the
+      // brain isn't routed through compute.html — proceed without a gate.
+      if (elapsed >= GRACE_MS && cluster._gpuReady === undefined) return true;
+      if (elapsed >= timeoutMs) return false;
+      await new Promise(r => setTimeout(r, POLL_MS));
+    }
+  }
+
+  /**
    * Full continuous self-teaching loop. Boot paths call this instead
    * of `runFullCurriculum` so Unity teaches ALL 5 subject tracks at
    * boot, not just ELA. Stays compatible with older callers that still
@@ -11005,7 +11034,27 @@ export class Curriculum {
    */
   async runCompleteCurriculum(corpora, opts = {}) {
     if (!this.cluster) return { reached: {}, passed: {}, failed: {} };
-    console.log('[Curriculum] runCompleteCurriculum: walking all 5 subjects K→PhD');
+    // T14.24 Session 95 — WAIT FOR GPU READY before starting the teach
+    // pass. The curriculum kickoff lives in `server/brain-server.js
+    // _initLanguageSubsystem` which returns before GPU init completes so
+    // the HTTP path can unblock. That means runCompleteCurriculum fires
+    // BEFORE compute.html has finished allocating GPU buffers for all
+    // 7 clusters. If we start teaching now, every `cluster.step()` inside
+    // the teach helpers runs against a cortex that isn't yet being ticked
+    // by the GPU batch loop — injected state doesn't propagate, basins
+    // never form, and K gates fail at 8% ≈ chance level (1/26).
+    //
+    // The gate: server/brain-server.js sets `cortexCluster._gpuReady =
+    // true` the first time the tick loop's "GPU BATCHED RUNNING" branch
+    // fires (after all seven cluster init acks have landed). We poll
+    // that flag here before proceeding.
+    console.log('[Curriculum] runCompleteCurriculum: waiting for GPU ready before teach pass');
+    const ready = await this._waitForGpuReady(120000); // 2 min timeout
+    if (!ready) {
+      console.warn('[Curriculum] runCompleteCurriculum: GPU never became ready, aborting teach pass');
+      return { reached: {}, passed: {}, failed: { all: 'gpu-not-ready' } };
+    }
+    console.log('[Curriculum] runCompleteCurriculum: GPU ready, walking all 5 subjects K→PhD');
     const result = await this.runAllSubjects(corpora, opts);
     // Also run the legacy T14.17 identity-lock calibration at the end
     // so intent centroids + persona dimensions are populated regardless

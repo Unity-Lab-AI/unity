@@ -536,6 +536,15 @@ class ServerBrain {
         console.warn(`[Brain] Language cortex CPU-safety clip: GPUCONFIGURE.bat configured ${configuredCortex.toLocaleString()} cortex neurons but CPU-side NeuronCluster caps at ${CPU_LANGUAGE_CORTEX_CAP.toLocaleString()}. Main GPU brain still runs at full ${TOTAL_NEURONS.toLocaleString()}-neuron scale. Full GPU-scale language is T15 scope (GPU compute pipeline extension for T14.4 cross-region sparse ops).`);
       }
       console.log(`[Brain] Language cortex = ${langCortexSize.toLocaleString()} CPU neurons (configured ${configuredCortex.toLocaleString()} from GPUCONFIGURE.bat, capped at ${CPU_LANGUAGE_CORTEX_CAP.toLocaleString()} for CPU safety). T14.4 sub-regions: letter ${Math.floor(langCortexSize * 0.05)}, phon ${Math.floor(langCortexSize * 0.20)}, sem ${Math.floor(langCortexSize * 0.167)}, motor ${Math.floor(langCortexSize * 0.033)}.`);
+      // T14.24 Session 95 — mark the cluster as NOT gpu-ready yet. The
+      // server tick loop flips this to `true` when the first GPU-ready
+      // tick fires (after all 7 cluster init acks land). Curriculum
+      // waits on this flag before starting the teach pass so teaching
+      // doesn't run into a dead cortex during the GPU init window.
+      // Explicitly `false` (not undefined) so `Curriculum._waitForGpuReady`
+      // distinguishes "server mode, still initializing" from "browser
+      // CPU mode, no GPU ever". Undefined stays reserved for CPU mode.
+      const pendingGpuReady = false;
       this.cortexCluster = new clusterMod.NeuronCluster('cortex', langCortexSize, {
         tonicDrive: 14 + (this.persona.arousalBaseline || 0.9) * 6,
         noiseAmplitude: 7,
@@ -551,6 +560,10 @@ class ServerBrain {
         excitatoryRatio: 0.85,
         learningRate: 0.002,
       });
+      // T14.24 Session 95 — set gpu-ready flag to pending (false) so the
+      // curriculum's _waitForGpuReady poll knows to actually wait rather
+      // than falling through the CPU-mode grace period.
+      this.cortexCluster._gpuReady = pendingGpuReady;
       // T14.4 sub-regions are populated inside NeuronCluster's constructor
       // when name === 'cortex'. At the real configured scale, the letter
       // region is langCortexSize × 0.05, phon is × 0.20, sem is × 0.167,
@@ -1306,6 +1319,15 @@ class ServerBrain {
             if (!this._gpuModeLogged) {
               console.log(`[Brain] GPU BATCHED RUNNING — ${allClusters.length} clusters * ${SUBSTEPS} substeps in 1 message/tick`);
               this._gpuModeLogged = true;
+              // T14.24 Session 95 — GPU-ready gate for curriculum kickoff.
+              // Flip the flag the Curriculum._waitForGpuReady poll checks so
+              // runCompleteCurriculum can only start teaching AFTER all
+              // seven cluster init acks have landed and compute.html is
+              // actually servicing compute_batch messages. Without this
+              // gate the curriculum teaches into a dead cortex during the
+              // init window — K gates fail at chance level (8% ≈ 1/26).
+              if (this.cortexCluster) this.cortexCluster._gpuReady = true;
+              this._gpuReady = true;
             }
 
             const p = this.persona;
