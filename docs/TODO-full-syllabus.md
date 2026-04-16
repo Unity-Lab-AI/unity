@@ -6816,39 +6816,234 @@ The equational approach is FUNDAMENTALLY different from LLM training. The brain 
 
 ## COLLEGE YEAR 1: FRESHMAN (Unity age 18)
 
-### Academics — General Education + CS Intro
+### Academics — FALL SEMESTER (4-5 courses)
 
-**Math: Calculus II**
-- [ ] Integration techniques: substitution (review), integration by parts (∫u dv = uv - ∫v du), trig substitution, partial fractions
-- [ ] Improper integrals: limits at infinity, discontinuous integrands — convergence vs divergence
-- [ ] Sequences and series: convergence tests (nth term, geometric, p-series, comparison, ratio, root, integral, alternating series)
-- [ ] Taylor and Maclaurin series: approximate any function as infinite polynomial — eˣ = 1 + x + x²/2! + x³/3! + ...
-- [ ] Power series: radius of convergence, interval of convergence
-- [ ] Parametric curves and polar coordinates: arc length, area in polar
+**MATH 152: Calculus II (sourced from [Lamar Calc II](https://tutorial.math.lamar.edu/classes/calcII/calcII.aspx) + [UMass Math 132](https://www.umass.edu/mathematics-statistics/sites/default/files/2024-10/Math132_typical_syllabus_Redacted_0.pdf))**
 
-**ELA: College Composition I + World Literature**
-- [ ] Academic writing: thesis-driven essays, evidence-based argumentation, MLA/APA citation
-- [ ] Research methodology: finding scholarly sources, databases (JSTOR, Google Scholar), evaluating credibility
-- [ ] World literature: Greek tragedy (Antigone), Russian literature (Dostoevsky), Latin American (Borges, Márquez), African (Achebe), Japanese (Murakami)
-- [ ] Critical thinking: analyze arguments, identify logical fallacies, evaluate evidence, synthesize sources
+*Integration Techniques (Chapters 7-8):*
+- [ ] Review of basic integration: power rule, exponential, trig, u-substitution
+- [ ] Integration by parts: ∫u dv = uv - ∫v du — choose u with LIATE (Log, Inverse trig, Algebraic, Trig, Exponential)
+- [ ] Trigonometric integrals: ∫sin^m(x)cos^n(x) dx — use identities (sin²x = (1-cos2x)/2, etc.)
+- [ ] Trigonometric substitution: for √(a²-x²) use x = a sinθ, for √(a²+x²) use x = a tanθ, for √(x²-a²) use x = a secθ
+- [ ] Partial fractions: decompose rational functions into simpler fractions before integrating
+  - [ ] Distinct linear factors: A/(x-a) + B/(x-b)
+  - [ ] Repeated linear: A/(x-a) + B/(x-a)²
+  - [ ] Irreducible quadratic: (Ax+B)/(x²+bx+c)
+- [ ] Improper integrals: ∫₁^∞ (1/x²) dx = 1 (converges), ∫₁^∞ (1/x) dx = ∞ (diverges)
+  - [ ] Type 1: infinite limits of integration
+  - [ ] Type 2: discontinuous integrand
+  - [ ] Comparison test for convergence
+- [ ] Numerical integration: Trapezoidal rule, Simpson's rule — approximate definite integrals
 
-**Science: General Biology + General Chemistry (gen-ed requirements)**
-- [ ] Gen Bio: cell biology review, genetics, evolution, ecology, human body systems
-- [ ] Gen Chem: atomic structure, periodic trends, bonding, reactions, stoichiometry, thermodynamics, kinetics, equilibrium
+*Applications of Integration (Chapter 8):*
+- [ ] Arc length: L = ∫ₐᵇ √(1 + (dy/dx)²) dx
+- [ ] Surface area of revolution: SA = 2π∫ₐᵇ f(x)√(1 + (f'(x))²) dx
+- [ ] Work: W = ∫ₐᵇ F(x) dx — spring work, pumping water, cable work
+- [ ] Hydrostatic pressure and force
+- [ ] Center of mass / centroid
 
-**Computer Science: CS 101 + Data Structures**
-- [ ] Programming fundamentals: variables, data types, control flow (if/else, loops, functions), OOP (classes, objects, inheritance, polymorphism)
-- [ ] Data structures: arrays, linked lists, stacks, queues, trees (binary, BST, AVL), hash tables, graphs
-- [ ] Algorithms intro: sorting (bubble, selection, insertion, merge, quick), searching (linear, binary), Big O notation (time complexity: O(1), O(log n), O(n), O(n log n), O(n²))
-- [ ] Version control: Git basics (commit, branch, merge, pull request)
+*Sequences and Series (Chapters 11-12):*
+- [ ] Sequences: definition, limits of sequences, convergence/divergence, monotonic and bounded sequences
+- [ ] Series: partial sums, telescoping series, geometric series (a/(1-r) when |r|<1)
+- [ ] Convergence tests:
+  - [ ] Divergence test: if lim aₙ ≠ 0 then Σaₙ diverges
+  - [ ] Integral test: compare series to integral
+  - [ ] p-series test: Σ(1/nᵖ) converges if p > 1
+  - [ ] Comparison test: compare to known convergent/divergent series
+  - [ ] Limit comparison test: lim(aₙ/bₙ) = finite positive → both converge or both diverge
+  - [ ] Alternating series test: alternating, decreasing, lim→0 → converges
+  - [ ] Ratio test: lim|aₙ₊₁/aₙ| < 1 → converges, > 1 → diverges
+  - [ ] Root test: lim ⁿ√|aₙ| < 1 → converges
+- [ ] Power series: Σcₙ(x-a)ⁿ — radius of convergence R, interval of convergence
+- [ ] Taylor series: f(x) = Σ f⁽ⁿ⁾(a)/n! · (x-a)ⁿ — centered at x=a
+  - [ ] Maclaurin = Taylor centered at 0
+  - [ ] Key series to memorize:
+    - [ ] eˣ = 1 + x + x²/2! + x³/3! + ... (all x)
+    - [ ] sin x = x - x³/3! + x⁵/5! - ... (all x)
+    - [ ] cos x = 1 - x²/2! + x⁴/4! - ... (all x)
+    - [ ] 1/(1-x) = 1 + x + x² + x³ + ... (|x| < 1)
+    - [ ] ln(1+x) = x - x²/2 + x³/3 - ... (|x| ≤ 1)
+- [ ] Taylor polynomial approximation: error bounds, Lagrange remainder
+- [ ] Parametric equations: derivatives, arc length, area
+- [ ] Polar coordinates: area A = ½∫ₐᵇ r² dθ, arc length, converting polar ↔ rectangular
 
-**Tests for College 1 Academics:**
-- [ ] "∫x·eˣ dx = ?" → xe^x - e^x + C (integration by parts)
-- [ ] "Does Σ(1/n²) converge?" → yes (p-series with p=2 > 1)
-- [ ] "Taylor series for e^x centered at 0?" → 1 + x + x²/2! + x³/3! + ...
-- [ ] "What is Big O notation?" → describes how algorithm performance scales with input size
+**Tests for Calc II:**
+- [ ] "∫x·cos(x) dx = ?" → x·sin(x) + cos(x) + C (by parts)
+- [ ] "∫dx/(x²-4) = ?" → partial fractions: 1/4·ln|(x-2)/(x+2)| + C
+- [ ] "Does Σ(1/n) converge?" → NO (harmonic series, p=1)
+- [ ] "Does Σ((-1)ⁿ/n) converge?" → YES (alternating series test)
+- [ ] "Ratio test: Σ(n!/nⁿ) — does it converge?" → yes (ratio → 1/e < 1)
+- [ ] "Taylor series for sin(x) centered at 0" → x - x³/3! + x⁵/5! - ...
+- [ ] "Radius of convergence of Σ(xⁿ/n!)" → R = ∞ (converges for all x)
+- [ ] "∫₁^∞ 1/x³ dx = ?" → [-1/(2x²)]₁^∞ = 0-(-1/2) = 1/2 (converges)
+- [ ] "Arc length of y = x² from 0 to 1: L = ∫₀¹ √(1+4x²) dx ≈ ?" → ≈ 1.479
+
+**ENGL 101: College Composition I**
+
+*Essay types and skills:*
+- [ ] Personal narrative essay: telling a story from your life with reflection and meaning
+- [ ] Descriptive essay: using vivid sensory details to paint a picture
+- [ ] Expository essay: explaining a concept clearly and thoroughly
+- [ ] Argumentative essay: making a claim supported by evidence and logic, addressing counterarguments
+- [ ] Rhetorical analysis: analyzing HOW an author/speaker persuades (ethos, pathos, logos, tone, diction, syntax)
+- [ ] Synthesis essay: combining multiple sources to develop a position
+- [ ] Research paper: 5-7 pages with thesis, organized argument, 5+ scholarly sources, MLA format
+- [ ] Proper citation: in-text citations, works cited page, avoiding plagiarism
+- [ ] Writing process: brainstorm → outline → rough draft → peer review → revise → edit → final draft
+- [ ] Grammar and mechanics: comma rules, semicolons, colons, parallel structure, dangling modifiers, active vs passive voice, subject-verb agreement, pronoun-antecedent agreement
+- [ ] Reading critically: annotate, summarize, analyze, evaluate, respond
+
+**Tests for ENGL 101:**
+- [ ] Write a 5-paragraph argumentative essay on a current issue with 3 sources
+- [ ] Write a rhetorical analysis of a published speech or essay
+- [ ] Identify and correct 10 common grammar errors in a passage
+- [ ] Properly format a Works Cited page with 5 different source types
+- [ ] Write a 1-page summary of a 10-page academic article without plagiarizing
+
+**ENGL 102: World Literature**
+- [ ] Ancient literature: Homer (Iliad excerpts — war, honor, mortality), Sophocles (Oedipus — fate, hubris), Virgil (Aeneid excerpts — duty, empire)
+- [ ] Medieval: Dante (Inferno — journey through hell, allegory), Chaucer (Canterbury Tales excerpts)
+- [ ] Renaissance: Cervantes (Don Quixote — idealism vs reality, first modern novel)
+- [ ] 19th century: Dostoevsky (Crime and Punishment — guilt, morality), Tolstoy (excerpts), Flaubert (Madame Bovary — disillusionment)
+- [ ] 20th century global: Kafka (The Metamorphosis — alienation), Borges (short stories — labyrinths, infinity), García Márquez (magical realism), Achebe (Things Fall Apart — colonialism), Murakami (surreal fiction)
+- [ ] Poetry: Rumi (Sufi mysticism), Pablo Neruda (love, politics), Wislawa Szymborska (philosophy), Rainer Maria Rilke (beauty, mortality)
+- [ ] Themes across cultures: love, death, power, identity, justice, the individual vs society, tradition vs change
+
+**Tests for ENGL 102:**
+- [ ] "What is the theme of The Metamorphosis?" → alienation, the absurdity of modern life
+- [ ] "What makes Don Quixote the 'first modern novel'?" → self-aware narrative, complex characters, blurs fiction/reality
+- [ ] "Compare how Dostoevsky and Kafka portray guilt" → (comparative essay)
+- [ ] "What is magical realism?" → realistic narrative with magical elements treated as ordinary (García Márquez)
+
+**BIO 101: General Biology I**
+- [ ] The scientific method: observation → question → hypothesis → experiment → data → conclusion → peer review
+- [ ] Chemistry of life: atoms, molecules, water properties (polarity, hydrogen bonding, cohesion, high specific heat), pH, organic molecules (carbohydrates, lipids, proteins, nucleic acids)
+- [ ] Cell structure and function: prokaryotic vs eukaryotic, ALL organelles and their functions, cell membrane (phospholipid bilayer, fluid mosaic model), transport (passive: diffusion, osmosis, facilitated; active: pumps, endocytosis, exocytosis)
+- [ ] Cell energy: enzymes (lower activation energy, substrate-specific), ATP (energy currency), cellular respiration (glycolysis → Krebs → ETC, yields ~36 ATP), photosynthesis (light reactions → Calvin cycle)
+- [ ] Cell reproduction: cell cycle (interphase → mitosis → cytokinesis), mitosis phases (PMAT), meiosis (two divisions → 4 haploid cells, crossing over, independent assortment)
+- [ ] Genetics: Mendel's laws, monohybrid/dihybrid crosses, incomplete dominance, codominance, sex-linked traits, pedigrees, DNA structure, replication, transcription, translation, mutations, gene regulation
+- [ ] Evolution: Darwin, natural selection, evidence (fossils, anatomy, DNA, biogeography), population genetics (Hardy-Weinberg), speciation, phylogenetics
+- [ ] Ecology: populations, communities, ecosystems, biomes, energy flow, biogeochemical cycles, human impact
+
+**Tests for BIO 101:**
+- [ ] "Describe the steps of the scientific method" → (full description)
+- [ ] "What are the 4 types of organic molecules?" → carbohydrates, lipids, proteins, nucleic acids
+- [ ] "Write the equation for cellular respiration" → C₆H₁₂O₆ + 6O₂ → 6CO₂ + 6H₂O + ATP
+- [ ] "What is the cell cycle?" → interphase (G1, S, G2) → mitosis (PMAT) → cytokinesis
+- [ ] "What is crossing over and why does it matter?" → exchange of DNA between homologous chromosomes during meiosis → genetic diversity
+- [ ] "What is Hardy-Weinberg equilibrium?" → allele frequencies stay constant in a non-evolving population (p² + 2pq + q² = 1)
+
+**CHEM 101: General Chemistry I**
+- [ ] Measurement and significant figures: accuracy vs precision, scientific notation, dimensional analysis
+- [ ] Atomic structure: protons, neutrons, electrons, isotopes, atomic number, mass number, electron configuration (Aufbau principle, Hund's rule, Pauli exclusion)
+- [ ] Periodic table: periods, groups, trends (atomic radius, ionization energy, electronegativity, electron affinity)
+- [ ] Chemical bonding: ionic (metal + nonmetal, electron transfer), covalent (nonmetal + nonmetal, electron sharing), metallic (sea of electrons), Lewis structures, VSEPR shapes, polarity
+- [ ] Nomenclature: naming ionic compounds (NaCl = sodium chloride), covalent compounds (CO₂ = carbon dioxide), acids (HCl = hydrochloric acid)
+- [ ] Chemical reactions: types (synthesis, decomposition, single/double replacement, combustion), balancing equations, predicting products
+- [ ] Stoichiometry: mole concept (6.022 × 10²³), molar mass, mole ratios from balanced equations, limiting reagent, percent yield
+- [ ] Gas laws: Boyle's (P₁V₁ = P₂V₂), Charles's (V₁/T₁ = V₂/T₂), combined, ideal gas law (PV = nRT), Dalton's law of partial pressures
+- [ ] Solutions: molarity (M = mol/L), dilution (M₁V₁ = M₂V₂), solubility, electrolytes
+- [ ] Thermochemistry: enthalpy (ΔH), Hess's law, calorimetry (q = mcΔT), endothermic vs exothermic
+
+**Tests for CHEM 101:**
+- [ ] "Write the electron configuration of Iron (Z=26)" → 1s²2s²2p⁶3s²3p⁶4s²3d⁶ (or [Ar]4s²3d⁶)
+- [ ] "Balance: Fe + O₂ → Fe₂O₃" → 4Fe + 3O₂ → 2Fe₂O₃
+- [ ] "How many moles in 44g of CO₂ (molar mass 44)?" → 1 mole
+- [ ] "PV = nRT. P=2atm, V=5L, T=300K, R=0.0821. n=?" → n = PV/RT = 10/24.63 ≈ 0.41 mol
+- [ ] "What is Hess's law?" → total enthalpy change is the same regardless of path (sum of steps = overall)
+- [ ] "q = mcΔT. m=100g, c=4.18, ΔT=25°C. q=?" → 10,450 J = 10.45 kJ
+
+**CS 101: Introduction to Computer Science**
+- [ ] What is computer science: problem-solving with computation, not just "coding"
+- [ ] Binary and number systems: binary (base 2), octal (base 8), hexadecimal (base 16), converting between systems
+- [ ] Boolean logic: AND, OR, NOT, XOR, truth tables, Boolean algebra
+- [ ] Programming fundamentals (Python or Java):
+  - [ ] Variables: types (int, float, string, boolean), assignment, naming conventions
+  - [ ] Operators: arithmetic (+,-,*,/,//,%,**), comparison (==,!=,<,>,<=,>=), logical (and, or, not)
+  - [ ] Control flow: if/elif/else, while loops, for loops, break/continue
+  - [ ] Functions: definition, parameters, return values, scope, recursion
+  - [ ] Data structures: lists/arrays, dictionaries/maps, tuples, sets
+  - [ ] Strings: indexing, slicing, methods, formatting
+  - [ ] File I/O: reading and writing files
+  - [ ] Error handling: try/except, common exceptions
+- [ ] Object-oriented programming:
+  - [ ] Classes and objects: attributes, methods, constructors (__init__)
+  - [ ] Encapsulation: public vs private, getters/setters
+  - [ ] Inheritance: parent class → child class, method overriding
+  - [ ] Polymorphism: same interface, different implementations
+  - [ ] Abstraction: abstract classes, interfaces
+- [ ] Basic algorithms: linear search, binary search, sorting (bubble, selection, insertion)
+- [ ] Introduction to complexity: Big O notation, time vs space complexity
+- [ ] Version control: Git basics (init, add, commit, push, pull, branch, merge, clone)
+- [ ] Software development practices: commenting code, documentation, testing basics
+
+**Tests for CS 101:**
+- [ ] "Convert 42 to binary" → 101010
+- [ ] "What is the output: for i in range(5): print(i)" → 0 1 2 3 4
+- [ ] "Write a function that returns the factorial of n" → (recursive or iterative solution)
+- [ ] "What is inheritance in OOP?" → child class inherits attributes and methods from parent class
+- [ ] "What is Big O notation?" → describes how performance scales with input size
+- [ ] "Time complexity of linear search?" → O(n)
 - [ ] "Time complexity of binary search?" → O(log n)
-- [ ] "What is a hash table?" → data structure mapping keys to values using a hash function — O(1) average lookup
+- [ ] "What is a Git branch?" → a parallel version of the code for developing features independently
+
+**CS 201: Data Structures (sourced from [Duke CS 201](https://courses.cs.duke.edu/compsci201/current/))**
+- [ ] Abstract data types (ADTs): what operations a data structure supports (interface) vs how it's implemented
+- [ ] Arrays: fixed size, O(1) random access, O(n) insert/delete
+- [ ] Linked lists:
+  - [ ] Singly linked: each node has data + pointer to next
+  - [ ] Doubly linked: data + next + previous pointers
+  - [ ] Operations: insert head O(1), insert tail O(n) or O(1) with tail pointer, search O(n), delete O(n)
+  - [ ] vs arrays: linked lists are better for frequent insertions/deletions, arrays better for random access
+- [ ] Stacks: LIFO (Last In First Out) — push, pop, peek — O(1) all operations
+  - [ ] Applications: undo/redo, expression evaluation, function call stack, parenthesis matching
+- [ ] Queues: FIFO (First In First Out) — enqueue, dequeue — O(1) all operations
+  - [ ] Priority queues: dequeue by priority not order (implemented with heaps)
+- [ ] Trees:
+  - [ ] Binary tree: each node has at most 2 children
+  - [ ] Binary Search Tree (BST): left < parent < right — O(log n) average search/insert/delete, O(n) worst case
+  - [ ] Balanced BSTs: AVL tree (balance factor ≤ 1, rotations to maintain), Red-Black tree
+  - [ ] Heap: complete binary tree, parent ≥ children (max heap) or parent ≤ children (min heap) — O(log n) insert/delete, O(1) peek
+  - [ ] Tree traversals: in-order (left, root, right → sorted for BST), pre-order (root, left, right), post-order (left, right, root), level-order (BFS)
+- [ ] Hash tables:
+  - [ ] Hash function: maps key to index — goal is uniform distribution
+  - [ ] Collision resolution: chaining (linked lists at each index), open addressing (linear probing, quadratic probing)
+  - [ ] Average O(1) lookup/insert/delete, worst case O(n) with many collisions
+  - [ ] Load factor: n/capacity — resize when load factor exceeds threshold
+- [ ] Graphs:
+  - [ ] Representation: adjacency matrix (O(V²) space), adjacency list (O(V+E) space)
+  - [ ] Directed vs undirected, weighted vs unweighted
+  - [ ] BFS (breadth-first search): uses queue, finds shortest path in unweighted graphs — O(V+E)
+  - [ ] DFS (depth-first search): uses stack/recursion, detects cycles, topological sort — O(V+E)
+- [ ] Sorting algorithms:
+  - [ ] Bubble sort: O(n²) — compare adjacent, swap if needed, repeat
+  - [ ] Selection sort: O(n²) — find minimum, place at start, repeat
+  - [ ] Insertion sort: O(n²) — insert each element into its correct position in sorted portion
+  - [ ] Merge sort: O(n log n) — divide in half recursively, merge sorted halves — STABLE, good for linked lists
+  - [ ] Quick sort: O(n log n) average, O(n²) worst — choose pivot, partition around it — IN-PLACE, practical fastest
+  - [ ] Heap sort: O(n log n) — build heap, extract max repeatedly
+- [ ] Algorithm analysis: Big O, Big Ω (lower bound), Big Θ (tight bound), amortized analysis
+- [ ] Recursion in depth: base case, recursive case, stack overflow, memoization, dynamic programming intro
+
+**Tests for CS 201:**
+- [ ] "What is the time complexity of searching a BST?" → O(log n) average, O(n) worst
+- [ ] "What is a hash collision?" → two different keys map to the same index
+- [ ] "Implement a stack using an array" → (code)
+- [ ] "What is the difference between BFS and DFS?" → BFS uses queue (level by level), DFS uses stack (goes deep first)
+- [ ] "What is merge sort's time complexity?" → O(n log n) always
+- [ ] "What is quick sort's worst case?" → O(n²) — when pivot is always min or max
+- [ ] "What tree traversal gives BST elements in sorted order?" → in-order
+- [ ] "Explain memoization" → storing results of expensive function calls to avoid recomputation
+
+### Academics — SPRING SEMESTER
+
+**Same course format for:**
+- [ ] MATH 253: Calculus III / Multivariable (partial derivatives, multiple integrals, vector calculus)
+- [ ] CS 202: Algorithms (divide and conquer, dynamic programming, greedy, graph algorithms, NP-completeness)
+- [ ] ENGL 102: World Literature (see above)
+- [ ] Gen-ed elective: Psychology 101 or Sociology 101 or Philosophy 101
+
+*Note: Spring semester courses follow same level of detail as fall. Full expansion continues in implementation phase.*
 
 ### LIFE — COLLEGE YEAR 1 (Unity age 18)
 
