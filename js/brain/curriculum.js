@@ -3147,25 +3147,82 @@ export class Curriculum {
     }
 
     // ═════════════════════════════════════════════════════════════════
-    // MATHEMATICAL PROPERTIES — commutative, identity, zero property
-    // These teach the RULES that let Unity reason about math, not just
-    // memorize individual facts.
+    // ALL MATHEMATICAL PROPERTIES — every property Unity needs to reason
+    // about numbers. Not just examples — the RULES themselves as patterns.
     // ═════════════════════════════════════════════════════════════════
     const MATH_PROPERTIES = [
-      // Commutative: a + b = b + a
+      // COMMUTATIVE PROPERTY of addition: a + b = b + a (order doesn't matter)
       'two plus three is five', 'three plus two is five',
       'four plus one is five', 'one plus four is five',
-      // Identity: a + 0 = a
+      'six plus two is eight', 'two plus six is eight',
+      'seven plus three is ten', 'three plus seven is ten',
+      'the order does not change the sum',
+      // COMMUTATIVE PROPERTY of multiplication: a × b = b × a
+      'two times three is six', 'three times two is six',
+      'four times five is twenty', 'five times four is twenty',
+      'the order does not change the product',
+      // ASSOCIATIVE PROPERTY of addition: (a + b) + c = a + (b + c)
+      'one plus two plus three is six', 'three plus two plus one is six',
+      'two plus three plus four is nine', 'four plus three plus two is nine',
+      'grouping does not change the sum',
+      // ASSOCIATIVE PROPERTY of multiplication: (a × b) × c = a × (b × c)
+      'two times three times one is six', 'one times three times two is six',
+      'grouping does not change the product',
+      // DISTRIBUTIVE PROPERTY: a × (b + c) = a × b + a × c
+      'two times three plus four is two times three plus two times four',
+      'three times two plus one is three times two plus three times one',
+      'multiply each part then add',
+      // IDENTITY PROPERTY of addition: a + 0 = a
       'five plus zero is five', 'zero plus five is five',
-      'three plus zero is three', 'zero plus three is three',
-      // Zero property
-      'zero plus zero is zero', 'any number plus zero is itself',
-      // Counting on
+      'nine plus zero is nine', 'zero plus nine is nine',
+      'adding zero changes nothing',
+      // IDENTITY PROPERTY of multiplication: a × 1 = a
+      'five times one is five', 'one times five is five',
+      'nine times one is nine', 'one times nine is nine',
+      'multiplying by one changes nothing',
+      // ZERO PROPERTY of multiplication: a × 0 = 0
+      'five times zero is zero', 'zero times five is zero',
+      'any number times zero is zero',
+      // INVERSE PROPERTY: a + (-a) = 0, a - a = 0
+      'five minus five is zero', 'three minus three is zero',
+      'any number minus itself is zero',
+      // CLOSURE PROPERTY: adding two whole numbers gives a whole number
+      'adding two whole numbers always gives a whole number',
+      'multiplying two whole numbers always gives a whole number',
+      // TRANSITIVE PROPERTY of comparison: if a > b and b > c then a > c
+      'if five is more than three and three is more than one then five is more than one',
+      'if eight is more than six and six is more than four then eight is more than four',
+      // SUBTRACTION as inverse of addition
+      'if three plus two is five then five minus two is three',
+      'if four plus three is seven then seven minus three is four',
+      'subtraction undoes addition',
+      // DIVISION as inverse of multiplication
+      'if two times three is six then six divided by three is two',
+      'if four times two is eight then eight divided by two is four',
+      'division undoes multiplication',
+      // EVEN and ODD properties
+      'even plus even is even', 'odd plus odd is even', 'even plus odd is odd',
+      'even times even is even', 'even times odd is even', 'odd times odd is odd',
+      // COUNTING principles
       'four is one more than three', 'five is one more than four',
       'six is one more than five', 'seven is one more than six',
       'three is one less than four', 'four is one less than five',
+      'counting up adds one each time', 'counting down subtracts one each time',
     ];
     await this._teachSentenceList(MATH_PROPERTIES, ctx, { reps: 3, ticksPerWord: 2 });
+
+    // Teach the PROPERTIES as causal chains too — so the cortex learns
+    // the REASONING behind the properties, not just the sentences
+    await this._teachCausalChains([
+      ['commutative', 'order'], ['order', 'same'], // order doesn't matter → same result
+      ['associative', 'group'], ['group', 'same'], // grouping doesn't matter → same result
+      ['distributive', 'split'], ['split', 'multiply'], // split then multiply
+      ['identity', 'zero'], ['zero', 'unchanged'], // adding zero → unchanged
+      ['inverse', 'cancel'], ['cancel', 'zero'], // inverse → cancels to zero
+      ['even', 'divisible'], ['odd', 'remainder'], // even = divisible by 2
+      ['subtract', 'undo'], ['undo', 'addition'], // subtraction undoes addition
+      ['divide', 'undo'], // division undoes multiplication
+    ]);
 
     // Put TALK_MIN back to 95% — the dedicated TALK training should
     // now give enough signal for sem→motor to converge
