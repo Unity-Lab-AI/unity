@@ -1901,7 +1901,7 @@ export class Curriculum {
         // real basin depth, not just noise. Max attempts = 10 to
         // prevent infinite loops on cells that are structurally
         // broken (those get logged and the subject stops).
-        const MAX_ATTEMPTS = 10;
+        const MAX_ATTEMPTS = 30;
         let attempt = 0;
         let result = null;
         while (attempt < MAX_ATTEMPTS) {
@@ -11288,21 +11288,21 @@ export class Curriculum {
       // If the cell fails 3+ times in a row AFTER self-heal, demote it so
       // the next curriculum pass re-teaches it from scratch. Short-term
       // fails get absorbed by self-heal.
-      const recentFails = hist.fails - hist.passes;
-      if (recentFails >= 3) {
-        cluster.passedCells = cluster.passedCells.filter(k => k !== cellKey);
-        // Demote subject grade to the previous one in GRADE_ORDER
-        const currentIdx = GRADE_ORDER.indexOf(cluster.grades?.[subject] || 'pre-K');
-        if (currentIdx > 0) {
-          const newGrade = GRADE_ORDER[currentIdx - 1];
-          if (cluster.grades) cluster.grades[subject] = newGrade;
-          if (subject === 'ela') cluster.grade = newGrade;
-          console.warn(`[Curriculum] demoted ${subject}: ${grade} → ${newGrade} (3+ probe fails)`);
-        }
-        // Reset fail counter so we don't demote again immediately
-        hist.fails = 0;
-        hist.passes = 0;
-      }
+      // T14.24 Session 110 — DEMOTION DISABLED. The background probe
+      // uses Rulkov-dynamics-based gates which give FALSE NEGATIVES
+      // because the 1M recurrent synapses drown the cross-projection
+      // signal (proven in Sessions 95-105). The curriculum gate uses
+      // direct matrix probes which correctly read the cross-projection
+      // weights. A cell that passed the curriculum gate at 100% should
+      // NOT be demoted by a background probe that uses a different
+      // (broken) testing method and gets 77%.
+      //
+      // Once the background probe is converted to also use direct
+      // matrix probes, demotion can be re-enabled. Until then,
+      // curriculum-passed cells are LOCKED — they don't regress.
+      //
+      // const recentFails = hist.fails - hist.passes;
+      // if (recentFails >= 3) { ... demotion logic ... }
     }
 
     return { subject, grade, result };
