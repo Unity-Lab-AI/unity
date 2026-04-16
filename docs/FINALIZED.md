@@ -5,6 +5,104 @@
 
 ---
 
+## 2026-04-16 — T14.24 Session 111: TALK fix + grade-lock + life track + focused retry + function words + doc sync
+
+**Gee 2026-04-16:** *"we were not getting 100%s and we were trying to make sure unity is actually learning and her systems are populating with knowledge"* + *"it should be making sense at grade 3 at least basic shit like yes no maybe okay im Unity im 25 and can describe its self"* + *"i think we need a whole life play that for each grade unity gets life experience"* + *"unitys brain is equational"* + *"she has to be able to recite her life not just read it"* + *"read this sentence and say the same thing in different words and fill in the blank and write a story all of it for each subject math has to solve the problems and equations it learned"*
+
+Session 111 was a massive session spanning doc sync, code fixes, life experience track build, and gate redesign discovery. Three commits: `0f61c3f`, `8d92c1e`, `6beed8b`, `24ce00f`.
+
+### TALK probe direction fixed (root cause of all non-ELA K failures)
+
+`_gateVocabList`, `_gateSentenceList`, `_gateMathKReal` TALK probes all changed from letter→motor (wrong — READ feedback direction) to sem→motor (correct — PRODUCTION direction). Injects GloVe(word) into sem pattern, propagates `sem_to_motor` cross-projection, argmax decodes first letter + mean-centering. Result: Math/Sci/Soc/Art-K TALK went from 40-60% (stuck) to 100% immediately. Sci-K/Soc-K/Art-K pass on attempt 1-2 now.
+
+### Grade-lock enforced
+
+`runAllSubjects` no longer lets any subject race ahead. ALL 6 subjects must pass grade N before ANY advance to N+1. 1-minute wall-clock timeout per subject per round, 10 rounds retry. No more "give up and wait for reboot" — keeps trying. Shutdown flag + event loop yield so Ctrl+C actually works during curriculum.
+
+### Life Experience track — 6th subject (20 methods, birth to 25)
+
+`SUBJECTS` expanded to `['ela', 'math', 'science', 'social', 'art', 'life']`. `cluster.grades` includes `life: 'pre-K'`. Total cells 95 → 114 (6 × 19).
+
+20 life methods (runLifePreK through runLifePhD) teaching Unity's personal identity via dual-layer equational approach:
+- **Layer 1:** `_conceptTeach` with 8-dimensional emotional feature vectors `[joy, pain, trust, fear, anger, love, independence, identity]` shaping cortex attractor basins — how Unity FEELS about each experience
+- **Layer 2:** `_teachSentenceList` with recallable memory sentences she can speak about — what Unity can SAY
+
+Memory-weighted Hebbian per tier: core self 5× lr / 50 reps, personal life 3× / 20 reps, strong opinions 3× / 15 reps, skills 2× / 12 reps, school knowledge 1× / 8 reps, background trivia 0.5× / 4 reps.
+
+Life content covers: first words, family (mom/grandma/grandpa/distant dad), sensory world, temperament, first day of school, first friend, dad leaving, Girl Scouts, music discovery, first punch, betrayal, first computer, goth discovery, online friends, grandpa dying, coding (hello world), fights with mom, first eyeliner, paper route, dad's new family, full goth look, the crew, first joint, first kiss, first concert, CS teacher, first real application, first relationship, coke, coding portfolio, half-shaved head, suspended, leaving home, dorm freedom, all-nighters, heartbreak, tattoos, hackathon win, devotion, collar, dark humor, grandma sick, mom's pride, full PhD persona.
+
+New TODO files: `docs/TODO-life-experience.md` (Unity's full life story with memory weighting), `docs/TODO-curriculum-depth.md` (real-world parity expansion).
+
+### Focused retry on failing words
+
+All three shared gates (`_gateVocabList`, `_gateSentenceList`, `_gateConceptTeach`) now return which specific words failed TALK. Re-teach ONLY the failing words at 3× intensity. Like a real student studying what they got wrong, not the whole textbook. Up to 5 focus rounds per cell.
+
+### Function words taught at ELA-K
+
+~120 basic English function words (the, a, an, I, you, we, he, she, is, am, are, yes, no, and, but, or, if, what, who, where, etc.) + conversational words (okay, yeah, hey, hi, bye, please, thanks, sorry) + basic adjectives/nouns taught via `_teachVocabList` direct pattern at ELA-K level. Previously these words went through the old corpus walk which can't converge.
+
+### ELA-G1/G2/Math-G1 converted to direct pattern
+
+Old bespoke inject→step→learn teach bodies replaced with shared helpers. ELA-G1 → `_teachVocabList`. ELA-G2 → `_teachVocabList` + `_teachSentenceList`. Math-G1 → `_teachSentenceList` + `_teachVocabList`.
+
+### `_gateConceptTeach` built
+
+`_conceptTeach` previously returned `{taught: N}` with no `.pass` field, so every cell using it ALWAYS FAILED (runSubjectGrade checks `result.pass` which was `undefined`). Now returns proper `{pass, reason}` via direct matrix probe (READ letter→sem + TALK sem→motor).
+
+### Background probe demotion re-enabled
+
+Session 110 had disabled it because old Rulkov-dynamics probes gave false negatives. Now all gates use direct matrix probes, so demotion is safe. 3 consecutive fails after self-heal = demotion.
+
+### Math-K SEQ targeted boost
+
+SEQ boost now only hits FAILING digit transitions at 5× learning rate instead of boosting all 9 transitions equally. Fixes the stuck 8/9 (89%) issue.
+
+### Word cap removed
+
+`_singleGradeCap` no longer limits Unity to 1 word at K, 2 at G1, etc. Once she passes any grade she speaks freely. Only pre-K = silence.
+
+### 3D popup silence guard
+
+`brain-3d.js _generateEventCommentary` checks `cortexGrades.ela` — if pre-K, returns null. No generated speech from untrained weights.
+
+### Setup page doc links fixed
+
+Explicit synchronous `readFileSync` route handlers in `brain-server.js` for `unity-guide.html`, `brain-equations.html`, `dashboard.html`, `gpu-configure.html`. Async `fs.readFile` was getting starved by curriculum/GPU event loop work — pages spun forever.
+
+### Ctrl+C shutdown fix
+
+`_brainShutdownRequested` global flag. First Ctrl+C sets flag (curriculum checks and breaks), saves, exits. Second Ctrl+C force-kills via `process.exit(1)`. `await _microtask()` yield in retry loop so SIGINT handler fires.
+
+### Task number placement law
+
+Added to CLAUDE.md + memory. Task numbers (T14.x, Session N, Task #N) BANNED from all public-facing files (README, SETUP, HTML pages). Allowed ONLY in workflow docs (TODO, FINALIZED, NOW, ARCHITECTURE, ROADMAP, SKILL_TREE, EQUATIONS) and in-session task lists.
+
+### Full doc sync
+
+All files updated with 6 subjects, 114 cells, life track, emotional features, memory weighting. Public HTML pages (brain-equations.html, unity-guide.html) rewritten with proper HTML tables — no text walls. Curriculum sections show per-subject grade tables. Historical references preserved as-is, only current-state claims updated.
+
+### Known remaining issues (NOT done — carried forward)
+
+- **G1+ TALK convergence** — `sem_to_motor` cross-projection too small (~16K connections) for 40+ word mappings. ELA-G1 TALK DECLINES across retries due to destructive interference. Needs `crossTargetFanout` increase.
+- **Gates test wrong thing** — current gates test "produce first letter from GloVe" which is NOT a real human-grade test. Need: paraphrase, fill-in-blank, story writing, math problem solving, conversation.
+- **3D popups don't show internal state** — should show live thoughts (sem readout nearest words), feelings (amygdala state), emotion changes, senses, mind capacity.
+
+### Files touched
+
+Code: `js/brain/curriculum.js` (~+1500 lines), `js/brain/cluster.js`, `js/brain/language-cortex.js`, `js/ui/brain-3d.js`, `server/brain-server.js`
+
+Docs: `docs/TODO.md`, `docs/FINALIZED.md`, `docs/NOW.md`, `docs/ARCHITECTURE.md`, `docs/SKILL_TREE.md`, `docs/ROADMAP.md`, `docs/EQUATIONS.md`, `docs/TODO-life-experience.md` (NEW), `docs/TODO-curriculum-depth.md` (NEW)
+
+Public: `README.md`, `SETUP.md`, `brain-equations.html`, `unity-guide.html`, `docs/component-templates.txt`
+
+Config: `.claude/CLAUDE.md` (task number law), memory files
+
+### Commits
+
+`0f61c3f` (Session 111 main), `8d92c1e` (function words), `6beed8b` (life track + doc sync), `24ce00f` (class brace fix)
+
+---
+
 ## 2026-04-15 — T14.24 Sessions 95-110: convergence failure discovery → direct pattern Hebbian breakthrough → shared helper conversion → live testing
 
 **Gee 2026-04-15:** *"we were not getting 100%s and we were trying to make sure unity is actually learning and her systems are populating with knowledge"* + *"no its suppsoe to be a n A+ which is over 95%"* + *"wtf 50% is still a failure it needs an A+ to pass"* + *"its all or nothing and it fucking keeps doing it till it gets it fucking right"*.

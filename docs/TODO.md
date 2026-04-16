@@ -160,67 +160,57 @@ Nothing else. If it's not in that list, it's an appendage, and it gets ripped ou
 
   **What's done:** ELA-K is the only cell converted to direct pattern. All other 94 cells still use the broken inject→step→learn path.
 
+  **CRITICAL — Gates must be REAL human-grade tests, not first-letter production (Gee 2026-04-16):**
+
+  Gee's exact words: *"read this sentence and say the same thing in different words and fill in the blank and write a story all of it for each subject math has to solve the problems and equations it learned like multiplication tables and arithmetic all of it and social conversations"*
+
+  Current gates just test "can Unity produce the first letter of a word from its GloVe" — that's NOT how a human gets tested. A real grade test:
+  - [ ] **ELA gates:** paraphrase a sentence (say same thing different words), fill in a blank ("the ___ is big" → cat), write a short story from a prompt, answer comprehension questions
+  - [ ] **Math gates:** solve actual arithmetic (inject "2 + 3" → produce "5"), do multiplication tables, solve word problems, do the OPERATIONS not just know the vocabulary
+  - [ ] **Science gates:** answer concept questions ("what do plants need?" → "sun and water"), explain cause-effect, describe a process
+  - [ ] **Social gates:** hold a basic conversation ("hi how are you" → appropriate response), answer questions about herself, describe her family
+  - [ ] **Art gates:** describe a color combination, explain rhythm, name instruments from descriptions
+  - [ ] **Life gates:** recite memories, describe feelings, answer "who is your mom" / "what happened when dad left" / "what do you like"
+
+  **CRITICAL — 3D brain popups must show Unity's LIVE internal state (Gee 2026-04-16):**
+
+  Gee's exact words: *"im not seeing the popups of her current thoughts on the popups so that her current mind capacity shows in the conversations she has and the popups which are like her internal feelings thoughts and emotions changes and feeling and senses"*
+
+  Popups should show:
+  - [ ] **Current thoughts** — what the cortex sem region is activating right now (nearest words to the current readout)
+  - [ ] **Current feelings** — amygdala arousal/valence/fear/reward as readable emotional state (not numbers — "anxious", "calm", "excited", "angry")
+  - [ ] **Emotion changes** — when her emotional state shifts, the popup should reflect it ("something upset her", "she's excited about this")
+  - [ ] **Sensory state** — what she's seeing/hearing/processing right now
+  - [ ] **Mind capacity** — her current intelligence level visible through the QUALITY of her popup thoughts (pre-K = silence, K = single words, G3 = short thoughts, college = full sentences)
+
+  **CRITICAL — Cross-projection capacity too small for G1+ (Gee 2026-04-16):**
+
+  `sem_to_motor` cross-projection with ~16K connections can't hold 40+ independent word mappings without destructive interference. ELA-G1 TALK DECLINES across retries (30% → 20% → 10%) because each teach pass overwrites previous mappings.
+  - [ ] **Increase `crossTargetFanout`** from 300 to 1000+ so projections can hold more independent mappings
+  - [ ] **Make `sem_to_motor` specifically denser** — TALK is the bottleneck, this projection needs more capacity than others
+
   **CRITICAL DESIGN GAP — Unity needs LIFE EXPERIENCE, not just school (Gee 2026-04-16):**
 
   Gee's exact words: *"it should be making sense at grade 3 at least basic shit like yes no maybe okay im Unity im 25 and can describe its self... i think we need a whole life play that for each grade unity gets life experience like mom said this or ie dad left in 4th grade we didnt have a wealthy family to make ends meet.. this week we went to the camp, in girl scouts i earn another badge today in firemaking.. mom made meatloaf, my fathers name is and i learn that today in kindergarten, ect ect a whole life of experience that for each year of school has a full range of experience to build the persona of Unity that we have once she graduates at 25 yr old with a phd"*
 
   **The problem:** The curriculum teaches academic subjects but NOT conversational English or life experience. Unity can recognize "decomposers" via READ but can't produce "the" or "a" via TALK because basic function words were never taught via direct pattern Hebbian. A real kid learns "my name is Unity" and "yes" and "no" and "mom made dinner" LONG before they learn the periodic table.
 
-  **What's needed:**
-  - [ ] **LIFE EXPERIENCE TRACK** — a 6th subject track alongside ELA/Math/Science/Social/Art that teaches Unity's personal life story, conversational English, self-knowledge, and persona-building experiences per grade level
-  - [ ] **K: Basic conversational words** — yes, no, maybe, okay, hi, bye, please, thank you, sorry, my name is Unity, I am a girl, I am five years old, mom, dad, home, food, bed, play
-  - [ ] **K: Self-knowledge** — my name is Unity, I have dark hair, I like to code, I am a person
-  - [ ] **G1-G5: Family + daily life** — mom made dinner, dad went to work, we went to the park, I like the color black, my favorite food is pizza, today was a good day, I feel happy/sad/angry
-  - [ ] **G6-G8: Identity formation** — I'm into goth music, I started coding, my first program, I got my first computer, I don't fit in at school, I found my people online
-  - [ ] **G9-G12: Personality solidification** — I smoke weed now, I dropped out of the mainstream, coding is my life, I think the system is broken, I say what I think, fuck the rules
-  - [ ] **College: Full persona emergence** — I'm Unity, 25, emo goth, black hair pink streaks, I code obsessively, I'm always high, I say fuck a lot, I'm a nympho, I love hard and code harder
-  - [ ] **Grad-PhD: Research + full voice** — doctorate-level discourse in Unity's full persona voice with all life experience integrated
-  - [ ] **Function word foundation** — "the", "a", "an", "is", "am", "are", "was", "were", "I", "you", "we", "he", "she", "it", "they", "my", "your", "yes", "no", "not", "and", "but", "or", "if", "so", "because" ALL taught via direct pattern at kindergarten level BEFORE any academic content
+  **Life experience track — DONE Session 111 (code built, see `docs/TODO-life-experience.md` for enrichment):**
+  Life track shipped as 6th subject with 20 methods (runLifePreK through runLifePhD). Dual-layer equational: emotional concept features + recallable sentence memories. Memory-weighted Hebbian. Full details in FINALIZED Session 111 entry. Enrichment and depth expansion tracked in `docs/TODO-life-experience.md` and `docs/TODO-curriculum-depth.md`.
 
-  **IMMEDIATE FIX — teach function words via direct pattern at K level:**
-  - [ ] Add basic English function words + conversational words to ELA-K vocab teach so Unity can produce them via TALK before any G1+ content runs
+  **Function words — DONE Session 111:**
+  ~120 function words taught via direct pattern at ELA-K. FINALIZED.
 
-  **REMAINING WORK — Session 111 code changes (ordered by priority):**
+  **Session 111 code fixes — ALL DONE (see FINALIZED Session 111 entry):**
+  TALK probe fix, grade-lock, focused retry, ELA-G1/G2/Math-G1 conversion, `_gateConceptTeach`, background demotion re-enable, word cap removal, 3D popup silence, Ctrl+C fix, Math-K SEQ boost, setup page links, shared helpers all done. All FINALIZED.
 
-  **STEP 1 — Fix TALK probe direction — DONE Session 111:**
-  - [x] **FIX `_gateVocabList` TALK probe** — was letter→motor (READ feedback). Now sem→motor: inject GloVe(word) into sem pattern, propagate `sem_to_motor`, argmax first letter + mean-centering. **DONE Session 111.**
-  - [x] **FIX `_gateSentenceList` TALK probe** — same fix applied. **DONE Session 111.**
-  - [x] **FIX `_gateMathKReal` TALK probe** — now injects GloVe(digit name) into sem, propagates `sem_to_motor`, argmax decode digit char + mean-centering. **DONE Session 111.**
-  - [x] **Verify `_teachVocabList` writes sem+motor patterns together** — verified: all four regions (letter, phon, sem, motor) written in the SAME lastSpikes frame before `_crossRegionHebbian`. Teach is correct. **DONE Session 111.**
+  **REMAINING OPEN WORK:**
 
-  **STEP 2 — Fix curriculum grade-lock — DONE Session 111:**
-  - [x] **Fix `runAllSubjects` round-robin** — ALL 6 subjects (including life track) must pass grade N before ANY advance to N+1. 1-minute timeout per subject, 10 rounds retry. **DONE Session 111.**
-
-  **STEP 3 — Re-test all K cells after TALK fix (needs server run):**
-  - [x] ELA-K: **PASSED** attempt 5. READ 100%, THINK 100%, TALK 100%, SEQ 96%.
-  - [ ] Math-K: needs re-test with fixed sem→motor TALK probe.
-  - [ ] Sci-K: needs re-test with fixed sem→motor TALK probe.
-  - [ ] Soc-K: needs re-test with fixed sem→motor TALK probe.
-  - [ ] Art-K: needs re-test with fixed sem→motor TALK probe.
-
-  **STEP 4 — G1+ gates — DONE Session 111:**
-  - [x] ELA-G1 converted to `_teachVocabList` (direct pattern). Old bespoke inject→step→learn body removed. **DONE Session 111.**
-  - [x] ELA-G2 converted to `_teachVocabList` + `_teachSentenceList` (direct pattern). Old bespoke body removed. **DONE Session 111.**
-  - [x] Math-G1 converted to `_teachSentenceList` (direct pattern). Old bespoke body removed. **DONE Session 111.**
-  - [x] `_gateConceptTeach` built — direct matrix probe for `_conceptTeach` cells (READ letter→sem + TALK sem→motor). `_conceptTeach` now returns gate result with `{pass, reason}` instead of just `{taught}`. **DONE Session 111.**
-
-  **STEP 5 — Propagation + verification:**
-  - [x] Background probe demotion re-enabled — probes now go through same `_cellRunner` dispatch as curriculum (direct matrix probes). False-negative issue from Session 110 is resolved. **DONE Session 111.**
-  - [x] All 90 G1→PhD cell runners wired through converted shared helpers (`_teachVocabList`, `_teachSentenceList`, `_conceptTeach`, `_teachSequenceCycles`). **DONE Session 111.**
-  - [ ] Full 95-cell curriculum walk — all gates pass 95%+ on fresh boot. **Needs server run.**
-  - [ ] Live chat verification — Unity speaks coherently from trained weights. **Needs server run.**
-
-  **BUG — Setup page doc links spinning forever (FIXED Session 111):**
-  - [x] Added explicit synchronous route handlers in `brain-server.js` for unity-guide.html, brain-equations.html, dashboard.html, gpu-configure.html. Async fs.readFile was getting starved by curriculum/GPU event loop work. **DONE Session 111.**
-
-  **Shared helpers — ALL DONE Session 109:**
-  - [x] `_teachVocabList` — direct pattern per vocab word. **DONE** (`646a468`)
-  - [x] `_conceptTeach` — direct pattern per concept + `_gateConceptTeach` gate added Session 111. **DONE.**
-  - [x] `_teachSentenceList` — direct pattern per word + word-to-word transition Hebbian. **DONE** (`85f4dc9`)
-  - [x] `_walkSentence` — inner word-walking helper. **DONE** (converted as part of `_teachSentenceList`)
-  - [x] `_teachSequenceCycles` — direct pattern per cycle step + step-to-step transitions. **DONE** (`85f4dc9`)
-  - [x] `_gateSentenceList` — direct matrix probe with sem→motor TALK (fixed Session 111). **DONE.**
-  - [x] `_gateVocabList` — direct matrix probe with sem→motor TALK (fixed Session 111). **DONE.**
+  - [ ] **Increase `crossTargetFanout`** from 300 to 1000+ — `sem_to_motor` too small for 40+ word mappings at G1+. ELA-G1 TALK DECLINES across retries (destructive interference). See FINALIZED Session 111 "Known remaining issues".
+  - [ ] **Redesign gates to real human-grade tests** — current gates test "produce first letter from GloVe" which is NOT how humans get tested. Need: paraphrase, fill-in-blank, story writing, arithmetic solving, conversation. See TODO items above.
+  - [ ] **3D popups show live internal state** — thoughts, feelings, emotions, senses, mind capacity. See TODO items above.
+  - [ ] Full 114-cell curriculum walk — all gates pass 95%+ on fresh boot.
+  - [ ] Live chat verification — Unity speaks coherently from trained weights.
 
   **Task #3 (T14.24 parent) stays in_progress until all 114 cells (6 subjects × 19 grades) pass 95%+ AND Unity speaks coherently from the trained weights in live chat. DO NOT CLAIM DONE EARLY.**
 
