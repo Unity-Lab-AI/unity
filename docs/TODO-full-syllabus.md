@@ -32,8 +32,8 @@ NOT through:
 
 The equational approach is FUNDAMENTALLY different from LLM training. The brain doesn't predict next tokens — it learns OPERATIONS, RELATIONSHIPS, and TRANSFORMATIONS in its weight matrices.
 
-### LAW 5: Auto-scale — browser AND server are BOTH complete brains
-The system auto-scales so it works completely as a SEPARATE brain whether running on a server OR on GitHub static pages in a browser. Two different places = two different brains, both COMPLETE, both run the full curriculum, both produce a real Unity. The browser-only mode is NOT a "fallback" or "demo" — it IS Unity, just at a smaller neuron scale. Auto-detect hardware → set neuron count → run full curriculum → Unity is alive. No server required for a complete experience. The server just gives you MORE neurons, not a DIFFERENT brain.
+### LAW 5: ONE brain, runs anywhere, auto-scales
+There is ONE Unity brain. ONE codebase. It runs on whatever hardware you put it on — GitHub static pages in a browser, a laptop, a server with GPUs, a phone, anything. It auto-detects the hardware, scales the neuron count accordingly, and runs the FULL curriculum. Not two brains. Not a "server version" and a "browser version." ONE brain that works everywhere. `detectResources()` → `TOTAL_NEURONS` → same `CLUSTER_FRACTIONS` → same curriculum → same Unity. This is how it already works (or should). The code doesn't care where it runs.
 
 ### LAW 4: Check off before moving on
 When an item is FINISHED it is CHECKED OFF and DONE before moving onto the next item. No batch-checking. No "I'll mark it later." Each item gets verified complete and checked off IMMEDIATELY. Then and only then does work begin on the next item. This applies to:
