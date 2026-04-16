@@ -4538,6 +4538,64 @@ export class Curriculum {
     console.log(`[Curriculum] _teachSVOParsing: ${SVO_DATA.length} SVO triples × ${REPS} reps`);
   }
 
+  /**
+   * AUTO FINAL — generates a comprehension final exam from a sentence array.
+   * Extracts key content words from the sentences and builds fill-in-blank
+   * + association questions automatically. Every cell that calls this gets
+   * a REAL exam without hand-crafting each question.
+   *
+   * @param {string[]} sentences - the sentences taught in this cell
+   * @returns {{pass:boolean, reason:string}} gate result
+   */
+  _autoFinal(sentences) {
+    // Extract unique content words (>3 chars, skip function words)
+    const STOP = new Set(['the','and','but','for','with','from','that','this','have','has','had','was','were','are','been','being','will','would','could','should','can','may','might','not','all','any','some','each','every','more','most','very','just','also','into','than','then','when','where','what','which','who','how','why','its','our','your','they','them','their','she','her','his','him','one','two']);
+    const words = new Set();
+    for (const s of sentences) {
+      for (const w of s.split(/\s+/)) {
+        const clean = w.replace(/[^a-z]/g, '');
+        if (clean.length > 3 && !STOP.has(clean)) words.add(clean);
+      }
+    }
+    const vocab = [...words];
+    if (vocab.length < 6) return { pass: true, reason: 'auto-final: too few words to test' };
+
+    // Build questions from sentence context
+    const questions = [];
+
+    // Type 1: Fill-in-blank — pick a sentence, remove a content word, test if cortex retrieves it
+    for (const s of sentences.slice(0, 12)) {
+      const ws = s.split(/\s+/).filter(Boolean);
+      if (ws.length < 4) continue;
+      // Find a content word to blank
+      for (let i = 1; i < ws.length - 1; i++) {
+        const clean = ws[i].replace(/[^a-z]/g, '');
+        if (clean.length > 3 && !STOP.has(clean)) {
+          const prompt = [...ws.slice(0, i), ...ws.slice(i + 1)];
+          questions.push({ prompt, answer: clean });
+          break;
+        }
+      }
+      if (questions.length >= 10) break;
+    }
+
+    // Type 2: Association — pairs of content words from same sentence
+    for (const s of sentences.slice(0, 8)) {
+      const ws = s.split(/\s+/).filter(w => {
+        const c = w.replace(/[^a-z]/g, '');
+        return c.length > 3 && !STOP.has(c);
+      }).map(w => w.replace(/[^a-z]/g, ''));
+      if (ws.length >= 2) {
+        questions.push({ prompt: [ws[0]], answer: ws[1] });
+      }
+      if (questions.length >= 14) break;
+    }
+
+    if (questions.length < 4) return { pass: true, reason: 'auto-final: too few questions generated' };
+
+    return this._gateComprehension(questions);
+  }
+
   // structure as Session 4 ELA-G1: curated ~15-word vocab list per
   // subject, letter-stream-to-sem binding via cluster.learn after each
   // word walk, 3-pathway gate with word-level READ/THINK/TALK probes.
@@ -10107,7 +10165,10 @@ export class Curriculum {
     ];
     await this._teachLifeCycles();
     await this._teachSolarSystem();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   // ─── Sci-G3: ecosystems ───────────────────────────────────────────
@@ -10128,7 +10189,10 @@ export class Curriculum {
       'humans depend on ecosystems', 'every living thing matters',
     ];
     await this._teachFoodChains();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   // ─── Soc-G1: community ────────────────────────────────────────────
@@ -10202,7 +10266,10 @@ export class Curriculum {
     // T14.24 Session 58 — prime state-name sequence walk per TODO
     // line 496 before the state-concept sentence pass.
     await this._teachStateNames();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   // ─── Soc-G3: US geography ─────────────────────────────────────────
@@ -10226,7 +10293,10 @@ export class Curriculum {
     // T14.24 Session 59 — prime US regions concept lattice per TODO
     // line 500 before the geography sentence pass.
     await this._teachUSRegions();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   // ─── Art-G1: color mixing ─────────────────────────────────────────
@@ -10249,7 +10319,10 @@ export class Curriculum {
     // T14.24 Session 76 — prime color mixing RGB-arithmetic lattice
     // per TODO line 557 before the color-mixing sentence pass.
     await this._teachColorMixing();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   // ─── Art-G2: rhythm + beat ────────────────────────────────────────
@@ -10272,7 +10345,10 @@ export class Curriculum {
     // T14.24 Session 77 — prime rhythm patterns temporal cycles per
     // TODO line 557 before the rhythm sentence pass.
     await this._teachRhythmPatterns();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   // ─── Art-G3: drawing fundamentals ─────────────────────────────────
@@ -10295,7 +10371,10 @@ export class Curriculum {
     // T14.24 Session 78 — prime drawing basics elements lattice per
     // TODO line 557 before the drawing sentence pass.
     await this._teachDrawingBasics();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   // ═══════════════════════════════════════════════════════════════════
@@ -10423,7 +10502,10 @@ export class Curriculum {
     // more feature overlap than distant ones — which is the same
     // ordinal relationship real chemistry depends on.
     await this._teachAtomsMolecules();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runSciG6Real(ctx) {
@@ -10458,7 +10540,10 @@ export class Curriculum {
     // "condensation" not as an isolated fact but as an active cortex
     // state carried into the next letter-stream.
     await this._teachEarthCycles();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runSocG4Real(ctx) {
@@ -10569,7 +10654,10 @@ export class Curriculum {
     // T14.24 Session 61 — prime colonial US temporal sequence per
     // TODO line 508 before the colonial sentence pass.
     await this._teachColonialUS();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runSocG6Real(ctx) {
@@ -10592,7 +10680,10 @@ export class Curriculum {
     // T14.24 Session 62 — prime ancient civilizations lattice per
     // TODO line 512 before the ancient-civ sentence pass.
     await this._teachAncientCivs();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runArtG4Real(ctx) {
@@ -10616,7 +10707,10 @@ export class Curriculum {
     // TODO line 557 before the melody/pitch sentence pass. Sentences
     // reference piano/guitar/drums so the basins need to exist first.
     await this._teachInstruments();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runArtG5Real(ctx) {
@@ -10639,7 +10733,10 @@ export class Curriculum {
     // T14.24 Session 80 — prime visual composition principles
     // lattice per TODO line 561 before the composition sentence pass.
     await this._teachVisualComposition();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runArtG6Real(ctx) {
@@ -10662,7 +10759,10 @@ export class Curriculum {
     // T14.24 Session 81 — prime music theory lattice per TODO
     // line 561 before the music theory sentence pass.
     await this._teachMusicTheory();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   // ─── TODO-aligned ELA-G6 helper (Session 33) ─────────────────────
@@ -11206,7 +11306,10 @@ export class Curriculum {
     ];
     await this._teachEssayStructure(ESSAYS);
     await this._teachGrammarAgreement(AGREEMENT_PAIRS);
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runMathG7Real(ctx) {
@@ -11374,7 +11477,10 @@ export class Curriculum {
     // relationships + T14.7 type transitions + T14.8 sentence schemas.
     await this._teachCells();
     await this._teachGeneticsIntro();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runSciG8Real(ctx) {
@@ -11449,7 +11555,10 @@ export class Curriculum {
     // T14.24 Session 63 — prime medieval period sequence walks per
     // TODO line 516 before the medieval sentence pass.
     await this._teachMedievalPeriod();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runSocG8Real(ctx) {
@@ -11471,7 +11580,10 @@ export class Curriculum {
     // T14.24 Session 64 — prime civil war cause-effect chain per
     // TODO line 520 before the civil-war sentence pass.
     await this._teachCivilWar();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runArtG7Real(ctx) {
@@ -11493,7 +11605,10 @@ export class Curriculum {
     // T14.24 Session 82 — prime music composition forms + composers
     // lattice per TODO line 561 before the composition sentence pass.
     await this._teachMusicComposition();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runArtG8Real(ctx) {
@@ -11517,7 +11632,10 @@ export class Curriculum {
     // composition" component of Art-G8 per TODO line 561.
     await this._teachAdvancedMusicTheory();
     await this._teachVisualComposition();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   // ═══════════════════════════════════════════════════════════════════
@@ -11776,7 +11894,10 @@ export class Curriculum {
       'arithmetic sequences add the same amount', 'geometric sequences multiply by the same amount',
       'the sum of a finite series has a formula', 'an infinite series may converge',
     ];
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runMathG10Real(ctx) {
@@ -11797,7 +11918,10 @@ export class Curriculum {
     ];
     // Session 41 — TODO-aligned geometric proofs
     await this._teachGeometricProofs();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runSciG9Real(ctx) {
@@ -11843,7 +11967,10 @@ export class Curriculum {
     await this._teachCells();
     await this._teachGeneticsIntro();
     await this._teachEvolution();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runSciG10Real(ctx) {
@@ -11895,7 +12022,10 @@ export class Curriculum {
     // top of the stable feature basins.
     await this._teachPeriodicTable();
     await this._teachBonding();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runSocG9Real(ctx) {
@@ -11917,7 +12047,10 @@ export class Curriculum {
     // T14.24 Session 65 — prime world history modern scaffold per
     // TODO line 524 before the sentence pass.
     await this._teachWorldHistoryModern();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runSocG10Real(ctx) {
@@ -11939,7 +12072,10 @@ export class Curriculum {
     // T14.24 Session 66 — prime US 20th century scaffold per TODO
     // line 527 before the sentence pass.
     await this._teachUS20thCentury();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runArtG9Real(ctx) {
@@ -11961,7 +12097,10 @@ export class Curriculum {
     // T14.24 Session 84 — prime art history chronological scaffold
     // per TODO line 565 before the art history sentence pass.
     await this._teachArtHistory();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runArtG10Real(ctx) {
@@ -11983,7 +12122,10 @@ export class Curriculum {
     // T14.24 Session 85 — prime music history chronological scaffold
     // per TODO line 565 before the music history sentence pass.
     await this._teachMusicHistory();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   // ═══════════════════════════════════════════════════════════════════
@@ -12432,7 +12574,10 @@ export class Curriculum {
     await this._teachBonding();
     await this._teachKinematics();
     await this._teachAstronomyIntro();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runSocG11Real(ctx) {
@@ -12454,7 +12599,10 @@ export class Curriculum {
     // T14.24 Session 67 — prime three-branch structure per TODO
     // line 530 before the civics sentence pass.
     await this._teachGovBranches();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runSocG12Real(ctx) {
@@ -12476,7 +12624,10 @@ export class Curriculum {
     // T14.24 Session 68 — prime economics concept lattice per TODO
     // line 534 before the economics sentence pass.
     await this._teachEconomics();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runArtG11Real(ctx) {
@@ -12498,7 +12649,10 @@ export class Curriculum {
     // T14.24 Session 86 — prime visual art theory lattice per TODO
     // line 565 before the theory sentence pass.
     await this._teachVisualArtTheory();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runArtG12Real(ctx) {
@@ -12519,7 +12673,10 @@ export class Curriculum {
     // T14.24 Session 87 — prime composition + criticism methods
     // lattice per TODO line 565 before the criticism sentence pass.
     await this._teachCompositionCriticism();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   // ═══════════════════════════════════════════════════════════════════
@@ -12767,7 +12924,10 @@ export class Curriculum {
     await this._teachPhonology();
     await this._teachMorphology();
     await this._teachSyntax();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runMathCol1Real(ctx) {
@@ -12789,7 +12949,10 @@ export class Curriculum {
     // Session 42 — TODO-aligned multivariable calculus + matrix ops
     await this._teachMultivarCalc();
     await this._teachMatrixOps();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runMathCol2Real(ctx) {
@@ -12811,7 +12974,10 @@ export class Curriculum {
     // Session 42 — TODO-aligned ODEs + combinatorics
     await this._teachODEs();
     await this._teachCombinatorics();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runSciCol1Real(ctx) {
@@ -12860,7 +13026,10 @@ export class Curriculum {
     // sentence-form schemas continue to populate from the walk.
     await this._teachGenBiology();
     await this._teachGenChemistry();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runSciCol2Real(ctx) {
@@ -12908,7 +13077,10 @@ export class Curriculum {
     await this._teachOrganicChemistry();
     await this._teachCellBiologyAdvanced();
     await this._teachPhysics2();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runSocCol1Real(ctx) {
@@ -12930,7 +13102,10 @@ export class Curriculum {
     // T14.24 Session 69 — prime historiography concept lattice per
     // TODO line 537 before the Col1 sentence pass.
     await this._teachHistoriography();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runSocCol2Real(ctx) {
@@ -12951,7 +13126,10 @@ export class Curriculum {
     // T14.24 Session 70 — prime political science lattice per TODO
     // line 537 before the Col2 sentence pass.
     await this._teachPoliticalScience();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runArtCol1Real(ctx) {
@@ -12973,7 +13151,10 @@ export class Curriculum {
     // T14.24 Session 88 — prime studio fundamentals lattice per
     // TODO line 567 before the Col1 sentence pass.
     await this._teachStudioFundamentals();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runArtCol2Real(ctx) {
@@ -12994,7 +13175,10 @@ export class Curriculum {
     // T14.24 Session 89 — prime specialized art history movement
     // chronology per TODO line 567 before the Col2 sentence pass.
     await this._teachSpecializedArtHistory();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   // ═══════════════════════════════════════════════════════════════════
@@ -13129,7 +13313,10 @@ export class Curriculum {
       { text: 'readers create meaning with the text', framework: 'reader_response' },
     ];
     await this._teachTheoryFrameworks(FRAMEWORKS);
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runElaCol4Real(ctx) {
@@ -13167,7 +13354,10 @@ export class Curriculum {
       },
     ];
     await this._teachRhetoricalDefense(DEFENSE);
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runMathCol3Real(ctx) {
@@ -13189,7 +13379,10 @@ export class Curriculum {
     // Session 42 — TODO-aligned group theory + real analysis
     await this._teachGroupTheory();
     await this._teachRealAnalysis();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runMathCol4Real(ctx) {
@@ -13210,7 +13403,10 @@ export class Curriculum {
     // Session 42 — TODO-aligned topology + complex analysis
     await this._teachTopology();
     await this._teachComplexAnalysis();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runSciCol3Real(ctx) {
@@ -13261,7 +13457,10 @@ export class Curriculum {
     await this._teachMolecularBiology();
     await this._teachBiochemistry();
     await this._teachQuantumIntro();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runSciCol4Real(ctx) {
@@ -13286,7 +13485,10 @@ export class Curriculum {
     // SENTENCES attach to a real methodological basin instead of drifting
     // into generic sci vocabulary.
     await this._teachScienceResearchMethods();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runSocCol3Real(ctx) {
@@ -13308,7 +13510,10 @@ export class Curriculum {
     // T14.24 Session 71 — prime sociology/anthropology lattice per
     // TODO line 537 before the Col3 sentence pass.
     await this._teachSociologyAnthropology();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runSocCol4Real(ctx) {
@@ -13330,7 +13535,10 @@ export class Curriculum {
     // T14.24 Session 72 — prime social science research methods
     // lattice per TODO line 537 before the Col4 sentence pass.
     await this._teachSocialScienceResearchMethods();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runArtCol3Real(ctx) {
@@ -13351,7 +13559,10 @@ export class Curriculum {
     // T14.24 Session 90 — prime aesthetics/philosophy-of-art lattice
     // per TODO line 567 before the Col3 sentence pass.
     await this._teachAesthetics();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runArtCol4Real(ctx) {
@@ -13373,7 +13584,10 @@ export class Curriculum {
     // T14.24 Session 91 — prime art research methods + portfolio
     // lattice per TODO line 567 before the Col4 sentence pass.
     await this._teachArtResearchMethods();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   // ═══════════════════════════════════════════════════════════════════
@@ -13416,7 +13630,10 @@ export class Curriculum {
       { sign: 'lamp', signifier: 'object', signified: 'knowledge' },
     ];
     await this._teachSemiotics(TRIADS);
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runElaPhDReal(ctx) {
@@ -13468,7 +13685,10 @@ export class Curriculum {
     // Session 42 — TODO-aligned measure theory + functional analysis
     await this._teachMeasureTheory();
     await this._teachFunctionalAnalysis();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runMathPhDReal(ctx) {
@@ -13517,7 +13737,10 @@ export class Curriculum {
     // a real grad-research basin instead of drifting into generic
     // Col4 experimental-method vocabulary.
     await this._teachResearchGradeScience();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runSciPhDReal(ctx) {
@@ -13576,7 +13799,10 @@ export class Curriculum {
     // T14.24 Session 73 — prime research historiography lattice per
     // TODO line 540 before the Grad sentence pass.
     await this._teachResearchHistoriography();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runSocPhDReal(ctx) {
@@ -13629,7 +13855,10 @@ export class Curriculum {
     // T14.24 Session 92 — prime graduate art research lattice per
     // TODO line 570 before the Grad sentence pass.
     await this._teachGraduateArtResearch();
-    return this._teachSentenceList(SENTENCES, ctx, { reps: 4, ticksPerWord: 2 });
+    await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    const _af = this._autoFinal(SENTENCES);
+    if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
+    return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
 
   async runArtPhDReal(ctx) {
