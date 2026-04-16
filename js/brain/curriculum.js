@@ -39,7 +39,7 @@
  */
 
 import { sharedEmbeddings } from './embeddings.js';
-import { ensureLetter, ensureLetters, encodeLetter, decodeLetter, inventorySize } from './letter-input.js';
+import { ensureLetter, ensureLetters, encodeLetter, decodeLetter, inventorySize, inventorySnapshot } from './letter-input.js';
 
 // Phase tick budgets. These scale the intensity of exposure — letters
 // and short words get more ticks per token because phonological basins
