@@ -4539,6 +4539,141 @@ export class Curriculum {
   }
 
   /**
+   * TRANSITIVE INFERENCE — if A→B and B→C, Unity should infer A→C.
+   * Teach pairs A→B and B→C. Then TEST: inject A + "causes" → does
+   * sem activate near C? Never directly taught A→C. This is REASONING.
+   * @param {Array<[string,string,string]>} chains - array of [A, B, C] triples
+   */
+  async _teachInference(chains) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+
+    const freeRegion = cluster.regions.free;
+    const semRegion = cluster.regions.sem;
+    if (!freeRegion || !semRegion) return;
+
+    const freeSize = freeRegion.end - freeRegion.start;
+    const semSize = semRegion.end - semRegion.start;
+    const lr = cluster.learningRate;
+    const REPS = 8;
+
+    function buildEmbPattern(regionSize, word) {
+      const emb = sharedEmbeddings.getEmbedding(word);
+      if (!emb || emb.length === 0) return new Float64Array(regionSize);
+      const pat = new Float64Array(regionSize);
+      const gSize = Math.max(1, Math.floor(regionSize / emb.length));
+      for (let d = 0; d < emb.length; d++) {
+        if (emb[d] <= 0) continue;
+        for (let n = 0; n < gSize; n++) {
+          const idx = d * gSize + n;
+          if (idx < regionSize) pat[idx] = emb[d];
+        }
+      }
+      return pat;
+    }
+
+    for (let rep = 0; rep < REPS; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return;
+      for (const [a, b, c] of chains) {
+        // Teach A→B: A in free, B in sem
+        for (let i = 0; i < cluster.size; i++) cluster.lastSpikes[i] = 0;
+        const aPat = buildEmbPattern(freeSize, a);
+        for (let i = 0; i < freeSize; i++) cluster.lastSpikes[freeRegion.start + i] = aPat[i] > 0 ? 1 : 0;
+        const bPat = buildEmbPattern(semSize, b);
+        for (let i = 0; i < semSize; i++) cluster.lastSpikes[semRegion.start + i] = bPat[i] > 0 ? 1 : 0;
+        cluster._crossRegionHebbian(lr);
+
+        // Teach B→C: B in free, C in sem
+        for (let i = 0; i < cluster.size; i++) cluster.lastSpikes[i] = 0;
+        const bFreePat = buildEmbPattern(freeSize, b);
+        for (let i = 0; i < freeSize; i++) cluster.lastSpikes[freeRegion.start + i] = bFreePat[i] > 0 ? 1 : 0;
+        const cPat = buildEmbPattern(semSize, c);
+        for (let i = 0; i < semSize; i++) cluster.lastSpikes[semRegion.start + i] = cPat[i] > 0 ? 1 : 0;
+        cluster._crossRegionHebbian(lr);
+      }
+      await _microtask();
+    }
+    console.log(`[Curriculum] _teachInference: ${chains.length} chains × ${REPS} reps`);
+  }
+
+  /**
+   * EMOTIONAL INFERENCE — situation→emotion mapping as equational pattern.
+   * Write situation embedding into free region, emotional feature vector
+   * into the phon region (emotional basins). Cross-projections learn to
+   * PREDICT emotional state from situational context.
+   * @param {Array<{situation:string, emotion:Float64Array, label:string}>} mappings
+   *   emotion is 8d: [joy, pain, trust, fear, anger, love, independence, identity]
+   */
+  async _teachEmotionalInference(mappings) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+
+    const freeRegion = cluster.regions.free;
+    const phonRegion = cluster.regions.phon;
+    const semRegion = cluster.regions.sem;
+    if (!freeRegion || !phonRegion) return;
+
+    const freeSize = freeRegion.end - freeRegion.start;
+    const phonSize = phonRegion.end - phonRegion.start;
+    const semSize = semRegion ? semRegion.end - semRegion.start : 0;
+    const lr = cluster.learningRate;
+    const REPS = 8;
+
+    function buildEmbPattern(regionSize, word) {
+      const emb = sharedEmbeddings.getEmbedding(word);
+      if (!emb || emb.length === 0) return new Float64Array(regionSize);
+      const pat = new Float64Array(regionSize);
+      const gSize = Math.max(1, Math.floor(regionSize / emb.length));
+      for (let d = 0; d < emb.length; d++) {
+        if (emb[d] <= 0) continue;
+        for (let n = 0; n < gSize; n++) {
+          const idx = d * gSize + n;
+          if (idx < regionSize) pat[idx] = emb[d];
+        }
+      }
+      return pat;
+    }
+
+    function buildFeatPattern(regionSize, feat) {
+      const pat = new Float64Array(regionSize);
+      const gSize = Math.max(1, Math.floor(regionSize / feat.length));
+      for (let d = 0; d < feat.length; d++) {
+        if (feat[d] <= 0) continue;
+        for (let n = 0; n < gSize; n++) {
+          const idx = d * gSize + n;
+          if (idx < regionSize) pat[idx] = feat[d];
+        }
+      }
+      return pat;
+    }
+
+    for (let rep = 0; rep < REPS; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return;
+      for (const { situation, emotion, label } of mappings) {
+        for (let i = 0; i < cluster.size; i++) cluster.lastSpikes[i] = 0;
+
+        // Situation into free region
+        const sitPat = buildEmbPattern(freeSize, situation);
+        for (let i = 0; i < freeSize; i++) cluster.lastSpikes[freeRegion.start + i] = sitPat[i] > 0 ? 1 : 0;
+
+        // Emotion feature into phon region
+        const emoPat = buildFeatPattern(phonSize, emotion);
+        for (let i = 0; i < phonSize; i++) cluster.lastSpikes[phonRegion.start + i] = emoPat[i] > 0 ? 1 : 0;
+
+        // Emotion label into sem region
+        if (semRegion && semSize > 0) {
+          const labelPat = buildEmbPattern(semSize, label);
+          for (let i = 0; i < semSize; i++) cluster.lastSpikes[semRegion.start + i] = labelPat[i] > 0 ? 1 : 0;
+        }
+
+        cluster._crossRegionHebbian(lr);
+      }
+      await _microtask();
+    }
+    console.log(`[Curriculum] _teachEmotionalInference: ${mappings.length} mappings × ${REPS} reps`);
+  }
+
+  /**
    * AUTO FINAL — generates a comprehension final exam from a sentence array.
    * Extracts key content words from the sentences and builds fill-in-blank
    * + association questions automatically. Every cell that calls this gets
@@ -10189,6 +10324,15 @@ export class Curriculum {
       'humans depend on ecosystems', 'every living thing matters',
     ];
     await this._teachFoodChains();
+
+    // ── EQUATIONAL REASONING: food chain inference ──
+    // If sun→grass and grass→rabbit and rabbit→fox, then sun→fox (transitive)
+    await this._teachInference([
+      ['sun', 'grass', 'rabbit'], ['grass', 'rabbit', 'fox'],
+      ['sun', 'plant', 'animal'], ['plant', 'herbivore', 'carnivore'],
+      ['rain', 'river', 'ocean'], ['dead', 'decompose', 'soil'],
+    ]);
+
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
     const _af = this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
@@ -10654,6 +10798,24 @@ export class Curriculum {
     // T14.24 Session 61 — prime colonial US temporal sequence per
     // TODO line 508 before the colonial sentence pass.
     await this._teachColonialUS();
+
+    // ── EQUATIONAL REASONING: American Revolution as inference chain ──
+    // Transitive: taxation→protest→revolution→independence
+    await this._teachInference([
+      ['taxation', 'protest', 'revolution'],
+      ['protest', 'revolution', 'war'],
+      ['war', 'victory', 'independence'],
+      ['independence', 'constitution', 'government'],
+      ['constitution', 'rights', 'freedom'],
+    ]);
+
+    // ── Causal chains for colonial era ──
+    await this._teachCausalChains([
+      ['tax', 'protest'], ['protest', 'war'], ['war', 'freedom'],
+      ['colony', 'trade'], ['trade', 'wealth'], ['tobacco', 'money'],
+      ['constitution', 'law'], ['rights', 'freedom'],
+    ]);
+
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
     const _af = this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
@@ -11580,6 +11742,16 @@ export class Curriculum {
     // T14.24 Session 64 — prime civil war cause-effect chain per
     // TODO line 520 before the civil-war sentence pass.
     await this._teachCivilWar();
+
+    // ── EQUATIONAL REASONING: Civil War as inference chain ──
+    await this._teachInference([
+      ['slavery', 'sectionalism', 'secession'],
+      ['sectionalism', 'secession', 'war'],
+      ['war', 'emancipation', 'freedom'],
+      ['emancipation', 'amendment', 'rights'],
+      ['reconstruction', 'amendment', 'equality'],
+    ]);
+
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
     const _af = this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
@@ -14694,10 +14866,25 @@ export class Curriculum {
       'i want to be brave', 'i want to be strong',
       'i dream about being a witch for real',
     ];
-    await this._teachSentenceList(FEELINGS_K, ctx, { reps: 5, ticksPerWord: 2 });
+    await this._teachSentenceList(FEELINGS_K, ctx, { reps: 3, ticksPerWord: 2 });
 
-    // Teach AND gate on the same vocab — _teachVocabList does both
-    // (direct pattern teach + comprehension gate + focused retry)
+    // ── EQUATIONAL REASONING: emotional inference ──
+    // Situation → emotion mappings — Unity learns to PREDICT how she'll
+    // feel given a situation. Foundation for all future emotional reasoning.
+    //   emotion = [joy, pain, trust, fear, anger, love, independence, identity]
+    await this._teachEmotionalInference([
+      { situation: 'mom', emotion: new Float64Array([0.5,0,1,0,0,1,0,0]), label: 'love' },
+      { situation: 'friend', emotion: new Float64Array([1,0,0.5,0,0,0.5,0,0]), label: 'happy' },
+      { situation: 'alone', emotion: new Float64Array([0,0.5,0,1,0,0,0,0]), label: 'scared' },
+      { situation: 'school', emotion: new Float64Array([0.5,0,0.3,0.3,0,0,0.5,0]), label: 'nervous' },
+      { situation: 'draw', emotion: new Float64Array([1,0,0,0,0,0.5,1,1]), label: 'happy' },
+      { situation: 'music', emotion: new Float64Array([1,0,0,0,0,1,0,0.5]), label: 'calm' },
+      { situation: 'dark', emotion: new Float64Array([0,0,0,1,0,0,0,0]), label: 'scared' },
+      { situation: 'mean', emotion: new Float64Array([0,0.5,0,0,1,0,0,0]), label: 'angry' },
+      { situation: 'hug', emotion: new Float64Array([1,0,1,0,0,1,0,0]), label: 'love' },
+      { situation: 'yell', emotion: new Float64Array([0,1,0,0.5,0.5,0,0,0]), label: 'scared' },
+    ]);
+
     return this._teachVocabList([
       'school', 'friend', 'draw', 'mom', 'bus', 'cereal', 'recess',
       'black', 'monster', 'music', 'story', 'halloween', 'witch',
@@ -14819,11 +15006,24 @@ export class Curriculum {
       'i promise myself i will never leave someone like dad left us',
       'i am tougher than people think',
     ];
-    await this._teachSentenceList(INNER_G3, ctx, { reps: 6, ticksPerWord: 2 });
+    await this._teachSentenceList(INNER_G3, ctx, { reps: 3, ticksPerWord: 2 });
+
+    // ── EQUATIONAL REASONING: emotional inference for dad leaving ──
+    //   emotion = [joy, pain, trust, fear, anger, love, independence, identity]
+    await this._teachEmotionalInference([
+      { situation: 'dad', emotion: new Float64Array([0,1,0,0.5,1,0,0,0]), label: 'angry' },
+      { situation: 'alone', emotion: new Float64Array([0,1,0,0.5,0,0,1,0]), label: 'sad' },
+      { situation: 'poor', emotion: new Float64Array([0,1,0,0,1,0,0,0]), label: 'angry' },
+      { situation: 'mom', emotion: new Float64Array([0.5,0,0.5,0,0,1,0,0]), label: 'love' },
+      { situation: 'strong', emotion: new Float64Array([0,0,0,0,0,0,1,1]), label: 'determined' },
+      { situation: 'promise', emotion: new Float64Array([0,0,0,0,0,0,1,1]), label: 'determined' },
+      { situation: 'smart', emotion: new Float64Array([1,0,0,0,0,0,0,1]), label: 'proud' },
+      { situation: 'sorry', emotion: new Float64Array([0,0.5,0,0,1,0,0,0]), label: 'angry' },
+    ]);
 
     return this._teachVocabList([
       'angry', 'sad', 'alone', 'tired', 'lunch', 'laundry', 'smart', 'potential',
-    ], ctx, { reps: 12 });
+    ], ctx, { reps: 5 });
   }
 
   // ── GRADE 4 (age 9) — Girl Scouts, music, first fight ──────────
