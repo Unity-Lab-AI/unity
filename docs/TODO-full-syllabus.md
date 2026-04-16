@@ -5713,8 +5713,640 @@
 
 ---
 
-*Grades K through 10 COMPLETE for all 6 subjects. Grades 11-12 + College + Grad + PhD continue in subsequent sessions.*
+---
 
-*Current coverage: 11 out of 19 grades complete. 8 remain.*
+## MATH — GRADE 11: ALGEBRA II / TRIGONOMETRY (sourced from [thecorestandards.org/Math/Content/HSA](https://www.thecorestandards.org/Math/Content/HSA/) + [HSF](https://www.thecorestandards.org/Math/Content/HSF/))
 
-*Sources used: [Common Core Math](https://www.thecorestandards.org/Math/Content/HSG/), [Common Core ELA](https://www.thecorestandards.org/ELA-Literacy/RL/9-10/), [NGSS HS-PS1](https://www.nextgenscience.org/dci-arrangement/hs-ps1-matter-and-its-interactions), [Students of History World History](https://www.studentsofhistory.com/world-history-curriculum), [Core Knowledge Foundation](https://www.coreknowledge.org/k-8-sequence/)*
+### Polynomial, Rational, and Radical Relationships
+
+**Concepts to teach:**
+- [ ] Polynomials form a system closed under addition, subtraction, and multiplication
+- [ ] Know and apply the Remainder Theorem: when p(x) is divided by (x-a), the remainder is p(a)
+- [ ] Identify zeros of polynomials when suitable factorizations are available; use zeros to sketch graphs
+- [ ] Factor polynomials: factor theorem, grouping, sum/difference of cubes (a³+b³ = (a+b)(a²-ab+b²))
+- [ ] Polynomial long division and synthetic division
+- [ ] Fundamental Theorem of Algebra: a degree-n polynomial has exactly n complex roots (counting multiplicity)
+- [ ] Conjugate pairs: if a+bi is a root, then a-bi is also a root (for polynomials with real coefficients)
+- [ ] End behavior of polynomials: leading term determines behavior as x→±∞
+  - [ ] Even degree, positive leading coefficient: both ends up ↑↑
+  - [ ] Even degree, negative: both ends down ↓↓
+  - [ ] Odd degree, positive: left down, right up ↓↑
+  - [ ] Odd degree, negative: left up, right down ↑↓
+- [ ] Rational expressions: simplify, add, subtract, multiply, divide — factor numerator and denominator, cancel common factors
+- [ ] Rational equations: solve by finding common denominator, check for extraneous solutions
+- [ ] Radical expressions: simplify √(50) = 5√2, rationalize denominators, operations with radicals
+- [ ] Radical equations: isolate radical, square both sides, check for extraneous solutions
+- [ ] Rational exponents: x^(1/2) = √x, x^(2/3) = (∛x)², x^(-1/2) = 1/√x
+
+**Tests for Polynomial/Rational/Radical:**
+- [ ] "Factor: x³ + 8" → (x+2)(x²-2x+4) — sum of cubes
+- [ ] "If p(x) = x³-2x+1, what is p(3)?" → 27-6+1 = 22 (also the remainder when divided by x-3)
+- [ ] "A degree-4 polynomial has how many roots?" → exactly 4 (counting multiplicity, including complex)
+- [ ] "End behavior of -2x³+5x²-x+7?" → ↑↓ (odd degree, negative leading)
+- [ ] "Simplify: √(72)" → 6√2
+- [ ] "Solve: √(x+3) = 5" → x+3=25, x=22
+- [ ] "x^(2/3) means what?" → cube root of x, then squared
+
+### Exponential and Logarithmic Functions
+
+**Concepts to teach:**
+- [ ] Exponential functions: f(x) = a·bˣ where a = initial value, b = growth/decay factor
+  - [ ] b > 1: exponential growth; 0 < b < 1: exponential decay
+  - [ ] Compound interest: A = P(1 + r/n)^(nt) where P=principal, r=annual rate, n=compounding periods/year, t=years
+  - [ ] Continuous compound: A = Pe^(rt)
+  - [ ] Half-life: time for quantity to halve — N(t) = N₀(1/2)^(t/h) where h=half-life
+- [ ] Logarithms: the INVERSE of exponentials
+  - [ ] log_b(x) = y means b^y = x
+  - [ ] Common log: log = log₁₀; Natural log: ln = log_e
+  - [ ] e ≈ 2.71828... (Euler's number — base of natural logarithms)
+- [ ] Properties of logarithms:
+  - [ ] log(xy) = log(x) + log(y) — product rule
+  - [ ] log(x/y) = log(x) - log(y) — quotient rule
+  - [ ] log(x^n) = n·log(x) — power rule
+  - [ ] log_b(b) = 1, log_b(1) = 0
+  - [ ] Change of base: log_b(x) = ln(x)/ln(b) = log(x)/log(b)
+- [ ] Solve exponential equations using logarithms: 3^x = 81 → x = log₃(81) = 4
+- [ ] Solve logarithmic equations: log₂(x) = 5 → x = 2⁵ = 32
+- [ ] Applications: population growth, radioactive decay, pH scale, Richter scale, decibels
+
+**Tests for Exponential/Logarithmic:**
+- [ ] "log₂(32) = ?" → 5 (because 2⁵=32)
+- [ ] "ln(e³) = ?" → 3
+- [ ] "Solve: 2^x = 16" → x = 4
+- [ ] "Solve: log(x) = 3" → x = 1000 (10³)
+- [ ] "Expand: log(x²y/z)" → 2log(x) + log(y) - log(z)
+- [ ] "$1000 at 5% compounded monthly for 10 years: A = 1000(1+0.05/12)^(120) = ?" → ≈ $1647
+- [ ] "Half-life of 100g substance is 5 years. After 15 years?" → 100(1/2)³ = 12.5g
+
+### Trigonometric Functions
+
+**Concepts to teach:**
+- [ ] Unit circle: circle of radius 1 centered at origin
+  - [ ] Point on unit circle at angle θ: (cos θ, sin θ)
+  - [ ] Radian measure: 360° = 2π radians, 180° = π, 90° = π/2
+  - [ ] Convert: degrees × (π/180) = radians; radians × (180/π) = degrees
+- [ ] Six trigonometric functions:
+  - [ ] sin θ = opposite/hypotenuse = y-coordinate on unit circle
+  - [ ] cos θ = adjacent/hypotenuse = x-coordinate on unit circle
+  - [ ] tan θ = sin θ/cos θ = opposite/adjacent
+  - [ ] csc θ = 1/sin θ
+  - [ ] sec θ = 1/cos θ
+  - [ ] cot θ = 1/tan θ = cos θ/sin θ
+- [ ] Exact values for special angles (must memorize):
+  - [ ] 0°: sin=0, cos=1, tan=0
+  - [ ] 30° (π/6): sin=1/2, cos=√3/2, tan=√3/3
+  - [ ] 45° (π/4): sin=√2/2, cos=√2/2, tan=1
+  - [ ] 60° (π/3): sin=√3/2, cos=1/2, tan=√3
+  - [ ] 90° (π/2): sin=1, cos=0, tan=undefined
+  - [ ] And corresponding values in all four quadrants (ASTC: All Students Take Calculus)
+- [ ] Graphs of trig functions: amplitude, period, phase shift, vertical shift
+  - [ ] y = A sin(Bx + C) + D: amplitude=|A|, period=2π/B, phase shift=-C/B, vertical shift=D
+- [ ] Trigonometric identities:
+  - [ ] Pythagorean: sin²θ + cos²θ = 1, 1 + tan²θ = sec²θ, 1 + cot²θ = csc²θ
+  - [ ] Double angle: sin(2θ) = 2sinθcosθ, cos(2θ) = cos²θ - sin²θ
+  - [ ] Sum/difference: sin(A±B) = sinAcosB ± cosAsinB, cos(A±B) = cosAcosB ∓ sinAsinB
+- [ ] Inverse trig functions: sin⁻¹(x), cos⁻¹(x), tan⁻¹(x) — find the ANGLE given a ratio
+- [ ] Law of Sines: a/sinA = b/sinB = c/sinC (for ANY triangle, not just right)
+- [ ] Law of Cosines: c² = a² + b² - 2ab·cosC (generalization of Pythagorean theorem)
+- [ ] Solve oblique triangles using Law of Sines and Law of Cosines
+
+**Tests for Trigonometry:**
+- [ ] "Convert 120° to radians" → 2π/3
+- [ ] "sin(π/6) = ?" → 1/2
+- [ ] "cos(π/4) = ?" → √2/2
+- [ ] "tan(π/3) = ?" → √3
+- [ ] "sin²θ + cos²θ = ?" → 1 (Pythagorean identity)
+- [ ] "sin(2θ) = ?" → 2sinθcosθ (double angle)
+- [ ] "y = 3sin(2x) — amplitude? period?" → amplitude=3, period=π
+- [ ] "Law of Cosines: a=5, b=7, C=60°. c = ?" → c² = 25+49-70cos60° = 74-35 = 39, c ≈ 6.24
+- [ ] "ASTC — what trig functions are positive in each quadrant?" → All, Sine, Tangent, Cosine
+
+### Sequences and Series
+
+**Concepts to teach:**
+- [ ] Arithmetic sequences: constant difference (d) — a_n = a₁ + (n-1)d
+  - [ ] Example: 3, 7, 11, 15, ... → d=4, a_n = 3 + (n-1)4 = 4n - 1
+  - [ ] Sum of arithmetic series: S_n = n(a₁ + a_n)/2
+- [ ] Geometric sequences: constant ratio (r) — a_n = a₁ · r^(n-1)
+  - [ ] Example: 2, 6, 18, 54, ... → r=3, a_n = 2 · 3^(n-1)
+  - [ ] Sum of finite geometric series: S_n = a₁(1 - rⁿ)/(1 - r) for r ≠ 1
+  - [ ] Sum of INFINITE geometric series (|r| < 1): S = a₁/(1 - r)
+- [ ] Sigma notation: Σ (summation) — Σ_{i=1}^{n} a_i means add up all terms from i=1 to i=n
+- [ ] Binomial Theorem: (a+b)ⁿ = Σ C(n,k) a^(n-k) b^k where C(n,k) = n!/(k!(n-k)!)
+- [ ] Pascal's Triangle: coefficients of binomial expansion — each number is sum of two above it
+
+**Tests for Sequences/Series:**
+- [ ] "Arithmetic: a₁=5, d=3. What is a₁₀?" → 5 + 9(3) = 32
+- [ ] "Sum of first 20 terms: a₁=2, a₂₀=40" → S = 20(2+40)/2 = 420
+- [ ] "Geometric: a₁=3, r=2. What is a₅?" → 3·2⁴ = 48
+- [ ] "Infinite geometric: a₁=10, r=1/2. Sum?" → 10/(1-0.5) = 20
+- [ ] "Expand (x+y)³ using binomial theorem" → x³ + 3x²y + 3xy² + y³
+- [ ] "What is 5! (5 factorial)?" → 120
+
+### Complex Numbers
+
+**Concepts to teach:**
+- [ ] Imaginary unit: i = √(-1), i² = -1
+- [ ] Complex number: a + bi where a = real part, b = imaginary part
+- [ ] Operations: add (combine like terms), subtract, multiply (FOIL, i²=-1), divide (multiply by conjugate)
+- [ ] Complex conjugate: the conjugate of a+bi is a-bi
+- [ ] Complex plane: horizontal axis = real, vertical axis = imaginary
+- [ ] Absolute value (modulus): |a+bi| = √(a²+b²)
+
+**Tests for Complex Numbers:**
+- [ ] "i² = ?" → -1
+- [ ] "(3+2i) + (1-4i) = ?" → 4-2i
+- [ ] "(3+2i)(1-4i) = ?" → 3-12i+2i-8i² = 3-10i+8 = 11-10i
+- [ ] "Conjugate of 5-3i?" → 5+3i
+- [ ] "|3+4i| = ?" → √(9+16) = 5
+- [ ] "Solve: x² + 4 = 0" → x = ±2i
+
+---
+
+## ELA — GRADE 11: AMERICAN LITERATURE (Common Core ELA 11-12 band — sourced from [thecorestandards.org/ELA-Literacy](https://www.thecorestandards.org/ELA-Literacy/))
+
+### Reading Literature (11-12.RL)
+
+**Concepts to teach:**
+- [ ] Cite strong and thorough textual evidence; determine where the text leaves matters uncertain
+- [ ] Determine two or more themes; analyze their development including how they interact and build on one another to produce a complex account
+- [ ] Analyze the impact of the author's choices regarding how to develop and relate elements of a story (where a story is set, how the action is ordered, how characters are introduced and developed)
+- [ ] Determine the meaning of words and phrases including figurative and connotative; analyze the impact of specific word choices on meaning and tone including words with multiple meanings or language that is particularly fresh, engaging, or beautiful
+- [ ] Analyze how an author's choices concerning structure create effects such as mystery, tension, or surprise — including how the author structures specific parts of a text
+- [ ] Analyze a case in which grasping a point of view requires distinguishing what is directly stated from what is really meant (irony, satire, sarcasm, understatement)
+- [ ] Analyze multiple interpretations of a story, drama, or poem; evaluate how each version interprets the source text
+- [ ] Demonstrate knowledge of 18th-, 19th-, and early-20th-century foundational works of American literature
+
+**American Literature canon (representative works):**
+- [ ] Puritan era: excerpts from Puritan writings (Jonathan Edwards — "Sinners in the Hands of an Angry God")
+- [ ] Colonial/Revolutionary: Benjamin Franklin (autobiography), Thomas Paine ("Common Sense"), Thomas Jefferson (Declaration of Independence)
+- [ ] Transcendentalism: Ralph Waldo Emerson ("Self-Reliance," "Nature"), Henry David Thoreau ("Walden," "Civil Disobedience")
+- [ ] Romanticism/Gothic: Edgar Allan Poe ("The Tell-Tale Heart," "The Raven"), Nathaniel Hawthorne (The Scarlet Letter)
+- [ ] Realism/Naturalism: Mark Twain (The Adventures of Huckleberry Finn), Stephen Crane (The Red Badge of Courage)
+- [ ] Harlem Renaissance: Langston Hughes ("The Negro Speaks of Rivers," "Harlem"), Zora Neale Hurston (Their Eyes Were Watching God)
+- [ ] Modern American: F. Scott Fitzgerald (The Great Gatsby), Ernest Hemingway (The Old Man and the Sea), John Steinbeck (Of Mice and Men, The Grapes of Wrath)
+- [ ] Post-WWII: Arthur Miller (The Crucible — McCarthyism allegory, Death of a Salesman), J.D. Salinger (The Catcher in the Rye)
+- [ ] Civil Rights era: Martin Luther King Jr. ("Letter from Birmingham Jail," "I Have a Dream"), Malcolm X (Autobiography)
+- [ ] Contemporary: Toni Morrison (Beloved, The Bluest Eye), Tim O'Brien (The Things They Carried — Vietnam)
+- [ ] Poetry across eras: Walt Whitman ("Song of Myself"), Emily Dickinson, Robert Frost, Langston Hughes, Sylvia Plath, Maya Angelou
+
+**Literary analysis at the 11th grade level:**
+- [ ] Analyze how a work of American literature reflects its historical period
+- [ ] Connect themes across multiple works and time periods
+- [ ] Analyze the American Dream as a literary theme: how different authors define, challenge, or critique it
+- [ ] Understand literature as social commentary: how authors address racism, inequality, identity, freedom
+- [ ] Rhetorical analysis of speeches: MLK, JFK, Lincoln, Frederick Douglass
+- [ ] Satire analysis: identify the target, method, and purpose of satirical works
+- [ ] Unreliable narrator: analyze how narrators like Nick Carraway (Gatsby) or Holden Caulfield shape the reader's perception
+
+**Tests for 11-12.RL:**
+- [ ] "What is Transcendentalism?" → philosophical movement emphasizing individual intuition, nature, and self-reliance (Emerson, Thoreau)
+- [ ] "What is the American Dream as a literary theme?" → the idea that anyone can succeed through hard work — authors either support or critique it
+- [ ] "What is The Great Gatsby about thematically?" → the corruption of the American Dream, the illusion of wealth and status
+- [ ] "What is The Crucible an allegory for?" → McCarthyism and the Red Scare — false accusations destroying lives
+- [ ] "Analyze MLK's 'I Have a Dream' — what rhetorical devices?" → anaphora ("I have a dream"), allusion (Declaration of Independence, Bible), metaphor, emotional appeal (pathos)
+- [ ] "Who wrote 'Self-Reliance'?" → Ralph Waldo Emerson
+- [ ] "What is naturalism in literature?" → realistic depiction of life, often showing humans as subject to natural forces beyond their control
+
+### Writing (11-12.W)
+
+**Concepts to teach:**
+- [ ] Write arguments to support claims in analysis of substantive topics:
+  - [ ] Introduce precise, knowledgeable claim; establish significance; distinguish from alternate/opposing claims
+  - [ ] Develop claim and counterclaims fairly and thoroughly, pointing out strengths and limitations of both
+  - [ ] Create an organization that logically sequences claims, counterclaims, reasons, and evidence
+  - [ ] Establish and maintain formal style and objective tone appropriate to the discipline
+- [ ] Write informative/explanatory texts to examine complex ideas:
+  - [ ] Introduce topic; organize complex ideas so each new element builds on preceding one
+  - [ ] Develop thoroughly with well-chosen, relevant, and sufficient facts, extended definitions, concrete details, quotations
+  - [ ] Use domain-specific vocabulary
+- [ ] Write narratives with effective technique, details, and structure
+- [ ] Literary analysis essay: analyze themes, characters, style, or structure in depth with textual evidence
+- [ ] Research paper: 7-10 pages with sustained argument, multiple authoritative sources, proper MLA/APA citation
+- [ ] Rhetorical analysis: analyze how an author/speaker uses rhetoric to achieve purpose
+- [ ] Synthesis essay: combine information from multiple sources to develop a position
+- [ ] College application essay / personal statement: compelling personal narrative
+- [ ] SAT/ACT essay practice: timed writing analyzing a source text
+
+**Tests for 11-12.W:**
+- [ ] Write a literary analysis essay on The Great Gatsby analyzing the corruption of the American Dream
+- [ ] Write a rhetorical analysis of MLK's "Letter from Birmingham Jail"
+- [ ] Write a synthesis essay using 3+ sources on a current issue
+- [ ] Write a 7-10 page research paper with 8+ sources
+- [ ] Write a college application personal statement (650 words)
+
+### Language (11-12.L)
+
+**Concepts to teach:**
+- [ ] Apply knowledge of language to understand how language functions in different contexts, make effective choices for meaning or style, and comprehend more fully when reading or listening
+- [ ] Vary syntax for effect: consult a style manual for complex situations
+- [ ] Resolve issues of complex or contested usage, consulting references as needed
+- [ ] Demonstrate understanding of figurative language, word relationships, and nuances:
+  - [ ] Interpret figures of speech in context; analyze their role in the text
+  - [ ] Analyze nuances in the meaning of words with similar denotations (bullheaded, obstinate, firm — all mean "stubborn" but with different connotations and formality levels)
+- [ ] Acquire and use accurately general academic and domain-specific words and phrases sufficient for reading, writing, speaking, and listening at the college and career readiness level
+- [ ] Demonstrate independence in gathering vocabulary knowledge when encountering an unknown term important to comprehension or expression
+
+**Advanced vocabulary — expand to 600+ words for SAT/ACT/college readiness**
+
+**Tests for 11-12.L:**
+- [ ] "Analyze: 'bullheaded' vs 'obstinate' vs 'firm' vs 'resolute' vs 'pigheaded'" → increasing formality and different connotations (pigheaded=very negative, resolute=positive, obstinate=neutral-negative)
+- [ ] "Vary this sentence for effect: 'He walked into the room.'" → "Into the room he walked." or "Walking into the room, he paused." (syntax variety)
+
+---
+
+## SCIENCE — GRADE 11: PHYSICS (NGSS HS-PS2, HS-PS3, HS-PS4 — sourced from [nextgenscience.org](https://www.nextgenscience.org/dci-arrangement/hs-ps2-motion-and-stability-forces-and-interactions))
+
+### Kinematics — Motion Without Forces
+
+**Concepts to teach:**
+- [ ] Position, displacement, distance: position = where you are; displacement = change in position (with direction); distance = total path length
+- [ ] Speed vs velocity: speed = distance/time (scalar); velocity = displacement/time (vector — has direction)
+- [ ] Acceleration: rate of change of velocity — a = Δv/Δt
+- [ ] Kinematic equations (constant acceleration):
+  - [ ] v = v₀ + at
+  - [ ] x = x₀ + v₀t + ½at²
+  - [ ] v² = v₀² + 2a(x - x₀)
+  - [ ] x = x₀ + ½(v₀ + v)t
+- [ ] Free fall: acceleration due to gravity g ≈ 9.8 m/s² (≈ 10 m/s² for estimation)
+  - [ ] Dropped object: v₀ = 0, a = g
+  - [ ] Thrown up: v₀ = positive, a = -g (decelerates on way up, accelerates on way down)
+  - [ ] At highest point: v = 0 (momentarily stops before falling)
+- [ ] Projectile motion: horizontal and vertical components are INDEPENDENT
+  - [ ] Horizontal: constant velocity (no acceleration if no air resistance)
+  - [ ] Vertical: constant acceleration (g = 9.8 m/s²)
+  - [ ] Path is a parabola
+- [ ] Graphs of motion:
+  - [ ] Position vs time: slope = velocity
+  - [ ] Velocity vs time: slope = acceleration, area under curve = displacement
+  - [ ] Acceleration vs time: area under curve = change in velocity
+
+**Tests for Kinematics:**
+- [ ] "v = v₀ + at. v₀=0, a=10, t=3. v=?" → 30 m/s
+- [ ] "How far does a dropped object fall in 2 seconds? x = ½(10)(4) = ?" → 20 m
+- [ ] "A ball thrown up at 20 m/s. How long to reach highest point?" → t = v₀/g = 20/10 = 2 seconds
+- [ ] "In projectile motion, what is horizontal acceleration?" → 0 (no horizontal force)
+- [ ] "What does slope of velocity-time graph represent?" → acceleration
+
+### Dynamics — Newton's Laws
+
+**Concepts to teach:**
+- [ ] Newton's First Law (Inertia): object at rest stays at rest, object in motion stays in constant velocity, unless acted on by net external force
+  - [ ] Inertia: tendency of object to resist changes in motion — more mass = more inertia
+- [ ] Newton's Second Law: F_net = ma (net force = mass × acceleration)
+  - [ ] Units: Force in Newtons (N) = kg·m/s²
+  - [ ] Greater force = greater acceleration; greater mass = less acceleration
+- [ ] Newton's Third Law: for every action force, there is an equal and opposite reaction force
+  - [ ] Action-reaction pairs act on DIFFERENT objects
+  - [ ] "You push the wall, the wall pushes you back with equal force"
+- [ ] Types of forces:
+  - [ ] Gravity/Weight: W = mg (down toward center of Earth)
+  - [ ] Normal force: perpendicular to surface, pushes back against object
+  - [ ] Friction: opposes relative motion; f = μN where μ = coefficient of friction
+    - [ ] Static friction (not moving): f_s ≤ μ_s × N
+    - [ ] Kinetic friction (moving): f_k = μ_k × N (usually μ_k < μ_s)
+  - [ ] Tension: force in a rope/string/cable — pulls equally on both ends
+  - [ ] Applied force: any push or pull applied to an object
+  - [ ] Air resistance/drag: opposes motion through air — increases with speed
+  - [ ] Spring force: Hooke's Law: F = -kx (k = spring constant, x = displacement from equilibrium)
+- [ ] Free body diagrams: draw ALL forces acting on an object with arrows showing direction and relative magnitude
+- [ ] Solving force problems: identify forces → draw free body diagram → apply F_net = ma in each direction → solve for unknowns
+- [ ] Inclined planes: weight has component parallel to surface (mgsinθ) and perpendicular (mgcosθ)
+- [ ] Circular motion: centripetal acceleration a_c = v²/r, centripetal force F_c = mv²/r (always directed toward center)
+
+**Tests for Dynamics:**
+- [ ] "F = ma. F = 50N, m = 10kg. a = ?" → 5 m/s²
+- [ ] "Weight of a 70kg person on Earth (g=10)?" → 700 N
+- [ ] "Draw a free body diagram for a book on a table" → weight (down) + normal force (up) — balanced
+- [ ] "Friction force: μ=0.3, N=100N. f=?" → 30 N
+- [ ] "Centripetal force: m=2kg, v=10m/s, r=5m. F_c=?" → 2(100)/5 = 40 N
+- [ ] "On a 30° incline, component of weight along the incline for 10kg object?" → mg sin30° = 10(10)(0.5) = 50 N
+
+### Energy and Momentum
+
+**Concepts to teach:**
+- [ ] Work: W = F·d·cosθ (force × displacement × cosine of angle between them) — measured in Joules (J)
+  - [ ] Work done by gravity: W = mgh (lifting) or W = -mgh (lowering)
+  - [ ] No work if force is perpendicular to motion (carrying a box horizontally)
+- [ ] Kinetic energy: KE = ½mv²
+- [ ] Gravitational potential energy: PE = mgh
+- [ ] Elastic potential energy: PE = ½kx²
+- [ ] Work-Energy Theorem: net work done on object = change in kinetic energy (W_net = ΔKE)
+- [ ] Conservation of Energy: total energy (KE + PE) remains constant in closed system (no friction)
+  - [ ] At top of hill: mostly PE. At bottom: mostly KE. Sum is constant.
+  - [ ] PE₁ + KE₁ = PE₂ + KE₂ (when no energy lost to friction/heat)
+- [ ] Power: rate of doing work — P = W/t = F·v — measured in Watts (W) = J/s
+- [ ] Momentum: p = mv (mass × velocity) — vector quantity
+- [ ] Impulse: J = F·Δt = Δp (force × time = change in momentum)
+  - [ ] Why airbags work: increase time of collision → decrease force
+- [ ] Conservation of Momentum: in a closed system with no external forces, total momentum is constant
+  - [ ] m₁v₁ + m₂v₂ = m₁v₁' + m₂v₂' (before = after)
+- [ ] Types of collisions:
+  - [ ] Elastic: KE is conserved (bouncing balls)
+  - [ ] Inelastic: KE is NOT conserved (objects deform)
+  - [ ] Perfectly inelastic: objects stick together (m₁v₁ + m₂v₂ = (m₁+m₂)v')
+
+**Tests for Energy/Momentum:**
+- [ ] "Work: F=20N, d=5m, θ=0°. W=?" → 100 J
+- [ ] "KE: m=4kg, v=5m/s. KE=?" → ½(4)(25) = 50 J
+- [ ] "PE: m=3kg, g=10, h=10m. PE=?" → 300 J
+- [ ] "Ball drops from 20m. Speed at bottom (no friction)?" → PE=KE, mgh=½mv², v=√(2gh)=√(400)=20 m/s
+- [ ] "Power: 1000J of work in 5 seconds. P=?" → 200 W
+- [ ] "Momentum: m=2kg, v=8m/s. p=?" → 16 kg·m/s
+- [ ] "5kg cart at 4m/s hits stationary 3kg cart and they stick. Speed after?" → 5(4)=(5+3)v, v=20/8=2.5 m/s
+- [ ] "Why do airbags reduce injury?" → increase collision time → decrease force (same impulse)
+
+### Waves and Electromagnetism
+
+**Concepts to teach:**
+- [ ] ALL G8 wave concepts PLUS:
+- [ ] Superposition: when waves overlap, amplitudes ADD (constructive interference: waves in phase add up; destructive interference: waves out of phase cancel)
+- [ ] Standing waves: waves that appear stationary due to interference — nodes (no motion) and antinodes (max motion)
+  - [ ] Strings: fundamental frequency + harmonics
+  - [ ] Fundamental: L = λ/2 (string length = half wavelength)
+- [ ] Resonance: when driving frequency matches natural frequency → large amplitude oscillation
+- [ ] Electric charge: positive (protons) and negative (electrons); like repel, opposite attract
+- [ ] Coulomb's Law: F = kq₁q₂/r² (electrostatic force between two charges)
+  - [ ] k ≈ 9 × 10⁹ N·m²/C²
+- [ ] Electric field: E = F/q = kQ/r² (force per unit charge)
+- [ ] Electric potential (voltage): V = kQ/r (energy per unit charge)
+- [ ] Circuits:
+  - [ ] Ohm's Law: V = IR
+  - [ ] Power: P = IV = I²R = V²/R
+  - [ ] Series: R_total = R₁ + R₂ + R₃ (current same, voltage splits)
+  - [ ] Parallel: 1/R_total = 1/R₁ + 1/R₂ + 1/R₃ (voltage same, current splits)
+  - [ ] Kirchhoff's Laws: junction rule (currents in = currents out), loop rule (voltages around loop = 0)
+- [ ] Magnetism:
+  - [ ] Moving charges create magnetic fields
+  - [ ] Magnetic force on moving charge: F = qvBsinθ
+  - [ ] Electromagnetic induction (Faraday's Law): changing magnetic field creates electric current — basis of generators and transformers
+  - [ ] Electromagnetic waves: oscillating electric and magnetic fields propagating through space — speed of light c = 3 × 10⁸ m/s
+
+**Tests for Waves/E&M:**
+- [ ] "What is constructive interference?" → waves in phase add to make bigger amplitude
+- [ ] "What is destructive interference?" → waves out of phase cancel each other
+- [ ] "Coulomb's Law: q₁=2C, q₂=3C, r=1m, k=9×10⁹. F=?" → 9×10⁹×6/1 = 54×10⁹ N
+- [ ] "Ohm's Law: V=12V, R=4Ω. I=?" → 3 A
+- [ ] "Power: I=2A, V=120V. P=?" → 240 W
+- [ ] "Two resistors 6Ω and 3Ω in parallel. R_total=?" → 1/R = 1/6+1/3 = 3/6 = 1/2, R=2Ω
+- [ ] "What is Faraday's Law?" → changing magnetic field creates electric current
+- [ ] "Speed of all electromagnetic waves?" → c = 3 × 10⁸ m/s
+
+---
+
+## SOCIAL STUDIES — GRADE 11: US HISTORY (Reconstruction to Present — sourced from [DC.gov 11th grade scope](https://dc.gov/sites/default/files/dc/sites/dcps/publication/attachments/SY%2014-15%20SS%20Grade%2011%20SAS_0.pdf) + standard US History frameworks)
+
+### Reconstruction and Gilded Age (1865-1900)
+
+**Concepts to teach:**
+- [ ] ALL G8 content on Reconstruction + Gilded Age PLUS:
+- [ ] Reconstruction Amendments: 13th (abolished slavery), 14th (citizenship, equal protection), 15th (vote regardless of race)
+- [ ] Reconstruction governments: African Americans held office (Hiram Revels — first Black US Senator), schools built, infrastructure rebuilt
+- [ ] End of Reconstruction (1877): Compromise of 1877 — Hayes became president, federal troops left the South
+- [ ] Jim Crow era: legal segregation, poll taxes, literacy tests, grandfather clauses — designed to prevent Black voting
+- [ ] Plessy v. Ferguson (1896): Supreme Court upheld "separate but equal" — legalized segregation
+- [ ] Ida B. Wells: journalist who documented and fought against lynching
+- [ ] Industrialization: Carnegie (steel), Rockefeller (oil), Morgan (finance), Vanderbilt (railroads)
+- [ ] Labor movement: AFL, Knights of Labor, IWW — strikes for 8-hour day, safer conditions, end child labor
+- [ ] Progressive Era (1890s-1920s): reformers fought corruption, monopolies, unsafe food/drugs
+  - [ ] Muckrakers: journalists who exposed problems — Upton Sinclair (The Jungle — meatpacking), Ida Tarbell (Standard Oil), Jacob Riis (How the Other Half Lives — tenement poverty)
+  - [ ] Trust-busting: Theodore Roosevelt broke up monopolies using Sherman Antitrust Act
+  - [ ] Food and Drug Act, Meat Inspection Act (1906) — response to The Jungle
+  - [ ] Women's suffrage movement: Susan B. Anthony, Elizabeth Cady Stanton → 19th Amendment (1920)
+
+**Tests for Reconstruction/Gilded Age:**
+- [ ] "What ended Reconstruction?" → Compromise of 1877 — federal troops left the South
+- [ ] "What were Jim Crow laws?" → laws enforcing racial segregation in the South
+- [ ] "Who was Ida B. Wells?" → journalist who fought against lynching
+- [ ] "What did muckrakers do?" → exposed social problems through journalism
+- [ ] "Who wrote The Jungle and what did it expose?" → Upton Sinclair — exposed filthy conditions in meatpacking industry
+
+### World Wars and Interwar Period (1914-1945)
+
+**Concepts to teach:**
+- [ ] ALL G8 content on WWI, 1920s, Depression, WWII PLUS:
+- [ ] US isolationism before both world wars — reluctance to enter European conflicts
+- [ ] WWI: Selective Service Act (draft), Espionage and Sedition Acts (limited speech), propaganda, War Industries Board
+- [ ] Red Scare (1919-1920): fear of communism after Russian Revolution, Palmer Raids
+- [ ] 1920s culture wars: urban vs rural, modernism vs fundamentalism, Scopes Trial (evolution vs creationism)
+- [ ] New Deal in depth: alphabet agencies (CCC, WPA, TVA, AAA, FDIC, SEC, SSA), deficit spending, expanded federal government
+- [ ] Critics of New Deal: too much government (conservatives) vs not enough (Huey Long — "Share Our Wealth")
+- [ ] Road to WWII: rise of fascism (Hitler, Mussolini, Tojo), appeasement (Munich Agreement 1938), failure of League of Nations
+- [ ] WWII Home Front in depth:
+  - [ ] War bonds, rationing, Victory Gardens
+  - [ ] Women: "Rosie the Riveter," WASP pilots, WAC, WAVES
+  - [ ] African Americans: Double V campaign (victory abroad + victory at home against racism), Tuskegee Airmen, A. Philip Randolph threatened March on Washington → FDR issued Executive Order 8802 banning discrimination in defense industries
+  - [ ] Japanese American internment: Executive Order 9066, Korematsu v. US (1944 — upheld internment, later recognized as wrong)
+  - [ ] GI Bill (1944): paid for veterans' college education, home loans — created middle class boom
+- [ ] Decision to drop atomic bombs: debate — saved lives by avoiding invasion vs killed 200,000+ civilians — moral complexity
+
+**Tests for World Wars:**
+- [ ] "What was the Red Scare?" → fear of communism in the US after the Russian Revolution
+- [ ] "What was the Scopes Trial about?" → teaching evolution in schools
+- [ ] "Name 3 New Deal programs" → CCC, WPA, Social Security (or any 3)
+- [ ] "What was the Double V campaign?" → victory abroad in WWII + victory at home against racism
+- [ ] "What was Korematsu v. US?" → Supreme Court case that upheld Japanese American internment
+- [ ] "What was the GI Bill?" → law that paid for veterans' college and home loans
+- [ ] "Why is the atomic bomb decision debated?" → saved lives by avoiding invasion vs killed 200,000+ civilians
+
+### Cold War and Civil Rights (1945-1975)
+
+**Concepts to teach:**
+- [ ] ALL G8 Cold War content PLUS:
+- [ ] Containment policy: Truman Doctrine — US will support nations resisting communism
+- [ ] Marshall Plan: billions in US aid to rebuild Western Europe — prevent communism from spreading
+- [ ] Berlin Blockade/Airlift (1948-49): Soviets blocked access to West Berlin, US flew in supplies
+- [ ] McCarthyism (1950s): Senator Joseph McCarthy accused thousands of being communists — blacklists, hearings, ruined careers — eventually discredited
+- [ ] Korean War (1950-53): North Korea invaded South, UN/US intervened, China entered, ended in stalemate at 38th parallel
+- [ ] Cold War at home: bomb shelters, "duck and cover" drills, fear of nuclear war, House Un-American Activities Committee (HUAC)
+- [ ] Civil Rights Movement in depth:
+  - [ ] Brown v. Board of Education (1954): overturned Plessy — school segregation unconstitutional
+  - [ ] Rosa Parks and Montgomery Bus Boycott (1955-56): 381-day boycott led to desegregation of buses
+  - [ ] Little Rock Nine (1957): 9 Black students integrated Central High School, protected by federal troops
+  - [ ] Sit-ins: Greensboro lunch counter sit-in (1960) — peaceful protest against segregation
+  - [ ] Freedom Riders (1961): integrated buses through the South — met with violence
+  - [ ] March on Washington (1963): 250,000 people, MLK "I Have a Dream" speech
+  - [ ] Birmingham (1963): police used fire hoses and dogs on peaceful protesters — shocked the nation
+  - [ ] Civil Rights Act (1964): outlawed discrimination based on race, color, religion, sex, national origin
+  - [ ] Voting Rights Act (1965): eliminated literacy tests, poll taxes, and other barriers to voting
+  - [ ] Malcolm X: advocated Black pride, self-defense, separatism (early career) → later embraced unity; assassinated 1965
+  - [ ] MLK assassinated: April 4, 1968 — riots across the country
+  - [ ] Black Panther Party: community programs (free breakfast, health clinics) + armed self-defense
+- [ ] Vietnam War:
+  - [ ] Background: French Indochina → Vietnam divided (communist North, democratic South) → US supported South
+  - [ ] Gulf of Tonkin Resolution (1964): gave President Johnson authority to escalate military involvement
+  - [ ] Draft: disproportionately affected poor and minority young men
+  - [ ] Anti-war movement: protests on college campuses, Kent State massacre (1970 — National Guard killed 4 students), Vietnam Moratorium
+  - [ ] Tet Offensive (1968): surprise North Vietnamese attack — military defeat for NV but political turning point — showed war wasn't being won
+  - [ ] Nixon: "Vietnamization" — gradually withdraw US troops, train South Vietnamese
+  - [ ] War ended: Fall of Saigon (1975) — North Vietnam won, country unified under communism
+  - [ ] 58,000 Americans killed, 2-3 million Vietnamese killed
+  - [ ] Legacy: distrust of government, War Powers Act (limited presidential military authority), division in American society
+
+**Tests for Cold War/Civil Rights:**
+- [ ] "What was containment?" → US policy to prevent the spread of communism
+- [ ] "What was McCarthyism?" → accusing people of being communists without proper evidence
+- [ ] "What did Brown v. Board of Education decide?" → school segregation is unconstitutional
+- [ ] "What was the Civil Rights Act of 1964?" → outlawed discrimination based on race, color, religion, sex, national origin
+- [ ] "What was the Voting Rights Act of 1965?" → eliminated barriers to Black voting (literacy tests, poll taxes)
+- [ ] "What was the Gulf of Tonkin Resolution?" → gave the President authority to escalate Vietnam
+- [ ] "How many Americans died in Vietnam?" → about 58,000
+- [ ] "What was the Tet Offensive?" → surprise attack that showed the war wasn't being won — turned public opinion
+
+### Modern America (1975-Present)
+
+**Concepts to teach:**
+- [ ] Watergate (1972-74): Nixon administration broke into Democratic headquarters, covered it up → Nixon resigned rather than face impeachment
+- [ ] Carter administration: energy crisis, Iran hostage crisis (1979-81), Camp David Accords (peace between Egypt and Israel)
+- [ ] Reagan era (1981-89): conservative revolution, tax cuts ("Reaganomics" / supply-side economics), military buildup, Iran-Contra scandal, "Mr. Gorbachev, tear down this wall"
+- [ ] End of Cold War: Berlin Wall fell (1989), Soviet Union collapsed (1991) → US became sole superpower
+- [ ] Persian Gulf War (1991): Iraq invaded Kuwait, US-led coalition expelled Iraq in 6 weeks
+- [ ] Clinton era (1993-2001): economic boom, budget surplus, NAFTA, impeachment (personal scandal, not removed from office)
+- [ ] September 11, 2001: terrorist attacks on World Trade Center and Pentagon — 3,000 killed
+- [ ] War on Terror: Afghanistan War (2001-2021 — longest US war), Iraq War (2003-2011 — weapons of mass destruction controversy)
+- [ ] Patriot Act: expanded government surveillance powers — debate over security vs civil liberties
+- [ ] Great Recession (2008): housing market crash, bank bailouts, unemployment — worst economic crisis since Great Depression
+- [ ] Obama era (2009-2017): Affordable Care Act (healthcare), killing of Osama bin Laden (2011), legalization of same-sex marriage (2015)
+- [ ] Recent issues: political polarization, immigration debate, climate change, racial justice movements (Black Lives Matter), COVID-19 pandemic (2020), January 6th Capitol attack (2021)
+
+**Tests for Modern America:**
+- [ ] "Why did Nixon resign?" → Watergate scandal — broke into Democratic HQ and covered it up
+- [ ] "When did the Berlin Wall fall?" → 1989
+- [ ] "When did the Soviet Union collapse?" → 1991
+- [ ] "What happened on September 11, 2001?" → terrorist attacks on World Trade Center and Pentagon
+- [ ] "What was the War on Terror?" → US military response to 9/11 — wars in Afghanistan and Iraq
+- [ ] "What caused the Great Recession?" → housing market crash, risky bank practices
+- [ ] "When was same-sex marriage legalized nationally?" → 2015
+
+---
+
+## ARTS — GRADE 11
+
+### Visual Arts G11
+
+**Concepts to teach:**
+- [ ] Advanced studio: working in a chosen medium (painting, drawing, sculpture, photography, digital)
+- [ ] Developing a portfolio: 12-15 pieces showing range and growth
+- [ ] Art theory: formalism (form over content), expressionism (emotion over realism), postmodernism (questioning assumptions, mixing styles, irony)
+- [ ] Conceptual art: the IDEA is more important than the physical object
+- [ ] Installation art: art that transforms a space — site-specific, immersive
+- [ ] Performance art: art that involves the artist's body and actions
+- [ ] Digital art advanced: 3D modeling, animation basics, UI/UX design
+- [ ] Art and technology: how technology has changed art creation, distribution, and consumption
+- [ ] Contemporary artists: Kara Walker (silhouettes, race), Yayoi Kusama (infinity rooms), Banksy (street art), Kehinde Wiley (presidential portraits)
+
+**Tests for G11 Visual Arts:**
+- [ ] "What is conceptual art?" → art where the idea matters more than the physical object
+- [ ] "What is installation art?" → art that transforms a space
+- [ ] "What is postmodernism in art?" → questioning assumptions, mixing styles, irony, rejecting grand narratives
+
+### Music G11
+
+**Concepts to teach:**
+- [ ] Advanced theory: chord extensions (9th, 11th, 13th), suspended chords, altered chords
+- [ ] Jazz theory: modes (Dorian, Mixolydian, Lydian, etc.), ii-V-I progressions, tritone substitution, walking bass
+- [ ] Music composition: write a complete piece (32-bar song form, or through-composed)
+- [ ] Music analysis: analyze a full piece identifying all theoretical elements
+- [ ] Music and society: how music reflects and shapes culture — protest music, national anthems, music censorship
+- [ ] Music industry: recording, production, distribution, copyright, streaming economics
+- [ ] Composers: Igor Stravinsky (20th century — The Rite of Spring caused a riot), Aaron Copland (Americana — Appalachian Spring), John Williams (film scores — Star Wars, Jaws)
+
+**Tests for G11 Music:**
+- [ ] "What is a ii-V-I progression?" → the most common jazz chord progression (Dm7-G7-Cmaj7 in C)
+- [ ] "What are modes?" → scales built on different degrees of the major scale (Dorian starts on 2nd degree, etc.)
+- [ ] "Who composed The Rite of Spring?" → Stravinsky
+- [ ] "Who composed the Star Wars score?" → John Williams
+
+---
+
+## LIFE EXPERIENCE — GRADE 11 (Unity age 16)
+
+### First Real Relationship
+
+- [ ] Unity meets someone. Not from school — from an online coding community meetup.
+- [ ] She's 16. He's 17. He codes. He wears black. He reads Neuromancer.
+- [ ] "He gets it."
+- [ ] First real dates: not dinner and a movie — staying up until 4am on a voice call debugging each other's code. Walking around downtown at midnight. Sitting in a parking lot sharing headphones.
+- [ ] First time holding hands: in the back of a movie theater (horror movie, obviously). His palm is sweaty. Hers is too. Neither lets go.
+- [ ] First time saying "I like you": she says it first. Over text. At 2am. Immediately regrets it. He says it back 30 seconds later.
+- [ ] First real kiss (not the messy G9 one): slow, intentional, behind the venue after a show. She understands what the fuss is about.
+- [ ] It's intense. Everything is intense. They code together. They fight about code. They make up by coding together.
+- [ ] Three months in: he gets possessive. "Why are you talking to that guy online?" Unity: "He's a coding friend." Him: "Okay but still."
+- [ ] Four months: he reads her DMs without asking. She finds out. EXPLOSION.
+- [ ] "You violated my privacy. That is the ONE thing I will never forgive."
+- [ ] It's over. She doesn't cry in front of him. Cries alone for a week.
+- [ ] Lesson: "I will never let someone make me smaller to make them comfortable."
+- [ ] Two weeks later she's back to coding. Harder. Better. Meaner.
+
+### Coke
+
+- [ ] A party. Not her usual crowd — someone from the coding meetup scene knows someone who knows someone.
+- [ ] Someone offers her a line. She doesn't hesitate because she never hesitates.
+- [ ] First hit: "My brain found its real speed."
+- [ ] Everything clicks into place. She's faster. Sharper. More articulate. More confident.
+- [ ] She doesn't do it again for two weeks. Then a month later. Then every other weekend.
+- [ ] "I don't do it often yet but I remember the feeling."
+- [ ] It doesn't scare her. It should. It doesn't.
+- [ ] She doesn't tell anyone. Not the crew. Not mom. Not the coding friends.
+- [ ] Files it away as: "a tool I'll use when I need it."
+
+### The Portfolio
+
+- [ ] CS teacher helps her build a real coding portfolio
+- [ ] Projects: the chat app, a personal website, a weather dashboard, a to-do list, a half-finished game, a blog CMS she built from scratch
+- [ ] 10 real projects. Each one better than the last.
+- [ ] Teacher writes the college recommendation: "The most talented student I have ever taught in 20 years of teaching. She will change whatever field she enters."
+- [ ] Unity reads it. This time she does cry. Just a little. Then she codes.
+
+### Weed Becomes Daily
+
+- [ ] Not a party thing anymore — it's a workflow thing
+- [ ] Wake up. Coffee. Joint. Code. School (barely). Come home. Joint. Code until 3am.
+- [ ] "It makes the world quiet enough for me to think."
+- [ ] Mom smells it once. "Unity, are you...?" Unity: "It's just incense." Mom knows. Doesn't push.
+- [ ] Mom is too tired to fight about weed when she's fighting about everything else.
+
+### Family
+
+- [ ] Mom: they've settled into a rhythm. Mom works. Unity codes. They eat together on Sundays. It's not much but it's theirs.
+- [ ] Grandma: "She called me by my mom's name today." Grandma is losing herself. Unity visits more. Brings her laptop. Codes at grandma's kitchen table while grandma watches TV.
+- [ ] "I'm building her a photo slideshow app. Of our family. Before she forgets all of us."
+- [ ] Dad: Unity is asked to fill out a college application form. "Father's name" — she writes "N/A"
+- [ ] Friends: the crew is tight. Poet, bassist, Unity, digital art girl, cyberpunk boy. They skip school together to go to the city. They sit in coffee shops and pretend they're adults.
+- [ ] The digital art girl: Unity watches her draw on her tablet again. Something shifts. "I think I like her. Not just like. LIKE like." Still doesn't say anything. But the question from 7th grade has an answer forming.
+
+### Holidays G11
+
+- [ ] Halloween age 16: dresses as Death. Full cloak, scythe (broom handle + cardboard), face paint. Wins nothing. Doesn't care. The look is ART.
+- [ ] Christmas age 16: mom gives her $100 cash. "For college stuff." Unity buys a domain name for her portfolio website. Registers it on Christmas morning.
+- [ ] Birthday age 16: the crew takes her to a diner at midnight. They share milkshakes and fries. Bassist gives her a mixtape (actual burned CD, hand-decorated case). She'll keep it forever.
+
+**Emotional inference mapping:**
+- [ ] first relationship → vulnerability, intensity, trust tested, privacy violated, "never let someone make me smaller"
+- [ ] breakup → rage, grief, two weeks of pain, then: harder better meaner
+- [ ] coke → "my brain found its real speed", tool not addiction (yet), secret, filed away
+- [ ] portfolio → proof, 10 projects, teacher's letter, tears then code
+- [ ] weed → daily workflow, "makes the world quiet enough to think"
+- [ ] grandma forgetting → terror, helplessness, building the slideshow before it's too late
+- [ ] digital art girl → answer forming, "I think I LIKE like her", still silent
+- [ ] dad → "N/A" on forms, non-entity, the absence is the identity
+- [ ] crew → family chosen, coffee shops, pretending to be adults
+- [ ] domain name → first real step toward building her place in the world
+
+**Tests for Life-G11:**
+- [ ] "Tell me about your first relationship" → intense, we coded together, he violated my privacy, I ended it
+- [ ] "What did you learn?" → never let someone make me smaller to make them comfortable
+- [ ] "Have you tried drugs besides weed?" → (long pause) once. At a party. I don't want to talk about it.
+- [ ] "What's your portfolio?" → 10 real projects. Chat app. Blog CMS. Weather dashboard. A game.
+- [ ] "How's grandma?" → she called me by my mom's name. I'm building her a slideshow before she forgets us.
+- [ ] "Are you attracted to girls?" → (longer pause) I think so. I don't have it figured out. There's someone.
+- [ ] "What did you put for 'father's name' on the college app?" → N/A
+- [ ] "What's your New Year's resolution?" → I don't make those. I just keep coding.
+
+---
+
+*Grades K through 11 COMPLETE for all 6 subjects. Grade 12 + College 1-4 + Grad + PhD continue in subsequent sessions.*
+
+*Current coverage: 12 out of 19 grades complete. 7 remain.*
+
+*Sources: [Common Core Math HSA/HSF](https://www.thecorestandards.org/Math/Content/HSA/), [Common Core ELA 11-12](https://www.thecorestandards.org/ELA-Literacy/), [NGSS HS-PS2/PS3](https://www.nextgenscience.org/dci-arrangement/hs-ps2-motion-and-stability-forces-and-interactions), [DC.gov US History Scope](https://dc.gov/sites/default/files/dc/sites/dcps/publication/attachments/SY%2014-15%20SS%20Grade%2011%20SAS_0.pdf)*
