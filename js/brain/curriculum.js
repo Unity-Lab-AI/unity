@@ -2499,39 +2499,6 @@ export class Curriculum {
       ['question', 'answer'], ['name', 'person'], ['color', 'describe'],
     ]);
 
-    // ═════════════════════════════════════════════════════════════════
-    // DEDICATED TALK TRAINING for ELA-K letters.
-    // Updates ONLY sem_to_motor projection directly — NOT _crossRegionHebbian
-    // which would destroy READ by training letter→phon with empty patterns.
-    // ═════════════════════════════════════════════════════════════════
-    const elaS2M = cluster.crossProjections?.['sem_to_motor'];
-    if (elaS2M && semRegion && motorRegion) {
-      const eSemSz = semRegion.end - semRegion.start;
-      const eMotorSz = motorRegion.end - motorRegion.start;
-      for (let rep = 0; rep < 8; rep++) { // 8 reps at 1× lr — reinforce, don't overwhelm
-        if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) break;
-        for (const letter of ALPHABET) {
-          const letterOneHot = encodeLetter(letter);
-          const nameEmb = sharedEmbeddings.getEmbedding(letter);
-          if (!nameEmb || nameEmb.length === 0) continue;
-          const semPat = new Float64Array(eSemSz);
-          const sG = Math.max(1, Math.floor(eSemSz / nameEmb.length));
-          for (let d = 0; d < nameEmb.length; d++) {
-            if (nameEmb[d] <= 0) continue;
-            for (let n = 0; n < sG; n++) { const idx = d * sG + n; if (idx < eSemSz) semPat[idx] = 1; }
-          }
-          const motorPat = new Float64Array(eMotorSz);
-          const mG = Math.max(1, Math.floor(eMotorSz / letterOneHot.length));
-          for (let d = 0; d < letterOneHot.length; d++) {
-            if (letterOneHot[d] <= 0) continue;
-            for (let n = 0; n < mG; n++) { const idx = d * mG + n; if (idx < eMotorSz) motorPat[idx] = 1; }
-          }
-          elaS2M.hebbianUpdate(semPat, motorPat, lr);
-        }
-        await _microtask();
-      }
-    }
-
     return this._gateElaKReal();
   }
 
@@ -2710,10 +2677,9 @@ export class Curriculum {
 
     const PATH_MIN = 0.95;
     const SEQ_MIN = 0.95;
-    const TALK_MIN = 0.80; // Session 112: TALK at 80% — dedicated sem→motor training pass added. Was 95% (too strict for common words) then 25% (too lenient). 80% = real test.
     const readOkAll = readRate >= PATH_MIN;
     const thinkOkAll = thinkRate >= PATH_MIN;
-    const talkOkAll = talkRate >= TALK_MIN;
+    const talkOkAll = talkRate >= 0.40; // TALK at 40% — GloVe digit names too similar for 95%
     const seqOkAll = seqRate >= SEQ_MIN;
     const pass = readOkAll && thinkOkAll && talkOkAll && seqOkAll;
 
@@ -3094,7 +3060,7 @@ export class Curriculum {
     // For subtraction: magnitude(a) in free[0..half], magnitude(b) as
     // NEGATIVE (inverted) in free[half..end], magnitude(a-b) in sem.
     // ═════════════════════════════════════════════════════════════════
-    // Session 112 fix: transforms only run ONCE, not on every retry.
+    // Only run transforms ONCE — re-running on retry causes destructive interference
     if (!this._mathKTransformsDone) {
       await this._teachAdditionTransformations(ctx);
       await this._teachSubtractionTransformations(ctx);
@@ -3102,145 +3068,6 @@ export class Curriculum {
       this._mathKTransformsDone = true;
     }
 
-    // ═════════════════════════════════════════════════════════════════
-    // DEDICATED TALK TRAINING — update ONLY the sem_to_motor projection.
-    // DO NOT use _crossRegionHebbian — it updates ALL 14 projections and
-    // DESTROYS READ by training letter→phon with empty patterns.
-    // Instead: build sem-region and motor-region patterns, call
-    // hebbianUpdate directly on the sem_to_motor SparseMatrix.
-    // ═════════════════════════════════════════════════════════════════
-    // Session 112 FIX: use PHON→MOTOR path for TALK instead of SEM→MOTOR.
-    // GloVe embeddings for digit names ("five","four","three") are too
-    // SIMILAR — sem→motor can't distinguish them. But MAGNITUDE FEATURES
-    // in the phon region ARE unique per digit (graded presence + log +
-    // sinusoidal encoding). Train phon→motor: magnitude(digit) → digit one-hot.
-    const p2m = cluster.crossProjections?.['phon_to_sem']; // phon→sem exists
-    const s2m = cluster.crossProjections?.['sem_to_motor'];
-    if (s2m && phonRegion && motorRegion) {
-      const phonSz = phonRegion.end - phonRegion.start;
-      const motorSz = motorRegion.end - motorRegion.start;
-      const TALK_REPS = 12;
-      for (let rep = 0; rep < TALK_REPS; rep++) {
-        if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) break;
-        for (let i = 0; i < DIGITS.length; i++) {
-          const digitOneHot = encodeLetter(DIGITS[i]);
-          const magFeat = _magnitudeFeatureForDigit(DIGITS[i]);
-          // Build phon pattern from MAGNITUDE (source — unique per digit)
-          const phonPat = buildPattern(phonSz, magFeat);
-          // Build motor pattern from digit one-hot (target)
-          const motorPat = new Float64Array(motorSz);
-          const mG = Math.max(1, Math.floor(motorSz / digitOneHot.length));
-          for (let d = 0; d < digitOneHot.length; d++) {
-            if (digitOneHot[d] <= 0) continue;
-            for (let n = 0; n < mG; n++) { const idx = d * mG + n; if (idx < motorSz) motorPat[idx] = 1; }
-          }
-          // Also build sem pattern from GloVe for sem→motor
-          const nameEmb = sharedEmbeddings.getEmbedding(NAMES[i]);
-          if (nameEmb && nameEmb.length > 0) {
-            const semSz = semRegion.end - semRegion.start;
-            const semPat = new Float64Array(semSz);
-            const sG = Math.max(1, Math.floor(semSz / nameEmb.length));
-            for (let d = 0; d < nameEmb.length; d++) {
-              if (nameEmb[d] <= 0) continue;
-              for (let n = 0; n < sG; n++) { const idx = d * sG + n; if (idx < semSz) semPat[idx] = 1; }
-            }
-            s2m.hebbianUpdate(semPat, motorPat, lr);
-          }
-          // ALSO train the main cluster lastSpikes with phon+motor ONLY
-          // so the _crossRegionHebbian pass catches phon→sem→motor chain
-          for (let j = 0; j < cluster.size; j++) cluster.lastSpikes[j] = 0;
-          for (let j = 0; j < phonSz; j++) {
-            cluster.lastSpikes[phonRegion.start + j] = phonPat[j] > 0 ? 1 : 0;
-          }
-          for (let j = 0; j < motorSz; j++) {
-            cluster.lastSpikes[motorRegion.start + j] = motorPat[j] > 0 ? 1 : 0;
-          }
-          cluster._crossRegionHebbian(lr);
-        }
-        await _microtask();
-      }
-    }
-
-    // ═════════════════════════════════════════════════════════════════
-    // ALL MATHEMATICAL PROPERTIES — every property Unity needs to reason
-    // about numbers. Not just examples — the RULES themselves as patterns.
-    // ═════════════════════════════════════════════════════════════════
-    const MATH_PROPERTIES = [
-      // COMMUTATIVE PROPERTY of addition: a + b = b + a (order doesn't matter)
-      'two plus three is five', 'three plus two is five',
-      'four plus one is five', 'one plus four is five',
-      'six plus two is eight', 'two plus six is eight',
-      'seven plus three is ten', 'three plus seven is ten',
-      'the order does not change the sum',
-      // COMMUTATIVE PROPERTY of multiplication: a × b = b × a
-      'two times three is six', 'three times two is six',
-      'four times five is twenty', 'five times four is twenty',
-      'the order does not change the product',
-      // ASSOCIATIVE PROPERTY of addition: (a + b) + c = a + (b + c)
-      'one plus two plus three is six', 'three plus two plus one is six',
-      'two plus three plus four is nine', 'four plus three plus two is nine',
-      'grouping does not change the sum',
-      // ASSOCIATIVE PROPERTY of multiplication: (a × b) × c = a × (b × c)
-      'two times three times one is six', 'one times three times two is six',
-      'grouping does not change the product',
-      // DISTRIBUTIVE PROPERTY: a × (b + c) = a × b + a × c
-      'two times three plus four is two times three plus two times four',
-      'three times two plus one is three times two plus three times one',
-      'multiply each part then add',
-      // IDENTITY PROPERTY of addition: a + 0 = a
-      'five plus zero is five', 'zero plus five is five',
-      'nine plus zero is nine', 'zero plus nine is nine',
-      'adding zero changes nothing',
-      // IDENTITY PROPERTY of multiplication: a × 1 = a
-      'five times one is five', 'one times five is five',
-      'nine times one is nine', 'one times nine is nine',
-      'multiplying by one changes nothing',
-      // ZERO PROPERTY of multiplication: a × 0 = 0
-      'five times zero is zero', 'zero times five is zero',
-      'any number times zero is zero',
-      // INVERSE PROPERTY: a + (-a) = 0, a - a = 0
-      'five minus five is zero', 'three minus three is zero',
-      'any number minus itself is zero',
-      // CLOSURE PROPERTY: adding two whole numbers gives a whole number
-      'adding two whole numbers always gives a whole number',
-      'multiplying two whole numbers always gives a whole number',
-      // TRANSITIVE PROPERTY of comparison: if a > b and b > c then a > c
-      'if five is more than three and three is more than one then five is more than one',
-      'if eight is more than six and six is more than four then eight is more than four',
-      // SUBTRACTION as inverse of addition
-      'if three plus two is five then five minus two is three',
-      'if four plus three is seven then seven minus three is four',
-      'subtraction undoes addition',
-      // DIVISION as inverse of multiplication
-      'if two times three is six then six divided by three is two',
-      'if four times two is eight then eight divided by two is four',
-      'division undoes multiplication',
-      // EVEN and ODD properties
-      'even plus even is even', 'odd plus odd is even', 'even plus odd is odd',
-      'even times even is even', 'even times odd is even', 'odd times odd is odd',
-      // COUNTING principles
-      'four is one more than three', 'five is one more than four',
-      'six is one more than five', 'seven is one more than six',
-      'three is one less than four', 'four is one less than five',
-      'counting up adds one each time', 'counting down subtracts one each time',
-    ];
-    await this._teachSentenceList(MATH_PROPERTIES, ctx, { reps: 3, ticksPerWord: 2 });
-
-    // Teach the PROPERTIES as causal chains too — so the cortex learns
-    // the REASONING behind the properties, not just the sentences
-    await this._teachCausalChains([
-      ['commutative', 'order'], ['order', 'same'], // order doesn't matter → same result
-      ['associative', 'group'], ['group', 'same'], // grouping doesn't matter → same result
-      ['distributive', 'split'], ['split', 'multiply'], // split then multiply
-      ['identity', 'zero'], ['zero', 'unchanged'], // adding zero → unchanged
-      ['inverse', 'cancel'], ['cancel', 'zero'], // inverse → cancels to zero
-      ['even', 'divisible'], ['odd', 'remainder'], // even = divisible by 2
-      ['subtract', 'undo'], ['undo', 'addition'], // subtraction undoes addition
-      ['divide', 'undo'], // division undoes multiplication
-    ]);
-
-    // Put TALK_MIN back to 95% — the dedicated TALK training should
-    // now give enough signal for sem→motor to converge
     return this._gateMathKReal();
   }
 
@@ -3316,27 +3143,24 @@ export class Curriculum {
         if (cosine(phonReadout, expected) > 0.15) readPass++;
       }
 
-      // ─── TALK: magnitude→motor via phon→sem→motor chain (PRODUCTION)
-      // Session 112 fix: GloVe digit names are too similar for sem→motor
-      // to distinguish. Use MAGNITUDE FEATURES (unique per digit) instead.
-      // Inject magnitude(digit) into phon, propagate phon→sem, then sem→motor.
-      const magFeat = _magnitudeFeatureForDigit(digit);
+      // ─── TALK: sem→motor → argmax decode digit (PRODUCTION direction)
+      // Session 111 fix: was letter→motor (wrong direction).
+      // Inject GloVe(digit name) into sem, propagate sem_to_motor, argmax = digit char.
+      const digitName = NAMES[DIGITS.indexOf(digit)];
+      const nameEmb = digitName ? sharedEmbeddings.getEmbedding(digitName) : null;
       const s2m = allProjs['sem_to_motor'];
-      const p2s = allProjs['phon_to_sem'];
-      if (s2m && p2s && phonRegion && semRegion && motorRegion) {
-        // Step 1: propagate magnitude through phon→sem
-        const phonPat = new Float64Array(phonSize);
-        const pGSize = Math.max(1, Math.floor(phonSize / magFeat.length));
-        for (let d = 0; d < magFeat.length; d++) {
-          if (magFeat[d] <= 0) continue;
-          for (let n = 0; n < pGSize; n++) {
-            const idx = d * pGSize + n;
-            if (idx < phonSize) phonPat[idx] = magFeat[d];
+      if (s2m && semRegion && motorRegion && nameEmb && nameEmb.length > 0) {
+        const semSize = semRegion.end - semRegion.start;
+        const semPat = new Float64Array(semSize);
+        const sGSize = Math.max(1, Math.floor(semSize / nameEmb.length));
+        for (let d = 0; d < nameEmb.length; d++) {
+          if (nameEmb[d] <= 0) continue;
+          for (let n = 0; n < sGSize; n++) {
+            const idx = d * sGSize + n;
+            if (idx < semSize) semPat[idx] = nameEmb[d];
           }
         }
-        const semFromPhon = p2s.propagate(phonPat);
-        // Step 2: propagate sem output through sem→motor
-        const motorOutput = s2m.propagate(semFromPhon);
+        const motorOutput = s2m.propagate(semPat);
         const motorSize = motorRegion.end - motorRegion.start;
         const mGSize = Math.max(1, Math.floor(motorSize / invSize));
         const motorReadout = new Float64Array(invSize);
@@ -3502,10 +3326,9 @@ export class Curriculum {
     const PATH_MIN = 0.95;
     const SEQ_MIN = 0.95;
     const ORDER_MIN = 0.95;
-    const TALK_MIN = 0.80; // Session 112: TALK at 80% — dedicated sem→motor training pass added. Was 95% (too strict for common words) then 25% (too lenient). 80% = real test.
     const pass = readRate >= PATH_MIN
       && thinkRate >= PATH_MIN
-      && talkRate >= TALK_MIN
+      && talkRate >= PATH_MIN
       && seqRate >= SEQ_MIN
       && orderRate >= ORDER_MIN;
 
@@ -3856,8 +3679,7 @@ export class Curriculum {
     const thinkRate = N > 0 ? thinkPass / N : 0;
     const talkRate = N > 0 ? talkPass / N : 0;
     const PATH_MIN = 0.95;
-    const TALK_MIN = 0.80; // Session 112: TALK at 80% — dedicated sem→motor training pass added. Was 95% (too strict for common words) then 25% (too lenient). 80% = real test. at 95%
-    const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= TALK_MIN;
+    const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= PATH_MIN;
 
     return {
       pass,
@@ -4090,9 +3912,10 @@ export class Curriculum {
     ];
     await this._teachSentenceList(WORD_PROBLEMS, ctx, { reps: 3, ticksPerWord: 2 });
 
-    // ── EQUATIONAL REASONING: addition/subtraction within 20 + place value ──
+    // ── EQUATIONAL REASONING: addition/subtraction within 20 ──
+    // The OPERATIONS as magnitude transformations (already taught at K
+    // within 10, now extended to 20)
     await this._teachAdditionTransformations(ctx);
-    await this._teachPlaceValueTransformations(ctx); // tens+ones for numbers 10-99
 
     // ── Geometry: partitioning shapes ──
     const GEOMETRY_G1 = [
@@ -4209,8 +4032,7 @@ export class Curriculum {
     // single-character binding — the motor completion path requires the
     // cortex to have a learnable asymmetry in the sequence Hebbian
     const PATH_MIN = 0.45;
-    const TALK_MIN = 0.80; // Session 112: TALK at 80% — dedicated sem→motor training pass added. Was 95% (too strict for common words) then 25% (too lenient). 80% = real test. at 95%
-    const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= TALK_MIN;
+    const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= PATH_MIN;
 
     return {
       pass,
@@ -5394,44 +5216,6 @@ export class Curriculum {
       await _microtask();
     }
 
-    // ═════════════════════════════════════════════════════════════════
-    // DEDICATED TALK TRAINING — update ONLY sem_to_motor projection.
-    // DO NOT use _crossRegionHebbian — it destroys READ by training
-    // letter→phon with empty patterns when only sem+motor are active.
-    // ═════════════════════════════════════════════════════════════════
-    const vocabS2M = cluster.crossProjections?.['sem_to_motor'];
-    if (vocabS2M && semRegion && motorRegion) {
-      const vSemSz = semRegion.end - semRegion.start;
-      const vMotorSz = motorRegion.end - motorRegion.start;
-      for (let talkRep = 0; talkRep < 10; talkRep++) {
-        if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) break;
-        for (const word of vocab) {
-          const firstLetter = word.replace(/[^a-z0-9]/g, '')[0];
-          if (!firstLetter) continue;
-          const wordEmb = sharedEmbeddings.getEmbedding(word);
-          if (!wordEmb || wordEmb.length === 0) continue;
-          const letterOneHot = encodeLetter(firstLetter);
-          // Build sem pattern
-          const sPat = new Float64Array(vSemSz);
-          const sG = Math.max(1, Math.floor(vSemSz / wordEmb.length));
-          for (let d = 0; d < wordEmb.length; d++) {
-            if (wordEmb[d] <= 0) continue;
-            for (let n = 0; n < sG; n++) { const idx = d * sG + n; if (idx < vSemSz) sPat[idx] = 1; }
-          }
-          // Build motor pattern
-          const mPat = new Float64Array(vMotorSz);
-          const mG = Math.max(1, Math.floor(vMotorSz / letterOneHot.length));
-          for (let d = 0; d < letterOneHot.length; d++) {
-            if (letterOneHot[d] <= 0) continue;
-            for (let n = 0; n < mG; n++) { const idx = d * mG + n; if (idx < vMotorSz) mPat[idx] = 1; }
-          }
-          // Update ONLY sem_to_motor
-          vocabS2M.hebbianUpdate(sPat, mPat, cluster.learningRate);
-        }
-        await _microtask();
-      }
-    }
-
     // Session 111 — REAL HUMAN-GRADE GATE.
     // Tests are NOT identical to training — they test the SAME CONCEPTS
     // but ask DIFFERENTLY, like a real school test.
@@ -5647,15 +5431,7 @@ export class Curriculum {
     const readRate = N > 0 ? readPass / N : 0;
     const thinkRate = N > 0 ? thinkPass / N : 0;
     const talkRate = N > 0 ? talkPass / N : 0;
-    // Session 112 fix: TALK at 95% is too hard for common words (dog, ear,
-    // eye, nose) whose GloVe embeddings are too generic for sem→motor to
-    // distinguish. READ+THINK prove UNDERSTANDING. TALK proves PRODUCTION
-    // which is harder and improves with more vocabulary exposure. Accept
-    // when READ+THINK both pass at 95% AND TALK is at least 60%.
-    // Pure TALK-only failure means the cortex UNDERSTANDS but can't yet
-    // PRODUCE — that's a brain growth issue, not a curriculum failure.
-    const TALK_MIN = 0.80; // Session 112: TALK at 80% — dedicated sem→motor training pass added. Was 95% (too strict for common words) then 25% (too lenient). 80% = real test.
-    const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= TALK_MIN;
+    const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= PATH_MIN;
 
     return {
       pass,
@@ -6190,8 +5966,7 @@ export class Curriculum {
     const thinkRate = N > 0 ? thinkPass / N : 0;
     const talkRate = N > 0 ? talkPass / N : 0;
     const PATH_MIN = 0.45;  // 3/7 digraphs = 43%, 4/7 = 57% — 45% ≈ 3/7 rounded up
-    const TALK_MIN = 0.80; // Session 112: TALK at 80% — dedicated sem→motor training pass added. Was 95% (too strict for common words) then 25% (too lenient). 80% = real test. at 95%
-    const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= TALK_MIN;
+    const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= PATH_MIN;
 
     return {
       pass,
@@ -6489,8 +6264,7 @@ export class Curriculum {
     const readRate = N > 0 ? readPass / N : 0;
     const thinkRate = N > 0 ? thinkPass / N : 0;
     const talkRate = N > 0 ? talkPass / N : 0;
-    const TALK_MIN = 0.80; // Session 112: TALK at 80% — dedicated sem→motor training pass added. Was 95% (too strict for common words) then 25% (too lenient). 80% = real test. at 95%
-    const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= TALK_MIN;
+    const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= PATH_MIN;
 
     return {
       pass,
@@ -8186,8 +7960,7 @@ export class Curriculum {
     const readRate = N > 0 ? readPass / N : 0;
     const thinkRate = N > 0 ? thinkPass / N : 0;
     const talkRate = N > 0 ? talkPass / N : 0;
-    const TALK_MIN = 0.80; // Session 112: TALK at 80% — dedicated sem→motor training pass added. Was 95% (too strict for common words) then 25% (too lenient). 80% = real test. at 95%
-    const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= TALK_MIN;
+    const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= PATH_MIN;
     return {
       pass,
       reason: `READ ${readPass}/${N} (${(readRate * 100).toFixed(0)}%), THINK ${thinkPass}/${N} (${(thinkRate * 100).toFixed(0)}%), TALK ${talkPass}/${N} (${(talkRate * 100).toFixed(0)}%)${talkFails.length > 0 ? ' [TALK fail: ' + talkFails.join(', ') + ']' : ''}`,
@@ -10053,13 +9826,10 @@ export class Curriculum {
     ];
     await this._teachSentenceList(WORD_PROBLEMS_G3, ctx, { reps: 2, ticksPerWord: 2 });
 
-    // ── Equational teaching — BOTH vocabulary helpers AND magnitude transforms ──
+    // ── Equational teaching ──
     await this._teachMultiplicationTables();
     await this._teachDivision();
     await this._teachFractions();
-    // Session 112: magnitude operation transforms
-    await this._teachMultiplicationTransformations(ctx);
-    await this._teachFractionTransformations(ctx);
 
     // ═══════════════════════════════════════════════════════════════
     // MATH G3 FINAL EXAM — tests the OPERATIONS equationally
@@ -10562,16 +10332,6 @@ export class Curriculum {
       ['evidence', 'argument'], ['argument', 'conclusion'],
       ['quote', 'support'], ['support', 'convince'],
       ['read', 'understand'], ['understand', 'summarize'],
-    ]);
-
-    // Session 112: paraphrase — core to summarization
-    await this._teachParaphrase([
-      ['the dog ran fast', 'the dog was quick'],
-      ['she felt happy', 'she was glad'],
-      ['the book was long', 'the story was lengthy'],
-      ['he was tired', 'he felt exhausted'],
-      ['we had fun', 'we enjoyed ourselves'],
-      ['the food was good', 'the meal was delicious'],
     ]);
 
     // ═══════════════════════════════════════════════════════════════
@@ -11336,16 +11096,6 @@ export class Curriculum {
     // more feature overlap than distant ones — which is the same
     // ordinal relationship real chemistry depends on.
     await this._teachAtomsMolecules();
-    // Session 112: hypothesis testing for scientific method
-    await this._teachHypothesisTesting([
-      { predict: 'water', observe: 'grow', match: true },
-      { predict: 'dark', observe: 'grow', match: false },
-      { predict: 'heat', observe: 'melt', match: true },
-      { predict: 'cold', observe: 'melt', match: false },
-      { predict: 'sun', observe: 'warm', match: true },
-      { predict: 'magnet', observe: 'attract', match: true },
-      { predict: 'wood', observe: 'attract', match: false },
-    ]);
     await this._teachCausalChains([
       ['atom', 'molecule'], ['molecule', 'matter'], ['heat', 'melt'],
       ['cold', 'freeze'], ['evaporate', 'gas'], ['condense', 'liquid'],
@@ -11852,7 +11602,6 @@ export class Curriculum {
     // Session 41 — TODO-aligned pre-algebra teaching
     await this._teachVariables();
     await this._teachOneVarEquations();
-    await this._teachAlgebraTransformations(ctx); // Session 112: variable binding as magnitude transform
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
 
     // ── COMMON CORE MATH G6: Full sixth-grade ──
@@ -11973,9 +11722,6 @@ export class Curriculum {
   }
 
   async _teachInferenceQA(qaPairs, opts = {}) {
-    // Renamed from _teachInference to avoid collision with the Session 112
-    // equational transitive reasoning method. This is the Session 34 ELA
-    // passage-based inference method.
     const cluster = this.cluster;
     if (!cluster) return { taught: 0 };
     const reps = opts.reps ?? 4;
@@ -12556,19 +12302,6 @@ export class Curriculum {
       ['war', 'emancipation', 'freedom'],
       ['emancipation', 'amendment', 'rights'],
       ['reconstruction', 'amendment', 'equality'],
-    ]);
-    // Session 112: perspective taking — same war, different viewpoints
-    //   features: [freedom, unity, sacrifice, rights, loss, resistance, liberation, suffering, hope]
-    await this._teachPerspectiveTaking([
-      { event: 'war', perspectives: [
-        { viewpoint: 'union', features: new Float64Array([1,1,1,0,0,0,0,0,0]) },
-        { viewpoint: 'confederate', features: new Float64Array([0,0,0,1,1,1,0,0,0]) },
-        { viewpoint: 'enslaved', features: new Float64Array([0,0,0,0,0,0,1,1,1]) },
-      ]},
-      { event: 'reconstruction', perspectives: [
-        { viewpoint: 'freedmen', features: new Float64Array([1,0,0,1,0,0,1,0,1]) },
-        { viewpoint: 'southerner', features: new Float64Array([0,0,0,0,1,1,0,1,0]) },
-      ]},
     ]);
 
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });

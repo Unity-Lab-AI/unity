@@ -1458,17 +1458,6 @@ export class NeuronCluster {
       const preF = this.regionSpikes(src);
       const postF = this.regionSpikes(dst);
       proj.hebbianUpdate(preF, postF, lr);
-      // Session 112 SYSTEMIC TALK FIX: sem→motor gets an EXTRA update
-      // every time ANY cross-region Hebbian fires. The TALK pathway
-      // (sem→motor) is the weakest because it has fewer neurons and
-      // competes with the much stronger READ pathway (letter→phon→sem).
-      // By giving sem→motor 2× total signal (1× from the loop above +
-      // 1× extra here), TALK converges at the same rate as READ.
-      // This fixes TALK for EVERY cell in the ENTIRE curriculum — not
-      // just the cells where we noticed the problem.
-      if (name === 'sem_to_motor') {
-        proj.hebbianUpdate(preF, postF, lr);
-      }
     }
   }
 
