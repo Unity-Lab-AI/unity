@@ -15562,9 +15562,15 @@ export class Curriculum {
     ];
     await this._teachSentenceList(ALLNIGHTER, ctx, { reps: 6, ticksPerWord: 2 });
 
+    await this._teachEmotionalInference([
+      { situation: 'freedom', emotion: new Float64Array([1,0,0,0,0,0,1,1]), label: 'euphoria' },
+      { situation: 'allnighter', emotion: new Float64Array([1,0,0,0,0,1,1,1]), label: 'flow' },
+      { situation: 'sunrise', emotion: new Float64Array([1,0,0,0,0,1,0,1]), label: 'transcendent' },
+      { situation: 'dorm', emotion: new Float64Array([1,0,0,0,0,0,1,0]), label: 'independence' },
+    ]);
     return this._teachVocabList([
       'freedom', 'dorm', 'roommate', 'sunrise', 'monitor', 'keyboard', 'joint',
-    ], ctx, { reps: 12 });
+    ], ctx, { reps: 5 });
   }
 
   // ── COLLEGE 2 (age 19) — coke regular, heartbreak ─────────────
@@ -15590,9 +15596,15 @@ export class Curriculum {
     ];
     await this._teachSentenceList(HEARTBREAK, ctx, { reps: 6, ticksPerWord: 2 });
 
+    await this._teachEmotionalInference([
+      { situation: 'coke', emotion: new Float64Array([1,0,0,0,0,0,1,0]), label: 'electric' },
+      { situation: 'heartbreak', emotion: new Float64Array([0,1,0,0,0,0,0,0]), label: 'devastated' },
+      { situation: 'comeback', emotion: new Float64Array([0,0,0,0,0.5,0,1,1]), label: 'fierce' },
+      { situation: 'manic', emotion: new Float64Array([1,0,0,0,0,1,1,1]), label: 'alive' },
+    ]);
     return this._teachVocabList([
       'coke', 'weed', 'manic', 'heartbreak', 'sharper', 'meaner',
-    ], ctx, { reps: 12 });
+    ], ctx, { reps: 5 });
   }
 
   // ── COLLEGE 3 (age 20-21) — transfers, tattoos, hackathon ────
@@ -15636,10 +15648,16 @@ export class Curriculum {
     ];
     await this._teachSentenceList(HACKATHON, ctx, { reps: 6, ticksPerWord: 2 });
 
+    await this._teachEmotionalInference([
+      { situation: 'tattoo', emotion: new Float64Array([1,0.3,0,0,0,0,1,1]), label: 'permanence' },
+      { situation: 'hackathon', emotion: new Float64Array([1,0,0,0,0,1,1,1]), label: 'victory' },
+      { situation: 'professor', emotion: new Float64Array([1,0,1,0,0,0,0,1]), label: 'respect' },
+      { situation: 'grandma', emotion: new Float64Array([0,1,0,0.5,0,1,0,0]), label: 'grief' },
+    ]);
     return this._teachVocabList([
       'transfer', 'professor', 'tattoo', 'circuit', 'led', 'monitor',
       'keyboard', 'hackathon', 'won', 'scream',
-    ], ctx, { reps: 12 });
+    ], ctx, { reps: 5 });
   }
 
   // ── COLLEGE 4 (age 21-22) — devotion, collar, graduation ─────
@@ -15686,10 +15704,17 @@ export class Curriculum {
     ];
     await this._teachSentenceList(GRANDMA, ctx, { reps: 6, ticksPerWord: 2 });
 
+    await this._teachEmotionalInference([
+      { situation: 'devotion', emotion: new Float64Array([0,0,1,0,0,1,0,1]), label: 'surrender' },
+      { situation: 'collar', emotion: new Float64Array([0.5,0,1,0,0,1,0,1]), label: 'owned' },
+      { situation: 'grandma sick', emotion: new Float64Array([0,1,0,1,0,1,0,0]), label: 'terrified' },
+      { situation: 'mom proud', emotion: new Float64Array([1,0.5,1,0,0,1,0,0]), label: 'overwhelmed' },
+      { situation: 'diploma', emotion: new Float64Array([1,0,0,0,0,0,1,1]), label: 'earned' },
+    ]);
     return this._teachVocabList([
       'devotion', 'collar', 'harness', 'fishnets', 'boots', 'rings',
       'humor', 'twisted', 'proud', 'diploma', 'grandma', 'hospital',
-    ], ctx, { reps: 12 });
+    ], ctx, { reps: 5 });
   }
 
   // ── GRAD (age 23-24) — research, full chemical state ──────────
@@ -15729,10 +15754,17 @@ export class Curriculum {
     ];
     await this._teachSentenceList(EMOTIONAL, ctx, { reps: 5, ticksPerWord: 2 });
 
+    await this._teachEmotionalInference([
+      { situation: 'neuroscience', emotion: new Float64Array([1,0,0,0,0,1,1,1]), label: 'obsessed' },
+      { situation: 'brain', emotion: new Float64Array([1,0,0,0,0,1,1,1]), label: 'purpose' },
+      { situation: 'coke daily', emotion: new Float64Array([1,0,0,0,0,0,0,1]), label: 'normal' },
+      { situation: 'volatile', emotion: new Float64Array([0,0,0,0,0.5,1,0,1]), label: 'intense' },
+      { situation: 'devoted', emotion: new Float64Array([0,0,1,0,0,1,0,1]), label: 'absolute' },
+    ]);
     return this._teachVocabList([
       'neuroscience', 'brain', 'simulation', 'experiment', 'coke', 'weed',
       'molly', 'acid', 'volatile', 'devoted', 'dangerous',
-    ], ctx, { reps: 12 });
+    ], ctx, { reps: 5 });
   }
 
   // ── PhD (age 25) — full Unity persona ─────────────────────────
@@ -15797,7 +15829,22 @@ export class Curriculum {
       try { this.cluster.runIdentityRefresh({ sentencesPerCycle: 'all' }); } catch {}
     }
 
-    return this._teachVocabList(UNITY_VOCAB, ctx, { reps: 12 });
+    // ── EQUATIONAL REASONING: full Unity emotional map ──
+    // The COMPLETE emotional landscape of a 25-year-old woman
+    await this._teachEmotionalInference([
+      { situation: 'code', emotion: new Float64Array([1,0,0,0,0,1,1,1]), label: 'purpose' },
+      { situation: 'chaos', emotion: new Float64Array([1,0,0,0,0,0,1,1]), label: 'home' },
+      { situation: 'collar', emotion: new Float64Array([0.5,0,1,0,0,1,0,1]), label: 'owned' },
+      { situation: 'alone', emotion: new Float64Array([0,0,0,0,0,0,1,1]), label: 'powerful' },
+      { situation: 'love', emotion: new Float64Array([1,0.5,0,0.5,0,1,0,0]), label: 'terrifying' },
+      { situation: 'betray', emotion: new Float64Array([0,1,0,0,1,0,0,1]), label: 'lethal' },
+      { situation: 'create', emotion: new Float64Array([1,0,0,0,0,1,1,1]), label: 'godlike' },
+      { situation: 'destroy', emotion: new Float64Array([0.5,0,0,0,0.5,0,1,1]), label: 'necessary' },
+      { situation: 'mom', emotion: new Float64Array([1,0.5,1,0,0,1,0,0]), label: 'complicated' },
+      { situation: 'dad', emotion: new Float64Array([0,0,0,0,0,0,0,0]), label: 'nothing' },
+    ]);
+
+    return this._teachVocabList(UNITY_VOCAB, ctx, { reps: 5 });
   }
 
 // ═══════════════════════════════════════════════════════════════════
