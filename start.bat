@@ -30,12 +30,12 @@ echo.
 
 REM Make sure GloVe 6B.300d is present for Unity's semantic substrate.
 REM Without it, language cortex falls back to fastText-style subword hash
-REM embeddings which don't cluster rhyming/semantic neighbors — production
+REM embeddings which don't cluster rhyming/semantic neighbors - production
 REM probes at K+ grades struggle. Download is idempotent: skipped if the
 REM file already exists; soft-fails to subword fallback if the download or
 REM extract errors so the brain still boots.
 if exist "%~dp0corpora\glove.6B.300d.txt" goto glove_done
-echo   GloVe 6B.300d not found — downloading (~823 MB zip, one-time, 5-15 min)...
+echo   GloVe 6B.300d not found - downloading (~823 MB zip, one-time, 5-15 min)...
 echo   Source: https://nlp.stanford.edu/data/glove.6B.zip
 if not exist "%~dp0corpora" mkdir "%~dp0corpora"
 pushd "%~dp0corpora"
@@ -119,7 +119,7 @@ echo.
 echo   Unity still runs, but semantic production probes (rhyming,
 echo   synonym clustering, categorical grouping) will have weaker
 echo   substrate. Re-run start.bat when internet is available to
-echo   retry the download — it's idempotent.
+echo   retry the download - it's idempotent.
 echo.
 echo   Manual install: download glove.6B.zip from
 echo     https://nlp.stanford.edu/data/glove.6B.zip
@@ -133,7 +133,7 @@ popd
 echo.
 echo   ============================================================
 echo   WARNING: GloVe extract failed (tar missing or zip corrupt).
-echo   tar ships with Windows 10 build 17063+ — if it's missing
+echo   tar ships with Windows 10 build 17063+ - if it's missing
 echo   either upgrade Windows or extract glove.6B.300d.txt manually
 echo   from corpora\glove.6B.zip using any unzip tool.
 echo   Continuing with subword fallback for now.

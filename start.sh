@@ -20,12 +20,12 @@ fi
 
 # Make sure GloVe 6B.300d is present for Unity's semantic substrate.
 # Without it, language cortex falls back to fastText-style subword hash
-# embeddings which don't cluster rhyming/semantic neighbors — production
+# embeddings which don't cluster rhyming/semantic neighbors - production
 # probes at K+ grades struggle. Download is idempotent: skipped if the
 # file already exists; soft-fails to subword fallback if network/tools
 # missing so the brain still boots.
 if [ ! -f "$DIR/corpora/glove.6B.300d.txt" ]; then
-    echo "  GloVe 6B.300d not found — downloading (~823 MB zip, one-time, 5-15 min)..."
+    echo "  GloVe 6B.300d not found - downloading (~823 MB zip, one-time, 5-15 min)..."
     echo "  Source: https://nlp.stanford.edu/data/glove.6B.zip"
     mkdir -p "$DIR/corpora"
     cd "$DIR/corpora"
@@ -45,7 +45,7 @@ if [ ! -f "$DIR/corpora/glove.6B.300d.txt" ]; then
         echo "  WARNING: GloVe download failed (network / curl missing / Stanford"
         echo "  NLP unreachable). Continuing with built-in fastText-style subword"
         echo "  embeddings fallback. Re-run start.sh when internet is available"
-        echo "  to retry — the download is idempotent."
+        echo "  to retry - the download is idempotent."
         echo ""
     fi
     cd "$DIR"
@@ -68,7 +68,7 @@ node brain-server.js &
 SERVER_PID=$!
 sleep 2
 
-# Open browser + GPU compute page (REQUIRED — brain runs on GPU exclusively)
+# Open browser + GPU compute page (REQUIRED - brain runs on GPU exclusively)
 echo "  Opening browser..."
 if command -v open &>/dev/null; then
     open http://localhost:7525
@@ -79,7 +79,7 @@ elif command -v xdg-open &>/dev/null; then
 fi
 
 echo "  Open: http://localhost:7525"
-echo "  GPU compute: http://localhost:7525/compute.html (REQUIRED — brain pauses without it)"
+echo "  GPU compute: http://localhost:7525/compute.html (REQUIRED - brain pauses without it)"
 echo "  Press Ctrl+C to stop."
 echo ""
 
