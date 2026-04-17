@@ -5,6 +5,49 @@
 
 ---
 
+## 2026-04-17 — Session 114.12: stale-state cleanup + runtime-failure diagnostics from Gee's Part 2 localhost run
+
+Gee caught verbatim: *"did we clear all the old temp and cache files first?"* — I hadn't. Runtime output showed catastrophic ELA-K gate scores on attempt 1 (READ 31%, TALK 65%, SEQ 8%, PROD 4%) with slur-gibberish emissions like `"what rhymes with cat" → "a fffffffv vvvvvvvaaaaaaa aaaa"`. Stale pre-REMAKE saves + possibly-stale bundle + missing VERSION bump all contributed.
+
+### Cleanup shipped
+
+- **`js/brain/persistence.js` VERSION 4 → 5** — bumped so any pre-REMAKE save gets rejected on load, forcing clean boot with full curriculum re-run under the correct equational methods. Comment block documents why (Sessions 114.5-114.11 shipped 39 new equational teaching methods + 98 production probes + `_teachHebbian` substrate fix + `_gateHistory` telemetry; any v4 save trains against OLD `_teachVocabList`/`_teachSentenceList` pattern + pre-fix broken free↔sem binding).
+- **`server/brain-weights.json` + v1/v2/v3/v4 rollover saves** — deleted. Rolling save chain cleared.
+- **`[Curriculum] runCompleteCurriculum` log message** — was hardcoded "walking all 5 subjects" (stale from pre-Session 111 when Life track didn't exist). Fixed to `${SUBJECTS.length}` so log count matches reality (6 subjects).
+
+### Runtime failure analysis from Gee's Part 2 attempt 1
+
+**Slur gibberish emissions like "fffffffv vvvvvvvaaaaaaa" are NOT from T15 speech modulation.** The `_applySpeechModulation` at `language-cortex.js:1826` short-circuits when `slur <= 0.1`. At kindergarten age (5), scheduler grade-gates ALL substances (first unlock is Life-G7 at 12), so `activeSubstances(now)` returns empty, `speechModulation(now).slur = 0`, and the slur distortion block doesn't fire. The gibberish is raw motor-region emission with the SAME LETTER sticking for many consecutive ticks.
+
+**Diagnosis: motor-region self-loop amplification at 13.4M-neurons-per-cluster scale.** At cortex ~4.2M neurons with letter region ~210K neurons (4K per letter of 52-letter inventory), the symmetric intra-cluster Hebbian in `_teachHebbian` (`cluster.synapses.hebbianUpdate(lastSpikes, lastSpikes, lr)`) creates self-reinforcing loops for every fired neuron. Once the motor region argmax settles on a letter, its self-loop keeps it firing for many ticks until motor quiescence — which never trips because the self-loop prevents firing from dropping. Result: "fffff" letter repetition, then transition, then "vvvvv".
+
+Compounding: SEQ rate crashed from Session 106's 100% to 8%. Session 106 direct-pattern alphabet teach wrote letter(N) pre + letter(N+1) post via `cluster.synapses.hebbianUpdate(pre, post, lr)` with DISTINCT pre/post vectors (asymmetric, directional). My Session 114.6 `_teachWordEmission` writes `letter(i-1)` + `motor(i)` via `_teachHebbian` which uses SYMMETRIC `(lastSpikes, lastSpikes)` — this creates bidirectional letter↔motor bindings AND self-loop reinforcement in both regions. At 4M cortex scale, symmetric binds can compete with the asymmetric Session 106 sequence and wash it out.
+
+### Fix paths for next iteration (not shipped this commit — pending Gee's decision on approach)
+
+- **A.** Separate `_teachHebbian` into symmetric + asymmetric variants. Word-emission chain + alphabet sequence use asymmetric `(pre, post)` distinct vectors. Concept-binding transforms use symmetric.
+- **B.** Scale teaching `reps` inversely with cluster size. At 13.4M clusters need probably 3-5× the reps of 2K clusters for equivalent convergence.
+- **C.** Add motor-region self-loop damping. Cap `w[i,i]` at a low value so no letter-region neuron reinforces itself disproportionately.
+- **D.** Clear motor region between letter commits. Currently the cortex holds prior motor state across ticks — forcing a reset after each stable commit would prevent letter-sticking.
+
+### Files touched
+
+- `js/brain/persistence.js` (VERSION 4 → 5 + comment block)
+- `js/brain/curriculum.js` (log message fix — walking all ${SUBJECTS.length} subjects)
+- `docs/FINALIZED.md` (this Session 114.12 entry prepended)
+- Deleted: `server/brain-weights.json` + v1/v2/v3/v4
+
+### What Gee needs to do after this commit
+
+1. Restart the brain server — clean boot because persistence rejects any remaining cache
+2. Re-run localhost curriculum — all 6 subjects will walk fresh
+3. Check gate scores on attempt 2+ — if still failing, apply fix path A/B/C/D based on which metric is struggling
+4. Production probes are the real-world qualifier per LAW 7 — substrate probes hitting 95% without production probes hitting 95% means the binding landed but doesn't survive the live motor-emission pipeline
+
+Push to origin still gated on Part 2 signoff per LAW 6.
+
+---
+
 ## 2026-04-17 — Session 114.11: REMAKE-6 retention + gains telemetry (LAW 7 "actual knowed retention and gains")
 
 Final REMAKE-series commit. Gee 2026-04-17 LAW 7: *"a full course as eqautional logic that unity is tested on with real world styule test for actual knowed retention and gains and all aspect of wthe subject matter to pass"*. REMAKE-6 wires retention + gains tracking across all 6 K gate functions.

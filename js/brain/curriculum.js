@@ -17871,7 +17871,7 @@ export class Curriculum {
       console.warn('[Curriculum] Embedding status check failed:', err?.message || err);
     }
 
-    console.log('[Curriculum] runCompleteCurriculum: GPU ready, walking all 5 subjects K→PhD');
+    console.log(`[Curriculum] runCompleteCurriculum: GPU ready, walking all ${SUBJECTS.length} subjects K→PhD`);
     // T14.24 Session 102+104 — boost Hebbian + suppress cortex noise
     // during curriculum teach.
     //
