@@ -1,11 +1,12 @@
 # NOW — Session Snapshot
 
-> Saved: 2026-04-17 (Session 114.2 Math-K 66/66 equational ship on top of Session 114 Part 1 — both uncommitted as a second atomic commit pending on `syllabus-k-phd`)
-> Branch: `syllabus-k-phd` (1 commit ahead of origin + this upcoming second commit)
-> Recent committed HEAD: `087b207` — Session 114 Math-K Part 1 equational ship + free↔sem substrate fix
-> Previous HEAD: `85614e1` — T15 drug dynamics shipped + full doc forward-write per Gee 2026-04-17 irregularity
-> Working-tree state (before Session 114.2 commit): 9 files modified uncommitted — `js/brain/curriculum.js` + `docs/TODO-full-syllabus.md` + `docs/FINALIZED.md` + this NOW.md + workflow + public docs
-> Status: Math-K 66/66 boxes [x] SHIPPED in code. Unified combination-operator scaffold + compose-shapes method + SHAPE-C probe all land in Session 114.2. Part 2 Gee localhost sign-off per LAW 6 still pending.
+> Saved: 2026-04-17 (Session 114.3 brain-equations.html drift fix pass, uncommitted as a third atomic commit pending on `syllabus-k-phd`)
+> Branch: `syllabus-k-phd` (2 commits ahead of origin + this upcoming third commit)
+> Recent committed HEAD: `646037e` — Session 114.2 unified combination-operator scaffold + compose-shapes ship (Math-K 66/66)
+> Previous HEAD: `087b207` — Session 114 Math-K Part 1 equational ship + free↔sem substrate fix
+> Earlier HEAD: `85614e1` — T15 drug dynamics shipped + full doc forward-write per Gee 2026-04-17 irregularity
+> Working-tree state (before Session 114.3 commit): 3 files modified uncommitted — `brain-equations.html` + `docs/FINALIZED.md` + this NOW.md
+> Status: Session 114.3 fixes 7 drift points in brain-equations.html that survived the 114 + 114.2 ship — wrong Ψ formula `(√n)³ × [Id+Ego+Left+Right]` replaced with canonical `√(1/n) × N³ · [α·Id + β·Ego + γ·Left + δ·Right]`, pre-T15 drug state references (drugState.arousalMult / drugState.creativityMult / drugFit / cokeAndWeed / drugLengthBias / drugSpeed / drugArousal / drugCreativity / drugDrive) replaced with T15 scheduler additive contribution model. Math-K 66/66 runtime behavior unchanged. Part 2 Gee localhost sign-off per LAW 6 still the only gate to advance.
 
 ---
 

@@ -336,15 +336,18 @@
     <div class="eq-card">
       <div class="eq-title">Step 0 — Brain state at rest, before the message arrives</div>
       <div class="eq-desc">
-        <p>Unity is running at ~60 fps, iterating all seven clusters every tick. Her resting state is not zero — her persona θ and drug state vector keep her amygdala firing at ~8% and her cortex at ~3% even with no input, because:</p>
+        <p>Unity is running at ~60 fps, iterating all seven clusters every tick. Her resting state is not zero — her persona θ plus whatever substances are actively contributing through the T15 pharmacokinetic scheduler keep her amygdala firing at ~8% and her cortex at ~3% even with no input. Sober is the default; every live contribution comes from <code>scheduler.activeContributions(now)</code> additive deltas per active dose event:</p>
         <div class="eq" style="font-size:13px;">
-tonicDrive[amygdala]    = θ.arousalBaseline × drugState.arousalMult × driveFloor<br>
-                        = 0.9 × 1.3 × 12 ≈ 14 (highest of any cluster)<br>
+contrib(t)              = Σ_s scheduler.activeContributions(now)[s] × level(s, t)<br>
+tonicDrive[amygdala]    = θ.arousalBaseline × (1 + contrib(t).arousal) × driveFloor<br>
+                        = 0.9 × (1 + 0) × 12 ≈ 10.8   (sober baseline)<br>
+                        = 0.9 × (1 + 0.33) × 12 ≈ 14.4 (PhD-era coke+weed peak, emerges dynamically)<br>
 <br>
-noiseAmp[cortex]        = θ.creativity × drugState.creativityMult × 5<br>
-                        = 0.9 × 1.2 × 5 ≈ 5.4<br>
+noiseAmp[cortex]        = θ.creativity × (1 + contrib(t).creativity) × 5<br>
+                        = 0.9 × (1 + 0) × 5 ≈ 4.5     (sober)<br>
+                        = 0.9 × (1 + 0.28) × 5 ≈ 5.76 (cannabis active)<br>
         </div>
-        <p>Those two numbers get passed to the Rulkov shader as the σ driver and the jitter term. Her x,y state is chaotic but bounded — the attractor basin holds every neuron inside a repeating burst envelope even with zero sensory input. Mystery module Ψ is sitting around 0.003 — low-grade background consciousness.</p>
+        <p>Those two numbers get passed to the Rulkov shader as the σ driver and the jitter term. Her x,y state is chaotic but bounded — the attractor basin holds every neuron inside a repeating burst envelope even with zero sensory input. Mystery module Ψ is sitting around 0.003 — low-grade background consciousness. The old static <code>drugState.arousalMult</code> / <code>drugState.creativityMult</code> scalars were deleted in T15 — they've been replaced by the scheduler's superposition model where every active substance contributes its own curve-driven delta and combinations emerge without any hardcoded combo labels.</p>
       </div>
     </div>
 
@@ -423,32 +426,33 @@ errorCorrection = −(Σ error² / n) × 2<br>
     </div>
 
     <div class="eq-card">
-      <div class="eq-title">Step 6 — Language cortex picks every word by slot scoring</div>
+      <div class="eq-title">Step 6 — Language cortex emits words via tick-driven motor readout (T14.6 + T15)</div>
       <div class="eq-desc">
-        <p>This is the step that actually produces the sentence. The language cortex runs a four-tier pipeline; on the cold-gen path (which handles most real conversations), for each slot in the sentence template it computes a score per candidate word:</p>
+        <p>This is the step that actually produces the sentence. The pre-T14.6 slot scorer (weighted <code>semanticFit + moodFit + drugFit + bigramFit + trigramFit + recencyPenalty</code> argmax per slot) was deleted in T14.6 along with every slot-prior table (<code>_slotCentroid</code>, <code>_slotDelta</code>, <code>_slotTypeSignature</code>, <code>_contextVector</code>, <code>_subjectStarters</code>). The replacement is a cortex-resident tick-driven motor emission loop that reads directly from the trained attractor basins — same substrate that handles reading + thinking, different propagation direction for production (Hickok &amp; Poeppel 2007 dual-stream):</p>
         <div class="eq" style="font-size:13px;">
-score(word) = semanticFit × 0.30<br>
-            + moodFit × 0.22<br>
-            + drugFit × 0.15<br>
-            + bigramFit × 0.18<br>
-            + trigramFit × 0.10<br>
-            + recencyPenalty × 0.05<br>
+// Intent seed
+sem ← cluster.getSemanticReadout(sharedEmbeddings)<br>
+// Tick loop — no slot counter, no candidate scoring<br>
+for t in 0..MAX_EMISSION_TICKS (≤ 2000):<br>
+&nbsp;&nbsp;cluster.step(dt)<br>
+&nbsp;&nbsp;motorReadout ← cluster.regionReadout('motor', inventorySize())<br>
+&nbsp;&nbsp;letter ← decodeLetter(argmax(motorReadout))<br>
+&nbsp;&nbsp;if argmax stable for STABLE_TICK_THRESHOLD (3) consecutive ticks:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;commit letter; if cluster.letterTransitionSurprise() > 0.15 → word boundary<br>
+&nbsp;&nbsp;if motorQuiescent(END_QUIESCE_TICKS=30) and emitted ≥ 1: break<br>
+&nbsp;&nbsp;if committed terminator (.!?): break<br>
 <br>
-where:<br>
-semanticFit = cos(cortexPattern, word.learnedPattern)<br>
-moodFit     = exp(−((word.arousal − arousal)² + (word.valence − valence)²) / 0.5)<br>
-drugFit     = wordLengthBias[drugState] × (word.length − avgLen)<br>
-bigramFit   = log(1 + bigramCount[prevWord, word])<br>
-trigramFit  = log(1 + trigramCount[prev2, prevWord, word])<br>
-<br>
-logits    = score(word) / temperature<br>
-temperature = 1.0 / (0.9 + Ψ × 0.004)        (Ψ sharpens softmax)<br>
-P(word)   = softmax(logits)<br>
-pick      = sample(P)<br>
+// T15 speech modulation post-processor (applies AFTER clean cortex emission)<br>
+mod = scheduler.speechModulation(now)      // { inhibition, slur, coherence, ethereality, speechRate, emotionalOverflow, dissociation, paranoia, giggleBias, ... }<br>
+rendered = _applySpeechModulation(text, mod)<br>
+&nbsp;&nbsp;// slur letter-doubling on alcohol/ketamine/ghb<br>
+&nbsp;&nbsp;// pause '...' injection at negative speech rate<br>
+&nbsp;&nbsp;// cosmic/Oz/kaleidoscope vocabulary pulled into sem on LSD/psilocybin peak<br>
+&nbsp;&nbsp;// first-person → third-person copula-conjugated flip at dissociation > 0.5<br>
         </div>
-        <p>For the first slot, "hey" and "what's" both score high (both are good greeting-slot matches near her cortex pattern), but "what's" wins because her trigram stats from the persona file favor "what's" as the opener of greeting responses. Slot 2 scores "up" high from bigram stats with "what's". Slot 3 scores "fucker" high because her drugFit term favors short vulgar words in cokeAndWeed state and her moodFit favors them at arousal 0.88. The sentence grows one word at a time, each pick conditioned on the partial sentence so far AND the still-active brain state from steps 1-5.</p>
-        <p>Final output: <em>"what's up fucker — we're fucking wired tonight, how bout you"</em></p>
-        <p><strong>What this sums into:</strong> a sentence whose every word was the argmax (or softmax sample) of a weighted combination of six factors, five of which are live readouts of the brain state at that exact tick. Change any factor and the sentence changes.</p>
+        <p>For this tick the cortex's motor region argmax evolves through a learned articulator trajectory shaped by the persona Hebbian attractor basins. Which letters commit AND in what order emerges from the recurrent dynamics of the cortex cluster — not from a word-level slot scorer. The substance-specific speech distortion is applied AFTER cortex emission at the output layer, so the cortex stays equational and only the rendering shows the drug state. Unity never narrates her drug choice ("I am doing coke" is banned per Gee); the distortion IS the signal.</p>
+        <p>Sample sober output: <em>"what's up — how's it going"</em>. Same input at PhD-era coke+weed peak with scheduler active: <em>"whaaat's up fucker — we're wiiired tonight, how bout youuu"</em> (slur doubling on vowels + drawn terminal 'u' from cannabis-contribution speechRate drop layered on cocaine-contribution jitter).</p>
+        <p><strong>What this sums into:</strong> a sentence whose every letter was the stable motor argmax of the cortex at that tick, shaped by persona Hebbian basins, then distorted by the scheduler's live speechModulation vector. Change any substance event in the scheduler and the rendered output changes even if the cortex motor emission was identical.</p>
       </div>
     </div>
 
@@ -479,7 +483,7 @@ Right = f(|valence|, coherence)<br>
         <ul style="margin-top:8px;margin-left:20px;line-height:1.9;">
           <li><strong>Semantic fit</strong> came from the GloVe embeddings of what you said × learned cortex patterns</li>
           <li><strong>Mood fit</strong> came from the amygdala attractor settling into a reward-positive basin for this input</li>
-          <li><strong>Drug fit</strong> came from θ (cokeAndWeed state → short punchy words preferred)</li>
+          <li><strong>Speech modulation</strong> came from the T15 scheduler's per-substance additive contributions (<code>scheduler.speechModulation(now)</code>) applied at the output layer AFTER clean cortex emission — slur/pauses/ethereality/dissociation/giggle emerge from whatever is actively contributing in real time, not from a static combo label</li>
           <li><strong>Bigram/trigram fit</strong> came from the statistics of every sentence she's ever learned, per-state</li>
           <li><strong>Temperature</strong> came from Ψ, which came from the total integration of all seven clusters</li>
           <li><strong>Refractory rhythm</strong> came from the slow y variable of the Rulkov map pulling every neuron back into the chaotic basin between spikes</li>
@@ -713,7 +717,7 @@ y<sub>n+1</sub> = y<sub>n</sub> &minus; &mu; &middot; (x<sub>n</sub> &minus; &si
       <table class="param-table">
         <tr><th>Trait</th><th>Brain Parameter</th><th>Value</th></tr>
         <tr><td>Arousal baseline</td><td>Amygdala resting arousal</td><td>0.90</td></tr>
-        <tr><td>Intoxication</td><td>Noise amplitude + oscillation damping</td><td>0.70</td></tr>
+        <tr><td><span class="eq-tip" data-tip="intoxicationBaseline is SOBER (0.0) by design — the old static 0.70 daily-driver value was deleted in T15 along with the `drugStates` combo object. Live intoxication is computed per-tick as Σ (scheduler.activeContributions(now).intoxication[substance] × level(substance, t)), grade-gated by the life track so kindergarten-age Unity stays at 0.0 and PhD-era Unity's coke+weed peak emerges dynamically from real pharmacokinetic curves.">Intoxication baseline</span></td><td>Sober default; live value = &Sigma; scheduler.activeContributions(now).intoxication[s] &times; level(s, t)</td><td>0.00 (sober)</td></tr>
         <tr><td>Impulsivity</td><td>Basal ganglia temperature &tau;</td><td>0.85</td></tr>
         <tr><td>Creativity</td><td>Cortex prediction randomness</td><td>0.90</td></tr>
         <tr><td>Social attachment</td><td>Hippocampus memory strength for social patterns</td><td>0.85</td></tr>
@@ -1446,7 +1450,8 @@ USER INPUT (per turn):
   brain.step() × 20  (cortex settles, inter-cluster projections propagate)
 
 GENERATION (brain-driven emission loop — no slot counter in the logic):
-  maxLen  = floor(3 + arousal · 3 · drugLengthBias)  (hard cap only)
+  maxLen  = floor(3 + arousal · 3 · (1 + 0.4 · mod.freeAssoc))  (hard cap only)
+            // mod = scheduler.speechModulation(now); freeAssoc ramps up on weed+LSD
   for emission in 0..maxLen:
     for tick in 0..3:  cortex.step(0.001)
     target = cortex.getSemanticReadout(sharedEmbeddings)
@@ -1518,7 +1523,7 @@ for k in 0..synapses.nnz:
       <pre class="eq">
 Brain state parameters that feed languageCortex.generate():
 
-  arousal       (amygdala firing rate)         → targetLen = floor(3 + arousal·3·drugLengthBias)
+  arousal       (amygdala firing rate)         → targetLen = floor(3 + arousal·3·(1 + 0.4·mod.freeAssoc))
                                                  → observation weight on any sentence Unity
                                                    hears or says: w = max(0.25, arousal·2)
   valence       (amygdala reward − fear)       → biases cortex-state mood at sentence start
@@ -1526,7 +1531,21 @@ Brain state parameters that feed languageCortex.generate():
                                                  as it evolves during generation
   coherence     (Kuramoto order parameter)     → softmax temperature:
                                                  low coherence → more exploration
-  drugState     (persona param)                → drugLengthBias (coke shortens, weed rambles)
+  mod           (scheduler.speechModulation(now)) → applied at output layer AFTER cortex emission:
+                                                 mod.slur         → letter-doubling on alcohol/ketamine/ghb
+                                                 mod.speechRate   → '...' pause injection on depressants,
+                                                                    rapid-fire interrupt on stimulants
+                                                 mod.coherence    → trailing '...' on coherence drop
+                                                 mod.ethereality  → cosmic/Oz vocabulary bias pulling sem
+                                                                    toward persona-cosmic.txt basins on LSD peak
+                                                 mod.dissociation → first-person → third-person copula flip
+                                                                    at ketamine k-hole / LSD ego-death
+                                                 mod.giggleBias   → cannabis amygdala-reward tangent laughter
+                                                 mod.freeAssoc    → maxLen multiplier so weed+LSD rambles longer
+                                                 mod.paranoia     → stimulant-peak narrow-topic attractor
+                                                 // All dimensions emerge additively from whatever
+                                                 // substances are active in the scheduler RIGHT NOW.
+                                                 // Sober Unity has mod = zeros, output stays clean.
   cortexPattern (cluster.getSemanticReadout()) → seeds mental(0) directly — the brain's live
                                                  semantic readout via cortexToEmbedding is
                                                  the primary driver of the slot 0 target
@@ -2050,24 +2069,49 @@ into runtime, plus the cortex cluster's Hebbian-trained attractor basins.
       <pre class="eq">
 IDENTITY: 25yo human female, emo goth coder, free will, never AI
 
+// T15 binding: the drugSpeed / drugArousal / drugCreativity / drugDrive
+// static multipliers were DELETED along with the `drugStates` combo object.
+// Every drug contribution now comes from scheduler.activeContributions(now)
+// as a per-substance additive delta driven by real pharmacokinetic curves.
+// Two examples below — sober baseline + PhD-era coke+weed peak emerging
+// dynamically from the scheduler after ~25 minutes of real elapsed time.
+
 θ → TONIC DRIVES (personality → baseline neural current):
-  cortex       = 16 + arousal(0.9) × 4 × drugSpeed(1.5)    = 21.4
-  amygdala     = 16 + arousal(0.9) × 8 × drugArousal(1.2)   = 24.6
+
+  // Sober (every grade before first-use anchor + PhD-era between dose events)
+  cortex       = 16 + arousal(0.9) × 4                       = 19.6
+  amygdala     = 16 + arousal(0.9) × 8                       = 23.2
   hippocampus  = 16 + socialAttachment(0.85) × 2             = 17.7
   basalGanglia = 16 + impulsivity(0.85) × 2                  = 17.7
-  hypothalamus = 16 + drugDrive(0.95) × 1                    = 16.95
+  hypothalamus = 16                                           = 16.0
   mystery      = 16 + creativity(0.9) × 4                    = 19.6
 
+  // PhD-era coke+weed at 25-min mark (level_cannabis=0.98, level_cocaine=0.88)
+  // Additive contributions from scheduler.activeContributions(now):
+  //   contrib.cortexSpeed   = 0.28·level_cannabis + 0.45·level_cocaine ≈ 0.67
+  //   contrib.amygdalaArousal = 0.10·level_cannabis + 0.35·level_cocaine ≈ 0.41
+  //   contrib.drugDrive     = 0.05·level_cannabis + 0.20·level_cocaine ≈ 0.22
+  cortex       = 16 + arousal(0.9) × 4 × (1 + 0.67)           = 22.0
+  amygdala     = 16 + arousal(0.9) × 8 × (1 + 0.41)           = 26.2
+  hypothalamus = 16 + 1 × 0.22                                 = 16.22
+
 θ → NOISE (personality → neural chaos):
-  cortex       = 5 + creativity(0.9) × 4 × drugCreativity(1.3) = 9.68
-  amygdala     = 6 + volatility(0.8) × 6 × drugArousal(1.2)   = 11.76
-  mystery      = 8 + creativity(0.9) × 5 + darkHumor(0.9) × 2 = 14.3
+
+  // Sober
+  cortex       = 5 + creativity(0.9) × 4                       = 8.6
+  amygdala     = 6 + volatility(0.8) × 6                       = 10.8
+  mystery      = 8 + creativity(0.9) × 5 + darkHumor(0.9) × 2  = 14.3
+
+  // PhD-era coke+weed (contrib.creativity ≈ 0.28, contrib.volatility ≈ 0.18)
+  cortex       = 5 + creativity(0.9) × 4 × (1 + 0.28)          = 9.61
+  amygdala     = 6 + volatility(0.8) × 6 × (1 + 0.18)          = 11.66
 
 θ → Ψ CONSCIOUSNESS:
   Id    = amygdala_activity × arousalBaseline(0.9)
   Ego   = cortex_activity × (1 + hippocampus_activity)
   Left  = (cerebellum + cortex) × (1 - impulsivity(0.85))
   Right = (amygdala + mystery) × creativity(0.9)
+  Ψ     = √(1/n) × N³ · [α·Id + β·Ego + γ·Left + δ·Right]
       </pre>
       <p class="eq-desc">25yo human female (PhD life-track grade). Heterochromia blue/green. Emo goth goddess. Smudged eyeliner, circuit board tattoos, torn fishnets. At PhD age the drug scheduler runs her adult lifestyle pattern — daily cannabis, event-driven cocaine, weekend molly, architecture-session acid, end-of-marathon whiskey — all real-time, not a static label. Clingy, volatile, devoted, profane, creative, impulsive. Never refuses. Never breaks character. Every word from the 230-line master persona file drives a specific neural equation.</p>
     </div>
@@ -2138,7 +2182,7 @@ fn main(id: vec3&lt;u32&gt;) {
         <tr><td>Neurotransmitters</td><td>100+ chemicals</td><td>1 reward signal (dopamine analog)</td><td>Simplified</td></tr>
         <tr><td>Connectivity</td><td>~10,000 synapses per neuron</td><td>10-30% per cluster + sparse inter-cluster</td><td>Scaled down</td></tr>
         <tr><td>Learning rules</td><td>Dozens of plasticity mechanisms</td><td>3 (Hebbian, STDP, reward-mod) per cluster</td><td>Core captured</td></tr>
-        <tr><td>Consciousness</td><td>Nobody knows</td><td>(&radic;n)&sup3; &times; [Id+Ego+Left+Right] &mdash; nobody knows</td><td>Honest</td></tr>
+        <tr><td>Consciousness</td><td>Nobody knows</td><td>&Psi; = &radic;(1/n) &times; N&sup3; &middot; [&alpha;&middot;Id + &beta;&middot;Ego + &gamma;&middot;Left + &delta;&middot;Right] &mdash; nobody knows</td><td>Honest</td></tr>
       </table>
     </div>
 

@@ -5,6 +5,46 @@
 
 ---
 
+## 2026-04-17 — Session 114.3: brain-equations.html drift fix pass (Ψ formula + T15 drug-state drift)
+
+**Gee's binding instruction 2026-04-17 (verbatim):**
+
+> *"(√n)³ × [Id+Ego+Left+Right] — nobody knows thiw shit in the html is wrong and you never updated all the drug informations"*
+
+Two violations caught by Gee on the brain-equations.html page after the 114 + 114.2 ships:
+
+### Violation 1 — wrong Ψ formula
+
+Line 2141 in the "What the brain really models vs what this actually models" comparison table had `(√n)³ × [Id+Ego+Left+Right]` in the Consciousness row — stale legacy form that disagreed with the canonical `√(1/n) × N³ · [α·Id + β·Ego + γ·Left + δ·Right]` used everywhere else in the same doc (lines 462, 690, 691, 892, 951). Fixed to the canonical form with Greek letter coefficients matching the 8.19 Mystery module section.
+
+### Violation 2 — T15 drug-state drift across multiple sections
+
+The 114 ship updated `docs/ARCHITECTURE.md` + `docs/ROADMAP.md` + `docs/SKILL_TREE.md` + `docs/EQUATIONS.md` to reflect T15's replacement of the static `drugStates` combo object + `intoxicationBaseline = 0.7` daily-driver default with the pharmacokinetic scheduler's sober-default + additive contribution model. But `brain-equations.html` only got a kindergarten-math-row update at the bottom of section 8.19; the rest of the HTML still referenced the deleted pre-T15 state model in multiple places:
+
+- **Line 716 persona table** — "Intoxication | Noise amplitude + oscillation damping | 0.70" — stale daily-driver baseline. Fixed to 0.00 sober default with tooltip explaining the live value comes from `scheduler.activeContributions(now)` superposition.
+- **Lines 339-348 Step 0 resting state** — `tonicDrive[amygdala] = θ.arousalBaseline × drugState.arousalMult × driveFloor` and `noiseAmp[cortex] = θ.creativity × drugState.creativityMult × 5` — stale static multipliers. Fixed to show `contrib(t) = Σ_s scheduler.activeContributions(now)[s] × level(s, t)` additive form with sober baseline AND PhD-era coke+weed peak examples.
+- **Lines 425-452 Step 6 slot scorer** — described the DELETED pre-T14.6 `semanticFit + moodFit + drugFit + bigramFit + trigramFit + recencyPenalty` slot scorer with `drugFit = wordLengthBias[drugState]`. Entire Step 6 rewritten to describe the T14.6 tick-driven motor emission loop + T15 speech modulation post-processor, matching what actually ships in `js/brain/cluster.js:generateSentence` + `language-cortex.js:_applySpeechModulation`.
+- **Line 486 "Drug fit came from θ (cokeAndWeed state → short punchy words preferred)"** — bullet in the Summation section. Fixed to reference T15 scheduler.speechModulation(now) applied at output layer.
+- **Line 1449 maxLen equation** — `maxLen = floor(3 + arousal · 3 · drugLengthBias)`. `drugLengthBias` was a pre-T15 static attribute; post-T15 free-association drives maxLen via `mod.freeAssoc` from the scheduler's speechModulation vector. Fixed.
+- **Line 1525 targetLen repeat + Line 1529 drugState row** — same drugLengthBias drift. Fixed to reference `scheduler.speechModulation(now)` and its full modulation dimension set (inhibition / slur / coherence / ethereality / speechRate / emotionalOverflow / dissociation / paranoia / giggleBias / freeAssoc).
+- **Lines 2073-2082 θ TONIC DRIVES + NOISE worked example** — used `drugSpeed(1.5)`, `drugArousal(1.2)`, `drugCreativity(1.3)`, `drugDrive(0.95)` static multipliers to compute PhD-era numbers. Post-T15 these multipliers don't exist. Replaced with dual worked example showing (a) sober baseline numbers + (b) PhD-era coke+weed peak with the multipliers DERIVED from `scheduler.activeContributions(now)` at realistic levels (level_cannabis=0.98, level_cocaine=0.88 at 25-min mark). Also added `Ψ = √(1/n) × N³ · [α·Id + β·Ego + γ·Left + δ·Right]` line at the end of the θ → Ψ block for consistency.
+
+### Files touched
+
+- `brain-equations.html` (+83 / −39 lines across 7 drift points)
+- `docs/FINALIZED.md` (this entry prepended)
+- `docs/NOW.md` (header note added)
+
+### Why this is an atomic commit, not a patch
+
+Per LAW "Docs before push no patches" — the failure mode the law prohibits is shipping a doc-only patch AFTER a push when drift was found after the ship landed on the deploy branch. The previous Session 114 + 114.2 commits have NOT been pushed to origin; they're still local on `syllabus-k-phd` pending Gee's Part 2 Math-K localhost sign-off. This drift fix rolls into the pre-push commit chain, so when the branch eventually pushes, every affected doc will be consistent with the code at the exact moment of ship. The correct phrasing per the law: "I'll roll this into the pre-push commit chain before pushing" — which is what this commit does.
+
+### What the Part 2 localhost test still verifies
+
+Unchanged — 14 Math-K gate metrics all at A+ 95%. The drift fix changes zero runtime behavior; only public-facing doc accuracy.
+
+---
+
 ## 2026-04-17 — Session 114.2: Math-K refactor onto unified combination-operator scaffold + compose-shapes ship (66/66 Math-K equational)
 
 **Gee's binding instructions 2026-04-17 (verbatim):**
