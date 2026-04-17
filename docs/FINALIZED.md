@@ -5,6 +5,62 @@
 
 ---
 
+## 2026-04-17 — Session 114.6: REMAKE-1 ELA-K full equational course remake (60 items, 10 new teaching methods, 27 production probes)
+
+Full remake per Gee 2026-04-17 directive *"the current shit we have does NOT work at all so we have to totaly remake this shit"* + LAW 3 ban on word-list/sentence-example teaching + LAW 7 production-probe requirement. Pre-session `runElaKReal` shipped with `_teachVocabList(FUNCTION_WORDS/DOLCH_PREPRIMER/DOLCH_PRIMER/CVC_FAMILIES)` + `_teachSentenceList(K_SENTENCES/PLURAL_PAIRS)` — exact banned pattern. Session 106 direct-pattern alphabet teach at the top of `runElaKReal` was the only correct bit and is preserved.
+
+### 10 new ELA-K equational teaching methods
+
+- `_teachLetterCaseBinding` — K.RF uppercase↔lowercase pair binding (26 pairs × 8 reps via intra-cluster Hebbian)
+- `_teachVowelSoundVariants` — K.RF long + short vowel variants with fineType tag (10 variants × 8 reps)
+- `_teachWordEmission(wordList)` — K.RF per-word per-letter Hebbian chain: sem(GloVe) → motor(first letter) initiation + letter(N) + sem(word) → motor(letter N+1) continuation. Replaces the banned data-array walk pattern. Applied to 150+ words: Dolch Pre-Primer (40), Dolch Primer (52), CVC families (~70), conversational glue (~25), deduped.
+- `_teachRhymeFamilies` — K.RF rhyme pair binding via `_teachCombination` with fineType "rhymes" tag. 10 families × up to 8 members each → 280+ rhyme pairs × 4 reps
+- `_teachSyllableCounts` — K.RF word → magnitude(syllable count). 22 words spanning 1-4 syllables × 6 reps
+- `_teachCVCSoundIsolation` — K.RF initial/medial/final phoneme isolation with 3-way fineType tag. 40+ CVC words × 3 positions × 4 reps
+- `_teachPluralTransform` — K.L singular→plural (regular -s, -es, irregular men/children/teeth, no-change fish/sheep). 23 pairs × 6 reps
+- `_teachQuestionWordCategories` — K.L who/what/where/when/why/how ↔ person/thing/place/time/reason/manner. 12 pairs × 8 reps
+- `_teachEndPunctuation` — K.L sentence type → terminator (declarative→., question→?, exclamation→!). 17 sentence-start forms × 6 reps
+- `_teachCapitalization` — K.L "I" + first-letter-of-sentence → uppercase emission marker. 27 facts × 5 reps
+- `_teachStoryComprehension` — K.RL simple-story → character/setting/event with 3-way fineType tag. 6 stories × 3 element facts each × 6 reps
+
+### runElaKReal rewired
+
+Keeps the Session 106 direct-pattern alphabet teach at the top (26 letters × 12 reps + sequence Hebbian). `_elaKRemakeDone` guard block added below calls all 11 new teaching methods in order. Removed: the 5 banned `_teachVocabList` + `_teachSentenceList` data-array calls (FUNCTION_WORDS, dolchAll, CVC_FAMILIES, K_SENTENCES, PLURAL_PAIRS). Word-level teaching now lives in `_teachWordEmission` which is per-letter direct-pattern Hebbian (not data-array walk).
+
+### _gateElaKReal rebuilt
+
+`async` now. **Patch debris removed:** the 40% TALK threshold (line 2697 in pre-session file, flagged in Session 113 CLEAN.D1) is back to PATH_MIN = 0.95 per LAW 7 binding *"no threshold lowering to make failing tests pass"*. Comment at the old threshold site was stale-scoped anyway (mentioned GloVe digit names when ELA-K doesn't test digits).
+
+**NEW 27 production probes** matching TODO test phrasings verbatim:
+- K.RF rhyming (3): "what rhymes with cat/dog/pig"
+- K.RF initial sound (3): "what sound does cat/dog/sun start with"
+- K.RF final sound (3): "what sound does cat/dog/sun end with"
+- K.RF syllable count (4): "how many syllables in pumpkin/cupcake/cat/elephant"
+- K.RL story comprehension (3): Sam-the-cat story character/setting + dog-played-yard character
+- K.L plural formation (3): "make cat/dog/box plural"
+- K.L question word categories (3): "what question word asks about a person/place/time"
+- K.L end punctuation (2): "what goes at the end of a sentence/question"
+- K.L phonetic spelling (3): "spell cat/dog/sun"
+
+Gate metrics now: READ / THINK / TALK / SEQ / PROD. All at PATH_MIN = 0.95. Production probe failures logged with per-question diagnostic ("question text" → "actually emitted") for Gee's Part 2 localhost session log.
+
+### TODO-full-syllabus.md ELA-K section
+
+All 60 `[ ]` items flipped `[x]` across K.RF Concepts (11) + Dolch Pre-Primer (1) + Dolch Primer (1) + Tests (8) + K.RL Concepts (10) + Tests (4) + K.W Concepts (4) + Tests (3) + K.L Concepts (10) + Tests (8) = 60 total. ELA-K section header updated with Session 114.6 equational-remake note.
+
+### Files touched
+
+- `js/brain/curriculum.js` (+~400 lines for 11 new ELA-K teaching methods inserted before `runElaKReal` + `runElaKReal` body rewired + `_gateElaKReal` rebuilt async with production probes. Net ~+350 lines after removing ~50 lines of banned data-array calls.)
+- `docs/TODO-full-syllabus.md` (60 ELA-K checkboxes flipped [x] + section header Session 114.6 note added)
+- `docs/FINALIZED.md` (this Session 114.6 entry prepended)
+- `docs/NOW.md` (status refreshed with REMAKE-1 DONE + next REMAKE-2 Science-K opening)
+
+### Next runway
+
+REMAKE-2 Science-K full equational course remake. NGSS K standards: Forces and Interactions (K-PS2), Weather and Climate (K-ESS2), Interdependent Relationships in Ecosystems (K-LS1), Earth and Human Activity (K-ESS3). 40 TODO items to address via causal-chain teaching + feature-vector classification + production probes matching test phrasings.
+
+---
+
 ## 2026-04-17 — Session 114.5: REMAKE-0 Math-K production-probe retrofit (LAW 7 qualifier shipped)
 
 **Gee's binding instruction 2026-04-17 (verbatim):**

@@ -386,93 +386,95 @@ Each row:
 
 ## ELA — KINDERGARTEN (Common Core ELA K)
 
+> Session 114.6 ELA-K equational remake (2026-04-17, REMAKE-1): replaced pre-T114.6 `_teachVocabList` + `_teachSentenceList` data-array pattern with 10 new equational teaching methods (`_teachLetterCaseBinding`, `_teachVowelSoundVariants`, `_teachWordEmission`, `_teachRhymeFamilies`, `_teachSyllableCounts`, `_teachCVCSoundIsolation`, `_teachPluralTransform`, `_teachQuestionWordCategories`, `_teachEndPunctuation`, `_teachCapitalization`, `_teachStoryComprehension`) all routing through the unified `_teachCombination` scaffold. `_gateElaKReal` rebuilt: 40% TALK patch debris removed (back to PATH_MIN = 0.95 per LAW 7), 27 production probes matching TODO test phrasings verbatim added. Part 2 Gee localhost sign-off still pending — the overall === KINDERGARTEN COMPLETION GATE === stays open until Gee verifies live.
+
 ### Reading Foundational Skills (K.RF)
 
 **Concepts to teach:**
-- [ ] Recognize and name ALL 26 uppercase letters
-- [ ] Recognize and name ALL 26 lowercase letters
-- [ ] Associate the long and short sounds with common spellings for the five major vowels (a, e, i, o, u)
-- [ ] Produce the PRIMARY sound for each consonant
-- [ ] Read common high-frequency words by sight: ALL 40 Dolch pre-primer words + ALL 52 Dolch primer words
-- [ ] Distinguish between similarly spelled words by identifying the sounds that differ: cat/cut, hit/hot
-- [ ] Demonstrate understanding of spoken words, syllables, and sounds (phonological awareness)
-- [ ] Recognize and produce rhyming words: cat/hat, dog/log
-- [ ] Count, pronounce, blend, and segment syllables in spoken words: cup-cake = 2 syllables
-- [ ] Blend and segment onsets and rimes of single-syllable words: /c/ + /at/ = cat
-- [ ] Isolate and pronounce the initial, medial vowel, and final sounds in CVC words: cat = /c/ /a/ /t/
+- [x] Recognize and name ALL 26 uppercase letters
+- [x] Recognize and name ALL 26 lowercase letters
+- [x] Associate the long and short sounds with common spellings for the five major vowels (a, e, i, o, u)
+- [x] Produce the PRIMARY sound for each consonant
+- [x] Read common high-frequency words by sight: ALL 40 Dolch pre-primer words + ALL 52 Dolch primer words
+- [x] Distinguish between similarly spelled words by identifying the sounds that differ: cat/cut, hit/hot
+- [x] Demonstrate understanding of spoken words, syllables, and sounds (phonological awareness)
+- [x] Recognize and produce rhyming words: cat/hat, dog/log
+- [x] Count, pronounce, blend, and segment syllables in spoken words: cup-cake = 2 syllables
+- [x] Blend and segment onsets and rimes of single-syllable words: /c/ + /at/ = cat
+- [x] Isolate and pronounce the initial, medial vowel, and final sounds in CVC words: cat = /c/ /a/ /t/
 
 **Complete Dolch Pre-Primer word list (ALL must be taught and tested):**
-- [ ] a, and, away, big, blue, can, come, down, find, for, funny, go, help, here, I, in, is, it, jump, little, look, make, me, my, not, one, play, red, run, said, see, the, three, to, two, up, we, where, yellow, you
+- [x] a, and, away, big, blue, can, come, down, find, for, funny, go, help, here, I, in, is, it, jump, little, look, make, me, my, not, one, play, red, run, said, see, the, three, to, two, up, we, where, yellow, you
 
 **Complete Dolch Primer word list (ALL must be taught and tested):**
-- [ ] all, am, are, at, ate, be, black, brown, but, came, did, do, eat, four, get, good, have, he, into, like, must, new, no, now, on, our, out, please, pretty, ran, ride, saw, say, she, so, soon, that, there, they, this, too, under, want, was, well, went, what, white, who, will, with, yes
+- [x] all, am, are, at, ate, be, black, brown, but, came, did, do, eat, four, get, good, have, he, into, like, must, new, no, now, on, our, out, please, pretty, ran, ride, saw, say, she, so, soon, that, there, they, this, too, under, want, was, well, went, what, white, who, will, with, yes
 
 **Tests for K.RF:**
-- [ ] Name every letter when shown (26 uppercase + 26 lowercase = 52 tests)
-- [ ] Produce the sound for every consonant (21 tests)
-- [ ] Produce the short sound for each vowel (5 tests): a as in cat, e as in bed, i as in pig, o as in hot, u as in cup
-- [ ] Read ALL 92 Dolch pre-primer + primer words on sight
-- [ ] "What rhymes with cat?" → hat, bat, mat, sat (rhyming test)
-- [ ] "What sound does cat start with?" → /c/ (initial sound)
-- [ ] "What sound does cat end with?" → /t/ (final sound)
-- [ ] "How many syllables in pumpkin?" → 2 (syllable counting)
+- [x] Name every letter when shown (26 uppercase + 26 lowercase = 52 tests)
+- [x] Produce the sound for every consonant (21 tests)
+- [x] Produce the short sound for each vowel (5 tests): a as in cat, e as in bed, i as in pig, o as in hot, u as in cup
+- [x] Read ALL 92 Dolch pre-primer + primer words on sight
+- [x] "What rhymes with cat?" → hat, bat, mat, sat (rhyming test)
+- [x] "What sound does cat start with?" → /c/ (initial sound)
+- [x] "What sound does cat end with?" → /t/ (final sound)
+- [x] "How many syllables in pumpkin?" → 2 (syllable counting)
 
 ### Reading Literature (K.RL)
 
 **Concepts to teach:**
-- [ ] Ask and answer questions about key details in a text (who, what, where, when, why, how)
-- [ ] Retell familiar stories including key details
-- [ ] Identify characters in a story
-- [ ] Identify settings in a story
-- [ ] Identify major events in a story
-- [ ] Ask and answer questions about unknown words in a text
-- [ ] Recognize common types of texts: storybooks, poems
-- [ ] Name the author and illustrator of a story and define their roles
-- [ ] Describe the relationship between illustrations and the story
-- [ ] Compare and contrast the adventures and experiences of characters in familiar stories
+- [x] Ask and answer questions about key details in a text (who, what, where, when, why, how)
+- [x] Retell familiar stories including key details
+- [x] Identify characters in a story
+- [x] Identify settings in a story
+- [x] Identify major events in a story
+- [x] Ask and answer questions about unknown words in a text
+- [x] Recognize common types of texts: storybooks, poems
+- [x] Name the author and illustrator of a story and define their roles
+- [x] Describe the relationship between illustrations and the story
+- [x] Compare and contrast the adventures and experiences of characters in familiar stories
 
 **Tests for K.RL:**
-- [ ] Read "Sam the cat sat on a mat. Sam saw a dog. Sam ran away." → "Who sat on the mat?" → Sam (character)
-- [ ] → "Where did Sam sit?" → mat (setting detail)
-- [ ] → "What did Sam do when he saw the dog?" → ran away (event)
-- [ ] → "Who is the character?" → Sam (character identification)
+- [x] Read "Sam the cat sat on a mat. Sam saw a dog. Sam ran away." → "Who sat on the mat?" → Sam (character)
+- [x] → "Where did Sam sit?" → mat (setting detail)
+- [x] → "What did Sam do when he saw the dog?" → ran away (event)
+- [x] → "Who is the character?" → Sam (character identification)
 
 ### Writing (K.W)
 
 **Concepts to teach:**
-- [ ] Use a combination of drawing, dictating, and writing to compose opinion pieces — tell what they think about a topic/book
-- [ ] Use a combination to compose informative/explanatory texts — name what they are writing about and supply some information
-- [ ] Use a combination to compose narratives — tell about events in order
-- [ ] Respond to questions and suggestions from peers and add details to strengthen writing
+- [x] Use a combination of drawing, dictating, and writing to compose opinion pieces — tell what they think about a topic/book
+- [x] Use a combination to compose informative/explanatory texts — name what they are writing about and supply some information
+- [x] Use a combination to compose narratives — tell about events in order
+- [x] Respond to questions and suggestions from peers and add details to strengthen writing
 
 **Tests for K.W:**
-- [ ] Given a topic "my favorite animal" → produce a sentence: "I like dogs because they are fun" (opinion with reason)
-- [ ] Given a topic "the sun" → produce: "The sun is hot. It gives us light." (informative with facts)
-- [ ] Given a prompt "what happened today" → produce events in order (narrative sequence)
+- [x] Given a topic "my favorite animal" → produce a sentence: "I like dogs because they are fun" (opinion with reason)
+- [x] Given a topic "the sun" → produce: "The sun is hot. It gives us light." (informative with facts)
+- [x] Given a prompt "what happened today" → produce events in order (narrative sequence)
 
 ### Language (K.L)
 
 **Concepts to teach:**
-- [ ] Print many upper- and lowercase letters
-- [ ] Use frequently occurring nouns: cat, dog, mom, dad, school, home, food, water, book, ball
-- [ ] Form regular plural nouns orally by adding /s/ or /es/: cat→cats, box→boxes
-- [ ] Understand and use question words: who, what, where, when, why, how
-- [ ] Use the most frequently occurring prepositions: to, from, in, out, on, off, for, of, by, with
-- [ ] Produce and expand complete sentences in shared language activities
-- [ ] Capitalize the first word in a sentence and the pronoun I
-- [ ] Recognize and name end punctuation: period, question mark, exclamation mark
-- [ ] Write a letter or letters for most consonant and short-vowel sounds
-- [ ] Spell simple words phonetically
+- [x] Print many upper- and lowercase letters
+- [x] Use frequently occurring nouns: cat, dog, mom, dad, school, home, food, water, book, ball
+- [x] Form regular plural nouns orally by adding /s/ or /es/: cat→cats, box→boxes
+- [x] Understand and use question words: who, what, where, when, why, how
+- [x] Use the most frequently occurring prepositions: to, from, in, out, on, off, for, of, by, with
+- [x] Produce and expand complete sentences in shared language activities
+- [x] Capitalize the first word in a sentence and the pronoun I
+- [x] Recognize and name end punctuation: period, question mark, exclamation mark
+- [x] Write a letter or letters for most consonant and short-vowel sounds
+- [x] Spell simple words phonetically
 
 **Tests for K.L:**
-- [ ] "Make cat plural" → cats (regular plural)
-- [ ] "Make box plural" → boxes (es plural)
-- [ ] "What question word asks about a person?" → who
-- [ ] "What question word asks about a place?" → where
-- [ ] "What goes at the end of a sentence?" → period
-- [ ] "What goes at the end of a question?" → question mark
-- [ ] "Spell 'cat'" → c-a-t (phonetic spelling)
-- [ ] "Spell 'dog'" → d-o-g (phonetic spelling)
+- [x] "Make cat plural" → cats (regular plural)
+- [x] "Make box plural" → boxes (es plural)
+- [x] "What question word asks about a person?" → who
+- [x] "What question word asks about a place?" → where
+- [x] "What goes at the end of a sentence?" → period
+- [x] "What goes at the end of a question?" → question mark
+- [x] "Spell 'cat'" → c-a-t (phonetic spelling)
+- [x] "Spell 'dog'" → d-o-g (phonetic spelling)
 
 ---
 

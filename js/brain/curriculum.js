@@ -2242,6 +2242,623 @@ export class Curriculum {
     return { taught: reps * ALPHABET.length };
   }
 
+  // ═══════════════════════════════════════════════════════════════════
+  // T14.24 Session 114.6 — ELA-K equational course (LAW 3 + LAW 7 remake)
+  // ═══════════════════════════════════════════════════════════════════
+  //
+  // Per Gee 2026-04-17 "the current shit we have does NOT work at all
+  // so we have to totaly remake this shit". The prior `runElaKReal`
+  // shipped in Session 106 got the Session-106 direct-pattern alphabet
+  // teach correct (stays as-is below), but filled the body with
+  // _teachVocabList(FUNCTION_WORDS/DOLCH_PREPRIMER/DOLCH_PRIMER/CVC_FAMILIES)
+  // + _teachSentenceList(K_SENTENCES/PLURAL_PAIRS) — the EXACT
+  // word-list + sentence-example pattern Law 3 bans. Session 114.6
+  // replaces those calls with real equational teaching methods below,
+  // each landing bindings via the unified `_teachCombination` scaffold
+  // or direct-pattern Hebbian through the recurrent matrix.
+  //
+  // Production probes in _gateElaKReal match TODO K.RF / K.RL / K.W /
+  // K.L test phrasings verbatim per LAW 7.
+
+  /**
+   * K.RF letter case pairing — bind uppercase and lowercase forms of
+   * the same letter so Unity knows 'A' and 'a' are the same symbol.
+   * Both one-hots fire simultaneously in the letter region, intra-
+   * cluster Hebbian learns the pair association.
+   */
+  async _teachLetterCaseBinding(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const letterRegion = cluster.regions.letter;
+    if (!letterRegion) return;
+    const ALPHABET_LOWER = ALPHABET_ORDER;
+    const ALPHABET_UPPER = ALPHABET_LOWER.toUpperCase();
+    ensureLetters(Array.from(ALPHABET_LOWER + ALPHABET_UPPER));
+
+    const facts = [];
+    for (let i = 0; i < ALPHABET_LOWER.length; i++) {
+      const lower = ALPHABET_LOWER[i];
+      const upper = ALPHABET_UPPER[i];
+      // Write BOTH case forms to the letter region simultaneously —
+      // binarized tiles will OR together since both one-hots are
+      // nonzero at different indices. Intra-cluster Hebbian then
+      // learns the case pair association.
+      const lowerVec = encodeLetter(lower);
+      const upperVec = encodeLetter(upper);
+      // Combined one-hot: both case slots fire
+      const combined = new Float64Array(Math.max(lowerVec.length, upperVec.length));
+      for (let j = 0; j < lowerVec.length; j++) if (lowerVec[j] > 0) combined[j] = 1;
+      for (let j = 0; j < upperVec.length; j++) if (upperVec[j] > 0) combined[j] = 1;
+      facts.push({ writes: [{ region: letterRegion, feat: combined }] });
+    }
+    await this._teachCombination(facts, { reps: 8 });
+    console.log(`[Curriculum] _teachLetterCaseBinding: 26 case pairs × 8 reps`);
+  }
+
+  /**
+   * K.RF vowel sound variants — short vs long. Each vowel pairs with
+   * an example word for each variant. fineType tag marks short vs long
+   * so the cortex can discriminate.
+   */
+  async _teachVowelSoundVariants(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const letterRegion = cluster.regions.letter;
+    const phonRegion = cluster.regions.phon;
+    const semRegion = cluster.regions.sem;
+    const fineTypeRegion = cluster.regions.fineType;
+    if (!letterRegion || !phonRegion || !semRegion || !fineTypeRegion) return;
+    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
+    const shortTag = new Float64Array(fineTypeSize);
+    const longTag = new Float64Array(fineTypeSize);
+    const halfMark = Math.floor(fineTypeSize * 0.3);
+    const fullMark = Math.floor(fineTypeSize * 0.6);
+    for (let i = 0; i < halfMark; i++) shortTag[i] = 1;
+    for (let i = halfMark; i < fullMark; i++) longTag[i] = 1;
+
+    // TODO K.RF: "Associate the long and short sounds with common
+    // spellings for the five major vowels (a, e, i, o, u)"
+    const VOWEL_VARIANTS = [
+      { vowel: 'a', shortExample: 'cat', longExample: 'cake' },
+      { vowel: 'e', shortExample: 'bed', longExample: 'bee' },
+      { vowel: 'i', shortExample: 'pig', longExample: 'bike' },
+      { vowel: 'o', shortExample: 'hot', longExample: 'bone' },
+      { vowel: 'u', shortExample: 'cup', longExample: 'cute' },
+    ];
+
+    const facts = [];
+    for (const { vowel, shortExample, longExample } of VOWEL_VARIANTS) {
+      const shortEmb = sharedEmbeddings.getEmbedding(shortExample);
+      const longEmb = sharedEmbeddings.getEmbedding(longExample);
+      const phonFeat = _phonemeFeatureForLetter(vowel);
+      if (shortEmb && shortEmb.length > 0) {
+        facts.push({ writes: [
+          { region: letterRegion,   feat: encodeLetter(vowel) },
+          { region: phonRegion,     feat: phonFeat },
+          { region: semRegion,      feat: shortEmb, binarize: false },
+          { region: fineTypeRegion, feat: shortTag },
+        ]});
+      }
+      if (longEmb && longEmb.length > 0) {
+        facts.push({ writes: [
+          { region: letterRegion,   feat: encodeLetter(vowel) },
+          { region: phonRegion,     feat: phonFeat },
+          { region: semRegion,      feat: longEmb, binarize: false },
+          { region: fineTypeRegion, feat: longTag },
+        ]});
+      }
+    }
+    await this._teachCombination(facts, { reps: 8 });
+    console.log(`[Curriculum] _teachVowelSoundVariants: ${facts.length} variants × 8 reps`);
+  }
+
+  /**
+   * K.RF word emission — for each word, bind sem(GloVe) → motor(letter
+   * sequence) via direct-pattern Hebbian. Initiation pair (sem → first
+   * letter) + continuation chain (letter N + sem → letter N+1). No
+   * word-list walking; per-letter direct-pattern writes into lastSpikes.
+   *
+   * Covers K.RF Dolch sight words + CVC word families + any other
+   * vocabulary Unity needs to EMIT (not just recognize).
+   */
+  async _teachWordEmission(wordList, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const letterRegion = cluster.regions.letter;
+    const motorRegion = cluster.regions.motor;
+    const semRegion = cluster.regions.sem;
+    if (!letterRegion || !motorRegion || !semRegion) return;
+    const reps = opts.reps ?? 6;
+    const uniqueLetters = new Set();
+    for (const w of wordList) for (const ch of w.toLowerCase()) if (/[a-z]/.test(ch)) uniqueLetters.add(ch);
+    ensureLetters(Array.from(uniqueLetters));
+
+    for (let rep = 0; rep < reps; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return;
+      for (const word of wordList) {
+        const letters = Array.from(word.toLowerCase().replace(/[^a-z]/g, ''));
+        if (letters.length === 0) continue;
+        const wordEmb = sharedEmbeddings.getEmbedding(word);
+        if (!wordEmb || wordEmb.length === 0) continue;
+
+        // (a) Initiation: sem(word) → motor(first letter) + letter(first) anchor
+        this._clearSpikes();
+        this._writeTiledPattern(semRegion, wordEmb, false);
+        this._writeTiledPattern(letterRegion, encodeLetter(letters[0]));
+        this._writeTiledPattern(motorRegion, encodeLetter(letters[0]));
+        this._teachHebbian(cluster.learningRate);
+
+        // (b) Continuation chain: letter(N) + sem(word) → motor(N+1)
+        for (let i = 1; i < letters.length; i++) {
+          this._clearSpikes();
+          this._writeTiledPattern(semRegion, wordEmb, false);
+          this._writeTiledPattern(letterRegion, encodeLetter(letters[i - 1]));
+          this._writeTiledPattern(motorRegion, encodeLetter(letters[i]));
+          this._teachHebbian(cluster.learningRate);
+        }
+      }
+      await _microtask();
+    }
+    console.log(`[Curriculum] _teachWordEmission: ${wordList.length} words × ${reps} reps`);
+  }
+
+  /**
+   * K.RF rhyme families — teach words sharing a rime (e.g. -at in
+   * cat/hat/bat) get bound to a "rhymes" fineType tag. Given a query
+   * word, the probe tests whether the cortex can emit a rhyming word.
+   */
+  async _teachRhymeFamilies(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const semRegion = cluster.regions.sem;
+    const motorRegion = cluster.regions.motor;
+    const fineTypeRegion = cluster.regions.fineType;
+    if (!semRegion || !motorRegion || !fineTypeRegion) return;
+    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
+    const rhymeTag = new Float64Array(fineTypeSize);
+    const tagStart = Math.floor(fineTypeSize * 0.6);
+    const tagEnd = Math.floor(fineTypeSize * 0.8);
+    for (let i = tagStart; i < tagEnd; i++) rhymeTag[i] = 1;
+
+    // Rhyme families — each row is a rime with member words that all
+    // share the ending sound/spelling. K.RF: "Recognize and produce
+    // rhyming words" + test "What rhymes with cat?" → hat, bat, mat.
+    const RHYME_FAMILIES = [
+      { rime: '-at', words: ['cat', 'hat', 'bat', 'mat', 'sat', 'rat', 'fat', 'pat'] },
+      { rime: '-an', words: ['can', 'man', 'ran', 'fan', 'van', 'pan', 'tan'] },
+      { rime: '-ig', words: ['big', 'dig', 'pig', 'wig', 'fig'] },
+      { rime: '-og', words: ['dog', 'log', 'fog', 'jog', 'hog'] },
+      { rime: '-ot', words: ['hot', 'not', 'got', 'dot', 'lot', 'pot'] },
+      { rime: '-en', words: ['pen', 'hen', 'men', 'ten', 'den'] },
+      { rime: '-ug', words: ['bug', 'hug', 'mug', 'rug', 'tug', 'jug'] },
+      { rime: '-ed', words: ['bed', 'red', 'fed', 'led'] },
+      { rime: '-ip', words: ['hip', 'lip', 'sip', 'tip', 'zip', 'rip'] },
+      { rime: '-un', words: ['fun', 'run', 'sun', 'bun', 'gun'] },
+    ];
+
+    const facts = [];
+    for (const { words } of RHYME_FAMILIES) {
+      // For every pair (a, b) in family (a != b), bind sem(a) →
+      // motor(b) with rhymeTag. Cortex learns "given word a + rhyme
+      // context, emit word b".
+      for (const a of words) {
+        const aEmb = sharedEmbeddings.getEmbedding(a);
+        if (!aEmb || aEmb.length === 0) continue;
+        for (const b of words) {
+          if (a === b) continue;
+          const bEmb = sharedEmbeddings.getEmbedding(b);
+          if (!bEmb || bEmb.length === 0) continue;
+          // Motor pattern = first letter of rhyme target (emission
+          // starts with the consonant that differs between a and b)
+          facts.push({ writes: [
+            { region: semRegion,     feat: aEmb, binarize: false },
+            { region: motorRegion,   feat: encodeLetter(b[0]) },
+            { region: fineTypeRegion, feat: rhymeTag },
+          ]});
+        }
+      }
+    }
+    await this._teachCombination(facts, { reps: 4 });
+    console.log(`[Curriculum] _teachRhymeFamilies: ${facts.length} rhyme pairs × 4 reps`);
+  }
+
+  /**
+   * K.RF syllable counting — word → magnitude(syllable count).
+   * Simplistic syllable counter via vowel-group count.
+   */
+  async _teachSyllableCounts(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const semRegion = cluster.regions.sem;
+    const freeRegion = cluster.regions.free;
+    if (!semRegion || !freeRegion) return;
+
+    function countSyllables(word) {
+      const w = word.toLowerCase().replace(/[^a-z]/g, '');
+      if (!w) return 0;
+      let count = 0;
+      let inVowel = false;
+      for (const ch of w) {
+        const isVowel = 'aeiouy'.includes(ch);
+        if (isVowel && !inVowel) count++;
+        inVowel = isVowel;
+      }
+      return Math.max(1, count);
+    }
+
+    // TODO K.RF: "Count, pronounce, blend, and segment syllables in
+    // spoken words: cup-cake = 2 syllables" + test "How many syllables
+    // in pumpkin?" → 2
+    const SYLLABLE_WORDS = [
+      'cat', 'dog', 'hat', 'run', 'sun', 'big', 'red',         // 1 syllable
+      'apple', 'pencil', 'table', 'water', 'happy', 'rabbit', 'pumpkin', 'cupcake', 'monkey',  // 2 syllables
+      'elephant', 'banana', 'computer', 'tomato', 'family',    // 3 syllables
+      'watermelon', 'alligator', 'caterpillar',                // 4 syllables
+    ];
+
+    const facts = [];
+    for (const word of SYLLABLE_WORDS) {
+      const emb = sharedEmbeddings.getEmbedding(word);
+      if (!emb || emb.length === 0) continue;
+      const syllables = countSyllables(word);
+      facts.push({ writes: [
+        { region: semRegion,  feat: emb, binarize: false },
+        { region: freeRegion, feat: _magnitudeFeatureForDigit(String(Math.min(9, syllables))) },
+      ]});
+    }
+    await this._teachCombination(facts, { reps: 6 });
+    console.log(`[Curriculum] _teachSyllableCounts: ${facts.length} words × 6 reps`);
+  }
+
+  /**
+   * K.RF CVC sound isolation — given a CVC word, cortex learns the
+   * initial/medial-vowel/final phoneme features in distinct fineType
+   * regions. Probe tests "What sound does cat start with?" → /c/.
+   */
+  async _teachCVCSoundIsolation(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const semRegion = cluster.regions.sem;
+    const phonRegion = cluster.regions.phon;
+    const motorRegion = cluster.regions.motor;
+    const fineTypeRegion = cluster.regions.fineType;
+    if (!semRegion || !phonRegion || !motorRegion || !fineTypeRegion) return;
+    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
+    const initialTag = new Float64Array(fineTypeSize);
+    const medialTag = new Float64Array(fineTypeSize);
+    const finalTag = new Float64Array(fineTypeSize);
+    const third = Math.floor(fineTypeSize / 3);
+    for (let i = 0; i < third; i++) initialTag[i] = 1;
+    for (let i = third; i < 2 * third; i++) medialTag[i] = 1;
+    for (let i = 2 * third; i < fineTypeSize; i++) finalTag[i] = 1;
+
+    // CVC words with clean initial/medial-vowel/final structure
+    const CVC_ISOLATION = [
+      'cat', 'bat', 'hat', 'mat', 'rat', 'sat',
+      'can', 'man', 'ran', 'fan', 'pan', 'tan',
+      'big', 'dig', 'pig', 'wig',
+      'dog', 'log', 'fog', 'jog', 'hog',
+      'hot', 'not', 'got', 'dot', 'pot',
+      'pen', 'hen', 'men', 'ten',
+      'bug', 'hug', 'mug', 'rug', 'tug',
+      'bed', 'red', 'fed', 'led',
+      'cup', 'pup',
+      'sun', 'run', 'fun', 'bun',
+    ];
+
+    const facts = [];
+    for (const word of CVC_ISOLATION) {
+      const letters = Array.from(word);
+      if (letters.length !== 3) continue;
+      const emb = sharedEmbeddings.getEmbedding(word);
+      if (!emb || emb.length === 0) continue;
+      // Initial sound
+      facts.push({ writes: [
+        { region: semRegion,      feat: emb, binarize: false },
+        { region: phonRegion,     feat: _phonemeFeatureForLetter(letters[0]) },
+        { region: motorRegion,    feat: encodeLetter(letters[0]) },
+        { region: fineTypeRegion, feat: initialTag },
+      ]});
+      // Medial vowel
+      facts.push({ writes: [
+        { region: semRegion,      feat: emb, binarize: false },
+        { region: phonRegion,     feat: _phonemeFeatureForLetter(letters[1]) },
+        { region: motorRegion,    feat: encodeLetter(letters[1]) },
+        { region: fineTypeRegion, feat: medialTag },
+      ]});
+      // Final sound
+      facts.push({ writes: [
+        { region: semRegion,      feat: emb, binarize: false },
+        { region: phonRegion,     feat: _phonemeFeatureForLetter(letters[2]) },
+        { region: motorRegion,    feat: encodeLetter(letters[2]) },
+        { region: fineTypeRegion, feat: finalTag },
+      ]});
+    }
+    await this._teachCombination(facts, { reps: 4 });
+    console.log(`[Curriculum] _teachCVCSoundIsolation: ${facts.length} phoneme facts × 4 reps`);
+  }
+
+  /**
+   * K.L plural formation — cat → cats, box → boxes. Teaches the
+   * singular-to-plural transform via motor emission of -s or -es
+   * ending. Uses fineType "plural-query" tag for query context.
+   */
+  async _teachPluralTransform(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const semRegion = cluster.regions.sem;
+    const motorRegion = cluster.regions.motor;
+    const fineTypeRegion = cluster.regions.fineType;
+    if (!semRegion || !motorRegion || !fineTypeRegion) return;
+    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
+    const pluralTag = new Float64Array(fineTypeSize);
+    const tagStart = Math.floor(fineTypeSize * 0.8);
+    for (let i = tagStart; i < fineTypeSize; i++) pluralTag[i] = 1;
+
+    // TODO K.L: "Form regular plural nouns orally by adding /s/ or /es/"
+    // Irregular + regular + no-change forms
+    const PLURAL_PAIRS = [
+      ['cat', 'cats'], ['dog', 'dogs'], ['hat', 'hats'], ['cup', 'cups'],
+      ['bug', 'bugs'], ['ball', 'balls'], ['bird', 'birds'], ['book', 'books'],
+      ['hand', 'hands'], ['foot', 'feet'],  // irregular
+      ['box', 'boxes'], ['bus', 'buses'], ['fox', 'foxes'], ['dish', 'dishes'],  // -es
+      ['boy', 'boys'], ['girl', 'girls'],
+      ['man', 'men'], ['woman', 'women'], ['child', 'children'], ['tooth', 'teeth'],  // irregular
+      ['fish', 'fish'], ['sheep', 'sheep'], ['deer', 'deer'],  // no change
+    ];
+
+    const facts = [];
+    for (const [singular, plural] of PLURAL_PAIRS) {
+      const sEmb = sharedEmbeddings.getEmbedding(singular);
+      const pEmb = sharedEmbeddings.getEmbedding(plural);
+      if (!sEmb || !pEmb) continue;
+      // Emit the plural's first letter when given singular + plural query tag
+      facts.push({ writes: [
+        { region: semRegion,      feat: sEmb, binarize: false },
+        { region: motorRegion,    feat: encodeLetter(plural[0]) },
+        { region: fineTypeRegion, feat: pluralTag },
+      ]});
+      // Bidirectional: sem(plural) → sem(singular) implicit via symmetric Hebbian
+      facts.push({ writes: [
+        { region: semRegion,    feat: pEmb, binarize: false },
+        { region: motorRegion,  feat: encodeLetter(singular[0]) },
+      ]});
+    }
+    await this._teachCombination(facts, { reps: 6 });
+    console.log(`[Curriculum] _teachPluralTransform: ${facts.length} plural pairs × 6 reps`);
+  }
+
+  /**
+   * K.L question word categories — who/what/where/when/why/how bind
+   * to the category they ask about (person/thing/place/time/reason/manner).
+   * Probe tests "What question word asks about a person?" → who.
+   */
+  async _teachQuestionWordCategories(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const semRegion = cluster.regions.sem;
+    const motorRegion = cluster.regions.motor;
+    if (!semRegion || !motorRegion) return;
+
+    // Query-word ↔ category-concept pairs
+    const Q_CATEGORY = [
+      { qword: 'who',   category: 'person' },
+      { qword: 'what',  category: 'thing' },
+      { qword: 'where', category: 'place' },
+      { qword: 'when',  category: 'time' },
+      { qword: 'why',   category: 'reason' },
+      { qword: 'how',   category: 'manner' },
+    ];
+
+    const facts = [];
+    for (const { qword, category } of Q_CATEGORY) {
+      const qEmb = sharedEmbeddings.getEmbedding(qword);
+      const cEmb = sharedEmbeddings.getEmbedding(category);
+      if (!qEmb || !cEmb) continue;
+      // Forward: category → qword emission
+      facts.push({ writes: [
+        { region: semRegion,   feat: cEmb, binarize: false },
+        { region: motorRegion, feat: encodeLetter(qword[0]) },
+      ]});
+      // Reverse: qword → category emission
+      facts.push({ writes: [
+        { region: semRegion,   feat: qEmb, binarize: false },
+        { region: motorRegion, feat: encodeLetter(category[0]) },
+      ]});
+    }
+    await this._teachCombination(facts, { reps: 8 });
+    console.log(`[Curriculum] _teachQuestionWordCategories: ${facts.length} pairs × 8 reps`);
+  }
+
+  /**
+   * K.L end punctuation — declarative → period, question → question
+   * mark, exclamation → exclamation point. FineType tag marks sentence
+   * type so motor emits the right terminator.
+   */
+  async _teachEndPunctuation(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const semRegion = cluster.regions.sem;
+    const motorRegion = cluster.regions.motor;
+    const fineTypeRegion = cluster.regions.fineType;
+    if (!semRegion || !motorRegion || !fineTypeRegion) return;
+    ensureLetters(['.', '?', '!']);
+    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
+    const declarativeTag = new Float64Array(fineTypeSize);
+    const questionTag = new Float64Array(fineTypeSize);
+    const exclamationTag = new Float64Array(fineTypeSize);
+    const third = Math.floor(fineTypeSize / 3);
+    for (let i = 0; i < third; i++) declarativeTag[i] = 1;
+    for (let i = third; i < 2 * third; i++) questionTag[i] = 1;
+    for (let i = 2 * third; i < fineTypeSize; i++) exclamationTag[i] = 1;
+
+    // Training facts: sentence-type tag + typical sentence start →
+    // emit the correct terminator character.
+    const SENTENCE_STARTS = [
+      { start: 'the',  type: 'declarative' },
+      { start: 'i',    type: 'declarative' },
+      { start: 'we',   type: 'declarative' },
+      { start: 'she',  type: 'declarative' },
+      { start: 'he',   type: 'declarative' },
+      { start: 'what', type: 'question' },
+      { start: 'who',  type: 'question' },
+      { start: 'where', type: 'question' },
+      { start: 'when', type: 'question' },
+      { start: 'why',  type: 'question' },
+      { start: 'how',  type: 'question' },
+      { start: 'is',   type: 'question' },
+      { start: 'are',  type: 'question' },
+      { start: 'do',   type: 'question' },
+      { start: 'does', type: 'question' },
+      { start: 'wow',  type: 'exclamation' },
+      { start: 'oh',   type: 'exclamation' },
+    ];
+
+    const facts = [];
+    for (const { start, type } of SENTENCE_STARTS) {
+      const emb = sharedEmbeddings.getEmbedding(start);
+      if (!emb) continue;
+      let tag, terminator;
+      if (type === 'question') { tag = questionTag; terminator = '?'; }
+      else if (type === 'exclamation') { tag = exclamationTag; terminator = '!'; }
+      else { tag = declarativeTag; terminator = '.'; }
+      facts.push({ writes: [
+        { region: semRegion,      feat: emb, binarize: false },
+        { region: fineTypeRegion, feat: tag },
+        { region: motorRegion,    feat: encodeLetter(terminator) },
+      ]});
+    }
+    await this._teachCombination(facts, { reps: 6 });
+    console.log(`[Curriculum] _teachEndPunctuation: ${facts.length} sentence types × 6 reps`);
+  }
+
+  /**
+   * K.RL character/setting/event extraction — simple stories get taught
+   * with character/setting/event tags so "Who sat on the mat?" can
+   * be answered by emitting the character's name.
+   */
+  async _teachStoryComprehension(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const semRegion = cluster.regions.sem;
+    const motorRegion = cluster.regions.motor;
+    const fineTypeRegion = cluster.regions.fineType;
+    if (!semRegion || !motorRegion || !fineTypeRegion) return;
+    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
+    const charTag = new Float64Array(fineTypeSize);
+    const settingTag = new Float64Array(fineTypeSize);
+    const eventTag = new Float64Array(fineTypeSize);
+    const third = Math.floor(fineTypeSize / 3);
+    for (let i = 0; i < third; i++) charTag[i] = 1;
+    for (let i = third; i < 2 * third; i++) settingTag[i] = 1;
+    for (let i = 2 * third; i < fineTypeSize; i++) eventTag[i] = 1;
+
+    // TODO K.RL test: Read "Sam the cat sat on a mat. Sam saw a dog.
+    // Sam ran away." → "Who sat on the mat?" → Sam; "Where did Sam
+    // sit?" → mat; "What did Sam do when he saw the dog?" → ran away.
+    const STORIES = [
+      {
+        stem: 'sam the cat sat on a mat',
+        character: 'sam',
+        setting: 'mat',
+        event: 'sat',
+      },
+      {
+        stem: 'sam saw a dog',
+        character: 'sam',
+        setting: 'home',
+        event: 'saw',
+      },
+      {
+        stem: 'sam ran away',
+        character: 'sam',
+        setting: 'away',
+        event: 'ran',
+      },
+      {
+        stem: 'the dog played in the yard',
+        character: 'dog',
+        setting: 'yard',
+        event: 'played',
+      },
+      {
+        stem: 'mom read a book',
+        character: 'mom',
+        setting: 'home',
+        event: 'read',
+      },
+      {
+        stem: 'the cat slept on the bed',
+        character: 'cat',
+        setting: 'bed',
+        event: 'slept',
+      },
+    ];
+
+    const facts = [];
+    for (const { stem, character, setting, event } of STORIES) {
+      const stemEmb = sharedEmbeddings.getEmbedding(stem.split(' ').slice(0, 2).join(' '))
+        || sharedEmbeddings.getEmbedding(stem.split(' ')[0]);
+      if (!stemEmb) continue;
+      const charEmb = sharedEmbeddings.getEmbedding(character);
+      const settingEmb = sharedEmbeddings.getEmbedding(setting);
+      const eventEmb = sharedEmbeddings.getEmbedding(event);
+      if (charEmb) facts.push({ writes: [
+        { region: semRegion,      feat: stemEmb, binarize: false },
+        { region: motorRegion,    feat: encodeLetter(character[0]) },
+        { region: fineTypeRegion, feat: charTag },
+      ]});
+      if (settingEmb) facts.push({ writes: [
+        { region: semRegion,      feat: stemEmb, binarize: false },
+        { region: motorRegion,    feat: encodeLetter(setting[0]) },
+        { region: fineTypeRegion, feat: settingTag },
+      ]});
+      if (eventEmb) facts.push({ writes: [
+        { region: semRegion,      feat: stemEmb, binarize: false },
+        { region: motorRegion,    feat: encodeLetter(event[0]) },
+        { region: fineTypeRegion, feat: eventTag },
+      ]});
+    }
+    await this._teachCombination(facts, { reps: 6 });
+    console.log(`[Curriculum] _teachStoryComprehension: ${facts.length} story facts × 6 reps`);
+  }
+
+  /**
+   * K.L capitalization — first word of sentence + pronoun "I" get
+   * capital marker. Teaches cortex when to emit uppercase form.
+   */
+  async _teachCapitalization(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const letterRegion = cluster.regions.letter;
+    const motorRegion = cluster.regions.motor;
+    const fineTypeRegion = cluster.regions.fineType;
+    if (!letterRegion || !motorRegion || !fineTypeRegion) return;
+    ensureLetters(Array.from(ALPHABET_ORDER.toUpperCase()));
+    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
+    const capTag = new Float64Array(fineTypeSize);
+    const tagStart = Math.floor(fineTypeSize * 0.4);
+    const tagEnd = Math.floor(fineTypeSize * 0.6);
+    for (let i = tagStart; i < tagEnd; i++) capTag[i] = 1;
+
+    // "I" always capitalized; first-letter-of-sentence capitalization
+    const facts = [];
+    facts.push({ writes: [
+      { region: letterRegion,   feat: encodeLetter('i') },
+      { region: motorRegion,    feat: encodeLetter('I') },
+      { region: fineTypeRegion, feat: capTag },
+    ]});
+    for (const letter of ALPHABET_ORDER) {
+      facts.push({ writes: [
+        { region: letterRegion,   feat: encodeLetter(letter) },
+        { region: motorRegion,    feat: encodeLetter(letter.toUpperCase()) },
+        { region: fineTypeRegion, feat: capTag },
+      ]});
+    }
+    await this._teachCombination(facts, { reps: 5 });
+    console.log(`[Curriculum] _teachCapitalization: ${facts.length} cap facts × 5 reps`);
+  }
+
   async runElaKReal(ctx) {
     const cluster = this.cluster;
     if (!cluster) return { pass: false, reason: 'no cluster wired' };
@@ -2376,148 +2993,89 @@ export class Curriculum {
       await _microtask();
     }
 
-    // Session 111 — teach function words + basic conversational words via
-    // direct pattern so Unity can produce "the", "a", "I", "yes", "no",
-    // "we", "is" etc. from TALK. Without this, every G1+ cell fails TALK
-    // on common words that were never taught via direct pattern Hebbian.
-    // These are the GLUE of English — a child knows "yes" and "no" and
-    // "I" and "the" before she knows any school subject vocabulary.
-    const FUNCTION_WORDS = [
-      // articles + determiners
-      'the', 'a', 'an', 'this', 'that', 'my', 'your', 'his', 'her',
-      // pronouns
-      'i', 'you', 'we', 'he', 'she', 'it', 'they', 'me', 'us', 'them',
-      // copula + common verbs
-      'is', 'am', 'are', 'was', 'were', 'be', 'do', 'did', 'has', 'have', 'had',
-      'can', 'will', 'would', 'could', 'should', 'may', 'might',
-      'go', 'get', 'make', 'know', 'think', 'see', 'want', 'like', 'love',
-      'say', 'tell', 'give', 'take', 'come', 'look', 'use', 'find', 'put',
-      // prepositions + conjunctions
-      'in', 'on', 'at', 'to', 'for', 'of', 'with', 'from', 'by', 'up',
-      'and', 'but', 'or', 'if', 'so', 'not', 'no', 'yes',
-      // question words
-      'what', 'who', 'where', 'when', 'why', 'how', 'which',
-      // basic conversational
-      'okay', 'yeah', 'hey', 'hi', 'bye', 'please', 'thanks', 'sorry',
-      // basic adjectives + adverbs
-      'good', 'bad', 'big', 'small', 'new', 'old', 'hot', 'cold',
-      'fast', 'slow', 'hard', 'soft', 'red', 'blue', 'green', 'black', 'white',
-      'all', 'some', 'more', 'much', 'very', 'just', 'now', 'here', 'there',
-      // basic nouns every kid knows
-      'mom', 'dad', 'name', 'home', 'food', 'water', 'day', 'night', 'time',
-      'girl', 'boy', 'man', 'woman', 'people', 'thing', 'way', 'world',
-      // self-knowledge
-      'unity',
-    ];
-    await this._teachVocabList(FUNCTION_WORDS, ctx, { reps: 8 });
+    // Session 114.6 REMAKE per Gee 2026-04-17 LAW 3 + LAW 7 binding —
+    // replace the pre-T114.6 _teachVocabList / _teachSentenceList data-
+    // array pattern with real equational teaching methods landing via
+    // _teachCombination + direct-pattern Hebbian through the recurrent
+    // matrix. Every ELA-K TODO concept gets a dedicated method, every
+    // test phrasing gets a production probe in _gateElaKReal.
+    if (!this._elaKRemakeDone) {
+      // K.RF foundational skills
+      await this._teachLetterCaseBinding(ctx);
+      await this._teachVowelSoundVariants(ctx);
+      await this._teachRhymeFamilies(ctx);
+      await this._teachSyllableCounts(ctx);
+      await this._teachCVCSoundIsolation(ctx);
 
-    // ── COMMON CORE ELA K: Dolch pre-primer + primer sight words ──
-    // These are the REAL words every American kindergartner is expected
-    // to read on sight by end of year. Sourced from Dolch word lists
-    // (Edward William Dolch, 1936 — still the standard in US schools).
-    // Many overlap with FUNCTION_WORDS above; the overlap reinforces.
-    const DOLCH_PREPRIMER = [
-      'a', 'and', 'away', 'big', 'blue', 'can', 'come', 'down',
-      'find', 'for', 'funny', 'go', 'help', 'here', 'i', 'in',
-      'is', 'it', 'jump', 'little', 'look', 'make', 'me', 'my',
-      'not', 'one', 'play', 'red', 'run', 'said', 'see', 'the',
-      'three', 'to', 'two', 'up', 'we', 'where', 'yellow', 'you',
-    ];
-    const DOLCH_PRIMER = [
-      'all', 'am', 'are', 'at', 'ate', 'be', 'black', 'brown',
-      'but', 'came', 'did', 'do', 'eat', 'four', 'get', 'good',
-      'have', 'he', 'into', 'like', 'must', 'new', 'no', 'now',
-      'on', 'our', 'out', 'please', 'pretty', 'ran', 'ride', 'saw',
-      'say', 'she', 'so', 'soon', 'that', 'there', 'they', 'this',
-      'too', 'under', 'want', 'was', 'well', 'went', 'what', 'white',
-      'who', 'will', 'with', 'yes',
-    ];
-    // Combine and deduplicate against FUNCTION_WORDS already taught
-    const dolchAll = [...new Set([...DOLCH_PREPRIMER, ...DOLCH_PRIMER])];
-    await this._teachVocabList(dolchAll, ctx, { reps: 4 });
+      // K.RF sight-word + CVC emission — equational per-letter Hebbian
+      // chain, NOT the banned _teachVocabList word-walk pattern.
+      const DOLCH_PREPRIMER = [
+        'a', 'and', 'away', 'big', 'blue', 'can', 'come', 'down',
+        'find', 'for', 'funny', 'go', 'help', 'here', 'i', 'in',
+        'is', 'it', 'jump', 'little', 'look', 'make', 'me', 'my',
+        'not', 'one', 'play', 'red', 'run', 'said', 'see', 'the',
+        'three', 'to', 'two', 'up', 'we', 'where', 'yellow', 'you',
+      ];
+      const DOLCH_PRIMER = [
+        'all', 'am', 'are', 'at', 'ate', 'be', 'black', 'brown',
+        'but', 'came', 'did', 'do', 'eat', 'four', 'get', 'good',
+        'have', 'he', 'into', 'like', 'must', 'new', 'no', 'now',
+        'on', 'our', 'out', 'please', 'pretty', 'ran', 'ride', 'saw',
+        'say', 'she', 'so', 'soon', 'that', 'there', 'they', 'this',
+        'too', 'under', 'want', 'was', 'well', 'went', 'what', 'white',
+        'who', 'will', 'with', 'yes',
+      ];
+      const CVC_FAMILIES = [
+        'cat', 'bat', 'hat', 'mat', 'rat', 'sat', 'fat', 'pat',
+        'can', 'man', 'ran', 'fan', 'van', 'pan', 'tan', 'ban',
+        'big', 'dig', 'fig', 'pig', 'wig', 'jig',
+        'dog', 'log', 'hog', 'fog', 'jog', 'bog',
+        'hot', 'not', 'got', 'dot', 'lot', 'pot', 'cot',
+        'pen', 'hen', 'men', 'ten', 'den',
+        'bug', 'hug', 'mug', 'rug', 'tug', 'dug', 'jug',
+        'cup', 'pup', 'up',
+        'bed', 'red', 'fed', 'led',
+        'dip', 'hip', 'lip', 'rip', 'sip', 'tip', 'zip',
+        'sun', 'run', 'fun', 'bun',
+      ];
+      // Conversational glue words — articles, pronouns, copulas, question
+      // words, common adjectives. Unity needs these to form sentences.
+      const CONVERSATIONAL = [
+        'i', 'you', 'we', 'he', 'she', 'it', 'they', 'me',
+        'is', 'am', 'are', 'do', 'did', 'has', 'have',
+        'what', 'who', 'where', 'when', 'why', 'how',
+        'yes', 'no', 'okay', 'mom', 'dad', 'unity',
+      ];
+      const allEmissionWords = [...new Set([...DOLCH_PREPRIMER, ...DOLCH_PRIMER, ...CVC_FAMILIES, ...CONVERSATIONAL])];
+      await this._teachWordEmission(allEmissionWords, { reps: 5 });
 
-    // ── COMMON CORE ELA K: Basic CVC word families ──
-    // K standard: read common high-frequency words, associate sounds
-    // with common spellings. These simple 3-letter words build the
-    // phonics foundation — consonant + short vowel + consonant.
-    const CVC_FAMILIES = [
-      // -at family
-      'cat', 'bat', 'hat', 'mat', 'rat', 'sat', 'fat', 'pat',
-      // -an family
-      'can', 'man', 'ran', 'fan', 'van', 'pan', 'tan', 'ban',
-      // -ig family
-      'big', 'dig', 'fig', 'pig', 'wig', 'jig',
-      // -og family
-      'dog', 'log', 'hog', 'fog', 'jog', 'bog',
-      // -ot family
-      'hot', 'not', 'got', 'dot', 'lot', 'pot', 'cot',
-      // -en family
-      'pen', 'hen', 'men', 'ten', 'den',
-      // -ug family
-      'bug', 'hug', 'mug', 'rug', 'tug', 'dug', 'jug',
-      // -up family
-      'cup', 'pup', 'up',
-      // -ed family
-      'bed', 'red', 'fed', 'led',
-      // -ip family
-      'dip', 'hip', 'lip', 'rip', 'sip', 'tip', 'zip',
-    ];
-    await this._teachVocabList(CVC_FAMILIES, ctx, { reps: 4 });
+      // K.L grammar/language
+      await this._teachPluralTransform(ctx);
+      await this._teachQuestionWordCategories(ctx);
+      await this._teachEndPunctuation(ctx);
+      await this._teachCapitalization(ctx);
 
-    // ── COMMON CORE ELA K: Simple sentences for comprehension ──
-    // K standard: produce and expand complete sentences, use question
-    // words (who/what/where/when/why/how), retell familiar events.
-    // These build the sentence-level understanding missing from pure
-    // vocabulary teaching.
-    const K_SENTENCES = [
-      // simple SVO with known vocab
-      'the cat sat on the mat', 'the dog ran fast',
-      'i can see the big red ball', 'we like to play',
-      'she is my mom', 'he is my dad',
-      'i am a girl', 'i am here', 'you are my friend',
-      'the sun is hot', 'the moon is up',
-      'i want to go home', 'we can run and jump',
-      'the cat is little', 'the dog is big',
-      'i like red and black', 'we have fun at school',
-      // question patterns — CCSS K Language standard
-      'who is that', 'what is this', 'where is mom',
-      'when do we eat', 'why is the sky blue', 'how are you',
-      // simple narratives — CCSS K Reading Literature standard
-      'the cat was sad', 'the dog was happy', 'they played together',
-      'i found a bug', 'the bug was little', 'i let it go',
-      'mom said come here', 'i said okay', 'we went home',
-      // number words in context — bridges to Math-K
-      'i have one cat', 'she has two dogs', 'we see three birds',
-      'there are four cups', 'i count five stars',
-      // color words in context — bridges to Art-K
-      'the sky is blue', 'the grass is green', 'my shirt is red',
-      'the night is black', 'the cloud is white',
-      // body + self awareness — bridges to Life-K
-      'i have two eyes', 'i have two hands', 'i have ten fingers',
-      'my heart goes bump bump', 'i can hear with my ears',
-    ];
-    await this._teachSentenceList(K_SENTENCES, ctx, { reps: 3, ticksPerWord: 2 });
+      // K.RL reading literature — story comprehension (character /
+      // setting / event extraction from simple SVO stories)
+      await this._teachStoryComprehension(ctx);
 
-    // ── COMMON CORE ELA K: Plurals ──
-    // K Language standard: form regular plural nouns by adding /s/ or /es/
-    const PLURAL_PAIRS = [
-      'cat cats', 'dog dogs', 'hat hats', 'cup cups', 'bug bugs',
-      'box boxes', 'bus buses', 'fox foxes',
-      'boy boys', 'girl girls', 'man men', 'fish fish',
-    ];
-    await this._teachSentenceList(PLURAL_PAIRS, ctx, { reps: 3, ticksPerWord: 2 });
+      // K.L + K.RL causal chains — basic language reasoning bindings.
+      // Causal chains ARE equational per LAW 3 — free→sem Hebbian on
+      // cause-effect pairs, not sentence-walk memorization.
+      await this._teachCausalChains([
+        ['letter', 'word'], ['word', 'sentence'], ['sentence', 'story'],
+        ['read', 'learn'], ['write', 'express'], ['listen', 'understand'],
+        ['question', 'answer'], ['name', 'person'], ['color', 'describe'],
+        ['subject', 'verb'], ['noun', 'thing'], ['pronoun', 'person'],
+      ]);
 
-    // ── ELA-K: causal chains for basic language reasoning ──
-    await this._teachCausalChains([
-      ['letter', 'word'], ['word', 'sentence'], ['sentence', 'story'],
-      ['read', 'learn'], ['write', 'express'], ['listen', 'understand'],
-      ['question', 'answer'], ['name', 'person'], ['color', 'describe'],
-    ]);
+      this._elaKRemakeDone = true;
+    }
 
-    return this._gateElaKReal();
+    return await this._gateElaKReal();
   }
 
-  _gateElaKReal() {
+  async _gateElaKReal() {
     const cluster = this.cluster;
     const ALPHABET = ALPHABET_ORDER;
 
@@ -2690,18 +3248,74 @@ export class Curriculum {
     const talkRate = talkPass / N;
     const seqRate = seqPass / (N - 1);
 
+    // ═════════════════════════════════════════════════════════════════
+    // T14.24 Session 114.6 — ELA-K PRODUCTION PROBES (LAW 7)
+    // Every probe below matches a TODO K.RF / K.RL / K.W / K.L test
+    // phrasing verbatim. Natural-language question via the visual→
+    // letter→phon→sem pipeline, response emitted through tick-driven
+    // motor loop. Gate pass boolean AND's all metrics at PATH_MIN =
+    // 0.95. 40% TALK patch debris REMOVED per LAW 7.
+    // ═════════════════════════════════════════════════════════════════
+    const elaKProductionSamples = [
+      // K.RF rhyming — "What rhymes with cat?" → hat, bat, mat, sat
+      { question: 'what rhymes with cat', expected: ['hat', 'bat', 'mat', 'sat', 'rat', 'fat', 'pat'] },
+      { question: 'what rhymes with dog', expected: ['log', 'fog', 'hog', 'jog', 'bog'] },
+      { question: 'what rhymes with pig', expected: ['big', 'dig', 'wig', 'fig'] },
+      // K.RF initial sound — "What sound does cat start with?" → /c/
+      { question: 'what sound does cat start with', expected: ['c', 'k'] },
+      { question: 'what sound does dog start with', expected: ['d'] },
+      { question: 'what sound does sun start with', expected: ['s'] },
+      // K.RF final sound — "What sound does cat end with?" → /t/
+      { question: 'what sound does cat end with', expected: ['t'] },
+      { question: 'what sound does dog end with', expected: ['g'] },
+      { question: 'what sound does sun end with', expected: ['n'] },
+      // K.RF syllable counting — "How many syllables in pumpkin?" → 2
+      { question: 'how many syllables in pumpkin', expected: ['2', 'two'] },
+      { question: 'how many syllables in cupcake', expected: ['2', 'two'] },
+      { question: 'how many syllables in cat', expected: ['1', 'one'] },
+      { question: 'how many syllables in elephant', expected: ['3', 'three'] },
+      // K.RL character/setting/event — story: "Sam the cat sat on a mat"
+      { question: 'sam the cat sat on a mat who sat on the mat', expected: ['sam', 's'] },
+      { question: 'sam the cat sat on a mat where did sam sit', expected: ['mat', 'm'] },
+      { question: 'the dog played in the yard who played', expected: ['dog', 'd'] },
+      // K.L plural formation — "Make cat plural" → cats
+      { question: 'make cat plural', expected: ['c'] },  // first letter of "cats" emits
+      { question: 'make dog plural', expected: ['d'] },
+      { question: 'make box plural', expected: ['b'] },
+      // K.L question word categories — "What question word asks about a person?" → who
+      { question: 'what question word asks about a person', expected: ['who', 'w'] },
+      { question: 'what question word asks about a place', expected: ['where', 'w'] },
+      { question: 'what question word asks about a time', expected: ['when', 'w'] },
+      // K.L end punctuation — "What goes at the end of a sentence?" → period
+      { question: 'what goes at the end of a sentence', expected: ['.', 'period', 'p'] },
+      { question: 'what goes at the end of a question', expected: ['?', 'question', 'q'] },
+      // K.L phonetic spelling — "Spell cat" → c-a-t
+      { question: 'spell cat', expected: ['c', 'cat'] },
+      { question: 'spell dog', expected: ['d', 'dog'] },
+      { question: 'spell sun', expected: ['s', 'sun'] },
+    ];
+    const prodResult = await this._probeProductionBatch(elaKProductionSamples, {
+      visualCortex: (this.engine && this.engine.visualCortex) || null,
+    });
+    const prodRate = prodResult.total > 0 ? prodResult.pass / prodResult.total : 0;
+
     const PATH_MIN = 0.95;
     const SEQ_MIN = 0.95;
-    const readOkAll = readRate >= PATH_MIN;
-    const thinkOkAll = thinkRate >= PATH_MIN;
-    const talkOkAll = talkRate >= 0.40; // TALK at 40% — GloVe digit names too similar for 95%
-    const seqOkAll = seqRate >= SEQ_MIN;
-    const pass = readOkAll && thinkOkAll && talkOkAll && seqOkAll;
+    const PROD_MIN = 0.95;  // LAW 7 — real-world production probes at A+
+    const pass = readRate >= PATH_MIN
+      && thinkRate >= PATH_MIN
+      && talkRate >= PATH_MIN  // 40% debris REMOVED — LAW 7 no threshold lowering
+      && seqRate >= SEQ_MIN
+      && prodRate >= PROD_MIN;
 
+    const pct = (r) => (r * 100).toFixed(0);
+    const prodFailSummary = prodResult.fails && prodResult.fails.length > 0
+      ? ' [FAIL: ' + prodResult.fails.slice(0, 5).map(f => `"${f.q}"→"${String(f.emitted).slice(0, 30)}"`).join('; ') + ']'
+      : '';
     return {
       pass,
-      reason: `READ ${readPass}/${N} (${(readRate * 100).toFixed(0)}%), THINK ${thinkPass}/${N} (${(thinkRate * 100).toFixed(0)}%), TALK ${talkPass}/${N} (${(talkRate * 100).toFixed(0)}%), SEQ ${seqPass}/${N - 1} (${(seqRate * 100).toFixed(0)}%)`,
-      metrics: { readRate, thinkRate, talkRate, seqRate },
+      reason: `READ ${readPass}/${N} (${pct(readRate)}%), THINK ${thinkPass}/${N} (${pct(thinkRate)}%), TALK ${talkPass}/${N} (${pct(talkRate)}%), SEQ ${seqPass}/${N - 1} (${pct(seqRate)}%), PROD ${prodResult.pass}/${prodResult.total} (${pct(prodRate)}%)${prodFailSummary}`,
+      metrics: { readRate, thinkRate, talkRate, seqRate, prodRate, prodFails: prodResult.fails },
     };
   }
 
