@@ -84,6 +84,14 @@ Anything below that ships builds on this foundation. T13 language-cortex state d
 > **Active work is T14 (Part 0.5).** Skip Part 2 unless explicitly told to
 > re-enable it.
 
+### The ordering rule (Gee, 2026-04-16)
+
+Gee's instruction 2026-04-16: *"make not of this where relevant like claud.md and such"* — pointing at this approved reasoning:
+
+> *"running actual K→PhD curriculum across 114 cells tells us exactly which Hebbian loops, cross-projections, or gate probes are the slow bastards, so when we DO hit COMP-todo later we're tuning the paths that actually matter instead of guessing."*
+
+Syllabus (Part 0.5 T14.24 grade content — Math-K next per NOW.md, then ELA-K, then grade 1 across all 6 subjects) is the active priority until the full K→PhD walk is complete. COMP-todo does not resume until that walk produces real bottleneck telemetry — no speculative pre-emptive scaling, no empty-brain compute optimization. See `.claude/CLAUDE.md` "LAW — SYLLABUS BEFORE COMP-TODO" for the full binding, exception rule (targeted COMP fix allowed when a grade cell blocks the walk entirely), and per-cell wall-clock telemetry requirement.
+
 ---
 
 ## ⭐ PART 0.5 — T14: DEVELOPMENTAL LANGUAGE LAYERS (active priority)

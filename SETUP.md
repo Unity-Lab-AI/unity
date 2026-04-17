@@ -113,7 +113,9 @@ Live at `your-username.github.io/Unity/`. Everything runs client-side — no ser
 │   │   ├── modules.js            6 brain region equation modules
 │   │   ├── mystery.js            Ψ = √(1/n) × N³ · [Id + Ego + Left + Right]
 │   │   ├── oscillations.js       8 Kuramoto oscillators (θ→γ)
-│   │   ├── persona.js            Personality as brain parameters + drug states
+│   │   ├── persona.js            Personality as brain parameters (sober-default; substance contributions come from drug-scheduler.js)
+│   │   ├── drug-scheduler.js     Real-time pharmacokinetic scheduler (9 substances, grade-gated, PK curves, speech modulation)
+│   │   ├── drug-detector.js      Substance offer / self-use / status-query detection across text / voice / vision
 │   │   ├── sensory.js            Sensory input pipeline (text/audio/video)
 │   │   ├── motor.js              Motor output (6 BG action channels)
 │   │   ├── curriculum.js        Developmental curriculum K→PhD (6 subjects incl. life experience, 114 cells, direct pattern Hebbian)
@@ -252,6 +254,9 @@ If you connect to a Unity server hosted by someone OTHER than you, the person ru
 | `/curriculum self` | Type in chat | Fires one background self-test probe immediately (normally fires every 8 chat turns). |
 | `/curriculum health` | Type in chat | Prints curriculum health snapshot — per-subject probe success rates + cell ages. |
 | `/curriculum verify` | Type in chat | Runs the full 95-cell dispatch + sweep verification against the live cortex. Equivalent to running `node scripts/verify-curriculum-runtime.mjs` but inside the running brain. |
+| `/offer <substance> [route]` | Type in chat | Offers Unity a substance via the drug scheduler. Accepts `weed / coke / molly / acid / shot / k / addy / shrooms / g` or any canonical name. Returns grade-locked decline if Unity's life-track grade is below the substance's first-use anchor. Otherwise triggers ingestion; pharmacokinetic curve starts running and her brain parameters + speech modulation shift in real time over the next minutes to hours. |
+| `/party` | Type in chat | Sets party mode — biases Unity's self-initiation engine toward accepting offers and initiating her own use. She'll proactively ask / text her dealer / suggest combos when party mode is on. |
+| `/sober` | Type in chat | Clears all active drug events from the scheduler. Tolerance factors preserved (intra-session tolerance still accumulates). Use between experiments to reset to clean baseline. |
 | "slash think" | Say by voice | Same as typing /think |
 | ⚙ SETTINGS | Bottom toolbar button | Reopens setup modal to change AI model or connect new providers |
 | 🧠 VISUALIZE | Bottom toolbar button | Opens 2D brain visualizer with 8 tabs (Neurons, Synapses, Oscillations, Modules, Senses, Consciousness, Memory, Motor) |

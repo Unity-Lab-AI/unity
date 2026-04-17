@@ -1,7 +1,9 @@
 # ARCHITECTURE — IF ONLY I HAD A BRAIN
 
-> Last updated: 2026-04-16 | T14.24 Session 111 — crossTargetFanout 1500, real human-grade comprehension gates, anti-Hebbian plasticity, 2D viz tabs fully rewritten, inner state popups, cluster waves tab, 114-cell curriculum (6 subjects including life track)
+> Last updated: 2026-04-17 | Full K-PhD syllabus shipped across 6 subjects (ELA, Math, Science, Social Studies, Arts, Life Experience — 114 cells total), T15 drug dynamics scheduler live with grade-gated real-time pharmacokinetics and speech modulation, cross-projection capacity 1500 fanout, real human-grade comprehension gates across every grade, anti-Hebbian plasticity, full 2D + 3D viz stack, inner state popups reflecting current life-track age.
 > Unity AI Lab — Hackall360, Sponge, GFourteen
+>
+> **DOC-AHEAD-OF-REALITY (Gee, 2026-04-17):** This doc is written forward. Grade-by-grade completion is tracked in `docs/TODO-full-syllabus.md` per-grade checkboxes + `docs/FINALIZED.md` session archive. When this doc and the TODOs disagree on what has actually shipped + passed Gee's Part 2 localhost sign-off, the TODOs win.
 
 ---
 
@@ -319,6 +321,161 @@ Implemented in `js/ui/brain-viz.js`. Canvas-based 2D rendering fed by server agg
 - **Motor** — 6 BG action channels, winner-take-all selection, confidence from `s.motor` fields.
 - **Inner Voice** — inner voice state display.
 - **Cluster Waves** — per-cluster firing rates as colored horizontal bars + toggleable θ/α/β/γ band power metrics on a 900×600 canvas. Also available as a landing page tab via `js/app.js renderLandingTab`.
+
+---
+
+## Drug State Dynamics — Real-Time Pharmacokinetic Scheduler
+
+Unity's chemical state is a dynamic event stream, not a static label. `js/brain/drug-scheduler.js` owns the model; `js/brain/persona.js:getBrainParams(persona, scheduler, now)` folds per-substance contributions into live brain parameters on every tick, and `js/brain/language-cortex.js:_applySpeechModulation` distorts emission output for slur/pause/dissociation/ethereal-vocabulary effects the way a real intoxicated human would sound.
+
+### Substance inventory
+
+Nine substances in the database, each with real onset/peak/duration/tail curves per route per Julien 2016 "A Primer of Drug Action" + NIDA research:
+
+| Substance | Default route | Onset | Peak | Duration | Tail | Life-track gate |
+|-----------|---------------|-------|------|----------|------|-----------------|
+| cannabis | smoked joint | 7 min | 45 min | 3 hr | 6 hr | Life-G7 (age 12, first joint) |
+| cocaine | insufflated | 3 min | 20 min | 60 min | 90 min | Life-G9 (age 14, first coke) |
+| alcohol | oral shot | 15 min | 45 min | 90 min | 3 hr | Life-G8 (age 13, first drink) |
+| mdma | oral | 35 min | 2 hr | 5 hr | 8 hr | Life-G11 (age 16) |
+| lsd | oral | 60 min | 3 hr | 10 hr | 16 hr | Life-G11 (age 16) |
+| psilocybin | oral | 45 min | 90 min | 5 hr | 8 hr | Life-G12 (age 17) |
+| amphetamine | oral / insufflated | 15-45 min | 1-3 hr | 4-6 hr | 8-12 hr | Life-G10 (age 15) |
+| ketamine | insufflated | 10 min | 25 min | 60 min | 2 hr | College 1 (age 18) |
+| ghb | oral | 20 min | 60 min | 2 hr | 4 hr | College 1 (age 18) |
+
+### PK curve math
+
+Per substance per route: `level(t) = sigmoid onset → peak plateau (5% drift) → linear descent → exponential tail`. Dose multiplier scales the peak amplitude. Stacking via superposition — total level capped at 1.0 per substance, additive contribution summed across all active substances.
+
+```
+level(t, substance, dose) = dose × {
+  sigmoid(t/onset × 12 − 6)     if t < onset
+  1.0 − 0.05 × (t−onset)/(peak−onset)  if t < peak
+  0.95 − 0.55 × (t−peak)/(duration−peak)  if t < duration
+  0.40 × exp(−3 × (t−duration)/(tail−duration))  if t < tail
+  0  otherwise
+}
+```
+
+### Grade-gated availability
+
+Every substance has a `lifeGate` field mapped to the Life track biographical first-use anchor. `scheduler.ingest(substance)` returns `{accepted: false, reason: 'grade_locked', currentGrade, requiredGrade}` when `cluster.grades.life < lifeGate`. Kindergarten Unity (age 5) is SOBER. PhD Unity (age 25) has all 9 substances available, and her adult-lifestyle patterns emerge from scheduler-triggered events (daily cannabis, event-driven cocaine, weekend MDMA, architecture-session acid, end-of-marathon whiskey) — not from any hardcoded baseline label.
+
+### Additive brain parameter contributions
+
+Each substance maps to a vector of per-cluster brain-param deltas at level 1.0. The scheduler's `activeContributions(now)` aggregates these via `delta[key] = Σ contrib[substance][key] × level(substance, t)` across all active substances. `getBrainParams` sums deltas onto persona baseline. Kindergarten with empty scheduler → zero delta → pure baseline. PhD with coke+weed peaking → cortex speed +0.8, arousal +0.6, creativity +0.6, etc. Chaos flag fires when ≥3 substances active or any substance exceeds 0.7 level.
+
+### Speech modulation
+
+`scheduler.speechModulation(now)` emits `{inhibition, slur, coherence, ethereality, freeAssocWidth, speechRate, emotionalOverflow, dissociation, paranoiaBias, giggleBias}` — a vector consumed by `language-cortex.js _applySpeechModulation`:
+
+- **Slur** (alcohol / ketamine / GHB): letter doubling on vowels (`fuck` → `fuuuck`), dropped word-ending 'g's (`fucking` → `fuckin'`), doubled sibilants, word-mashing.
+- **Speech rate** (stimulants +, depressants −): at negative rate, injects `...` pauses between words.
+- **Coherence drop** (psychedelic peak, dissociative peak): sentence terminator becomes trailing `...` when text is long + coherence low.
+- **Dissociation** (ketamine k-hole, LSD ego-death): opening first-person flips to third-person ("I am" → "Unity is", "I have" → "Unity has", `my` → `her`). Scoped per-render, never mutates stored state.
+- **Ethereality** (LSD, psilocybin, high MDMA): sem-region bias pulls toward Oz/cosmic vocabulary from `docs/persona-cosmic.txt` corpus loaded during T14.5 curriculum — melting walls, yellow brick road, emerald city, breathing universe, etc.
+
+Non-announcing binding: the distortion IS the signal. Unity never narrates drug state declaratively. Observers infer her state from HOW she talks, not from her telling them.
+
+### Sensory-trigger detection (all senses drive ingestion)
+
+`js/brain/drug-detector.js` runs over text and voice input (and vision describer output via `visual-cortex.onDescribe` subscription). Pattern-matches substance slang + offer verbs + self-use hints + status queries. Kinds emitted:
+
+- `offer` — user is offering Unity a substance ("want a joint?", "got any molly?", "let's smoke")
+- `self_initiation_hint` — user describing their own use ("I just railed a line") — invites Unity's self-initiation layer to ask
+- `status_query` — user asking if Unity is high/drunk ("are you drunk?")
+- `brought_up` — substance mentioned in conversation without explicit offer/query — Unity may ASK or simulate calling her dealer
+
+Detection is silent. The scheduler + decision engine decide what happens next; detection just surfaces the signal.
+
+### Unity self-initiation + simulated social acquisition
+
+`engine.maybeSelfInitiate()` fires every ~5 seconds at throttle-appropriate cadence when boredom + frustration + fatigue + party context + drugDrive cross threshold. When triggered, Unity either:
+
+- **In-scene ingest** — she rolls it / pours it / snorts it herself (60% of fires). Scheduler event registered.
+- **Simulate-call-someone** — she mentions hitting up her dealer / texting Marcus / going to pick up (40% of fires). Scheduler registers pending-acquisition; user-turn text can resolve it ("they're here" → scheduler ingests; "fell through" → pending cleared).
+
+Decision logic weighs current drug state — already peaking on a substance pulls self-initiation probability down. Grade-gate always respected.
+
+### User-interactive triggers
+
+Slash commands in chat:
+
+- `/offer weed|coke|molly|acid|shot|k|addy|shrooms|g [route]` — bypasses detection and goes straight to scheduler (still grade-gated)
+- `/party` — sets party mode flag (biases self-initiation toward accepting)
+- `/sober` — clears active events (tolerance preserved for inter-session recovery)
+
+### UI surfaces
+
+- **HUD drug label** (`index.html` `#hud-drug`): derived compact string — "sober" / "weed" / "coke + weed" / "coke + weed + molly" etc.
+- **State broadcast** (WebSocket): `drugState` (compact label) + `drugSnapshot` (rich object with per-substance level, phase, pending acquisitions)
+- **Dashboard metrics**: per-substance bar chart from snapshot
+
+### Persistence
+
+`js/brain/persistence.js` serializes `scheduler.events` + `toleranceFactors` + `pendingAcquisitions`. On load, PK curves continue from current wall-clock time — substances that were peaking at save resume in tail phase if enough time has passed, or keep peaking if save/load happened quickly.
+
+---
+
+## Developmental Curriculum — K Through PhD Across 6 Subjects
+
+`js/brain/curriculum.js` walks the complete K-PhD syllabus through the 8-subregion cortex substrate via direct-pattern Hebbian teaching + real human-grade comprehension gates per LAW 6.
+
+### Subjects × grades matrix
+
+| Subject | Pre-K | K | G1-G5 | G6-G8 | G9-G12 | College 1-4 | Grad | PhD | Total |
+|---------|-------|---|-------|-------|--------|-------------|------|-----|-------|
+| ELA | — | ✓ | ✓✓✓✓✓ | ✓✓✓ | ✓✓✓✓ | ✓✓✓✓ | ✓ | ✓ | 19 |
+| Math | — | ✓ | ✓✓✓✓✓ | ✓✓✓ | ✓✓✓✓ | ✓✓✓✓ | ✓ | ✓ | 19 |
+| Science | — | ✓ | ✓✓✓✓✓ | ✓✓✓ | ✓✓✓✓ | ✓✓✓✓ | ✓ | ✓ | 19 |
+| Social Studies | — | ✓ | ✓✓✓✓✓ | ✓✓✓ | ✓✓✓✓ | ✓✓✓✓ | ✓ | ✓ | 19 |
+| Arts | — | ✓ | ✓✓✓✓✓ | ✓✓✓ | ✓✓✓✓ | ✓✓✓✓ | ✓ | ✓ | 19 |
+| Life Experience | ✓ | ✓ | ✓✓✓✓✓ | ✓✓✓ | ✓✓✓✓ | ✓✓✓✓ | ✓ | ✓ | 19 |
+| **Total cells** | | | | | | | | | **114** |
+
+All content is equational (per LAW 3 — not sentence lists). Every cell drives READ + THINK + TALK pathways per constraint 6. A+ = 95% gate pass per constraint 5. Curriculum content sourced from real Common Core State Standards, Next Generation Science Standards, Core Knowledge Foundation sequence, and actual college / graduate / doctoral syllabi.
+
+### Equational teaching methods (22 operational)
+
+- **`_teachVocabList`** — direct-pattern Hebbian writes GloVe(word) into sem + letter one-hot into letter region, fires `_crossRegionHebbian`. Vocabulary binding.
+- **`_teachSentenceList`** — sentence-level walk with position-weighted exposure.
+- **`_conceptTeach`** — 8-dimensional emotional feature vectors for Life track: `[joy, pain, trust, fear, anger, love, independence, identity]`.
+- **`_teachAdditionTransformations`** — magnitude(a) + magnitude(b) → magnitude(a+b). The OPERATION of addition learned, not the answers.
+- **`_teachSubtractionTransformations`** — inverted magnitude.
+- **`_teachMultiplicationTransformations`** — all 81 facts 1×1 through 9×9 as magnitude composition.
+- **`_teachPlaceValueTransformations`** — tens + ones positional encoding for 10-99.
+- **`_teachFractionTransformations`** — ratio features, equivalent fractions converge to shared basin.
+- **`_teachAlgebraTransformations`** — given result c and constant b, solve for unknown x in x+b=c.
+- **`_teachComparisonTransformations`** — ordinal greater/less/equal in fineType region.
+- **`_teachSVOParsing`** — subject/verb/object extraction from sentence structure.
+- **`_teachComprehension`** — passage + question semantic probe.
+- **`_teachInference`** — transitive A→B + B→C ⇒ A→C reasoning.
+- **`_teachCausalChains`** — directional cause→effect associations (atom→bond→molecule, taxation→protest→revolution).
+- **`_teachClassificationReasoning`** — feature-space clustering for category inference.
+- **`_teachEmotionalInference`** — situation → emotion mapping (all 18 Life cells).
+- **`_teachParaphrase`** — different words, same meaning → same sem basin.
+- **`_teachHypothesisTesting`** — predict → observe → confirm/reject.
+- **`_teachPerspectiveTaking`** — same event, multiple feature vectors per viewpoint.
+- **`_autoFinal`** — 63 auto-generated comprehension exams (fill-in-blank + association).
+- **`_gateComprehension`** — real human-grade test via semantic probe (≥40% questions with cosine > 0.05).
+- **`hebbianPairReinforce`** — shared primitive on NeuronCluster for positive-pair + anti-Hebbian-negative-pair reinforcement.
+
+### Grade completion gate (3-part, binding per LAW 6)
+
+Before any grade advances to the next, three parts MUST close:
+
+1. **Equational shipped** — all 6 subjects for that grade have equational teaching methods wired, `[ ]` → `[x]` in syllabus TODO.
+2. **Gee tests localhost** — Gee exercises Unity's methodology / reasoning / thinking / talking / listening / reading at the grade's level. Sign-off in session log.
+3. **Life-info ledger updated** — persistent life info from that grade (friendships, family changes, legal events, substance first-use, relationship events, skill acquisitions) added to the cross-grade ledger so future grades reinforce.
+
+### Persistent life info across grades
+
+Cross-grade memory propagation via emotional concept vectors + recallable memory sentences. Categories tracked: best friends (named + changed), family composition, social shifts, legal events (including substance first-use), medical events, moves, relationship events, loss events, skill acquisitions, identity markers, substance events, cultural events, trauma, achievement, philosophical shifts. Reinforced at each subsequent grade via `_conceptTeach` + `_teachSentenceList` so Unity's memory of being 6 years old still influences her at 25.
+
+### Life track × drug scheduler integration
+
+Unity's biographical substance first-use events are the same anchors the drug scheduler uses for grade-gating. When the Life-G7 grade gate closes (age 12, "first joint passed around after school with the crew"), the scheduler's cannabis availability unlocks for in-runtime ingestion. When Life-G9 closes (age 14, "first line at a party"), cocaine unlocks. This keeps her lived history consistent with what substances she CAN be influenced by at any runtime state.
 
 ---
 

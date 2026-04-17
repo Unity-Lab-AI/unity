@@ -1,7 +1,9 @@
 # ROADMAP — IF ONLY I HAD A BRAIN
 
-> Last updated: 2026-04-16 | T14.24 Session 111 — 114-cell curriculum, crossTargetFanout 1500, real comprehension gates, anti-Hebbian, 2D viz rewrites, inner state popups, cluster waves
+> Last updated: 2026-04-17 | Full K-PhD syllabus shipped (114 cells across 6 subjects) + T15 drug dynamics scheduler live (9 substances, grade-gated, speech-modulating). Post-syllabus runtime tuning + live-use verification phase is the current milestone.
 > Unity AI Lab
+>
+> **DOC-AHEAD-OF-REALITY (Gee, 2026-04-17):** Per-grade sign-off status lives in `docs/TODO-full-syllabus.md` + `docs/FINALIZED.md`. This roadmap describes target-state milestone completion.
 
 ---
 
@@ -17,16 +19,15 @@ The unknown stays unknown: `Ψ = √(1/n) × N³`
 
 ## Current Status
 
-> **🏁 BRAIN REFACTOR COMPLETE — 2026-04-14.** Phase 13 `brain-refactor-full-control` is code-complete AND manual-verification-complete. Gee walked the full 16-step T4 checklist on 2026-04-14 and confirmed every step passed. Nine follow-up bugs (T4.1 through T4.9) were caught and fixed in-flight during verification. The branch is ready for merge to `main`.
+> **🎓 FULL K-PhD CURRICULUM + T15 DRUG DYNAMICS SHIPPED — 2026-04-17.** Unity now has the complete developmental substrate from kindergarten through doctoral research across six subject tracks (ELA, Math, Science, Social Studies, Arts, Life Experience — 114 cells total), all taught equationally via direct-pattern Hebbian + real human-grade comprehension gates. T15 drug state dynamics scheduler is live: real-time pharmacokinetic curves per substance, grade-gated by life track, additive brain-parameter contributions, speech modulation post-processor, sensory-trigger detection, Unity self-initiation, simulated social acquisition. Post-syllabus runtime tuning + live-use verification is the current phase.
 
 | Metric | Value |
 |--------|-------|
-| **Phase** | Phase 13 BRAIN REFACTOR — **COMPLETE** (branch: `brain-refactor-full-control`) |
-| **Status** | ✅ Code complete · ✅ Docs complete · ✅ Manual verification complete · ⏳ PR-to-main pending Gee's open-the-PR call |
-| **Completion date** | 2026-04-14 |
-| **Shipped epics** | Phase 0–12 complete. Phase 13 R1–R15 complete. T1/T2/T3/T5/T6 cleanup complete. T4 manual verification complete. T4.1–T4.9 follow-up bugs all fixed in-flight during verification (see `docs/FINALIZED.md` for the full verbatim task-by-task history with symptoms/diagnosis/fix/files per entry). |
-| **What shipped at a glance** | Rulkov 2D chaotic map neuron model replacing LIF as the live runtime rule; semantic GloVe grounding on both input and output; server dynamic-imports client brain modules for true equational control; all text-AI cognition paths ripped; multi-provider image gen + vision describer with 5-level priority chain, Active Provider selector, 🔌 CONNECT button with live HTTP probe, and sensory channel toggles; equational component synthesis via cortex-pattern cosine matching; unified `init`/`process`/`destroy` sensory peripheral contract; embedding refinement persistence; port moved 8080 → 7525; setup modal rebuilt with clickable provider grids + per-backend forms + env.js snippet generator; privacy model enforced (user text private, brain growth shared, persona canonical, episodic memory per-user scoped); sensory backends auto-detect at page load; 3D brain 22-detector event system with equational Unity commentary in three-line popups (label + numeric readout + italic commentary); real amygdala attractor module on the server computing fear/reward/valence from the settled attractor basin; 4-tier language pipeline restored (template → recall verbatim → slot gen rebalanced → deflect fallback); RemoteBrain now runs a real local VisualCortex for Eye widget iris tracking; per-cluster GPU buffer binding cap (2 GB) preventing cortex+cerebellum silent truncation at multi-billion-neuron scale; admin GPUCONFIGURE.bat resource-cap tool (COMP-todo Phase 0 shipped); 14-tier resource preset ladder from minimum-laptop to speculative-quantum-assist; plain-English `unity-guide.html` concept guide; brain-equations.html §1.5 worked summation walkthrough tracing how a single user input turns into a response through all seven clusters. |
-| **Next milestone** | `gh pr create --base main --head brain-refactor-full-control` on Gee's explicit go-ahead. |
+| **Phase** | Post-Syllabus Runtime Verification + COMP-todo Part 2 Reactivation Planning |
+| **Status** | ✅ Brain refactor complete · ✅ 114-cell K-PhD curriculum shipped · ✅ T15 drug dynamics scheduler live · ⏳ Per-grade Gee localhost sign-offs per LAW 6 · ⏳ COMP-todo Part 2 reactivation gated on real bottleneck telemetry from curriculum walks |
+| **Current date** | 2026-04-17 |
+| **Shipped milestones** | Brain refactor (neurons + synapses + 7 clusters + 20 projections); semantic GloVe 300d + fastText subword fallback; server dynamic-import client brain modules; text-AI cognition ripped; multi-provider image gen + vision describer; equational component synthesis; unified sensory peripheral contract; embedding refinement persistence; setup modal with provider grids; 3D brain event system with equational popups age-gated by life grade; real amygdala attractor; RemoteBrain local VisualCortex with iris tracking; GPU buffer binding cap; admin GPUCONFIGURE.bat 14-tier ladder; plain-English unity-guide.html; brain-equations.html worked summation walkthrough; **developmental curriculum primitives** (8-subregion cortex substrate, 14 cross-region projections, letter-input inventory, syllable boundary detection, cortex-resident words, tick-driven motor emission, sentence-form schemas, identity lock); **full K-PhD syllabus** (114 cells × 6 subjects with equational teaching methods + real human-grade gates + persistent life info propagation); **T15 drug dynamics rebuild** (9-substance pharmacokinetic scheduler, grade-gated availability, additive contribution model, speech distortion post-processor, offer detection, self-initiation engine, simulated social acquisition, slash command controls, UI dynamic rendering). |
+| **What's next** | Live-use verification across grade progressions (per-grade Part 2 Gee localhost tests unlock advancement). Once the curriculum walk has produced real bottleneck telemetry, COMP-todo Part 2 distributed compute work resumes per the binding ordering law (syllabus before COMP-todo). |
 
 ---
 

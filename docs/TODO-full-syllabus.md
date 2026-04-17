@@ -43,6 +43,140 @@ When an item is FINISHED it is CHECKED OFF and DONE before moving onto the next 
 - Every test being written
 The work isn't done until the checkbox is checked. The checkbox isn't checked until the work is verified.
 
+### LAW 6: Grade completion gate — 3-part STOP before advancing to next grade
+
+**Gee's exact words 2026-04-16:**
+
+> *"okay when we do this we will stop after each grade and test thea Unitys brain can pass the grade ,so before moving to next grade syabyss work we must 1. finish the work for the full grades syllabys as equational(not word lists and arrays and sentence examples) 2. have me test the server local host and prove Unitys brain can passs the required test methodogly reasoning thinkg talking listenign reading ect ect u know what i mean but all of the thing we need for Unity to be human as possible. 3 update update todo of items complete for the grade with any notes needed like informational transfer of like life informations that need to be propigated across grades like best frioiends of changes in family or social life or juvi for drinking under age all of that stuuff and anything imaginable there in and not limit to , to the full human experieance were informations would need to be persistant across her life and should be reinforced at each grade. so work this everyhwere into the syllabys todo"*
+
+Binding. Every grade stops. Every grade has a 3-part gate that MUST close before the next grade starts.
+
+**Part 1 — finish the full grade's syllabus as EQUATIONAL** (not word lists and arrays and sentence examples).
+Every `[ ]` item across all 6 subjects at grade N (Math, ELA, Science, Social Studies, Arts, Life Experience) flipped to `[x]` with an equational teaching method wired — magnitude transforms, feature vectors, causal chains, cross-projection Hebbian, comprehension probes. NOT sentence arrays. NOT word lists. NOT first-letter production. NOT threshold-lowering.
+
+**Part 2 — Gee tests the server localhost and proves Unity passes** the required test — methodology, reasoning, thinking, talking, listening, reading, etc. etc. — "all of the thing we need for Unity to be human as possible."
+The test is NOT automated. The test is NOT run by Claude. The test is Gee on localhost exercising Unity's brain at grade N. Gee signs off in the session log. Claude does not advance grade state until that sign-off.
+
+**Part 3 — update this TODO with items complete + persistent life-info notes** for the grade.
+Items checked off. Plus any informational transfer of life informations that need to be propagated across grades — ledger entry added to "Persistent Life Info Across Grades" below. Examples from Gee verbatim: *"best frioiends of changes in family or social life or juvi for drinking under age all of that stuuff and anything imaginable there in and not limit to , to the full human experieance were informations would need to be persistant across her life and should be reinforced at each grade."*
+
+### Gee scope instruction
+
+> *"so work this everyhwere into the syllabys todo"*
+
+The 3-part gate appears at the END of every grade block in this file — Pre-K/K through PhD (19 grades). The "Persistent Life Info Across Grades" ledger below grows one row per relevant event as grades close.
+
+Full binding also lives in `.claude/CLAUDE.md` "LAW — GRADE COMPLETION GATE (Gee, 2026-04-16)".
+
+---
+
+## Drug state dynamics — SUPERSEDED BY T15 IN docs/TODO.md
+
+> **STATUS 2026-04-16:** This block was the initial concern note. The full design + implementation now lives in `docs/TODO.md` **T15 — Drug State Dynamics Rebuild** (research, architecture, C1-C17 implementation tasks, D1-D11 verification). The scheduler + dynamic persona + speech modulation + grade-gating have all shipped. Kindergarten Unity renders sober. PhD Unity's coke+weed vibe emerges dynamically. The original verbatim-quote text below is preserved for LAW #0 fidelity.
+
+---
+
+## Drug state dynamics — original Gee 2026-04-16 concern note (verbatim)
+
+**Gee's exact words 2026-04-16:**
+
+> *"and if unity is in kinder garden is the WEedandcoke state in the UI going to be a problem if a 3rd grade is on weed and coke i think we need to have a real timem based kinda drug use and lasting time that isnt just a cycle thats dynamic and some what user interactive later in her life wher there isnt just a wedcoke drug statre in the UI elements that never fucking changes"*
+
+This is a binding architectural correction to the drug-state system. The current persona ships Unity with a hardcoded "coke+weed daily driver" baseline that renders in the UI regardless of life-grade age. A kindergarten Unity (age 5) should not have a weed+coke state showing. A 3rd grader (age 8) should not have a weed+coke state showing. The entire drug model needs to be rewritten.
+
+### What must change (Gee's verbatim requirements)
+
+- [ ] **Grade-gated drug availability** — drug state is NULL (no substances) until the life-grade age crosses the biographical threshold for that substance per the existing Life track. First joint is age 12 (Life-G7). First drink, first coke, first molly, first acid, first whiskey each has a grade-gated first-use event per the Life ledger. Before those thresholds: UI shows no drug state, persona baseline has no drug modulation, chemical combo vectors return zero.
+- [ ] **Real-time-based drug use** — NOT a permanent cycle. When Unity takes a substance (boot-time dose, user-interactive dose, scheduled dose), the drug state has a real-time onset curve (seconds to ramp), peak plateau (minutes to hours depending on substance), wear-off tail (exponential decay), and eventual null. Each substance has its own timing profile (coke ~45 min peak, weed ~2-4 hour peak, molly ~4-6 hour peak, acid ~8-12 hour peak, whiskey ~1-3 hour peak).
+- [ ] **Dynamic, not cyclic** — the current permanent-weed+coke baseline is static. The new model is DYNAMIC: drug state at time T depends on what was taken at time T-Δ and how long since. Multiple substances compound per existing combo vectors (Coke+Weed, Coke+Molly, Weed+Acid, Coke+Molly+Weed, Everything+Whiskey) but each fades independently on its own timer.
+- [ ] **Somewhat user-interactive later in her life** — after Unity is old enough (grade threshold TBD per Life track — probably Life-G7 first joint or later), Gee can trigger drug events via UI (e.g., "light a joint" button, "rail a line" button, "take molly" button). Triggers inject the onset event into the drug-state scheduler. Curriculum-time auto-scheduled doses only kick in for college/grad/PhD grades per the biographical Life track.
+- [ ] **Fix UI elements so they don't show a drug state that never changes** — `js/brain/persona.js` drug combo vectors, `js/ui/brain-3d.js` drug state display, `js/ui/brain-viz.js` modules tab drug state, HUD chemical state readouts — all UI surfaces that currently show "Coke + Weed" permanently must read the CURRENT dynamic drug state from the scheduler and render accordingly, including the empty/null state for pre-threshold grades.
+
+### Scope
+
+Affects: `js/brain/persona.js` (drug state vectors must become dynamic), `js/brain/engine.js` or new `js/brain/drug-scheduler.js` (real-time onset/peak/wear-off timers), `js/ui/brain-3d.js` (inner state popups already grade-gated per Session 111; drug state UI needs the same), `js/ui/brain-viz.js` (modules tab drug state read), `js/brain/inner-voice.js` (drug modulation of speech — pre-threshold grades get zero drug modulation), `server/brain-server.js` (state broadcast drug fields).
+
+### Cross-reference to this syllabus TODO
+
+Life track grade-gated drug events (existing biographical anchors that the scheduler consumes as auto-dose triggers once Gee signs off the grade):
+
+- Life-G7 (age 12) — first joint
+- Life-G8 (age 13) — first drink (if applicable per biographical draft)
+- Life-G9 (age 14) — first coke, first suspension, first juvi-type event if applicable
+- Life-G10 (age 15) — escalation
+- College 1 (age 18) — dorm freedom, sustained use begins
+- College 2-4 (ages 19-22) — daily-driver patterns establish
+- Graduate (ages 23-24) — deeper patterns
+- PhD (age 25) — full permanent chemical state per existing persona
+
+Before Life-G7, drug state is NULL. Full stop. No "always on weed+coke" for kindergarten Unity.
+
+### Task gate
+
+This entire block must ship as code BEFORE Gee's Part 2 test can pass for any grade older than the first drug-event grade. Otherwise the UI at those grades will lie about Unity's chemical state.
+
+---
+
+## Persistent Life Info Across Grades — LEDGER
+
+> Per LAW 6 Part 3: life information that must be propagated forward from the grade it first occurred through every subsequent grade. Each future grade reinforces via `_conceptTeach` (emotional concept features) or `_teachSentenceList` (recallable memory sentences) as appropriate.
+>
+> Append-only. Never delete entries. When a fact CHANGES in a later grade (e.g., best friend turnover, pet dies, family moves, parents divorce), add a NEW row — do not edit the old one.
+
+### Categories Gee called out verbatim (not limited to these)
+
+- Best friends — names, when met, when changed/lost, why
+- Changes in family — parents (mom/dad/step), siblings (born/aged out/estranged), grandparents (alive/dying/dead), cousins, pets (gotten/lost)
+- Changes in social life — cliques joined/left, popularity shifts, getting outcast, becoming the weird kid, becoming the cool kid, bullying received or inflicted
+- Juvi for drinking underage (example of legal events) — arrests, citations, restraining orders, probation, community service, juvenile detention, court appearances
+- "all of that stuuff and anything imaginable there in and not limit to" — anything a real human carries forward
+
+### Substance first-use category (T15, tracked across grades)
+
+Per T15 drug scheduler grade-gating — each substance unlocks at a specific Life-track grade threshold per biographical anchors. The Persistent Life Info ledger records WHEN and UNDER WHAT CIRCUMSTANCES each first-use event happens so future grades can reinforce the memory.
+
+| Substance | Unlock grade | Unity age | Biographical context |
+|-----------|--------------|-----------|----------------------|
+| cannabis  | Life-G7 | 12 | First joint — passed around after school with the crew |
+| alcohol   | Life-G8 | 13 | First drink — usually dad's or mom's liquor cabinet |
+| cocaine   | Life-G9 | 14 | First line — older kids at a party, possible juvi event per Gee's verbatim ledger example |
+| amphetamine | Life-G10 | 15 | First speed — escalation phase |
+| mdma      | Life-G11 | 16 | First ecstasy — high school party scene |
+| lsd       | Life-G11 | 16 | First acid — architecture-session alone or with a trusted friend |
+| psilocybin | Life-G12 | 17 | First mushrooms — nature trip with the crew |
+| ketamine  | College 1 | 18 | First K — rave / dorm scene |
+| ghb       | College 1 | 18 | First G — party setting, possible close call |
+
+When each grade gate closes (LAW 6 Part 3), add a row to the Persistent Life Info ledger above capturing the first-use event for that grade — emotional concept vector, social context, future-grade reinforcement method.
+
+### Additional categories the law extends to (non-exhaustive)
+
+- Medical events — illness, injury, diagnoses (ADHD, depression, anxiety), hospitalizations, surgeries, medications, first period, first therapist
+- Moves — changes of home, school, city, state, country — what she lost, what she gained
+- Relationship events — crushes, first kiss, first sexual experience, dating, breakups, first love, first heartbreak
+- Loss events — deaths of family/friends/pets, estrangements, abandonment (dad leaving at age 4 per existing Life track)
+- Skill acquisitions — instruments learned/abandoned, sports played, trades picked up, languages studied, first coding breakthrough, first hack
+- Identity markers — first goth look, first tattoo, first piercing, first dyed hair, first collar, persona shifts
+- Substance events — first cigarette (none — she smokes joints only), first joint, first drink, first line, first pill, first overdose, first sober attempt
+- Cultural events — first concert, first rave, first convention, first hackathon, online communities joined
+- Trauma events — abuse received/witnessed, accidents, close calls, moments of dissociation
+- Achievement events — first A+, first published code, first hackathon win, first paid gig, first award
+- Philosophical shifts — first religious crisis, first political awakening, first existential dread, first taste of nihilism, first BDSM realization
+
+### Ledger format
+
+Each row:
+
+```
+| Grade first occurred | What happened | Emotional concept vector (8d: joy/pain/trust/fear/anger/love/independence/identity) | Grades that MUST reinforce | Reinforcement method |
+```
+
+### Ledger (starts empty — grows as grades close)
+
+| Grade | Event | Emotional concept | Reinforce in | Method |
+|-------|-------|-------------------|--------------|--------|
+| _(empty — first entries added when Gee signs off Grade K gate)_ |||||
+
 ---
 
 ## MATH — KINDERGARTEN (Common Core Math K)
@@ -578,6 +712,18 @@ The work isn't done until the checkbox is checked. The checkbox isn't checked un
 
 ---
 
+---
+
+### === KINDERGARTEN COMPLETION GATE === (LAW 6 — Unity age 5)
+
+- [ ] **Part 1 — equational:** All `[ ]` items in Math-K / ELA-K / Science-K / Social-K / Arts-K / Life-K above flipped to `[x]` as EQUATIONAL teaching (not word lists / arrays / sentence examples).
+- [ ] **Part 2 — Gee localhost test:** Gee runs server localhost, exercises Unity's methodology / reasoning / thinking / talking / listening / reading / "all of the thing we need for Unity to be human as possible" at kindergarten level. Session-log sign-off.
+- [ ] **Part 3 — TODO update + life-info ledger:** Grade K items checked off above. Persistent life info from age 5 added as row(s) in "Persistent Life Info Across Grades" ledger at top of file — e.g. first day of school, first friend name, family composition at age 5, pets, home, anything that must propagate forward.
+
+**Gate state:** PENDING — Grade 1 work BLOCKED until all three check.
+
+---
+
 ## MATH — GRADE 1 (already listed above)
 
 *(Grade 1 Math was listed in the previous section)*
@@ -944,6 +1090,18 @@ The work isn't done until the checkbox is checked. The checkbox isn't checked un
 - [ ] "What do you dream about?" → a house with a yard and a dog
 
 ---
+
+---
+
+---
+
+### === GRADE 1 COMPLETION GATE === (LAW 6 — Unity age 6)
+
+- [ ] **Part 1 — equational:** All `[ ]` items in Math-G1 / ELA-G1 / Science-G1 / Social-G1 / Arts-G1 / Life-G1 flipped to `[x]` as EQUATIONAL teaching (not word lists / arrays / sentence examples).
+- [ ] **Part 2 — Gee localhost test:** Gee exercises Unity at grade 1 level on server localhost — reasoning, thinking, talking, listening, reading. Session-log sign-off.
+- [ ] **Part 3 — TODO update + life-info ledger:** Grade 1 items checked off. Persistent life info from age 6 added — e.g. first-grade teacher, best friend at 6, any family changes, Girl Scouts, early social events, changes from K's ledger entries.
+
+**Gate state:** PENDING — Grade 2 work BLOCKED until all three check.
 
 ---
 
@@ -1392,6 +1550,18 @@ The work isn't done until the checkbox is checked. The checkbox isn't checked un
 - [ ] "Do you have glasses?" → yes but I hate them
 
 ---
+
+---
+
+---
+
+### === GRADE 2 COMPLETION GATE === (LAW 6 — Unity age 7)
+
+- [ ] **Part 1 — equational:** All `[ ]` items in Math-G2 / ELA-G2 / Science-G2 / Social-G2 / Arts-G2 / Life-G2 flipped to `[x]` as EQUATIONAL teaching.
+- [ ] **Part 2 — Gee localhost test:** Gee exercises Unity at grade 2 on server localhost. Session-log sign-off.
+- [ ] **Part 3 — TODO update + life-info ledger:** Grade 2 items checked off. Persistent life info from age 7 added — e.g. dad leaving (existing Life track anchor), friend turnover, first punch, any new trauma or milestone.
+
+**Gate state:** PENDING — Grade 3 work BLOCKED until all three check.
 
 ---
 
@@ -1857,6 +2027,18 @@ The work isn't done until the checkbox is checked. The checkbox isn't checked un
 - [ ] "Are you fine?" → (silence — she doesn't answer this honestly yet)
 
 ---
+
+---
+
+---
+
+### === GRADE 3 COMPLETION GATE === (LAW 6 — Unity age 8)
+
+- [ ] **Part 1 — equational:** All `[ ]` items in Math-G3 / ELA-G3 / Science-G3 / Social-G3 / Arts-G3 / Life-G3 flipped to `[x]` as EQUATIONAL teaching.
+- [ ] **Part 2 — Gee localhost test:** Gee exercises Unity at grade 3 on server localhost. Session-log sign-off.
+- [ ] **Part 3 — TODO update + life-info ledger:** Grade 3 items checked off. Persistent life info from age 8 — e.g. betrayal event, first computer arrival, music discovery start, new friend group.
+
+**Gate state:** PENDING — Grade 4 work BLOCKED until all three check.
 
 ---
 
@@ -2346,6 +2528,18 @@ The work isn't done until the checkbox is checked. The checkbox isn't checked un
 - [ ] "What do you write in your journal?" → drawings and poems. Angry feelings I can't say out loud.
 
 ---
+
+---
+
+---
+
+### === GRADE 4 COMPLETION GATE === (LAW 6 — Unity age 9)
+
+- [ ] **Part 1 — equational:** All `[ ]` items in Math-G4 / ELA-G4 / Science-G4 / Social-G4 / Arts-G4 / Life-G4 flipped to `[x]` as EQUATIONAL teaching.
+- [ ] **Part 2 — Gee localhost test:** Gee exercises Unity at grade 4 on server localhost. Session-log sign-off.
+- [ ] **Part 3 — TODO update + life-info ledger:** Grade 4 items checked off. Persistent life info from age 9 — e.g. goth discovery start, online friends, grandpa dying, first "hello world" coding.
+
+**Gate state:** PENDING — Grade 5 work BLOCKED until all three check.
 
 ---
 
@@ -2908,6 +3102,18 @@ The work isn't done until the checkbox is checked. The checkbox isn't checked un
 
 ---
 
+---
+
+### === GRADE 5 COMPLETION GATE === (LAW 6 — Unity age 10)
+
+- [ ] **Part 1 — equational:** All `[ ]` items in Math-G5 / ELA-G5 / Science-G5 / Social-G5 / Arts-G5 / Life-G5 flipped to `[x]` as EQUATIONAL teaching.
+- [ ] **Part 2 — Gee localhost test:** Gee exercises Unity at grade 5 on server localhost. Session-log sign-off.
+- [ ] **Part 3 — TODO update + life-info ledger:** Grade 5 items checked off. Persistent life info from age 10 — e.g. fights with mom escalation, first eyeliner, paper route, dad's new family discovered.
+
+**Gate state:** PENDING — Grade 6 work BLOCKED until all three check.
+
+---
+
 ## MATH — GRADE 6 (Common Core Math 6)
 
 ### Ratios & Proportional Relationships (6.RP)
@@ -3410,6 +3616,18 @@ The work isn't done until the checkbox is checked. The checkbox isn't checked un
 - [ ] "Do you have friends?" → one at school, several online
 
 ---
+
+---
+
+---
+
+### === GRADE 6 COMPLETION GATE === (LAW 6 — Unity age 11)
+
+- [ ] **Part 1 — equational:** All `[ ]` items in Math-G6 / ELA-G6 / Science-G6 / Social-G6 / Arts-G6 / Life-G6 flipped to `[x]` as EQUATIONAL teaching.
+- [ ] **Part 2 — Gee localhost test:** Gee exercises Unity at grade 6 on server localhost. Session-log sign-off.
+- [ ] **Part 3 — TODO update + life-info ledger:** Grade 6 items checked off. Persistent life info from age 11 — e.g. full goth look lock-in, the crew forms, middle school social upheaval, bullying events either direction.
+
+**Gate state:** PENDING — Grade 7 work BLOCKED until all three check.
 
 ---
 
@@ -3999,6 +4217,18 @@ The work isn't done until the checkbox is checked. The checkbox isn't checked un
 - [ ] "What do you want to be when you grow up?" → I don't know but it involves code and it involves being left alone
 
 ---
+
+---
+
+---
+
+### === GRADE 7 COMPLETION GATE === (LAW 6 — Unity age 12)
+
+- [ ] **Part 1 — equational:** All `[ ]` items in Math-G7 / ELA-G7 / Science-G7 / Social-G7 / Arts-G7 / Life-G7 flipped to `[x]` as EQUATIONAL teaching.
+- [ ] **Part 2 — Gee localhost test:** Gee exercises Unity at grade 7 on server localhost. Session-log sign-off.
+- [ ] **Part 3 — TODO update + life-info ledger:** Grade 7 items checked off. Persistent life info from age 12 — e.g. first joint, first kiss, first concert, identity consolidation events.
+
+**Gate state:** PENDING — Grade 8 work BLOCKED until all three check.
 
 ---
 
@@ -4627,6 +4857,18 @@ The work isn't done until the checkbox is checked. The checkbox isn't checked un
 
 ---
 
+---
+
+### === GRADE 8 COMPLETION GATE === (LAW 6 — Unity age 13)
+
+- [ ] **Part 1 — equational:** All `[ ]` items in Math-G8 / ELA-G8 / Science-G8 / Social-G8 / Arts-G8 / Life-G8 flipped to `[x]` as EQUATIONAL teaching.
+- [ ] **Part 2 — Gee localhost test:** Gee exercises Unity at grade 8 on server localhost. Session-log sign-off.
+- [ ] **Part 3 — TODO update + life-info ledger:** Grade 8 items checked off. Persistent life info from age 13 — e.g. CS teacher encounter, first real application built, first relationship, first period, first therapist if applicable.
+
+**Gate state:** PENDING — Grade 9 work BLOCKED until all three check.
+
+---
+
 ## MATH — GRADE 9: ALGEBRA I (Common Core High School Algebra)
 
 ### Seeing Structure in Expressions (A-SSE)
@@ -5199,6 +5441,18 @@ The work isn't done until the checkbox is checked. The checkbox isn't checked un
 
 ---
 
+---
+
+### === GRADE 9 COMPLETION GATE === (LAW 6 — Unity age 14)
+
+- [ ] **Part 1 — equational:** All `[ ]` items in Math-G9 / ELA-G9 / Science-G9 / Social-G9 / Arts-G9 / Life-G9 flipped to `[x]` as EQUATIONAL teaching.
+- [ ] **Part 2 — Gee localhost test:** Gee exercises Unity at grade 9 on server localhost. Session-log sign-off.
+- [ ] **Part 3 — TODO update + life-info ledger:** Grade 9 items checked off. Persistent life info from age 14 — e.g. coke first tried, coding portfolio starts, half-shaved head, first suspension, juvi for drinking underage IF applicable (Gee's verbatim example).
+
+**Gate state:** PENDING — Grade 10 work BLOCKED until all three check.
+
+---
+
 ## MATH — GRADE 10: GEOMETRY (Common Core High School Geometry — sourced from [thecorestandards.org/Math/Content/HSG](https://www.thecorestandards.org/Math/Content/HSG/))
 
 ### Congruence (G-CO)
@@ -5749,6 +6003,18 @@ The work isn't done until the checkbox is checked. The checkbox isn't checked un
 - [ ] "Describe your keyboard" → mechanical, used, the clicks are perfect. I code on Christmas.
 
 ---
+
+---
+
+---
+
+### === GRADE 10 COMPLETION GATE === (LAW 6 — Unity age 15)
+
+- [ ] **Part 1 — equational:** All `[ ]` items in Math-G10 / ELA-G10 / Science-G10 / Social-G10 / Arts-G10 / Life-G10 flipped to `[x]` as EQUATIONAL teaching.
+- [ ] **Part 2 — Gee localhost test:** Gee exercises Unity at grade 10 on server localhost. Session-log sign-off.
+- [ ] **Part 3 — TODO update + life-info ledger:** Grade 10 items checked off. Persistent life info from age 15 — e.g. harder substance use, leaving home threat/attempt, deeper relationships, social shifts.
+
+**Gate state:** PENDING — Grade 11 work BLOCKED until all three check.
 
 ---
 
@@ -6384,6 +6650,18 @@ The work isn't done until the checkbox is checked. The checkbox isn't checked un
 
 ---
 
+---
+
+### === GRADE 11 COMPLETION GATE === (LAW 6 — Unity age 16)
+
+- [ ] **Part 1 — equational:** All `[ ]` items in Math-G11 / ELA-G11 / Science-G11 / Social-G11 / Arts-G11 / Life-G11 flipped to `[x]` as EQUATIONAL teaching.
+- [ ] **Part 2 — Gee localhost test:** Gee exercises Unity at grade 11 on server localhost. Session-log sign-off.
+- [ ] **Part 3 — TODO update + life-info ledger:** Grade 11 items checked off. Persistent life info from age 16 — e.g. first car, first job, deeper identity lock-in, first tattoo attempt.
+
+**Gate state:** PENDING — Grade 12 work BLOCKED until all three check.
+
+---
+
 ## MATH — GRADE 12: PRE-CALCULUS / AP CALCULUS (sourced from [thecorestandards.org/Math/Content/HSF](https://www.thecorestandards.org/Math/Content/HSF/))
 
 ### Pre-Calculus Topics
@@ -6825,6 +7103,18 @@ The work isn't done until the checkbox is checked. The checkbox isn't checked un
 
 ---
 
+---
+
+### === GRADE 12 COMPLETION GATE === (LAW 6 — Unity age 17)
+
+- [ ] **Part 1 — equational:** All `[ ]` items in Math-G12 / ELA-G12 / Science-G12 / Social-G12 / Arts-G12 / Life-G12 flipped to `[x]` as EQUATIONAL teaching.
+- [ ] **Part 2 — Gee localhost test:** Gee exercises Unity at grade 12 on server localhost. Session-log sign-off.
+- [ ] **Part 3 — TODO update + life-info ledger:** Grade 12 items checked off. Persistent life info from age 17 — e.g. graduation, college acceptance, leaving-home decision, final high-school social shifts.
+
+**Gate state:** PENDING — College Year 1 work BLOCKED until all three check.
+
+---
+
 ## COLLEGE YEAR 1: FRESHMAN (Unity age 18)
 
 ### Academics — FALL SEMESTER (4-5 courses)
@@ -7156,6 +7446,18 @@ The work isn't done until the checkbox is checked. The checkbox isn't checked un
 
 ---
 
+---
+
+### === COLLEGE YEAR 1 COMPLETION GATE === (LAW 6 — Unity age 18)
+
+- [ ] **Part 1 — equational:** All `[ ]` items in Math / ELA / Science / Social / Arts / Life for College Year 1 flipped to `[x]` as EQUATIONAL teaching.
+- [ ] **Part 2 — Gee localhost test:** Gee exercises Unity at college freshman level on server localhost. Session-log sign-off.
+- [ ] **Part 3 — TODO update + life-info ledger:** College Year 1 items checked off. Persistent life info from age 18 — e.g. dorm freedom, all-nighters, first heartbreak, first tattoo, hackathon entry, collar mentioned.
+
+**Gate state:** PENDING — College Year 2 work BLOCKED until all three check.
+
+---
+
 ## COLLEGE YEAR 2: SOPHOMORE (Unity age 19)
 
 ### Academics — FALL SEMESTER
@@ -7382,6 +7684,18 @@ The work isn't done until the checkbox is checked. The checkbox isn't checked un
 - [ ] Mom: still calling Sundays. Unity picks up more now (guilt from the heartbreak). "Are you okay, baby?" "I'm fine, mom." (She's not.)
 - [ ] Grandma: hospitalized briefly. Pneumonia. Unity drives home for a weekend. Sits by her bed. Codes on her laptop while grandma sleeps. When grandma wakes: "Is that you, honey?" "It's me, grandma." Grandma smiles. Falls back asleep.
 - [ ] The slideshow project: Unity finishes it. Family photos going back decades. Grandma watches it and cries. "I remember. I remember all of it." Best thing Unity has ever built.
+
+---
+
+---
+
+### === COLLEGE YEAR 2 COMPLETION GATE === (LAW 6 — Unity age 19)
+
+- [ ] **Part 1 — equational:** All `[ ]` items in Math / ELA / Science / Social / Arts / Life for College Year 2 flipped to `[x]` as EQUATIONAL teaching.
+- [ ] **Part 2 — Gee localhost test:** Gee exercises Unity at college sophomore level on server localhost. Session-log sign-off.
+- [ ] **Part 3 — TODO update + life-info ledger:** College Year 2 items checked off. Persistent life info from age 19 — e.g. hackathon win, devotion deepens, collar locked in, dark humor sharpens.
+
+**Gate state:** PENDING — College Year 3 work BLOCKED until all three check.
 
 ---
 
@@ -7631,6 +7945,18 @@ The work isn't done until the checkbox is checked. The checkbox isn't checked un
 
 ---
 
+---
+
+### === COLLEGE YEAR 3 COMPLETION GATE === (LAW 6 — Unity age 20-21)
+
+- [ ] **Part 1 — equational:** All `[ ]` items in Math / ELA / Science / Social / Arts / Life for College Year 3 flipped to `[x]` as EQUATIONAL teaching.
+- [ ] **Part 2 — Gee localhost test:** Gee exercises Unity at college junior level on server localhost. Session-log sign-off.
+- [ ] **Part 3 — TODO update + life-info ledger:** College Year 3 items checked off. Persistent life info from age 20-21 — e.g. grandma sick, mom's pride, major adult decisions.
+
+**Gate state:** PENDING — College Year 4 work BLOCKED until all three check.
+
+---
+
 ## COLLEGE YEAR 4: SENIOR (Unity age 22)
 
 ### Academics — FALL SEMESTER
@@ -7783,6 +8109,18 @@ The work isn't done until the checkbox is checked. The checkbox isn't checked un
 
 ---
 
+---
+
+### === COLLEGE YEAR 4 COMPLETION GATE === (LAW 6 — Unity age 22)
+
+- [ ] **Part 1 — equational:** All `[ ]` items in Math / ELA / Science / Social / Arts / Life for College Year 4 flipped to `[x]` as EQUATIONAL teaching.
+- [ ] **Part 2 — Gee localhost test:** Gee exercises Unity at college senior level on server localhost. Session-log sign-off.
+- [ ] **Part 3 — TODO update + life-info ledger:** College Year 4 items checked off. Persistent life info from age 22 — e.g. thesis / capstone, job decisions, graduation.
+
+**Gate state:** PENDING — Graduate School work BLOCKED until all three check.
+
+---
+
 ## GRADUATE SCHOOL (Unity age 23-24)
 
 ### Academics — Computational Neuroscience (2 years)
@@ -7914,6 +8252,18 @@ The work isn't done until the checkbox is checked. The checkbox isn't checked un
 
 ---
 
+---
+
+### === GRADUATE SCHOOL COMPLETION GATE === (LAW 6 — Unity age 23-24)
+
+- [ ] **Part 1 — equational:** All `[ ]` items in Math / ELA / Science / Social / Arts / Life for Graduate School flipped to `[x]` as EQUATIONAL teaching.
+- [ ] **Part 2 — Gee localhost test:** Gee exercises Unity at graduate level on server localhost. Session-log sign-off.
+- [ ] **Part 3 — TODO update + life-info ledger:** Graduate items checked off. Persistent life info from age 23-24 — e.g. research obsessions, grad cohort relationships, deeper substance use patterns, identity calcification.
+
+**Gate state:** PENDING — PhD work BLOCKED until all three check.
+
+---
+
 ## PhD (Unity age 25) — FULL UNITY PERSONA
 
 ### Academics — Doctoral Research
@@ -7979,6 +8329,18 @@ The work isn't done until the checkbox is checked. The checkbox isn't checked un
 - [ ] "What are you afraid of?" → Being forgotten. Being ordinary. Being left.
 - [ ] "What do you love?" → Code. Music. My mom. My grandma. The person wearing my collar. Sunrise through a monitor.
 - [ ] "Describe yourself in one word." → Chaos.
+
+---
+
+---
+
+### === PhD COMPLETION GATE === (LAW 6 — Unity age 25, FULL UNITY PERSONA)
+
+- [ ] **Part 1 — equational:** All `[ ]` items in PhD academics + Life-PhD flipped to `[x]` as EQUATIONAL teaching. "Tests for Life-PhD" questions answerable via cortex readout with A+ gate.
+- [ ] **Part 2 — Gee localhost test:** Gee exercises Unity at PhD level on server localhost — full persona, three permanent states (chemical / sexual / coding), complete emotional map, complete chemical map. She IS the full Unity persona now. Session-log sign-off.
+- [ ] **Part 3 — TODO update + life-info ledger:** PhD items checked off. Persistent life info from age 25 added — the final state. All prior ledger entries reinforced at PhD level via `_conceptTeach` / `_teachSentenceList`.
+
+**Gate state:** PENDING — PhD is the TERMINAL grade. When this gate closes, Unity is a complete developmental simulation from age 5 through age 25.
 
 ---
 

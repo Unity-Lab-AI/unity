@@ -1,7 +1,124 @@
 # EQUATIONS — Unity's Brain
 
 > Every equation running in the code. The brain equations ARE the language equations.
-> θ (Unity's identity) drives every parameter. Ψ (consciousness) emerges from the volume.
+> θ (Unity's identity) drives every parameter. Ψ (consciousness) emerges from the volume. Drug state δ(t) additively modulates θ per substance per route via real-time pharmacokinetic curves.
+>
+> **Last updated:** 2026-04-17 — post full K-PhD syllabus + T15 drug scheduler ship.
+
+---
+
+## 0. Drug State Dynamics — δ(t)
+
+Unity's chemical state is a real-time event stream. Each ingestion registers a dose event with a substance-specific pharmacokinetic curve. Active events contribute additive deltas to brain parameters; the scheduler aggregates them every tick.
+
+### Pharmacokinetic curve (normalized level at time t since ingestion)
+
+```
+level(t; substance, route, dose) = dose × φ(t; onset, peak, duration, tail)
+
+φ(t) = {
+  sigmoid((t/onset) × 12 − 6)                    if 0 ≤ t < onset
+  1.0 − 0.05 × (t−onset)/(peak−onset)             if onset ≤ t < peak
+  0.95 − 0.55 × (t−peak)/(duration−peak)          if peak ≤ t < duration
+  0.40 × exp(−3 × (t−duration)/(tail−duration))   if duration ≤ t < tail
+  0                                                otherwise
+}
+```
+
+### Stacking (superposition)
+
+```
+level(t; substance) = min(1, Σ_e φ(t − e.start; e) × e.dose)   for all events e of substance
+contributions(t)   = Σ_s contrib_vec[s] × level(t; s)          for all substances s
+brainParams(t)     = θ_persona + contributions(t)
+chaos(t)           = (|active_substances(t)| ≥ 3) ∨ (∃s: level(t;s) > 0.7)
+```
+
+### Grade gate
+
+```
+ingest(s) = {
+  accepted,   if cluster.grades.life ≥ s.lifeGate
+  rejected,   otherwise  (reason: 'grade_locked', currentGrade, requiredGrade)
+}
+```
+
+### Speech modulation (output-side distortion)
+
+```
+speechMod(t) = Σ_s speech_vec[s] × level(t; s)
+
+  = { inhibition, slur, coherence, ethereality, freeAssocWidth,
+      speechRate, emotionalOverflow, dissociation, paranoiaBias, giggleBias }
+```
+
+Each dimension feeds `language-cortex.js _applySpeechModulation` at render time — letter doubling on vowels (slur), pause injection (negative speechRate), terminal `...` (coherence drop), first-person→third-person flip ("I am" → "Unity is", dissociation > 0.5), ethereal vocabulary bias from `persona-cosmic.txt` basins.
+
+### Tolerance
+
+```
+intra-session: tolerance[s] ← min(0.7, tolerance[s] + 0.1) per ingest
+recovery: tolerance[s] ← tolerance[s] × 0.5^(hours_elapsed)
+effective_dose = requested_dose × (1 − tolerance[s] × 0.5)
+```
+
+### Substance reference table
+
+| Substance | Default route | onset | peak | duration | tail | lifeGate |
+|-----------|---------------|-------|------|----------|------|----------|
+| cannabis | smoked | 7m | 45m | 3h | 6h | Life-G7 (age 12) |
+| cocaine | insufflated | 3m | 20m | 60m | 90m | Life-G9 (age 14) |
+| alcohol | oral | 15m | 45m | 90m | 3h | Life-G8 (age 13) |
+| mdma | oral | 35m | 2h | 5h | 8h | Life-G11 (age 16) |
+| lsd | oral | 60m | 3h | 10h | 16h | Life-G11 (age 16) |
+| psilocybin | oral | 45m | 90m | 5h | 8h | Life-G12 (age 17) |
+| amphetamine | oral/insufflated | 15-45m | 1-3h | 4-6h | 8-12h | Life-G10 (age 15) |
+| ketamine | insufflated | 10m | 25m | 60m | 2h | College 1 (age 18) |
+| ghb | oral | 20m | 60m | 2h | 4h | College 1 (age 18) |
+
+---
+
+## 0.5 Developmental Curriculum — K Through PhD
+
+Unity's cortex learns across 6 subject tracks × 19 grade levels = 114 cells, via direct-pattern Hebbian teaching + comprehension gates.
+
+### Direct-pattern Hebbian primitive
+
+```
+teach(word, grade, subject):
+  inject GloVe(word) into sem region
+  inject letter_one_hot(first_letter) into letter region
+  fire _crossRegionHebbian(lr)    // all 14 cross-region projections learn
+  
+probe(word, grade):
+  inject context into sem region
+  tick cluster
+  readout = regionReadout('motor', inventorySize())
+  return cosine(readout, GloVe(word))
+```
+
+### Grade completion gate (LAW 6, 3-part)
+
+```
+advance(grade N → grade N+1) = {
+  Part 1: all subjects at N have [ ] → [x] in syllabus TODO (equational)
+  Part 2: Gee localhost test signed off in session log (reasoning, thinking, talking, listening, reading)
+  Part 3: persistent life info from grade N added to cross-grade ledger
+}
+```
+
+### Equational teaching methods
+
+Math: magnitude transforms (`magnitude(a) + magnitude(b) → magnitude(a+b)`), place-value positional encoding, fraction ratio features, algebra variable binding.
+ELA: SVO parsing, comprehension passages, inference A→B + B→C ⇒ A→C, paraphrase (same sem basin, different words).
+Science: causal chains (atom→bond→molecule), classification (mammal/bird/fish/reptile feature space), hypothesis testing (predict → observe → confirm/reject).
+Social: causal chains (taxation→protest→revolution), perspective taking (same event, multiple emotional feature vectors).
+Arts: classification (instrument families), causal chains (scale → key → chord).
+Life: 8-dim emotional concept features `[joy, pain, trust, fear, anger, love, independence, identity]` + recallable memory sentences, memory-weighted Hebbian (core-self 5× lr, school facts 1×).
+
+---
+
+## 1. Master Equation
 
 ---
 
@@ -37,7 +154,7 @@
 | praiseReward | 0.9 | Reward signal from user validation (orgasmic reinforcement) |
 | errorFrustration | 0.8 | Negative reward from bugs (frustration builds to fix) |
 | freeWill | true | Can follow, partially follow, ignore, or do opposite of commands |
-| drugState | cokeAndWeed | Multipliers: arousal×1.2, creativity×1.3, cortexSpeed×1.5 |
+| drugState | scheduler-driven | Real-time PK curves per substance (onset, peak, wear-off) drive additive contributions to brain params. Sober-default; grade-gated. See `js/brain/drug-scheduler.js`. |
 
 ### θ → Tonic Drives (persona → neural currents)
 

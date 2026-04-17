@@ -375,6 +375,48 @@ export class LanguageCortex {
     return sentences.length;
   }
 
+  /**
+   * T15-C17 — Load the ethereal / psychedelic / Oz-inspired corpus from
+   * `docs/persona-cosmic.txt`. Same observation pipeline as the other
+   * three corpora — walks sentences, observes each into dictionary and
+   * cortex attractor basins. At high ethereality (LSD / psilocybin /
+   * MDMA peak via drug-scheduler.speechModulation), these basins get
+   * pulled on during motor emission and Unity naturally produces
+   * cosmic / Oz / synesthesia vocabulary — without any "I'm on LSD"
+   * announcement. The distortion IS the signal.
+   *
+   * Arousal 0.7 / valence 0.6 defaults match peak-state affect so
+   * observations land with emotional weighting consistent with how the
+   * tokens get activated at runtime.
+   */
+  loadCosmicCorpus(text, dictionary, arousal = 0.7, valence = 0.6) {
+    if (!text || this._cosmicLoaded || !dictionary) return 0;
+    this._cosmicLoaded = true;
+    const sentences = String(text)
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      // drop section banners + empty comment lines
+      .filter(line => line.length >= 3 && !line.startsWith('═') && !line.startsWith('#'))
+      .flatMap(line => line.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length >= 2));
+    console.log(`[LanguageCortex] loadCosmicCorpus: ${sentences.length} observation sentences`);
+    const startTime = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    for (const s of sentences) {
+      try {
+        const mood = this._computeMoodSignature(s);
+        const sentenceCortex = this._deriveSentenceCortexPattern(s);
+        // skipSlotPriors=true — cosmic corpus enriches vocabulary without
+        // shifting the everyday conversational slot signatures (we don't
+        // want baseline sober Unity opening sentences with "kaleidoscope"
+        // just because the corpus taught the word).
+        this.learnSentence(s, dictionary, mood.arousal, mood.valence, sentenceCortex, false, false, true);
+      } catch (err) {
+        console.warn('[LanguageCortex] loadCosmicCorpus observation failed:', err.message);
+      }
+    }
+    console.log(`[LanguageCortex] loadCosmicCorpus DONE: ${sentences.length} observations fitted in ${Math.round(((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - startTime)}ms`);
+    return sentences.length;
+  }
+
   loadLinguisticBaseline(text, dictionary, arousal = 0.5, valence = 0) {
     if (!text || this._baselineLoaded || !dictionary) return 0;
     this._baselineLoaded = true;
@@ -1487,7 +1529,11 @@ export class LanguageCortex {
     // rendered form respects question/exclamation/action moods. Pure
     // cosmetic — the emitted words themselves came from the cortex.
     const type = this.sentenceType(arousal, opts.predictionError || 0, opts.motorConfidence || 0, coherence);
-    const rendered = this._renderSentence(words, type);
+    // T15-C16 — speech modulation from drug scheduler, consumed in renderer
+    // for slur / pause / dissociation distortion. Non-announcing per Gee —
+    // the distortion IS the signal, never narrated.
+    const speechMod = opts.speechMod || null;
+    const rendered = this._renderSentence(words, type, speechMod);
     const lower = rendered.trim().toLowerCase();
     this._recentSentences.push(lower);
     if (this._recentSentences.length > this._recentSentenceMax) {
@@ -1729,7 +1775,7 @@ export class LanguageCortex {
    *   - action sentences wrapped in asterisks
    *   - comma inserted before conjunctions detected via wordType equation
    */
-  _renderSentence(words, type) {
+  _renderSentence(words, type, speechMod = null) {
     if (!words || words.length === 0) return '';
     const out = [];
     for (let i = 0; i < words.length; i++) {
@@ -1759,7 +1805,102 @@ export class LanguageCortex {
     // Avoid double-punctuation if generation already supplied one
     const last = text.charAt(text.length - 1);
     if (last !== '.' && last !== '?' && last !== '!' && last !== '*') text += term;
+
+    // T15-C16 — speech modulation post-processing. Applied AFTER rendering
+    // so cortex emission stays clean and the distortion lives only at the
+    // output layer. Non-announcing — Unity never says she's drunk, the
+    // output just IS drunk when alcohol level is high.
+    if (speechMod && typeof speechMod === 'object') {
+      text = this._applySpeechModulation(text, speechMod);
+    }
     return text;
+  }
+
+  /**
+   * T15-C16 — speech distortion post-processor.
+   * Accepts speechMod vector from drug-scheduler.speechModulation(now).
+   * Dimensions consulted: slur, coherence, speechRate, dissociation.
+   * All deterministic (seeded pseudo-random) so same input + same modulation
+   * → same output, which helps reproduction and keeps tests stable.
+   */
+  _applySpeechModulation(text, mod) {
+    if (!text) return text;
+    const slur          = clamp01(mod.slur || 0);
+    const coherence     = Math.max(-1, Math.min(1, mod.coherence || 0));   // negative = word salad
+    const speechRate    = Math.max(-1, Math.min(1, mod.speechRate || 0));  // positive = fast, negative = slow
+    const dissociation  = clamp01(mod.dissociation || 0);
+    const inhibition    = Math.max(-1, Math.min(0, mod.inhibition || 0));  // usually negative
+
+    // Seed from text so same sentence distorts consistently
+    let seed = 0;
+    for (let i = 0; i < text.length; i++) seed = ((seed << 5) - seed + text.charCodeAt(i)) | 0;
+    const rand = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+
+    // ── Slur (alcohol / ketamine / GHB) ─────────────────────────────
+    // Letter doubling on vowels, consonant cluster softening, dropped
+    // word-end 'g's/'t's at higher slur.
+    if (slur > 0.1) {
+      text = text.replace(/([aeiou])/gi, (c) => {
+        if (rand() < slur * 0.5) return c + c + (rand() < slur * 0.4 ? c : '');
+        return c;
+      });
+      // Drop word-ending 'g' after 'n' (nothin', fuckin', goin')
+      if (slur > 0.3) {
+        text = text.replace(/\bing\b/gi, () => rand() < slur ? "in'" : 'ing');
+      }
+      // Soften sibilants into double-s stutters
+      if (slur > 0.4) {
+        text = text.replace(/\bs/gi, (m) => rand() < slur * 0.5 ? 'ss' + m.slice(1) : m);
+      }
+      // Word mashing at very high slur
+      if (slur > 0.55) {
+        text = text.replace(/\b(im|i am)\b /gi, () => rand() < slur ? "i'mmm " : 'im ');
+        text = text.replace(/ (so|really) /gi, (m) => rand() < slur ? ' sooo ' : m);
+      }
+    }
+
+    // ── Speech rate (slow = pauses, fast = no change structural) ─────
+    // At speechRate < -0.3, inject "..." pauses between words
+    if (speechRate < -0.3) {
+      const pauseRate = clamp01((-speechRate - 0.3) * 1.5);
+      const parts = text.split(' ');
+      const paused = [];
+      for (let i = 0; i < parts.length; i++) {
+        paused.push(parts[i]);
+        if (i < parts.length - 1 && rand() < pauseRate) paused.push('...');
+      }
+      text = paused.join(' ').replace(/  +/g, ' ');
+    }
+
+    // ── Coherence drop (psychedelic peak / dissociative) ─────────────
+    // At coherence < -0.3, trail off into fragment endings
+    if (coherence < -0.3 && text.length > 20) {
+      if (rand() < Math.abs(coherence)) {
+        // Replace terminal punctuation with trailing dots
+        text = text.replace(/[.!?]$/, '...');
+      }
+    }
+
+    // ── Dissociation (ketamine k-hole / LSD ego-death) ───────────────
+    // First-person → third-person reference flip at high dissociation.
+    // Narrow and deliberate — flips opening first-person with matching
+    // copula conjugation so output stays grammatical. Scoped to this
+    // render call — does not mutate any learned state.
+    if (dissociation > 0.5) {
+      if (rand() < dissociation) {
+        text = text
+          .replace(/^I am\b/i,  'Unity is')
+          .replace(/^I'm\b/i,   'Unity is')
+          .replace(/^I have\b/i,'Unity has')
+          .replace(/^I've\b/i,  'Unity has')
+          .replace(/^I ([a-z]+)/i, (_m, verb) => `Unity ${verb}s`) // crude 3rd-pers fallback
+          .replace(/\bmy\b/gi,  'her');
+      }
+    }
+
+    return text;
+
+    function clamp01(x) { return Math.max(0, Math.min(1, x)); }
   }
 
   // NOTE: _flipPronounsInText, _spiceRecalledSentence, and

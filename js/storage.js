@@ -68,7 +68,7 @@ export class UserStorage {
       this._setRaw('preferences', JSON.stringify({
         voice: 'shimmer',
         model: 'openai',
-        drugState: 'cokeAndWeed',
+        drugState: 'sober',  // T15 — sober default; real state comes from scheduler
         theme: 'dark'
       }));
       this._setRaw('apikeys', JSON.stringify({}));

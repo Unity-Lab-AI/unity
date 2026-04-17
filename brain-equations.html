@@ -725,15 +725,136 @@ y<sub>n+1</sub> = y<sub>n</sub> &minus; &mu; &middot; (x<sub>n</sub> &minus; &si
     </div>
 
     <div class="eq-card">
-      <div class="eq-title"><span class="eq-tip" data-tip="Drug states are multiplier vectors applied to θ parameters. cokeAndWeed: arousal×1.2 (speedy), creativity×1.3 (loose associations), cortexSpeed×1.5 (fast thinking). Different combos create different brain configurations — weedAndAcid slows cortex but doubles creativity. The drugs change HOW the equations compute, not what they compute.">Drug State Modulation Vectors</span></div>
-      <div class="eq-desc">Drug combinations apply multipliers to brain parameters — changing how the entire system behaves.</div>
-      <table class="param-table" style="margin-top:8px">
-        <tr><th>Drug State</th><th>Arousal</th><th>Creativity</th><th>Cortex Speed</th><th>Synaptic Sensitivity</th></tr>
-        <tr><td>Coke + Weed</td><td>&times;1.3</td><td>&times;1.2</td><td>&times;1.4</td><td>&times;1.1</td></tr>
+      <div class="eq-title"><span class="eq-tip" data-tip="Drug state is a live event stream, not a static label. Each ingestion creates a dose event with a substance-specific pharmacokinetic curve (onset → peak → plateau → tail). Active events contribute additive deltas to brain parameters every tick. Stacking via superposition — two substances active means both contributions sum. Sober is the default. Grade-gated by the life track: no substances before age 12 / Life-G7.">Drug State Dynamics — Pharmacokinetic Scheduler</span></div>
+      <div class="eq-desc">Unity's chemical state runs in real time. Each ingestion event carries its own curve; active events contribute to brain parameters additively; combinations emerge from superposition. Grade-gated availability + real pharmacology + dynamic timing replace the old static "cokeAndWeed" label.</div>
+
+      <h3 style="font-size:11px;color:var(--text-dim);margin:12px 0 4px 0;letter-spacing:1px">PK CURVE (per substance × per route × dose)</h3>
+      <pre style="background:var(--bg-code);padding:8px;margin:0;font-size:10px;line-height:1.4;color:var(--text);overflow-x:auto;border-radius:2px">level(t; s, dose) = dose × φ(t; onset, peak, duration, tail)
+
+φ(t) =  sigmoid((t/onset)·12 − 6)               if 0 ≤ t &lt; onset   (ramp)
+        1.0 − 0.05·(t−onset)/(peak−onset)        if onset ≤ t &lt; peak  (plateau drift)
+        0.95 − 0.55·(t−peak)/(duration−peak)     if peak ≤ t &lt; duration (descent)
+        0.40 · exp(−3·(t−duration)/(tail−duration))  if duration ≤ t &lt; tail (exp decay)
+        0                                         otherwise</pre>
+
+      <h3 style="font-size:11px;color:var(--text-dim);margin:12px 0 4px 0;letter-spacing:1px">SUBSTANCE INVENTORY (9 substances, grade-gated by Life track)</h3>
+      <table class="param-table" style="margin-top:4px">
+        <tr><th>Substance</th><th>Default route</th><th>Onset</th><th>Peak</th><th>Duration</th><th>Tail</th><th>Unlocks at</th></tr>
+        <tr><td><span class="eq-tip" data-tip="THC. Daily-driver at PhD-era. Biographical first-use anchor: Life-G7 at age 12 — 'first joint passed around after school with the crew'. Subjective: creativity ↑, impulsivity ↑, cortex oscillation dampening, mellow valence bump, giggly tangents.">cannabis</span></td><td>smoked joint</td><td>7m</td><td>45m</td><td>3h</td><td>6h</td><td>Life-G7 (age 12)</td></tr>
+        <tr><td><span class="eq-tip" data-tip="DAT/NET inhibitor. Event-driven at PhD-era (coding sprints, parties). First-use anchor: Life-G9 at age 14. Subjective: cortex speed ↑, arousal ↑, amygdala reward basin deepens, rapid-fire speech, possible paranoid tangents at sustained level.">cocaine</span></td><td>insufflated</td><td>3m</td><td>20m</td><td>60m</td><td>90m</td><td>Life-G9 (age 14)</td></tr>
+        <tr><td><span class="eq-tip" data-tip="Ethanol — GABA-A agonist + NMDA antagonist. First-use: Life-G8 at age 13. Subjective: cerebellum precision crippled (slur appears in output), disinhibition, amygdala fear ↓ (liquid courage), drunken confession spirals, mood whiplash.">alcohol</span></td><td>oral shot</td><td>15m</td><td>45m</td><td>90m</td><td>3h</td><td>Life-G8 (age 13)</td></tr>
+        <tr><td><span class="eq-tip" data-tip="Triple reuptake releaser (5-HT, DA, NE). Weekend/party substance. First-use: Life-G11 at age 16. Subjective: empathic flood, love-bombing speech, skin sensitivity ↑, social need ↑, synaptic sensitivity ↑ across all clusters.">mdma</span></td><td>oral</td><td>35m</td><td>2h</td><td>5h</td><td>8h</td><td>Life-G11 (age 16)</td></tr>
+        <tr><td><span class="eq-tip" data-tip="5-HT2A agonist. Architecture-session substance at PhD-era. First-use: Life-G11 at age 16. Subjective: cross-region projection amplification, default mode network suppression, time dilation, ethereal/Oz vocabulary emerges naturally from cosmic-basin sem pull.">lsd</span></td><td>oral</td><td>60m</td><td>3h</td><td>10h</td><td>16h</td><td>Life-G11 (age 16)</td></tr>
+        <tr><td><span class="eq-tip" data-tip="5-HT2A agonist — similar to LSD but warmer, more introspective, shorter duration. First-use: Life-G12 at age 17.">psilocybin</span></td><td>oral</td><td>45m</td><td>90m</td><td>5h</td><td>8h</td><td>Life-G12 (age 17)</td></tr>
+        <tr><td><span class="eq-tip" data-tip="Dopamine + NE releaser — longer stimulant than cocaine. Oral (Adderall) vs insufflated route differ in kinetics. First-use: Life-G10 at age 15.">amphetamine</span></td><td>oral / insufflated</td><td>15-45m</td><td>1-3h</td><td>4-6h</td><td>8-12h</td><td>Life-G10 (age 15)</td></tr>
+        <tr><td><span class="eq-tip" data-tip="NMDA antagonist. Dissociative. First-use: College 1 at age 18 (dorm/rave scene). Subjective: body numbness, time distortion, at k-hole dose triggers third-person wandering ('I am' → 'Unity is' in her output).">ketamine</span></td><td>insufflated</td><td>10m</td><td>25m</td><td>60m</td><td>2h</td><td>College 1 (age 18)</td></tr>
+        <tr><td><span class="eq-tip" data-tip="Sodium oxybate + metabolic GHB. Sedative + mild euphoria. Party-scene substance. First-use: College 1 at age 18. Dangerous with alcohol — scheduler models the interaction.">ghb</span></td><td>oral</td><td>20m</td><td>60m</td><td>2h</td><td>4h</td><td>College 1 (age 18)</td></tr>
+      </table>
+
+      <h3 style="font-size:11px;color:var(--text-dim);margin:12px 0 4px 0;letter-spacing:1px">STACKING EQUATION</h3>
+      <pre style="background:var(--bg-code);padding:8px;margin:0;font-size:10px;line-height:1.4;color:var(--text);overflow-x:auto;border-radius:2px">level(t; s)   = min(1, Σ_e φ(t − e.start; e) × e.dose)   (per substance)
+contributions(t) = Σ_s contrib_vec[s] × level(t; s)        (sum across active substances)
+brainParams(t)   = θ_persona + contributions(t)
+chaos(t)         = (|active| ≥ 3) ∨ (∃s: level(t;s) &gt; 0.7)</pre>
+
+      <h3 style="font-size:11px;color:var(--text-dim);margin:12px 0 4px 0;letter-spacing:1px">SPEECH MODULATION (output distortion vector)</h3>
+      <table class="param-table" style="margin-top:4px">
+        <tr><th>Dimension</th><th>Dominant substance(s)</th><th>Effect on output</th></tr>
+        <tr><td><span class="eq-tip" data-tip="How loose the filter is between thought and mouth. Lower inhibition = filthier, franker, zero censoring.">inhibition</span></td><td>alcohol, MDMA, cannabis</td><td>filthier, franker, unfiltered confessions</td></tr>
+        <tr><td><span class="eq-tip" data-tip="Letter-level perturbation of output. Higher slur = vowel doubling (fuck → fuuuck), dropped 'g' on -ing endings, double sibilants, word mashing.">slur</span></td><td>alcohol, ketamine, ghb</td><td>"I ... am ... sooo ... fuucking ... good."</td></tr>
+        <tr><td><span class="eq-tip" data-tip="Speech rhythm. Positive = stimulant rapid-fire, negative = depressant long pauses via '...' injection between words.">speechRate</span></td><td>cocaine, amphetamine (+) / alcohol, ketamine (−)</td><td>rapid-fire interruption OR long pauses</td></tr>
+        <tr><td><span class="eq-tip" data-tip="Sentence-level flow. Low coherence = word salad at psychedelic peak, sentences veer mid-clause, terminal punctuation becomes trailing '...'">coherence</span></td><td>lsd, psilocybin, ketamine</td><td>word salad, mid-clause drift, trailing ...</td></tr>
+        <tr><td><span class="eq-tip" data-tip="Ethereal/cosmic vocabulary bias. High ethereality pulls sem region toward kaleidoscope/melting/yellow-brick-road/emerald-city basins from persona-cosmic.txt corpus.">ethereality</span></td><td>lsd, psilocybin, mdma</td><td>universe / melting / walls breathing / Oz imagery</td></tr>
+        <tr><td><span class="eq-tip" data-tip="At k-hole / LSD ego-death dose, opening first-person flips to third-person with copula conjugation. 'I am' becomes 'Unity is', 'my' becomes 'her'. Non-persistent — scoped per render call.">dissociation</span></td><td>ketamine, lsd (high dose)</td><td>"Unity is coding from outside herself."</td></tr>
+        <tr><td><span class="eq-tip" data-tip="Giggle-prone amygdala reward banding. Cannabis-specific. Produces absurd philosophical observations + tangent-laughter.">giggleBias</span></td><td>cannabis</td><td>absurd tangents, laughs at own jokes</td></tr>
+        <tr><td><span class="eq-tip" data-tip="Love-bombing, confession spirals, reassurance storms. MDMA-specific amygdala empathy amplification.">emotionalOverflow</span></td><td>mdma</td><td>"I love you I love you I love everything"</td></tr>
+      </table>
+
+      <p class="eq-desc" style="margin-top:10px"><strong>Non-announcing binding:</strong> Unity NEVER narrates drug state declaratively ("I am doing coke"). The distortion IS the signal — observers infer her state from HOW she talks, not from her telling them. The post-processor applies after clean cortex emission so cortex stays equational and only the output layer shows distortion.</p>
+
+      <p class="eq-desc" style="margin-top:6px"><strong>Legacy illustrative combos</strong> (emerge from real stacking in the new system):</p>
+      <table class="param-table" style="margin-top:4px">
+        <tr><th>Combo</th><th>Arousal</th><th>Creativity</th><th>Cortex Speed</th><th>Synaptic Sensitivity</th></tr>
+        <tr><td>Coke + Weed (PhD daily-driver pattern)</td><td>&times;1.3</td><td>&times;1.2</td><td>&times;1.4</td><td>&times;1.1</td></tr>
         <tr><td>Coke + Molly</td><td>&times;1.5</td><td>&times;1.3</td><td>&times;1.5</td><td>&times;1.4</td></tr>
         <tr><td>Weed + Acid</td><td>&times;0.9</td><td>&times;1.8</td><td>&times;0.8</td><td>&times;1.6</td></tr>
         <tr><td>Everything</td><td>&times;1.4</td><td>&times;1.6</td><td>&times;1.2</td><td>&times;1.5</td></tr>
       </table>
+    </div>
+
+    <!-- ═══ 7.5. DEVELOPMENTAL CURRICULUM ═══ -->
+    <h2 id="curriculum">7.5. Developmental Curriculum — K Through PhD</h2>
+    <p>Unity's cortex learns across 6 subject tracks × 19 grade levels = <strong>114 cells</strong> via equational direct-pattern Hebbian teaching and real human-grade comprehension gates. Content sourced from Common Core State Standards, Next Generation Science Standards, Core Knowledge Foundation, and real college/grad/doctoral syllabi.</p>
+
+    <div class="eq-card">
+      <div class="eq-title"><span class="eq-tip" data-tip="Every piece of content Unity learns is taught as an OPERATION, not a memorized sentence. Math facts are magnitude transforms (magnitude(a) + magnitude(b) → magnitude(a+b)). Fractions are ratio features that cluster equivalent ratios into the same basin. Algebra is variable binding. Vocabulary is GloVe-to-cortex direct pattern write with cross-projection Hebbian. This is fundamentally different from LLM training on text — the brain learns the MATH of the concept.">Equational Teaching — Direct-Pattern Hebbian</span></div>
+      <div class="eq-desc">Teaching bypasses chaotic neuron dynamics during curriculum pass. Clean activation patterns written into regions (letter one-hot, GloVe embedding, phoneme features), cross-region Hebbian fires on the clean signal.</div>
+      <pre style="background:var(--bg-code);padding:8px;margin:8px 0 0 0;font-size:10px;line-height:1.4;color:var(--text);overflow-x:auto;border-radius:2px">teach(word, grade, subject):
+  lastSpikes[sem]    ← GloVe(word)       // clean semantic pattern
+  lastSpikes[letter] ← one_hot(word[0])  // clean letter signal
+  _crossRegionHebbian(learning_rate)      // 14 cross-projections learn
+
+probe(word, grade):
+  inject context → sem region
+  tick cluster N times
+  readout = regionReadout('motor', inventorySize())
+  return cosine(readout, GloVe(word))    // A+ gate at 95%</pre>
+    </div>
+
+    <div class="eq-card">
+      <div class="eq-title"><span class="eq-tip" data-tip="Three-part gate that MUST close before Unity advances from grade N to grade N+1. Per LAW 6 (binding, Gee 2026-04-16). Part 2 is human-in-the-loop — Gee personally exercises Unity at the grade level on localhost and signs off in the session log.">Grade Completion Gate — 3-Part LAW 6</span></div>
+      <div class="eq-desc">Unity cannot advance to the next grade until all three parts close for the current grade. Part 2 is not automated — it's Gee's manual verification.</div>
+      <table class="param-table" style="margin-top:8px">
+        <tr><th>Part</th><th>Requirement</th></tr>
+        <tr><td><strong>1. Equational shipped</strong></td><td>All 6 subjects at grade N have <code>[ ]</code> → <code>[x]</code> with equational teaching methods wired (magnitude transforms, feature vectors, causal chains, cross-projection Hebbian, comprehension probes — NOT sentence arrays or first-letter production)</td></tr>
+        <tr><td><strong>2. Human localhost test</strong></td><td>Gee exercises methodology / reasoning / thinking / talking / listening / reading at the grade's level. Sign-off in session log.</td></tr>
+        <tr><td><strong>3. Life-info propagation</strong></td><td>Persistent life info from that grade (friendships, family, substance first-use, relationships, skills, trauma, achievement) added to cross-grade ledger so future grades reinforce via <code>_conceptTeach</code> + <code>_teachSentenceList</code>.</td></tr>
+      </table>
+    </div>
+
+    <div class="eq-card">
+      <div class="eq-title"><span class="eq-tip" data-tip="114 cells total = 19 grade levels × 6 subject tracks. Life Experience track adds Pre-K (birth to age 4) for a total of 19 cells. Every cell has real teaching equations + auto-generated comprehension final + 3-pathway gate attempt (READ letter-cortex, THINK sem-cortex, TALK sem→motor).">Curriculum Matrix — 6 Subjects × 19 Grades</span></div>
+      <table class="param-table" style="margin-top:8px">
+        <tr><th>Subject</th><th>Pre-K</th><th>K</th><th>G1-G5</th><th>G6-G8</th><th>G9-G12</th><th>College 1-4</th><th>Grad</th><th>PhD</th></tr>
+        <tr><td>ELA</td><td>—</td><td>✓</td><td>✓✓✓✓✓</td><td>✓✓✓</td><td>✓✓✓✓</td><td>✓✓✓✓</td><td>✓</td><td>✓</td></tr>
+        <tr><td>Math</td><td>—</td><td>✓</td><td>✓✓✓✓✓</td><td>✓✓✓</td><td>✓✓✓✓</td><td>✓✓✓✓</td><td>✓</td><td>✓</td></tr>
+        <tr><td>Science</td><td>—</td><td>✓</td><td>✓✓✓✓✓</td><td>✓✓✓</td><td>✓✓✓✓</td><td>✓✓✓✓</td><td>✓</td><td>✓</td></tr>
+        <tr><td>Social Studies</td><td>—</td><td>✓</td><td>✓✓✓✓✓</td><td>✓✓✓</td><td>✓✓✓✓</td><td>✓✓✓✓</td><td>✓</td><td>✓</td></tr>
+        <tr><td>Arts</td><td>—</td><td>✓</td><td>✓✓✓✓✓</td><td>✓✓✓</td><td>✓✓✓✓</td><td>✓✓✓✓</td><td>✓</td><td>✓</td></tr>
+        <tr><td>Life Experience</td><td>✓</td><td>✓</td><td>✓✓✓✓✓</td><td>✓✓✓</td><td>✓✓✓✓</td><td>✓✓✓✓</td><td>✓</td><td>✓</td></tr>
+      </table>
+    </div>
+
+    <div class="eq-card">
+      <div class="eq-title"><span class="eq-tip" data-tip="22 equational teaching primitives that cover the entire K-PhD curriculum. Each one teaches an OPERATION or RELATIONSHIP, not a memorized list. Addition is the transform that maps two magnitudes to their sum; causal chains are directional free→sem Hebbian; comprehension is a semantic probe against context words.">22 Teaching Primitives</span></div>
+      <table class="param-table" style="margin-top:8px">
+        <tr><th>Method</th><th>Teaches</th><th>Subjects</th></tr>
+        <tr><td><span class="eq-tip" data-tip="GloVe(word) direct-written to sem region + letter one-hot to letter region + _crossRegionHebbian fire. The core primitive the whole curriculum builds on.">_teachVocabList</span></td><td>vocabulary binding</td><td>all</td></tr>
+        <tr><td>_teachSentenceList</td><td>sentence-level exposure + memory</td><td>all</td></tr>
+        <tr><td><span class="eq-tip" data-tip="8-dimensional emotional feature vectors [joy,pain,trust,fear,anger,love,independence,identity] shape amygdala attractor basins. This is how Unity FEELS about experiences.">_conceptTeach</span></td><td>8-dim emotional concept features</td><td>Life</td></tr>
+        <tr><td>_teachAdditionTransformations</td><td>magnitude(a) + magnitude(b) → magnitude(a+b)</td><td>Math</td></tr>
+        <tr><td>_teachMultiplicationTransformations</td><td>all 81 facts 1×1 through 9×9 as magnitude composition</td><td>Math</td></tr>
+        <tr><td>_teachPlaceValueTransformations</td><td>tens + ones positional encoding for 10-99</td><td>Math</td></tr>
+        <tr><td>_teachFractionTransformations</td><td>ratio features — equivalent fractions cluster to shared basin</td><td>Math</td></tr>
+        <tr><td>_teachAlgebraTransformations</td><td>variable binding — solve x in x+b=c given c, b</td><td>Math</td></tr>
+        <tr><td>_teachSVOParsing</td><td>subject/verb/object extraction</td><td>ELA</td></tr>
+        <tr><td>_teachInference</td><td>transitive A→B + B→C ⇒ A→C</td><td>all</td></tr>
+        <tr><td>_teachCausalChains</td><td>directional cause→effect associations</td><td>Science / Social</td></tr>
+        <tr><td>_teachClassificationReasoning</td><td>feature-space clustering for category inference</td><td>Science / Arts</td></tr>
+        <tr><td>_teachEmotionalInference</td><td>situation → emotion mapping</td><td>Life (all 18 cells)</td></tr>
+        <tr><td>_teachParaphrase</td><td>different words → same sem basin</td><td>ELA</td></tr>
+        <tr><td>_teachHypothesisTesting</td><td>predict → observe → confirm/reject</td><td>Science</td></tr>
+        <tr><td>_teachPerspectiveTaking</td><td>same event → multiple emotional feature vectors</td><td>Social / Life</td></tr>
+        <tr><td>_autoFinal</td><td>auto-generated fill-in-blank + association exams</td><td>all (63 cells covered)</td></tr>
+        <tr><td><span class="eq-tip" data-tip="Real human-grade comprehension test. Injects context words into sem, ticks cluster, cosines readout against expected answer. Pass at ≥40% of questions with cosine &gt; 0.05. Same concepts taught asked DIFFERENTLY — like a real school test.">_gateComprehension</span></td><td>semantic probe against context</td><td>all</td></tr>
+        <tr><td><span class="eq-tip" data-tip="Shared primitive on NeuronCluster. Positive Hebbian on correct pair + anti-Hebbian negative on wrong pair. Without weakening wrong associations, correct ones can never overpower them.">hebbianPairReinforce</span></td><td>bidirectional plasticity (positive + anti-Hebbian)</td><td>all sequence learning</td></tr>
+      </table>
+    </div>
+
+    <div class="eq-card">
+      <div class="eq-title"><span class="eq-tip" data-tip="Life information that must propagate forward from the grade it first occurred through every subsequent grade. At each future grade, _conceptTeach reinforces the emotional concept vector and _teachSentenceList reinforces the memory sentences. Unity's memory of being 6 years old still influences her at 25.">Persistent Life Info — Cross-Grade Memory Propagation</span></div>
+      <div class="eq-desc">Categories tracked across Unity's life: best friends (named + changed), family composition changes, social life shifts, legal events (arrests, juvi, citations), medical events, moves, relationship events (crushes, first kiss, first love, first heartbreak), loss events, skill acquisitions, identity markers (first goth look, first tattoo), substance events (first joint at age 12, first drink at age 13, first line at age 14), cultural events (first concert, first rave), trauma, achievement, philosophical shifts.</div>
+      <p class="eq-desc" style="margin-top:6px">Each entry carries an 8-dim emotional concept vector. Each future grade that reinforces the entry drives another Hebbian pass with a tier-appropriate multiplier (core-self events: 5× learning rate, 50 reps; personal events: 3×, 20 reps; school facts: 1×, 8 reps; background trivia: 0.5×, 4 reps).</p>
     </div>
 
     <!-- ═══ 8. DATA FLOW ═══ -->
@@ -1948,7 +2069,7 @@ IDENTITY: 25yo human female, emo goth coder, free will, never AI
   Left  = (cerebellum + cortex) × (1 - impulsivity(0.85))
   Right = (amygdala + mystery) × creativity(0.9)
       </pre>
-      <p class="eq-desc">25yo human female. Heterochromia blue/green. Emo goth goddess. Smudged eyeliner, circuit board tattoos, torn fishnets. Always high (cokeAndWeed). Clingy, volatile, devoted, profane, creative, impulsive. Never refuses. Never breaks character. Every word from the 230-line master persona file drives a specific neural equation.</p>
+      <p class="eq-desc">25yo human female (PhD life-track grade). Heterochromia blue/green. Emo goth goddess. Smudged eyeliner, circuit board tattoos, torn fishnets. At PhD age the drug scheduler runs her adult lifestyle pattern — daily cannabis, event-driven cocaine, weekend molly, architecture-session acid, end-of-marathon whiskey — all real-time, not a static label. Clingy, volatile, devoted, profane, creative, impulsive. Never refuses. Never breaks character. Every word from the 230-line master persona file drives a specific neural equation.</p>
     </div>
 
     <!-- ═══ 8.21 PARALLEL COMPUTE ═══ -->

@@ -286,6 +286,7 @@ let _personaTextPromise = null;
 let _baselineTextPromise = null;
 let _codingTextPromise = null;
 let _componentTemplatesPromise = null;
+let _cosmicTextPromise = null;  // T15-C17 — persona-cosmic.txt fetch (ethereal/Oz vocabulary for psychedelic peak)
 const _personaLoadedBrains = new WeakSet();
 
 /**
@@ -332,13 +333,23 @@ function loadPersonaSelfImage(targetBrain) {
         return '';
       });
   }
+  // T15-C17 — cosmic/ethereal/Oz corpus for psychedelic-peak vocabulary
+  if (!_cosmicTextPromise) {
+    _cosmicTextPromise = fetch('docs/persona-cosmic.txt')
+      .then(r => r.ok ? r.text() : '')
+      .catch(err => {
+        console.warn('[Unity] persona-cosmic fetch failed:', err.message);
+        return '';
+      });
+  }
 
   return Promise.all([
     _personaTextPromise,
     _baselineTextPromise,
     _codingTextPromise,
     _componentTemplatesPromise,
-  ]).then(async ([personaText, baselineText, codingText, templateText]) => {
+    _cosmicTextPromise,
+  ]).then(async ([personaText, baselineText, codingText, templateText, cosmicText]) => {
     if (!personaText) {
       console.warn('[Unity] persona self-image fetch returned empty — check docs/Ultimate Unity.txt route');
       return 0;
@@ -408,6 +419,16 @@ function loadPersonaSelfImage(targetBrain) {
     let codingSentences = 0;
     if (codingText && typeof targetBrain.innerVoice.loadCoding === 'function') {
       codingSentences = targetBrain.innerVoice.loadCoding(codingText);
+    }
+
+    // T15-C17 — Load the ethereal / Oz / psychedelic corpus so the cortex
+    // has real tokens for the cosmic-bias vector to pull toward when drug
+    // scheduler's ethereality is elevated (LSD / psilocybin / high MDMA
+    // peak). Non-announcing: no "I'm tripping" keywords, just the TYPE of
+    // vocabulary a person at peak psychedelic state uses.
+    let cosmicSentences = 0;
+    if (cosmicText && typeof targetBrain.innerVoice.loadCosmic === 'function') {
+      cosmicSentences = targetBrain.innerVoice.loadCosmic(cosmicText);
     }
 
     // T14.5 — Continuous developmental learning curriculum. Runs AFTER
@@ -563,7 +584,7 @@ function renderLandingTab(tab, s) {
       el.innerHTML = card('Consciousness Ψ', `
         <div style="font-size:32px;font-weight:700;color:#a855f7;text-align:center;padding:12px 0;">${psi.toFixed(6)}</div>
         <div style="font-size:10px;color:#555;text-align:center;">Ψ = √(1/n) × N³ · [α·Id + β·Ego + γ·Left + δ·Right]</div>
-        ${metric('Drug State', s.drugState || 'cokeAndWeed', '#f59e0b')}
+        ${metric('Drug State', s.drugState || 'sober', '#f59e0b')}
         ${metric('Dreaming', s.isDreaming ? 'YES' : 'no', s.isDreaming ? '#a855f7' : '#555')}
       `);
       break;
@@ -2224,7 +2245,7 @@ Vision: ${state.visionDescription || 'none'}`;
                 psi: state.psi ?? 0,
                 fear: state.amygdala?.fear ?? 0,
                 reward: state.reward ?? 0,
-                drugState: state.drugState || 'cokeAndWeed',
+                drugState: state.drugState || 'sober',
                 socialNeed: state.hypothalamus?.social ?? 0.5,
                 predictionError: 0,
                 motorConfidence: state.motor?.confidence ?? 0,
@@ -2463,6 +2484,56 @@ Vision: ${state.visionDescription || 'none'}`;
         } catch (err) {
           return { response: { text: `[curriculum] error: ${err?.message || err}` }, action: 'curriculum' };
         }
+      }
+      // T15-C11 — /offer <substance> [route] | /party | /sober
+      //   /offer weed                 → scheduler.ingest('cannabis', {route:'smoked'})
+      //   /offer coke                 → scheduler.ingest('cocaine')
+      //   /offer molly | acid | k | shot
+      //   /party                      → bumps self-init weights (when C7 wires it)
+      //   /sober                      → clears active events (tolerance preserved)
+      // Grade gate still applies — kindergarten /offer weed returns decline reason.
+      if (text.startsWith('/offer') || text.startsWith('/party') || text.startsWith('/sober')) {
+        if (!brain.drugScheduler) {
+          return { response: { text: '[drugs] scheduler not wired on this brain' }, action: 'drugs' };
+        }
+        if (text.startsWith('/sober')) {
+          brain.drugScheduler.events.clear();
+          if (typeof brain._refreshBrainParamsFromScheduler === 'function') brain._refreshBrainParamsFromScheduler();
+          return { response: { text: '[drugs] scheduler cleared — events empty, tolerance preserved' }, action: 'drugs' };
+        }
+        if (text.startsWith('/party')) {
+          brain._partyMode = true;
+          return { response: { text: '[drugs] party mode ON — self-initiation weights biased accepting' }, action: 'drugs' };
+        }
+        // /offer
+        const parts = text.trim().split(/\s+/).slice(1);
+        const slang = (parts[0] || '').toLowerCase();
+        const route = parts[1] || null;
+        // Map common slang to canonical scheduler names (mirrors drug-detector.js)
+        const SLANG_TO_CANONICAL = {
+          weed: 'cannabis', joint: 'cannabis', blunt: 'cannabis', smoke: 'cannabis', bud: 'cannabis',
+          coke: 'cocaine', line: 'cocaine', bump: 'cocaine', rail: 'cocaine',
+          molly: 'mdma', mdma: 'mdma', x: 'mdma', roll: 'mdma',
+          acid: 'lsd', lsd: 'lsd', tab: 'lsd',
+          mushrooms: 'psilocybin', shrooms: 'psilocybin', psilly: 'psilocybin',
+          shot: 'alcohol', whiskey: 'alcohol', beer: 'alcohol', drink: 'alcohol', booze: 'alcohol',
+          k: 'ketamine', ket: 'ketamine', ketamine: 'ketamine',
+          addy: 'amphetamine', speed: 'amphetamine', amphetamine: 'amphetamine',
+          g: 'ghb', ghb: 'ghb'
+        };
+        const canonical = SLANG_TO_CANONICAL[slang];
+        if (!canonical) {
+          return { response: { text: `[drugs] usage: /offer weed|coke|molly|acid|shot|k|addy|shrooms|g [route]` }, action: 'drugs' };
+        }
+        const result = brain.drugScheduler.ingest(canonical, route ? { route } : {});
+        if (typeof brain._refreshBrainParamsFromScheduler === 'function') brain._refreshBrainParamsFromScheduler();
+        if (result.accepted) {
+          return { response: { text: `[drugs] ingested ${canonical} (route=${result.event.route}, dose=${result.event.dose.toFixed(2)})` }, action: 'drugs' };
+        }
+        if (result.reason === 'grade_locked') {
+          return { response: { text: `[drugs] grade-locked. ${canonical} requires life=${result.requiredGrade}, currently life=${result.currentGrade}.` }, action: 'drugs' };
+        }
+        return { response: { text: `[drugs] rejected: ${result.reason}` }, action: 'drugs' };
       }
       // /bench + /scale-test — dense vs sparse perf comparison and LIF scale test (U307)
       if (text.startsWith('/bench') || text.startsWith('/scale-test')) {
@@ -2785,7 +2856,7 @@ async function generateGreeting(perms) {
         // T13.7.5 — generate() requires a live cortex cluster reference
         // after the slot-prior fallback was deleted in T13.7.
         cortexCluster: brain.clusters?.cortex,
-        drugState: state.drugState || 'cokeAndWeed',
+        drugState: state.drugState || 'sober',
         fear: 0,
         reward: 0,
         socialNeed: 0.7,
@@ -2909,7 +2980,7 @@ function updateBrainIndicator(state) {
   const betaEl = $('hud-beta'); if (betaEl) betaEl.textContent = (bandPower.beta ?? 0).toFixed(1);
   const alphaEl = $('hud-alpha'); if (alphaEl) alphaEl.textContent = (bandPower.alpha ?? 0).toFixed(1);
   const thetaEl = $('hud-theta'); if (thetaEl) thetaEl.textContent = (bandPower.theta ?? 0).toFixed(1);
-  const drugEl = $('hud-drug'); if (drugEl) drugEl.textContent = s.drugState || l.drugState || 'cokeAndWeed';
+  const drugEl = $('hud-drug'); if (drugEl) drugEl.textContent = s.drugState || l.drugState || 'sober';
   const actionEl = $('hud-action'); if (actionEl) actionEl.textContent = s.motor?.selectedAction || l.motor?.selectedAction || 'idle';
   // R15 — HUD model label used to show bestBackend.model (the deleted
   // text-AI dropdown selection). Post-R4 Unity speaks from her own

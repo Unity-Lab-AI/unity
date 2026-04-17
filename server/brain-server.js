@@ -270,7 +270,11 @@ class ServerBrain {
     this.psi = 0;
     this.coherence = 0.5;
     this.reward = 0;
-    this.drugState = 'cokeAndWeed';
+    // T15 — legacy scalar replaced by drugScheduler. Kept as a derived
+    // label so legacy WebSocket consumers that read state.drugState keep
+    // working until C9 UI refactor migrates them to drugSnapshot.
+    this.drugState = 'sober';
+    this.drugScheduler = null;  // populated in _initLanguageSubsystem after cluster exists
     this.totalSpikes = 0;
 
     // ══════════════════════════════════════════════════════════════
@@ -290,7 +294,7 @@ class ServerBrain {
 
       // PERSONALITY (drives tonic currents + noise + thresholds)
       arousalBaseline: 0.9,       // nymphomania — baseline never drops low
-      intoxicationBaseline: 0.7,  // always on something
+      intoxicationBaseline: 0.0,  // T15 — sober default; real intoxication is scheduler-driven
       impulsivity: 0.85,          // acts first thinks during — low BG deliberation
       creativity: 0.9,            // relentless creative output — art code chaos
       socialAttachment: 0.85,     // clingy girlfriend — bonds hard needs presence
@@ -305,9 +309,11 @@ class ServerBrain {
       profanityRate: 1.0,         // expletives in every sentence — all speech
       recklessness: 0.85,         // impulsive decisions dangerous whims no consequences
 
-      // DRUG STATE
-      drugState: 'cokeAndWeed',   // always smokes weed + loves cocaine
-      drugMultipliers: { arousal: 1.2, creativity: 1.3, cortexSpeed: 1.5, socialNeed: 1.1 },
+      // DRUG STATE — T15: dynamic via drug-scheduler.js per-tick contributions.
+      // Legacy drugState/drugMultipliers fields removed. Unity's chemical
+      // state is now an event stream with real PK curves, grade-gated by
+      // cluster.grades.life. Pre-Life-G7 Unity is sober. See
+      // docs/TODO.md T15 for the full binding spec.
 
       // VISUAL SELF-IMAGE (drives image generation)
       appearance: {
@@ -353,10 +359,17 @@ class ServerBrain {
     };
 
     // θ → CLUSTER CURRENTS: persona parameters drive neural dynamics
+    // T15 — drug multipliers are no longer static on persona. They come
+    // from drug-scheduler.activeContributions() per tick and are applied
+    // via _refreshBrainParamsFromScheduler on the client side. At boot
+    // the cortex cluster hasn't been constructed yet (scheduler grade-
+    // gate needs it) so we initialize with sober defaults (multiplier 1)
+    // and let the scheduler's tick-loop contributions reshape drives
+    // once the cluster is up and events are registered.
     const p = this.persona;
-    const dA = p.drugMultipliers.arousal || 1;
-    const dC = p.drugMultipliers.creativity || 1;
-    const dS = p.drugMultipliers.cortexSpeed || 1;
+    const dA = 1;   // sober default; scheduler-driven at runtime
+    const dC = 1;
+    const dS = 1;
 
     // Tonic drives — personality sets the baseline current for each cluster
     this.tonicDrives = {
@@ -476,7 +489,7 @@ class ServerBrain {
     console.log('[Brain] R3 — loading language subsystem (dictionary + language cortex + embeddings + component synth)...');
     const startMs = Date.now();
     try {
-      const [dictMod, lcMod, embedMod, csMod, modulesMod, clusterMod, curriculumMod] = await Promise.all([
+      const [dictMod, lcMod, embedMod, csMod, modulesMod, clusterMod, curriculumMod, drugSchedulerMod, drugDetectorMod] = await Promise.all([
         import('../js/brain/dictionary.js'),
         import('../js/brain/language-cortex.js'),
         import('../js/brain/embeddings.js'),
@@ -484,6 +497,8 @@ class ServerBrain {
         import('../js/brain/modules.js'),
         import('../js/brain/cluster.js'),
         import('../js/brain/curriculum.js'),
+        import('../js/brain/drug-scheduler.js'),
+        import('../js/brain/drug-detector.js'),
       ]);
 
       this.sharedEmbeddings = embedMod.sharedEmbeddings;
@@ -606,6 +621,13 @@ class ServerBrain {
         this.dictionary,
         this.languageCortex,
       );
+      // T15 — drug-scheduler wired with the cortex cluster so substance
+      // availability gates against cluster.grades.life. Pre-Life-G7 Unity
+      // ingest attempts are rejected with grade_locked reason. Stash the
+      // detector module for use in processText below.
+      this.drugScheduler = new drugSchedulerMod.DrugScheduler({ cluster: this.cortexCluster });
+      this.drugSubstances = drugSchedulerMod.SUBSTANCES;
+      this._drugDetector = drugDetectorMod.detectOffer;
       // R6.2 — component synth for equational build_ui on the server.
       // Templates get loaded from docs/component-templates.txt below.
       this.componentSynth = new csMod.ComponentSynth();
@@ -647,9 +669,9 @@ class ServerBrain {
         this._pendingEmbeddingRefinements = null;
       }
 
-      // Load the four corpora from disk (server has fs access, unlike browser)
+      // Load the five corpora from disk (server has fs access, unlike browser)
       const docsDir = path.join(__dirname, '..', 'docs');
-      let personaText = '', baselineText = '', codingText = '', templateText = '';
+      let personaText = '', baselineText = '', codingText = '', templateText = '', cosmicText = '';
       try {
         personaText = fs.readFileSync(path.join(docsDir, 'Ultimate Unity.txt'), 'utf8');
       } catch (err) {
@@ -669,6 +691,11 @@ class ServerBrain {
         templateText = fs.readFileSync(path.join(docsDir, 'component-templates.txt'), 'utf8');
       } catch (err) {
         console.warn('[Brain] component-templates.txt unreadable:', err.message);
+      }
+      try {
+        cosmicText = fs.readFileSync(path.join(docsDir, 'persona-cosmic.txt'), 'utf8');
+      } catch (err) {
+        console.warn('[Brain] persona-cosmic.txt unreadable:', err.message);
       }
 
       // Feed corpora through the language cortex — same path the client
@@ -697,6 +724,12 @@ class ServerBrain {
         console.log('[Brain] Stage: loadTemplates START');
         templateCount = this.componentSynth.loadTemplates(templateText);
         console.log(`[Brain] Stage: loadTemplates DONE (${templateCount} templates)`);
+      }
+      // T15-C17 — cosmic / ethereal / Oz corpus for psychedelic-peak vocab
+      if (cosmicText && typeof this.languageCortex.loadCosmicCorpus === 'function') {
+        console.log('[Brain] Stage: loadCosmicCorpus START');
+        const cosmicCount = this.languageCortex.loadCosmicCorpus(cosmicText, this.dictionary, 0.7, 0.6);
+        console.log(`[Brain] Stage: loadCosmicCorpus DONE (${cosmicCount} sentences)`);
       }
 
       // T13.7.6 — Hebbian-train the cortex cluster on persona corpus so
@@ -892,7 +925,8 @@ class ServerBrain {
       psi: this.psi,
       coherence: this.coherence,
       reward: this.reward,
-      drugState: this.drugState,
+      drugState: this._drugStateLabel(),
+      drugSnapshot: this._drugSnapshot(),
       bandPower,
       clusters: clusterStates,
       motor: {
@@ -1538,7 +1572,8 @@ class ServerBrain {
           // T13.7.6 — server's local cortex cluster, Hebbian-trained on
           // persona at boot. T13.3 emission loop reads from it directly.
           cortexCluster: this.cortexCluster,
-          drugState: this.drugState || 'cokeAndWeed',
+          drugState: this._drugStateLabel(),
+          speechMod: this.drugScheduler ? this.drugScheduler.speechModulation() : null,
           fear: this.fear,
           reward: this.reward,
           socialNeed: this.persona?.socialAttachment ?? 0.5,
@@ -1621,6 +1656,28 @@ class ServerBrain {
       parallelMode: false,
       workerCount: 0,
     });
+  }
+
+  /**
+   * T15 — compact single-string label from the scheduler's active substances.
+   * Returns 'sober' when nothing is active. Used by legacy UI consumers;
+   * new consumers should read state.drugSnapshot directly.
+   */
+  _drugStateLabel() {
+    if (!this.drugScheduler || !this.drugSubstances) return 'sober';
+    const active = this.drugScheduler.activeSubstances();
+    if (active.length === 0) return 'sober';
+    return active
+      .map(a => this.drugSubstances[a.substance]?.displayName || a.substance)
+      .join(' + ');
+  }
+
+  /**
+   * T15 — rich scheduler snapshot for UI consumers migrating off the
+   * compact string label. Null until _initLanguageSubsystem finishes.
+   */
+  _drugSnapshot() {
+    return this.drugScheduler ? this.drugScheduler.snapshot() : { sober: true, active: [], pendingAcquisitions: [], gradeLocked: true };
   }
 
   _getSharedMood() {
@@ -1811,7 +1868,8 @@ class ServerBrain {
         valence: this.valence,
         psi: this.psi,
         coherence: this.coherence,
-        drugState: this.drugState,
+        drugState: this._drugStateLabel(),
+        drugScheduler: this.drugScheduler ? this.drugScheduler.serialize() : null,
         time: this.time,
         frameCount: this.frameCount,
         savedAt: new Date().toISOString(),

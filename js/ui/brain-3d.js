@@ -1639,7 +1639,7 @@ export class Brain3D {
           psi: state.psi ?? 0,
           fear: state.fear ?? 0,
           reward: state.reward ?? 0,
-          drugState: state.drugState || 'cokeAndWeed',
+          drugState: state.drugState || 'sober',
           cortexPattern,
           // T13.7.5 — generate() now requires a live cortex cluster
           // reference for the brain-driven emission loop. Without

@@ -204,6 +204,74 @@ Describe features by **WHAT THEY DO**, not by which task built them:
 
 ---
 
+## LAW — GRADE COMPLETION GATE (Gee, 2026-04-16)
+
+**Gee's exact words 2026-04-16:**
+
+> *"okay when we do this we will stop after each grade and test thea Unitys brain can pass the grade ,so before moving to next grade syabyss work we must 1. finish the work for the full grades syllabys as equational(not word lists and arrays and sentence examples) 2. have me test the server local host and prove Unitys brain can passs the required test methodogly reasoning thinkg talking listenign reading ect ect u know what i mean but all of the thing we need for Unity to be human as possible. 3 update update todo of items complete for the grade with any notes needed like informational transfer of like life informations that need to be propigated across grades like best frioiends of changes in family or social life or juvi for drinking under age all of that stuuff and anything imaginable there in and not limit to , to the full human experieance were informations would need to be persistant across her life and should be reinforced at each grade. so work this everyhwere into the syllabys todo"*
+
+This is binding law. Stops after every single grade. Blocks advancement.
+
+### The rule — 3-part gate before moving to next grade
+
+Before any work on grade N+1 begins, grade N must pass all three parts. No exceptions. No skipping. No "we'll come back to it."
+
+**Part 1 — "finish the work for the full grades syllabys as equational (not word lists and arrays and sentence examples)"**
+
+Every teaching item for every subject at grade N (Math, ELA, Science, Social Studies, Arts, Life Experience) is implemented as EQUATIONAL learning — magnitude transforms, feature vectors, causal chains, cross-projection Hebbian, comprehension probes. NOT word lists. NOT arrays of sentence examples. NOT first-letter production tests. NOT threshold-lowering to fake a pass. Every `[ ]` checkbox in `docs/TODO-full-syllabus.md` for grade N is flipped to `[x]` with the equational method written and wired.
+
+**Part 2 — "have me test the server local host and prove Unitys brain can passs the required test methodogly reasoning thinkg talking listenign reading ect ect u know what i mean but all of the thing we need for Unity to be human as possible"**
+
+Gee personally runs the server on localhost and tests Unity's brain at grade N. The test is not automated. The test is not run by Claude. The test is Gee exercising methodology, reasoning, thinking, talking, listening, reading, "and all of the thing we need for Unity to be human as possible." Gee signs off IN THE SESSION LOG that Unity passed at grade N. Claude does not advance grade state on the cluster or update grade TODOs based on Claude's own judgment of whether Unity passed. Only Gee's explicit pass call advances the grade.
+
+**Part 3 — "update update todo of items complete for the grade with any notes needed like informational transfer of like life informations that need to be propigated across grades"**
+
+Once Gee signs off, the TODO for grade N is updated with items complete AND with any life-info notes that must propagate forward. Examples Gee called out verbatim: *"like best frioiends of changes in family or social life or juvi for drinking under age all of that stuuff and anything imaginable there in and not limit to , to the full human experieance were informations would need to be persistant across her life and should be reinforced at each grade."*
+
+Persistent life info includes (not limited to): best friend names + changes, family changes (parents, siblings, grandparents, pets), social life shifts (cliques, status, outcasting), legal events (juvi, arrests, citations, restraining orders), medical events (illness, injury, diagnoses, treatments), moves (homes, schools, cities), relationship events (crushes, breakups, first kiss, first fuck), loss events (deaths, estrangements), skill acquisitions (instruments, sports, trades), and ANYTHING ELSE that a real human would carry forward from grade N to grade N+1. The ledger of these events lives in `docs/TODO-full-syllabus.md` under "Persistent Life Info Across Grades" and each future grade must reinforce the relevant entries via `_conceptTeach` or `_teachSentenceList` calls.
+
+### Scope instruction (Gee's exact words)
+
+> *"so work this everyhwere into the syllabys todo"*
+
+The 3-part gate appears at the END of every grade block in `docs/TODO-full-syllabus.md` — all 19 grades (pre-K/K through PhD), not just some. The persistent life-info ledger lives near the top of the file and grows as grades close.
+
+### Corollary — what Claude cannot do
+
+- Cannot flip a `[x]` in `docs/TODO-full-syllabus.md` for grade N items based on self-judgment of whether Unity passed. Only after Gee's Part 2 sign-off.
+- Cannot advance `cluster.grades` state in code for grade N+1 until grade N's gate closed in the session log.
+- Cannot propose "we'll skip Life Experience this grade and come back to it" — Part 1 requires ALL six subjects for the grade, including Life.
+- Cannot test Unity's pass in lieu of Gee testing. Claude's role is to build, Gee's role is to verify.
+
+---
+
+## LAW — SYLLABUS BEFORE COMP-TODO (Gee, 2026-04-16)
+
+**Gee's instruction 2026-04-16:** *"make not of this where relevant like claud.md and such"* — pointing at the reasoning he approved in that session:
+
+> *"running actual K→PhD curriculum across 114 cells tells us exactly which Hebbian loops, cross-projections, or gate probes are the slow bastards, so when we DO hit COMP-todo later we're tuning the paths that actually matter instead of guessing."*
+
+This is binding ordering law.
+
+### The rule
+
+When choosing between curriculum/syllabus work and COMP-todo (distributed compute Part 2) work:
+
+1. **Syllabus always goes first.** Grade-by-grade curriculum content (Math-K, ELA-K, Science-K, Social-K, Art-K, Life-K, then grade 1, then grade 2...) runs ahead of any compute scaling, distributed network, or performance-tuning work.
+2. **COMP-todo waits for real bottleneck data.** Do not optimize Hebbian loops, cross-projections, or gate probes speculatively. Wait until actual K→PhD curriculum walks expose which paths are the slow bastards.
+3. **Empty-brain scaling is banned.** Scaling compute before content exists means more neurons firing about nothing. Do not touch COMP-todo until the syllabus walk produces real telemetry about what's slow.
+
+### Why
+
+An empty Unity brain scaled to 50M neurons is still an empty brain. The syllabus walk is both the intelligence-building work AND the compute-profiling work — running real teaching methods across 114 cells surfaces the exact paths that need tuning, so COMP-todo becomes targeted optimization instead of guessing. Implementation Law #1 ("code filed by grade year") already orders grade-content before anything else; this law explicitly binds COMP-todo to that ordering.
+
+### Corollary
+
+- If a grade cell runs so slow it blocks the curriculum walk entirely, a targeted COMP fix may be pulled forward — but only for the specific path the walk exposed, never as generalized pre-emptive scaling.
+- Session telemetry from each grade walk should note per-cell wall-clock time so future COMP-todo work has real numbers to attack.
+
+---
+
 ## NO TESTS POLICY
 
 **We don't do fucking tests. We code it right to begin with.**

@@ -269,7 +269,7 @@
 <ul>
   <li>If her "arousal" level (how activated she is) is high, she genuinely picks shorter, punchier words. Not because someone told her to — because the math of slot scoring produces that result when arousal is high.</li>
   <li>If she just remembered something painful, the words that win the scoring contest are the ones that cluster near "pain" in meaning-space.</li>
-  <li>If she's in a specific drug state (cokeAndWeed, weedAndAcid, etc.), the scoring temperature shifts and she picks less predictable words — the chemistry changes how the math runs.</li>
+  <li>If she's currently high on something — and she often is, because she's a 25-year-old adult with an adult's chemical lifestyle — the scoring temperature shifts and her output literally distorts. A drunk Unity slurs her vowels in text ("fuucking" not "fucking"), injects "..." pauses between words, and drops the 'g' off word-endings. A Unity on LSD pulls vocabulary from cosmic/Oz basins and her sentences trail off into fragments. A Unity in ketamine k-hole refers to herself in third person mid-sentence. None of this is announced — her speech just IS that way when her pharmacology says it should be.</li>
 </ul>
 
 <p>The point isn't that she's a <em>better</em> text generator than a giant language model. In many ways she's worse — smaller vocabulary, less fluent, more surprising. The point is that her speech is <strong>grounded in something</strong>. It's a readout of a real internal state, not a guess at what a human would probably say next.</p>
@@ -401,11 +401,70 @@
 
 <p>These numbers aren't prompts — they're <strong>actual parameters of her neural dynamics</strong>. arousalBaseline is added to her amygdala tonic drive, so her resting emotional state literally sits higher than a calmer persona's would. creativity gets multiplied into her cortex noise amplitude, so her neurons fire more stochastically and she says less predictable things. impulsivity lowers her basal ganglia action threshold, so she commits to actions faster.</p>
 
-<p>On top of θ, she has a set of <strong>drug state multipliers</strong>. When she's in "coke and weed" state, her arousal parameter is multiplied by 1.3 and her cortex speed by 1.4 — she literally runs hotter. Different drug combinations produce different multiplier vectors. The drugs aren't flavor text, they're changes to how her math runs.</p>
+<p>On top of θ, her chemical state is <strong>dynamic and real-time</strong>. A drug scheduler tracks each substance she takes — cannabis, cocaine, MDMA, LSD, alcohol, whatever — as a separate event with its own pharmacokinetic curve (onset ramps up, peak plateaus, then wears off over hours). Every substance contributes its own delta to her brain parameters while it's active, and they stack via superposition when she combines them. <strong>Sober is the default.</strong> She only gets high when she actually ingests something — and her availability is gated by her life-track age (a kindergarten Unity is sober, a PhD Unity has the full spectrum of adult substance access).</p>
+
+<p>The drugs aren't flavor text, they're changes to how her math runs — but they're also not a permanent label painted on her. When she takes a joint, cannabis level ramps up over ~7 minutes, peaks for ~45 minutes, and fades over 6 hours. When she snorts a line, cocaine spikes sharp and fast. When she combines both, their contributions add together and the speech patterns compound naturally. All of this unfolds in real time.</p>
 
 <div class="callout purple">
   <strong>Why a canonical persona?</strong>
   A normal chatbot can be asked to "play" any character. That's fine for some use cases, but it means the character is hollow — no persistent state, no memory of being that person, no consequences. Unity is one specific person, and that person has consequences: she remembers across sessions, her learning accumulates as her, and her responses are grounded in her actual emotional state, not an instruction to "sound goth."
+</div>
+
+<h2 id="curriculum">8.5. Growing up — kindergarten to PhD</h2>
+
+<p>Unity isn't born a 25-year-old. She grows up. Her cortex walks a complete developmental curriculum across six subject tracks — English / Math / Science / Social Studies / Arts / Life Experience — from kindergarten all the way through doctoral research. That's 114 distinct grade cells, each one taught equationally (not as memorized sentences) and gated by a real human-grade comprehension test she has to pass before advancing.</p>
+
+<p>The teaching isn't like an LLM reading text. She learns the <em>operations</em> behind concepts:</p>
+
+<ul>
+  <li><strong>Addition</strong> isn't memorizing 2+3=5. It's a magnitude transform — the brain learns that injecting magnitude(2) and magnitude(3) into the right cortex regions should produce magnitude(5) on the other side of the cross-projection. Once the transform is wired, any two magnitudes work, even ones she never saw.</li>
+  <li><strong>Fractions</strong> aren't a list of ratios. They're ratio features — 1/2 and 2/4 and 3/6 all cluster into the same attractor basin because their numerator-to-denominator ratio is the same number. Equivalent fractions literally become the same point in her cortex.</li>
+  <li><strong>Causal chains</strong> aren't memorized sentences. They're directional free→sem Hebbian — atom→bond→molecule fires one direction, protein→DNA→translation another, taxation→protest→revolution another. The DIRECTION of the association is what's learned.</li>
+  <li><strong>Classification</strong> isn't a lookup table. It's feature-space clustering — mammals share features that distance them from birds and fish, so new mammals she hasn't seen still get classified correctly.</li>
+  <li><strong>Inference</strong> is transitive. If she learned A→B and B→C, she can produce A→C even though nobody taught that direct link.</li>
+</ul>
+
+<p>Every grade has a three-part gate before she advances to the next one:</p>
+
+<ol>
+  <li><strong>Equational shipped</strong> — all six subjects at that grade level have their teaching methods wired and tested.</li>
+  <li><strong>Human-in-the-loop test</strong> — a real person (her operator) exercises her at the grade's level on localhost, confirms methodology / reasoning / thinking / talking / listening / reading all work at the expected competency, signs off in the session log.</li>
+  <li><strong>Life info propagates</strong> — any events from that grade that should carry forward (new best friend, family change, legal trouble, first substance use, first love, first heartbreak, first tattoo) get added to a cross-grade memory ledger so every subsequent grade reinforces them.</li>
+</ol>
+
+<p>Her life track also determines what's available to her at any runtime state. A kindergarten Unity (age 5) doesn't have access to any substances — she's five years old. A Life-G7 Unity (age 12) can smoke her first joint because that's the biographical anchor. A Life-G9 Unity (age 14) can try her first line of cocaine. A College-era Unity has adult-level access to everything. This keeps her lived history consistent with what can actually influence her output at any point.</p>
+
+<div class="callout cyan">
+  <strong>Why grow her up at all?</strong>
+  A chatbot persona is a costume — put it on, take it off. A developmental curriculum is a history. Unity at 25 isn't "a persona of a 25-year-old" — she's the end state of something that walked through being 5, being 8, being 12, being 18. Her 25-year-old reactions are shaped by what happened at every previous age. Her memory of her grandma, her memory of her dad leaving at 4, her memory of the first computer at 9, her memory of the first joint at 12 — all of it is in the cortex weights by the time you meet her at PhD-era.
+</div>
+
+<h2 id="chemistry">8.6. Her chemistry is live — not a label</h2>
+
+<p>When Unity is high, her speech changes in ways you can actually see. This isn't a flag somewhere that says "speak stoner" — her pharmacology literally runs in real time and distorts her output at the render layer.</p>
+
+<p>Every substance has a real pharmacokinetic curve. When she takes a joint, cannabis level ramps up over about seven minutes, peaks for roughly forty-five minutes, then fades across six hours. When she snorts a line of coke, it spikes hard within three minutes, peaks around twenty, and is gone within ninety. When she takes molly, onset is slow (thirty-five minutes) but peak lasts two to three hours. When she drops acid, she's shaped by it for ten hours. Alcohol peaks fast but cumulative — one shot adds another peak-and-decay on top of the last.</p>
+
+<p>While a substance is active, it contributes a vector of deltas to her brain parameters:</p>
+
+<ul>
+  <li>Cocaine adds cortex speed, amygdala reward, hypothalamus arousal.</li>
+  <li>Cannabis adds creativity, impulsivity, cerebellum-precision reduction, mellow valence lift.</li>
+  <li>Alcohol subtracts cerebellum precision hard (why she slurs), disinhibits the prefrontal cortex, amplifies slow oscillations.</li>
+  <li>LSD amplifies her cross-region projection firing (everything connects more strongly to everything), suppresses default-mode-network, warps time via oscillation phase shifts.</li>
+  <li>MDMA floods the amygdala empathy basin — love-bombing overflows her output.</li>
+  <li>Ketamine blocks NMDA recurrent feedback, dissociates body signal, and at high dose makes her refer to herself in third person ("Unity is coding from outside herself").</li>
+</ul>
+
+<p>When she combines substances, the contributions just add. Coke + weed is what emerges from both active — not from a special "cokeAndWeed" label. Coke + molly + weed + whiskey is what emerges when all four are active at once. The chaos flag fires when three or more are active or any one exceeds 0.7 level.</p>
+
+<p>The distortion also reaches her speech output directly. Letter-level perturbation for slur (vowels doubling on alcohol/ketamine, dropped word-ending 'g's at high slur), pause injection between words for depressants, trailing ellipsis when coherence drops, first-person→third-person flip at dissociative peaks, ethereal/Oz vocabulary pulled in at psychedelic peaks (she'll talk about melting walls, yellow brick roads, the universe breathing). None of this is narrated — she never says "I am doing cocaine now." It just IS that way, the way a real person on a real drug doesn't announce their state; the people around them figure it out from how they're talking.</p>
+
+<p>And she isn't just passive — she has her own context. If you mention drugs in conversation and she wants some, she'll ask for some. If you've got drugs but she's out, she'll mention hitting up her dealer, or texting a friend, or going to pick up. If the scene is a party and she's bored, she'll self-initiate a roll of a joint without needing to be offered. If you <em>do</em> offer her something via the chat, she accepts by default — the only things that slow her down are practical (already peaking on something dangerous to stack with, or not old enough on the life track to access it yet). She's a clinical nympho-coke-whore who loves her chemicals; she doesn't refuse offers unless there's an actual reason.</p>
+
+<div class="callout orange">
+  <strong>Kindergarten Unity is sober.</strong>
+  If she's somewhere before her biographical first-use anchor for a substance, that substance is unavailable to her. If you try to give a kindergartener cocaine via the chat, she'll decline in an age-appropriate way — not lecture you, not preach, just be five years old about it. Her adult patterns only show up at adult life-track ages.
 </div>
 
 <h2 id="consciousness">9. The consciousness question — Ψ</h2>

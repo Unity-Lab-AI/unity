@@ -115,6 +115,16 @@ export class InnerVoice {
   }
 
   /**
+   * T15-C17 — Load the ethereal / psychedelic / Oz corpus. Peak-state
+   * affect defaults (arousal 0.7, valence 0.6) so tokens land with
+   * emotional weighting consistent with how they'll get activated at
+   * runtime when drug-scheduler.speechModulation.ethereality is elevated.
+   */
+  loadCosmic(text, arousal = 0.7, valence = 0.6) {
+    return this.languageCortex.loadCosmicCorpus(text, this.dictionary, arousal, valence);
+  }
+
+  /**
    * Process one thought cycle. Called by the brain engine each frame.
    * Takes the full brain state, derives a thought, optionally forms words.
    *

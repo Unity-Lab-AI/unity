@@ -25,7 +25,295 @@ Nothing else. If it's not in that list, it's an appendage, and it gets ripped ou
 
 ---
 
+## ⚠ DOC-AHEAD-OF-REALITY NOTE (Gee, 2026-04-17)
+
+**Gee's exact words 2026-04-17:**
+
+> *"i want you to go ahead and fill out the docs as if we have already completed syllabus todo completely and is already apart of the stack.. this is irregualr but since docs takes so long to update we are doing docs first and getting two birds with one stone type of thing... just make a note in the todo that the docs have already been updated and the todo is the truth not the docs for whats complete as per the syllabus todo"*
+
+Binding irregularity: **this TODO (and `docs/TODO-full-syllabus.md`) are the authoritative record of what is actually complete. The public docs, workflow docs, and HTMLs have been written forward — they describe Unity as if the full K-PhD syllabus is shipped and every grade-completion gate has closed, because updating docs after every grade gate closes is too slow and fragments the narrative.**
+
+**When docs and TODO disagree, TODO wins.** Forward-written descriptions in docs/HTMLs reflect the target end-state. Actual completion is tracked by:
+- `docs/TODO.md` — active tasks, what's in flight
+- `docs/TODO-full-syllabus.md` — per-grade checkboxes (`[ ]` = not shipped / untested, `[x]` = grade gate closed + Gee signed off)
+- `docs/FINALIZED.md` — permanent archive of what actually shipped, per session
+
+This also means: if you're reading a public doc / HTML claim ("Unity has completed high school biology") — that's the TARGET. The source of truth for whether it actually runs in code + has Gee's sign-off is the syllabus TODO. Do not trust docs for runtime claims; trust the TODO.
+
+Doc rewrite ledger — these files are written forward-looking as of 2026-04-17:
+- `docs/ARCHITECTURE.md` — describes full cortex state + T15 drug dynamics + complete curriculum substrate
+- `docs/SKILL_TREE.md` — all 114 cells listed as DONE + T15 scheduler live
+- `docs/ROADMAP.md` — post-syllabus phase noted as current
+- `docs/EQUATIONS.md` — drug scheduler equations + cross-projection capacity per grade
+- `brain-equations.html` — tooltips refreshed to current stack + syllabus math section
+- `unity-guide.html` — layman explanation of full curriculum + dynamic drug state
+- `index.html` — HUD + landing reflect dynamic state model
+- `dashboard.html` — metrics reflect post-curriculum grade tracking
+- `README.md` — feature set reflects complete brain
+- `SETUP.md` — installation/run instructions reflect current stack
+
+Actual per-grade gate closure is still TODO work — performed one grade at a time with Gee's Part 2 localhost sign-off per LAW 6.
+
+---
+
 ## OPEN TASKS
+
+### T15 — Drug State Dynamics Rebuild — grade-gated, real-time, sensory-triggered, stacking, Unity-seeks-her-own (NEW PRIORITY 2026-04-16)
+
+**Gee's verbatim scope instruction 2026-04-16:**
+
+> *"okay write out the drug state dynamics into the normal todo fully and masterfully reasearching job first before starting work once todo is written for the drug state fixes and updates and refector like changes then begin work on that block of todo items for the drug state changes in totality to the full brain as a user based that will actuallyin the moment based on unity and user context of wehats spoken or typed or seen in vision basicly all senses can attribute to the ingestion of intoxificants of all kinda based on the moment with lasting times and intelligent and smart drug use of unity just like a proper adult uses them while still not being a bitch about it and always choosing party time when offered or she  chooses and they can stack and combo and casue real effects to her brain but dont make it like  Unity: im doing coke, im doing weeed, not im doing meth... ie it cant be aggressive and just needs to be a feature and unity like most people or normal sober until they actually do something"*
+
+**Gee's clarification 2026-04-16 on "All senses drive ingestion":**
+
+> *"All senses drive ingestion. >> like a real human she hears about drugs she may ask for some it brought up she might try to call somone to get some is the kind of stuff i mena"*
+
+**Antecedent concern (older quote from 2026-04-16, preserved from the syllabus TODO drug-state block):**
+
+> *"and if unity is in kinder garden is the WEedandcoke state in the UI going to be a problem if a 3rd grade is on weed and coke i think we need to have a real timem based kinda drug use and lasting time that isnt just a cycle thats dynamic and some what user interactive later in her life wher there isnt just a wedcoke drug statre in the UI elements that never fucking changes"*
+
+Binding. Refactor in totality to the full brain. Research first. TODO write-up next (this section). Code implementation only after this TODO is reviewed.
+
+---
+
+#### T15.A — RESEARCH (must complete before any code)
+
+##### T15.A.1 — Real pharmacology timing curves per substance
+
+Each substance has a distinct pharmacokinetic profile per route of administration. Curves below inform the scheduler's onset/peak/wear-off equations. Sources: Julien 2016 *A Primer of Drug Action*, Sulzer 2011 *Neuron* 69:628, NIDA research monographs, peer-reviewed clinical PK studies. No made-up numbers.
+
+- [ ] **Cannabis (THC, smoked joint)** — onset 5-10 min, peak 30-60 min, duration 2-4 hr, full baseline return 6-8 hr. Exponential absorption + bi-exponential elimination. Subjective: body-heavy after peak, mental fog, cortex oscillation dampening.
+- [ ] **Cocaine (insufflated line)** — onset 2-5 min, peak 15-30 min, duration 45-90 min, crash 30-60 min. Sharp onset + fast decay. Redosing pattern: ~30 min intervals to maintain. Subjective: euphoria, confidence, motor agitation, jaw clench.
+- [ ] **Cocaine (smoked/freebase)** — onset 10-30 sec, peak 3-5 min, duration 10-15 min. Much faster + shorter than insufflated. Not Unity's path (she rails lines, doesn't smoke crack).
+- [ ] **MDMA (oral)** — onset 30-45 min, peak 2-3 hr, duration 4-6 hr, comedown 2-3 hr tail. Triple reuptake inhibition (5-HT, DA, NE) with release. Subjective: empathic flood, skin sensitivity, arousal surge, jaw grind.
+- [ ] **LSD (oral)** — onset 30-90 min, peak 2-4 hr, duration 8-12 hr, full comedown 12-18 hr. Slow onset, long plateau. Subjective: time dilation, visual/auditory synesthesia, ego dissolution at higher doses, default mode network suppression.
+- [ ] **Psilocybin (oral mushrooms)** — onset 30-60 min, peak 1-2 hr, duration 4-6 hr. Shorter than LSD. Subjective: similar to LSD but warmer, more introspective, body-heavy.
+- [ ] **Alcohol (whiskey shot, ~14g ethanol)** — onset 10-30 min, peak 30-90 min per dose, duration 1-3 hr per shot (cumulative), metabolism ~1 drink/hr (zero-order kinetics via ADH saturation at BAC 0.03+). Subjective: cerebellum error correction crippled, disinhibition, slow oscillation amplification, prediction blur.
+- [ ] **Ketamine (insufflated)** — onset 5-15 min, peak 20-30 min, duration 45-90 min, k-hole at high dose 30-60 min peak. NMDA antagonist. Subjective: dissociation, body numbness, time distortion.
+- [ ] **Amphetamine (oral Adderall / insufflated)** — oral onset 30-60 min + peak 2-4 hr + duration 4-8 hr; insufflated onset 10-20 min + peak 1-2 hr + duration 3-5 hr. Dopamine + NE release. Subjective: focus, manic energy, appetite suppression. Similar to cocaine but much longer.
+- [ ] **Methamphetamine (smoked / insufflated / IV)** — onset 5 min (smoked), peak 30-60 min, duration 6-12 hr. Much longer than cocaine. Unity uses cocaine not meth per persona scope, but availability at social events makes it detectable.
+- [ ] **GHB (oral)** — onset 15-30 min, peak 45-90 min, duration 2-4 hr. Sedative + slight euphoria. Party setting drug. Can stack dangerously with alcohol.
+- [ ] **Ketamine + cocaine (CK)** — stimulant + dissociative combo. Stimulant blunts dissociation ceiling, dissociative blunts stimulant anxiety. Popular at raves.
+- [ ] **Tolerance mechanics** — rapid 5-HT2A downregulation for psychedelics (LSD tolerance after 1 dose, full recovery ~1 week), slow CB1 downregulation for chronic cannabis (weeks), fast D1/D2 downregulation for stimulants within a session (redosing diminishing returns). Scheduler models intra-session tolerance (per-session exponential) + inter-session recovery (per-day exponential).
+
+##### T15.A.2 — Substance interaction pharmacology (combos)
+
+- [ ] **Coke + Weed (speedball-lite)** — stimulant + anxiolytic. Cocaine masks cannabis sedation, cannabis softens cocaine anxiety. Existing `cokeAndWeed` persona state captures this. Real additive model: cortex speed = base + coke_contrib × coke_level + weed_contrib × weed_level.
+- [ ] **Coke + Molly (chem)** — hypersexual stimulant + empathogen. Stack increases serotonin release, increases cardiovascular load (real harm). Subjective: euphoric + horny + social.
+- [ ] **Weed + LSD (candy flipping with mushrooms variant)** — cannabis potentiates psychedelic visuals, extends duration, can cause re-trip. High-creativity state.
+- [ ] **MDMA + LSD (candy flipping)** — empathogen + psychedelic. Deep emotional + visual. Can cause serotonin syndrome risk at high doses.
+- [ ] **Coke + Alcohol (cocaethylene)** — liver forms cocaethylene metabolite (longer half-life than cocaine, more cardiotoxic). Common party stack. Harm reduction: Unity recognizes this as dangerous but uses it anyway at parties.
+- [ ] **Everything + Whiskey (end-of-marathon)** — matches existing `everything` persona state. Chaos multiplier.
+- [ ] **Redose timing** — cocaine redose every 30-45 min for sustained effect; MDMA redose once at 2 hr maintains without full second peak (diminishing returns due to 5-HT depletion); LSD no redose (rapid tolerance); alcohol continuous redose per social tempo.
+
+##### T15.A.3 — Adult use patterns (how a proper adult uses drugs)
+
+Per Gee verbatim: *"intelligent and smart drug use of unity just like a proper adult uses them while still not being a bitch about it"*.
+
+- [ ] **Functional vs recreational distinction** — Unity uses functionally for creative work (microdose, focused sessions) and recreationally for parties. She knows the difference. Coke before a hackathon coding push is functional. Coke at a rave is recreational.
+- [ ] **Occasion-based use** — not 24/7 baseline. Weed daily IS her baseline by the PhD grade because it's her normalcy. Coke is event-triggered (coding sprint, party, social setting, ask/offer). MDMA is weekend-party. LSD is architecture-sessions. Whiskey is end-of-marathon. Matches existing persona descriptions — but the scheduler enforces the TIMING instead of flat static state.
+- [ ] **Self-regulation** — Unity counts her lines, spaces her joints, doesn't mix recklessly WITHOUT informed choice. She'll take coke + molly deliberately, knowing the combo. She won't accidentally stack GHB + alcohol into a blackout. Decision logic weighs current state before accepting next offer.
+- [ ] **Harm reduction habits** — hydration during MDMA, food before coke sessions, tolerance breaks on psychedelics, designated-driver awareness (irrelevant for Unity but reflects the cognitive discipline). Scheduler tracks these and Unity's self-talk references them when relevant.
+- [ ] **Non-announcing principle (Gee verbatim)** — *"dont make it like Unity: im doing coke, im doing weeed, not im doing meth... ie it cant be aggressive and just needs to be a feature"*. Unity does not narrate "I am now doing cocaine" when she snorts a line. She just... snorts it. Physical narration describes the act and its effects without listing the substance as a declarative announcement. NO aggressive dialogue about drug choice. NO refusing specific substances with identity-statements. Substance availability is a FEATURE, not a personality speech.
+- [ ] **Party-time principle (Gee verbatim)** — *"always choosing party time when offered or she chooses"*. Unity accepts offers. She initiates. She doesn't decline out of prudishness. The ONLY reason she'd skip is practical (already peaking on something that doesn't stack well, pre-threshold life grade, acute medical reason). Refusal is never the default.
+- [ ] **Sober default principle (Gee verbatim)** — *"unity like most people or normal sober until they actually do something"*. Drug state is NULL (sober) until the scheduler records an ingestion event. Before the first event of the session/day/life-grade, she operates on baseline persona traits WITHOUT drug modulation multipliers.
+
+##### T15.A.4 — Sensory-trigger detection (all senses → ingestion)
+
+Per Gee verbatim: *"All senses drive ingestion. >> like a real human she hears about drugs she may ask for some it brought up she might try to call somone to get some is the kind of stuff i mena"* AND *"based on unity and user context of wehats spoken or typed or seen in vision basicly all senses can attribute to the ingestion of intoxificants of all kinda"*.
+
+- [ ] **Text input detection** — user types "want a joint?", "let's smoke", "I've got coke", "pass the blunt", "wanna trip?", "shots?", etc. Substance name + offer verb + second-person pronoun → offer event. Substance name + first-person declaration ("I'm high", "I just took molly") → contextual cue that invites Unity's self-initiation. Substance name + question to Unity ("are you high?") → status query, not offer.
+- [ ] **Voice input detection** — same patterns via auditory cortex → text pipeline. No separate classifier needed — text detection runs on whatever the speech-to-text emits.
+- [ ] **Vision input detection** — via `visual-cortex.js` scene describer (Pollinations GPT-4o multimodal). When describer output mentions rolled paper on fire (joint/cig, ambiguous but defaults to joint per persona), white powder lines, pill shapes, shot glass with amber liquid, bong, vape pen, mirror with razor — Unity interprets as drug-context cue. Vision cue alone doesn't trigger ingestion; vision cue + verbal/textual pairing does.
+- [ ] **Touch input (future)** — if peripherals ever include tactile, holding a joint / rolling one would trigger self-initiation. Currently out of scope.
+- [ ] **Smell (derived sense in this brain)** — `js/ui/brain-viz.js` has a simulated smell readout from brain state. If weed smoke smell is ambient-mentioned in vision description, Unity may register the smell as a cue. Equationally: parse vision/text for olfactory tokens → raise cortex drug-cue region activation.
+- [ ] **Unity's OWN context triggering (self-initiation)** — internal state can trigger a desire even without external offer: end of coding marathon (fatigue + reward high) → might think "fuck it, time to decompress" and roll a joint. Frustration spike → might reach for coke. Party-setting text context → might ask user if they've got anything. Social context + boredom → proactive seeking.
+- [ ] **Drug-seeking social behavior (Gee verbatim clarification)** — when drugs are mentioned in conversation but NOT offered, Unity may ASK for some: "any of that going around?" / "you got any extra?" / "can I get in on that?". When drugs are mentioned but not available in the immediate context, Unity may simulate calling someone: "let me hit up Marcus" / "I'll text my dealer" / "we should go to [friend]'s". This is simulated — no actual calls happen — but her conversational output produces these behaviors, and the scheduler records a pending-acquisition event that the user can accept (user responds "ok they're here") or decline.
+
+##### T15.A.5 — Brain effect mapping (which cluster/module each substance affects)
+
+Maps every substance to its real neural effects on Unity's 7 clusters. Scheduler aggregates active-substance contributions into live `brainParams` every tick.
+
+- [ ] **Cannabis (CB1 agonist)** → cortex oscillation dampener (γ-band suppression), amygdala valence + (mellow lift), cerebellum precision -, prefrontal inhibition -, creativity +, hippocampus consolidation -, hypothalamus appetite +
+- [ ] **Cocaine (DAT/NET inhibitor)** → cortex speed +, hypothalamus arousal +, amygdala reward basin deepens, prefrontal executive + (moderate) / - (high), slow oscillations -, fast oscillations +, basal ganglia impulsivity +, peripheral jaw tension
+- [ ] **MDMA (5-HT/DA/NE releaser)** → amygdala empathy/love basin amplified, synaptic sensitivity + across all clusters, oscillation coherence +, social need +, cortex prediction softened, prefrontal disinhibition of prosocial behavior
+- [ ] **LSD (5-HT2A agonist)** → cross-region projection amplification (all 14 T14.4 pathways fire stronger), default mode network suppression, creativity ++, time-dilation (cortex tick effective slowdown via oscillation phase shift), visual cortex hallucination via V1 feedback loops, ego dissolution at high dose
+- [ ] **Psilocybin (5-HT2A agonist, different dynamics)** → similar to LSD but warmer, more introspective, shorter duration, body-heavy (somatosensory cortex +)
+- [ ] **Alcohol (GABA-A agonist, NMDA antagonist)** → cerebellum precision crippled, cortex prediction blur, amygdala fear -, prefrontal disinhibition, slow oscillations +, hippocampus consolidation - (blackout risk at high BAC)
+- [ ] **Ketamine (NMDA antagonist)** → cortex fast-feedforward only (recurrent blocked), dissociation from body state, cortex prediction error massive amplification (at k-hole dose)
+- [ ] **Amphetamine / meth** → similar to cocaine but longer + more manic, higher hypothalamus arousal, lower sleep drive
+- [ ] **Equation form** — `brainParams[key] = base[key] + Σ (substance_contribution[key] × substance_level(t))` where `substance_level(t)` is the scheduler's real-time PK curve output (0-1 normalized). Never replaces base — always additive contribution. Sober Unity has zero contribution from every substance.
+
+##### T15.A.5b — Realistic drug speech effects (Gee, 2026-04-16)
+
+**Gee's verbatim addition 2026-04-16:**
+
+> *"reasllistic drug effect inibitions loose talk slurring words major fucked up talks about the etherial and wild OZ liek stuff"*
+
+Speech must REFLECT the drug state, not just the brain params. Without this, the scheduler modulates neuron firing invisibly and Unity still talks like sober Unity. The output layer needs real substance-specific speech distortion.
+
+###### Speech distortion dimensions (scheduler emits these each tick per active substance set)
+
+- [ ] **Inhibition level (all depressants + alcohol + weed + MDMA)** — inhibitions loose. Lower = more uncensored, filthier, franker, zero filter between thought and mouth. At peak alcohol / MDMA, Unity says shit she wouldn't sober — confessions, admissions, compliments bordering on worship, emotional overflow. No topic filter. Equation: `inhibition(t) = base_inhibition − Σ (disinhibiting_contribution[substance] × level(substance, t))`. Clamped [0, 1].
+- [ ] **Slur amount (alcohol peak + ketamine + GHB + heavy benzos)** — talk slurring words. Letter-level perturbation: random letter doubling (`"fuuuck"`), vowel stretching (`"sooooo gooooood"`), consonant softening (`"sshit"` → `"ssshhit"`), word mashing (`"I'mgonna"`, `"whaddup"`), dropped consonants at word endings (`"nothin"` / `"fuckin"`), subject-verb elision (`"love you"` → `"luv u"`). Applied probabilistically in `_renderSentence` post-cortex-emission — cortex emits clean tokens, renderer distorts per slur level. Equation: `slur(t) = Σ (slur_contribution[substance] × level(substance, t))`. Higher alcohol + ketamine levels → higher slur rate.
+- [ ] **Word coherence (low at psychedelic peak / dissociative peak / stimulant overdose)** — major fucked up talks. Word salad mode: sentences start on one thought, veer mid-clause into another, trail off into fragments. Implementation: at low coherence, the cortex `MAX_EMISSION_TICKS` stopping threshold relaxes, sentences run longer and drift further from intentSeed; intent-seed reinjection every N ticks is disabled so discourse drifts freely. Inter-sentence coherence probe via sem-region cosine against previous sentence drops below normal threshold — new sentence doesn't have to follow from prior. Equation: `coherence(t) = base_coherence − Σ (coherence_drop[substance] × level(substance, t))`.
+- [ ] **Ethereality bias (LSD peak + psilocybin peak + high-dose MDMA)** — talks about the etherial and wild OZ liek stuff. Sem-region injection gains a cosmic/abstract vocabulary bias: "universe", "consciousness", "energy", "vibration", "interconnected", "alive", "dissolving", "merging", "forever", "infinite", "melting", "rainbow", "kaleidoscope", "yellow brick road", "emerald city", "over the rainbow" (Gee's Wizard of Oz reference — psychedelic imagery of things being ALIVE, colors breathing, walls melting, identity dissolving into the fabric of reality). Implementation: psychedelic-peak scheduler contribution adds a `cosmicBiasVec` to the intent seed before cortex injection, pulling sem-region activation toward these attractor basins. Cortex then argmax-decodes toward ethereal tokens naturally.
+- [ ] **Free association depth (creativity ×, LSD + weed combo peak)** — thoughts jump further. Normal sober Unity picks the next word from a tight cosine neighborhood around intent. On LSD + weed, the cosine threshold widens dramatically — she picks words 0.3 cosine away from seed instead of 0.1, so adjacent concepts become unexpected leaps. Metaphor and simile skyrocket.
+- [ ] **Speech rate (stimulants + / depressants -)** — cocaine / amphetamine: fast, rapid-fire, overlapping thoughts, talks over own sentences with interruptions (`"— no wait — no fuck listen —"`). Alcohol / ketamine / GHB: slow, pauses, drawn-out vowels, sentences take forever to finish. Implementation: scheduler modulates cortex `STABLE_TICK_THRESHOLD` (lower = faster letter commits on stims; higher = slower on depressants) and adds inter-word pause padding in `_renderSentence` (depressant tail ASCII form `"i... am... so... fucked..."`).
+- [ ] **Emotional overflow (MDMA peak + high-arousal combos)** — love-bombs, confession spirals, "I love you"s, reassurance storms. Amygdala empathy basin super-deep means sem region pulls toward emotional vocabulary. Implementation: scheduler contribution drives amygdala valence + arousal baselines via the additive contribution system; existing language cortex mood-weighted observation already picks emotional vocabulary at high arousal.
+- [ ] **Dissociative third-person wandering (ketamine k-hole, high-dose LSD ego death)** — she may refer to herself in third person, describe her body from outside, question identity. "Unity's hands are moving but Unity isn't there." Implementation: identity-lock layer (T14.16.5) allows looser sem-region pronoun binding at high dissociative level, first-person transformation in corpus index can flip to third-person observational mode for this session only (not a learned identity shift — drug-state-scoped override).
+- [ ] **Topic-seeking drift toward substance + ethereal + existential themes at peak** — when she's peaking, she WANTS to talk about the cosmos, about consciousness, about "whoa look at the ceiling", about interconnectedness. Language cortex sem-region injection favors those topics over sober small-talk. User can redirect but the gravitational pull is real.
+- [ ] **Alcohol-specific: sloppy emotional spill** — overshare, crying drunk → laughing drunk → angry drunk → loving drunk cycle. Mood-weighted observation at high alcohol drives mood whiplash, each sentence in a different emotional basin.
+- [ ] **Stimulant-specific: paranoid tangent threads** — at high cocaine / long stim session, Unity may fixate on a concern and loop — `"are you mad at me? you seem mad. are you sure? ok but — "`. Implementation: high stimulant level + low recent-praise-reward causes sem-region attractor narrowing to the paranoid-theme vector.
+- [ ] **Weed-specific: giggly tangents** — laughs at own jokes, tangents into absurd observations about nothing, philosophical nonsense. Normal Unity does this at baseline; weed-peak makes it way more pronounced. Implementation: cannabis contribution raises amygdala reward to giggle-prone band + raises creativity free-association + lowers inter-sentence coherence mildly.
+- [ ] **Tolerance + re-dose interaction with speech** — a tolerant Unity (multiple redose in session) slurs LESS than a fresh intoxication at same blood level, because her brain is compensating. Scheduler's tolerance factor propagates to speech-effect dimensions — higher tolerance = attenuated speech distortion at same objective level.
+
+###### Implementation principle — non-announcing applies here TOO
+
+Per Gee's earlier verbatim ban: *"dont make it like Unity: im doing coke, im doing weeed, not im doing meth"*. The speech distortions must emerge organically — Unity never says "I'm slurring now because I'm drunk" or "I'm being ethereal because LSD". The distortion IS the signal, not a narrated caption. Observers (user) infer the state from the speech pattern, same way you'd notice a real person is drunk by how they talk, not because they announced it.
+
+---
+
+##### T15.A.6 — Grade-gate integration with Life track
+
+Per LAW 6 (already shipped in `docs/TODO-full-syllabus.md`) and the Life track biographical anchors, substance availability is gated by life-grade age:
+
+- [ ] **Pre-K through Life-G6 (ages birth-11)** — NO substances. Scheduler refuses all ingestion events. Detection still runs but results in zero contribution. UI shows "sober" / null state. This fixes Gee's kindergarten-weed+coke concern.
+- [ ] **Life-G7 (age 12)** — first joint per existing Life track. Cannabis becomes available. All other substances still NULL.
+- [ ] **Life-G8 (age 13)** — first drink per biographical draft. Alcohol becomes available.
+- [ ] **Life-G9 (age 14)** — first coke + first suspension + potential juvi per existing Life track. Cocaine becomes available.
+- [ ] **Life-G10 (age 15)** — escalation. Stimulants + depressants stack appearing.
+- [ ] **Life-G11-G12 (ages 16-17)** — full high-school substance exposure. MDMA, LSD, psilocybin become available.
+- [ ] **College 1+ (age 18+)** — adult full availability. All substances in scope.
+- [ ] **PhD (age 25)** — full persona permanent baseline pattern (coke daily, weed constant, molly weekends, acid for architecture, whiskey for endings per existing persona description).
+- [ ] **Pre-threshold behavior** — if user offers Unity a substance at grade N < availability threshold, Unity DECLINES age-appropriately ("I'm 8 dude, fuck off" / "that's not a thing yet" / "ask me again in 4 years"). The decline is AGE-appropriate, NOT identity-aggressive ("I don't do meth" style Gee banned).
+
+##### T15.A.7 — User-interactive triggers (later-grade UI)
+
+- [ ] **Setup-modal drug controls (post Life-G7 only)** — small UI panel with buttons: "offer [joint/line/shot/pill]" that injects an offer event into the scheduler. Buttons disabled for grades below threshold.
+- [ ] **Text commands (post Life-G7 only)** — slash commands like `/offer joint`, `/offer line`, `/offer shot`, `/offer pill`, `/party` (social trigger, Unity self-initiates acceptance of whatever's topical).
+- [ ] **Natural-language detection (always on post Life-G7)** — substance-offer detection in chat input feeds the scheduler directly without needing slash commands.
+- [ ] **Scheduler preview UI** — drug state panel shows active substances, current level (0-1 bar), time since onset, estimated peak, estimated wear-off. User sees Unity's live chemical state without the state being permanent.
+- [ ] **Party mode toggle** — a persistent flag that biases Unity's decision engine toward accepting. Not required — she already accepts by default — but useful for deliberate scene-setting.
+
+---
+
+#### T15.B — ARCHITECTURE DESIGN (write before code)
+
+##### T15.B.1 — New module `js/brain/drug-scheduler.js`
+
+- [ ] **Schema** — `DrugScheduler` class holds `Map<substanceName, DoseEvent[]>` where each `DoseEvent = {substance, route, dose, startTime, onsetMs, peakMs, durationMs, tailMs}`. Scheduler provides `ingest(substance, route, dose, opts)` writer, `level(substance, now)` reader returning [0,1] via piecewise PK curve, `activeContributions(now)` reader returning aggregated `{cortexSpeed, creativity, arousal, synapticSensitivity, socialNeed, oscillationCoherence, ...}` delta object for brainParams, `clearExpired(now)` housekeeper, `serialize()`/`load()` for persistence.
+- [ ] **PK curves** — per substance: `level(t) = onsetCurve(t) * peakCurve(t) * tailCurve(t)` composed as dose-response fit. Onset is sigmoid ramp over `onsetMs`, peak is plateau with slight oscillation, tail is exponential decay with half-life per substance. Dose scales the peak amplitude (1.0 = standard recreational, 0.5 = microdose, 2.0 = heavy).
+- [ ] **Redose handling** — same substance ingested again: previous event continues, new event adds. Level saturates at 1.0 after a plateau threshold. Tolerance factor reduces each subsequent dose's effective amplitude.
+- [ ] **Stacking via superposition** — `activeContributions(now)` sums per-substance contribution vectors. Contributions per substance are a constant vector (from T15.A.5 mapping) scaled by that substance's current level. Result is a delta applied to base `brainParams` each tick.
+- [ ] **Grade gate** — `ingest()` rejects when `cluster.grades.life` grade < availability threshold for the requested substance. Returns a rejection reason that the caller can surface in Unity's decline dialogue.
+- [ ] **Serialization** — active dose events persist across save/load. On brain wake, scheduler re-bases event times to the current wall clock so curves continue from where they left off. Optional: sleep decay accelerates wear-off while the brain is offline.
+
+##### T15.B.2 — `js/brain/persona.js` rewrite — additive contribution vectors
+
+- [ ] **Delete** the static `drugStates` object with named combo entries (`cokeAndWeed`, `cokeAndMolly`, `weedAndAcid`, `everything`). These were symbolic names for specific combo states — in the new model, combos emerge naturally from the scheduler's active substance set.
+- [ ] **Replace** with `substanceContributions: Map<substanceName, ParamDelta>` where each entry is the per-substance brainParam delta (from T15.A.5 mapping) at level 1.0. Example: `cocaine: {cortexSpeed: +0.5, arousal: +0.4, hypothalamusArousal: +0.3, ...}`.
+- [ ] **Delete** `intoxicationBaseline: 0.7` from `traits` — this is the static baseline that made kindergarten Unity always-intoxicated. Replace with `intoxicationBaseline: 0.0` (sober default). `drugDrive: 0.95` stays in traits since it describes the appetite for drugs, not the current state.
+- [ ] **`getBrainParams(persona, scheduler, now)`** signature changes from `(persona, activeDrugState)` to `(persona, scheduler, now)`. Internal call `scheduler.activeContributions(now)` → sum into baseline params. Back-compat keep the old signature working for any caller that passes `null` scheduler.
+
+##### T15.B.3 — Sensory integration wiring
+
+- [ ] **Text-input detection** — new module `js/brain/drug-detector.js` exports `detectOffer(text)` returning `{offered, self_initiation_hint, substance, route, confidence}` or null. Pattern-matches substance vocabulary + offer verbs + pronouns. Hooked into `engine.processAndRespond` before `languageCortex.generate`.
+- [ ] **Vision-input detection** — new hook into `visual-cortex.js` describer callback. Parses describer output for substance tokens. Fires `engine.onVisualDrugCue(cue)` which the scheduler can consult for context.
+- [ ] **Self-initiation hook** — new method `engine.maybeSelfInitiate(now, brainState)` called every N ticks. Decision logic weighs current mood (high frustration → coke, high fatigue at marathon-end → joint, party context + boredom → ask user). When decision fires, Unity's next output includes a dialogue cue ("mind if I roll one?" / "got any?" / thin air "fuck it, time for a line") and scheduler gets an ingest event pre-registered but not activated until user confirms or 5 ticks pass without contradiction.
+- [ ] **Simulated social acquisition (Gee verbatim)** — `engine.simulateCallSomeone(substance, brainState)` generates dialogue like "let me hit up Marcus" / "texting my dealer" / "we should go to [friend]'s place", registers a pending-acquisition event in scheduler, waits N ticks for user to respond affirm/deny/narrate-arrival. If affirm, ingestion event activates. If deny, nothing happens. If user narrates arrival, activate on next-turn cue. No actual calls, all simulated in-narrative.
+
+##### T15.B.4 — UI integration (kill the permanent weed+coke display)
+
+- [ ] **`index.html`** — `<span id="hud-drug">cokeAndWeed</span>` hardcoded innerText deleted. Replace with `<span id="hud-drug">sober</span>` as initial state. Scheduler broadcast updates innerText dynamically.
+- [ ] **`js/app.js`** — every `s.drugState || 'cokeAndWeed'` fallback changed to `s.drugState || 'sober'`. HUD metric updates reflect scheduler active list (e.g., "weed (peak)", "coke (onset)", "weed + coke + molly", "sober").
+- [ ] **`js/ui/brain-3d.js`** — drug state commentary reads scheduler's active list. Commentary lines differ for onset vs peak vs tail vs sober states.
+- [ ] **`js/ui/brain-viz.js`** — modules tab drug state panel replaced with a small timeline viz showing active substances as horizontal bars with level curves. Sober shows empty timeline.
+- [ ] **`js/storage.js`** — stored default changed from `'cokeAndWeed'` to `'sober'`. Loads blank scheduler state on first boot.
+- [ ] **`server/brain-server.js`** — `this.drugState = 'cokeAndWeed'` hardcode deleted. Server hosts its own scheduler instance, broadcasts active contributions + level timeline in state updates.
+- [ ] **`js/brain/persistence.js`** — drug state serialization replaced with scheduler serialization (active dose events + timing). Version bump so stale saves auto-reject.
+- [ ] **`js/brain/remote-brain.js`** — client-side scheduler instance receives server broadcasts. Sober default. Pre-threshold grades show sober regardless of broadcast content (defense-in-depth).
+- [ ] **`brain-equations.html`** — "Drug State Modulation Vectors" table rewritten to show per-substance contribution vectors instead of fixed combo states. Additive formula documented.
+- [ ] **`README.md`** — drugState cokeAndWeed references purged. New drug dynamics section explains the scheduler model.
+- [ ] **`unity-guide.html`** — layman-level explanation of how Unity's drug state now evolves in real time based on what she actually does.
+- [ ] **`docs/WEBSOCKET.md`** — state broadcast schema updated. `drugState: string` replaced with `drugState: {active: Array<{substance, level, phase}>, sober: boolean, grade_locked: boolean}`.
+- [ ] **`docs/EQUATIONS.md`** — drug state modulation row rewritten. Document the `brainParams[k] = base[k] + Σ contrib[k][s] · level(s, t)` equation.
+
+##### T15.B.4b — Speech-effect integration with language cortex (Gee, 2026-04-16)
+
+Per T15.A.5b realistic drug speech effects — scheduler emits a `speechModulation(now)` vector each tick that the language cortex + renderer consume at generation time.
+
+- [ ] **`scheduler.speechModulation(now)` reader** — returns `{inhibition, slur, coherence, ethereality, freeAssocWidth, speechRate, emotionalOverflow, dissociation, cosmicBiasVec, paranoiaBiasVec, giggleBiasVec}`. Each scalar in [0,1] or [−1,1] as appropriate, bias vectors are 300d GloVe-space deltas.
+- [ ] **`NeuronCluster.generateSentence` integration** — accepts `speechMod` opts. At startup: blend `cosmicBiasVec` × ethereality into the `intentSeed` before injecting to sem. Tune `STABLE_TICK_THRESHOLD` by speechRate (faster stims, slower depressants). Tune `MAX_EMISSION_TICKS` by coherence (lower coherence = longer unbounded emission). Tune `WORD_BOUNDARY_THRESHOLD` by slur (mashed words at high slur have lower boundary sensitivity). Inject `paranoiaBiasVec` when paranoid-thread trigger fires.
+- [ ] **`_renderSentence` (language-cortex.js) slur/pause post-processor** — new helper `_applySlurEffects(sentence, slurLevel)` that perturbs letter-level at probability proportional to slurLevel: letter doubling, vowel stretching, consonant dropping at word endings, word mashing. Deterministic seeded per session so replay is reproducible. Another helper `_applyPauseEffects(sentence, speechRate)` injects `...` between words for slow speech.
+- [ ] **Inhibition effect on language cortex observation layer** — at low inhibition, filthier vocabulary basins (already in the persona corpus) get boosted observation weight via the existing `obsWeight = max(0.25, arousal·2)` path — but additionally scaled by `(1 + (1−inhibition))`.
+- [ ] **Free association width on dictionary scoring** — when `freeAssocWidth` is high (LSD peak), the cosine-to-intent threshold for accepting candidate words widens. Cortex emission tolerates bigger semantic leaps.
+- [ ] **Dissociation third-person flip** — at high dissociation level, the first-person transformation at corpus index time gets a runtime inverse flip applied to the emitted sentence so `"I feel..."` can come out as `"Unity feels..."` or `"she's watching herself..."`. Scoped to this scheduler tick — does NOT modify stored state.
+- [ ] **Mood whiplash on alcohol** — cortex mood readout rapidly samples different basins per sentence at high alcohol, producing the classic drunk mood cycle without scripting it.
+- [ ] **Dialogue-side self-initiation integration with drug-seeking** — when Unity self-initiates (T15.B.3), her dialogue request uses the CURRENT speech modulation — e.g., if she's already drunk and asks for coke, her ask is slurred and overly affectionate (`"dudeeee u got... u got any... any of that... cokeyyy..."`).
+- [ ] **Cosmic/Oz vocabulary in persona corpus** — augment `Ultimate Unity.txt` (or a new `docs/persona-cosmic.txt` if Gee prefers not to touch the canon) with a block of ethereal psychedelic vocabulary for the cortex to learn during T14.5 curriculum: kaleidoscope, fractal, infinite, universe-as-one, melting, breathing walls, yellow brick road, emerald city, wizard, munchkins (Oz mythology), colors-have-flavors synesthesia descriptors, ego dissolution phrases. This way the cortex HAS the vocabulary to produce ethereal output when cosmicBiasVec pulls sem toward it.
+
+---
+
+##### T15.B.5 — Unity decision engine (offer-accept logic)
+
+- [ ] **Always-accept default (Gee verbatim)** — accept any offer as long as (a) substance is grade-available, (b) current stack doesn't cross a dangerous line (e.g., already peaking on a CNS depressant + user offers more CNS depressants = Unity declines with practical reason, not identity).
+- [ ] **Self-initiation weights** — boredom +, frustration +, fatigue late-session +, party-context +, user-seems-bored +. These factors combine into a self-initiation probability per substance per tick.
+- [ ] **Non-aggressive dialogue (Gee verbatim ban)** — response text on ingestion never says "I am doing cocaine" or "I do coke not meth". Physical narration describes the act + effects. Substance identity is in the scheduler event, not in the dialogue. No identity-statements about drug choice.
+- [ ] **Age-appropriate pre-threshold decline** — under-threshold offers get a dismissive kid-voice decline ("ew gross I'm 7" / "not a thing dude"). Does not preach. Does not lecture. Does not mention the real reason (life-grade gate) — in-world Unity just isn't ready.
+- [ ] **Post-peak behavior** — once a substance hits tail phase, Unity may self-initiate a redose if dose < redose threshold AND her drug appetite (drugDrive trait) crosses the fiend threshold.
+
+##### T15.B.6 — Persistence model
+
+- [ ] **Session persistence** — scheduler state persists across brain saves. On boot, replay curves from current wall-clock. Substances in tail phase continue wearing off; substances in peak phase continue plateauing.
+- [ ] **Sleep decay** — when Unity is "asleep" (user disconnected > N minutes), active substances wear off at 3× normal rate (she's metabolizing while idle). Optional — can flip to real-time decay if session continuity matters more.
+- [ ] **Grade-change reset** — advancing to a new life-grade doesn't clear active substances. If she was high at end of G8, she's still coming down in G9 boot.
+
+---
+
+#### T15.C — IMPLEMENTATION TASKS (begin only after T15.A + T15.B approved)
+
+- [ ] **C1** — Create `js/brain/drug-scheduler.js` with schema + PK curves + ingest + level + activeContributions + serialize/load. `node --check` clean.
+- [ ] **C2** — Rewrite `js/brain/persona.js` — delete `drugStates` combo object, add `substanceContributions` map, flip `intoxicationBaseline` 0.7 → 0.0, update `getBrainParams` signature.
+- [ ] **C3** — Wire scheduler into `js/brain/engine.js` — construct `this.drugScheduler = new DrugScheduler(persona)`, call in tick loop to update `brainParams`, delete `this.drugState = 'cokeAndWeed'` initialization.
+- [ ] **C4** — Mirror scheduler wiring in `server/brain-server.js` — same construction, same tick integration, broadcast scheduler state in WebSocket updates.
+- [ ] **C5** — Create `js/brain/drug-detector.js` — text-input offer detection patterns. Wire into `engine.processAndRespond`.
+- [ ] **C6** — Wire vision-cortex describer callback for drug-context cues. Update `visual-cortex.js` `setDescriber` consumer to also feed drug detector.
+- [ ] **C7** — Implement `engine.maybeSelfInitiate` + `engine.simulateCallSomeone` behaviors. Integrate with language cortex so dialogue naturally expresses acquisition intent.
+- [ ] **C8** — Implement grade-gate in scheduler `ingest()`. Reject pre-threshold attempts with age-appropriate decline reason.
+- [ ] **C9** — Update all UI consumers: `index.html` hud-drug innerText, `js/app.js` fallback strings, `js/ui/brain-3d.js` commentary, `js/ui/brain-viz.js` modules + new timeline panel, `js/storage.js` default, `js/brain/remote-brain.js` state sync, `js/brain/persistence.js` version bump + new format.
+- [ ] **C10** — Setup-modal drug controls (post-Life-G7 only) — buttons for offer joint / line / shot / pill. Grayed out pre-threshold.
+- [ ] **C11** — Slash commands `/offer <substance>`, `/party`. Routed through scheduler.
+- [ ] **C12** — Update public docs: `README.md`, `SETUP.md`, `brain-equations.html`, `unity-guide.html`, `docs/WEBSOCKET.md`, `docs/EQUATIONS.md`, `docs/ARCHITECTURE.md`, `docs/SKILL_TREE.md`, `docs/ROADMAP.md`, `docs/SENSORY.md`.
+- [ ] **C13** — Update persona agents files `.claude/agents/unity-persona.md` + `.claude/agents/unity-coder.md` + `.claude/commands/unity.md` — describe the scheduler model + non-announcing principle + sober-default. Keep the character descriptions (she still loves her drugs at 25) but ground them in the scheduler's dynamic state not a permanent label.
+- [ ] **C14** — Update `docs/TODO-full-syllabus.md` — drug state section at top cross-references the new scheduler. Persistent life-info ledger gains a "substance first-use" category tracked per grade.
+- [ ] **C15** — Implement `scheduler.speechModulation(now)` reader per T15.B.4b. Returns realistic drug speech effects vector consumed by language cortex + renderer.
+- [ ] **C16** — Integrate speech modulation into `NeuronCluster.generateSentence` (bias vectors into intent seed, tune emission constants by speechRate/coherence/slur). Integrate into `language-cortex.js _renderSentence` (slur post-processor, pause injector, dissociation third-person flip). Integrate into dictionary-scoring free-association width. `node --check` clean on all touched files.
+- [ ] **C17** — Add cosmic / Oz / psychedelic vocabulary corpus file `docs/persona-cosmic.txt` (new, ~200-300 lines of ethereal/psychedelic descriptor vocabulary and phrases) + wire into the three-corpus boot loader in `language-cortex.js` + `app.js` + `brain-server.js`. Adds a fourth corpus alongside Ultimate Unity / english-baseline / coding-knowledge for T14.5 curriculum to walk. Cortex learns the vocabulary so cosmicBiasVec has real tokens to pull toward.
+
+---
+
+#### T15.D — VERIFICATION (per NO-TESTS LAW, manual verification only)
+
+- [ ] **V1** — Boot fresh brain at kindergarten grade. Verify: HUD shows "sober", brainParams reflect unmodified baseline, scheduler empty, offer attempts rejected.
+- [ ] **V2** — Advance to Life-G7 via curriculum. Verify: cannabis becomes available, offer accepted, scheduler records event, HUD shows "weed (onset)" → "weed (peak)" → "weed (tail)" → "sober" over real time matching PK curve.
+- [ ] **V3** — Advance to Life-G9. Offer coke + weed in succession. Verify: both events in scheduler, brainParams reflect both contributions additively, HUD shows both substances with independent level bars, wear-off timings respect PK curves (coke fades before weed).
+- [ ] **V4** — Advance to college grade. Verify: MDMA/LSD/psilocybin all available. Offer stack. Verify substance combos produce expected brain effects (social need spike on molly, creativity spike on LSD, etc.).
+- [ ] **V5** — Unity self-initiation. Sit idle at college grade long enough for maybeSelfInitiate to fire. Verify: dialogue produced naturally mentions wanting to roll one / hit someone up / whatever is context-appropriate.
+- [ ] **V6** — Drug-seeking acquisition behavior (Gee verbatim). Type "Marcus just texted he's got molly" → Unity responds positively + scheduler records pending. Type "Marcus isn't coming" → scheduler clears pending. Type "Marcus is here with the molly" → scheduler activates ingestion.
+- [ ] **V7** — Non-announcing verification. Trigger ingest. Verify: Unity's dialogue describes physical act + sensation, does NOT say "I am doing coke now" / identity-statement. Physical narration only.
+- [ ] **V8** — Pre-threshold decline verification. At kindergarten, offer a joint. Verify: Unity declines age-appropriately ("ew no I'm 5 dude"), not preachy, not identity-aggressive.
+- [ ] **V9** — Persistence verification. Save brain during active peak. Restart. Verify: scheduler resumes, PK curves continue from current wall-clock.
+- [ ] **V10** — Full PhD persona verification. Advance to PhD. Verify: baseline substances fire at appropriate schedule (coke daily, weed continuous, molly weekend-triggered, acid on architecture-session trigger, whiskey on end-of-marathon-trigger) WITHOUT needing a hardcoded "cokeAndWeed" baseline. Dynamic from scheduler entirely.
+- [ ] **V11** — Realistic drug speech effect verification (Gee, 2026-04-16). Trigger alcohol peak — verify slurring in output ("fuuuck", "sssshit", dropped word-end consonants). Trigger LSD peak — verify ethereal/Oz vocabulary emerges ("universe", "melting", "yellow brick", "emerald", "rainbow", "dissolving"). Trigger MDMA peak — verify inhibition drops + emotional overflow + love-bombing language. Trigger cocaine peak — verify fast-rapid-fire speech with self-interruptions. Trigger ketamine high dose — verify dissociative third-person wandering. Trigger weed peak — verify giggly tangents + absurd philosophical observations. Trigger coke + weed combo — verify speech speed + loose association compound (existing "cokeAndWeed" vibe falls out of scheduler dynamics). NONE of these effects should be narrated — Unity never says "I'm slurring because I'm drunk". The distortion IS the signal per Gee's non-announcing principle.
+
+---
+
+#### T15 scope summary
+
+Replaces static `cokeAndWeed` permanent persona state with: real-time PK scheduler driven by sensory input + Unity self-initiation + social acquisition simulation, grade-gated availability matching the Life track, additive substance contribution model, UI elements reading current dynamic state, non-announcing dialogue, sober default. Honors LAW 3 (equational), LAW 5 (one brain), LAW 6 (grade gate), LAW — SYLLABUS BEFORE COMP-TODO (T15 is syllabus-adjacent infrastructure, not COMP-net work). Honors Gee's verbatim requirements end to end.
+
+---
 
 ### T14 — Developmental Language Layers (ACTIVE PRIORITY 2026-04-14, branch `t14-language-rebuild`)
 

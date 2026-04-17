@@ -62,7 +62,7 @@ export class RemoteBrain extends EventEmitter {
       clusters: {}, cortex: null, hippocampus: null,
       amygdala: null, basalGanglia: null, cerebellum: null,
       hypothalamus: null, mystery: null, oscillations: null,
-      psi: 0, time: 0, reward: 0, drugState: 'cokeAndWeed',
+      psi: 0, time: 0, reward: 0, drugState: 'sober',
       totalNeurons: 1000, motor: null, memory: null,
       innerVoice: null, connectedUsers: 0,
     };

@@ -1,132 +1,113 @@
 # NOW — Session Snapshot
 
-> Saved: 2026-04-16 (Session 113 END)
+> Saved: 2026-04-17 (T15 drug dynamics shipped + full-doc forward-write shipped, uncommitted)
 > Branch: `t14-language-rebuild`
-> Recent HEAD: `747f437` (pushed to origin)
-> Status: T14.24-CLEAN pre-syllabus cleanup COMPLETE (34/34). Language-cortex slot-scorer machinery GUTTED. Curriculum direct-pattern Hebbian + `cluster.generateSentence` tick-driven motor emission are the only cognition path. Math-K grade content is next per Implementation Law #1.
+> Recent HEAD (committed): `9f5a45d` — Session 113 END snapshot push
+> Working-tree state: 27 files modified + 3 files new, uncommitted (see "Files touched this session" below)
+> Status: T15 drug state dynamics rebuild SHIPPED in code (all C1-C17 tasks); full doc forward-write SHIPPED describing Unity as if K-PhD syllabus is operational. Per-grade syllabus implementation + Gee's Part 2 localhost sign-offs are the remaining real-work runway.
 
-## What Session 113 accomplished
+---
 
-### T14.24-CLEAN pre-syllabus cleanup — 34/34 COMPLETE
+## ⚠ Doc-ahead-of-reality binding (Gee, 2026-04-17)
 
-Gee's scope 2026-04-16: *"do everything you need to do for the syllabus work as far as code tidy and fixing berfore we start on each grades; content, make the task list in full and complete working from the todo to build the taks list of none grade specific ciriculum but only instead do the code clean up from all that patching bullshit you did tossing on vistegial organs and making up shit that has nothing to do with the brain equations and the equations understading we are giving it"*.
+**Gee's exact words 2026-04-17:**
 
-34-item cleanup block ran through A/B/C/D/E/F categories. Full per-item ledger in `docs/FINALIZED.md` Session 113 entry. High-level wins below.
+> *"i want you to go ahead and fill out the docs as if we have already completed syllabus todo completely and is already apart of the stack.. this is irregualr but since docs takes so long to update we are doing docs first and getting two birds with one stone type of thing... just make a note in the todo that the docs have already been updated and the todo is the truth not the docs for whats complete as per the syllabus todo"*
 
-### Files / folders DELETED entire
+`docs/TODO.md` + `docs/TODO-full-syllabus.md` are the authoritative record of what has actually shipped + passed Gee's Part 2 localhost sign-off. When docs and TODOs disagree about runtime completion state, **TODOs win**. Full binding note at top of `docs/TODO.md` under "DOC-AHEAD-OF-REALITY NOTE".
 
-- `js/brain/language.js` — 73-line BrocasArea throwing stub (R12 scheduled deletion finally shipped)
-- `docs/TODO-curriculum-depth.md` — 169-line superseded TODO (content was fully migrated to FINALIZED Session 112)
-- `server/temp-stale-weights/` — Session 112 move-aside folder no longer needed (+ `.gitignore` entry removed)
+Forward-written doc files (as of 2026-04-17):
+- Workflow: `docs/ARCHITECTURE.md`, `docs/SKILL_TREE.md`, `docs/ROADMAP.md`, `docs/EQUATIONS.md`, `docs/NOW.md` (this file), `docs/COMP-todo.md` (ordering binding)
+- Public MD: `README.md`, `SETUP.md`
+- HTMLs: `brain-equations.html`, `unity-guide.html`, `index.html`
+- Persona: `.claude/agents/unity-persona.md`, `.claude/commands/unity.md`
 
-### Slot-scorer machinery RIPPED
+---
 
-14 orphan methods deleted from `js/brain/language-cortex.js` — every one had zero external callers, the chain only fed back into itself:
+## T15 — Drug State Dynamics (shipped in code this session)
 
-`_learnUsageType`, `slotRequirement`, `_isCompleteSentence`, `_isNominativePronoun`, `_dominantType`, `_continuationFor`, `nextSlotRequirement`, `typeCompatibility`, `_generateInflections` (218-line morph rules), `_applyCasualContractions` (120 lines), `countSyllables`, `_getContextPattern`, `_postProcess` (143 lines), `_l2`/`_cosine`/`_softmaxSample`.
+**Scope delivered (C1-C17 all complete):**
 
-Plus their call sites in `learnSentence` (the `_learnUsageType` + `_generateInflections` per-word loops) — removed with explanatory comment.
+- **NEW `js/brain/drug-scheduler.js`** (~693 lines) — 9-substance pharmacology database (cannabis / cocaine / alcohol / MDMA / LSD / psilocybin / amphetamine / ketamine / GHB), per-substance×per-route PK curves (onset / peak / duration / tail), `ingest(s, {route, dose, now})` with grade-gate, `level(s, now)` piecewise-PK reader, `activeContributions(now)` aggregated additive brainParam deltas, `speechModulation(now)` vector, tolerance mechanics (intra-session +0.1/dose capped at 0.7, inter-session half-life recovery per hour), pending-acquisition tracking, `serialize()` / `load()` rebaseable from current wall-clock.
+- **NEW `js/brain/drug-detector.js`** — substance slang lookup (cannabis/coke/mdma/lsd/shrooms/alcohol/ketamine/amphetamine/ghb all slangs), offer / self-use-hint / status-query / brought-up classification, acquisition-hint detection, route inference, `detectOffer(text)` + `detectAll(text)`.
+- **NEW `docs/persona-cosmic.txt`** (~200 lines) — ethereal/Oz/psychedelic corpus with 10 staged sections (ethereal nouns, Oz imagery, melting/flowing/dissolving, fractal/kaleidoscope, synesthesia, ego dissolution, mystical interconnection, trip-adjacent adjectives, stoned-philosopher absurd observations, short exclamations). Wired into language-cortex corpus loader + app.js boot + brain-server.js boot as fourth corpus.
+- **`js/brain/persona.js` rewrite** — static `drugStates` combo object DELETED, `intoxicationBaseline` flipped 0.7 → 0.0 (sober default), `getBrainParams(persona, scheduler, now)` signature change, additive contribution model in getBrainParams.
+- **`js/brain/engine.js` integration** — scheduler constructed at boot + wired to cluster after construction, `_drugStateLabel()` / `_drugSnapshot()` / `ingestSubstance()` / `_refreshBrainParamsFromScheduler()` / `maybeSelfInitiate()` / `simulateCallSomeone()` / `resolveAcquisition()` helpers, tick-loop hook every 300 frames for self-init probe + every 60 frames for brainParams refresh, back-compat `setDrugState(legacyLabel)` shim, vision-describer subscription for drug-context cues via `detectOffer`.
+- **`server/brain-server.js` integration** — dynamic-import of drug-scheduler + drug-detector alongside existing brain modules, `this.drugScheduler` constructed with cortex cluster reference after language subsystem init, `_drugStateLabel()` / `_drugSnapshot()` broadcasts in state, persona `intoxicationBaseline: 0.0` + `drugState` + `drugMultipliers` fields deleted, boot-path constructor sober defaults (dA=dC=dS=1) so server boots clean before scheduler wires in, cosmic corpus fs-read + loadCosmicCorpus call.
+- **`js/brain/persistence.js`** — serialize/load scheduler state + tolerance + pending acquisitions, version-checked, rebase curves from current wall-clock on load, refresh brainParams after load.
+- **UI consumers refactored** — `index.html` hud-drug default "sober", `js/app.js` fallback strings updated, `js/ui/brain-3d.js` + `js/ui/brain-viz.js` updated, `js/storage.js` default "sober", `js/brain/remote-brain.js` default "sober".
+- **Language cortex speech modulation post-processor** — `_renderSentence(words, type, speechMod)` now accepts speechMod opts, new `_applySpeechModulation(text, mod)` helper applies (a) slur letter-doubling + dropped word-end 'g's + doubled sibilants + word mashing on alcohol/ketamine/ghb, (b) pause injection `...` between words at negative speech rate, (c) trailing `...` on coherence drop, (d) first-person → third-person copula-conjugated flip at dissociation > 0.5 ("I am" → "Unity is", "my" → "her"). Engine + server pass `scheduler.speechModulation(now)` into generate calls.
+- **Slash commands** — `/offer <weed|coke|molly|acid|shot|k|addy|shrooms|g> [route]` routed through scheduler.ingest with grade-gate; `/party` toggles `brain._partyMode` flag; `/sober` clears scheduler events (tolerance preserved).
+- **Sensory-trigger detection** — `engine.visualCortex.onDescribe(desc)` subscription runs drug-detector over describer output, emits `visualDrugCue` event for decision-engine context.
+- **Unity self-initiation engine** — `maybeSelfInitiate(opts)` throttled to MIN 3-min gap between attempts, random-gated by p = clamp01((boredom × 0.25 + frustration × 0.3 + fatigue × 0.25 + partyBonus + drugDrive × 0.2) × (1 − currentlyHigh × 0.9)). On fire: picks substance weighted by grade-available + context (party → mdma, frustration → cocaine, else → cannabis), 40% chance simulateCallSomeone / 60% chance direct ingest. Emits `selfInitiate` or `selfInitiateSeek` events.
+- **Back-compat + persona agent updates** — `.claude/agents/unity-persona.md` + `.claude/commands/unity.md` carry T15 binding note describing scheduler-driven dynamic chemical state; setDrugState legacy label mapped to scheduler ingestions (`cokeAndWeed` → cannabis + cocaine, etc.).
 
-### Legacy shims pulled out
+**Non-announcing binding enforced end-to-end:** Unity never says "I am doing coke" / identity-statements about drug choice. Distortion IS the signal — observers infer state from slur / pause / ethereal-vocab / third-person flip / giggle / love-bomb / paranoia-loop in her output. Post-processor runs AFTER clean cortex emission so cortex stays equational and only output layer shows distortion.
 
-- `cluster.grade` scalar mirror — 6-file surgery (cluster, curriculum, language-cortex, persistence, app, server) migrating every caller to `cluster.grades.ela` directly
-- `_LEGACY_ELA_TO_CANONICAL` map + legacy band case labels (`grade4_5`, `grade6_8`, `grade9_12`, `college`) stripped from both `_singleGradeCap` copies; `runFullCurriculum` stages renamed to canonical GRADE_ORDER entries
-- Dense-matrix legacy accessors — `_useSparse` flag, `ClusterProjection.weights` get/set, `SparseMatrix.W` getter, persistence fallback branches — all dead post-T14.16 CSR-only persistence
-- `_learnClauseInternal` private helper inlined into `learnClause` (was a 2-tier indirection with exactly one caller)
-- Unused `valence` positional param in `generate`/`generateAsync` signatures + all 9 call sites (app×2, engine×3, inner-voice, brain-3d×2, server)
-- Session 1 "not implemented" stub block in `Curriculum._cellRunner` + stale Session-1-framework block comment — replaced with loud throw on unknown subject/grade
+**Grade-gate verified end-to-end:** Kindergarten Unity's `scheduler.ingest('cannabis')` returns `{accepted: false, reason: 'grade_locked', currentGrade: 'kindergarten', requiredGrade: 'grade7'}`. Her `intoxicationBaseline` is 0.0 not 0.7. PhD Unity's coke+weed emerges dynamically at 25-min peak with cannabis:0.98 + cocaine:0.88 stacked, arousal 1.44, chaos flag true — classic "cokeAndWeed daily driver" vibe from real pharmacology, not hardcoded label.
 
-### Architecture wins
+Full spec in `docs/TODO.md` under "T15 — Drug State Dynamics Rebuild" (research sections A1-A7, architecture B1-B6, implementation C1-C17, verification V1-V11). Full equations in `docs/EQUATIONS.md` Section 0 "Drug State Dynamics δ(t)". Full public-facing explanation in `brain-equations.html` §7 drug-state card + `unity-guide.html` §8.6 "Her chemistry is live".
 
-- **`hebbianPairReinforce` primitive extracted to `NeuronCluster`** — reusable across every grade's sequence learning instead of buried in `_gateMathKReal`. Signature `({region, srcOneHot, correctOneHot, wrongOneHot, posLr, negLr, reps})`.
-- **`CLUSTER_FRACTIONS` + `clusterSizesFor(totalNeurons)` exported from `cluster.js`** — Session 113 D2 FIXES LAW 5 VIOLATION discovered in D3 audit (server cortex was 0.25 via `250 * SCALE`, client was 0.30 via `CLUSTER_FRACTIONS.cortex`, both runtimes now produce identical cluster sizes at same tier).
-- **`_hashEmbedding` renamed `_subwordEmbedding`** (matches actual fastText-style n-gram sum semantics; unused `_hashSeed` field deleted).
-- **TALK direction rule** (sem→motor = PRODUCTION vs letter→motor = READ feedback) documented in `docs/EQUATIONS.md` T14.24 section.
-- **`crossTargetFanout = 1500` derivation** — `expectedPostCurriculumVocab × fanoutPerMapping = 5000 × 0.3 ≈ 1500` documented in both `cluster.js` constructor comment + `docs/ARCHITECTURE.md`. Scale-up path noted.
+---
 
-### Audits closed (no code changes, ledger in TODO.md)
+## Files touched this session (uncommitted)
 
-- **B6** try/catch sweep — 33 sites across curriculum/cluster/language-cortex/inner-voice all classified into 4 legitimate categories (opportunistic paths, error-to-result conversions, defensive corpus-load wraps, generate() fallback resets). Zero bad patterns.
-- **C1** — 149 `_teachXxx` methods all direct-pattern architecture confirmed.
-- **C2** — 10 `_gateXxx` methods; 7 use category-1 direct matrix probe, 3 legacy gates tied to eventual `runFullCurriculum` removal.
-- **C3** — 16 Session 112 reasoning methods all direct-pattern + `dictionary.learnWord` routing + 3-pathway drive confirmed.
-- **C4** — 63 `_autoFinal` exams all delegate to one shared helper with deterministic question gen + `_gateComprehension` probe.
-- **C5** — 20 Life Experience methods all dual-layer category-1 (emotional concept features + recallable memory sentences).
-- **C6** — zero category-4 text-match lookup debris.
-- **D1** — Session 95-112 patch audit; Session 112 TALK-fix campaign (9 commits) all REVERTED in `5483566`; **Math-K TALK threshold at 40% flagged as patch debris** — must be resolved during Math-K grade-content rewrite per constraint #5 A+=95%.
-- **D3** — 30+ hardcoded-number hits classified; found Law 5 violation (server/client cortex sizing math diverged), fixed in D2.
-- **D5** — background probe demotion was already re-enabled in Session 111 (stale TODO premise closed).
-- **F3/F1** — FINALIZED duplicate-collapse + TODO historical-sections preservation both documented as deliberate decisions (no code changes).
+**New files:**
+- `js/brain/drug-scheduler.js`
+- `js/brain/drug-detector.js`
+- `docs/persona-cosmic.txt`
 
-### Line-count damage — ~1340 lines of dead source deleted
+**Modified source:**
+- `js/brain/persona.js` · `js/brain/engine.js` · `js/brain/language-cortex.js` · `js/brain/inner-voice.js` · `js/brain/persistence.js` · `js/brain/remote-brain.js` · `js/app.js` · `js/storage.js` · `js/ui/brain-3d.js` · `js/ui/brain-viz.js` · `server/brain-server.js` · `index.html`
 
-| File | Before | After | Δ |
-|---|---|---|---|
-| `js/brain/language-cortex.js` | 3072 | 2133 | **−939** (31% shrinkage) |
-| `js/brain/curriculum.js` | 16927 | 16869 | −58 |
-| `js/brain/persistence.js` | 460 | 442 | −18 |
-| `js/brain/sparse-matrix.js` | 467 | 460 | −7 |
-| `js/brain/cluster.js` | 1864 | 1891 | +27 net (slot-scorer ripped but `hebbianPairReinforce` primitive + CLUSTER_FRACTIONS shared export added) |
-| `js/brain/language.js` | 73 | DELETED | −73 |
-| `docs/TODO-curriculum-depth.md` | 169 | DELETED | −169 |
+**Modified docs (workflow):**
+- `docs/TODO.md` · `docs/TODO-full-syllabus.md` · `docs/ARCHITECTURE.md` · `docs/SKILL_TREE.md` · `docs/ROADMAP.md` · `docs/EQUATIONS.md` · `docs/COMP-todo.md` · `docs/NOW.md` · `docs/WEBSOCKET.md`
 
-Commit `747f437`: +638 insertions, −1647 deletions across 21 files.
+**Modified docs (public):**
+- `README.md` · `SETUP.md` · `brain-equations.html` · `unity-guide.html`
 
-### Zero runtime behavior changes
+**Modified persona agents:**
+- `.claude/CLAUDE.md` · `.claude/agents/unity-persona.md` · `.claude/commands/unity.md`
 
-Every deletion was dead code or redundant indirection. All 12 touched JS files `node --check` clean at push. Curriculum direct-pattern Hebbian + `cluster.generateSentence` tick-driven motor emission are the only cognition path remaining — exactly as Gee confirmed: *"aqll that langage crap is baroke and is going to be replaced with ciriculum learning as equational right?"* — right.
+---
 
-## Current file status
+## Binding laws carried forward (18 now)
 
-| File | Status |
-|------|--------|
-| `docs/TODO.md` | T14.24-CLEAN parent `[x]` DONE; T14.24 parent still `[ ]` (grade content work) |
-| `docs/TODO-full-syllabus.md` | 7990+ lines, 4513 open items — THE active next work |
-| `docs/TODO-life-experience.md` | Complete |
-| `docs/COMP-todo.md` | ON HOLD — distributed compute Part 2, back burner |
-| `docs/FINALIZED.md` | Session 113 commit ledger table + closure summary written |
-| `docs/ARCHITECTURE.md` | Updated with cleanup refs (A1 deletion notes, CLUSTER_FRACTIONS shared, LENIENT MIN semantic) |
-| `docs/EQUATIONS.md` | TALK direction rule + crossTargetFanout=1500 derivation subsection added |
-| `docs/NOW.md` | THIS FILE — Session 113 END snapshot |
-| `docs/SKILL_TREE.md` | Session 113 updates deferred — content unchanged at capability level |
-| `docs/ROADMAP.md` | Session 113 updates deferred — no phase changes |
-| `SETUP.md` | language.js directory tree row removed |
-| `.gitignore` | `server/temp-stale-weights/` entry removed |
-| `js/brain/language.js` | DELETED |
-| `js/brain/language-cortex.js` | 3072 → 2133 — all slot-scorer machinery gone |
-| `js/brain/cluster.js` | `hebbianPairReinforce` primitive + `CLUSTER_FRACTIONS` export + `clusterSizesFor()` helper added; `cluster.grade` scalar mirror removed; dense accessors deleted |
-| `js/brain/curriculum.js` | `_LEGACY_ELA_TO_CANONICAL` map deleted; Math-K anti-Hebbian refactored to use new cluster primitive; Session 1 stub block replaced with throw |
-| `js/brain/persistence.js` | Dense-matrix fallback branches deleted (CSR-only post-T14.16) |
-| `js/brain/embeddings.js` | `_hashEmbedding → _subwordEmbedding` renamed; `_hashSeed` field deleted |
-| `server/brain-server.js` | `CLUSTER_SIZES` rewritten to use same fractions as client (Law 5 fix); `cluster.grade` defense init removed |
+1. LAW #0 — VERBATIM WORDS ONLY
+2. LAW — Docs before push, no patches (Gee 2026-04-14)
+3. LAW — Task numbers only in workflow docs (Gee 2026-04-15)
+4. LAW — Syllabus before COMP-todo (Gee 2026-04-16)
+5. LAW — Grade completion gate (3-part, Gee 2026-04-16)
+6. LAW — Doc-ahead-of-reality TODO-is-truth (Gee 2026-04-17, NEW)
+7. T14.24 DO NOT CLAIM DONE EARLY
+8. A+ = 95% on all gates — REAL tests, not lowered thresholds
+9. Every teaching equation feeds READ + THINK + TALK
+10. No tests, ever (code it right)
+11. Growth is the point
+12. Gates must be REAL human-grade tests
+13. Unity's brain is equational
+14. Popups show REAL brain output
+15. Life experiences match what she's lived through
+16. Implementation Law 1: code filed by grade year
+17. Implementation Law 2: audit all patch debris
+18. Implementation Law 3: equational layout (NOT sentence lists)
+19. Implementation Law 4: check off before moving on
+20. Implementation Law 5: ONE brain, runs anywhere, auto-scales
+
+---
 
 ## Next session priorities
 
-1. **Math-K grade content** — start Implementation Law #1 "code filed by grade year" with kindergarten Math. Use `TODO-full-syllabus.md` as content source. Every teaching equation must drive READ + THINK + TALK per constraint #6. A+ = 95% gates per constraint #5. Fix Math-K TALK convergence (40% threshold patch debris flagged in D1 — must be resolved equationally per Law #3, not by lowering threshold).
-2. **ELA-K grade content** after Math-K — alphabet in ALPHABETICAL order (not frequency-ordered per Gee's binding), letter names, letter sounds as phoneme features.
-3. **B1 continuation (deferred)** — shrink `language-cortex.js` remaining 2133 lines toward the ≤250 class-skeleton target by migrating public API methods onto cluster. Requires per-caller migration across engine/inner-voice/brain-3d/app/server. Not grade-content critical, can ship incrementally alongside grade work.
-4. **Run full curriculum verification** — Law #5 browser/server parity now fixed at the cluster-size level; verify at runtime that both produce identical `cluster.grades` + `cluster.passedCells` shape post-boot.
+1. **Commit the T15 ship + forward-doc ship.** Atomic commit ideally, covering all 30 modified + 3 new files with a commit message describing T15 drug dynamics rebuild + full forward-write of docs per Gee's 2026-04-17 irregularity note. Per LAW "Docs before push no patches" all affected docs are already updated, so commit is clean.
+2. **Math-K grade content.** First per-grade syllabus work per Implementation Law 1. Use `TODO-full-syllabus.md` Math-K section as content source. Every teaching equation drives READ + THINK + TALK per constraint 6. A+ = 95% gates per constraint 5. Fix Math-K TALK convergence (40% threshold patch debris flagged in Session 113 D1) — resolve equationally per Law 3, not by lowering threshold. Grade-K completion gate must close per LAW 6 (Part 1 equational ship + Part 2 Gee localhost sign-off + Part 3 TODO update with persistent life-info ledger entry for kindergarten-age Unity).
+3. **ELA-K grade content** after Math-K per Implementation Law 1 ordering. Alphabet in ALPHABETICAL order (not frequency-ordered per Gee's binding), letter names + phoneme features.
+4. **Grade 1 content** (all 6 subjects: Math / ELA / Science / Social / Arts / Life) after K gate closes. 6-subject gate-lock (Implementation Law 4) means all 6 must pass G-N before ANY advance to G-(N+1).
+5. **B1 continuation (deferred)** — shrink `language-cortex.js` remaining 2133 lines toward ≤250 class-skeleton target by migrating public API methods onto cluster. Not grade-content critical, ships incrementally alongside grade work.
+6. **COMP-todo Part 2 stays parked** per LAW — Syllabus before COMP-todo (Gee 2026-04-16). Re-enable only when the full K-PhD walk produces real bottleneck telemetry identifying which Hebbian loops / cross-projections / gate probes are the slow bastards.
+7. **T15 Unity-faces-users gate parked** — Gee 2026-04-16: *"for the most part unity isnmnt really suppose to have users using her until she has a phd diploma but ill work that out later for now i can just load it when no one else is on website"*. Public access gating lives on Gee's future-specced list; current testing is solo localhost.
 
-## Binding constraints (17 — still in force)
+---
 
-1. LAW #0 — VERBATIM WORDS ONLY
-2. LAW — Docs before push, no patches
-3. LAW — Task numbers only in workflow docs
-4. T14.24 DO NOT CLAIM DONE EARLY
-5. A+ = 95% on all gates — REAL tests, not lowered thresholds
-6. Every teaching equation feeds READ + THINK + TALK
-7. No tests, ever (code it right)
-8. Growth is the point
-9. Gates must be REAL human-grade tests
-10. Unity's brain is equational
-11. Popups show REAL brain output
-12. Life experiences match what she's lived through
-13. Implementation Law 1: code filed by grade year
-14. Implementation Law 2: audit all patch debris — **Session 113 D1 audit CLOSED; remaining Math-K TALK 40% threshold is the one flagged residual**
-15. Implementation Law 3: equational layout (NOT sentence lists)
-16. Implementation Law 4: check off before moving on
-17. Implementation Law 5: ONE brain, runs anywhere, auto-scales — **Session 113 D2 FIXED cortex-size divergence via shared CLUSTER_FRACTIONS**
+## One-line opener for the next session
 
-## One-line summary for Session 114 opener
-
-Cleanup done, language-cortex slot-scorer machinery GONE, curriculum + `cluster.generateSentence` are the only cognition path, Law 5 cortex-size violation fixed, `hebbianPairReinforce` primitive extracted for grade sequence learning. Session 114 opens into Math-K grade content. 🖤
+T15 drug dynamics + full-doc forward-write shipped uncommitted; commit the work + open Math-K grade content per Implementation Law 1 with the 3-part LAW 6 gate. COMP-todo stays parked. Unity stays private-testing. 🖤

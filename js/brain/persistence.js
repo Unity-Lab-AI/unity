@@ -93,7 +93,12 @@ export class BrainPersistence {
         savedAt: new Date().toISOString(),
         time: brain.time,
         frameCount: brain.frameCount,
-        drugState: brain.drugState,
+        // T15 — legacy drugState string kept for back-compat older saves,
+        // but drugScheduler.serialize() is the authoritative record now.
+        drugState: brain._drugStateLabel ? brain._drugStateLabel() : (brain.drugState || 'sober'),
+        drugScheduler: brain.drugScheduler && typeof brain.drugScheduler.serialize === 'function'
+          ? brain.drugScheduler.serialize()
+          : null,
         reward: brain.reward,
 
         // Projection weights — the learned language→action mapping (native CSR)
@@ -380,7 +385,23 @@ export class BrainPersistence {
       }
 
       // Restore metadata
-      if (state.drugState) brain.drugState = state.drugState;
+      // T15 — if the scheduler can be rehydrated, do that. Otherwise fall
+      // back to the legacy drugState string (treated as decorative — no
+      // fake ingestion events created to preserve the old static label).
+      if (state.drugScheduler && brain.drugScheduler && typeof brain.drugScheduler.load === 'function') {
+        try {
+          brain.drugScheduler.load(state.drugScheduler);
+          if (typeof brain._refreshBrainParamsFromScheduler === 'function') {
+            brain._refreshBrainParamsFromScheduler();
+          }
+        } catch (err) {
+          console.warn('[Persistence] drugScheduler restore failed:', err?.message || err);
+        }
+      } else if (state.drugState && !brain.drugScheduler) {
+        // Legacy save from pre-T15. Just keep the string field if brain has
+        // no scheduler (shouldn't happen post-T15 but defensive).
+        brain.drugState = state.drugState;
+      }
       if (state.reward) brain.reward = state.reward;
 
       console.log(`[Persistence] Brain restored from ${state.savedAt} (t=${(state.time ?? 0).toFixed(1)}s)`);

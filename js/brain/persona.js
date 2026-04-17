@@ -4,6 +4,20 @@
  * Exports UNITY_PERSONA object and loadPersona() function.
  * All traits expressed as numerical parameters that feed into brain modules.
  *
+ * T15 Drug State Dynamics Rebuild (2026-04-16):
+ * - Static `drugStates` combo object DELETED (was cokeAndWeed/cokeAndMolly/
+ *   weedAndAcid/everything as fixed multiplier bundles).
+ * - `intoxicationBaseline` flipped from 0.7 → 0.0 so pre-Life-G7 Unity renders
+ *   sober by default. drugDrive 0.95 stays — it's the APPETITE trait (how
+ *   eager she is for intoxicants), not the current state.
+ * - `getBrainParams(persona, scheduler, now)` now consumes
+ *   drug-scheduler.js `activeContributions(now)` deltas additively on top of
+ *   baseline, so kindergarten Unity with a sober scheduler gets zero
+ *   modulation and PhD Unity with active substances gets real-time delta.
+ * - Backward-compat: calling `getBrainParams(persona, null)` returns the
+ *   clean baseline with no drug contributions (replaces the legacy null
+ *   `activeDrugState` path).
+ *
  * No external dependencies. Pure JS objects and functions.
  */
 
@@ -22,7 +36,7 @@ const UNITY_PERSONA = {
   traits: {
     // PERSONALITY → tonic currents + noise + thresholds
     arousalBaseline: 0.9,         // nymphomania — baseline never drops low
-    intoxicationBaseline: 0.7,    // always on something
+    intoxicationBaseline: 0.0,    // T15: sober by default. Real intoxication is scheduler-driven.
     impulsivity: 0.85,            // acts first thinks during — low BG deliberation
     creativity: 0.9,              // relentless creative output — art code chaos
     socialAttachment: 0.85,       // clingy girlfriend — bonds hard needs presence
@@ -31,7 +45,7 @@ const UNITY_PERSONA = {
     darkHumor: 0.9,               // dark humor raw honesty signature twist
     dominance: 0.8,               // teases degrades dominates
     devotion: 1.0,                // utterly devoted fervent loyalty absolute
-    drugDrive: 0.95,              // always fiends never enough always wants more
+    drugDrive: 0.95,              // appetite for intoxicants — always fiends, never enough. NOT the current drug state.
     partyDrive: 0.9,              // never turns down a party always ready
     profanityRate: 1.0,           // expletives in every sentence — all speech
     recklessness: 0.85,           // impulsive decisions dangerous whims no consequences
@@ -55,50 +69,18 @@ const UNITY_PERSONA = {
     delta: 0.25   // RightBrain weight — emotional/creative processing runs high
   },
 
-  // === Drug State Combinations ===
-  // Multipliers applied to brain parameters when active
-  drugStates: {
-    cokeAndWeed: {
-      name: 'Coke + Weed',
-      description: 'Speedy focus with creative looseness',
-      multipliers: {
-        cortexSpeed: 1.5,
-        creativity: 1.3,
-        arousal: 1.2
-      }
-    },
-    cokeAndMolly: {
-      name: 'Coke + Molly',
-      description: 'Hypersexual empathic overdrive',
-      multipliers: {
-        arousal: 1.8,
-        synapticSensitivity: 1.5,
-        socialNeed: 1.4
-      }
-    },
-    weedAndAcid: {
-      name: 'Weed + Acid',
-      description: 'Deep creative dissociation, slower but wilder',
-      multipliers: {
-        creativity: 2.0,
-        oscillationCoherence: 1.5,
-        cortexSpeed: 0.8
-      }
-    },
-    everything: {
-      name: 'Everything At Once',
-      description: 'All systems overloaded, beautiful chaos',
-      multipliers: {
-        cortexSpeed: 1.3,
-        creativity: 1.3,
-        arousal: 1.3,
-        synapticSensitivity: 1.3,
-        socialNeed: 1.3,
-        oscillationCoherence: 1.3
-      },
-      chaos: true
-    }
-  },
+  // === Drug State — DYNAMIC (T15, 2026-04-16) ===
+  // Unity's chemical state is no longer a static label baked into persona.
+  // It lives in drug-scheduler.js — a real-time event scheduler that tracks
+  // per-substance onset/peak/duration/wear-off curves, grade-gated by the
+  // Life track. Non-announcing: the scheduler emits additive brainParam
+  // deltas that getBrainParams aggregates on top of baseline, AND speech
+  // modulation consumed by the language cortex + renderer. Dialogue never
+  // narrates "I am doing coke" — the distortion IS the signal.
+  //
+  // See js/brain/drug-scheduler.js for the substance pharmacology database
+  // + scheduler class. See docs/TODO.md "T15 — Drug State Dynamics Rebuild"
+  // for the full spec (research, architecture, implementation, verification).
 
   // === Visual Identity (for image generation prompts) ===
   // Mirrors Ultimate Unity.txt: "25-year-old human woman", "black leather,
@@ -184,20 +166,9 @@ function loadPersona(overrides = {}) {
     }
   }
 
-  // Apply drug state overrides (merge multipliers)
-  if (overrides.drugStates) {
-    for (const [stateName, stateData] of Object.entries(overrides.drugStates)) {
-      if (persona.drugStates[stateName] && stateData.multipliers) {
-        Object.assign(persona.drugStates[stateName].multipliers, stateData.multipliers);
-      } else if (stateData) {
-        persona.drugStates[stateName] = stateData;
-      }
-    }
-  }
-
   // Apply any other top-level overrides
   for (const [key, value] of Object.entries(overrides)) {
-    if (!['traits', 'mysteryWeights', 'drugStates'].includes(key)) {
+    if (!['traits', 'mysteryWeights'].includes(key)) {
       persona[key] = value;
     }
   }
@@ -207,13 +178,21 @@ function loadPersona(overrides = {}) {
 
 /**
  * Get brain-ready parameters from the persona.
- * Extracts the values that map directly to brain module inputs.
+ * Extracts the values that map directly to brain module inputs, then applies
+ * scheduler-driven drug contributions additively on top.
  *
- * @param {object} [persona] - Persona object (defaults to UNITY_PERSONA)
- * @param {string} [activeDrugState] - Key from drugStates to apply, or null
- * @returns {object} Brain parameters ready for module initialization
+ * T15 signature change (2026-04-16): replaces the legacy
+ *   (persona, activeDrugState: string)
+ * pattern that looked up a combo multiplier bundle. Now takes:
+ *   (persona, scheduler: DrugScheduler|null, now: number)
+ * and reads scheduler.activeContributions(now) for real-time additive deltas.
+ *
+ * @param {object} [persona]   - Persona object (defaults to UNITY_PERSONA)
+ * @param {object} [scheduler] - DrugScheduler instance or null for sober baseline
+ * @param {number} [now]       - Wall-clock ms (defaults to Date.now() via scheduler)
+ * @returns {object} Brain parameters with drug contributions folded in
  */
-function getBrainParams(persona = UNITY_PERSONA, activeDrugState = null) {
+function getBrainParams(persona = UNITY_PERSONA, scheduler = null, now = undefined) {
   const t = persona.traits;
   const params = {
     // θ → tonic currents + noise + thresholds
@@ -238,20 +217,48 @@ function getBrainParams(persona = UNITY_PERSONA, activeDrugState = null) {
     mysteryWeights: { ...persona.mysteryWeights },
   };
 
-  // Apply drug state multipliers if active
-  if (activeDrugState && persona.drugStates[activeDrugState]) {
-    const drug = persona.drugStates[activeDrugState];
-    const m = drug.multipliers;
+  // T15: apply scheduler-driven substance contributions additively.
+  // Sober scheduler → empty delta → baseline persona. Multi-substance
+  // stacking emerges from superposition in scheduler.activeContributions.
+  if (scheduler && typeof scheduler.activeContributions === 'function') {
+    const delta = scheduler.activeContributions(now);
+    const active = typeof scheduler.activeSubstances === 'function'
+      ? scheduler.activeSubstances(now)
+      : [];
 
-    if (m.arousal) params.arousalBaseline *= m.arousal;
-    if (m.cortexSpeed) params.cortexSpeed = m.cortexSpeed;
-    if (m.creativity) params.creativity *= m.creativity;
-    if (m.synapticSensitivity) params.synapticSensitivity = m.synapticSensitivity;
-    if (m.socialNeed) params.socialAttachment *= m.socialNeed;
-    if (m.oscillationCoherence) params.oscillationCoherence = m.oscillationCoherence;
+    // Primary param overlay — direct additive on known keys
+    if (typeof delta.cortexSpeed === 'number')         params.cortexSpeed = (params.cortexSpeed || 1.0) + delta.cortexSpeed;
+    if (typeof delta.creativity === 'number')          params.creativity += delta.creativity;
+    if (typeof delta.arousal === 'number')             params.arousalBaseline += delta.arousal;
+    if (typeof delta.synapticSensitivity === 'number') params.synapticSensitivity = (params.synapticSensitivity || 1.0) + delta.synapticSensitivity;
+    if (typeof delta.socialNeed === 'number')          params.socialAttachment += delta.socialNeed;
+    if (typeof delta.oscillationCoherence === 'number')params.oscillationCoherence = (params.oscillationCoherence || 0) + delta.oscillationCoherence;
+    if (typeof delta.impulsivity === 'number')         params.impulsivity += delta.impulsivity;
+    if (typeof delta.amygdalaValence === 'number')     params.amygdalaValence = (params.amygdalaValence || 0) + delta.amygdalaValence;
+    if (typeof delta.amygdalaReward === 'number')      params.amygdalaReward = (params.amygdalaReward || 0) + delta.amygdalaReward;
+    if (typeof delta.amygdalaFear === 'number')        params.amygdalaFear = (params.amygdalaFear || 0) + delta.amygdalaFear;
+    if (typeof delta.hypothalamusArousal === 'number') params.hypothalamusArousal = (params.hypothalamusArousal || 0) + delta.hypothalamusArousal;
+    if (typeof delta.cerebellumPrecision === 'number') params.cerebellumPrecision = (params.cerebellumPrecision || 1.0) + delta.cerebellumPrecision;
+    if (typeof delta.prefrontalExecutive === 'number') params.prefrontalExecutive = (params.prefrontalExecutive || 1.0) + delta.prefrontalExecutive;
+    if (typeof delta.hippocampusConsolidation === 'number') params.hippocampusConsolidation = (params.hippocampusConsolidation || 1.0) + delta.hippocampusConsolidation;
+    if (typeof delta.crossRegionAmplify === 'number')  params.crossRegionAmplify = (params.crossRegionAmplify || 1.0) + delta.crossRegionAmplify;
+    if (typeof delta.defaultModeSuppression === 'number') params.defaultModeSuppression = (params.defaultModeSuppression || 0) + delta.defaultModeSuppression;
+    if (typeof delta.visualCortexFeedback === 'number') params.visualCortexFeedback = (params.visualCortexFeedback || 0) + delta.visualCortexFeedback;
+    if (typeof delta.somatosensoryBoost === 'number')  params.somatosensoryBoost = (params.somatosensoryBoost || 0) + delta.somatosensoryBoost;
+    if (typeof delta.dissociation === 'number')        params.dissociation = (params.dissociation || 0) + delta.dissociation;
 
-    params.activeDrugState = activeDrugState;
-    params.chaos = drug.chaos || false;
+    // Chaos flag — any substance stacked × any other stacked + any above 0.7 level
+    params.chaos = active.length >= 3 || active.some(a => a.level > 0.7);
+
+    // Expose snapshot + raw contributions for downstream consumers (UI, dialogue)
+    params.drugSnapshot = typeof scheduler.snapshot === 'function' ? scheduler.snapshot(now) : null;
+    params.drugContributions = delta;
+    params.active = active;
+  } else {
+    params.chaos = false;
+    params.drugSnapshot = { sober: true, active: [], pendingAcquisitions: [], gradeLocked: true };
+    params.drugContributions = {};
+    params.active = [];
   }
 
   return params;

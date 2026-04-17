@@ -85,7 +85,8 @@ Broadcast to every connected client every `STATE_BROADCAST_MS` (100 ms → 10 Hz
     "oscillations": [...],
     "mystery":  { "psi": 1.34, "id": ..., "ego": ..., ... },
     "motor":    { "selectedAction": "respond_text", "channelRates": [...] },
-    "drugState": "cokeAndWeed",
+    "drugState": "sober",
+    "drugSnapshot": { "sober": true, "active": [], "pendingAcquisitions": [], "gradeLocked": false },
     "clientCount": 3
   }
 }

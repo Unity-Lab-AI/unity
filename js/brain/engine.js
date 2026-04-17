@@ -31,6 +31,8 @@ import { BrainPersistence } from './persistence.js';
 import { sharedEmbeddings } from './embeddings.js';
 import { ComponentSynth } from './component-synth.js';
 import { Curriculum } from './curriculum.js';
+import { DrugScheduler, SUBSTANCES as DRUG_SUBSTANCES } from './drug-scheduler.js';
+import { detectOffer as detectDrugOffer } from './drug-detector.js';
 
 // ── EventEmitter ────────────────────────────────────────────────────
 
@@ -77,8 +79,11 @@ export class UnityBrain extends EventEmitter {
     super();
 
     this.persona = loadPersona(personaOverrides);
-    this.drugState = 'cokeAndWeed';
-    this.brainParams = getBrainParams(this.persona, this.drugState);
+    // T15 — drug-scheduler replaces static drugState label. Cluster is
+    // wired in after clusters are constructed (few lines below) so the
+    // scheduler can gate substance availability by cluster.grades.life.
+    this.drugScheduler = new DrugScheduler();
+    this.brainParams = getBrainParams(this.persona, this.drugScheduler);
     const arousal = this.brainParams.arousalBaseline || 0.9;
 
     // ══════════════════════════════════════════════════════════════
@@ -216,6 +221,31 @@ export class UnityBrain extends EventEmitter {
       this.innerVoice.languageCortex,
     );
     this.innerVoice.setCurriculum(this.curriculum);
+    // T15 — wire cluster into drug scheduler so grade-gate resolves
+    // substance availability against cluster.grades.life. Pre-Life-G7
+    // Unity ingest attempts return {accepted:false, reason:'grade_locked'}.
+    this.drugScheduler.setCluster(this.clusters.cortex);
+    // Refresh brainParams now that the scheduler has a cluster reference.
+    this.brainParams = getBrainParams(this.persona, this.drugScheduler);
+
+    // T15-C6 — drug-context detection from vision describer output.
+    // When the scene describer reports rolled paper on fire, white
+    // powder lines, pill shapes, shot glasses, bongs — it emits through
+    // the existing onDescribe pipeline. We subscribe here, run the
+    // text-offer detector over the description, and — if a substance is
+    // spotted — emit a `visualDrugCue` event that biases the
+    // self-initiation probe on the next tick. Vision alone never
+    // triggers ingestion; it only sets context for decision logic.
+    if (this.visualCortex && typeof this.visualCortex.onDescribe === 'function') {
+      this.visualCortex.onDescribe(desc => {
+        if (!desc || typeof desc !== 'string') return;
+        const cue = detectDrugOffer(desc);
+        if (cue && cue.substance) {
+          this._lastVisualDrugCue = { ...cue, at: Date.now() };
+          this.emit('visualDrugCue', this._lastVisualDrugCue);
+        }
+      });
+    }
     // R6.2 — equational component synthesizer. Loads templates from
     // docs/component-templates.txt (same corpus-loading pattern as
     // persona / baseline / coding). `loadTemplates` gets called from
@@ -239,11 +269,29 @@ export class UnityBrain extends EventEmitter {
       clusters: {}, cortex: null, hippocampus: null,
       amygdala: null, basalGanglia: null, cerebellum: null,
       hypothalamus: null, mystery: null, oscillations: null,
-      psi: 0, time: 0, reward: 0, drugState: this.drugState,
+      psi: 0, time: 0, reward: 0,
+      drugState: this._drugStateLabel(),         // T15 — compact string for legacy consumers
+      drugSnapshot: this.drugScheduler.snapshot(), // T15 — rich snapshot for new consumers
       totalNeurons: TOTAL_NEURONS,
       motor: null, memory: null, sensory: null,
       visualCortex: null, auditoryCortex: null,
     };
+  }
+
+  /**
+   * T15 — compact single-string label derived from the scheduler snapshot.
+   * Returns 'sober' when no substances are active. Otherwise joins the
+   * display names of active substances with ' + ', e.g. 'weed', 'weed + coke',
+   * 'weed + coke + molly'. Used for legacy UI consumers that expect a string;
+   * new consumers should read `state.drugSnapshot` directly.
+   */
+  _drugStateLabel() {
+    if (!this.drugScheduler) return 'sober';
+    const active = this.drugScheduler.activeSubstances();
+    if (active.length === 0) return 'sober';
+    return active
+      .map(a => DRUG_SUBSTANCES[a.substance]?.displayName || a.substance)
+      .join(' + ');
   }
 
   /**
@@ -653,7 +701,8 @@ export class UnityBrain extends EventEmitter {
       psi: mysteryOut.psi,
       time: this.time,
       reward: this.reward,
-      drugState: this.drugState,
+      drugState: this._drugStateLabel(),           // T15
+      drugSnapshot: this.drugScheduler.snapshot(), // T15
       totalNeurons: TOTAL_NEURONS,
       motor: motorResult,
       memory: this.memorySystem.getState(),
@@ -688,6 +737,25 @@ export class UnityBrain extends EventEmitter {
     if (!this.running) return;
     for (let i = 0; i < STEPS_PER_FRAME; i++) this.step(DT);
     this.frameCount++;
+
+    // T15-C7 — Unity's self-initiation probe. Throttled internally (min
+    // 3-minute gap between attempts + random gate), checked every ~5 sec
+    // so the tick-loop cost stays negligible. When it fires, scheduler
+    // state mutates (direct ingest or pending acquisition) and an event
+    // is emitted that the app layer can surface / turn into dialogue.
+    if (this.drugScheduler && this.frameCount % 300 === 0) {
+      this.maybeSelfInitiate({
+        arousal: this.state?.arousal ?? 0.5,
+        reward: this.state?.reward ?? 0.5
+      });
+    }
+
+    // T15 — refresh brainParams from scheduler contributions every ~1s so
+    // live PK curves actually shape brain params during peak/wear-off,
+    // not just at ingest time.
+    if (this.drugScheduler && this.frameCount % 60 === 0) {
+      this._refreshBrainParamsFromScheduler();
+    }
 
     // ── DREAMING MODE ──
     // When no one has interacted for 30+ seconds, the brain dreams:
@@ -1016,7 +1084,8 @@ export class UnityBrain extends EventEmitter {
           cortexPattern,
           cortexCluster: this.clusters.cortex,
           recalling: state.memory?.lastRecall ? true : false,
-          drugState: this.persona?.drugState || 'cokeAndWeed',
+          drugState: this._drugStateLabel(),
+          speechMod: this.drugScheduler ? this.drugScheduler.speechModulation() : null,
           fear: state.amygdala?.fear ?? 0,
           reward: state.amygdala?.reward ?? 0,
           socialNeed: state.hypothalamus?.drives?.social_need ?? 0.5,
@@ -1146,7 +1215,8 @@ export class UnityBrain extends EventEmitter {
           psi: state.psi ?? 0,
           cortexPattern,
           cortexCluster: this.clusters.cortex,
-          drugState: this.persona?.drugState || 'cokeAndWeed',
+          drugState: this._drugStateLabel(),
+          speechMod: this.drugScheduler ? this.drugScheduler.speechModulation() : null,
           fear: state.amygdala?.fear ?? 0,
           reward: state.amygdala?.reward ?? 0,
           socialNeed: state.hypothalamus?.drives?.social_need ?? 0.7,
@@ -1215,7 +1285,8 @@ export class UnityBrain extends EventEmitter {
           psi: state.psi ?? 0,
           cortexPattern,
           cortexCluster: this.clusters.cortex,
-          drugState: this.persona?.drugState || 'cokeAndWeed',
+          drugState: this._drugStateLabel(),
+          speechMod: this.drugScheduler ? this.drugScheduler.speechModulation() : null,
           fear: state.amygdala?.fear ?? 0,
           reward: state.amygdala?.reward ?? 0,
           socialNeed: state.hypothalamus?.drives?.social_need ?? 0.5,
@@ -1302,15 +1373,175 @@ export class UnityBrain extends EventEmitter {
     return this.motor.getState();
   }
 
-  setDrugState(name) {
-    if (!this.persona.drugStates[name]) return;
-    this.drugState = name;
-    this.brainParams = getBrainParams(this.persona, name);
-    this.mystery.setWeights(this.brainParams.mysteryWeights);
+  /**
+   * T15 — replaces the legacy combo-label setter. Accepts a substance name
+   * (canonical key from DRUG_SUBSTANCES, e.g. 'cannabis', 'cocaine') plus
+   * optional route/dose, routes through the scheduler's grade-gated ingest,
+   * refreshes brainParams, and propagates arousal/chaos changes to the
+   * clusters. Returns the scheduler's ingest result so callers can surface
+   * grade-locked decline reasons.
+   */
+  ingestSubstance(substance, opts = {}) {
+    if (!this.drugScheduler) return { accepted: false, reason: 'no_scheduler' };
+    const result = this.drugScheduler.ingest(substance, opts);
+    if (result.accepted) this._refreshBrainParamsFromScheduler();
+    return result;
+  }
+
+  /**
+   * Re-read scheduler contributions into this.brainParams. Called after any
+   * ingestion and — cheaply — in the step loop via tickDrugScheduler() so
+   * live PK curves actually shape brain params rather than baking at ingest.
+   */
+  _refreshBrainParamsFromScheduler() {
+    this.brainParams = getBrainParams(this.persona, this.drugScheduler);
+    if (this.mystery?.setWeights) this.mystery.setWeights(this.brainParams.mysteryWeights);
     const arousal = this.brainParams.arousalBaseline || 0.9;
-    this.clusters.cortex.tonicDrive = 14 + arousal * 6;
-    this.clusters.amygdala.tonicDrive = 15 + arousal * 8;
-    this.clusters.mystery.noiseAmplitude = 12 * (this.brainParams.chaos ? 1.5 : 1.0);
+    if (this.clusters?.cortex)    this.clusters.cortex.tonicDrive    = 14 + arousal * 6;
+    if (this.clusters?.amygdala)  this.clusters.amygdala.tonicDrive  = 15 + arousal * 8;
+    if (this.clusters?.mystery)   this.clusters.mystery.noiseAmplitude = 12 * (this.brainParams.chaos ? 1.5 : 1.0);
+  }
+
+  /**
+   * T15-C7 — Unity's own context can trigger drug seeking even without a
+   * user offer (per Gee: "she hears about drugs she may ask for some it
+   * brought up she might try to call somone to get some"). Called
+   * periodically from the think loop. Mood + scheduler state + grade
+   * decide whether to fire. Non-announcing — the decision produces a
+   * scheduler event (direct ingest or pending acquisition) + an engine
+   * emit that the language cortex turns into natural seeking dialogue on
+   * its next generate call.
+   *
+   * @param {object} [opts]
+   * @param {number} [opts.now]     - wall-clock ms
+   * @param {number} [opts.arousal] - current brain arousal (0-1)
+   * @param {number} [opts.reward]  - current reward signal (0-1)
+   * @param {number} [opts.fatigue] - session-length-derived fatigue (0-1)
+   * @returns {null | {fired: true, substance, available: boolean, pending: boolean, reason: string}}
+   */
+  maybeSelfInitiate(opts = {}) {
+    if (!this.drugScheduler) return null;
+
+    const now = opts.now ?? Date.now();
+    const arousal = typeof opts.arousal === 'number' ? opts.arousal : (this.state?.arousal ?? 0.5);
+    const reward  = typeof opts.reward  === 'number' ? opts.reward  : (this.state?.reward  ?? 0.5);
+    const fatigue = typeof opts.fatigue === 'number' ? opts.fatigue : clamp01(((now - (this._startedAt || now)) / 3600000));
+
+    // Throttle — don't even think about it more than once every ~3 min.
+    const MIN_GAP_MS = 3 * 60 * 1000;
+    if (this._lastSelfInitAt && now - this._lastSelfInitAt < MIN_GAP_MS) return null;
+
+    // No life-grade data means we can't gate substance choice — skip.
+    if (!this.clusters?.cortex?.grades?.life) return null;
+
+    // Build a weighted probability that she self-initiates this tick.
+    // Bored + frustrated + long-session + party-mode all push it up;
+    // already-high pulls it down.
+    const activeLevel = this.drugScheduler.activeSubstances(now)
+      .reduce((sum, a) => sum + a.level, 0);
+    const boredom = Math.max(0, 0.5 - arousal) * 2;            // low arousal = bored
+    const frustration = Math.max(0, 0.5 - reward) * 2;         // low reward = frustrated
+    const partyBonus = this._partyMode ? 0.4 : 0;
+    const drugDrive = this.persona?.traits?.drugDrive ?? 0.8;
+    const currentlyHigh = Math.min(1, activeLevel);             // scales down probability
+    const p = clamp01(
+      (boredom * 0.25 + frustration * 0.3 + fatigue * 0.25 + partyBonus + drugDrive * 0.2)
+      * (1 - currentlyHigh * 0.9)
+    );
+
+    // Cheap deterministic gate from current brain time — avoids thrash
+    // when called every tick. Fires ~p fraction of attempts.
+    if (Math.random() > p) return null;
+
+    // Pick a substance. Weight by: grade-available, recent absence, mood fit.
+    const available = this.drugScheduler.availableSubstances();
+    if (available.length === 0) return null;
+
+    // Simple heuristic — bored + calm → weed, frustrated + tired → coke,
+    // party + social → mdma, architecture/coding + long session → lsd
+    let pick;
+    if (partyBonus > 0 && available.includes('mdma')) pick = 'mdma';
+    else if (frustration > 0.4 && available.includes('cocaine')) pick = 'cocaine';
+    else if (available.includes('cannabis')) pick = 'cannabis';
+    else pick = available[0];
+
+    this._lastSelfInitAt = now;
+
+    // Already peaking on this? skip.
+    if (this.drugScheduler.level(pick, now) > 0.4) return null;
+
+    // Decision: in-scene ingestion (she rolls it / pours it) vs
+    // simulateCallSomeone (she texts / calls / needs to go pick up).
+    // Coin flip weighted by whether she's already holding (boolean state
+    // we don't track yet — default 60% in-scene / 40% call-someone).
+    const callsDealer = Math.random() < 0.4;
+    if (callsDealer) {
+      this.drugScheduler.registerPendingAcquisition(pick, 'dealer');
+      this.emit('selfInitiateSeek', { substance: pick, time: now });
+      return { fired: true, substance: pick, available: true, pending: true, reason: 'calls_dealer' };
+    }
+
+    // In-scene: direct ingest via scheduler (honors grade-gate + tolerance)
+    const result = this.drugScheduler.ingest(pick, { now });
+    if (result.accepted) this._refreshBrainParamsFromScheduler();
+    this.emit('selfInitiate', { substance: pick, time: now, result });
+    return { fired: true, substance: pick, available: result.accepted, pending: false, reason: result.reason || 'in_scene' };
+
+    function clamp01(x) { return Math.max(0, Math.min(1, x)); }
+  }
+
+  /**
+   * T15-C7 — explicit "call someone" trigger. Records a pending
+   * acquisition the user can resolve by saying something like "they're
+   * here" / "it arrived" via `resolveAcquisition(substance, 'arrived')`.
+   * Returns the ack so callers can surface dialogue hints.
+   */
+  simulateCallSomeone(substance, opts = {}) {
+    if (!this.drugScheduler) return { called: false, reason: 'no_scheduler' };
+    if (!this.drugScheduler.isAvailable(substance)) {
+      return {
+        called: false,
+        reason: 'grade_locked',
+        currentGrade: this.clusters?.cortex?.grades?.life || 'pre-K'
+      };
+    }
+    const source = opts.source || 'dealer';
+    this.drugScheduler.registerPendingAcquisition(substance, source);
+    this.emit('selfInitiateSeek', { substance, source, time: Date.now() });
+    return { called: true, substance, source };
+  }
+
+  /**
+   * T15-C7 — resolve a previously registered pending acquisition.
+   * outcome: 'arrived' — substance shows up, ingestion fires
+   * outcome: 'dropped' — deal fell through, pending cleared
+   */
+  resolveAcquisition(substance, outcome, opts = {}) {
+    if (!this.drugScheduler) return { resolved: false, reason: 'no_scheduler' };
+    const res = this.drugScheduler.resolvePendingAcquisition(substance, outcome, opts);
+    if (res.ingestionResult?.accepted) this._refreshBrainParamsFromScheduler();
+    return res;
+  }
+
+  /**
+   * T15 — back-compat shim. The legacy setDrugState('cokeAndWeed') call
+   * style now maps to scheduler ingestions. Unknown labels are ignored
+   * (not thrown) so old saves/UI don't crash during the transition.
+   */
+  setDrugState(name) {
+    const map = {
+      cokeAndWeed:  ['cannabis', 'cocaine'],
+      cokeAndMolly: ['cocaine', 'mdma'],
+      weedAndAcid:  ['cannabis', 'lsd'],
+      everything:   ['cannabis', 'cocaine', 'mdma', 'lsd', 'alcohol'],
+      sober:        []
+    };
+    const substances = map[name];
+    if (!substances) return;
+    // Ingest each (grade gate still applies — kindergarten with
+    // setDrugState('cokeAndWeed') still returns sober).
+    for (const sub of substances) this.drugScheduler.ingest(sub);
+    this._refreshBrainParamsFromScheduler();
   }
 
   // ══════════════════════════════════════════════════════════════

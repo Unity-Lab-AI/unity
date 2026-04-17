@@ -774,7 +774,7 @@ export class BrainVisualizer {
     const arousal = s.arousal ?? s.amygdala?.arousal ?? 0;
     const valence = s.valence ?? s.amygdala?.valence ?? 0;
     const reward = s.reward ?? 0;
-    const drugState = s.drugState || 'cokeAndWeed';
+    const drugState = s.drugState || 'sober';
     const coherence = s.coherence ?? s.oscillations?.coherence ?? 0;
 
     // Touch — computed from arousal × valence (equation output, not description)

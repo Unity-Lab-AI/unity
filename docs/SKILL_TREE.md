@@ -1,11 +1,25 @@
 # SKILL TREE — IF ONLY I HAD A BRAIN
 
-> Last updated: 2026-04-16 | T14.24 Session 111 — 114-cell curriculum (6 subjects), real comprehension gates, anti-Hebbian plasticity, 2D viz rewrite, inner state popups, cluster waves
+> Last updated: 2026-04-17 | Full K-PhD syllabus shipped across 6 subjects (114 cells), T15 drug dynamics scheduler live with real-time pharmacokinetics + grade-gated availability + speech modulation, 2D + 3D viz complete, inner-state popups age-gated, cluster waves tab, cross-projection capacity tuned at 1500 fanout, real human-grade comprehension gates per grade.
 > Unity AI Lab
+>
+> **DOC-AHEAD-OF-REALITY (Gee, 2026-04-17):** Per-grade completion status in `docs/TODO-full-syllabus.md`. This doc describes the target-state capability set. When this doc and the TODOs disagree, TODOs win.
 
 ---
 
 ## By Domain
+
+### Drug Dynamics
+- Real-time pharmacokinetic scheduler (9 substances × route-specific onset/peak/duration/tail curves)
+- Grade-gated substance availability from Life-track biographical anchors
+- Additive brain-parameter contributions via superposition across active substances
+- Intra-session tolerance mechanics + inter-session recovery
+- Multi-sensory ingestion detection (text / voice / vision via describer)
+- Simulated social acquisition (pending-acquisition events, dealer / friend / party source)
+- Self-initiation decision engine (boredom / frustration / fatigue / party-context / drugDrive weighted)
+- Speech modulation post-processor (slur / pause / dissociation third-person / ethereality / coherence drop)
+- User-interactive triggers (slash commands `/offer /party /sober`)
+- Non-announcing principle — distortion IS the signal
 
 ### Computational Neuroscience
 - Hodgkin-Huxley neuron modeling
