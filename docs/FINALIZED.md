@@ -5,6 +5,38 @@
 
 ---
 
+## 2026-04-17 — Session 114.19c: `_gateElaKReal` `semRegion` scope bug fix (one-line decl)
+
+Gee's Part 2 Session 114.19 localhost boot hit 28+ consecutive retries with `[Curriculum] ela/kindergarten attempt N — ela/kindergarten threw: semRegion is not defined — retrying...` — my Phase 3 primitive probe rewrite referenced `semRegion` inside `_gateElaKReal` but never declared it in that function's scope. `_gateElaKReal` declared `letterRegion`, `phonRegion`, `motorRegion` at lines 3383-3385 but not `semRegion`, and the probe loop writes `sem(GloVe(word))` into the sem region via `input[semRegion.start + d * sGroup + n] = emb[d]` — ReferenceError on every probe, gate throws, curriculum retry loop kicks in.
+
+### Fix
+
+One line added to `_gateElaKReal` local region declarations:
+
+```
+const letterRegion = cluster.regions.letter;
+const phonRegion = cluster.regions.phon;
+const motorRegion = cluster.regions.motor;
+const semRegion = cluster.regions.sem;  // ADDED — Session 114.19c
+if (!letterRegion || !phonRegion) return { pass: false, reason: 'missing regions' };
+```
+
+Every other sem-writing method on `Curriculum` declares `semRegion` at method top — I missed it in the gate-probe rewrite because Phase 3 edits only touched the probe loop block, not the region-declaration header. Parse check would have caught a syntax error but this is a runtime ReferenceError — `node --check` passes, only throws at probe execution.
+
+### Files
+
+- `js/brain/curriculum.js` — one line `const semRegion = cluster.regions.sem;` added to `_gateElaKReal` at line 3386
+- `docs/FINALIZED.md` — this Session 114.19c entry prepended
+- `docs/NOW.md` — status refreshed
+
+### Why atomic with the post-commit clear
+
+Per the new LAW written in Session 114.19b (`.claude/CLAUDE.md`): ship atomic commit, clear stale state, THEN tell Gee to test. The 28 failed curriculum retries from the buggy 114.19 boot may have partially serialized `conversations.json` and `episodic-memory.db` writes — clearing those prevents stale hydration on the 114.19c boot.
+
+Push still gated on LAW 6 Part 2 signoff.
+
+---
+
 ## 2026-04-17 — Session 114.19: K-foundation three-phase rebuild — real English phoneme substrate + phoneme blending + primitive-format production probes
 
 Gee 2026-04-17 verbatim: *"yopu are fucking askling it questions for the test in english when it hasnet even learned the words tyyou are speaking to it becasue you didnt teach it phonics and athe aplphanbet appropriately to where i can fucking remember it and use it equationally"*. Followed by Gee's directive `"c"` — full atomic K-foundation rebuild in three phases, shipped as ONE commit.

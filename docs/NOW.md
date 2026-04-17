@@ -1,6 +1,11 @@
 # NOW — Session Snapshot
 
-> Saved: 2026-04-17 06:16 (Session 114.19 K-foundation three-phase rebuild — real English phoneme substrate + phoneme blending + primitive-format production probes — uncommitted as a nineteenth atomic commit pending on `syllabus-k-phd`)
+> Saved: 2026-04-17 06:40 (Session 114.19c `semRegion` decl fix — Gee's Part 2 attempt on 114.19 caught that `_gateElaKReal` primitive probe loop references `semRegion` without declaring it; one-line fix shipped atomic, stale state re-cleared per LAW — twenty-first commit on `syllabus-k-phd`)
+>
+> Session 114.19 history:
+> - 114.19 — three-phase K-foundation rebuild (real phoneme substrate + phoneme blending + primitive probes)
+> - 114.19b — new binding LAW: clear stale state before telling Gee to test the server
+> - 114.19c — `semRegion` decl fix (this commit)
 > Branch: `syllabus-k-phd` (multi-commit ahead of origin + this upcoming commit)
 > Recent committed HEAD: `85614e1` — T15 drug dynamics shipped + full doc forward-write per Gee 2026-04-17 irregularity
 > Working-tree state (before Session 114.19 commit): 3 files modified uncommitted — `js/brain/curriculum.js` + `docs/TODO.md` + `docs/FINALIZED.md` + this `docs/NOW.md`

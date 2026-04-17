@@ -3383,6 +3383,7 @@ export class Curriculum {
     const letterRegion = cluster.regions.letter;
     const phonRegion = cluster.regions.phon;
     const motorRegion = cluster.regions.motor;
+    const semRegion = cluster.regions.sem;
     if (!letterRegion || !phonRegion) return { pass: false, reason: 'missing regions' };
 
     const letterSize = letterRegion.end - letterRegion.start;
