@@ -1634,7 +1634,6 @@ export class Brain3D {
       const out = lc.generate(
         dict,
         state.arousal ?? 0.5,
-        state.valence ?? 0,
         state.coherence ?? 0.5,
         {
           psi: state.psi ?? 0,
@@ -2165,7 +2164,7 @@ export class Brain3D {
             try { cortexPattern = cortex.getSemanticReadout(__sharedEmbeddings); }
             catch { cortexPattern = null; }
           }
-          const out = lc.generate(dict, state.arousal ?? 0.5, state.valence ?? 0, state.coherence ?? 0.5, {
+          const out = lc.generate(dict, state.arousal ?? 0.5, state.coherence ?? 0.5, {
             cortexPattern, cortexCluster: cortex, _internalThought: true,
           });
           const text = typeof out === 'string' ? out : (out?.text || '');

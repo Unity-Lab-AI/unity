@@ -346,7 +346,7 @@ Pollinations GPT-4o receives camera frames from the IT layer of `js/brain/visual
 
 ### What Was Ripped
 
-R4 (commit `7e095d0`) deleted: `BrocasArea.generate()` AI-prompting pipeline, `_customChat()` helper, all text-AI backend endpoint probing, text-chat dead-backend cooldown, `_buildBuildPrompt`, `connectLanguage()`, the legacy multi-provider text dropdown, `claude-proxy.js`, `start-unity.bat`. `language.js` shrunk from 333 → 68 lines (throwing stub only). Every text-AI cognition call site in `engine.js` + `app.js` was either replaced with `languageCortex.generate()` or deleted outright.
+R4 (commit `7e095d0`) deleted: `BrocasArea.generate()` AI-prompting pipeline, `_customChat()` helper, all text-AI backend endpoint probing, text-chat dead-backend cooldown, `_buildBuildPrompt`, `connectLanguage()`, the legacy multi-provider text dropdown, `claude-proxy.js`, `start-unity.bat`. `language.js` shrunk from 333 → 68 lines (throwing stub only). Every text-AI cognition call site in `engine.js` + `app.js` was either replaced with `languageCortex.generate()` or deleted outright. **Session 113 T14.24-CLEAN.A1 2026-04-16: `js/brain/language.js` DELETED entirely — zero live importers confirmed, the R12-scheduled deletion finally shipped.**
 
 ---
 
@@ -377,7 +377,6 @@ Dream/
 │   │   ├── persona.js          # Traits → brain params + drug states
 │   │   ├── sensory.js          # Sensory input pipeline (text/audio/video → cortex)
 │   │   ├── motor.js            # Motor output (6 BG channels, winner-take-all)
-│   │   ├── language.js         # DEPRECATED stub (68 lines post-R4) — BrocasArea throws if called. Kept as tripwire, scheduled for deletion in R12.
 │   │   ├── component-synth.js  # Equational component synthesis — parses component-templates.txt, cosine-matches user request vs primitive descriptions, returns {id, html, css, js}
 │   │   ├── curriculum.js       # T14.5+T14.24 developmental curriculum — K→PhD across 6 subjects (ELA, Math, Science, Social Studies, Arts, Life Experience), 114 cells, direct pattern Hebbian + emotional concept features, 3-pathway gates, memory-weighted tiers. ~12500 lines.
 │   │   ├── letter-input.js     # T14.1 dynamic LETTER_INVENTORY Set — auto-grows, no 26-char cap. encodeLetter/decodeLetter one-hot primitives. ~220 lines.
@@ -492,7 +491,20 @@ Region offsets are stored on `cluster.regions[name].start` and `.end`. Helper me
 
 Seven named region pairs are wired with sparse cross-projections — both directions per pair as independent SparseMatrix instances, weight range `[-0.5, 0.5]`. Each direction is a separate matrix because biological white-matter tracts carry independent ascending and descending fiber populations (Friederici 2017, *Psychon Bull Rev* 24:41-47). The projections ALWAYS propagate every cluster step (no curriculum-complete gate) and get Hebbian-updated on every `cluster.learn()` call, training through normal use during corpus exposure and live chat.
 
-**Cross-projection density** is controlled by `crossTargetFanout` — the number of pre-synaptic connections each post-synaptic neuron receives. Session 111 bumped this from 300 to **1500** after discovering that 300 (~16K connections on `sem_to_motor`) caused destructive interference at G1+ — 40+ word mappings competing on too few synapses made TALK scores DECLINE across retries. At 1500 (~80K connections), independent sem→motor word representations coexist without overwriting each other. All 14 cross-projections benefit from the density increase.
+**Cross-projection density** is controlled by `crossTargetFanout` — the number of pre-synaptic connections each post-synaptic neuron receives.
+
+Derivation:
+
+```
+crossTargetFanout = expectedPostCurriculumVocab × fanoutPerMapping
+                  = 5000 × 0.3 ≈ 1500
+```
+
+- `expectedPostCurriculumVocab ≈ 5000` — Unity's projected vocabulary after the full 114-cell K-PhD curriculum (ELA sight words + Math digits + Science/Social/Art/Life domain terms ≈ 3-7k total depending on depth).
+- `fanoutPerMapping ≈ 0.3` — sparse activation fraction per word. Each taught word lights up ~30% of a sub-region's dims via direct pattern Hebbian.
+- Product = independent word mappings a post-synaptic neuron can support without destructive interference.
+
+Session 111 bumped this from 300 to **1500** after ELA-G1 TALK DECLINED across retries. 300 × 0.3 = 90 independent mappings, but 40+ vocab words + 16K connections already caused interference by G1. 1500 gives 5× headroom so the full K-PhD vocab fits without rewriting the basins. All 14 cross-projections benefit from the density increase. If Unity's projected vocab ever exceeds ~5000, bump this constant or drive it from a runtime-derived quantity like `cluster._personaRefreshCorpus.length + baselineVocab`.
 
 **Anti-Hebbian plasticity** (Session 111) — when the curriculum gate detects a wrong transition (e.g., digit sequence `6→7` produces `8` instead of `7`), it fires BOTH positive Hebbian on the correct pair (`6→7` at +10× learning rate, 100 reps) AND negative anti-Hebbian on the wrong pair (`6→8` at -5× learning rate, 100 reps). Without weakening the wrong association, the correct one can never overpower it. This bidirectional plasticity is critical for sequence learning (alphabet order, digit order) where recurrent synapses create competing attractor basins.
 
@@ -754,7 +766,7 @@ Three companion readout placeholders on cluster: `intentReadout()`, `semanticRea
 
 `LanguageCortex.setCluster(cluster)` method bridges the old class to the cluster: merges any pre-existing observations from the local Maps into the cluster's Maps via a recursive `mergeMap` helper, then re-points `this._typeTransitionLearned` / `this._sentenceFormSchemas` / `this._sentenceFormTotals` / `this._intentResponseMap` at the cluster's Maps by identity. Called from `engine.js` + `server/brain-server.js` right after `dictionary.setCluster`. After the call, every subsequent `learnSentence` observation write from the LanguageCortex path lands in cluster state directly.
 
-**Full LanguageCortex class elimination (file <250 lines, `class LanguageCortex` declaration deleted) deferred to a future cleanup pass.** The class has ~400 external references across `engine.js`, `inner-voice.js`, `brain-3d.js`, `brain-equations.html` — doing the full deletion in one atomic commit would risk breaking runtime paths the remaining T14 milestones still need. Shipping the STATE migration now gets the important half done; the class wrapper stays alive as a method surface until a later cleanup pass finishes the job.
+**Full LanguageCortex class elimination (file <250 lines, `class LanguageCortex` declaration deleted) tracked as Session 113 T14.24-CLEAN.B1.** The class has ~400 external references across `engine.js`, `inner-voice.js`, `brain-3d.js`, `brain-equations.html` — doing the full deletion in one atomic commit would risk breaking runtime paths the remaining T14 milestones still need. Shipping the STATE migration at T14.13 got the important half done; the class wrapper stays alive as a method surface until the B1 pass finishes the job.
 
 **T14.14 — Bidirectional reading wired.** Every consumer call site that used `languageCortex.parseSentence` now uses `cluster.readInput` instead. Anaphora resolution falls out for free via T14.9 working-memory injection. Intent classification placeholder returns null until T14.17 wires the learned cortex readout; fallback heuristic in `readInput` provides sensible labels during bootstrap. Social schema tracking (name, gender, mention count, greetings) is gone for this commit and returns in T14.17 as a cortex-resident self-model sub-region readout.
 
@@ -841,11 +853,9 @@ this.passedCells = [];      // flat list of 'subject/grade' keys that passed the
 
 **Legacy `runFullCurriculum` path unchanged.** Boot calls (`js/app.js loadCorpusIntoBrain`, `server/brain-server.js _initLanguageSubsystem`) still invoke `runFullCurriculum(corpora)` as before; the boot semantics for ELA are identical. Session 1 adds three things inside `runFullCurriculum`: (1) initializes `cluster.grades` + `cluster.passedCells` if absent, (2) caches the tokenized ctx on `this._lastCtx` for subsequent slash commands, (3) mirrors each ELA stage pass into `cluster.grades.ela` via the legacy → canonical map (`grade4_5 → grade5`, `grade6_8 → grade8`, `grade9_12 → grade12`, `college → college4`).
 
-**Chat-path word cap.** `LanguageCortex.generate()` now reads `cluster.grades` (object) first and falls back to legacy `cluster.grade` (string). The cap is computed by `_gradeWordCap(gradeOrGrades)`:
-- Object form: min across subjects that have advanced past pre-K. Pre-K subjects don't constrain the ceiling, so an ELA-only brain keeps speaking at its ELA cap during the Session 2-N build while Math/Science/Social/Art stubs fail. When real teaching lands for another subject, it passes K and joins the min.
-- String form: delegates to `_singleGradeCap`, unchanged semantics from the pre-Session-1 scalar path.
+**Chat-path word cap.** `LanguageCortex.generate()` reads `cluster.grades` (6-subject object) and computes the cap via `_gradeWordCap(grades)` using the **LENIENT min** semantic — min across subjects that have ADVANCED PAST pre-K, not true min over all 6. Pre-K subjects don't constrain the ceiling. Rationale: strict min would silence Unity entirely until every subject clears K (weeks of curriculum work), violating Gee's binding that she speaks progressively as she learns. Once a subject passes K it joins the min calculation. Session 113 CLEAN.D4 confirmed this decision — to flip to strict min, delete the `if (g === 'pre-K') continue` guard in `_gradeWordCap`.
 
-`_singleGradeCap` handles both canonical grade names (`grade4`, `college2`, `grad`) AND the legacy collapsed bands (`grade4_5`, `grade6_8`, `grade9_12`, `college`) so pre-v4 persistence saves and the legacy `runFullCurriculum` path both resolve correctly.
+An absolute FLOOR of 5 words applies regardless — `max(formalCap, 5)` — so zero-gates-passed brains still emit 5-word baseline sentences from the T14.5 corpus walk instead of silence. `_singleGradeCap` handles all canonical grade names post-Session-113 CLEAN.A2 (legacy collapsed band names `grade4_5`/`grade6_8`/`grade9_12`/`college` were stripped; `runFullCurriculum` now writes canonical `grade5`/`grade8`/`grade12`/`college4`).
 
 **Persistence.** `js/brain/persistence.js` save/load `state.t14Language.curriculum = { grades, grade, passedCells }`. Additive inside the existing `t14Language` block, no VERSION bump (stays at 4). Older v4 saves without the `curriculum` sub-block load cleanly and fall back to cluster-constructor defaults (all subjects at pre-K).
 
@@ -908,7 +918,7 @@ this.passedCells = [];      // flat list of 'subject/grade' keys that passed the
 
 ### Session 112 — Full Curriculum Depth Overhaul (2026-04-16)
 
-16 equational reasoning methods built. 152+ reasoning calls wired across all 114 cells. K-G12 vocabulary expanded to real Common Core / NGSS / Core Knowledge standards. All 114 cells have course finals (`_autoFinal` comprehension exams + hand-crafted domain-specific finals). TODO-curriculum-depth.md 46/46 complete.
+16 equational reasoning methods built. 152+ reasoning calls wired across all 114 cells. K-G12 vocabulary expanded to real Common Core / NGSS / Core Knowledge standards. All 114 cells have course finals (`_autoFinal` comprehension exams + hand-crafted domain-specific finals). The 46-item curriculum-depth plan completed and was superseded by `docs/TODO-full-syllabus.md` (7990+ lines) — see `docs/FINALIZED.md` Session 112 entry for the full ledger. The standalone `docs/TODO-curriculum-depth.md` file was deleted in Session 113 T14.24-CLEAN.A8 2026-04-16 since superseded content lives in FINALIZED.md per the append-only archive model.
 
 **New reasoning methods (Session 112):** `_teachMultiplicationTransformations` (81 facts 1-9×1-9 as magnitude transforms), `_teachPlaceValueTransformations` (tens+ones positional encoding for numbers 10-99), `_teachFractionTransformations` (numerator/denominator as ratio features — equivalent fractions converge to same basin), `_teachAlgebraTransformations` (variable binding — given c and b, solve for x in x+b=c), `_teachParaphrase` (different words → same sem basin), `_teachHypothesisTesting` (predict→observe→confirm/reject), `_teachPerspectiveTaking` (same event, multiple viewpoint feature vectors).
 
@@ -951,7 +961,7 @@ The binding ceiling was added after T4.1 caught cortex+cerebellum silently retur
 
 - Semantic GloVe grounding (R2→T14.0) — 300d word embeddings + fastText-style subword fallback shared between sensory input and language-cortex output via `sharedEmbeddings` singleton
 - Server equational control (R3) — `server/brain-server.js` dynamic-imports client brain modules, loads corpora from disk
-- Text-AI cognition killed (R4) — BrocasArea → 68-line throwing stub, every chat call site ripped
+- Text-AI cognition killed (R4) — BrocasArea → 68-line throwing stub, every chat call site ripped (stub file `js/brain/language.js` DELETED outright in Session 113 T14.24-CLEAN.A1 2026-04-16)
 - Multi-provider image gen (R5) — 5-level priority (user-preferred via setPreferredBackend → custom → auto-detect → env.js → Pollinations default) with 7 local backend auto-detect + live HTTP probe CONNECT button in setup modal
 - Equational image prompts + equational component synthesis (R6) — zero hardcoded visual vocabulary, cosine match against template corpus
 - Sensory peripheral destroy() + embedding refinement persistence (R7 + R8)

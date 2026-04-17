@@ -337,7 +337,7 @@ export class InnerVoice {
     // path never runs in practice, but the fallback is removed to
     // prevent a latent bug if some future caller forgets.
     const sentence = this.languageCortex.generate(
-      this.dictionary, arousal, valence, coherence ?? 0.5, {
+      this.dictionary, arousal, coherence ?? 0.5, {
         predictionError: brainState?.cortex?.predictionError ?? 0,
         motorConfidence: brainState?.motor?.confidence ?? 0,
         psi: brainState?.psi ?? 0,

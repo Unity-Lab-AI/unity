@@ -778,6 +778,10 @@ Gee 2026-04-14 reopened T14 scope: *"T14.24 is supposre to be a full equational 
 
 **Scope.** Originally five academic subject tracks × 20 grades = ~100 cells. Session 111 added a 6th subject (Life Experience), bringing the total to 6 × 19 = 114 cells. Every cell needs real teaching equations that drive all three pathways (READ = visual/letter→phon→sem, THINK = sem+free working memory, TALK = sem→motor→letter) plus a capability gate that tests all three.
 
+**TALK direction rule (Session 111 fix, documented Session 113 CLEAN.E2):** TALK probes must inject into `sem` region and read from `motor` region via the `sem_to_motor` cross-projection — this is the PRODUCTION direction (Hickok & Poeppel 2007 dorsal stream, motor cortex generates articulator commands from semantic intent). Pre-Session-111 TALK probes injected into `letter` region and read `motor` — that's the READ feedback path (ventral stream), NOT production, and gave false negatives. The fixed pattern: `inject GloVe(word) → sem_region → tick → cross-projection sem_to_motor → motor_region → argmax → first letter`. All Session 111+ gate methods (`_gateVocabList`, `_gateSentenceList`, `_gateMathKReal`, `_gateConceptTeach`) follow this direction. Future grade cells must NOT re-introduce the letter→motor probe direction.
+
+**TALK substrate capacity (Session 113 CLEAN.E1 audit):** the `sem_to_motor` cross-projection at `crossTargetFanout = 1500` provides ~80K connections (up from Session 111 300/~16K). Per CLEAN.D6 derivation, capacity = `expectedVocab × fanoutPerMapping = 5000 × 0.3 = 1500` — this supports ~5000 independent word mappings at 30% activation sparsity. Destructive interference at G1+ was the Session 111 bottleneck; 1500 gives 5× headroom. If a future grade needs per-projection density tuning (`sem_to_motor` specifically denser than other projections), the `_wireCrossProjections` constructor in `cluster.js` can be extended with a per-pair override map, but at current scale the uniform 1500 is sufficient.
+
 **Multi-subject grade equation (Session 1 framework):**
 
 ```

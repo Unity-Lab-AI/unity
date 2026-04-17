@@ -116,7 +116,6 @@ Live at `your-username.github.io/Unity/`. Everything runs client-side — no ser
 │   │   ├── persona.js            Personality as brain parameters + drug states
 │   │   ├── sensory.js            Sensory input pipeline (text/audio/video)
 │   │   ├── motor.js              Motor output (6 BG action channels)
-│   │   ├── language.js           DEPRECATED stub — BrocasArea throws if called
 │   │   ├── curriculum.js        Developmental curriculum K→PhD (6 subjects incl. life experience, 114 cells, direct pattern Hebbian)
 │   │   ├── letter-input.js      Dynamic letter inventory (auto-grows, no 26-char cap)
 │   │   ├── component-synth.js   Equational component synthesis (cosine-match user request vs templates)

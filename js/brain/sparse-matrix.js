@@ -435,14 +435,6 @@ export class SparseMatrix {
   }
 
   /**
-   * Compatibility property — returns dense weight array.
-   * Allows SparseMatrix to work as drop-in for SynapseMatrix.W access.
-   */
-  get W() {
-    return this.toDense();
-  }
-
-  /**
    * Get memory usage in bytes.
    */
   get memoryBytes() {

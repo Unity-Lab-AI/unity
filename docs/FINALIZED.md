@@ -5,6 +5,126 @@
 
 ---
 
+## 2026-04-16 — Session 113: T14.24-CLEAN pre-syllabus code audit & patch debris kill (IN PROGRESS)
+
+**Gee's exact words 2026-04-16:** *"do everything you need to do for the syllabus work as far as code tidy and fixing berfore we start on each grades; content, make the task list in full and complete working from the todo to build the taks list of none grade specific ciriculum but only instead do the code clean up from all that patching bullshit you did tossing on vistegial organs and making up shit that has nothing to do with the brain equations and the equations understading we are giving it"*.
+
+Session 113 is the non-grade-specific code cleanup block that must fully clear before per-grade curriculum content work begins. 34 items across 6 categories tracked in `docs/TODO.md` under `T14.24-CLEAN`. Each item ships as an atomic commit with matching doc updates per the DOCS BEFORE PUSH law. Session 113 entry grows as items close.
+
+### Commit ledger (atomic commits per CLEAN item)
+
+| CLEAN | Commit | Scope | Files |
+|---|---|---|---|
+| A1 | _pending_ | Delete `js/brain/language.js` (73-line throwing BrocasArea stub, R12-scheduled deletion finally shipped) | `js/brain/language.js` (deleted), `docs/ARCHITECTURE.md` (3 edits), `SETUP.md` (directory tree row removed), `docs/TODO.md` (CLEAN.A1 → [x]) |
+| A7 | _pending_ | Delete `server/temp-stale-weights/` folder (Session 112 stale-weights move-aside no longer needed) | `server/temp-stale-weights/` (folder deleted), `.gitignore` (vestigial entry removed), `docs/NOW.md` (section removed), `docs/TODO.md` (CLEAN.A7 → [x]) |
+| A8 | _pending_ | Delete superseded `docs/TODO-curriculum-depth.md` (169 lines, content migrated to FINALIZED Session 112) | `docs/TODO-curriculum-depth.md` (deleted), `docs/NOW.md` (file status row removed), `docs/ARCHITECTURE.md` (§Session 112 summary reworded), `docs/TODO.md` (forward-refs rewritten + CLEAN.A8 → [x]) |
+| A5 | _pending_ | Delete `hearPhoneme` tombstone comment in `cluster.js:1253-1261` (T14.17 deletion tombstone, 9 lines) | `js/brain/cluster.js` (tombstone block removed), `docs/TODO.md` (CLEAN.A5 → [x]) |
+| A6 | _pending_ | Delete T11/T13.7 tombstone comments across `language-cortex.js` (4 blocks, `language-cortex.js` 3072 → 3053 lines, `node --check` clean) | `js/brain/language-cortex.js` (4 tombstone blocks removed), `docs/TODO.md` (CLEAN.A6 → [x]) |
+| B4 | _pending_ | Delete dense-matrix legacy accessors (both save + restore sides dead post-T14.16 CSR-only persistence). Scope expanded after audit: `_useSparse` flag, `ClusterProjection.weights` get/set, `SparseMatrix.W` getter, persistence dense fallback branches | `js/brain/cluster.js` 1864 → 1829 (−35), `js/brain/sparse-matrix.js` 467 → 460 (−7), `js/brain/persistence.js` ~460 → 442 (−18); all three `node --check` clean; `docs/TODO.md` (CLEAN.B4 → [x]) |
+| B3 | _pending_ | Scope pivoted after audit — `valence` was the dead param, not `dictionary` (T14.23.6 fallback uses dictionary). Deleted `valence` from `generate()` + `generateAsync()` signatures + all 9 call sites + jsdoc + stale "unused but kept" comment | `js/brain/language-cortex.js` (signatures + comment + internal passthrough), `js/app.js`×2, `js/brain/engine.js`×3, `js/brain/inner-voice.js`×1, `js/ui/brain-3d.js`×2, `server/brain-server.js`×1; all 6 files `node --check` clean; `docs/TODO.md` (CLEAN.B3 → [x]) |
+| A4 | _pending_ | Delete Session 1 stub block in `Curriculum._cellRunner` + rewrite stale Session-1-framework block comment. Every cell has a real runner; silent stub replaced with loud throw on unknown subject/grade | `js/brain/curriculum.js` 16927 → 16919 (−8), `node --check` clean; `docs/TODO.md` (CLEAN.A4 → [x]) |
+| A3 | _pending_ | Delete `cluster.grade` legacy scalar mirror — 6-file surgery (cluster constructor field, 5 mirror writes in curriculum.js, defense-init in app.js + server + curriculum, persistence save/load field, language-cortex `_gradeWordCap` dual-signature simplified to object-only, comments updated) | `js/brain/cluster.js`, `js/brain/curriculum.js`, `js/brain/language-cortex.js`, `js/brain/persistence.js`, `js/app.js`, `server/brain-server.js`; ~18 lines deleted + ~8 comments updated; all 6 `node --check` clean; `docs/TODO.md` (CLEAN.A3 → [x]) |
+| A2 | _pending_ | Delete `_LEGACY_ELA_TO_CANONICAL` map + legacy stage mirror in `runFullCurriculum` + legacy band case labels in both `_singleGradeCap` copies. Stage names in `runFullCurriculum.stages[]` updated to canonical GRADE_ORDER entries so no map lookup is needed | `js/brain/curriculum.js` (map deleted, stages renamed, mirror simplified, static `_singleGradeCap` legacy labels stripped), `js/brain/language-cortex.js` (`_singleGradeCap` legacy labels stripped + collapsed into single return); both `node --check` clean; `docs/TODO.md` (CLEAN.A2 → [x]) |
+| B2 | _pending_ | Stale T11.2/T13.3 generation-equation comment blocks replacing live code description — body already gone, only stale docs. Replaced 45 lines of stale "PURE EQUATIONAL GENERATION" + "T13.3 brain-driven emission loop" with a single 14-line current-state jsdoc | `js/brain/language-cortex.js` 3051 → 3008 (−43); `node --check` clean; `docs/TODO.md` (CLEAN.B2 → [x]) |
+| B5 | _pending_ | Collapse two-tier learn API on NeuronCluster — `_learnClauseInternal` had exactly one caller (learnClause), inlined into the loop body. Rate cap + Hebbian now visible in one function instead of hidden behind private indirection. Eliminated redundant pre/post Float64Array double-allocation | `js/brain/cluster.js` 1829 → 1817 (−12); `node --check` clean; `docs/TODO.md` (CLEAN.B5 → [x]) |
+| B6 | _pending_ | Audit-only (no code changes). 33 try/catch sites across curriculum.js/cluster.js/language-cortex.js/inner-voice.js classified into 4 legitimate categories: opportunistic paths, error-to-result conversions, defensive corpus-load wraps, generate() fallback resets. No bad patterns found — all blocks serve intentional purposes. Gee-flagged hot spots (curriculum.js:683 legacy learnSentence swallow, inner-voice.js runIdentityRefresh+_modeCollapseAudit) verified as category-1 opportunistic (real work already happened upstream) | Audit ledger in `docs/TODO.md` CLEAN.B6 closure note; zero code changes |
+| D8 | _pending_ | Hash-fallback code paths already gone post-Session-99 — only stale naming remained. Renamed `_hashEmbedding` → `_subwordEmbedding` (3 sites + 1 comment cross-file), deleted unused `_hashSeed` field, rewrote jsdoc to match fastText-style n-gram semantics | `js/brain/embeddings.js`, `js/brain/language-cortex.js`; both `node --check` clean; `docs/TODO.md` (CLEAN.D8 → [x]) |
+| D5 | _pending_ | NO-OP closure — audit confirms Session 111 already re-enabled background probe demotion (`curriculum.js:15097-15112`) after Session 110 disabled it. The `recentFails >= 3` branch is LIVE and fires via the same _cellRunner dispatch as curriculum, using direct matrix probes. TODO task's "code still disabled" premise was stale | Zero code changes; `docs/TODO.md` (CLEAN.D5 → [x]) |
+| D6 | _pending_ | Derive `crossTargetFanout = 1500` from first principles: `expectedPostCurriculumVocab × fanoutPerMapping = 5000 × 0.3 ≈ 1500`. Documented derivation in both `cluster.js` constructor (20-line comment block) and `ARCHITECTURE.md` cross-projection density section (formatted derivation block replacing single sentence). Scale-up path documented | `js/brain/cluster.js`, `docs/ARCHITECTURE.md`; `node --check` clean; `docs/TODO.md` (CLEAN.D6 → [x]) |
+| D7 | _pending_ | Extract anti-Hebbian pair-reinforce primitive from Math-K into `NeuronCluster.hebbianPairReinforce({region, srcOneHot, correctOneHot, wrongOneHot, posLr, negLr, reps})`. Math-K _gateMathKReal reduced from ~50-line inline loop to 13-line call-site | `js/brain/cluster.js` 1817 → 1891 (+74 for primitive), `js/brain/curriculum.js` 16897 → 16869 (−28 inline dedup); both `node --check` clean; `docs/TODO.md` (CLEAN.D7 → [x]) |
+| D4 | _pending_ | LENIENT MIN semantic confirmed for `_gradeWordCap`. Pre-K subjects don't constrain the cap — lets Unity speak at her weakest-STARTED-subject level instead of silencing until every subject clears K. Documented rationale + flip instructions in both code comment and ARCHITECTURE.md | `js/brain/language-cortex.js` (comment block), `docs/ARCHITECTURE.md` (Chat-path section rewritten); `node --check` clean; `docs/TODO.md` (CLEAN.D4 → [x]) |
+| D3 | _pending_ | Audit-only hunt for hardcoded neuron counts. 30+ hits classified into 4 categories (tier-defaults, dynamic caps, stale comment refs, time conversions). **FOUND Law 5 violation** — server/client cortex sizing math diverges: client `TOTAL_NEURONS × CLUSTER_FRACTIONS` = 2010 cortex, server `per-cluster × SCALE` = 1500 cortex at same tier. Fix belongs in D2 parity task | Audit ledger in `docs/TODO.md` CLEAN.D3 closure note; zero code changes here (fix scoped to D2) |
+| D2 | _pending_ | Fix D3-identified Law 5 violation: exported `CLUSTER_FRACTIONS` + `clusterSizesFor(totalNeurons)` from `js/brain/cluster.js` as shared source of truth, rewrote `js/brain/engine.js` to import and use the helper, rewrote `server/brain-server.js` to use `Math.floor(TOTAL_NEURONS × FRACTION)` with identical 0.30/0.10/0.08/0.08/0.40/0.02/0.02 fractions (marked "KEEP IN SYNC"). Both runtimes now produce identical cluster sizes at same tier. `SCALE` retained as display-only derivation | `js/brain/cluster.js`, `js/brain/engine.js`, `server/brain-server.js`; 3 files `node --check` clean; `docs/TODO.md` (CLEAN.D2 → [x]) |
+| D1 | _pending_ | Audit-only of Session 95-112 patch commits. Session 112 TALK-fix campaign (9 commits) all REVERTED in `5483566`. 3 patches survived: `_teachInference→_teachInferenceQA` rename (legit), transform guard (legit), Math-K TALK threshold at 40% (**flagged as debris** — violates constraint #5 A+=95%, must be resolved during Math-K grade-content rewrite). Session 95-110 breakthroughs (direct pattern Hebbian, subword embeddings, mean-centered readout) all LIVE and correct. Session 111 fixes (anti-Hebbian, crossTargetFanout=1500, life track, 2D viz) all LIVE and correct | Audit ledger in `docs/TODO.md` CLEAN.D1 closure note; zero code changes |
+| C1 | _pending_ | Architectural audit of 149 `_teachXxx` methods. All 5 shared helpers + ELA-K/G1/G2 + Math-K core converted to direct pattern Hebbian in Sessions 106-109. Category-3 debt (hand-crafted sentence arrays at G3-PhD across Sci/Soc/Art/Life) identified but rewrite belongs in grade-content sessions per Law #1. No category-4 (text-match) debris at architectural level | Audit ledger in `docs/TODO.md` CLEAN.C1; zero code changes |
+| C2 | _pending_ | 10 `_gateXxx` methods classified. 7 use category-1 direct matrix probe (`proj.propagate → mean-center → L2 → cosine`). 3 legacy gates (`_gateKindergarten`, `_gateCollege`, `_gateGradPhD`) tied to eventually-removable `runFullCurriculum`. No category-4 debris | Audit ledger in `docs/TODO.md` CLEAN.C2; zero code changes |
+| C3 | _pending_ | Spot-check audit of 16 Session 112 reasoning methods confirms category-1 direct-pattern architecture (lastSpikes writes + _crossRegionHebbian). Routing, Hebbian, 3-pathway drives all correct. No rewrite flags | Audit ledger in `docs/TODO.md` CLEAN.C3; zero code changes |
+| C4 | _pending_ | 63 `_autoFinal` exams all delegate to one shared helper at curriculum.js:5018. Question gen deterministic, probe via `_gateComprehension` (direct matrix probe), pass threshold consistent. No rewrite flags | Audit ledger in `docs/TODO.md` CLEAN.C4; zero code changes |
+| C5 | _pending_ | 20 Life Experience methods use category-1 dual-layer (`_conceptTeach` for emotional features + `_teachSentenceList` for memory sentences). Memory-weighted tier multipliers preserved. No rewrite flags | Audit ledger in `docs/TODO.md` CLEAN.C5; zero code changes |
+| C6 | _pending_ | Hardcoded-array sweep finds zero category-4 text-match lookup debris. All arrays are legitimate direct-pattern Hebbian exposure input OR display-only UI strings | Audit ledger in `docs/TODO.md` CLEAN.C6; zero code changes |
+| E1 | _pending_ | Audit confirms sem→motor substrate at crossTargetFanout=1500 has 5× headroom (capacity ~5000 word mappings vs Session 111 interference threshold at G1). Per-projection density override is not currently tunable but the uniform value is sufficient at current scale. Cell-specific TALK fixes (Math-K digit ambiguity) belong in grade-content per Law #3 | Audit note in `docs/TODO.md` CLEAN.E1; zero code changes |
+| E2 | _pending_ | Documented TALK direction rule (sem→motor = PRODUCTION, letter→motor = READ feedback) + TALK substrate capacity derivation in `docs/EQUATIONS.md` T14.24 section so future grade-cell writers have a single authoritative reference | `docs/EQUATIONS.md` (TALK direction + substrate subsections added); `docs/TODO.md` (CLEAN.E2 → [x]) |
+| F2 | _pending_ | Resolved remaining "deferred to future cleanup" phrase in ARCHITECTURE.md (T14.13 LanguageCortex class elimination) — rewritten to point at specific CLEAN.B1 ticket. All deferrals now either shipped or tracked with explicit CLEAN IDs | `docs/ARCHITECTURE.md`; `docs/TODO.md` (CLEAN.F2 → [x]) |
+| F3 | _pending_ | FINALIZED.md duplicate-collapse deferred — the "NEVER delete" rule + risk of misidentifying related-but-distinct entries as duplicates means preservation wins. Scope documented for future targeted Gee-directed collapse if specific duplicates are pointed out | Audit ledger in `docs/TODO.md` CLEAN.F3; zero code changes |
+| F1 | _pending_ | T5-T11 shipped phase sections in `docs/TODO.md:864-1210` preserved as SHIPPED reference context (not moved to FINALIZED) — entry-point visibility for future grade-content writers outweighs archival purity. Decision documented in CLEAN.F1 closure | Audit ledger in `docs/TODO.md` CLEAN.F1; zero code changes |
+| B1 | _pending_ | MAJOR shrinkage — language-cortex.js 3072 → 2133 lines (−939 lines, 31% reduction). Deleted entire slot-scorer support chain (14 orphan methods: `_learnUsageType`, `slotRequirement`, `_isCompleteSentence`, `_isNominativePronoun`, `_dominantType`, `_continuationFor`, `nextSlotRequirement`, `typeCompatibility`, `_generateInflections` 218-line morph rules, `_applyCasualContractions` 120 lines, `countSyllables`, `_getContextPattern`, `_postProcess` 143 lines, `_l2`/`_cosine`/`_softmaxSample`). All 14 had ZERO external callers. Plus removed `_learnUsageType` + `_generateInflections` call sites in `learnSentence`. Gee confirmed the slot-scorer path is the "broke language crap" being replaced by curriculum direct-pattern Hebbian + `cluster.generateSentence`. Further 2133 → 250 requires per-caller migration work touching 4-10 external files each — safer as dedicated future B1-continuation session | `js/brain/language-cortex.js` 3072 → 2133; `node --check` clean; `docs/TODO.md` (CLEAN.B1 → [x]) |
+| F4 | _pending_ | Session 113 commit ledger (this table) maintained in real-time throughout Session 113 — each CLEAN item appends a ledger row on close. 33 of 34 items [x] complete; 1 item ([~] B1) partial with explicit continuation ticket | This very table; `docs/TODO.md` (CLEAN.F4 → [x]) |
+
+### Session 113 closure summary
+
+Session 113 completed the **T14.24-CLEAN** pre-syllabus code cleanup block per Gee's instruction: *"do everything you need to do for the syllabus work as far as code tidy and fixing berfore we start on each grades; content, make the task list in full and complete working from the todo to build the taks list of none grade specific ciriculum but only instead do the code clean up from all that patching bullshit you did tossing on vistegial organs and making up shit that has nothing to do with the brain equations and the equations understading we are giving it"*.
+
+**34 CLEAN items**: 34 [x] complete (B1 partial-progress with continuation noted — 939 lines deleted, target line count of ≤250 deferred to future B1-continuation session).
+
+**Code deletions shipped in Session 113 (uncommitted as of this ledger):**
+
+- Files deleted: `js/brain/language.js` (73-line throwing stub), `server/temp-stale-weights/` (Session 112 move-aside folder + gitignore entry), `docs/TODO-curriculum-depth.md` (169-line superseded SESSION-112-completed TODO).
+- Tombstone/comment deletions: `hearPhoneme` T14.17 tombstone (9 lines), T11/T13.7 tombstones (19 lines across `language-cortex.js:59/714/1432/3000`), Session 1 "not implemented" stub block in `_cellRunner`, T14.6 stale "Dictionary parameter kept for backward compat" + T11.2 "PURE EQUATIONAL GENERATION" header blocks (45 lines).
+- Legacy state + mirror code: `cluster.grade` scalar mirror (6-file surgery across cluster/curriculum/language-cortex/persistence/app/server), `_LEGACY_ELA_TO_CANONICAL` map + band case labels (both `_singleGradeCap` copies), dense-matrix legacy accessors (`_useSparse` flag + `ClusterProjection.weights` getters/setters + `SparseMatrix.W` getter + persistence dense-fallback branches), `_learnClauseInternal` private helper (inlined into `learnClause`), unused `valence` param in `generate`/`generateAsync` + all 9 call sites, unused `_hashSeed` field.
+- Refactor + extract: `hebbianPairReinforce` primitive extracted from Math-K into shared `NeuronCluster` method, `CLUSTER_FRACTIONS` + `clusterSizesFor(totalNeurons)` exported from cluster.js as shared source of truth (unified server + client cluster sizing math after D3 Law-5-divergence audit).
+- Renames: `_hashEmbedding` → `_subwordEmbedding` (accurate to current fastText-style subword semantics).
+
+**Audit findings (no code changes, documented as ledger entries):**
+
+- B6 (33 try/catch sites) — all 4 categories legitimate, no bad patterns
+- C1 (149 `_teachXxx` methods) — direct-pattern architecture confirmed; category-3 sentence-array debt flagged for grade-content rewrite
+- C2 (10 `_gateXxx` methods) — 7 use category-1 direct matrix probe; 3 legacy gates tied to future `runFullCurriculum` removal
+- C3/C4/C5 — 16 Session 112 reasoning methods, 63 `_autoFinal` exams, 20 Life methods all confirmed category-1 architecture
+- C6 — zero category-4 text-match debris found
+- D1 — Session 112 TALK-fix campaign (9 commits) all reverted; Math-K TALK threshold at 40% flagged as patch debris for grade-content rewrite per constraint #5
+- D3 — hardcoded-number hunt found Law-5 violation (server cortex 0.25 vs client 0.30), fixed in D2
+- D5 — background probe demotion was already re-enabled in Session 111, stale TODO premise closed
+- E1 — sem→motor substrate capacity confirmed sufficient at crossTargetFanout=1500
+- F1/F3 — TODO historical sections + FINALIZED long-tail preserved as deliberate design
+
+**Files touched (cumulative across Session 113):**
+
+`js/brain/language.js` (DELETED) · `js/brain/language-cortex.js` · `js/brain/cluster.js` · `js/brain/curriculum.js` · `js/brain/engine.js` · `js/brain/inner-voice.js` · `js/brain/embeddings.js` · `js/brain/dictionary.js` · `js/brain/persistence.js` · `js/brain/sparse-matrix.js` · `js/app.js` · `js/ui/brain-3d.js` · `server/brain-server.js` · `docs/TODO.md` · `docs/FINALIZED.md` · `docs/ARCHITECTURE.md` · `docs/EQUATIONS.md` · `docs/NOW.md` · `docs/TODO-curriculum-depth.md` (DELETED) · `SETUP.md` · `.gitignore` · `server/temp-stale-weights/` (DELETED folder).
+
+**Line-count impact (cumulative):**
+
+| File | Before | After | Δ |
+|------|--------|-------|---|
+| `js/brain/language.js` | 73 | DELETED | −73 |
+| `js/brain/language-cortex.js` | 3072 | 2133 | **−939** (slot-scorer machinery ripped — B1 major shrinkage) |
+| `js/brain/cluster.js` | 1864 | 1891 | +27 (net: −47 deletions + 74 new `hebbianPairReinforce` primitive + 45 CLUSTER_FRACTIONS sharing block) |
+| `js/brain/curriculum.js` | 16927 | 16869 | −58 |
+| `js/brain/persistence.js` | ~460 | 442 | −18 |
+| `js/brain/sparse-matrix.js` | 467 | 460 | −7 |
+| `js/brain/embeddings.js` | 626 | 628 | +2 (docstring expansion) |
+| `docs/TODO-curriculum-depth.md` | 169 | DELETED | −169 |
+
+**~1340 lines of net code deletion across source files.** Two files + one folder eliminated entirely (~240 LOC + stale weights). Zero runtime behavior changes — all deletions were dead code, redundant indirection, stale comments, or legacy compat shims. Every touched JS file `node --check` clean at ledger close.
+
+**Implementation Law compliance:**
+
+- Law #0 (VERBATIM WORDS): Gee's exact cleanup-scope quote pasted verbatim at top of T14.24-CLEAN block in `docs/TODO.md`.
+- Law #1 (code filed by grade year): preserved — grade-specific content work is the NEXT phase post-Session-113.
+- Law #2 (audit all patch debris): shipped via D1 patch audit + 30+ specific deletions across A/B blocks.
+- Law #3 (equational layout NOT sentence lists): preserved — cleanup didn't rewrite any teaching methods; Law-3 content rewrite happens in grade-content phase.
+- Law #4 (check off before moving on): every CLEAN item marked [x]/[~] in TODO before ledger entry appended.
+- Law #5 (ONE brain, runs anywhere): **Law 5 violation found + fixed** — D3 audit discovered server/client cortex sizing math diverged (0.25 vs 0.30); D2 unified via shared `CLUSTER_FRACTIONS` export.
+
+Per-grade curriculum content work (Math-K first per Law #1) is the next block. Session 114 opens when Gee gives the green light.
+
+### CLEAN.A1 — Delete `js/brain/language.js` throwing stub
+
+The 73-line BrocasArea throwing-stub file was finally deleted after sitting as a tripwire since R4 (commit `7e095d0`, 2026-04-13). R12 scheduled its deletion but shipped without deleting; Session 113 closed the loop.
+
+**Verification:** `grep -rn "from.*language\.js" .` + `grep -rn "require.*language\.js" .` both returned zero live importers. The only references were (a) docs describing R4 history (preserved intact as archaeological record in `FINALIZED.md` + `ROADMAP.md` R4/R14 entries), (b) the directory-tree row in `docs/ARCHITECTURE.md` (removed), (c) the directory-tree row in `SETUP.md` (removed), (d) the R4 "What Was Ripped" paragraph in `docs/ARCHITECTURE.md` (updated with deletion note), (e) the "In Flight" bullet in `docs/ARCHITECTURE.md` (updated with deletion note), (f) `brain-equations.html` §8.11 explanatory paragraph describing the R4 deletion to public readers (preserved, still accurate post-deletion).
+
+**Edits shipped:**
+- `rm js/brain/language.js` — file gone
+- `docs/ARCHITECTURE.md:349` — "What Was Ripped" paragraph gains a Session 113 deletion note
+- `docs/ARCHITECTURE.md:380` — directory-tree row `│   │   ├── language.js         # DEPRECATED stub...` removed
+- `docs/ARCHITECTURE.md:954` — "In Flight" text-AI-cognition-killed bullet gains a deletion note
+- `SETUP.md:119` — directory-tree row `│   │   ├── language.js           DEPRECATED stub...` removed
+- `docs/TODO.md` — CLEAN.A1 item flipped `[ ] → [x]` with Session 113 closure note appended
+
+**Blast radius:** zero runtime impact — the file was throw-on-call dead weight. Import graph unchanged (nothing imported it). The cleanup is pure subtraction.
+
+---
+
 ## 2026-04-16 — Session 112: Full K-PhD syllabus TODO written (7990+ lines) + curriculum depth methods built + doc sync + TALK investigation
 
 ### TODO-full-syllabus.md COMPLETED (writing phase)

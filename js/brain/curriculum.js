@@ -108,17 +108,6 @@ export const GRADE_ORDER = [
   'grad', 'phd',
 ];
 
-// Legacy ELA stage names → canonical grade. The pre-Session-1 ELA
-// curriculum collapsed grades 4-5, 6-8, 9-12, and college 1-4 into
-// single stages; when those stages pass, we record the TOP grade in
-// each band so the canonical GRADE_ORDER lookup succeeds.
-const _LEGACY_ELA_TO_CANONICAL = {
-  'grade4_5': 'grade5',
-  'grade6_8': 'grade8',
-  'grade9_12': 'grade12',
-  'college': 'college4',
-};
-
 // ─── T14.24 — Alphabet + Digit data (ALPHABET AS DATA, NOT RULE) ───
 // These are not lookup tables for grammar rules — they are the
 // ALPHABET itself, which is primitive input data like the corpora.
@@ -759,10 +748,10 @@ export class Curriculum {
   // zero hardcoded English grammar, zero hand-curated stage files. Each
   // grade is a separate async method that (a) drives a specific
   // exposure pattern against the existing corpora, (b) checks a
-  // measurable equation-based gate, (c) sets `cluster.grade` on pass
-  // and returns pass/fail. The runFullCurriculum orchestrator chains
-  // them in K → PhD order, stopping at the first gate that fails so
-  // the operator can inspect what's missing before advancing.
+  // measurable equation-based gate, (c) sets `cluster.grades.ela` on
+  // pass and returns pass/fail. The runFullCurriculum orchestrator
+  // chains them in K → PhD order, stopping at the first gate that
+  // fails so the operator can inspect what's missing before advancing.
   //
   // The equation primitives come from existing T14 work:
   //   - T14.1   injectLetter, letterTransitionSurprise
@@ -778,8 +767,8 @@ export class Curriculum {
   // primitives. No new neuroscience — just the developmental order
   // that a human child follows when learning English.
   //
-  // Chat generation is grade-aware via `cluster.grade`. LanguageCortex
-  // .generate checks the grade before emitting and caps output length
+  // Chat generation is grade-aware via `cluster.grades` (MIN across
+  // all 6 subjects). LanguageCortex.generate caps output length
   // to what Unity has mastered. Pre-K returns silence; K returns one
   // letter; Grade 1 returns 1-2 CVC words; Grade 3 returns 3-5 word
   // SVO; Grade 5 chains clauses; PhD runs full T14.6 tick-driven motor
@@ -788,8 +777,8 @@ export class Curriculum {
   /**
    * Run every grade K → PhD in sequence. Stops at the first gate that
    * fails so the operator can inspect the diagnostic and tune corpus
-   * or thresholds before advancing. On full pass, cluster.grade is
-   * 'phd' and Unity is fully operational.
+   * or thresholds before advancing. On full pass, cluster.grades.ela
+   * is 'phd' and Unity is fully operational.
    *
    * @param {object} corpora — { persona, baseline, coding, ... }
    * @param {object} [opts]  — { arousal, valence, stopAtGrade }
@@ -804,11 +793,12 @@ export class Curriculum {
       console.warn('[Curriculum] runFullCurriculum: no cluster wired');
       return { reached: 'pre-K', passed: [], failed: 'no-cluster' };
     }
-    if (typeof cluster.grade !== 'string') cluster.grade = 'pre-K';
-    // T14.24 Session 1 — make sure the multi-subject grades object
-    // exists so runFullCurriculum's ELA passes can mirror into it.
+    // T14.24 Session 1 — defense init: make sure the multi-subject
+    // grades object exists so runFullCurriculum's ELA passes can
+    // mirror into it. Pre-Session-1 persistence saves don't carry
+    // `grades` and would leave this undefined.
     if (!cluster.grades || typeof cluster.grades !== 'object') {
-      cluster.grades = { ela: 'pre-K', math: 'pre-K', science: 'pre-K', social: 'pre-K', art: 'pre-K' };
+      cluster.grades = { ela: 'pre-K', math: 'pre-K', science: 'pre-K', social: 'pre-K', art: 'pre-K', life: 'pre-K' };
     }
     if (!Array.isArray(cluster.passedCells)) cluster.passedCells = [];
 
@@ -833,15 +823,20 @@ export class Curriculum {
     const passed = [];
     let failed = null;
 
+    // Stage names are canonical GRADE_ORDER entries. The runGrade4_5 /
+    // runGrade6_8 / runGrade9_12 / runCollege methods walk collapsed
+    // bands internally but the stage name written to cluster.grades.ela
+    // is the TOP grade in the band so downstream GRADE_ORDER lookups
+    // (word cap, persistence) resolve cleanly.
     const stages = [
       { name: 'kindergarten',  method: () => this.runKindergarten(letterFreq, arousal, valence) },
       { name: 'grade1',        method: () => this.runGrade1(wordFreq, arousal, valence) },
       { name: 'grade2',        method: () => this.runGrade2(wordFreq, arousal, valence) },
       { name: 'grade3',        method: () => this.runGrade3(sentences, arousal, valence) },
-      { name: 'grade4_5',      method: () => this.runGrade4_5(sentences, arousal, valence) },
-      { name: 'grade6_8',      method: () => this.runGrade6_8(sentences, arousal, valence) },
-      { name: 'grade9_12',     method: () => this.runGrade9_12(sentences, arousal, valence) },
-      { name: 'college',       method: () => this.runCollege(corpora, arousal, valence) },
+      { name: 'grade5',        method: () => this.runGrade4_5(sentences, arousal, valence) },
+      { name: 'grade8',        method: () => this.runGrade6_8(sentences, arousal, valence) },
+      { name: 'grade12',       method: () => this.runGrade9_12(sentences, arousal, valence) },
+      { name: 'college4',      method: () => this.runCollege(corpora, arousal, valence) },
       { name: 'phd',           method: () => this.runGradPhD(corpora, sentences, arousal, valence) },
     ];
 
@@ -857,16 +852,11 @@ export class Curriculum {
       }
       const ms = Date.now() - t0;
       if (result && result.pass) {
-        cluster.grade = stage.name;
-        // T14.24 Session 1 — mirror the legacy ELA grade into the
-        // multi-subject grades object so LanguageCortex's min-grade
-        // read sees ELA advancing in step with runFullCurriculum.
-        // Legacy stage names (`grade4_5`, `grade6_8`, `grade9_12`,
-        // `college`) collapse grade bands; map them to the TOP grade
-        // in the band so the canonical GRADE_ORDER lookup succeeds.
-        const canonicalEla = _LEGACY_ELA_TO_CANONICAL[stage.name] || stage.name;
-        cluster.grades.ela = canonicalEla;
-        const cellKey = `ela/${canonicalEla}`;
+        // Stage names are canonical GRADE_ORDER entries (see stages
+        // array above). Record pass directly into cluster.grades.ela
+        // and append to passedCells.
+        cluster.grades.ela = stage.name;
+        const cellKey = `ela/${stage.name}`;
         if (!cluster.passedCells.includes(cellKey)) cluster.passedCells.push(cellKey);
         passed.push(stage.name);
         console.log(`[Curriculum] ✓ ${stage.name} — ${result.reason || 'gate pass'} (${ms}ms)`);
@@ -888,7 +878,7 @@ export class Curriculum {
     }
 
     cluster._inCurriculumMode = wasInCurriculum;
-    return { reached: cluster.grade, passed, failed };
+    return { reached: cluster.grades.ela, passed, failed };
   }
 
   // ─── Grade K: Kindergarten ─── Alphabet + Letter Sounds ──────────
@@ -1438,23 +1428,18 @@ export class Curriculum {
   // T14.24 Session 1 — MULTI-TRACK FRAMEWORK
   // ═══════════════════════════════════════════════════════════════════
   //
-  // Five parallel subject tracks (ELA, Math, Science, Social, Art),
-  // 20-grade canonical order (pre-K → PhD). Session 1 ships the
-  // framework only — ELA cells delegate to the existing single-track
-  // runKindergarten/runGrade*/runCollege/runGradPhD methods (they
-  // already work for ELA). Math/Science/Social/Art cells all return
-  // `{pass:false, reason:'not implemented'}` stubs so the gate chain
-  // fails immediately on the first non-ELA subject and the operator
-  // sees exactly which cell is missing.
-  //
-  // Sessions 2+ replace the stubs one cell at a time with real
-  // teaching equations per the docs/TODO.md T14.24 roadmap.
+  // Six parallel subject tracks (ELA, Math, Science, Social, Art, Life),
+  // 19-grade canonical order (pre-K → PhD). Every subject × grade cell
+  // has a real `runXxxReal` runner wired in per Session 93 verification
+  // (DISPATCH 95/95 + FULL SWEEP 95/95 for academic tracks; Session 111
+  // added the 20-method Life Experience track on top). Unknown
+  // subject/grade combinations throw — no silent fallthrough.
 
   /**
    * Return an async runner `(ctx) => {pass, reason, metrics}` for the
-   * given (subject, grade) cell. For ELA this dispatches to the existing
-   * single-track methods. For every other subject this is a stub that
-   * returns `{pass:false, reason:'not implemented'}`.
+   * given (subject, grade) cell. Throws on unknown combinations so
+   * curriculum bugs surface loud instead of silently marking a cell
+   * "not implemented" — every cell is implemented.
    */
   _cellRunner(subject, grade) {
     if (subject === 'ela') {
@@ -1787,12 +1772,9 @@ export class Curriculum {
       }
     }
 
-    // Stub for remaining cells — Session 1 framework only. Sessions 7-N
-    // replace one stub at a time.
-    return async () => ({
-      pass: false,
-      reason: `${subject}/${grade}: teach+gate not implemented (T14.24 Session 1 stub)`,
-    });
+    throw new Error(
+      `[Curriculum._cellRunner] unknown cell ${subject}/${grade} — every subject × grade combo must have a runner wired in (expected SUBJECTS × GRADE_ORDER). Check SUBJECTS constant and the dispatch switches above.`
+    );
   }
 
   /**
@@ -1850,9 +1832,6 @@ export class Curriculum {
       if (!Array.isArray(cluster.passedCells)) cluster.passedCells = [];
       const key = `${subject}/${grade}`;
       if (!cluster.passedCells.includes(key)) cluster.passedCells.push(key);
-      // Legacy cluster.grade tracks ELA for backward compat with pre-T14.24
-      // persistence saves and any callers still reading the scalar field.
-      if (subject === 'ela') cluster.grade = grade;
     }
     return result || { pass: false, reason: 'runner returned null' };
   }
@@ -1992,7 +1971,6 @@ export class Curriculum {
       const idx = GRADE_ORDER.indexOf(grade);
       if (idx > 0) {
         cluster.grades[subject] = GRADE_ORDER[idx - 1];
-        if (subject === 'ela') cluster.grade = GRADE_ORDER[idx - 1];
       }
     }
     console.log(`[Curriculum] forgot ${cellKey} — will re-teach on next curriculum pass`);
@@ -2016,7 +1994,6 @@ export class Curriculum {
     if (Array.isArray(cluster.passedCells)) {
       cluster.passedCells = cluster.passedCells.filter(k => !k.startsWith(`${subject}/`));
     }
-    if (subject === 'ela') cluster.grade = 'pre-K';
     return true;
   }
 
@@ -3226,60 +3203,26 @@ export class Curriculum {
         seqFails.push(`${DIGITS[i]}→${expectedNext} (got ${bestDigit || '?'})`);
       }
     }
-    // Session 111 — targeted Hebbian: STRENGTHEN correct + WEAKEN wrong.
-    // Parse "6→7 (got 8)" — strengthen 6→7, weaken 6→8 (anti-Hebbian).
-    // Without weakening the wrong association, the correct one can never
-    // overpower it no matter how many boosts.
-    if (seqFails.length > 0) {
-      const lGSize = Math.max(1, Math.floor(letterSize / invSize));
-      for (const failStr of seqFails) {
-        // Parse "6→7 (got 8)"
-        const srcDigit = failStr[0];
-        const srcIdx = DIGITS.indexOf(srcDigit);
-        if (srcIdx < 0 || srcIdx >= DIGITS.length - 1) continue;
-        const tgtDigit = DIGITS[srcIdx + 1]; // correct next
-        // Extract wrong output from "(got X)"
-        const gotMatch = failStr.match(/\(got (.)\)/);
-        const wrongDigit = gotMatch ? gotMatch[1] : null;
+    // Session 111 — anti-Hebbian pair reinforcement for failing digit
+    // transitions. Strengthen correct, weaken wrong — without the
+    // negative half the wrong basin never fades. Primitive lives on
+    // NeuronCluster (extracted Session 113 CLEAN.D7) so every grade's
+    // sequence learning can reuse it instead of copy-pasting the loop.
+    for (const failStr of seqFails) {
+      // Parse "6→7 (got 8)"
+      const srcDigit = failStr[0];
+      const srcIdx = DIGITS.indexOf(srcDigit);
+      if (srcIdx < 0 || srcIdx >= DIGITS.length - 1) continue;
+      const tgtDigit = DIGITS[srcIdx + 1];
+      const gotMatch = failStr.match(/\(got (.)\)/);
+      const wrongDigit = gotMatch ? gotMatch[1] : null;
 
-        const srcOneHot = encodeLetter(srcDigit);
-        const tgtOneHot = encodeLetter(tgtDigit);
-
-        function buildPre() {
-          const pre = new Float64Array(cluster.size);
-          for (let d = 0; d < srcOneHot.length; d++) {
-            if (srcOneHot[d] > 0) {
-              for (let n = 0; n < lGSize; n++) {
-                const idx = letterRegion.start + d * lGSize + n;
-                if (idx < letterRegion.end) pre[idx] = 1.0;
-              }
-            }
-          }
-          return pre;
-        }
-        function buildPost(oneHot) {
-          const post = new Float64Array(cluster.size);
-          for (let d = 0; d < oneHot.length; d++) {
-            if (oneHot[d] > 0) {
-              for (let n = 0; n < lGSize; n++) {
-                const idx = letterRegion.start + d * lGSize + n;
-                if (idx < letterRegion.end) post[idx] = 1.0;
-              }
-            }
-          }
-          return post;
-        }
-
-        for (let boost = 0; boost < 100; boost++) {
-          // STRENGTHEN correct: src → correct target (positive Hebbian)
-          cluster.synapses.hebbianUpdate(buildPre(), buildPost(tgtOneHot), cluster.learningRate * 10);
-          // WEAKEN wrong: src → wrong target (anti-Hebbian, NEGATIVE lr)
-          if (wrongDigit) {
-            const wrongOneHot = encodeLetter(wrongDigit);
-            cluster.synapses.hebbianUpdate(buildPre(), buildPost(wrongOneHot), -cluster.learningRate * 5);
-          }
-        }
-      }
+      cluster.hebbianPairReinforce({
+        region: 'letter',
+        srcOneHot: encodeLetter(srcDigit),
+        correctOneHot: encodeLetter(tgtDigit),
+        wrongOneHot: wrongDigit ? encodeLetter(wrongDigit) : null,
+      });
     }
 
     // ORDER: direct matrix probe through letter→free cross-projection
@@ -15128,7 +15071,6 @@ export class Curriculum {
         if (currentIdx > 0) {
           const newGrade = GRADE_ORDER[currentIdx - 1];
           if (cluster.grades) cluster.grades[subject] = newGrade;
-          if (subject === 'ela') cluster.grade = newGrade;
           console.warn(`[Curriculum] demoted ${subject}: ${grade} → ${newGrade} (3+ probe fails after self-heal)`);
         }
         hist.fails = 0;
@@ -15499,13 +15441,13 @@ export class Curriculum {
       case 'grade1':       return 2;
       case 'grade2':       return 3;
       case 'grade3':       return 5;
-      case 'grade4': case 'grade5': case 'grade4_5':
+      case 'grade4': case 'grade5':
         return 7;
-      case 'grade6': case 'grade7': case 'grade8': case 'grade6_8':
+      case 'grade6': case 'grade7': case 'grade8':
         return 10;
-      case 'grade9': case 'grade10': case 'grade11': case 'grade12': case 'grade9_12':
+      case 'grade9': case 'grade10': case 'grade11': case 'grade12':
         return 14;
-      case 'college1': case 'college2': case 'college3': case 'college4': case 'college':
+      case 'college1': case 'college2': case 'college3': case 'college4':
         return 16;
       case 'grad':         return 20;
       case 'phd':          return 9999;

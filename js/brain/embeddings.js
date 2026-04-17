@@ -73,8 +73,7 @@ export class SemanticEmbeddings {
     // Learned refinements — contextual shifts from brain experience
     this._refinements = new Map(); // word → Float32Array(50) delta
 
-    // Unknown word fallback — hash-based embedding
-    this._hashSeed = 42;
+    // Unknown word fallback — fastText-style subword embedding (see _subwordEmbedding)
   }
 
   /**
@@ -270,8 +269,8 @@ export class SemanticEmbeddings {
     let vec = this._embeddings.get(word);
 
     if (!vec) {
-      // Hash-based fallback for unknown words
-      vec = this._hashEmbedding(word);
+      // Subword-based fallback for unknown words (fastText-style n-gram sum).
+      vec = this._subwordEmbedding(word);
     }
 
     // Apply learned refinement
@@ -472,7 +471,7 @@ export class SemanticEmbeddings {
     }
 
     const delta = this._refinements.get(word);
-    const base = this._embeddings.get(word) || this._hashEmbedding(word);
+    const base = this._embeddings.get(word) || this._subwordEmbedding(word);
 
     for (let i = 0; i < EMBED_DIM; i++) {
       // Move toward context
@@ -481,11 +480,14 @@ export class SemanticEmbeddings {
   }
 
   /**
-   * Hash-based embedding for unknown words.
-   * Deterministic — same word always produces same vector.
-   * Distributes uniformly in embedding space.
+   * Subword-based embedding for unknown words (fastText-style).
+   * Sum of n-gram hash contributions (N = 3..5) over boundary-marked
+   * word `<word>`. Deterministic — same word always produces same
+   * vector. Words that share character n-grams share feature dims so
+   * "cat" ↔ "cats" cosine > "cat" ↔ "xyz" cosine, giving the cortex
+   * usable structure even without real GloVe vectors.
    */
-  _hashEmbedding(word) {
+  _subwordEmbedding(word) {
     // T14.24 Session 99 — fastText-style subword embedding as the
     // GloVe-free default. Previously this was a single-hash-per-word
     // function that produced fully-uncorrelated vectors for every

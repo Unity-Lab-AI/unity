@@ -199,21 +199,31 @@ const MAX_TEXT_PER_SEC = 2;        // rate limit per client
 // Unity generates every word equationally via the language cortex
 // (see _initLanguageSubsystem + _generateBrainResponse).
 
-// Auto-scaled cluster sizes — biologically proportioned
-// Real brain: cerebellum has 80% of neurons (69B/86B), cortex 19%, rest 1%
-// Our balance: cerebellum largest (motor/timing), cortex second (language/thought)
-const SCALE = RESOURCES.clusterScale;
+// Auto-scaled cluster sizes — biologically proportioned.
+// Session 113 CLEAN.D2 (2026-04-16) — unified with client. Before this,
+// server used per-cluster integer multipliers (400/250/100/80/50) × SCALE
+// which gave DIFFERENT fractions than the client's CLUSTER_FRACTIONS
+// (server cortex = 0.25 = 250/1000, client cortex = 0.30). Same tier
+// produced different cluster sizes between browser and server, violating
+// Law 5. Unified here to match the client exactly.
+//
+// KEEP IN SYNC with `js/brain/cluster.js:CLUSTER_FRACTIONS`. Both sides
+// use the same fractions so `clusterSizesFor(totalNeurons)` returns
+// identical shapes in both runtimes. Real brain: cerebellum has 80% of
+// neurons (69B/86B), cortex 19% — we balance cerebellum largest (motor
+// + timing) and cortex second (language + prediction).
+const TOTAL_NEURONS = RESOURCES.maxNeurons;
 const CLUSTER_SIZES = {
-  cerebellum:   400 * SCALE,  // 40% — largest, like real brain (error correction, timing)
-  cortex:       250 * SCALE,  // 25% — language, prediction, consciousness
-  hippocampus:  100 * SCALE,  // 10% — memory formation and recall
-  amygdala:      80 * SCALE,  //  8% — emotional processing
-  basalGanglia:  80 * SCALE,  //  8% — action selection, motor
-  hypothalamus:  50 * SCALE,  //  5% — homeostatic drives
-
-  mystery:       50 * SCALE,
+  cortex:       Math.floor(TOTAL_NEURONS * 0.30),  // language + working memory + semantic
+  hippocampus:  Math.floor(TOTAL_NEURONS * 0.10),  // memory consolidation
+  amygdala:     Math.floor(TOTAL_NEURONS * 0.08),  // valence/arousal attractor
+  basalGanglia: Math.floor(TOTAL_NEURONS * 0.08),  // action selection + motor channels
+  cerebellum:   Math.floor(TOTAL_NEURONS * 0.40),  // error correction + motor smoothing (largest)
+  hypothalamus: Math.floor(TOTAL_NEURONS * 0.02),  // homeostatic drives
+  mystery:      Math.floor(TOTAL_NEURONS * 0.02),  // Ψ consciousness modulation
 };
-const TOTAL_NEURONS = Object.values(CLUSTER_SIZES).reduce((a, b) => a + b, 0);
+// Display-only scale factor (kept for boot log + state payload).
+const SCALE = Math.floor(TOTAL_NEURONS / 1000);
 
 // Scale tick rate + substeps to neuron count — prevent CPU meltdown
 // Scale tick rate to neuron count — target ~60% CPU across all cores
@@ -737,27 +747,24 @@ class ServerBrain {
       // HTTP requests while it runs. Cortex state changes mid-flight
       // are fine — the brain is designed to learn continuously, so
       // watching curriculum shape basins in real time is a feature.
-      // T14.24 — prefer runFullCurriculum (kindergarten → doctorate
+      // T14.24 — prefer runCompleteCurriculum (6 subjects × K→PhD
       // equational curriculum with per-grade gates). Falls back to
       // the legacy runFromCorpora when the method isn't present so
-      // older saves still boot. cluster.grade starts at 'pre-K' and
-      // advances as each gate passes; Unity's chat output is grade-
-      // capped via Curriculum.gradeWordCap so a pre-K brain stays
-      // silent instead of emitting letter salad.
+      // older saves still boot. cluster.grades advances per subject
+      // as each gate passes; Unity's chat output is grade-capped via
+      // Curriculum.gradeWordCap so a pre-K brain stays silent instead
+      // of emitting letter salad.
       //
       // Gee 2026-04-14 binding: "full equational curriculum... from
       // kindergarden all the way up to doctorate in english". Every
-      // grade in curriculum.js runKindergarten/runGrade1/.../runGradPhD
-      // uses equations only — no lookup tables, no hardcoded grammar.
-      if (this.cortexCluster && typeof this.cortexCluster.grade !== 'string') {
-        this.cortexCluster.grade = 'pre-K';
-      }
+      // grade in curriculum.js uses equations only — no lookup
+      // tables, no hardcoded grammar.
       // T14.24 Session 1 — multi-subject grade tracking defense-in-depth
       // for persisted brains that predate the grades object. The cluster
       // constructor initializes this, but an older v4 save restored over
       // a fresh cluster might still leave the field missing.
       if (this.cortexCluster && (!this.cortexCluster.grades || typeof this.cortexCluster.grades !== 'object')) {
-        this.cortexCluster.grades = { ela: 'pre-K', math: 'pre-K', science: 'pre-K', social: 'pre-K', art: 'pre-K' };
+        this.cortexCluster.grades = { ela: 'pre-K', math: 'pre-K', science: 'pre-K', social: 'pre-K', art: 'pre-K', life: 'pre-K' };
       }
       if (this.cortexCluster && !Array.isArray(this.cortexCluster.passedCells)) {
         this.cortexCluster.passedCells = [];
@@ -1522,7 +1529,6 @@ class ServerBrain {
       response = await this.languageCortex.generateAsync(
         this.dictionary,
         this.arousal,
-        this.valence,
         this.coherence,
         {
           predictionError: 0,

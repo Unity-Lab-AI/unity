@@ -49,17 +49,12 @@ Root cause: GloVe digit name embeddings too similar for sem→motor distinction.
 
 All workflow docs + public pages updated twice during session. FINALIZED entry written. TODO-curriculum-depth.md marked SUPERSEDED (all 46 items done, moved to FINALIZED).
 
-### Stale Brain Weights
-
-Server brain weight files moved to `server/temp-stale-weights/` for clean boot. Delete this folder anytime — it's gitignored.
-
 ## Current file status
 
 | File | Status |
 |------|--------|
 | `docs/TODO.md` | T14.24 parent task open (stays open — weeks of work) |
 | `docs/TODO-full-syllabus.md` | 7990+ lines, 4513 open items — THE active work |
-| `docs/TODO-curriculum-depth.md` | SUPERSEDED — all items done, moved to FINALIZED |
 | `docs/TODO-life-experience.md` | Complete |
 | `docs/COMP-todo.md` | ON HOLD — distributed compute, separate scope |
 | `docs/FINALIZED.md` | Session 112 entry written |

@@ -422,16 +422,14 @@ function loadPersonaSelfImage(targetBrain) {
     // from exposure statistics — the legacy loaders only populated the
     // dictionary and the type-transition tables. Non-blocking if the
     // curriculum isn't wired (remote brains, test harnesses).
-    // T14.24 — prefer runFullCurriculum (K→PhD equational curriculum
-    // with per-grade gates). Falls back to runFromCorpora if the new
-    // method isn't present. Initializes cluster.grade so generate()
-    // knows Unity starts pre-K.
-    const cortex = targetBrain.clusters?.cortex;
-    if (cortex && typeof cortex.grade !== 'string') cortex.grade = 'pre-K';
+    // T14.24 — prefer runCompleteCurriculum (6 subjects × K→PhD
+    // equational curriculum with per-grade gates). Falls back to
+    // runFromCorpora if the new method isn't present.
     // T14.24 Session 1 — multi-subject grade tracking defense-in-depth
     // for persisted brains that predate the grades object.
+    const cortex = targetBrain.clusters?.cortex;
     if (cortex && (!cortex.grades || typeof cortex.grades !== 'object')) {
-      cortex.grades = { ela: 'pre-K', math: 'pre-K', science: 'pre-K', social: 'pre-K', art: 'pre-K' };
+      cortex.grades = { ela: 'pre-K', math: 'pre-K', science: 'pre-K', social: 'pre-K', art: 'pre-K', life: 'pre-K' };
     }
     if (cortex && !Array.isArray(cortex.passedCells)) cortex.passedCells = [];
     if (targetBrain.curriculum && typeof targetBrain.curriculum.runCompleteCurriculum === 'function') {
@@ -2213,15 +2211,14 @@ Vision: ${state.visionDescription || 'none'}`;
         let generated = '(language cortex not available)';
         if (lc && typeof lc.generate === 'function' && dict) {
           try {
-            // T13.7.5 — generate signature is (dict, arousal, valence, coherence, opts).
-            // The legacy call below was 10 positional args which silently mapped psi → opts
-            // (a number), losing cortexCluster + every downstream parameter. After T13.7
-            // deleted the slot-prior fallback, that broken call path returned '' silently.
+            // T14.24-CLEAN.B3 — generate signature is (dict, arousal, coherence, opts).
+            // valence removed 2026-04-16 Session 113: it was passed positionally by every
+            // caller but never consumed inside generate(). The rest of the pipeline (sentence
+            // type, length sizing, cortex emission) uses arousal + coherence only.
             const cortex = brain.clusters?.cortex;
             const out = lc.generate(
               dict,
               state.amygdala?.arousal ?? 0.5,
-              state.amygdala?.valence ?? 0,
               state.oscillations?.coherence ?? 0.5,
               {
                 psi: state.psi ?? 0,
@@ -2779,7 +2776,6 @@ async function generateGreeting(perms) {
     const text = brain.innerVoice.languageCortex.generate(
       brain.innerVoice.dictionary,
       state.amygdala?.arousal ?? 0.9,
-      state.amygdala?.valence ?? 0.2,
       state.oscillations?.coherence ?? 0.4,
       {
         predictionError: 0,

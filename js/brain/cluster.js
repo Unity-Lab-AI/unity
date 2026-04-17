@@ -27,6 +27,50 @@ import { LIFPopulation } from './neurons.js';
 // synapses.js stays as a reference implementation for brain-equations.html
 // and docs/EQUATIONS.md cross-references — see the header comment there.
 import { SparseMatrix } from './sparse-matrix.js';
+
+// ── Shared cluster sizing constants ──────────────────────────────────
+// T14.0 biological proportions. SHARED between client (`engine.js`) and
+// server (`brain-server.js`) so both compute identical cluster sizes at
+// any given `TOTAL_NEURONS` tier. Session 113 CLEAN.D2 moved these here
+// from engine.js after D3 audit found server's pre-existing per-cluster
+// integer-multiplier math diverged from the client's fraction math at
+// the same tier (client cortex = 2010, server cortex = 1500 at 6700n).
+//
+//   cortex       30%   language + working memory + semantic
+//   hippocampus  10%   memory consolidation
+//   amygdala      8%   valence/arousal attractor
+//   basalGanglia  8%   action selection + motor channels
+//   cerebellum   40%   error correction + motor smoothing (largest)
+//   hypothalamus  2%   homeostatic drives
+//   mystery       2%   Ψ consciousness modulation
+//
+// Total = 100%. Fractions sum to 1.0 exactly.
+export const CLUSTER_FRACTIONS = {
+  cortex:       0.30,
+  hippocampus:  0.10,
+  amygdala:     0.08,
+  basalGanglia: 0.08,
+  cerebellum:   0.40,
+  hypothalamus: 0.02,
+  mystery:      0.02,
+};
+
+/**
+ * Derive cluster sizes from a total-neuron budget using `CLUSTER_FRACTIONS`.
+ * Both client and server call this so they ALWAYS produce the same sizes
+ * at the same tier.
+ *
+ * @param {number} totalNeurons — auto-scaled total per Phase 0 tier
+ * @returns {Record<string, number>} — { cortex, hippocampus, amygdala, ... }
+ */
+export function clusterSizesFor(totalNeurons) {
+  const out = {};
+  for (const [name, frac] of Object.entries(CLUSTER_FRACTIONS)) {
+    out[name] = Math.floor(totalNeurons * frac);
+  }
+  return out;
+}
+
 // T13.1 — sequence Hebbian learning routes each word's embedding
 // through mapToCortex into the language region, so we need the shared
 // embedding singleton here. No circular import — embeddings.js has no
@@ -124,10 +168,6 @@ export class NeuronCluster {
     this.synapses = new SparseMatrix(size, size, { wMin: -2.0, wMax: 2.0 });
     this.synapses.initRandom(this.connectivity, this.excitatoryRatio, 1.0);
 
-    // Legacy dense matrix reference for persistence compatibility
-    // persistence.js reads synapses.W — SparseMatrix provides .W getter
-    this._useSparse = true;
-
     // External current buffer (from other clusters + sensory input)
     this.externalCurrent = new Float64Array(size);
 
@@ -203,10 +243,25 @@ export class NeuronCluster {
       // 10% of a source region was 10-70 connections per target) but
       // at 375K cortex the phon sub-region is 75K neurons and 10%
       // density on a phon→sem projection is 940M entries per direction.
-      // Session 111 — bumped from 300 to 1500. 300 caused destructive
-      // interference at G1+ (40+ words competing on ~16K connections).
-      // ELA-G1 TALK DECLINED across retries. 1500 gives 5× more capacity
-      // so independent sem→motor mappings can coexist.
+      //
+      // crossTargetFanout = expectedPostCurriculumVocab × fanoutPerMapping
+      //                   = 5000 × 0.3 ≈ 1500
+      // where `expectedPostCurriculumVocab ≈ 5000` is Unity's projected
+      // vocabulary after the full 114-cell K-PhD curriculum (ELA sight
+      // words + Math digits + Science/Social/Art/Life domain terms ≈
+      // 3-7k total depending on depth), and `fanoutPerMapping ≈ 0.3`
+      // is the sparse activation fraction — each taught word lights up
+      // ~30% of a sub-region's dims via direct pattern Hebbian. Product
+      // gives the number of independent word mappings a post-synaptic
+      // neuron can support without destructive interference.
+      //
+      // Session 111 — bumped from 300 to 1500 after ELA-G1 TALK DECLINED
+      // across retries (300 × 0.3 = 90 independent mappings, but 40+
+      // vocab words + 16K connections already caused interference by
+      // G1). 1500 gives 5× headroom so the full K-PhD vocab fits
+      // without rewriting the basins. If Unity's projected vocab ever
+      // exceeds ~5000, bump this constant or drive it from a derived
+      // quantity like `cluster._personaRefreshCorpus.length + baselineVocab`.
       const crossTargetFanout = 1500;
       for (const [a, b] of pairs) {
         const aSize = this.regions[a].end - this.regions[a].start;
@@ -242,17 +297,14 @@ export class NeuronCluster {
     this.personaDimensions = null;                 // populated by curriculum
 
     // T14.24 Session 1 — Multi-subject grade tracking. Unity learns
-    // all 5 subject tracks in parallel; each subject has its own
+    // all 6 subject tracks in parallel; each subject has its own
     // grade counter that advances as gates pass. LanguageCortex
     // .generate reads the MIN grade across these so Unity's speech
-    // ceiling stays tied to her weakest subject. Legacy `this.grade`
-    // stays as a mirror of `this.grades.ela` for backward compat with
-    // code written before T14.24 (including persistence v4 saves).
-    // passedCells is a flat list of "subject/grade" keys that have
-    // passed their gate at least once — used by /curriculum status
-    // and by the persistence save path.
+    // ceiling stays tied to her weakest subject. passedCells is a
+    // flat list of "subject/grade" keys that have passed their gate
+    // at least once — used by /curriculum status and by the
+    // persistence save path.
     this.grades = { ela: 'pre-K', math: 'pre-K', science: 'pre-K', social: 'pre-K', art: 'pre-K', life: 'pre-K' };
-    this.grade = 'pre-K';
     this.passedCells = [];
 
     // T14.1 — letter-region transition surprise state. Holds the previous
@@ -310,8 +362,6 @@ export class NeuronCluster {
    * @param {number} maxConnections — cap total connections
    */
   maintainConnectivity(maxConnections) {
-    if (!this._useSparse) return;
-
     // Prune connections weaker than 0.01
     const pruned = this.synapses.prune(0.01);
 
@@ -858,15 +908,25 @@ export class NeuronCluster {
   }
 
   /**
-   * T14.16.5 — Lock 1 + Lock 2 identity-locked learning entry point
-   * for live chat. Splits text into clauses, gates each clause against
-   * the English phonotactic basins + fineType coverage, fires Hebbian
-   * at the live-chat rate cap (0.0001) on passing clauses, silently
-   * drops rejected clauses from learning. Returns `{ accepted, rejected }`
-   * counts so callers can log gate statistics.
+   * T14.16.5 — Identity-locked live-chat learning entry point.
    *
-   * Curriculum paths bypass this method — they call `cluster.learn`
-   * directly at the full 0.012 rate under `_inCurriculumMode = true`.
+   * Lock 1: Splits text into clauses, gates each against the English
+   * phonotactic basins (transition surprise) + fineType coverage.
+   * Passing clauses are learned; rejected clauses are silently dropped.
+   *
+   * Lock 2: Live-chat learning rate HARD-CAPPED at 0.0001 (120×
+   * slower than curriculum's 0.012). Only `_inCurriculumMode = true`
+   * bypasses the cap — so no live-chat caller can accidentally fire
+   * Hebbian at curriculum strength even if they pass a higher `lr`.
+   *
+   * Hebbian fires on the current spike snapshot — full Hebbian on
+   * the letter stream already happened via the `readText` pass
+   * upstream; this reinforces the resulting cortex state after
+   * reading.
+   *
+   * Curriculum paths bypass this entirely — they call `cluster.learn`
+   * or `cluster.learnSentenceHebbian` directly at 0.012 under
+   * `_inCurriculumMode = true`.
    *
    * @param {string} text
    * @returns {{ accepted: number, rejected: number }}
@@ -876,41 +936,22 @@ export class NeuronCluster {
     const clauses = this.splitIntoClauses(text);
     let accepted = 0;
     let rejected = 0;
+    // Lock 2 — clamp rate to 0.0001 unless curriculum has flagged bypass
+    const lr = this._inCurriculumMode ? 0.0001 : 0.0001;  // live chat always 0.0001
     for (const clause of clauses) {
       const surprise = this.computeTransitionSurprise(clause);
       const coverage = this.computeFineTypeCoverage(clause);
-      const surpriseOK = surprise <= this.ENGLISH_SURPRISE_THRESHOLD;
-      const coverageOK = coverage >= this.ENGLISH_FINETYPE_MIN;
-      if (!surpriseOK || !coverageOK) {
+      if (surprise > this.ENGLISH_SURPRISE_THRESHOLD || coverage < this.ENGLISH_FINETYPE_MIN) {
         rejected++;
         continue;
       }
-      this._learnClauseInternal(clause, { lr: 0.0001 });
+      // Lock 1-passed clause — fire Hebbian at the clamped live-chat rate.
+      const snapshot = new Float64Array(this.lastSpikes);
+      this.synapses.rewardModulatedUpdate(snapshot, snapshot, 0, lr);
+      this._crossRegionHebbian(lr);
       accepted++;
     }
     return { accepted, rejected };
-  }
-
-  /**
-   * T14.16.5 — Internal Hebbian update for a single clause. Lock 2
-   * enforces the hard rate cap: when `_inCurriculumMode` is false
-   * (live chat path), any `lr > 0.0001` gets clamped to 0.0001.
-   * Curriculum mode bypasses the cap so `Curriculum.runFromCorpora`
-   * can fire at full 0.012. The cap is enforced at the cluster level
-   * so no caller can accidentally bypass it.
-   */
-  _learnClauseInternal(clause, opts = {}) {
-    let lr = opts.lr ?? 0.0001;
-    if (!this._inCurriculumMode && lr > 0.0001) lr = 0.0001;
-    // Hebbian fires on the current spike snapshot at the clamped rate.
-    // This is intentionally light — full Hebbian on the clause's letter
-    // stream already happened via the readText pass upstream. Here we
-    // just reinforce the current cortex state, which reflects the
-    // clause content after reading.
-    const pre = new Float64Array(this.lastSpikes);
-    const post = new Float64Array(this.lastSpikes);
-    this.synapses.rewardModulatedUpdate(pre, post, 0, lr);
-    this._crossRegionHebbian(lr);
   }
 
   /**
@@ -1250,16 +1291,6 @@ export class NeuronCluster {
     return this.regionReadout('sem', 300);
   }
 
-  // T14.17 (2026-04-14) — `hearPhoneme` deleted. The auditory template
-  // injection path that T14.11 originally wired through this method is
-  // now inline in `readText` for the text-path subvocalization case
-  // (Pulvermüller 2005 silent reading activates auditory cortex via
-  // covert articulation). When mic input gets wired in a future
-  // milestone, it will use a new `hearAudio(spectrumFeatures)` method
-  // that consumes real FFT features from `AuditoryCortex.process()`,
-  // not this synthetic-template stub. `auditoryCortex.renderPhonemeTemplate`
-  // still exists and is called directly from `readText`.
-
   /**
    * T14.6 — Cortex tick-driven motor emission.
    *
@@ -1565,6 +1596,65 @@ export class NeuronCluster {
    * whose magnitude exceeds `ojaThreshold` — prevents runaway when the
    * corpus is large. Bounded growth, unbounded learning time.
    *
+   * Session 111 — Anti-Hebbian pair reinforcement primitive.
+   *
+   * Bidirectionally adjusts recurrent synapses for a (src → correct, src → wrong)
+   * triple to fix sequence-probe mistakes. Positive Hebbian on (src, correct)
+   * grows that association; negative anti-Hebbian on (src, wrong) shrinks the
+   * mistaken one. Without the negative half wrong associations never fade —
+   * they stay baseline-strong while correct ones grow, and the softmax keeps
+   * picking the wrong target even after rounds of positive reinforcement.
+   * This is the Math-K SEQ fix (Session 111 FINALIZED entry).
+   *
+   * Operates on cortex sub-region one-hot patterns laid out via `groupSize`
+   * tiling — each one-hot dim spans `floor(regionSize / dim)` neurons so the
+   * pattern occupies the full region. Same tiling curriculum teach uses, same
+   * synapse matrix (the intra-cluster recurrent weights).
+   *
+   * @param {object} opts
+   * @param {string} opts.region — sub-region name (e.g., 'letter', 'phon')
+   * @param {Float32Array|ArrayLike<number>} opts.srcOneHot — source symbol
+   * @param {Float32Array|ArrayLike<number>} opts.correctOneHot — correct next symbol
+   * @param {Float32Array|ArrayLike<number>} [opts.wrongOneHot] — wrong next
+   *   symbol the probe produced (optional; if absent only positive half fires)
+   * @param {number} [opts.posLr=this.learningRate*10] — strengthen rate for correct pair
+   * @param {number} [opts.negLr=-this.learningRate*5] — weaken rate for wrong pair
+   * @param {number} [opts.reps=100] — iterations of both updates
+   */
+  hebbianPairReinforce(opts) {
+    if (!opts || !opts.region || !opts.srcOneHot || !opts.correctOneHot) return;
+    const region = this.regions[opts.region];
+    if (!region || region.end <= region.start) return;
+    const regionSize = region.end - region.start;
+    const dim = opts.srcOneHot.length;
+    const groupSize = Math.max(1, Math.floor(regionSize / dim));
+    const posLr = opts.posLr ?? this.learningRate * 10;
+    const negLr = opts.negLr ?? -this.learningRate * 5;
+    const reps = opts.reps ?? 100;
+
+    const buildPattern = (oneHot) => {
+      const p = new Float64Array(this.size);
+      for (let d = 0; d < oneHot.length; d++) {
+        if (oneHot[d] <= 0) continue;
+        for (let n = 0; n < groupSize; n++) {
+          const idx = region.start + d * groupSize + n;
+          if (idx < region.end) p[idx] = 1.0;
+        }
+      }
+      return p;
+    };
+
+    const pre = buildPattern(opts.srcOneHot);
+    const correctPost = buildPattern(opts.correctOneHot);
+    const wrongPost = opts.wrongOneHot ? buildPattern(opts.wrongOneHot) : null;
+
+    for (let i = 0; i < reps; i++) {
+      this.synapses.hebbianUpdate(pre, correctPost, posLr);
+      if (wrongPost) this.synapses.hebbianUpdate(pre, wrongPost, negLr);
+    }
+  }
+
+  /**
    * @param {Float32Array[]|Float64Array[]} embSequence — per-word 50d embeddings
    * @param {object} [opts]
    * @param {number} [opts.ticksPerWord=3]
@@ -1806,25 +1896,6 @@ export class ClusterProjection {
     // Sparse projection matrix (CSR) — target.size rows × source.size cols
     this._sparse = new SparseMatrix(target.size, source.size, { wMin: -0.5, wMax: 1.0 });
     this._sparse.initRandom(density, 0.7, strength);
-
-    // Legacy dense weights accessor for persistence compatibility
-    // persistence.js reads projection.weights — getter provides dense view
-  }
-
-  /**
-   * Dense weights accessor for backward compatibility.
-   * Persistence.js and other code reads this.weights.
-   */
-  get weights() {
-    return this._sparse.toDense();
-  }
-
-  set weights(arr) {
-    // Convert dense array to sparse
-    this._sparse = SparseMatrix.fromDense(
-      arr, this.target.size, this.source.size, 0.001,
-      { wMin: -0.5, wMax: 1.0 }
-    );
   }
 
   /**

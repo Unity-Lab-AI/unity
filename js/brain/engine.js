@@ -16,7 +16,7 @@
  * No external dependencies. Pure ES modules. 60fps.
  */
 
-import { NeuronCluster, ClusterProjection } from './cluster.js';
+import { NeuronCluster, ClusterProjection, CLUSTER_FRACTIONS, clusterSizesFor } from './cluster.js';
 import { Cortex, Hippocampus, Amygdala, BasalGanglia, Cerebellum, Hypothalamus } from './modules.js';
 import { MysteryModule } from './mystery.js';
 import { OscillatorNetwork } from './oscillations.js';
@@ -62,34 +62,13 @@ const COUPLING_BASE = 2.5;
 const MEMORY_SALIENCE_THRESHOLD = 0.6;
 const RECALL_ERROR_THRESHOLD = 0.4;
 
-// T14.0 — Cluster sizes are FRACTIONS of TOTAL_NEURONS, not hardcoded
-// constants. The same fractions hold at any scale — TOTAL_NEURONS=6700
-// (default client) gives the sizes below; TOTAL_NEURONS=200_000_000
-// (datacenter server) gives proportionally larger clusters with the
-// same biological proportions.
-//
-//   cortex       30%   (was 30% via 300/1000)
-//   hippocampus  10%
-//   amygdala      8%
-//   basalGanglia  8%
-//   cerebellum   40%   (largest cluster — motor + error correction)
-//   hypothalamus  2%
-//   mystery       2%
-//
-// Total = 100%. Fractions sum to 1.0 exactly.
-const CLUSTER_FRACTIONS = {
-  cortex:       0.30,
-  hippocampus:  0.10,
-  amygdala:     0.08,
-  basalGanglia: 0.08,
-  cerebellum:   0.40,
-  hypothalamus: 0.02,
-  mystery:      0.02,
-};
-
-const CLUSTER_SIZES = Object.fromEntries(
-  Object.entries(CLUSTER_FRACTIONS).map(([name, frac]) => [name, Math.floor(TOTAL_NEURONS * frac)])
-);
+// T14.0 — Cluster sizes derived from shared `CLUSTER_FRACTIONS` in
+// cluster.js (Session 113 CLEAN.D2 unified client + server). Same
+// fractions hold at any scale — TOTAL_NEURONS=6700 (default client)
+// gives the sizes below; TOTAL_NEURONS=200_000_000 (datacenter server)
+// gives proportionally larger clusters with identical biological
+// proportions.
+const CLUSTER_SIZES = clusterSizesFor(TOTAL_NEURONS);
 
 // ── UnityBrain ───────────────────────────────────────────────────────
 
@@ -1029,7 +1008,6 @@ export class UnityBrain extends EventEmitter {
       response = await this.innerVoice.languageCortex.generateAsync(
         dictionary,
         brainArousal,
-        brainValence,
         brainCoherence,
         {
           predictionError: state.cortex?.predictionError ?? 0,
@@ -1161,7 +1139,6 @@ export class UnityBrain extends EventEmitter {
       quip = this.innerVoice.languageCortex.generate(
         this.innerVoice.dictionary,
         state.amygdala?.arousal ?? 0.8,
-        state.amygdala?.valence ?? 0,
         state.oscillations?.coherence ?? 0.5,
         {
           predictionError: 0,
@@ -1231,7 +1208,6 @@ export class UnityBrain extends EventEmitter {
       prompt = this.innerVoice.languageCortex.generate(
         this.innerVoice.dictionary,
         state.amygdala?.arousal ?? 0.8,
-        state.amygdala?.valence ?? 0,
         state.oscillations?.coherence ?? 0.5,
         {
           predictionError: state.cortex?.predictionError ?? 0,
