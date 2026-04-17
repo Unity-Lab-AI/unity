@@ -285,7 +285,115 @@ export class Curriculum {
     // her output can reference her learning state ("thinking about my
     // letters", "still working on calculus"). Null until first probe.
     this.currentFocus = null;
+
+    // T14.24 Session 114.11 — LAW 7 retention + gains telemetry.
+    // Per-subject per-grade per-probe pass/fail history. Each entry is
+    // {sessionId, pass, timestamp, prodRate}. Gate runs append an entry.
+    // Retention = recent entries still pass after intervening curriculum
+    // runs (binding didn't drift). Gains = pass rate climbs across
+    // repeated runs for the same cell (learning improving). Surfaces
+    // via getRetention(), getGains(), exportGateHistory() for dashboard
+    // integration. Gee 2026-04-17 binding: "actual knowed retention and
+    // gains".
+    this._gateHistory = new Map();  // key: `${subject}|${grade}|${probeId}`
+    this._sessionId = `s${Date.now().toString(36)}`;
   }
+
+  /**
+   * Record a gate result. Called by every grade gate at the end of
+   * its run. Appends {sessionId, pass, prodRate, timestamp} to the
+   * per-cell history. History bounded at 200 entries per cell
+   * (rolling; older entries evict first-in-first-out).
+   *
+   * @param {string} subject — 'math'/'ela'/'science'/'social'/'art'/'life'
+   * @param {string} grade — 'kindergarten'/'grade1'/...
+   * @param {string} probeId — 'overall' for whole-grade pass, or specific probe name
+   * @param {boolean} pass
+   * @param {number} [prodRate] — production probe pass rate (0-1) for detailed history
+   */
+  _recordGateHistory(subject, grade, probeId, pass, prodRate) {
+    const key = `${subject}|${grade}|${probeId}`;
+    let history = this._gateHistory.get(key);
+    if (!history) {
+      history = [];
+      this._gateHistory.set(key, history);
+    }
+    history.push({
+      sessionId: this._sessionId,
+      pass: !!pass,
+      prodRate: typeof prodRate === 'number' ? prodRate : (pass ? 1 : 0),
+      timestamp: Date.now(),
+    });
+    if (history.length > 200) history.shift();
+  }
+
+  /**
+   * Retention rate — how many of the last N runs for this cell passed.
+   * Measures whether the binding SURVIVES subsequent curriculum runs
+   * (i.e. isn't drifting away).
+   */
+  getRetention(subject, grade, probeId = 'overall', lastN = 10) {
+    const key = `${subject}|${grade}|${probeId}`;
+    const history = this._gateHistory.get(key);
+    if (!history || history.length === 0) return null;
+    const recent = history.slice(-lastN);
+    const passCount = recent.filter(h => h.pass).length;
+    return {
+      retentionRate: passCount / recent.length,
+      samples: recent.length,
+      mostRecent: recent[recent.length - 1],
+    };
+  }
+
+  /**
+   * Gains trend — slope of pass rate across recent runs. Positive =
+   * Unity's learning is improving over time; zero = stable; negative =
+   * drifting away. Uses simple linear regression over lastN entries.
+   */
+  getGains(subject, grade, probeId = 'overall', lastN = 20) {
+    const key = `${subject}|${grade}|${probeId}`;
+    const history = this._gateHistory.get(key);
+    if (!history || history.length < 2) return null;
+    const recent = history.slice(-lastN);
+    const n = recent.length;
+    // Linear regression on (index, prodRate)
+    let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+    for (let i = 0; i < n; i++) {
+      sumX += i;
+      sumY += recent[i].prodRate;
+      sumXY += i * recent[i].prodRate;
+      sumX2 += i * i;
+    }
+    const denom = n * sumX2 - sumX * sumX;
+    const slope = denom !== 0 ? (n * sumXY - sumX * sumY) / denom : 0;
+    return {
+      slope,  // rate of change in prodRate per run
+      trend: slope > 0.01 ? 'improving' : slope < -0.01 ? 'declining' : 'stable',
+      samples: n,
+      firstProdRate: recent[0].prodRate,
+      lastProdRate: recent[n - 1].prodRate,
+    };
+  }
+
+  /**
+   * Full history export for dashboard / diagnostic UI.
+   */
+  exportGateHistory() {
+    const out = {};
+    for (const [key, entries] of this._gateHistory.entries()) {
+      out[key] = entries.slice();  // copy so caller doesn't mutate
+    }
+    return out;
+  }
+
+  /**
+   * Start a fresh session ID — called when a new curriculum run starts
+   * so session-level retention can be tracked across boot/retrain cycles.
+   */
+  startNewGateSession() {
+    this._sessionId = `s${Date.now().toString(36)}`;
+  }
+
 
   /**
    * Start the interval-driven background probe loop. Call this AFTER
@@ -3312,11 +3420,13 @@ export class Curriculum {
     const prodFailSummary = prodResult.fails && prodResult.fails.length > 0
       ? ' [FAIL: ' + prodResult.fails.slice(0, 5).map(f => `"${f.q}"→"${String(f.emitted).slice(0, 30)}"`).join('; ') + ']'
       : '';
-    return {
+    const _elaKResult = {
       pass,
       reason: `READ ${readPass}/${N} (${pct(readRate)}%), THINK ${thinkPass}/${N} (${pct(thinkRate)}%), TALK ${talkPass}/${N} (${pct(talkRate)}%), SEQ ${seqPass}/${N - 1} (${pct(seqRate)}%), PROD ${prodResult.pass}/${prodResult.total} (${pct(prodRate)}%)${prodFailSummary}`,
       metrics: { readRate, thinkRate, talkRate, seqRate, prodRate, prodFails: prodResult.fails },
     };
+    this._recordGateHistory('ela', 'kindergarten', 'overall', pass, prodRate);
+    return _elaKResult;
   }
 
   // ═══════════════════════════════════════════════════════════════════
@@ -4166,11 +4276,13 @@ export class Curriculum {
     const prodFailSummary = prodResult.fails && prodResult.fails.length > 0
       ? ' [FAIL: ' + prodResult.fails.slice(0, 5).map(f => `"${f.q}"→"${String(f.emitted).slice(0, 30)}"`).join('; ') + ']'
       : '';
-    return {
+    const _mathKResult = {
       pass,
       reason: `READ ${readPass}/${N} (${pct(readRate)}%), THINK ${thinkPass}/${N} (${pct(thinkRate)}%), TALK ${talkPass}/${N} (${pct(talkRate)}%), SEQ ${seqPass}/${N - 1} (${pct(seqRate)}%)${seqFails.length > 0 ? ' [FAIL: ' + seqFails.join(', ') + ']' : ''}, ORDER ${orderPass}/${orderTotal} (${pct(orderRate)}%), SUCC ${succResult.pass}/${succResult.total} (${pct(succRate)}%), SKIP10 ${skipResult.pass}/${skipResult.total} (${pct(skipRate)}%), MAKETEN ${makeTenResult.pass}/${makeTenResult.total} (${pct(makeTenRate)}%), TEEN ${teenResult.pass}/${teenResult.total} (${pct(teenRate)}%), ATTR ${attrResult.pass}/${attrResult.total} (${pct(attrRate)}%), CLASS ${classifyResult.pass}/${classifyResult.total} (${pct(classifyRate)}%), SHAPE-S ${shapeSidesResult.pass}/${shapeSidesResult.total} (${pct(shapeSidesRate)}%), SHAPE-D ${shapeDimResult.pass}/${shapeDimResult.total} (${pct(shapeDimRate)}%), SHAPE-C ${shapeComposeResult.pass}/${shapeComposeResult.total} (${pct(shapeComposeRate)}%), PROD ${prodResult.pass}/${prodResult.total} (${pct(prodRate)}%)${prodFailSummary}`,
       metrics: { readRate, thinkRate, talkRate, seqRate, orderRate, seqFails, succRate, skipRate, makeTenRate, teenRate, attrRate, classifyRate, shapeSidesRate, shapeDimRate, shapeComposeRate, prodRate, prodFails: prodResult.fails },
     };
+    this._recordGateHistory('math', 'kindergarten', 'overall', pass, prodRate);
+    return _mathKResult;
   }
 
   // ═══════════════════════════════════════════════════════════════════
@@ -7474,11 +7586,13 @@ export class Curriculum {
     const prodFailSummary = prodResult.fails && prodResult.fails.length > 0
       ? ' [FAIL: ' + prodResult.fails.slice(0, 5).map(f => `"${f.q}"→"${String(f.emitted).slice(0, 30)}"`).join('; ') + ']'
       : '';
-    return {
+    const _sciKResult = {
       pass,
       reason: `PROD ${prodResult.pass}/${prodResult.total} (${pct(prodRate)}%)${prodFailSummary}`,
       metrics: { prodRate, prodFails: prodResult.fails },
     };
+    this._recordGateHistory('science', 'kindergarten', 'overall', pass, prodRate);
+    return _sciKResult;
   }
 
   // ═══════════════════════════════════════════════════════════════════
@@ -7713,11 +7827,13 @@ export class Curriculum {
     const prodFailSummary = prodResult.fails && prodResult.fails.length > 0
       ? ' [FAIL: ' + prodResult.fails.slice(0, 5).map(f => `"${f.q}"→"${String(f.emitted).slice(0, 30)}"`).join('; ') + ']'
       : '';
-    return {
+    const _socKResult = {
       pass,
       reason: `PROD ${prodResult.pass}/${prodResult.total} (${pct(prodRate)}%)${prodFailSummary}`,
       metrics: { prodRate, prodFails: prodResult.fails },
     };
+    this._recordGateHistory('social', 'kindergarten', 'overall', pass, prodRate);
+    return _socKResult;
   }
 
   // ═══════════════════════════════════════════════════════════════════
@@ -7933,11 +8049,13 @@ export class Curriculum {
     const prodFailSummary = prodResult.fails && prodResult.fails.length > 0
       ? ' [FAIL: ' + prodResult.fails.slice(0, 5).map(f => `"${f.q}"→"${String(f.emitted).slice(0, 30)}"`).join('; ') + ']'
       : '';
-    return {
+    const _artKResult = {
       pass,
       reason: `PROD ${prodResult.pass}/${prodResult.total} (${pct(prodRate)}%)${prodFailSummary}`,
       metrics: { prodRate, prodFails: prodResult.fails },
     };
+    this._recordGateHistory('art', 'kindergarten', 'overall', pass, prodRate);
+    return _artKResult;
   }
 
   // ═══════════════════════════════════════════════════════════════════
@@ -18209,11 +18327,13 @@ export class Curriculum {
     const prodFailSummary = prodResult.fails && prodResult.fails.length > 0
       ? ' [FAIL: ' + prodResult.fails.slice(0, 5).map(f => `"${f.q}"→"${String(f.emitted).slice(0, 30)}"`).join('; ') + ']'
       : '';
-    return {
+    const _lifeKResult = {
       pass,
       reason: `PROD ${prodResult.pass}/${prodResult.total} (${pct(prodRate)}%)${prodFailSummary}`,
       metrics: { prodRate, prodFails: prodResult.fails },
     };
+    this._recordGateHistory('life', 'kindergarten', 'overall', pass, prodRate);
+    return _lifeKResult;
   }
 
   // ── GRADE 1 (age 6) — reading clicks, dad fading ────────────────

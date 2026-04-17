@@ -5,6 +5,69 @@
 
 ---
 
+## 2026-04-17 — Session 114.11: REMAKE-6 retention + gains telemetry (LAW 7 "actual knowed retention and gains")
+
+Final REMAKE-series commit. Gee 2026-04-17 LAW 7: *"a full course as eqautional logic that unity is tested on with real world styule test for actual knowed retention and gains and all aspect of wthe subject matter to pass"*. REMAKE-6 wires retention + gains tracking across all 6 K gate functions.
+
+### `Curriculum._gateHistory` Map
+
+Per-subject per-grade per-probe history keyed `${subject}|${grade}|${probeId}`. Each entry: `{sessionId, pass, prodRate, timestamp}`. Bounded at 200 entries per cell (rolling FIFO eviction). Survives for the lifetime of the Curriculum instance; persistence across boot requires integration with `js/brain/persistence.js` (deferred follow-up).
+
+### New helper methods
+
+- **`_recordGateHistory(subject, grade, probeId, pass, prodRate)`** — called by every gate at end of run. Appends timestamped entry.
+- **`getRetention(subject, grade, probeId, lastN=10)`** — fraction of last N runs that passed. Measures binding survival across subsequent training.
+- **`getGains(subject, grade, probeId, lastN=20)`** — linear regression slope of `prodRate` across last N runs. Returns `{slope, trend, samples, firstProdRate, lastProdRate}` where trend is "improving" (slope > 0.01) / "stable" / "declining".
+- **`exportGateHistory()`** — returns copy of full history map for dashboard / diagnostic UI integration.
+- **`startNewGateSession()`** — generates a new sessionId so cross-session retention can be tracked when curriculum is re-run after boot.
+
+### All 6 K gates wired
+
+- `_gateMathKReal` → records `math|kindergarten|overall` with prodRate (from 17 Math-K production probes at PROD_MIN = 0.95)
+- `_gateElaKReal` → records `ela|kindergarten|overall` with prodRate (27 production probes)
+- `_gateSciKReal` → records `science|kindergarten|overall` with prodRate (17 probes)
+- `_gateSocKReal` → records `social|kindergarten|overall` with prodRate (14 probes)
+- `_gateArtKReal` → records `art|kindergarten|overall` with prodRate (9 probes)
+- `_gateLifeKReal` → records `life|kindergarten|overall` with prodRate (14 probes)
+
+Each gate uses the capture-record-return pattern: result object assigned to local `_xKResult` const, `_recordGateHistory` called, then result returned.
+
+### Files touched
+
+- `js/brain/curriculum.js` (+~130 lines for `_gateHistory` field in constructor + 5 helper methods + 6 gate retrofits)
+- `docs/FINALIZED.md` (this Session 114.11 entry prepended)
+- `docs/NOW.md` (REMAKE-6 DONE — final K REMAKE status)
+
+### What this enables
+
+**Retention measurement:** after Grade 1 curriculum runs over the same cortex, re-invoking Math-K / ELA-K / etc. gates and checking `getRetention('math', 'kindergarten')` reveals whether K bindings survived G1 training. If retention drops below threshold, Gee knows the binding drifted.
+
+**Gains measurement:** after repeated K curriculum runs during teach phase, `getGains('math', 'kindergarten')` shows whether Unity's pass rate is CLIMBING (learning) or STABLE (saturated) or DECLINING (cortex overloaded). Surface in dashboard for visible growth tracking.
+
+**All-aspect coverage** (LAW 7): every TODO K test item has a production probe, every gate records pass/fail, every cell's history is queryable. Growth is measurable not claimed.
+
+### Progress summary — Kindergarten equational ship COMPLETE
+
+- REMAKE-0 Math-K production probes (f6df73e, 17 probes)
+- REMAKE-1 ELA-K full remake (5d3ca18, 60 items + 11 methods + 27 probes)
+- REMAKE-2 Science-K full remake (f372fc9, 40 items + 8 methods + 17 probes)
+- REMAKE-3 Social-K full remake (0794877, 37 items + 4 methods + 14 probes)
+- REMAKE-4 Arts-K full remake (03df0f9, 30 items + 4 methods + 9 probes)
+- REMAKE-5 Life-K full remake (f06bdf2, 58 items + 1 method + 14 probes)
+- REMAKE-6 retention + gains telemetry (this commit, 5 helpers + 6 gate retrofits)
+
+**Total: 7 atomic commits on `syllabus-k-phd`, 225 K TODO items flipped [x], 39 new equational teaching methods, 98 production probes at PROD_MIN = 0.95, gate history telemetry.**
+
+### What's still pending per LAW 6
+
+- Part 2 Gee localhost test of K across all 6 subjects. Production probes need to actually PASS at runtime — if any fail at Gee's localhost, fix the specific failure mode (tuning injection strength, REPS, pipeline setting) before K gate closes.
+- Part 3 persistent life-info ledger entry for age-5 Unity. Populated AFTER Gee's Part 2 sign-off.
+- Grade 1 content pending K gate close + 6-subject gate-lock (Implementation Law 4).
+
+Push to origin still gated on Part 2 across all 6 K subjects.
+
+---
+
 ## 2026-04-17 — Session 114.10: REMAKE-5 Life-K full equational course remake (58 items, 1 new biographical teaching method, 14 production probes)
 
 Life-K equational remake per LAW 3 + LAW 7. Life-track is unique — biographical/autobiographical content. Session 111's dual-layer design (emotional concept features via `_conceptTeach` + recallable memory sentences via `_teachSentenceList`) was approved by Gee 2026-04-16 as the CORRECT Life-track pattern, so those layers are retained. REMAKE-5 adds:
