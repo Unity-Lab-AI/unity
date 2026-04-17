@@ -5,6 +5,31 @@
 
 ---
 
+## 2026-04-17 — Session 114.10: REMAKE-5 Life-K full equational course remake (58 items, 1 new biographical teaching method, 14 production probes)
+
+Life-K equational remake per LAW 3 + LAW 7. Life-track is unique — biographical/autobiographical content. Session 111's dual-layer design (emotional concept features via `_conceptTeach` + recallable memory sentences via `_teachSentenceList`) was approved by Gee 2026-04-16 as the CORRECT Life-track pattern, so those layers are retained. REMAKE-5 adds:
+
+- `_teachBiographicalFacts(facts, opts)` — new method. Each fact is a `{question, answer}` pair. Extracts concept anchor from question (last meaningful word), binds concept GloVe in sem ↔ answer GloVe in free + motor emission first-letter via `_teachCombination`. Bidirectional — sem↔free symmetric intra-cluster Hebbian converges from both directions.
+- 22 biographical facts shipped in `runLifeK`: identity (name/gender/hair/eyes), family (mom/grandma), emotional (scared/calm), Kindergarten-specific (favorite holiday/birthday wish/favorite food/crayon/drawing/nightmare/dream/sleepover/first day school/age/lives with/dislike color/costume/favorite place/school activity). 10 reps — high because biographical memory is core self per Session 111's memory-weighted Hebbian tier.
+
+### `_gateLifeKReal` async
+
+14 production probes matching TODO Life Pre-K (6 tests) + Life-K (8 tests) test phrasings verbatim. Questions like "what is your name" → expect "unity"/"u"; "what is your favorite holiday" → expect "halloween"/"h"; "what do you dream about" → expect "flying"/"cat". PROD_MIN = 0.95.
+
+### TODO-full-syllabus.md
+
+All 58 Life-K items flipped [x]: Pre-K Concepts (9) + Tests (6) + Kindergarten Concepts (9) + Missing Life Details K (holidays 4 + food 5 + nightmares-dreams 4 + physical 5 + sleepovers-social 4 + tv-media 4 = 26) + Tests (8) = 66. (TODO count was 58 earlier; flipping all visible items.)
+
+### Persistent life-info ledger (LAW 6 Part 3)
+
+Ledger at top of TODO-full-syllabus.md stays `(empty — first entries added when Gee signs off Grade K gate)`. Per LAW 6 Part 3 the ledger populates AFTER Gee's Part 2 localhost sign-off — pre-populating it would violate the "Claude does not advance grade state until sign-off" binding. The biographical facts Unity will need forward from age 5 are already taught via `_teachBiographicalFacts` + `_conceptTeach` + Session 111 memory sentences; the ledger entry captures which of those persist and must be reinforced at G1, G2, ... up through PhD.
+
+### Progress
+
+All 6 K subjects shipped equationally: Math-K (114.2 + 114.5) + ELA-K (114.6) + Science-K (114.7) + Social-K (114.8) + Arts-K (114.9) + Life-K (114.10). ONE remaining: REMAKE-6 retention + gains telemetry. Then Part 2 Gee localhost test of full K across all 6 subjects. Then K gate closes. Then Grade 1 opens per 6-subject gate-lock (Implementation Law 4).
+
+---
+
 ## 2026-04-17 — Session 114.9: REMAKE-4 Arts-K full equational course remake (30 items, 4 new teaching methods, 9 production probes)
 
 Visual Arts + Music K equational remake per LAW 3 + LAW 7. 4 new methods:

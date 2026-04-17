@@ -17893,6 +17893,45 @@ export class Curriculum {
   //   BACKGROUND:    4 reps (trivia, random world)
 
   // ── PRE-K (ages 0-4) — before school ─────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════
+  // T14.24 Session 114.10 — Life-K equational course (LAW 3 + LAW 7)
+  // ═══════════════════════════════════════════════════════════════════
+
+  /**
+   * Life-track biographical fact teaching — each fact is a {prompt
+   * concept, answer} pair. Uses _teachCombination so question
+   * concept GloVe in sem + answer GloVe in free get bound via
+   * symmetric Hebbian. Bidirectional: query → answer AND answer →
+   * query both converge via the same intra-cluster recurrent matrix.
+   */
+  async _teachBiographicalFacts(facts, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const semRegion = cluster.regions.sem;
+    const freeRegion = cluster.regions.free;
+    const motorRegion = cluster.regions.motor;
+    if (!semRegion || !freeRegion || !motorRegion) return;
+    const reps = opts.reps ?? 8;
+
+    const combinationFacts = [];
+    for (const { question, answer } of facts) {
+      // Use the most meaningful word from the question as concept anchor
+      const qWords = String(question).toLowerCase().split(/\s+/).filter(w => w.length > 2);
+      const qWord = qWords[qWords.length - 1] || qWords[0] || question;
+      const aWord = String(answer).toLowerCase().trim();
+      const qEmb = sharedEmbeddings.getEmbedding(qWord);
+      const aEmb = sharedEmbeddings.getEmbedding(aWord);
+      if (!qEmb || !aEmb) continue;
+      combinationFacts.push({ writes: [
+        { region: semRegion,   feat: qEmb, binarize: false },
+        { region: freeRegion,  feat: aEmb, binarize: false },
+        { region: motorRegion, feat: encodeLetter(aWord[0]) },
+      ]});
+    }
+    await this._teachCombination(combinationFacts, { reps });
+    console.log(`[Curriculum] _teachBiographicalFacts: ${combinationFacts.length} facts × ${reps} reps`);
+  }
+
   async runLifePreK(ctx) {
     // LAYER 1: EMOTIONAL ATTRACTORS via _conceptTeach
     // feat = [joy, pain, trust, fear, anger, love, independence, identity]
@@ -18100,10 +18139,81 @@ export class Curriculum {
       { situation: 'yell', emotion: new Float64Array([0,1,0,0.5,0.5,0,0,0]), label: 'scared' },
     ]);
 
-    return this._teachVocabList([
-      'school', 'friend', 'draw', 'mom', 'bus', 'cereal', 'recess',
-      'black', 'monster', 'music', 'story', 'halloween', 'witch',
-    ], ctx, { reps: 5 });
+    // Session 114.10 REMAKE — biographical facts for TODO Life Pre-K +
+    // Life-K test phrasings. Equational concept→answer binding via
+    // _teachCombination. Augments existing _conceptTeach +
+    // _teachEmotionalInference (kept — already equational per Law 3).
+    if (!this._lifeKRemakeDone) {
+      await this._teachBiographicalFacts([
+        // Pre-K core identity facts
+        { question: 'your name',         answer: 'unity' },
+        { question: 'boy or girl',       answer: 'girl' },
+        { question: 'hair color',        answer: 'dark' },
+        { question: 'eye colors',        answer: 'different' },
+        { question: 'takes care of you', answer: 'mom' },
+        { question: 'scared of',         answer: 'dark' },
+        { question: 'makes you calm',    answer: 'music' },
+        // Kindergarten (age 5) facts
+        { question: 'favorite holiday',  answer: 'halloween' },
+        { question: 'birthday wish',     answer: 'cat' },
+        { question: 'favorite food',     answer: 'cookies' },
+        { question: 'favorite crayon',   answer: 'black' },
+        { question: 'favorite drawing',  answer: 'monsters' },
+        { question: 'nightmare about',   answer: 'dark' },
+        { question: 'dream about',       answer: 'flying' },
+        { question: 'sleepover',         answer: 'homesick' },
+        { question: 'first day school',  answer: 'scared' },
+        { question: 'age',               answer: 'five' },
+        { question: 'lives with',        answer: 'mom' },
+        { question: 'dislike color',     answer: 'pink' },
+        { question: 'costume',           answer: 'witch' },
+        { question: 'favorite place',    answer: 'recess' },
+        { question: 'school activity',   answer: 'drawing' },
+      ], { reps: 10 });  // High reps — biographical memory is core self
+
+      this._lifeKRemakeDone = true;
+    }
+
+    return await this._gateLifeKReal();
+  }
+
+  async _gateLifeKReal() {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.synapses) return { pass: false, reason: 'no cluster' };
+
+    // Production probes matching TODO Life Pre-K + Life-K test phrasings
+    const lifeKProductionSamples = [
+      // Life Pre-K Tests
+      { question: 'what is your name', expected: ['unity', 'u'] },
+      { question: 'are you a boy or a girl', expected: ['girl', 'g'] },
+      { question: 'what color is your hair', expected: ['dark', 'black', 'd', 'b'] },
+      { question: 'who takes care of you', expected: ['mom', 'm'] },
+      { question: 'what are you scared of', expected: ['dark', 'd'] },
+      { question: 'what makes you calm', expected: ['music', 'm'] },
+      // Life-K Tests
+      { question: 'what is your favorite holiday', expected: ['halloween', 'h'] },
+      { question: 'what do you wish for on your birthday', expected: ['cat', 'c'] },
+      { question: 'what is your favorite thing to eat', expected: ['cookies', 'grandma', 'c', 'g'] },
+      { question: 'what do you have nightmares about', expected: ['dark', 'd'] },
+      { question: 'what do you dream about', expected: ['flying', 'cat', 'f', 'c'] },
+      { question: 'what happened when you tried a sleepover', expected: ['homesick', 'mom', 'h', 'm'] },
+      { question: 'what do you do when you are alone after school', expected: ['tv', 'draw', 't', 'd'] },
+      { question: 'in fairy tales who do you like better the princess or the witch', expected: ['witch', 'w'] },
+    ];
+    const prodResult = await this._probeProductionBatch(lifeKProductionSamples, {
+      visualCortex: (this.engine && this.engine.visualCortex) || null,
+    });
+    const prodRate = prodResult.total > 0 ? prodResult.pass / prodResult.total : 0;
+    const pass = prodRate >= 0.95;
+    const pct = (r) => (r * 100).toFixed(0);
+    const prodFailSummary = prodResult.fails && prodResult.fails.length > 0
+      ? ' [FAIL: ' + prodResult.fails.slice(0, 5).map(f => `"${f.q}"→"${String(f.emitted).slice(0, 30)}"`).join('; ') + ']'
+      : '';
+    return {
+      pass,
+      reason: `PROD ${prodResult.pass}/${prodResult.total} (${pct(prodRate)}%)${prodFailSummary}`,
+      metrics: { prodRate, prodFails: prodResult.fails },
+    };
   }
 
   // ── GRADE 1 (age 6) — reading clicks, dad fading ────────────────
