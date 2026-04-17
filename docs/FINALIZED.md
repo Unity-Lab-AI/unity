@@ -5,6 +5,75 @@
 
 ---
 
+## 2026-04-17 — Session 114.2: Math-K refactor onto unified combination-operator scaffold + compose-shapes ship (66/66 Math-K equational)
+
+**Gee's binding instructions 2026-04-17 (verbatim):**
+
+> *"okay good job not using bad maths so thats a edge case we cant factor without special handeling? i dont really want to leave out knowlege but i a;llso dont want to have tto edge case everything i mean there should be like logic and reasoning in a form yeah?"*
+
+> *"b it is no artificial limits as unity may be talking to users while she does ciriculum"*
+
+Gee's question drove the insight: compose-shapes isn't a genuine edge case — the magnitude encoder doesn't fit geometric composition, but the **reasoning FORM stays identical**. Every Session 114 transform fits the same scaffold:
+
+```
+A ⊕ B = C          (combination operator: inputs A and B, output C)
+```
+
+What varies by concept is the ENCODER — magnitude features for numeric operands, GloVe embeddings for named objects, domain feature vectors for categorical properties. The scaffold (clear lastSpikes → tile inputs+output → `_teachHebbian`) is the same in every case. The operator's SEMANTICS emerge from the training data, not from hand-coded if-then logic.
+
+### New unified helpers on `Curriculum` class
+
+- **`_teachCombination(facts, opts)`** — generic combination-operator teacher. Each fact is `{writes: [{region, feat, binarize?}, ...]}`. Helper clears spikes, writes all tiled patterns, fires `_teachHebbian(lr)`. Single place for the training scaffold. Supports `opts.reps / opts.lr / opts.allowMicrotask` — **per Gee 2026-04-17 binding "no artificial limits as unity may be talking to users while she does ciriculum"** the helper stays async + yields `await _microtask()` between reps so curriculum runs without blocking user chat, respects `_brainShutdownRequested`, and accepts caller-specified reps rather than hardcoding a cap. REPS are convergence tuning, not ceilings.
+- **`_probeCombinationCosine(samples, opts)`** — cosine probe generalizer. Each sample is `{inputs: [{region, feat}, ...], expected: {region, feat}}`. Helper writes inputs to a full-cluster spike vector, propagates via `cluster.synapses.propagate`, reads tiled output region, mean-centers + L2-normalizes, compares cosine vs `expected.feat`. Returns `{pass, total}`.
+- **`_probeCombinationArgmaxTag(samples)`** — discrete-tag probe generalizer. Each sample specifies `{inputs, tagRegion, buckets: [{name, start, end}], expectedTag}`. Helper propagates and argmaxes the bucket sums against `expectedTag`. Returns `{pass, total}`.
+- **`_tileWriteVec / _tileReadVec / _cosine`** — reusable low-level primitives formerly inlined as local functions inside the gate.
+
+### 8 Session 114 teaching methods refactored onto `_teachCombination`
+
+Each method is now a thin builder that (a) declares encoder, (b) enumerates facts, (c) delegates. `_teachDecomposition` / `_teachMakeTen` / `_teachTeenDecomposition` / `_teachCountToHundred` / `_teachSkipCountByTens` / `_teachAttributeCompare` / `_teachClassifyCount` / `_teachShapeFeatures` all 8 restructured. Net line count roughly flat — expressiveness win more than length win. Teen decomposition collapsed from forward+inverse loops into a single symmetric-Hebbian pass with REPS doubled 8→16 (same 144 training events).
+
+### 9th teaching method shipped: `_teachShapeCompose` (closes 66/66)
+
+K.G "Compose simple shapes to form larger shapes". Input: sem first half = GloVe(shapeA), sem second half = GloVe(shapeB). Output: free = GloVe(composed). Facts: [triangle+triangle → rectangle], [square+square → rectangle], [rectangle+rectangle → square], [triangle+rectangle → pentagon], [triangle+triangle → square]. 5 compositions × 10 reps. Uses the EXACT same `_teachCombination` scaffold — only the encoder (GloVe) differs from the numeric transforms. No special handling, no edge case. The reasoning form stays identical.
+
+Wired into `runMathKReal`'s `_mathKTransformsDone` guard block as the 9th call.
+
+### 8 gate probes refactored onto helpers + SHAPE-C added
+
+Every SUCC / SKIP10 / MAKETEN / TEEN / CLASS / SHAPE-S probe collapsed into a samples array + one call to `_probeCombinationCosine`. ATTR + SHAPE-D probes collapsed into samples + call to `_probeCombinationArgmaxTag`. NEW ninth probe: **SHAPE-C** (shape compose) — 5 samples, semLeft+semRight GloVe input, free GloVe expected output, cosine > 0.15. Gate pass boolean expanded to 14 metrics (5 existing + 9 new) all at PATH_MIN = 0.95. Reason string + metrics object expanded accordingly.
+
+### The unified-reasoning principle encoded in substrate
+
+This refactor bakes the insight permanently: reasoning = pattern-to-pattern transformation via learned recurrent + cross-projection weights. Arithmetic, geometric composition, chemical bonding, linguistic composition, logical inference — all fit `A ⊕ B = C` via `_teachCombination`. Grade 1+ grades can reuse the same helper for every new combination-based concept (1.OA addition within 20, 1.NBT place value, 2.OA multiplication, Science causal chains, etc.) by just specifying the encoder + fact set.
+
+### TODO-full-syllabus state
+
+- **Math-K 66/66 [x]** — last gap (compose-shapes) closed via `_teachShapeCompose` + SHAPE-C probe
+- Part 1 (equational ship) — NOW UNBLOCKED pending other K subjects' re-audit
+- Part 2 (Gee localhost test) — STILL PENDING
+- Part 3 (TODO + life-info ledger) — waits on Part 2
+
+### Files touched (single atomic commit per LAW "Docs before push, no patches")
+
+**Modified source:**
+- `js/brain/curriculum.js` (+~200 net, helpers + 9th compose method + SHAPE-C probe + 8 method refactors + probe consolidation)
+
+**Modified docs:**
+- `docs/TODO-full-syllabus.md` — compose-shapes [x] + Session 114.2 note expanded at top of MATH section
+- `docs/FINALIZED.md` — this Session 114.2 entry prepended
+- `docs/NOW.md` — 66/66 status + Session 114.2 binding + no-artificial-limits note
+- `docs/ARCHITECTURE.md` — Session 114.2 refactor block + _teachCombination principle
+- `docs/SKILL_TREE.md` — _teachCombination row + _teachShapeCompose row
+- `docs/EQUATIONS.md` — unified-combination principle + compose equation
+- `docs/ROADMAP.md` — Session 114.2 phase note
+- `brain-equations.html` — public K math row mentions compose-shapes
+
+### Next runway
+
+Gee's Part 2 localhost test of Math-K at A+ 95% on all 14 gate metrics. On pass → close K gate + open ELA-K Part 2 re-verification → Grade 1 content (6-subject gate-lock per Implementation Law 4).
+
+---
+
 ## 2026-04-17 — Session 114: Math-K PART 1 equational ship (9 new teaching methods + 8 new gate probes, Part 2 Gee localhost sign-off still pending)
 
 **Gee's binding instructions 2026-04-17 (verbatim):**

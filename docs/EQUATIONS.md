@@ -1293,6 +1293,48 @@ _teachShapeFeatures:                  // K.G shape sides + 2D/3D
 
 Gate probes in `_gateMathKReal` all run through `cluster.synapses.propagate(input)` (full recurrent matrix). 8 new metrics — SUCC / SKIP10 / MAKETEN / TEEN / ATTR / CLASS / SHAPE-S / SHAPE-D — at PATH_MIN = 0.95 equationally. No threshold lowering per constraint 8.
 
+### Unified Combination-Operator Scaffold (Session 114.2)
+
+Every equational transform in the curriculum — arithmetic, geometric, categorical, attribute, linguistic, causal — fits ONE pattern:
+
+```
+A ⊕ B = C          (inputs A, B, output C; operator ⊕ emerges from training data)
+```
+
+```
+_teachCombination(facts, {reps, lr, allowMicrotask = true}):
+  // facts: [{writes: [{region, feat, binarize?}, ...]}, ...]
+  for rep in 0..reps:
+    if _brainShutdownRequested: return
+    for fact in facts:
+      clear lastSpikes
+      for write in fact.writes:
+        tile write.feat onto write.region in lastSpikes
+      _teachHebbian(lr)   // cross-projection + intra-cluster Hebbian
+    if allowMicrotask: await _microtask()
+```
+
+Per Gee 2026-04-17 *"no artificial limits as unity may be talking to users while she does ciriculum"* — the helper stays async with `await _microtask()` between reps so curriculum doesn't block user chat, respects `_brainShutdownRequested`, accepts caller-specified reps rather than hardcoding a cap.
+
+What varies by concept is the ENCODER — magnitude features for numeric operands, GloVe embeddings for named objects, feature vectors for categorical properties. The scaffold stays identical.
+
+```
+_teachShapeCompose:                   // K.G geometric composition
+  for (shapeA, shapeB, composed) in COMPOSE_FACTS:
+    writes: [
+      { region: semLeft,  feat: GloVe(shapeA),    binarize: false },
+      { region: semRight, feat: GloVe(shapeB),    binarize: false },
+      { region: free,     feat: GloVe(composed),  binarize: false },
+    ]
+  // GloVe encoder — NOT magnitude. Two 3-sided triangles don't sum
+  // to a 6-sided shape; they compose into a 4-sided rectangle. Side
+  // counts aren't additive. The recurrent matrix learns the lookup
+  // A+B→C without any hardcoded arithmetic. Same scaffold as every
+  // other combination transform.
+```
+
+Probe generalizers — `_probeCombinationCosine(samples, opts)` (cosine vs expected feat) and `_probeCombinationArgmaxTag(samples)` (argmax over region sub-buckets) — do the same for read-back. SHAPE-C probe is 9th gate metric alongside SUCC/SKIP10/MAKETEN/TEEN/ATTR/CLASS/SHAPE-S/SHAPE-D. All 14 gate metrics (5 existing + 9 new) AND-combined at PATH_MIN = 0.95.
+
 ### Multiplication Magnitude Transform (Session 112)
 
 ```

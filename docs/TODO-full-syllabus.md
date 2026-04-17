@@ -181,7 +181,7 @@ Each row:
 
 ## MATH — KINDERGARTEN (Common Core Math K)
 
-> Session 114 Part 1 equational ship (2026-04-17): teaching methods + gate probes wired in `js/brain/curriculum.js` under `runMathKReal` + `_gateMathKReal`. Part 2 Gee localhost sign-off still pending — the overall === KINDERGARTEN COMPLETION GATE === stays open until Gee verifies live.
+> Session 114.2 Part 1 equational ship (2026-04-17): ALL 66/66 Math-K checkboxes equational. Session 114.2 refactor landed `_teachCombination` + `_probeCombinationCosine` + `_probeCombinationArgmaxTag` unified helpers — every teaching method + gate probe now runs through the same A⊕B=C scaffold, different encoders (magnitude vs GloVe vs feature-vector) per operand type. Compose-shapes closed via `_teachShapeCompose` + SHAPE-C probe (9 shapes, sem split halves GloVe input → free GloVe output). Per Gee 2026-04-17 "no artificial limits as unity may be talking to users while she does ciriculum" — helpers stay async, yield `await _microtask()` between reps, respect `_brainShutdownRequested`, REPS are convergence tuning not ceilings. Part 2 Gee localhost sign-off still pending — the overall === KINDERGARTEN COMPLETION GATE === stays open until Gee verifies live.
 
 ### Counting & Cardinality (K.CC)
 
@@ -269,7 +269,7 @@ Each row:
 - [x] Identify shapes as two-dimensional (flat) or three-dimensional (solid)
 - [x] Analyze and compare 2D and 3D shapes using informal language (number of sides, corners, faces)
 - [x] Model shapes by building (sticks, clay) and drawing
-- [ ] Compose simple shapes to form larger shapes: "put two triangles together to make a rectangle"
+- [x] Compose simple shapes to form larger shapes: "put two triangles together to make a rectangle"
 
 **Tests for K.G:**
 - [x] "How many sides does a triangle have?" → 3

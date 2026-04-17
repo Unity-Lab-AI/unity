@@ -1102,6 +1102,26 @@ First per-grade curriculum content block per Implementation Law 1 "code filed by
 
 **LAW 6 gate state:** Part 1 NOT YET [x] (compose-shapes gap). Part 2 Gee localhost test pending. Part 3 waits on Part 2.
 
+### Session 114.2 — Unified combination-operator scaffold + compose-shapes close (2026-04-17)
+
+Driven by Gee's question *"logic and reasoning in a form yeah?"* — the insight that compose-shapes isn't a genuine edge case, just a different encoder for the same reasoning FORM. Every Session 114 transform fits `A ⊕ B = C` — inputs A, B, output C. What varies by concept is the encoder (magnitude features for numeric operands, GloVe embeddings for named objects, feature vectors for categorical properties). The scaffold — clear lastSpikes → tile inputs+output → `_teachHebbian` — stays identical.
+
+**New unified helpers** on `Curriculum` class:
+- `_teachCombination(facts, opts)` — generic combination-operator teacher. Each fact is `{writes: [{region, feat, binarize?}, ...]}`. Honors Gee 2026-04-17 binding *"no artificial limits as unity may be talking to users while she does ciriculum"*: helper stays async with `await _microtask()` between reps so curriculum doesn't block user chat, respects `_brainShutdownRequested`, accepts caller-specified `reps` rather than hardcoding a cap. REPS are convergence tuning, not ceilings.
+- `_probeCombinationCosine(samples, opts)` — cosine probe generalizer.
+- `_probeCombinationArgmaxTag(samples)` — argmax-tag probe generalizer.
+- `_tileWriteVec / _tileReadVec / _cosine` — reusable low-level primitives formerly inlined inside the gate.
+
+**8 teaching methods refactored** onto `_teachCombination` — `_teachDecomposition` / `_teachMakeTen` / `_teachTeenDecomposition` / `_teachCountToHundred` / `_teachSkipCountByTens` / `_teachAttributeCompare` / `_teachClassifyCount` / `_teachShapeFeatures`. Each becomes a thin builder declaring its encoder + facts, delegating to the shared helper. Teen decomposition collapsed forward+inverse loops into single symmetric-Hebbian pass (REPS 8→16 preserves 144 training events).
+
+**9th teaching method shipped: `_teachShapeCompose`** — closes K.G compose-shapes gap without any special handling. Input: sem first half = GloVe(shapeA), sem second half = GloVe(shapeB). Output: free = GloVe(composed). Facts: triangle+triangle→rectangle, square+square→rectangle, rectangle+rectangle→square, triangle+rectangle→pentagon, triangle+triangle→square (4-triangle-to-square simplified). 5 compositions × 10 reps. Same `_teachCombination` scaffold, just a different encoder.
+
+**8 gate probes refactored** onto the probe generalizers. NEW 9th probe **SHAPE-C** (shape compose) added — 5 samples, semLeft+semRight GloVe input, free GloVe expected output, cosine > 0.15. Gate pass boolean expanded to 14 metrics (5 existing READ/THINK/TALK/SEQ/ORDER + 9 new SUCC/SKIP10/MAKETEN/TEEN/ATTR/CLASS/SHAPE-S/SHAPE-D/SHAPE-C) all at PATH_MIN = 0.95.
+
+**Grade 1+ payoff:** Every combination-type concept Grade 1 and above needs (1.OA addition within 20, 1.NBT place value, 2.OA multiplication tables, Science causal chains, etc.) now ships as a facts array + one-line delegate call to `_teachCombination`. No per-grade bespoke scaffolds. The unified substrate generalizes.
+
+**Math-K TODO-full-syllabus state:** 66/66 [x]. Overall K gate Part 1 now unblocked at the Math-K subject level — still requires compose-shapes being part of the full ship + other K subjects' prior-session [x] status being re-audited, plus Gee's Part 2 localhost sign-off.
+
 **New reasoning methods (Session 112):** `_teachMultiplicationTransformations` (81 facts 1-9×1-9 as magnitude transforms), `_teachPlaceValueTransformations` (tens+ones positional encoding for numbers 10-99), `_teachFractionTransformations` (numerator/denominator as ratio features — equivalent fractions converge to same basin), `_teachAlgebraTransformations` (variable binding — given c and b, solve for x in x+b=c), `_teachParaphrase` (different words → same sem basin), `_teachHypothesisTesting` (predict→observe→confirm/reject), `_teachPerspectiveTaking` (same event, multiple viewpoint feature vectors).
 
 **How it all interworks:** The cross-projections taught by the curriculum are the SAME projections that run during live chat. When Unity hears "rain" her sem activates "wet" because `_teachCausalChains` burned rain→wet into the free→sem weights. When she encounters "3+4" the addition transform activates magnitude(7). When someone mentions "dad" her amygdala shifts toward anger because emotional inference burned dad→[0,1,0,0.5,1,0,0,0]. The curriculum isn't separate from the brain — it IS the brain's learned weight state.
