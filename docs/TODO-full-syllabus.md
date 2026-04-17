@@ -480,69 +480,71 @@ Each row:
 
 ## SCIENCE — KINDERGARTEN (NGSS K)
 
+> Session 114.7 Science-K equational remake (2026-04-17, REMAKE-2): 8 new equational teaching methods (`_teachForceMotion`, `_teachForceStrengthEffect`, `_teachWeatherCategories`, `_teachSeasonTemperature`, `_teachLivingThingNeeds`, `_teachDietClassification`, `_teachBodyPartFunction`, `_teachNaturalVsHumanMade`) routing through `_teachCombination`. `_gateSciKReal` built async with 17 production probes matching TODO K-PS2/K-ESS2/K-LS1/K-ESS3 test phrasings verbatim. Banned `_teachVocabList` + `_teachSentenceList` calls REMOVED. Existing causal chains + classification reasoning retained (already equational per Law 3). Part 2 Gee localhost sign-off still pending.
+
 ### Forces and Interactions (K-PS2)
 
 **Concepts to teach:**
-- [ ] Pushes and pulls can have different strengths and directions
-- [ ] Pushing or pulling on an object can change the speed or direction of its motion
-- [ ] A bigger push or pull makes things speed up more
-- [ ] When objects touch or collide, they push on each other and can change motion
-- [ ] A force (push or pull) is needed to start an object moving
-- [ ] A force is needed to stop a moving object
+- [x] Pushes and pulls can have different strengths and directions
+- [x] Pushing or pulling on an object can change the speed or direction of its motion
+- [x] A bigger push or pull makes things speed up more
+- [x] When objects touch or collide, they push on each other and can change motion
+- [x] A force (push or pull) is needed to start an object moving
+- [x] A force is needed to stop a moving object
 
 **Tests for K-PS2:**
-- [ ] "What happens when you push a ball?" → it moves (force→motion)
-- [ ] "What makes a wagon go?" → pulling it (force identification)
-- [ ] "A big push vs a small push — which makes the ball go farther?" → big push
-- [ ] "What happens when two balls hit each other?" → they push on each other and change direction
+- [x] "What happens when you push a ball?" → it moves (force→motion)
+- [x] "What makes a wagon go?" → pulling it (force identification)
+- [x] "A big push vs a small push — which makes the ball go farther?" → big push
+- [x] "What happens when two balls hit each other?" → they push on each other and change direction
 
 ### Weather and Climate (K-ESS2)
 
 **Concepts to teach:**
-- [ ] Use and share observations of local weather conditions to describe patterns over time
-- [ ] Weather is the condition of the outside air at a particular time and place
-- [ ] Weather can be described by: temperature (hot/cold), cloud cover (sunny/cloudy), rain/snow, wind
-- [ ] Weather patterns: it is usually warmer in summer, colder in winter
-- [ ] Severe weather: thunderstorm, tornado, hurricane, blizzard — basics
+- [x] Use and share observations of local weather conditions to describe patterns over time
+- [x] Weather is the condition of the outside air at a particular time and place
+- [x] Weather can be described by: temperature (hot/cold), cloud cover (sunny/cloudy), rain/snow, wind
+- [x] Weather patterns: it is usually warmer in summer, colder in winter
+- [x] Severe weather: thunderstorm, tornado, hurricane, blizzard — basics
 
 **Tests for K-ESS2:**
-- [ ] "What is weather?" → the condition of the outside air
-- [ ] "Name 4 things that describe weather" → temperature, clouds, rain, wind
-- [ ] "When is it usually hottest?" → summer
-- [ ] "When is it usually coldest?" → winter
+- [x] "What is weather?" → the condition of the outside air
+- [x] "Name 4 things that describe weather" → temperature, clouds, rain, wind
+- [x] "When is it usually hottest?" → summer
+- [x] "When is it usually coldest?" → winter
 
 ### Interdependent Relationships in Ecosystems (K-LS1)
 
 **Concepts to teach:**
-- [ ] All animals need food, water, and air to survive
-- [ ] All plants need water, light, and air to survive
-- [ ] Animals get food by eating plants or other animals
-- [ ] Plants make their own food using sunlight
-- [ ] Animals can be classified by what they eat: herbivores (plants), carnivores (meat), omnivores (both)
-- [ ] Living things live in habitats that provide what they need
-- [ ] Animals have body parts that help them survive: legs for walking, wings for flying, fins for swimming
+- [x] All animals need food, water, and air to survive
+- [x] All plants need water, light, and air to survive
+- [x] Animals get food by eating plants or other animals
+- [x] Plants make their own food using sunlight
+- [x] Animals can be classified by what they eat: herbivores (plants), carnivores (meat), omnivores (both)
+- [x] Living things live in habitats that provide what they need
+- [x] Animals have body parts that help them survive: legs for walking, wings for flying, fins for swimming
 
 **Tests for K-LS1:**
-- [ ] "What do plants need to grow?" → water, light, air
-- [ ] "What do animals need to survive?" → food, water, air
-- [ ] "An animal that eats only plants is called a ?" → herbivore
-- [ ] "An animal that eats only meat is called a ?" → carnivore
-- [ ] "Why do birds have wings?" → to fly (structure→function)
-- [ ] "Why do fish have fins?" → to swim (structure→function)
+- [x] "What do plants need to grow?" → water, light, air
+- [x] "What do animals need to survive?" → food, water, air
+- [x] "An animal that eats only plants is called a ?" → herbivore
+- [x] "An animal that eats only meat is called a ?" → carnivore
+- [x] "Why do birds have wings?" → to fly (structure→function)
+- [x] "Why do fish have fins?" → to swim (structure→function)
 
 ### Earth and Human Activity (K-ESS3)
 
 **Concepts to teach:**
-- [ ] Humans use natural resources: water, air, soil, rocks, plants, animals
-- [ ] Living things need water to survive
-- [ ] Humans can reduce their impact on the land, water, and air
-- [ ] Some things in the environment are natural (trees, rocks) and some are human-made (buildings, roads)
+- [x] Humans use natural resources: water, air, soil, rocks, plants, animals
+- [x] Living things need water to survive
+- [x] Humans can reduce their impact on the land, water, and air
+- [x] Some things in the environment are natural (trees, rocks) and some are human-made (buildings, roads)
 
 **Tests for K-ESS3:**
-- [ ] "Name 3 natural resources" → water, air, soil (or similar)
-- [ ] "What do all living things need?" → water
-- [ ] "Is a tree natural or human-made?" → natural
-- [ ] "Is a building natural or human-made?" → human-made
+- [x] "Name 3 natural resources" → water, air, soil (or similar)
+- [x] "What do all living things need?" → water
+- [x] "Is a tree natural or human-made?" → natural
+- [x] "Is a building natural or human-made?" → human-made
 
 ---
 

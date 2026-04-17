@@ -7033,83 +7033,452 @@ export class Curriculum {
     };
   }
 
+  // ═══════════════════════════════════════════════════════════════════
+  // T14.24 Session 114.7 — Science-K equational course (LAW 3 + LAW 7)
+  // ═══════════════════════════════════════════════════════════════════
+  //
+  // NGSS K standards (Forces and Interactions K-PS2 + Weather/Climate
+  // K-ESS2 + Interdependent Relationships K-LS1 + Earth and Human
+  // Activity K-ESS3). Replaces banned _teachVocabList +
+  // _teachSentenceList data-array pattern with real equational methods.
+
+  /**
+   * K-PS2 Forces and Interactions — push/pull → motion + force
+   * strength → motion magnitude + collision bidirectionality.
+   * Causal-chain teaching via _teachCombination with sem+fineType tags.
+   */
+  async _teachForceMotion(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const semRegion = cluster.regions.sem;
+    const freeRegion = cluster.regions.free;
+    const fineTypeRegion = cluster.regions.fineType;
+    if (!semRegion || !freeRegion || !fineTypeRegion) return;
+    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
+    const causeTag = new Float64Array(fineTypeSize);
+    const effectTag = new Float64Array(fineTypeSize);
+    const half = Math.floor(fineTypeSize / 2);
+    for (let i = 0; i < half; i++) causeTag[i] = 1;
+    for (let i = half; i < fineTypeSize; i++) effectTag[i] = 1;
+
+    // Force → motion causal pairs
+    const FORCE_MOTION_PAIRS = [
+      ['push', 'move'], ['pull', 'move'],
+      ['push', 'roll'], ['pull', 'come'],
+      ['force', 'motion'], ['stop', 'still'],
+      ['collide', 'bounce'], ['hit', 'push'],
+    ];
+
+    const facts = [];
+    for (const [cause, effect] of FORCE_MOTION_PAIRS) {
+      const cEmb = sharedEmbeddings.getEmbedding(cause);
+      const eEmb = sharedEmbeddings.getEmbedding(effect);
+      if (!cEmb || !eEmb) continue;
+      facts.push({ writes: [
+        { region: freeRegion,     feat: cEmb, binarize: false },
+        { region: semRegion,      feat: eEmb, binarize: false },
+        { region: fineTypeRegion, feat: causeTag },
+      ]});
+    }
+    await this._teachCombination(facts, { reps: 6 });
+    console.log(`[Curriculum] _teachForceMotion: ${facts.length} force-motion pairs × 6 reps`);
+  }
+
+  /**
+   * K-PS2 bigger-push → more-motion magnitude transform.
+   * Force magnitude + object → motion magnitude.
+   */
+  async _teachForceStrengthEffect(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const freeRegion = cluster.regions.free;
+    const semRegion = cluster.regions.sem;
+    if (!freeRegion || !semRegion) return;
+    const freeSize = freeRegion.end - freeRegion.start;
+    const freeHalf = Math.floor(freeSize / 2);
+    const freeLeftRegion = { start: freeRegion.start, end: freeRegion.start + freeHalf };
+    const freeRightRegion = { start: freeRegion.start + freeHalf, end: freeRegion.end };
+
+    // For each magnitude level, the motion effect scales proportionally
+    const facts = [];
+    for (let strength = 1; strength <= 9; strength++) {
+      const strengthMag = _magnitudeFeatureForDigit(String(strength));
+      // free_left = force magnitude, free_right = object marker, sem = motion magnitude
+      const pushEmb = sharedEmbeddings.getEmbedding('push');
+      if (!pushEmb) continue;
+      facts.push({ writes: [
+        { region: freeLeftRegion,  feat: strengthMag },
+        { region: freeRightRegion, feat: pushEmb.slice(0, Math.min(pushEmb.length, 50)), binarize: false },
+        { region: semRegion,       feat: _magnitudeFeatureForDigit(String(strength)) },
+      ]});
+    }
+    await this._teachCombination(facts, { reps: 6 });
+    console.log(`[Curriculum] _teachForceStrengthEffect: ${facts.length} strength→effect × 6 reps`);
+  }
+
+  /**
+   * K-ESS2 Weather categories — weather type → feature profile
+   * (temperature / precipitation / wind / cloud cover).
+   */
+  async _teachWeatherCategories(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const semRegion = cluster.regions.sem;
+    const freeRegion = cluster.regions.free;
+    if (!semRegion || !freeRegion) return;
+
+    // Weather feature dimensions: [hot, cold, wet, dry, windy, calm, cloudy, sunny]
+    function weatherFeat(hot, cold, wet, dry, windy, calm, cloudy, sunny) {
+      return new Float64Array([hot, cold, wet, dry, windy, calm, cloudy, sunny]);
+    }
+    const WEATHER = [
+      { name: 'sunny',   feat: weatherFeat(1, 0, 0, 1, 0, 1, 0, 1) },
+      { name: 'rainy',   feat: weatherFeat(0, 0, 1, 0, 0, 1, 1, 0) },
+      { name: 'cloudy',  feat: weatherFeat(0, 0, 0, 1, 0, 1, 1, 0) },
+      { name: 'windy',   feat: weatherFeat(0, 0, 0, 1, 1, 0, 0, 0) },
+      { name: 'snowy',   feat: weatherFeat(0, 1, 1, 0, 0, 1, 1, 0) },
+      { name: 'hot',     feat: weatherFeat(1, 0, 0, 1, 0, 1, 0, 1) },
+      { name: 'cold',    feat: weatherFeat(0, 1, 0, 1, 0, 1, 1, 0) },
+      { name: 'stormy',  feat: weatherFeat(0, 0, 1, 0, 1, 0, 1, 0) },
+    ];
+
+    const facts = [];
+    for (const { name, feat } of WEATHER) {
+      const emb = sharedEmbeddings.getEmbedding(name);
+      if (!emb) continue;
+      facts.push({ writes: [
+        { region: semRegion,  feat: emb, binarize: false },
+        { region: freeRegion, feat: feat },
+      ]});
+    }
+    await this._teachCombination(facts, { reps: 6 });
+    console.log(`[Curriculum] _teachWeatherCategories: ${facts.length} weather types × 6 reps`);
+  }
+
+  /**
+   * K-ESS2 Season → temperature binding. Summer=hot, winter=cold, etc.
+   */
+  async _teachSeasonTemperature(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const semRegion = cluster.regions.sem;
+    const freeRegion = cluster.regions.free;
+    if (!semRegion || !freeRegion) return;
+    const freeSize = freeRegion.end - freeRegion.start;
+    const freeHalf = Math.floor(freeSize / 2);
+    const freeLeftRegion = { start: freeRegion.start, end: freeRegion.start + freeHalf };
+
+    const SEASON_TEMP = [
+      { season: 'summer', temp: 'hot',  tempMag: 9 },
+      { season: 'fall',   temp: 'cool', tempMag: 4 },
+      { season: 'winter', temp: 'cold', tempMag: 1 },
+      { season: 'spring', temp: 'warm', tempMag: 6 },
+    ];
+
+    const facts = [];
+    for (const { season, temp, tempMag } of SEASON_TEMP) {
+      const sEmb = sharedEmbeddings.getEmbedding(season);
+      const tEmb = sharedEmbeddings.getEmbedding(temp);
+      if (!sEmb || !tEmb) continue;
+      // season GloVe → temp magnitude in free_left, temp word in sem
+      facts.push({ writes: [
+        { region: semRegion,      feat: sEmb, binarize: false },
+        { region: freeLeftRegion, feat: _magnitudeFeatureForDigit(String(tempMag)) },
+      ]});
+      // Reverse: temp word → season word (recall direction)
+      facts.push({ writes: [
+        { region: semRegion,  feat: tEmb, binarize: false },
+        { region: freeRegion, feat: sEmb, binarize: false },
+      ]});
+    }
+    await this._teachCombination(facts, { reps: 8 });
+    console.log(`[Curriculum] _teachSeasonTemperature: ${facts.length} season-temp pairs × 8 reps`);
+  }
+
+  /**
+   * K-LS1 Plant + animal needs — organism type → survival requirements.
+   */
+  async _teachLivingThingNeeds(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const semRegion = cluster.regions.sem;
+    const freeRegion = cluster.regions.free;
+    if (!semRegion || !freeRegion) return;
+
+    const NEEDS = [
+      { thing: 'plant',  needs: ['water', 'light', 'air'] },
+      { thing: 'animal', needs: ['food', 'water', 'air'] },
+      { thing: 'dog',    needs: ['food', 'water', 'air'] },
+      { thing: 'cat',    needs: ['food', 'water', 'air'] },
+      { thing: 'bird',   needs: ['food', 'water', 'air'] },
+      { thing: 'fish',   needs: ['food', 'water', 'air'] },
+      { thing: 'tree',   needs: ['water', 'light', 'air'] },
+      { thing: 'flower', needs: ['water', 'light', 'air'] },
+      { thing: 'human',  needs: ['food', 'water', 'air'] },
+    ];
+
+    const facts = [];
+    for (const { thing, needs } of NEEDS) {
+      const tEmb = sharedEmbeddings.getEmbedding(thing);
+      if (!tEmb) continue;
+      for (const need of needs) {
+        const nEmb = sharedEmbeddings.getEmbedding(need);
+        if (!nEmb) continue;
+        facts.push({ writes: [
+          { region: semRegion,  feat: tEmb, binarize: false },
+          { region: freeRegion, feat: nEmb, binarize: false },
+        ]});
+      }
+    }
+    await this._teachCombination(facts, { reps: 6 });
+    console.log(`[Curriculum] _teachLivingThingNeeds: ${facts.length} need facts × 6 reps`);
+  }
+
+  /**
+   * K-LS1 Animal diet classification — herbivore / carnivore / omnivore.
+   */
+  async _teachDietClassification(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const semRegion = cluster.regions.sem;
+    const fineTypeRegion = cluster.regions.fineType;
+    const motorRegion = cluster.regions.motor;
+    if (!semRegion || !fineTypeRegion || !motorRegion) return;
+    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
+    const herbTag = new Float64Array(fineTypeSize);
+    const carnTag = new Float64Array(fineTypeSize);
+    const omniTag = new Float64Array(fineTypeSize);
+    const third = Math.floor(fineTypeSize / 3);
+    for (let i = 0; i < third; i++) herbTag[i] = 1;
+    for (let i = third; i < 2 * third; i++) carnTag[i] = 1;
+    for (let i = 2 * third; i < fineTypeSize; i++) omniTag[i] = 1;
+
+    const DIET_FACTS = [
+      // eats-only-plants
+      { animal: 'cow',     diet: 'herbivore' },
+      { animal: 'horse',   diet: 'herbivore' },
+      { animal: 'rabbit',  diet: 'herbivore' },
+      { animal: 'deer',    diet: 'herbivore' },
+      { animal: 'sheep',   diet: 'herbivore' },
+      { animal: 'giraffe', diet: 'herbivore' },
+      // eats-only-meat
+      { animal: 'lion',    diet: 'carnivore' },
+      { animal: 'tiger',   diet: 'carnivore' },
+      { animal: 'wolf',    diet: 'carnivore' },
+      { animal: 'shark',   diet: 'carnivore' },
+      { animal: 'eagle',   diet: 'carnivore' },
+      // eats-both
+      { animal: 'bear',    diet: 'omnivore' },
+      { animal: 'pig',     diet: 'omnivore' },
+      { animal: 'human',   diet: 'omnivore' },
+      { animal: 'dog',     diet: 'omnivore' },
+    ];
+
+    const facts = [];
+    for (const { animal, diet } of DIET_FACTS) {
+      const aEmb = sharedEmbeddings.getEmbedding(animal);
+      if (!aEmb) continue;
+      let tag;
+      if (diet === 'herbivore') tag = herbTag;
+      else if (diet === 'carnivore') tag = carnTag;
+      else tag = omniTag;
+      facts.push({ writes: [
+        { region: semRegion,      feat: aEmb, binarize: false },
+        { region: fineTypeRegion, feat: tag },
+        { region: motorRegion,    feat: encodeLetter(diet[0]) },
+      ]});
+    }
+    await this._teachCombination(facts, { reps: 6 });
+    console.log(`[Curriculum] _teachDietClassification: ${facts.length} diet facts × 6 reps`);
+  }
+
+  /**
+   * K-LS1 Body part → function (wings→fly, fins→swim, legs→walk).
+   */
+  async _teachBodyPartFunction(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const semRegion = cluster.regions.sem;
+    const freeRegion = cluster.regions.free;
+    if (!semRegion || !freeRegion) return;
+
+    const BODY_FUNCTIONS = [
+      { part: 'wings', function_: 'fly' },
+      { part: 'fins',  function_: 'swim' },
+      { part: 'legs',  function_: 'walk' },
+      { part: 'arms',  function_: 'reach' },
+      { part: 'hands', function_: 'grab' },
+      { part: 'eyes',  function_: 'see' },
+      { part: 'ears',  function_: 'hear' },
+      { part: 'nose',  function_: 'smell' },
+      { part: 'mouth', function_: 'eat' },
+      { part: 'teeth', function_: 'chew' },
+      { part: 'gills', function_: 'breathe' },
+      { part: 'roots', function_: 'grow' },
+    ];
+
+    const facts = [];
+    for (const { part, function_ } of BODY_FUNCTIONS) {
+      const pEmb = sharedEmbeddings.getEmbedding(part);
+      const fEmb = sharedEmbeddings.getEmbedding(function_);
+      if (!pEmb || !fEmb) continue;
+      facts.push({ writes: [
+        { region: semRegion,  feat: pEmb, binarize: false },
+        { region: freeRegion, feat: fEmb, binarize: false },
+      ]});
+    }
+    await this._teachCombination(facts, { reps: 6 });
+    console.log(`[Curriculum] _teachBodyPartFunction: ${facts.length} part-function pairs × 6 reps`);
+  }
+
+  /**
+   * K-ESS3 Natural resources + natural-vs-human-made classification.
+   */
+  async _teachNaturalVsHumanMade(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const semRegion = cluster.regions.sem;
+    const fineTypeRegion = cluster.regions.fineType;
+    const motorRegion = cluster.regions.motor;
+    if (!semRegion || !fineTypeRegion || !motorRegion) return;
+    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
+    const naturalTag = new Float64Array(fineTypeSize);
+    const humanMadeTag = new Float64Array(fineTypeSize);
+    const half = Math.floor(fineTypeSize / 2);
+    for (let i = 0; i < half; i++) naturalTag[i] = 1;
+    for (let i = half; i < fineTypeSize; i++) humanMadeTag[i] = 1;
+
+    const CLASSIFIED = [
+      { thing: 'tree',     type: 'natural' },
+      { thing: 'rock',     type: 'natural' },
+      { thing: 'water',    type: 'natural' },
+      { thing: 'air',      type: 'natural' },
+      { thing: 'soil',     type: 'natural' },
+      { thing: 'plant',    type: 'natural' },
+      { thing: 'animal',   type: 'natural' },
+      { thing: 'mountain', type: 'natural' },
+      { thing: 'river',    type: 'natural' },
+      { thing: 'building', type: 'humanmade' },
+      { thing: 'road',     type: 'humanmade' },
+      { thing: 'car',      type: 'humanmade' },
+      { thing: 'house',    type: 'humanmade' },
+      { thing: 'bridge',   type: 'humanmade' },
+      { thing: 'plastic',  type: 'humanmade' },
+      { thing: 'computer', type: 'humanmade' },
+      { thing: 'chair',    type: 'humanmade' },
+    ];
+
+    const facts = [];
+    for (const { thing, type } of CLASSIFIED) {
+      const emb = sharedEmbeddings.getEmbedding(thing);
+      if (!emb) continue;
+      const tag = type === 'natural' ? naturalTag : humanMadeTag;
+      facts.push({ writes: [
+        { region: semRegion,      feat: emb, binarize: false },
+        { region: fineTypeRegion, feat: tag },
+        { region: motorRegion,    feat: encodeLetter(type[0]) },
+      ]});
+    }
+    await this._teachCombination(facts, { reps: 6 });
+    console.log(`[Curriculum] _teachNaturalVsHumanMade: ${facts.length} classified × 6 reps`);
+  }
+
   async runSciKReal(ctx) {
     // Session 43 — TODO-aligned classification + states of matter
     await this._teachClassification();
     await this._teachStatesOfMatter();
 
-    // ── NGSS K: Expanded vocabulary + sentences ──
-    // NGSS K covers: pushes/pulls (forces), weather, plants/animals
-    // needs, sunlight warms earth, reduce human impact.
-    const SCI_K_VOCAB = [
-      // living things
-      'animal', 'plant', 'tree', 'bird', 'fish', 'dog', 'cat', 'bug',
-      'flower', 'seed', 'leaf', 'root', 'stem', 'grass',
-      // body + senses
-      'eye', 'ear', 'nose', 'mouth', 'hand', 'skin',
-      'see', 'hear', 'smell', 'taste', 'touch',
-      // weather + sky
-      'sun', 'moon', 'star', 'sky', 'cloud', 'rain', 'snow', 'wind',
-      'hot', 'cold', 'warm', 'cool',
-      // matter + materials
-      'water', 'ice', 'rock', 'dirt', 'sand', 'wood', 'metal',
-      // forces
-      'push', 'pull', 'fast', 'slow', 'move', 'stop',
+    // Session 114.7 REMAKE — equational NGSS K teaching replacing
+    // banned _teachVocabList + _teachSentenceList data-array pattern
+    if (!this._sciKRemakeDone) {
+      // K-PS2 Forces and Interactions
+      await this._teachForceMotion(ctx);
+      await this._teachForceStrengthEffect(ctx);
+      // K-ESS2 Weather and Climate
+      await this._teachWeatherCategories(ctx);
+      await this._teachSeasonTemperature(ctx);
+      // K-LS1 Interdependent Relationships
+      await this._teachLivingThingNeeds(ctx);
+      await this._teachDietClassification(ctx);
+      await this._teachBodyPartFunction(ctx);
+      // K-ESS3 Earth and Human Activity
+      await this._teachNaturalVsHumanMade(ctx);
+
+      // Existing causal chains retained — already equational per Law 3
+      await this._teachCausalChains([
+        ['push', 'move'], ['pull', 'move'], ['push', 'fall'],
+        ['water', 'grow'], ['sun', 'warm'], ['sun', 'grow'],
+        ['rain', 'wet'], ['cold', 'ice'], ['hot', 'melt'],
+        ['wind', 'blow'], ['seed', 'plant'], ['plant', 'flower'],
+        ['food', 'energy'], ['sleep', 'rest'], ['fire', 'hot'],
+      ]);
+
+      // Existing classification reasoning retained — equational per Law 3
+      await this._teachClassificationReasoning([
+        { item: 'dog',    features: new Float64Array([1,1,1,1,1,1,0,0]), category: 'animal' },
+        { item: 'cat',    features: new Float64Array([1,1,1,1,1,1,0,0]), category: 'animal' },
+        { item: 'bird',   features: new Float64Array([1,1,1,1,1,1,0,0]), category: 'animal' },
+        { item: 'fish',   features: new Float64Array([1,1,1,1,1,0,0,0]), category: 'animal' },
+        { item: 'bug',    features: new Float64Array([1,1,1,1,1,1,0,0]), category: 'animal' },
+        { item: 'tree',   features: new Float64Array([1,0,1,0,0,0,1,0]), category: 'plant' },
+        { item: 'flower', features: new Float64Array([1,0,1,0,0,0,1,0]), category: 'plant' },
+        { item: 'grass',  features: new Float64Array([1,0,1,0,0,0,1,0]), category: 'plant' },
+        { item: 'rock',   features: new Float64Array([0,0,0,0,0,0,0,1]), category: 'mineral' },
+        { item: 'water',  features: new Float64Array([0,0,0,0,0,0,0,0]), category: 'mineral' },
+        { item: 'sand',   features: new Float64Array([0,0,0,0,0,0,0,1]), category: 'mineral' },
+      ]);
+
+      this._sciKRemakeDone = true;
+    }
+
+    return await this._gateSciKReal();
+  }
+
+  async _gateSciKReal() {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.synapses) return { pass: false, reason: 'no cluster' };
+
+    // Session 114.7 production probes matching TODO K-PS2 / K-ESS2 /
+    // K-LS1 / K-ESS3 test phrasings verbatim.
+    const sciKProductionSamples = [
+      // K-PS2 Tests
+      { question: 'what happens when you push a ball', expected: ['move', 'roll', 'm'] },
+      { question: 'what makes a wagon go', expected: ['pull', 'push', 'p'] },
+      { question: 'big push or small push which goes farther', expected: ['big', 'b'] },
+      { question: 'what happens when two balls hit each other', expected: ['push', 'bounce', 'p', 'b'] },
+      // K-ESS2 Tests
+      { question: 'what is weather', expected: ['air', 'outside', 'condition'] },
+      { question: 'when is it hottest', expected: ['summer', 's'] },
+      { question: 'when is it coldest', expected: ['winter', 'w'] },
+      // K-LS1 Tests
+      { question: 'what do plants need to grow', expected: ['water', 'light', 'air', 'w', 'l', 'a'] },
+      { question: 'what do animals need to survive', expected: ['food', 'water', 'air', 'f', 'w'] },
+      { question: 'an animal that eats only plants is called', expected: ['herbivore', 'h'] },
+      { question: 'an animal that eats only meat is called', expected: ['carnivore', 'c'] },
+      { question: 'why do birds have wings', expected: ['fly', 'f'] },
+      { question: 'why do fish have fins', expected: ['swim', 's'] },
+      // K-ESS3 Tests
+      { question: 'name a natural resource', expected: ['water', 'air', 'soil', 'tree', 'rock', 'w', 'a', 's', 't', 'r'] },
+      { question: 'what do all living things need', expected: ['water', 'w'] },
+      { question: 'is a tree natural or human made', expected: ['natural', 'n'] },
+      { question: 'is a building natural or human made', expected: ['human', 'h'] },
     ];
-    await this._teachVocabList(SCI_K_VOCAB, ctx, { reps: 3 });
+    const prodResult = await this._probeProductionBatch(sciKProductionSamples, {
+      visualCortex: (this.engine && this.engine.visualCortex) || null,
+    });
+    const prodRate = prodResult.total > 0 ? prodResult.pass / prodResult.total : 0;
+    const PROD_MIN = 0.95;
+    const pass = prodRate >= PROD_MIN;
 
-    // NGSS K sentences — real science concepts
-    const SCI_K_SENTENCES = [
-      // living vs nonliving
-      'a dog is alive', 'a rock is not alive',
-      'plants need water and sun', 'animals need food and water',
-      'a seed grows into a plant', 'a bird can fly',
-      // senses
-      'i see with my eyes', 'i hear with my ears',
-      'i smell with my nose', 'i taste with my mouth',
-      'i feel with my hands',
-      // weather
-      'the sun makes us warm', 'rain falls from clouds',
-      'snow is cold and white', 'wind can push things',
-      'today is sunny', 'today is cloudy',
-      // forces
-      'a push makes things move', 'a pull brings things close',
-      'a ball rolls when you push it', 'a wagon moves when you pull it',
-      // matter
-      'water is wet', 'ice is cold and hard', 'ice is frozen water',
-      'when ice gets warm it melts', 'steam comes from hot water',
-    ];
-    await this._teachSentenceList(SCI_K_SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-
-    // ── EQUATIONAL REASONING: Causal chains for K-level science ──
-    // NGSS K: pushes/pulls cause motion, water causes growth,
-    // sunlight causes warmth. These are OPERATIONS not vocabulary.
-    await this._teachCausalChains([
-      ['push', 'move'], ['pull', 'move'], ['push', 'fall'],
-      ['water', 'grow'], ['sun', 'warm'], ['sun', 'grow'],
-      ['rain', 'wet'], ['cold', 'ice'], ['hot', 'melt'],
-      ['wind', 'blow'], ['seed', 'plant'], ['plant', 'flower'],
-      ['food', 'energy'], ['sleep', 'rest'], ['fire', 'hot'],
-    ]);
-
-    // ── EQUATIONAL REASONING: Classification for K-level science ──
-    // Living vs nonliving, animal vs plant — feature-space clustering
-    //   features: [alive, moves, grows, eats, breathes, has_legs, has_leaves, hard]
-    await this._teachClassificationReasoning([
-      { item: 'dog',    features: new Float64Array([1,1,1,1,1,1,0,0]), category: 'animal' },
-      { item: 'cat',    features: new Float64Array([1,1,1,1,1,1,0,0]), category: 'animal' },
-      { item: 'bird',   features: new Float64Array([1,1,1,1,1,1,0,0]), category: 'animal' },
-      { item: 'fish',   features: new Float64Array([1,1,1,1,1,0,0,0]), category: 'animal' },
-      { item: 'bug',    features: new Float64Array([1,1,1,1,1,1,0,0]), category: 'animal' },
-      { item: 'tree',   features: new Float64Array([1,0,1,0,0,0,1,0]), category: 'plant' },
-      { item: 'flower', features: new Float64Array([1,0,1,0,0,0,1,0]), category: 'plant' },
-      { item: 'grass',  features: new Float64Array([1,0,1,0,0,0,1,0]), category: 'plant' },
-      { item: 'rock',   features: new Float64Array([0,0,0,0,0,0,0,1]), category: 'mineral' },
-      { item: 'water',  features: new Float64Array([0,0,0,0,0,0,0,0]), category: 'mineral' },
-      { item: 'sand',   features: new Float64Array([0,0,0,0,0,0,0,1]), category: 'mineral' },
-    ]);
-
-    return this._teachVocabList(SCI_K_VOCAB.slice(0, 20), ctx, { reps: 3 });
+    const pct = (r) => (r * 100).toFixed(0);
+    const prodFailSummary = prodResult.fails && prodResult.fails.length > 0
+      ? ' [FAIL: ' + prodResult.fails.slice(0, 5).map(f => `"${f.q}"→"${String(f.emitted).slice(0, 30)}"`).join('; ') + ']'
+      : '';
+    return {
+      pass,
+      reason: `PROD ${prodResult.pass}/${prodResult.total} (${pct(prodRate)}%)${prodFailSummary}`,
+      metrics: { prodRate, prodFails: prodResult.fails },
+    };
   }
 
   async runSocKReal(ctx) {

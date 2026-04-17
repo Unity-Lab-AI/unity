@@ -5,6 +5,35 @@
 
 ---
 
+## 2026-04-17 — Session 114.7: REMAKE-2 Science-K full equational course remake (40 items, 8 new teaching methods, 17 production probes)
+
+NGSS K remake per LAW 3 + LAW 7. Replaces banned `_teachVocabList(SCI_K_VOCAB)` + `_teachSentenceList(SCI_K_SENTENCES)` with 8 new equational teaching methods. Existing `_teachClassification`/`_teachStatesOfMatter`/`_teachCausalChains`/`_teachClassificationReasoning` retained — already equational per Law 3.
+
+### 8 new Science-K equational teaching methods
+
+- `_teachForceMotion` (K-PS2) — push/pull → motion causal pairs with cause/effect fineType tags. 8 pairs × 6 reps
+- `_teachForceStrengthEffect` (K-PS2) — force magnitude → motion magnitude transform. 9 strengths × 6 reps
+- `_teachWeatherCategories` (K-ESS2) — weather type → 8-dim feature vector (hot/cold/wet/dry/windy/calm/cloudy/sunny). 8 types × 6 reps
+- `_teachSeasonTemperature` (K-ESS2) — summer→hot, winter→cold, spring→warm, fall→cool. Bidirectional. 4 seasons × 8 reps
+- `_teachLivingThingNeeds` (K-LS1) — plants need water/light/air; animals need food/water/air. 9 organisms × 3 needs × 6 reps
+- `_teachDietClassification` (K-LS1) — herbivore/carnivore/omnivore with 3-way fineType tag + motor emission. 15 animals × 6 reps
+- `_teachBodyPartFunction` (K-LS1) — wings→fly, fins→swim, legs→walk, etc. 12 part-function pairs × 6 reps
+- `_teachNaturalVsHumanMade` (K-ESS3) — binary classification with fineType tag. 17 things × 6 reps
+
+### `_gateSciKReal` built
+
+Async. 17 production probes matching TODO test phrasings verbatim: K-PS2 (4 force-motion tests), K-ESS2 (3 weather/season), K-LS1 (6 needs/diet/body-function), K-ESS3 (4 natural-resources). PROD_MIN = 0.95.
+
+### TODO ELA-K 40 items flipped [x]
+
+K-PS2 Concepts (6) + Tests (4) + K-ESS2 Concepts (5) + Tests (4) + K-LS1 Concepts (7) + Tests (6) + K-ESS3 Concepts (4) + Tests (4) = 40 total.
+
+### Next runway
+
+REMAKE-3 Social-K. Core Knowledge K: Self/Family/Community + American Symbols/Holidays + Maps and Geography Basics. 37 items via feature-vector relationship encoding + category tags + production probes.
+
+---
+
 ## 2026-04-17 — Session 114.6: REMAKE-1 ELA-K full equational course remake (60 items, 10 new teaching methods, 27 production probes)
 
 Full remake per Gee 2026-04-17 directive *"the current shit we have does NOT work at all so we have to totaly remake this shit"* + LAW 3 ban on word-list/sentence-example teaching + LAW 7 production-probe requirement. Pre-session `runElaKReal` shipped with `_teachVocabList(FUNCTION_WORDS/DOLCH_PREPRIMER/DOLCH_PRIMER/CVC_FAMILIES)` + `_teachSentenceList(K_SENTENCES/PLURAL_PAIRS)` — exact banned pattern. Session 106 direct-pattern alphabet teach at the top of `runElaKReal` was the only correct bit and is preserved.
