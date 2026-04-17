@@ -29,14 +29,28 @@ if [ ! -f "$DIR/corpora/glove.6B.300d.txt" ]; then
     echo "  Source: https://nlp.stanford.edu/data/glove.6B.zip"
     mkdir -p "$DIR/corpora"
     cd "$DIR/corpora"
-    if curl -LO --fail --show-error --max-time 1800 https://nlp.stanford.edu/data/glove.6B.zip; then
-        if unzip -p glove.6B.zip glove.6B.300d.txt > glove.6B.300d.txt 2>/dev/null || \
+    # Match start.bat curl flags for cross-platform uniformity per Gee's
+    # 114.16 binding. --progress-bar gives a simple [========] line
+    # instead of the default animated progress table that uses \r (which
+    # on CMD corrupts subsequent line parses; on bash it's just uglier
+    # in non-TTY contexts like CI logs). -o explicit output filename for
+    # parity with start.bat's -o glove.6B.zip.
+    if curl -L --fail --show-error --progress-bar --max-time 1800 -o glove.6B.zip https://nlp.stanford.edu/data/glove.6B.zip; then
+        # Extract just glove.6B.300d.txt from the zip (skips 50d/100d/200d
+        # variants that would waste ~1 GB of disk). Try unzip first (common
+        # on Linux + macOS), fall back to tar (ships with modern macOS +
+        # Windows Git Bash). Both strip the zip's internal path and drop
+        # the file directly in corpora/.
+        if unzip -o glove.6B.zip glove.6B.300d.txt 2>/dev/null || \
            tar -xf glove.6B.zip glove.6B.300d.txt 2>/dev/null; then
             rm glove.6B.zip
             echo "  GloVe 6B.300d installed at corpora/glove.6B.300d.txt."
         else
             echo ""
-            echo "  WARNING: GloVe extract failed. Install unzip or tar and retry."
+            echo "  WARNING: GloVe extract failed (no unzip or tar). Install one and retry."
+            echo "    macOS: tar + unzip ship by default"
+            echo "    Debian/Ubuntu: apt install unzip"
+            echo "    Alpine: apk add unzip"
             echo "  Continuing with subword fallback for now."
             echo ""
         fi
