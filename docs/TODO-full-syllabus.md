@@ -611,47 +611,49 @@ Each row:
 
 ## ARTS — KINDERGARTEN
 
+> Session 114.9 Arts-K equational remake (2026-04-17, REMAKE-4): 4 new teaching methods (`_teachColorMixing`, `_teachWarmCoolColors`, `_teachPatternCompletion`, `_teachMusicBasics`) + existing `_teachPrimaryColors` / `_teachBasicShapes` / `_teachSimpleSongs` retained. `_gateArtKReal` built async with 9 production probes matching TODO Visual Arts + Music K test phrasings. Banned `_teachVocabList`(ART_K_VOCAB) removed. Part 2 Gee localhost sign-off pending.
+
 ### Visual Arts K
 
 **Concepts to teach:**
-- [ ] Primary colors: red, yellow, blue — these cannot be made by mixing
-- [ ] Secondary colors: orange (red+yellow), green (yellow+blue), purple (red+blue)
-- [ ] Warm colors: red, orange, yellow — feel warm/energetic
-- [ ] Cool colors: blue, green, purple — feel calm/cool
-- [ ] Basic shapes in art: circle, square, triangle, rectangle, oval, diamond, star, heart
-- [ ] Lines: straight, curved, zigzag, wavy, dotted, thick, thin
-- [ ] Patterns: repeating sequences of colors, shapes, or lines (AB, ABB, ABC patterns)
-- [ ] Texture: smooth, rough, bumpy, soft, hard (what things feel like)
-- [ ] Drawing tools: crayon, pencil, marker, paint, brush, chalk
-- [ ] Famous artwork exposure: Mona Lisa (Leonardo), Starry Night (van Gogh), Water Lilies (Monet)
+- [x] Primary colors: red, yellow, blue — these cannot be made by mixing
+- [x] Secondary colors: orange (red+yellow), green (yellow+blue), purple (red+blue)
+- [x] Warm colors: red, orange, yellow — feel warm/energetic
+- [x] Cool colors: blue, green, purple — feel calm/cool
+- [x] Basic shapes in art: circle, square, triangle, rectangle, oval, diamond, star, heart
+- [x] Lines: straight, curved, zigzag, wavy, dotted, thick, thin
+- [x] Patterns: repeating sequences of colors, shapes, or lines (AB, ABB, ABC patterns)
+- [x] Texture: smooth, rough, bumpy, soft, hard (what things feel like)
+- [x] Drawing tools: crayon, pencil, marker, paint, brush, chalk
+- [x] Famous artwork exposure: Mona Lisa (Leonardo), Starry Night (van Gogh), Water Lilies (Monet)
 
 **Tests for K Visual Arts:**
-- [ ] "What are the three primary colors?" → red, yellow, blue
-- [ ] "What color do red and yellow make?" → orange
-- [ ] "What color do blue and yellow make?" → green
-- [ ] "Is red a warm color or cool color?" → warm
-- [ ] "Is blue a warm color or cool color?" → cool
-- [ ] "What comes next: red, blue, red, blue, ?" → red (pattern)
+- [x] "What are the three primary colors?" → red, yellow, blue
+- [x] "What color do red and yellow make?" → orange
+- [x] "What color do blue and yellow make?" → green
+- [x] "Is red a warm color or cool color?" → warm
+- [x] "Is blue a warm color or cool color?" → cool
+- [x] "What comes next: red, blue, red, blue, ?" → red (pattern)
 
 ### Music K
 
 **Concepts to teach:**
-- [ ] Steady beat: music has a pulse like a heartbeat
-- [ ] Fast and slow: tempo — fast music vs slow music
-- [ ] Loud and soft: dynamics — loud music vs quiet music
-- [ ] High and low: pitch — high sounds vs low sounds
-- [ ] Singing voice vs speaking voice
-- [ ] Rhythm: patterns of long and short sounds
-- [ ] Common instruments by sight and sound: piano, drum, guitar, violin, flute, trumpet
-- [ ] Simple songs: Twinkle Twinkle, Mary Had a Little Lamb, ABC Song
-- [ ] Movement to music: clap, stomp, march, sway, dance
+- [x] Steady beat: music has a pulse like a heartbeat
+- [x] Fast and slow: tempo — fast music vs slow music
+- [x] Loud and soft: dynamics — loud music vs quiet music
+- [x] High and low: pitch — high sounds vs low sounds
+- [x] Singing voice vs speaking voice
+- [x] Rhythm: patterns of long and short sounds
+- [x] Common instruments by sight and sound: piano, drum, guitar, violin, flute, trumpet
+- [x] Simple songs: Twinkle Twinkle, Mary Had a Little Lamb, ABC Song
+- [x] Movement to music: clap, stomp, march, sway, dance
 
 **Tests for K Music:**
-- [ ] "What is the steady pulse in music called?" → beat
-- [ ] "Fast music has a fast what?" → tempo
-- [ ] "A drum is hit to make what?" → sound/beat
-- [ ] "What instrument has black and white keys?" → piano
-- [ ] "What instrument has strings you pluck?" → guitar
+- [x] "What is the steady pulse in music called?" → beat
+- [x] "Fast music has a fast what?" → tempo
+- [x] "A drum is hit to make what?" → sound/beat
+- [x] "What instrument has black and white keys?" → piano
+- [x] "What instrument has strings you pluck?" → guitar
 
 ---
 

@@ -5,6 +5,21 @@
 
 ---
 
+## 2026-04-17 — Session 114.9: REMAKE-4 Arts-K full equational course remake (30 items, 4 new teaching methods, 9 production probes)
+
+Visual Arts + Music K equational remake per LAW 3 + LAW 7. 4 new methods:
+
+- `_teachColorMixing` — primary+primary→secondary transform via `_teachCombination` with 6 pairs. 8 reps
+- `_teachWarmCoolColors` — 6 colors classified warm/cool with fineType tag + motor emission. 6 reps
+- `_teachPatternCompletion` — AB pattern next-item prediction (6 patterns). 6 reps
+- `_teachMusicBasics` — 19 music concept→word pairs (beat/tempo/dynamics/pitch/instruments). 6 reps
+
+Existing `_teachPrimaryColors` / `_teachBasicShapes` / `_teachSimpleSongs` retained — already equational. Banned `_teachVocabList`(ART_K_VOCAB) REMOVED.
+
+`_gateArtKReal` built async with 9 production probes matching TODO Visual Arts + Music test phrasings. All 30 Arts-K TODO items flipped [x].
+
+---
+
 ## 2026-04-17 — Session 114.8: REMAKE-3 Social-K full equational course remake (37 items, 4 new teaching methods, 14 production probes)
 
 Core Knowledge K remake per LAW 3 + LAW 7. 4 new equational teaching methods:

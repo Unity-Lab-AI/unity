@@ -7720,21 +7720,224 @@ export class Curriculum {
     };
   }
 
+  // ═══════════════════════════════════════════════════════════════════
+  // T14.24 Session 114.9 — Arts-K equational course (LAW 3 + LAW 7)
+  // ═══════════════════════════════════════════════════════════════════
+
+  /**
+   * Visual Arts K — color mixing transforms (primary + primary → secondary).
+   */
+  async _teachColorMixing(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const freeRegion = cluster.regions.free;
+    const semRegion = cluster.regions.sem;
+    if (!freeRegion || !semRegion) return;
+    const freeSize = freeRegion.end - freeRegion.start;
+    const freeHalf = Math.floor(freeSize / 2);
+    const freeLeftRegion = { start: freeRegion.start, end: freeRegion.start + freeHalf };
+    const freeRightRegion = { start: freeRegion.start + freeHalf, end: freeRegion.end };
+
+    // Primary + Primary → Secondary color combinations
+    const MIXES = [
+      ['red',    'yellow', 'orange'],
+      ['yellow', 'blue',   'green'],
+      ['red',    'blue',   'purple'],
+      ['blue',   'red',    'purple'],
+      ['yellow', 'red',    'orange'],
+      ['blue',   'yellow', 'green'],
+    ];
+    const facts = [];
+    for (const [a, b, c] of MIXES) {
+      const aEmb = sharedEmbeddings.getEmbedding(a);
+      const bEmb = sharedEmbeddings.getEmbedding(b);
+      const cEmb = sharedEmbeddings.getEmbedding(c);
+      if (!aEmb || !bEmb || !cEmb) continue;
+      facts.push({ writes: [
+        { region: freeLeftRegion,  feat: aEmb, binarize: false },
+        { region: freeRightRegion, feat: bEmb, binarize: false },
+        { region: semRegion,       feat: cEmb, binarize: false },
+      ]});
+    }
+    await this._teachCombination(facts, { reps: 8 });
+    console.log(`[Curriculum] _teachColorMixing: ${facts.length} × 8 reps`);
+  }
+
+  /**
+   * Visual Arts K — warm/cool color classification.
+   */
+  async _teachWarmCoolColors(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const semRegion = cluster.regions.sem;
+    const fineTypeRegion = cluster.regions.fineType;
+    const motorRegion = cluster.regions.motor;
+    if (!semRegion || !fineTypeRegion || !motorRegion) return;
+    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
+    const warmTag = new Float64Array(fineTypeSize);
+    const coolTag = new Float64Array(fineTypeSize);
+    const half = Math.floor(fineTypeSize / 2);
+    for (let i = 0; i < half; i++) warmTag[i] = 1;
+    for (let i = half; i < fineTypeSize; i++) coolTag[i] = 1;
+
+    const COLORS = [
+      { color: 'red',    temp: 'warm' },
+      { color: 'orange', temp: 'warm' },
+      { color: 'yellow', temp: 'warm' },
+      { color: 'blue',   temp: 'cool' },
+      { color: 'green',  temp: 'cool' },
+      { color: 'purple', temp: 'cool' },
+    ];
+    const facts = [];
+    for (const { color, temp } of COLORS) {
+      const emb = sharedEmbeddings.getEmbedding(color);
+      if (!emb) continue;
+      facts.push({ writes: [
+        { region: semRegion,      feat: emb, binarize: false },
+        { region: fineTypeRegion, feat: temp === 'warm' ? warmTag : coolTag },
+        { region: motorRegion,    feat: encodeLetter(temp[0]) },
+      ]});
+    }
+    await this._teachCombination(facts, { reps: 6 });
+    console.log(`[Curriculum] _teachWarmCoolColors: ${facts.length} × 6 reps`);
+  }
+
+  /**
+   * Visual Arts K — AB pattern next-item prediction.
+   * Previous two items → next item in the repeating pattern.
+   */
+  async _teachPatternCompletion(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const freeRegion = cluster.regions.free;
+    const semRegion = cluster.regions.sem;
+    if (!freeRegion || !semRegion) return;
+    const freeSize = freeRegion.end - freeRegion.start;
+    const freeHalf = Math.floor(freeSize / 2);
+    const freeLeftRegion = { start: freeRegion.start, end: freeRegion.start + freeHalf };
+    const freeRightRegion = { start: freeRegion.start + freeHalf, end: freeRegion.end };
+
+    // AB pattern: given (A, B) continuation query, next is A.
+    // red,blue → red / blue,red → blue / circle,square → circle
+    const PATTERNS = [
+      ['red', 'blue', 'red'],
+      ['blue', 'red', 'blue'],
+      ['yellow', 'green', 'yellow'],
+      ['circle', 'square', 'circle'],
+      ['square', 'circle', 'square'],
+      ['triangle', 'circle', 'triangle'],
+    ];
+    const facts = [];
+    for (const [a, b, next] of PATTERNS) {
+      const aEmb = sharedEmbeddings.getEmbedding(a);
+      const bEmb = sharedEmbeddings.getEmbedding(b);
+      const nEmb = sharedEmbeddings.getEmbedding(next);
+      if (!aEmb || !bEmb || !nEmb) continue;
+      facts.push({ writes: [
+        { region: freeLeftRegion,  feat: aEmb, binarize: false },
+        { region: freeRightRegion, feat: bEmb, binarize: false },
+        { region: semRegion,       feat: nEmb, binarize: false },
+      ]});
+    }
+    await this._teachCombination(facts, { reps: 6 });
+    console.log(`[Curriculum] _teachPatternCompletion: ${facts.length} × 6 reps`);
+  }
+
+  /**
+   * Music K — tempo/dynamics/pitch classifications + beat concept.
+   */
+  async _teachMusicBasics(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const semRegion = cluster.regions.sem;
+    const freeRegion = cluster.regions.free;
+    if (!semRegion || !freeRegion) return;
+
+    // Concept → defining word
+    const MUSIC_CONCEPTS = [
+      ['steady', 'beat'],
+      ['music', 'beat'],
+      ['pulse', 'beat'],
+      ['fast', 'tempo'],
+      ['slow', 'tempo'],
+      ['loud', 'dynamics'],
+      ['soft', 'dynamics'],
+      ['quiet', 'dynamics'],
+      ['high', 'pitch'],
+      ['low', 'pitch'],
+      ['sing', 'voice'],
+      ['song', 'music'],
+      ['rhythm', 'pattern'],
+      ['drum', 'beat'],
+      ['piano', 'instrument'],
+      ['guitar', 'instrument'],
+      ['violin', 'instrument'],
+      ['flute', 'instrument'],
+      ['trumpet', 'instrument'],
+    ];
+    const facts = [];
+    for (const [a, b] of MUSIC_CONCEPTS) {
+      const aEmb = sharedEmbeddings.getEmbedding(a);
+      const bEmb = sharedEmbeddings.getEmbedding(b);
+      if (!aEmb || !bEmb) continue;
+      facts.push({ writes: [
+        { region: semRegion,  feat: aEmb, binarize: false },
+        { region: freeRegion, feat: bEmb, binarize: false },
+      ]});
+    }
+    await this._teachCombination(facts, { reps: 6 });
+    console.log(`[Curriculum] _teachMusicBasics: ${facts.length} × 6 reps`);
+  }
+
   async runArtKReal(ctx) {
-    // T14.24 Session 75 — Art-K per TODO line 551. Three concept
-    // helpers: _teachPrimaryColors (RGB features), _teachBasicShapes
-    // (geometric features), _teachSimpleSongs (rhythmic sequence).
-    // Run before the general K vocab pass.
+    // Session 75 existing equational helpers retained
     await this._teachPrimaryColors();
     await this._teachBasicShapes();
     await this._teachSimpleSongs();
-    // ART-K vocab: primary colors, basic shapes, art actions, music basics
-    const ART_K_VOCAB = [
-      'red', 'blue', 'yellow', 'green', 'circle',
-      'square', 'line', 'color', 'paint', 'draw',
-      'make', 'sing', 'dance', 'beat', 'song',
+
+    // Session 114.9 REMAKE — equational Arts-K teaching
+    if (!this._artKRemakeDone) {
+      await this._teachColorMixing(ctx);
+      await this._teachWarmCoolColors(ctx);
+      await this._teachPatternCompletion(ctx);
+      await this._teachMusicBasics(ctx);
+      this._artKRemakeDone = true;
+    }
+
+    return await this._gateArtKReal();
+  }
+
+  async _gateArtKReal() {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.synapses) return { pass: false, reason: 'no cluster' };
+
+    const artKProductionSamples = [
+      // Visual Arts K Tests
+      { question: 'what are the three primary colors', expected: ['red', 'yellow', 'blue', 'r', 'y', 'b'] },
+      { question: 'what color do red and yellow make', expected: ['orange', 'o'] },
+      { question: 'what color do blue and yellow make', expected: ['green', 'g'] },
+      { question: 'is red a warm color or cool color', expected: ['warm', 'w'] },
+      { question: 'is blue a warm color or cool color', expected: ['cool', 'c'] },
+      { question: 'what comes next red blue red blue', expected: ['red', 'r'] },
+      // Music K Tests
+      { question: 'what is the steady pulse in music called', expected: ['beat', 'b'] },
+      { question: 'fast music has a fast what', expected: ['tempo', 't'] },
+      { question: 'a drum is hit to make what', expected: ['sound', 'beat', 's', 'b'] },
     ];
-    return this._teachVocabList(ART_K_VOCAB, ctx);
+    const prodResult = await this._probeProductionBatch(artKProductionSamples, {
+      visualCortex: (this.engine && this.engine.visualCortex) || null,
+    });
+    const prodRate = prodResult.total > 0 ? prodResult.pass / prodResult.total : 0;
+    const pass = prodRate >= 0.95;
+    const pct = (r) => (r * 100).toFixed(0);
+    const prodFailSummary = prodResult.fails && prodResult.fails.length > 0
+      ? ' [FAIL: ' + prodResult.fails.slice(0, 5).map(f => `"${f.q}"→"${String(f.emitted).slice(0, 30)}"`).join('; ') + ']'
+      : '';
+    return {
+      pass,
+      reason: `PROD ${prodResult.pass}/${prodResult.total} (${pct(prodRate)}%)${prodFailSummary}`,
+      metrics: { prodRate, prodFails: prodResult.fails },
+    };
   }
 
   // ═══════════════════════════════════════════════════════════════════
