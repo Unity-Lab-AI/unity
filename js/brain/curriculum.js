@@ -7235,8 +7235,13 @@ export class Curriculum {
    * K-PS2 Forces and Interactions — push/pull → motion + force
    * strength → motion magnitude + collision bidirectionality.
    * Causal-chain teaching via _teachCombination with sem+fineType tags.
+   *
+   * Named `_teachForceMotionK` (K-suffix) to distinguish from the
+   * older G5-era `_teachForceMotion` at line ~10597 which teaches
+   * F=ma / mass / acceleration / friction / gravity concepts for
+   * the physics side of the grade 5 science curriculum.
    */
-  async _teachForceMotion(ctx) {
+  async _teachForceMotionK(ctx) {
     const cluster = this.cluster;
     if (!cluster || !cluster.crossProjections) return;
     const semRegion = cluster.regions.sem;
@@ -7581,7 +7586,7 @@ export class Curriculum {
     // banned _teachVocabList + _teachSentenceList data-array pattern
     if (!this._sciKRemakeDone) {
       // K-PS2 Forces and Interactions
-      await this._teachForceMotion(ctx);
+      await this._teachForceMotionK(ctx);
       await this._teachForceStrengthEffect(ctx);
       // K-ESS2 Weather and Climate
       await this._teachWeatherCategories(ctx);
@@ -7919,8 +7924,15 @@ export class Curriculum {
 
   /**
    * Visual Arts K — color mixing transforms (primary + primary → secondary).
+   *
+   * Named `_teachColorMixingK` (K-suffix) to distinguish from the
+   * older Art-G1 `_teachColorMixing` at line ~11110 which teaches
+   * 8-dim RGB/warm/cool/secondary feature vectors. The K version
+   * does equational A+B→C pair-to-composite binding via
+   * `_teachCombination` (freeLeft+freeRight→sem) while the G1
+   * version uses `_conceptTeach` feature-vector clustering.
    */
-  async _teachColorMixing(ctx) {
+  async _teachColorMixingK(ctx) {
     const cluster = this.cluster;
     if (!cluster || !cluster.crossProjections) return;
     const freeRegion = cluster.regions.free;
@@ -8090,7 +8102,7 @@ export class Curriculum {
 
     // Session 114.9 REMAKE — equational Arts-K teaching
     if (!this._artKRemakeDone) {
-      await this._teachColorMixing(ctx);
+      await this._teachColorMixingK(ctx);
       await this._teachWarmCoolColors(ctx);
       await this._teachPatternCompletion(ctx);
       await this._teachMusicBasics(ctx);
