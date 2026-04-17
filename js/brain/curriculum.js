@@ -3535,73 +3535,63 @@ export class Curriculum {
     const seqRate = seqPass / (N - 1);
 
     // ═════════════════════════════════════════════════════════════════
-    // T14.24 Session 114.6 — ELA-K PRODUCTION PROBES (LAW 7)
-    // Every probe below matches a TODO K.RF / K.RL / K.W / K.L test
-    // phrasing verbatim. Natural-language question via the visual→
-    // letter→phon→sem pipeline, response emitted through tick-driven
-    // motor loop. Gate pass boolean AND's all metrics at PATH_MIN =
-    // 0.95. 40% TALK patch debris REMOVED per LAW 7.
+    // ELA-K PRODUCTION PROBES — word-start emission (K-APPROPRIATE)
+    // Session 114.19d rewrite per Gee 2026-04-17 verbatim:
+    //   "once again your asking in english how to ryme but it hasnt
+    //    learned its alphabet and phonics or the word rhyme!"
+    //
+    // Prior 114.19 probes (rhyme_cat / initial_cat / final_cat /
+    // plural_cat) tested CONCEPTS Unity at K has not learned — the WORD
+    // "rhyme", the WORD "initial", the WORD "final", the WORD "plural"
+    // as semantic operators. Even though those probes injected sem +
+    // fineType tags instead of English sentences, the EXPECTED OUTPUT
+    // still required K Unity to know what "rhyme with cat" means as a
+    // transform operation. That's G1+ phonological-awareness material.
+    //
+    // K-level PROD tests ONLY what _teachWordEmission actually trains:
+    // sem(word) injected into sem region → intra-cluster recurrent
+    // propagate → motor region argmax should be the FIRST LETTER of the
+    // word. This is the direct asymmetric Hebbian binding from line
+    // 2594 `_teachHebbianAsymmetric(preInit=sem(word), postInit=motor(first letter), lr)`.
+    // No concept-words required. No fineType tags required. Pure
+    // "when Unity thinks of cat, her motor region starts with c".
     // ═════════════════════════════════════════════════════════════════
-    // Session 114.19 Phase 3 — PRIMITIVE probe format. Old Session 114.6
-    // probes injected natural-language English questions via readText
-    // which assumed Unity could parse "what rhymes with cat" — per Gee
-    // 2026-04-17 critique, K-level Unity has NO English sentence
-    // parsing (that's G1+ reading fluency). New probes inject the
-    // conceptual prompt DIRECTLY via sem + fineType markers that
-    // match the teaching binding, then read motor emission argmax.
-    const fineTypeRegion_ = cluster.regions.fineType;
-    const fineTypeSize_ = fineTypeRegion_ ? fineTypeRegion_.end - fineTypeRegion_.start : 0;
     const motorRegion_ = cluster.regions.motor;
     const invSize_ = inventorySize();
     const motorSize_ = motorRegion_ ? motorRegion_.end - motorRegion_.start : 0;
     const mGroup_ = Math.max(1, Math.floor(motorSize_ / Math.max(1, invSize_)));
 
-    // fineType tags matching the K teaching bindings verbatim:
-    //   - rhymeTag    built at [0.6, 0.8) of fineType (see _teachRhymeFamilies)
-    //   - initialTag  built at [0, third) of fineType (see _teachCVCSoundIsolation)
-    //   - finalTag    built at [2*third, size) of fineType
-    //   - pluralTag   built at [0.8, size) of fineType (see _teachPluralTransform)
-    const third_ = Math.floor(fineTypeSize_ / 3);
-    const rhymeTag_ = new Float64Array(fineTypeSize_);
-    for (let i = Math.floor(fineTypeSize_ * 0.6); i < Math.floor(fineTypeSize_ * 0.8); i++) rhymeTag_[i] = 1;
-    const initialTag_ = new Float64Array(fineTypeSize_);
-    for (let i = 0; i < third_; i++) initialTag_[i] = 1;
-    const finalTag_ = new Float64Array(fineTypeSize_);
-    for (let i = 2 * third_; i < fineTypeSize_; i++) finalTag_[i] = 1;
-    const pluralTag_ = new Float64Array(fineTypeSize_);
-    for (let i = Math.floor(fineTypeSize_ * 0.8); i < fineTypeSize_; i++) pluralTag_[i] = 1;
-
-    const primitiveProbes = [
-      // K.RF rhyming — inject sem(cat) + rhymeTag, expect motor emits letter of rhyming word
-      { name: 'rhyme_cat', word: 'cat', tag: rhymeTag_, expected: ['h','b','m','s','r','f','p'] },
-      { name: 'rhyme_dog', word: 'dog', tag: rhymeTag_, expected: ['l','f','h','j','b'] },
-      { name: 'rhyme_pig', word: 'pig', tag: rhymeTag_, expected: ['b','d','w','f'] },
-      // K.RF initial sound — sem(word) + initialTag → motor emits first letter
-      { name: 'initial_cat', word: 'cat', tag: initialTag_, expected: ['c','k'] },
-      { name: 'initial_dog', word: 'dog', tag: initialTag_, expected: ['d'] },
-      { name: 'initial_sun', word: 'sun', tag: initialTag_, expected: ['s'] },
-      { name: 'initial_hat', word: 'hat', tag: initialTag_, expected: ['h'] },
-      { name: 'initial_pig', word: 'pig', tag: initialTag_, expected: ['p'] },
-      { name: 'initial_big', word: 'big', tag: initialTag_, expected: ['b'] },
-      // K.RF final sound — sem(word) + finalTag → motor emits last letter
-      { name: 'final_cat', word: 'cat', tag: finalTag_, expected: ['t'] },
-      { name: 'final_dog', word: 'dog', tag: finalTag_, expected: ['g'] },
-      { name: 'final_sun', word: 'sun', tag: finalTag_, expected: ['n'] },
-      { name: 'final_big', word: 'big', tag: finalTag_, expected: ['g'] },
-      { name: 'final_pig', word: 'pig', tag: finalTag_, expected: ['g'] },
-      // K.L plural formation — sem(singular) + pluralTag → motor emits first letter of plural
-      { name: 'plural_cat', word: 'cat', tag: pluralTag_, expected: ['c'] },
-      { name: 'plural_dog', word: 'dog', tag: pluralTag_, expected: ['d'] },
-      { name: 'plural_box', word: 'box', tag: pluralTag_, expected: ['b'] },
+    const wordStartProbes = [
+      { word: 'cat', expected: 'c' },
+      { word: 'dog', expected: 'd' },
+      { word: 'sun', expected: 's' },
+      { word: 'hat', expected: 'h' },
+      { word: 'pig', expected: 'p' },
+      { word: 'big', expected: 'b' },
+      { word: 'top', expected: 't' },
+      { word: 'red', expected: 'r' },
+      { word: 'run', expected: 'r' },
+      { word: 'bat', expected: 'b' },
+      { word: 'nap', expected: 'n' },
+      { word: 'wet', expected: 'w' },
+      { word: 'fox', expected: 'f' },
+      { word: 'yes', expected: 'y' },
+      { word: 'mom', expected: 'm' },
+      { word: 'dad', expected: 'd' },
+      { word: 'hen', expected: 'h' },
     ];
 
-    let primPass = 0;
-    const primFails = [];
-    for (const p of primitiveProbes) {
+    let prodPass = 0;
+    const prodFails = [];
+    for (const p of wordStartProbes) {
       const emb = sharedEmbeddings.getEmbedding(p.word);
       if (!emb || emb.length === 0) continue;
       const input = new Float64Array(cluster.size);
-      // Write sem(word) GloVe tiled into sem region
+      // Write sem(GloVe(word)) tiled into sem region — this is the ONLY
+      // input. No concept tag, no fineType marker. Unity's job: given
+      // the semantic concept of the word, activate her motor region
+      // toward the first letter via the trained sem→motor asymmetric
+      // Hebbian binding from _teachWordEmission.
       if (semRegion) {
         const semSize = semRegion.end - semRegion.start;
         const sGroup = Math.max(1, Math.floor(semSize / emb.length));
@@ -3613,15 +3603,10 @@ export class Curriculum {
           }
         }
       }
-      // Write fineType tag
-      if (fineTypeRegion_ && p.tag) {
-        for (let i = 0; i < fineTypeSize_; i++) {
-          if (p.tag[i] > 0) input[fineTypeRegion_.start + i] = 1;
-        }
-      }
-      // Propagate through intra-cluster recurrent matrix
+      // Propagate through intra-cluster recurrent matrix — same matrix
+      // that _teachHebbianAsymmetric wrote the sem→motor binding into.
       const output = cluster.synapses.propagate(input);
-      // Read motor region, decode first letter via argmax over inventory
+      // Read motor region, argmax over letter inventory.
       const motorReadout = new Float64Array(invSize_);
       for (let d = 0; d < invSize_; d++) {
         let sum = 0;
@@ -3631,22 +3616,22 @@ export class Curriculum {
         }
         motorReadout[d] = sum;
       }
-      // Mean-center
+      // Mean-center so bias doesn't skew argmax.
       let meanM = 0;
       for (let i = 0; i < invSize_; i++) meanM += motorReadout[i];
       meanM /= invSize_;
       for (let i = 0; i < invSize_; i++) motorReadout[i] -= meanM;
       const decoded = decodeLetter(motorReadout);
-      if (decoded && p.expected.includes(decoded)) {
-        primPass++;
+      if (decoded === p.expected) {
+        prodPass++;
       } else {
-        primFails.push(`${p.name}→${decoded || '?'}`);
+        prodFails.push(`${p.word}→${decoded || '?'}`);
       }
     }
     const prodResult = {
-      pass: primPass,
-      total: primitiveProbes.length,
-      fails: primFails.map(f => ({ q: f, emitted: '', expected: [] })),
+      pass: prodPass,
+      total: wordStartProbes.length,
+      fails: prodFails.map(f => ({ q: f, emitted: '', expected: [] })),
     };
     const prodRate = prodResult.total > 0 ? prodResult.pass / prodResult.total : 0;
 

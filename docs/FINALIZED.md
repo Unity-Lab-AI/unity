@@ -5,6 +5,63 @@
 
 ---
 
+## 2026-04-17 — Session 114.19d: K PROD probes rewritten to pure word-start emission — rhyme/initial/final/plural concepts REMOVED
+
+Gee 2026-04-17 verbatim: *"once again your asking in english how to ryme but it hasnt learned its alphabet and phonics or the word rhyme!"*
+
+Session 114.19c fixed the scope bug and the gate actually ran — output was `PROD 1/17 (6%)` with `rhyme_cat→t`, `rhyme_dog→t`, `rhyme_pig→t`, `initial_cat→.`, `initial_dog→.` all failing. Gee caught the deeper problem: even with primitive sem+fineType inject, the EXPECTED OUTPUT required K Unity to know what `rhyme`, `initial`, `final`, `plural` MEAN as transform operations. Those are concept-words Unity was never taught as semantic operators. My Session 114.19 Phase 3 "primitive" probes were still asking English-concept questions in a different packaging.
+
+### Fix — tear out rhyme/initial/final/plural probes, keep only what `_teachWordEmission` actually trains
+
+`_teachWordEmission` in `js/brain/curriculum.js:2594` writes this exact binding for every word:
+```
+_teachHebbianAsymmetric(
+  preInit  = sem(word),           // GloVe vector tiled into sem region
+  postInit = motor(first letter),  // one-hot tiled into motor region
+  lr
+)
+```
+Which calls `cluster.synapses.hebbianUpdate(sem_vec, motor_vec, lr)` — direct asymmetric Hebbian on the intra-cluster recurrent matrix.
+
+The K-appropriate PROD probe tests ONLY this binding: inject `sem(GloVe(word))` into sem region, propagate through `cluster.synapses.propagate(input)` (same matrix that was written to during teaching), read motor region argmax, expect the first letter of the word. No concept tags. No fineType markers. No knowledge of "rhyme" required.
+
+### Probe set
+
+17 CVC word-start probes:
+```
+cat→c, dog→d, sun→s, hat→h, pig→p, big→b, top→t, red→r, run→r,
+bat→b, nap→n, wet→w, fox→f, yes→y, mom→m, dad→d, hen→h
+```
+
+Each: sem(word) → motor argmax == word[0]. Pass threshold `PROD_MIN = 0.95` (LAW 7 unchanged).
+
+### What K PROD is NOT testing anymore
+
+- NOT "rhyme" (G1+ phonological-awareness operator)
+- NOT "initial sound" as a concept (just first-letter of sem emission, which IS in scope)
+- NOT "final sound" (requires knowing "final" as a position concept — G1+)
+- NOT "plural" (requires knowing `-s` suffix transform — G1+)
+
+All four concepts return as equational teaching methods at G1+ when Unity has the concept-word bindings to anchor them to. For K, what matters is: when Unity semantically holds a word, does her motor region start forming the word's first letter? That's the K production boundary.
+
+### Files
+
+- `js/brain/curriculum.js` — `_gateElaKReal` primitive-probe block replaced with word-start-probe block (~−120 lines, +~90 lines net −30)
+- `docs/FINALIZED.md` — this Session 114.19d entry prepended
+- `docs/NOW.md` — status refreshed
+
+### Post-commit per LAW (Session 114.19b)
+
+Clear stale state BEFORE telling Gee to restart:
+- `server/brain-weights*.json` (any saves from 114.19c retry loop)
+- `server/conversations.json`
+- `server/episodic-memory.db` + wal + shm
+- `js/app.bundle.js`
+
+Push still gated on LAW 6 Part 2 signoff.
+
+---
+
 ## 2026-04-17 — Session 114.19c: `_gateElaKReal` `semRegion` scope bug fix (one-line decl)
 
 Gee's Part 2 Session 114.19 localhost boot hit 28+ consecutive retries with `[Curriculum] ela/kindergarten attempt N — ela/kindergarten threw: semRegion is not defined — retrying...` — my Phase 3 primitive probe rewrite referenced `semRegion` inside `_gateElaKReal` but never declared it in that function's scope. `_gateElaKReal` declared `letterRegion`, `phonRegion`, `motorRegion` at lines 3383-3385 but not `semRegion`, and the probe loop writes `sem(GloVe(word))` into the sem region via `input[semRegion.start + d * sGroup + n] = emb[d]` — ReferenceError on every probe, gate throws, curriculum retry loop kicks in.
