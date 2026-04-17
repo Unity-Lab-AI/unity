@@ -39,11 +39,24 @@ echo   GloVe 6B.300d not found - downloading (~823 MB zip, one-time, 5-15 min)..
 echo   Source: https://nlp.stanford.edu/data/glove.6B.zip
 if not exist "%~dp0corpora" mkdir "%~dp0corpora"
 pushd "%~dp0corpora"
-curl -LO --fail --show-error --max-time 1800 https://nlp.stanford.edu/data/glove.6B.zip
-if errorlevel 1 goto err_glove_download
+REM --progress-bar gives a simple [====] progress line that doesn't use
+REM carriage-return animation. Without --progress-bar, curl's default
+REM progress table uses \r to overwrite lines, which corrupts CMD's
+REM subsequent "if errorlevel" line parse - Gee's Session 114.17 log
+REM showed "'rrorlevel' is not recognized" from exactly this bug.
+REM Also using %ERRORLEVEL% explicit check (more robust than bare
+REM "if errorlevel 1" against prior curl progress state).
+curl -L --fail --show-error --progress-bar --max-time 1800 -o glove.6B.zip https://nlp.stanford.edu/data/glove.6B.zip
+if %ERRORLEVEL% NEQ 0 (
+    popd
+    goto err_glove_download
+)
 echo   Extracting glove.6B.300d.txt (~990 MB from zip)...
 tar -xf glove.6B.zip glove.6B.300d.txt
-if errorlevel 1 goto err_glove_extract
+if %ERRORLEVEL% NEQ 0 (
+    popd
+    goto err_glove_extract
+)
 del glove.6B.zip
 popd
 echo   GloVe 6B.300d installed at corpora\glove.6B.300d.txt.
@@ -109,7 +122,6 @@ pause
 exit /b 1
 
 :err_glove_download
-popd
 echo.
 echo   ============================================================
 echo   WARNING: GloVe download failed (network, curl missing, or
@@ -129,7 +141,6 @@ echo.
 goto glove_done
 
 :err_glove_extract
-popd
 echo.
 echo   ============================================================
 echo   WARNING: GloVe extract failed (tar missing or zip corrupt).

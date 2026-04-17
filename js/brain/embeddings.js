@@ -103,10 +103,25 @@ export class SemanticEmbeddings {
       let text = null;
 
       if (isNode) {
-        // Server path — read from local disk
+        // Server path — stream from local disk LINE-BY-LINE.
+        //
+        // Session 114.17 fix: the old code did `fs.readFileSync(p, 'utf8')`
+        // which loads the entire 990 MB file as a single JS string. V8's
+        // max string length on 64-bit is ~1 GB; the 990 MB file is right
+        // at the edge. Then `text.split('\n')` creates 400k substrings +
+        // a 400k-element array, doubling memory. Per Gee's Part 2 boot
+        // log on 2026-04-17, readFileSync either threw "Invalid string
+        // length" or completed but `split('\n')` OOM'd silently, causing
+        // the fallback "GloVe not found" message despite the file being
+        // present at 1,037,962,819 bytes / 400,000 lines.
+        //
+        // New path: `readline.createInterface` over a read stream, parse
+        // each line as it arrives, build the Map incrementally. Peak
+        // memory = Map + current line buffer, not the whole file.
         try {
           const fs = await import('fs');
           const path = await import('path');
+          const readline = await import('readline');
           // Try several plausible paths relative to cwd / module location
           const candidates = [
             GLOVE_LOCAL_PATH,
@@ -114,16 +129,41 @@ export class SemanticEmbeddings {
             path.join(process.cwd(), '..', GLOVE_LOCAL_PATH),
             path.join(process.cwd(), 'server', GLOVE_LOCAL_PATH),
           ];
+          let foundPath = null;
           for (const p of candidates) {
-            if (fs.existsSync(p)) {
-              console.log(`[Embeddings] Reading ${p}...`);
-              text = fs.readFileSync(p, 'utf8');
-              break;
-            }
+            if (fs.existsSync(p)) { foundPath = p; break; }
           }
-          if (!text) {
+          if (!foundPath) {
             throw new Error(`GloVe ${EMBED_DIM}d not found at any of: ${candidates.join(', ')} — download glove.6B.300d.txt from https://nlp.stanford.edu/data/glove.6B.zip and place at corpora/glove.6B.300d.txt`);
           }
+          console.log(`[Embeddings] Reading ${foundPath} via streaming readline...`);
+          const stream = fs.createReadStream(foundPath, { encoding: 'utf8' });
+          const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
+          let streamCount = 0;
+          for await (const line of rl) {
+            if (!line) continue;
+            const parts = line.split(' ');
+            if (parts.length !== EMBED_DIM + 1) continue;
+            const word = parts[0].toLowerCase();
+            const vec = new Float32Array(EMBED_DIM);
+            for (let i = 0; i < EMBED_DIM; i++) {
+              vec[i] = parseFloat(parts[i + 1]) || 0;
+            }
+            // L2-normalize inline so the parse-after-read branch below
+            // is skipped for the Node streaming path.
+            let norm = 0;
+            for (let i = 0; i < EMBED_DIM; i++) norm += vec[i] * vec[i];
+            norm = Math.sqrt(norm) || 1;
+            for (let i = 0; i < EMBED_DIM; i++) vec[i] /= norm;
+            this._embeddings.set(word, vec);
+            streamCount++;
+            if (streamCount % 50000 === 0) {
+              console.log(`[Embeddings]   streamed ${streamCount.toLocaleString()} vectors...`);
+            }
+          }
+          this._loaded = true;
+          console.log(`[Embeddings] Loaded ${streamCount.toLocaleString()} word vectors (${EMBED_DIM}d) via stream`);
+          return streamCount;
         } catch (err) {
           if (err.message.includes('not found')) throw err;
           throw new Error(`Server GloVe load failed: ${err.message}`);
