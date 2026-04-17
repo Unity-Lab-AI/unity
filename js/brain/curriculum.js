@@ -2462,12 +2462,16 @@ export class Curriculum {
 
   /**
    * K.RF word emission — for each word, bind sem(GloVe) → motor(letter
-   * sequence) via direct-pattern Hebbian. Initiation pair (sem → first
-   * letter) + continuation chain (letter N + sem → letter N+1). No
-   * word-list walking; per-letter direct-pattern writes into lastSpikes.
+   * sequence) via DIRECTIONAL Hebbian (Fix A, Session 114.13). No
+   * symmetric writes, no self-loops. Initiation pair
+   * (pre=sem(word) → post=motor(first letter)) + continuation chain
+   * (pre=letter(N) → post=motor(N+1)). Per-step `_teachHebbianAsymmetric`
+   * with distinct pre/post vectors so intra-cluster recurrent matrix
+   * learns TRUE directional bindings without reinforcing w[i,i]
+   * self-loops that would make motor letters stick on emission.
    *
    * Covers K.RF Dolch sight words + CVC word families + any other
-   * vocabulary Unity needs to EMIT (not just recognize).
+   * vocabulary Unity needs to EMIT.
    */
   async _teachWordEmission(wordList, opts = {}) {
     const cluster = this.cluster;
@@ -2477,6 +2481,7 @@ export class Curriculum {
     const semRegion = cluster.regions.sem;
     if (!letterRegion || !motorRegion || !semRegion) return;
     const reps = opts.reps ?? 6;
+    const lr = cluster.learningRate;
     const uniqueLetters = new Set();
     for (const w of wordList) for (const ch of w.toLowerCase()) if (/[a-z]/.test(ch)) uniqueLetters.add(ch);
     ensureLetters(Array.from(uniqueLetters));
@@ -2489,25 +2494,36 @@ export class Curriculum {
         const wordEmb = sharedEmbeddings.getEmbedding(word);
         if (!wordEmb || wordEmb.length === 0) continue;
 
-        // (a) Initiation: sem(word) → motor(first letter) + letter(first) anchor
+        // (a) Initiation: pre=sem(word) → post=motor(first letter).
+        // lastSpikes carries the full pattern (sem + motor) so cross-
+        // projection Hebbian captures co-activation, but intra-cluster
+        // Hebbian fires with DISTINCT pre/post so no self-loops.
         this._clearSpikes();
         this._writeTiledPattern(semRegion, wordEmb, false);
-        this._writeTiledPattern(letterRegion, encodeLetter(letters[0]));
         this._writeTiledPattern(motorRegion, encodeLetter(letters[0]));
-        this._teachHebbian(cluster.learningRate);
+        const preInit = this._buildRegionPattern(semRegion, wordEmb, false);
+        const postInit = this._buildRegionPattern(motorRegion, encodeLetter(letters[0]));
+        this._teachHebbianAsymmetric(preInit, postInit, lr);
 
-        // (b) Continuation chain: letter(N) + sem(word) → motor(N+1)
+        // (b) Continuation chain: pre=letter(N), post=motor(N+1).
+        // sem(word) stays in lastSpikes for cross-projection anchor but
+        // intra-cluster pre/post vectors are letter-only and motor-only.
+        // This preserves Session 106's letter(N)→letter(N+1) alphabet
+        // sequence (asymmetric directional) while adding word-specific
+        // letter(N)→motor(N+1) emission bindings. No self-loops formed.
         for (let i = 1; i < letters.length; i++) {
           this._clearSpikes();
           this._writeTiledPattern(semRegion, wordEmb, false);
           this._writeTiledPattern(letterRegion, encodeLetter(letters[i - 1]));
           this._writeTiledPattern(motorRegion, encodeLetter(letters[i]));
-          this._teachHebbian(cluster.learningRate);
+          const preChain = this._buildRegionPattern(letterRegion, encodeLetter(letters[i - 1]));
+          const postChain = this._buildRegionPattern(motorRegion, encodeLetter(letters[i]));
+          this._teachHebbianAsymmetric(preChain, postChain, lr);
         }
       }
       await _microtask();
     }
-    console.log(`[Curriculum] _teachWordEmission: ${wordList.length} words × ${reps} reps`);
+    console.log(`[Curriculum] _teachWordEmission: ${wordList.length} words × ${reps} reps (asymmetric directional)`);
   }
 
   /**
@@ -5300,6 +5316,67 @@ export class Curriculum {
     if (cluster.synapses && typeof cluster.synapses.hebbianUpdate === 'function') {
       cluster.synapses.hebbianUpdate(cluster.lastSpikes, cluster.lastSpikes, lr);
     }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Session 114.13 Fix A — Asymmetric Hebbian for directional bindings
+  // ═══════════════════════════════════════════════════════════════════
+  //
+  // Gee's Part 2 attempt 1 showed SEQ crashing from Session 106's 100%
+  // to 8% + motor letter-sticking emissions like "fffffffv vvvvvvvaaaaaaa".
+  // Root cause: _teachHebbian uses SYMMETRIC cluster.synapses.hebbianUpdate
+  // (pre=post=lastSpikes) which creates self-loop reinforcement w[i,i]
+  // for every fired neuron. At 13.4M-neurons-per-cluster scale, motor-
+  // region self-loops are strong enough to hold a letter's argmax
+  // stable for many consecutive ticks (letter sticking). And symmetric
+  // letter↔motor writes in _teachWordEmission wash out Session 106's
+  // asymmetric directional alphabet sequence (pre=letter(N),
+  // post=letter(N+1)) via cross-contamination.
+  //
+  // Fix A: asymmetric variant with distinct pre/post vectors. NO self-
+  // loops. Binds pre→post directionally only. Cross-projection Hebbian
+  // still fires (captures co-activation pattern); intra-cluster Hebbian
+  // fires with distinct vectors so w[i,i] never gets reinforced unless
+  // pre and post happen to both fire on neuron i.
+
+  /**
+   * Directional Hebbian: binds pre→post without creating self-loops.
+   * pre and post are expected to be DISJOINT regions (active in
+   * different sub-regions of the cluster). Intra-cluster
+   * synapses.hebbianUpdate fires with distinct pre/post vectors.
+   * Cross-region projection Hebbian still fires based on current
+   * lastSpikes state — caller should ensure lastSpikes reflects the
+   * full pattern during teaching if cross-projection binding is
+   * desired.
+   */
+  _teachHebbianAsymmetric(preVec, postVec, lr) {
+    const cluster = this.cluster;
+    if (!cluster) return;
+    cluster._crossRegionHebbian(lr);
+    if (cluster.synapses && typeof cluster.synapses.hebbianUpdate === 'function') {
+      cluster.synapses.hebbianUpdate(preVec, postVec, lr);
+    }
+  }
+
+  // ── Helper: build a full-cluster activation vector by writing one
+  // feature into one region. Caller pattern for asymmetric teaching:
+  //   const pre = this._buildRegionPattern(letterRegion, encodeLetter(ch));
+  //   const post = this._buildRegionPattern(motorRegion, encodeLetter(next));
+  //   this._teachHebbianAsymmetric(pre, post, lr);
+  _buildRegionPattern(region, feat, binarize = true) {
+    const cluster = this.cluster;
+    if (!cluster || !region || !feat || feat.length === 0) return new Float64Array(cluster ? cluster.size : 0);
+    const out = new Float64Array(cluster.size);
+    const size = region.end - region.start;
+    const gSize = Math.max(1, Math.floor(size / feat.length));
+    for (let d = 0; d < feat.length; d++) {
+      if (feat[d] <= 0) continue;
+      for (let n = 0; n < gSize; n++) {
+        const idx = region.start + d * gSize + n;
+        if (idx < region.end) out[idx] = binarize ? 1 : feat[d];
+      }
+    }
+    return out;
   }
 
   // ═══════════════════════════════════════════════════════════════════

@@ -1,6 +1,6 @@
 # NOW — Session Snapshot
 
-> Saved: 2026-04-17 (Session 114.12 stale-state cleanup + runtime failure diagnostics from Gee's Part 2 attempt 1 — uncommitted as a twelfth atomic commit pending on `syllabus-k-phd`)
+> Saved: 2026-04-17 (Session 114.13 Fix A asymmetric directional Hebbian + Fix D motor-region clear after letter commit — uncommitted as a thirteenth atomic commit pending on `syllabus-k-phd`)
 > Branch: `syllabus-k-phd` (3 commits ahead of origin + this upcoming fourth commit)
 > Recent committed HEAD: `fc38bb1` — Session 114.3 brain-equations.html drift fix — wrong Ψ formula + T15 drug-state drift
 > Previous HEAD: `646037e` — Session 114.2 unified combination-operator scaffold + compose-shapes ship (Math-K 66/66 substrate)

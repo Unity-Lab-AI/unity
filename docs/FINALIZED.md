@@ -5,6 +5,57 @@
 
 ---
 
+## 2026-04-17 — Session 114.13: Fix A + Fix D — asymmetric directional Hebbian + motor-region clear after letter commit
+
+Gee 2026-04-17: *"i agree A&D"*. Both fix paths shipped in one atomic commit addressing the catastrophic SEQ crash (100%→8%) + slur-gibberish letter-sticking emissions ("fffffffv vvvvvvvaaaaaaa") from Part 2 attempt 1.
+
+### Fix A — Asymmetric Hebbian variant (prevents self-loops + preserves directional bindings)
+
+**New helper `Curriculum._teachHebbianAsymmetric(preVec, postVec, lr)`** on `js/brain/curriculum.js`. Calls:
+- `cluster._crossRegionHebbian(lr)` — cross-projection Hebbian still fires (captures lastSpikes co-activation)
+- `cluster.synapses.hebbianUpdate(preVec, postVec, lr)` — intra-cluster recurrent Hebbian with DISTINCT pre/post. When pre and post are disjoint region activations, no `w[i,i]` self-loop reinforcement is created.
+
+**New helper `Curriculum._buildRegionPattern(region, feat, binarize)`** builds a full-cluster Float64Array with ONLY the specified region populated. Used by callers to construct distinct pre/post vectors for asymmetric teaching.
+
+**`_teachWordEmission` refactored to asymmetric.** Per-word per-letter chain now:
+- Initiation: `pre=sem(wordEmb)`, `post=motor(first letter)` — directional, no self-loops
+- Continuation (for each letter i in word): `pre=letter(letters[i-1])`, `post=motor(letters[i])` — directional binding for sequence, preserves Session 106's letter(N)→letter(N+1) alphabet sequence (asymmetric directional) without washing it out via symmetric cross-writes.
+
+`lastSpikes` still carries the full pattern (sem + letter + motor) during teaching so `_crossRegionHebbian` can fire on co-activation. The asymmetric fix applies ONLY to the intra-cluster recurrent matrix where self-loops were doing damage at 13.4M-neurons-per-cluster scale.
+
+### Fix D — Clear motor region after letter commits
+
+**`js/brain/cluster.js:generateSentence`** — after `committedLetter` is assigned (STABLE_TICK_THRESHOLD of consecutive same-letter argmax), three things now happen:
+1. Zero out the motor region in `lastSpikes` (`for j in [motor.start, motor.end]: lastSpikes[j] = 0`)
+2. Reset `lastMotorLetter = null` so argmax tracking starts fresh
+3. Reset `_motorQuiescentTicks = 0` so quiescence counter doesn't trip on the freshly-cleared region
+
+Without this reset, the committed letter's motor-region activation persists for many additional ticks via self-loop reinforcement (which Fix A largely eliminates for NEW teaching, but legacy weights + cross-projection feedback can still cause sticking). Clearing doesn't lose information — the next tick's cross-projections (sem→motor + motor←letter) re-populate motor from the cortex's ADVANCED sem/letter state (cortex already advanced past the committed letter).
+
+### Why A+D together
+
+- **Fix A alone:** prevents NEW symmetric self-loops from forming, but existing legacy weights from previous curriculum runs still have self-loops. Motor could still stick on those.
+- **Fix D alone:** forces a motor reset every STABLE_TICK_THRESHOLD ticks, but if Hebbian training keeps reinforcing self-loops on every cortex step, the reset gets overwritten instantly.
+- **A + D together:** Fix A stops NEW self-loop formation during teaching; Fix D breaks any remaining sticking behavior at emission time. Both required for clean letter-by-letter motor emission.
+
+### Files touched
+
+- `js/brain/curriculum.js` (+~50 lines: `_teachHebbianAsymmetric`, `_buildRegionPattern`, `_teachWordEmission` asymmetric refactor)
+- `js/brain/cluster.js` (+~15 lines: motor-region clear after committed letter in `generateSentence`)
+- `docs/FINALIZED.md` (this Session 114.13 entry prepended)
+- `docs/NOW.md` (status refreshed)
+
+### What Gee does next
+
+1. Restart brain server — persistence.js VERSION 5 already rejects any v4 cache (shipped in Session 114.12 commit `368cae3`)
+2. Re-run localhost curriculum — all 6 subjects fresh, REMAKE teaching runs under Fix A asymmetric, emissions run under Fix D motor-clear
+3. Report attempt 2+ gate scores + emission samples
+4. If SEQ + PROD still under 95% but emissions are now clean (no letter sticking), next fix is B (scale reps) or C (cap self-loop weights). If emissions still stick, we investigate the cortex-step dynamics path deeper.
+
+Push still gated on LAW 6 Part 2 signoff.
+
+---
+
 ## 2026-04-17 — Session 114.12: stale-state cleanup + runtime-failure diagnostics from Gee's Part 2 localhost run
 
 Gee caught verbatim: *"did we clear all the old temp and cache files first?"* — I hadn't. Runtime output showed catastrophic ELA-K gate scores on attempt 1 (READ 31%, TALK 65%, SEQ 8%, PROD 4%) with slur-gibberish emissions like `"what rhymes with cat" → "a fffffffv vvvvvvvaaaaaaa aaaa"`. Stale pre-REMAKE saves + possibly-stale bundle + missing VERSION bump all contributed.

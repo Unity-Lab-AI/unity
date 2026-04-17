@@ -1407,6 +1407,27 @@ export class NeuronCluster {
         committedLetter = activeLetter;
         letterBuffer += activeLetter;
         stableTicks = 0;
+
+        // Session 114.13 Fix D — clear the motor region after a letter
+        // commits so the just-committed letter's activation doesn't
+        // stick for many consecutive ticks via self-loop reinforcement.
+        // Without this reset, at large cluster scale (13M+ neurons) the
+        // symmetric intra-cluster Hebbian self-loops + cross-projection
+        // feedback keep the committed letter firing, producing
+        // "fffffffv vvvvvvvaaaaaaa" letter-sticking emissions. Clearing
+        // the motor region doesn't lose information — the next tick's
+        // cross-projections (sem→motor, motor←letter) will re-populate
+        // motor from the cortex's current sem/letter state which has
+        // ALREADY advanced past the committed letter via the persistent
+        // cortex dynamics.
+        if (this.regions.motor) {
+          const { start, end } = this.regions.motor;
+          for (let j = start; j < end; j++) this.lastSpikes[j] = 0;
+        }
+        // Reset the motor-argmax tracking so the next letter starts
+        // from a clean stability count.
+        lastMotorLetter = null;
+        this._motorQuiescentTicks = 0;
       }
 
       // STEP 3 — Word boundary via cortex letter-region transition
