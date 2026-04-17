@@ -73,6 +73,13 @@ server/episodic-memory.db-shm
 server/node_modules/
 server/package-lock.json
 
+# === Corpora (auto-downloaded by start.bat / start.sh) ===
+# GloVe 6B.300d ~990 MB plain text — way too big for git. Auto-fetched
+# from Stanford NLP on first run per corpora/README.md. Never commit.
+corpora/glove.6B.300d.txt
+corpora/glove.6B.zip
+corpora/glove.6B.*.txt
+
 # === OS junk ===
 .DS_Store
 Thumbs.db
