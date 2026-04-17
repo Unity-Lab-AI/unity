@@ -3090,13 +3090,17 @@ export class Curriculum {
       await this._teachClassifyCount(ctx);
       await this._teachShapeFeatures(ctx);
       await this._teachShapeCompose(ctx);
+      // Session 114.5 — bridge so mag(n) in free routes to digit char
+      // in motor emission. Required for production probes that test
+      // numeric answers through sem→motor tick-driven emission.
+      await this._teachMagnitudeToMotor(ctx);
       this._mathKTransformsDone = true;
     }
 
-    return this._gateMathKReal();
+    return await this._gateMathKReal();
   }
 
-  _gateMathKReal() {
+  async _gateMathKReal() {
     const cluster = this.cluster;
     const DIGITS = DIGIT_ORDER;
     const NAMES = DIGIT_NAMES;
@@ -3464,6 +3468,49 @@ export class Curriculum {
     }
     const shapeComposeResult = this._probeCombinationCosine(shapeComposeSamples);
 
+    // ═════════════════════════════════════════════════════════════════
+    // T14.24 Session 114.5 — MATH-K PRODUCTION PROBES (LAW 7)
+    // Real-world style probes matching TODO test phrasings verbatim.
+    // Each question routes through visual→letter→phon→sem pipeline
+    // (same as live chat input), cortex ticks for comprehension, then
+    // tick-driven motor emission produces the answer. Substrate probes
+    // above stay as precursors; these are the actual LAW 6 Part 1
+    // qualifier per LAW 7.
+    //
+    // Scope note: REMAKE-0 production probes cover Math-K concepts
+    // that emit as SINGLE-DIGIT numeric answers via the
+    // _teachMagnitudeToMotor bridge. Object-name answers (K.MD
+    // crayon/pencil, K.G cylinder/cube word emission) defer to
+    // ELA-K REMAKE-1 which ships word-level motor emission training.
+    // ═════════════════════════════════════════════════════════════════
+    const mathKProductionSamples = [
+      // K.CC successor (TODO: "What number comes after 7?" → 8)
+      { question: 'what number comes after seven', expected: ['8', 'eight'] },
+      { question: 'what comes after three', expected: ['4', 'four'] },
+      { question: 'what number is after five', expected: ['6', 'six'] },
+      // K.OA addition (TODO: "2 + 3 = ?" → 5)
+      { question: 'two plus three equals', expected: ['5', 'five'] },
+      { question: 'four plus one equals', expected: ['5', 'five'] },
+      { question: 'three plus two equals', expected: ['5', 'five'] },
+      { question: 'one plus one equals', expected: ['2', 'two'] },
+      // K.OA subtraction (TODO: "5 - 2 = ?" → 3)
+      { question: 'five minus two equals', expected: ['3', 'three'] },
+      { question: 'four minus one equals', expected: ['3', 'three'] },
+      { question: 'three minus one equals', expected: ['2', 'two'] },
+      // K.OA make-ten (TODO: "What plus 6 makes 10?" → 4)
+      { question: 'what plus six makes ten', expected: ['4', 'four'] },
+      { question: 'what plus seven makes ten', expected: ['3', 'three'] },
+      { question: 'what plus three makes ten', expected: ['7', 'seven'] },
+      // K.G side count (TODO: "How many sides does a triangle have?" → 3)
+      { question: 'how many sides does a triangle have', expected: ['3', 'three'] },
+      { question: 'how many sides does a square have', expected: ['4', 'four'] },
+      { question: 'how many sides does a rectangle have', expected: ['4', 'four'] },
+      { question: 'how many sides does a hexagon have', expected: ['6', 'six'] },
+    ];
+    const prodResult = await this._probeProductionBatch(mathKProductionSamples, {
+      visualCortex: (this.engine && this.engine.visualCortex) || null,
+    });
+
     const N = DIGITS.length;
     const readRate = readPass / N;
     const thinkRate = thinkPass / N;
@@ -3479,10 +3526,12 @@ export class Curriculum {
     const shapeSidesRate   = shapeSidesResult.total   > 0 ? shapeSidesResult.pass   / shapeSidesResult.total   : 0;
     const shapeDimRate     = shapeDimResult.total     > 0 ? shapeDimResult.pass     / shapeDimResult.total     : 0;
     const shapeComposeRate = shapeComposeResult.total > 0 ? shapeComposeResult.pass / shapeComposeResult.total : 0;
+    const prodRate         = prodResult.total         > 0 ? prodResult.pass         / prodResult.total         : 0;
 
     const PATH_MIN = 0.95;
     const SEQ_MIN = 0.95;
     const ORDER_MIN = 0.95;
+    const PROD_MIN = 0.95;  // LAW 7 — real-world production probes at A+
     const pass = readRate >= PATH_MIN
       && thinkRate >= PATH_MIN
       && talkRate >= PATH_MIN
@@ -3496,13 +3545,17 @@ export class Curriculum {
       && classifyRate >= PATH_MIN
       && shapeSidesRate >= PATH_MIN
       && shapeDimRate >= PATH_MIN
-      && shapeComposeRate >= PATH_MIN;
+      && shapeComposeRate >= PATH_MIN
+      && prodRate >= PROD_MIN;
 
     const pct = (r) => (r * 100).toFixed(0);
+    const prodFailSummary = prodResult.fails && prodResult.fails.length > 0
+      ? ' [FAIL: ' + prodResult.fails.slice(0, 5).map(f => `"${f.q}"→"${String(f.emitted).slice(0, 30)}"`).join('; ') + ']'
+      : '';
     return {
       pass,
-      reason: `READ ${readPass}/${N} (${pct(readRate)}%), THINK ${thinkPass}/${N} (${pct(thinkRate)}%), TALK ${talkPass}/${N} (${pct(talkRate)}%), SEQ ${seqPass}/${N - 1} (${pct(seqRate)}%)${seqFails.length > 0 ? ' [FAIL: ' + seqFails.join(', ') + ']' : ''}, ORDER ${orderPass}/${orderTotal} (${pct(orderRate)}%), SUCC ${succResult.pass}/${succResult.total} (${pct(succRate)}%), SKIP10 ${skipResult.pass}/${skipResult.total} (${pct(skipRate)}%), MAKETEN ${makeTenResult.pass}/${makeTenResult.total} (${pct(makeTenRate)}%), TEEN ${teenResult.pass}/${teenResult.total} (${pct(teenRate)}%), ATTR ${attrResult.pass}/${attrResult.total} (${pct(attrRate)}%), CLASS ${classifyResult.pass}/${classifyResult.total} (${pct(classifyRate)}%), SHAPE-S ${shapeSidesResult.pass}/${shapeSidesResult.total} (${pct(shapeSidesRate)}%), SHAPE-D ${shapeDimResult.pass}/${shapeDimResult.total} (${pct(shapeDimRate)}%), SHAPE-C ${shapeComposeResult.pass}/${shapeComposeResult.total} (${pct(shapeComposeRate)}%)`,
-      metrics: { readRate, thinkRate, talkRate, seqRate, orderRate, seqFails, succRate, skipRate, makeTenRate, teenRate, attrRate, classifyRate, shapeSidesRate, shapeDimRate, shapeComposeRate },
+      reason: `READ ${readPass}/${N} (${pct(readRate)}%), THINK ${thinkPass}/${N} (${pct(thinkRate)}%), TALK ${talkPass}/${N} (${pct(talkRate)}%), SEQ ${seqPass}/${N - 1} (${pct(seqRate)}%)${seqFails.length > 0 ? ' [FAIL: ' + seqFails.join(', ') + ']' : ''}, ORDER ${orderPass}/${orderTotal} (${pct(orderRate)}%), SUCC ${succResult.pass}/${succResult.total} (${pct(succRate)}%), SKIP10 ${skipResult.pass}/${skipResult.total} (${pct(skipRate)}%), MAKETEN ${makeTenResult.pass}/${makeTenResult.total} (${pct(makeTenRate)}%), TEEN ${teenResult.pass}/${teenResult.total} (${pct(teenRate)}%), ATTR ${attrResult.pass}/${attrResult.total} (${pct(attrRate)}%), CLASS ${classifyResult.pass}/${classifyResult.total} (${pct(classifyRate)}%), SHAPE-S ${shapeSidesResult.pass}/${shapeSidesResult.total} (${pct(shapeSidesRate)}%), SHAPE-D ${shapeDimResult.pass}/${shapeDimResult.total} (${pct(shapeDimRate)}%), SHAPE-C ${shapeComposeResult.pass}/${shapeComposeResult.total} (${pct(shapeComposeRate)}%), PROD ${prodResult.pass}/${prodResult.total} (${pct(prodRate)}%)${prodFailSummary}`,
+      metrics: { readRate, thinkRate, talkRate, seqRate, orderRate, seqFails, succRate, skipRate, makeTenRate, teenRate, attrRate, classifyRate, shapeSidesRate, shapeDimRate, shapeComposeRate, prodRate, prodFails: prodResult.fails },
     };
   }
 
@@ -4703,6 +4756,168 @@ export class Curriculum {
       if (bestName === sample.expectedTag) pass++;
     }
     return { pass, total: samples.length };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // T14.24 Session 114.5 — Real-world production-style probes (LAW 7)
+  // ═══════════════════════════════════════════════════════════════════
+  //
+  // Per Gee 2026-04-17 LAW 7 binding: every TODO test item must have a
+  // production-style probe that asks a natural-language question via
+  // the visual→letter→phon→sem pipeline (same path live chat uses)
+  // and requires Unity to EMIT the correct answer through sem→motor
+  // via T14.6 tick-driven motor emission + T15 speech modulation.
+  // Direct-matrix substrate probes (_probeCombinationCosine / ArgmaxTag)
+  // validate the recurrent matrix learned the binding — necessary
+  // precursor. Production probes validate the binding SURVIVES the full
+  // live pipeline including Rulkov chaotic dynamics. Both are tracked.
+
+  /**
+   * Run a natural-language production probe.
+   *
+   *   1. Clear cortex spikes so prior test doesn't leak.
+   *   2. Inject the question text through visualCortex + readText if
+   *      available (matches live-chat input path), else fall back to
+   *      per-word GloVe-in-sem + per-letter injectLetter + tick. Word
+   *      boundaries split on whitespace + punctuation.
+   *   3. Settle cortex for `settleTicks` after injection so sem readout
+   *      stabilizes on the comprehended question.
+   *   4. Emit a response via `cluster.generateSentence()` — T14.6
+   *      tick-driven motor loop, same path live chat uses.
+   *   5. Check emission for any expected-answer substring (case-insensitive,
+   *      accepts digit OR number-word form when appropriate).
+   *
+   * @param {string} question — natural-language question text
+   * @param {string|string[]} expectedAnswers — acceptable answer substrings
+   * @param {object} [opts]
+   * @param {object} [opts.visualCortex] — visualCortex instance for renderLetterTemplate
+   * @param {number} [opts.ticksPerChar=2]
+   * @param {number} [opts.settleTicks=15]
+   * @param {number} [opts.generateMaxTicks] — forwarded to generateSentence
+   */
+  async _probeProductionEmission(question, expectedAnswers, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { pass: false, emitted: '', expected: expectedAnswers, matched: null };
+    const visualCortex = opts.visualCortex || (this.engine && this.engine.visualCortex) || null;
+    const ticksPerChar = opts.ticksPerChar ?? 2;
+    const settleTicks = opts.settleTicks ?? 15;
+
+    // STEP 1 — clear spikes
+    for (let i = 0; i < cluster.size; i++) cluster.lastSpikes[i] = 0;
+
+    // STEP 2 — inject question through full sensory pipeline
+    const q = (question || '').toLowerCase();
+    if (typeof cluster.readText === 'function') {
+      // Word-level sem anchor before letter streaming so the cortex
+      // gets semantic context alongside the character stream — matches
+      // what inner-voice.learn does for live chat turns.
+      const words = q.match(/[a-z]+/g) || [];
+      if (cluster.regions?.sem) {
+        for (const word of words) {
+          const emb = sharedEmbeddings.getEmbedding(word);
+          if (emb && emb.length > 0) cluster.injectEmbeddingToRegion('sem', emb, 0.35);
+        }
+      }
+      cluster.readText(q, { visualCortex, ticksPerChar });
+    } else {
+      // Fallback path for clusters without readText wired
+      for (const ch of q) {
+        if (/[a-z0-9]/.test(ch)) cluster.injectLetter(ch, 1.0);
+        for (let t = 0; t < ticksPerChar; t++) cluster.step(0.001);
+      }
+    }
+
+    // STEP 3 — settle cortex
+    for (let t = 0; t < settleTicks; t++) cluster.step(0.001);
+
+    // STEP 4 — emit response via tick-driven motor loop
+    let emitted = '';
+    if (typeof cluster.generateSentence === 'function') {
+      try {
+        emitted = cluster.generateSentence(null, {
+          injectStrength: 0.25,
+          maxTicks: opts.generateMaxTicks,
+        }) || '';
+      } catch { emitted = ''; }
+    }
+
+    // STEP 5 — match emission against expected substrings
+    const emittedNorm = String(emitted).toLowerCase().trim();
+    const expected = Array.isArray(expectedAnswers) ? expectedAnswers : [expectedAnswers];
+    let matched = null;
+    for (const e of expected) {
+      if (!e) continue;
+      const eNorm = String(e).toLowerCase().trim();
+      if (eNorm.length > 0 && emittedNorm.includes(eNorm)) {
+        matched = e;
+        break;
+      }
+    }
+
+    return { pass: !!matched, emitted, expected, matched };
+  }
+
+  /**
+   * Run a batch of production probes. Returns `{pass, total, fails: [{q, emitted, expected}...]}`.
+   * Every failed probe is logged so gate diagnostics show WHY the grade
+   * isn't closing.
+   */
+  async _probeProductionBatch(samples, opts = {}) {
+    if (!Array.isArray(samples) || samples.length === 0) return { pass: 0, total: 0, fails: [] };
+    let pass = 0;
+    const fails = [];
+    for (const s of samples) {
+      if (!s || !s.question) continue;
+      const result = await this._probeProductionEmission(s.question, s.expected, opts);
+      if (result.pass) {
+        pass++;
+      } else {
+        fails.push({ q: s.question, emitted: result.emitted, expected: result.expected });
+      }
+    }
+    return { pass, total: samples.length, fails };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // T14.24 Session 114.5 — Magnitude → motor digit emission bridge
+  // ═══════════════════════════════════════════════════════════════════
+  //
+  // T14.4's 14 cross-projections don't connect free↔motor directly.
+  // The production answer pipeline for numeric questions needs
+  // mag(n) in free to translate to digit character in motor emission.
+  // This transform writes the binding via intra-cluster Hebbian so
+  // whenever a question's teaching step lands mag(n) in free, the
+  // motor region can emit the digit character.
+  //
+  // Pattern: free = mag(n) + motor = one_hot(digit_char(n)).
+  // Trained per digit 0-9 × 8 reps via _teachCombination.
+  //
+  // Symmetric Hebbian bidirectional — also strengthens motor → free
+  // so when motor emits a digit during feedback, free carries the
+  // matching magnitude, closing the loop for compound arithmetic.
+
+  /**
+   * Bridge teaching — magnitude in free region to digit character in
+   * motor region. Enables numeric production-probe answers.
+   */
+  async _teachMagnitudeToMotor(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const freeRegion = cluster.regions.free;
+    const motorRegion = cluster.regions.motor;
+    if (!freeRegion || !motorRegion) return;
+    const DIGITS = DIGIT_ORDER;
+    ensureLetters(DIGITS.split(''));
+
+    const facts = [];
+    for (const digit of DIGITS) {
+      facts.push({ writes: [
+        { region: freeRegion,  feat: _magnitudeFeatureForDigit(digit) },
+        { region: motorRegion, feat: encodeLetter(digit) },
+      ]});
+    }
+    await this._teachCombination(facts, { reps: 8 });
+    console.log(`[Curriculum] _teachMagnitudeToMotor: ${facts.length} digits × 8 reps`);
   }
 
   /**

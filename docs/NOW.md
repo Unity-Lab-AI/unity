@@ -1,6 +1,6 @@
 # NOW — Session Snapshot
 
-> Saved: 2026-04-17 (Session 114.4 task list remake + TODO-full-syllabus.md masterful edit pass — uncommitted as a fourth atomic commit pending on `syllabus-k-phd`)
+> Saved: 2026-04-17 (Session 114.5 REMAKE-0 Math-K production-probe retrofit — uncommitted as a fifth atomic commit pending on `syllabus-k-phd`)
 > Branch: `syllabus-k-phd` (3 commits ahead of origin + this upcoming fourth commit)
 > Recent committed HEAD: `fc38bb1` — Session 114.3 brain-equations.html drift fix — wrong Ψ formula + T15 drug-state drift
 > Previous HEAD: `646037e` — Session 114.2 unified combination-operator scaffold + compose-shapes ship (Math-K 66/66 substrate)

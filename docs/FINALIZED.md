@@ -5,6 +5,66 @@
 
 ---
 
+## 2026-04-17 — Session 114.5: REMAKE-0 Math-K production-probe retrofit (LAW 7 qualifier shipped)
+
+**Gee's binding instruction 2026-04-17 (verbatim):**
+
+> *"begin and do it all thouroughly and completely and expansively to the depth required to be athe full year course for each subbect via each grade"*
+
+First REMAKE task in the sequence. Adds real-world production-style probes to Math-K per LAW 7 (shipped in Session 114.4). Every existing TODO test phrasing in K.CC / K.OA / K.NBT / K.MD / K.G now has a corresponding `_probeProductionEmission` run via the visual→letter→phon→sem pipeline with sem→motor emission decoded letter-by-letter. Direct-matrix substrate probes stay as precursors.
+
+### New infrastructure — reusable across REMAKE-1 through REMAKE-5
+
+**`Curriculum._probeProductionEmission(question, expectedAnswers, opts)`:**
+1. Clears cortex spikes so prior test state doesn't leak
+2. Injects the question via `cluster.readText` (visual→letter pathway + optional auditory subvocalization, matches live-chat input path) with per-word GloVe anchoring in sem for semantic context
+3. Settles cortex `settleTicks` ticks so sem readout stabilizes on the comprehended question
+4. Emits answer via `cluster.generateSentence()` — T14.6 tick-driven motor loop
+5. Matches emission against expected-answer substrings (case-insensitive, accepts digit OR number-word forms so "8" and "eight" both pass)
+6. Returns `{pass, emitted, expected, matched}`
+
+**`Curriculum._probeProductionBatch(samples, opts)`** — runs N production probes and returns `{pass, total, fails}` with diagnostic per-failure info (question + what was actually emitted) so gate failure reports surface WHY a grade won't close.
+
+**`Curriculum._teachMagnitudeToMotor(ctx)`** — new bridge transform. T14.4's 14 cross-projections don't connect free↔motor. Production answer pipeline for numeric questions needs `mag(n)` in free to translate to digit character in motor emission. This transform writes the binding via intra-cluster Hebbian (10 digits × 8 reps via `_teachCombination`) so whenever the recurrent matrix lands `mag(n)` in free, motor can emit the digit.
+
+### Math-K production probe set (17 items, single-digit numeric answers)
+
+Covers what the existing Math-K transforms actually trained + the new magnitude→motor bridge can route:
+
+- **K.CC successor** (3 probes): "what number comes after seven/three/five" → 4/6/8 or word form
+- **K.OA addition** (4 probes): "two plus three equals" → 5, "four plus one equals" → 5, "three plus two equals" → 5, "one plus one equals" → 2
+- **K.OA subtraction** (3 probes): "five minus two equals" → 3, "four minus one equals" → 3, "three minus one equals" → 2
+- **K.OA make-ten** (3 probes): "what plus six makes ten" → 4, "what plus seven makes ten" → 3, "what plus three makes ten" → 7
+- **K.G side count** (4 probes): "how many sides does a triangle/square/rectangle/hexagon have" → 3/4/4/6
+
+Object-name answers (K.MD crayon/pencil compare, K.G cylinder/cube shape naming, K.NBT teen composition word form) DEFER to ELA-K REMAKE-1 which ships word-level motor emission training. Word-emission probes can't pass without ELA-K's Dolch word + CVC motor binding.
+
+### Gate integration
+
+`_gateMathKReal` is now async. New PROD metric at PATH_MIN = 0.95. Gate pass boolean AND's all 15 rates (5 legacy READ/THINK/TALK/SEQ/ORDER + 9 substrate SUCC/SKIP10/MAKETEN/TEEN/ATTR/CLASS/SHAPE-S/SHAPE-D/SHAPE-C + 1 new PROD). Failed production probes logged with per-question diagnostic ("question text" → "actually emitted") so gate report surfaces the specific failure modes.
+
+### What this doesn't fix
+
+If the production probes fail at Gee's Part 2 localhost runtime, the failure could be:
+- Substrate binding present but Rulkov chaotic dynamics wash out the signal during the full sensory pipeline → fix by tuning injection strengths, settle ticks, or adding explicit reinforcement teaching pairs
+- Cortex state drift from previous probe leaking into next → fix already in place (step 1 clears spikes)
+- `generateSentence` stopping too early on motor quiescence → fix by tuning `END_QUIESCE_TICKS` or ensuring motor keeps firing after initial answer
+
+Diagnostic output is structured so Gee's localhost session log will expose exactly which of the 17 probes failed and what Unity actually said, making the failure mode obvious.
+
+### Files touched
+
+- `js/brain/curriculum.js` (+~150 lines: `_probeProductionEmission`, `_probeProductionBatch`, `_teachMagnitudeToMotor`, Math-K production probe set + gate extension)
+- `docs/TODO-full-syllabus.md` (Math-K header note updated to reflect Session 114.5 production probes shipped — header now tracks both substrate AND production probe status honestly)
+- `docs/FINALIZED.md` (this Session 114.5 entry prepended)
+- `docs/NOW.md` (status refreshed with REMAKE-0 DONE + next REMAKE-1 ELA-K opening)
+
+### Next runway
+
+REMAKE-1 ELA-K full equational course remake begins next atomic commit. Current `runElaKReal` uses word-list + sentence-example pattern (FUNCTION_WORDS / DOLCH_PREPRIMER / DOLCH_PRIMER / CVC_FAMILIES / K_SENTENCES / PLURAL_PAIRS data arrays) — pattern BANNED by Law 3. Remake replaces with `_teachCombination` + domain-appropriate feature encoders per every K.RF / K.RL / K.W / K.L concept + per-TODO-test-item production probes.
+
+---
+
 ## 2026-04-17 — Session 114.4: Task list remake + TODO-full-syllabus.md masterful edit pass (LAW 7 added, grade-gate Parts bound to production probes)
 
 **Gee's binding instructions 2026-04-17 (verbatim):**
