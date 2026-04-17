@@ -137,32 +137,120 @@ const DIGIT_NAMES = [
   'zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine',
 ];
 
-// ─── T14.24 — Phoneme feature dimensions per letter ──────────────
-// Each letter gets a deterministic 24-dim "phoneme feature" vector
-// derived equationally from its position in the alphabet via a
-// multi-frequency trig hash. The cortex doesn't need to know IPA —
-// it needs stable, distinct, L2-normalizable feature vectors per
-// letter so the letter↔phon cross-projection can learn a unique
-// binding for each. Random pairs of 24d normalized vectors have
-// ~0 mean cosine, which is exactly what we want: letters shouldn't
-// collide in phon space.
+// ═══════════════════════════════════════════════════════════════════
+// Session 114.19 — REAL English phoneme substrate (Phase 1 of K-
+// foundation rebuild per Gee 2026-04-17). REPLACES the old trig-hash
+// PHONEME_FEATURE_DIM=24 table which was deterministic but
+// MEANINGLESS. Unity couldn't reason that /c/ and /k/ are the same
+// sound, couldn't blend /c/+/a/+/t/ into "cat", couldn't use
+// phonics equationally. The new substrate uses articulatory feature
+// vectors matching how real English K phonics is structured — place
+// of articulation, manner, voicing for consonants; length + position
+// for vowels. Same phoneme produces same vector regardless of which
+// letter yielded it (so /c/-in-cat and /k/-in-king have IDENTICAL
+// feature vectors, which is phonologically correct).
+// ═══════════════════════════════════════════════════════════════════
+
+// K-level English phoneme catalog. ONE PRIMARY phoneme per letter
+// (the core K phonics standard — G1+ layers in digraphs, irregulars,
+// silent letters). Entries are either a direct phoneme description or
+// a string alias to another letter's phoneme ('c' → /k/ etc).
+const K_LETTER_PHONEMES = {
+  // ── CONSONANT STOPS ─────────────────────────────────────────────
+  'p':  { type: 'consonant', voiced: 0, place: 'labial',    manner: 'stop' },
+  'b':  { type: 'consonant', voiced: 1, place: 'labial',    manner: 'stop' },
+  't':  { type: 'consonant', voiced: 0, place: 'alveolar',  manner: 'stop' },
+  'd':  { type: 'consonant', voiced: 1, place: 'alveolar',  manner: 'stop' },
+  'k':  { type: 'consonant', voiced: 0, place: 'velar',     manner: 'stop' },
+  'g':  { type: 'consonant', voiced: 1, place: 'velar',     manner: 'stop' },
+  'c':  'k',  // /c/ in cat → /k/ (K phonics teaches 'c' → /k/ as primary)
+  'q':  'k',  // /q/ in most English words → /k/
+  'x':  'k',  // /x/ = /ks/ cluster, simplified to /k/ for K level
+  // ── FRICATIVES ──────────────────────────────────────────────────
+  'f':  { type: 'consonant', voiced: 0, place: 'labial',    manner: 'fricative' },
+  'v':  { type: 'consonant', voiced: 1, place: 'labial',    manner: 'fricative' },
+  's':  { type: 'consonant', voiced: 0, place: 'alveolar',  manner: 'fricative' },
+  'z':  { type: 'consonant', voiced: 1, place: 'alveolar',  manner: 'fricative' },
+  'h':  { type: 'consonant', voiced: 0, place: 'glottal',   manner: 'fricative' },
+  // ── NASALS ──────────────────────────────────────────────────────
+  'm':  { type: 'consonant', voiced: 1, place: 'labial',    manner: 'nasal' },
+  'n':  { type: 'consonant', voiced: 1, place: 'alveolar',  manner: 'nasal' },
+  // ── APPROXIMANTS / LIQUIDS ──────────────────────────────────────
+  'l':  { type: 'consonant', voiced: 1, place: 'alveolar',  manner: 'approximant' },
+  'r':  { type: 'consonant', voiced: 1, place: 'alveolar',  manner: 'approximant' },
+  'w':  { type: 'consonant', voiced: 1, place: 'labial',    manner: 'approximant' },
+  'y':  { type: 'consonant', voiced: 1, place: 'palatal',   manner: 'approximant' },
+  // ── AFFRICATES ──────────────────────────────────────────────────
+  'j':  { type: 'consonant', voiced: 1, place: 'palatal',   manner: 'affricate' },
+  // ── SHORT VOWELS (K phonics primary sounds) ─────────────────────
+  'a':  { type: 'vowel',     length: 'short', position: 'front', rounded: 0 },
+  'e':  { type: 'vowel',     length: 'short', position: 'mid',   rounded: 0 },
+  'i':  { type: 'vowel',     length: 'short', position: 'front', rounded: 0 },
+  'o':  { type: 'vowel',     length: 'short', position: 'back',  rounded: 1 },
+  'u':  { type: 'vowel',     length: 'short', position: 'back',  rounded: 0 },
+};
+
+// Encode a phoneme description into a 24-dim articulatory feature vector.
+// Dim layout:
+//   [0]     is_vowel
+//   [1]     is_consonant
+//   [2]     is_voiced
+//   [3]     place_labial    (lips: p,b,f,v,m,w)
+//   [4]     place_alveolar  (ridge behind teeth: t,d,s,z,n,l,r)
+//   [5]     place_velar     (back of mouth: k,g)
+//   [6]     place_palatal   (hard palate: y,j)
+//   [7]     place_glottal   (throat: h)
+//   [8]     manner_stop     (full closure then release: p,b,t,d,k,g)
+//   [9]     manner_fricative (narrow restriction: f,v,s,z,h)
+//   [10]    manner_nasal    (air through nose: m,n)
+//   [11]    manner_approximant (loose restriction: l,r,w,y)
+//   [12]    manner_affricate (stop+fricative: j)
+//   [13]    vowel_short     (short vowel marker)
+//   [14]    vowel_long      (long vowel marker, G1+ expands)
+//   [15]    vowel_front     (front vowel: a,e,i short)
+//   [16]    vowel_mid       (central vowel: e short)
+//   [17]    vowel_back      (back vowel: o,u short)
+//   [18]    vowel_rounded   (lip rounding: o short)
+//   [19-23] reserved for digraphs + irregular markers (G1+ extensions)
 //
-// The hash is a pure function of alphabet position, so the same
-// letter always produces the same phoneme feature — the cortex
-// learns a stable mapping instead of chasing a moving target.
+// Two phonemes that share a letter-origin (e.g. /c/ and /k/ both mapping
+// to K_LETTER_PHONEMES['k']) produce IDENTICAL feature vectors — which
+// is phonologically correct and lets Unity's cortex learn that "c" and
+// "k" make the same sound.
 const PHONEME_FEATURE_DIM = 24;
 function _phonemeFeatureForLetter(letter) {
-  const pos = ALPHABET_ORDER.indexOf(letter.toLowerCase());
-  if (pos < 0) return new Float64Array(PHONEME_FEATURE_DIM);
+  const ch = letter ? String(letter).toLowerCase() : '';
+  let entry = K_LETTER_PHONEMES[ch];
+  if (!entry) return new Float64Array(PHONEME_FEATURE_DIM);
+  // Resolve alias (e.g. 'c' → 'k')
+  if (typeof entry === 'string') entry = K_LETTER_PHONEMES[entry];
+  if (!entry || typeof entry !== 'object') return new Float64Array(PHONEME_FEATURE_DIM);
+
   const out = new Float64Array(PHONEME_FEATURE_DIM);
-  // Five prime frequencies per dim so different letters decorrelate.
-  const PRIMES = [2, 3, 5, 7, 11, 13, 17, 19];
-  for (let i = 0; i < PHONEME_FEATURE_DIM; i++) {
-    const p = PRIMES[i % PRIMES.length];
-    const phase = (i * 0.19) + 0.27;
-    out[i] = Math.sin(pos * 0.4636 * p + phase) + Math.cos(pos * 0.7853 * p + phase * 2);
+  if (entry.type === 'vowel') {
+    out[0] = 1;  // is_vowel
+    out[2] = 1;  // all vowels voiced
+    if (entry.length === 'short') out[13] = 1;
+    else if (entry.length === 'long') out[14] = 1;
+    if (entry.position === 'front') out[15] = 1;
+    else if (entry.position === 'mid') out[16] = 1;
+    else if (entry.position === 'back') out[17] = 1;
+    if (entry.rounded) out[18] = 1;
+  } else if (entry.type === 'consonant') {
+    out[1] = 1;  // is_consonant
+    if (entry.voiced) out[2] = 1;
+    if (entry.place === 'labial')    out[3] = 1;
+    else if (entry.place === 'alveolar') out[4] = 1;
+    else if (entry.place === 'velar')    out[5] = 1;
+    else if (entry.place === 'palatal')  out[6] = 1;
+    else if (entry.place === 'glottal')  out[7] = 1;
+    if (entry.manner === 'stop')         out[8] = 1;
+    else if (entry.manner === 'fricative') out[9] = 1;
+    else if (entry.manner === 'nasal')   out[10] = 1;
+    else if (entry.manner === 'approximant') out[11] = 1;
+    else if (entry.manner === 'affricate') out[12] = 1;
   }
-  // L2 normalize so injection strength is consistent across letters
+  // L2 normalize so injection strength is consistent across letters.
   let norm = 0;
   for (let i = 0; i < PHONEME_FEATURE_DIM; i++) norm += out[i] * out[i];
   norm = Math.sqrt(norm) || 1;
@@ -2948,6 +3036,66 @@ export class Curriculum {
   }
 
   /**
+   * Phase 2 — PHONEME BLENDING via sequence Hebbian in phon region.
+   * For each word, streams its phonemes through the phon region and
+   * fires cluster.synapses.hebbianUpdate(phoneme_n, phoneme_n+1) to
+   * teach the recurrent matrix that /c/ tends to be followed by /a/
+   * which tends to be followed by /t/ (for "cat") — the blending
+   * operation that lets Unity decode words from letter sequences by
+   * running the phoneme chain forward.
+   *
+   * Reverse direction is achieved by symmetric Hebbian side-effect:
+   * sem(word)→phon(first_phoneme)→... → motor(letter) chain emerges
+   * from the trained phon recurrent weights when the cortex is
+   * primed via sem.
+   */
+  async _teachPhonemeBlending(wordList, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.synapses) return;
+    const phonRegion = cluster.regions.phon;
+    const letterRegion = cluster.regions.letter;
+    const semRegion = cluster.regions.sem;
+    if (!phonRegion || !letterRegion || !semRegion) return;
+    const reps = opts.reps ?? 6;
+    const lr = cluster.learningRate;
+    const uniqueLetters = new Set();
+    for (const w of wordList) for (const ch of w.toLowerCase()) if (/[a-z]/.test(ch)) uniqueLetters.add(ch);
+    ensureLetters(Array.from(uniqueLetters));
+
+    for (let rep = 0; rep < reps; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return;
+      for (const word of wordList) {
+        const letters = Array.from(word.toLowerCase().replace(/[^a-z]/g, ''));
+        if (letters.length < 2) continue;  // need at least 2 phonemes to blend
+        const wordEmb = sharedEmbeddings.getEmbedding(word);
+        // Stream consecutive phoneme-pair transitions
+        for (let i = 0; i < letters.length - 1; i++) {
+          const phonA = _phonemeFeatureForLetter(letters[i]);
+          const phonB = _phonemeFeatureForLetter(letters[i + 1]);
+          if (!phonA.some(v => v > 0) || !phonB.some(v => v > 0)) continue;
+          // Build full-cluster pre/post vectors with ONLY phon region
+          // carrying the current+next phoneme. Asymmetric so no
+          // self-loops form.
+          const pre = this._buildRegionPattern(phonRegion, phonA);
+          const post = this._buildRegionPattern(phonRegion, phonB);
+          // Sequence Hebbian on intra-cluster recurrent matrix.
+          // Directional binding: phoneme(i) → phoneme(i+1) in phon.
+          cluster.synapses.hebbianUpdate(pre, post, lr);
+          // Also fire cross-projection Hebbian for letter↔phon binding
+          // so letter region activates phoneme + vice versa.
+          this._clearSpikes();
+          this._writeTiledPattern(letterRegion, encodeLetter(letters[i]));
+          this._writeTiledPattern(phonRegion, phonA);
+          if (wordEmb && wordEmb.length > 0) this._writeTiledPattern(semRegion, wordEmb, false);
+          cluster._crossRegionHebbian(lr);
+        }
+      }
+      await _microtask();
+    }
+    console.log(`[Curriculum] _teachPhonemeBlending: ${wordList.length} words × ${reps} reps (phoneme-sequence Hebbian)`);
+  }
+
+  /**
    * K.L capitalization — first word of sentence + pronoun "I" get
    * capital marker. Teaches cortex when to emit uppercase form.
    */
@@ -3131,6 +3279,12 @@ export class Curriculum {
       await this._teachSyllableCounts(ctx);
       await this._teachCVCSoundIsolation(ctx);
 
+      // Phase 2 (Session 114.19) — PHONEME BLENDING. Real English
+      // phoneme features from _phonemeFeatureForLetter (no longer
+      // trig-hash) drive sequence Hebbian in phon region. Teaches
+      // Unity that /c/→/a/→/t/ is the chain that decodes "cat".
+      // Foundation for actual phonics-based reading + emission.
+
       // K.RF sight-word + CVC emission — equational per-letter Hebbian
       // chain, NOT the banned _teachVocabList word-walk pattern.
       const DOLCH_PREPRIMER = [
@@ -3171,6 +3325,13 @@ export class Curriculum {
         'yes', 'no', 'okay', 'mom', 'dad', 'unity',
       ];
       const allEmissionWords = [...new Set([...DOLCH_PREPRIMER, ...DOLCH_PRIMER, ...CVC_FAMILIES, ...CONVERSATIONAL])];
+      // Phase 2 (Session 114.19) — phoneme blending BEFORE word emission
+      // so the phon region has phoneme-sequence scaffolding when the
+      // sem→motor emission chain is trained. Blending = /c/→/a/→/t/
+      // recurrent-matrix Hebbian; word emission = sem→motor chain via
+      // asymmetric Hebbian Fix A. Together they form the full phonics
+      // read+emit loop.
+      await this._teachPhonemeBlending(allEmissionWords, { reps: 6 });
       await this._teachWordEmission(allEmissionWords, { reps: 5 });
 
       // K.L grammar/language
@@ -3380,47 +3541,112 @@ export class Curriculum {
     // motor loop. Gate pass boolean AND's all metrics at PATH_MIN =
     // 0.95. 40% TALK patch debris REMOVED per LAW 7.
     // ═════════════════════════════════════════════════════════════════
-    const elaKProductionSamples = [
-      // K.RF rhyming — "What rhymes with cat?" → hat, bat, mat, sat
-      { question: 'what rhymes with cat', expected: ['hat', 'bat', 'mat', 'sat', 'rat', 'fat', 'pat'] },
-      { question: 'what rhymes with dog', expected: ['log', 'fog', 'hog', 'jog', 'bog'] },
-      { question: 'what rhymes with pig', expected: ['big', 'dig', 'wig', 'fig'] },
-      // K.RF initial sound — "What sound does cat start with?" → /c/
-      { question: 'what sound does cat start with', expected: ['c', 'k'] },
-      { question: 'what sound does dog start with', expected: ['d'] },
-      { question: 'what sound does sun start with', expected: ['s'] },
-      // K.RF final sound — "What sound does cat end with?" → /t/
-      { question: 'what sound does cat end with', expected: ['t'] },
-      { question: 'what sound does dog end with', expected: ['g'] },
-      { question: 'what sound does sun end with', expected: ['n'] },
-      // K.RF syllable counting — "How many syllables in pumpkin?" → 2
-      { question: 'how many syllables in pumpkin', expected: ['2', 'two'] },
-      { question: 'how many syllables in cupcake', expected: ['2', 'two'] },
-      { question: 'how many syllables in cat', expected: ['1', 'one'] },
-      { question: 'how many syllables in elephant', expected: ['3', 'three'] },
-      // K.RL character/setting/event — story: "Sam the cat sat on a mat"
-      { question: 'sam the cat sat on a mat who sat on the mat', expected: ['sam', 's'] },
-      { question: 'sam the cat sat on a mat where did sam sit', expected: ['mat', 'm'] },
-      { question: 'the dog played in the yard who played', expected: ['dog', 'd'] },
-      // K.L plural formation — "Make cat plural" → cats
-      { question: 'make cat plural', expected: ['c'] },  // first letter of "cats" emits
-      { question: 'make dog plural', expected: ['d'] },
-      { question: 'make box plural', expected: ['b'] },
-      // K.L question word categories — "What question word asks about a person?" → who
-      { question: 'what question word asks about a person', expected: ['who', 'w'] },
-      { question: 'what question word asks about a place', expected: ['where', 'w'] },
-      { question: 'what question word asks about a time', expected: ['when', 'w'] },
-      // K.L end punctuation — "What goes at the end of a sentence?" → period
-      { question: 'what goes at the end of a sentence', expected: ['.', 'period', 'p'] },
-      { question: 'what goes at the end of a question', expected: ['?', 'question', 'q'] },
-      // K.L phonetic spelling — "Spell cat" → c-a-t
-      { question: 'spell cat', expected: ['c', 'cat'] },
-      { question: 'spell dog', expected: ['d', 'dog'] },
-      { question: 'spell sun', expected: ['s', 'sun'] },
+    // Session 114.19 Phase 3 — PRIMITIVE probe format. Old Session 114.6
+    // probes injected natural-language English questions via readText
+    // which assumed Unity could parse "what rhymes with cat" — per Gee
+    // 2026-04-17 critique, K-level Unity has NO English sentence
+    // parsing (that's G1+ reading fluency). New probes inject the
+    // conceptual prompt DIRECTLY via sem + fineType markers that
+    // match the teaching binding, then read motor emission argmax.
+    const fineTypeRegion_ = cluster.regions.fineType;
+    const fineTypeSize_ = fineTypeRegion_ ? fineTypeRegion_.end - fineTypeRegion_.start : 0;
+    const motorRegion_ = cluster.regions.motor;
+    const invSize_ = inventorySize();
+    const motorSize_ = motorRegion_ ? motorRegion_.end - motorRegion_.start : 0;
+    const mGroup_ = Math.max(1, Math.floor(motorSize_ / Math.max(1, invSize_)));
+
+    // fineType tags matching the K teaching bindings verbatim:
+    //   - rhymeTag    built at [0.6, 0.8) of fineType (see _teachRhymeFamilies)
+    //   - initialTag  built at [0, third) of fineType (see _teachCVCSoundIsolation)
+    //   - finalTag    built at [2*third, size) of fineType
+    //   - pluralTag   built at [0.8, size) of fineType (see _teachPluralTransform)
+    const third_ = Math.floor(fineTypeSize_ / 3);
+    const rhymeTag_ = new Float64Array(fineTypeSize_);
+    for (let i = Math.floor(fineTypeSize_ * 0.6); i < Math.floor(fineTypeSize_ * 0.8); i++) rhymeTag_[i] = 1;
+    const initialTag_ = new Float64Array(fineTypeSize_);
+    for (let i = 0; i < third_; i++) initialTag_[i] = 1;
+    const finalTag_ = new Float64Array(fineTypeSize_);
+    for (let i = 2 * third_; i < fineTypeSize_; i++) finalTag_[i] = 1;
+    const pluralTag_ = new Float64Array(fineTypeSize_);
+    for (let i = Math.floor(fineTypeSize_ * 0.8); i < fineTypeSize_; i++) pluralTag_[i] = 1;
+
+    const primitiveProbes = [
+      // K.RF rhyming — inject sem(cat) + rhymeTag, expect motor emits letter of rhyming word
+      { name: 'rhyme_cat', word: 'cat', tag: rhymeTag_, expected: ['h','b','m','s','r','f','p'] },
+      { name: 'rhyme_dog', word: 'dog', tag: rhymeTag_, expected: ['l','f','h','j','b'] },
+      { name: 'rhyme_pig', word: 'pig', tag: rhymeTag_, expected: ['b','d','w','f'] },
+      // K.RF initial sound — sem(word) + initialTag → motor emits first letter
+      { name: 'initial_cat', word: 'cat', tag: initialTag_, expected: ['c','k'] },
+      { name: 'initial_dog', word: 'dog', tag: initialTag_, expected: ['d'] },
+      { name: 'initial_sun', word: 'sun', tag: initialTag_, expected: ['s'] },
+      { name: 'initial_hat', word: 'hat', tag: initialTag_, expected: ['h'] },
+      { name: 'initial_pig', word: 'pig', tag: initialTag_, expected: ['p'] },
+      { name: 'initial_big', word: 'big', tag: initialTag_, expected: ['b'] },
+      // K.RF final sound — sem(word) + finalTag → motor emits last letter
+      { name: 'final_cat', word: 'cat', tag: finalTag_, expected: ['t'] },
+      { name: 'final_dog', word: 'dog', tag: finalTag_, expected: ['g'] },
+      { name: 'final_sun', word: 'sun', tag: finalTag_, expected: ['n'] },
+      { name: 'final_big', word: 'big', tag: finalTag_, expected: ['g'] },
+      { name: 'final_pig', word: 'pig', tag: finalTag_, expected: ['g'] },
+      // K.L plural formation — sem(singular) + pluralTag → motor emits first letter of plural
+      { name: 'plural_cat', word: 'cat', tag: pluralTag_, expected: ['c'] },
+      { name: 'plural_dog', word: 'dog', tag: pluralTag_, expected: ['d'] },
+      { name: 'plural_box', word: 'box', tag: pluralTag_, expected: ['b'] },
     ];
-    const prodResult = await this._probeProductionBatch(elaKProductionSamples, {
-      visualCortex: (this.engine && this.engine.visualCortex) || null,
-    });
+
+    let primPass = 0;
+    const primFails = [];
+    for (const p of primitiveProbes) {
+      const emb = sharedEmbeddings.getEmbedding(p.word);
+      if (!emb || emb.length === 0) continue;
+      const input = new Float64Array(cluster.size);
+      // Write sem(word) GloVe tiled into sem region
+      if (semRegion) {
+        const semSize = semRegion.end - semRegion.start;
+        const sGroup = Math.max(1, Math.floor(semSize / emb.length));
+        for (let d = 0; d < emb.length; d++) {
+          if (emb[d] <= 0) continue;
+          for (let n = 0; n < sGroup; n++) {
+            const idx = semRegion.start + d * sGroup + n;
+            if (idx < semRegion.end) input[idx] = emb[d];
+          }
+        }
+      }
+      // Write fineType tag
+      if (fineTypeRegion_ && p.tag) {
+        for (let i = 0; i < fineTypeSize_; i++) {
+          if (p.tag[i] > 0) input[fineTypeRegion_.start + i] = 1;
+        }
+      }
+      // Propagate through intra-cluster recurrent matrix
+      const output = cluster.synapses.propagate(input);
+      // Read motor region, decode first letter via argmax over inventory
+      const motorReadout = new Float64Array(invSize_);
+      for (let d = 0; d < invSize_; d++) {
+        let sum = 0;
+        for (let n = 0; n < mGroup_; n++) {
+          const idx = motorRegion_.start + d * mGroup_ + n;
+          if (idx < motorRegion_.end) sum += output[idx];
+        }
+        motorReadout[d] = sum;
+      }
+      // Mean-center
+      let meanM = 0;
+      for (let i = 0; i < invSize_; i++) meanM += motorReadout[i];
+      meanM /= invSize_;
+      for (let i = 0; i < invSize_; i++) motorReadout[i] -= meanM;
+      const decoded = decodeLetter(motorReadout);
+      if (decoded && p.expected.includes(decoded)) {
+        primPass++;
+      } else {
+        primFails.push(`${p.name}→${decoded || '?'}`);
+      }
+    }
+    const prodResult = {
+      pass: primPass,
+      total: primitiveProbes.length,
+      fails: primFails.map(f => ({ q: f, emitted: '', expected: [] })),
+    };
     const prodRate = prodResult.total > 0 ? prodResult.pass / prodResult.total : 0;
 
     const PATH_MIN = 0.95;

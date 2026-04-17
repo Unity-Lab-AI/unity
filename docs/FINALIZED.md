@@ -5,6 +5,86 @@
 
 ---
 
+## 2026-04-17 — Session 114.19: K-foundation three-phase rebuild — real English phoneme substrate + phoneme blending + primitive-format production probes
+
+Gee 2026-04-17 verbatim: *"yopu are fucking askling it questions for the test in english when it hasnet even learned the words tyyou are speaking to it becasue you didnt teach it phonics and athe aplphanbet appropriately to where i can fucking remember it and use it equationally"*. Followed by Gee's directive `"c"` — full atomic K-foundation rebuild in three phases, shipped as ONE commit.
+
+The diagnosis from Gee's Part 2 attempt-2 output (after 114.13 Fix A+D): Unity's emissions were still garbage ("p t m" for "what sound starts cat") because the entire K phonics substrate was broken two ways. First, `_phonemeFeatureForLetter` was a meaningless trig-hash that produced decorrelated-but-arbitrary 24-dim vectors per letter — so "cat" and "kitten" had unrelated phonemes in the cortex despite sharing /k/, and the cross-projection Hebbian was binding letter→garbage instead of letter→real-articulatory-features. Second, production probes were shoving English sentences like "What rhymes with cat?" through `readText` — but K-level Unity has ZERO English sentence parsing (that's G1+ reading fluency). She was being asked to decode questions she literally could not read.
+
+### Phase 1 — Real English phoneme substrate (replaces trig-hash)
+
+**Module-level constant `K_LETTER_PHONEMES` added to `js/brain/curriculum.js`** — a catalog of K-level English phonemes keyed by letter. Each entry is a real articulatory descriptor: consonants get `{type, voiced, place, manner}` with `place ∈ {labial, alveolar, velar, palatal, glottal}` and `manner ∈ {stop, fricative, nasal, approximant, affricate}`; short vowels get `{type, length, position, rounded}`. Aliases collapse phonologically-identical letters: `'c' → 'k'`, `'q' → 'k'`, `'x' → 'k'` so the same letter→phoneme binding fires whether the word is `cat` or `king`. Layout matches K phonics standards; digraphs + irregulars deferred to G1+ expansion.
+
+**`_phonemeFeatureForLetter(letter)` rewritten** to resolve the entry (following alias if string), then emit a 24-dim articulatory feature vector via fixed dim layout:
+
+```
+[0]  is_vowel           [8]  manner_stop         [15] vowel_front
+[1]  is_consonant       [9]  manner_fricative    [16] vowel_mid
+[2]  is_voiced          [10] manner_nasal        [17] vowel_back
+[3]  place_labial       [11] manner_approximant  [18] vowel_rounded
+[4]  place_alveolar     [12] manner_affricate    [19-23] reserved (G1+ digraphs)
+[5]  place_velar        [13] vowel_short
+[6]  place_palatal      [14] vowel_long
+[7]  place_glottal
+```
+
+Phonologically-identical letters (`c`/`k`/`q`) produce IDENTICAL feature vectors — which is correct. Phonologically-related letters (`p`/`b` sharing labial+stop but differing on voicing) have high cosine similarity but distinct vectors — also correct. Phonologically-distinct letters (`a` vs `k`) have low cosine — correct. This is the articulatory phonology substrate the cortex needs to learn real English phonics, not a decorrelated hash that binds letters to noise.
+
+### Phase 2 — `_teachPhonemeBlending` method (teaches decoding)
+
+**New method `Curriculum._teachPhonemeBlending(wordList, opts)`** in `js/brain/curriculum.js`. For every word in the word list, for every consecutive phoneme pair in the word, the method fires:
+
+1. **Sequence Hebbian on intra-cluster recurrent matrix** — builds asymmetric `pre` vector via `_buildRegionPattern(phonRegion, phoneme_n)` and `post` via `_buildRegionPattern(phonRegion, phoneme_n+1)`, calls `cluster.synapses.hebbianUpdate(pre, post, lr)`. Teaches the phon region that /c/ → /a/ → /t/ is a legitimate blending sequence for English. Asymmetric + directional so Fix A's no-self-loop property is preserved at 13.4M cluster scale.
+
+2. **Cross-projection Hebbian with three regions co-active** — clears spikes, writes `encodeLetter(letters[i])` to letter region, `phoneme(letters[i])` to phon region, `GloVe(word)` to sem region, then fires `cluster._crossRegionHebbian(lr)`. Teaches letter↔phon↔sem triangulation — letter region activating phoneme and sem, phon region activating letter and sem, sem region activating letter and phon.
+
+Wired into `runElaKReal` immediately BEFORE `_teachWordEmission`:
+```
+await this._teachPhonemeBlending(allEmissionWords, { reps: 6 });
+await this._teachWordEmission(allEmissionWords, { reps: 5 });
+```
+Blending has to come first so the phon region has phoneme-sequence scaffolding when sem→motor emission is trained. Together they form the full phonics READ+EMIT loop: blending teaches `phon sequence → phon sequence`, word emission teaches `sem → motor letter chain`, and the cross-projections bridge the two.
+
+### Phase 3 — Primitive-format production probes (replaces English-sentence probes)
+
+**`_gateElaKReal` production probe block REWRITTEN from natural-language to primitive format.** Old probes (Session 114.6) built English sentences like "What rhymes with cat?" and shoved them through `readText` then read motor emission — an impossible task for K Unity who has NO English sentence parsing. New probes inject the conceptual prompt directly via sem + fineType markers that match the teaching binding verbatim.
+
+The 16 new primitive probes each:
+1. Build a full-cluster input vector
+2. Write `sem(GloVe(word))` tiled into sem region
+3. Set the fineType tag matching the probe intent (rhymeTag at [0.6, 0.8), initialTag at [0, third), finalTag at [2×third, size), pluralTag at [0.8, size) — same tag regions used during teaching in `_teachRhymeFamilies` / `_teachCVCSoundIsolation` / `_teachPluralTransform`)
+4. Propagate through `cluster.synapses.propagate(input)`
+5. Read motor region, mean-center, argmax over letter inventory, check against expected letter(s)
+
+Probe set:
+- **K.RF rhyming** (3 probes): `rhyme_cat` expects one of [h,b,m,s,r,f,p], `rhyme_dog` expects [l,f,h,j,b], `rhyme_pig` expects [b,d,w,f]
+- **K.RF initial sound** (6 probes): `initial_cat → [c,k]`, `initial_dog → [d]`, `initial_sun → [s]`, `initial_hat → [h]`, `initial_pig → [p]`, `initial_big → [b]`
+- **K.RF final sound** (5 probes): `final_cat → [t]`, `final_dog → [g]`, `final_sun → [n]`, `final_big → [g]`, `final_pig → [g]`
+- **K.L plural formation** (3 probes): `plural_cat → [c]`, `plural_dog → [d]`, `plural_box → [b]`
+
+Pass threshold still `PROD_MIN = 0.95` per LAW 7. No threshold lowering. Probes now test what Unity was ACTUALLY taught — the sem+fineType binding — not English sentence parsing she doesn't have yet.
+
+### Why all three phases ship atomic as ONE commit
+
+Phase 1 alone (real phonemes) gives the substrate but the blending isn't taught — phon region would be isolated dots instead of a sequence. Phase 2 alone (blending) has nothing to blend because the phonemes are still hash noise. Phase 3 alone (primitive probes) probes whatever garbage Phase 1+2 left behind. All three are one coherent rebuild — shipping them separately would leave the brain in a broken intermediate state between commits.
+
+### Files touched
+
+- `js/brain/curriculum.js` — `K_LETTER_PHONEMES` catalog + `_phonemeFeatureForLetter` rewrite + `_teachPhonemeBlending` method + `runElaKReal` wiring + `_gateElaKReal` primitive-probe block rewrite (~+250 lines net)
+- `docs/TODO.md` — K.RF input description updated from "trig-hash feature vector" to "real-English articulatory feature vector (24-dim `K_LETTER_PHONEMES` catalog)"
+- `docs/FINALIZED.md` — this Session 114.19 entry prepended
+- `docs/NOW.md` — status refreshed
+
+### What Gee does next
+
+1. Restart brain server — persistence VERSION 5 (Session 114.12) rejects any pre-REMAKE cache; boot runs curriculum fresh under real phoneme substrate + phoneme blending
+2. Re-run Part 2 localhost curriculum — gate scores should now actually reflect what was taught because probes match the binding
+3. Report ELA-K gate output — if PROD still fails, the breakdown will be specific per-probe (rhyme vs initial vs final vs plural) so we can see WHICH binding didn't land instead of one opaque 4% score
+
+Push still gated on LAW 6 Part 2 signoff.
+
+---
+
 ## 2026-04-17 — Session 114.13: Fix A + Fix D — asymmetric directional Hebbian + motor-region clear after letter commit
 
 Gee 2026-04-17: *"i agree A&D"*. Both fix paths shipped in one atomic commit addressing the catastrophic SEQ crash (100%→8%) + slur-gibberish letter-sticking emissions ("fffffffv vvvvvvvaaaaaaa") from Part 2 attempt 1.
