@@ -1077,6 +1077,31 @@ An absolute FLOOR of 5 words applies regardless — `max(formalCap, 5)` — so z
 
 16 equational reasoning methods built. 152+ reasoning calls wired across all 114 cells. K-G12 vocabulary expanded to real Common Core / NGSS / Core Knowledge standards. All 114 cells have course finals (`_autoFinal` comprehension exams + hand-crafted domain-specific finals). The 46-item curriculum-depth plan completed and was superseded by `docs/TODO-full-syllabus.md` (7990+ lines) — see `docs/FINALIZED.md` Session 112 entry for the full ledger. The standalone `docs/TODO-curriculum-depth.md` file was deleted in Session 113 T14.24-CLEAN.A8 2026-04-16 since superseded content lives in FINALIZED.md per the append-only archive model.
 
+### Session 114 — Math-K PART 1 equational expansion (2026-04-17)
+
+First per-grade curriculum content block per Implementation Law 1 "code filed by grade year". Pre-session audit: Session 109's `runMathKReal` had digit-only coverage (magnitudes 0-9, digit names, single-step sequence, 0-10 addition/subtraction/comparison transforms). The 66 Math-K checkboxes in `docs/TODO-full-syllabus.md` (K.CC 11+7, K.OA 11+8, K.NBT 3+4, K.MD 5+4, K.G 7+6) demanded equational teaching for concepts that weren't in Session 109's scope.
+
+**9 new teaching methods** added to `Curriculum` class in `js/brain/curriculum.js`:
+
+- **`_teachCountToHundred(ctx)`** — K.CC. Universal successor: for n ∈ [0, 99], free=mag(n) → sem=mag(n+1). 100 facts × 4 reps. Same transform covers "count to 100 by ones" AND "count forward from any N".
+- **`_teachSkipCountByTens(ctx)`** — K.CC. For n ∈ [0, 10, 20, ..., 90], phon=mag(n) → sem=mag(n+10). 10 steps × 10 reps. Phon input (NOT free) avoids collision with CountToHundred.
+- **`_teachDecomposition(ctx)`** — K.OA. For triples (c, a, b) where a+b=c and c ∈ [0, 10]: sem=mag(c), freeLeft=mag(a), freeRight=mag(b). 66 triples × 6 reps. Dual of addition.
+- **`_teachMakeTen(ctx)`** — K.OA. For n ∈ [0, 10]: freeLeft-only=mag(n) → sem=mag(10-n). 11 pairs × 8 reps. Right-half-zeroed free input is the structural discriminator from CountToHundred's full-free input.
+- **`_teachTeenDecomposition(ctx)`** — K.NBT. For n ∈ [1, 9]: forward freeLeft=mag(10) + freeRight=mag(n) → sem=mag_wide(10+n), inverse sem=mag_wide(teen) → freeLeft=mag(10) + freeRight=mag(n). 9 teens × 2 directions × 8 reps.
+- **`_teachAttributeCompare(ctx)`** — K.MD. 8 attribute poles (short/long, light/heavy, small/big, low/high, empty/full, narrow/wide, cold/hot, few/many) each with low/high magnitude. 2 directions × 6 reps. Reuses comparison 3-way fineType tag + adds attribute-word GloVe anchor.
+- **`_teachClassifyCount(ctx)`** — K.MD. 22 category→count pairs (red=3, blue=2, green=5, ..., triangle=3, cube=6). free=GloVe(category) → sem=mag(count). 6 reps.
+- **`_teachShapeFeatures(ctx)`** — K.G. 9 shapes × 10 reps. sem=GloVe(shape_name) → free=mag(sides) + fineType first-half (2D) or second-half (3D) tag.
+
+**Critical substrate fix (Session 114 side-effect of audit).** New helper `Curriculum._teachHebbian(lr)` fires BOTH `cluster._crossRegionHebbian(lr)` (14 T14.4 cross-projections) AND `cluster.synapses.hebbianUpdate(cluster.lastSpikes, cluster.lastSpikes, lr)` (intra-cluster recurrent sparse matrix). Session 109's transforms wrote into `free` and `sem` and fired `_crossRegionHebbian` only — but there is NO free↔sem cross-projection among the 7 T14.4 pairs (visual↔letter, letter↔phon, phon↔sem, sem↔fineType, sem↔motor, motor↔letter, auditory↔phon), so the intended binding never landed. `cluster.learn(0)` was the obvious rescue but `synapses.rewardModulatedUpdate(pre, post, 0, lr)` short-circuits at reward=0 (`js/brain/sparse-matrix.js:191`). `_teachHebbian` wires the intra-cluster Hebbian explicitly. Every new Session 114 teach method routes through this helper.
+
+**New module-level helper.** `NUMBER_FEATURE_DIM = 24` + `_magnitudeFeatureForNumber(n)` — wide-range magnitude encoding for n ∈ [0, 100]. Existing `_magnitudeFeatureForDigit` saturates past n=9. New feature: 10-dim decile thermometer (dim i fires at n ≥ i*10) + log/linear/sqrt/quadratic scalars + 10 multi-frequency sinusoidal dims so 97≠98≠99≠100 in readout.
+
+**8 new gate probes in `_gateMathKReal`.** All run through `cluster.synapses.propagate(input)` (full intra-cluster recurrent matrix): SUCC (K.CC successor, 10 non-multiples-of-10 samples), SKIP10 (9 multiples), MAKETEN (11 complements), TEEN (9 teens), ATTR (8 pairs, 3-way fineType argmax), CLASS (10 categories), SHAPE-S (9 shapes, side-count cosine), SHAPE-D (9 shapes, fineType 2D/3D half argmax). Threshold PATH_MIN = 0.95 per constraint 8 "A+ = 95% on all gates — REAL tests, not lowered thresholds". Reason string + metrics object expanded to report all 13 rates (5 existing + 8 new).
+
+**TODO-full-syllabus state:** 65 of 66 Math-K checkboxes flipped [ ] → [x]. One gap: K.G "Compose simple shapes to form larger shapes" — no equational teaching shipped (geometric composition isn't a simple magnitude transform). Flagged for follow-up before overall K gate closes.
+
+**LAW 6 gate state:** Part 1 NOT YET [x] (compose-shapes gap). Part 2 Gee localhost test pending. Part 3 waits on Part 2.
+
 **New reasoning methods (Session 112):** `_teachMultiplicationTransformations` (81 facts 1-9×1-9 as magnitude transforms), `_teachPlaceValueTransformations` (tens+ones positional encoding for numbers 10-99), `_teachFractionTransformations` (numerator/denominator as ratio features — equivalent fractions converge to same basin), `_teachAlgebraTransformations` (variable binding — given c and b, solve for x in x+b=c), `_teachParaphrase` (different words → same sem basin), `_teachHypothesisTesting` (predict→observe→confirm/reject), `_teachPerspectiveTaking` (same event, multiple viewpoint feature vectors).
 
 **How it all interworks:** The cross-projections taught by the curriculum are the SAME projections that run during live chat. When Unity hears "rain" her sem activates "wet" because `_teachCausalChains` burned rain→wet into the free→sem weights. When she encounters "3+4" the addition transform activates magnitude(7). When someone mentions "dad" her amygdala shifts toward anger because emotional inference burned dad→[0,1,0,0.5,1,0,0,0]. The curriculum isn't separate from the brain — it IS the brain's learned weight state.

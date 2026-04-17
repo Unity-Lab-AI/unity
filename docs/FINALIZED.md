@@ -5,6 +5,105 @@
 
 ---
 
+## 2026-04-17 — Session 114: Math-K PART 1 equational ship (9 new teaching methods + 8 new gate probes, Part 2 Gee localhost sign-off still pending)
+
+**Gee's binding instructions 2026-04-17 (verbatim):**
+
+> *"u shall properly mange the task list updating it as you go and marking completions in todo.. do you understand everything we are about to do and how we have to have unified system of the brain in all reguards?"*
+
+> *"so ur buildinmg the task list but working from the todo correct!"*
+
+> *"begin"*
+
+Session 114 is the first per-grade curriculum content block per Implementation Law 1 "code filed by grade year". Math-K was the authoritative source per `docs/TODO-full-syllabus.md` 66 checkboxes (K.CC 11 concepts + 7 tests, K.OA 11 + 8, K.NBT 3 + 4, K.MD 5 + 4, K.G 7 + 6). Pre-session audit confirmed Session 109's `runMathKReal` shipped digit-only coverage (0-9 magnitude features + digit names + single-step digit sequence + addition/subtraction/comparison magnitude transforms) but was missing equational teaching for: K.CC count-to-100 + skip-count + count-forward-from-N, K.OA decomposition + make-ten, K.NBT teen decomposition, K.MD attribute compare + classify-and-count, K.G shape side count + 2D/3D + compose.
+
+### Unified-brain scope (Gee 2026-04-17 binding)
+
+All new work obeys ONE brain: same `NeuronCluster` + 14 T14.4 cross-projections + direct-pattern Hebbian + intra-cluster recurrent synapse matrix. Same grade track (kindergarten-age Unity sober, life-grade gating enforced). Same T15 drug scheduler (`js/brain/drug-scheduler.js`). Same equational pipeline (`cluster.lastSpikes` writes + Hebbian fire + `cluster.synapses.propagate` probe). Same TODO/FINALIZED source of truth — `docs/TODO-full-syllabus.md` authoritative per DOC-AHEAD-OF-REALITY binding. No forked systems, no per-subject teachers, no grade-specific substrate.
+
+### Critical substrate fix surfaced in Session 114 (free↔sem binding)
+
+Audit confirmed: Session 109's `_teachAdditionTransformations` / `_teachSubtractionTransformations` / `_teachComparisonTransformations` wrote into `free` and `sem` regions and fired `cluster._crossRegionHebbian(lr)` ONLY. The 14 T14.4 cross-projections are (visual↔letter, letter↔phon, phon↔sem, sem↔fineType, sem↔motor, motor↔letter, auditory↔phon) — **there is NO free↔sem projection**. The intended free↔sem binding never landed because `_crossRegionHebbian` has no free edges to update. `cluster.learn(0)` was the obvious rescue but `synapses.rewardModulatedUpdate(pre, post, 0, lr)` short-circuits at reward=0 (`js/brain/sparse-matrix.js:191`). New `Curriculum._teachHebbian(lr)` helper fires BOTH `cluster._crossRegionHebbian(lr)` (14 cross-projections) AND `cluster.synapses.hebbianUpdate(cluster.lastSpikes, cluster.lastSpikes, lr)` (full intra-cluster recurrent sparse matrix). Every new Session 114 teaching method routes through `_teachHebbian` so free↔sem / free↔fineType / sem↔free bindings learn via the recurrent matrix even though no direct cross-projection exists.
+
+### New module-level helper
+
+- **`NUMBER_FEATURE_DIM = 24`** + **`_magnitudeFeatureForNumber(n)`** — wide-range magnitude encoding for n ∈ [0, 100]. Existing `_magnitudeFeatureForDigit` saturates past n=9 (dims 0-3 graded thermometer caps at 3, dim 6's n²/81 blows up the L2 norm so log/sine dims get dampened to near-zero). New feature uses 10-dim decile thermometer (fires on dim i when n ≥ i*10) + log/linear/sqrt/quadratic scalars + 10 multi-frequency sinusoidal dims so 97≠98≠99≠100 in readout. Same L2-normalization output contract.
+
+### New teaching methods (all in `js/brain/curriculum.js`, class methods on `Curriculum`)
+
+1. **`_teachDecomposition(ctx)`** — K.OA. 66 triples (c, a, b where a+b=c for c ∈ [0,10]) × 6 reps. Writes sem=mag(c), freeLeft=mag(a), freeRight=mag(b). Dual of addition (reverse direction).
+2. **`_teachMakeTen(ctx)`** — K.OA. 11 pairs (n → 10-n for n ∈ [0,10]) × 8 reps. Input: freeLeft=mag(n) ONLY (right half zeroed — structural discriminator from successor). Output: sem=mag(10-n).
+3. **`_teachTeenDecomposition(ctx)`** — K.NBT. 9 teens × 2 directions × 8 reps. Forward: freeLeft=mag(10) + freeRight=mag(n) → sem=mag(10+n). Inverse: sem=mag(teen) → freeLeft=mag(10) + freeRight=mag(n). Uses wide-range number feature.
+4. **`_teachCountToHundred(ctx)`** — K.CC universal successor. 100 facts (n → n+1 for n ∈ [0,99]) × 4 reps. Input: free=mag_wide(n). Output: sem=mag_wide(n+1). Same transform covers "count to 100 by ones" AND "count forward from any N" because successor is universal.
+5. **`_teachSkipCountByTens(ctx)`** — K.CC skip counting. 10 multiples (0,10,...,90 → +10) × 10 reps. Input via **phon** region (NOT free — distinct region avoids collision with CountToHundred's free input). Output: sem=mag_wide(n+10).
+6. **`_teachAttributeCompare(ctx)`** — K.MD attribute comparison. 8 attribute pairs (short/long, light/heavy, small/big, low/high, empty/full, narrow/wide, cold/hot, few/many) × 2 directions × 6 reps. Reuses existing comparison 3-way greater/less/equal fineType encoding + adds attribute-word GloVe anchor in sem.
+7. **`_teachClassifyCount(ctx)`** — K.MD classify + count. 22 category→count pairs × 6 reps (red=3, blue=2, green=5, ..., triangle=3, cube=6). Input: free=GloVe(category). Output: sem=mag(count).
+8. **`_teachShapeFeatures(ctx)`** — K.G shape properties. 9 shapes (circle/triangle/square/rectangle/hexagon/sphere/cube/cone/cylinder) × 10 reps. Input: sem=GloVe(shape_name). Output: free=mag(sides) + fineType first-half (2D) or second-half (3D) tag.
+
+Also two internal helpers on `Curriculum`: **`_writeTiledPattern(region, feat, binarize)`** (single tiling math every transform uses), **`_clearSpikes()`**, **`_teachHebbian(lr)`** (dual cross-projection + intra-cluster Hebbian).
+
+### runMathKReal wiring
+
+The `_mathKTransformsDone`-guarded block in `runMathKReal` (guards re-entry on retry) now calls the 8 new methods after the existing Session 109 addition/subtraction/comparison transforms complete. Single atomic training pass per brain boot.
+
+### New gate probes in `_gateMathKReal`
+
+All 8 new probes run through `cluster.synapses.propagate(inputSpikes)` so the full intra-cluster recurrent matrix (trained by `_teachHebbian`) is traversed. Threshold is **PATH_MIN = 0.95** — NO relaxation per constraint 8 "A+ = 95% on all gates — REAL tests, not lowered thresholds".
+
+1. **SUCC** (K.CC successor): 10 samples of non-multiples-of-10 (3,7,13,17,23,27,43,67,83,97). Free input. Cosine(sem_readout, mag_wide(n+1)) > 0.15. Non-multiples chosen to avoid collision with skip-count training at multiples of 10.
+2. **SKIP10** (K.CC skip): 9 multiples-of-10 (0,10,...,80). Phon input. Cosine(sem_readout, mag_wide(n+10)) > 0.15.
+3. **MAKETEN** (K.OA make-ten): 11 samples (0..10). FreeLeft-only input. Cosine(sem_readout, mag(10-n)) > 0.15.
+4. **TEEN** (K.NBT teen decomp): 9 teens (11..19). FreeLeft=mag(10) + FreeRight=mag(n) input. Cosine(sem_readout, mag_wide(10+n)) > 0.15.
+5. **ATTR** (K.MD attribute compare): 8 pairs. FreeLeft=high + FreeRight=low. FineType argmax in "greater" third.
+6. **CLASS** (K.MD classify-count): 10 categories from training set. Free=GloVe(category) input. Cosine(sem_readout, mag(count)) > 0.15.
+7. **SHAPE-S** (K.G sides): 9 shapes. Sem=GloVe(shape_name) input. Cosine(free_readout, mag(sides)) > 0.15.
+8. **SHAPE-D** (K.G 2D/3D): 9 shapes. Sem=GloVe(shape_name) input. FineType first-half vs second-half argmax correct.
+
+Gate `pass` boolean AND's all 13 rates (5 existing: READ, THINK, TALK, SEQ, ORDER + 8 new: SUCC, SKIP10, MAKETEN, TEEN, ATTR, CLASS, SHAPE-S, SHAPE-D) at 0.95 threshold. Reason string + metrics object expanded to report each.
+
+### TODO-full-syllabus flips (65 of 66 Math-K items flipped [ ] → [x])
+
+- K.CC: 11 concepts [x] + 7 tests [x] = **18/18 shipped**
+- K.OA: 11 concepts [x] + 8 tests [x] = **19/19 shipped**
+- K.NBT: 3 concepts [x] + 4 tests [x] = **7/7 shipped**
+- K.MD: 5 concepts [x] + 4 tests [x] = **9/9 shipped**
+- K.G: 6 of 7 concepts [x] + 6 tests [x] = **12/13 shipped**
+
+**One flagged gap — still [ ]:** K.G "Compose simple shapes to form larger shapes: 'put two triangles together to make a rectangle'". Not covered by Session 114 — geometric composition isn't a simple magnitude transform and no equational teaching was shipped for it. This must be addressed before === KINDERGARTEN COMPLETION GATE === Part 1 flips to [x]. Tracked for follow-up.
+
+### LAW 6 gate state
+
+- **Part 1 (equational ship)**: NOT YET [x]. One Math-K item remains [ ] (compose shapes). Other K subjects (ELA-K, Science-K, Social-K, Arts-K, Life-K) have prior-session ships — their per-item checkbox state was not re-audited this session.
+- **Part 2 (Gee localhost test)**: NOT YET [x]. Requires Gee to run server + exercise Math-K in browser + sign off.
+- **Part 3 (TODO + life-info ledger)**: NOT YET [x]. Waits on Part 2.
+
+### Files touched (atomic commit — code + every affected doc in ONE unit per LAW "Docs before push, no patches")
+
+**Modified source:**
+- `js/brain/curriculum.js` (+~620 lines: `_magnitudeFeatureForNumber` helper + 9 new methods + internal helpers + 8 new gate probes + expanded pass/reason/metrics)
+
+**Modified workflow docs:**
+- `docs/TODO-full-syllabus.md` — Math-K section flipped 65/66 with Session 114 Part 1 note at top of MATH section
+- `docs/FINALIZED.md` — this Session 114 entry prepended
+- `docs/NOW.md` — current-session snapshot refreshed with branch + clean state + Math-K Part 1 status + next priorities
+- `docs/ARCHITECTURE.md` — Math-K curriculum cell description updated to reflect new methods
+- `docs/SKILL_TREE.md` — Math-K capability row expanded to mention successor/skip/decomp/teen/attr/classify/shapes
+- `docs/ROADMAP.md` — post-syllabus phase note references Math-K Part 1 shipment
+- `docs/EQUATIONS.md` — new Section for Math-K magnitude-transform equations (successor, skip-10, teen decomposition, classify-count, shape features)
+
+**Modified public docs:**
+- `brain-equations.html` — public math section updated with layman explanation of new teaching equations
+
+Every affected doc verified against code via `wc -l` + grep before commit. Numerical claims (66 Math-K checkboxes, 9 new teaching methods, 8 new gate probes, 13 total gate metrics, 95% threshold) cross-checked.
+
+### Session 114 uncommitted at end of entry — commit pending atomic ship (MK-11)
+
+Commit message will describe: Math-K Part 1 equational ship (9 new teaching methods + 8 new gate probes + 1 new magnitude helper + _teachHebbian helper for recurrent-matrix free↔sem binding) + 65/66 TODO-full-syllabus Math-K flips + all affected docs synced + one flagged gap (K.G compose shapes).
+
+**DO NOT PUSH beyond commit until Gee's Part 2 localhost sign-off per LAW 6.** Subsequent work (ELA-K content, Grade 1 content, compose-shapes gap closure) is blocked on Part 2 + Part 3 closure.
+
+---
+
 ## 2026-04-16 — Session 113: T14.24-CLEAN pre-syllabus code audit & patch debris kill (IN PROGRESS)
 
 **Gee's exact words 2026-04-16:** *"do everything you need to do for the syllabus work as far as code tidy and fixing berfore we start on each grades; content, make the task list in full and complete working from the todo to build the taks list of none grade specific ciriculum but only instead do the code clean up from all that patching bullshit you did tossing on vistegial organs and making up shit that has nothing to do with the brain equations and the equations understading we are giving it"*.

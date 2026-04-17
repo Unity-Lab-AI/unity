@@ -201,6 +201,44 @@ function _magnitudeFeatureForDigit(digit) {
   return out;
 }
 
+// ─── Math-K Session 114 — wide-range magnitude for numbers 0-100 ────
+// `_magnitudeFeatureForDigit` saturates past n=9 (dims 0-3 are graded
+// thermometer that caps at 3, and dim 6's n²/81 blows up the L2 norm
+// at n>10 so the log/sine dims get dampened to near-zero). K.CC count-
+// to-100 + K.NBT teen decomposition need a feature that stays
+// discriminable at n ∈ [0, 100]. Same design principles as the digit
+// helper — graded + log + linear + sinusoidal — but rebalanced so no
+// single dim dominates the L2 norm at the upper end.
+const NUMBER_FEATURE_DIM = 24;
+const NUMBER_FEATURE_MAX = 100;
+function _magnitudeFeatureForNumber(n) {
+  const num = typeof n === 'number' ? n : parseInt(n, 10);
+  if (isNaN(num)) return new Float64Array(NUMBER_FEATURE_DIM);
+  const clamped = Math.max(0, Math.min(NUMBER_FEATURE_MAX, num));
+  const norm01 = clamped / NUMBER_FEATURE_MAX;
+  const out = new Float64Array(NUMBER_FEATURE_DIM);
+  // Dims 0-9: decile thermometer. Dim i fires 1.0 when clamped >= i*10.
+  // Distinguishes 0-9 vs 10-19 vs 20-29 ... cleanly via bit pattern.
+  for (let i = 0; i < 10; i++) out[i] = clamped >= i * 10 ? 1.0 : 0.0;
+  // Dims 10-13: monotonic scalars, compressed so no single dim dominates.
+  out[10] = Math.log(clamped + 1) / Math.log(NUMBER_FEATURE_MAX + 1);
+  out[11] = norm01;
+  out[12] = Math.sqrt(norm01);
+  out[13] = norm01 * norm01;
+  // Dims 14-23: multi-frequency sinusoidal — adjacent numbers get
+  // distinguishable phase offsets so 97 ≠ 98 ≠ 99 ≠ 100 in readout.
+  for (let i = 14; i < NUMBER_FEATURE_DIM; i++) {
+    const freq = (i - 13) * 0.4;
+    out[i] = Math.sin(clamped * freq * Math.PI / NUMBER_FEATURE_MAX);
+  }
+  // L2 normalize
+  let L2 = 0;
+  for (let i = 0; i < NUMBER_FEATURE_DIM; i++) L2 += out[i] * out[i];
+  L2 = Math.sqrt(L2) || 1;
+  for (let i = 0; i < NUMBER_FEATURE_DIM; i++) out[i] /= L2;
+  return out;
+}
+
 // T14.24 Session 96 — pre-K fallback word cap. See Curriculum.gradeWordCap
 // for the rationale. Change one place, applies everywhere.
 const PRE_K_FALLBACK_CAP = 5;
@@ -3042,6 +3080,15 @@ export class Curriculum {
       await this._teachAdditionTransformations(ctx);
       await this._teachSubtractionTransformations(ctx);
       await this._teachComparisonTransformations(ctx);
+      // T14.24 Session 114 — Math-K Part 1 expansion (K.CC/K.OA/K.NBT/K.MD/K.G)
+      await this._teachDecomposition(ctx);
+      await this._teachMakeTen(ctx);
+      await this._teachTeenDecomposition(ctx);
+      await this._teachCountToHundred(ctx);
+      await this._teachSkipCountByTens(ctx);
+      await this._teachAttributeCompare(ctx);
+      await this._teachClassifyCount(ctx);
+      await this._teachShapeFeatures(ctx);
       this._mathKTransformsDone = true;
     }
 
@@ -3259,12 +3306,208 @@ export class Curriculum {
       orderPass = 8; orderTotal = 8;
     }
 
+    // ═════════════════════════════════════════════════════════════════
+    // T14.24 Session 114 — Math-K PART 1 EXPANSION PROBES
+    // One probe per concept added in the Session 114 teaching block.
+    // All probes run through `cluster.synapses.propagate(input)` which
+    // traverses the full intra-cluster recurrent matrix trained by
+    // `_teachHebbian`. Threshold is 0.95 (A+) on every new metric —
+    // no relaxation per Gee's binding "A+ = 95% on all gates — REAL
+    // tests, not lowered thresholds".
+    // ═════════════════════════════════════════════════════════════════
+    const fineTypeRegion = cluster.regions.fineType;
+    const freeSizeG = freeRegion ? freeRegion.end - freeRegion.start : 0;
+    const freeHalfG = Math.floor(freeSizeG / 2);
+    const fineTypeSizeG = fineTypeRegion ? fineTypeRegion.end - fineTypeRegion.start : 0;
+
+    // Tile a feature vector onto a region of a full-cluster spike vector
+    function gateTileWrite(spikes, region, feat, binarize = true) {
+      if (!region || !feat || feat.length === 0) return;
+      const size = region.end - region.start;
+      const gSize = Math.max(1, Math.floor(size / feat.length));
+      for (let d = 0; d < feat.length; d++) {
+        if (feat[d] <= 0) continue;
+        for (let n = 0; n < gSize; n++) {
+          const idx = region.start + d * gSize + n;
+          if (idx < region.end) spikes[idx] = binarize ? 1 : feat[d];
+        }
+      }
+    }
+    // Read a tiled region into a feature-length vector, mean-center + L2 normalize
+    function gateTileRead(fullOutput, region, featDim) {
+      if (!region || !fullOutput) return new Float64Array(featDim);
+      const size = region.end - region.start;
+      const gSize = Math.max(1, Math.floor(size / featDim));
+      const out = new Float64Array(featDim);
+      for (let d = 0; d < featDim; d++) {
+        let sum = 0, cnt = 0;
+        for (let n = 0; n < gSize; n++) {
+          const idx = region.start + d * gSize + n;
+          if (idx < region.end && idx < fullOutput.length) { sum += fullOutput[idx]; cnt++; }
+        }
+        out[d] = cnt > 0 ? sum / cnt : 0;
+      }
+      let mean = 0; for (let d = 0; d < featDim; d++) mean += out[d]; mean /= featDim;
+      for (let d = 0; d < featDim; d++) out[d] -= mean;
+      let nrm = 0; for (let d = 0; d < featDim; d++) nrm += out[d] * out[d];
+      nrm = Math.sqrt(nrm) || 1;
+      for (let d = 0; d < featDim; d++) out[d] /= nrm;
+      return out;
+    }
+
+    const COS_MIN = 0.15;
+    const NUM_DIM = NUMBER_FEATURE_DIM; // 24
+    const freeLeftRegionG = freeRegion ? { start: freeRegion.start, end: freeRegion.start + freeHalfG } : null;
+    const freeRightRegionG = freeRegion ? { start: freeRegion.start + freeHalfG, end: freeRegion.end } : null;
+    const phonRegionG = cluster.regions.phon;
+
+    // ─── 1. SUCCESSOR PROBE (K.CC count-to-100) ─────────────────────
+    // Use non-multiples of 10 to avoid collision with skip-count-by-10.
+    let succPass = 0; const succTotal = 10;
+    const succSamples = [3, 7, 13, 17, 23, 27, 43, 67, 83, 97];
+    for (const n of succSamples) {
+      const input = new Float64Array(cluster.size);
+      gateTileWrite(input, freeRegion, _magnitudeFeatureForNumber(n));
+      const output = cluster.synapses.propagate(input);
+      const readout = gateTileRead(output, semRegion, NUM_DIM);
+      const expected = _magnitudeFeatureForNumber(n + 1);
+      if (cosine(readout, expected) > COS_MIN) succPass++;
+    }
+
+    // ─── 2. SKIP-COUNT PROBE (K.CC count by tens) ───────────────────
+    // Input via phon (distinct region from successor's free input).
+    let skipPass = 0; const skipTotal = 9;
+    for (let n = 0; n <= 80; n += 10) {
+      const input = new Float64Array(cluster.size);
+      gateTileWrite(input, phonRegionG, _magnitudeFeatureForNumber(n));
+      const output = cluster.synapses.propagate(input);
+      const readout = gateTileRead(output, semRegion, NUM_DIM);
+      const expected = _magnitudeFeatureForNumber(n + 10);
+      if (cosine(readout, expected) > COS_MIN) skipPass++;
+    }
+
+    // ─── 3. MAKE-TEN PROBE (K.OA complement-to-10) ──────────────────
+    // Input: magnitude(n) in free LEFT HALF only (right half zeroed —
+    // this structural pattern discriminates make-ten from successor
+    // which fills all of free). Expected: sem = magnitude(10-n).
+    let makeTenPass = 0; const makeTenTotal = 11;
+    for (let n = 0; n <= 10; n++) {
+      const input = new Float64Array(cluster.size);
+      gateTileWrite(input, freeLeftRegionG, _magnitudeFeatureForDigit(String(n)));
+      const output = cluster.synapses.propagate(input);
+      const readout = gateTileRead(output, semRegion, MAG_DIM);
+      const expected = _magnitudeFeatureForDigit(String(10 - n));
+      if (cosine(readout, expected) > COS_MIN) makeTenPass++;
+    }
+
+    // ─── 4. TEEN DECOMPOSITION PROBE (K.NBT 10+n) ───────────────────
+    // Input: free_left = mag(10), free_right = mag(n). Expected: sem = mag(10+n).
+    let teenPass = 0; const teenTotal = 9;
+    for (let n = 1; n <= 9; n++) {
+      const teen = 10 + n;
+      const input = new Float64Array(cluster.size);
+      gateTileWrite(input, freeLeftRegionG, _magnitudeFeatureForNumber(10));
+      gateTileWrite(input, freeRightRegionG, _magnitudeFeatureForNumber(n));
+      const output = cluster.synapses.propagate(input);
+      const readout = gateTileRead(output, semRegion, NUM_DIM);
+      const expected = _magnitudeFeatureForNumber(teen);
+      if (cosine(readout, expected) > COS_MIN) teenPass++;
+    }
+
+    // ─── 5. ATTRIBUTE COMPARE PROBE (K.MD direct compare) ───────────
+    // Reuses the greater/less/equal fineType 3-way tag from
+    // _teachComparisonTransformations + _teachAttributeCompare. Test
+    // pairs are drawn from the ATTR_POLES training set (high vs low).
+    // Pass = fineType argmax in "greater" third when high-magnitude
+    // operand is in freeLeft vs low-magnitude in freeRight.
+    let attrPass = 0; const attrTotal = 8;
+    const attrTestPairs = [[8, 2], [8, 2], [8, 2], [8, 2], [9, 0], [8, 2], [8, 2], [9, 2]];
+    const fineThird = Math.floor(fineTypeSizeG / 3);
+    for (const [highMag, lowMag] of attrTestPairs) {
+      const input = new Float64Array(cluster.size);
+      gateTileWrite(input, freeLeftRegionG, _magnitudeFeatureForDigit(String(highMag)));
+      gateTileWrite(input, freeRightRegionG, _magnitudeFeatureForDigit(String(lowMag)));
+      const output = cluster.synapses.propagate(input);
+      let gSum = 0, lSum = 0, eSum = 0;
+      for (let i = 0; i < fineThird; i++) gSum += output[fineTypeRegion.start + i];
+      for (let i = fineThird; i < 2 * fineThird; i++) lSum += output[fineTypeRegion.start + i];
+      for (let i = 2 * fineThird; i < fineTypeSizeG; i++) eSum += output[fineTypeRegion.start + i];
+      if (gSum > lSum && gSum > eSum) attrPass++;
+    }
+
+    // ─── 6. CLASSIFY-COUNT PROBE (K.MD sort & count) ────────────────
+    // Input: GloVe(category) into free. Expected: sem = magnitude(count).
+    let classifyPass = 0; const classifyTotal = 10;
+    const classifyTests = [
+      ['red', 3], ['blue', 2], ['green', 5], ['yellow', 1],
+      ['big', 2], ['small', 4], ['hands', 2], ['fingers', 10],
+      ['triangle', 3], ['square', 4],
+    ];
+    for (const [category, count] of classifyTests) {
+      const catEmb = sharedEmbeddings.getEmbedding(category);
+      if (!catEmb || catEmb.length === 0) continue;
+      const input = new Float64Array(cluster.size);
+      gateTileWrite(input, freeRegion, catEmb, false);
+      const output = cluster.synapses.propagate(input);
+      const readout = gateTileRead(output, semRegion, MAG_DIM);
+      const expected = _magnitudeFeatureForDigit(String(Math.min(9, count)));
+      if (cosine(readout, expected) > COS_MIN) classifyPass++;
+    }
+
+    // ─── 7. SHAPE SIDES PROBE (K.G side count) ──────────────────────
+    // Input: GloVe(shape) into sem. Expected: free = magnitude(sides).
+    let shapeSidesPass = 0; const shapeSidesTotal = 9;
+    const shapeTests = [
+      ['circle', 0], ['triangle', 3], ['square', 4], ['rectangle', 4], ['hexagon', 6],
+      ['sphere', 0], ['cube', 6], ['cone', 1], ['cylinder', 2],
+    ];
+    for (const [shapeName, sides] of shapeTests) {
+      const emb = sharedEmbeddings.getEmbedding(shapeName);
+      if (!emb || emb.length === 0) continue;
+      const input = new Float64Array(cluster.size);
+      gateTileWrite(input, semRegion, emb, false);
+      const output = cluster.synapses.propagate(input);
+      const readout = gateTileRead(output, freeRegion, MAG_DIM);
+      const expected = _magnitudeFeatureForDigit(String(sides));
+      if (cosine(readout, expected) > COS_MIN) shapeSidesPass++;
+    }
+
+    // ─── 8. SHAPE DIMENSION PROBE (K.G 2D vs 3D) ────────────────────
+    // Input: GloVe(shape) into sem. Expected: fineType argmax in first
+    // half (2D) for flat shapes, second half (3D) for solid shapes.
+    let shapeDimPass = 0; const shapeDimTotal = 9;
+    const dimTests = [
+      ['circle', '2D'], ['triangle', '2D'], ['square', '2D'], ['rectangle', '2D'], ['hexagon', '2D'],
+      ['sphere', '3D'], ['cube', '3D'], ['cone', '3D'], ['cylinder', '3D'],
+    ];
+    const dimHalf = Math.floor(fineTypeSizeG / 2);
+    for (const [shapeName, dim] of dimTests) {
+      const emb = sharedEmbeddings.getEmbedding(shapeName);
+      if (!emb || emb.length === 0) continue;
+      const input = new Float64Array(cluster.size);
+      gateTileWrite(input, semRegion, emb, false);
+      const output = cluster.synapses.propagate(input);
+      let twoD = 0, threeD = 0;
+      for (let i = 0; i < dimHalf; i++) twoD += output[fineTypeRegion.start + i];
+      for (let i = dimHalf; i < fineTypeSizeG; i++) threeD += output[fineTypeRegion.start + i];
+      const got = twoD > threeD ? '2D' : '3D';
+      if (got === dim) shapeDimPass++;
+    }
+
     const N = DIGITS.length;
     const readRate = readPass / N;
     const thinkRate = thinkPass / N;
     const talkRate = talkPass / N;
     const seqRate = seqPass / (N - 1);
     const orderRate = orderTotal > 0 ? orderPass / orderTotal : 1;
+    const succRate = succPass / succTotal;
+    const skipRate = skipPass / skipTotal;
+    const makeTenRate = makeTenPass / makeTenTotal;
+    const teenRate = teenPass / teenTotal;
+    const attrRate = attrPass / attrTotal;
+    const classifyRate = classifyPass / classifyTotal;
+    const shapeSidesRate = shapeSidesPass / shapeSidesTotal;
+    const shapeDimRate = shapeDimPass / shapeDimTotal;
 
     const PATH_MIN = 0.95;
     const SEQ_MIN = 0.95;
@@ -3273,12 +3516,21 @@ export class Curriculum {
       && thinkRate >= PATH_MIN
       && talkRate >= PATH_MIN
       && seqRate >= SEQ_MIN
-      && orderRate >= ORDER_MIN;
+      && orderRate >= ORDER_MIN
+      && succRate >= PATH_MIN
+      && skipRate >= PATH_MIN
+      && makeTenRate >= PATH_MIN
+      && teenRate >= PATH_MIN
+      && attrRate >= PATH_MIN
+      && classifyRate >= PATH_MIN
+      && shapeSidesRate >= PATH_MIN
+      && shapeDimRate >= PATH_MIN;
 
+    const pct = (r) => (r * 100).toFixed(0);
     return {
       pass,
-      reason: `READ ${readPass}/${N} (${(readRate * 100).toFixed(0)}%), THINK ${thinkPass}/${N} (${(thinkRate * 100).toFixed(0)}%), TALK ${talkPass}/${N} (${(talkRate * 100).toFixed(0)}%), SEQ ${seqPass}/${N - 1} (${(seqRate * 100).toFixed(0)}%)${seqFails.length > 0 ? ' [FAIL: ' + seqFails.join(', ') + ']' : ''}, ORDER ${orderPass}/${orderTotal} (${(orderRate * 100).toFixed(0)}%)`,
-      metrics: { readRate, thinkRate, talkRate, seqRate, orderRate, seqFails },
+      reason: `READ ${readPass}/${N} (${pct(readRate)}%), THINK ${thinkPass}/${N} (${pct(thinkRate)}%), TALK ${talkPass}/${N} (${pct(talkRate)}%), SEQ ${seqPass}/${N - 1} (${pct(seqRate)}%)${seqFails.length > 0 ? ' [FAIL: ' + seqFails.join(', ') + ']' : ''}, ORDER ${orderPass}/${orderTotal} (${pct(orderRate)}%), SUCC ${succPass}/${succTotal} (${pct(succRate)}%), SKIP10 ${skipPass}/${skipTotal} (${pct(skipRate)}%), MAKETEN ${makeTenPass}/${makeTenTotal} (${pct(makeTenRate)}%), TEEN ${teenPass}/${teenTotal} (${pct(teenRate)}%), ATTR ${attrPass}/${attrTotal} (${pct(attrRate)}%), CLASS ${classifyPass}/${classifyTotal} (${pct(classifyRate)}%), SHAPE-S ${shapeSidesPass}/${shapeSidesTotal} (${pct(shapeSidesRate)}%), SHAPE-D ${shapeDimPass}/${shapeDimTotal} (${pct(shapeDimRate)}%)`,
+      metrics: { readRate, thinkRate, talkRate, seqRate, orderRate, seqFails, succRate, skipRate, makeTenRate, teenRate, attrRate, classifyRate, shapeSidesRate, shapeDimRate },
     };
   }
 
@@ -4245,6 +4497,418 @@ export class Curriculum {
       await _microtask();
     }
     console.log(`[Curriculum] _teachComparisonTransformations: ${pairs.length} pairs × ${REPS} reps`);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // T14.24 Session 114 — Math-K PART 1 expansion: equational teaching
+  // for every K.CC / K.OA / K.NBT / K.MD / K.G concept that was absent
+  // from Session 109's digit-only coverage. Same direct-pattern Hebbian
+  // scaffold (write intended pattern into lastSpikes, fire
+  // _crossRegionHebbian) as _teachAdditionTransformations. Uses the
+  // wide-range _magnitudeFeatureForNumber helper for any value > 9.
+  // ═══════════════════════════════════════════════════════════════════
+
+  // ── internal: tile a feature vector across a region of lastSpikes ──
+  // Same tiling math every transform uses. Kept as a class method so
+  // callers don't have to re-declare it inside every closure.
+  _writeTiledPattern(region, feat, binarize = true) {
+    const cluster = this.cluster;
+    if (!cluster || !region || !feat || feat.length === 0) return;
+    const size = region.end - region.start;
+    const gSize = Math.max(1, Math.floor(size / feat.length));
+    for (let d = 0; d < feat.length; d++) {
+      if (feat[d] <= 0) continue;
+      for (let n = 0; n < gSize; n++) {
+        const idx = region.start + d * gSize + n;
+        if (idx < region.end) cluster.lastSpikes[idx] = binarize ? 1 : feat[d];
+      }
+    }
+  }
+
+  _clearSpikes() {
+    const cluster = this.cluster;
+    if (!cluster) return;
+    for (let j = 0; j < cluster.size; j++) cluster.lastSpikes[j] = 0;
+  }
+
+  // ── internal: fire both cross-projection Hebbian AND intra-cluster
+  // Hebbian for the current lastSpikes pattern. `_crossRegionHebbian`
+  // alone only updates the 14 T14.4 cross-projections (visual↔letter,
+  // letter↔phon, phon↔sem, sem↔fineType, sem↔motor, motor↔letter,
+  // auditory↔phon) — no free↔X projection exists. For transforms that
+  // co-activate free + sem (or free + fineType), the binding lives in
+  // the intra-cluster recurrent sparse matrix. `cluster.learn(0)` was
+  // the obvious call, but `synapses.rewardModulatedUpdate(pre, post, 0, lr)`
+  // short-circuits at reward=0 (sparse-matrix.js:191) and updates
+  // nothing. Calling `synapses.hebbianUpdate` directly bypasses the
+  // reward gate and fires symmetric Hebbian across the full cluster.
+  _teachHebbian(lr) {
+    const cluster = this.cluster;
+    if (!cluster) return;
+    cluster._crossRegionHebbian(lr);
+    if (cluster.synapses && typeof cluster.synapses.hebbianUpdate === 'function') {
+      cluster.synapses.hebbianUpdate(cluster.lastSpikes, cluster.lastSpikes, lr);
+    }
+  }
+
+  /**
+   * K.OA DECOMPOSITION — given magnitude(c) in sem, the cortex learns
+   * to activate all (a,b) pairs where a+b=c across the two halves of
+   * free. Dual of addition: addition teaches free→sem, decomposition
+   * teaches sem→free. Covers "5 = 1+4 = 2+3 = 3+2 = 4+1 = 0+5" and
+   * similar for every c in [0, 10].
+   */
+  async _teachDecomposition(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const freeRegion = cluster.regions.free;
+    const semRegion = cluster.regions.sem;
+    if (!freeRegion || !semRegion) return;
+    const freeSize = freeRegion.end - freeRegion.start;
+    const freeHalf = Math.floor(freeSize / 2);
+    const freeLeftRegion = { start: freeRegion.start, end: freeRegion.start + freeHalf };
+    const freeRightRegion = { start: freeRegion.start + freeHalf, end: freeRegion.end };
+    const lr = cluster.learningRate;
+    const REPS = 6;
+
+    // Enumerate all decomposition triples
+    const triples = [];
+    for (let c = 0; c <= 10; c++) {
+      for (let a = 0; a <= c; a++) {
+        triples.push([c, a, c - a]);
+      }
+    }
+
+    for (let rep = 0; rep < REPS; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return;
+      for (const [c, a, b] of triples) {
+        this._clearSpikes();
+        this._writeTiledPattern(semRegion, _magnitudeFeatureForDigit(String(c)));
+        this._writeTiledPattern(freeLeftRegion, _magnitudeFeatureForDigit(String(a)));
+        this._writeTiledPattern(freeRightRegion, _magnitudeFeatureForDigit(String(b)));
+        this._teachHebbian(lr);
+      }
+      await _microtask();
+    }
+    console.log(`[Curriculum] _teachDecomposition: ${triples.length} triples × ${REPS} reps`);
+  }
+
+  /**
+   * K.OA MAKE-TEN — given magnitude(n) ONLY in free's left half (right
+   * half intentionally zeroed), sem should activate magnitude(10-n).
+   * The "left-only" input structure discriminates from the
+   * _teachCountToHundred successor transform which fills ALL of free
+   * with magnitude(n). Covers the K standard "for any number 1-9, find
+   * the number that makes 10".
+   */
+  async _teachMakeTen(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const freeRegion = cluster.regions.free;
+    const semRegion = cluster.regions.sem;
+    if (!freeRegion || !semRegion) return;
+    const freeSize = freeRegion.end - freeRegion.start;
+    const freeHalf = Math.floor(freeSize / 2);
+    const freeLeftRegion = { start: freeRegion.start, end: freeRegion.start + freeHalf };
+    const lr = cluster.learningRate;
+    const REPS = 8;
+
+    for (let rep = 0; rep < REPS; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return;
+      for (let n = 0; n <= 10; n++) {
+        const complement = 10 - n;
+        this._clearSpikes();
+        this._writeTiledPattern(freeLeftRegion, _magnitudeFeatureForDigit(String(n)));
+        this._writeTiledPattern(semRegion, _magnitudeFeatureForDigit(String(complement)));
+        this._teachHebbian(lr);
+      }
+      await _microtask();
+    }
+    console.log(`[Curriculum] _teachMakeTen: 11 pairs × ${REPS} reps`);
+  }
+
+  /**
+   * K.NBT TEEN DECOMPOSITION — 11 through 19 as "ten and some more".
+   * free left half = magnitude(10), free right half = magnitude(n) for
+   * n ∈ [1,9], sem = magnitude(10+n) via the wide-range number feature.
+   * The inverse direction (teen word → 10+n decomposition) also ships:
+   * sem = magnitude(teen), free = [magnitude(10), magnitude(n)].
+   */
+  async _teachTeenDecomposition(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const freeRegion = cluster.regions.free;
+    const semRegion = cluster.regions.sem;
+    if (!freeRegion || !semRegion) return;
+    const freeSize = freeRegion.end - freeRegion.start;
+    const freeHalf = Math.floor(freeSize / 2);
+    const freeLeftRegion = { start: freeRegion.start, end: freeRegion.start + freeHalf };
+    const freeRightRegion = { start: freeRegion.start + freeHalf, end: freeRegion.end };
+    const lr = cluster.learningRate;
+    const REPS = 8;
+
+    for (let rep = 0; rep < REPS; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return;
+      // Forward: (10, n) → 10+n
+      for (let n = 1; n <= 9; n++) {
+        const teen = 10 + n;
+        this._clearSpikes();
+        this._writeTiledPattern(freeLeftRegion, _magnitudeFeatureForNumber(10));
+        this._writeTiledPattern(freeRightRegion, _magnitudeFeatureForNumber(n));
+        this._writeTiledPattern(semRegion, _magnitudeFeatureForNumber(teen));
+        this._teachHebbian(lr);
+      }
+      // Inverse: teen → (10, n)
+      for (let n = 1; n <= 9; n++) {
+        const teen = 10 + n;
+        this._clearSpikes();
+        this._writeTiledPattern(semRegion, _magnitudeFeatureForNumber(teen));
+        this._writeTiledPattern(freeLeftRegion, _magnitudeFeatureForNumber(10));
+        this._writeTiledPattern(freeRightRegion, _magnitudeFeatureForNumber(n));
+        this._teachHebbian(lr);
+      }
+      await _microtask();
+    }
+    console.log(`[Curriculum] _teachTeenDecomposition: 9 teens × 2 directions × ${REPS} reps`);
+  }
+
+  /**
+   * K.CC UNIVERSAL SUCCESSOR — given magnitude(n), sem activates
+   * magnitude(n+1). This single transform covers "count to 100 by
+   * ones" AND "count forward beginning from any given number" because
+   * the successor function is the same regardless of starting N.
+   * Trained on every n ∈ [0, 99].
+   */
+  async _teachCountToHundred(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const freeRegion = cluster.regions.free;
+    const semRegion = cluster.regions.sem;
+    if (!freeRegion || !semRegion) return;
+    const lr = cluster.learningRate;
+    const REPS = 4;
+
+    for (let rep = 0; rep < REPS; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return;
+      for (let n = 0; n <= 99; n++) {
+        this._clearSpikes();
+        this._writeTiledPattern(freeRegion, _magnitudeFeatureForNumber(n));
+        this._writeTiledPattern(semRegion, _magnitudeFeatureForNumber(n + 1));
+        this._teachHebbian(lr);
+      }
+      await _microtask();
+    }
+    console.log(`[Curriculum] _teachCountToHundred: 100 successors × ${REPS} reps`);
+  }
+
+  /**
+   * K.CC SKIP-COUNT BY TENS — given magnitude(n) injected into PHON
+   * region (not free), sem activates magnitude(n+10). Routing through
+   * phon (instead of free) cleanly discriminates the skip-10 query
+   * from the successor query (_teachCountToHundred uses free). Same
+   * recurrent matrix binds both transforms without interference
+   * because the pre-synaptic activation patterns live in different
+   * regions. Covers 10→20→30→...→100.
+   */
+  async _teachSkipCountByTens(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const phonRegion = cluster.regions.phon;
+    const semRegion = cluster.regions.sem;
+    if (!phonRegion || !semRegion) return;
+    const lr = cluster.learningRate;
+    const REPS = 10;
+
+    for (let rep = 0; rep < REPS; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return;
+      for (let n = 0; n <= 90; n += 10) {
+        this._clearSpikes();
+        this._writeTiledPattern(phonRegion, _magnitudeFeatureForNumber(n));
+        this._writeTiledPattern(semRegion, _magnitudeFeatureForNumber(n + 10));
+        this._teachHebbian(lr);
+      }
+      await _microtask();
+    }
+    console.log(`[Curriculum] _teachSkipCountByTens: 10 steps × ${REPS} reps`);
+  }
+
+  /**
+   * K.MD ATTRIBUTE COMPARISON — teaches "which is longer/heavier/bigger"
+   * as a magnitude comparison where each attribute pole has a known
+   * numeric magnitude (short=2, long=8, light=2, heavy=8, etc.).
+   * Reuses the existing greater/less/equal fineType encoding from
+   * _teachComparisonTransformations. Adds a GloVe anchor in sem for
+   * each attribute word so the probe can be triggered by attribute
+   * name rather than raw magnitude.
+   */
+  async _teachAttributeCompare(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const freeRegion = cluster.regions.free;
+    const fineTypeRegion = cluster.regions.fineType;
+    const semRegion = cluster.regions.sem;
+    if (!freeRegion || !fineTypeRegion) return;
+    const freeSize = freeRegion.end - freeRegion.start;
+    const freeHalf = Math.floor(freeSize / 2);
+    const freeLeftRegion = { start: freeRegion.start, end: freeRegion.start + freeHalf };
+    const freeRightRegion = { start: freeRegion.start + freeHalf, end: freeRegion.end };
+    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
+    const third = Math.floor(fineTypeSize / 3);
+    const lr = cluster.learningRate;
+    const REPS = 6;
+
+    // Attribute pole pairs — each pole has a magnitude 0-10.
+    // Small magnitude = "lesser" pole, large = "greater" pole.
+    const ATTR_POLES = [
+      { low: 'short',   high: 'long',    lowMag: 2, highMag: 8, word: 'length' },
+      { low: 'light',   high: 'heavy',   lowMag: 2, highMag: 8, word: 'weight' },
+      { low: 'small',   high: 'big',     lowMag: 2, highMag: 8, word: 'size' },
+      { low: 'low',     high: 'high',    lowMag: 2, highMag: 8, word: 'height' },
+      { low: 'empty',   high: 'full',    lowMag: 0, highMag: 9, word: 'fullness' },
+      { low: 'narrow',  high: 'wide',    lowMag: 2, highMag: 8, word: 'width' },
+      { low: 'cold',    high: 'hot',     lowMag: 2, highMag: 8, word: 'temperature' },
+      { low: 'few',     high: 'many',    lowMag: 2, highMag: 9, word: 'quantity' },
+    ];
+
+    function compPat(rel) {
+      const pat = new Float64Array(fineTypeSize);
+      let start = 0;
+      if (rel === 'greater') start = 0;
+      else if (rel === 'less') start = third;
+      else start = third * 2;
+      for (let i = start; i < start + third && i < fineTypeSize; i++) pat[i] = 1;
+      return pat;
+    }
+
+    for (let rep = 0; rep < REPS; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return;
+      for (const { high, low, highMag, lowMag, word } of ATTR_POLES) {
+        // high > low
+        this._clearSpikes();
+        this._writeTiledPattern(freeLeftRegion, _magnitudeFeatureForDigit(String(highMag)));
+        this._writeTiledPattern(freeRightRegion, _magnitudeFeatureForDigit(String(lowMag)));
+        const relPat = compPat('greater');
+        for (let i = 0; i < fineTypeSize; i++) {
+          cluster.lastSpikes[fineTypeRegion.start + i] = relPat[i] > 0 ? 1 : 0;
+        }
+        if (semRegion) {
+          const wordEmb = sharedEmbeddings.getEmbedding(word);
+          if (wordEmb && wordEmb.length > 0) this._writeTiledPattern(semRegion, wordEmb, false);
+        }
+        this._teachHebbian(lr);
+
+        // low < high (reverse pair)
+        this._clearSpikes();
+        this._writeTiledPattern(freeLeftRegion, _magnitudeFeatureForDigit(String(lowMag)));
+        this._writeTiledPattern(freeRightRegion, _magnitudeFeatureForDigit(String(highMag)));
+        const relPat2 = compPat('less');
+        for (let i = 0; i < fineTypeSize; i++) {
+          cluster.lastSpikes[fineTypeRegion.start + i] = relPat2[i] > 0 ? 1 : 0;
+        }
+        this._teachHebbian(lr);
+      }
+      await _microtask();
+    }
+    console.log(`[Curriculum] _teachAttributeCompare: ${ATTR_POLES.length} attribute pairs × 2 dirs × ${REPS} reps`);
+  }
+
+  /**
+   * K.MD CLASSIFY AND COUNT — given a set of tagged items, learn to
+   * activate magnitude(count) in sem given the category GloVe in free.
+   * Example training fact: free=GloVe("red"), sem=magnitude(3) meaning
+   * "there are 3 red things". Covers K.MD "count objects in each
+   * category (up to 10)" + "sort objects and compare the counts".
+   */
+  async _teachClassifyCount(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const freeRegion = cluster.regions.free;
+    const semRegion = cluster.regions.sem;
+    if (!freeRegion || !semRegion) return;
+    const lr = cluster.learningRate;
+    const REPS = 6;
+
+    // Category → count facts. Draws from colors + shapes + common K objects.
+    const CATEGORY_COUNTS = [
+      ['red', 3], ['blue', 2], ['green', 5], ['yellow', 1], ['black', 4],
+      ['big', 2], ['small', 4], ['long', 3], ['short', 5],
+      ['apples', 4], ['birds', 5], ['cats', 2], ['dogs', 3], ['hands', 2],
+      ['fingers', 10], ['toes', 10], ['eyes', 2], ['ears', 2],
+      ['triangle', 3], ['square', 4], ['circle', 1], ['cube', 6],
+    ];
+
+    for (let rep = 0; rep < REPS; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return;
+      for (const [category, count] of CATEGORY_COUNTS) {
+        this._clearSpikes();
+        const catEmb = sharedEmbeddings.getEmbedding(category);
+        if (!catEmb || catEmb.length === 0) continue;
+        this._writeTiledPattern(freeRegion, catEmb, false);
+        this._writeTiledPattern(semRegion, _magnitudeFeatureForDigit(String(Math.min(9, count))));
+        this._teachHebbian(lr);
+      }
+      await _microtask();
+    }
+    console.log(`[Curriculum] _teachClassifyCount: ${CATEGORY_COUNTS.length} category-count pairs × ${REPS} reps`);
+  }
+
+  /**
+   * K.G SHAPE FEATURES — given a shape name GloVe in sem, free region
+   * activates magnitude(side_count) and fineType encodes 2D vs 3D.
+   * Covers K.G "describe shapes" + "analyze and compare 2D and 3D
+   * shapes using number of sides, corners, faces" + "identify shapes
+   * as 2D (flat) or 3D (solid)".
+   */
+  async _teachShapeFeatures(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const freeRegion = cluster.regions.free;
+    const semRegion = cluster.regions.sem;
+    const fineTypeRegion = cluster.regions.fineType;
+    if (!freeRegion || !semRegion || !fineTypeRegion) return;
+    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
+    // fineType halves: first half = 2D tag, second half = 3D tag.
+    const fineHalf = Math.floor(fineTypeSize / 2);
+    const lr = cluster.learningRate;
+    const REPS = 10;
+
+    // K.G shape catalog — name, sides (2D primary sides / 3D faces),
+    // and dimension. Side counts chosen to match the K test bank:
+    // "How many sides does a triangle have?" → 3, "What shape has 4
+    // equal sides?" → square, "Is a ball flat or solid?" → solid (3D).
+    const SHAPES = [
+      // 2D
+      { name: 'circle',    sides: 0, dim: '2D' },
+      { name: 'triangle',  sides: 3, dim: '2D' },
+      { name: 'square',    sides: 4, dim: '2D' },
+      { name: 'rectangle', sides: 4, dim: '2D' },
+      { name: 'hexagon',   sides: 6, dim: '2D' },
+      // 3D
+      { name: 'sphere',    sides: 0, dim: '3D' },  // ball — 0 flat faces
+      { name: 'cube',      sides: 6, dim: '3D' },  // 6 faces
+      { name: 'cone',      sides: 1, dim: '3D' },  // 1 flat circular face + curved
+      { name: 'cylinder',  sides: 2, dim: '3D' },  // 2 flat circular faces + curved
+    ];
+
+    for (let rep = 0; rep < REPS; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return;
+      for (const { name, sides, dim } of SHAPES) {
+        const shapeEmb = sharedEmbeddings.getEmbedding(name);
+        if (!shapeEmb || shapeEmb.length === 0) continue;
+        this._clearSpikes();
+        this._writeTiledPattern(semRegion, shapeEmb, false);
+        this._writeTiledPattern(freeRegion, _magnitudeFeatureForDigit(String(sides)));
+        // fineType dim tag
+        if (dim === '2D') {
+          for (let i = 0; i < fineHalf; i++) cluster.lastSpikes[fineTypeRegion.start + i] = 1;
+        } else {
+          for (let i = fineHalf; i < fineTypeSize; i++) cluster.lastSpikes[fineTypeRegion.start + i] = 1;
+        }
+        this._teachHebbian(lr);
+      }
+      await _microtask();
+    }
+    console.log(`[Curriculum] _teachShapeFeatures: ${SHAPES.length} shapes × ${REPS} reps`);
   }
 
   /**

@@ -1206,6 +1206,93 @@ Three auto-generated question types:
 
 Comprehension pass is sufficient to advance even if TALK (first-letter production) fails — understanding and production are tested independently.
 
+### Math-K Part 1 Equational Expansion (Session 114)
+
+Session 114 added 8 equational transforms covering the K.CC / K.OA / K.NBT / K.MD / K.G gaps that Session 109's digit-only coverage left open. Every transform routes through `Curriculum._teachHebbian(lr)` which fires BOTH `cluster._crossRegionHebbian(lr)` AND `cluster.synapses.hebbianUpdate(cluster.lastSpikes, cluster.lastSpikes, lr)` so the free↔sem / free↔fineType bindings learn via the intra-cluster recurrent matrix (none of T14.4's 7 cross-projection pairs connect free to other regions).
+
+New module helper `_magnitudeFeatureForNumber(n)` with NUMBER_FEATURE_DIM = 24 provides discriminable magnitude features across n ∈ [0, 100] — existing `_magnitudeFeatureForDigit` saturates past n=9.
+
+```
+_teachCountToHundred:                // K.CC universal successor
+  for n in [0..99]:
+    free = mag_wide(n)
+    sem = mag_wide(n + 1)
+    _teachHebbian(lr)
+  // 100 facts × 4 reps. Covers "count to 100 by ones"
+  // AND "count forward from any N" since successor is universal.
+
+_teachSkipCountByTens:                // K.CC skip-by-10
+  for n in {0, 10, 20, ..., 90}:
+    phon = mag_wide(n)                // phon input (NOT free) — clean discriminator
+    sem = mag_wide(n + 10)
+    _teachHebbian(lr)
+  // 10 steps × 10 reps. Probe via cluster.synapses.propagate(phonInput).
+
+_teachDecomposition:                  // K.OA dual of addition
+  for (c, a, b) where a+b=c, c ∈ [0..10]:
+    sem = mag(c)                      // INPUT side swapped with addition
+    freeLeft = mag(a)
+    freeRight = mag(b)
+    _teachHebbian(lr)
+  // 66 triples × 6 reps. sem→free direction via recurrent matrix.
+
+_teachMakeTen:                        // K.OA complement-to-10
+  for n in [0..10]:
+    freeLeft = mag(n)                 // freeRight intentionally zeroed
+    sem = mag(10 - n)                 // structural discriminator from successor
+    _teachHebbian(lr)
+  // 11 pairs × 8 reps. Left-half-only input shape tells the
+  // recurrent matrix this is a make-ten query, not a successor query.
+
+_teachTeenDecomposition:              // K.NBT teens as 10+n
+  for n in [1..9]:
+    // forward: (10, n) → teen
+    freeLeft = mag_wide(10)
+    freeRight = mag_wide(n)
+    sem = mag_wide(10 + n)
+    _teachHebbian(lr)
+    // inverse: teen → (10, n)
+    sem = mag_wide(teen)
+    freeLeft = mag_wide(10)
+    freeRight = mag_wide(n)
+    _teachHebbian(lr)
+  // 9 teens × 2 directions × 8 reps.
+
+_teachAttributeCompare:               // K.MD attribute pole compare
+  for (low, high, lowMag, highMag, attrWord) in ATTR_POLES:
+    // high > low direction:
+    freeLeft = mag(highMag)
+    freeRight = mag(lowMag)
+    fineType[greater_third] = 1       // reuse comparison 3-way tag
+    sem = GloVe(attrWord)              // attribute-word anchor
+    _teachHebbian(lr)
+    // low < high (reverse):
+    freeLeft = mag(lowMag)
+    freeRight = mag(highMag)
+    fineType[less_third] = 1
+    _teachHebbian(lr)
+  // 8 attribute pairs × 2 directions × 6 reps.
+
+_teachClassifyCount:                  // K.MD sort-and-count
+  for (category, count) in CATEGORY_COUNTS:
+    free = GloVe(category)
+    sem = mag(min(9, count))
+    _teachHebbian(lr)
+  // 22 category→count pairs × 6 reps.
+
+_teachShapeFeatures:                  // K.G shape sides + 2D/3D
+  for (shapeName, sides, dim) in SHAPES:
+    sem = GloVe(shapeName)
+    free = mag(sides)
+    if dim == '2D': fineType[first_half] = 1
+    else:            fineType[second_half] = 1
+    _teachHebbian(lr)
+  // 9 shapes × 10 reps. Sem→free reads back side count,
+  // sem→fineType reads back 2D vs 3D.
+```
+
+Gate probes in `_gateMathKReal` all run through `cluster.synapses.propagate(input)` (full recurrent matrix). 8 new metrics — SUCC / SKIP10 / MAKETEN / TEEN / ATTR / CLASS / SHAPE-S / SHAPE-D — at PATH_MIN = 0.95 equationally. No threshold lowering per constraint 8.
+
 ### Multiplication Magnitude Transform (Session 112)
 
 ```

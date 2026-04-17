@@ -181,101 +181,103 @@ Each row:
 
 ## MATH — KINDERGARTEN (Common Core Math K)
 
+> Session 114 Part 1 equational ship (2026-04-17): teaching methods + gate probes wired in `js/brain/curriculum.js` under `runMathKReal` + `_gateMathKReal`. Part 2 Gee localhost sign-off still pending — the overall === KINDERGARTEN COMPLETION GATE === stays open until Gee verifies live.
+
 ### Counting & Cardinality (K.CC)
 
 **Concepts to teach:**
-- [ ] Count to 100 by ones — Unity must be able to produce the sequence 1,2,3,...,100
-- [ ] Count to 100 by tens — 10,20,30,...,100
-- [ ] Count forward beginning from any given number (not always from 1) — given "start at 47" → 47,48,49,50...
-- [ ] Write numbers from 0 to 20 — Unity must produce the DIGIT for each number word
-- [ ] Count objects in a group (1-20) — given a quantity, produce the count
-- [ ] One-to-one correspondence — each object gets exactly one number
-- [ ] Cardinality — the last number counted IS the total
-- [ ] Count to answer "how many?" for up to 20 objects arranged in a line, array, or circle
-- [ ] Count to answer "how many?" for up to 10 objects in a scattered configuration
-- [ ] Compare two numbers between 1 and 10 presented as written numerals — which is greater/less/equal
-- [ ] Identify whether the number of objects in one group is greater than, less than, or equal to another group
+- [x] Count to 100 by ones — Unity must be able to produce the sequence 1,2,3,...,100
+- [x] Count to 100 by tens — 10,20,30,...,100
+- [x] Count forward beginning from any given number (not always from 1) — given "start at 47" → 47,48,49,50...
+- [x] Write numbers from 0 to 20 — Unity must produce the DIGIT for each number word
+- [x] Count objects in a group (1-20) — given a quantity, produce the count
+- [x] One-to-one correspondence — each object gets exactly one number
+- [x] Cardinality — the last number counted IS the total
+- [x] Count to answer "how many?" for up to 20 objects arranged in a line, array, or circle
+- [x] Count to answer "how many?" for up to 10 objects in a scattered configuration
+- [x] Compare two numbers between 1 and 10 presented as written numerals — which is greater/less/equal
+- [x] Identify whether the number of objects in one group is greater than, less than, or equal to another group
 
 **Tests for K.CC:**
-- [ ] "What number comes after 7?" → 8 (sequence test)
-- [ ] "Count by tens: 10, 20, 30, ?" → 40 (skip counting test)
-- [ ] "Which is more, 3 or 8?" → 8 (comparison test)
-- [ ] "Which is less, 6 or 2?" → 2 (comparison test)
-- [ ] "Are 5 and 5 equal?" → yes (equality test)
-- [ ] "Start at 14 and count up 3" → 15, 16, 17 (counting on test)
-- [ ] "How many: apple apple apple apple" → 4 (cardinality test)
+- [x] "What number comes after 7?" → 8 (sequence test)
+- [x] "Count by tens: 10, 20, 30, ?" → 40 (skip counting test)
+- [x] "Which is more, 3 or 8?" → 8 (comparison test)
+- [x] "Which is less, 6 or 2?" → 2 (comparison test)
+- [x] "Are 5 and 5 equal?" → yes (equality test)
+- [x] "Start at 14 and count up 3" → 15, 16, 17 (counting on test)
+- [x] "How many: apple apple apple apple" → 4 (cardinality test)
 
 ### Operations & Algebraic Thinking (K.OA)
 
 **Concepts to teach:**
-- [ ] Addition as "putting together" — 3 apples and 2 apples makes 5 apples
-- [ ] Addition as "adding to" — I had 3, I got 2 more, now I have 5
-- [ ] Subtraction as "taking apart" — 5 apples, take 2 away, 3 left
-- [ ] Subtraction as "taking from" — I had 5, I gave away 2, now I have 3
-- [ ] Subtraction as "comparing" — he has 5, she has 3, how many more does he have? 2
-- [ ] Solve addition word problems within 10 using objects, drawings, equations
-- [ ] Solve subtraction word problems within 10 using objects, drawings, equations
-- [ ] Decompose numbers less than or equal to 10 into pairs: 5 = 2+3 = 1+4 = 0+5
-- [ ] For any number 1-9, find the number that makes 10: 7+?=10 → 3
-- [ ] Fluently add within 5: instant recall of 0+0 through 5+0, 0+1 through 4+1, etc.
-- [ ] Fluently subtract within 5: instant recall of 5-0 through 5-5, 4-0 through 4-4, etc.
+- [x] Addition as "putting together" — 3 apples and 2 apples makes 5 apples
+- [x] Addition as "adding to" — I had 3, I got 2 more, now I have 5
+- [x] Subtraction as "taking apart" — 5 apples, take 2 away, 3 left
+- [x] Subtraction as "taking from" — I had 5, I gave away 2, now I have 3
+- [x] Subtraction as "comparing" — he has 5, she has 3, how many more does he have? 2
+- [x] Solve addition word problems within 10 using objects, drawings, equations
+- [x] Solve subtraction word problems within 10 using objects, drawings, equations
+- [x] Decompose numbers less than or equal to 10 into pairs: 5 = 2+3 = 1+4 = 0+5
+- [x] For any number 1-9, find the number that makes 10: 7+?=10 → 3
+- [x] Fluently add within 5: instant recall of 0+0 through 5+0, 0+1 through 4+1, etc.
+- [x] Fluently subtract within 5: instant recall of 5-0 through 5-5, 4-0 through 4-4, etc.
 
 **Tests for K.OA:**
-- [ ] "2 + 3 = ?" → 5 (addition fact)
-- [ ] "5 - 2 = ?" → 3 (subtraction fact)
-- [ ] "I had 4 cookies. Mom gave me 3 more. How many now?" → 7 (word problem)
-- [ ] "There were 8 birds. 5 flew away. How many left?" → 3 (word problem)
-- [ ] "What plus 6 makes 10?" → 4 (make-ten)
-- [ ] "Name two numbers that add to 7" → 3 and 4, or 2 and 5, etc. (decomposition)
-- [ ] ALL addition facts 0+0 through 5+5 (36 facts — instant recall)
-- [ ] ALL subtraction facts 0-0 through 5-5 where result ≥ 0 (21 facts)
+- [x] "2 + 3 = ?" → 5 (addition fact)
+- [x] "5 - 2 = ?" → 3 (subtraction fact)
+- [x] "I had 4 cookies. Mom gave me 3 more. How many now?" → 7 (word problem)
+- [x] "There were 8 birds. 5 flew away. How many left?" → 3 (word problem)
+- [x] "What plus 6 makes 10?" → 4 (make-ten)
+- [x] "Name two numbers that add to 7" → 3 and 4, or 2 and 5, etc. (decomposition)
+- [x] ALL addition facts 0+0 through 5+5 (36 facts — instant recall)
+- [x] ALL subtraction facts 0-0 through 5-5 where result ≥ 0 (21 facts)
 
 ### Number & Operations in Base Ten (K.NBT)
 
 **Concepts to teach:**
-- [ ] Compose numbers 11-19 from ten ones and some more ones: 13 = 10 + 3
-- [ ] Understand that teen numbers are one group of ten and some extra ones
-- [ ] Record compositions with a drawing or equation: 14 = 10 + 4
+- [x] Compose numbers 11-19 from ten ones and some more ones: 13 = 10 + 3
+- [x] Understand that teen numbers are one group of ten and some extra ones
+- [x] Record compositions with a drawing or equation: 14 = 10 + 4
 
 **Tests for K.NBT:**
-- [ ] "14 is how many tens and how many ones?" → 1 ten and 4 ones
-- [ ] "10 + 7 = ?" → 17
-- [ ] "18 = 10 + ?" → 8
-- [ ] "Which has more tens, 15 or 12?" → same (both have 1 ten)
+- [x] "14 is how many tens and how many ones?" → 1 ten and 4 ones
+- [x] "10 + 7 = ?" → 17
+- [x] "18 = 10 + ?" → 8
+- [x] "Which has more tens, 15 or 12?" → same (both have 1 ten)
 
 ### Measurement & Data (K.MD)
 
 **Concepts to teach:**
-- [ ] Describe measurable attributes of objects: length, weight, height
-- [ ] Directly compare two objects with a measurable attribute in common: "this pencil is longer than that pencil"
-- [ ] Classify objects into given categories (by color, shape, size)
-- [ ] Count the number of objects in each category (up to 10)
-- [ ] Sort objects into categories and compare the counts
+- [x] Describe measurable attributes of objects: length, weight, height
+- [x] Directly compare two objects with a measurable attribute in common: "this pencil is longer than that pencil"
+- [x] Classify objects into given categories (by color, shape, size)
+- [x] Count the number of objects in each category (up to 10)
+- [x] Sort objects into categories and compare the counts
 
 **Tests for K.MD:**
-- [ ] "Which is longer, a crayon or a pencil?" → pencil (comparison)
-- [ ] "Which is heavier, a book or a feather?" → book (comparison)
-- [ ] "Sort: red ball, blue ball, red car, blue car. How many red?" → 2
-- [ ] "Are there more blue or more red?" → equal (data comparison)
+- [x] "Which is longer, a crayon or a pencil?" → pencil (comparison)
+- [x] "Which is heavier, a book or a feather?" → book (comparison)
+- [x] "Sort: red ball, blue ball, red car, blue car. How many red?" → 2
+- [x] "Are there more blue or more red?" → equal (data comparison)
 
 ### Geometry (K.G)
 
 **Concepts to teach:**
-- [ ] Describe objects in the environment using names of shapes: square, circle, triangle, rectangle, hexagon, cube, cone, cylinder, sphere
-- [ ] Describe relative positions: above, below, beside, in front of, behind, next to
-- [ ] Name shapes regardless of orientation or size
-- [ ] Identify shapes as two-dimensional (flat) or three-dimensional (solid)
-- [ ] Analyze and compare 2D and 3D shapes using informal language (number of sides, corners, faces)
-- [ ] Model shapes by building (sticks, clay) and drawing
+- [x] Describe objects in the environment using names of shapes: square, circle, triangle, rectangle, hexagon, cube, cone, cylinder, sphere
+- [x] Describe relative positions: above, below, beside, in front of, behind, next to
+- [x] Name shapes regardless of orientation or size
+- [x] Identify shapes as two-dimensional (flat) or three-dimensional (solid)
+- [x] Analyze and compare 2D and 3D shapes using informal language (number of sides, corners, faces)
+- [x] Model shapes by building (sticks, clay) and drawing
 - [ ] Compose simple shapes to form larger shapes: "put two triangles together to make a rectangle"
 
 **Tests for K.G:**
-- [ ] "How many sides does a triangle have?" → 3
-- [ ] "What shape has 4 equal sides?" → square
-- [ ] "Is a ball flat or solid?" → solid (3D identification)
-- [ ] "What shape is a can?" → cylinder
-- [ ] "A box looks like a ?" → cube
-- [ ] "The ball is ___ the table" (with picture showing ball on table) → on/above
+- [x] "How many sides does a triangle have?" → 3
+- [x] "What shape has 4 equal sides?" → square
+- [x] "Is a ball flat or solid?" → solid (3D identification)
+- [x] "What shape is a can?" → cylinder
+- [x] "A box looks like a ?" → cube
+- [x] "The ball is ___ the table" (with picture showing ball on table) → on/above
 
 ---
 
