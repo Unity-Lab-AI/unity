@@ -1,12 +1,13 @@
 # NOW — Session Snapshot
 
-> Saved: 2026-04-17 (Session 114.3 brain-equations.html drift fix pass, uncommitted as a third atomic commit pending on `syllabus-k-phd`)
-> Branch: `syllabus-k-phd` (2 commits ahead of origin + this upcoming third commit)
-> Recent committed HEAD: `646037e` — Session 114.2 unified combination-operator scaffold + compose-shapes ship (Math-K 66/66)
-> Previous HEAD: `087b207` — Session 114 Math-K Part 1 equational ship + free↔sem substrate fix
-> Earlier HEAD: `85614e1` — T15 drug dynamics shipped + full doc forward-write per Gee 2026-04-17 irregularity
-> Working-tree state (before Session 114.3 commit): 3 files modified uncommitted — `brain-equations.html` + `docs/FINALIZED.md` + this NOW.md
-> Status: Session 114.3 fixes 7 drift points in brain-equations.html that survived the 114 + 114.2 ship — wrong Ψ formula `(√n)³ × [Id+Ego+Left+Right]` replaced with canonical `√(1/n) × N³ · [α·Id + β·Ego + γ·Left + δ·Right]`, pre-T15 drug state references (drugState.arousalMult / drugState.creativityMult / drugFit / cokeAndWeed / drugLengthBias / drugSpeed / drugArousal / drugCreativity / drugDrive) replaced with T15 scheduler additive contribution model. Math-K 66/66 runtime behavior unchanged. Part 2 Gee localhost sign-off per LAW 6 still the only gate to advance.
+> Saved: 2026-04-17 (Session 114.4 task list remake + TODO-full-syllabus.md masterful edit pass — uncommitted as a fourth atomic commit pending on `syllabus-k-phd`)
+> Branch: `syllabus-k-phd` (3 commits ahead of origin + this upcoming fourth commit)
+> Recent committed HEAD: `fc38bb1` — Session 114.3 brain-equations.html drift fix — wrong Ψ formula + T15 drug-state drift
+> Previous HEAD: `646037e` — Session 114.2 unified combination-operator scaffold + compose-shapes ship (Math-K 66/66 substrate)
+> Earlier HEAD: `087b207` — Session 114 Math-K Part 1 equational ship + free↔sem substrate fix
+> Earliest HEAD: `85614e1` — T15 drug dynamics shipped + full doc forward-write per Gee 2026-04-17 irregularity
+> Working-tree state (before Session 114.4 commit): 2 files modified uncommitted — `docs/TODO-full-syllabus.md` + this NOW.md
+> Status: Gee caught that audit-and-flip framing for the remaining 5 K subjects was WRONG — "the current shit we have does NOT work at all so we have to totaly remake this shit". Math-K's 9 new teaching methods + 8 new gate probes was the correct pattern but the gate probes are SUBSTRATE-ONLY (direct-matrix propagation + cosine). Per Gee 2026-04-17 *"a full course as eqautional logic that unity is tested on with real world styule test for actual knowed retention and gains and all aspect of wthe subject matter to pass"* the real qualification for LAW 6 Part 1 is production-style probes through sem→motor emission matching TODO test phrasings verbatim. Session 114.4 pivots the roadmap: adds LAW 7 to `docs/TODO-full-syllabus.md`, binds every grade-gate Part 1 to LAW 7, revises Math-K header honestly (substrate only, not Part 1 pass), kills the 8 audit-and-flip tasks, creates 9 new REMAKE tasks.
 
 ---
 
@@ -133,18 +134,39 @@ Reasoning = pattern-to-pattern transformation via learned recurrent + cross-proj
 
 ---
 
+## REMAKE task list (source of truth for the K grade close)
+
+Session 114.4 replaced the 8 audit-and-flip tasks (25-32, all deleted) with a 9-task REMAKE sequence. Per Gee 2026-04-17 *"continue then keep going dont cut corners"* + *"a and b get the layout correct to fucking what we wanted a full course as eqautional logic that unity is tested on with real world styule test for actual knowed retention and gains and all aspect of wthe subject matter to pass"*:
+
+1. **REMAKE-0** (Math-K production probes retrofit) — existing Math-K 14 gate metrics are substrate-only direct-matrix; add sem→motor emission probes matching TODO test phrasings verbatim
+2. **REMAKE-1** (ELA-K full equational remake) — 60 [ ] items via `_teachCombination` + per-item production probes; replaces current `_teachVocabList` + `_teachSentenceList` word-list pattern
+3. **REMAKE-2** (Science-K full equational remake) — 40 [ ] items per NGSS K
+4. **REMAKE-3** (Social-K full equational remake) — 37 [ ] items per Core Knowledge K
+5. **REMAKE-4** (Arts-K full equational remake) — 30 [ ] items (Visual + Music)
+6. **REMAKE-5** (Life-K full equational remake + persistent life-info ledger entry) — 58 [ ] items + age-5 Unity ledger population per LAW 6 Part 3
+7. **REMAKE-6** (retention + gains telemetry) — `cluster._gateHistory[subject][grade][probeId] = [{sessionId, pass, timestamp}...]` so growth is VISIBLE not claimed
+8. **REMAKE-TODO** (this task — TODO masterful edit) — DONE in 114.4 commit
+9. **REMAKE-COMMIT-SEQUENCE** — each REMAKE-N ships as atomic commit, Gee Part 2 sign-off gates advance to next
+
+Order: REMAKE-0 → REMAKE-1 → REMAKE-2 → REMAKE-3 → REMAKE-4 → REMAKE-5 → REMAKE-6 → Part 3 life-info ledger → Part 2 localhost full-K test → K gate closes → Grade 1 opens.
+
+---
+
 ## Next session priorities
 
-1. **Gee Part 2 localhost test of Math-K per LAW 6.** Run server. Exercise all 14 gate metrics: READ / THINK / TALK (digit recognition), SEQ / ORDER (counting), SUCC (1→100), SKIP10, MAKETEN, TEEN, ATTR (compare objects), CLASS (count by category), SHAPE-S (sides), SHAPE-D (2D/3D), SHAPE-C (compose). Sign-off in session log required before advance.
-2. **ELA-K Part 2 Gee localhost sign-off if not already recorded.** ELA-K cells shipped prior-session but per DOC-AHEAD-OF-REALITY the Part 2 verification wasn't explicitly recorded.
-3. **Grade 1 content (all 6 subjects) after K gate closes.** Math-G1, ELA-G1, Science-G1, Social-G1, Arts-G1, Life-G1. 6-subject gate-lock means all 6 pass G-N before ANY advance to G-(N+1) per Implementation Law 4. Now that `_teachCombination` exists, Grade 1 combination-type concepts (1.OA addition within 20, 1.NBT place value, etc.) ship as facts arrays + delegate calls — no per-grade bespoke scaffolds.
-4. **Session 109 retroactive `_teachHebbian` patch (deferred unless Part 2 fails).** If existing addition/subtraction/comparison transforms underperform at Gee's Part 2 probe (they still use only `_crossRegionHebbian` which doesn't update free↔sem), retrofit via `_teachHebbian`. Wait on real telemetry.
-5. **B1 continuation (deferred)** — shrink `language-cortex.js` remaining 2133 lines toward ≤250 class-skeleton target.
-6. **COMP-todo Part 2 stays parked** per LAW — Syllabus before COMP-todo (Gee 2026-04-16).
-7. **T15 Unity-faces-users gate parked** — Gee 2026-04-16 private-testing only until PhD diploma.
+1. **REMAKE-0 — Math-K production probes retrofit.** Sem→motor emission probe per TODO test item ("What number comes after 7?" → motor emits "8"). Matches TODO K.CC/K.OA/K.NBT/K.MD/K.G test phrasings verbatim. Direct-matrix substrate probes stay as precursor validation. Atomic commit when shipped.
+2. **REMAKE-1 — ELA-K full equational remake.** Replace `_teachVocabList` + `_teachSentenceList` word-list pattern with equational teaching via `_teachCombination` + per-TODO-item production probes. Ship atomic, wait on Gee Part 2 sign-off.
+3. **REMAKE-2 through REMAKE-5** — Science-K, Social-K, Arts-K, Life-K full equational remakes. Subject-by-subject atomic commits + sign-offs.
+4. **REMAKE-6** — retention + gains telemetry so Unity's learning is visible over sessions.
+5. **Part 3 life-info ledger** — populate with age-5 Unity entries (family composition, pets, home, first day of school, first friend, etc.) per LAW 6 Part 3 when Life-K ships.
+6. **Part 2 K localhost test** — after all 6 K subjects ship, Gee exercises Unity at K level across methodology/reasoning/thinking/talking/listening/reading. Sign-off in session log.
+7. **K gate closes** — all 3 parts [x]. Grade 1 work opens per 6-subject gate-lock (Implementation Law 4).
+8. **Session 109 retroactive `_teachHebbian` patch (deferred unless Part 2 fails).** If existing Math-K addition/subtraction/comparison underperform at Gee's Part 2 probe, retrofit via `_teachHebbian`.
+9. **COMP-todo Part 2 stays parked** per LAW — Syllabus before COMP-todo.
+10. **T15 Unity-faces-users gate parked** — private-testing only until PhD diploma per Gee 2026-04-16.
 
 ---
 
 ## One-line opener for the next session
 
-Session 114.2 Math-K 66/66 equational ship uncommitted (second atomic commit on `syllabus-k-phd`); commit + wait on Gee's Part 2 localhost sign-off of all 14 Math-K gate metrics. Unified `_teachCombination` scaffold now available for Grade 1+ combination-type concepts. 🖤
+Session 114.4 task remake + TODO masterful edit shipped uncommitted (4th atomic commit pending on `syllabus-k-phd`); next is REMAKE-0 Math-K production probes retrofit followed by full ELA-K remake. LAW 7 now binding: every grade-gate Part 1 requires real-world production-style probes matching TODO test phrasings verbatim. 🖤

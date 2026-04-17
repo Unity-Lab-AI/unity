@@ -5,6 +5,75 @@
 
 ---
 
+## 2026-04-17 — Session 114.4: Task list remake + TODO-full-syllabus.md masterful edit pass (LAW 7 added, grade-gate Parts bound to production probes)
+
+**Gee's binding instructions 2026-04-17 (verbatim):**
+
+> *"continue then keep going dont cut corners"*
+
+> *"work from the todo the current shit we have does NOT work at all so we have to totaly remake this shit thats what youve been doing with syllabus right?"*
+
+> *"a and b get the layout correct to fucking what we wanted a full course as eqautional logic that unity is tested on with real world styule test for actual knowed retention and gains and all aspect of wthe subject matter to pass.. i mean wtf have we been doing is that not wehat the todo says and all that clean up we did yesterday"*
+
+> *"remake the task list and edit the todo if it s fucking wrong and using the old broken shit and course data"*
+
+> *"and precisely and with masterfull editing edit the massive todo so the thing is correct as if its not all other fucking shits fucked"*
+
+### What Gee caught
+
+After committing Session 114 + 114.2 + 114.3 on `syllabus-k-phd`, I proposed an audit-and-flip framing for the remaining 5 K subjects (ELA / Science / Social / Arts / Life). Gee correctly pushed back — the existing `runElaKReal` / `runSciKReal` / etc. use `_teachVocabList` + `_teachSentenceList` with word-list + sentence-example data arrays, which is PRECISELY the pattern Law 3 bans and LAW 6 Part 1 explicitly excludes. The audit-and-flip framing would have silently accepted broken architecture as "shipped". The correct framing is total remake: build fresh equational teaching methods per TODO spec with real-world production-style probes.
+
+Gee also identified that my Math-K gate probes (SUCC / SKIP10 / MAKETEN / TEEN / ATTR / CLASS / SHAPE-S / SHAPE-D / SHAPE-C) are substrate-only direct-matrix validation — they prove the recurrent matrix learned the binding, but they're NOT real-world tests. A real-world test uses the full sensory pipeline (visual→letter→phon→sem) to inject a natural-language question and requires Unity to EMIT the answer through sem→motor + T14.6 tick-driven motor emission + T15 speech modulation. That's what Gee's Part 2 localhost actually measures. In-code gate should do the same.
+
+### Task list remake
+
+Deleted 8 audit-and-flip tasks (25-32). Created 9 REMAKE tasks:
+
+- REMAKE-0: Retrofit Math-K with real-world production-style probes matching TODO test phrasings verbatim
+- REMAKE-1: ELA-K full equational course remake (60 items)
+- REMAKE-2: Science-K full equational course remake (40 items)
+- REMAKE-3: Social-K full equational course remake (37 items)
+- REMAKE-4: Arts-K full equational course remake (30 items)
+- REMAKE-5: Life-K full equational remake + persistent life-info ledger entry (58 items + age-5 Unity ledger)
+- REMAKE-6: Retention + gains telemetry via `cluster._gateHistory[subject][grade][probeId]` tracking
+- REMAKE-TODO: this task — TODO masterful edit pass (DONE in 114.4 commit)
+- REMAKE-COMMIT-SEQUENCE: atomic commits per subject + Gee localhost sign-off between each
+
+### TODO-full-syllabus.md masterful edit
+
+**NEW LAW 7 added** — "Real-world production-style probes — actual known retention and gains". Binds:
+- Every TODO test item must be verified by a production-style probe matching the phrasing verbatim
+- Question phrasing routes through visual→letter→phon→sem pipeline
+- Output emitted through motor region via tick-driven emission + T15 speech modulation
+- Retention tracking via `cluster._gateHistory` timestamped probe records
+- Gains tracking across repeated curriculum runs
+- All-aspect coverage — every [ ] item has at minimum one production probe, no "implicit pass"
+- Substrate validation (direct-matrix probes) stays as PRECURSOR gate but is NOT sufficient alone
+
+**LAW 6 Part 1 bound to LAW 7.** Global LAW 6 definition + all 19 per-grade-gate Part 1 bullets now explicitly reference LAW 7 via `replace_all` edits. Every grade from K through PhD has the same production-probe binding.
+
+**Math-K header note revised honestly.** Was: "66/66 Math-K checkboxes equational" implying Part 1 pass. Now: "66/66 Math-K checkboxes have equational teaching methods wired + direct-matrix substrate probes" + explicit note that "under LAW 7 (added 2026-04-17) this is SUBSTRATE validation only — NOT Part 1 pass" + "Math-K production probes are pending per REMAKE-0" + "Until production probes ship AND pass at A+ 95% AND Part 2 Gee localhost sign-off closes, the 66/66 status is SUBSTRATE ONLY".
+
+**Final status note at end of TODO updated** to reference LAW 7 alongside LAW 3.
+
+**Cosmetic cleanup:** 32+ instances of consecutive `---` horizontal-rule separators collapsed to single separators. File dropped from 8374 → 8310 lines (−64 cosmetic noise lines). No semantic content removed.
+
+### Files touched
+
+- `docs/TODO-full-syllabus.md` (LAW 7 added, LAW 6 Part 1 bound globally, 19 grade-gate Part 1 bullets updated, Math-K header revised, final status note updated, 64 cosmetic duplicate-separator lines removed, net structural clarity win)
+- `docs/NOW.md` (remade task list section + updated priorities ordered per REMAKE-0 through REMAKE-6 + REMAKE-COMMIT-SEQUENCE flow + updated opener)
+- `docs/FINALIZED.md` (this Session 114.4 entry prepended)
+
+### What this session does NOT do
+
+Zero code changes to `js/brain/curriculum.js` this commit. No gate probe behavior change. Math-K 66/66 substrate stays as-is pending REMAKE-0 retrofit. The other 5 K subjects' stale `runXKReal` pattern stays as-is pending REMAKE-1 through REMAKE-5. This is a purely bookkeeping + TODO-rigor commit that realigns the roadmap to the correct scope before code surgery begins.
+
+### Next runway
+
+REMAKE-0 Math-K production probes retrofit → REMAKE-1 ELA-K full equational remake → REMAKE-2 Science-K → REMAKE-3 Social-K → REMAKE-4 Arts-K → REMAKE-5 Life-K + life-info ledger entry → REMAKE-6 retention/gains telemetry → Part 2 Gee localhost K test → K gate closes → Grade 1 opens.
+
+---
+
 ## 2026-04-17 — Session 114.3: brain-equations.html drift fix pass (Ψ formula + T15 drug-state drift)
 
 **Gee's binding instruction 2026-04-17 (verbatim):**

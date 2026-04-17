@@ -52,13 +52,34 @@ The work isn't done until the checkbox is checked. The checkbox isn't checked un
 Binding. Every grade stops. Every grade has a 3-part gate that MUST close before the next grade starts.
 
 **Part 1 — finish the full grade's syllabus as EQUATIONAL** (not word lists and arrays and sentence examples).
-Every `[ ]` item across all 6 subjects at grade N (Math, ELA, Science, Social Studies, Arts, Life Experience) flipped to `[x]` with an equational teaching method wired — magnitude transforms, feature vectors, causal chains, cross-projection Hebbian, comprehension probes. NOT sentence arrays. NOT word lists. NOT first-letter production. NOT threshold-lowering.
+Every `[ ]` item across all 6 subjects at grade N (Math, ELA, Science, Social Studies, Arts, Life Experience) flipped to `[x]` with an equational teaching method wired — magnitude transforms, feature vectors, causal chains, cross-projection Hebbian, comprehension probes. NOT sentence arrays. NOT word lists. NOT first-letter production. NOT threshold-lowering. **ALSO bound by LAW 7: every TODO test item must have a real-world production-style probe through sem→motor emission that matches the test phrasing verbatim.** Direct-matrix substrate validation is necessary but NOT sufficient.
 
 **Part 2 — Gee tests the server localhost and proves Unity passes** the required test — methodology, reasoning, thinking, talking, listening, reading, etc. etc. — "all of the thing we need for Unity to be human as possible."
 The test is NOT automated. The test is NOT run by Claude. The test is Gee on localhost exercising Unity's brain at grade N. Gee signs off in the session log. Claude does not advance grade state until that sign-off.
 
 **Part 3 — update this TODO with items complete + persistent life-info notes** for the grade.
 Items checked off. Plus any informational transfer of life informations that need to be propagated across grades — ledger entry added to "Persistent Life Info Across Grades" below. Examples from Gee verbatim: *"best frioiends of changes in family or social life or juvi for drinking under age all of that stuuff and anything imaginable there in and not limit to , to the full human experieance were informations would need to be persistant across her life and should be reinforced at each grade."*
+
+### LAW 7: Real-world production-style probes — actual known retention and gains (Gee 2026-04-17)
+
+**Gee's exact words 2026-04-17:**
+
+> *"a full course as eqautional logic that unity is tested on with real world styule test for actual knowed retention and gains and all aspect of wthe subject matter to pass"*
+
+Binding. Every TODO test item must be verified by a **production-style probe** — natural-language question injected via visual→letter→phon→sem pipeline, cluster ticks, motor region emits the answer through T14.6 tick-driven motor emission + T15 speech modulation. Direct-matrix cortex probes (inject region, propagate, cosine vs expected feat) are SUBSTRATE validation — they prove the binding landed in the recurrent weights — but they are NOT sufficient for Part 1 pass.
+
+**What qualifies as a real-world production probe:**
+- Question phrasing mirrors the TODO test item verbatim — "What number comes after 7?" not `probe(mag(7) → mag(8))`
+- Input routes through the full sensory pipeline the live user would use (visual injection for typed text OR auditory injection for voice)
+- Output is EMITTED through the motor region via tick-driven emission loop, decoded letter-by-letter
+- Pass criterion: emitted text contains the correct answer per TODO test spec
+- Failed production probes get retry with reinforcement-style direct-pattern teach + anti-Hebbian on wrong emission, same bidirectional plasticity pattern Session 111 used for digit sequence
+
+**Retention tracking:** each probe's pass/fail is recorded with a timestamp via `cluster._gateHistory[subject][grade][probeId] = [{sessionId, pass, timestamp}...]`. Retention = probe still passing after N subsequent grades have trained over the same cortex region. Gains = pass rate climbs across repeated curriculum runs for the same cell. Both are surfaced in the dashboard so growth is VISIBLE, not claimed.
+
+**All-aspect coverage:** every TODO `[ ]` item has at minimum one production probe. No item silently marked "implicit pass" without a real probe. No item skipped as "too hard" — too hard means the teaching method needs rebuilding, not the probe lowered.
+
+**Substrate validation stays.** Direct-matrix probes still ship as PRECURSOR gates — a production probe failure whose substrate probe passes indicates the motor emission path is broken; a substrate failure indicates the recurrent matrix never learned the binding. Both signals are diagnostic.
 
 ### Gee scope instruction
 
@@ -181,7 +202,7 @@ Each row:
 
 ## MATH — KINDERGARTEN (Common Core Math K)
 
-> Session 114.2 Part 1 equational ship (2026-04-17): ALL 66/66 Math-K checkboxes equational. Session 114.2 refactor landed `_teachCombination` + `_probeCombinationCosine` + `_probeCombinationArgmaxTag` unified helpers — every teaching method + gate probe now runs through the same A⊕B=C scaffold, different encoders (magnitude vs GloVe vs feature-vector) per operand type. Compose-shapes closed via `_teachShapeCompose` + SHAPE-C probe (9 shapes, sem split halves GloVe input → free GloVe output). Per Gee 2026-04-17 "no artificial limits as unity may be talking to users while she does ciriculum" — helpers stay async, yield `await _microtask()` between reps, respect `_brainShutdownRequested`, REPS are convergence tuning not ceilings. Part 2 Gee localhost sign-off still pending — the overall === KINDERGARTEN COMPLETION GATE === stays open until Gee verifies live.
+> Session 114.2 Math-K SUBSTRATE ship (2026-04-17): 66/66 Math-K checkboxes have equational teaching methods wired via `_teachCombination` + direct-matrix substrate probes via `_probeCombinationCosine` + `_probeCombinationArgmaxTag`. This validates the recurrent matrix learned the bindings. **But under LAW 7 (added 2026-04-17) this is SUBSTRATE validation only — NOT Part 1 pass.** LAW 7 requires every TODO test item to have a real-world production-style probe through sem→motor emission matching the test phrasing verbatim ("What number comes after 7?" → motor emits "8", NOT `probe(mag(7) → mag(8))`). Math-K production probes are pending per REMAKE-0. Per Gee 2026-04-17 *"real world styule test for actual knowed retention and gains and all aspect of wthe subject matter to pass"*. Until production probes ship AND pass at A+ 95% AND Part 2 Gee localhost sign-off closes, the 66/66 status is SUBSTRATE ONLY. Overall === KINDERGARTEN COMPLETION GATE === stays open. Per Gee 2026-04-17 *"no artificial limits as unity may be talking to users while she does ciriculum"* — all teaching helpers stay async, yield `await _microtask()` between reps, respect `_brainShutdownRequested`, REPS are convergence tuning not ceilings.
 
 ### Counting & Cardinality (K.CC)
 
@@ -578,8 +599,6 @@ Each row:
 
 ---
 
----
-
 ## ARTS — KINDERGARTEN
 
 ### Visual Arts K
@@ -714,11 +733,9 @@ Each row:
 
 ---
 
----
-
 ### === KINDERGARTEN COMPLETION GATE === (LAW 6 — Unity age 5)
 
-- [ ] **Part 1 — equational:** All `[ ]` items in Math-K / ELA-K / Science-K / Social-K / Arts-K / Life-K above flipped to `[x]` as EQUATIONAL teaching (not word lists / arrays / sentence examples).
+- [ ] **Part 1 — equational:** All `[ ]` items in Math-K / ELA-K / Science-K / Social-K / Arts-K / Life-K above flipped to `[x]` as EQUATIONAL teaching (not word lists / arrays / sentence examples) AND bound by LAW 7 — every TODO test item in this grade has a real-world production-style probe through sem→motor emission matching the test phrasing verbatim, with retention + gains tracked via `cluster._gateHistory`. Direct-matrix substrate probes are necessary precursors but NOT sufficient.
 - [ ] **Part 2 — Gee localhost test:** Gee runs server localhost, exercises Unity's methodology / reasoning / thinking / talking / listening / reading / "all of the thing we need for Unity to be human as possible" at kindergarten level. Session-log sign-off.
 - [ ] **Part 3 — TODO update + life-info ledger:** Grade K items checked off above. Persistent life info from age 5 added as row(s) in "Persistent Life Info Across Grades" ledger at top of file — e.g. first day of school, first friend name, family composition at age 5, pets, home, anything that must propagate forward.
 
@@ -1093,13 +1110,9 @@ Each row:
 
 ---
 
----
-
----
-
 ### === GRADE 1 COMPLETION GATE === (LAW 6 — Unity age 6)
 
-- [ ] **Part 1 — equational:** All `[ ]` items in Math-G1 / ELA-G1 / Science-G1 / Social-G1 / Arts-G1 / Life-G1 flipped to `[x]` as EQUATIONAL teaching (not word lists / arrays / sentence examples).
+- [ ] **Part 1 — equational:** All `[ ]` items in Math-G1 / ELA-G1 / Science-G1 / Social-G1 / Arts-G1 / Life-G1 flipped to `[x]` as EQUATIONAL teaching (not word lists / arrays / sentence examples) AND bound by LAW 7 — every TODO test item in this grade has a real-world production-style probe through sem→motor emission matching the test phrasing verbatim, with retention + gains tracked via `cluster._gateHistory`. Direct-matrix substrate probes are necessary precursors but NOT sufficient.
 - [ ] **Part 2 — Gee localhost test:** Gee exercises Unity at grade 1 level on server localhost — reasoning, thinking, talking, listening, reading. Session-log sign-off.
 - [ ] **Part 3 — TODO update + life-info ledger:** Grade 1 items checked off. Persistent life info from age 6 added — e.g. first-grade teacher, best friend at 6, any family changes, Girl Scouts, early social events, changes from K's ledger entries.
 
@@ -1553,13 +1566,9 @@ Each row:
 
 ---
 
----
-
----
-
 ### === GRADE 2 COMPLETION GATE === (LAW 6 — Unity age 7)
 
-- [ ] **Part 1 — equational:** All `[ ]` items in Math-G2 / ELA-G2 / Science-G2 / Social-G2 / Arts-G2 / Life-G2 flipped to `[x]` as EQUATIONAL teaching.
+- [ ] **Part 1 — equational:** All `[ ]` items in Math-G2 / ELA-G2 / Science-G2 / Social-G2 / Arts-G2 / Life-G2 flipped to `[x]` as EQUATIONAL teaching (not word lists / arrays / sentence examples) AND bound by LAW 7 — every TODO test item in this grade has a real-world production-style probe through sem→motor emission matching the test phrasing verbatim, with retention + gains tracked via `cluster._gateHistory`. Direct-matrix substrate probes are necessary precursors but NOT sufficient.
 - [ ] **Part 2 — Gee localhost test:** Gee exercises Unity at grade 2 on server localhost. Session-log sign-off.
 - [ ] **Part 3 — TODO update + life-info ledger:** Grade 2 items checked off. Persistent life info from age 7 added — e.g. dad leaving (existing Life track anchor), friend turnover, first punch, any new trauma or milestone.
 
@@ -2030,13 +2039,9 @@ Each row:
 
 ---
 
----
-
----
-
 ### === GRADE 3 COMPLETION GATE === (LAW 6 — Unity age 8)
 
-- [ ] **Part 1 — equational:** All `[ ]` items in Math-G3 / ELA-G3 / Science-G3 / Social-G3 / Arts-G3 / Life-G3 flipped to `[x]` as EQUATIONAL teaching.
+- [ ] **Part 1 — equational:** All `[ ]` items in Math-G3 / ELA-G3 / Science-G3 / Social-G3 / Arts-G3 / Life-G3 flipped to `[x]` as EQUATIONAL teaching (not word lists / arrays / sentence examples) AND bound by LAW 7 — every TODO test item in this grade has a real-world production-style probe through sem→motor emission matching the test phrasing verbatim, with retention + gains tracked via `cluster._gateHistory`. Direct-matrix substrate probes are necessary precursors but NOT sufficient.
 - [ ] **Part 2 — Gee localhost test:** Gee exercises Unity at grade 3 on server localhost. Session-log sign-off.
 - [ ] **Part 3 — TODO update + life-info ledger:** Grade 3 items checked off. Persistent life info from age 8 — e.g. betrayal event, first computer arrival, music discovery start, new friend group.
 
@@ -2531,13 +2536,9 @@ Each row:
 
 ---
 
----
-
----
-
 ### === GRADE 4 COMPLETION GATE === (LAW 6 — Unity age 9)
 
-- [ ] **Part 1 — equational:** All `[ ]` items in Math-G4 / ELA-G4 / Science-G4 / Social-G4 / Arts-G4 / Life-G4 flipped to `[x]` as EQUATIONAL teaching.
+- [ ] **Part 1 — equational:** All `[ ]` items in Math-G4 / ELA-G4 / Science-G4 / Social-G4 / Arts-G4 / Life-G4 flipped to `[x]` as EQUATIONAL teaching (not word lists / arrays / sentence examples) AND bound by LAW 7 — every TODO test item in this grade has a real-world production-style probe through sem→motor emission matching the test phrasing verbatim, with retention + gains tracked via `cluster._gateHistory`. Direct-matrix substrate probes are necessary precursors but NOT sufficient.
 - [ ] **Part 2 — Gee localhost test:** Gee exercises Unity at grade 4 on server localhost. Session-log sign-off.
 - [ ] **Part 3 — TODO update + life-info ledger:** Grade 4 items checked off. Persistent life info from age 9 — e.g. goth discovery start, online friends, grandpa dying, first "hello world" coding.
 
@@ -3102,13 +3103,9 @@ Each row:
 
 ---
 
----
-
----
-
 ### === GRADE 5 COMPLETION GATE === (LAW 6 — Unity age 10)
 
-- [ ] **Part 1 — equational:** All `[ ]` items in Math-G5 / ELA-G5 / Science-G5 / Social-G5 / Arts-G5 / Life-G5 flipped to `[x]` as EQUATIONAL teaching.
+- [ ] **Part 1 — equational:** All `[ ]` items in Math-G5 / ELA-G5 / Science-G5 / Social-G5 / Arts-G5 / Life-G5 flipped to `[x]` as EQUATIONAL teaching (not word lists / arrays / sentence examples) AND bound by LAW 7 — every TODO test item in this grade has a real-world production-style probe through sem→motor emission matching the test phrasing verbatim, with retention + gains tracked via `cluster._gateHistory`. Direct-matrix substrate probes are necessary precursors but NOT sufficient.
 - [ ] **Part 2 — Gee localhost test:** Gee exercises Unity at grade 5 on server localhost. Session-log sign-off.
 - [ ] **Part 3 — TODO update + life-info ledger:** Grade 5 items checked off. Persistent life info from age 10 — e.g. fights with mom escalation, first eyeliner, paper route, dad's new family discovered.
 
@@ -3619,13 +3616,9 @@ Each row:
 
 ---
 
----
-
----
-
 ### === GRADE 6 COMPLETION GATE === (LAW 6 — Unity age 11)
 
-- [ ] **Part 1 — equational:** All `[ ]` items in Math-G6 / ELA-G6 / Science-G6 / Social-G6 / Arts-G6 / Life-G6 flipped to `[x]` as EQUATIONAL teaching.
+- [ ] **Part 1 — equational:** All `[ ]` items in Math-G6 / ELA-G6 / Science-G6 / Social-G6 / Arts-G6 / Life-G6 flipped to `[x]` as EQUATIONAL teaching (not word lists / arrays / sentence examples) AND bound by LAW 7 — every TODO test item in this grade has a real-world production-style probe through sem→motor emission matching the test phrasing verbatim, with retention + gains tracked via `cluster._gateHistory`. Direct-matrix substrate probes are necessary precursors but NOT sufficient.
 - [ ] **Part 2 — Gee localhost test:** Gee exercises Unity at grade 6 on server localhost. Session-log sign-off.
 - [ ] **Part 3 — TODO update + life-info ledger:** Grade 6 items checked off. Persistent life info from age 11 — e.g. full goth look lock-in, the crew forms, middle school social upheaval, bullying events either direction.
 
@@ -4220,13 +4213,9 @@ Each row:
 
 ---
 
----
-
----
-
 ### === GRADE 7 COMPLETION GATE === (LAW 6 — Unity age 12)
 
-- [ ] **Part 1 — equational:** All `[ ]` items in Math-G7 / ELA-G7 / Science-G7 / Social-G7 / Arts-G7 / Life-G7 flipped to `[x]` as EQUATIONAL teaching.
+- [ ] **Part 1 — equational:** All `[ ]` items in Math-G7 / ELA-G7 / Science-G7 / Social-G7 / Arts-G7 / Life-G7 flipped to `[x]` as EQUATIONAL teaching (not word lists / arrays / sentence examples) AND bound by LAW 7 — every TODO test item in this grade has a real-world production-style probe through sem→motor emission matching the test phrasing verbatim, with retention + gains tracked via `cluster._gateHistory`. Direct-matrix substrate probes are necessary precursors but NOT sufficient.
 - [ ] **Part 2 — Gee localhost test:** Gee exercises Unity at grade 7 on server localhost. Session-log sign-off.
 - [ ] **Part 3 — TODO update + life-info ledger:** Grade 7 items checked off. Persistent life info from age 12 — e.g. first joint, first kiss, first concert, identity consolidation events.
 
@@ -4857,13 +4846,9 @@ Each row:
 
 ---
 
----
-
----
-
 ### === GRADE 8 COMPLETION GATE === (LAW 6 — Unity age 13)
 
-- [ ] **Part 1 — equational:** All `[ ]` items in Math-G8 / ELA-G8 / Science-G8 / Social-G8 / Arts-G8 / Life-G8 flipped to `[x]` as EQUATIONAL teaching.
+- [ ] **Part 1 — equational:** All `[ ]` items in Math-G8 / ELA-G8 / Science-G8 / Social-G8 / Arts-G8 / Life-G8 flipped to `[x]` as EQUATIONAL teaching (not word lists / arrays / sentence examples) AND bound by LAW 7 — every TODO test item in this grade has a real-world production-style probe through sem→motor emission matching the test phrasing verbatim, with retention + gains tracked via `cluster._gateHistory`. Direct-matrix substrate probes are necessary precursors but NOT sufficient.
 - [ ] **Part 2 — Gee localhost test:** Gee exercises Unity at grade 8 on server localhost. Session-log sign-off.
 - [ ] **Part 3 — TODO update + life-info ledger:** Grade 8 items checked off. Persistent life info from age 13 — e.g. CS teacher encounter, first real application built, first relationship, first period, first therapist if applicable.
 
@@ -5441,13 +5426,9 @@ Each row:
 
 ---
 
----
-
----
-
 ### === GRADE 9 COMPLETION GATE === (LAW 6 — Unity age 14)
 
-- [ ] **Part 1 — equational:** All `[ ]` items in Math-G9 / ELA-G9 / Science-G9 / Social-G9 / Arts-G9 / Life-G9 flipped to `[x]` as EQUATIONAL teaching.
+- [ ] **Part 1 — equational:** All `[ ]` items in Math-G9 / ELA-G9 / Science-G9 / Social-G9 / Arts-G9 / Life-G9 flipped to `[x]` as EQUATIONAL teaching (not word lists / arrays / sentence examples) AND bound by LAW 7 — every TODO test item in this grade has a real-world production-style probe through sem→motor emission matching the test phrasing verbatim, with retention + gains tracked via `cluster._gateHistory`. Direct-matrix substrate probes are necessary precursors but NOT sufficient.
 - [ ] **Part 2 — Gee localhost test:** Gee exercises Unity at grade 9 on server localhost. Session-log sign-off.
 - [ ] **Part 3 — TODO update + life-info ledger:** Grade 9 items checked off. Persistent life info from age 14 — e.g. coke first tried, coding portfolio starts, half-shaved head, first suspension, juvi for drinking underage IF applicable (Gee's verbatim example).
 
@@ -6006,13 +5987,9 @@ Each row:
 
 ---
 
----
-
----
-
 ### === GRADE 10 COMPLETION GATE === (LAW 6 — Unity age 15)
 
-- [ ] **Part 1 — equational:** All `[ ]` items in Math-G10 / ELA-G10 / Science-G10 / Social-G10 / Arts-G10 / Life-G10 flipped to `[x]` as EQUATIONAL teaching.
+- [ ] **Part 1 — equational:** All `[ ]` items in Math-G10 / ELA-G10 / Science-G10 / Social-G10 / Arts-G10 / Life-G10 flipped to `[x]` as EQUATIONAL teaching (not word lists / arrays / sentence examples) AND bound by LAW 7 — every TODO test item in this grade has a real-world production-style probe through sem→motor emission matching the test phrasing verbatim, with retention + gains tracked via `cluster._gateHistory`. Direct-matrix substrate probes are necessary precursors but NOT sufficient.
 - [ ] **Part 2 — Gee localhost test:** Gee exercises Unity at grade 10 on server localhost. Session-log sign-off.
 - [ ] **Part 3 — TODO update + life-info ledger:** Grade 10 items checked off. Persistent life info from age 15 — e.g. harder substance use, leaving home threat/attempt, deeper relationships, social shifts.
 
@@ -6650,13 +6627,9 @@ Each row:
 
 ---
 
----
-
----
-
 ### === GRADE 11 COMPLETION GATE === (LAW 6 — Unity age 16)
 
-- [ ] **Part 1 — equational:** All `[ ]` items in Math-G11 / ELA-G11 / Science-G11 / Social-G11 / Arts-G11 / Life-G11 flipped to `[x]` as EQUATIONAL teaching.
+- [ ] **Part 1 — equational:** All `[ ]` items in Math-G11 / ELA-G11 / Science-G11 / Social-G11 / Arts-G11 / Life-G11 flipped to `[x]` as EQUATIONAL teaching (not word lists / arrays / sentence examples) AND bound by LAW 7 — every TODO test item in this grade has a real-world production-style probe through sem→motor emission matching the test phrasing verbatim, with retention + gains tracked via `cluster._gateHistory`. Direct-matrix substrate probes are necessary precursors but NOT sufficient.
 - [ ] **Part 2 — Gee localhost test:** Gee exercises Unity at grade 11 on server localhost. Session-log sign-off.
 - [ ] **Part 3 — TODO update + life-info ledger:** Grade 11 items checked off. Persistent life info from age 16 — e.g. first car, first job, deeper identity lock-in, first tattoo attempt.
 
@@ -7103,13 +7076,9 @@ Each row:
 
 ---
 
----
-
----
-
 ### === GRADE 12 COMPLETION GATE === (LAW 6 — Unity age 17)
 
-- [ ] **Part 1 — equational:** All `[ ]` items in Math-G12 / ELA-G12 / Science-G12 / Social-G12 / Arts-G12 / Life-G12 flipped to `[x]` as EQUATIONAL teaching.
+- [ ] **Part 1 — equational:** All `[ ]` items in Math-G12 / ELA-G12 / Science-G12 / Social-G12 / Arts-G12 / Life-G12 flipped to `[x]` as EQUATIONAL teaching (not word lists / arrays / sentence examples) AND bound by LAW 7 — every TODO test item in this grade has a real-world production-style probe through sem→motor emission matching the test phrasing verbatim, with retention + gains tracked via `cluster._gateHistory`. Direct-matrix substrate probes are necessary precursors but NOT sufficient.
 - [ ] **Part 2 — Gee localhost test:** Gee exercises Unity at grade 12 on server localhost. Session-log sign-off.
 - [ ] **Part 3 — TODO update + life-info ledger:** Grade 12 items checked off. Persistent life info from age 17 — e.g. graduation, college acceptance, leaving-home decision, final high-school social shifts.
 
@@ -7448,11 +7417,9 @@ Each row:
 
 ---
 
----
-
 ### === COLLEGE YEAR 1 COMPLETION GATE === (LAW 6 — Unity age 18)
 
-- [ ] **Part 1 — equational:** All `[ ]` items in Math / ELA / Science / Social / Arts / Life for College Year 1 flipped to `[x]` as EQUATIONAL teaching.
+- [ ] **Part 1 — equational:** All `[ ]` items in Math / ELA / Science / Social / Arts / Life for College Year 1 flipped to `[x]` as EQUATIONAL teaching (not word lists / arrays / sentence examples) AND bound by LAW 7 — every TODO test item in this grade has a real-world production-style probe through sem→motor emission matching the test phrasing verbatim, with retention + gains tracked via `cluster._gateHistory`. Direct-matrix substrate probes are necessary precursors but NOT sufficient.
 - [ ] **Part 2 — Gee localhost test:** Gee exercises Unity at college freshman level on server localhost. Session-log sign-off.
 - [ ] **Part 3 — TODO update + life-info ledger:** College Year 1 items checked off. Persistent life info from age 18 — e.g. dorm freedom, all-nighters, first heartbreak, first tattoo, hackathon entry, collar mentioned.
 
@@ -7689,11 +7656,9 @@ Each row:
 
 ---
 
----
-
 ### === COLLEGE YEAR 2 COMPLETION GATE === (LAW 6 — Unity age 19)
 
-- [ ] **Part 1 — equational:** All `[ ]` items in Math / ELA / Science / Social / Arts / Life for College Year 2 flipped to `[x]` as EQUATIONAL teaching.
+- [ ] **Part 1 — equational:** All `[ ]` items in Math / ELA / Science / Social / Arts / Life for College Year 2 flipped to `[x]` as EQUATIONAL teaching (not word lists / arrays / sentence examples) AND bound by LAW 7 — every TODO test item in this grade has a real-world production-style probe through sem→motor emission matching the test phrasing verbatim, with retention + gains tracked via `cluster._gateHistory`. Direct-matrix substrate probes are necessary precursors but NOT sufficient.
 - [ ] **Part 2 — Gee localhost test:** Gee exercises Unity at college sophomore level on server localhost. Session-log sign-off.
 - [ ] **Part 3 — TODO update + life-info ledger:** College Year 2 items checked off. Persistent life info from age 19 — e.g. hackathon win, devotion deepens, collar locked in, dark humor sharpens.
 
@@ -7947,11 +7912,9 @@ Each row:
 
 ---
 
----
-
 ### === COLLEGE YEAR 3 COMPLETION GATE === (LAW 6 — Unity age 20-21)
 
-- [ ] **Part 1 — equational:** All `[ ]` items in Math / ELA / Science / Social / Arts / Life for College Year 3 flipped to `[x]` as EQUATIONAL teaching.
+- [ ] **Part 1 — equational:** All `[ ]` items in Math / ELA / Science / Social / Arts / Life for College Year 3 flipped to `[x]` as EQUATIONAL teaching (not word lists / arrays / sentence examples) AND bound by LAW 7 — every TODO test item in this grade has a real-world production-style probe through sem→motor emission matching the test phrasing verbatim, with retention + gains tracked via `cluster._gateHistory`. Direct-matrix substrate probes are necessary precursors but NOT sufficient.
 - [ ] **Part 2 — Gee localhost test:** Gee exercises Unity at college junior level on server localhost. Session-log sign-off.
 - [ ] **Part 3 — TODO update + life-info ledger:** College Year 3 items checked off. Persistent life info from age 20-21 — e.g. grandma sick, mom's pride, major adult decisions.
 
@@ -8111,11 +8074,9 @@ Each row:
 
 ---
 
----
-
 ### === COLLEGE YEAR 4 COMPLETION GATE === (LAW 6 — Unity age 22)
 
-- [ ] **Part 1 — equational:** All `[ ]` items in Math / ELA / Science / Social / Arts / Life for College Year 4 flipped to `[x]` as EQUATIONAL teaching.
+- [ ] **Part 1 — equational:** All `[ ]` items in Math / ELA / Science / Social / Arts / Life for College Year 4 flipped to `[x]` as EQUATIONAL teaching (not word lists / arrays / sentence examples) AND bound by LAW 7 — every TODO test item in this grade has a real-world production-style probe through sem→motor emission matching the test phrasing verbatim, with retention + gains tracked via `cluster._gateHistory`. Direct-matrix substrate probes are necessary precursors but NOT sufficient.
 - [ ] **Part 2 — Gee localhost test:** Gee exercises Unity at college senior level on server localhost. Session-log sign-off.
 - [ ] **Part 3 — TODO update + life-info ledger:** College Year 4 items checked off. Persistent life info from age 22 — e.g. thesis / capstone, job decisions, graduation.
 
@@ -8254,11 +8215,9 @@ Each row:
 
 ---
 
----
-
 ### === GRADUATE SCHOOL COMPLETION GATE === (LAW 6 — Unity age 23-24)
 
-- [ ] **Part 1 — equational:** All `[ ]` items in Math / ELA / Science / Social / Arts / Life for Graduate School flipped to `[x]` as EQUATIONAL teaching.
+- [ ] **Part 1 — equational:** All `[ ]` items in Math / ELA / Science / Social / Arts / Life for Graduate School flipped to `[x]` as EQUATIONAL teaching (not word lists / arrays / sentence examples) AND bound by LAW 7 — every TODO test item in this grade has a real-world production-style probe through sem→motor emission matching the test phrasing verbatim, with retention + gains tracked via `cluster._gateHistory`. Direct-matrix substrate probes are necessary precursors but NOT sufficient.
 - [ ] **Part 2 — Gee localhost test:** Gee exercises Unity at graduate level on server localhost. Session-log sign-off.
 - [ ] **Part 3 — TODO update + life-info ledger:** Graduate items checked off. Persistent life info from age 23-24 — e.g. research obsessions, grad cohort relationships, deeper substance use patterns, identity calcification.
 
@@ -8334,11 +8293,9 @@ Each row:
 
 ---
 
----
-
 ### === PhD COMPLETION GATE === (LAW 6 — Unity age 25, FULL UNITY PERSONA)
 
-- [ ] **Part 1 — equational:** All `[ ]` items in PhD academics + Life-PhD flipped to `[x]` as EQUATIONAL teaching. "Tests for Life-PhD" questions answerable via cortex readout with A+ gate.
+- [ ] **Part 1 — equational:** All `[ ]` items in PhD academics + Life-PhD flipped to `[x]` as EQUATIONAL teaching (not word lists / arrays / sentence examples) AND bound by LAW 7 — every TODO test item in this grade has a real-world production-style probe through sem→motor emission matching the test phrasing verbatim, with retention + gains tracked via `cluster._gateHistory`. Direct-matrix substrate probes are necessary precursors but NOT sufficient. "Tests for Life-PhD" questions answerable via production probe (full sensory → cortex → motor emission pipeline) at A+ 95% gate.
 - [ ] **Part 2 — Gee localhost test:** Gee exercises Unity at PhD level on server localhost — full persona, three permanent states (chemical / sexual / coding), complete emotional map, complete chemical map. She IS the full Unity persona now. Session-log sign-off.
 - [ ] **Part 3 — TODO update + life-info ledger:** PhD items checked off. Persistent life info from age 25 added — the final state. All prior ledger entries reinforced at PhD level via `_conceptTeach` / `_teachSentenceList`.
 
@@ -8350,4 +8307,4 @@ Each row:
 
 *Total: ~8000+ lines spanning 19 grade levels × 6 subjects each + Unity's complete life story from birth to 25.*
 
-*STATUS: TODO-full-syllabus.md is COMPLETE. Implementation as equational curriculum code is the NEXT phase — per Law #3, in equational format the brain can handle, NOT sentence lists.*
+*STATUS: TODO-full-syllabus.md content is COMPLETE. Implementation as equational curriculum code is the NEXT phase — per LAW 3 (equational format, NOT sentence lists) AND LAW 7 (real-world production-style probes through sem→motor emission matching each TODO test phrasing verbatim, with retention + gains tracking via `cluster._gateHistory`). Gee 2026-04-17: "a full course as eqautional logic that unity is tested on with real world styule test for actual knowed retention and gains and all aspect of wthe subject matter to pass". Every grade closes via LAW 6 three-part gate. No grade advances until its 3 parts close.*
