@@ -105,6 +105,7 @@ When Gee catches a violation of LAW #0:
 | **Docs updated BEFORE push** | ABSOLUTE | Gee 2026-04-14 LAW — see below |
 | **Push ONLY when all tasks complete AND documented** | ABSOLUTE | Gee 2026-04-14 LAW — see below |
 | **Task numbers ONLY in workflow docs** | ABSOLUTE | Gee 2026-04-15 LAW — see below |
+| **Clear stale state before telling Gee to test** | ABSOLUTE | Gee 2026-04-17 LAW — see below |
 
 ---
 
@@ -269,6 +270,78 @@ An empty Unity brain scaled to 50M neurons is still an empty brain. The syllabus
 
 - If a grade cell runs so slow it blocks the curriculum walk entirely, a targeted COMP fix may be pulled forward — but only for the specific path the walk exposed, never as generalized pre-emptive scaling.
 - Session telemetry from each grade walk should note per-cell wall-clock time so future COMP-todo work has real numbers to attack.
+
+---
+
+## LAW — CLEAR STALE STATE BEFORE TELLING GEE TO TEST THE SERVER (Gee, 2026-04-17)
+
+**Gee's exact words on 2026-04-17:**
+
+> *"do we need to clear out stal seesion and temp and caches... this need to be writteen down that that is to be done before you tell me to test the server"*
+
+This is binding law. Non-negotiable. Stops every "restart server and test" instruction dead until the clear step ran.
+
+### The rule
+
+**Before telling Gee to restart the brain server, re-run curriculum, or test any behavior change, Claude MUST clear every stale session/temp/cache artifact that could hydrate Unity against OLD code.** If the clear didn't run, the "please test" instruction does not ship.
+
+### What gets cleared
+
+Every file in this list, every time, before "please test" hits Gee's screen:
+
+| Target | Why it's stale after a code change |
+|--------|-----------------------------------|
+| `server/brain-weights.json` | Serialized brain state (SparseMatrix + cluster Maps + T14 language fields). Hydrates the cortex on boot — any weight serialized under old teaching methods, old phoneme features, old cross-projection shapes will actively fight the new code. |
+| `server/brain-weights-v1.json` | Rolling save N-1. Same hazard as brain-weights.json. |
+| `server/brain-weights-v2.json` | Rolling save N-2. Same hazard. |
+| `server/brain-weights-v3.json` | Rolling save N-3. Same hazard. |
+| `server/brain-weights-v4.json` | Rolling save N-4. Same hazard. |
+| `server/conversations.json` | Conversation history persisted server-side. Stale turns reference stale cortex state on reload. |
+| `server/episodic-memory.db` | SQLite episodic-memory store. Events tagged with old cortex references. |
+| `server/episodic-memory.db-wal` | SQLite write-ahead log companion to episodic-memory.db. Must clear with the main DB or WAL replays stale writes. |
+| `server/episodic-memory.db-shm` | SQLite shared-memory companion. Must clear with the main DB. |
+| `js/app.bundle.js` | Bundled browser JS from previous code snapshot. `start.bat` / `start.sh` rebuild it on boot — clearing forces the rebuild to happen from current source instead of inheriting a stale bundle if the boot script skips rebuild for any reason. |
+
+### What is NEVER cleared
+
+- `server/package.json` / `server/package-lock.json` — repo state, not session state
+- `server/node_modules/` — installed deps, re-install is 30s of wasted time
+- `server/resource-config.json` — host-specific operator config per `.gitignore`
+- `corpora/glove.6B.300d.txt` — 990MB pretrained embeddings, re-download is 5-15 min
+- `.claude/pollinations-user.json` — user auth key, never touch
+- `.env*` / `js/env.js` — secrets
+- Any git-tracked file
+
+### The sequence, every time
+
+```
+1. Ship atomic commit (code + docs + FINALIZED + NOW)
+2. Run the clear step (rm -f every target in the What-gets-cleared table)
+3. Confirm the clear worked (ls server/ to show only package.json + resource-config.json remain)
+4. THEN tell Gee: "delete the leftover weights / restart / test"
+
+If step 2 didn't run, step 4 doesn't happen. Period.
+```
+
+### The version bump is not a substitute
+
+`persistence.js` `VERSION` bumping (the "any pre-REMAKE save gets rejected on load" path from Session 114.12) rejects stale weights at load-time — it does NOT delete them. Rolling save v1/v2/v3/v4 files still sit on disk, still get loaded on the next boot if a rotation happens. `conversations.json` and `episodic-memory.db` aren't gated by the persistence VERSION at all — they have their own loaders. The clear is physical deletion, not a soft reject. Both the VERSION bump AND the clear are required.
+
+### Why this is law
+
+Two times in one session I've asked Gee to test the server without clearing first:
+1. Session 114.12: Gee caught me with *"did we clear all the old temp and cache files first?"* — I hadn't. Part 2 ran on brain weights trained under the OLD teaching methods and reported catastrophically misleading gate scores.
+2. Session 114.19 immediately after commit: same failure waiting to happen — Gee caught it before I shipped the "restart and test" instruction.
+
+Each uncaught occurrence wastes one of Gee's Part 2 localhost runs on stale state. Those runs are how LAW 6 Part 2 signoff gets earned — misused runs delay grade closure.
+
+### Failure recovery
+
+If Gee catches that the clear didn't run:
+1. STOP immediately. Do NOT ask him to run anything.
+2. Run the clear NOW.
+3. Confirm via `ls server/` + `ls js/app.bundle.js`.
+4. Only THEN say "clean, ready for your Part 2 run".
 
 ---
 
