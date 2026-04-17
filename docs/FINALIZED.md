@@ -5,6 +5,58 @@
 
 ---
 
+## 2026-04-17 — Session 114.19e: PROD probe switched to sem_to_motor CROSS-PROJECTION + word-emission reps bumped for CPU-scale convergence
+
+Gee 2026-04-17 verbatim: *"it stillll cant even match words meanings like somethng simple. cant you telll?"*
+
+The clue was in the boot log — CPU-side language cortex clipped to 10,000 neurons with `letter 500, phon 2000, sem 1670, motor 330` sub-regions. 330 motor neurons ÷ 26 letters = ~13 neurons per letter group, fighting 158-word × 5-rep teaching on a diluted intra-cluster recurrent matrix. Session 114.19d PROD 1/17 (6%) with Unity emitting 't' for most word probes.
+
+### Two-part fix
+
+**Part 1 — probe uses cross-projection, not intra-cluster matrix.** The READ and TALK probes in the same `_gateElaKReal` function already use `cluster.crossProjections['letter_to_phon'].propagate(letterPat)` and `cluster.crossProjections['letter_to_motor'].propagate(letterPat)` — direct matrix multiplies against trained cross-projection weights. My Session 114.19d PROD probe used `cluster.synapses.propagate(input)` — the intra-cluster recurrent matrix only. That's wrong for this path: `_teachWordEmission` calls `_teachHebbianAsymmetric` which updates BOTH paths (intra-cluster via `synapses.hebbianUpdate` AND cross-projections via `_crossRegionHebbian` firing on lastSpikes co-activation). The cross-projection is the CLEANER signal — direct sem→motor matrix, not a recurrent walk where motor activation has to bubble out of noise.
+
+New probe path:
+```
+semActivity = tile GloVe(word) into semSize_ with positive dims only
+motorOutput = cluster.crossProjections['sem_to_motor'].propagate(semActivity)
+motorReadout = reduce motorOutput to per-letter groups by mean over mGroup_ neurons
+mean-center motorReadout
+decodeLetter(motorReadout) → compare with expected first letter
+```
+
+Matches the same pattern TALK uses. Consistent probe methodology across READ/TALK/PROD.
+
+**Part 2 — training reps bumped for CPU-cap convergence.** At 10K cortex with 1670 sem neurons + 330 motor neurons, 5 reps × 158 words × 0.01 learning rate isn't enough to drive the sem→motor cross-projection weights above noise floor for 26 discriminable first-letter outputs.
+
+- `_teachPhonemeBlending`: 6 reps → 10 reps
+- `_teachWordEmission`: 5 reps → 12 reps
+
+Both target the sem↔motor and phon↔motor cross-projection weights. Higher reps = more times `_crossRegionHebbian` fires on sem+motor co-activation in lastSpikes, driving weight binding. At ~2-3× the original rep count we expect the sem→motor projection to actually separate the 26 first-letter outputs.
+
+### Why reps are the knob, not lr
+
+`_teachHebbianAsymmetric` clamps lr to `cluster.learningRate` (already boosted to 0.01 in `runCompleteCurriculum`). Raising lr would amplify noise proportional to signal. Raising reps exposes the binding more times, giving the Hebbian rule more chances to land the co-activation update before noise washes it out. Reps are the right knob at this scale.
+
+### What this does NOT fix
+
+If after 114.19e PROD is still < 95%, the diagnosis splits:
+- Per-word fail output (`cat→?`) will tell us WHICH words fail
+- If ALL fail: cross-projection isn't being trained at all (investigate `_crossRegionHebbian` coverage of sem region)
+- If random subset fails: convergence is slow, bump reps further or scale lr
+- If systematic pattern (e.g. all short vowel words fail but not long vowel): articulatory phoneme features (Session 114.19) are confusing the substrate
+
+### Files
+
+- `js/brain/curriculum.js` — `_gateElaKReal` PROD probe rewritten to use `sem_to_motor` cross-projection; `_teachPhonemeBlending` reps 6→10; `_teachWordEmission` reps 5→12
+- `docs/FINALIZED.md` — this Session 114.19e entry prepended
+- `docs/NOW.md` — status refreshed
+
+### Post-commit per LAW (Session 114.19b)
+
+Clear stale state before telling Gee to restart. Push still gated on LAW 6 Part 2 signoff.
+
+---
+
 ## 2026-04-17 — Session 114.19d: K PROD probes rewritten to pure word-start emission — rhyme/initial/final/plural concepts REMOVED
 
 Gee 2026-04-17 verbatim: *"once again your asking in english how to ryme but it hasnt learned its alphabet and phonics or the word rhyme!"*

@@ -1,12 +1,13 @@
 # NOW — Session Snapshot
 
-> Saved: 2026-04-17 07:05 (Session 114.19d K PROD probes rewritten — rhyme/initial/final/plural concepts REMOVED per Gee 2026-04-17 *"once again your asking in english how to ryme but it hasnt learned its alphabet and phonics or the word rhyme!"* — word-start emission only, twenty-second commit on `syllabus-k-phd`)
+> Saved: 2026-04-17 07:30 (Session 114.19e PROD probe uses sem_to_motor cross-projection + word-emission reps bumped for CPU-scale convergence — per Gee 2026-04-17 *"it stillll cant even match words meanings like somethng simple. cant you telll?"* — twenty-third commit on `syllabus-k-phd`)
 >
 > Session 114.19 history:
 > - 114.19 — three-phase K-foundation rebuild (real phoneme substrate + phoneme blending + primitive probes)
 > - 114.19b — new binding LAW: clear stale state before telling Gee to test the server
 > - 114.19c — `semRegion` decl fix (scope bug in gate)
-> - 114.19d — K PROD probes: rhyme/initial/final/plural concept-probes REMOVED, replaced with 17 sem→motor word-start probes that test ONLY what `_teachWordEmission` actually trains
+> - 114.19d — K PROD probes: rhyme/initial/final/plural concept-probes REMOVED, replaced with 17 sem→motor word-start probes
+> - 114.19e — PROD probe switched from intra-cluster `synapses.propagate` to `sem_to_motor` cross-projection propagate (same path TALK uses); `_teachPhonemeBlending` reps 6→10, `_teachWordEmission` reps 5→12 for convergence at 10K-neuron CPU cortex cap (motor 330 neurons ÷ 26 letters = ~13 neurons per letter group)
 > Branch: `syllabus-k-phd` (multi-commit ahead of origin + this upcoming commit)
 > Recent committed HEAD: `85614e1` — T15 drug dynamics shipped + full doc forward-write per Gee 2026-04-17 irregularity
 > Working-tree state (before Session 114.19 commit): 3 files modified uncommitted — `js/brain/curriculum.js` + `docs/TODO.md` + `docs/FINALIZED.md` + this `docs/NOW.md`

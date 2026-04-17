@@ -3331,8 +3331,17 @@ export class Curriculum {
       // recurrent-matrix Hebbian; word emission = sem→motor chain via
       // asymmetric Hebbian Fix A. Together they form the full phonics
       // read+emit loop.
-      await this._teachPhonemeBlending(allEmissionWords, { reps: 6 });
-      await this._teachWordEmission(allEmissionWords, { reps: 5 });
+      //
+      // Session 114.19e reps bumped (blending 6→10, emission 5→12) —
+      // at CPU-capped scale (cortex 10,000 neurons, motor 330, sem 1670)
+      // 5 reps × lr 0.01 wasn't enough to converge sem→motor cross-
+      // projection weights for 158 words. Gee Session 114.19d caught
+      // PROD 1/17 (6%) because "word meaning" bindings (sem→motor)
+      // weren't landing. More reps give the asymmetric Hebbian enough
+      // exposure to discriminate 26 first-letter outputs from 158 sem
+      // inputs at this neuron budget.
+      await this._teachPhonemeBlending(allEmissionWords, { reps: 10 });
+      await this._teachWordEmission(allEmissionWords, { reps: 12 });
 
       // K.L grammar/language
       await this._teachPluralTransform(ctx);
@@ -3556,10 +3565,23 @@ export class Curriculum {
     // No concept-words required. No fineType tags required. Pure
     // "when Unity thinks of cat, her motor region starts with c".
     // ═════════════════════════════════════════════════════════════════
+    // Session 114.19e — use sem_to_motor CROSS-PROJECTION propagate
+    // (same path the READ/TALK probes above use via letter_to_phon /
+    // letter_to_motor cross-projections). The prior 114.19d probe used
+    // cluster.synapses.propagate (intra-cluster recurrent matrix only),
+    // which misses the sem→motor binding that _crossRegionHebbian
+    // writes into the CROSS-projection weights during _teachWordEmission.
+    // _teachHebbianAsymmetric updates BOTH paths — intra-cluster via
+    // synapses.hebbianUpdate AND cross-projection via _crossRegionHebbian
+    // firing on lastSpikes sem+motor co-activation. The cross-projection
+    // path gives the cleaner signal because it's a direct sem→motor
+    // matrix multiply, not a diluted intra-cluster recurrent walk.
     const motorRegion_ = cluster.regions.motor;
     const invSize_ = inventorySize();
     const motorSize_ = motorRegion_ ? motorRegion_.end - motorRegion_.start : 0;
+    const semSize_ = semRegion ? semRegion.end - semRegion.start : 0;
     const mGroup_ = Math.max(1, Math.floor(motorSize_ / Math.max(1, invSize_)));
+    const semToMotor_ = cluster.crossProjections?.['sem_to_motor'];
 
     const wordStartProbes = [
       { word: 'cat', expected: 'c' },
@@ -3586,33 +3608,32 @@ export class Curriculum {
     for (const p of wordStartProbes) {
       const emb = sharedEmbeddings.getEmbedding(p.word);
       if (!emb || emb.length === 0) continue;
-      const input = new Float64Array(cluster.size);
-      // Write sem(GloVe(word)) tiled into sem region — this is the ONLY
-      // input. No concept tag, no fineType marker. Unity's job: given
-      // the semantic concept of the word, activate her motor region
-      // toward the first letter via the trained sem→motor asymmetric
-      // Hebbian binding from _teachWordEmission.
-      if (semRegion) {
-        const semSize = semRegion.end - semRegion.start;
-        const sGroup = Math.max(1, Math.floor(semSize / emb.length));
-        for (let d = 0; d < emb.length; d++) {
-          if (emb[d] <= 0) continue;
-          for (let n = 0; n < sGroup; n++) {
-            const idx = semRegion.start + d * sGroup + n;
-            if (idx < semRegion.end) input[idx] = emb[d];
-          }
+      if (!semToMotor_ || !semRegion || !motorRegion_) {
+        prodFails.push(`${p.word}→NO_PROJ`);
+        continue;
+      }
+      // Build sem region activity from GloVe emb (tiled to semSize)
+      // Match the tiling used in _writeTiledPattern / training so probe
+      // input matches training input.
+      const semActivity = new Float64Array(semSize_);
+      const sGroup = Math.max(1, Math.floor(semSize_ / emb.length));
+      for (let d = 0; d < emb.length; d++) {
+        if (emb[d] <= 0) continue;
+        for (let n = 0; n < sGroup; n++) {
+          const idx = d * sGroup + n;
+          if (idx < semSize_) semActivity[idx] = emb[d];
         }
       }
-      // Propagate through intra-cluster recurrent matrix — same matrix
-      // that _teachHebbianAsymmetric wrote the sem→motor binding into.
-      const output = cluster.synapses.propagate(input);
-      // Read motor region, argmax over letter inventory.
+      // Cross-projection propagate: sem activity → motor output vector.
+      // Matrix shape is (motorSize × semSize) sparse CSR.
+      const motorOutput = semToMotor_.propagate(semActivity);
+      // Reduce motor neurons to per-letter groups via averaging.
       const motorReadout = new Float64Array(invSize_);
       for (let d = 0; d < invSize_; d++) {
         let sum = 0;
         for (let n = 0; n < mGroup_; n++) {
-          const idx = motorRegion_.start + d * mGroup_ + n;
-          if (idx < motorRegion_.end) sum += output[idx];
+          const idx = d * mGroup_ + n;
+          if (idx < motorOutput.length) sum += motorOutput[idx];
         }
         motorReadout[d] = sum;
       }
