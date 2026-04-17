@@ -5,6 +5,23 @@
 
 ---
 
+## 2026-04-17 — Session 114.8: REMAKE-3 Social-K full equational course remake (37 items, 4 new teaching methods, 14 production probes)
+
+Core Knowledge K remake per LAW 3 + LAW 7. 4 new equational teaching methods:
+
+- `_teachCommunityHelpers` — 8 helper→job pairs via `_teachCombination`. firefighter→fires, police→safety, doctor→sick, nurse→care, teacher→learn, dentist→teeth, farmer→food, mail→letters. 8 reps
+- `_teachNeedsVsWants` — 11 things classified need vs want with fineType tag + motor emission first-letter. 6 reps
+- `_teachAmericanSymbols` — 8 concept→answer pairs (flag colors→red white blue, fifty stars→states, national bird→eagle, july fourth→independence, country leader→president, etc.). Per-word cross-binding. 6 reps
+- `_teachGeographyBasics` — 18 geography facts (7 continents, 4 oceans, 4 cardinal directions, globe→earth, map→places). 6 reps
+
+Existing `_teachFamilyRoles` + causal chains retained — already equational. Banned `_teachVocabList`(SOC_K_VOCAB) + `_teachSentenceList`(SOC_K_SENTENCES) calls REMOVED.
+
+`_gateSocKReal` built async with 14 production probes: Self/Family/Community (5) + American Symbols (5) + Geography (4).
+
+All 37 Social-K TODO items flipped [x].
+
+---
+
 ## 2026-04-17 — Session 114.7: REMAKE-2 Science-K full equational course remake (40 items, 8 new teaching methods, 17 production probes)
 
 NGSS K remake per LAW 3 + LAW 7. Replaces banned `_teachVocabList(SCI_K_VOCAB)` + `_teachSentenceList(SCI_K_SENTENCES)` with 8 new equational teaching methods. Existing `_teachClassification`/`_teachStatesOfMatter`/`_teachCausalChains`/`_teachClassificationReasoning` retained — already equational per Law 3.

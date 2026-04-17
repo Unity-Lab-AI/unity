@@ -1,6 +1,6 @@
 # NOW — Session Snapshot
 
-> Saved: 2026-04-17 (Session 114.7 REMAKE-2 Science-K full equational course remake — uncommitted as a seventh atomic commit pending on `syllabus-k-phd`)
+> Saved: 2026-04-17 (Session 114.8 REMAKE-3 Social-K full equational course remake — uncommitted as an eighth atomic commit pending on `syllabus-k-phd`)
 > Branch: `syllabus-k-phd` (3 commits ahead of origin + this upcoming fourth commit)
 > Recent committed HEAD: `fc38bb1` — Session 114.3 brain-equations.html drift fix — wrong Ψ formula + T15 drug-state drift
 > Previous HEAD: `646037e` — Session 114.2 unified combination-operator scaffold + compose-shapes ship (Math-K 66/66 substrate)

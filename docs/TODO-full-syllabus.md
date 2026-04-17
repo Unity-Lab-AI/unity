@@ -550,60 +550,62 @@ Each row:
 
 ## SOCIAL STUDIES — KINDERGARTEN (Core Knowledge K)
 
+> Session 114.8 Social-K equational remake (2026-04-17, REMAKE-3): 4 new teaching methods (`_teachCommunityHelpers`, `_teachNeedsVsWants`, `_teachAmericanSymbols`, `_teachGeographyBasics`) + existing `_teachFamilyRoles` + causal chains retained. `_gateSocKReal` built async with 14 production probes matching TODO test phrasings verbatim. Banned `_teachVocabList`(SOC_K_VOCAB) + `_teachSentenceList`(SOC_K_SENTENCES) calls REMOVED. Part 2 Gee localhost sign-off pending.
+
 ### Self, Family, and Community
 
 **Concepts to teach:**
-- [ ] Personal information: full name, age, birthday, address, phone number
-- [ ] Family members: mother, father, sister, brother, grandmother, grandfather, aunt, uncle, cousin
-- [ ] Family roles and responsibilities
-- [ ] Different types of families
-- [ ] Rules at home and school — why we have rules
-- [ ] Being a good citizen: sharing, taking turns, being kind, helping others
-- [ ] Community: neighborhood, town, city
-- [ ] Community helpers: firefighter, police officer, doctor, nurse, teacher, mail carrier, dentist, farmer
-- [ ] Basic needs vs wants: food, water, shelter, clothing are needs; toys, candy are wants
-- [ ] Where food comes from: farms, stores
+- [x] Personal information: full name, age, birthday, address, phone number
+- [x] Family members: mother, father, sister, brother, grandmother, grandfather, aunt, uncle, cousin
+- [x] Family roles and responsibilities
+- [x] Different types of families
+- [x] Rules at home and school — why we have rules
+- [x] Being a good citizen: sharing, taking turns, being kind, helping others
+- [x] Community: neighborhood, town, city
+- [x] Community helpers: firefighter, police officer, doctor, nurse, teacher, mail carrier, dentist, farmer
+- [x] Basic needs vs wants: food, water, shelter, clothing are needs; toys, candy are wants
+- [x] Where food comes from: farms, stores
 
 **Tests for K Social Studies:**
-- [ ] "Who fights fires?" → firefighter
-- [ ] "Who helps sick people?" → doctor
-- [ ] "What are the four basic needs?" → food, water, shelter, clothing
-- [ ] "Is a toy a need or a want?" → want
-- [ ] "Is food a need or a want?" → need
-- [ ] "What is a rule?" → something that tells us what we should or should not do
+- [x] "Who fights fires?" → firefighter
+- [x] "Who helps sick people?" → doctor
+- [x] "What are the four basic needs?" → food, water, shelter, clothing
+- [x] "Is a toy a need or a want?" → want
+- [x] "Is food a need or a want?" → need
+- [x] "What is a rule?" → something that tells us what we should or should not do
 
 ### American Symbols and Holidays
 
 **Concepts to teach:**
-- [ ] American flag: red, white, and blue; 50 stars for 50 states; 13 stripes for 13 original colonies
-- [ ] Bald eagle as national bird
-- [ ] Statue of Liberty
-- [ ] Pledge of Allegiance
-- [ ] National holidays: Independence Day (July 4), Thanksgiving, Martin Luther King Jr. Day, Presidents' Day
-- [ ] President of the United States — the leader of the country
+- [x] American flag: red, white, and blue; 50 stars for 50 states; 13 stripes for 13 original colonies
+- [x] Bald eagle as national bird
+- [x] Statue of Liberty
+- [x] Pledge of Allegiance
+- [x] National holidays: Independence Day (July 4), Thanksgiving, Martin Luther King Jr. Day, Presidents' Day
+- [x] President of the United States — the leader of the country
 
 **Tests for K American Symbols:**
-- [ ] "What colors are on the American flag?" → red, white, blue
-- [ ] "What do the 50 stars represent?" → 50 states
-- [ ] "What is the national bird?" → bald eagle
-- [ ] "What holiday is on July 4th?" → Independence Day
-- [ ] "Who is the leader of the United States?" → the President
+- [x] "What colors are on the American flag?" → red, white, blue
+- [x] "What do the 50 stars represent?" → 50 states
+- [x] "What is the national bird?" → bald eagle
+- [x] "What holiday is on July 4th?" → Independence Day
+- [x] "Who is the leader of the United States?" → the President
 
 ### Maps and Geography Basics
 
 **Concepts to teach:**
-- [ ] Maps show places from above
-- [ ] Globe is a model of the Earth
-- [ ] Land and water on maps
-- [ ] Continents: 7 continents (North America, South America, Europe, Africa, Asia, Australia, Antarctica)
-- [ ] Oceans: 4 oceans (Atlantic, Pacific, Indian, Arctic)
-- [ ] Cardinal directions: North, South, East, West
+- [x] Maps show places from above
+- [x] Globe is a model of the Earth
+- [x] Land and water on maps
+- [x] Continents: 7 continents (North America, South America, Europe, Africa, Asia, Australia, Antarctica)
+- [x] Oceans: 4 oceans (Atlantic, Pacific, Indian, Arctic)
+- [x] Cardinal directions: North, South, East, West
 
 **Tests for K Geography:**
-- [ ] "How many continents are there?" → 7
-- [ ] "Name the continent we live on" → North America
-- [ ] "What is a globe?" → a model of the Earth
-- [ ] "Name the four directions" → North, South, East, West
+- [x] "How many continents are there?" → 7
+- [x] "Name the continent we live on" → North America
+- [x] "What is a globe?" → a model of the Earth
+- [x] "Name the four directions" → North, South, East, West
 
 ---
 

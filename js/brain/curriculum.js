@@ -7481,54 +7481,243 @@ export class Curriculum {
     };
   }
 
+  // ═══════════════════════════════════════════════════════════════════
+  // T14.24 Session 114.8 — Social-K equational course (LAW 3 + LAW 7)
+  // ═══════════════════════════════════════════════════════════════════
+
+  /**
+   * Core Knowledge K community helpers — helper → job via sem↔sem binding.
+   */
+  async _teachCommunityHelpers(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const semRegion = cluster.regions.sem;
+    const freeRegion = cluster.regions.free;
+    if (!semRegion || !freeRegion) return;
+
+    const HELPERS = [
+      { helper: 'firefighter', job: 'fires' },
+      { helper: 'police',      job: 'safety' },
+      { helper: 'doctor',      job: 'sick' },
+      { helper: 'nurse',       job: 'care' },
+      { helper: 'teacher',     job: 'learn' },
+      { helper: 'dentist',     job: 'teeth' },
+      { helper: 'farmer',      job: 'food' },
+      { helper: 'mail',        job: 'letters' },
+    ];
+    const facts = [];
+    for (const { helper, job } of HELPERS) {
+      const hEmb = sharedEmbeddings.getEmbedding(helper);
+      const jEmb = sharedEmbeddings.getEmbedding(job);
+      if (!hEmb || !jEmb) continue;
+      facts.push({ writes: [
+        { region: semRegion,  feat: jEmb, binarize: false },
+        { region: freeRegion, feat: hEmb, binarize: false },
+      ]});
+    }
+    await this._teachCombination(facts, { reps: 8 });
+    console.log(`[Curriculum] _teachCommunityHelpers: ${facts.length} × 8 reps`);
+  }
+
+  /**
+   * Core Knowledge K needs vs wants — binary classification with fineType tag.
+   */
+  async _teachNeedsVsWants(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const semRegion = cluster.regions.sem;
+    const fineTypeRegion = cluster.regions.fineType;
+    const motorRegion = cluster.regions.motor;
+    if (!semRegion || !fineTypeRegion || !motorRegion) return;
+    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
+    const needTag = new Float64Array(fineTypeSize);
+    const wantTag = new Float64Array(fineTypeSize);
+    const half = Math.floor(fineTypeSize / 2);
+    for (let i = 0; i < half; i++) needTag[i] = 1;
+    for (let i = half; i < fineTypeSize; i++) wantTag[i] = 1;
+
+    const CLASSIFIED = [
+      { thing: 'food',     type: 'need' },
+      { thing: 'water',    type: 'need' },
+      { thing: 'shelter',  type: 'need' },
+      { thing: 'clothing', type: 'need' },
+      { thing: 'air',      type: 'need' },
+      { thing: 'sleep',    type: 'need' },
+      { thing: 'toy',      type: 'want' },
+      { thing: 'candy',    type: 'want' },
+      { thing: 'game',     type: 'want' },
+      { thing: 'tv',       type: 'want' },
+      { thing: 'phone',    type: 'want' },
+    ];
+    const facts = [];
+    for (const { thing, type } of CLASSIFIED) {
+      const emb = sharedEmbeddings.getEmbedding(thing);
+      if (!emb) continue;
+      facts.push({ writes: [
+        { region: semRegion,      feat: emb, binarize: false },
+        { region: fineTypeRegion, feat: type === 'need' ? needTag : wantTag },
+        { region: motorRegion,    feat: encodeLetter(type[0]) },
+      ]});
+    }
+    await this._teachCombination(facts, { reps: 6 });
+    console.log(`[Curriculum] _teachNeedsVsWants: ${facts.length} × 6 reps`);
+  }
+
+  /**
+   * Core Knowledge K American symbols — symbol ↔ fact pairs.
+   */
+  async _teachAmericanSymbols(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const semRegion = cluster.regions.sem;
+    const freeRegion = cluster.regions.free;
+    if (!semRegion || !freeRegion) return;
+
+    const SYMBOLS = [
+      { concept: 'flag colors',    answer: 'red white blue' },
+      { concept: 'fifty stars',    answer: 'states' },
+      { concept: 'national bird',  answer: 'eagle' },
+      { concept: 'july fourth',    answer: 'independence' },
+      { concept: 'country leader', answer: 'president' },
+      { concept: 'liberty statue', answer: 'freedom' },
+      { concept: 'thanksgiving',   answer: 'thanks' },
+      { concept: 'presidents day', answer: 'honor' },
+    ];
+    const facts = [];
+    for (const { concept, answer } of SYMBOLS) {
+      const words = concept.split(' ');
+      const aWords = answer.split(' ');
+      for (const cWord of words) {
+        const cEmb = sharedEmbeddings.getEmbedding(cWord);
+        if (!cEmb) continue;
+        for (const aWord of aWords) {
+          const aEmb = sharedEmbeddings.getEmbedding(aWord);
+          if (!aEmb) continue;
+          facts.push({ writes: [
+            { region: semRegion,  feat: cEmb, binarize: false },
+            { region: freeRegion, feat: aEmb, binarize: false },
+          ]});
+        }
+      }
+    }
+    await this._teachCombination(facts, { reps: 6 });
+    console.log(`[Curriculum] _teachAmericanSymbols: ${facts.length} × 6 reps`);
+  }
+
+  /**
+   * Core Knowledge K geography — continents, oceans, cardinal directions.
+   */
+  async _teachGeographyBasics(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const semRegion = cluster.regions.sem;
+    const freeRegion = cluster.regions.free;
+    if (!semRegion || !freeRegion) return;
+
+    const GEO_FACTS = [
+      // Continent count
+      { concept: 'continents count', answer: 'seven' },
+      // Continents
+      { concept: 'north america',    answer: 'continent' },
+      { concept: 'south america',    answer: 'continent' },
+      { concept: 'europe',           answer: 'continent' },
+      { concept: 'africa',           answer: 'continent' },
+      { concept: 'asia',             answer: 'continent' },
+      { concept: 'australia',        answer: 'continent' },
+      { concept: 'antarctica',       answer: 'continent' },
+      // Oceans
+      { concept: 'atlantic',         answer: 'ocean' },
+      { concept: 'pacific',          answer: 'ocean' },
+      { concept: 'indian',           answer: 'ocean' },
+      { concept: 'arctic',           answer: 'ocean' },
+      // Cardinal directions
+      { concept: 'north direction',  answer: 'up' },
+      { concept: 'south direction',  answer: 'down' },
+      { concept: 'east direction',   answer: 'right' },
+      { concept: 'west direction',   answer: 'left' },
+      // Globe
+      { concept: 'globe',            answer: 'earth' },
+      { concept: 'map',              answer: 'places' },
+    ];
+    const facts = [];
+    for (const { concept, answer } of GEO_FACTS) {
+      const cWords = concept.split(' ');
+      const cEmb = cWords.length > 1
+        ? sharedEmbeddings.getEmbedding(cWords[0])  // first word primary anchor
+        : sharedEmbeddings.getEmbedding(concept);
+      const aEmb = sharedEmbeddings.getEmbedding(answer);
+      if (!cEmb || !aEmb) continue;
+      facts.push({ writes: [
+        { region: semRegion,  feat: cEmb, binarize: false },
+        { region: freeRegion, feat: aEmb, binarize: false },
+      ]});
+    }
+    await this._teachCombination(facts, { reps: 6 });
+    console.log(`[Curriculum] _teachGeographyBasics: ${facts.length} × 6 reps`);
+  }
+
   async runSocKReal(ctx) {
     // Session 56 — family-role concept lattice with kinship features
     await this._teachFamilyRoles();
 
-    // ── Core Knowledge K: Expanded vocabulary ──
-    // Family, community, helpers, rules, American symbols, holidays
-    const SOC_K_VOCAB = [
-      // family
-      'mom', 'dad', 'sister', 'brother', 'baby', 'grandma', 'grandpa',
-      'family', 'home', 'house', 'apartment',
-      // community
-      'school', 'teacher', 'friend', 'neighbor', 'town', 'city',
-      'park', 'store', 'library', 'church', 'hospital',
-      // community helpers
-      'firefighter', 'police', 'doctor', 'nurse', 'mail',
-      // civic basics
-      'rule', 'share', 'kind', 'help', 'turn', 'fair', 'safe',
-      // American symbols
-      'flag', 'star', 'eagle', 'president',
-      // basic needs
-      'food', 'water', 'shelter', 'clothing',
+    // Session 114.8 REMAKE — equational Core Knowledge K teaching
+    if (!this._socKRemakeDone) {
+      await this._teachCommunityHelpers(ctx);
+      await this._teachNeedsVsWants(ctx);
+      await this._teachAmericanSymbols(ctx);
+      await this._teachGeographyBasics(ctx);
+
+      // Existing causal chains retained — equational per Law 3
+      await this._teachCausalChains([
+        ['fire', 'firefighter'], ['sick', 'doctor'], ['hurt', 'nurse'],
+        ['crime', 'police'], ['learn', 'school'], ['share', 'friend'],
+        ['kind', 'happy'], ['mean', 'sad'], ['help', 'thank'],
+        ['rule', 'safe'], ['work', 'money'], ['money', 'food'],
+      ]);
+
+      this._socKRemakeDone = true;
+    }
+
+    return await this._gateSocKReal();
+  }
+
+  async _gateSocKReal() {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.synapses) return { pass: false, reason: 'no cluster' };
+
+    const socKProductionSamples = [
+      // Self / Family / Community Tests
+      { question: 'who fights fires', expected: ['firefighter', 'f'] },
+      { question: 'who helps sick people', expected: ['doctor', 'd'] },
+      { question: 'what are the four basic needs', expected: ['food', 'water', 'shelter', 'clothing', 'f', 'w', 's', 'c'] },
+      { question: 'is a toy a need or a want', expected: ['want', 'w'] },
+      { question: 'is food a need or a want', expected: ['need', 'n'] },
+      // American Symbols Tests
+      { question: 'what colors are on the american flag', expected: ['red', 'white', 'blue', 'r', 'w', 'b'] },
+      { question: 'what do the fifty stars represent', expected: ['states', 's'] },
+      { question: 'what is the national bird', expected: ['eagle', 'e'] },
+      { question: 'what holiday is on july fourth', expected: ['independence', 'i'] },
+      { question: 'who is the leader of the united states', expected: ['president', 'p'] },
+      // Geography Tests
+      { question: 'how many continents are there', expected: ['7', 'seven', 's'] },
+      { question: 'name the continent we live on', expected: ['north', 'america', 'n', 'a'] },
+      { question: 'what is a globe', expected: ['earth', 'model', 'e', 'm'] },
+      { question: 'name the four directions', expected: ['north', 'south', 'east', 'west', 'n', 's', 'e', 'w'] },
     ];
-    await this._teachVocabList(SOC_K_VOCAB, ctx, { reps: 3 });
-
-    // ── Core Knowledge K sentences ──
-    const SOC_K_SENTENCES = [
-      'my family loves me', 'mom takes care of me', 'dad works hard',
-      'i go to school every day', 'my teacher helps me learn',
-      'we share toys with friends', 'we take turns on the slide',
-      'rules keep us safe', 'we raise our hand to talk',
-      'a firefighter puts out fires', 'a doctor helps sick people',
-      'a police officer keeps us safe', 'a nurse takes care of you',
-      'the flag has red white and blue', 'the eagle is our bird',
-      'we need food and water', 'we need a home to live in',
-      'be kind to your friends', 'help people who need it',
-    ];
-    await this._teachSentenceList(SOC_K_SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-
-    // ── EQUATIONAL REASONING: Social causal chains ──
-    // Community cause-effect relationships
-    await this._teachCausalChains([
-      ['fire', 'firefighter'], ['sick', 'doctor'], ['hurt', 'nurse'],
-      ['crime', 'police'], ['learn', 'school'], ['share', 'friend'],
-      ['kind', 'happy'], ['mean', 'sad'], ['help', 'thank'],
-      ['rule', 'safe'], ['work', 'money'], ['money', 'food'],
-    ]);
-
-    return this._teachVocabList(SOC_K_VOCAB.slice(0, 15), ctx, { reps: 3 });
+    const prodResult = await this._probeProductionBatch(socKProductionSamples, {
+      visualCortex: (this.engine && this.engine.visualCortex) || null,
+    });
+    const prodRate = prodResult.total > 0 ? prodResult.pass / prodResult.total : 0;
+    const pass = prodRate >= 0.95;
+    const pct = (r) => (r * 100).toFixed(0);
+    const prodFailSummary = prodResult.fails && prodResult.fails.length > 0
+      ? ' [FAIL: ' + prodResult.fails.slice(0, 5).map(f => `"${f.q}"→"${String(f.emitted).slice(0, 30)}"`).join('; ') + ']'
+      : '';
+    return {
+      pass,
+      reason: `PROD ${prodResult.pass}/${prodResult.total} (${pct(prodRate)}%)${prodFailSummary}`,
+      metrics: { prodRate, prodFails: prodResult.fails },
+    };
   }
 
   async runArtKReal(ctx) {
