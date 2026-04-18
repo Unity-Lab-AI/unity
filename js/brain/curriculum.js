@@ -3720,7 +3720,7 @@ export class Curriculum {
       const _semToMotorProj = cluster?.crossProjections?.['sem_to_motor'];
       const _projNnz = _semToMotorProj?.nnz ?? 'n/a';
       const _projShape = _semToMotorProj ? `${_semToMotorProj.rows}x${_semToMotorProj.cols}` : 'n/a';
-      console.log(`[Curriculum][K-DIAG] gate: inv=${_invSize}, motor=${_motorSize}, mGroup=${_motorMGroup}, sem_to_motor=${_projShape} nnz=${_projNnz}`);
+      console.log(`[Curriculum][K-DIAG] gate: inv=${_invSize}, motor=${_motorSize}, mGroup=${_motorMGroup}, sem_to_motor=${_projShape} nnz=${_projNnz}, noise=${cluster.noiseAmplitude.toFixed(2)}, tonicDrive=${cluster.tonicDrive.toFixed(2)}, driveBaseline=${cluster.driveBaseline.toFixed(2)}, emotionalGate=${cluster.emotionalGate.toFixed(2)}, actionGate=${cluster.actionGate.toFixed(2)}, gainMultiplier=${cluster.gainMultiplier.toFixed(2)}, effectiveDrive=${(cluster.tonicDrive * cluster.driveBaseline * cluster.emotionalGate * cluster.actionGate * cluster.gainMultiplier).toFixed(2)}`);
     } catch (err) {
       console.warn('[Curriculum][K-DIAG] gate log failed:', err?.message || err);
     }
@@ -4024,19 +4024,44 @@ export class Curriculum {
       // trajectories are independent; summing reveals the trained
       // attractor direction.
       const motorAccum = new Float64Array(motorSize_);
+      let _totalClusterSpikes = 0;
+      let _totalMotorSpikes = 0;
+      let _totalSemSpikes = 0;
+      const _semRegion = cluster.regions.sem;
       for (let run = 0; run < DYN_PROD_AVG_RUNS; run++) {
         _probeReset();
         cluster.injectEmbeddingToRegion('sem', emb, 1.0);
         for (let t = 0; t < DYN_PROD_TICKS; t++) {
           cluster.step(0.001);
+          // Count ALL spikes for diagnostic
+          for (let i = 0; i < cluster.size; i++) {
+            if (cluster.lastSpikes[i]) _totalClusterSpikes++;
+          }
           for (let i = 0; i < motorSize_; i++) {
-            if (cluster.lastSpikes[motorRegion_.start + i]) motorAccum[i]++;
+            if (cluster.lastSpikes[motorRegion_.start + i]) {
+              motorAccum[i]++;
+              _totalMotorSpikes++;
+            }
+          }
+          if (_semRegion) {
+            for (let i = _semRegion.start; i < _semRegion.end; i++) {
+              if (cluster.lastSpikes[i]) _totalSemSpikes++;
+            }
           }
           // Re-inject sem periodically to sustain attention
           if (t === 5 || t === 12) {
             cluster.injectEmbeddingToRegion('sem', emb, 0.5);
           }
         }
+      }
+      // Stash firing diag for first-probe log
+      if (_firstProbeDiag === null) {
+        this._firstProbeFiringDiag = {
+          totalCluster: _totalClusterSpikes,
+          totalMotor: _totalMotorSpikes,
+          totalSem: _totalSemSpikes,
+          maxPossibleMotor: motorSize_ * DYN_PROD_TICKS * DYN_PROD_AVG_RUNS,
+        };
       }
       // Reduce motor spike counts to 26 letter slots.
       const readoutSize = Math.min(invSize_, LETTER_SLOTS);
@@ -4069,7 +4094,9 @@ export class Curriculum {
         const expectedRank = topSlots.findIndex(s => s.idx === expectedIdx);
         let posCount = 0;
         for (let i = 0; i < emb.length; i++) if (emb[i] > 0) posCount++;
-        _firstProbeDiag = `[Curriculum][K-DIAG] DYN-PROD[${p.word}→${p.expected}] decoded=${decoded || '∅'}, emb_pos=${posCount}/${emb.length}, expected_slot=${p.expected}(${expectedIdx}:${Number.isFinite(expectedVal) ? expectedVal.toFixed(3) : 'NaN'}) rank=${expectedRank + 1}/${motorReadout.length}, top5_motor=${topStr}`;
+        const fd = this._firstProbeFiringDiag;
+        const firingStr = fd ? `, spikes(cluster=${fd.totalCluster},motor=${fd.totalMotor}/${fd.maxPossibleMotor},sem=${fd.totalSem})` : '';
+        _firstProbeDiag = `[Curriculum][K-DIAG] DYN-PROD[${p.word}→${p.expected}] decoded=${decoded || '∅'}, emb_pos=${posCount}/${emb.length}, expected_slot=${p.expected}(${expectedIdx}:${Number.isFinite(expectedVal) ? expectedVal.toFixed(3) : 'NaN'}) rank=${expectedRank + 1}/${motorReadout.length}, top5_motor=${topStr}${firingStr}`;
       }
       if (decoded === p.expected) {
         prodPass++;
