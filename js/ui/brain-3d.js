@@ -617,15 +617,20 @@ export class Brain3D {
     // from view" and we needed visibility on exactly which init stage
     // died. Every failure path now prints console.error AND exposes
     // the Brain3D instance on window so devtools can inspect state.
+    // Each failure path stashes `_initError` so the on-page banner in
+    // app.js can surface the specific reason without DevTools.
     try {
       this._buildDOM();
     } catch (err) {
       console.error('[Brain3D] _buildDOM threw:', err, err.stack);
+      this._initError = `_buildDOM threw: ${err?.message || err}`;
       this._destroyed = true;
       return;
     }
     if (!this._canvas) {
-      console.error('[Brain3D] Canvas not created — container:', containerId, 'found element:', document.getElementById(containerId));
+      const msg = `Canvas not created — container "${containerId}" ${document.getElementById(containerId) ? 'found' : 'NOT FOUND in DOM'}`;
+      console.error('[Brain3D] ' + msg);
+      this._initError = msg;
       this._destroyed = true;
       return;
     }
@@ -633,13 +638,16 @@ export class Brain3D {
       this._genPositions();
     } catch (err) {
       console.error('[Brain3D] _genPositions threw:', err, err.stack);
+      this._initError = `_genPositions threw: ${err?.message || err}`;
       this._destroyed = true;
       return;
     }
     try {
       this._initGL();
       if (!this._gl) {
-        console.error('[Brain3D] _initGL returned without creating GL context — WebGL unavailable in this browser?');
+        const msg = 'WebGL context creation failed — browser may not support WebGL, or context was lost';
+        console.error('[Brain3D] ' + msg);
+        this._initError = msg;
         this._destroyed = true;
         return;
       }
@@ -647,6 +655,7 @@ export class Brain3D {
       console.log('[Brain3D] init complete — container:', containerId, 'canvas:', this._canvas.width + 'x' + this._canvas.height, 'gl:', !!this._gl);
     } catch (err) {
       console.error('[Brain3D] _initGL or _uploadStatic threw:', err, err.stack);
+      this._initError = `_initGL/_uploadStatic threw: ${err?.message || err}`;
       this._destroyed = true;
     }
     // Expose on window for devtools inspection

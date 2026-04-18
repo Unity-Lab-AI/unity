@@ -80,9 +80,32 @@ let landingBrainSource = null; // RemoteBrain or null
     landingBrainSource = await detectRemoteBrain();
   } catch {}
 
-  // Init 3D brain on landing container
+  // Init 3D brain on landing container.
+  // Per Gee 2026-04-18: "the 3D brain still is not dispalying it still
+  // hasnt been fixed no 3D brain is rendering since i originally
+  // mentioned it". The constructor catches internal errors silently via
+  // _destroyed flag but only logs to console, which the operator won't
+  // see without DevTools. Render a visible banner to #brain-3d-landing
+  // if init fails so the failure reason surfaces immediately without
+  // having to open F12.
+  const _show3dError = (reason) => {
+    const host = document.getElementById('brain-3d-landing');
+    if (!host) return;
+    const banner = document.createElement('div');
+    banner.style.cssText = 'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(80,0,0,0.85);color:#ff9090;font-family:monospace;font-size:13px;padding:20px 28px;border:1px solid #ff4040;border-radius:6px;max-width:80%;text-align:center;z-index:9999;';
+    banner.textContent = '3D Brain init failed: ' + reason;
+    host.appendChild(banner);
+  };
   try {
     landingBrain3d = new Brain3D('brain-3d-landing');
+    if (!landingBrain3d || landingBrain3d._destroyed) {
+      _show3dError(
+        landingBrain3d && landingBrain3d._initError
+          ? landingBrain3d._initError
+          : 'Brain3D constructor returned destroyed instance (check DevTools console for specifics — _buildDOM / _genPositions / _initGL / _uploadStatic logged the specific throw)'
+      );
+      throw new Error('Brain3D init failed silently — banner shown on page');
+    }
     // Make the overlay fit inside the landing container, not fullscreen
     if (landingBrain3d._overlay) {
       landingBrain3d._overlay.style.position = 'absolute';
