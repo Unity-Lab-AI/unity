@@ -1334,70 +1334,119 @@ class ServerBrain {
     });
   }
 
-  /**
-   * Upload a sparse CSR matrix to GPU. Used for T14.4 cross-region
-   * projections. `matrix` should have `.rows`, `.cols`, `.nnz`,
-   * `.values` (Float32Array-compatible), `.colIdx` (Uint32), `.rowPtr`.
-   *
-   * Safety: JSON-serializing massive typed arrays runs into V8's
-   * ~512 MB string limit AND costs seconds of GC-heavy serialization.
-   * For matrices over ~10 M nnz we skip the upload and leave the
-   * matrix on the CPU path until T17.3.e adds binary WebSocket
-   * frames for efficient transfer.
-   */
-  async gpuSparseUpload(name, matrix) {
-    const nnz = (matrix.values && matrix.values.length) || matrix.nnz || 0;
-    const MAX_JSON_NNZ = 10_000_000; // ~240 MB JSON payload, safely under V8 string cap
-    if (nnz > MAX_JSON_NNZ) {
-      console.warn(`[Brain] gpuSparseUpload(${name}) skipped: nnz=${nnz.toLocaleString()} exceeds safe JSON size ${MAX_JSON_NNZ.toLocaleString()}. Matrix stays on CPU path until binary-frame transfer ships.`);
-      return { ok: false, error: 'matrix too large for JSON transfer' };
-    }
-    return this._sparseSend({
-      type: 'sparse_upload',
-      name,
-      rows: matrix.rows,
-      cols: matrix.cols,
-      values: Array.from(matrix.values || []),
-      colIdx: Array.from(matrix.colIdx || []),
-      rowPtr: Array.from(matrix.rowPtr || []),
-    }, 60_000); // larger timeout for upload — matrices can be big
+  // ── Binary WebSocket frame encoders/decoders ──
+  //
+  // Wire format header (all frames):
+  //   0..3:  magic "SPRS" (request) or "SPRR" (response)
+  //   4:     type byte  (1=upload, 2=propagate, 3=hebbian)
+  //   5..8:  reqId (uint32 LE)
+  //   9..10: nameLen (uint16 LE)
+  //   11..:  name (UTF-8), then type-specific payload
+  //
+  // Typed-array payloads are concatenated with Uint32 length prefixes:
+  //   [len][data] for each of values/colIdx/rowPtr/preSpikes/postSpikes
+  //
+  // Binary frames bypass V8's ~512 MB JSON string limit AND the
+  // JSON.stringify + JSON.parse round-trip cost. 10-20× faster for
+  // typed-array payloads; unlimited size within available memory.
+  //
+  // Per Gee 2026-04-18 "make it work without jerry rigging" — this
+  // replaces the 10M-nnz JSON-safety skip with real binary transport.
+
+  _encodeSparseHeader(typeByte, reqId, name) {
+    const nameBuf = Buffer.from(name, 'utf8');
+    const hdr = Buffer.alloc(11 + nameBuf.length);
+    hdr.write('SPRS', 0, 'ascii');
+    hdr[4] = typeByte;
+    hdr.writeUInt32LE(reqId, 5);
+    hdr.writeUInt16LE(nameBuf.length, 9);
+    nameBuf.copy(hdr, 11);
+    return hdr;
+  }
+
+  _sparseSendBinary(msgBuffer, reqId, timeoutMs = 120_000) {
+    if (!this._gpuClient || this._gpuClient.readyState !== 1) return Promise.resolve(null);
+    if (!this._gpuSparsePending) this._gpuSparsePending = new Map();
+    this._gpuClient.send(msgBuffer, { binary: true });
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        if (this._gpuSparsePending && this._gpuSparsePending.has(reqId)) {
+          this._gpuSparsePending.delete(reqId);
+          console.warn(`[Brain] sparse binary reqId=${reqId} timed out after ${timeoutMs}ms`);
+          resolve(null);
+        }
+      }, timeoutMs);
+      this._gpuSparsePending.set(reqId, { resolve, reject, timeout });
+    });
   }
 
   /**
-   * Dispatch sparse propagate: currents = matrix @ preSpikes.
+   * Upload a sparse CSR matrix to GPU via binary WebSocket frame.
+   * No size limit — transports Float32/Uint32 typed arrays directly
+   * as binary, bypassing JSON.
+   */
+  async gpuSparseUpload(name, matrix) {
+    const reqId = this._nextSparseReqId();
+    const rows = matrix.rows;
+    const cols = matrix.cols;
+    const values = matrix.values instanceof Float32Array ? matrix.values : new Float32Array(matrix.values || []);
+    const colIdx = matrix.colIdx instanceof Uint32Array ? matrix.colIdx : new Uint32Array(matrix.colIdx || []);
+    const rowPtr = matrix.rowPtr instanceof Uint32Array ? matrix.rowPtr : new Uint32Array(matrix.rowPtr || []);
+    const nnz = values.length;
+
+    const hdr = this._encodeSparseHeader(1, reqId, name);
+    const meta = Buffer.alloc(12);
+    meta.writeUInt32LE(rows, 0);
+    meta.writeUInt32LE(cols, 4);
+    meta.writeUInt32LE(nnz, 8);
+    const valuesBuf = Buffer.from(values.buffer, values.byteOffset, values.byteLength);
+    const colIdxBuf = Buffer.from(colIdx.buffer, colIdx.byteOffset, colIdx.byteLength);
+    const rowPtrBuf = Buffer.from(rowPtr.buffer, rowPtr.byteOffset, rowPtr.byteLength);
+    const full = Buffer.concat([hdr, meta, valuesBuf, colIdxBuf, rowPtrBuf]);
+    return this._sparseSendBinary(full, reqId, 180_000);
+  }
+
+  /**
+   * Dispatch sparse propagate via binary frame: currents = matrix @ preSpikes.
    * Returns Float32Array (or null on timeout).
    */
   async gpuSparsePropagate(name, preSpikes) {
-    const preArray = preSpikes instanceof Uint8Array ? Array.from(preSpikes)
-      : preSpikes instanceof Uint32Array ? Array.from(preSpikes)
-      : Array.from(preSpikes || []);
-    const result = await this._sparseSend({
-      type: 'sparse_propagate',
-      name,
-      preSpikes: preArray,
-    });
+    const reqId = this._nextSparseReqId();
+    const pre = preSpikes instanceof Uint32Array ? preSpikes
+      : preSpikes instanceof Uint8Array ? Uint32Array.from(preSpikes)
+      : new Uint32Array(preSpikes || []);
+    const hdr = this._encodeSparseHeader(2, reqId, name);
+    const lenBuf = Buffer.alloc(4);
+    lenBuf.writeUInt32LE(pre.length, 0);
+    const preBuf = Buffer.from(pre.buffer, pre.byteOffset, pre.byteLength);
+    const full = Buffer.concat([hdr, lenBuf, preBuf]);
+    const result = await this._sparseSendBinary(full, reqId, 30_000);
     if (!result || !result.currents) return null;
-    return new Float32Array(result.currents);
+    return result.currents; // Float32Array assembled by ack handler
   }
 
   /**
-   * Dispatch sparse Hebbian: update weights based on pre/post spike
-   * co-activity.
+   * Dispatch sparse Hebbian via binary frame.
    */
   async gpuSparseHebbian(name, preSpikes, postSpikes, lr) {
-    const preArray = preSpikes instanceof Uint8Array ? Array.from(preSpikes)
-      : preSpikes instanceof Uint32Array ? Array.from(preSpikes)
-      : Array.from(preSpikes || []);
-    const postArray = postSpikes instanceof Uint8Array ? Array.from(postSpikes)
-      : postSpikes instanceof Uint32Array ? Array.from(postSpikes)
-      : Array.from(postSpikes || []);
-    return this._sparseSend({
-      type: 'sparse_hebbian',
-      name,
-      preSpikes: preArray,
-      postSpikes: postArray,
-      lr,
-    });
+    const reqId = this._nextSparseReqId();
+    const pre = preSpikes instanceof Uint32Array ? preSpikes
+      : preSpikes instanceof Uint8Array ? Uint32Array.from(preSpikes)
+      : new Uint32Array(preSpikes || []);
+    const post = postSpikes instanceof Uint32Array ? postSpikes
+      : postSpikes instanceof Uint8Array ? Uint32Array.from(postSpikes)
+      : new Uint32Array(postSpikes || []);
+    const hdr = this._encodeSparseHeader(3, reqId, name);
+    const preLen = Buffer.alloc(4);
+    preLen.writeUInt32LE(pre.length, 0);
+    const postLen = Buffer.alloc(4);
+    postLen.writeUInt32LE(post.length, 0);
+    const lrBuf = Buffer.alloc(4);
+    lrBuf.writeFloatLE(lr || 0.01, 0);
+    const preBuf = Buffer.from(pre.buffer, pre.byteOffset, pre.byteLength);
+    const postBuf = Buffer.from(post.buffer, post.byteOffset, post.byteLength);
+    const full = Buffer.concat([hdr, preLen, preBuf, postLen, postBuf, lrBuf]);
+    return this._sparseSendBinary(full, reqId, 30_000);
   }
 
   _updateDerivedState() {
@@ -2566,6 +2615,40 @@ wss.on('connection', (ws, req) => {
   }));
 
   ws.on('message', (data) => {
+    // T17.3.e — binary WebSocket frames for sparse matrix responses.
+    // Client sends "SPRR" magic + type + reqId + payload. Decode and
+    // route to the matching pending promise.
+    if (Buffer.isBuffer(data) && data.length >= 9 && data.slice(0, 4).toString('ascii') === 'SPRR') {
+      const typeByte = data[4];
+      const reqId = data.readUInt32LE(5);
+      if (brain._gpuSparsePending) {
+        const pending = brain._gpuSparsePending.get(reqId);
+        if (pending) {
+          brain._gpuSparsePending.delete(reqId);
+          clearTimeout(pending.timeout);
+          if (typeByte === 2) {
+            // propagate response — currents Float32Array
+            const currentsLen = data.readUInt32LE(9);
+            const currentsOffset = 13;
+            const expectedLen = currentsOffset + currentsLen * 4;
+            if (data.length < expectedLen) {
+              pending.resolve({ error: 'truncated propagate response' });
+            } else {
+              // Copy to a fresh Float32Array so we own the memory
+              const currents = new Float32Array(data.buffer.slice(
+                data.byteOffset + currentsOffset,
+                data.byteOffset + currentsOffset + currentsLen * 4,
+              ));
+              pending.resolve({ currents });
+            }
+          } else {
+            // upload_ack / hebbian_ack — just resolve OK
+            pending.resolve({ ok: true, reqId });
+          }
+        }
+      }
+      return;
+    }
     try {
       const msg = JSON.parse(data.toString());
 
