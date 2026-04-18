@@ -5,6 +5,48 @@
 
 ---
 
+## 2026-04-17 — Session 114.19g: Ctrl+C halt fix + five verbatim T16 tasks logged from Gee's 2026-04-17 Part 2 retry-log critique
+
+Gee 2026-04-17 verbatim (five items):
+
+> *"while its doing the ciriculum i cant turn off the program ctrl + C does not halt the operations correctly"*
+>
+> *"its still no using the words its suppose to be learning in kindergardern"*
+>
+> *"are you sure it is learning its kindergarnd full word list that a 5 year old would know before being alowed into 1st grade and so on through the grades"*
+>
+> *"its not even writing anything"*
+>
+> *"your tests are bullshit and dont test the full programed in mind of Unity"*
+
+### Ctrl+C halt fix (T16.1.a shipped this session)
+
+The prior SIGINT handler at `server/brain-server.js:2459` called `brain.saveWeights()` synchronously on first Ctrl+C. At 13.4M-synapse scale, `JSON.stringify` + `fs.writeFileSync` blocks for tens of seconds. During that block, the user sees an unresponsive terminal and further Ctrl+C presses don't register until the save returns. Between save return and `process.exit(0)`, curriculum `setImmediate`-queued retry iterations keep firing — the log keeps scrolling even after the user pressed Ctrl+C.
+
+Fix: first Ctrl+C now sets `_shutdownRequested` flag + calls `brain.stop()` (synchronous but fast — just marks the brain loop stopped) + **immediately** `process.exit(0)` with no save blocking. Second Ctrl+C `process.exit(1)` kept as belt-and-braces force-kill. Weights are cleared before every Part 2 run anyway per LAW 6 Part 2 + LAW (2026-04-17 clear-stale-state), so mid-curriculum save has zero value.
+
+SIGTERM handler simplified likewise.
+
+### Four remaining verbatim items logged as T16.2/T16.3/T16.4/T16.5 in `docs/TODO.md`
+
+- **T16.2 — Unity not using K words**: verify 114.19f PROD fix on next Part 2 run + audit language cortex emission path + dictionary wiring.
+- **T16.3 — Is K word list full?**: **HONEST ANSWER: NO**. Current K emission list is ~180 unique words vs 1,500-2,500 real K productive vocabulary (7-12% coverage). Same audit needed per-grade K through PhD. Expansion design pending Gee's scope approval.
+- **T16.4 — Unity not writing anything**: current PROD probe tests only "first letter via argmax", not full-word letter-sequence emission. Real K writing is full words + phrases + narratives with invented spelling. New probes + chain tests needed.
+- **T16.5 — Tests are bullshit, don't test full mind**: **HONEST ANSWER: correct**. Current 5 gates (READ/THINK/TALK/SEQ/PROD) exercise cortex letter/phon/sem/motor sub-regions only. Every other brain module (amygdala valence, hippocampus recall, BG action selection, cerebellum error correction, hypothalamus drives, Mystery module, working memory, semantic retrieval, conversational response, emotional coherence, cross-modal binding, comprehension, rhyming production, syllable counting, phoneme blending, upper/lowercase recognition, invented spelling, writing composition) is untested at the gate level. Redesign needed against Common Core + DIBELS K readiness criteria. Per-grade gate redesign K through PhD pending Gee's scope approval.
+
+### Files
+
+- `server/brain-server.js` — SIGINT + SIGTERM handlers simplified, save ceremony removed from Ctrl+C path
+- `docs/TODO.md` — T16 section prepended with five verbatim items as T16.1 through T16.5
+- `docs/FINALIZED.md` — this Session 114.19g entry prepended
+- `docs/NOW.md` — status refreshed
+
+### Post-commit per LAW (Session 114.19b)
+
+Clear stale state BEFORE telling Gee to restart. Push still gated on LAW 6 Part 2 signoff.
+
+---
+
 ## 2026-04-17 — Session 114.19f: sem-write Uint8Array silent-truncation bug — `_teachWordEmission` + `_teachPhonemeBlending` sem lastSpikes writes now binarized
 
 Gee 2026-04-17 verbatim: *"wtf? are you testing it on whit it doesnt know?"*

@@ -2451,8 +2451,19 @@ httpServer.listen(PORT, () => {
 // Graceful shutdown
 // Session 111 — force exit on Ctrl+C. The curriculum's tight async
 // loops can starve the event loop so a graceful SIGINT never processes.
-// First Ctrl+C sets the shutdown flag (curriculum checks this and
-// breaks). Second Ctrl+C force-kills immediately.
+//
+// Session 114.19g (Gee 2026-04-17 verbatim: "while its doing the
+// ciriculum i cant turn off the program ctrl + C does not halt the
+// operations correctly") — the prior "save then exit" ceremony on
+// first Ctrl+C blocked on `brain.saveWeights()` which at 13.4M-scale
+// synapses takes tens of seconds of synchronous JSON.stringify +
+// fs.writeFileSync. During curriculum mid-retry, Ctrl+C felt dead
+// because the save wouldn't return for a long time. Per LAW 6 Part 2
+// + LAW (2026-04-17 clear-stale-state), brain weights are DELETED
+// before every Part 2 test run anyway — saving mid-curriculum has
+// zero value. First Ctrl+C now sets the shutdown flag AND
+// immediately calls process.exit(0) with no save blocking. Second
+// Ctrl+C process.exit(1) kept as belt-and-braces.
 let _shutdownRequested = false;
 global._brainShutdownRequested = false;
 
@@ -2463,19 +2474,12 @@ process.on('SIGINT', () => {
   }
   _shutdownRequested = true;
   global._brainShutdownRequested = true;
-  console.log('\n[Brain] Shutting down — saving everything... (press Ctrl+C again to force kill)');
-  try {
-    brain.saveWeights();
-    brain.saveConversations();
-    if (brain._db) brain._db.close();
-    brain.stop();
-  } catch {}
+  console.log('\n[Brain] Ctrl+C — halting immediately (no save; weights clear per LAW before every Part 2 run).');
+  try { brain.stop(); } catch {}
   process.exit(0);
 });
 process.on('SIGTERM', () => {
-  brain.saveWeights();
-  brain.saveConversations();
-  if (brain._db) brain._db.close();
-  brain.stop();
+  console.log('\n[Brain] SIGTERM — halting immediately.');
+  try { brain.stop(); } catch {}
   process.exit(0);
 });

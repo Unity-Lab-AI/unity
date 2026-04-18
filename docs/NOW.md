@@ -1,6 +1,33 @@
 # NOW — Session Snapshot
 
-> Saved: 2026-04-17 19:30 (Session 114.19f sem-write Uint8Array silent-truncation bug fix — per Gee 2026-04-17 verbatim *"wtf? are you testing it on whit it doesnt know?"* — twenty-fourth commit on `syllabus-k-phd`)
+> Saved: 2026-04-17 19:45 (Session 114.19g Ctrl+C halt fix + five verbatim T16 tasks logged from Gee's Part 2 retry-log critique — per Gee 2026-04-17 verbatim *"while its doing the ciriculum i cant turn off the program ctrl + C does not halt the operations correctly" + "its still no using the words its suppose to be learning in kindergardern" + "are you sure it is learning its kindergarnd full word list that a 5 year old would know before being alowed into 1st grade and so on through the grades" + "its not even writing anything" + "your tests are bullshit and dont test the full programed in mind of Unity"* — twenty-fifth commit on `syllabus-k-phd`)
+
+## Session 114.19g — what shipped (uncommitted on top of 114.19f)
+
+### Ctrl+C halt fix (T16.1.a)
+
+`server/brain-server.js` SIGINT handler no longer calls `brain.saveWeights()` synchronously on first Ctrl+C. Prior ceremony blocked for tens of seconds at 13.4M-synapse scale on `JSON.stringify` + `fs.writeFileSync` — the terminal looked dead while setImmediate-queued curriculum iterations kept scrolling. New first Ctrl+C sets shutdown flag + `brain.stop()` + immediate `process.exit(0)`. Weights are cleared before every Part 2 run per LAW anyway, so mid-curriculum save had zero value. SIGTERM simplified likewise.
+
+### Five verbatim T16 tasks logged
+
+`docs/TODO.md` prepended with T16 section containing Gee's five verbatim sentences as T16.1 through T16.5. Honest audit answers embedded inline:
+- T16.3 — K word list coverage: ~180 words vs 1,500-2,500 real K vocab = 7-12% coverage. NO, not full.
+- T16.5 — Current 5 gates exercise cortex sub-regions only. NO, they don't test the full programmed mind.
+
+Both answers require Gee's scope approval before large rewrite work begins.
+
+### Files touched this session
+
+- `server/brain-server.js` — SIGINT + SIGTERM handlers simplified
+- `docs/TODO.md` — T16 section prepended with five verbatim items
+- `docs/FINALIZED.md` — Session 114.19g entry prepended
+- `docs/NOW.md` — this file, updated header
+
+---
+
+## Session 114.19f — what shipped (already committed at f604668)
+
+### The Uint8Array truncation trap
 >
 > Session 114.19 history:
 > - 114.19 — three-phase K-foundation rebuild (real phoneme substrate + phoneme blending + primitive probes)

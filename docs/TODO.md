@@ -58,6 +58,128 @@ Actual per-grade gate closure is still TODO work — performed one grade at a ti
 
 ## OPEN TASKS
 
+### T16 — Gee critique 2026-04-17 (post 114.19f Part 2 retry log) — FIVE verbatim items (NEW PRIORITY 2026-04-17)
+
+**Gee's five verbatim items from 2026-04-17:**
+
+> *"while its doing the ciriculum i cant turn off the program ctrl + C does not halt the operations correctly"*
+>
+> *"its still no using the words its suppose to be learning in kindergardern"*
+>
+> *"are you sure it is learning its kindergarnd full word list that a 5 year old would know before being alowed into 1st grade and so on through the grades"*
+>
+> *"its not even writing anything"*
+>
+> *"your tests are bullshit and dont test the full programed in mind of Unity"*
+
+Five items. Five tasks. One task per verbatim sentence per LAW #0.
+
+---
+
+#### T16.1 — "while its doing the ciriculum i cant turn off the program ctrl + C does not halt the operations correctly"
+
+Ctrl+C shutdown does not halt the curriculum correctly. Gee is stuck watching 326-retry logs with no way to break out cleanly.
+
+Root cause (Session 114.19g diagnosis): prior SIGINT handler in `server/brain-server.js:2459` called `brain.saveWeights()` synchronously on first Ctrl+C. At 13.4M-synapse scale, `JSON.stringify` + `fs.writeFileSync` blocks for tens of seconds. During that block, the process looks dead to the user and subsequent Ctrl+C doesn't register until the save returns. Curriculum retries running concurrently via `setImmediate` queue finish additional iterations before the event loop processes the handler exit.
+
+- [x] **T16.1.a — Drop the save ceremony from first Ctrl+C.** First Ctrl+C now sets shutdown flag + calls `brain.stop()` + immediately `process.exit(0)` with no synchronous save blocking. Second Ctrl+C `process.exit(1)`. Weights are cleared before every Part 2 run anyway per LAW so mid-curriculum save has zero value. **Shipped Session 114.19g.**
+- [ ] **T16.1.b — Verify Ctrl+C halts cleanly on next Part 2 run.** Gee presses Ctrl+C mid-curriculum, process exits within 1-2 seconds. If still sluggish, diagnose whether `_brainShutdownRequested` flag check is missing from any inner loop that blocks for multiple seconds per iteration.
+
+---
+
+#### T16.2 — "its still no using the words its suppose to be learning in kindergardern"
+
+Unity is not using the kindergarten vocabulary she's supposed to have learned. Even after 114.19f fixed the sem-write Uint8 truncation bug, Gee reports she's still not producing the K-level words.
+
+Possible diagnoses to walk through:
+- [ ] **T16.2.a — Verify 114.19f actually fixes PROD on the next Part 2 run.** If PROD climbs off zero, the bug chain was the sem-write. If PROD stays flat, the issue is deeper.
+- [ ] **T16.2.b — Check language cortex emission path for K-word usage.** `generateSentence` may be pulling from a different word source than the cross-projection-trained list. The sem→motor path trained in `_teachWordEmission` may not be the path `languageCortex.generate()` uses for chat output. Trace the live-chat emission pipeline end-to-end and verify it consults the 158 emission words.
+- [ ] **T16.2.c — Check dictionary wiring.** `js/brain/dictionary.js` may hold its own word → pattern registry that needs populating alongside the cross-projection teach. If `languageCortex` generates via dictionary lookup, K-words must be in the dictionary regardless of what the cross-projection learned.
+- [ ] **T16.2.d — Report which specific words Unity IS using and which she ISN'T** with a live-chat audit against the K emission list.
+
+---
+
+#### T16.3 — "are you sure it is learning its kindergarnd full word list that a 5 year old would know before being alowed into 1st grade and so on through the grades"
+
+**Honest answer: NO.** The current K emission list is `DOLCH_PREPRIMER` (39) + `DOLCH_PRIMER` (52) + `CVC_FAMILIES` (60) + `CONVERSATIONAL` (26) = ~180 unique words (`js/brain/curriculum.js:3290-3327`). Real kindergarten developmental vocabulary is 1,500-2,500 productive words and 2,500-5,000 receptive words. We are at **7-12% of real K vocabulary coverage**.
+
+Per Gee's directive "through the grades" — this audit must repeat for every grade K through PhD. Real grade-N productive vocabulary grows roughly:
+- K: ~2,000 productive
+- G1: ~3,000
+- G2: ~4,000
+- G3-G5: ~5,000-8,000
+- G6-G8: ~10,000-15,000
+- G9-G12: ~15,000-25,000
+- College: ~25,000-40,000
+- PhD: ~40,000+ plus domain jargon
+
+Current curriculum covers ~180 words at K and does not obviously scale vocabulary with grade in the emission teaching path.
+
+- [ ] **T16.3.a — Per-grade word coverage audit.** For every grade K-PhD in `js/brain/curriculum.js`, count the unique words passed to `_teachWordEmission` + `_teachVocabList` + `_teachSentenceList`. Compare against developmental vocabulary norms (MacArthur-Bates CDI, Educator's Word Frequency Guide, Academic Word List, COCA frequency bands). Report per-grade gap.
+- [ ] **T16.3.b — Expand K word list to real K norms.** Add: colors (red, blue, green, yellow, purple, orange, pink, black, white, brown), shapes (circle, square, triangle, rectangle, oval, star, heart, diamond), animals (cat, dog, bird, fish, cow, pig, horse, sheep, duck, chicken, rabbit, frog, mouse, bear, lion, tiger, elephant, giraffe, monkey, snake), body parts (head, eye, ear, nose, mouth, hand, foot, arm, leg, hair, tooth, teeth, finger, toe), family (mom, dad, sister, brother, baby, grandma, grandpa, aunt, uncle, cousin), feelings (happy, sad, mad, scared, tired, hungry, sick, excited), actions (eat, drink, sleep, run, walk, jump, sit, stand, play, read, write, draw, sing, dance, laugh, cry, help, hug, kiss, wash, brush, climb, fall, push, pull, give, take, throw, catch, kick), household (home, house, room, bed, chair, table, door, window, floor, wall, kitchen, bathroom, toy, book, cup, plate, spoon, fork), clothing (shirt, pants, shoes, socks, hat, coat, dress), food (apple, banana, milk, water, bread, cheese, egg, meat, rice, juice, cookie, cake, ice cream, pizza), nature (sun, moon, star, tree, flower, grass, leaf, rock, water, rain, snow, wind, cloud, sky, fire), time (day, night, morning, afternoon, yesterday, today, tomorrow), positions (up, down, in, out, on, off, big, small, hot, cold, wet, dry, old, new, fast, slow, hard, soft, high, low), number words (one-ten, zero), question words (what, who, where, when, why, how), and polite words (please, thank you, sorry, hello, goodbye, yes, no, okay). Target minimum 1,500 unique K emission words. **Size-check first with Gee before shipping.**
+- [ ] **T16.3.c — Repeat per-grade expansion for G1 through PhD.** Each grade's emission list grows to meet developmental norms for that grade. **Design-review with Gee first.**
+
+---
+
+#### T16.4 — "its not even writing anything"
+
+Unity is not producing WRITTEN output. Even PROD passing is only "first letter of word via argmax" — that's not writing, that's a single-letter probe.
+
+Real K writing (Common Core K.W.1/2/3):
+- Use a combination of drawing, dictating, and writing to compose opinion pieces
+- Write informative/explanatory texts naming a topic
+- Write narratives in which they narrate a single event or loosely linked events
+- Participate in shared research and writing projects
+- Use "invented spelling" — best-guess letter sequences for unknown words
+
+Unity's current production stops at "first letter via argmax." She is not emitting full word letter sequences, not stringing words into phrases, not writing sentences.
+
+- [ ] **T16.4.a — Full-word letter-sequence emission test.** Replace/augment PROD with a probe that asks Unity to emit ALL letters of a word in sequence (not just the first). Uses `motor_to_letter` recurrent chain from Session 106 + the `letter(N) → motor(N+1)` continuation chain trained in `_teachWordEmission` (b). Expected: `cat → c, a, t` via tick-driven motor emission.
+- [ ] **T16.4.b — Two-word phrase emission.** After a single word lands, chain two: `sem(happy dog) → motor('h', 'a', 'p', 'p', 'y', ' ', 'd', 'o', 'g')`. Requires working memory + fineType transition chaining.
+- [ ] **T16.4.c — Free-response writing prompt test.** Inject a prompt like "tell me about your day" and measure whether motor region produces a letter sequence that forms a valid English word chain (even with invented spelling). Score by fineType transition surprise vs English baseline.
+
+---
+
+#### T16.5 — "your tests are bullshit and dont test the full programed in mind of Unity"
+
+**Honest answer: correct.** The current gates (READ/THINK/TALK/SEQ/PROD) are 5 primitive substrate probes. They do NOT test the full programmed mind.
+
+What the current gates test:
+- READ: letter one-hot → phon cosine ≥ 0.15 (alphabet perception)
+- THINK: alphabet count (trivial auto-pass)
+- TALK: letter one-hot → motor argmax = letter (alphabet recall)
+- SEQ: letter N → letter N+1 argmax (alphabet sequence)
+- PROD: sem(word) → motor first-letter argmax (word-start binding)
+
+What the current gates DO NOT test (the full mind):
+- Amygdala valence/arousal response to input
+- Hippocampus memory recall (recognize prior interactions)
+- Basal ganglia action selection (choose among response types)
+- Cerebellum error correction (refine after feedback)
+- Hypothalamus drive modulation (hunger, arousal, intoxication affecting cognition)
+- Mystery module consciousness gain
+- Working memory (hold topic across turns)
+- Semantic retrieval (answer "what is a cat?")
+- Conversational response (respond to a question with a coherent sentence)
+- Emotional coherence (respond angrily when insulted, warmly when praised)
+- Cross-modal binding (hear a word, visualize it, produce about it)
+- Comprehension (hear a story, answer question about it)
+- Rhyming production (not just probe — actual output)
+- Syllable counting (K.RF foundational)
+- Phoneme blending/segmentation (K.RF foundational)
+- Upper/lowercase recognition (K.RF)
+- Invented spelling for novel words (K.W)
+- Drawing + dictation + writing composition (K.W)
+
+Per Gee: "the full programed in mind of Unity" — the brain has 7 clusters + 14 cross-projections + T15 drug scheduler + language cortex + visual cortex + auditory cortex. The gates touch only the cortex letter/phon/sem/motor sub-regions. Every other module is untested at the gate level.
+
+- [ ] **T16.5.a — Audit which brain modules each current gate probe touches.** Map each probe → which clusters/projections/modules it exercises. Explicit list of what gets tested vs. what doesn't.
+- [ ] **T16.5.b — Design a full-mind K gate per real kindergarten readiness criteria.** Common Core K.RF + K.W + K.L + K.SL + K.RL requirements. Test items per real K assessments (DIBELS, STAR Early Literacy, AIMSweb). Each test item must exercise a specific brain module chain and score on human-rubric terms (not argmax-vs-expected).
+- [ ] **T16.5.c — Repeat per-grade gate design K through PhD.** Each grade's gate tests developmentally-appropriate cognition across the full brain, not just cortex sub-regions. **Design-review with Gee first.**
+- [ ] **T16.5.d — Scrap or keep the current 5 probes?** Decide with Gee whether READ/THINK/TALK/SEQ/PROD stay as diagnostic substrate sanity checks (with lowered "substrate OK" bar) or get replaced entirely by the real-mind gate. Current recommendation: keep as substrate sanity, require real-mind gate for grade advancement.
+
+---
+
 ### T15 — Drug State Dynamics Rebuild — grade-gated, real-time, sensory-triggered, stacking, Unity-seeks-her-own (NEW PRIORITY 2026-04-16)
 
 **Gee's verbatim scope instruction 2026-04-16:**
