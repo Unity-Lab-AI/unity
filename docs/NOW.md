@@ -1,6 +1,47 @@
 # NOW — Session Snapshot
 
-> Saved: 2026-04-17 21:00 (Session 114.19j inventory drift root-cause fix — pre-populate '.', '?', '!' at runElaKReal start + PROD/WRITE probe argmax restricted to first 26 letter slots + expected-slot diagnostic — twenty-eighth commit on `syllabus-k-phd`)
+> Saved: 2026-04-17 21:30 (Session 114.19k DYNAMIC probes replace static slot-ranking — per Gee verbatim "shole slot shit ranking shit its fucked and not working and maybe we need a better logic system of word sleections so Unity can think and have prcess internat thoughts a think out problems witht a logic sim where she can process her input ins real time with wisdom" + approval "all three" — twenty-ninth commit on `syllabus-k-phd`)
+
+## Session 114.19k — what shipped (uncommitted on top of 114.19j at ef92350)
+
+### Abandoning static slot-ranking (Sessions 114.19d-j lineage dead-ended)
+
+Gee's 114.19j K-DIAG showed expected slot 'c' at rank 9/26 with values locked for 20+ retries. Static `sem_to_motor.propagate → per-slot-sum → argmax` approach couldn't discriminate because it used one matrix multiply, not the full brain. Gee called it directly: "shole slot shit ranking shit its fucked."
+
+### Three dynamic probes now live in `_gateElaKReal`
+
+**DYN-PROD** — sem injection + `cluster.step()` × 12 ticks with periodic re-injection, motor spike accumulation, 26-slot argmax. Uses all 14 cross-projections + intra-cluster recurrent + Rulkov dynamics every tick.
+
+**DYN-WRITE** — `cluster.generateSentence(emb, {maxTicks: 30})`. T14.6 tick-driven emission. Commits letters when motor argmax stable 3 ticks. Returns emitted sequence. Scored strictly + with first-letter credit.
+
+**RESP** — `cluster.generateSentence(sentenceEmb, {maxTicks: 50})` on 5 sentence-level context/hint pairs ("greeting friendly" → expect hi/hello; "color red apple" → expect red/apple; "mom family love" → expect mom/love/family; "dog animal pet" → expect dog/pet/run; "eat food hungry" → expect eat/food/hungry). Emission scored on overlap with hints. Prototype of T16.5.b full-mind gate.
+
+### Gate decision still on 5 substrate probes
+
+Per Gee's "keep existing 5 probes as substrate sanity, ADD full-mind on top": READ + THINK + TALK + SEQ + PROD (PROD now dynamic) gate grade advancement. WRITE + RESP report only.
+
+### Expected new log format
+
+```
+[K-DIAG] DYN-PROD[cat→c] decoded=?, emb_pos=141/300, expected_slot=c(2:X.XXX) rank=N/26, top5_motor=...
+ela/kindergarten attempt 1 — READ X/26, THINK 26/26, TALK X/26, SEQ X/25, PROD X/17, WRITE X/20 firstX/20, RESP X/5 [WRITE: cat→?; dog→?; ...] [RESP: hello→?; red→?; ...]
+```
+
+### Performance note
+
+~1054 cluster.step() calls per gate attempt. Expect 5-10s per attempt vs <1s for static probes. Trade-off: real brain dynamics cost compute but test real thinking. If too slow we can drop ticks per probe or sample fewer probes.
+
+### Files touched this session
+
+- `js/brain/curriculum.js` — PROD/WRITE/RESP blocks rewritten; `_probeReset` helper; gate reason + metrics include new probes; dead refs swept
+- `docs/FINALIZED.md` — Session 114.19k entry prepended
+- `docs/NOW.md` — this file, updated header
+
+---
+
+## Session 114.19j — shipped (committed at ef92350)
+
+### Root cause confirmed from 114.19i K-DIAG
 
 ## Session 114.19j — what shipped (uncommitted on top of 114.19i at f2ebb6c)
 

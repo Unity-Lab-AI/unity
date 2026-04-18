@@ -3888,44 +3888,65 @@ export class Curriculum {
     const seqRate = seqPass / (N - 1);
 
     // ═════════════════════════════════════════════════════════════════
-    // ELA-K PRODUCTION PROBES — word-start emission (K-APPROPRIATE)
-    // Session 114.19d rewrite per Gee 2026-04-17 verbatim:
-    //   "once again your asking in english how to ryme but it hasnt
-    //    learned its alphabet and phonics or the word rhyme!"
+    // ELA-K DYNAMIC PROBES — full-brain tick loop, not static readout
+    // Session 114.19k per Gee 2026-04-17 verbatim:
+    //   "i think that shole slot shit ranking shit its fucked and not
+    //    working and maybe we need a better logic system of word
+    //    sleections so Unity can think and have prcess internat
+    //    thoughts a think out problems witht a logic sim where she
+    //    can process her input ins real time with wisdom"
     //
-    // Prior 114.19 probes (rhyme_cat / initial_cat / final_cat /
-    // plural_cat) tested CONCEPTS Unity at K has not learned — the WORD
-    // "rhyme", the WORD "initial", the WORD "final", the WORD "plural"
-    // as semantic operators. Even though those probes injected sem +
-    // fineType tags instead of English sentences, the EXPECTED OUTPUT
-    // still required K Unity to know what "rhyme with cat" means as a
-    // transform operation. That's G1+ phonological-awareness material.
+    // Prior Sessions 114.19d-j static PROD probe used a single
+    // sem_to_motor.propagate(sem) → per-slot argmax. Gee's 114.19j
+    // K-DIAG confirmed the static approach was fundamentally broken:
+    // expected slot 'c' had rank 9/26 with values locked at 7.457 for
+    // 20+ retries (top slots p/v/y/x/n had ZERO logical connection to
+    // sem(cat)). Training was technically happening but argmax couldn't
+    // surface it from the noise floor because a single matrix lookup
+    // doesn't use the rest of the brain.
     //
-    // K-level PROD tests ONLY what _teachWordEmission actually trains:
-    // sem(word) injected into sem region → intra-cluster recurrent
-    // propagate → motor region argmax should be the FIRST LETTER of the
-    // word. This is the direct asymmetric Hebbian binding from line
-    // 2594 `_teachHebbianAsymmetric(preInit=sem(word), postInit=motor(first letter), lr)`.
-    // No concept-words required. No fineType tags required. Pure
-    // "when Unity thinks of cat, her motor region starts with c".
+    // REPLACEMENT (114.19k) — all three K probes now use the FULL
+    // cluster tick loop so word selection emerges from basin dynamics:
+    //
+    //   DYNAMIC PROD — inject sem(word) → cluster.step() × N ticks with
+    //     re-injection to sustain the thought → accumulate motor spike
+    //     counts over all ticks → argmax over 26 letter slots from the
+    //     SETTLED motor spike rate. Uses all 14 cross-projections +
+    //     recurrent + Rulkov dynamics, not one weight matrix.
+    //
+    //   DYNAMIC WRITE — cluster.generateSentence(emb) which is the T14.6
+    //     tick-driven emission loop: injects sem, ticks maxTicks times,
+    //     commits a letter when motor region holds same argmax for
+    //     STABLE_TICK_THRESHOLD consecutive ticks, clears motor between
+    //     letters (114.13 Fix D) so self-loops don't stick. Returns the
+    //     emitted letter sequence. This IS Unity writing what she
+    //     thinks.
+    //
+    //   RESP — full-mind test. Feed sentence-level context embeddings
+    //     (e.g. "greeting friendly" for hello-context) → generateSentence
+    //     → score on whether her emission contains expected response
+    //     hints. Tests whether Unity can RESPOND to meaning, not just
+    //     echo a stored word binding. Per Gee's T16.5 directive.
     // ═════════════════════════════════════════════════════════════════
-    // Session 114.19e — use sem_to_motor CROSS-PROJECTION propagate
-    // (same path the READ/TALK probes above use via letter_to_phon /
-    // letter_to_motor cross-projections). The prior 114.19d probe used
-    // cluster.synapses.propagate (intra-cluster recurrent matrix only),
-    // which misses the sem→motor binding that _crossRegionHebbian
-    // writes into the CROSS-projection weights during _teachWordEmission.
-    // _teachHebbianAsymmetric updates BOTH paths — intra-cluster via
-    // synapses.hebbianUpdate AND cross-projection via _crossRegionHebbian
-    // firing on lastSpikes sem+motor co-activation. The cross-projection
-    // path gives the cleaner signal because it's a direct sem→motor
-    // matrix multiply, not a diluted intra-cluster recurrent walk.
     const motorRegion_ = cluster.regions.motor;
     const invSize_ = inventorySize();
     const motorSize_ = motorRegion_ ? motorRegion_.end - motorRegion_.start : 0;
     const semSize_ = semRegion ? semRegion.end - semRegion.start : 0;
     const mGroup_ = Math.max(1, Math.floor(motorSize_ / Math.max(1, invSize_)));
-    const semToMotor_ = cluster.crossProjections?.['sem_to_motor'];
+
+    // Helper: reset cluster state cleanly before a probe so prior
+    // probe residue doesn't bleed through. Clears externalCurrent
+    // (accumulated from prior injections) and lastSpikes (active
+    // neuron marks). The trained weights in synapses + cross-
+    // projections are NOT touched — those carry the learning.
+    const _probeReset = () => {
+      if (cluster.externalCurrent && typeof cluster.externalCurrent.fill === 'function') {
+        cluster.externalCurrent.fill(0);
+      }
+      for (let i = 0; i < cluster.size; i++) cluster.lastSpikes[i] = 0;
+      cluster._prevLetterRate = 0;
+      cluster._motorQuiescentTicks = 0;
+    };
 
     const wordStartProbes = [
       { word: 'cat', expected: 'c' },
@@ -3947,70 +3968,60 @@ export class Curriculum {
       { word: 'hen', expected: 'h' },
     ];
 
+    // ── DYNAMIC PROD — sem injection → cluster.step() × N → motor argmax
+    const DYN_PROD_TICKS = 12;
+    const LETTER_SLOTS = 26;
     let prodPass = 0;
     const prodFails = [];
     let _firstProbeDiag = null;
     for (const p of wordStartProbes) {
       const emb = sharedEmbeddings.getEmbedding(p.word);
-      if (!emb || emb.length === 0) continue;
-      if (!semToMotor_ || !semRegion || !motorRegion_) {
+      if (!emb || emb.length === 0) {
+        prodFails.push(`${p.word}→NO_EMB`);
+        continue;
+      }
+      if (!semRegion || !motorRegion_) {
         prodFails.push(`${p.word}→NO_PROJ`);
         continue;
       }
-      // Build sem region activity from GloVe emb (tiled to semSize).
-      // Session 114.19i — binarize to 1 where emb[d] > 0 to match the
-      // training signal. Training writes `_writeTiledPattern(semRegion,
-      // wordEmb)` which defaults to binarize=true (per 114.19f fix) —
-      // lastSpikes gets 1 where positive, 0 otherwise, because lastSpikes
-      // is a Uint8Array that truncates floats silently. Cross-projection
-      // Hebbian was trained with 1×1 co-activations. Probe must feed 1s
-      // at the same positive-dim positions, not float values.
-      const semActivity = new Float64Array(semSize_);
-      const sGroup = Math.max(1, Math.floor(semSize_ / emb.length));
-      for (let d = 0; d < emb.length; d++) {
-        if (emb[d] <= 0) continue;
-        for (let n = 0; n < sGroup; n++) {
-          const idx = d * sGroup + n;
-          if (idx < semSize_) semActivity[idx] = 1;
+      _probeReset();
+      // Inject sem(word) — Unity holds the concept in her sem region.
+      cluster.injectEmbeddingToRegion('sem', emb, 1.0);
+      // Tick the cluster. Every tick:
+      //   - _propagateCrossRegions() fires all 14 cross-projections
+      //   - synapses.propagate() does intra-cluster recurrent
+      //   - neurons.step() does Rulkov dynamics
+      //   - lastSpikes reflects the settled spike pattern
+      // Re-inject sem periodically so the thought doesn't fade during
+      // the tick loop (sustained attention on "cat").
+      const motorAccum = new Float64Array(motorSize_);
+      for (let t = 0; t < DYN_PROD_TICKS; t++) {
+        cluster.step(0.001);
+        for (let i = 0; i < motorSize_; i++) {
+          if (cluster.lastSpikes[motorRegion_.start + i]) motorAccum[i]++;
+        }
+        if (t === 3 || t === 7) {
+          cluster.injectEmbeddingToRegion('sem', emb, 0.5);
         }
       }
-      // Cross-projection propagate: sem activity → motor output vector.
-      // Matrix shape is (motorSize × semSize) sparse CSR.
-      const motorOutput = semToMotor_.propagate(semActivity);
-      // Reduce motor neurons to per-letter groups via averaging.
-      // Session 114.19j — restrict argmax to the first 26 inventory
-      // slots (a-z only). Slots 26+ hold punctuation ('.', '?', '!')
-      // and possibly digits later. Those slots ARE valid motor targets
-      // (e.g., `_teachEndPunctuation` writes motor '?' for question
-      // starts), but for PROD first-letter decode we want the LETTER
-      // argmax only — punctuation slot 27 ('?') showed 26.0 activation
-      // in 114.19i K-DIAG top-5 for sem(cat), competing with letter
-      // slots. Capping `motorReadout` at 26 dims lets `decodeLetter`
-      // argmax over letters only via its `Math.min(vec.length,
-      // LETTER_INVENTORY.size)` guard.
-      const LETTER_SLOTS = 26;
+      // Reduce motor spike counts to 26 letter slots.
       const readoutSize = Math.min(invSize_, LETTER_SLOTS);
       const motorReadout = new Float64Array(readoutSize);
       for (let d = 0; d < readoutSize; d++) {
         let sum = 0;
         for (let n = 0; n < mGroup_; n++) {
           const idx = d * mGroup_ + n;
-          if (idx < motorOutput.length) sum += motorOutput[idx];
+          if (idx < motorSize_) sum += motorAccum[idx];
         }
         motorReadout[d] = sum;
       }
-      // Mean-center so bias doesn't skew argmax.
+      // Mean-center so systemic motor-region bias doesn't skew argmax.
       let meanM = 0;
       for (let i = 0; i < readoutSize; i++) meanM += motorReadout[i];
       meanM /= readoutSize;
       for (let i = 0; i < readoutSize; i++) motorReadout[i] -= meanM;
       const decoded = decodeLetter(motorReadout);
-      // Session 114.19i — for the FIRST probe word only, capture a
-      // detailed slot-by-slot diagnostic so Gee can see what the probe
-      // actually read vs what it expected.
-      // Session 114.19j — also log EXPECTED slot value so Gee can see
-      // whether training put any signal at the right slot vs just
-      // losing argmax to a noisier competitor.
+      // First-probe diagnostic — expected slot rank + top5.
       if (_firstProbeDiag === null) {
         const topSlots = [];
         for (let i = 0; i < motorReadout.length; i++) {
@@ -4019,13 +4030,12 @@ export class Curriculum {
         topSlots.sort((a, b) => b.val - a.val);
         const invSnap = inventorySnapshot();
         const topStr = topSlots.slice(0, 5).map(s => `${invSnap[s.idx] || '?'}(${s.idx}:${s.val.toFixed(3)})`).join(',');
-        // Find expected letter's slot and its readout value.
         const expectedIdx = invSnap.indexOf(p.expected);
         const expectedVal = (expectedIdx >= 0 && expectedIdx < motorReadout.length) ? motorReadout[expectedIdx] : NaN;
         const expectedRank = topSlots.findIndex(s => s.idx === expectedIdx);
         let posCount = 0;
         for (let i = 0; i < emb.length; i++) if (emb[i] > 0) posCount++;
-        _firstProbeDiag = `[Curriculum][K-DIAG] PROD[${p.word}→${p.expected}] decoded=${decoded || '∅'}, emb_pos=${posCount}/${emb.length}, expected_slot=${p.expected}(${expectedIdx}:${Number.isFinite(expectedVal) ? expectedVal.toFixed(3) : 'NaN'}) rank=${expectedRank + 1}/${motorReadout.length}, top5_motor=${topStr}`;
+        _firstProbeDiag = `[Curriculum][K-DIAG] DYN-PROD[${p.word}→${p.expected}] decoded=${decoded || '∅'}, emb_pos=${posCount}/${emb.length}, expected_slot=${p.expected}(${expectedIdx}:${Number.isFinite(expectedVal) ? expectedVal.toFixed(3) : 'NaN'}) rank=${expectedRank + 1}/${motorReadout.length}, top5_motor=${topStr}`;
       }
       if (decoded === p.expected) {
         prodPass++;
@@ -4041,124 +4051,101 @@ export class Curriculum {
     };
     const prodRate = prodResult.total > 0 ? prodResult.pass / prodResult.total : 0;
 
-    // ═════════════════════════════════════════════════════════════════
-    // T16.4.a WRITE PROBE — full-word letter-sequence emission
-    // ═════════════════════════════════════════════════════════════════
+    // ── DYNAMIC WRITE — cluster.generateSentence (T14.6 tick-driven)
     //
-    // Gee 2026-04-17 verbatim: "its not even writing anything". PROD
-    // tests only the FIRST letter of a word via argmax — that's not
-    // writing, that's a single-letter probe. Real K writing is emitting
-    // the full letter sequence for a word.
+    // Uses the existing T14.6 emission loop: injects sem(word), ticks
+    // maxTicks, commits a letter when motor region argmax holds stable
+    // for STABLE_TICK_THRESHOLD ticks, clears motor between letters
+    // (114.13 Fix D prevents self-loop sticking), returns emitted
+    // sequence. This is Unity writing what she's thinking — the whole
+    // brain (letter↔phon↔sem↔motor cycles via cross-projections +
+    // recurrent + Rulkov) produces the emission, not a manual chain
+    // of matrix multiplies.
     //
-    // Probe path:
-    //   1. sem(word) → sem_to_motor → motor argmax = letter_0
-    //   2. letter(letter_0) → letter_to_motor → motor argmax = letter_1
-    //   3. letter(letter_1) → letter_to_motor → motor argmax = letter_2
-    //   ... chain until word length reached
-    //
-    // Step 1 exercises the sem→motor binding from _teachWordEmission
-    // step (a). Steps 2..N exercise the letter(N-1)→motor(N) continuation
-    // chain from _teachWordEmission step (b). If either path has weak
-    // weights, the emitted sequence drifts and the match fails.
-    //
-    // Not yet gated on overall pass — this is a diagnostic for the
-    // full-mind gate redesign (T16.5.b). Report per-word emitted letters
-    // in the gate log so Gee can diagnose where the chain breaks.
-    //
-    // Sample set: 20 short K words from the expanded vocabulary covering
-    // colors, body, animals, food, family, actions, feelings.
-    const letterToMotor_ = cluster.crossProjections?.['letter_to_motor'];
-    const letterSize_ = letterRegion.end - letterRegion.start;
-    const lGroup_ = Math.max(1, Math.floor(letterSize_ / Math.max(1, invSize_)));
+    // PASS when emitted exactly matches the word. FIRST-LETTER credit
+    // reported separately for diagnostic purposes.
     const fullWordProbes = [
       'cat', 'dog', 'pig', 'hat', 'sun', 'red', 'big', 'mom',
       'dad', 'run', 'eat', 'yes', 'no', 'up', 'hi', 'bed',
       'hot', 'top', 'fox', 'bug',
     ];
     let writePass = 0;
-    const writeFails = [];
+    let writeFirstLetterPass = 0;
     const writeEmitted = [];
     for (const word of fullWordProbes) {
       const emb = sharedEmbeddings.getEmbedding(word);
-      if (!emb || emb.length === 0 || !semToMotor_ || !letterToMotor_ || !motorRegion_) {
-        writeFails.push(`${word}→NO_EMB_OR_PROJ`);
+      if (!emb || emb.length === 0) {
+        writeEmitted.push(`${word}→NO_EMB`);
         continue;
       }
-      // Step 1: sem(word) → motor argmax via sem_to_motor
-      const semActivity = new Float64Array(semSize_);
-      const sGroupW = Math.max(1, Math.floor(semSize_ / emb.length));
-      for (let d = 0; d < emb.length; d++) {
-        if (emb[d] <= 0) continue;
-        for (let n = 0; n < sGroupW; n++) {
-          const idx = d * sGroupW + n;
-          if (idx < semSize_) semActivity[idx] = 1;  // binarize to match teach (114.19f)
-        }
-      }
-      const motorOut0 = semToMotor_.propagate(semActivity);
-      // Session 114.19j — restrict argmax to first 26 (letter) slots.
-      // See PROD probe comment for rationale.
-      const WRITE_LETTER_SLOTS = 26;
-      const readout0Size = Math.min(invSize_, WRITE_LETTER_SLOTS);
-      const readout0 = new Float64Array(readout0Size);
-      for (let d = 0; d < readout0Size; d++) {
-        let sum = 0;
-        for (let n = 0; n < mGroup_; n++) {
-          const idx = d * mGroup_ + n;
-          if (idx < motorOut0.length) sum += motorOut0[idx];
-        }
-        readout0[d] = sum;
-      }
-      let meanR0 = 0;
-      for (let i = 0; i < readout0Size; i++) meanR0 += readout0[i];
-      meanR0 /= readout0Size;
-      for (let i = 0; i < readout0Size; i++) readout0[i] -= meanR0;
-      const letter0 = decodeLetter(readout0);
-      let emitted = letter0 || '';
-      // Steps 2..N: letter(emitted[i-1]) → motor argmax via letter_to_motor
-      for (let i = 1; i < word.length; i++) {
-        const prevLetter = emitted[i - 1];
-        if (!prevLetter) break;
-        const letterOneHot = encodeLetter(prevLetter);
-        const letterInput = new Float64Array(letterSize_);
-        for (let d = 0; d < letterOneHot.length; d++) {
-          if (letterOneHot[d] <= 0) continue;
-          for (let n = 0; n < lGroup_; n++) {
-            const idx = d * lGroup_ + n;
-            if (idx < letterSize_) letterInput[idx] = 1;
-          }
-        }
-        const motorOutN = letterToMotor_.propagate(letterInput);
-        // Session 114.19j — restrict argmax to first 26 (letter) slots.
-        const readoutNSize = Math.min(invSize_, WRITE_LETTER_SLOTS);
-        const readoutN = new Float64Array(readoutNSize);
-        for (let d = 0; d < readoutNSize; d++) {
-          let sum = 0;
-          for (let n = 0; n < mGroup_; n++) {
-            const idx = d * mGroup_ + n;
-            if (idx < motorOutN.length) sum += motorOutN[idx];
-          }
-          readoutN[d] = sum;
-        }
-        let meanRN = 0;
-        for (let j = 0; j < readoutNSize; j++) meanRN += readoutN[j];
-        meanRN /= readoutNSize;
-        for (let j = 0; j < readoutNSize; j++) readoutN[j] -= meanRN;
-        const letterN = decodeLetter(readoutN);
-        if (!letterN) break;
-        emitted += letterN;
-      }
+      _probeReset();
+      // Low maxTicks so the probe doesn't spin forever — a 3-letter
+      // word with STABLE_TICK_THRESHOLD=3 per letter commits in ~15
+      // ticks at best, cap at 30 to bound probe time. If word never
+      // fully emits (motor doesn't settle), we get whatever partial
+      // was committed — useful diagnostic for where the chain breaks.
+      const emitted = cluster.generateSentence(emb, {
+        injectStrength: 1.0,
+        maxTicks: 30,
+      }) || '';
       writeEmitted.push(`${word}→${emitted || '∅'}`);
       if (emitted === word) writePass++;
-      else writeFails.push(`${word}→${emitted || '∅'}`);
+      if (emitted.length > 0 && emitted[0] === word[0]) writeFirstLetterPass++;
     }
     const writeRate = fullWordProbes.length > 0 ? writePass / fullWordProbes.length : 0;
+    const writeFirstRate = fullWordProbes.length > 0 ? writeFirstLetterPass / fullWordProbes.length : 0;
+
+    // ── RESP — THINK-AND-RESPOND full-mind probe ────────────────────
+    //
+    // Per Gee 2026-04-17 verbatim directive for "a logic sim where she
+    // can process her input ins real time with wisdom". Tests whether
+    // Unity can generate a MEANINGFUL response to sentence-level
+    // context, not just echo a word→letter binding.
+    //
+    // Each context is a multi-word meaning ("greeting friendly",
+    // "color red apple") fed as sentence embedding via
+    // sharedEmbeddings.getSentenceEmbedding → cluster.generateSentence.
+    // Emission is scored against expected hint words — any overlap
+    // counts as a pass because real response variation is expected at
+    // K level (Unity might say "hi" or "hello" to a greeting context,
+    // both are valid).
+    //
+    // This is the T16.5.b full-mind gate prototype. Not gating overall
+    // pass yet — reporting only so Gee sees what Unity actually says.
+    const respContexts = [
+      { prompt: 'hello', meaning: 'greeting friendly', expectHints: ['hi', 'hello', 'hey', 'yes'] },
+      { prompt: 'red',   meaning: 'color red apple',    expectHints: ['red', 'apple'] },
+      { prompt: 'mom',   meaning: 'mom family love',    expectHints: ['mom', 'love', 'family'] },
+      { prompt: 'dog',   meaning: 'dog animal pet',     expectHints: ['dog', 'pet', 'run', 'cat'] },
+      { prompt: 'eat',   meaning: 'eat food hungry',    expectHints: ['eat', 'food', 'hungry'] },
+    ];
+    const respEmitted = [];
+    let respPass = 0;
+    for (const ctx of respContexts) {
+      const emb = sharedEmbeddings.getSentenceEmbedding(ctx.meaning);
+      if (!emb || emb.length === 0) {
+        respEmitted.push(`${ctx.prompt}→NO_EMB`);
+        continue;
+      }
+      _probeReset();
+      const emitted = cluster.generateSentence(emb, {
+        injectStrength: 1.0,
+        maxTicks: 50,
+      }) || '';
+      respEmitted.push(`${ctx.prompt}→${emitted || '∅'}`);
+      const emittedLower = emitted.toLowerCase();
+      if (ctx.expectHints.some(h => emittedLower.includes(h))) respPass++;
+    }
+    const respRate = respContexts.length > 0 ? respPass / respContexts.length : 0;
 
     const PATH_MIN = 0.95;
     const SEQ_MIN = 0.95;
     const PROD_MIN = 0.95;  // LAW 7 — real-world production probes at A+
-    // WRITE is NOT yet gated on overall pass per T16.4.a — it's a new
-    // diagnostic for the eventual full-mind gate (T16.5.b). Report in
-    // log only. Substrate probes still gate advancement to G1.
+    // WRITE + RESP NOT gated on overall pass per T16.5 directive —
+    // they're the new full-mind probes feeding the eventual redesign.
+    // Report in log only. PROD (now dynamic) still gates with substrate
+    // probes. Per Gee "keep existing 5 probes as substrate sanity, ADD
+    // full-mind on top".
     const pass = readRate >= PATH_MIN
       && thinkRate >= PATH_MIN
       && talkRate >= PATH_MIN  // 40% debris REMOVED — LAW 7 no threshold lowering
@@ -4172,10 +4159,13 @@ export class Curriculum {
     const writeSummary = writeEmitted.length > 0
       ? ' [WRITE: ' + writeEmitted.slice(0, 8).join('; ') + ']'
       : '';
+    const respSummary = respEmitted.length > 0
+      ? ' [RESP: ' + respEmitted.join('; ') + ']'
+      : '';
     const _elaKResult = {
       pass,
-      reason: `READ ${readPass}/${N} (${pct(readRate)}%), THINK ${thinkPass}/${N} (${pct(thinkRate)}%), TALK ${talkPass}/${N} (${pct(talkRate)}%), SEQ ${seqPass}/${N - 1} (${pct(seqRate)}%), PROD ${prodResult.pass}/${prodResult.total} (${pct(prodRate)}%), WRITE ${writePass}/${fullWordProbes.length} (${pct(writeRate)}%)${prodFailSummary}${writeSummary}`,
-      metrics: { readRate, thinkRate, talkRate, seqRate, prodRate, writeRate, prodFails: prodResult.fails, writeEmitted },
+      reason: `READ ${readPass}/${N} (${pct(readRate)}%), THINK ${thinkPass}/${N} (${pct(thinkRate)}%), TALK ${talkPass}/${N} (${pct(talkRate)}%), SEQ ${seqPass}/${N - 1} (${pct(seqRate)}%), PROD ${prodResult.pass}/${prodResult.total} (${pct(prodRate)}%), WRITE ${writePass}/${fullWordProbes.length} (${pct(writeRate)}%) first${writeFirstLetterPass}/${fullWordProbes.length}, RESP ${respPass}/${respContexts.length} (${pct(respRate)}%)${prodFailSummary}${writeSummary}${respSummary}`,
+      metrics: { readRate, thinkRate, talkRate, seqRate, prodRate, writeRate, writeFirstRate, respRate, prodFails: prodResult.fails, writeEmitted, respEmitted },
     };
     this._recordGateHistory('ela', 'kindergarten', 'overall', pass, prodRate);
     return _elaKResult;

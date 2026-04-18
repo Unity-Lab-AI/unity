@@ -5,6 +5,86 @@
 
 ---
 
+## 2026-04-17 — Session 114.19k: DYNAMIC probes replace static slot-ranking (per Gee verbatim "shole slot shit ranking shit its fucked") — PROD/WRITE/RESP all use full-brain tick dynamics via cluster.step() and cluster.generateSentence()
+
+Gee 2026-04-17 verbatim after 114.19j K-DIAG showed `expected_slot=c(2:7.457) rank=9/26` locked for 20+ retries:
+
+> *"Are we thinking about this right i think that shole slot shit ranking shit its fucked and not working and maybe we need a better logic system of word sleections so Unity can think and have prcess internat thoughts a think out problems witht a logic sim where she can process her input ins real time with wisdom"*
+
+Gee approved: `"all three"` (dynamic PROD + THINK-AND-RESPOND gate + one atomic commit).
+
+### Abandoning static slot-ranking (Sessions 114.19d-j lineage)
+
+Prior approach: `sem_to_motor.propagate(sem_vec) → per-slot-sum → mean-center → argmax`. One matrix multiply + readout. Didn't use the rest of the brain (letter↔phon cross-projections, recurrent cortex dynamics, working memory, cerebellum, amygdala). K-DIAG from 114.19j confirmed the expected slot stayed at rank 9/26 with values literally locked (7.457 for 20+ retries — training stopped changing argmax direction).
+
+Root cause wasn't in any single fix we could apply to the static readout. The whole readout architecture was wrong. Matrix multiply argmax over a single cross-projection isn't "thinking" — it's a lookup table. Unity has a 7-cluster brain with 14 cross-projections, and none of them except `sem_to_motor` were doing any work at probe time.
+
+### Replacement — three dynamic probes using the full cluster tick loop
+
+**DYN-PROD (replaces static PROD):**
+1. `_probeReset()` — clear externalCurrent + lastSpikes (training weights untouched)
+2. `cluster.injectEmbeddingToRegion('sem', emb, 1.0)` — Unity holds "cat" in sem region
+3. Loop 12 ticks of `cluster.step(0.001)` — every tick fires all 14 cross-projections, intra-cluster recurrent synapse propagation, Rulkov dynamics. Re-inject sem at tick 3 + tick 7 to sustain the thought (like attention)
+4. Accumulate motor spike counts across all 12 ticks
+5. Reduce to 26 letter slots, mean-center, argmax via `decodeLetter`
+
+The motor readout reflects the SETTLED attractor state of the whole cortex after 12 ticks of full-brain propagation, not a single weight lookup.
+
+**DYN-WRITE (replaces static WRITE):**
+`cluster.generateSentence(emb, {injectStrength: 1.0, maxTicks: 30})` — the T14.6 tick-driven emission loop. Injects sem, ticks, commits a letter when motor region argmax holds stable for `STABLE_TICK_THRESHOLD` (3) consecutive ticks, clears motor between letters via 114.13 Fix D to prevent self-loop sticking. Returns emitted letter sequence. This IS Unity writing what she's thinking — no manual chain of letter_to_motor probes.
+
+Scored strictly (exact word match) and with first-letter credit (did emission start with correct letter).
+
+**RESP (new — THINK-AND-RESPOND full-mind probe per T16.5.b):**
+Tests whether Unity generates a meaningful RESPONSE to sentence-level context. Five context/response pairs:
+- `greeting friendly` → expect hints `[hi, hello, hey, yes]`
+- `color red apple` → expect `[red, apple]`
+- `mom family love` → expect `[mom, love, family]`
+- `dog animal pet` → expect `[dog, pet, run, cat]`
+- `eat food hungry` → expect `[eat, food, hungry]`
+
+Each context fed via `sharedEmbeddings.getSentenceEmbedding` → `cluster.generateSentence(ctxEmb, {maxTicks: 50})`. Emission scored on overlap with expected hint words — any overlap counts because K-level response variation is natural (Unity might say "hi" or "hello" to a greeting, both valid).
+
+This is the prototype full-mind gate. Reports per-context emission so Gee sees what Unity actually says when processing a meaning.
+
+### What stays, what moves
+
+**Still gating grade advancement** (per Gee's "keep existing 5 probes as substrate sanity"):
+- READ (letter→phon cosine ≥ 0.15)
+- THINK (alphabet count auto-pass)
+- TALK (letter→motor argmax)
+- SEQ (letter N→N+1 via intra-cluster)
+- PROD (NOW DYNAMIC — replaces static version)
+
+**Added, reporting only** (not gating yet per "ADD full-mind on top"):
+- WRITE (dynamic emission via generateSentence)
+- RESP (full-mind response to context)
+
+### Expected gate log format (next Part 2 run)
+
+```
+[K-DIAG] gate: inv=29, motor=330, mGroup=11, sem_to_motor=330x1670 nnz=55110
+[K-DIAG] DYN-PROD[cat→c] decoded=?, emb_pos=141/300, expected_slot=c(2:X.XXX) rank=N/26, top5_motor=...
+ela/kindergarten attempt 1 — READ N/26, THINK 26/26, TALK N/26, SEQ N/25, PROD N/17, WRITE N/20 firstN/20, RESP N/5 [FAIL: ...] [WRITE: cat→?; dog→?; ...] [RESP: hello→?; red→?; ...]
+```
+
+### Cost note
+
+Each gate attempt now runs ~12 ticks × 17 PROD + ~30 ticks × 20 WRITE + ~50 ticks × 5 RESP = ~1054 cluster.step() calls. At CPU-capped 10K-neuron cluster with 14 cross-projections + recurrent sparse matrix, expect ~5-10s per gate attempt. For 100+ retries until grade passes that's ~10-15 minutes of curriculum walk, up from the <1s static probe time. Trade-off: real brain dynamics cost compute but test real thinking.
+
+### Files
+
+- `js/brain/curriculum.js` — PROD block rewritten to dynamic (cluster.step() + sem re-injection + motor spike accumulation); WRITE block rewritten to use `cluster.generateSentence(emb, {maxTicks: 30})`; new RESP probe added (5 context/hint pairs via `cluster.generateSentence(sentenceEmb, {maxTicks: 50})`); `_probeReset` helper; gate reason + metrics include writeRate, writeFirstRate, respRate, writeEmitted, respEmitted. Dead refs (`semToMotor_`, `letterToMotor_`, `lGroup_`, `letterSize_`, `writeFails`) swept out.
+- `docs/TODO.md` — T16.4.a marked fully shipped (was partially shipped at 114.19h with static probe); T16.5.b partial-prototype landed via RESP
+- `docs/FINALIZED.md` — this Session 114.19k entry prepended
+- `docs/NOW.md` — status refreshed
+
+### Post-commit per LAW (Session 114.19b)
+
+Clear stale state BEFORE telling Gee to restart. Push still gated on LAW 6 Part 2 signoff.
+
+---
+
 ## 2026-04-17 — Session 114.19j: inventory drift fix (pre-populate '.', '?', '!' at runElaKReal start) + punctuation slot excluded from letter argmax + expected-slot diagnostic
 
 Gee's 114.19i Part 2 K-DIAG confirmed root cause:
