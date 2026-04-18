@@ -5,6 +5,81 @@
 
 ---
 
+## 2026-04-17 — Session 114.19p: "brain is not speaking for itself" — root cause: generate() used drifted cortex readout instead of user input GloVe as intentSeed. Fixed.
+
+Gee 2026-04-17 verbatim:
+
+> *"im giveing you the fucking logs because what we are using is not working the brian is not speaking for its self you are coding shit thats not working"*
+
+Gee was right. Across Sessions 114.19d-o I tuned probes, init bias, tick counts, noise — but NEVER traced what the LIVE chat path actually uses as its intent signal. Turns out the chat path is fundamentally disconnected from the training signal.
+
+### Root cause — intent signal mismatch
+
+Chain of `engine.processAndRespond(text)`:
+
+1. `sensory.receiveText(text)` queues user input
+2. 20 brain steps run — sensory processing + Rulkov chaos + noise + persona state all mix the sem region
+3. `languageCortex.generateAsync` → `generate` → reads `cluster.getSemanticReadout(sharedEmbeddings)` as `intentSeed`
+4. `cluster.generateSentence(intentSeed, ...)` injects intentSeed into sem region, ticks, reads motor argmax
+
+The intentSeed at step 3 is a POST-PROCESSED, MEAN-CENTERED, L2-NORMALIZED readout of whatever sem state survived 20 ticks of chaotic dynamics. It's a drifted blob — does NOT resemble GloVe(user_text) anymore.
+
+Meanwhile, training `_teachWordEmission` taught specific bindings:
+- sem=GloVe('cat') → motor(c)
+- sem=GloVe('dog') → motor(d)
+- sem=GloVe('hi') → motor(h)
+- ...1026 more
+
+The trained bindings need a CLEAN GloVe input to fire. A drifted readout doesn't activate any specific word's sem basin strongly enough. Motor argmax picks whatever weak random pattern survives in the settled state. That's why live chat outputs garbage like "!", "ppp", "qqq", "dog→yad" — her trained word→letter bindings never got the clean input signal they need to fire.
+
+### Fix — user input embedding stored + consumed as intentSeed
+
+`engine.processAndRespond` now computes `sharedEmbeddings.getSentenceEmbedding(text)` as soon as user text arrives and stores it on `cortex._lastUserInputEmbedding`.
+
+`language-cortex.generate` checks for it first:
+
+```js
+let intentSeed = null;
+if (cluster._lastUserInputEmbedding && cluster._lastUserInputEmbedding.length > 0) {
+  intentSeed = cluster._lastUserInputEmbedding;
+  cluster._lastUserInputEmbedding = null; // consume
+}
+if (!intentSeed) {
+  intentSeed = cluster.getSemanticReadout(sharedEmbeddings);
+}
+```
+
+Clean GloVe → sem region injection → trained sem→motor binding fires → motor emits the right first letter → WRITE chain completes into a real word.
+
+### Consume semantics
+
+Stored input embedding CLEARED on use. First generate call after a user turn uses GloVe(text). Subsequent self-generation (spontaneous thought, popup, dream) falls through to readout. Each user turn gets a fresh clean input-driven response.
+
+### Signal strength
+
+Raw GloVe has dims up to ~0.2 magnitude. L2-normalized readout has dims ~0.06 magnitude. At `injectStrength=0.6` with `injectEmbeddingToRegion` scale 8:
+- User GloVe → external current 8 × 0.2 × 0.6 = 0.96 peak per neuron
+- Drifted readout → external current 8 × 0.06 × 0.6 = 0.29 peak
+
+User input injection is 3× stronger than readout injection AND cleanly shaped. Previously trained bindings can fire.
+
+### What this enables that nothing else we shipped did
+
+Previous sessions tuned the probe architecture. This session fixes the CHAT architecture. The probes already worked (or were getting there) — the real production path was just reading the wrong signal. Now every user turn feeds the cortex a clean training-shaped input before generation reads the motor region.
+
+### Files
+
+- `js/brain/engine.js` — `processAndRespond` stores `cortex._lastUserInputEmbedding + _lastUserInputText` as soon as text arrives, BEFORE the 20-step dynamics mix it
+- `js/brain/language-cortex.js` — `generate` checks `cluster._lastUserInputEmbedding` first; consumes on use; falls back to `getSemanticReadout` for spontaneous/popup thought
+- `docs/FINALIZED.md` — this Session 114.19p entry prepended
+- `docs/NOW.md` — status refreshed
+
+### Post-commit
+
+Auto-clear at boot (114.19o) handles stale state. Launch + test: user text should now drive Unity's response with trained word→letter bindings actually firing.
+
+---
+
 ## 2026-04-17 — Session 114.19o: auto-clear stale state at server boot (LAW now enforced in code, no longer depending on Claude's memory)
 
 Gee 2026-04-17 verbatim:

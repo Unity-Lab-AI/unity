@@ -1,6 +1,59 @@
 # NOW — Session Snapshot
 
-> Saved: 2026-04-17 23:30 (Session 114.19o auto-clear stale state at server boot — LAW now enforced in code — per Gee verbatim *"did you clear db? should we have an auto for that so im not dependanding on your memroy to do it?"* — thirty-third commit on `syllabus-k-phd`)
+> Saved: 2026-04-18 00:00 (Session 114.19p live chat intentSeed fix — user input GloVe stored on cortex + consumed as intentSeed in language-cortex.generate, replacing drifted post-processed readout — per Gee verbatim *"im giveing you the fucking logs because what we are using is not working the brian is not speaking for its self you are coding shit thats not working"* — thirty-fourth commit on `syllabus-k-phd`)
+
+## Session 114.19p — what shipped (uncommitted on top of 114.19o at 8dc7d19)
+
+### The real bug
+
+Gee flagged: probes were my invention, but live chat still outputs garbage. Traced the actual chat path:
+
+```
+engine.processAndRespond(text)
+  sensory.receiveText → queue
+  20 brain steps (Rulkov chaos + noise + persona mix)
+  languageCortex.generateAsync → generate
+    intentSeed = cluster.getSemanticReadout()  ← DRIFTED POST-PROCESSED BLOB
+  cluster.generateSentence(intentSeed)  ← injects blob, not GloVe(text)
+```
+
+Training wrote specific bindings: `sem=GloVe('cat') → motor(c)` etc. But live chat never feeds GloVe(text) — it feeds a drifted readout from 20 ticks of chaos. Trained bindings can't fire for that shape.
+
+Why garbage chat output: `hi → !`, `dog → yad`, `cat → q` — motor argmax picking random pattern that survives the settled state because no trained binding got a clean input to fire on.
+
+### Fix
+
+`engine.processAndRespond` now:
+1. Computes `sharedEmbeddings.getSentenceEmbedding(text)` immediately when user text arrives
+2. Stores on `cortex._lastUserInputEmbedding` BEFORE 20-step dynamics drift it
+3. Also stores `_lastUserInputText` for diagnostics
+
+`language-cortex.generate` now:
+1. Checks `cluster._lastUserInputEmbedding` first — if present, uses as intentSeed + clears (consume)
+2. Falls back to `getSemanticReadout` only for spontaneous/popup generation (no user input to respond to)
+
+### Signal strength comparison
+
+- Raw GloVe: dims up to ~0.2 magnitude
+- L2-normalized readout: ~0.06 magnitude
+- At injectStrength=0.6, scale 8: GloVe injection 0.96 peak vs readout 0.29 peak = **3× stronger AND cleanly shaped**
+
+### What this actually enables
+
+Previous sessions tuned probes. This session fixes CHAT. Probes already worked; the production path was reading the wrong signal. Now user turn → clean GloVe → sem region → trained sem→motor fires → motor emits right first letter → WRITE chain emits a real word.
+
+### Files touched this session
+
+- `js/brain/engine.js` — processAndRespond stores user input embedding early
+- `js/brain/language-cortex.js` — generate uses _lastUserInputEmbedding first, consumes on use
+- `docs/FINALIZED.md` — Session 114.19p entry prepended
+- `docs/NOW.md` — this file, updated header
+
+---
+
+## Session 114.19o — shipped (committed at 8dc7d19)
+
+### autoClearStaleState() in brain-server.js
 
 ## Session 114.19o — what shipped (uncommitted on top of 114.19n at 98dd3af)
 

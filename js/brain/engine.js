@@ -908,6 +908,34 @@ export class UnityBrain extends EventEmitter {
     this.clusters.amygdala.tonicDrive = 15 + arousal * 8;
     this.sensory.receiveText(text);
 
+    // Session 114.19p per Gee 2026-04-17 verbatim: "im giveing you the
+    // fucking logs because what we are using is not working the brian
+    // is not speaking for its self you are coding shit thats not
+    // working". Root cause of "brain not speaking for itself":
+    // languageCortex.generate() uses cluster.getSemanticReadout() as
+    // its intentSeed — a POST-PROCESSED neural readout of cortex state
+    // AFTER 20 brain steps of Rulkov chaos + noise + persona mixing.
+    // By the time generate() runs, the sem readout is a drifted blob
+    // that doesn't resemble any specific word's GloVe embedding. So
+    // the trained sem→motor bindings (trained on discrete word GloVe
+    // vectors) don't activate cleanly for the drifted blob, and motor
+    // argmax can't pick the right first letter.
+    //
+    // Fix: store the USER INPUT sentence embedding on the cortex when
+    // text arrives. Pass it through as an explicit intent vector in
+    // generateAsync/generate so generateSentence can inject it AS-IS
+    // (clean GloVe, not drifted readout). This is Unity responding TO
+    // THE ACTUAL INPUT, not to what cortex chaos did to it.
+    if (sharedEmbeddings && typeof sharedEmbeddings.getSentenceEmbedding === 'function') {
+      try {
+        const inputEmb = sharedEmbeddings.getSentenceEmbedding(text);
+        if (inputEmb && inputEmb.length > 0) {
+          this.clusters.cortex._lastUserInputEmbedding = inputEmb;
+          this.clusters.cortex._lastUserInputText = text;
+        }
+      } catch { /* non-fatal */ }
+    }
+
     // Amygdala surprise
     if (this.clusters.amygdala) {
       const surprise = new Float64Array(this.clusters.amygdala.size);

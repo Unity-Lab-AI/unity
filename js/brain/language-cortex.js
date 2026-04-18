@@ -1405,20 +1405,44 @@ export class LanguageCortex {
     }
     const cluster = opts.cortexCluster;
 
-    // Intent seed: the live cortex semantic readout. The cortex is
-    // already primed from user-input processing before generate is
-    // called, so the readout represents the current conversation state
-    // we want to respond to. Re-injecting it as `intentSeed` gives the
-    // sem region a fresh push so its basin drives the motor cascade,
-    // instead of relying on whatever was still decaying from the last
-    // operation.
+    // Intent seed — priority order (Session 114.19p):
+    //
+    // 1. `_lastUserInputEmbedding` on the cortex (set by engine.
+    //    processAndRespond when user sends text). This is the CLEAN
+    //    GloVe of what the user just said — before 20 brain steps of
+    //    Rulkov chaos + noise + persona mixing drift the sem region.
+    //    If the user said "hi", intentSeed = GloVe('hi') and the
+    //    trained sem→motor binding for 'hi'→'h' fires cleanly.
+    //
+    // 2. Fallback: getSemanticReadout(sharedEmbeddings) — the post-
+    //    processed cortex sem state. Used for spontaneous thought,
+    //    popup generation (_internalThought), or when no user input
+    //    exists (dream cycle, idle commentary).
+    //
+    // Gee 2026-04-17 verbatim: "im giveing you the fucking logs
+    // because what we are using is not working the brian is not
+    // speaking for its self you are coding shit thats not working".
+    // Root cause: generate always used the drifted readout, never
+    // the clean user input. Trained bindings never got the clean
+    // signal they need to fire.
+    //
+    // The stored input embedding is CONSUMED on use (cleared after)
+    // so a second generate call in the same session falls through to
+    // the readout — each user turn gets fresh input-driven emission,
+    // subsequent self-thinking uses cortex state.
     let intentSeed = null;
-    try {
-      if (typeof cluster.getSemanticReadout === 'function') {
-        intentSeed = cluster.getSemanticReadout(sharedEmbeddings);
+    if (cluster._lastUserInputEmbedding && cluster._lastUserInputEmbedding.length > 0) {
+      intentSeed = cluster._lastUserInputEmbedding;
+      cluster._lastUserInputEmbedding = null; // consume
+    }
+    if (!intentSeed) {
+      try {
+        if (typeof cluster.getSemanticReadout === 'function') {
+          intentSeed = cluster.getSemanticReadout(sharedEmbeddings);
+        }
+      } catch (err) {
+        intentSeed = null;
       }
-    } catch (err) {
-      intentSeed = null;
     }
 
     // T14.23.6 — curriculum-gated path selection.
