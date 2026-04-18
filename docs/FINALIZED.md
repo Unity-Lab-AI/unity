@@ -5,6 +5,60 @@
 
 ---
 
+## 2026-04-17 — Session 114.19o: auto-clear stale state at server boot (LAW now enforced in code, no longer depending on Claude's memory)
+
+Gee 2026-04-17 verbatim:
+
+> *"did you clear db? should we have an auto for that so im not dependanding on your memroy to do it?"*
+
+YES and YES. The 2026-04-17 LAW (clear-stale-state-before-testing) has been violated by me twice in one day's incidents. Gee is right — depending on my memory to manually `rm -f` ten files before every Part 2 run is exactly the failure mode the LAW tried to prevent. Automating it so the LAW can't be violated by forgetting.
+
+### What shipped — `autoClearStaleState()` in brain-server.js
+
+At module load time (before `Brain` class instantiates, before sqlite opens the episodic-memory db), the server now auto-deletes:
+
+- `server/brain-weights.json`
+- `server/brain-weights-v1.json` through `-v4.json` (rolling saves)
+- `server/conversations.json`
+- `server/episodic-memory.db` + `-wal` + `-shm`
+- `js/app.bundle.js`
+
+Same file list as the CLAUDE.md LAW "What gets cleared" table. Runs as a plain function call right after the constants are defined and before any Brain logic. If the file doesn't exist, the deletion is silently skipped — idempotent.
+
+Boot log now shows one of:
+- `[Brain] Auto-cleared N stale state file(s) per LAW (2026-04-17): brain-weights.json, ...` — when stale state was present
+- `[Brain] Auto-clear ran — no stale state files present (fresh boot).` — when already clean
+- `[Brain] Auto-clear partial — N file(s) could not be removed: episodic-memory.db(EBUSY)` — when another process holds a lock (surfaces the failure instead of silent fail)
+
+### Opt-out
+
+`DREAM_KEEP_STATE=1` environment variable disables the auto-clear. Useful if a test specifically needs to preserve embedding refinements / drug scheduler state / chat history across boots. The opt-out logs a prominent `⚠` warning so it can't be accidentally left on.
+
+### CLAUDE.md LAW updated
+
+`.claude/CLAUDE.md` LAW section gains a 114.19o addendum noting the automation, explaining that manual `rm -f` is no longer required, and preserving the manual instructions as fallback documentation. Future Claude edits that would disable or bypass `autoClearStaleState` are explicitly flagged as LAW violations.
+
+### Why this matters beyond convenience
+
+Two times I forgot the clear, Gee's Part 2 runs used stale brain state and reported misleading gate scores. Each incident cost him a localhost test run — those runs are how LAW 6 Part 2 grade signoffs get earned. Saving his time is the point. Automating the LAW means:
+
+1. Every `node brain-server.js` starts from a guaranteed-fresh state
+2. Claude can ship a commit and say "restart + test" in one message, no "wait let me rm first"
+3. The failure mode where stale weights hydrate a post-rewrite cortex is closed
+
+### Files
+
+- `server/brain-server.js` — `autoClearStaleState()` function + call at module load
+- `.claude/CLAUDE.md` — LAW section gains 114.19o addendum documenting the automation + opt-out + fallback
+- `docs/FINALIZED.md` — this Session 114.19o entry prepended
+- `docs/NOW.md` — status refreshed
+
+### Post-commit
+
+No manual clear needed anymore. Commit ships; next `node brain-server.js` auto-clears and runs curriculum on fresh state. LAW 6 Part 2 signoff still required for any push to origin.
+
+---
+
 ## 2026-04-17 — Session 114.19n: letter↔motor init reverted to 70/30 (TALK regression fix) + `suppressNoise` opt added to `cluster.generateSentence` + `_internalThought` wired to suppress noise on popup emissions
 
 Gee 2026-04-17 verbatim acceptance of the earlier-session proposal:

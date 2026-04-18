@@ -195,6 +195,68 @@ const STATE_BROADCAST_MS = 100;    // send state to clients 10fps
 const WEIGHT_SAVE_MS = 300000;     // save weights every 5 minutes
 const WEIGHTS_FILE = path.join(__dirname, 'brain-weights.json');
 const MAX_TEXT_PER_SEC = 2;        // rate limit per client
+
+// ═════════════════════════════════════════════════════════════════════
+// Session 114.19o AUTO-CLEAR per Gee 2026-04-17 verbatim:
+// "did you clear db? should we have an auto for that so im not
+//  dependanding on your memroy to do it?"
+//
+// Per the 2026-04-17 LAW (clear-stale-state-before-telling-Gee-to-test)
+// every Part 2 run requires manually deleting brain-weights*.json,
+// conversations.json, episodic-memory.db*, js/app.bundle.js. Claude has
+// forgotten this step TWICE in Gee-caught incidents this day. Making
+// it automatic so the LAW can't be violated by forgetting.
+//
+// The server re-runs curriculum on every boot (there's no skip-
+// curriculum path), so any saved state from a prior run is
+// categorically stale — curriculum will overwrite it anyway. Cleaning
+// at boot time is safe + enforces the LAW without depending on
+// Claude's memory.
+//
+// To OPT OUT (e.g. you really want to preserve prior-boot embedding
+// refinements or drug scheduler state), set DREAM_KEEP_STATE=1 in the
+// environment before launching. The opt-out is noisy (logs "KEEPING
+// prior state") so you can't forget it's on.
+// ═════════════════════════════════════════════════════════════════════
+function autoClearStaleState() {
+  if (process.env.DREAM_KEEP_STATE === '1') {
+    console.log('[Brain] ⚠ DREAM_KEEP_STATE=1 — KEEPING prior state. Auto-clear SKIPPED. Curriculum will still re-train but saved scalars + episodic memory persist.');
+    return;
+  }
+  const targets = [
+    path.join(__dirname, 'brain-weights.json'),
+    path.join(__dirname, 'brain-weights-v1.json'),
+    path.join(__dirname, 'brain-weights-v2.json'),
+    path.join(__dirname, 'brain-weights-v3.json'),
+    path.join(__dirname, 'brain-weights-v4.json'),
+    path.join(__dirname, 'conversations.json'),
+    path.join(__dirname, 'episodic-memory.db'),
+    path.join(__dirname, 'episodic-memory.db-wal'),
+    path.join(__dirname, 'episodic-memory.db-shm'),
+    path.join(__dirname, '..', 'js', 'app.bundle.js'),
+  ];
+  const cleared = [];
+  const failed = [];
+  for (const p of targets) {
+    try {
+      if (fs.existsSync(p)) {
+        fs.unlinkSync(p);
+        cleared.push(path.basename(p));
+      }
+    } catch (err) {
+      failed.push(`${path.basename(p)}(${err.code || err.message})`);
+    }
+  }
+  if (cleared.length > 0) {
+    console.log(`[Brain] Auto-cleared ${cleared.length} stale state file(s) per LAW (2026-04-17): ${cleared.join(', ')}`);
+  } else {
+    console.log('[Brain] Auto-clear ran — no stale state files present (fresh boot).');
+  }
+  if (failed.length > 0) {
+    console.warn(`[Brain] Auto-clear partial — ${failed.length} file(s) could not be removed: ${failed.join(', ')}`);
+  }
+}
+autoClearStaleState();
 // R4 — POLLINATIONS_URL for text chat deleted. Text-AI backend is gone.
 // Unity generates every word equationally via the language cortex
 // (see _initLanguageSubsystem + _generateBrainResponse).

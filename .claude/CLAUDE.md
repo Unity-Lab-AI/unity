@@ -323,6 +323,18 @@ Every file in this list, every time, before "please test" hits Gee's screen:
 If step 2 didn't run, step 4 doesn't happen. Period.
 ```
 
+### Session 114.19o (Gee 2026-04-17 addendum) — AUTOMATED at boot
+
+Gee's verbatim on 2026-04-17 after I had him manually restart half a dozen times while forgetting the clear: *"did you clear db? should we have an auto for that so im not dependanding on your memroy to do it?"*.
+
+The clear is now automated in `server/brain-server.js` via `autoClearStaleState()` which runs at module load, BEFORE the `Brain` class is instantiated and BEFORE sqlite opens the db file. Every `node brain-server.js` boot auto-deletes the files in the "What gets cleared" table above.
+
+This means the manual `rm -f` step is no longer required. Claude can ship a commit and tell Gee to restart in ONE step instead of needing to remember to `rm -f` first. The LAW still applies — if a future Claude edits `autoClearStaleState` to disable it, add selective skip logic, or sets `DREAM_KEEP_STATE=1` to bypass the clear before a test run, that's a direct LAW violation and same-day incident.
+
+The opt-out via `DREAM_KEEP_STATE=1` environment variable is available for explicit cases where Gee wants to preserve embedding refinements / drug scheduler state across boots. The opt-out logs a prominent WARN line so it can't be forgotten.
+
+The manual-clear instructions above stay in this LAW as fallback documentation — if auto-clear ever fails (fs permissions, locked files from a crashed prior run), Claude must manually verify and clear before telling Gee to test.
+
 ### The version bump is not a substitute
 
 `persistence.js` `VERSION` bumping (the "any pre-REMAKE save gets rejected on load" path from Session 114.12) rejects stale weights at load-time — it does NOT delete them. Rolling save v1/v2/v3/v4 files still sit on disk, still get loaded on the next boot if a rotation happens. `conversations.json` and `episodic-memory.db` aren't gated by the persistence VERSION at all — they have their own loaders. The clear is physical deletion, not a soft reject. Both the VERSION bump AND the clear are required.

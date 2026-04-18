@@ -1,6 +1,44 @@
 # NOW — Session Snapshot
 
-> Saved: 2026-04-17 23:00 (Session 114.19n letter↔motor init reverted to 70/30 + `suppressNoise` opt added to `cluster.generateSentence` + `_internalThought` popup flag wired to trigger noise suppression — per Gee verbatim *"want popups to produce cleaner emissions during live input I could add noise suppression when _internalThought is active — that's a small targeted change"* — thirty-second commit on `syllabus-k-phd`)
+> Saved: 2026-04-17 23:30 (Session 114.19o auto-clear stale state at server boot — LAW now enforced in code — per Gee verbatim *"did you clear db? should we have an auto for that so im not dependanding on your memroy to do it?"* — thirty-third commit on `syllabus-k-phd`)
+
+## Session 114.19o — what shipped (uncommitted on top of 114.19n at 98dd3af)
+
+### autoClearStaleState() in brain-server.js
+
+At module load (before Brain class + sqlite open), the server auto-deletes all files in the CLAUDE.md LAW "What gets cleared" table:
+
+- brain-weights.json + -v1..-v4
+- conversations.json
+- episodic-memory.db + -wal + -shm
+- js/app.bundle.js
+
+Boot log surfaces one of three lines: auto-cleared N files, no stale state present, or partial clear with lock errors named.
+
+### Opt-out
+
+`DREAM_KEEP_STATE=1` env var disables the clear with prominent ⚠ warning.
+
+### CLAUDE.md LAW addendum
+
+The 2026-04-17 LAW section gets a 114.19o addendum documenting that manual `rm -f` is no longer required, automation runs at boot, opt-out available, and future Claude must not disable this without LAW violation being explicit.
+
+### No more "wait let me clear" before testing
+
+Commit ships → restart → auto-clear fires → curriculum runs on fresh state. One step instead of two.
+
+### Files touched this session
+
+- `server/brain-server.js` — autoClearStaleState() function + module-load call
+- `.claude/CLAUDE.md` — LAW 114.19o addendum
+- `docs/FINALIZED.md` — Session 114.19o entry prepended
+- `docs/NOW.md` — this file, updated header
+
+---
+
+## Session 114.19n — shipped (committed at 98dd3af)
+
+### Fix 1 — letter↔motor reverted to 70/30
 
 ## Session 114.19n — what shipped (uncommitted on top of 114.19m at 93c9a3b)
 
