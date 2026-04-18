@@ -129,9 +129,11 @@ Motor region at 201M × 0.033 = 6.6M neurons. Sem = 33M. Cross-projection sem→
 
 - [ ] **T17.1 — Phase 1 remove CPU cap (SHIP NOW).** `CPU_LANGUAGE_CORTEX_CAP = 100000`. Validate PROD discrimination improves.
 - [ ] **T17.2 — Phase 2 worker parallelization.** `cluster.step()` across N cores.
-- [ ] **T17.3 — Phase 3.a GPU cross-region sparse matmul shader.** WGSL shader for `crossProjection.propagate()` on GPU.
-- [ ] **T17.4 — Phase 3.b GPU cross-region Hebbian shader.** WGSL shader for `_crossRegionHebbian()` on GPU.
-- [ ] **T17.5 — Phase 3.c Wire cluster to GPU cross-region path.** `cluster._propagateCrossRegions` routes to GPU when available.
+- [x] **T17.3.a — GPU sparse matrix scaffolding (SHIPPED).** `GPUCompute.uploadSparseMatrix(name, rows, cols, values, colIdx, rowPtr)` + `propagateSparse(name)` + `hebbianSparse(name, lr)` + `writeSparsePreSpikes` + `writeSparsePostSpikes` added. Reuses existing `SYNAPSE_PROPAGATE_SHADER` + `PLASTICITY_SHADER` pipelines. Standalone sparse matrices keyed by name, not tied to clusters. Foundation for cross-region ops — next commits wire cluster.js + compute.html to use it.
+- [ ] **T17.3.b — compute.html message handlers.** Add `sparse_upload` / `sparse_propagate` / `sparse_hebbian` message types in compute.html that call the corresponding `gpu.*` methods. Server sends these messages via WebSocket; compute.html dispatches shaders and returns results.
+- [ ] **T17.3.c — WebSocket protocol in server.** Server-side helpers `this._gpuUploadSparseMatrix(name, matrix)` + `await this._gpuPropagateSparse(name, preSpikes)` + `this._gpuHebbianSparse(name, preSpikes, postSpikes, lr)`. Promise-based async dispatch with batchId tracking like existing compute_batch.
+- [ ] **T17.3.d — Wire cluster class to GPU when available.** NeuronCluster constructor detects GPU proxy → for each cross-projection calls `_gpuUploadSparseMatrix`. `_propagateCrossRegions` routes to GPU when proxy present, falls back to CPU otherwise. `_crossRegionHebbian` same.
+- [ ] **T17.3.e — Remove CPU_SINGLE_THREAD_DISPATCH_BUDGET when GPU path active.** Auto-scale drops the dispatch-budget bound, scales to VRAM budget instead. Language cortex can grow to 1M+ once GPU is handling cross-region ops.
 - [ ] **T17.6 — Phase 4 live chat on upscaled cortex.** `engine.processAndRespond` drives scaled cluster.
 - [ ] **T17.7 — Phase 5 single-cortex integration.** Language sub-regions in main 201M GPU cortex.
 

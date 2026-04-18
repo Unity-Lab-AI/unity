@@ -261,6 +261,13 @@ export class GPUCompute {
     this._pipelines = {};
     this._buffers = {};
     this._ping = 0; // double-buffer index
+    // Standalone sparse matrices keyed by name (not tied to any single
+    // cluster). Used for T14.4 cross-region projections + any other
+    // sparse structure that lives outside a cluster's intra-cluster
+    // synapse matrix. Each entry: { rows, cols, nnz, values, colIdx,
+    // rowPtr, preSpikes, postCurrents } where each field after
+    // rows/cols/nnz is a GPUBuffer.
+    this._sparseMatrices = {};
   }
 
   /**
@@ -434,6 +441,168 @@ export class GPUCompute {
     }
 
     this._buffers[name] = buffers;
+  }
+
+  /**
+   * Upload a standalone sparse CSR matrix to GPU — not bound to any
+   * cluster. Used for T14.4 cross-region projections where the matrix
+   * connects one region's spikes to another region's currents
+   * (independent of any cluster's intra-cluster synapses).
+   *
+   * Stores under `this._sparseMatrices[name]`. Subsequent
+   * propagateSparse + hebbianSparse calls dispatch shaders against it.
+   *
+   * @param {string} name — projection identifier, e.g. 'sem_to_motor'
+   * @param {number} rows — target region size (spikes vector destination)
+   * @param {number} cols — source region size (pre-spike vector domain)
+   * @param {Float32Array|Float64Array} values — CSR non-zero weights, length = nnz
+   * @param {Uint32Array} colIdx — CSR column indices, length = nnz
+   * @param {Uint32Array} rowPtr — CSR row pointers, length = rows + 1
+   */
+  uploadSparseMatrix(name, rows, cols, values, colIdx, rowPtr) {
+    if (!this._available) return false;
+    const vals32 = values instanceof Float32Array ? values : new Float32Array(values);
+    const nnz = vals32.length;
+    const entry = {
+      rows, cols, nnz,
+      values:  this._createBuffer(vals32, GPUBufferUsage.STORAGE),
+      colIdx:  this._createBuffer(colIdx instanceof Uint32Array ? colIdx : new Uint32Array(colIdx), GPUBufferUsage.STORAGE),
+      rowPtr:  this._createBuffer(rowPtr instanceof Uint32Array ? rowPtr : new Uint32Array(rowPtr), GPUBufferUsage.STORAGE),
+      // Per-matrix pre-spike input buffer + post-current output buffer.
+      // Re-used across dispatches (overwritten each call).
+      preSpikes: this._device.createBuffer({
+        size: cols * 4, // u32 per slot
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+      }),
+      postCurrents: this._device.createBuffer({
+        size: rows * 4, // f32 per slot
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
+      }),
+      postSpikes: this._device.createBuffer({
+        size: rows * 4, // u32 per slot — used by hebbianSparse as post signal
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+      }),
+    };
+    this._sparseMatrices[name] = entry;
+    return true;
+  }
+
+  /**
+   * Dispatch sparse matmul: currents[target region] = matrix @ spikes[source region].
+   * Reuses the existing SYNAPSE_PROPAGATE_SHADER. Pre-spikes must be
+   * uploaded to this matrix's `preSpikes` buffer first via
+   * `writeBuffer(entry.preSpikes, 0, spikeData)`.
+   *
+   * Returns a Float32Array of post-region currents (readback).
+   */
+  async propagateSparse(name) {
+    if (!this._available) return null;
+    const entry = this._sparseMatrices[name];
+    if (!entry) return null;
+    const device = this._device;
+    const pass = device.createCommandEncoder().beginComputePass();
+    // Reuse the synapse propagate pipeline + layout from the main cluster path.
+    // Params layout matches SYNAPSE_PROPAGATE_SHADER (n, nnz).
+    const params = new Uint32Array([entry.rows, entry.nnz]);
+    const paramsBuf = this._createBuffer(params, GPUBufferUsage.UNIFORM);
+    const bindGroup = device.createBindGroup({
+      layout: this._pipelines.propagate.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: paramsBuf } },
+        { binding: 1, resource: { buffer: entry.values } },
+        { binding: 2, resource: { buffer: entry.colIdx } },
+        { binding: 3, resource: { buffer: entry.rowPtr } },
+        { binding: 4, resource: { buffer: entry.preSpikes } },
+        { binding: 5, resource: { buffer: entry.postCurrents } },
+      ],
+    });
+    pass.setPipeline(this._pipelines.propagate);
+    pass.setBindGroup(0, bindGroup);
+    pass.dispatchWorkgroups(Math.ceil(entry.rows / 256));
+    pass.end();
+    // Readback via temporary mapped buffer
+    const encoder = device.createCommandEncoder();
+    const readback = device.createBuffer({
+      size: entry.rows * 4,
+      usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+    });
+    encoder.copyBufferToBuffer(entry.postCurrents, 0, readback, 0, entry.rows * 4);
+    device.queue.submit([encoder.finish()]);
+    await readback.mapAsync(GPUMapMode.READ);
+    const out = new Float32Array(readback.getMappedRange().slice(0));
+    readback.unmap();
+    readback.destroy();
+    paramsBuf.destroy();
+    return out;
+  }
+
+  /**
+   * Dispatch sparse Hebbian weight update. Reuses PLASTICITY_SHADER.
+   * Pre-spikes + post-spikes must be uploaded to the matrix's
+   * preSpikes/postSpikes buffers before calling. Weights are updated
+   * in place on GPU.
+   *
+   * @param {string} name
+   * @param {number} lr — learning rate
+   */
+  hebbianSparse(name, lr) {
+    if (!this._available) return false;
+    const entry = this._sparseMatrices[name];
+    if (!entry) return false;
+    const device = this._device;
+    const params = new Float32Array([entry.rows, entry.nnz, lr, 1.0, -2.0, 2.0]);
+    // Pack: n (u32), nnz (u32), lr (f32), reward (f32), wMin (f32), wMax (f32)
+    const paramsView = new ArrayBuffer(24);
+    new Uint32Array(paramsView, 0, 2).set([entry.rows, entry.nnz]);
+    new Float32Array(paramsView, 8, 4).set([lr, 1.0, -2.0, 2.0]);
+    const paramsBuf = this._createBuffer(new Uint8Array(paramsView), GPUBufferUsage.UNIFORM);
+    const bindGroup = device.createBindGroup({
+      layout: this._pipelines.plasticity.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: paramsBuf } },
+        { binding: 1, resource: { buffer: entry.values } },
+        { binding: 2, resource: { buffer: entry.colIdx } },
+        { binding: 3, resource: { buffer: entry.rowPtr } },
+        { binding: 4, resource: { buffer: entry.preSpikes } },
+        { binding: 5, resource: { buffer: entry.postSpikes } },
+      ],
+    });
+    const encoder = device.createCommandEncoder();
+    const pass = encoder.beginComputePass();
+    pass.setPipeline(this._pipelines.plasticity);
+    pass.setBindGroup(0, bindGroup);
+    pass.dispatchWorkgroups(Math.ceil(entry.rows / 256));
+    pass.end();
+    device.queue.submit([encoder.finish()]);
+    // paramsBuf destroyed lazily by device GC
+    return true;
+  }
+
+  /**
+   * Write spike data into a sparse matrix's pre-spike buffer, so the
+   * next propagateSparse/hebbianSparse call sees it.
+   */
+  writeSparsePreSpikes(name, spikes) {
+    const entry = this._sparseMatrices[name];
+    if (!entry) return false;
+    const data = spikes instanceof Uint32Array ? spikes
+      : spikes instanceof Uint8Array ? Uint32Array.from(spikes)
+      : new Uint32Array(spikes);
+    this._device.queue.writeBuffer(entry.preSpikes, 0, data.buffer, data.byteOffset, data.byteLength);
+    return true;
+  }
+
+  /**
+   * Write post-spike data (for Hebbian).
+   */
+  writeSparsePostSpikes(name, spikes) {
+    const entry = this._sparseMatrices[name];
+    if (!entry) return false;
+    const data = spikes instanceof Uint32Array ? spikes
+      : spikes instanceof Uint8Array ? Uint32Array.from(spikes)
+      : new Uint32Array(spikes);
+    this._device.queue.writeBuffer(entry.postSpikes, 0, data.buffer, data.byteOffset, data.byteLength);
+    return true;
   }
 
   _createBuffer(data, usage) {
