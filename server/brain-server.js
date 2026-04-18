@@ -661,8 +661,10 @@ class ServerBrain {
       if (this._pendingEmbeddingRefinements && typeof this.sharedEmbeddings.loadRefinements === 'function') {
         try {
           this.sharedEmbeddings.loadRefinements(this._pendingEmbeddingRefinements);
-          const refinementCount = Object.keys(this._pendingEmbeddingRefinements || {}).length || '?';
-          console.log(`[Brain] Restored ${refinementCount} embedding refinement delta(s) from last save`);
+          // Session 114.19l — `|| '?'` collapsed 0 → '?' via falsy-OR.
+          // Use nullish coalescing so zero-count reports as "0" not "?".
+          const refinementCount = Object.keys(this._pendingEmbeddingRefinements || {}).length;
+          console.log(`[Brain] Restored ${refinementCount} embedding refinement delta(s) from last save (NOT cortex cross-projection weights — those re-train from scratch every curriculum walk)`);
         } catch (err) {
           console.warn('[Brain] Embedding refinement restore failed:', err.message);
         }
@@ -806,10 +808,16 @@ class ServerBrain {
         // T14.24 Session 17 — prefer multi-subject complete curriculum
         // (all 5 tracks K→PhD) over the legacy ELA-only runFullCurriculum.
         console.log('[Brain] Stage: curriculum.runCompleteCurriculum START (BACKGROUND — 5 subjects × K→PhD, tick loop proceeds)');
+        // Session 114.19l — block periodic saveWeights while curriculum
+        // is teaching so next-boot _loadWeights doesn't restore stale
+        // mid-teach state. Flag cleared in .then/.catch so saves resume
+        // after curriculum completes.
+        this._curriculumInProgress = true;
         this.curriculum.runCompleteCurriculum(
           { persona: personaText, baseline: baselineText, coding: codingText },
           { arousal: 0.8, valence: 0.2 },
         ).then((result) => {
+          this._curriculumInProgress = false;
           const perSubject = Object.entries(result.reached || {}).map(([s, g]) => `${s}=${g}`).join(', ');
           console.log(`[Brain] Stage: curriculum.runCompleteCurriculum DONE (background) — ${perSubject}`);
           // T14.24 Session 18 — start continuous background probe loop
@@ -817,6 +825,7 @@ class ServerBrain {
             this.curriculum.startBackgroundProbeLoop();
           }
         }).catch((err) => {
+          this._curriculumInProgress = false;
           console.warn('[Brain] curriculum.runCompleteCurriculum failed:', err?.message || err);
         });
       } else if (this.curriculum && typeof this.curriculum.runFullCurriculum === 'function') {
@@ -1842,6 +1851,19 @@ class ServerBrain {
   // ── Persistence ──────────────────────────────────────────────
 
   saveWeights() {
+    // Session 114.19l — skip periodic saves while curriculum is
+    // teaching. Gee caught on 2026-04-17 that the periodic setInterval
+    // `brain.saveWeights()` writes `brain-weights.json` mid-curriculum
+    // and on next boot `_loadWeights` restores stale scalars + embedding
+    // refinements from that partial state. Since curriculum runs on
+    // every boot (there's no "skip curriculum" path), any save made
+    // DURING the curriculum walk is invalid — the brain state will be
+    // overwritten by the next curriculum run anyway. Blocking mid-teach
+    // saves prevents stale-state resurrection across Ctrl+C + restart.
+    // After `runCompleteCurriculum` completes, normal saves resume.
+    if (this._curriculumInProgress) {
+      return;
+    }
     try {
       // Versioned save — keep last 5 versions for rollback
       this._saveVersion = (this._saveVersion || 0) + 1;

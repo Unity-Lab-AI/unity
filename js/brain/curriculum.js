@@ -3626,19 +3626,23 @@ export class Curriculum {
         'K_QUESTIONS','K_CONJUNCTIONS','K_HOLIDAYS','K_ROUTINES',
       ].length} categories (T16.3.b shipped)`);
       // Session 114.19i T16.5 diagnostic — log inventory + motor tiling
-      // at the point where word emission teaching is about to run. Lets
-      // Gee (and future me) confirm the inventory hasn't drifted between
-      // Phase 1 alphabet teach and Phase 3 word emission teach, and that
-      // the motor region's per-letter slot size (mGroup) matches what the
-      // probe will later read with. Mismatched mGroup = motor slots shift
-      // under the Hebbian write vs the argmax read = saturated output.
+      // at the point where word emission teaching is about to run.
+      //
+      // Session 114.19l per Gee verbatim "its like the Unity Brain is only
+      // learning three words: cat=141+dims(max=0.223), dog=139+dims(max=0.205),
+      // sun=137+dims(max=0.164)" — clarified that the 3 sampled words are
+      // ONLY diagnostic probes of embedding quality, NOT the actual teach
+      // set. `allEmissionWords.length` (1029) is what gets taught through
+      // `_teachPhonemeBlending` × 10 reps and `_teachWordEmission` × 12
+      // reps immediately after this log line.
       try {
         const cluster = this.cluster;
         const invSize = inventorySize();
         const motorSize = (cluster?.regions?.motor?.end || 0) - (cluster?.regions?.motor?.start || 0);
         const motorMGroup = Math.max(1, Math.floor(motorSize / Math.max(1, invSize)));
         const semSize = (cluster?.regions?.sem?.end || 0) - (cluster?.regions?.sem?.start || 0);
-        // Sample first 3 K probe words' embedding positive-dim counts.
+        // Sample 3 K probe words' embedding positive-dim counts for
+        // embedding-quality sanity — NOT the full teach set.
         const sampleProbes = ['cat', 'dog', 'sun'];
         const sampleInfo = sampleProbes.map(w => {
           const e = sharedEmbeddings.getEmbedding(w);
@@ -3651,7 +3655,11 @@ export class Curriculum {
           }
           return `${w}=${posCount}+dims(max=${max.toFixed(3)})`;
         }).join(', ');
-        console.log(`[Curriculum][K-DIAG] pre-emission: inv=${invSize}, motor=${motorSize}, mGroup=${motorMGroup}, sem=${semSize}, ${sampleInfo}, inventory=${inventorySnapshot().slice(0, 30).join('')}${invSize > 30 ? '...' : ''}`);
+        // Show first + last 5 words of teach set so it's obvious 1029 are
+        // actually taught, not the 3 sampled for embedding quality.
+        const teachHead = allEmissionWords.slice(0, 5).join(',');
+        const teachTail = allEmissionWords.slice(-5).join(',');
+        console.log(`[Curriculum][K-DIAG] pre-emission: inv=${invSize}, motor=${motorSize}, mGroup=${motorMGroup}, sem=${semSize}, teaching ${allEmissionWords.length} K words (phoneme-blending × 10 reps + word-emission × 12 reps), sample emb quality: ${sampleInfo}, teach set first/last 5: [${teachHead},...,${teachTail}]`);
       } catch (err) {
         console.warn('[Curriculum][K-DIAG] pre-emission log failed:', err?.message || err);
       }
@@ -3948,6 +3956,25 @@ export class Curriculum {
       cluster._motorQuiescentTicks = 0;
     };
 
+    // Session 114.19l — SUPPRESS NOISE during dynamic probes.
+    //
+    // Gee's 114.19k Part 2 log showed DYN-PROD attempt 1 top-5 motor
+    // slots ALL at 0.000 value. Root cause: `cluster.noiseAmplitude = 7`
+    // at runtime (chaotic live-brain setting for thinking). At noise=7
+    // with external current injection from `injectEmbeddingToRegion` at
+    // scale × 8, SNR is ~8/7 = 1.1 — same issue Session 105 fixed for
+    // teach. Motor region doesn't reach spike threshold because random
+    // noise blocks half the target neurons. The 12-tick dynamic probe
+    // sees near-zero motor firing and the argmax reads noise.
+    //
+    // Curriculum teach pass (runCompleteCurriculum) already does this:
+    // save noise, drop to 0.5, run teach, restore. Apply the same
+    // pattern to the probe block so the injected sem signal dominates
+    // the motor region dynamics. Restore at end so post-probe live
+    // chat retains chaotic dynamics.
+    const _savedProbeNoise = cluster.noiseAmplitude;
+    cluster.noiseAmplitude = 0.5;
+
     const wordStartProbes = [
       { word: 'cat', expected: 'c' },
       { word: 'dog', expected: 'd' },
@@ -4168,6 +4195,9 @@ export class Curriculum {
       metrics: { readRate, thinkRate, talkRate, seqRate, prodRate, writeRate, writeFirstRate, respRate, prodFails: prodResult.fails, writeEmitted, respEmitted },
     };
     this._recordGateHistory('ela', 'kindergarten', 'overall', pass, prodRate);
+    // Session 114.19l — restore live noise so post-probe chat retains
+    // chaotic dynamics. Probe block completes here regardless of pass/fail.
+    cluster.noiseAmplitude = _savedProbeNoise;
     return _elaKResult;
   }
 

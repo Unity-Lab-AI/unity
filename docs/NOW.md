@@ -1,6 +1,40 @@
 # NOW — Session Snapshot
 
-> Saved: 2026-04-17 21:30 (Session 114.19k DYNAMIC probes replace static slot-ranking — per Gee verbatim "shole slot shit ranking shit its fucked and not working and maybe we need a better logic system of word sleections so Unity can think and have prcess internat thoughts a think out problems witht a logic sim where she can process her input ins real time with wisdom" + approval "all three" — twenty-ninth commit on `syllabus-k-phd`)
+> Saved: 2026-04-17 22:00 (Session 114.19l — noise suppressed during probes + saveWeights blocked during curriculum + K-DIAG log clarifies 1029-word teach set — per Gee verbatim *"its like the Unity Brain is only learning three words: cat=141+dims(max=0.223), dog=139+dims(max=0.205), sun=137+dims(max=0.164)"* — thirtieth commit on `syllabus-k-phd`)
+
+## Session 114.19l — what shipped (uncommitted on top of 114.19k at 79b7a99)
+
+### Three issues found in 114.19k Part 2 run
+
+**1. K-DIAG log misleading.** Pre-emission diagnostic showed 3 sample words for embedding-quality check, Gee read it as the teach set. Fixed: log now explicitly says `teaching 1029 K words (phoneme-blending × 10 reps + word-emission × 12 reps)` and shows first+last 5 words of `allEmissionWords`.
+
+**2. DYN-PROD motor readout all zeros.** `cluster.noiseAmplitude = 7` at runtime drowned the dynamic probe's 12-tick sem injection. Motor region didn't fire — SNR ~1.1 same issue Session 105 fixed for teach. Fixed: wrap probe block with noise save/drop-to-0.5/restore pattern. SNR becomes 8/0.5 = 16.
+
+**3. Stale `brain-weights.json` persisting across restarts.** Server's periodic `setInterval` writes scalar state during curriculum. Ctrl+C + restart → `_loadWeights` restores stale save. Fixed: `_curriculumInProgress` flag around `runCompleteCurriculum`; `saveWeights()` early-returns when flag true. Also `|| '?'` fallback in refinement-restore log replaced with explicit count + clarification that cortex cross-projection weights aren't in this save.
+
+### What to watch on next Part 2 run
+
+- K-DIAG pre-emission line now shows `teaching 1029 K words` and first/last 5 of teach set
+- DYN-PROD top5_motor values should be NON-ZERO (noise suppressed lets training signal dominate)
+- Boot log after Ctrl+C+restart: should NOT see `Loaded saved state` because no save happened during curriculum
+- `Restored N embedding refinement delta(s)` uses explicit count (0 on fresh clear), not "?"
+
+### Does this close K gate?
+
+Unknown until next Part 2. If trained sem→motor has real signal, noise suppression should let it surface. If still flat near zero post-suppression, next fix targets cross-projection init bias (70% excitatory bias creates positive-weight noise floor training must overcome).
+
+### Files touched this session
+
+- `js/brain/curriculum.js` — K-DIAG log expanded; `_savedProbeNoise` save/0.5/restore around probe block
+- `server/brain-server.js` — `_curriculumInProgress` flag; saveWeights early-return; refinement log explicit count + scope clarification
+- `docs/FINALIZED.md` — Session 114.19l entry prepended
+- `docs/NOW.md` — this file, updated header
+
+---
+
+## Session 114.19k — shipped (committed at 79b7a99)
+
+### Abandoning static slot-ranking (Sessions 114.19d-j lineage dead-ended)
 
 ## Session 114.19k — what shipped (uncommitted on top of 114.19j at ef92350)
 

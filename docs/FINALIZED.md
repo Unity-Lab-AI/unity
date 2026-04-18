@@ -5,6 +5,63 @@
 
 ---
 
+## 2026-04-17 — Session 114.19l: noise suppressed during probes (SNR fix) + saveWeights blocked during curriculum (stale-state prevention) + K-DIAG log clarifies 1029-word teach set + embedding-refinement restore log fix
+
+Gee 2026-04-17 verbatim after 114.19k Part 2 run:
+
+> *"its like the Unity Brain is only learning three words: cat=141+dims(max=0.223), dog=139+dims(max=0.205), sun=137+dims(max=0.164)"*
+
+### Three issues found in Gee's 114.19k log, all fixed
+
+**Issue 1 — misleading K-DIAG log (Gee's verbatim concern).**
+The `[Curriculum][K-DIAG] pre-emission` log hardcoded three sample words (cat/dog/sun) to show embedding-quality diagnostic. Gee read this as the entire teach set. Fixed — log now explicitly states `teaching 1029 K words (phoneme-blending × 10 reps + word-emission × 12 reps)` + shows first + last 5 words of the actual teach set + clarifies the three sampled words are ONLY embedding-quality diagnostics, not the teach scope.
+
+**Issue 2 — DYN-PROD motor readout all zeros (root cause of post-114.19k regression).**
+Gee's 114.19k K-DIAG attempt 1:
+```
+DYN-PROD[cat→c] decoded=a, emb_pos=141/300, expected_slot=c(2:0.000) rank=3/26, top5_motor=a(0:0.000),b(1:0.000),c(2:0.000),d(3:0.000),e(4:0.000)
+```
+ALL top-5 slots at value 0.000 — motor region didn't fire ANY spikes during the 12-tick dynamic probe. Root cause: `cluster.noiseAmplitude = 7` at runtime (live-chat chaotic-thinking setting). SNR of injected sem (scale × 8 from `injectEmbeddingToRegion`) vs noise ~1.1 — same SNR issue Session 105 fixed for curriculum teach. Motor region doesn't reach spike threshold because random noise blocks half the target neurons.
+
+Fix: wrap the dynamic probe block with the same noise-suppression pattern `runCompleteCurriculum` uses. `cluster.noiseAmplitude` saved → dropped to 0.5 for the probes → restored after the gate returns so post-probe live chat retains chaotic dynamics. SNR becomes 8/0.5 = 16, injection dominates.
+
+**Issue 3 — saveWeights polluting across restarts.**
+Gee's 114.19k boot log:
+```
+[Brain] Loaded saved state from 2026-04-18T02:52:05.104Z
+[Brain] Restored ? embedding refinement delta(s) from last save
+```
+Even though LAW 6 Part 2 + the 2026-04-17 clear-stale-state LAW have us manually deleting `server/brain-weights*.json` before test runs, the server's `setInterval` periodic `saveWeights()` writes the file mid-curriculum. Ctrl+C kills the server but the file persists. Next boot `_loadWeights` restores mid-teach scalars + a mostly-empty embedding-refinement map from the stale save. The `|| '?'` fallback logged "?" when count was 0, making the line look suspicious.
+
+Fix (three parts):
+- `this._curriculumInProgress = true` set before `runCompleteCurriculum` call; cleared in both `.then()` (completion) and `.catch()` (failure)
+- `saveWeights()` early-returns when `this._curriculumInProgress` is true — no mid-teach writes to disk
+- Embedding-refinement restore log uses explicit count (0 when empty) instead of `|| '?'`, and clarifies the log saying "NOT cortex cross-projection weights — those re-train from scratch every curriculum walk" so Gee doesn't misread scalar + refinement restore as cortex-weight restore
+
+### What this enables for the next Part 2 run
+
+- DYN-PROD top5_motor values will be non-zero (sem→motor dynamics can actually settle into basins instead of being drowned by chaotic noise)
+- K-DIAG pre-emission log will show `teaching 1029 K words` literally in the line — no more misreading
+- After Ctrl+C + restart, the `brain-weights.json` file will NOT have been written during the prior curriculum run, so `_loadWeights` won't restore stale scalars
+- Restore log will say "0 embedding refinement delta(s)" on a fresh clear, not "?"
+
+### Does this fix PROD/WRITE/RESP pass rates?
+
+Unknown yet — depends on whether the trained sem→motor cross-projection has enough signal once noise is suppressed. The 114.19k data showed PROD climbing from 0/17 (attempt 1) to 1/17 (attempt 4) with rank oscillating 3→13→7→22→11, consistent with random argmax under noise. With noise suppressed the REAL trained signal should dominate. If it's still flat with values near zero, next fix will target the cross-projection init or training intensity.
+
+### Files
+
+- `js/brain/curriculum.js` — K-DIAG pre-emission log expanded with teach-set size + first/last 5 words; `_savedProbeNoise` saved + `cluster.noiseAmplitude = 0.5` before probes; restored at end of gate
+- `server/brain-server.js` — `_curriculumInProgress` flag set around `runCompleteCurriculum`; `saveWeights()` early-returns when flag true; embedding-refinement log uses explicit count + clarifies scope
+- `docs/FINALIZED.md` — this Session 114.19l entry prepended
+- `docs/NOW.md` — status refreshed
+
+### Post-commit per LAW (Session 114.19b)
+
+Clear stale state BEFORE telling Gee to restart. Push still gated on LAW 6 Part 2 signoff.
+
+---
+
 ## 2026-04-17 — Session 114.19k: DYNAMIC probes replace static slot-ranking (per Gee verbatim "shole slot shit ranking shit its fucked") — PROD/WRITE/RESP all use full-brain tick dynamics via cluster.step() and cluster.generateSentence()
 
 Gee 2026-04-17 verbatim after 114.19j K-DIAG showed `expected_slot=c(2:7.457) rank=9/26` locked for 20+ retries:
