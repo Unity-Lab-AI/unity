@@ -461,25 +461,48 @@ export class GPUCompute {
    */
   uploadSparseMatrix(name, rows, cols, values, colIdx, rowPtr) {
     if (!this._available) return false;
+    const device = this._device;
     const vals32 = values instanceof Float32Array ? values : new Float32Array(values);
+    const cols32 = colIdx instanceof Uint32Array ? colIdx : new Uint32Array(colIdx);
+    const rows32 = rowPtr instanceof Uint32Array ? rowPtr : new Uint32Array(rowPtr);
     const nnz = vals32.length;
+
+    // Use createBuffer + queue.writeBuffer (async, non-blocking) instead
+    // of createBuffer({mappedAtCreation:true}) which synchronously maps
+    // the buffer to CPU memory before copy. For 60MB+ sparse matrices
+    // mappedAtCreation was taking seconds per buffer × 3 buffers per
+    // matrix, blocking the WebSocket onmessage handler and starving
+    // main-brain compute_batch dispatch. writeBuffer queues the write
+    // on the GPU command stream and returns immediately; subsequent
+    // dispatches serialize behind it automatically.
+    const makeStorage = (sizeBytes) => device.createBuffer({
+      size: sizeBytes,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+
+    const valuesBuf = makeStorage(vals32.byteLength);
+    const colIdxBuf = makeStorage(cols32.byteLength);
+    const rowPtrBuf = makeStorage(rows32.byteLength);
+
+    device.queue.writeBuffer(valuesBuf, 0, vals32.buffer, vals32.byteOffset, vals32.byteLength);
+    device.queue.writeBuffer(colIdxBuf, 0, cols32.buffer, cols32.byteOffset, cols32.byteLength);
+    device.queue.writeBuffer(rowPtrBuf, 0, rows32.buffer, rows32.byteOffset, rows32.byteLength);
+
     const entry = {
       rows, cols, nnz,
-      values:  this._createBuffer(vals32, GPUBufferUsage.STORAGE),
-      colIdx:  this._createBuffer(colIdx instanceof Uint32Array ? colIdx : new Uint32Array(colIdx), GPUBufferUsage.STORAGE),
-      rowPtr:  this._createBuffer(rowPtr instanceof Uint32Array ? rowPtr : new Uint32Array(rowPtr), GPUBufferUsage.STORAGE),
-      // Per-matrix pre-spike input buffer + post-current output buffer.
-      // Re-used across dispatches (overwritten each call).
-      preSpikes: this._device.createBuffer({
-        size: cols * 4, // u32 per slot
+      values: valuesBuf,
+      colIdx: colIdxBuf,
+      rowPtr: rowPtrBuf,
+      preSpikes: device.createBuffer({
+        size: cols * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
       }),
-      postCurrents: this._device.createBuffer({
-        size: rows * 4, // f32 per slot
+      postCurrents: device.createBuffer({
+        size: rows * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
       }),
-      postSpikes: this._device.createBuffer({
-        size: rows * 4, // u32 per slot — used by hebbianSparse as post signal
+      postSpikes: device.createBuffer({
+        size: rows * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
       }),
     };
