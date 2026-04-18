@@ -1338,8 +1338,20 @@ class ServerBrain {
    * Upload a sparse CSR matrix to GPU. Used for T14.4 cross-region
    * projections. `matrix` should have `.rows`, `.cols`, `.nnz`,
    * `.values` (Float32Array-compatible), `.colIdx` (Uint32), `.rowPtr`.
+   *
+   * Safety: JSON-serializing massive typed arrays runs into V8's
+   * ~512 MB string limit AND costs seconds of GC-heavy serialization.
+   * For matrices over ~10 M nnz we skip the upload and leave the
+   * matrix on the CPU path until T17.3.e adds binary WebSocket
+   * frames for efficient transfer.
    */
   async gpuSparseUpload(name, matrix) {
+    const nnz = (matrix.values && matrix.values.length) || matrix.nnz || 0;
+    const MAX_JSON_NNZ = 10_000_000; // ~240 MB JSON payload, safely under V8 string cap
+    if (nnz > MAX_JSON_NNZ) {
+      console.warn(`[Brain] gpuSparseUpload(${name}) skipped: nnz=${nnz.toLocaleString()} exceeds safe JSON size ${MAX_JSON_NNZ.toLocaleString()}. Matrix stays on CPU path until binary-frame transfer ships.`);
+      return { ok: false, error: 'matrix too large for JSON transfer' };
+    }
     return this._sparseSend({
       type: 'sparse_upload',
       name,
@@ -1348,7 +1360,7 @@ class ServerBrain {
       values: Array.from(matrix.values || []),
       colIdx: Array.from(matrix.colIdx || []),
       rowPtr: Array.from(matrix.rowPtr || []),
-    });
+    }, 60_000); // larger timeout for upload — matrices can be big
   }
 
   /**
