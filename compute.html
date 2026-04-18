@@ -136,6 +136,72 @@ function connectToServer() {
       });
       return;
     }
+
+    // ── T17.3.b SPARSE OPS: GPU language cortex cross-region projections ──
+    //
+    // Server uploads each cross-projection as a standalone sparse CSR
+    // matrix keyed by name (e.g. "sem_to_motor"). Then propagate +
+    // Hebbian dispatches run on GPU instead of blocking Node's main
+    // thread with CPU sparse matmul.
+    //
+    // All three message types carry a `reqId` for request/response
+    // correlation so the server can Promise.resolve on the matching
+    // ack. Spikes are transferred as regular arrays (not typed —
+    // JSON through WebSocket doesn't preserve typed arrays).
+
+    if (msg.type === 'sparse_upload' && gpuReady) {
+      const { reqId, name, rows, cols, values, colIdx, rowPtr } = msg;
+      try {
+        const ok = gpu.uploadSparseMatrix(
+          name, rows, cols,
+          new Float32Array(values),
+          new Uint32Array(colIdx),
+          new Uint32Array(rowPtr),
+        );
+        ws.send(JSON.stringify({ type: 'sparse_upload_ack', reqId, name, ok, nnz: values.length }));
+      } catch (err) {
+        ws.send(JSON.stringify({ type: 'sparse_upload_ack', reqId, name, ok: false, error: err.message }));
+      }
+      return;
+    }
+
+    if (msg.type === 'sparse_propagate' && gpuReady) {
+      const { reqId, name, preSpikes } = msg;
+      try {
+        if (preSpikes && preSpikes.length > 0) {
+          gpu.writeSparsePreSpikes(name, new Uint32Array(preSpikes));
+        }
+        const currents = await gpu.propagateSparse(name);
+        // Compress output — pack as plain array for JSON. At M+ scale,
+        // this is the biggest WebSocket payload. Could optimize to
+        // binary WebSocket frames later; for now plain JSON works.
+        ws.send(JSON.stringify({
+          type: 'sparse_propagate_ack',
+          reqId, name,
+          currents: currents ? Array.from(currents) : null,
+        }));
+      } catch (err) {
+        ws.send(JSON.stringify({ type: 'sparse_propagate_ack', reqId, name, error: err.message }));
+      }
+      return;
+    }
+
+    if (msg.type === 'sparse_hebbian' && gpuReady) {
+      const { reqId, name, preSpikes, postSpikes, lr } = msg;
+      try {
+        if (preSpikes && preSpikes.length > 0) {
+          gpu.writeSparsePreSpikes(name, new Uint32Array(preSpikes));
+        }
+        if (postSpikes && postSpikes.length > 0) {
+          gpu.writeSparsePostSpikes(name, new Uint32Array(postSpikes));
+        }
+        const ok = gpu.hebbianSparse(name, lr ?? 0.01);
+        ws.send(JSON.stringify({ type: 'sparse_hebbian_ack', reqId, name, ok }));
+      } catch (err) {
+        ws.send(JSON.stringify({ type: 'sparse_hebbian_ack', reqId, name, error: err.message }));
+      }
+      return;
+    }
   } catch (err) {
     console.warn('[GPU Compute] Error:', err.message, err.stack);
   }

@@ -758,20 +758,26 @@ class ServerBrain {
       // distinguishes "server mode, still initializing" from "browser
       // CPU mode, no GPU ever". Undefined stays reserved for CPU mode.
       const pendingGpuReady = false;
+      // T17.3.d — GPU proxy hooks for the language cortex. When the
+      // GPU compute client (compute.html) is connected, these methods
+      // ship cross-projection sparse ops to GPU instead of CPU.
+      // Cluster uploads each projection on initGpu() call, then fires
+      // weight updates to GPU alongside CPU shadow during training.
+      const gpuProxy = {
+        upload:    (name, matrix)                => this.gpuSparseUpload(name, matrix),
+        propagate: (name, preSpikes)             => this.gpuSparsePropagate(name, preSpikes),
+        hebbian:   (name, preSpikes, postSpikes, lr) => this.gpuSparseHebbian(name, preSpikes, postSpikes, lr),
+      };
       this.cortexCluster = new clusterMod.NeuronCluster('cortex', langCortexSize, {
         tonicDrive: 14 + (this.persona.arousalBaseline || 0.9) * 6,
         noiseAmplitude: 7,
         connectivity: 0.15,
-        // T14.20 — lower targetFanout for the CPU language cluster
-        // (300 instead of 1000) so memory + tick speed stay in the
-        // usable range for interactive generation. The T14.19
-        // auto-scaling formula uses `targetFanout / size` so at the
-        // 10K CPU cap this gives 0.03 density = 3M synapse entries
-        // = ~36MB memory, and per-tick sparse multiplies stay under
-        // 15ms so 50-200 emission ticks finish in 1-3 seconds.
+        // Fanout auto-derived from langCortexSize in cluster.js —
+        // kept here as explicit opt for documentation.
         targetFanout: 300,
         excitatoryRatio: 0.85,
         learningRate: 0.002,
+        gpuProxy, // T17.3.d — proxy used for cross-region ops when GPU ready
       });
       // T14.24 Session 95 — set gpu-ready flag to pending (false) so the
       // curriculum's _waitForGpuReady poll knows to actually wait rather
@@ -1299,6 +1305,89 @@ class ServerBrain {
     });
   }
 
+  // ── T17.3.c SPARSE DISPATCH HELPERS ──
+  //
+  // Send sparse upload/propagate/hebbian messages to compute.html,
+  // await the matching ack via reqId correlation. Used by the GPU
+  // language cortex path to offload cross-projection ops to GPU.
+
+  _nextSparseReqId() {
+    this._sparseSeq = (this._sparseSeq || 0) + 1;
+    return this._sparseSeq;
+  }
+
+  _sparseSend(msg, timeoutMs = 30000) {
+    if (!this._gpuClient || this._gpuClient.readyState !== 1) return Promise.resolve(null);
+    if (!this._gpuSparsePending) this._gpuSparsePending = new Map();
+    const reqId = this._nextSparseReqId();
+    msg.reqId = reqId;
+    this._gpuClient.send(JSON.stringify(msg));
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        if (this._gpuSparsePending && this._gpuSparsePending.has(reqId)) {
+          this._gpuSparsePending.delete(reqId);
+          console.warn(`[Brain] sparse dispatch reqId=${reqId} type=${msg.type} timed out after ${timeoutMs}ms`);
+          resolve(null);
+        }
+      }, timeoutMs);
+      this._gpuSparsePending.set(reqId, { resolve, reject, timeout });
+    });
+  }
+
+  /**
+   * Upload a sparse CSR matrix to GPU. Used for T14.4 cross-region
+   * projections. `matrix` should have `.rows`, `.cols`, `.nnz`,
+   * `.values` (Float32Array-compatible), `.colIdx` (Uint32), `.rowPtr`.
+   */
+  async gpuSparseUpload(name, matrix) {
+    return this._sparseSend({
+      type: 'sparse_upload',
+      name,
+      rows: matrix.rows,
+      cols: matrix.cols,
+      values: Array.from(matrix.values || []),
+      colIdx: Array.from(matrix.colIdx || []),
+      rowPtr: Array.from(matrix.rowPtr || []),
+    });
+  }
+
+  /**
+   * Dispatch sparse propagate: currents = matrix @ preSpikes.
+   * Returns Float32Array (or null on timeout).
+   */
+  async gpuSparsePropagate(name, preSpikes) {
+    const preArray = preSpikes instanceof Uint8Array ? Array.from(preSpikes)
+      : preSpikes instanceof Uint32Array ? Array.from(preSpikes)
+      : Array.from(preSpikes || []);
+    const result = await this._sparseSend({
+      type: 'sparse_propagate',
+      name,
+      preSpikes: preArray,
+    });
+    if (!result || !result.currents) return null;
+    return new Float32Array(result.currents);
+  }
+
+  /**
+   * Dispatch sparse Hebbian: update weights based on pre/post spike
+   * co-activity.
+   */
+  async gpuSparseHebbian(name, preSpikes, postSpikes, lr) {
+    const preArray = preSpikes instanceof Uint8Array ? Array.from(preSpikes)
+      : preSpikes instanceof Uint32Array ? Array.from(preSpikes)
+      : Array.from(preSpikes || []);
+    const postArray = postSpikes instanceof Uint8Array ? Array.from(postSpikes)
+      : postSpikes instanceof Uint32Array ? Array.from(postSpikes)
+      : Array.from(postSpikes || []);
+    return this._sparseSend({
+      type: 'sparse_hebbian',
+      name,
+      preSpikes: preArray,
+      postSpikes: postArray,
+      lr,
+    });
+  }
+
   _updateDerivedState() {
     // Amygdala → arousal — PERSONA baseline drives the floor.
     // T13.7.7 — pre-fix this was `arousalBaseline + rate*0.15` clamped
@@ -1537,6 +1626,19 @@ class ServerBrain {
               }
               this._updateDerivedState();
             } else {
+            // T17.3.d — kick off language-cortex GPU init ONCE after
+            // all 7 main-brain clusters finish their acks. Uploads
+            // cross-projection sparse matrices to GPU via the proxy
+            // helpers. Non-blocking (runs async); cluster continues
+            // on CPU path until upload completes, then _gpuProxyReady
+            // flips true and subsequent _crossRegionHebbian calls
+            // fire-and-forget to GPU alongside CPU shadow.
+            if (this.cortexCluster && this.cortexCluster._gpuProxy && !this._cortexGpuInitStarted) {
+              this._cortexGpuInitStarted = true;
+              this.cortexCluster.initGpu().catch((err) => {
+                console.warn('[Brain] cortexCluster.initGpu() failed:', err && err.message);
+              });
+            }
             // T14.23 — BATCHED COMPUTE PATH.
             //
             // Old path: server dispatched SUBSTEPS * allClusters = 70
@@ -2590,6 +2692,20 @@ wss.on('connection', (ws, req) => {
           brain._gpuInitializedConfirmed[msg.clusterName] = true;
           console.log(`[GPU] Confirmed: ${msg.clusterName} initialized (${(msg.size || 0).toLocaleString()} neurons)`);
           break;
+
+        // ── T17.3.c SPARSE OPS: GPU language cortex dispatch acks ──
+        case 'sparse_upload_ack':
+        case 'sparse_propagate_ack':
+        case 'sparse_hebbian_ack': {
+          if (!brain._gpuSparsePending || !msg.reqId) break;
+          const pending = brain._gpuSparsePending.get(msg.reqId);
+          if (!pending) break;
+          brain._gpuSparsePending.delete(msg.reqId);
+          clearTimeout(pending.timeout);
+          if (msg.error) pending.reject(new Error(msg.error));
+          else pending.resolve(msg);
+          break;
+        }
 
         default:
           console.log(`[${id}] Unknown message type: ${msg.type}`);

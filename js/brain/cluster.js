@@ -109,6 +109,19 @@ export class NeuronCluster {
     this.name = name;
     this.size = size;
 
+    // T17.3.d — GPU proxy for cross-region operations. When present,
+    // `_propagateCrossRegions` and `_crossRegionHebbian` dispatch to
+    // GPU via the proxy instead of blocking Node's main thread with
+    // CPU sparse matmul. Proxy interface:
+    //   await proxy.upload(name, matrix)     — ship a sparse CSR matrix to GPU
+    //   await proxy.propagate(name, preSpikes) → Float32Array
+    //   await proxy.hebbian(name, preSpikes, postSpikes, lr)
+    //
+    // Null = CPU path (default). Server wires this to its GPU WebSocket
+    // dispatch helpers when the GPU client is connected.
+    this._gpuProxy = opts.gpuProxy || null;
+    this._gpuProxyReady = false; // flips true once cross-projections uploaded
+
     // Regulation parameters — each cluster has its own
     this.tonicDrive = opts.tonicDrive ?? 15;
     this.noiseAmplitude = opts.noiseAmplitude ?? 8;
@@ -1557,7 +1570,60 @@ export class NeuronCluster {
       const preF = this.regionSpikes(src);
       const postF = this.regionSpikes(dst);
       proj.hebbianUpdate(preF, postF, lr);
+      // T17.3.d — fire-and-forget GPU Hebbian when proxy ready.
+      // Weight updates happen on BOTH the CPU shadow copy AND the GPU
+      // copy so probes and live-chat reads stay consistent regardless
+      // of which path reads them. When T17.3.e completes we remove the
+      // CPU shadow and read exclusively from GPU.
+      if (this._gpuProxyReady && this._gpuProxy && this._gpuProxy.hebbian) {
+        // Don't await — dispatch and continue. Ordering preserved by
+        // WebSocket sequential send semantics.
+        try {
+          this._gpuProxy.hebbian(`${this.name}_${name}`, preF, postF, lr);
+        } catch { /* non-fatal — CPU path already updated */ }
+      }
     }
+  }
+
+  /**
+   * T17.3.d — Upload all cross-projections to GPU via the proxy. Once
+   * complete, sets `_gpuProxyReady = true` so subsequent
+   * `_crossRegionHebbian` calls dispatch to GPU alongside the CPU
+   * shadow updates. The `_propagateCrossRegions` hot-path wiring
+   * follows in T17.3.e — currents readback requires async/await
+   * cascade through cluster.step which is a larger refactor.
+   *
+   * Cluster must be fully constructed (cross-projections initialized)
+   * before calling this. Safe to call after construction but before
+   * any curriculum teach.
+   */
+  async initGpu() {
+    if (!this._gpuProxy || !this._gpuProxy.upload) return false;
+    if (!this.crossProjections) return false;
+    const names = Object.keys(this.crossProjections);
+    let uploaded = 0;
+    for (const name of names) {
+      const proj = this.crossProjections[name];
+      const key = `${this.name}_${name}`;
+      try {
+        const matrix = {
+          rows: proj.rows,
+          cols: proj.cols,
+          nnz: proj.nnz,
+          values: proj.values,
+          colIdx: proj.colIdx,
+          rowPtr: proj.rowPtr,
+        };
+        const ack = await this._gpuProxy.upload(key, matrix);
+        if (ack && ack.ok) uploaded++;
+        else console.warn(`[Cluster ${this.name}] GPU upload failed for ${key}:`, ack && ack.error);
+      } catch (err) {
+        console.warn(`[Cluster ${this.name}] GPU upload exception for ${key}:`, err && err.message);
+      }
+    }
+    this._gpuProxyReady = uploaded === names.length;
+    console.log(`[Cluster ${this.name}] GPU proxy ready: ${uploaded}/${names.length} cross-projections uploaded (${this._gpuProxyReady ? 'FULL' : 'PARTIAL — falling back to CPU for failed projections'})`);
+    return this._gpuProxyReady;
   }
 
   /**
