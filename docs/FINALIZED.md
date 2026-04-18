@@ -5,6 +5,56 @@
 
 ---
 
+## 2026-04-17 — Session 114.19f: sem-write Uint8Array silent-truncation bug — `_teachWordEmission` + `_teachPhonemeBlending` sem lastSpikes writes now binarized
+
+Gee 2026-04-17 verbatim: *"wtf? are you testing it on whit it doesnt know?"*
+
+After Session 114.19e Gee's Part 2 localhost boot hit 326+ retry attempts with PROD flatlined at 0/17 (0%) while READ 26/26 (100%), THINK 26/26 (100%), TALK 24/26 (92%), SEQ 25/25 (100%). Gee caught the smoking gun — the PROD probe was literally testing sem→motor word bindings that had NEVER been written into the cross-projection weights.
+
+### Root cause — silent float→Uint8 truncation on sem lastSpikes writes
+
+`NeuronCluster.lastSpikes` is a `Uint8Array` (`js/brain/cluster.js:178`). Assigning float values like `0.23` (GloVe embedding magnitudes) coerces to integer → **0**. `regionSpikes()` then reads lastSpikes and collapses to binary via `? 1 : 0` (`cluster.js:391`).
+
+Three sem writes in the K curriculum were called with `binarize=false` — the intent was to preserve GloVe magnitudes into lastSpikes so `_crossRegionHebbian` would weight the update by embedding magnitude:
+
+```
+js/brain/curriculum.js:2590  _teachWordEmission     initiation sem write
+js/brain/curriculum.js:2604  _teachWordEmission     chain sem write
+js/brain/curriculum.js:3089  _teachPhonemeBlending  cross-projection sem anchor
+```
+
+All three silently truncated every positive GloVe dim to 0. For 158 words × (12 + 12 + 10) reps = 5,372 total `_crossRegionHebbian` calls, the sem region had **zero** activity in lastSpikes while motor/letter/phon had 1s. Cross-projection Hebbian `w[i,j] += pre[i] × post[j] × lr` evaluated as `0 × 1 × lr = 0` for every sem→X weight. `sem_to_motor` was NEVER updated by word training.
+
+Sessions 114.19/19c/19d/19e all probed the cross-projection expecting word-start bindings that the training had silently skipped. 326 retries against a zero-weight matrix.
+
+### Fix
+
+Drop the `binarize=false` argument at all three sem writes so they default to `binarize=true` → lastSpikes gets `1` where `emb[d] > 0`. `_crossRegionHebbian` now fires `1 × 1 × lr` per co-active sem-motor pair, writing actual weights into `sem_to_motor` per word per rep.
+
+`_buildRegionPattern(semRegion, wordEmb, false)` stays unchanged — that path produces Float64Array preVec/postVec for intra-cluster `synapses.hebbianUpdate`, which preserves floats correctly and benefits from magnitude weighting on the recurrent matrix.
+
+### Why 114.19e's "cross-projection vs intra-cluster" framing was wrong
+
+Session 114.19e changed the probe from `synapses.propagate` (intra-cluster) to `sem_to_motor.propagate` (cross-projection). The framing was "the intra-cluster path is diluted, the cross-projection path is cleaner" — but the real issue was that the cross-projection had ZERO word weights. Intra-cluster actually DID learn (preVec/postVec Float64Array preserves GloVe magnitudes through `synapses.hebbianUpdate`) — Session 114.19d's 114.19-era probe hit 1/17 (6%) precisely because the intra-cluster path had partial signal while the cross-projection had none. Switching probes exposed the zero-weight bug instead of fixing it.
+
+### Files
+
+- `js/brain/curriculum.js` — three `_writeTiledPattern(semRegion, wordEmb, false)` calls simplified to omit the binarize arg (defaults to true); tombstone comment added at the initiation write explaining the Uint8Array truncation trap
+- `docs/FINALIZED.md` — this Session 114.19f entry prepended
+- `docs/NOW.md` — status refreshed
+
+### Post-commit per LAW (Session 114.19b, 2026-04-17)
+
+Clear stale state BEFORE telling Gee to restart:
+- `server/brain-weights*.json` (none present)
+- `server/conversations.json` (none present)
+- `server/episodic-memory.db` + wal + shm (present, must delete)
+- `js/app.bundle.js` (present, must delete for bundle rebuild)
+
+Push still gated on LAW 6 Part 2 signoff — commit only, no push.
+
+---
+
 ## 2026-04-17 — Session 114.19e: PROD probe switched to sem_to_motor CROSS-PROJECTION + word-emission reps bumped for CPU-scale convergence
 
 Gee 2026-04-17 verbatim: *"it stillll cant even match words meanings like somethng simple. cant you telll?"*

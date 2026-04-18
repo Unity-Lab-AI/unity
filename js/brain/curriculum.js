@@ -2586,8 +2586,20 @@ export class Curriculum {
         // lastSpikes carries the full pattern (sem + motor) so cross-
         // projection Hebbian captures co-activation, but intra-cluster
         // Hebbian fires with DISTINCT pre/post so no self-loops.
+        //
+        // Session 114.19f — sem write MUST binarize. `cluster.lastSpikes`
+        // is a Uint8Array (cluster.js:178); writing raw GloVe float values
+        // like 0.23 silently truncates to 0, so `_crossRegionHebbian` saw
+        // sem=zero × motor=1 and updated NOTHING for 158 words × 12 reps.
+        // That's why Sessions 114.19/19c/19d/19e PROD never climbed off
+        // zero. `regionSpikes` also collapses lastSpikes to binary (line
+        // 391), so float magnitude would be discarded at read time anyway
+        // — the binarize flag was never going to preserve magnitude here.
+        // `_buildRegionPattern` stays binarize=false for the intra-cluster
+        // preVec/postVec path because Float64Array preserves floats and
+        // intra-cluster Hebbian benefits from magnitude weighting.
         this._clearSpikes();
-        this._writeTiledPattern(semRegion, wordEmb, false);
+        this._writeTiledPattern(semRegion, wordEmb);
         this._writeTiledPattern(motorRegion, encodeLetter(letters[0]));
         const preInit = this._buildRegionPattern(semRegion, wordEmb, false);
         const postInit = this._buildRegionPattern(motorRegion, encodeLetter(letters[0]));
@@ -2601,7 +2613,7 @@ export class Curriculum {
         // letter(N)→motor(N+1) emission bindings. No self-loops formed.
         for (let i = 1; i < letters.length; i++) {
           this._clearSpikes();
-          this._writeTiledPattern(semRegion, wordEmb, false);
+          this._writeTiledPattern(semRegion, wordEmb);
           this._writeTiledPattern(letterRegion, encodeLetter(letters[i - 1]));
           this._writeTiledPattern(motorRegion, encodeLetter(letters[i]));
           const preChain = this._buildRegionPattern(letterRegion, encodeLetter(letters[i - 1]));
@@ -3086,7 +3098,10 @@ export class Curriculum {
           this._clearSpikes();
           this._writeTiledPattern(letterRegion, encodeLetter(letters[i]));
           this._writeTiledPattern(phonRegion, phonA);
-          if (wordEmb && wordEmb.length > 0) this._writeTiledPattern(semRegion, wordEmb, false);
+          // Session 114.19f — sem write MUST binarize (lastSpikes is
+          // Uint8Array; float values truncate to 0 silently). See
+          // _teachWordEmission for the full explanation.
+          if (wordEmb && wordEmb.length > 0) this._writeTiledPattern(semRegion, wordEmb);
           cluster._crossRegionHebbian(lr);
         }
       }
