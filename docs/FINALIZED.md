@@ -5,6 +5,42 @@
 
 ---
 
+## 2026-04-17 — Session 114.19i: PROD saturated-to-'y' diagnosis — PROD sem binarization (114.19f consistency fix) + K-DIAG instrumentation + stats-getter log fix
+
+Gee 2026-04-17 Part 2 log after Session 114.19h showed: READ climbs 62→100%, THINK 100%, TALK plateaus at 27%, SEQ climbs to 96%, PROD stuck at 1/17 (6%), WRITE 0/20 (0%). Per-word outputs collapsed: `cat→y; dog→y; sun→y; hat→y; pig→y` for PROD; `cat→yad; dog→yad; pig→yad; hat→yad; red→yad; mom→ada; big→mmm; sun→hwm` for WRITE.
+
+**Pattern:** motor argmax saturated to letter 'y' (and continuation chain to 'yad') for the MAJORITY of sem inputs. Two outliers (`sun→hwm`, `big→mmm`) prove the matrix isn't identically biased — it partially discriminates — but the argmax is dominated by a single attractor basin across most common words.
+
+### Three fixes shipped in 114.19i
+
+**Fix 1 — PROD probe sem binarization (114.19f consistency).** The PROD probe at `_gateElaKReal` was still writing float GloVe values (`semActivity[idx] = emb[d]`) while training writes 1s per the 114.19f Uint8 truncation fix. Cross-projection matrix multiply is linear so argmax direction is preserved, but for consistency with the trained activation distribution the probe now also binarizes: `semActivity[idx] = 1` where `emb[d] > 0`. Matches what WRITE probe already does.
+
+**Fix 2 — `sharedEmbeddings.status()` → `.stats` getter.** The curriculum log at `runCompleteCurriculum` called `sharedEmbeddings.status()` which doesn't exist (it's a getter named `stats`, not a method named `status`). Silently returned null → log always said "Embedding source: fastText-style subword n-grams" even when GloVe 6B 400k was loaded. Gee's Part 2 log showed the misleading claim despite the `[Embeddings] Loaded 400,000 word vectors` message seconds earlier. The actual `getEmbedding(word)` fetcher uses `this._embeddings.get(word)` first and only falls through to subword when GloVe misses — so real GloVe WAS being used for training, just the log lied. Fixed by reading `sharedEmbeddings.stats` (the getter) instead of calling `.status()`.
+
+**Fix 3 — K-DIAG diagnostic instrumentation (T16.5 groundwork).** Three new log lines to capture inventory state + motor tiling + probe sem activation at the points where drift would show:
+- `[Curriculum][K-DIAG] pre-emission: inv=N, motor=M, mGroup=G, sem=S, cat=P+dims(max=X), dog=..., sun=..., inventory=abc...` — fires once at K vocab construction, BEFORE `_teachPhonemeBlending` + `_teachWordEmission`. Shows inventory state at teach time.
+- `[Curriculum][K-DIAG] gate: inv=N, motor=M, mGroup=G, sem_to_motor=RxC nnz=N` — fires every gate attempt at `_gateElaKReal` start. Shows inventory state at probe time + cross-projection size + accumulated nonzero-weight count.
+- `[Curriculum][K-DIAG] PROD[cat→c] decoded=X, emb_pos=P/300, top5_motor=letter(idx:val),...` — fires once per attempt for the FIRST PROD probe word. Shows the top 5 motor readout slots with letter+index+value so the actual motor activation pattern is visible per attempt.
+
+### Hypotheses the next Part 2 log will answer
+
+1. **Inventory drift between teach and probe.** If pre-emission `inv=26` and gate `inv=30+`, motor tiling mGroup changed and the probe reads shifted slots. Fix: freeze inventory or use fixed mGroup not dependent on `inventorySize()`.
+2. **Cross-projection saturation at one motor slot.** If top5_motor all cluster around ONE letter regardless of word input, the matrix has a dominant basin from Phase 1 alphabet teach that word training didn't overcome. Fix: more reps, or clear+retrain just the motor cross-projection.
+3. **Embedding degeneracy for common words.** If `cat=P+dims` is very small (<20) or if cat/dog/sun all have similar positive-dim patterns, the sem inputs aren't discriminable enough. Fix: different embedding tile strategy or larger sem region.
+4. **Motor tiling mismatch across teach phases.** If `inv=26` before Phase 1 but then grew to `inv=29+` by Phase 3, motor slots for Phase 1 at mGroup=12 vs Phase 3 at mGroup=11 write to overlapping-but-shifted positions.
+
+### Files
+
+- `js/brain/curriculum.js` — three K-DIAG log points added; `status()` → `stats` getter fix; PROD probe sem activation binarized to 1s
+- `docs/FINALIZED.md` — this Session 114.19i entry prepended
+- `docs/NOW.md` — status refreshed
+
+### Post-commit per LAW (Session 114.19b)
+
+Clear stale state BEFORE telling Gee to restart. Push still gated on LAW 6 Part 2 signoff.
+
+---
+
 ## 2026-04-17 — Session 114.19h: K vocabulary expansion to ~1,100 unique words (T16.3.b) + WRITE probe for full-word letter-sequence emission (T16.4.a)
 
 Gee 2026-04-17 decisions on scope (four verbatim yeses):

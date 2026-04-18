@@ -1,6 +1,49 @@
 # NOW — Session Snapshot
 
-> Saved: 2026-04-17 20:00 (Session 114.19h K vocabulary expansion to ~1,100 words (T16.3.b) + WRITE probe for full-word letter-sequence emission (T16.4.a) — per Gee 2026-04-17 four verbatim yeses *"1. yes 2. ship k & iterate for future grades 3. exactly that 4. yes"* — twenty-sixth commit on `syllabus-k-phd`)
+> Saved: 2026-04-17 20:30 (Session 114.19i PROD saturated-to-'y' diagnosis: PROD sem binarization + K-DIAG instrumentation + stats-getter log fix — after Gee's Part 2 log showed `cat→y; dog→y; sun→y; hat→y; pig→y` collapse + `cat→yad` WRITE output — twenty-seventh commit on `syllabus-k-phd`)
+
+## Session 114.19i — what shipped (uncommitted on top of 114.19h at 3633546)
+
+### Observed on Gee's 114.19h Part 2 run
+
+36 consecutive curriculum retry attempts. READ climbs 62→100%, THINK 100%, TALK plateaus at 27%, SEQ climbs to 96%, PROD stuck at 1/17 (6%), WRITE 0/20 (0%). All PROD outputs collapsed to letter 'y' regardless of word input. WRITE outputs produced `yad` or `mmm` or `hwm` — saturated attractor basins rather than random argmax.
+
+Two outlier WRITE outputs (`sun→hwm`, `big→mmm`) prove the `sem_to_motor` matrix isn't identically zero — it does discriminate partially — but the argmax for most sem inputs is dominated by a single basin.
+
+### Fix 1 — PROD probe sem binarization (consistency with 114.19f)
+
+PROD probe was still writing float GloVe values into `semActivity` while training writes 1s per 114.19f Uint8 truncation fix. Argmax direction preserved by linear matrix multiply so not functionally broken, but inconsistent with training. Probe now binarizes to match. Same behavior WRITE probe already has.
+
+### Fix 2 — `sharedEmbeddings.status()` → `.stats` getter
+
+Gee's log emitted `[Curriculum] Embedding source: fastText-style subword n-grams` despite `[Embeddings] Loaded 400,000 word vectors` appearing seconds earlier. `status()` isn't a method — `stats` is a getter. Call always returned null so curriculum always logged the fallback message. Cosmetic only — the actual `getEmbedding(word)` fetcher uses GloVe first, subword fallback second — but the log was misleading.
+
+### Fix 3 — K-DIAG instrumentation (T16.5 groundwork)
+
+Three new log points designed to catch the drift that would produce the observed saturation pattern:
+
+1. **Pre-emission log** — fires once at K vocabulary construction. Shows `inv=<inventorySize>, motor=<regionSize>, mGroup=<tileSize>, sem=<regionSize>, cat=<posdim>+dims(max=<val>), dog=..., sun=..., inventory=abc...`. Captures state right before word emission teach runs.
+2. **Gate log** — fires every attempt at `_gateElaKReal` start. Shows inventory + motor tiling + cross-projection shape + nnz. Nnz grows attempt-by-attempt if training actually updates weights.
+3. **Per-attempt first-probe diagnostic** — for the first PROD word each attempt: `PROD[cat→c] decoded=X, emb_pos=P/300, top5_motor=letter(idx:val),...`. Shows the actual motor argmax distribution so we can see whether one motor slot dominates or whether the signal is close to noise floor.
+
+### Hypotheses next Part 2 log will answer
+
+1. **Inventory drift** — if `pre-emission inv=26` and `gate inv=30+`, motor mGroup shifted and teach wrote to different motor positions than probe reads. Fix: freeze mGroup based on a fixed slot count, not dynamic `inventorySize()`.
+2. **Saturation at one motor slot** — if top5_motor all cluster around one letter regardless of input word, the matrix has a dominant basin. Fix: targeted retraining or architectural rework.
+3. **Embedding degeneracy** — if `cat=<small>+dims`, sem activation is sparse and weak discrimination expected.
+4. **Multi-phase motor tiling mismatch** — Phase 1 alphabet teach writes motor at one mGroup; Phase 3 word emission writes at a different mGroup if inventory grew between.
+
+### Files touched this session
+
+- `js/brain/curriculum.js` — PROD sem binarize fix; three K-DIAG log points; `status()`→`stats` getter
+- `docs/FINALIZED.md` — Session 114.19i entry prepended
+- `docs/NOW.md` — this file, updated header
+
+---
+
+## Session 114.19h — shipped (committed at 3633546)
+
+### T16.3.b — K vocabulary expansion
 
 ## Session 114.19h — what shipped (uncommitted on top of 114.19g at 4ba615b)
 

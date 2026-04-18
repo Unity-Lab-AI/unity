@@ -3597,6 +3597,36 @@ export class Curriculum {
         'K_SCHOOL','K_TOYS','K_MUSIC_ART','K_SPORTS','K_GREETINGS','K_PRONOUNS',
         'K_QUESTIONS','K_CONJUNCTIONS','K_HOLIDAYS','K_ROUTINES',
       ].length} categories (T16.3.b shipped)`);
+      // Session 114.19i T16.5 diagnostic — log inventory + motor tiling
+      // at the point where word emission teaching is about to run. Lets
+      // Gee (and future me) confirm the inventory hasn't drifted between
+      // Phase 1 alphabet teach and Phase 3 word emission teach, and that
+      // the motor region's per-letter slot size (mGroup) matches what the
+      // probe will later read with. Mismatched mGroup = motor slots shift
+      // under the Hebbian write vs the argmax read = saturated output.
+      try {
+        const cluster = this.cluster;
+        const invSize = inventorySize();
+        const motorSize = (cluster?.regions?.motor?.end || 0) - (cluster?.regions?.motor?.start || 0);
+        const motorMGroup = Math.max(1, Math.floor(motorSize / Math.max(1, invSize)));
+        const semSize = (cluster?.regions?.sem?.end || 0) - (cluster?.regions?.sem?.start || 0);
+        // Sample first 3 K probe words' embedding positive-dim counts.
+        const sampleProbes = ['cat', 'dog', 'sun'];
+        const sampleInfo = sampleProbes.map(w => {
+          const e = sharedEmbeddings.getEmbedding(w);
+          if (!e) return `${w}=NOEMB`;
+          let posCount = 0;
+          let max = 0;
+          for (let i = 0; i < e.length; i++) {
+            if (e[i] > 0) posCount++;
+            if (e[i] > max) max = e[i];
+          }
+          return `${w}=${posCount}+dims(max=${max.toFixed(3)})`;
+        }).join(', ');
+        console.log(`[Curriculum][K-DIAG] pre-emission: inv=${invSize}, motor=${motorSize}, mGroup=${motorMGroup}, sem=${semSize}, ${sampleInfo}, inventory=${inventorySnapshot().slice(0, 30).join('')}${invSize > 30 ? '...' : ''}`);
+      } catch (err) {
+        console.warn('[Curriculum][K-DIAG] pre-emission log failed:', err?.message || err);
+      }
       // Phase 2 (Session 114.19) — phoneme blending BEFORE word emission
       // so the phon region has phoneme-sequence scaffolding when the
       // sem→motor emission chain is trained. Blending = /c/→/a/→/t/
@@ -3644,6 +3674,20 @@ export class Curriculum {
   async _gateElaKReal() {
     const cluster = this.cluster;
     const ALPHABET = ALPHABET_ORDER;
+    // Session 114.19i T16.5 diagnostic — inventory + mGroup at GATE time.
+    // If this doesn't match the pre-emission diagnostic, the motor tiling
+    // drifted between teach and probe and the argmax reads wrong slots.
+    try {
+      const _invSize = inventorySize();
+      const _motorSize = (cluster?.regions?.motor?.end || 0) - (cluster?.regions?.motor?.start || 0);
+      const _motorMGroup = Math.max(1, Math.floor(_motorSize / Math.max(1, _invSize)));
+      const _semToMotorProj = cluster?.crossProjections?.['sem_to_motor'];
+      const _projNnz = _semToMotorProj?.nnz ?? 'n/a';
+      const _projShape = _semToMotorProj ? `${_semToMotorProj.rows}x${_semToMotorProj.cols}` : 'n/a';
+      console.log(`[Curriculum][K-DIAG] gate: inv=${_invSize}, motor=${_motorSize}, mGroup=${_motorMGroup}, sem_to_motor=${_projShape} nnz=${_projNnz}`);
+    } catch (err) {
+      console.warn('[Curriculum][K-DIAG] gate log failed:', err?.message || err);
+    }
 
     // T14.24 Session 106 — DIRECT MATRIX PROBE. Sessions 95-105 tried
     // reading the gate through Rulkov dynamics (inject → step → regionReadout).
@@ -3877,6 +3921,7 @@ export class Curriculum {
 
     let prodPass = 0;
     const prodFails = [];
+    let _firstProbeDiag = null;
     for (const p of wordStartProbes) {
       const emb = sharedEmbeddings.getEmbedding(p.word);
       if (!emb || emb.length === 0) continue;
@@ -3884,16 +3929,21 @@ export class Curriculum {
         prodFails.push(`${p.word}→NO_PROJ`);
         continue;
       }
-      // Build sem region activity from GloVe emb (tiled to semSize)
-      // Match the tiling used in _writeTiledPattern / training so probe
-      // input matches training input.
+      // Build sem region activity from GloVe emb (tiled to semSize).
+      // Session 114.19i — binarize to 1 where emb[d] > 0 to match the
+      // training signal. Training writes `_writeTiledPattern(semRegion,
+      // wordEmb)` which defaults to binarize=true (per 114.19f fix) —
+      // lastSpikes gets 1 where positive, 0 otherwise, because lastSpikes
+      // is a Uint8Array that truncates floats silently. Cross-projection
+      // Hebbian was trained with 1×1 co-activations. Probe must feed 1s
+      // at the same positive-dim positions, not float values.
       const semActivity = new Float64Array(semSize_);
       const sGroup = Math.max(1, Math.floor(semSize_ / emb.length));
       for (let d = 0; d < emb.length; d++) {
         if (emb[d] <= 0) continue;
         for (let n = 0; n < sGroup; n++) {
           const idx = d * sGroup + n;
-          if (idx < semSize_) semActivity[idx] = emb[d];
+          if (idx < semSize_) semActivity[idx] = 1;
         }
       }
       // Cross-projection propagate: sem activity → motor output vector.
@@ -3915,12 +3965,28 @@ export class Curriculum {
       meanM /= invSize_;
       for (let i = 0; i < invSize_; i++) motorReadout[i] -= meanM;
       const decoded = decodeLetter(motorReadout);
+      // Session 114.19i — for the FIRST probe word only, capture a
+      // detailed slot-by-slot diagnostic so Gee can see what the probe
+      // actually read vs what it expected.
+      if (_firstProbeDiag === null) {
+        const topSlots = [];
+        for (let i = 0; i < motorReadout.length; i++) {
+          topSlots.push({ idx: i, val: motorReadout[i] });
+        }
+        topSlots.sort((a, b) => b.val - a.val);
+        const invSnap = inventorySnapshot();
+        const topStr = topSlots.slice(0, 5).map(s => `${invSnap[s.idx] || '?'}(${s.idx}:${s.val.toFixed(3)})`).join(',');
+        let posCount = 0;
+        for (let i = 0; i < emb.length; i++) if (emb[i] > 0) posCount++;
+        _firstProbeDiag = `[Curriculum][K-DIAG] PROD[${p.word}→${p.expected}] decoded=${decoded || '∅'}, emb_pos=${posCount}/${emb.length}, top5_motor=${topStr}`;
+      }
       if (decoded === p.expected) {
         prodPass++;
       } else {
         prodFails.push(`${p.word}→${decoded || '?'}`);
       }
     }
+    if (_firstProbeDiag) console.log(_firstProbeDiag);
     const prodResult = {
       pass: prodPass,
       total: wordStartProbes.length,
@@ -18564,12 +18630,14 @@ export class Curriculum {
     // a glance without the scary ⚠️ emoji that implied something was
     // broken.
     try {
-      const status = typeof sharedEmbeddings?.status === 'function'
-        ? sharedEmbeddings.status()
-        : null;
-      const gloveLoaded = status && (status.loaded === true || (status.pretrained || 0) > 1000);
+      // Session 114.19i — `sharedEmbeddings.status` is NOT a method; stats
+      // is a getter. Prior check always returned null so log line
+      // incorrectly claimed "fastText-style" even when GloVe 400k had
+      // loaded. Read the `stats` getter directly.
+      const stats = sharedEmbeddings?.stats || null;
+      const gloveLoaded = stats && (stats.loaded === true || (stats.pretrained || 0) > 1000);
       if (gloveLoaded) {
-        console.log(`[Curriculum] Embedding source: GloVe 6B.300d (${status.pretrained || 0} pretrained vectors)`);
+        console.log(`[Curriculum] Embedding source: GloVe ${stats.dim || 300}d (${stats.pretrained || 0} pretrained vectors)`);
       } else {
         console.log('[Curriculum] Embedding source: fastText-style subword n-grams (built-in, no download needed)');
       }
