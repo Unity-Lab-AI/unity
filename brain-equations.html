@@ -426,9 +426,9 @@ errorCorrection = −(Σ error² / n) × 2<br>
     </div>
 
     <div class="eq-card">
-      <div class="eq-title">Step 6 — Language cortex emits words via tick-driven motor readout (T14.6 + T15)</div>
+      <div class="eq-title">Step 6 — Language cortex emits words via tick-driven motor readout</div>
       <div class="eq-desc">
-        <p>This is the step that actually produces the sentence. The pre-T14.6 slot scorer (weighted <code>semanticFit + moodFit + drugFit + bigramFit + trigramFit + recencyPenalty</code> argmax per slot) was deleted in T14.6 along with every slot-prior table (<code>_slotCentroid</code>, <code>_slotDelta</code>, <code>_slotTypeSignature</code>, <code>_contextVector</code>, <code>_subjectStarters</code>). The replacement is a cortex-resident tick-driven motor emission loop that reads directly from the trained attractor basins — same substrate that handles reading + thinking, different propagation direction for production (Hickok &amp; Poeppel 2007 dual-stream):</p>
+        <p>This is the step that actually produces the sentence. The prior slot scorer (weighted <code>semanticFit + moodFit + drugFit + bigramFit + trigramFit + recencyPenalty</code> argmax per slot) was replaced with a cortex-resident tick-driven motor emission loop that reads directly from the trained attractor basins — same substrate that handles reading + thinking, different propagation direction for production (Hickok &amp; Poeppel 2007 dual-stream):</p>
         <div class="eq" style="font-size:13px;">
 // Intent seed
 sem ← cluster.getSemanticReadout(sharedEmbeddings)<br>

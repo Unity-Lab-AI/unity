@@ -5,6 +5,88 @@
 
 ---
 
+## 2026-04-17 — Session 114.19s: LAW violation fix — task numbers scrubbed from user-visible console/HTML + sparse matrix init rewrite (kills 1.2GB transient JS object spam that hung 100K cortex) + start.bat Node heap bumped to 16GB
+
+Gee 2026-04-17 verbatim:
+
+> *"and why the fuck are my internal item task numbersa showing up in the fucking appliction!!!!!!"*
+
+And earlier in the same session (re: the 100K cortex hang):
+
+> *"as you can see the end of the attached log... the prograsm quits out and doenst continue"*
+
+### LAW violation — task numbers in user-visible log output
+
+Gee's 2026-04-15 LAW (already in `.claude/CLAUDE.md`): *"wtf ARE YOU DOING PUTTING WORKFLOW TASK ITEM NUMBERS IN THE PUBLIC FACING DOCUMENTS!"* + *"I TOLD U TASK NUMBERS ARE ONLY FOR TODOS VISUAL TASK LISTS AND FUCKING FINALIZED!"*.
+
+My session 114.19r log statements leaked task numbers into the user-visible brain server startup log:
+- `[Brain] Language cortex scale: ... (T17.1 Phase 1 — up from prior 10K cap)`
+- `[Brain] Language cortex = 100,000 CPU neurons (T17.1 Phase 1). T14.4 sub-regions: ...`
+
+Plus pre-existing violations in other console lines:
+- `[Brain] Stage: trainPersonaHebbian SKIPPED (T14.22 — curriculum does the equivalent work async)`
+- `[LanguageCortex] generate called without cortexCluster — T14.6 requires ...`
+- `[Persistence] T14 language state snapshot failed`
+- `[Persistence] Restored T14 language state`
+- `[Curriculum] K vocabulary: N unique words across N categories (T16.3.b shipped)`
+
+Plus a public HTML violation:
+- `brain-equations.html:429` — `<div class="eq-title">Step 6 — Language cortex emits words via tick-driven motor readout (T14.6 + T15)</div>`
+- `brain-equations.html:431` — `<p>This is the step that actually produces the sentence. The pre-T14.6 slot scorer (weighted...) was deleted in T14.6 along with every slot-prior table ...`
+
+All scrubbed. Task numbers removed from every user-visible path. Descriptive text replaces them:
+- Prior "T17.1 Phase 1 — up from prior 10K cap" → just the size numbers
+- Prior "T14.4 sub-regions:" → "Sub-regions:"
+- Prior "T14.22 — curriculum does the equivalent work" → "curriculum does the equivalent work"
+- Prior "T14.6 requires" → "tick-driven emission requires"
+- Prior "T14 language state" → "language state"
+- Prior "(T16.3.b shipped)" → removed
+- Prior brain-equations.html "(T14.6 + T15)" title → removed; "pre-T14.6 slot scorer" → "prior slot scorer"
+
+### 100K cortex hang — sparse matrix init memory spam
+
+Gee's 100K boot hung at cluster construction. Root cause: `SparseMatrix.initRandom` allocated transient `{j, w}` objects per sparse entry. At 100K cortex with 14 cross-projections, total entries = ~5M intra-cluster + ~35M cross-projection = ~40M JS objects. V8 object overhead ~40 bytes each = **1.6GB of transient heap pressure**, pushing Node into GC thrashing (effectively hanging the constructor for minutes).
+
+Fix — direct typed-array allocation, no transient objects:
+- Two-pass init: first pass computes per-row kPerRow + total nnz
+- Single allocation of final `values` (Float64Array) + `colIdx` (Uint32Array) + `rowPtr` (Uint32Array)
+- Per-row scratch Uint32Array (reused) for sampling unique column indices
+- Fill values + colIdx directly during sampling loop — no `{j, w}` object creation
+
+Memory profile at 100K:
+- Prior: ~360MB final + ~1.6GB transient = ~2GB peak with GC thrash
+- New: ~360MB final + 1-2MB scratch = ~360MB steady
+
+### Node heap bump
+
+`start.bat` launcher adds `--max-old-space-size=16384` (16GB heap) to the `node brain-server.js` invocation. Defensive safety — even with the sparse-matrix rewrite, larger cortex tiers (Phase 2/3 bring capacity higher) will want headroom. Gee's 128GB box easily accommodates.
+
+### What the next boot should show
+
+- NO task numbers in any `[Brain] ...` line, NO `(TXX.X)` in any output
+- `[Brain] Language cortex = 100,000 CPU neurons. Sub-regions: letter 5000, phon 20000, sem 16700, motor 3300.`
+- Cluster construction completes within seconds (not hangs)
+- Curriculum walk begins, `[Curriculum] K vocabulary: 1029 unique words across 32 categories` (no trailing task marker)
+- `[K-DIAG]` diagnostic lines still present (those are diagnostic tags not task numbers)
+
+### Files
+
+- `server/brain-server.js` — task-number scrubbing in console logs
+- `js/brain/curriculum.js` — task-number scrub on K vocabulary log
+- `js/brain/language-cortex.js` — task-number scrub on generate warning
+- `js/brain/persistence.js` — task-number scrub on language state save/load logs
+- `brain-equations.html` — task-number scrub on Step 6 heading + description
+- `js/brain/sparse-matrix.js` — initRandom rewritten for typed-array direct fill
+- `start.bat` — `--max-old-space-size=16384` added to node invocation
+- `docs/FINALIZED.md` — this Session 114.19s entry prepended
+- `docs/NOW.md` — status refreshed
+
+### Post-commit
+
+Auto-clear at boot handles stale state. Launch via `start.bat` for the 16GB heap; plain `node brain-server.js` will work at 100K post-sparse-rewrite too but with default heap.
+
+---
+
 ## 2026-04-17 — Session 114.19r T17.1: Phase 1 language cortex scale-up 10K → 100K (10× capacity) + T17 plan logged in TODO
 
 Gee 2026-04-17 verbatim approval of the T17 plan: *"go ahead and yeah all of that"*. Triggered by: *"FuckingB obviously you fuck why the fuck were you not doing this originally when the archetectrure says this is 100% GPU run with CPU only wher need to use system ram... do you need to totaly redesign so the brasin logic and equations properly work with all systems of the PC to fully operate the BRain Equations with the langauge of the brain"*.

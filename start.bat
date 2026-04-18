@@ -71,9 +71,14 @@ if errorlevel 1 goto err_bundle
 echo   Bundle built - browser will load fresh code.
 echo.
 
-REM Start brain server in background, wait, open browser tabs
+REM Start brain server in background, wait, open browser tabs.
+REM --max-old-space-size=16384 gives Node 16 GB of heap so the larger
+REM language-cortex sparse matrices and their transient JS objects
+REM during sparse init don't hit GC thrashing / default heap cap.
+REM Raise further if memory budget grows. Your 128 GB box can easily
+REM take 32 GB for this path.
 echo   Starting brain server (GPU EXCLUSIVE - no CPU workers)...
-start /b node brain-server.js
+start /b node --max-old-space-size=16384 brain-server.js
 ping -n 3 127.0.0.1 >nul
 start "" http://localhost:7525
 start "" http://localhost:7525/compute.html

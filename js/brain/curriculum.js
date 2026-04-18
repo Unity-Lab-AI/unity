@@ -3624,7 +3624,7 @@ export class Curriculum {
         'K_WEATHER','K_TIME','K_POSITIONS','K_ADJECTIVES','K_PLACES','K_VEHICLES',
         'K_SCHOOL','K_TOYS','K_MUSIC_ART','K_SPORTS','K_GREETINGS','K_PRONOUNS',
         'K_QUESTIONS','K_CONJUNCTIONS','K_HOLIDAYS','K_ROUTINES',
-      ].length} categories (T16.3.b shipped)`);
+      ].length} categories`);
       // Session 114.19i T16.5 diagnostic — log inventory + motor tiling
       // at the point where word emission teaching is about to run.
       //

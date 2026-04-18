@@ -1400,7 +1400,7 @@ export class LanguageCortex {
     // current cortex semantic readout — just enough to give Unity a voice
     // from cold boot while basins are still being shaped.
     if (!opts.cortexCluster || typeof opts.cortexCluster.generateSentence !== 'function') {
-      console.warn('[LanguageCortex] generate called without cortexCluster — T14.6 requires a cluster that supports generateSentence().');
+      console.warn('[LanguageCortex] generate called without cortexCluster — tick-driven emission requires a cluster that supports generateSentence().');
       return '';
     }
     const cluster = opts.cortexCluster;

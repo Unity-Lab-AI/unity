@@ -1,6 +1,51 @@
 # NOW — Session Snapshot
 
-> Saved: 2026-04-18 01:00 (Session 114.19r T17.1 Phase 1 — language cortex CPU cap 10K → 100K (10×) + T17 five-phase plan logged in TODO — per Gee verbatim *"FuckingB obviously you fuck why the fuck were you not doing this originally when the archetectrure says this is 100% GPU run..."* + approval *"go ahead and yeah all of that"* — thirty-seventh commit on `syllabus-k-phd`)
+> Saved: 2026-04-18 02:00 (Session 114.19s — task numbers SCRUBBED from all user-visible logs + HTML per Gee verbatim *"and why the fuck are my internal item task numbersa showing up in the fucking appliction!!!!!!"* + sparse-matrix init rewrite (kills 1.6GB transient object spam that hung 100K cortex) + start.bat Node heap bumped to 16GB — thirty-eighth commit on `syllabus-k-phd`)
+
+## Session 114.19s — what shipped
+
+### LAW violation scrub — task numbers out of user-visible paths
+
+Gee's 2026-04-15 LAW bans task numbers in public/application output. My 114.19r log lines violated it: `[Brain] Language cortex ... (T17.1 Phase 1)` + `T14.4 sub-regions`. Plus pre-existing violations I never caught in `[Brain] Stage: trainPersonaHebbian SKIPPED (T14.22 ...)`, `[LanguageCortex] generate called without cortexCluster — T14.6 requires ...`, persistence save/load logs, `(T16.3.b shipped)` curriculum log, and `brain-equations.html` Step 6 title/description.
+
+All scrubbed. Every user-visible console/HTML path has descriptive text now, no TXX.X / Session N identifiers.
+
+### Sparse matrix init rewrite — fixes the 100K hang
+
+Prior `SparseMatrix.initRandom` allocated transient `{j, w}` objects per sparse entry. At 100K cortex with 14 cross-projections ≈ 40M entries × 40 bytes/object = **1.6GB of transient V8 heap** → GC thrashing → effective hang during constructor.
+
+Fix: direct typed-array fill (no transient objects). Two-pass: compute per-row `kPerRow` + total nnz, single allocation of final Float64/Uint32 arrays, per-row scratch Uint32Array for sampling unique column indices, fill values+colIdx directly during the sampling loop.
+
+Peak memory at 100K drops from ~2GB with thrash to ~360MB steady.
+
+### start.bat heap bump
+
+`start /b node brain-server.js` → `start /b node --max-old-space-size=16384 brain-server.js`. 16GB Node heap ceiling. Defensive — sparse init is now memory-efficient but Phase 2/3 scale work wants headroom.
+
+### What the next boot should show
+
+- NO `(TXX.X)` or `Session NNN` in any server output
+- Cluster construction completes in seconds at 100K
+- `[Brain] Language cortex = 100,000 CPU neurons. Sub-regions: letter 5000, phon 20000, sem 16700, motor 3300.`
+- `[Curriculum] K vocabulary: 1029 unique words across 32 categories` (no trailing `(T16.3.b shipped)`)
+
+### Files touched this session
+
+- `server/brain-server.js` — task-number scrub
+- `js/brain/curriculum.js` — task-number scrub on K vocabulary log
+- `js/brain/language-cortex.js` — task-number scrub on generate warning
+- `js/brain/persistence.js` — task-number scrub on save/load logs
+- `brain-equations.html` — task-number scrub on Step 6 heading + description
+- `js/brain/sparse-matrix.js` — initRandom rewrite, typed-array direct fill, no transient `{j, w}` objects
+- `start.bat` — `--max-old-space-size=16384` Node heap bump
+- `docs/FINALIZED.md` — Session 114.19s entry prepended
+- `docs/NOW.md` — this file
+
+---
+
+## Session 114.19r — shipped (committed at 0091cfe)
+
+### The architectural violation
 
 ## Session 114.19r T17.1 — what shipped
 

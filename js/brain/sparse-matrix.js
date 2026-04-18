@@ -70,49 +70,68 @@ export class SparseMatrix {
     // is O(nnz) with a small constant — at 10K * 300 fanout that's 3M
     // ops (~60ms) instead of 100M ops (~2-5s). 50-100x faster, exact
     // same output shape.
-    const rowEntries = new Array(rows);
-    let total = 0;
+    // Rewrite — allocate directly into typed arrays, no transient
+    // {j, w} objects per entry. At 100K-neuron cortex, the prior
+    // version created ~30M { j, w } objects (~1.2GB of V8 heap) just
+    // for intra-cluster + cross-projection init, which GC-thrashed
+    // Node into an apparent hang. Direct typed-array fills cut that
+    // to the final ~360MB footprint plus a per-row Uint32 scratch for
+    // sorting column indices.
+    //
+    // Per row: sample kPerRow unique column indices into a scratch
+    // Uint32Array, in-place radix-ish sort (actually plain Array sort
+    // on a sliced typed-array view), then fill values + colIdx
+    // slots directly.
+
+    // Pre-compute total entries so we can allocate final typed arrays
+    // up front (no temp row arrays accumulated).
+    let totalPre = 0;
+    const perRowK = new Uint32Array(rows);
     for (let i = 0; i < rows; i++) {
-      // Exact target count from density × cols. At d=0.03 on 10K cols,
-      // that's 300 connections per row. Clamped to cols-1 to guarantee
-      // termination of the rejection loop even at d=1.0.
-      let kPerRow = Math.min(Math.round(cols * density), Math.max(0, cols - (noSelfConnect ? 1 : 0)));
-      if (kPerRow <= 0) {
-        rowEntries[i] = [];
-        continue;
-      }
-      const seen = new Set();
-      const entries = [];
-      while (entries.length < kPerRow) {
-        const j = Math.floor(Math.random() * cols);
-        if (noSelfConnect && i === j) continue;
-        if (seen.has(j)) continue;
-        seen.add(j);
-        const sign = Math.random() < excitatoryRatio ? 1 : -1;
-        const w = sign * (0.1 + Math.random() * 0.4) * strength;
-        entries.push({ j, w });
-      }
-      // Sort entries by column index so the CSR output has ascending
-      // column order per row, matching what the dense-scan algorithm
-      // produced and keeping downstream consumers (propagate,
-      // hebbianUpdate) happy with sorted CSR.
-      entries.sort((a, b) => a.j - b.j);
-      rowEntries[i] = entries;
-      total += entries.length;
+      const kPerRow = Math.min(Math.round(cols * density), Math.max(0, cols - (noSelfConnect ? 1 : 0)));
+      perRowK[i] = kPerRow;
+      totalPre += kPerRow;
     }
 
-    // Allocate and fill CSR arrays
-    this.values = new Float64Array(total);
-    this.colIdx = new Uint32Array(total);
+    this.values = new Float64Array(totalPre);
+    this.colIdx = new Uint32Array(totalPre);
     this.rowPtr = new Uint32Array(rows + 1);
-    this.nnz = total;
+    this.nnz = totalPre;
+
+    // Scratch column buffer, reused across rows to avoid per-row
+    // allocation. Sized to the largest kPerRow on this matrix.
+    let maxK = 0;
+    for (let i = 0; i < rows; i++) if (perRowK[i] > maxK) maxK = perRowK[i];
+    const scratchCols = new Uint32Array(maxK);
+    const seen = new Set();
 
     let idx = 0;
     this.rowPtr[0] = 0;
     for (let i = 0; i < rows; i++) {
-      for (const entry of rowEntries[i]) {
-        this.values[idx] = entry.w;
-        this.colIdx[idx] = entry.j;
+      const kPerRow = perRowK[i];
+      if (kPerRow <= 0) {
+        this.rowPtr[i + 1] = idx;
+        continue;
+      }
+      // Reset Set for this row. Clearing is faster than reconstructing.
+      seen.clear();
+      let count = 0;
+      while (count < kPerRow) {
+        const j = Math.floor(Math.random() * cols);
+        if (noSelfConnect && i === j) continue;
+        if (seen.has(j)) continue;
+        seen.add(j);
+        scratchCols[count++] = j;
+      }
+      // Sort the kPerRow filled slice of scratchCols. Use subarray +
+      // Array.from sort because typed-array sort is numeric ascending
+      // by default, which is what we need.
+      const sortedCols = scratchCols.subarray(0, kPerRow).slice().sort();
+      // Fill final typed arrays for this row.
+      for (let k = 0; k < kPerRow; k++) {
+        this.colIdx[idx] = sortedCols[k];
+        const sign = Math.random() < excitatoryRatio ? 1 : -1;
+        this.values[idx] = sign * (0.1 + Math.random() * 0.4) * strength;
         idx++;
       }
       this.rowPtr[i + 1] = idx;

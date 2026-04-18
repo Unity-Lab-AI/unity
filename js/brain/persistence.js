@@ -196,7 +196,7 @@ export class BrainPersistence {
           };
         }
       } catch (err) {
-        console.warn('[Persistence] T14 language state snapshot failed:', err?.message || err);
+        console.warn('[Persistence] language state snapshot failed:', err?.message || err);
       }
 
       // Save cluster synapses — native CSR format (all clusters use SparseMatrix)
@@ -388,10 +388,10 @@ export class BrainPersistence {
             if (typeof brain.innerVoice?.languageCortex?.setCluster === 'function') {
               brain.innerVoice.languageCortex.setCluster(cortex);
             }
-            console.log('[Persistence] Restored T14 language state');
+            console.log('[Persistence] Restored language state');
           }
         } catch (err) {
-          console.warn('[Persistence] T14 language state restore failed:', err?.message || err);
+          console.warn('[Persistence] language state restore failed:', err?.message || err);
         }
       }
 

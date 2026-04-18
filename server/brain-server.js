@@ -647,9 +647,9 @@ class ServerBrain {
       const configuredCortex = CLUSTER_SIZES.cortex;
       const langCortexSize = Math.min(configuredCortex, CPU_LANGUAGE_CORTEX_CAP);
       if (configuredCortex > CPU_LANGUAGE_CORTEX_CAP) {
-        console.log(`[Brain] Language cortex scale: GPUCONFIGURE.bat configured ${configuredCortex.toLocaleString()} cortex neurons. Language-cluster CPU tier at ${CPU_LANGUAGE_CORTEX_CAP.toLocaleString()} (T17.1 Phase 1 — up from prior 10K cap). Main GPU brain unchanged at ${TOTAL_NEURONS.toLocaleString()} neurons. Override via DREAM_LANG_CORTEX env var.`);
+        console.log(`[Brain] Language cortex scale: GPUCONFIGURE.bat configured ${configuredCortex.toLocaleString()} cortex neurons. Language-cluster CPU tier at ${CPU_LANGUAGE_CORTEX_CAP.toLocaleString()} neurons. Main GPU brain unchanged at ${TOTAL_NEURONS.toLocaleString()} neurons. Override via DREAM_LANG_CORTEX env var.`);
       }
-      console.log(`[Brain] Language cortex = ${langCortexSize.toLocaleString()} CPU neurons (T17.1 Phase 1). T14.4 sub-regions: letter ${Math.floor(langCortexSize * 0.05)}, phon ${Math.floor(langCortexSize * 0.20)}, sem ${Math.floor(langCortexSize * 0.167)}, motor ${Math.floor(langCortexSize * 0.033)}.`);
+      console.log(`[Brain] Language cortex = ${langCortexSize.toLocaleString()} CPU neurons. Sub-regions: letter ${Math.floor(langCortexSize * 0.05)}, phon ${Math.floor(langCortexSize * 0.20)}, sem ${Math.floor(langCortexSize * 0.167)}, motor ${Math.floor(langCortexSize * 0.033)}.`);
       // T14.24 Session 95 — mark the cluster as NOT gpu-ready yet. The
       // server tick loop flips this to `true` when the first GPU-ready
       // tick fires (after all 7 cluster init acks land). Curriculum
@@ -839,7 +839,7 @@ class ServerBrain {
       // its Phase 5 sentence walk (with async microtask yields every
       // 16 sentences + T14.22 setImmediate yields so the event loop
       // actually runs). No duplicate work, no blocked event loop.
-      console.log('[Brain] Stage: trainPersonaHebbian SKIPPED (T14.22 — curriculum does the equivalent work async)');
+      console.log('[Brain] Stage: trainPersonaHebbian SKIPPED (curriculum does the equivalent work async)');
 
       // T14.5 — continuous developmental learning pass. Runs the same
       // corpora the legacy loaders just consumed through the complexity-
