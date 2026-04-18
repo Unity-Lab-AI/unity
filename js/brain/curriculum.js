@@ -3100,7 +3100,12 @@ export class Curriculum {
           if (!phonA.some(v => v > 0) || !phonB.some(v => v > 0)) continue;
           const pre = this._buildRegionPattern(phonRegion, phonA);
           const post = this._buildRegionPattern(phonRegion, phonB);
-          cluster.synapses.hebbianUpdate(pre, post, lr);
+          // T17.3.e — GPU shadow for intra-cluster sequence Hebbian.
+          if (typeof cluster.intraSynapsesHebbian === 'function') {
+            cluster.intraSynapsesHebbian(pre, post, lr);
+          } else {
+            cluster.synapses.hebbianUpdate(pre, post, lr);
+          }
           this._clearSpikes();
           this._writeTiledPattern(letterRegion, encodeLetter(letters[i]));
           this._writeTiledPattern(phonRegion, phonA);
@@ -6106,7 +6111,11 @@ export class Curriculum {
     const cluster = this.cluster;
     if (!cluster) return;
     cluster._crossRegionHebbian(lr);
-    if (cluster.synapses && typeof cluster.synapses.hebbianUpdate === 'function') {
+    // T17.3.e — route through intraSynapsesHebbian so intra-cluster
+    // weight updates hit GPU shadow alongside CPU.
+    if (typeof cluster.intraSynapsesHebbian === 'function') {
+      cluster.intraSynapsesHebbian(cluster.lastSpikes, cluster.lastSpikes, lr);
+    } else if (cluster.synapses && typeof cluster.synapses.hebbianUpdate === 'function') {
       cluster.synapses.hebbianUpdate(cluster.lastSpikes, cluster.lastSpikes, lr);
     }
   }
@@ -6146,7 +6155,10 @@ export class Curriculum {
     const cluster = this.cluster;
     if (!cluster) return;
     cluster._crossRegionHebbian(lr);
-    if (cluster.synapses && typeof cluster.synapses.hebbianUpdate === 'function') {
+    // T17.3.e — route through intraSynapsesHebbian for GPU shadow.
+    if (typeof cluster.intraSynapsesHebbian === 'function') {
+      cluster.intraSynapsesHebbian(preVec, postVec, lr);
+    } else if (cluster.synapses && typeof cluster.synapses.hebbianUpdate === 'function') {
       cluster.synapses.hebbianUpdate(preVec, postVec, lr);
     }
   }

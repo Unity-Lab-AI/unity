@@ -1599,12 +1599,23 @@ export class NeuronCluster {
    */
   async initGpu() {
     if (!this._gpuProxy || !this._gpuProxy.upload) return false;
-    if (!this.crossProjections) return false;
-    const names = Object.keys(this.crossProjections);
+    const targets = [];
+    // T17.3.e — intra-cluster synapse matrix uploaded alongside
+    // cross-projections. Hebbian updates during curriculum teach call
+    // `intraSynapsesHebbian(pre, post, lr)` which dispatches GPU
+    // fire-and-forget alongside the CPU synapses.hebbianUpdate. Puts
+    // the intra-cluster matrix on GPU so it's ready for propagate
+    // dispatch once the async cascade is wired through cluster.step.
+    if (this.synapses) {
+      targets.push({ key: `${this.name}_intraSynapses`, proj: this.synapses });
+    }
+    if (this.crossProjections) {
+      for (const name of Object.keys(this.crossProjections)) {
+        targets.push({ key: `${this.name}_${name}`, proj: this.crossProjections[name] });
+      }
+    }
     let uploaded = 0;
-    for (const name of names) {
-      const proj = this.crossProjections[name];
-      const key = `${this.name}_${name}`;
+    for (const { key, proj } of targets) {
       try {
         const matrix = {
           rows: proj.rows,
@@ -1621,9 +1632,27 @@ export class NeuronCluster {
         console.warn(`[Cluster ${this.name}] GPU upload exception for ${key}:`, err && err.message);
       }
     }
-    this._gpuProxyReady = uploaded === names.length;
-    console.log(`[Cluster ${this.name}] GPU proxy ready: ${uploaded}/${names.length} cross-projections uploaded (${this._gpuProxyReady ? 'FULL' : 'PARTIAL — falling back to CPU for failed projections'})`);
+    this._gpuProxyReady = uploaded === targets.length;
+    console.log(`[Cluster ${this.name}] GPU proxy ready: ${uploaded}/${targets.length} matrices uploaded (${this._gpuProxyReady ? 'FULL — intra-synapses + all cross-projections on GPU' : 'PARTIAL — falling back to CPU for failed matrices'})`);
     return this._gpuProxyReady;
+  }
+
+  /**
+   * T17.3.e — intra-cluster Hebbian wrapper. Applies the update on
+   * CPU (authoritative) AND fires GPU fire-and-forget shadow when
+   * proxy ready. Curriculum teach uses this instead of calling
+   * `cluster.synapses.hebbianUpdate` directly so intra-cluster
+   * weights stay in sync between CPU and GPU.
+   */
+  intraSynapsesHebbian(pre, post, lr) {
+    if (!this.synapses) return;
+    this.synapses.hebbianUpdate(pre, post, lr);
+    if (this._gpuProxyReady && this._gpuProxy && this._gpuProxy.hebbian) {
+      const key = `${this.name}_intraSynapses`;
+      try {
+        this._gpuProxy.hebbian(key, pre, post, lr);
+      } catch { /* non-fatal — CPU update authoritative */ }
+    }
   }
 
   /**
