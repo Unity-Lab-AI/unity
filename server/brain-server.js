@@ -1367,12 +1367,21 @@ class ServerBrain {
   _sparseSendBinary(msgBuffer, reqId, timeoutMs = 120_000) {
     if (!this._gpuClient || this._gpuClient.readyState !== 1) return Promise.resolve(null);
     if (!this._gpuSparsePending) this._gpuSparsePending = new Map();
-    this._gpuClient.send(msgBuffer, { binary: true });
+    const sizeMb = (msgBuffer.length / 1e6).toFixed(1);
+    const bufferedBefore = this._gpuClient.bufferedAmount;
+    console.log(`[Brain] sparse binary send reqId=${reqId} size=${sizeMb}MB (bufferedAmount=${(bufferedBefore/1e6).toFixed(1)}MB)`);
+    this._gpuClient.send(msgBuffer, (err) => {
+      if (err) {
+        console.warn(`[Brain] sparse binary send reqId=${reqId} ERROR: ${err.message}`);
+      } else {
+        console.log(`[Brain] sparse binary send reqId=${reqId} flushed (bufferedAmount=${(this._gpuClient.bufferedAmount/1e6).toFixed(1)}MB)`);
+      }
+    });
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         if (this._gpuSparsePending && this._gpuSparsePending.has(reqId)) {
           this._gpuSparsePending.delete(reqId);
-          console.warn(`[Brain] sparse binary reqId=${reqId} timed out after ${timeoutMs}ms`);
+          console.warn(`[Brain] sparse binary reqId=${reqId} timed out after ${timeoutMs}ms (bufferedAmount=${(this._gpuClient.bufferedAmount/1e6).toFixed(1)}MB still pending)`);
           resolve(null);
         }
       }, timeoutMs);
@@ -2602,9 +2611,17 @@ const httpServer = http.createServer((req, res) => {
 // maxPayload bumped to 2 GB so sparse matrix upload binary frames
 // can transfer at any realistic size. Default 100 MiB silently
 // rejects the 180 MB cross-projection frames at 200K cortex.
-// Language cortex grows with hardware per T17, so ceiling-free
-// frames are mandatory.
-const wss = new WebSocketServer({ server: httpServer, maxPayload: 2 * 1024 * 1024 * 1024 });
+// perMessageDeflate disabled because (a) sparse matrix binary data
+// is mostly entropy (random-init weights + random column indices)
+// so compression ratio is ~1.0 with significant CPU cost, and (b)
+// compression was defaulting on and adding seconds of latency per
+// frame. Language cortex grows with hardware per T17, so ceiling-
+// free + compression-free frames are mandatory.
+const wss = new WebSocketServer({
+  server: httpServer,
+  maxPayload: 2 * 1024 * 1024 * 1024,
+  perMessageDeflate: false,
+});
 
 wss.on('connection', (ws, req) => {
   const id = 'user_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6);

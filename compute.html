@@ -80,6 +80,8 @@ function connectToServer() {
       // binaryType='arraybuffer' set in connectToServer so e.data is
       // ArrayBuffer directly. Blob path kept as safety fallback.
       const buf = e.data instanceof ArrayBuffer ? e.data : await e.data.arrayBuffer();
+      const sizeMb = (buf.byteLength / 1e6).toFixed(1);
+      console.log(`[GPU Compute] binary frame received size=${sizeMb}MB, first4=${String.fromCharCode(new Uint8Array(buf, 0, 4)[0], new Uint8Array(buf, 0, 4)[1], new Uint8Array(buf, 0, 4)[2], new Uint8Array(buf, 0, 4)[3])}`);
       const view = new DataView(buf);
       const magic = String.fromCharCode(view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3));
       if (magic === 'SPRS') {
