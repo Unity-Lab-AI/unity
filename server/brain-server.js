@@ -616,13 +616,40 @@ class ServerBrain {
       // in 15-30 sec. That's borderline for interactive chat but
       // acceptable for a rebuild branch that's not yet optimized.
       // Further scaling requires T15 GPU language compute.
-      const CPU_LANGUAGE_CORTEX_CAP = 10000;
+      // Session 114.19r T17.1 (Gee 2026-04-17 verbatim approval "go
+      // ahead and yeah all of that" for the T17 plan) — remove the
+      // original 10K CPU-safety cap. 10K neurons was inadequate for
+      // the 1029-word K vocabulary + all the other curriculum bindings
+      // trying to coexist in one cluster. Sessions 114.19d-q stacked
+      // 14 iterative fixes fighting that cap. Scaling up to 100K gives
+      // 10× per-word discrimination capacity.
+      //
+      // Memory budget at 100K (8,500MB+ RAM box, Gee has 128GB):
+      //   - LIF state: 100K × 17B = 1.7MB
+      //   - Intra-cluster sparse synapses (connectivity 0.15 ≈ 15K
+      //     nonzeros/row): 100K × 15K × 12B = 18GB (capped via
+      //     targetFanout=300 below → 100K × 300 × 12 = 360MB)
+      //   - 14 cross-projections (sub-region sizes proportional): motor=3.3K,
+      //     sem=16.7K. sem→motor at fanout 1500 = 3.3K × 1500 × 12 = ~60MB.
+      //     Total cross: ~840MB.
+      //   - Grand total: ~1.2GB. Comfortable on 128GB.
+      //
+      // Tick performance cost: ~10× more ops per step vs 10K baseline.
+      // Curriculum walk stretches from seconds to ~10-17 min per gate.
+      // Acceptable for this validation phase — T17.2 worker parallelization
+      // and T17.3 GPU cross-region shaders will bring interactive speed back.
+      //
+      // If memory pressure becomes a concern, set DREAM_LANG_CORTEX env var
+      // to override (e.g. DREAM_LANG_CORTEX=50000 to drop back). Default 100K
+      // is the honest scale-up Phase 1.
+      const envCap = parseInt(process.env.DREAM_LANG_CORTEX, 10);
+      const CPU_LANGUAGE_CORTEX_CAP = Number.isFinite(envCap) && envCap > 0 ? envCap : 100000;
       const configuredCortex = CLUSTER_SIZES.cortex;
       const langCortexSize = Math.min(configuredCortex, CPU_LANGUAGE_CORTEX_CAP);
       if (configuredCortex > CPU_LANGUAGE_CORTEX_CAP) {
-        console.warn(`[Brain] Language cortex CPU-safety clip: GPUCONFIGURE.bat configured ${configuredCortex.toLocaleString()} cortex neurons but CPU-side NeuronCluster caps at ${CPU_LANGUAGE_CORTEX_CAP.toLocaleString()}. Main GPU brain still runs at full ${TOTAL_NEURONS.toLocaleString()}-neuron scale. Full GPU-scale language is T15 scope (GPU compute pipeline extension for T14.4 cross-region sparse ops).`);
+        console.log(`[Brain] Language cortex scale: GPUCONFIGURE.bat configured ${configuredCortex.toLocaleString()} cortex neurons. Language-cluster CPU tier at ${CPU_LANGUAGE_CORTEX_CAP.toLocaleString()} (T17.1 Phase 1 — up from prior 10K cap). Main GPU brain unchanged at ${TOTAL_NEURONS.toLocaleString()} neurons. Override via DREAM_LANG_CORTEX env var.`);
       }
-      console.log(`[Brain] Language cortex = ${langCortexSize.toLocaleString()} CPU neurons (configured ${configuredCortex.toLocaleString()} from GPUCONFIGURE.bat, capped at ${CPU_LANGUAGE_CORTEX_CAP.toLocaleString()} for CPU safety). T14.4 sub-regions: letter ${Math.floor(langCortexSize * 0.05)}, phon ${Math.floor(langCortexSize * 0.20)}, sem ${Math.floor(langCortexSize * 0.167)}, motor ${Math.floor(langCortexSize * 0.033)}.`);
+      console.log(`[Brain] Language cortex = ${langCortexSize.toLocaleString()} CPU neurons (T17.1 Phase 1). T14.4 sub-regions: letter ${Math.floor(langCortexSize * 0.05)}, phon ${Math.floor(langCortexSize * 0.20)}, sem ${Math.floor(langCortexSize * 0.167)}, motor ${Math.floor(langCortexSize * 0.033)}.`);
       // T14.24 Session 95 — mark the cluster as NOT gpu-ready yet. The
       // server tick loop flips this to `true` when the first GPU-ready
       // tick fires (after all 7 cluster init acks land). Curriculum

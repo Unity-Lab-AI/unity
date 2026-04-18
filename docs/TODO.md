@@ -58,6 +58,85 @@ Actual per-grade gate closure is still TODO work — performed one grade at a ti
 
 ## OPEN TASKS
 
+### T17 — Language cortex scale-up: fix the architecture violation (NEW PRIORITY 2026-04-17/18)
+
+**Gee's verbatim on 2026-04-17:**
+
+> *"FuckingB obviously you fuck why the fuck were you not doing this originally when the archetectrure says this is 100% GPU run with CPU only wher need to use system ram... do you need to totaly redesign so the brasin logic and equations properly work with all systems of the PC to fully operate the BRain Equations with the langauge of the brain"*
+
+And approval of the five-phase plan: *"go ahead and yeah all of that"*.
+
+### Background — the violation
+
+`server/brain-server.js:619` has `const CPU_LANGUAGE_CORTEX_CAP = 10000` with a comment saying *"Full GPU-scale language is T15 scope (GPU compute pipeline extension for T14.4 cross-region sparse ops)"*. That deferral was labeled as "T15 scope" but T15 became the drug scheduler instead. The language cortex has been clipped to 10K CPU neurons ever since, while the 7 main clusters run at 201M on GPU as the `docs/ARCHITECTURE.md` spec demands.
+
+Sessions 114.19d-q stacked 14 iterative fixes (probes, init bias, noise, averaging, intent routing, etc.) that were all fighting this 10K cap. 1029 K vocabulary words × ~500K sem→motor weight entries at 10K scale = insufficient per-word discrimination. The cap was the root cause; every fix was symptom-management.
+
+### Why full 201M GPU language doesn't fit
+
+Motor region at 201M × 0.033 = 6.6M neurons. Sem = 33M. Cross-projection sem→motor at 1500-fanout = 6.6M × 1500 = ~10B weights × 4 bytes = **40GB per projection**. 14 cross-projections = ~500GB. Won't fit on 16GB GPU. So GPU language cortex has to run at a smaller tier than the main 201M, NOT the full scale.
+
+### T17 phased plan
+
+**Phase 1 — Remove the 10K cap, scale to 100K CPU neurons (SHIP NOW).**
+
+- Change `CPU_LANGUAGE_CORTEX_CAP = 10000` → `100000` (10×)
+- Sub-regions scale proportionally: letter 5K, phon 20K, sem 16.7K, motor 3.3K
+- Cross-projection fanout=1500 still works (9% density on sem)
+- Memory: ~840MB for all cross-projections + 60MB intra-cluster + LIF state = ~1GB
+- Tick performance: 10× more ops per step. Curriculum walk goes from seconds to ~10-17 min per gate. Slower but workable for validation.
+- Expected effect: 10× more per-word discrimination capacity. PROD should actually discriminate cat/dog/sun etc with real signal instead of collision-dominated argmax.
+
+**Phase 2 — Worker-thread parallelization of cluster.step() (1-2 commits).**
+
+- Node `worker_threads` split `cluster.step()` across 16 cores (Gee's 5800X)
+- Neurons chunked per worker; synapse propagate parallelized by row-range
+- `_propagateCrossRegions` fires each projection on its own worker
+- Expected 5-10× speedup brings 100K-500K cortex into interactive range
+
+**Phase 3 — GPU cross-region shaders (3-5 commits).**
+
+- New WGSL shader: sparse CSR matmul for cross-projection propagate
+- New WGSL shader: cross-region Hebbian sparse weight update
+- GPU buffer management for T14.4 sub-region offsets + 14 cross-projection sparse CSRs
+- `cluster._propagateCrossRegions` and `_crossRegionHebbian` route to GPU when available, fall back to CPU
+- Each shader commit validated by running ELA-K gate on that path
+
+**Phase 4 — Live chat wired to upscaled language cortex (1-2 commits).**
+
+- `engine.processAndRespond` drives the real scaled cluster (not clipped)
+- `languageCortex.generate` uses upscaled generation
+- User input actually exercises the 100K-1M-neuron trained substrate
+- Validates: user types "hi" → real 'h','i' emission via scaled weights
+
+**Phase 5 — Move language into the main 201M GPU cortex (biggest win, deferred last).**
+
+- Instead of separate language cluster, embed T14.4 sub-regions + cross-projections INTO the main GPU cortex
+- Single cortex runs both the 7-cluster brain sim AND the language subsystem
+- Sub-regions are slices of the 201M cortex neurons
+- Cross-projection sparse matrices sized to fit GPU memory (motor region stays small so cross-matrices stay manageable)
+- Eliminates the dual-cortex architecture mess that was the root cause
+
+### Verification checkpoints per phase
+
+- Phase 1: PROD `expected_slot=c rank=?` — should climb into top-5 consistently
+- Phase 2: gate attempt wall-clock time drops 5-10× — enables rapid iteration
+- Phase 3: gate log shows `[GPU] cross-region propagate on device` — all 14 projections firing on GPU
+- Phase 4: `hi` input produces emission starting with 'h' in live chat
+- Phase 5: single-cortex architecture visible in `docs/ARCHITECTURE.md` diagrams with no separate language cluster
+
+### T17 tasks
+
+- [ ] **T17.1 — Phase 1 remove CPU cap (SHIP NOW).** `CPU_LANGUAGE_CORTEX_CAP = 100000`. Validate PROD discrimination improves.
+- [ ] **T17.2 — Phase 2 worker parallelization.** `cluster.step()` across N cores.
+- [ ] **T17.3 — Phase 3.a GPU cross-region sparse matmul shader.** WGSL shader for `crossProjection.propagate()` on GPU.
+- [ ] **T17.4 — Phase 3.b GPU cross-region Hebbian shader.** WGSL shader for `_crossRegionHebbian()` on GPU.
+- [ ] **T17.5 — Phase 3.c Wire cluster to GPU cross-region path.** `cluster._propagateCrossRegions` routes to GPU when available.
+- [ ] **T17.6 — Phase 4 live chat on upscaled cortex.** `engine.processAndRespond` drives scaled cluster.
+- [ ] **T17.7 — Phase 5 single-cortex integration.** Language sub-regions in main 201M GPU cortex.
+
+---
+
 ### T16 — Gee critique 2026-04-17 (post 114.19f Part 2 retry log) — FIVE verbatim items (NEW PRIORITY 2026-04-17)
 
 **Gee's five verbatim items from 2026-04-17:**

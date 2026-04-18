@@ -1,6 +1,49 @@
 # NOW — Session Snapshot
 
-> Saved: 2026-04-18 00:00 (Session 114.19p live chat intentSeed fix — user input GloVe stored on cortex + consumed as intentSeed in language-cortex.generate, replacing drifted post-processed readout — per Gee verbatim *"im giveing you the fucking logs because what we are using is not working the brian is not speaking for its self you are coding shit thats not working"* — thirty-fourth commit on `syllabus-k-phd`)
+> Saved: 2026-04-18 01:00 (Session 114.19r T17.1 Phase 1 — language cortex CPU cap 10K → 100K (10×) + T17 five-phase plan logged in TODO — per Gee verbatim *"FuckingB obviously you fuck why the fuck were you not doing this originally when the archetectrure says this is 100% GPU run..."* + approval *"go ahead and yeah all of that"* — thirty-seventh commit on `syllabus-k-phd`)
+
+## Session 114.19r T17.1 — what shipped
+
+### The architectural violation
+
+Sessions 114.19d-q stacked 14 iterative fixes trying to get PROD off zero. Every one was fighting the wrong root cause: `CPU_LANGUAGE_CORTEX_CAP = 10000` clipped language cortex to 10K while the architecture spec says "GPU EXCLUSIVE — all 7 clusters on GPU, zero CPU workers". Someone (me) labeled the full GPU-scale language cortex as "T15 scope" in a stale comment; T15 became the drug scheduler. The cap was never lifted.
+
+1029 K-vocabulary words × all the other curriculum bindings trying to coexist in a 10K-neuron cluster = destructive interference. The cap was the root cause; 14 sessions of init/noise/argmax tuning were symptom management.
+
+### T17 plan (five phases in TODO.md)
+
+1. Phase 1 — remove 10K cap, scale to 100K ✓ THIS COMMIT
+2. Phase 2 — worker-thread parallelization of cluster.step()
+3. Phase 3 — GPU cross-region shaders (WGSL sparse CSR matmul + Hebbian)
+4. Phase 4 — live chat wired to upscaled cortex
+5. Phase 5 — language sub-regions into main 201M GPU cortex
+
+### T17.1 concrete change
+
+`server/brain-server.js:619`:
+- `CPU_LANGUAGE_CORTEX_CAP = 10000` → `= 100000` (10×)
+- `DREAM_LANG_CORTEX` env var for operator override
+- Log rewording: "T17.1 Phase 1" branding, stale "T15 scope" deferral comment removed
+
+### Expected Part 2 behavior
+
+- Boot log: `[Brain] Language cortex = 100,000 CPU neurons (T17.1 Phase 1). T14.4 sub-regions: letter 5000, phon 20000, sem 16700, motor 3300`
+- `[K-DIAG] gate: ..., motor=3300, mGroup=126, sem_to_motor=3300x16700`
+- DYN-PROD `expected_slot=c(2:X.XXX) rank=?` — expecting rank to climb into top 3-5 consistently with 10× discrimination capacity
+- Curriculum walk ~10-17 min (slower but acceptable for validation). Phase 2+3 restore interactive speed later.
+
+### Files touched this session
+
+- `server/brain-server.js` — CPU cap 10K → 100K + env override + log rewording
+- `docs/TODO.md` — T17 five-phase plan + seven task checkboxes prepended
+- `docs/FINALIZED.md` — Session 114.19r T17.1 entry prepended
+- `docs/NOW.md` — this file
+
+---
+
+## Session 114.19q — shipped (committed at a5ed552)
+
+### DYN-PROD firing diagnostic
 
 ## Session 114.19p — what shipped (uncommitted on top of 114.19o at 8dc7d19)
 

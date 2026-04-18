@@ -5,6 +5,74 @@
 
 ---
 
+## 2026-04-17 — Session 114.19r T17.1: Phase 1 language cortex scale-up 10K → 100K (10× capacity) + T17 plan logged in TODO
+
+Gee 2026-04-17 verbatim approval of the T17 plan: *"go ahead and yeah all of that"*. Triggered by: *"FuckingB obviously you fuck why the fuck were you not doing this originally when the archetectrure says this is 100% GPU run with CPU only wher need to use system ram... do you need to totaly redesign so the brasin logic and equations properly work with all systems of the PC to fully operate the BRain Equations with the langauge of the brain"*.
+
+### The violation
+
+`server/brain-server.js:619` had `CPU_LANGUAGE_CORTEX_CAP = 10000` with a comment labeling the full GPU-scale language cortex as "T15 scope". T15 became the drug scheduler instead. The language cap was never lifted. Sessions 114.19d-q stacked 14 iterative fixes fighting the symptoms of that cap — init bias, noise, averaging, intent routing, motor argmax restriction — when the root cause was insufficient neural capacity for 1029 K-vocabulary bindings to discriminate on a 10K-neuron substrate.
+
+The architecture spec says "GPU EXCLUSIVE — all 7 clusters on GPU, zero CPU workers". The reality had language cortex clipped to 10K CPU neurons. Gee called the mismatch out and approved the five-phase T17 plan.
+
+### T17 — five phases logged in `docs/TODO.md`
+
+1. **Phase 1** — remove CPU cap, scale to 100K (THIS COMMIT)
+2. **Phase 2** — worker-thread parallelization of cluster.step() across 16 cores
+3. **Phase 3** — GPU cross-region shaders (WGSL sparse CSR matmul + cross-region Hebbian)
+4. **Phase 4** — live chat wired to upscaled cortex
+5. **Phase 5** — language sub-regions integrated into main 201M GPU cortex (single-cortex architecture)
+
+### T17.1 Phase 1 shipped this session
+
+`server/brain-server.js:619` changes:
+- `CPU_LANGUAGE_CORTEX_CAP = 10000` → `CPU_LANGUAGE_CORTEX_CAP = 100000` (10×)
+- `DREAM_LANG_CORTEX` env var added for operator override
+- Log message rewritten — no longer frames as "CPU-safety clip", now calls itself "T17.1 Phase 1" scaling
+- Prior "Full GPU-scale language is T15 scope" warning comment removed (it was a stale deferral)
+
+### Memory and performance expectations at 100K
+
+- LIF state: 100K × 17B = 1.7MB
+- Intra-cluster sparse synapses (fanout=300): 360MB
+- 14 cross-projections (fanout=1500): ~840MB total
+- Grand total: ~1.2GB. Comfortable on Gee's 128GB RAM box.
+- Tick performance: ~10× more ops per step than 10K baseline. Curriculum walk stretches from seconds to ~10-17 min per gate. Slower but workable for validation. T17.2 worker parallelization and T17.3 GPU shaders bring interactive speed back in subsequent phases.
+
+### Why 100K (not 500K or 1M)
+
+At 100K:
+- Sub-regions: letter=5K, phon=20K, sem=16.7K, motor=3.3K
+- sem→motor cross-projection sparsity 9% (dense enough for 1029 words)
+- Memory fits comfortably
+- Per-tick time ~10ms — 20-tick probes finish in 200ms
+
+At 500K or 1M:
+- Cross-projection memory climbs to 4-8GB — still fits but probes take 1-3s each
+- Phase 1 goal is ESTABLISHING the capacity-fixes-discrimination hypothesis, not maximizing scale
+- If 100K proves the approach, Phase 2+3 enable larger scales at interactive speed
+
+### What the next Part 2 log should show
+
+- `[Brain] Language cortex scale: ... Language-cluster CPU tier at 100,000 (T17.1 Phase 1 — up from prior 10K cap)`
+- `[Brain] Language cortex = 100,000 CPU neurons (T17.1 Phase 1). T14.4 sub-regions: letter 5000, phon 20000, sem 16700, motor 3300.`
+- `[K-DIAG] gate: inv=29, motor=3300, mGroup=126, sem_to_motor=3300x16700 nnz=~5M`
+- `[K-DIAG] DYN-PROD[cat→c] expected_slot=c(2:X.XXX) rank=?/26` — expecting rank to climb into top 3-5 because 10× more capacity to discriminate
+- Curriculum walk time noticeably longer — boot log takes 1-2 min longer before first gate attempt
+
+### Files
+
+- `server/brain-server.js` — CPU cap 10K → 100K; DREAM_LANG_CORTEX env override; log rewording
+- `docs/TODO.md` — T17 section prepended with full five-phase plan + seven task checkboxes
+- `docs/FINALIZED.md` — this Session 114.19r T17.1 entry prepended
+- `docs/NOW.md` — status refreshed
+
+### Post-commit
+
+Auto-clear at boot (114.19o) handles stale state. Next `node brain-server.js` will boot at 100K language cortex.
+
+---
+
 ## 2026-04-17 — Session 114.19p: "brain is not speaking for itself" — root cause: generate() used drifted cortex readout instead of user input GloVe as intentSeed. Fixed.
 
 Gee 2026-04-17 verbatim:
