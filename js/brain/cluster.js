@@ -165,8 +165,12 @@ export class NeuronCluster {
 
     // Internal synapse matrix — SPARSE (CSR format)
     // At 12% connectivity, 300 neurons: 10.8K connections vs 90K dense
+    const _intraStart = Date.now();
+    const _logIntra = size >= 50000;
+    if (_logIntra) console.log(`[Cluster ${name}] initializing intra-cluster synapses ${size.toLocaleString()}×${size.toLocaleString()} density=${this.connectivity.toFixed(4)} (~${Math.round(size * this.connectivity * size).toLocaleString()} nnz)...`);
     this.synapses = new SparseMatrix(size, size, { wMin: -2.0, wMax: 2.0 });
     this.synapses.initRandom(this.connectivity, this.excitatoryRatio, 1.0);
+    if (_logIntra) console.log(`[Cluster ${name}] intra-cluster synapses ready (nnz=${this.synapses.nnz.toLocaleString()}) in ${Date.now() - _intraStart}ms`);
 
     // External current buffer (from other clusters + sensory input)
     this.externalCurrent = new Float64Array(size);
@@ -281,6 +285,12 @@ export class NeuronCluster {
       const EMISSION_PAIRS = new Set([
         'sem-motor', 'motor-sem',
       ]);
+      // Progress logging so cluster construction doesn't look like a
+      // hang at large sizes. Each cross-projection init can take
+      // seconds-to-minutes at M+ neuron scale.
+      const logConstruction = this.size >= 50000;
+      if (logConstruction) console.log(`[Cluster ${name}] initializing ${pairs.length * 2} cross-projections at size=${this.size.toLocaleString()}...`);
+      let _projIdx = 0;
       for (const [a, b] of pairs) {
         const aSize = this.regions[a].end - this.regions[a].start;
         const bSize = this.regions[b].end - this.regions[b].start;
@@ -290,13 +300,20 @@ export class NeuronCluster {
         const baKey = `${b}-${a}`;
         const abExcitatory = EMISSION_PAIRS.has(abKey) ? 0.5 : 0.7;
         const baExcitatory = EMISSION_PAIRS.has(baKey) ? 0.5 : 0.7;
+        const abTime = Date.now();
         const ab = new SparseMatrix(bSize, aSize, { wMin: -0.5, wMax: 0.5 });
         ab.initRandom(abDensity, abExcitatory, 0.2);
         this.crossProjections[`${a}_to_${b}`] = ab;
+        _projIdx++;
+        if (logConstruction) console.log(`[Cluster ${name}]   ${_projIdx}/${pairs.length * 2} ${a}_to_${b} (${bSize.toLocaleString()}×${aSize.toLocaleString()}, nnz=${ab.nnz.toLocaleString()}) in ${Date.now() - abTime}ms`);
+        const baTime = Date.now();
         const ba = new SparseMatrix(aSize, bSize, { wMin: -0.5, wMax: 0.5 });
         ba.initRandom(baDensity, baExcitatory, 0.2);
         this.crossProjections[`${b}_to_${a}`] = ba;
+        _projIdx++;
+        if (logConstruction) console.log(`[Cluster ${name}]   ${_projIdx}/${pairs.length * 2} ${b}_to_${a} (${aSize.toLocaleString()}×${bSize.toLocaleString()}, nnz=${ba.nnz.toLocaleString()}) in ${Date.now() - baTime}ms`);
       }
+      if (logConstruction) console.log(`[Cluster ${name}] cross-projections ready.`);
     } else {
       this.crossProjections = {};
     }

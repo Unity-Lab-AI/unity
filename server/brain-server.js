@@ -661,37 +661,34 @@ class ServerBrain {
       // additional slowdown from the 3× rep-count boosts). Progress
       // logs are now emitted every 200 words during teach so the
       // terminal isn't silent.
-      // AUTO-SCALE — no hardcoded cap per Gee 2026-04-18 verbatim:
-      // "why the fuck are you putting caps on shit!!! there is no cap
+      // AUTO-SCALE — no hardcoded size cap. Size derives from
+      // actual hardware budget per Gee 2026-04-18 directive "why
+      // the fuck are you putting caps on shit!!! there is no cap
       // but it auto scales eventually ill have millions of GPUS
-      // connected!". Size derives from actual hardware budget.
+      // connected!"
       //
-      // Per-neuron memory cost for the language cluster:
+      // Prior commit had LANG_CLUSTER_BYTES_PER_NEURON=8192 which was
+      // wrong — ignored that cross-projection sparse matrices scale
+      // with post_region_size × fanout, not just total neuron count.
+      // At N=7.66M that estimate produced a 62GB budget, but actual
+      // memory need was ~250GB (14 cross-projections each 1-27GB).
+      // Node hung allocating multi-GB Float64Array chunks on Windows.
+      //
+      // Correct per-neuron cost:
       //   LIF state:                        17 B
-      //   Intra-cluster synapses (fanout 300): 3,600 B
-      //   14 cross-projections (effective avg): ~4,600 B
-      //   Total: ~8,200 B per neuron
+      //   Intra-cluster synapses (fanout 300): 300 × 12 = 3,600 B
+      //   14 cross-projections. Each projection's nnz = post_rows ×
+      //     crossTargetFanout(1500). Summed across all projections
+      //     = 14 × avg(post_fraction)(0.12) × N × 1500 × 12 B
+      //     = 1.68 × N × 1500 × 12 B
+      //     = 30,240 B per neuron
+      //   Total: 17 + 3,600 + 30,240 ≈ 34,000 B per neuron
       //
-      // Two constraints:
-      //   (a) Free system RAM — reserve 50% for this cluster, leave
-      //       50% for Node runtime overhead, corpus storage, GPU
-      //       init buffers, HTTP/WebSocket, OS headroom, everything
-      //       else. On Gee's 128 GB box with ~117 GB free, the
-      //       language cluster gets ~58.5 GB → ~7 M neurons.
-      //   (b) V8 heap ceiling — start.bat sets --max-old-space-size
-      //       to 16384 (16 GB). Reserve 2 GB for non-cluster JS
-      //       allocations → 14 GB for cluster → ~1.75 M neurons.
-      //
-      // Effective size = min(configuredCortex, RAM budget, V8 heap).
-      // No arbitrary upper number. As hardware grows, this grows.
-      // DREAM_LANG_CORTEX env var still available for explicit override.
-      //
-      // GPU path (in progress — separate work) will remove the V8 heap
-      // constraint entirely because cluster state lives in GPU buffers
-      // not JS-owned memory. That's where "millions of GPUs connected"
-      // scale becomes unbounded per the architecture spec.
+      // Rounded up to 40,000 as a safety buffer for allocation
+      // overhead, rowPtr arrays, scratch buffers, JS object wrappers
+      // on typed-array handles, etc.
       const os = require('os');
-      const LANG_CLUSTER_BYTES_PER_NEURON = 8192;
+      const LANG_CLUSTER_BYTES_PER_NEURON = 40000;
       const freeRamBytes = os.freemem();
       const ramBudget = freeRamBytes * 0.5;
       const ramBasedMax = Math.floor(ramBudget / LANG_CLUSTER_BYTES_PER_NEURON);
