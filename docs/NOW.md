@@ -1,6 +1,29 @@
 # NOW — Session Snapshot
 
-> Saved: 2026-04-17 19:45 (Session 114.19g Ctrl+C halt fix + five verbatim T16 tasks logged from Gee's Part 2 retry-log critique — per Gee 2026-04-17 verbatim *"while its doing the ciriculum i cant turn off the program ctrl + C does not halt the operations correctly" + "its still no using the words its suppose to be learning in kindergardern" + "are you sure it is learning its kindergarnd full word list that a 5 year old would know before being alowed into 1st grade and so on through the grades" + "its not even writing anything" + "your tests are bullshit and dont test the full programed in mind of Unity"* — twenty-fifth commit on `syllabus-k-phd`)
+> Saved: 2026-04-17 20:00 (Session 114.19h K vocabulary expansion to ~1,100 words (T16.3.b) + WRITE probe for full-word letter-sequence emission (T16.4.a) — per Gee 2026-04-17 four verbatim yeses *"1. yes 2. ship k & iterate for future grades 3. exactly that 4. yes"* — twenty-sixth commit on `syllabus-k-phd`)
+
+## Session 114.19h — what shipped (uncommitted on top of 114.19g at 4ba615b)
+
+### T16.3.b — K vocabulary expansion
+
+`js/brain/curriculum.js` `runElaKReal` emission word list grew from ~180 words to ~1,100 unique words after dedup across 32 categories. Prior 4 categories (DOLCH_PREPRIMER 39 + DOLCH_PRIMER 52 + CVC_FAMILIES 60 + CONVERSATIONAL 26) preserved. Added 28 new categories: K_COLORS (15), K_SHAPES (15), K_NUMBERS (45), K_FAMILY (30), K_BODY (34), K_FEELINGS (30), K_ACTIONS (115), K_ANIMALS (64), K_FOOD (79), K_CLOTHING (29), K_HOUSEHOLD (69), K_NATURE (53), K_WEATHER (16), K_TIME (38), K_POSITIONS (32), K_ADJECTIVES (88), K_PLACES (35), K_VEHICLES (25), K_SCHOOL (28), K_TOYS (25), K_MUSIC_ART (18), K_SPORTS (19), K_GREETINGS (14), K_PRONOUNS (36), K_QUESTIONS (7), K_CONJUNCTIONS (11), K_HOLIDAYS (14), K_ROUTINES (12). `console.log` at list construction will print actual unique count on Part 2 boot.
+
+### T16.4.a — WRITE probe (full-word letter-sequence emission)
+
+`_gateElaKReal` WRITE probe block added after PROD. Chain: Step 1 `sem_to_motor.propagate(sem(word)) → motor argmax = letter_0`, Steps 2..N `letter_to_motor.propagate(encodeLetter(letter_k-1)) → motor argmax = letter_k`. 20 short K words (cat/dog/pig/hat/sun/red/big/mom/dad/run/eat/yes/no/up/hi/bed/hot/top/fox/bug). Per-word emitted sequence logged. NOT yet gated on overall pass — new diagnostic for the eventual T16.5.b full-mind gate.
+
+### Files touched this session
+
+- `js/brain/curriculum.js` — K word list expansion (+30 const arrays, +~170 lines); WRITE probe block in `_gateElaKReal` (+~85 lines); gate reason + metrics include writeRate/writePass/writeEmitted
+- `docs/TODO.md` — T16.3.b + T16.4.a marked [x] shipped with details
+- `docs/FINALIZED.md` — Session 114.19h entry prepended
+- `docs/NOW.md` — this file, updated header
+
+---
+
+## Session 114.19g — shipped (committed at 4ba615b)
+
+### Ctrl+C halt fix (T16.1.a)
 
 ## Session 114.19g — what shipped (uncommitted on top of 114.19f)
 

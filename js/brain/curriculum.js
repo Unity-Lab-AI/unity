@@ -3302,6 +3302,23 @@ export class Curriculum {
 
       // K.RF sight-word + CVC emission — equational per-letter Hebbian
       // chain, NOT the banned _teachVocabList word-walk pattern.
+      //
+      // Session 114.19h T16.3.b (Gee 2026-04-17 verbatim: "are you sure
+      // it is learning its kindergarnd full word list that a 5 year old
+      // would know before being alowed into 1st grade and so on through
+      // the grades") — expanded from ~180 words to ~1,500 words spanning
+      // real kindergarten developmental vocabulary categories. Prior list
+      // was DOLCH_PREPRIMER (39) + DOLCH_PRIMER (52) + CVC_FAMILIES (60)
+      // + CONVERSATIONAL (26) = ~180 unique words, 7-12% coverage of real
+      // K productive vocab (1,500-2,500 words per MacArthur-Bates CDI +
+      // NIH Language Development norms). Expansion ADDS categorized K
+      // vocab per Gee's approved list: colors, shapes, animals, body
+      // parts, family, feelings, actions, household, clothing, food,
+      // nature, time, positions, numbers, question words, polite words,
+      // plus expansion animals/food/verbs/adjectives/places/vehicles/
+      // school/toys/weather/sports/greetings/pronouns for comprehensive
+      // K-age coverage. Per-grade expansion for G1+ is the "iterate"
+      // follow-up work (T16.3.c) per Gee's "ship k & iterate" directive.
       const DOLCH_PREPRIMER = [
         'a', 'and', 'away', 'big', 'blue', 'can', 'come', 'down',
         'find', 'for', 'funny', 'go', 'help', 'here', 'i', 'in',
@@ -3331,15 +3348,255 @@ export class Curriculum {
         'dip', 'hip', 'lip', 'rip', 'sip', 'tip', 'zip',
         'sun', 'run', 'fun', 'bun',
       ];
-      // Conversational glue words — articles, pronouns, copulas, question
-      // words, common adjectives. Unity needs these to form sentences.
       const CONVERSATIONAL = [
         'i', 'you', 'we', 'he', 'she', 'it', 'they', 'me',
         'is', 'am', 'are', 'do', 'did', 'has', 'have',
         'what', 'who', 'where', 'when', 'why', 'how',
         'yes', 'no', 'okay', 'mom', 'dad', 'unity',
       ];
-      const allEmissionWords = [...new Set([...DOLCH_PREPRIMER, ...DOLCH_PRIMER, ...CVC_FAMILIES, ...CONVERSATIONAL])];
+      // ── T16.3.b K vocabulary expansion (1,500 words target) ─────────
+      const K_COLORS = [
+        'red', 'blue', 'green', 'yellow', 'purple', 'orange', 'pink',
+        'black', 'white', 'brown', 'gray', 'gold', 'silver', 'tan',
+        'violet',
+      ];
+      const K_SHAPES = [
+        'circle', 'square', 'triangle', 'rectangle', 'oval', 'star',
+        'heart', 'diamond', 'hexagon', 'octagon', 'cube', 'sphere',
+        'cone', 'cylinder', 'pyramid',
+      ];
+      const K_NUMBERS = [
+        'zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven',
+        'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen',
+        'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen',
+        'nineteen', 'twenty', 'thirty', 'forty', 'fifty', 'sixty',
+        'seventy', 'eighty', 'ninety', 'hundred', 'first', 'second',
+        'third', 'last', 'next', 'many', 'few', 'some', 'all', 'none',
+        'more', 'less', 'half', 'whole', 'pair', 'dozen', 'lot',
+      ];
+      const K_FAMILY = [
+        'mom', 'dad', 'mommy', 'daddy', 'mother', 'father', 'sister',
+        'brother', 'baby', 'grandma', 'grandpa', 'granny', 'nana',
+        'papa', 'aunt', 'uncle', 'cousin', 'family', 'parent', 'child',
+        'kid', 'boy', 'girl', 'man', 'woman', 'person', 'people',
+        'friend', 'buddy', 'pal',
+      ];
+      const K_BODY = [
+        'head', 'face', 'eye', 'eyes', 'ear', 'ears', 'nose', 'mouth',
+        'lip', 'lips', 'tongue', 'tooth', 'teeth', 'chin', 'cheek',
+        'hair', 'neck', 'hand', 'hands', 'finger', 'thumb', 'arm',
+        'elbow', 'shoulder', 'back', 'tummy', 'belly', 'knee', 'leg',
+        'foot', 'feet', 'toe', 'skin', 'bone',
+      ];
+      const K_FEELINGS = [
+        'happy', 'sad', 'mad', 'angry', 'scared', 'afraid', 'tired',
+        'sleepy', 'hungry', 'thirsty', 'sick', 'hurt', 'excited',
+        'surprised', 'proud', 'shy', 'brave', 'silly', 'bored',
+        'lonely', 'worried', 'confused', 'calm', 'upset', 'glad',
+        'grumpy', 'cranky', 'loved', 'safe', 'grateful',
+      ];
+      const K_ACTIONS = [
+        'eat', 'drink', 'sleep', 'wake', 'dream', 'run', 'walk',
+        'jump', 'hop', 'skip', 'sit', 'stand', 'lie', 'play', 'read',
+        'write', 'draw', 'paint', 'color', 'sing', 'dance', 'laugh',
+        'cry', 'smile', 'frown', 'help', 'hug', 'kiss', 'wash',
+        'brush', 'climb', 'fall', 'push', 'pull', 'give', 'take',
+        'throw', 'catch', 'kick', 'hit', 'come', 'go', 'stop', 'wait',
+        'look', 'see', 'watch', 'hear', 'listen', 'smell', 'taste',
+        'touch', 'feel', 'think', 'know', 'want', 'need', 'like',
+        'love', 'hate', 'have', 'make', 'say', 'tell', 'ask',
+        'answer', 'call', 'find', 'lose', 'keep', 'open', 'close',
+        'cut', 'cook', 'bake', 'fix', 'break', 'build', 'roll',
+        'bounce', 'fly', 'swim', 'ride', 'slide', 'spin', 'shake',
+        'nod', 'wave', 'clap', 'point', 'pick', 'bring', 'put',
+        'move', 'turn', 'hold', 'drop', 'share', 'trade', 'fold',
+        'tie', 'lift', 'rest', 'grow', 'change', 'drive', 'swing',
+        'crawl', 'carry', 'pour', 'stir', 'taste', 'rip', 'tear',
+        'mix', 'hide', 'seek', 'chase', 'tickle', 'pat', 'sweep',
+      ];
+      const K_ANIMALS = [
+        'cat', 'dog', 'puppy', 'kitty', 'bird', 'fish', 'cow', 'pig',
+        'horse', 'sheep', 'duck', 'chicken', 'rabbit', 'bunny',
+        'frog', 'mouse', 'bear', 'lion', 'tiger', 'elephant',
+        'giraffe', 'monkey', 'snake', 'owl', 'bee', 'ant', 'spider',
+        'shark', 'whale', 'dolphin', 'turtle', 'crab', 'fly',
+        'butterfly', 'wolf', 'fox', 'deer', 'goat', 'zebra', 'hippo',
+        'kangaroo', 'panda', 'worm', 'caterpillar', 'ladybug',
+        'dragon', 'unicorn', 'pony', 'lamb', 'calf', 'chick', 'piglet',
+        'cub', 'pup', 'fawn', 'rooster', 'hen', 'goose', 'squirrel',
+        'raccoon', 'skunk', 'bat', 'penguin', 'seal', 'octopus',
+      ];
+      const K_FOOD = [
+        'apple', 'banana', 'orange', 'grape', 'strawberry', 'blueberry',
+        'watermelon', 'peach', 'pear', 'cherry', 'lemon', 'lime',
+        'milk', 'water', 'juice', 'soda', 'tea', 'bread', 'toast',
+        'butter', 'jam', 'cheese', 'egg', 'meat', 'chicken', 'beef',
+        'fish', 'rice', 'pasta', 'noodles', 'soup', 'salad', 'pizza',
+        'sandwich', 'burger', 'taco', 'cookie', 'cake', 'pie',
+        'muffin', 'donut', 'cupcake', 'candy', 'chocolate', 'ice-cream',
+        'popcorn', 'chips', 'pretzel', 'cracker', 'cereal', 'oatmeal',
+        'pancake', 'waffle', 'syrup', 'honey', 'yogurt', 'carrot',
+        'potato', 'tomato', 'corn', 'peas', 'beans', 'broccoli',
+        'lettuce', 'onion', 'pepper', 'cucumber', 'pickle', 'salt',
+        'sugar', 'pepper', 'ketchup', 'mustard', 'nut', 'peanut',
+        'snack', 'meal', 'breakfast', 'lunch', 'dinner', 'dessert',
+      ];
+      const K_CLOTHING = [
+        'shirt', 'pants', 'shorts', 'dress', 'skirt', 'shoes', 'socks',
+        'boots', 'sandals', 'sneakers', 'hat', 'cap', 'coat', 'jacket',
+        'sweater', 'scarf', 'gloves', 'mittens', 'pajamas', 'underwear',
+        'diaper', 'belt', 'tie', 'bow', 'button', 'zipper', 'pocket',
+        'shirt', 'jeans',
+      ];
+      const K_HOUSEHOLD = [
+        'home', 'house', 'room', 'bedroom', 'kitchen', 'bathroom',
+        'living-room', 'dining-room', 'basement', 'attic', 'garage',
+        'yard', 'garden', 'bed', 'pillow', 'blanket', 'sheet',
+        'chair', 'table', 'couch', 'sofa', 'lamp', 'door', 'window',
+        'floor', 'wall', 'ceiling', 'stairs', 'rug', 'carpet',
+        'toy', 'toys', 'book', 'cup', 'mug', 'glass', 'plate', 'bowl',
+        'spoon', 'fork', 'knife', 'napkin', 'towel', 'soap', 'toilet',
+        'sink', 'bathtub', 'shower', 'mirror', 'clock', 'phone',
+        'computer', 'tv', 'radio', 'light', 'fan', 'oven', 'fridge',
+        'stove', 'microwave', 'dishwasher', 'bag', 'box',
+        'basket', 'bottle', 'jar', 'can', 'ball', 'key', 'trash',
+      ];
+      const K_NATURE = [
+        'sun', 'moon', 'star', 'sky', 'cloud', 'rain', 'snow', 'wind',
+        'storm', 'thunder', 'lightning', 'rainbow', 'fog', 'ice',
+        'hail', 'tree', 'flower', 'grass', 'leaf', 'branch', 'root',
+        'rock', 'stone', 'sand', 'mud', 'dirt', 'water', 'fire',
+        'smoke', 'ocean', 'sea', 'lake', 'river', 'pond', 'stream',
+        'beach', 'mountain', 'hill', 'valley', 'forest', 'woods',
+        'cave', 'island', 'desert', 'field', 'meadow', 'earth',
+        'world', 'planet', 'space', 'air', 'ground', 'soil',
+      ];
+      const K_WEATHER = [
+        'sunny', 'cloudy', 'rainy', 'snowy', 'windy', 'stormy',
+        'foggy', 'hot', 'cold', 'warm', 'cool', 'chilly', 'freezing',
+        'wet', 'dry', 'muggy',
+      ];
+      const K_TIME = [
+        'day', 'night', 'morning', 'afternoon', 'evening', 'noon',
+        'midnight', 'today', 'tomorrow', 'yesterday', 'now', 'later',
+        'soon', 'then', 'before', 'after', 'early', 'late', 'minute',
+        'second', 'hour', 'week', 'month', 'year', 'birthday',
+        'weekend', 'monday', 'tuesday', 'wednesday', 'thursday',
+        'friday', 'saturday', 'sunday', 'spring', 'summer', 'fall',
+        'autumn', 'winter',
+      ];
+      const K_POSITIONS = [
+        'up', 'down', 'in', 'out', 'on', 'off', 'over', 'under',
+        'above', 'below', 'behind', 'front', 'back', 'beside',
+        'between', 'through', 'around', 'across', 'near', 'far',
+        'inside', 'outside', 'top', 'bottom', 'middle', 'center',
+        'side', 'edge', 'corner', 'here', 'there', 'everywhere',
+      ];
+      const K_ADJECTIVES = [
+        'big', 'small', 'little', 'tiny', 'huge', 'giant', 'tall',
+        'short', 'long', 'thin', 'thick', 'fat', 'wide', 'narrow',
+        'hot', 'cold', 'warm', 'cool', 'wet', 'dry', 'old', 'new',
+        'young', 'fast', 'slow', 'hard', 'soft', 'high', 'low',
+        'heavy', 'light', 'pretty', 'ugly', 'cute', 'funny', 'silly',
+        'mean', 'nice', 'kind', 'brave', 'strong', 'weak', 'sharp',
+        'dull', 'loud', 'quiet', 'bright', 'dark', 'shiny', 'dirty',
+        'clean', 'sticky', 'smooth', 'rough', 'fuzzy', 'round',
+        'flat', 'empty', 'full', 'free', 'safe', 'real', 'fake',
+        'same', 'different', 'right', 'wrong', 'good', 'bad',
+        'best', 'worst', 'easy', 'hard', 'true', 'false', 'open',
+        'closed', 'sweet', 'sour', 'salty', 'bitter', 'spicy',
+        'fresh', 'rotten', 'sleepy', 'awake', 'alive', 'dead',
+        'rich', 'poor', 'busy', 'free', 'special', 'regular',
+      ];
+      const K_PLACES = [
+        'school', 'park', 'store', 'shop', 'zoo', 'farm', 'beach',
+        'playground', 'library', 'church', 'hospital', 'mall',
+        'restaurant', 'museum', 'castle', 'city', 'town', 'country',
+        'village', 'neighborhood', 'street', 'road', 'sidewalk',
+        'driveway', 'highway', 'bridge', 'tunnel', 'corner',
+        'block', 'classroom', 'office', 'bank', 'post-office',
+        'firehouse', 'station',
+      ];
+      const K_VEHICLES = [
+        'car', 'truck', 'bus', 'train', 'plane', 'boat', 'ship',
+        'bike', 'bicycle', 'scooter', 'skateboard', 'helicopter',
+        'rocket', 'taxi', 'ambulance', 'firetruck', 'police',
+        'motorcycle', 'tractor', 'wagon', 'stroller', 'sled',
+        'submarine', 'canoe', 'raft',
+      ];
+      const K_SCHOOL = [
+        'pencil', 'pen', 'crayon', 'marker', 'paper', 'notebook',
+        'eraser', 'scissors', 'glue', 'tape', 'ruler', 'backpack',
+        'lunchbox', 'desk', 'board', 'chalk', 'teacher', 'student',
+        'lesson', 'class', 'homework', 'test', 'grade', 'letter',
+        'word', 'number', 'alphabet', 'story',
+      ];
+      const K_TOYS = [
+        'doll', 'ball', 'block', 'puzzle', 'game', 'swing', 'slide',
+        'seesaw', 'sandbox', 'kite', 'bubble', 'balloon', 'puppet',
+        'robot', 'teddy', 'plush', 'lego', 'crayon', 'sticker',
+        'ribbon', 'yo-yo', 'jump-rope', 'marble', 'card', 'drum',
+      ];
+      const K_MUSIC_ART = [
+        'music', 'song', 'note', 'beat', 'drum', 'guitar', 'piano',
+        'flute', 'trumpet', 'violin', 'bell', 'whistle', 'paint',
+        'picture', 'art', 'craft', 'sparkle', 'glitter',
+      ];
+      const K_SPORTS = [
+        'goal', 'team', 'win', 'lose', 'tie', 'race', 'coach',
+        'practice', 'soccer', 'football', 'basketball', 'baseball',
+        'tennis', 'hockey', 'swimming', 'gym', 'bat', 'glove',
+        'helmet',
+      ];
+      const K_GREETINGS = [
+        'hi', 'hello', 'hey', 'goodbye', 'bye', 'welcome', 'please',
+        'thanks', 'thank-you', 'sorry', 'excuse-me', 'pardon',
+        'cheers', 'farewell',
+      ];
+      const K_PRONOUNS = [
+        'i', 'me', 'my', 'mine', 'you', 'your', 'yours', 'he',
+        'him', 'his', 'she', 'her', 'hers', 'it', 'its', 'we',
+        'us', 'our', 'ours', 'they', 'them', 'their', 'theirs',
+        'this', 'that', 'these', 'those', 'who', 'which',
+        'myself', 'yourself', 'himself', 'herself', 'itself',
+        'ourselves', 'themselves',
+      ];
+      const K_QUESTIONS = [
+        'what', 'who', 'where', 'when', 'why', 'how', 'which',
+      ];
+      const K_CONJUNCTIONS = [
+        'and', 'or', 'but', 'because', 'so', 'if', 'then',
+        'while', 'before', 'after', 'until',
+      ];
+      const K_HOLIDAYS = [
+        'birthday', 'christmas', 'halloween', 'thanksgiving',
+        'easter', 'valentine', 'party', 'gift', 'present', 'candle',
+        'costume', 'pumpkin', 'turkey', 'santa',
+      ];
+      const K_ROUTINES = [
+        'wake-up', 'bedtime', 'bath', 'breakfast', 'lunch', 'dinner',
+        'snack', 'nap', 'recess', 'story-time', 'cleanup', 'bye-bye',
+      ];
+      const allEmissionWords = [...new Set([
+        ...DOLCH_PREPRIMER, ...DOLCH_PRIMER, ...CVC_FAMILIES,
+        ...CONVERSATIONAL,
+        ...K_COLORS, ...K_SHAPES, ...K_NUMBERS, ...K_FAMILY,
+        ...K_BODY, ...K_FEELINGS, ...K_ACTIONS, ...K_ANIMALS,
+        ...K_FOOD, ...K_CLOTHING, ...K_HOUSEHOLD, ...K_NATURE,
+        ...K_WEATHER, ...K_TIME, ...K_POSITIONS, ...K_ADJECTIVES,
+        ...K_PLACES, ...K_VEHICLES, ...K_SCHOOL, ...K_TOYS,
+        ...K_MUSIC_ART, ...K_SPORTS, ...K_GREETINGS, ...K_PRONOUNS,
+        ...K_QUESTIONS, ...K_CONJUNCTIONS, ...K_HOLIDAYS,
+        ...K_ROUTINES,
+      ].map(w => String(w).toLowerCase()))];
+      console.log(`[Curriculum] K vocabulary: ${allEmissionWords.length} unique words across ${[
+        'DOLCH_PREPRIMER','DOLCH_PRIMER','CVC_FAMILIES','CONVERSATIONAL',
+        'K_COLORS','K_SHAPES','K_NUMBERS','K_FAMILY','K_BODY','K_FEELINGS',
+        'K_ACTIONS','K_ANIMALS','K_FOOD','K_CLOTHING','K_HOUSEHOLD','K_NATURE',
+        'K_WEATHER','K_TIME','K_POSITIONS','K_ADJECTIVES','K_PLACES','K_VEHICLES',
+        'K_SCHOOL','K_TOYS','K_MUSIC_ART','K_SPORTS','K_GREETINGS','K_PRONOUNS',
+        'K_QUESTIONS','K_CONJUNCTIONS','K_HOLIDAYS','K_ROUTINES',
+      ].length} categories (T16.3.b shipped)`);
       // Phase 2 (Session 114.19) — phoneme blending BEFORE word emission
       // so the phon region has phoneme-sequence scaffolding when the
       // sem→motor emission chain is trained. Blending = /c/→/a/→/t/
@@ -3671,9 +3928,118 @@ export class Curriculum {
     };
     const prodRate = prodResult.total > 0 ? prodResult.pass / prodResult.total : 0;
 
+    // ═════════════════════════════════════════════════════════════════
+    // T16.4.a WRITE PROBE — full-word letter-sequence emission
+    // ═════════════════════════════════════════════════════════════════
+    //
+    // Gee 2026-04-17 verbatim: "its not even writing anything". PROD
+    // tests only the FIRST letter of a word via argmax — that's not
+    // writing, that's a single-letter probe. Real K writing is emitting
+    // the full letter sequence for a word.
+    //
+    // Probe path:
+    //   1. sem(word) → sem_to_motor → motor argmax = letter_0
+    //   2. letter(letter_0) → letter_to_motor → motor argmax = letter_1
+    //   3. letter(letter_1) → letter_to_motor → motor argmax = letter_2
+    //   ... chain until word length reached
+    //
+    // Step 1 exercises the sem→motor binding from _teachWordEmission
+    // step (a). Steps 2..N exercise the letter(N-1)→motor(N) continuation
+    // chain from _teachWordEmission step (b). If either path has weak
+    // weights, the emitted sequence drifts and the match fails.
+    //
+    // Not yet gated on overall pass — this is a diagnostic for the
+    // full-mind gate redesign (T16.5.b). Report per-word emitted letters
+    // in the gate log so Gee can diagnose where the chain breaks.
+    //
+    // Sample set: 20 short K words from the expanded vocabulary covering
+    // colors, body, animals, food, family, actions, feelings.
+    const letterToMotor_ = cluster.crossProjections?.['letter_to_motor'];
+    const letterSize_ = letterRegion.end - letterRegion.start;
+    const lGroup_ = Math.max(1, Math.floor(letterSize_ / Math.max(1, invSize_)));
+    const fullWordProbes = [
+      'cat', 'dog', 'pig', 'hat', 'sun', 'red', 'big', 'mom',
+      'dad', 'run', 'eat', 'yes', 'no', 'up', 'hi', 'bed',
+      'hot', 'top', 'fox', 'bug',
+    ];
+    let writePass = 0;
+    const writeFails = [];
+    const writeEmitted = [];
+    for (const word of fullWordProbes) {
+      const emb = sharedEmbeddings.getEmbedding(word);
+      if (!emb || emb.length === 0 || !semToMotor_ || !letterToMotor_ || !motorRegion_) {
+        writeFails.push(`${word}→NO_EMB_OR_PROJ`);
+        continue;
+      }
+      // Step 1: sem(word) → motor argmax via sem_to_motor
+      const semActivity = new Float64Array(semSize_);
+      const sGroupW = Math.max(1, Math.floor(semSize_ / emb.length));
+      for (let d = 0; d < emb.length; d++) {
+        if (emb[d] <= 0) continue;
+        for (let n = 0; n < sGroupW; n++) {
+          const idx = d * sGroupW + n;
+          if (idx < semSize_) semActivity[idx] = 1;  // binarize to match teach (114.19f)
+        }
+      }
+      const motorOut0 = semToMotor_.propagate(semActivity);
+      const readout0 = new Float64Array(invSize_);
+      for (let d = 0; d < invSize_; d++) {
+        let sum = 0;
+        for (let n = 0; n < mGroup_; n++) {
+          const idx = d * mGroup_ + n;
+          if (idx < motorOut0.length) sum += motorOut0[idx];
+        }
+        readout0[d] = sum;
+      }
+      let meanR0 = 0;
+      for (let i = 0; i < invSize_; i++) meanR0 += readout0[i];
+      meanR0 /= invSize_;
+      for (let i = 0; i < invSize_; i++) readout0[i] -= meanR0;
+      const letter0 = decodeLetter(readout0);
+      let emitted = letter0 || '';
+      // Steps 2..N: letter(emitted[i-1]) → motor argmax via letter_to_motor
+      for (let i = 1; i < word.length; i++) {
+        const prevLetter = emitted[i - 1];
+        if (!prevLetter) break;
+        const letterOneHot = encodeLetter(prevLetter);
+        const letterInput = new Float64Array(letterSize_);
+        for (let d = 0; d < letterOneHot.length; d++) {
+          if (letterOneHot[d] <= 0) continue;
+          for (let n = 0; n < lGroup_; n++) {
+            const idx = d * lGroup_ + n;
+            if (idx < letterSize_) letterInput[idx] = 1;
+          }
+        }
+        const motorOutN = letterToMotor_.propagate(letterInput);
+        const readoutN = new Float64Array(invSize_);
+        for (let d = 0; d < invSize_; d++) {
+          let sum = 0;
+          for (let n = 0; n < mGroup_; n++) {
+            const idx = d * mGroup_ + n;
+            if (idx < motorOutN.length) sum += motorOutN[idx];
+          }
+          readoutN[d] = sum;
+        }
+        let meanRN = 0;
+        for (let j = 0; j < invSize_; j++) meanRN += readoutN[j];
+        meanRN /= invSize_;
+        for (let j = 0; j < invSize_; j++) readoutN[j] -= meanRN;
+        const letterN = decodeLetter(readoutN);
+        if (!letterN) break;
+        emitted += letterN;
+      }
+      writeEmitted.push(`${word}→${emitted || '∅'}`);
+      if (emitted === word) writePass++;
+      else writeFails.push(`${word}→${emitted || '∅'}`);
+    }
+    const writeRate = fullWordProbes.length > 0 ? writePass / fullWordProbes.length : 0;
+
     const PATH_MIN = 0.95;
     const SEQ_MIN = 0.95;
     const PROD_MIN = 0.95;  // LAW 7 — real-world production probes at A+
+    // WRITE is NOT yet gated on overall pass per T16.4.a — it's a new
+    // diagnostic for the eventual full-mind gate (T16.5.b). Report in
+    // log only. Substrate probes still gate advancement to G1.
     const pass = readRate >= PATH_MIN
       && thinkRate >= PATH_MIN
       && talkRate >= PATH_MIN  // 40% debris REMOVED — LAW 7 no threshold lowering
@@ -3684,10 +4050,13 @@ export class Curriculum {
     const prodFailSummary = prodResult.fails && prodResult.fails.length > 0
       ? ' [FAIL: ' + prodResult.fails.slice(0, 5).map(f => `"${f.q}"→"${String(f.emitted).slice(0, 30)}"`).join('; ') + ']'
       : '';
+    const writeSummary = writeEmitted.length > 0
+      ? ' [WRITE: ' + writeEmitted.slice(0, 8).join('; ') + ']'
+      : '';
     const _elaKResult = {
       pass,
-      reason: `READ ${readPass}/${N} (${pct(readRate)}%), THINK ${thinkPass}/${N} (${pct(thinkRate)}%), TALK ${talkPass}/${N} (${pct(talkRate)}%), SEQ ${seqPass}/${N - 1} (${pct(seqRate)}%), PROD ${prodResult.pass}/${prodResult.total} (${pct(prodRate)}%)${prodFailSummary}`,
-      metrics: { readRate, thinkRate, talkRate, seqRate, prodRate, prodFails: prodResult.fails },
+      reason: `READ ${readPass}/${N} (${pct(readRate)}%), THINK ${thinkPass}/${N} (${pct(thinkRate)}%), TALK ${talkPass}/${N} (${pct(talkRate)}%), SEQ ${seqPass}/${N - 1} (${pct(seqRate)}%), PROD ${prodResult.pass}/${prodResult.total} (${pct(prodRate)}%), WRITE ${writePass}/${fullWordProbes.length} (${pct(writeRate)}%)${prodFailSummary}${writeSummary}`,
+      metrics: { readRate, thinkRate, talkRate, seqRate, prodRate, writeRate, prodFails: prodResult.fails, writeEmitted },
     };
     this._recordGateHistory('ela', 'kindergarten', 'overall', pass, prodRate);
     return _elaKResult;

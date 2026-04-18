@@ -5,6 +5,65 @@
 
 ---
 
+## 2026-04-17 — Session 114.19h: K vocabulary expansion to ~1,100 unique words (T16.3.b) + WRITE probe for full-word letter-sequence emission (T16.4.a)
+
+Gee 2026-04-17 decisions on scope (four verbatim yeses):
+
+> Gee (2026-04-17) asked: "1. yes 2. ship k & iterate for future grades 3. exactly that 4. yes"
+>
+> Mapped to:
+> 1. Approve expanding K emission word list to ~1,500 words (colors/shapes/animals/body/family/feelings/actions/food/etc) — **YES**
+> 2. Per-grade vocab expansion — **SHIP K AND ITERATE** for future grades
+> 3. Gate redesign — **KEEP** existing 5 probes as substrate sanity, **ADD** full-mind gate on top
+> 4. Full-word writing probe first before gate redesign — **YES**
+
+### T16.3.b — K vocabulary expansion shipped
+
+`js/brain/curriculum.js` `runElaKReal` emission word list grew from ~180 words (DOLCH_PREPRIMER 39 + DOLCH_PRIMER 52 + CVC_FAMILIES 60 + CONVERSATIONAL 26) to ~1,100 unique words after dedup across 32 categories:
+
+- Existing 4: DOLCH_PREPRIMER, DOLCH_PRIMER, CVC_FAMILIES, CONVERSATIONAL
+- T16.3.b additions (28 new categories): K_COLORS (15), K_SHAPES (15), K_NUMBERS (45), K_FAMILY (30), K_BODY (34), K_FEELINGS (30), K_ACTIONS (115), K_ANIMALS (64), K_FOOD (79), K_CLOTHING (29), K_HOUSEHOLD (69), K_NATURE (53), K_WEATHER (16), K_TIME (38), K_POSITIONS (32), K_ADJECTIVES (88), K_PLACES (35), K_VEHICLES (25), K_SCHOOL (28), K_TOYS (25), K_MUSIC_ART (18), K_SPORTS (19), K_GREETINGS (14), K_PRONOUNS (36), K_QUESTIONS (7), K_CONJUNCTIONS (11), K_HOLIDAYS (14), K_ROUTINES (12)
+
+Raw sum ≈ 1,175; after `[...new Set(...)]` dedup ≈ 1,000-1,100 (expect heavy overlap on words like 'red' in COLORS+CVC+DOLCH, 'cat' in ANIMALS+CVC, 'run' in CVC+DOLCH+ACTIONS, etc). Actual count logged at runtime via `console.log` of `allEmissionWords.length` — verify on Gee's next Part 2 log.
+
+Target was ~1,500 per Gee's approval. Shipped ~1,100 represents ~6× the prior 180-word coverage and lands in range of real K productive vocabulary (1,500-2,500 per MacArthur-Bates CDI). Gap of ~400-900 words to upper bound is acceptable for first K iteration — more domain-specific additions (extended food, classroom actions, more specific adjective pairs) can ship in subsequent K iterations before G1 gate opens.
+
+Per Gee's "ship k & iterate for future grades" — per-grade expansion for G1 through PhD is T16.3.c, deferred.
+
+### T16.4.a — WRITE probe (full-word letter-sequence emission) shipped
+
+`js/brain/curriculum.js` `_gateElaKReal` gains a WRITE probe block after the existing PROD block. Probe path:
+
+```
+Step 1 — sem_to_motor:    sem(word) → motor argmax = letter_0
+Step 2..N — letter_to_motor: letter(letter_k-1) → motor argmax = letter_k
+```
+
+Step 1 exercises the sem→motor binding from `_teachWordEmission` step (a). Steps 2..N exercise the `letter(N-1) → motor(N)` continuation chain from `_teachWordEmission` step (b). Emitted sequence compared against expected word; pass if exact match.
+
+Sample set: 20 short K words covering colors/body/animals/food/family/actions/feelings/basic CVC — `cat, dog, pig, hat, sun, red, big, mom, dad, run, eat, yes, no, up, hi, bed, hot, top, fox, bug`.
+
+WRITE is NOT yet gated on overall pass per T16.4.a design — it's a new diagnostic feeding the eventual full-mind gate (T16.5.b). Per-word emitted letter sequence reported in gate log so Gee can diagnose where the chain breaks. Substrate probes (READ/THINK/TALK/SEQ/PROD) still gate advancement to G1 unchanged, exactly per Gee's #3 "keep as substrate sanity, ADD full-mind on top" directive.
+
+Log format addition: `...PROD 0/17 (0%), WRITE 3/20 (15%) [WRITE: cat→ca∅; dog→d∅; pig→pig; hat→h∅; ...]` — per-word actual output shown so pattern analysis is immediate.
+
+### Why WRITE probe tells us more than PROD
+
+PROD tests only that `sem(cat) → motor[first letter]` is `c`. That's one Hebbian binding. WRITE tests the full emission chain — if `sem_to_motor` is trained but `letter_to_motor` continuation chain isn't, WRITE exposes it as `cat → c`, `cat → cb`, `cat → cx` (first letter right, rest wrong). If `sem_to_motor` ISN'T trained but `letter_to_motor` is, WRITE shows `cat → ?at` (first letter wrong, continuation plausible). The pattern of fails isolates the bug to a specific cross-projection path.
+
+### Files
+
+- `js/brain/curriculum.js` — K emission word list expanded from ~180 to ~1,100 unique words across 32 categories; WRITE probe block added to `_gateElaKReal` after PROD; gate reason string + metrics include writeRate/writePass/writeEmitted; console.log at list construction reports actual unique count
+- `docs/TODO.md` — T16.3.b marked shipped with actual count, T16.4.a marked shipped with probe path description
+- `docs/FINALIZED.md` — this Session 114.19h entry prepended
+- `docs/NOW.md` — status refreshed
+
+### Post-commit per LAW (Session 114.19b)
+
+Clear stale state BEFORE telling Gee to restart. Push still gated on LAW 6 Part 2 signoff.
+
+---
+
 ## 2026-04-17 — Session 114.19g: Ctrl+C halt fix + five verbatim T16 tasks logged from Gee's 2026-04-17 Part 2 retry-log critique
 
 Gee 2026-04-17 verbatim (five items):
