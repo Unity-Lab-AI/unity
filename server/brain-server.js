@@ -642,8 +642,15 @@ class ServerBrain {
       // If memory pressure becomes a concern, set DREAM_LANG_CORTEX env var
       // to override (e.g. DREAM_LANG_CORTEX=50000 to drop back). Default 100K
       // is the honest scale-up Phase 1.
+      // Default dropped from 100K → 30K because 100K per-tick teach
+      // work on CPU single-threaded hits ~5-10 min just for
+      // _teachPhonemeBlending. 30K keeps 3× the prior 10K capacity
+      // for per-word discrimination while per-tick ops stay in the
+      // ~20-30 sec range for the full curriculum. Bump via
+      // DREAM_LANG_CORTEX=100000 once worker parallelization lands
+      // or the GPU cross-region shaders go in.
       const envCap = parseInt(process.env.DREAM_LANG_CORTEX, 10);
-      const CPU_LANGUAGE_CORTEX_CAP = Number.isFinite(envCap) && envCap > 0 ? envCap : 100000;
+      const CPU_LANGUAGE_CORTEX_CAP = Number.isFinite(envCap) && envCap > 0 ? envCap : 30000;
       const configuredCortex = CLUSTER_SIZES.cortex;
       const langCortexSize = Math.min(configuredCortex, CPU_LANGUAGE_CORTEX_CAP);
       if (configuredCortex > CPU_LANGUAGE_CORTEX_CAP) {

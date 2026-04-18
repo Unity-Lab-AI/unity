@@ -2487,8 +2487,8 @@ export class Curriculum {
       for (let j = 0; j < upperVec.length; j++) if (upperVec[j] > 0) combined[j] = 1;
       facts.push({ writes: [{ region: letterRegion, feat: combined }] });
     }
-    await this._teachCombination(facts, { reps: 8 });
-    console.log(`[Curriculum] _teachLetterCaseBinding: 26 case pairs × 8 reps`);
+    await this._teachCombination(facts, { reps: 24 });
+    console.log(`[Curriculum] _teachLetterCaseBinding: 26 case pairs × 24 reps`);
   }
 
   /**
@@ -2544,8 +2544,8 @@ export class Curriculum {
         ]});
       }
     }
-    await this._teachCombination(facts, { reps: 8 });
-    console.log(`[Curriculum] _teachVowelSoundVariants: ${facts.length} variants × 8 reps`);
+    await this._teachCombination(facts, { reps: 24 });
+    console.log(`[Curriculum] _teachVowelSoundVariants: ${facts.length} variants × 24 reps`);
   }
 
   /**
@@ -2574,10 +2574,17 @@ export class Curriculum {
     for (const w of wordList) for (const ch of w.toLowerCase()) if (/[a-z]/.test(ch)) uniqueLetters.add(ch);
     ensureLetters(Array.from(uniqueLetters));
 
+    console.log(`[Curriculum] _teachWordEmission START: ${wordList.length} words × ${reps} reps (asymmetric directional)`);
     for (let rep = 0; rep < reps; rep++) {
       if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return;
+      let _wordIdx = 0;
       for (const word of wordList) {
         const letters = Array.from(word.toLowerCase().replace(/[^a-z]/g, ''));
+        _wordIdx++;
+        if (_wordIdx % 200 === 0) {
+          console.log(`[Curriculum]   _teachWordEmission rep ${rep + 1}/${reps}, word ${_wordIdx}/${wordList.length}`);
+          await _microtask();
+        }
         if (letters.length === 0) continue;
         const wordEmb = sharedEmbeddings.getEmbedding(word);
         if (!wordEmb || wordEmb.length === 0) continue;
@@ -2623,7 +2630,7 @@ export class Curriculum {
       }
       await _microtask();
     }
-    console.log(`[Curriculum] _teachWordEmission: ${wordList.length} words × ${reps} reps (asymmetric directional)`);
+    console.log(`[Curriculum] _teachWordEmission DONE: ${wordList.length} words × ${reps} reps`);
   }
 
   /**
@@ -2682,8 +2689,8 @@ export class Curriculum {
         }
       }
     }
-    await this._teachCombination(facts, { reps: 4 });
-    console.log(`[Curriculum] _teachRhymeFamilies: ${facts.length} rhyme pairs × 4 reps`);
+    await this._teachCombination(facts, { reps: 12 });
+    console.log(`[Curriculum] _teachRhymeFamilies: ${facts.length} rhyme pairs × 12 reps`);
   }
 
   /**
@@ -2730,8 +2737,8 @@ export class Curriculum {
         { region: freeRegion, feat: _magnitudeFeatureForDigit(String(Math.min(9, syllables))) },
       ]});
     }
-    await this._teachCombination(facts, { reps: 6 });
-    console.log(`[Curriculum] _teachSyllableCounts: ${facts.length} words × 6 reps`);
+    await this._teachCombination(facts, { reps: 24 });
+    console.log(`[Curriculum] _teachSyllableCounts: ${facts.length} words × 24 reps`);
   }
 
   /**
@@ -2798,8 +2805,8 @@ export class Curriculum {
         { region: fineTypeRegion, feat: finalTag },
       ]});
     }
-    await this._teachCombination(facts, { reps: 4 });
-    console.log(`[Curriculum] _teachCVCSoundIsolation: ${facts.length} phoneme facts × 4 reps`);
+    await this._teachCombination(facts, { reps: 12 });
+    console.log(`[Curriculum] _teachCVCSoundIsolation: ${facts.length} phoneme facts × 12 reps`);
   }
 
   /**
@@ -2848,8 +2855,8 @@ export class Curriculum {
         { region: motorRegion,  feat: encodeLetter(singular[0]) },
       ]});
     }
-    await this._teachCombination(facts, { reps: 6 });
-    console.log(`[Curriculum] _teachPluralTransform: ${facts.length} plural pairs × 6 reps`);
+    await this._teachCombination(facts, { reps: 18 });
+    console.log(`[Curriculum] _teachPluralTransform: ${facts.length} plural pairs × 18 reps`);
   }
 
   /**
@@ -2890,8 +2897,8 @@ export class Curriculum {
         { region: motorRegion, feat: encodeLetter(category[0]) },
       ]});
     }
-    await this._teachCombination(facts, { reps: 8 });
-    console.log(`[Curriculum] _teachQuestionWordCategories: ${facts.length} pairs × 8 reps`);
+    await this._teachCombination(facts, { reps: 24 });
+    console.log(`[Curriculum] _teachQuestionWordCategories: ${facts.length} pairs × 24 reps`);
   }
 
   /**
@@ -2952,8 +2959,8 @@ export class Curriculum {
         { region: motorRegion,    feat: encodeLetter(terminator) },
       ]});
     }
-    await this._teachCombination(facts, { reps: 6 });
-    console.log(`[Curriculum] _teachEndPunctuation: ${facts.length} sentence types × 6 reps`);
+    await this._teachCombination(facts, { reps: 18 });
+    console.log(`[Curriculum] _teachEndPunctuation: ${facts.length} sentence types × 18 reps`);
   }
 
   /**
@@ -3043,8 +3050,8 @@ export class Curriculum {
         { region: fineTypeRegion, feat: eventTag },
       ]});
     }
-    await this._teachCombination(facts, { reps: 6 });
-    console.log(`[Curriculum] _teachStoryComprehension: ${facts.length} story facts × 6 reps`);
+    await this._teachCombination(facts, { reps: 18 });
+    console.log(`[Curriculum] _teachStoryComprehension: ${facts.length} story facts × 18 reps`);
   }
 
   /**
@@ -3074,40 +3081,36 @@ export class Curriculum {
     for (const w of wordList) for (const ch of w.toLowerCase()) if (/[a-z]/.test(ch)) uniqueLetters.add(ch);
     ensureLetters(Array.from(uniqueLetters));
 
+    console.log(`[Curriculum] _teachPhonemeBlending START: ${wordList.length} words × ${reps} reps (phoneme-sequence Hebbian)`);
     for (let rep = 0; rep < reps; rep++) {
       if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return;
+      let _wordIdx = 0;
       for (const word of wordList) {
         const letters = Array.from(word.toLowerCase().replace(/[^a-z]/g, ''));
-        if (letters.length < 2) continue;  // need at least 2 phonemes to blend
+        _wordIdx++;
+        if (_wordIdx % 200 === 0) {
+          console.log(`[Curriculum]   _teachPhonemeBlending rep ${rep + 1}/${reps}, word ${_wordIdx}/${wordList.length}`);
+          await _microtask();
+        }
+        if (letters.length < 2) continue;
         const wordEmb = sharedEmbeddings.getEmbedding(word);
-        // Stream consecutive phoneme-pair transitions
         for (let i = 0; i < letters.length - 1; i++) {
           const phonA = _phonemeFeatureForLetter(letters[i]);
           const phonB = _phonemeFeatureForLetter(letters[i + 1]);
           if (!phonA.some(v => v > 0) || !phonB.some(v => v > 0)) continue;
-          // Build full-cluster pre/post vectors with ONLY phon region
-          // carrying the current+next phoneme. Asymmetric so no
-          // self-loops form.
           const pre = this._buildRegionPattern(phonRegion, phonA);
           const post = this._buildRegionPattern(phonRegion, phonB);
-          // Sequence Hebbian on intra-cluster recurrent matrix.
-          // Directional binding: phoneme(i) → phoneme(i+1) in phon.
           cluster.synapses.hebbianUpdate(pre, post, lr);
-          // Also fire cross-projection Hebbian for letter↔phon binding
-          // so letter region activates phoneme + vice versa.
           this._clearSpikes();
           this._writeTiledPattern(letterRegion, encodeLetter(letters[i]));
           this._writeTiledPattern(phonRegion, phonA);
-          // Session 114.19f — sem write MUST binarize (lastSpikes is
-          // Uint8Array; float values truncate to 0 silently). See
-          // _teachWordEmission for the full explanation.
           if (wordEmb && wordEmb.length > 0) this._writeTiledPattern(semRegion, wordEmb);
           cluster._crossRegionHebbian(lr);
         }
       }
       await _microtask();
     }
-    console.log(`[Curriculum] _teachPhonemeBlending: ${wordList.length} words × ${reps} reps (phoneme-sequence Hebbian)`);
+    console.log(`[Curriculum] _teachPhonemeBlending DONE: ${wordList.length} words × ${reps} reps`);
   }
 
   /**
@@ -3142,8 +3145,8 @@ export class Curriculum {
         { region: fineTypeRegion, feat: capTag },
       ]});
     }
-    await this._teachCombination(facts, { reps: 5 });
-    console.log(`[Curriculum] _teachCapitalization: ${facts.length} cap facts × 5 reps`);
+    await this._teachCombination(facts, { reps: 15 });
+    console.log(`[Curriculum] _teachCapitalization: ${facts.length} cap facts × 15 reps`);
   }
 
   async runElaKReal(ctx) {

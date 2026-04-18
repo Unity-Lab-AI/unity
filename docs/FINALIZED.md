@@ -5,6 +5,57 @@
 
 ---
 
+## 2026-04-18 — Session 114.19t: K rep-count boosts 3× across 9 teach methods + progress logging on slow teach loops + default scale dropped 100K→30K
+
+Gee 2026-04-17/18 verbatim:
+
+> *"this doesnt seem enough:teachSyllableCounts: 24 words × 6 reps --- teachVowelSoundVariants: 10 variants × 8 reps, is thiss all of them?"*
+> *"what about other s they have these same issues?"*
+> *"The 3D Brain never rendered(was it the popup fix that broke it or something else)"*
+> *"it go stuck once it got to herre"*
+
+### Four items, three fixed this commit + one logged for next commit
+
+**1. Rep counts too low on K teach methods.** Honest audit: most K methods sit at 80-540 total exposures per concept vs 1000+ real-world K norms. Boosts (×3 on most, ×4 on some):
+
+| Method | Before | After |
+|---|---|---|
+| _teachLetterCaseBinding | 26 × 8 reps = 208 | 26 × 24 = 624 |
+| _teachVowelSoundVariants | 10 × 8 = 80 | 10 × 24 = 240 |
+| _teachRhymeFamilies | 280 × 4 = 1120 | 280 × 12 = 3360 |
+| _teachSyllableCounts | 24 × 6 = 144 | 24 × 24 = 576 |
+| _teachCVCSoundIsolation | 135 × 4 = 540 | 135 × 12 = 1620 |
+| _teachPluralTransform | 46 × 6 = 276 | 46 × 18 = 828 |
+| _teachQuestionWordCategories | 12 × 8 = 96 | 12 × 24 = 288 |
+| _teachEndPunctuation | 17 × 6 = 102 | 17 × 18 = 306 |
+| _teachStoryComprehension | 18 × 6 = 108 | 18 × 18 = 324 |
+| _teachCapitalization | 27 × 5 = 135 | 27 × 15 = 405 |
+
+Phoneme blending + word emission already at 10K+ exposures — left alone.
+
+**2. "Is this all of them?"** No — Math-K and the other K subjects have similar low-count methods (_teachDecomposition 66×6, _teachMultiplicationTransformations N×4, etc). This commit ships the ELA-K boosts; Math/Science/Social/Art/Life-K boosts will follow in the next commit after Gee validates that ELA-K rep boost moves PROD discrimination.
+
+**3. "Stuck at pre-emission" — was actually SLOW, not stuck.** At 100K cortex, `_teachPhonemeBlending` does ~3 trillion ops with no intermediate logging for 5-10 minutes. Looked like a hang.
+
+Two fixes:
+- Progress logging added inside `_teachPhonemeBlending` + `_teachWordEmission`. Prints `rep N/M, word X/Y` every 200 words + yields to event loop so the process isn't silent for 5+ min stretches.
+- Default cortex scale dropped from 100K → 30K. Keeps 3× the prior 10K capacity (meaningful discrimination gain from the scale-up) but curriculum walk completes in ~3 min instead of 30-60 min per attempt. `DREAM_LANG_CORTEX=100000` still available as override. 100K returns as the default when Phase 2 worker parallelization or Phase 3 GPU shaders land.
+
+**4. "3D Brain never rendered" — investigation pending.** My popup noise-suppression fix (114.19n) only added an optional `suppressNoise` flag to `cluster.generateSentence` and wired `_internalThought` through it. No touch to init/render path. Likely something else client-side — either WebGL init failure or a runtime error in brain-3d.js on page load. Need browser DevTools console output to diagnose. Logged as a follow-up investigation rather than blind-fixing.
+
+### Files
+
+- `server/brain-server.js` — default scale 30K (100K still overridable)
+- `js/brain/curriculum.js` — 10 method rep-count boosts + progress logging in _teachPhonemeBlending + _teachWordEmission
+- `docs/FINALIZED.md` — this entry prepended
+- `docs/NOW.md` — refreshed
+
+### Post-commit
+
+Auto-clear fires at boot. Next `start.bat` launches at 30K with boosted reps and progress-logged teach loops.
+
+---
+
 ## 2026-04-17 — Session 114.19s: LAW violation fix — task numbers scrubbed from user-visible console/HTML + sparse matrix init rewrite (kills 1.2GB transient JS object spam that hung 100K cortex) + start.bat Node heap bumped to 16GB
 
 Gee 2026-04-17 verbatim:

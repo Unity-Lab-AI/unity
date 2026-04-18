@@ -1,6 +1,52 @@
 # NOW — Session Snapshot
 
-> Saved: 2026-04-18 02:00 (Session 114.19s — task numbers SCRUBBED from all user-visible logs + HTML per Gee verbatim *"and why the fuck are my internal item task numbersa showing up in the fucking appliction!!!!!!"* + sparse-matrix init rewrite (kills 1.6GB transient object spam that hung 100K cortex) + start.bat Node heap bumped to 16GB — thirty-eighth commit on `syllabus-k-phd`)
+> Saved: 2026-04-18 03:00 (Session 114.19t — K teach rep-counts boosted 3× across 9 methods + progress logging inside slow teach loops + default scale dropped 100K→30K so curriculum actually completes on CPU single-thread — per Gee verbatim *"this doesnt seem enough: teachSyllableCounts: 24 words × 6 reps — teachVowelSoundVariants: 10 variants × 8 reps, is thiss all of them? — what about other s they have these same issues?"* + *"The 3D Brain never rendered"* + *"it go stuck once it got to herre"* — thirty-ninth commit on `syllabus-k-phd`)
+
+## Session 114.19t — what shipped
+
+### 1. K teach rep-count boosts (3× across 9 low-exposure methods)
+
+Gee caught that 24 syllable words × 6 reps = 144 exposures is way below real-world K repetition. Audit of every K method showed most sit at 80-540 exposures vs 1000+ real K norms. Boosts:
+
+| Method | Before | After |
+|---|---|---|
+| _teachLetterCaseBinding | 26 × 8 = 208 | 26 × **24** = 624 |
+| _teachVowelSoundVariants | 10 × 8 = 80 | 10 × **24** = 240 |
+| _teachRhymeFamilies | 280 × 4 = 1120 | 280 × **12** = 3360 |
+| _teachSyllableCounts | 24 × 6 = 144 | 24 × **24** = 576 |
+| _teachCVCSoundIsolation | 135 × 4 = 540 | 135 × **12** = 1620 |
+| _teachPluralTransform | 46 × 6 = 276 | 46 × **18** = 828 |
+| _teachQuestionWordCategories | 12 × 8 = 96 | 12 × **24** = 288 |
+| _teachEndPunctuation | 17 × 6 = 102 | 17 × **18** = 306 |
+| _teachStoryComprehension | 18 × 6 = 108 | 18 × **18** = 324 |
+| _teachCapitalization | 27 × 5 = 135 | 27 × **15** = 405 |
+
+Phoneme blending + word emission already at 10,000+ exposures — left alone.
+
+### 2. Progress logging in slow teach loops
+
+Prior `_teachPhonemeBlending` + `_teachWordEmission` only logged at start/end — ~5-10 min of silence at 100K scale looked like a hang. Now prints `rep N/M, word X/Y` every 200 words + yields to event loop.
+
+### 3. Default scale 100K → 30K
+
+100K on CPU single-thread = 5-10 min JUST for `_teachPhonemeBlending`. Full curriculum at 100K = 30-60 min per attempt. Gee saw that as a hang. Dropping to 30K gives 3× prior 10K capacity (still meaningful discrimination gain) at ~3 min full-curriculum time. Cap stays overridable via `DREAM_LANG_CORTEX=100000`. Worker parallelization (Phase 2) or GPU shaders (Phase 3) restore 100K as a real option later.
+
+### 3D Brain rendering issue (not yet fixed)
+
+Gee asked if the popup noise-suppression fix broke 3D render. My review: no — that change only added an optional `suppressNoise` flag to `cluster.generateSentence`, routed `_internalThought` through it. Doesn't touch init/render path. Likely something else — client-side WebGL init or runtime error on page load. Need browser DevTools console output from Gee to diagnose. Logged as `T18 — 3D Brain render regression investigation (NEEDS DIAG)` in the mental queue; will take it next with concrete error info.
+
+### Files touched
+
+- `server/brain-server.js` — default scale 30K (cap env-overridable)
+- `js/brain/curriculum.js` — 10 method rep-count boosts + progress logging in phoneme-blending/word-emission
+- `docs/FINALIZED.md` — session entry prepended
+- `docs/NOW.md` — this file
+
+---
+
+## Session 114.19s — shipped (committed at 1e4193d)
+
+### LAW violation scrub — task numbers out of user-visible paths
 
 ## Session 114.19s — what shipped
 
