@@ -1,6 +1,58 @@
 # NOW — Session Snapshot
 
-> Saved: 2026-04-17 20:30 (Session 114.19i PROD saturated-to-'y' diagnosis: PROD sem binarization + K-DIAG instrumentation + stats-getter log fix — after Gee's Part 2 log showed `cat→y; dog→y; sun→y; hat→y; pig→y` collapse + `cat→yad` WRITE output — twenty-seventh commit on `syllabus-k-phd`)
+> Saved: 2026-04-17 21:00 (Session 114.19j inventory drift root-cause fix — pre-populate '.', '?', '!' at runElaKReal start + PROD/WRITE probe argmax restricted to first 26 letter slots + expected-slot diagnostic — twenty-eighth commit on `syllabus-k-phd`)
+
+## Session 114.19j — what shipped (uncommitted on top of 114.19i at f2ebb6c)
+
+### Root cause confirmed from 114.19i K-DIAG
+
+Gee's 114.19i Part 2 run produced the diagnostic that unblocked the diagnosis:
+
+```
+[K-DIAG] gate: inv=29, motor=330, mGroup=11, sem_to_motor=330x1670 nnz=55110
+[K-DIAG] PROD[cat→c] decoded=b, emb_pos=141/300, top5_motor=b(1:27.546),h(7:26.546),?(27:26.028),y(24:23.546),x(23:21.546)
+```
+
+Two concrete bugs visible:
+1. **Inventory grew from 26 → 29** mid-curriculum (when `_teachEndPunctuation` added '.', '?', '!'). Phase 1 alphabet teach ran at inv=26/mGroup=12; Phase 3 word emission and gate probe ran at inv=29/mGroup=11. Motor slot boundaries drifted by 1 neuron per slot, compounding to ZERO overlap by letter 'y' (Phase 1 wrote motor[288..300] for 'y', probe read motor[264..275]).
+2. **Slot 27 ('?') competing in letter argmax** — punctuation slot showed 26.0 activation for input sem(cat), ranking #3 in top-5, displacing letters from argmax.
+
+### Fix 1 — pre-populate inventory
+
+`ensureLetters(['.', '?', '!'])` added at the top of `runElaKReal` right after `ensureLetters(ALPHABET.split(''))`. Inventory locks at 29 before any motor write happens. mGroup=11 consistent across Phase 1 alphabet teach, Phase 3 word emission, and the gate probe. No drift.
+
+### Fix 2 — probe argmax restricted to first 26 slots
+
+PROD and WRITE readouts now allocate `Math.min(invSize_, 26)` dims instead of `invSize_`. `decodeLetter` argmaxes over letters only. Punctuation training data at slots 26-28 preserved for future sentence-emission work but excluded from letter decode competition.
+
+### Fix 3 — expected-slot diagnostic
+
+First-probe K-DIAG line now includes `expected_slot=c(2:X.XXX) rank=N/26` so Gee can see whether training put ANY signal at the expected slot vs just losing argmax to noise.
+
+### What to watch for on next Part 2 run
+
+Expected K-DIAG line format:
+```
+[K-DIAG] gate: inv=29, motor=330, mGroup=11, sem_to_motor=330x1670 nnz=55110
+[K-DIAG] PROD[cat→c] decoded=?, emb_pos=141/300, expected_slot=c(2:X.XXX) rank=N/26, top5_motor=...
+```
+
+Diagnostic outcomes:
+- **If `expected_slot=c` value is in top-5 and PROD climbs** → drift was the whole issue, K gate may close
+- **If `expected_slot=c` rank is 2-5 but PROD still low** → training signal exists but noise floor still dominates, need stronger lr/reps or init rebalancing
+- **If `expected_slot=c` rank is 15+** → word training isn't landing discriminable signal; need to rework Phase 3 or reset cross-projection init
+
+### Files touched this session
+
+- `js/brain/curriculum.js` — pre-populate punctuation at runElaKReal start; 26-slot argmax restriction in PROD and WRITE; expected-slot diagnostic in `_firstProbeDiag`
+- `docs/FINALIZED.md` — Session 114.19j entry prepended
+- `docs/NOW.md` — this file, updated header
+
+---
+
+## Session 114.19i — shipped (committed at f2ebb6c)
+
+### Observed on Gee's 114.19h Part 2 run
 
 ## Session 114.19i — what shipped (uncommitted on top of 114.19h at 3633546)
 

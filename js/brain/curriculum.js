@@ -3152,7 +3152,35 @@ export class Curriculum {
     if (!cluster.crossProjections) return { pass: false, reason: 'no cross-projections' };
 
     const ALPHABET = ALPHABET_ORDER;
+    // Session 114.19j T16.5 root-cause fix — PRE-POPULATE the letter
+    // inventory with ALL characters that any K teach method will
+    // encounter, BEFORE Phase 1 alphabet teach writes the first motor
+    // pattern. Prior order caused `inventorySize()` to grow from 26 →
+    // 29 mid-curriculum when `_teachEndPunctuation` added '.', '?', '!'
+    // via `ensureLetters`. That shifted `mGroup = floor(motorSize /
+    // inventorySize)` from 12 to 11, so motor slot boundaries drifted
+    // by 1 neuron per slot. Phase 1 alphabet teach wrote letter 'c' at
+    // motor[24..36] (inv=26, mGroup=12) but probe read slot 'c' at
+    // motor[22..33] (inv=29, mGroup=11). By letter 'y' (idx 24) the
+    // training write motor[288..300] and the probe read motor[264..275]
+    // had ZERO overlap — probe was reading a completely different
+    // region of the motor cortex than was trained. Gee's 114.19i K-DIAG
+    // confirmed this with `inv=29, mGroup=11` at gate time and top-5
+    // argmax showing slot `?(27)` (punctuation slot!) competing with
+    // letter slots at 26.0 activation — a clear signal that the motor
+    // readout was reading into punctuation territory meant for slots
+    // 26-28. Pre-populating '.', '?', '!' here locks inv=29 for Phase
+    // 1 so teach/probe mGroup both stay at 11 and slot boundaries
+    // align. Digits 0-9 also pre-added so future Math-K integration
+    // doesn't reintroduce the same drift when ELA-K weights are
+    // serialized + later refined.
     ensureLetters(ALPHABET.split(''));
+    ensureLetters(['.', '?', '!']);
+    // Digits NOT pre-added — they belong to Math-K inventory. Adding
+    // them here would shrink mGroup from floor(330/29)=11 to
+    // floor(330/39)=8, reducing motor resolution per letter without
+    // benefit. Math-K runs after ELA-K gate closes, so digit growth
+    // happens post-ELA-K and doesn't affect this gate.
 
     // T14.24 Session 106 — DIRECT PATTERN HEBBIAN. Sessions 95-105
     // tried to teach through the Rulkov chaotic dynamics (inject →
@@ -3950,8 +3978,20 @@ export class Curriculum {
       // Matrix shape is (motorSize × semSize) sparse CSR.
       const motorOutput = semToMotor_.propagate(semActivity);
       // Reduce motor neurons to per-letter groups via averaging.
-      const motorReadout = new Float64Array(invSize_);
-      for (let d = 0; d < invSize_; d++) {
+      // Session 114.19j — restrict argmax to the first 26 inventory
+      // slots (a-z only). Slots 26+ hold punctuation ('.', '?', '!')
+      // and possibly digits later. Those slots ARE valid motor targets
+      // (e.g., `_teachEndPunctuation` writes motor '?' for question
+      // starts), but for PROD first-letter decode we want the LETTER
+      // argmax only — punctuation slot 27 ('?') showed 26.0 activation
+      // in 114.19i K-DIAG top-5 for sem(cat), competing with letter
+      // slots. Capping `motorReadout` at 26 dims lets `decodeLetter`
+      // argmax over letters only via its `Math.min(vec.length,
+      // LETTER_INVENTORY.size)` guard.
+      const LETTER_SLOTS = 26;
+      const readoutSize = Math.min(invSize_, LETTER_SLOTS);
+      const motorReadout = new Float64Array(readoutSize);
+      for (let d = 0; d < readoutSize; d++) {
         let sum = 0;
         for (let n = 0; n < mGroup_; n++) {
           const idx = d * mGroup_ + n;
@@ -3961,13 +4001,16 @@ export class Curriculum {
       }
       // Mean-center so bias doesn't skew argmax.
       let meanM = 0;
-      for (let i = 0; i < invSize_; i++) meanM += motorReadout[i];
-      meanM /= invSize_;
-      for (let i = 0; i < invSize_; i++) motorReadout[i] -= meanM;
+      for (let i = 0; i < readoutSize; i++) meanM += motorReadout[i];
+      meanM /= readoutSize;
+      for (let i = 0; i < readoutSize; i++) motorReadout[i] -= meanM;
       const decoded = decodeLetter(motorReadout);
       // Session 114.19i — for the FIRST probe word only, capture a
       // detailed slot-by-slot diagnostic so Gee can see what the probe
       // actually read vs what it expected.
+      // Session 114.19j — also log EXPECTED slot value so Gee can see
+      // whether training put any signal at the right slot vs just
+      // losing argmax to a noisier competitor.
       if (_firstProbeDiag === null) {
         const topSlots = [];
         for (let i = 0; i < motorReadout.length; i++) {
@@ -3976,9 +4019,13 @@ export class Curriculum {
         topSlots.sort((a, b) => b.val - a.val);
         const invSnap = inventorySnapshot();
         const topStr = topSlots.slice(0, 5).map(s => `${invSnap[s.idx] || '?'}(${s.idx}:${s.val.toFixed(3)})`).join(',');
+        // Find expected letter's slot and its readout value.
+        const expectedIdx = invSnap.indexOf(p.expected);
+        const expectedVal = (expectedIdx >= 0 && expectedIdx < motorReadout.length) ? motorReadout[expectedIdx] : NaN;
+        const expectedRank = topSlots.findIndex(s => s.idx === expectedIdx);
         let posCount = 0;
         for (let i = 0; i < emb.length; i++) if (emb[i] > 0) posCount++;
-        _firstProbeDiag = `[Curriculum][K-DIAG] PROD[${p.word}→${p.expected}] decoded=${decoded || '∅'}, emb_pos=${posCount}/${emb.length}, top5_motor=${topStr}`;
+        _firstProbeDiag = `[Curriculum][K-DIAG] PROD[${p.word}→${p.expected}] decoded=${decoded || '∅'}, emb_pos=${posCount}/${emb.length}, expected_slot=${p.expected}(${expectedIdx}:${Number.isFinite(expectedVal) ? expectedVal.toFixed(3) : 'NaN'}) rank=${expectedRank + 1}/${motorReadout.length}, top5_motor=${topStr}`;
       }
       if (decoded === p.expected) {
         prodPass++;
@@ -4048,8 +4095,12 @@ export class Curriculum {
         }
       }
       const motorOut0 = semToMotor_.propagate(semActivity);
-      const readout0 = new Float64Array(invSize_);
-      for (let d = 0; d < invSize_; d++) {
+      // Session 114.19j — restrict argmax to first 26 (letter) slots.
+      // See PROD probe comment for rationale.
+      const WRITE_LETTER_SLOTS = 26;
+      const readout0Size = Math.min(invSize_, WRITE_LETTER_SLOTS);
+      const readout0 = new Float64Array(readout0Size);
+      for (let d = 0; d < readout0Size; d++) {
         let sum = 0;
         for (let n = 0; n < mGroup_; n++) {
           const idx = d * mGroup_ + n;
@@ -4058,9 +4109,9 @@ export class Curriculum {
         readout0[d] = sum;
       }
       let meanR0 = 0;
-      for (let i = 0; i < invSize_; i++) meanR0 += readout0[i];
-      meanR0 /= invSize_;
-      for (let i = 0; i < invSize_; i++) readout0[i] -= meanR0;
+      for (let i = 0; i < readout0Size; i++) meanR0 += readout0[i];
+      meanR0 /= readout0Size;
+      for (let i = 0; i < readout0Size; i++) readout0[i] -= meanR0;
       const letter0 = decodeLetter(readout0);
       let emitted = letter0 || '';
       // Steps 2..N: letter(emitted[i-1]) → motor argmax via letter_to_motor
@@ -4077,8 +4128,10 @@ export class Curriculum {
           }
         }
         const motorOutN = letterToMotor_.propagate(letterInput);
-        const readoutN = new Float64Array(invSize_);
-        for (let d = 0; d < invSize_; d++) {
+        // Session 114.19j — restrict argmax to first 26 (letter) slots.
+        const readoutNSize = Math.min(invSize_, WRITE_LETTER_SLOTS);
+        const readoutN = new Float64Array(readoutNSize);
+        for (let d = 0; d < readoutNSize; d++) {
           let sum = 0;
           for (let n = 0; n < mGroup_; n++) {
             const idx = d * mGroup_ + n;
@@ -4087,9 +4140,9 @@ export class Curriculum {
           readoutN[d] = sum;
         }
         let meanRN = 0;
-        for (let j = 0; j < invSize_; j++) meanRN += readoutN[j];
-        meanRN /= invSize_;
-        for (let j = 0; j < invSize_; j++) readoutN[j] -= meanRN;
+        for (let j = 0; j < readoutNSize; j++) meanRN += readoutN[j];
+        meanRN /= readoutNSize;
+        for (let j = 0; j < readoutNSize; j++) readoutN[j] -= meanRN;
         const letterN = decodeLetter(readoutN);
         if (!letterN) break;
         emitted += letterN;

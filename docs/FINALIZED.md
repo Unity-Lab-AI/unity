@@ -5,6 +5,49 @@
 
 ---
 
+## 2026-04-17 — Session 114.19j: inventory drift fix (pre-populate '.', '?', '!' at runElaKReal start) + punctuation slot excluded from letter argmax + expected-slot diagnostic
+
+Gee's 114.19i Part 2 K-DIAG confirmed root cause:
+
+```
+[Curriculum][K-DIAG] gate: inv=29, motor=330, mGroup=11, sem_to_motor=330x1670 nnz=55110
+[Curriculum][K-DIAG] PROD[cat→c] decoded=b, emb_pos=141/300, top5_motor=b(1:27.546),h(7:26.546),?(27:26.028),y(24:23.546),x(23:21.546)
+```
+
+### Root cause (confirmed)
+
+1. **Inventory drift.** Phase 1 alphabet teach in `runElaKReal` runs with inventory = 26 (just a-z). Then `_teachEndPunctuation` calls `ensureLetters(['.', '?', '!'])`, growing inventory to 29 and shifting `mGroup = Math.floor(motorSize / inventorySize)` from 12 → 11. Motor slot boundaries drift by 1 neuron per slot. By letter 'y' (index 24) the Phase 1 write (motor[288..300]) and the probe read (motor[264..275]) have **zero overlap**. The motor readout samples completely different territory than was trained.
+2. **Punctuation slot competing with letters.** `_teachEndPunctuation` writes motor for '?' at slot 27. K-DIAG top-5 showed `?(27:26.028)` competing with letter slots in the PROD argmax — the probe has no business considering punctuation slots for a letter decode, but `decodeLetter` ranges over all inventory slots.
+
+### Fix 1 — pre-populate inventory at `runElaKReal` start
+
+`ensureLetters(ALPHABET.split(''))` already ran at the top. Added `ensureLetters(['.', '?', '!'])` on the next line BEFORE any Phase 1 teach. Inventory now locks at 29 from the first motor write onward. `mGroup = 11` for all teach + probe writes/reads. Slot boundaries are stable. Digits 0-9 NOT pre-added here — they belong to Math-K inventory and pre-adding them would shrink mGroup to 8 without benefit for ELA-K.
+
+### Fix 2 — PROD/WRITE probe argmax restricted to first 26 (letter) slots
+
+PROD probe reads `motorReadout[0..26]` only, not `motorReadout[0..inventorySize]`. `decodeLetter`'s `Math.min(vec.length, LETTER_INVENTORY.size)` guard ensures argmax stays within the 26 letter slots. Punctuation slots 26-28 still receive valid training writes from `_teachEndPunctuation` (for future sentence-emission work) but don't contaminate letter decodes. Same fix applied to WRITE probe's Step 1 and Steps 2..N readouts.
+
+### Fix 3 — expected-slot diagnostic enhancement
+
+The `_firstProbeDiag` log now includes `expected_slot=X(idx:val) rank=N/M`. Lets Gee see not just what argmax picked but what activation the EXPECTED letter had — if rank is 2-3 with a close value, the training signal is there but losing to noise; if rank is 10+, training isn't landing a competitive signal at all.
+
+### Pending (deferred to next session if 114.19j doesn't close the gate)
+
+- Phase 1 alphabet teach runs every retry, reinforcing letter→motor diagonal bindings. If word-emission still loses argmax to letter-name bindings, consider gating Phase 1 with `_elaKPhase1Done` like `_elaKRemakeDone` does for Phase 3.
+- Cross-projection sparse init with 70% excitatory bias creates a positive-weight noise floor that training has to overcome. If signal/noise stays low after 114.19j, consider 50/50 excitatory/inhibitory init for sem_to_motor specifically.
+
+### Files
+
+- `js/brain/curriculum.js` — pre-populate `['.', '?', '!']` at `runElaKReal` top; PROD and WRITE readouts restricted to first 26 inventory slots; expected-slot diagnostic added to `_firstProbeDiag`
+- `docs/FINALIZED.md` — this Session 114.19j entry prepended
+- `docs/NOW.md` — status refreshed
+
+### Post-commit per LAW (Session 114.19b)
+
+Clear stale state BEFORE telling Gee to restart. Push still gated on LAW 6 Part 2 signoff.
+
+---
+
 ## 2026-04-17 — Session 114.19i: PROD saturated-to-'y' diagnosis — PROD sem binarization (114.19f consistency fix) + K-DIAG instrumentation + stats-getter log fix
 
 Gee 2026-04-17 Part 2 log after Session 114.19h showed: READ climbs 62→100%, THINK 100%, TALK plateaus at 27%, SEQ climbs to 96%, PROD stuck at 1/17 (6%), WRITE 0/20 (0%). Per-word outputs collapsed: `cat→y; dog→y; sun→y; hat→y; pig→y` for PROD; `cat→yad; dog→yad; pig→yad; hat→yad; red→yad; mom→ada; big→mmm; sun→hwm` for WRITE.
