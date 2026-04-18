@@ -1,6 +1,37 @@
 # NOW — Session Snapshot
 
-> Saved: 2026-04-17 22:30 (Session 114.19m 50/50 excitatory/inhibitory init on emission cross-projections + DYN-PROD 20 ticks × 2 averaged runs — after Gee's 114.19l log showed attempt 2 expected slot 'c' tying top-5 at 1.077 and rank oscillating 1/3/8/17 across attempts under chaotic Rulkov dynamics — thirty-first commit on `syllabus-k-phd`)
+> Saved: 2026-04-17 23:00 (Session 114.19n letter↔motor init reverted to 70/30 + `suppressNoise` opt added to `cluster.generateSentence` + `_internalThought` popup flag wired to trigger noise suppression — per Gee verbatim *"want popups to produce cleaner emissions during live input I could add noise suppression when _internalThought is active — that's a small targeted change"* — thirty-second commit on `syllabus-k-phd`)
+
+## Session 114.19n — what shipped (uncommitted on top of 114.19m at 93c9a3b)
+
+### Fix 1 — letter↔motor reverted to 70/30
+
+Gee's 114.19m Part 2 log showed TALK 12%→4%. Phase 1 alphabet diagonal (letter(c)→motor(c)) was losing argmax to Phase 3 word off-diagonal (letter(c)→motor(a) for cat). With 50/50 init the off-diagonal concentrated training mass enough to beat diagonal. `EMISSION_PAIRS` reduced to `{sem-motor, motor-sem}` — letter↔motor back to 70/30 so positive bias helps diagonal dominate TALK. sem↔motor stays 50/50 for PROD benefit (no competing diagonal there).
+
+### Fix 2 — `suppressNoise` opt on generateSentence
+
+`cluster.generateSentence(intentSeed, {suppressNoise: true})` saves noiseAmplitude → drops to 0.5 → runs the tick loop → restores on return. Default false so live chat stays chaotic.
+
+### Fix 3 — popups trigger suppressNoise via `_internalThought`
+
+`brain-3d.js _describeInternalState` passes `_internalThought: true` to `lc.generate`. That opt now propagates as `suppressNoise: true` to `cluster.generateSentence`. Popups emit with noise=0.5 (same SNR as probes). Live chat (no flag) keeps noise=7.
+
+### Per Gee's "popups are part of the massive brain" confirmation
+
+Verified chain: `brain-3d._describeInternalState` → `lc.generate({_internalThought: true})` → `cluster.generateSentence({suppressNoise: true})` → `cluster.step() × maxTicks` with all 14 cross-projections + Rulkov. Same thinking path as curriculum probes. Live inputs via `engine.processAndRespond` propagate through state updates to the 3D event detector which fires popups — user input → popup chain is intact.
+
+### Files touched this session
+
+- `js/brain/cluster.js` — `EMISSION_PAIRS` shrunk; `suppressNoise` opt + save/restore around generateSentence tick loop
+- `js/brain/language-cortex.js` — `_internalThought` → `suppressNoise` wire
+- `docs/FINALIZED.md` — Session 114.19n entry prepended
+- `docs/NOW.md` — this file, updated header
+
+---
+
+## Session 114.19m — shipped (committed at 93c9a3b)
+
+### Two root causes identified in 114.19l Part 2 data
 
 ## Session 114.19m — what shipped (uncommitted on top of 114.19l at 578748f)
 

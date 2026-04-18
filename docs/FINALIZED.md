@@ -5,6 +5,72 @@
 
 ---
 
+## 2026-04-17 — Session 114.19n: letter↔motor init reverted to 70/30 (TALK regression fix) + `suppressNoise` opt added to `cluster.generateSentence` + `_internalThought` wired to suppress noise on popup emissions
+
+Gee 2026-04-17 verbatim acceptance of the earlier-session proposal:
+
+> *"want popups to produce cleaner emissions during live input I could add noise suppression when _internalThought is active — that's a small targeted change."*
+
+Also Gee's 114.19m Part 2 log showed TALK dropped from 12% → 4% on attempt 1. Diagnosing + fixing.
+
+### Fix 1 — revert letter↔motor to 70/30 (keep sem↔motor at 50/50)
+
+Session 114.19m changed `EMISSION_PAIRS` to include both sem↔motor AND motor↔letter / letter↔motor. Zero-mean init on sem↔motor helps PROD (word→first-letter binding has no competing diagonal). But zero-mean init on letter↔motor HURTS TALK because:
+
+- Phase 1 alphabet teach: `letter(c)→motor(c)` diagonal × 26 letters × 12 reps × every retry = ~312 reps per letter diagonal
+- Phase 3 word emission: `letter(N-1)→motor(N)` off-diagonal × 1029 words × avg 3 letter pairs × 12 reps = ~37K off-diagonal reps (40× more than diagonal)
+
+With 70/30 init, the positive bias + small diagonal training signal wins argmax for TALK because the off-diagonal reps are split across many target letters. With 50/50 init, the off-diagonal reps concentrate enough training mass to beat the diagonal.
+
+Fix: `EMISSION_PAIRS` reduced to `{sem-motor, motor-sem}`. letter↔motor / motor↔letter return to default 70/30. Expected effect: PROD retains the 50/50 benefit on the sem→motor path; TALK recovers the diagonal-dominance from 70/30 on letter→motor.
+
+### Fix 2 — `suppressNoise` opt on `cluster.generateSentence`
+
+Added `opts.suppressNoise` parameter. When true, save current `noiseAmplitude` → drop to 0.5 → run the tick-driven emission loop → restore on return. Default false so live-chat emission keeps chaotic dynamics.
+
+Rationale: probe blocks already suppress noise globally before calling generateSentence (via `_savedProbeNoise` wrapper). Popups don't — they run at live-chat noise=7. Adding the opt lets callers opt in without touching cluster state globally.
+
+### Fix 3 — popups (3D brain) pass `_internalThought` → suppressNoise
+
+`brain-3d.js _describeInternalState` already passes `_internalThought: true` when generating popup text via `lc.generate(dict, arousal, coherence, {cortexPattern, cortexCluster, _internalThought: true})`. That flag was previously observed by `lc.generate` but not propagated to `cluster.generateSentence`. Now wired:
+
+```js
+cluster.generateSentence(intentSeed, {
+  injectStrength: 0.6,
+  suppressNoise: opts._internalThought === true,
+});
+```
+
+Popup emissions now run with noise=0.5 (same SNR boost as probes). Live chat (no `_internalThought` flag) keeps noise=7.
+
+### Per Gee's "popups are part of the massive brain" directive
+
+Confirmed the path:
+
+```
+brain-3d.js _describeInternalState
+  → lc.generate({_internalThought: true})
+  → cluster.generateSentence({suppressNoise: true})
+  → cluster.step() × maxTicks with _propagateCrossRegions + Rulkov dynamics
+  → motor spike readout + decodeLetter per tick, commit on stability
+  → emitted sentence appears in popup above the active cluster
+```
+
+Live user inputs via `engine.processAndRespond` → cortex activation → state.update → brain-3d event detector → `_describeInternalState` → popup — same chain. Inputs in the moment DO have possibility of being popups, and those popups now use the exact same dynamic thinking as the curriculum probes, with noise suppressed for cleaner emission.
+
+### Files
+
+- `js/brain/cluster.js` — `EMISSION_PAIRS` reduced to `{sem-motor, motor-sem}`; `suppressNoise` opt added to `generateSentence` with save/restore around the tick loop
+- `js/brain/language-cortex.js` — `_internalThought` flag from `generate` opts now propagated as `suppressNoise` to `cluster.generateSentence`
+- `docs/FINALIZED.md` — this Session 114.19n entry prepended
+- `docs/NOW.md` — status refreshed
+
+### Post-commit per LAW (Session 114.19b)
+
+Clear stale state BEFORE telling Gee to restart. Push still gated on LAW 6 Part 2 signoff.
+
+---
+
 ## 2026-04-17 — Session 114.19m: 50/50 excitatory/inhibitory init for emission cross-projections (kills positive-bias noise floor) + DYN-PROD bumped to 20 ticks × 2 averaged runs (kills Rulkov chaos variance)
 
 Gee's 114.19l Part 2 run confirmed 114.19l fixes landed (no "Loaded saved state" log; K-DIAG shows `teaching 1029 K words`; noise suppression active) AND revealed two remaining issues:

@@ -263,34 +263,23 @@ export class NeuronCluster {
       // exceeds ~5000, bump this constant or drive it from a derived
       // quantity like `cluster._personaRefreshCorpus.length + baselineVocab`.
       const crossTargetFanout = 1500;
-      // Session 114.19m — projections on the EMISSION PATHWAYS
-      // (sem↔motor, motor↔letter, letter↔motor, letter↔phon when used
-      // as a motor-relay) init with 50/50 excitatory/inhibitory ratio
-      // (zero-mean random weights) instead of the default 70/30.
+      // Session 114.19m — sem↔motor projections init with 50/50
+      // excitatory/inhibitory (zero-mean random weights) instead of
+      // default 70/30. Killed the positive-bias baseline that drowned
+      // Hebbian training on the word→first-letter pathway.
       //
-      // Gee's 114.19l Part 2 run showed expected_slot 'c' tying ALL
-      // top-5 at 1.077 when it DID win (rank 1) and oscillating between
-      // rank 1/3/8/17 across retries under chaotic Rulkov dynamics.
-      // Root cause: 70% excitatory init produces a positive-weight
-      // baseline (each of ~1500 pre-connections per motor neuron avg
-      // +0.04 weight) that the small Hebbian training increments
-      // (+0.01 per rep × 12 reps × ~50 overlapping words = +0.006
-      // per weight) can't overcome. Motor argmax is dominated by
-      // init-bias randomness rather than trained signal.
-      //
-      // 50/50 init gives zero-mean random baseline — the sum across
-      // active sem dims × random weights has expected value ~0, with
-      // variance shrinking as √N. Training's positive Hebbian updates
-      // shift specific (pre, post) pairs above the zero mean, making
-      // argmax direction REAL signal.
-      //
-      // 70/30 preserved for the non-emission pairs (visual↔letter,
-      // phon↔sem, sem↔fineType, auditory↔phon) where biological
-      // Dale-principle excitatory cortex fibers match the learned
-      // comprehension pathways better than zero-mean.
+      // Session 114.19n — letter↔motor REVERTED to 70/30 after 114.19m
+      // Part 2 showed TALK regressed 12%→4%. TALK uses letter_to_motor
+      // for letter→same-letter diagonal (Phase 1 alphabet teach
+      // reinforces letter(c)→motor(c)). Phase 3 word emission trains
+      // off-diagonal letter(c)→motor(a) for "cat" with 40× more reps.
+      // With 50/50 init both signals show up cleanly; off-diagonal
+      // wins argmax. Keeping 70/30 for letter↔motor lets the positive
+      // bias favor the diagonal path so TALK can still succeed.
+      // sem↔motor 50/50 stays — that pair has no competing diagonal,
+      // just word→first-letter with direct positive signal.
       const EMISSION_PAIRS = new Set([
         'sem-motor', 'motor-sem',
-        'motor-letter', 'letter-motor',
       ]);
       for (const [a, b] of pairs) {
         const aSize = this.regions[a].end - this.regions[a].start;
@@ -1372,6 +1361,16 @@ export class NeuronCluster {
     const injectStrength = opts.injectStrength ?? 0.6;
     const maxTicks = opts.maxTicks ?? this.MAX_EMISSION_TICKS;
 
+    // Session 114.19n — optional noise suppression for deliberate
+    // emissions. When `suppressNoise` is true (popups passing
+    // _internalThought, curriculum gate probes, any call that wants
+    // cleaner argmax over settled attractors), save runtime noise →
+    // drop to 0.5 → restore on return. Live chat emission path
+    // passes suppressNoise=false (default) to keep chaotic thinking.
+    const suppressNoise = opts.suppressNoise === true;
+    const _savedNoise = this.noiseAmplitude;
+    if (suppressNoise) this.noiseAmplitude = 0.5;
+
     // STEP 1 — Inject intent if caller provided one. Null means
     // "cortex is already primed, just tick."
     if (intentSeed && intentSeed.length > 0 && this.regions.sem) {
@@ -1492,6 +1491,9 @@ export class NeuronCluster {
       output.push(letterBuffer);
     }
 
+    // Session 114.19n — restore runtime noise for post-emission live
+    // dynamics. No-op if suppressNoise was false.
+    if (suppressNoise) this.noiseAmplitude = _savedNoise;
     return output.join(' ');
   }
 

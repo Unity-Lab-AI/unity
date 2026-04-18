@@ -1452,7 +1452,18 @@ export class LanguageCortex {
     const curriculumDone = cluster.intentCentroids && cluster.intentCentroids.size > 0;
     let words = [];
     if (curriculumDone) {
-      const raw = cluster.generateSentence(intentSeed, { injectStrength: 0.6 });
+      // Session 114.19n per Gee 2026-04-17 verbatim: "want popups to
+      // produce cleaner emissions during live input I could add noise
+      // suppression when _internalThought is active — that's a small
+      // targeted change." When `_internalThought` is set (3D brain
+      // popup path from `brain-3d.js _describeInternalState`), pass
+      // `suppressNoise: true` to generateSentence so noiseAmplitude
+      // drops 7 → 0.5 for the emission only. Live chat (no
+      // _internalThought flag) keeps chaotic dynamics.
+      const raw = cluster.generateSentence(intentSeed, {
+        injectStrength: 0.6,
+        suppressNoise: opts._internalThought === true,
+      });
       words = raw ? raw.split(/\s+/).filter(Boolean) : [];
     }
 
