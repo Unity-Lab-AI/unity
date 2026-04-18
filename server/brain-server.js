@@ -223,6 +223,16 @@ function autoClearStaleState() {
     console.log('[Brain] ⚠ DREAM_KEEP_STATE=1 — KEEPING prior state. Auto-clear SKIPPED. Curriculum will still re-train but saved scalars + episodic memory persist.');
     return;
   }
+  // NOTE — js/app.bundle.js NOT cleared here. start.bat runs
+  // `npm run build` IMMEDIATELY before `node brain-server.js`, which
+  // writes a fresh bundle. Deleting it here racing that rebuild
+  // breaks the server — browser requests /js/app.bundle.js and gets
+  // 404, which is exactly what Gee reported 2026-04-18: "still no
+  // 3D brain visualklization but the htmls are now opening:
+  // localhost:7525:34 GET /js/app.bundle.js net::ERR_ABORTED 404".
+  // Clearing the bundle was the original bug. The freshly-built
+  // bundle IS current; stale-bundle-from-prior-run is already
+  // overwritten by the start.bat build step. No need to clear.
   const targets = [
     path.join(__dirname, 'brain-weights.json'),
     path.join(__dirname, 'brain-weights-v1.json'),
@@ -233,7 +243,6 @@ function autoClearStaleState() {
     path.join(__dirname, 'episodic-memory.db'),
     path.join(__dirname, 'episodic-memory.db-wal'),
     path.join(__dirname, 'episodic-memory.db-shm'),
-    path.join(__dirname, '..', 'js', 'app.bundle.js'),
   ];
   const cleared = [];
   const failed = [];

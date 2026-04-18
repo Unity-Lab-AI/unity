@@ -300,7 +300,7 @@ Every file in this list, every time, before "please test" hits Gee's screen:
 | `server/episodic-memory.db` | SQLite episodic-memory store. Events tagged with old cortex references. |
 | `server/episodic-memory.db-wal` | SQLite write-ahead log companion to episodic-memory.db. Must clear with the main DB or WAL replays stale writes. |
 | `server/episodic-memory.db-shm` | SQLite shared-memory companion. Must clear with the main DB. |
-| `js/app.bundle.js` | Bundled browser JS from previous code snapshot. `start.bat` / `start.sh` rebuild it on boot — clearing forces the rebuild to happen from current source instead of inheriting a stale bundle if the boot script skips rebuild for any reason. |
+| `js/app.bundle.js` | Bundled browser JS. **DO NOT clear at server boot — start.bat runs `npm run build` immediately before `node brain-server.js`, so the bundle is already fresh by the time the server module loads. The auto-clear in brain-server.js does NOT include this file because racing the rebuild caused a 404-on-bundle breakage (Session 114.19v 2026-04-18: Gee saw "GET /js/app.bundle.js net::ERR_ABORTED 404" → no 3D brain / no UI at all).** Manual clearing is fine if the server will be started from scratch via `start.bat` (which rebuilds); just don't put it in the in-process auto-clear list. |
 
 ### What is NEVER cleared
 
