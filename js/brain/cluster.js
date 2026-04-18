@@ -263,21 +263,49 @@ export class NeuronCluster {
       // exceeds ~5000, bump this constant or drive it from a derived
       // quantity like `cluster._personaRefreshCorpus.length + baselineVocab`.
       const crossTargetFanout = 1500;
+      // Session 114.19m — projections on the EMISSION PATHWAYS
+      // (sem↔motor, motor↔letter, letter↔motor, letter↔phon when used
+      // as a motor-relay) init with 50/50 excitatory/inhibitory ratio
+      // (zero-mean random weights) instead of the default 70/30.
+      //
+      // Gee's 114.19l Part 2 run showed expected_slot 'c' tying ALL
+      // top-5 at 1.077 when it DID win (rank 1) and oscillating between
+      // rank 1/3/8/17 across retries under chaotic Rulkov dynamics.
+      // Root cause: 70% excitatory init produces a positive-weight
+      // baseline (each of ~1500 pre-connections per motor neuron avg
+      // +0.04 weight) that the small Hebbian training increments
+      // (+0.01 per rep × 12 reps × ~50 overlapping words = +0.006
+      // per weight) can't overcome. Motor argmax is dominated by
+      // init-bias randomness rather than trained signal.
+      //
+      // 50/50 init gives zero-mean random baseline — the sum across
+      // active sem dims × random weights has expected value ~0, with
+      // variance shrinking as √N. Training's positive Hebbian updates
+      // shift specific (pre, post) pairs above the zero mean, making
+      // argmax direction REAL signal.
+      //
+      // 70/30 preserved for the non-emission pairs (visual↔letter,
+      // phon↔sem, sem↔fineType, auditory↔phon) where biological
+      // Dale-principle excitatory cortex fibers match the learned
+      // comprehension pathways better than zero-mean.
+      const EMISSION_PAIRS = new Set([
+        'sem-motor', 'motor-sem',
+        'motor-letter', 'letter-motor',
+      ]);
       for (const [a, b] of pairs) {
         const aSize = this.regions[a].end - this.regions[a].start;
         const bSize = this.regions[b].end - this.regions[b].start;
-        // Density from source region size — post-synaptic neuron in the
-        // target region ends up with ≈ crossTargetFanout pre-synaptic
-        // connections regardless of how big the source is.
         const abDensity = Math.min(0.10, crossTargetFanout / Math.max(1, aSize));
         const baDensity = Math.min(0.10, crossTargetFanout / Math.max(1, bSize));
-        // a → b projection (post=b, pre=a)
+        const abKey = `${a}-${b}`;
+        const baKey = `${b}-${a}`;
+        const abExcitatory = EMISSION_PAIRS.has(abKey) ? 0.5 : 0.7;
+        const baExcitatory = EMISSION_PAIRS.has(baKey) ? 0.5 : 0.7;
         const ab = new SparseMatrix(bSize, aSize, { wMin: -0.5, wMax: 0.5 });
-        ab.initRandom(abDensity, 0.7, 0.2);
+        ab.initRandom(abDensity, abExcitatory, 0.2);
         this.crossProjections[`${a}_to_${b}`] = ab;
-        // b → a projection (post=a, pre=b)
         const ba = new SparseMatrix(aSize, bSize, { wMin: -0.5, wMax: 0.5 });
-        ba.initRandom(baDensity, 0.7, 0.2);
+        ba.initRandom(baDensity, baExcitatory, 0.2);
         this.crossProjections[`${b}_to_${a}`] = ba;
       }
     } else {

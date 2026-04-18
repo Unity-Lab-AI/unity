@@ -3996,7 +3996,15 @@ export class Curriculum {
     ];
 
     // ── DYNAMIC PROD — sem injection → cluster.step() × N → motor argmax
-    const DYN_PROD_TICKS = 12;
+    //
+    // Session 114.19m — bumped to 20 ticks + AVERAGE over 2 probe runs
+    // per word to damp Rulkov chaotic variance. Prior 12 ticks × single
+    // run showed expected_slot 'c' oscillating rank 1/3/8/17 across
+    // retries under identical training weights — classic chaos sensitivity.
+    // Averaging two independent tick trajectories gives a stabler readout
+    // of the underlying trained attractor.
+    const DYN_PROD_TICKS = 20;
+    const DYN_PROD_AVG_RUNS = 2;
     const LETTER_SLOTS = 26;
     let prodPass = 0;
     const prodFails = [];
@@ -4011,24 +4019,23 @@ export class Curriculum {
         prodFails.push(`${p.word}→NO_PROJ`);
         continue;
       }
-      _probeReset();
-      // Inject sem(word) — Unity holds the concept in her sem region.
-      cluster.injectEmbeddingToRegion('sem', emb, 1.0);
-      // Tick the cluster. Every tick:
-      //   - _propagateCrossRegions() fires all 14 cross-projections
-      //   - synapses.propagate() does intra-cluster recurrent
-      //   - neurons.step() does Rulkov dynamics
-      //   - lastSpikes reflects the settled spike pattern
-      // Re-inject sem periodically so the thought doesn't fade during
-      // the tick loop (sustained attention on "cat").
+      // Accumulate motor spikes across DYN_PROD_AVG_RUNS independent
+      // probe runs — each run resets state + re-injects so chaotic
+      // trajectories are independent; summing reveals the trained
+      // attractor direction.
       const motorAccum = new Float64Array(motorSize_);
-      for (let t = 0; t < DYN_PROD_TICKS; t++) {
-        cluster.step(0.001);
-        for (let i = 0; i < motorSize_; i++) {
-          if (cluster.lastSpikes[motorRegion_.start + i]) motorAccum[i]++;
-        }
-        if (t === 3 || t === 7) {
-          cluster.injectEmbeddingToRegion('sem', emb, 0.5);
+      for (let run = 0; run < DYN_PROD_AVG_RUNS; run++) {
+        _probeReset();
+        cluster.injectEmbeddingToRegion('sem', emb, 1.0);
+        for (let t = 0; t < DYN_PROD_TICKS; t++) {
+          cluster.step(0.001);
+          for (let i = 0; i < motorSize_; i++) {
+            if (cluster.lastSpikes[motorRegion_.start + i]) motorAccum[i]++;
+          }
+          // Re-inject sem periodically to sustain attention
+          if (t === 5 || t === 12) {
+            cluster.injectEmbeddingToRegion('sem', emb, 0.5);
+          }
         }
       }
       // Reduce motor spike counts to 26 letter slots.

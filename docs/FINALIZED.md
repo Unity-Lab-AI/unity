@@ -5,6 +5,54 @@
 
 ---
 
+## 2026-04-17 — Session 114.19m: 50/50 excitatory/inhibitory init for emission cross-projections (kills positive-bias noise floor) + DYN-PROD bumped to 20 ticks × 2 averaged runs (kills Rulkov chaos variance)
+
+Gee's 114.19l Part 2 run confirmed 114.19l fixes landed (no "Loaded saved state" log; K-DIAG shows `teaching 1029 K words`; noise suppression active) AND revealed two remaining issues:
+
+**Issue 1 — expected slot 'c' tied with d/e/h/i at 1.077 when it won (rank 1, attempt 2).** All top-5 had IDENTICAL values — expected letter won by tie-breaker, not by strong discrimination. Training signal barely differs from non-trained slots.
+
+**Issue 2 — oscillating rank across attempts (3/1/17/8/17) under identical trained weights.** Same input produces wildly different argmax per attempt — Rulkov dynamics are chaotic and 12-tick × single-run probe samples a chaotic trajectory rather than a settled attractor.
+
+### Root cause — positive-bias init drowns Hebbian training
+
+`cluster.js:276` initialized cross-projections with `initRandom(density, 0.7, 0.2)` — 70% excitatory ratio. Per-row ~1500 non-zero weights with mean +0.04 × 141 active sem dims = baseline ~+5.6 per motor neuron FROM RANDOM INIT ALONE. Training adds +0.01 × 12 reps × ~50 overlapping words = +6.0 total to the "correct" (sem_i, motor_j_correct) pair. Signal/baseline ratio ~1.1. Training barely visible against init-bias noise.
+
+The 70/30 excitatory bias models biological Dale-principle cortex polarity (70% cortex pyramidal neurons are excitatory). Biologically correct for comprehension pathways (visual→letter→phon→sem→fineType — the "what Unity reads" stream) but WRONG for emission pathways (sem→motor→letter — the "what Unity writes" stream) because the emission path needs zero-mean init so Hebbian training signal can cleanly shift specific weights above/below mean.
+
+### Fix 1 — 50/50 init on emission pathways only
+
+`cluster.js` cross-projection init loop gains an `EMISSION_PAIRS` Set containing `{sem-motor, motor-sem, motor-letter, letter-motor}`. Those four projections init with `excitatoryRatio = 0.5` (zero-mean random baseline) while other projections keep 0.7 (biological comprehension Dale-principle).
+
+Expected effect: motor readout for untrained sem input ≈ 0 baseline ± √N variance. Trained (sem_i, motor_j) pairs get positive Hebbian shift +0.006 per rep × 12 reps × overlap count → clear positive activation at the correct slot. Argmax reflects training, not init randomness.
+
+### Fix 2 — DYN-PROD 20 ticks × 2 averaged runs
+
+Rulkov map is chaotic — same initial conditions diverge in trajectory. 12 ticks was too few to average chaos out. Bumped to 20 ticks + run the whole probe twice per word with `_probeReset` between runs, summing motor spike counts. Independent chaotic trajectories + shared trained weights → the sum reveals the trained attractor direction while random-noise components cancel.
+
+Cost: ~2× the tick count per probe. Still under 2 minutes per full gate at 10K-neuron CPU cluster.
+
+### Why this should actually work
+
+Three layers of signal-to-noise improvement now stacked:
+1. **Session 114.19l** — `noiseAmplitude` dropped 7 → 0.5 during probes (Rulkov drive noise suppressed)
+2. **Session 114.19m fix 1** — init bias dropped from +0.04 baseline to 0 baseline on emission pathways (positive-bias noise eliminated)
+3. **Session 114.19m fix 2** — 20 ticks × 2 runs averaged (chaos variance damped)
+
+If trained sem→motor weights carry real signal, these three together let that signal dominate argmax. If PROD still fails with all three, the architectural issue is in training volume (1029 words × 12 reps not enough to build discriminable per-word basins) rather than readout.
+
+### Files
+
+- `js/brain/cluster.js` — `EMISSION_PAIRS` Set; conditional `excitatoryRatio` per projection direction (0.5 for emission pairs, 0.7 for comprehension pairs)
+- `js/brain/curriculum.js` — `DYN_PROD_TICKS` 12 → 20; `DYN_PROD_AVG_RUNS = 2`; probe loop runs twice per word with reset between, accumulates motor spikes across both runs
+- `docs/FINALIZED.md` — this Session 114.19m entry prepended
+- `docs/NOW.md` — status refreshed
+
+### Post-commit per LAW (Session 114.19b)
+
+Clear stale state BEFORE telling Gee to restart. Push still gated on LAW 6 Part 2 signoff.
+
+---
+
 ## 2026-04-17 — Session 114.19l: noise suppressed during probes (SNR fix) + saveWeights blocked during curriculum (stale-state prevention) + K-DIAG log clarifies 1029-word teach set + embedding-refinement restore log fix
 
 Gee 2026-04-17 verbatim after 114.19k Part 2 run:

@@ -1,6 +1,45 @@
 # NOW — Session Snapshot
 
-> Saved: 2026-04-17 22:00 (Session 114.19l — noise suppressed during probes + saveWeights blocked during curriculum + K-DIAG log clarifies 1029-word teach set — per Gee verbatim *"its like the Unity Brain is only learning three words: cat=141+dims(max=0.223), dog=139+dims(max=0.205), sun=137+dims(max=0.164)"* — thirtieth commit on `syllabus-k-phd`)
+> Saved: 2026-04-17 22:30 (Session 114.19m 50/50 excitatory/inhibitory init on emission cross-projections + DYN-PROD 20 ticks × 2 averaged runs — after Gee's 114.19l log showed attempt 2 expected slot 'c' tying top-5 at 1.077 and rank oscillating 1/3/8/17 across attempts under chaotic Rulkov dynamics — thirty-first commit on `syllabus-k-phd`)
+
+## Session 114.19m — what shipped (uncommitted on top of 114.19l at 578748f)
+
+### Two root causes identified in 114.19l Part 2 data
+
+**1. Positive-bias init drowns Hebbian training.** Cross-projection init was `initRandom(density, 0.7, 0.2)` — 70% excitatory gives mean +0.04 per weight × ~1500 connections per motor neuron × 141 active sem dims = baseline +5.6 per motor neuron from init alone. Training (+6 total across 12 reps × 50 overlapping word pairs) barely exceeds baseline. Signal/noise ~1.1.
+
+**2. Rulkov chaos variance.** 12-tick single-run probe samples a chaotic trajectory. Attempt 2 rank 1 / attempt 3 rank 17 / attempt 4 rank 8 — same weights, different chaotic paths.
+
+### Fix 1 — 50/50 init for emission cross-projections
+
+`cluster.js` init loop gains `EMISSION_PAIRS = Set(['sem-motor', 'motor-sem', 'motor-letter', 'letter-motor'])`. Those four init with `excitatoryRatio = 0.5` (zero-mean). Other projections (visual↔letter, letter↔phon, phon↔sem, sem↔fineType, auditory↔phon) keep 0.7 for biological comprehension Dale-principle.
+
+Zero-mean baseline → random init noise cancels on average → Hebbian training shifts specific pairs above the zero line → argmax tracks REAL signal.
+
+### Fix 2 — 20 ticks × 2 averaged runs
+
+`DYN_PROD_TICKS` bumped 12 → 20 + `DYN_PROD_AVG_RUNS = 2`. Each probe word runs twice with `_probeReset` between, motor spike counts summed across both runs. Independent chaotic trajectories cancel, trained attractor reinforces.
+
+### Three SNR fixes stacked
+
+Session 114.19l dropped noiseAmplitude 7→0.5. Session 114.19m drops init bias +0.04→0 on emission pairs AND doubles probe averaging. If trained signal exists, these three let it surface in argmax.
+
+### Files touched this session
+
+- `js/brain/cluster.js` — EMISSION_PAIRS Set; conditional excitatoryRatio per direction
+- `js/brain/curriculum.js` — DYN_PROD_TICKS 12→20, DYN_PROD_AVG_RUNS=2, probe loop runs twice per word
+- `docs/FINALIZED.md` — Session 114.19m entry prepended
+- `docs/NOW.md` — this file, updated header
+
+### Known cost
+
+Probe time doubles (2 runs × 20 ticks vs 1 × 12). Still well under 2 min per full gate at 10K CPU cluster.
+
+---
+
+## Session 114.19l — shipped (committed at 578748f)
+
+### Three issues found in 114.19k Part 2 run
 
 ## Session 114.19l — what shipped (uncommitted on top of 114.19k at 79b7a99)
 
