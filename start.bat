@@ -72,13 +72,17 @@ echo   Bundle built - browser will load fresh code.
 echo.
 
 REM Start brain server in background, wait, open browser tabs.
-REM --max-old-space-size=16384 gives Node 16 GB of heap so the larger
-REM language-cortex sparse matrices and their transient JS objects
-REM during sparse init don't hit GC thrashing / default heap cap.
-REM Raise further if memory budget grows. Your 128 GB box can easily
-REM take 32 GB for this path.
+REM --max-old-space-size=65536 = 64 GB V8 heap ceiling. Language
+REM cortex is CPU-side for now (GPU port in progress) and its sparse
+REM synapse + cross-projection weights live in JS-owned typed arrays.
+REM The auto-scale logic in brain-server.js derives its neuron count
+REM from os.freemem() and v8.getHeapStatistics().heap_size_limit, so
+REM a bigger heap ceiling = bigger language cortex size. On a 128 GB
+REM RAM box this lets the language cluster reach ~7-8 M neurons before
+REM hitting the 50%-of-free-RAM constraint. Set even higher (128 GB
+REM box could run 96 GB) if needed. Zero hardcoded cluster-size cap.
 echo   Starting brain server (GPU EXCLUSIVE - no CPU workers)...
-start /b node --max-old-space-size=16384 brain-server.js
+start /b node --max-old-space-size=65536 brain-server.js
 ping -n 3 127.0.0.1 >nul
 start "" http://localhost:7525
 start "" http://localhost:7525/compute.html

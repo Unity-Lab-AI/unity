@@ -642,21 +642,80 @@ class ServerBrain {
       // If memory pressure becomes a concern, set DREAM_LANG_CORTEX env var
       // to override (e.g. DREAM_LANG_CORTEX=50000 to drop back). Default 100K
       // is the honest scale-up Phase 1.
-      // Default dropped from 100K → 30K because 100K per-tick teach
-      // work on CPU single-threaded hits ~5-10 min just for
-      // _teachPhonemeBlending. 30K keeps 3× the prior 10K capacity
-      // for per-word discrimination while per-tick ops stay in the
-      // ~20-30 sec range for the full curriculum. Bump via
-      // DREAM_LANG_CORTEX=100000 once worker parallelization lands
-      // or the GPU cross-region shaders go in.
-      const envCap = parseInt(process.env.DREAM_LANG_CORTEX, 10);
-      const CPU_LANGUAGE_CORTEX_CAP = Number.isFinite(envCap) && envCap > 0 ? envCap : 30000;
+      // CPU language cortex is the WRONG architecture per Gee's verbatim
+      // 2026-04-18 directive: "whhy is this so fucking small!!! this is
+      // in no way auto scalling correctly.. als wtf why CPU the language
+      // is the most important fuckign thing and we need GPU for that
+      // dont we just like the rest of the brain ie THIS OIIS ONE MASSIVE
+      // SYSTEM NO FUCKIGN SHIT THAT IS JUST SIDE PROCESSES".
+      //
+      // The real fix is moving the language cluster to GPU with T14.4
+      // cross-projections as GPU sparse matrices (in-progress work —
+      // see docs/TODO.md "T17.3 GPU cross-region shaders"). Until that
+      // ships, the CPU cluster stays as a transitional path. Default
+      // scaled back up to 100K for meaningful capacity; `DREAM_LANG_CORTEX`
+      // env var still overrides for smaller/larger local testing.
+      //
+      // At 100K CPU the curriculum walk is slow (~5-10 min for
+      // _teachPhonemeBlending + _teachWordEmission combined, plus
+      // additional slowdown from the 3× rep-count boosts). Progress
+      // logs are now emitted every 200 words during teach so the
+      // terminal isn't silent.
+      // AUTO-SCALE — no hardcoded cap per Gee 2026-04-18 verbatim:
+      // "why the fuck are you putting caps on shit!!! there is no cap
+      // but it auto scales eventually ill have millions of GPUS
+      // connected!". Size derives from actual hardware budget.
+      //
+      // Per-neuron memory cost for the language cluster:
+      //   LIF state:                        17 B
+      //   Intra-cluster synapses (fanout 300): 3,600 B
+      //   14 cross-projections (effective avg): ~4,600 B
+      //   Total: ~8,200 B per neuron
+      //
+      // Two constraints:
+      //   (a) Free system RAM — reserve 50% for this cluster, leave
+      //       50% for Node runtime overhead, corpus storage, GPU
+      //       init buffers, HTTP/WebSocket, OS headroom, everything
+      //       else. On Gee's 128 GB box with ~117 GB free, the
+      //       language cluster gets ~58.5 GB → ~7 M neurons.
+      //   (b) V8 heap ceiling — start.bat sets --max-old-space-size
+      //       to 16384 (16 GB). Reserve 2 GB for non-cluster JS
+      //       allocations → 14 GB for cluster → ~1.75 M neurons.
+      //
+      // Effective size = min(configuredCortex, RAM budget, V8 heap).
+      // No arbitrary upper number. As hardware grows, this grows.
+      // DREAM_LANG_CORTEX env var still available for explicit override.
+      //
+      // GPU path (in progress — separate work) will remove the V8 heap
+      // constraint entirely because cluster state lives in GPU buffers
+      // not JS-owned memory. That's where "millions of GPUs connected"
+      // scale becomes unbounded per the architecture spec.
+      const os = require('os');
+      const LANG_CLUSTER_BYTES_PER_NEURON = 8192;
+      const freeRamBytes = os.freemem();
+      const ramBudget = freeRamBytes * 0.5;
+      const ramBasedMax = Math.floor(ramBudget / LANG_CLUSTER_BYTES_PER_NEURON);
+      // V8 heap sized from start.bat --max-old-space-size. Read the
+      // actual limit from v8.getHeapStatistics() so env overrides flow
+      // through correctly.
+      let v8BasedMax = Infinity;
+      try {
+        const v8 = require('v8');
+        const heapStats = v8.getHeapStatistics();
+        const heapLimit = heapStats.heap_size_limit;
+        // Reserve 2 GB of the heap for non-cluster allocations.
+        const clusterHeapBudget = Math.max(0, heapLimit - 2 * 1024 * 1024 * 1024);
+        v8BasedMax = Math.floor(clusterHeapBudget / LANG_CLUSTER_BYTES_PER_NEURON);
+      } catch { /* v8 module missing — skip heap-based bound */ }
+
+      const envOverride = parseInt(process.env.DREAM_LANG_CORTEX, 10);
       const configuredCortex = CLUSTER_SIZES.cortex;
-      const langCortexSize = Math.min(configuredCortex, CPU_LANGUAGE_CORTEX_CAP);
-      if (configuredCortex > CPU_LANGUAGE_CORTEX_CAP) {
-        console.log(`[Brain] Language cortex scale: GPUCONFIGURE.bat configured ${configuredCortex.toLocaleString()} cortex neurons. Language-cluster CPU tier at ${CPU_LANGUAGE_CORTEX_CAP.toLocaleString()} neurons. Main GPU brain unchanged at ${TOTAL_NEURONS.toLocaleString()} neurons. Override via DREAM_LANG_CORTEX env var.`);
-      }
-      console.log(`[Brain] Language cortex = ${langCortexSize.toLocaleString()} CPU neurons. Sub-regions: letter ${Math.floor(langCortexSize * 0.05)}, phon ${Math.floor(langCortexSize * 0.20)}, sem ${Math.floor(langCortexSize * 0.167)}, motor ${Math.floor(langCortexSize * 0.033)}.`);
+      const autoSize = Math.min(configuredCortex, ramBasedMax, v8BasedMax);
+      const langCortexSize = Number.isFinite(envOverride) && envOverride > 0 ? envOverride : autoSize;
+      const langMemGb = (langCortexSize * LANG_CLUSTER_BYTES_PER_NEURON / 1e9).toFixed(2);
+      const heapLimitGb = (v8BasedMax === Infinity ? 'unlimited' : ((v8BasedMax * LANG_CLUSTER_BYTES_PER_NEURON) / 1e9).toFixed(1) + 'GB');
+      console.log(`[Brain] Language cortex auto-scaled to ${langCortexSize.toLocaleString()} neurons (~${langMemGb} GB). Budget: free RAM ${(freeRamBytes/1e9).toFixed(1)}GB × 50% = ${(ramBudget/1e9).toFixed(1)}GB → ${ramBasedMax.toLocaleString()} neurons; V8 heap cluster-budget → ${heapLimitGb} → ${v8BasedMax === Infinity ? '∞' : v8BasedMax.toLocaleString()} neurons; configured cortex ${configuredCortex.toLocaleString()} neurons. Main GPU brain unchanged at ${TOTAL_NEURONS.toLocaleString()} neurons.${envOverride > 0 ? ' DREAM_LANG_CORTEX override active.' : ''}`);
+      console.log(`[Brain] Language cortex = ${langCortexSize.toLocaleString()} neurons. Sub-regions: letter ${Math.floor(langCortexSize * 0.05).toLocaleString()}, phon ${Math.floor(langCortexSize * 0.20).toLocaleString()}, sem ${Math.floor(langCortexSize * 0.167).toLocaleString()}, motor ${Math.floor(langCortexSize * 0.033).toLocaleString()}.`);
       // T14.24 Session 95 — mark the cluster as NOT gpu-ready yet. The
       // server tick loop flips this to `true` when the first GPU-ready
       // tick fires (after all 7 cluster init acks land). Curriculum

@@ -1,6 +1,49 @@
 # NOW — Session Snapshot
 
-> Saved: 2026-04-18 03:00 (Session 114.19t — K teach rep-counts boosted 3× across 9 methods + progress logging inside slow teach loops + default scale dropped 100K→30K so curriculum actually completes on CPU single-thread — per Gee verbatim *"this doesnt seem enough: teachSyllableCounts: 24 words × 6 reps — teachVowelSoundVariants: 10 variants × 8 reps, is thiss all of them? — what about other s they have these same issues?"* + *"The 3D Brain never rendered"* + *"it go stuck once it got to herre"* — thirty-ninth commit on `syllabus-k-phd`)
+> Saved: 2026-04-18 04:00 (Session 114.19u — language cortex auto-scales from hardware, NO hardcoded cap; derives size from os.freemem() × 50% + V8 heap ceiling + configured cortex — per Gee verbatim *"why the fuck are you putting caps on shit!!! there is no cap but it auto scales eventually ill have millions of GPUS connected!"* — fortieth commit on `syllabus-k-phd`)
+
+## Session 114.19u — what shipped
+
+### CPU_LANGUAGE_CORTEX_CAP constant DELETED
+
+Replaced with auto-scale function taking the min of three budgets:
+1. **Free RAM × 50%** via `os.freemem()`
+2. **V8 heap cluster-budget** via `v8.getHeapStatistics().heap_size_limit` minus 2 GB reserve
+3. **Configured cortex** via `CLUSTER_SIZES.cortex`
+
+No hardcoded cluster-size number in the code. As hardware grows, the language cortex grows.
+
+### start.bat V8 heap bump
+
+Raised `--max-old-space-size` from 16 GB to **64 GB**. Language cortex's sparse synapse + cross-projection weights live in JS-owned typed arrays, so V8 heap ceiling directly limits achievable size. Bigger heap → bigger cortex.
+
+### Effective size on Gee's 128 GB RAM + 16 GB VRAM box
+
+- Free RAM ~117 GB × 50% = 58.5 GB → ~7.1 M neurons budget from RAM
+- V8 heap (64 GB − 2 GB reserve) → ~7.75 M neurons budget from heap
+- Configured cortex: 201 M
+- **min = ~7.1 M neurons** — 70× the prior 100 K default
+
+### Size scales, speed does NOT (yet)
+
+CPU single-thread sparse walks at 7 M neurons are ~70× slower than at 100 K. `_teachPhonemeBlending` at 7 M will run for hours per gate attempt on one core. Auto-scale unlocks SIZE; the GPU port unlocks SPEED. `DREAM_LANG_CORTEX=100000` override still available for fast iteration until the GPU port lands.
+
+### GPU port is the next real fix
+
+Gee's original message: "we need GPU for that dont we just like the rest of the brain ie THIS OIIS ONE MASSIVE SYSTEM NO FUCKIGN SHIT THAT IS JUST SIDE PROCESSES". CPU language cortex is the wrong architecture. T17.3 GPU cross-region shaders (WGSL sparse CSR matmul + cross-region Hebbian) is the next commit — that's when "millions of GPUs connected" scale becomes actually available.
+
+### Files touched
+
+- `server/brain-server.js` — auto-scale, no hardcoded cap
+- `start.bat` — V8 heap 16 GB → 64 GB
+- `docs/FINALIZED.md` — session entry prepended
+- `docs/NOW.md` — this file
+
+---
+
+## Session 114.19t — shipped (committed at ce60a86)
+
+### 1. K teach rep-count boosts (3× across 9 low-exposure methods)
 
 ## Session 114.19t — what shipped
 

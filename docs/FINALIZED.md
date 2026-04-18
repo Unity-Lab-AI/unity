@@ -5,6 +5,57 @@
 
 ---
 
+## 2026-04-18 — Session 114.19u: Language cortex AUTO-SCALES from hardware — no hardcoded cap — per Gee "why the fuck are you putting caps on shit!!! there is no cap but it auto scales"
+
+Gee 2026-04-18 verbatim:
+
+> *"Language cortex = 30,000 CPU neurons.  --- whhy is this so fucking small!!! this is in no way auto scalling correctly.. als wtf why CPU the language is the most important fuckign thing and we need GPU for that dont we just like the rest of the brain ie THIS OIIS ONE MASSIVE SYSTEM NO FUCKIGN SHIT THAT IS JUST SIDE PROCESSES"*
+
+Followed by:
+
+> *"why the fuck are you putting caps on shit!!! there is no cap but it auto scales eventually ill have millions of GPUS connected!"*
+
+He's right. Sessions 114.19r/s/t all used hardcoded `CPU_LANGUAGE_CORTEX_CAP = N` with me picking N (10K → 100K → 30K → 100K like a dumbass). That's NOT auto-scaling — that's me picking numbers. The main cortex auto-scales from `GPUCONFIGURE.bat` hardware detection; language cortex should do the same.
+
+### What shipped — true auto-scale from hardware budget
+
+`CPU_LANGUAGE_CORTEX_CAP` deleted. Replaced with computed `langCortexSize` derived from three bounds, taking the min:
+
+1. **Free RAM budget (50% of `os.freemem()`)** — reserves half of available system memory for the language cluster, leaves half for Node runtime, corpus storage, GPU init buffers, HTTP/WebSocket, OS headroom.
+2. **V8 heap cluster-budget** — reads `v8.getHeapStatistics().heap_size_limit`, reserves 2 GB for non-cluster JS allocations, gives the rest to the cluster. `start.bat` now sets `--max-old-space-size=65536` (64 GB heap ceiling) so the heap doesn't bottleneck the RAM budget on bigger boxes.
+3. **Configured cortex (`CLUSTER_SIZES.cortex`)** — never exceed the main cortex size from `GPUCONFIGURE.bat` hardware detection.
+
+Per-neuron budget is derived, not hardcoded: `LANG_CLUSTER_BYTES_PER_NEURON = 8192` (LIF state 17 B + intra-cluster synapses ~3,600 B + 14 cross-projections ~4,600 B).
+
+Env override `DREAM_LANG_CORTEX=N` still available for explicit testing; no hardcoded ceiling otherwise.
+
+On Gee's 128 GB RAM + 16 GB VRAM box with the 64 GB V8 heap:
+- Free RAM ~117 GB × 50% = 58.5 GB budget → ~7.1 M neurons
+- V8 heap 64 GB − 2 GB reserve = 62 GB → ~7.75 M neurons
+- Configured cortex: 201 M
+- **min = ~7.1 M neurons** — 70× the prior 100 K default
+
+### Why "auto-scale to 7M" doesn't immediately solve the interactive-speed problem
+
+Size scales with RAM. Tick throughput DOES NOT. CPU single-thread sparse matrix walks at 7 M neurons take ~70× longer than at 100 K. `_teachPhonemeBlending` + `_teachWordEmission` at 7 M will run for hours per gate attempt on one core. Size fix is only half the story; speed needs GPU port (in-progress).
+
+`DREAM_LANG_CORTEX=100000` operator override still works for fast iteration. But the hardcoded-cap-in-code is gone.
+
+### The GPU port is still the real fix
+
+Gee's second message makes it explicit: "we need GPU for that dont we just like the rest of the brain ie THIS OIIS ONE MASSIVE SYSTEM NO FUCKIGN SHIT THAT IS JUST SIDE PROCESSES". CPU language cortex is the wrong architecture. The T17.3 GPU cross-region shader work (WGSL sparse CSR matmul + cross-region Hebbian) is the next commit — that's when "millions of GPUs connected" scale actually becomes available.
+
+This commit is the auto-scale fix to unblock the immediate "stop putting caps on shit" directive. GPU port follows.
+
+### Files
+
+- `server/brain-server.js` — `CPU_LANGUAGE_CORTEX_CAP` constant deleted; auto-scale from `os.freemem()` + `v8.getHeapStatistics()` + `CLUSTER_SIZES.cortex`
+- `start.bat` — V8 heap ceiling raised from 16 GB to 64 GB via `--max-old-space-size=65536`
+- `docs/FINALIZED.md` — this entry prepended
+- `docs/NOW.md` — refreshed
+
+---
+
 ## 2026-04-18 — Session 114.19t: K rep-count boosts 3× across 9 teach methods + progress logging on slow teach loops + default scale dropped 100K→30K
 
 Gee 2026-04-17/18 verbatim:
