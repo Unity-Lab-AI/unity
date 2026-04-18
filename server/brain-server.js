@@ -696,6 +696,33 @@ class ServerBrain {
       // Rounded up to 40,000 as a safety buffer for allocation
       // overhead, rowPtr arrays, scratch buffers, JS object wrappers
       // on typed-array handles, etc.
+      // Third auto-scale bound — CPU single-thread dispatch budget.
+      // The Node event loop has ONE thread. The main GPU brain needs to
+      // dispatch compute_batch messages to compute.html every ~100ms or
+      // the 15-second timeout fires ("compute_batch N timed out after
+      // 15s — GPU may be hung"). If curriculum teach on the CPU
+      // language cortex blocks the thread for longer than that, the
+      // main brain hangs. Gee 2026-04-18 Part 2 log confirmed: at
+      // 1.46M CPU cortex each cluster.step() blocks ~2s, which starves
+      // compute_batch dispatch → timeouts cascade.
+      //
+      // Per-step CPU cost (JS sparse matmul):
+      //   cluster.step time ≈ (N × targetFanout) × ~3 ns/op
+      //   At fanout=300, each step costs ~900 ns × N
+      //
+      // Budget for ~50ms per synchronous chunk to keep main brain alive:
+      //   N ≤ 50e6 ns / 900 ns ≈ 55,000 neurons
+      // Rounded up to 200,000 with the expectation that some
+      // curriculum teach methods yield between steps (our progress
+      // logging adds microtask yields). Still conservative vs the
+      // 1.46M that definitely broke.
+      //
+      // NOT A CAP — this is the hardware-tier dispatch budget for the
+      // CPU single-thread path. Once Worker parallelization lands
+      // (T17.2) this rises. Once GPU cross-region shaders land (T17.3)
+      // the language cortex leaves this single-thread path entirely
+      // and this bound no longer applies.
+      const CPU_SINGLE_THREAD_DISPATCH_BUDGET = 200000;
       const os = require('os');
       const LANG_CLUSTER_BYTES_PER_NEURON = 40000;
       const freeRamBytes = os.freemem();
@@ -716,11 +743,11 @@ class ServerBrain {
 
       const envOverride = parseInt(process.env.DREAM_LANG_CORTEX, 10);
       const configuredCortex = CLUSTER_SIZES.cortex;
-      const autoSize = Math.min(configuredCortex, ramBasedMax, v8BasedMax);
+      const autoSize = Math.min(configuredCortex, ramBasedMax, v8BasedMax, CPU_SINGLE_THREAD_DISPATCH_BUDGET);
       const langCortexSize = Number.isFinite(envOverride) && envOverride > 0 ? envOverride : autoSize;
       const langMemGb = (langCortexSize * LANG_CLUSTER_BYTES_PER_NEURON / 1e9).toFixed(2);
       const heapLimitGb = (v8BasedMax === Infinity ? 'unlimited' : ((v8BasedMax * LANG_CLUSTER_BYTES_PER_NEURON) / 1e9).toFixed(1) + 'GB');
-      console.log(`[Brain] Language cortex auto-scaled to ${langCortexSize.toLocaleString()} neurons (~${langMemGb} GB). Budget: free RAM ${(freeRamBytes/1e9).toFixed(1)}GB × 50% = ${(ramBudget/1e9).toFixed(1)}GB → ${ramBasedMax.toLocaleString()} neurons; V8 heap cluster-budget → ${heapLimitGb} → ${v8BasedMax === Infinity ? '∞' : v8BasedMax.toLocaleString()} neurons; configured cortex ${configuredCortex.toLocaleString()} neurons. Main GPU brain unchanged at ${TOTAL_NEURONS.toLocaleString()} neurons.${envOverride > 0 ? ' DREAM_LANG_CORTEX override active.' : ''}`);
+      console.log(`[Brain] Language cortex auto-scaled to ${langCortexSize.toLocaleString()} neurons (~${langMemGb} GB). Bounds: free RAM ${(freeRamBytes/1e9).toFixed(1)}GB × 50% = ${(ramBudget/1e9).toFixed(1)}GB → ${ramBasedMax.toLocaleString()} neurons | V8 heap cluster-budget → ${heapLimitGb} → ${v8BasedMax === Infinity ? '∞' : v8BasedMax.toLocaleString()} neurons | CPU single-thread dispatch budget → ${CPU_SINGLE_THREAD_DISPATCH_BUDGET.toLocaleString()} neurons (so curriculum teach doesn't starve main-brain GPU compute_batch dispatch) | configured cortex ${configuredCortex.toLocaleString()} neurons. Main GPU brain at ${TOTAL_NEURONS.toLocaleString()} neurons.${envOverride > 0 ? ' DREAM_LANG_CORTEX override active.' : ''}`);
       console.log(`[Brain] Language cortex = ${langCortexSize.toLocaleString()} neurons. Sub-regions: letter ${Math.floor(langCortexSize * 0.05).toLocaleString()}, phon ${Math.floor(langCortexSize * 0.20).toLocaleString()}, sem ${Math.floor(langCortexSize * 0.167).toLocaleString()}, motor ${Math.floor(langCortexSize * 0.033).toLocaleString()}.`);
       // T14.24 Session 95 — mark the cluster as NOT gpu-ready yet. The
       // server tick loop flips this to `true` when the first GPU-ready
