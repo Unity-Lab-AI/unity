@@ -53,6 +53,9 @@ const clusterState = {}; // persists across reconnects
 function connectToServer() {
   // R14 — brain-server moved from 8080 to 7525
   ws = new WebSocket('ws://localhost:7525');
+  // Binary frames arrive as ArrayBuffer (not Blob) — skips the async
+  // Blob→ArrayBuffer copy for 100MB+ sparse matrix uploads.
+  ws.binaryType = 'arraybuffer';
 
   ws.onopen = () => {
     statusEl.textContent = 'GPU + Server connected — registering as compute client...';
@@ -73,8 +76,10 @@ function connectToServer() {
   try {
     // Binary frame path — "SPRS" magic = sparse op request. Decode
     // header + payload, dispatch to gpu, send binary response.
-    if (e.data instanceof Blob || e.data instanceof ArrayBuffer) {
-      const buf = e.data instanceof Blob ? await e.data.arrayBuffer() : e.data;
+    if (e.data instanceof ArrayBuffer || e.data instanceof Blob) {
+      // binaryType='arraybuffer' set in connectToServer so e.data is
+      // ArrayBuffer directly. Blob path kept as safety fallback.
+      const buf = e.data instanceof ArrayBuffer ? e.data : await e.data.arrayBuffer();
       const view = new DataView(buf);
       const magic = String.fromCharCode(view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3));
       if (magic === 'SPRS') {
@@ -86,7 +91,9 @@ function connectToServer() {
         const name = new TextDecoder('utf-8').decode(nameBytes);
         off += nameLen;
         if (typeByte === 1) {
-          // UPLOAD
+          // UPLOAD — use typed-array VIEWS into the received buffer
+          // directly (no redundant copy). GPUCompute._createBuffer
+          // copies into GPU memory anyway.
           const rows = view.getUint32(off, true); off += 4;
           const cols = view.getUint32(off, true); off += 4;
           const nnz  = view.getUint32(off, true); off += 4;
@@ -94,10 +101,7 @@ function connectToServer() {
           const colIdx = new Uint32Array(buf, off, nnz); off += nnz * 4;
           const rowPtr = new Uint32Array(buf, off, rows + 1);
           try {
-            gpu.uploadSparseMatrix(name, rows, cols,
-              new Float32Array(values),
-              new Uint32Array(colIdx),
-              new Uint32Array(rowPtr));
+            gpu.uploadSparseMatrix(name, rows, cols, values, colIdx, rowPtr);
             // Send tiny binary ack back (SPRR + type=1 + reqId)
             const ack = new ArrayBuffer(9);
             const av = new DataView(ack);
@@ -112,11 +116,11 @@ function connectToServer() {
           return;
         }
         if (typeByte === 2) {
-          // PROPAGATE
+          // PROPAGATE — view directly, no copy
           const preLen = view.getUint32(off, true); off += 4;
           const preSpikes = new Uint32Array(buf, off, preLen);
           try {
-            if (preLen > 0) gpu.writeSparsePreSpikes(name, new Uint32Array(preSpikes));
+            if (preLen > 0) gpu.writeSparsePreSpikes(name, preSpikes);
             const currents = await gpu.propagateSparse(name);
             const clen = currents ? currents.length : 0;
             const resp = new ArrayBuffer(13 + clen * 4);
@@ -136,15 +140,15 @@ function connectToServer() {
           return;
         }
         if (typeByte === 3) {
-          // HEBBIAN
+          // HEBBIAN — view directly, no copy
           const preLen = view.getUint32(off, true); off += 4;
           const preSpikes = new Uint32Array(buf, off, preLen); off += preLen * 4;
           const postLen = view.getUint32(off, true); off += 4;
           const postSpikes = new Uint32Array(buf, off, postLen); off += postLen * 4;
           const lr = view.getFloat32(off, true);
           try {
-            if (preLen > 0) gpu.writeSparsePreSpikes(name, new Uint32Array(preSpikes));
-            if (postLen > 0) gpu.writeSparsePostSpikes(name, new Uint32Array(postSpikes));
+            if (preLen > 0) gpu.writeSparsePreSpikes(name, preSpikes);
+            if (postLen > 0) gpu.writeSparsePostSpikes(name, postSpikes);
             gpu.hebbianSparse(name, lr);
             const ack = new ArrayBuffer(9);
             const av = new DataView(ack);

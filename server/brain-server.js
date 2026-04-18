@@ -2599,7 +2599,12 @@ const httpServer = http.createServer((req, res) => {
   });
 });
 
-const wss = new WebSocketServer({ server: httpServer });
+// maxPayload bumped to 2 GB so sparse matrix upload binary frames
+// can transfer at any realistic size. Default 100 MiB silently
+// rejects the 180 MB cross-projection frames at 200K cortex.
+// Language cortex grows with hardware per T17, so ceiling-free
+// frames are mandatory.
+const wss = new WebSocketServer({ server: httpServer, maxPayload: 2 * 1024 * 1024 * 1024 });
 
 wss.on('connection', (ws, req) => {
   const id = 'user_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6);
