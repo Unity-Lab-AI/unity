@@ -2037,6 +2037,15 @@ export class Curriculum {
     if (!GRADE_ORDER.includes(grade)) return { pass: false, reason: `unknown grade: ${grade}` };
     const cluster = this.cluster;
     if (!cluster) return { pass: false, reason: 'no cluster wired' };
+    // T17.7 Gee 2026-04-18 — START log so curriculum silence is
+    // never mistaken for a hang. Every subject/grade attempt
+    // announces itself before the runner dispatches. The
+    // "walking all 6 subjects K→PhD" line only fires once at
+    // runCompleteCurriculum start; without per-cell entry logs
+    // Gee could not tell whether a stuck Node process was in
+    // ELA-K alphabet teach, Math-K digit teach, or a specific
+    // cross-projection Hebbian.
+    console.log(`[Curriculum] ${subject}/${grade} START`);
 
     const baseCtx = corpora ? this._buildCtx(corpora, opts) : (this._lastCtx || null);
     if (!baseCtx) return { pass: false, reason: 'no corpora provided and no cached ctx' };
@@ -3132,7 +3141,17 @@ export class Curriculum {
           if (typeof cluster.intraSynapsesHebbian === 'function') {
             cluster.intraSynapsesHebbian(pre, post, lr);
           } else {
-            cluster.synapses.hebbianUpdate(pre, post, lr);
+            // T17.2 — route through cluster.intraSynapsesHebbian so the
+        // 110M-nnz sparse Hebbian update dispatches to the worker
+        // pool (fire-and-forget async) instead of blocking the Node
+        // main thread for seconds per call. Direct
+        // cluster.synapses.hebbianUpdate was freezing the event loop
+        // long enough that WebSocket heartbeats timed out and the
+        // landing-tab WebSocket disconnected repeatedly during the
+        // runElaKReal SEQUENCE TEACHING phase (300 calls × ~5s per
+        // call at biological-scale synapses). intraSynapsesHebbian
+        // also fires the GPU shadow Hebbian in parallel.
+        cluster.intraSynapsesHebbian(pre, post, lr);
           }
           this._clearSpikes();
           this._writeTiledPattern(letterRegion, encodeLetter(letters[i]));
@@ -3339,7 +3358,17 @@ export class Curriculum {
             if (idx < letterRegion.end) post[idx] = 1.0;
           }
         }
-        cluster.synapses.hebbianUpdate(pre, post, lr);
+        // T17.2 — route through cluster.intraSynapsesHebbian so the
+        // 110M-nnz sparse Hebbian update dispatches to the worker
+        // pool (fire-and-forget async) instead of blocking the Node
+        // main thread for seconds per call. Direct
+        // cluster.synapses.hebbianUpdate was freezing the event loop
+        // long enough that WebSocket heartbeats timed out and the
+        // landing-tab WebSocket disconnected repeatedly during the
+        // runElaKReal SEQUENCE TEACHING phase (300 calls × ~5s per
+        // call at biological-scale synapses). intraSynapsesHebbian
+        // also fires the GPU shadow Hebbian in parallel.
+        cluster.intraSynapsesHebbian(pre, post, lr);
       }
       await _microtask();
     }
@@ -4632,7 +4661,17 @@ export class Curriculum {
             if (idx < letterRegion.end) post[idx] = 1.0;
           }
         }
-        cluster.synapses.hebbianUpdate(pre, post, lr);
+        // T17.2 — route through cluster.intraSynapsesHebbian so the
+        // 110M-nnz sparse Hebbian update dispatches to the worker
+        // pool (fire-and-forget async) instead of blocking the Node
+        // main thread for seconds per call. Direct
+        // cluster.synapses.hebbianUpdate was freezing the event loop
+        // long enough that WebSocket heartbeats timed out and the
+        // landing-tab WebSocket disconnected repeatedly during the
+        // runElaKReal SEQUENCE TEACHING phase (300 calls × ~5s per
+        // call at biological-scale synapses). intraSynapsesHebbian
+        // also fires the GPU shadow Hebbian in parallel.
+        cluster.intraSynapsesHebbian(pre, post, lr);
       }
       await _microtask();
     }
@@ -13225,7 +13264,17 @@ export class Curriculum {
                 if (idx < letterRegion.end) post[idx] = 1.0;
               }
             }
-            cluster.synapses.hebbianUpdate(pre, post, lr);
+            // T17.2 — route through cluster.intraSynapsesHebbian so the
+        // 110M-nnz sparse Hebbian update dispatches to the worker
+        // pool (fire-and-forget async) instead of blocking the Node
+        // main thread for seconds per call. Direct
+        // cluster.synapses.hebbianUpdate was freezing the event loop
+        // long enough that WebSocket heartbeats timed out and the
+        // landing-tab WebSocket disconnected repeatedly during the
+        // runElaKReal SEQUENCE TEACHING phase (300 calls × ~5s per
+        // call at biological-scale synapses). intraSynapsesHebbian
+        // also fires the GPU shadow Hebbian in parallel.
+        cluster.intraSynapsesHebbian(pre, post, lr);
           }
           prevLetterOneHot = letterOneHot;
         }
