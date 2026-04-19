@@ -166,8 +166,7 @@ Live at `your-username.github.io/Unity/`. Everything runs client-side — no ser
     ├── ARCHITECTURE.md           Codebase structure and systems
     ├── SKILL_TREE.md             Capabilities by domain
     ├── ROADMAP.md                Milestones and phases
-    ├── TODO.md                   Active tasks
-    ├── TODO-SERVER.md            Server brain task tracking
+    ├── TODO.md                   Active tasks (single source of truth)
     └── FINALIZED.md              Completed work archive
 ```
 
@@ -281,7 +280,7 @@ If you connect to a Unity server hosted by someone OTHER than you, the person ru
 | "slash think" | Say by voice | Same as typing /think |
 | ⚙ SETTINGS | Bottom toolbar button | Reopens setup modal to change AI model or connect new providers |
 | 🧠 VISUALIZE | Bottom toolbar button | Opens 2D brain visualizer with 8 tabs (Neurons, Synapses, Oscillations, Modules, Senses, Consciousness, Memory, Motor) |
-| 🧠 3D BRAIN | Bottom toolbar button | Opens WebGL 3D brain with up to 5000 render neurons, process notifications, expansion |
+| 🧠 3D BRAIN | Bottom toolbar button | Opens WebGL 3D brain with up to 20,000 render neurons per cluster (up to 300,000 total across 15 render slots — 7 main clusters + 8 language sub-regions), process notifications, expansion |
 | Brain speaks equationally | Default | No AI text model exists. Brain speaks from its own language cortex (developmental cortex with tick-driven motor emission, GloVe 300d + subword embeddings, direct-pattern Hebbian curriculum K→PhD). Image gen, vision describer, and TTS are the only AI calls — all sensory. |
 | 🎤 | Bottom toolbar button | Mute/unmute microphone |
 | Clear All Data | Setup modal (bottom) | Wipes all localStorage — history, keys, preferences, everything |

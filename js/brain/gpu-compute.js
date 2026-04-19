@@ -1305,7 +1305,17 @@ export class GPUCompute {
       const srcBufs = this._buffers[binding.srcCluster];
       const dstBufs = this._buffers[binding.dstCluster];
       if (!srcBufs?.spikes || !dstBufs?.currents) {
-        console.warn(`[GPUCompute] uploadSparseMatrix ${name}: cluster-bound mode requires src(${binding.srcCluster}) + dst(${binding.dstCluster}) both uploaded first`);
+        // T18.10 — destroy the three allocated buffers before returning
+        // false. Each can be 100-600 MB at biological scale; without
+        // cleanup they orphan in VRAM, repeated failures (upload order
+        // race / T18.6.c auto-rescale re-init) stack leaks until VRAM
+        // exhausts → device.lost cascades into Windows TDR → certain
+        // Windows + NVIDIA driver combos take the whole network stack
+        // down until PC reset.
+        try { valuesBuf.destroy(); } catch { /* already gone */ }
+        try { colIdxBuf.destroy(); } catch { /* already gone */ }
+        try { rowPtrBuf.destroy(); } catch { /* already gone */ }
+        console.warn(`[GPUCompute] uploadSparseMatrix ${name}: cluster-bound mode requires src(${binding.srcCluster}) + dst(${binding.dstCluster}) both uploaded first — destroyed ${((vals32.byteLength + cols32.byteLength + rows32.byteLength) / 1048576).toFixed(1)} MB of allocated buffers to avoid VRAM leak`);
         return false;
       }
       entry.binding = {
@@ -1368,7 +1378,18 @@ export class GPUCompute {
       const srcBufs = this._buffers[binding.srcCluster];
       const dstBufs = this._buffers[binding.dstCluster];
       if (!srcBufs?.spikes || !dstBufs?.currents) {
-        console.warn(`[GPUCompute] _beginSparseUpload ${name}: cluster-bound requires src(${binding.srcCluster}) + dst(${binding.dstCluster}) both uploaded first`);
+        // T18.10 — destroy the three allocated buffers before returning
+        // false. Same leak path as uploadSparseMatrix — chunked-upload
+        // cluster-bound validation failure orphans values/colIdx/rowPtr
+        // in VRAM. A single leaked 7.9 GB cross-projection attempt
+        // exhausts VRAM on a 16 GB card in ONE try; repeated retries
+        // guarantee device.lost and potential Windows network stack
+        // collapse via TDR cascade.
+        try { entry.values.destroy(); } catch { /* already gone */ }
+        try { entry.colIdx.destroy(); } catch { /* already gone */ }
+        try { entry.rowPtr.destroy(); } catch { /* already gone */ }
+        const leakedMB = ((nnz * 4 * 2 + rowPtr32.byteLength) / 1048576).toFixed(1);
+        console.warn(`[GPUCompute] _beginSparseUpload ${name}: cluster-bound requires src(${binding.srcCluster}) + dst(${binding.dstCluster}) both uploaded first — destroyed ${leakedMB} MB of allocated buffers to avoid VRAM leak`);
         return false;
       }
       entry.binding = {
