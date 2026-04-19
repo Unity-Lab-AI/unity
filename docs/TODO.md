@@ -93,8 +93,8 @@ T18.5.b (pre-push doc checklist) and T18.5.c (ASK GEE for push approval) do NOT 
 
 ### T15 open (full drug scheduler rebuild — large block)
 - ~~**T15.A** — Research block~~ — **SHIPPED Session 114.19ab** (`docs/T15-pharmacology-research.md` with all 11 substances / 7 combos / 7 adult patterns / 7 sensory triggers / 8 brain mappings / 13 speech effects / 8 grade-gate entries tied to Life syllabus / 5 user-interactive triggers). Gaps flagged for T15.B review: opioids omitted per Unity persona fit, DXM omitted, withdrawal modeling partial, per-substance tolerance decay rates TBD in architecture.
-- **T15.B** — Architecture design: drug-scheduler.js module schema + persona.js rewrite + sensory integration wiring + UI integration (kill permanent weed+coke display) + speech-effect integration with language cortex + Unity decision engine + persistence model. Consumes T15-pharmacology-research.md.
-- **T15.C** — Implementation tasks (only after T15.A + T15.B approved)
+- ~~**T15.B** — Architecture design~~ — **SHIPPED Session 114.19ab** (`docs/T15-architecture.md` — DrugScheduler module additions spec (COMBOS table + combo-aware activeContributions/speechModulation + riskFlags + pendingDesires sensory intake + PATTERNS engine + decide() decision engine), persona integration, sensory wiring (incl. new olfactory module spec), UI kill-static-label + snapshot rendering, 13-axis speech handoff to language cortex, persistence v1→v2 + persistent-life-info ledger). 12-deliverable T15.C implementation backlog enumerated.
+- **T15.C** — Implementation tasks (12 atomic commits per T15-architecture.md §7: COMBOS table + combo-aware contributions + riskFlags + craving intake + PATTERNS engine + decide() + 13-axis speech + olfactory module + sensory-trigger module + UI refresh + persistence v2 + life-info ledger wiring)
 - **T15.D** — Verification (manual per NO-TESTS LAW, covers V1-V11) — **DEFERRED past K-only push gate** per Gee 2026-04-18: *"we wont be doing D15.D untill way later.. not after Kindergarden learning only of the brain"*
 
 ### Plus (NOT TODO items — Gee-only closures)

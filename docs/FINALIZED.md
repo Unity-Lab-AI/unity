@@ -5,6 +5,60 @@
 
 ---
 
+## 2026-04-18 — Session 114.19ab (continued): T15.B architecture design SHIPPED — `docs/T15-architecture.md`
+
+### What shipped
+
+`docs/T15-architecture.md` — full T15.B deliverable. Consumes T15.A research. Design doc only; T15.C implements, T15.D deferred.
+
+### Architectural additions specified (on top of existing drug-scheduler.js substrate)
+
+**Module API additions:**
+1. `COMBOS` table — 7 synergy entries keyed by sorted-pair substance names, with synergyContributions + synergySpeech + riskFlags
+2. Combo-aware `activeContributions()` rewrite — pairwise over active substances scaled by `min(level_a, level_b)`
+3. Combo-aware `speechModulation()` rewrite — same pattern
+4. New `riskFlags(now)` aggregator — cumulative physicalStrain etc. from active combos
+5. New `pendingDesires` Map + `addCraving(substance, delta, durationMs)` + `currentCraving(substance)` sensory-trigger intake
+6. New `PATTERNS` table — 7 adult-use patterns (morningCoffee, codingMarathon, weekendParty, acidArchitect, whiskeyWinddown, kHoleContemplate, sexSessionMolly)
+7. New `evaluatePatterns(ctx)` + `autoIngest(substance, route, offsetMs)` pattern engine
+8. New `decide(offer) → {accept, reason}` decision engine with probability modifiers (craving, active pattern, trusted source, physicalStrain negative, prior trauma negative)
+
+**Persona integration:**
+- Remove remaining `'cokeAndWeed'` literals across codebase (grep shows 10 files — brain-equations.html, dashboard.html, persistence.js, persona-cosmic.txt plus docs)
+- `applyBrainParamDeltas(base, delta)` helper so persona stays authoritative for baseline; scheduler additive
+- Speech modulation handoff: 13-axis extension of the existing speech state object (adds inhibition, warmth, ethereality, profoundBias, interruptionBias, repetition, volume, confessionalBias to existing 9)
+
+**Sensory wiring:**
+- New `js/brain/drug-sensory-triggers.js` module holding 7 trigger specs
+- New `js/brain/sensory-olfactory.js` shallow module (Unity currently has no olfaction) — accepts scent tags via chat metadata, emits low-amplitude into cortex auditory/free regions
+- Extensions to `sensory-visual.js` for whitePowderLine + flashRate pattern detection (mock stubs initially)
+
+**UI integration:**
+- Kill static "drug state: cokeAndWeed" persona-card display
+- Render `scheduler.snapshot()` dynamically: sober badge, active substances list with phase + level, risk flags badges, pending acquisitions indicator
+- 3D brain renderer: ingest-event burst animations on target brain regions per T15.A §5 mapping
+- Wire-format: replace `drugState: string` with full `drugState: snapshot` object
+
+**Decision engine integration:**
+- Flow: `drug-detector.detectOffer(text)` → `scheduler.decide({substance, source, social, time})` → accept path `scheduler.ingest()` OR reject path `server/drug-rejections.js` (new library of Unity-voice rejection phrasings keyed by reason)
+
+**Persistence:**
+- Version bump 1→2 adding `pendingDesires` + `autoPatternsFired` + persistent life info entry `firstUse[substance] = {grade, age, contextTags, emotionalFingerprint}`
+- Prior-trauma markers with sim-time decay, consumed by decision engine
+
+### 12-deliverable T15.C backlog (atomic commits)
+
+COMBOS table + combo-aware contributions + riskFlags + craving intake + PATTERNS engine + decide() + 13-axis speech + olfactory module + sensory-trigger module + UI refresh + persistence v2 + life-info ledger wiring.
+
+### Non-goals
+
+- Opioids (heroin/fentanyl/oxycodone) — persona/Life-track fit issue
+- DXM / other dissociatives beyond ketamine
+- Full withdrawal-syndrome modeling (stressDampening covers the reversal signal)
+- Per-substance dose-escalation curves beyond tolerance decay
+
+---
+
 ## 2026-04-18 — Session 114.19ab: T15.A pharmacology research block SHIPPED — `docs/T15-pharmacology-research.md`
 
 Gee 2026-04-18 verbatim directives that drove this:

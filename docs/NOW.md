@@ -1,6 +1,6 @@
 # NOW — Session Snapshot
 
-> Saved: 2026-04-18 (Session 114.19ab — T15.A pharmacology research block SHIPPED via `docs/T15-pharmacology-research.md`. Prior in session: T17.7 Phase C + Phase D shipped. T17.7 Phase E deferred to multi-commit breakdown (intent-injection + workingMemory-readout migrations required first). T15.D deferred past K-only gate per Gee. Phases E/F + T15.B/C still open before main-branch push.)
+> Saved: 2026-04-18 (Session 114.19ab — T15.A + T15.B shipped. Prior in session: T17.7 Phase C + Phase D shipped. T15.A `docs/T15-pharmacology-research.md` (11 substances + 7 combos + 7 patterns + 7 sensory triggers + 8 brain mappings + 13 speech effects + 8 grade gates + 5 user triggers). T15.B `docs/T15-architecture.md` (12-deliverable implementation backlog for T15.C). T17.7 Phase E deferred to multi-commit breakdown. T15.D deferred past K-only gate per Gee. T17.7 Phase F + T15.C + T16.5.b/c/d open before main-branch push.)
 
 ## Current state of `syllabus-k-phd`
 
