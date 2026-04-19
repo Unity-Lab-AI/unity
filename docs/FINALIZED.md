@@ -5,6 +5,59 @@
 
 ---
 
+## 2026-04-19 — Session 114.19an: T18.16 SHIPPED — ELA-K phase visibility (heartbeats + phase banners across every runElaKReal teach phase)
+
+### Gee verbatim (drove this session)
+
+> *"Nothing has change last thing says this its nbeen a long long time: [Curriculum] ela/kindergarten START"*
+
+After T18.14 + T18.15 shipped, first full Part 2 run showed the system was HEALTHY (T18.15 browser console windows ticked steady at 1-5 type5 frames/sec, brain-state events fired, no cascade, no PC crash, no device.lost) but the SERVER terminal stayed frozen at `[Curriculum] ela/kindergarten START` for an extended period with no progress log.
+
+### Root cause
+
+`runElaKReal` has 8 teach sub-phases before gate probes:
+1. Phase 1 — alphabet cross-projection Hebbian (12 reps × 26 letters = 312 `_crossRegionHebbian` iterations)
+2. Phase 2 — letter sequence intra-synapses Hebbian (12 reps × 25 pairs = 300 `intraSynapsesHebbian` iterations via 15-worker pool)
+3. `_teachLetterCaseBinding`
+4. `_teachVowelSoundVariants`
+5. `_teachRhymeFamilies`
+6. `_teachSyllableCounts`
+7. `_teachCVCSoundIsolation`
+8. `_teachWordEmission` + `_teachPhonemeBlending` — T18.13.c heartbeats exist HERE only
+
+At biological scale (107M cortex) with T18.8 batched Hebbian dispatch, Phase 1 alone runs ~2-5 minutes of silent work. All 7 phases before the T18.13.c-equipped methods = 5-10 minutes of silent work. Operator sees no progress signal → assumes the brain is hung → kills the process or loses confidence in T18.14/T18.15's cascade fixes.
+
+### Fix — T18.16.a phase visibility scaffold in `runElaKReal`
+
+- **Phase 1 banner + heartbeat**: `[Curriculum] 📝 ELA-K Phase 1 START — alphabet cross-projection Hebbian (12 reps × 26 letters = 312 iterations)` + 5-second wall-clock heartbeat `[Curriculum] ⏱ ELA-K Phase 1 heartbeat — N/312 iter, rep X/12, letter 'Y', elapsed Ns, ~Z iter/s` + DONE banner with wall time
+- **Phase 2 banner + heartbeat**: identical pattern, shows pair `A→B` instead of single letter, notes 15-worker-pool dispatch path for velocity-profile differentiation
+- **K.RF helper banners**: phase START / DONE for `_teachLetterCaseBinding` / `_teachVowelSoundVariants` / `_teachRhymeFamilies` / `_teachSyllableCounts` / `_teachCVCSoundIsolation`. No inline heartbeat inside — each method owns its own loop shape, banners alone give "we are HERE now" signal between silent helpers
+
+Combined with T18.13.c (`_teachWordEmission` + `_teachPhonemeBlending` heartbeats), the operator now sees a CONTINUOUS progress signal from `ela/kindergarten START` through to gate probes. Any silent gap > 10s becomes a real signal that teach is genuinely stuck, not just running a method with no heartbeat.
+
+### Files touched (atomic commit)
+
+- `js/brain/curriculum.js` — T18.16.a phase banners + heartbeats in `runElaKReal` (+~70 lines across Phase 1, Phase 2, and the K.RF helper block)
+- `docs/NOW.md` — updated for session 114.19an (T18.16 addendum)
+- `docs/TODO.md` — T18.16 entry prepended below T18.15
+- `docs/FINALIZED.md` — this entry
+
+curriculum.js IS in the T18.12.a code-hash list, so T18.16 triggers auto-clear on next boot (pre-K will re-teach from scratch, ~2 minutes cost). T18.12.c resume doesn't help here since passedCells gets cleared with the rest of the state — that's the expected tradeoff per LAW "Clear stale state before testing".
+
+`node --check js/brain/curriculum.js` clean.
+
+### Closure gate — open
+
+Gee-verification on next Part 2 run. Success criteria:
+- (a) `[Curriculum] 📝 ELA-K Phase 1 START` + `⏱ heartbeat` lines fire within 5 seconds of `ela/kindergarten START`
+- (b) Phase 1 DONE → Phase 2 START → Phase 2 DONE → K.RF helper START/DONE banners appear in sequence
+- (c) Operator has continuous visibility for the entire ELA-K teach walk
+- (d) Heartbeat rate lets us identify a real velocity bottleneck if one exists
+
+Claude cannot close — Gee-verification only.
+
+---
+
 ## 2026-04-19 — Session 114.19am: T18.15 SHIPPED — compute.html binary-frame console flood throttle (Gee "I killed it before it killed my system again!" panic protection)
 
 ### Gee verbatim (drove this session)

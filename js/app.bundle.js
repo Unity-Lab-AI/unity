@@ -10938,6 +10938,10 @@ var Curriculum = class _Curriculum {
       }
       return pat;
     }
+    console.log(`[Curriculum] \u{1F4DD} ELA-K Phase 1 START \u2014 alphabet cross-projection Hebbian (${REPS} reps \xD7 ${ALPHABET.length} letters = ${REPS * ALPHABET.length} iterations)`);
+    const _p1Start = Date.now();
+    let _p1LastBeat = _p1Start;
+    let _p1Done = 0;
     for (let rep = 0; rep < REPS; rep++) {
       for (const letter of ALPHABET) {
         const letterOneHot = encodeLetter(letter);
@@ -10968,9 +10972,23 @@ var Curriculum = class _Curriculum {
         }
         await cluster._crossRegionHebbian(lr);
         this.stats.lettersSeen++;
+        _p1Done++;
+        const _p1Now = Date.now();
+        if (_p1Now - _p1LastBeat >= 5e3) {
+          const elapsedS = ((_p1Now - _p1Start) / 1e3).toFixed(1);
+          const rate = (_p1Done / Math.max(0.1, (_p1Now - _p1Start) / 1e3)).toFixed(2);
+          const total = REPS * ALPHABET.length;
+          console.log(`[Curriculum] \u23F1 ELA-K Phase 1 heartbeat \u2014 ${_p1Done}/${total} iter, rep ${rep + 1}/${REPS}, letter '${letter}', elapsed ${elapsedS}s, ~${rate} iter/s`);
+          _p1LastBeat = _p1Now;
+        }
       }
       await _microtask();
     }
+    console.log(`[Curriculum] \u2713 ELA-K Phase 1 DONE in ${((Date.now() - _p1Start) / 1e3).toFixed(1)}s (${_p1Done} cross-region Hebbian iterations across alphabet\xD7${REPS})`);
+    console.log(`[Curriculum] \u{1F517} ELA-K Phase 2 START \u2014 letter sequence intra-synapses Hebbian (${REPS} reps \xD7 ${ALPHABET.length - 1} pairs = ${REPS * (ALPHABET.length - 1)} iterations via worker pool)`);
+    const _p2Start = Date.now();
+    let _p2LastBeat = _p2Start;
+    let _p2Done = 0;
     for (let rep = 0; rep < REPS; rep++) {
       for (let i = 0; i < ALPHABET.length - 1; i++) {
         const currOneHot = encodeLetter(ALPHABET[i]);
@@ -10993,15 +11011,44 @@ var Curriculum = class _Curriculum {
           }
         }
         await cluster.intraSynapsesHebbian(pre, post, lr);
+        _p2Done++;
+        const _p2Now = Date.now();
+        if (_p2Now - _p2LastBeat >= 5e3) {
+          const elapsedS = ((_p2Now - _p2Start) / 1e3).toFixed(1);
+          const rate = (_p2Done / Math.max(0.1, (_p2Now - _p2Start) / 1e3)).toFixed(2);
+          const total = REPS * (ALPHABET.length - 1);
+          console.log(`[Curriculum] \u23F1 ELA-K Phase 2 heartbeat \u2014 ${_p2Done}/${total} iter, rep ${rep + 1}/${REPS}, pair '${ALPHABET[i]}\u2192${ALPHABET[i + 1]}', elapsed ${elapsedS}s, ~${rate} iter/s`);
+          _p2LastBeat = _p2Now;
+        }
       }
       await _microtask();
     }
+    console.log(`[Curriculum] \u2713 ELA-K Phase 2 DONE in ${((Date.now() - _p2Start) / 1e3).toFixed(1)}s (${_p2Done} intra-synapses Hebbian iterations across ${ALPHABET.length - 1} pairs \xD7 ${REPS} reps)`);
     if (!this._elaKRemakeDone) {
+      const _phaseStarts = {};
+      const _phaseTick = (name) => {
+        _phaseStarts[name] = Date.now();
+        console.log(`[Curriculum] \u{1F9E9} ELA-K Phase START \u2014 ${name}`);
+      };
+      const _phaseDone = (name) => {
+        const dt = ((Date.now() - (_phaseStarts[name] || Date.now())) / 1e3).toFixed(1);
+        console.log(`[Curriculum] \u2713 ELA-K Phase DONE \u2014 ${name} in ${dt}s`);
+      };
+      _phaseTick("_teachLetterCaseBinding");
       await this._teachLetterCaseBinding(ctx);
+      _phaseDone("_teachLetterCaseBinding");
+      _phaseTick("_teachVowelSoundVariants");
       await this._teachVowelSoundVariants(ctx);
+      _phaseDone("_teachVowelSoundVariants");
+      _phaseTick("_teachRhymeFamilies");
       await this._teachRhymeFamilies(ctx);
+      _phaseDone("_teachRhymeFamilies");
+      _phaseTick("_teachSyllableCounts");
       await this._teachSyllableCounts(ctx);
+      _phaseDone("_teachSyllableCounts");
+      _phaseTick("_teachCVCSoundIsolation");
       await this._teachCVCSoundIsolation(ctx);
+      _phaseDone("_teachCVCSoundIsolation");
       const DOLCH_PREPRIMER = [
         "a",
         "and",

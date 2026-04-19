@@ -356,6 +356,20 @@ Root cause is UX, not correctness: pre-T18.15 `compute.html:163` logged one line
 
 ---
 
+#### T18.16 — ELA-K phase visibility (Gee 2026-04-19 "Nothing has change last thing says this its nbeen a long long time: ela/kindergarten START")
+
+**Gee's verbatim 2026-04-19:**
+
+> *"Nothing has change last thing says this its nbeen a long long time: [Curriculum] ela/kindergarten START"*
+
+Server terminal stuck at `ela/kindergarten START` while browser showed T18.15 windows ticking steady (1-5 type5 frames/sec), brain-state events firing, no cascade markers anywhere. System HEALTHY but invisibly slow. Root cause: `runElaKReal`'s first two teach phases + five K.RF foundational-skill helpers run equational Hebbian loops with NO top-level progress logs. Pre-T18.16 the ELA-K walk was silent until teach reached `_teachWordEmission` / `_teachPhonemeBlending` (T18.13.c heartbeats exist only there), which is the 8th teach sub-phase in ELA-K — roughly 5-10 minutes of silent work at biological scale before any heartbeat fired.
+
+- [x] **T18.16.a — Heartbeats + phase banners across all ELA-K teach phases.** Phase 1 (alphabet cross-projection Hebbian, 312 iters): START banner with iteration count + 5-second wall-clock heartbeat inside the inner loop showing `rep X/12, letter 'Y', elapsed Ns, ~Z iter/s` + DONE banner with total wall time. Phase 2 (letter sequence intra-synapses Hebbian via 15-worker pool, 300 iters): identical START/heartbeat/DONE pattern showing pair `A→B`. K.RF helpers (`_teachLetterCaseBinding` / `_teachVowelSoundVariants` / `_teachRhymeFamilies` / `_teachSyllableCounts` / `_teachCVCSoundIsolation`): phase START + DONE banners (no inline heartbeat inside since each method owns its own loop shape). Operator now sees a continuous progress signal from ELA-K START through to `_teachWordEmission` (T18.13.c heartbeats) through to gate probes. **SHIPPED** — `js/brain/curriculum.js`.
+
+**T18.16 closure gate:** Gee-verification on next Part 2 run. Success criteria: (a) `[Curriculum] 📝 ELA-K Phase 1 START` + `⏱ heartbeat` lines fire within seconds of `ela/kindergarten START`; (b) Phase 1 DONE → Phase 2 START → Phase 2 DONE → K.RF helper START/DONE banners appear in sequence; (c) operator has continuous visibility for the entire ELA-K teach walk. Claude cannot close — Gee-verification only.
+
+---
+
 #### T18.5 — push gate for main-branch deploy (BINDING)
 
 Per Gee's verbatim 2026-04-18 instruction: before ANY push to `main` for GitHub static deploy, every T18 item above must be shipped AND all docs must be updated AND Gee must explicitly say "yes, push it". Claude does not initiate the push. Claude asks first after the fixes land.

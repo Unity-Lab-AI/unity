@@ -1,6 +1,25 @@
 # NOW — Session Snapshot
 
-> **Session:** 114.19am · **Date:** 2026-04-19 · **Branch:** `syllabus-k-phd` · **HEAD (pre-push):** `2e3d666` (T18.14) · **BUILD:** `0.1.0+c7eb8354-3de8` (pre-stamp; T18.15 pending)
+> **Session:** 114.19an · **Date:** 2026-04-19 · **Branch:** `syllabus-k-phd` · **HEAD (pre-push):** `ba82045` (T18.15) · **BUILD:** `0.1.0+2e3d666f-b97b` (pre-stamp; T18.16 pending)
+
+---
+
+## T18.16 addendum — Gee reported ELA-K terminal stuck at `ela/kindergarten START` for "long long time"
+
+**Gee verbatim 2026-04-19:** *"Nothing has change last thing says this its nbeen a long long time: [Curriculum] ela/kindergarten START"*
+
+Browser T18.15 windows showed teach running (1-5 type5 frames/sec, no cascade). But server terminal was silent because `runElaKReal`'s first 7 teach phases have NO top-level progress logs — heartbeats (T18.13.c) only fire in the 8th phase (`_teachWordEmission` / `_teachPhonemeBlending`). At biological scale that's 5-10 minutes of silent work.
+
+T18.16.a ships heartbeats + phase banners across every ELA-K teach phase. Operator now sees `📝 ELA-K Phase 1 START` → `⏱ heartbeat` lines every 5s → `✓ Phase 1 DONE` → Phase 2 banners → K.RF helper START/DONE banners → T18.13.c heartbeats in the word-emission phase. Continuous visibility from `ela/kindergarten START` through to gate probes.
+
+curriculum.js is in the T18.12.a code-hash list, so T18.16 boot triggers auto-clear → pre-K re-teach (~2 minutes). Expected tradeoff.
+
+See `docs/FINALIZED.md` session 114.19an entry for full details.
+
+---
+
+## Original session entry (T18.15) below
+---
 
 ---
 

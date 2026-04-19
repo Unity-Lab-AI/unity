@@ -3439,6 +3439,19 @@ export class Curriculum {
       return pat;
     }
 
+    // T18.16.a — ELA-K Phase 1 heartbeat scaffold. At biological scale
+    // `_crossRegionHebbian(lr)` takes 200-1000ms per letter because each
+    // call dispatches 14 GPU bound-Hebbian ops (one per cross-projection)
+    // via T18.8 batched dispatch and awaits the batch ACK. Pre-T18.16
+    // this phase ran 312 iters silent → Gee's terminal stayed blank at
+    // `ela/kindergarten START` for 2-5 minutes with no progress signal.
+    // Phase banner + 5-second wall-clock heartbeat gives per-iteration
+    // visibility.
+    console.log(`[Curriculum] 📝 ELA-K Phase 1 START — alphabet cross-projection Hebbian (${REPS} reps × ${ALPHABET.length} letters = ${REPS * ALPHABET.length} iterations)`);
+    const _p1Start = Date.now();
+    let _p1LastBeat = _p1Start;
+    let _p1Done = 0;
+
     // TEACH: direct Hebbian on intended patterns
     for (let rep = 0; rep < REPS; rep++) {
       for (const letter of ALPHABET) {
@@ -3478,9 +3491,19 @@ export class Curriculum {
         // Fire cross-region Hebbian on these clean patterns
         await cluster._crossRegionHebbian(lr);
         this.stats.lettersSeen++;
+        _p1Done++;
+        const _p1Now = Date.now();
+        if (_p1Now - _p1LastBeat >= 5000) {
+          const elapsedS = ((_p1Now - _p1Start) / 1000).toFixed(1);
+          const rate = (_p1Done / Math.max(0.1, (_p1Now - _p1Start) / 1000)).toFixed(2);
+          const total = REPS * ALPHABET.length;
+          console.log(`[Curriculum] ⏱ ELA-K Phase 1 heartbeat — ${_p1Done}/${total} iter, rep ${rep + 1}/${REPS}, letter '${letter}', elapsed ${elapsedS}s, ~${rate} iter/s`);
+          _p1LastBeat = _p1Now;
+        }
       }
       await _microtask();
     }
+    console.log(`[Curriculum] ✓ ELA-K Phase 1 DONE in ${((Date.now() - _p1Start) / 1000).toFixed(1)}s (${_p1Done} cross-region Hebbian iterations across alphabet×${REPS})`);
 
     // SEQUENCE TEACHING — teach the INTRA-REGION recurrent weights
     // that letter N leads to letter N+1. Same direct-spike approach
@@ -3489,6 +3512,18 @@ export class Curriculum {
     // (y,z): set pre=N, post=N+1, fire hebbianUpdate on the main
     // synapses. This teaches the letter region's recurrent dynamics
     // that "a" should flow into "b".
+    //
+    // T18.16.a — Phase 2 heartbeat scaffold. `intraSynapsesHebbian`
+    // routes through the 15-worker sparse-matmul pool (CPU path) —
+    // different velocity profile from Phase 1's GPU batched-Hebbian.
+    // Per-iteration cost is dominated by the worker pool's drain rate
+    // on a 90M-nnz intra-cluster synapse matrix. Without a heartbeat
+    // here the operator sees no progress between Phase 1 DONE and the
+    // next phase START log.
+    console.log(`[Curriculum] 🔗 ELA-K Phase 2 START — letter sequence intra-synapses Hebbian (${REPS} reps × ${ALPHABET.length - 1} pairs = ${REPS * (ALPHABET.length - 1)} iterations via worker pool)`);
+    const _p2Start = Date.now();
+    let _p2LastBeat = _p2Start;
+    let _p2Done = 0;
     for (let rep = 0; rep < REPS; rep++) {
       for (let i = 0; i < ALPHABET.length - 1; i++) {
         const currOneHot = encodeLetter(ALPHABET[i]);
@@ -3520,9 +3555,19 @@ export class Curriculum {
         // in V8 semi-space faster than GC could promote them,
         // OOM-crashing Node at the first real teach pass.
         await cluster.intraSynapsesHebbian(pre, post, lr);
+        _p2Done++;
+        const _p2Now = Date.now();
+        if (_p2Now - _p2LastBeat >= 5000) {
+          const elapsedS = ((_p2Now - _p2Start) / 1000).toFixed(1);
+          const rate = (_p2Done / Math.max(0.1, (_p2Now - _p2Start) / 1000)).toFixed(2);
+          const total = REPS * (ALPHABET.length - 1);
+          console.log(`[Curriculum] ⏱ ELA-K Phase 2 heartbeat — ${_p2Done}/${total} iter, rep ${rep + 1}/${REPS}, pair '${ALPHABET[i]}→${ALPHABET[i + 1]}', elapsed ${elapsedS}s, ~${rate} iter/s`);
+          _p2LastBeat = _p2Now;
+        }
       }
       await _microtask();
     }
+    console.log(`[Curriculum] ✓ ELA-K Phase 2 DONE in ${((Date.now() - _p2Start) / 1000).toFixed(1)}s (${_p2Done} intra-synapses Hebbian iterations across ${ALPHABET.length - 1} pairs × ${REPS} reps)`);
 
     // Session 114.6 REMAKE per Gee 2026-04-17 LAW 3 + LAW 7 binding —
     // replace the pre-T114.6 _teachVocabList / _teachSentenceList data-
@@ -3531,12 +3576,37 @@ export class Curriculum {
     // matrix. Every ELA-K TODO concept gets a dedicated method, every
     // test phrasing gets a production probe in _gateElaKReal.
     if (!this._elaKRemakeDone) {
+      // T18.16.a — Phase-start banners for each K.RF foundational-skill
+      // teach method. Each of these methods runs equational teach loops
+      // internally with no top-level progress log; the banners give Gee
+      // a "we are HERE now" signal between silent phases so teach velocity
+      // across the full ELA-K walk is visible without needing per-method
+      // heartbeats inside every helper.
       // K.RF foundational skills
+      const _phaseStarts = {};
+      const _phaseTick = (name) => {
+        _phaseStarts[name] = Date.now();
+        console.log(`[Curriculum] 🧩 ELA-K Phase START — ${name}`);
+      };
+      const _phaseDone = (name) => {
+        const dt = ((Date.now() - (_phaseStarts[name] || Date.now())) / 1000).toFixed(1);
+        console.log(`[Curriculum] ✓ ELA-K Phase DONE — ${name} in ${dt}s`);
+      };
+      _phaseTick('_teachLetterCaseBinding');
       await this._teachLetterCaseBinding(ctx);
+      _phaseDone('_teachLetterCaseBinding');
+      _phaseTick('_teachVowelSoundVariants');
       await this._teachVowelSoundVariants(ctx);
+      _phaseDone('_teachVowelSoundVariants');
+      _phaseTick('_teachRhymeFamilies');
       await this._teachRhymeFamilies(ctx);
+      _phaseDone('_teachRhymeFamilies');
+      _phaseTick('_teachSyllableCounts');
       await this._teachSyllableCounts(ctx);
+      _phaseDone('_teachSyllableCounts');
+      _phaseTick('_teachCVCSoundIsolation');
       await this._teachCVCSoundIsolation(ctx);
+      _phaseDone('_teachCVCSoundIsolation');
 
       // Phase 2 (Session 114.19) — PHONEME BLENDING. Real English
       // phoneme features from _phonemeFeatureForLetter (no longer
