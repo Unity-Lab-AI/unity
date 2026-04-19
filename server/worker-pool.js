@@ -162,6 +162,129 @@ class SparseMatmulPool {
     });
   }
 
+  /**
+   * T17.2 — Hebbian update across the worker pool. Each worker
+   * processes a disjoint row-range of the matrix's values buffer, so
+   * there are no write collisions. Mutates the matrix in place (just
+   * like `SparseMatrix.hebbianUpdate`) — after the promise resolves
+   * every weight has been updated with `ΔW = η · post · pre` clamped
+   * to [wMin, wMax].
+   *
+   * Falls through to synchronous single-thread matmul if the pool
+   * isn't available. Same result, just no parallelism.
+   */
+  async hebbianUpdate(matrix, preSpikes, postSpikes, lr) {
+    const rows = matrix.rows;
+    const wMin = matrix.wMin ?? -2.0;
+    const wMax = matrix.wMax ?? 2.0;
+
+    // Convert to Float32 (typed array) so the shared buffer is a
+    // well-defined binary layout across workers. Single-thread
+    // fallback below accepts whatever the caller passed.
+    if (!this._ready || this._workers.length === 0) {
+      // Synchronous fallback — identical semantics to
+      // SparseMatrix.hebbianUpdate so behavior is indistinguishable.
+      const values = matrix.values;
+      const colIdx = matrix.colIdx;
+      const rowP = matrix.rowPtr;
+      for (let i = 0; i < rows; i++) {
+        if (!postSpikes[i]) continue;
+        const scaled = lr * postSpikes[i];
+        const start = rowP[i];
+        const end = rowP[i + 1];
+        for (let k = start; k < end; k++) {
+          let v = values[k] + scaled * preSpikes[colIdx[k]];
+          if (v > wMax) v = wMax;
+          else if (v < wMin) v = wMin;
+          values[k] = v;
+        }
+      }
+      return true;
+    }
+
+    const shared = (arr, SharedCtor) => {
+      if (arr.buffer instanceof SharedArrayBuffer) return arr;
+      const sab = new SharedArrayBuffer(arr.byteLength);
+      const view = new SharedCtor(sab);
+      view.set(arr);
+      return view;
+    };
+
+    // values MUST be shared (we mutate it). If the caller's values
+    // array isn't already SharedArrayBuffer-backed, upgrade it in
+    // place so subsequent calls benefit too.
+    if (!(matrix.values.buffer instanceof SharedArrayBuffer)) {
+      const sab = new SharedArrayBuffer(matrix.values.byteLength);
+      const shView = matrix.values instanceof Float32Array
+        ? new Float32Array(sab)
+        : new Float64Array(sab);
+      shView.set(matrix.values);
+      matrix.values = shView;
+    }
+    const valsShared = matrix.values instanceof Float32Array
+      ? matrix.values
+      : (() => {
+          // Hebbian worker expects Float32 — one-time conversion if
+          // matrix is stored as Float64 (SparseMatrix default).
+          const sab = new SharedArrayBuffer(matrix.rows === 0 ? 4 : matrix.values.length * 4);
+          const v = new Float32Array(sab);
+          for (let i = 0; i < matrix.values.length; i++) v[i] = matrix.values[i];
+          return v;
+        })();
+    const colsShared = shared(matrix.colIdx instanceof Uint32Array ? matrix.colIdx : new Uint32Array(matrix.colIdx), Uint32Array);
+    const rowPShared = shared(matrix.rowPtr instanceof Uint32Array ? matrix.rowPtr : new Uint32Array(matrix.rowPtr), Uint32Array);
+    const preF32  = preSpikes  instanceof Float32Array ? preSpikes  : Float32Array.from(preSpikes);
+    const postF32 = postSpikes instanceof Float32Array ? postSpikes : Float32Array.from(postSpikes);
+    const preShared  = shared(preF32, Float32Array);
+    const postShared = shared(postF32, Float32Array);
+
+    const jobId = ++this._jobSeq;
+    const N = this._workers.length;
+    const rowsPerWorker = Math.ceil(rows / N);
+
+    await new Promise((resolve) => {
+      this._pending.set(jobId, { resolve, expected: N, received: 0 });
+      for (let i = 0; i < N; i++) {
+        const startRow = i * rowsPerWorker;
+        const endRow = Math.min(startRow + rowsPerWorker, rows);
+        if (startRow >= rows) {
+          const entry = this._pending.get(jobId);
+          if (entry) {
+            entry.received++;
+            if (entry.received >= entry.expected) {
+              this._pending.delete(jobId);
+              resolve();
+            }
+          }
+          continue;
+        }
+        this._workers[i].postMessage({
+          type: 'hebbian',
+          jobId,
+          valuesBuf: valsShared.buffer,
+          colIdxBuf: colsShared.buffer,
+          rowPtrBuf: rowPShared.buffer,
+          preSpikesBuf: preShared.buffer,
+          postSpikesBuf: postShared.buffer,
+          startRow,
+          endRow,
+          lr,
+          wMin,
+          wMax,
+        });
+      }
+    });
+
+    // If we up-converted values to Float32 for workers but matrix
+    // stored Float64, copy back so subsequent CPU single-thread reads
+    // see the updated weights. (This only fires when the SparseMatrix
+    // was constructed with Float64 values, which is the default.)
+    if (valsShared !== matrix.values) {
+      for (let i = 0; i < valsShared.length; i++) matrix.values[i] = valsShared[i];
+    }
+    return true;
+  }
+
   get ready() { return this._ready; }
   get size() { return this._workers.length; }
 

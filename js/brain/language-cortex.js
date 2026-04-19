@@ -1476,19 +1476,30 @@ export class LanguageCortex {
     const curriculumDone = cluster.intentCentroids && cluster.intentCentroids.size > 0;
     let words = [];
     if (curriculumDone) {
-      // Session 114.19n per Gee 2026-04-17 verbatim: "want popups to
-      // produce cleaner emissions during live input I could add noise
-      // suppression when _internalThought is active — that's a small
-      // targeted change." When `_internalThought` is set (3D brain
-      // popup path from `brain-3d.js _describeInternalState`), pass
-      // `suppressNoise: true` to generateSentence so noiseAmplitude
-      // drops 7 → 0.5 for the emission only. Live chat (no
-      // _internalThought flag) keeps chaotic dynamics.
-      const raw = cluster.generateSentence(intentSeed, {
-        injectStrength: 0.6,
-        suppressNoise: opts._internalThought === true,
-      });
-      words = raw ? raw.split(/\s+/).filter(Boolean) : [];
+      // T17.6 — when the async caller (`generateAsync`) has already run
+      // the emission via `cluster.generateSentenceAwait` (GPU full-await
+      // cascade), it passes the result through `opts._preEmittedWords`.
+      // generate() uses those instead of calling the sync emission path
+      // so live chat gets the GPU-resolved currents on every tick
+      // instead of the fire-and-forget one-tick-lag that eats cache
+      // miss penalties at biological scale.
+      if (Array.isArray(opts._preEmittedWords)) {
+        words = opts._preEmittedWords;
+      } else {
+        // Session 114.19n per Gee 2026-04-17 verbatim: "want popups to
+        // produce cleaner emissions during live input I could add noise
+        // suppression when _internalThought is active — that's a small
+        // targeted change." When `_internalThought` is set (3D brain
+        // popup path from `brain-3d.js _describeInternalState`), pass
+        // `suppressNoise: true` to generateSentence so noiseAmplitude
+        // drops 7 → 0.5 for the emission only. Live chat (no
+        // _internalThought flag) keeps chaotic dynamics.
+        const raw = cluster.generateSentence(intentSeed, {
+          injectStrength: 0.6,
+          suppressNoise: opts._internalThought === true,
+        });
+        words = raw ? raw.split(/\s+/).filter(Boolean) : [];
+      }
     }
 
     // Dictionary-cosine path. Runs pre-curriculum ALWAYS, and
@@ -1764,6 +1775,7 @@ export class LanguageCortex {
     // bookkeeping) is cheap and can stay synchronous — we run it by
     // delegating to generate() after prefilling _precomputedScores.
     let precomputedScores = null;
+    let preEmittedWords = null;
 
     const cluster = opts.cortexCluster;
     if (cluster && typeof cluster.generateSentence === 'function') {
@@ -1771,6 +1783,50 @@ export class LanguageCortex {
       // (tick-driven motor emission) which is bounded and fast — no need
       // to precompute scores at all, let generate() run sync.
       const curriculumDone = cluster.intentCentroids && cluster.intentCentroids.size > 0;
+
+      // T17.6 — post-curriculum GPU-ready path: run the motor emission
+      // via `cluster.generateSentenceAwait` so every tick pre-awaits
+      // its GPU propagate (T18.4.b full-await cascade). Hands the raw
+      // sentence to generate() via `opts._preEmittedWords` so the sync
+      // generate() path doesn't call `cluster.generateSentence` (which
+      // uses the fire-and-forget one-tick-lag mode and eats cache-miss
+      // penalties). Live chat on the upscaled cortex now consistently
+      // gets GPU-resolved currents per tick instead of the 3s cache-
+      // miss fallback.
+      //
+      // Falls through to the sync path (generate() calls
+      // cluster.generateSentence) when GPU proxy isn't ready, when
+      // generateSentenceAwait isn't available (older cluster build),
+      // or when curriculum hasn't shaped the cortex yet.
+      if (curriculumDone
+          && cluster._gpuProxyReady
+          && typeof cluster.generateSentenceAwait === 'function') {
+        // Compute the same intentSeed generate() would use: prefer the
+        // caller-supplied user input embedding if present, otherwise
+        // fall back to the cluster's semantic readout.
+        let intentSeed = null;
+        if (cluster._lastUserInputEmbedding && cluster._lastUserInputEmbedding.length > 0) {
+          intentSeed = cluster._lastUserInputEmbedding;
+        }
+        if (!intentSeed) {
+          try {
+            if (typeof cluster.getSemanticReadout === 'function') {
+              intentSeed = cluster.getSemanticReadout(sharedEmbeddings);
+            }
+          } catch {}
+        }
+        try {
+          const raw = await cluster.generateSentenceAwait(intentSeed, {
+            injectStrength: 0.6,
+            suppressNoise: opts._internalThought === true,
+          });
+          preEmittedWords = raw ? raw.split(/\s+/).filter(Boolean) : [];
+        } catch (err) {
+          // Await path failed — let generate() fall back to sync emission.
+          preEmittedWords = null;
+        }
+      }
+
       if (!curriculumDone && dictionary && dictionary._words && dictionary._words.size > 0) {
         // Pre-curriculum path — compute dictionary scores async so the
         // event loop stays responsive through the scoring work.
@@ -1792,11 +1848,13 @@ export class LanguageCortex {
       }
     }
 
-    // Hand the precomputed scores back to generate() which handles
-    // top-K sampling, sentence rendering, and recency ring bookkeeping.
+    // Hand the precomputed scores + pre-emitted async sentence back to
+    // generate() which handles top-K sampling, sentence rendering, and
+    // recency ring bookkeeping.
     return this.generate(dictionary, arousal, coherence, {
       ...opts,
       _precomputedScores: precomputedScores,
+      _preEmittedWords: preEmittedWords,
     });
   }
 

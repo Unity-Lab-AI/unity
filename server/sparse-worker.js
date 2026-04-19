@@ -24,6 +24,8 @@ const { parentPort } = require('worker_threads');
 parentPort.on('message', (msg) => {
   if (msg.type === 'propagate') {
     propagate(msg);
+  } else if (msg.type === 'hebbian') {
+    hebbian(msg);
   } else if (msg.type === 'shutdown') {
     process.exit(0);
   }
@@ -63,6 +65,55 @@ function propagate(msg) {
       }
     }
     currents[i] = sum;
+  }
+
+  parentPort.postMessage({ type: 'done', jobId, startRow, endRow });
+}
+
+/**
+ * T17.2 — Hebbian update on a row-range of a sparse CSR matrix.
+ *
+ *   ΔW_ij = η · post_i · pre_j
+ *
+ * Each row's update touches only its own slice of `values[start..end]`
+ * so splitting row-range across workers is race-free by construction
+ * (same reasoning as propagate). Worker reads preSpikes + postSpikes
+ * shared buffers, writes directly to shared values buffer with bounds
+ * clamping at wMin/wMax.
+ */
+function hebbian(msg) {
+  const {
+    jobId,
+    valuesBuf,
+    colIdxBuf,
+    rowPtrBuf,
+    preSpikesBuf,
+    postSpikesBuf,
+    startRow,
+    endRow,
+    lr,
+    wMin,
+    wMax,
+  } = msg;
+
+  const values = new Float32Array(valuesBuf);
+  const colIdx = new Uint32Array(colIdxBuf);
+  const rowPtr = new Uint32Array(rowPtrBuf);
+  const preSpikes = new Float32Array(preSpikesBuf);
+  const postSpikes = new Float32Array(postSpikesBuf);
+
+  for (let i = startRow; i < endRow; i++) {
+    const post = postSpikes[i];
+    if (post === 0) continue;
+    const scaled = lr * post;
+    const start = rowPtr[i];
+    const end = rowPtr[i + 1];
+    for (let k = start; k < end; k++) {
+      let v = values[k] + scaled * preSpikes[colIdx[k]];
+      if (v > wMax) v = wMax;
+      else if (v < wMin) v = wMin;
+      values[k] = v;
+    }
   }
 
   parentPort.postMessage({ type: 'done', jobId, startRow, endRow });

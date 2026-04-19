@@ -1760,7 +1760,15 @@ export class NeuronCluster {
       if (!this.regions[src] || !this.regions[dst]) continue;
       const preF = this.regionSpikes(src);
       const postF = this.regionSpikes(dst);
-      proj.hebbianUpdate(preF, postF, lr);
+      // T17.2 — route CPU Hebbian through worker pool when available.
+      // Same disjoint-row-range parallelization as intraSynapsesHebbian.
+      if (this._sparsePool && this._sparsePool.ready) {
+        this._sparsePool.hebbianUpdate(proj, preF, postF, lr).catch(() => {
+          proj.hebbianUpdate(preF, postF, lr);
+        });
+      } else {
+        proj.hebbianUpdate(preF, postF, lr);
+      }
       // T17.3.d — fire-and-forget GPU Hebbian when proxy ready.
       // Weight updates happen on BOTH the CPU shadow copy AND the GPU
       // copy so probes and live-chat reads stay consistent regardless
@@ -1837,7 +1845,26 @@ export class NeuronCluster {
    */
   intraSynapsesHebbian(pre, post, lr) {
     if (!this.synapses) return;
-    this.synapses.hebbianUpdate(pre, post, lr);
+    // T17.2 — parallelize CPU Hebbian across worker pool when available.
+    // Same row-range partitioning pattern as sparse matmul (disjoint
+    // row-ranges, no write collisions on values buffer). Falls through
+    // to synchronous single-thread update if pool unavailable.
+    //
+    // Note: worker path is async (returns Promise), but Hebbian update
+    // is fire-and-forget — callers don't await, so we kick off the pool
+    // job and return immediately. Curriculum teach can't be racing the
+    // same matrix back-to-back within a single JS tick because the
+    // worker's shared-buffer writes happen on the main thread's event
+    // loop return.
+    if (this._sparsePool && this._sparsePool.ready) {
+      this._sparsePool.hebbianUpdate(this.synapses, pre, post, lr).catch(() => {
+        // Pool failed — fall back to synchronous path so the update
+        // still happens. Next call will retry via the pool.
+        this.synapses.hebbianUpdate(pre, post, lr);
+      });
+    } else {
+      this.synapses.hebbianUpdate(pre, post, lr);
+    }
     if (this._gpuProxyReady && this._gpuProxy && this._gpuProxy.hebbian) {
       const key = `${this.name}_intraSynapses`;
       try {
