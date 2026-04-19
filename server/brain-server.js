@@ -1077,6 +1077,12 @@ class ServerBrain {
         // Hebbian call at 7M-per-direction standalone sizes.
         propagateBound:  (name)                             => this.gpuSparsePropagateBound(name),
         hebbianBound:    (name, lr)                         => this.gpuSparseHebbianBound(name, lr),
+        // T18.28 — drain-wait helper. Before gate probes fire readback
+        // requests, wait for the WebSocket send queue to drop below
+        // 10 MB so the readback lands immediately instead of queuing
+        // behind hundreds of pending Hebbian frames. Times out after
+        // 30 seconds to prevent deadlock if compute.html is truly hung.
+        drainWait: () => this.gpuDrainWait(),
         // Curriculum writes training patterns through this path so teach
         // methods update the main cortex sub-slice (first N of each
         // region, where N = standalone region size). The bound cross-
@@ -2171,14 +2177,28 @@ class ServerBrain {
     // side; CPU path is authoritative per T17.2 / T17.7 comment chain).
     // Threshold 50 MB = plenty of headroom for bursty Hebbian dispatch
     // without flooding the OS socket.
-    const BUFFERED_AMOUNT_DROP_THRESHOLD = 50 * 1024 * 1024; // 50 MB
+    // T18.28 — raised threshold 50MB → 200MB per Gee 2026-04-19
+    // "shouldnt threshold be 100MB so that it gets all the training
+    // it lossing alot". At 50MB drops were firing ~17/sec during
+    // _teachWordEmission (7562 total drops over 411s). Each dropped
+    // type=5 batched Hebbian frame = ~10-64 lost GPU-side Hebbian
+    // updates. CPU-side learning still happened but GPU's cross-
+    // projection weights drifted from CPU over 12 reps × 1029 words.
+    // Gate probe then reads stale GPU state via readbackLetterBuckets
+    // → potential spurious fail OR freeze (probe readback queues
+    // behind pending Hebbian frames). Raising to 200MB gives Node's
+    // WebSocket buffer more headroom during compute.html serial-
+    // onmessage stalls — fewer drops, more complete GPU sync.
+    // Node can easily hold 200MB WebSocket buffer without OS
+    // memory concern on a 128GB box.
+    const BUFFERED_AMOUNT_DROP_THRESHOLD = 200 * 1024 * 1024; // 200 MB
     if (this._gpuClient.bufferedAmount > BUFFERED_AMOUNT_DROP_THRESHOLD) {
       if (!this._t1826DroppedCount) this._t1826DroppedCount = 0;
       this._t1826DroppedCount++;
       // Throttle the drop-log so we don't spam N lines/sec when backpressure sustained
       if (!this._t1826LastLogMs || (Date.now() - this._t1826LastLogMs) >= 5000) {
         this._t1826LastLogMs = Date.now();
-        console.warn(`[Brain] T18.26 backpressure — dropped sparse binary send (ws.bufferedAmount=${(this._gpuClient.bufferedAmount/1024/1024).toFixed(1)}MB > 50MB threshold). ${this._t1826DroppedCount} total drops since boot. Fire-and-forget caller continues; CPU-side Hebbian remains authoritative.`);
+        console.warn(`[Brain] T18.28 backpressure — dropped sparse binary send (ws.bufferedAmount=${(this._gpuClient.bufferedAmount/1024/1024).toFixed(1)}MB > 200MB threshold). ${this._t1826DroppedCount} total drops since boot. Fire-and-forget caller continues; CPU-side Hebbian remains authoritative.`);
       }
       return Promise.resolve(null);
     }
@@ -2211,6 +2231,36 @@ class ServerBrain {
       }, timeoutMs);
       this._gpuSparsePending.set(reqId, { resolve, reject, timeout });
     });
+  }
+
+  /**
+   * T18.28 — drain-wait for gate probes. Polls ws.bufferedAmount until
+   * it drops below 10 MB or 30-second timeout elapses. Curriculum gate
+   * probes fire readback requests (readbackLetterBuckets etc.) that
+   * MUST land promptly to produce correct probe output. If Hebbian
+   * backlog is queued ahead of the readback, the readback can wait
+   * indefinitely — Gee saw "freeze" at [K-DIAG] gate log line because
+   * ~17000 frames were queued in compute.html. Waiting for drain before
+   * firing probe reads ensures fresh readback results.
+   */
+  async gpuDrainWait() {
+    const DRAIN_THRESHOLD = 10 * 1024 * 1024; // 10 MB
+    const TIMEOUT_MS = 30_000;
+    const POLL_MS = 100;
+    const start = Date.now();
+    if (!this._gpuClient || this._gpuClient.readyState !== 1) return;
+    const initial = this._gpuClient.bufferedAmount;
+    if (initial <= DRAIN_THRESHOLD) return; // already drained
+    while (Date.now() - start < TIMEOUT_MS) {
+      await new Promise(r => setTimeout(r, POLL_MS));
+      if (!this._gpuClient || this._gpuClient.readyState !== 1) return;
+      if (this._gpuClient.bufferedAmount <= DRAIN_THRESHOLD) {
+        const elapsed = Date.now() - start;
+        console.log(`[Brain] T18.28 drain-wait completed in ${elapsed}ms: bufferedAmount ${(initial/1024/1024).toFixed(1)}MB → ${(this._gpuClient.bufferedAmount/1024/1024).toFixed(1)}MB`);
+        return;
+      }
+    }
+    console.warn(`[Brain] T18.28 drain-wait timed out at 30s: bufferedAmount stuck at ${(this._gpuClient.bufferedAmount/1024/1024).toFixed(1)}MB — compute.html processing slower than expected. Gate probe readbacks may still queue behind Hebbian frames.`);
   }
 
   // Backpressure gate for fire-and-forget GPU shadows. Curriculum fires

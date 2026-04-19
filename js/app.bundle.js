@@ -600,7 +600,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "d6435b75-16aa";
+var BUILD = "dc1756f0-9de0";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -2627,12 +2627,9 @@ var NeuronCluster = class {
             const _freedColIdxBytes = proj.colIdx ? proj.colIdx.byteLength : 0;
             const _freedRowPtrBytes = proj.rowPtr ? proj.rowPtr.byteLength : 0;
             const _freedMB = ((_freedValuesBytes + _freedColIdxBytes + _freedRowPtrBytes) / (1024 * 1024)).toFixed(1);
-            proj.values = null;
-            proj.colIdx = null;
-            proj.rowPtr = null;
             if (!this._t1822TotalFreedBytes) this._t1822TotalFreedBytes = 0;
             this._t1822TotalFreedBytes += _freedValuesBytes + _freedColIdxBytes + _freedRowPtrBytes;
-            console.log(`[T18.22/23] freed CPU arrays for bound projection ${key}: values=${(_freedValuesBytes / 1024 / 1024).toFixed(1)}MB + colIdx=${(_freedColIdxBytes / 1024 / 1024).toFixed(1)}MB + rowPtr=${(_freedRowPtrBytes / 1024 / 1024).toFixed(1)}MB = ${_freedMB}MB this projection, ${(this._t1822TotalFreedBytes / 1024 / 1024).toFixed(1)}MB cumulative`);
+            console.log(`[T18.27] bound projection ${key} uploaded to GPU: would free ${(_freedValuesBytes / 1024 / 1024).toFixed(1)}MB values + ${(_freedColIdxBytes / 1024 / 1024).toFixed(1)}MB colIdx + ${(_freedRowPtrBytes / 1024 / 1024).toFixed(1)}MB rowPtr = ${_freedMB}MB total, but KEEPING arrays intact (T18.22 reverted \u2014 science-K regression). Cumulative bytes left resident: ${(this._t1822TotalFreedBytes / 1024 / 1024).toFixed(1)}MB.`);
           }
         } else {
           console.warn(`[Cluster ${this.name}] GPU upload failed for ${key}:`, ack && ack.error);
@@ -12486,6 +12483,15 @@ var Curriculum = class _Curriculum {
   async _gateElaKReal() {
     const cluster = this.cluster;
     const ALPHABET = ALPHABET_ORDER;
+    if (cluster && cluster._gpuProxy && typeof cluster._gpuProxy.drainWait === "function") {
+      try {
+        console.log(`[Curriculum] T18.28 draining WebSocket queue before gate probe...`);
+        await cluster._gpuProxy.drainWait();
+        console.log(`[Curriculum] T18.28 drain complete \u2014 gate probe readbacks will land immediately.`);
+      } catch (err) {
+        console.warn(`[Curriculum] T18.28 drain-wait failed (proceeding anyway):`, err?.message || err);
+      }
+    }
     try {
       const _invSize = inventorySize();
       const _motorSize = (cluster?.regions?.motor?.end || 0) - (cluster?.regions?.motor?.start || 0);
