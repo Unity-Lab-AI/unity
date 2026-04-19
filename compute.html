@@ -216,12 +216,21 @@ function connectToServer() {
 
     // ── INIT: Server sends full voltages once per cluster ──
     if (msg.type === 'gpu_init' && gpuReady) {
-      const { clusterName, size, lifParams } = msg;
+      const { clusterName, size, lifParams, regions } = msg;
 
       // Initialize at Vrest — NO voltage transfer needed
       // GPU creates buffers and fills with Vrest internally. Zero JS allocation.
-      gpu.uploadCluster(clusterName, size, null, null, lifParams);
-      clusterState[clusterName] = { initialized: true, size, lifParams };
+      //
+      // T17.7 Phase B.1 — `regions` metadata carries per-cluster
+      // sub-region slice offsets + L/R side tags. uploadCluster
+      // validates and stores on bufs.regions; subsequent compute_batch
+      // calls updateRegionGates(clusterName, psi) populate the per-tick
+      // Ψ-modulated hemisphere gate table that LIF_SHADER reads.
+      // When regions is absent (clusters prior to this rollout), the
+      // cluster remains homogeneous (numRegions=0, gate=1.0) matching
+      // pre-B.1 behavior.
+      gpu.uploadCluster(clusterName, size, null, null, lifParams, regions);
+      clusterState[clusterName] = { initialized: true, size, lifParams, regions: regions || null };
 
       // Tell server this cluster is ready on GPU
       ws.send(JSON.stringify({ type: 'gpu_init_ack', clusterName, size }));

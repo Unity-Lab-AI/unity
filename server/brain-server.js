@@ -1334,6 +1334,75 @@ class ServerBrain {
    *
    * This cuts WebSocket traffic from ~10MB/step to ~100KB/step.
    */
+  /**
+   * T17.7 Phase B.1 — build the regions metadata object for a
+   * cluster's gpu_init message. For the main cortex cluster, returns
+   * the 8 language sub-regions (auditory / visual / free / letter /
+   * phon / sem / fineType / motor) with biological lateralization.
+   * For other clusters returns a single bilateral/center region
+   * spanning the whole cluster so the hemisphere gate stays at 1.0
+   * (no lateralization) but the side tag is still carried for future
+   * inter-cluster projection dispatch that may care about hemisphere.
+   *
+   * Main cortex layout — same fractional proportions as the standalone
+   * cortexCluster's sub-regions, scaled to the main cortex's size.
+   * Phase B.3 mirrors standalone cortexCluster.lastSpikes into these
+   * slices; Phase C migrates curriculum teach writes to land here
+   * directly; Phase E deletes the standalone cluster and promotes
+   * these slices to authoritative.
+   *
+   * L/R side tags per Gee 2026-04-18 "if we keep as is the non
+   * centered ones need mirroring to other brain side too as they are
+   * onlky one sided.. and proper left right gating":
+   *   - auditory / visual / free / sem:  bilateral
+   *     (primary sensory + working memory + semantic angular gyrus
+   *     span both hemispheres)
+   *   - letter / phon / fineType / motor: left-dominant
+   *     (Wernicke's + Broca's + VWFA + syntactic features; Lindell
+   *     2006 right-hemisphere homologs exist but are less specialized)
+   *   - hypothalamus / mystery: center (midline / commissural)
+   *   - everything else: bilateral
+   *
+   * Ψ gate per Phase A.3: bilateral/center returns 1.0 regardless of
+   * Ψ; left-dominant regions modulate by hemisphereGate(side, Ψ).
+   *
+   * @param {string} clusterName
+   * @param {number} size
+   * @returns {object | null}
+   */
+  _regionsFor(clusterName, size) {
+    if (clusterName === 'cortex') {
+      // Same fractional layout as the standalone cortexCluster's
+      // regions map (cluster.js). Scaled to main cortex size so the
+      // regions span the full cluster with no "homogeneous outside"
+      // gap — per Gee "NO intra-synapse matrix; wave functions sync
+      // activate via fractilization", the cortex IS its sub-regions.
+      const S = size;
+      return {
+        auditory:  { start: Math.floor(S * 0.000), end: Math.floor(S * 0.083), side: 'bilateral' },
+        visual:    { start: Math.floor(S * 0.083), end: Math.floor(S * 0.250), side: 'bilateral' },
+        free:      { start: Math.floor(S * 0.250), end: Math.floor(S * 0.500), side: 'bilateral' },
+        letter:    { start: Math.floor(S * 0.500), end: Math.floor(S * 0.550), side: 'left' },
+        phon:      { start: Math.floor(S * 0.550), end: Math.floor(S * 0.750), side: 'left' },
+        sem:       { start: Math.floor(S * 0.750), end: Math.floor(S * 0.917), side: 'bilateral' },
+        fineType:  { start: Math.floor(S * 0.917), end: Math.floor(S * 0.967), side: 'left' },
+        motor:     { start: Math.floor(S * 0.967), end: S,                      side: 'left' },
+      };
+    }
+    if (clusterName === 'hippocampus' || clusterName === 'amygdala'
+        || clusterName === 'basalGanglia' || clusterName === 'cerebellum') {
+      return {
+        whole: { start: 0, end: size, side: 'bilateral' },
+      };
+    }
+    if (clusterName === 'hypothalamus' || clusterName === 'mystery') {
+      return {
+        whole: { start: 0, end: size, side: 'center' },
+      };
+    }
+    return null;  // unknown cluster — no regions, homogeneous behavior
+  }
+
   async _gpuStep(clusterName) {
     if (!this._gpuClient || this._gpuClient.readyState !== 1) return null;
     if (!this._gpuPending) this._gpuPending = {};
@@ -1345,6 +1414,18 @@ class ServerBrain {
       // FIRST DISPATCH — tell GPU to create buffers at Vrest
       // DO NOT send voltage array — at 25.6M neurons that's 260MB base64.
       // GPU initializes its own voltages at Vrest. Same result, zero transfer.
+      //
+      // T17.7 Phase B.1 — regions metadata with L/R side tags. For the
+      // main cortex cluster, register the 8 language sub-regions with
+      // their biological lateralization (left-dominant for language
+      // production/recognition; bilateral for sensory primaries + free
+      // working memory). Other clusters get a single bilateral or
+      // center tag to match real neuroanatomy. When compute.html
+      // processes gpu_init with this metadata, uploadCluster stores
+      // the regions on bufs.regions and the Ψ-modulated hemisphere
+      // gate pipeline (Phase A.3) automatically activates for this
+      // cluster's LIF dispatch. Zero additional wire-up needed.
+      const regions = this._regionsFor(clusterName, size);
       this._gpuClient.send(JSON.stringify({
         type: 'gpu_init',
         clusterName,
@@ -1352,9 +1433,11 @@ class ServerBrain {
         tonicDrive: this.tonicDrives[clusterName],
         noiseAmp: this.noiseAmplitudes[clusterName],
         lifParams: { tau: 20, Vrest: -65, Vthresh: -50, Vreset: -70, dt: 1, R: 1, tRefrac: 2 },
+        regions,
       }));
       this._gpuInitialized[clusterName] = true;
-      console.log(`[Brain] GPU init sent: ${clusterName} (${size.toLocaleString()} neurons)`);
+      const regionCount = regions ? Object.keys(regions).length : 0;
+      console.log(`[Brain] GPU init sent: ${clusterName} (${size.toLocaleString()} neurons${regionCount > 0 ? `, ${regionCount} sub-regions` : ''})`);
       return Promise.resolve(null);
     }
 
