@@ -4068,6 +4068,23 @@ export class Curriculum {
   async _gateElaKReal() {
     const cluster = this.cluster;
     const ALPHABET = ALPHABET_ORDER;
+
+    // T18.28 — drain-wait before gate probe. Gee 2026-04-19 froze after
+    // "[K-DIAG] gate: ..." log fired — gate-probe readbacks queue
+    // behind pending Hebbian frames in compute.html's serial onmessage
+    // queue. With ~17000 lifetime frames and 19-28 frames/sec drain
+    // rate, a readback request could wait 10+ minutes to land. Wait
+    // for bufferedAmount to drop below 10MB before firing probe reads.
+    if (cluster && cluster._gpuProxy && typeof cluster._gpuProxy.drainWait === 'function') {
+      try {
+        console.log(`[Curriculum] T18.28 draining WebSocket queue before gate probe...`);
+        await cluster._gpuProxy.drainWait();
+        console.log(`[Curriculum] T18.28 drain complete — gate probe readbacks will land immediately.`);
+      } catch (err) {
+        console.warn(`[Curriculum] T18.28 drain-wait failed (proceeding anyway):`, err?.message || err);
+      }
+    }
+
     // Session 114.19i T16.5 diagnostic — inventory + mGroup at GATE time.
     // If this doesn't match the pre-emission diagnostic, the motor tiling
     // drifted between teach and probe and the argmax reads wrong slots.
