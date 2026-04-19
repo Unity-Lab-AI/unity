@@ -600,7 +600,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "dc1756f0-9de0";
+var BUILD = "62786614-e6be";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -12529,7 +12529,12 @@ var Curriculum = class _Curriculum {
       const d = Math.sqrt(na) * Math.sqrt(nb);
       return d > 0 ? dot / d : 0;
     }
+    const _gateLetterStart = Date.now();
+    let _gateLetterIdx = 0;
+    console.log(`[Curriculum][K-DIAG] gate probe starting letter loop (${ALPHABET.length} letters \xD7 READ+TALK)...`);
     for (const letter of ALPHABET) {
+      _gateLetterIdx++;
+      const _letterStart = Date.now();
       const letterOneHot = encodeLetter(letter);
       const letterPat = new Float64Array(letterSize);
       const lGSize = Math.max(1, Math.floor(letterSize / letterOneHot.length));
@@ -12541,29 +12546,38 @@ var Curriculum = class _Curriculum {
         }
       }
       if (letterToPhon) {
-        const phonOutput = letterToPhon.propagate(letterPat);
-        const PHON_DIM = 24;
-        const pGSize = Math.max(1, Math.floor(phonSize / PHON_DIM));
-        const phonReadout = new Float64Array(PHON_DIM);
-        for (let d = 0; d < PHON_DIM; d++) {
-          let sum = 0;
-          for (let n = 0; n < pGSize; n++) {
-            const idx = d * pGSize + n;
-            if (idx < phonOutput.length) sum += phonOutput[idx];
+        if (!letterToPhon.values || !letterToPhon.colIdx || !letterToPhon.rowPtr) {
+          console.warn(`[Curriculum][K-DIAG] letter '${letter}' READ: letterToPhon CSR arrays null (values=${letterToPhon.values?.length || "null"}, colIdx=${letterToPhon.colIdx?.length || "null"}, rowPtr=${letterToPhon.rowPtr?.length || "null"}) \u2014 skipping READ probe`);
+        } else {
+          const _readStart = Date.now();
+          const phonOutput = letterToPhon.propagate(letterPat);
+          const _readMs = Date.now() - _readStart;
+          if (_letterStart && _gateLetterIdx <= 3) {
+            console.log(`[Curriculum][K-DIAG] letter '${letter}' READ propagate ${_readMs}ms (phonOutput.length=${phonOutput.length})`);
           }
-          phonReadout[d] = sum / pGSize;
+          const PHON_DIM = 24;
+          const pGSize = Math.max(1, Math.floor(phonSize / PHON_DIM));
+          const phonReadout = new Float64Array(PHON_DIM);
+          for (let d = 0; d < PHON_DIM; d++) {
+            let sum = 0;
+            for (let n = 0; n < pGSize; n++) {
+              const idx = d * pGSize + n;
+              if (idx < phonOutput.length) sum += phonOutput[idx];
+            }
+            phonReadout[d] = sum / pGSize;
+          }
+          let mean = 0;
+          for (let i = 0; i < PHON_DIM; i++) mean += phonReadout[i];
+          mean /= PHON_DIM;
+          for (let i = 0; i < PHON_DIM; i++) phonReadout[i] -= mean;
+          let norm = 0;
+          for (let i = 0; i < PHON_DIM; i++) norm += phonReadout[i] * phonReadout[i];
+          norm = Math.sqrt(norm) || 1;
+          for (let i = 0; i < PHON_DIM; i++) phonReadout[i] /= norm;
+          const expectedPhon = _phonemeFeatureForLetter(letter);
+          const readCos = cosine(phonReadout, expectedPhon);
+          if (readCos > READ_COS_MIN) readPass++;
         }
-        let mean = 0;
-        for (let i = 0; i < PHON_DIM; i++) mean += phonReadout[i];
-        mean /= PHON_DIM;
-        for (let i = 0; i < PHON_DIM; i++) phonReadout[i] -= mean;
-        let norm = 0;
-        for (let i = 0; i < PHON_DIM; i++) norm += phonReadout[i] * phonReadout[i];
-        norm = Math.sqrt(norm) || 1;
-        for (let i = 0; i < PHON_DIM; i++) phonReadout[i] /= norm;
-        const expectedPhon = _phonemeFeatureForLetter(letter);
-        const readCos = cosine(phonReadout, expectedPhon);
-        if (readCos > READ_COS_MIN) readPass++;
       }
       const allProjs = cluster.crossProjections || {};
       let motorOutput = null;
@@ -12571,7 +12585,15 @@ var Curriculum = class _Curriculum {
         if (pname.endsWith("_to_motor")) {
           const srcName = pname.slice(0, pname.indexOf("_to_"));
           if (srcName === "letter") {
-            motorOutput = proj.propagate(letterPat);
+            if (!proj.values || !proj.colIdx || !proj.rowPtr) {
+              console.warn(`[Curriculum][K-DIAG] letter '${letter}' TALK: ${pname} CSR arrays null \u2014 skipping TALK direct`);
+            } else {
+              const _talkStart = Date.now();
+              motorOutput = proj.propagate(letterPat);
+              if (_gateLetterIdx <= 3) {
+                console.log(`[Curriculum][K-DIAG] letter '${letter}' TALK via ${pname} propagate ${Date.now() - _talkStart}ms`);
+              }
+            }
             break;
           }
         }
@@ -12601,7 +12623,12 @@ var Curriculum = class _Curriculum {
         const decoded = decodeLetter(motorReadout);
         if (decoded === letter) talkPass++;
       }
+      const _letterMs = Date.now() - _letterStart;
+      if (_letterMs > 2e3 || _gateLetterIdx === 1 || _gateLetterIdx === 13 || _gateLetterIdx === 26) {
+        console.log(`[Curriculum][K-DIAG] gate letter ${_gateLetterIdx}/26 '${letter}' done in ${_letterMs}ms (readPass=${readPass} talkPass=${talkPass} so far)`);
+      }
     }
+    console.log(`[Curriculum][K-DIAG] gate letter loop DONE in ${Date.now() - _gateLetterStart}ms \u2014 readPass=${readPass}/26, talkPass=${talkPass}/26`);
     const thinkPass = ALPHABET.length;
     let seqPass = 0;
     for (let i = 0; i < ALPHABET.length - 1; i++) {
