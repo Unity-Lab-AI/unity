@@ -71,20 +71,20 @@ const LIF_SHADER = /* wgsl */`
   @group(0) @binding(3) var<storage, read> currents: array<f32>;           // T18.4.a — per-neuron synaptic current
   // T17.7 Phase A.3 — per-region hemispheric gate table. Packed as a
   // flat f32 array where each region takes 4 entries: [start, end,
-  // gate, pad]. `numRegions` (in params) tells the shader how many
+  // gate, pad]. numRegions (in params) tells the shader how many
   // regions to scan. Gate is precomputed server-side as
-  // `hemisphereGate(side, Ψ) = 0.5 + 0.5 · sigmoid(Ψ · 4.0)` for
+  // hemisphereGate(side, psi) = 0.5 + 0.5 * sigmoid(psi * 4.0) for
   // lateralized regions, 1.0 for bilateral/center. When a neuron
   // index falls outside every registered region, gate defaults to
   // 1.0 (homogeneous-cortex neurons outside language sub-regions).
   //
-  // Mystery Ψ binding constraint (Gee 2026-04-18): the shader's
-  // per-neuron drive is modulated by `neuronDrive * regionGate`
-  // so Ψ is woven into the main equation at the firing-decision
+  // Mystery psi binding constraint (Gee 2026-04-18): the shader's
+  // per-neuron drive is modulated by neuronDrive * regionGate
+  // so psi is woven into the main equation at the firing-decision
   // level, not just in the global gainMultiplier already baked into
-  // effectiveDrive. Two Ψ factors — one global (gainMultiplier),
+  // effectiveDrive. Two psi factors — one global (gainMultiplier),
   // one per-region (hemispheric binding) — matching the
-  // consciousness architecture where Ψ both modulates overall
+  // consciousness architecture where psi both modulates overall
   // cortical gain AND shapes hemispheric integration.
   @group(0) @binding(4) var<storage, read> regionGates: array<f32>;
 
