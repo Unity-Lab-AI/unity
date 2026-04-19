@@ -983,18 +983,36 @@ async function init() {
     }
     sensoryStatus.init(providers);
 
-    // Fire the auto-detect probes (non-blocking). Refresh the
-    // inventory panel whenever they resolve so the user sees results
-    // land in real time as each probe completes.
-    if (typeof providers.autoDetect === 'function') {
-      providers.autoDetect()
-        .then(() => renderSensoryInventory())
-        .catch(err => console.warn('[Unity] image backend auto-detect failed:', err.message));
-    }
-    if (typeof providers.autoDetectVision === 'function') {
-      providers.autoDetectVision()
-        .then(() => renderSensoryInventory())
-        .catch(err => console.warn('[Unity] vision backend auto-detect failed:', err.message));
+    // Auto-detect is OPT-IN per Gee 2026-04-18: the default boot
+    // probes were hitting 11 common local AI ports (ComfyUI /
+    // Stable Diffusion / LocalAI / Ollama / Forge / etc) every
+    // page load. Almost nobody has all of those running, so every
+    // probe failed with ERR_CONNECTION_REFUSED and the browser's
+    // network layer logged each as a red error — the console
+    // looked broken even though the brain was fine. Pollinations
+    // works out of the box without any of this, so the sensible
+    // default is "don't probe unless the user told us to".
+    //
+    // Enable by setting ENV_KEYS.probeLocalAI = true in env.js OR
+    // localStorage.unity_probe_local_ai = '1' from the setup
+    // modal toggle. When off (default) we skip both probes
+    // entirely and the inventory renders with zero local backends
+    // — Pollinations + user-configured API keys still work.
+    const probeEnv = (ENV_KEYS && ENV_KEYS.probeLocalAI === true);
+    const probeLs = (typeof localStorage !== 'undefined' && localStorage.getItem('unity_probe_local_ai') === '1');
+    if (probeEnv || probeLs) {
+      if (typeof providers.autoDetect === 'function') {
+        providers.autoDetect()
+          .then(() => renderSensoryInventory())
+          .catch(err => console.warn('[Unity] image backend auto-detect failed:', err.message));
+      }
+      if (typeof providers.autoDetectVision === 'function') {
+        providers.autoDetectVision()
+          .then(() => renderSensoryInventory())
+          .catch(err => console.warn('[Unity] vision backend auto-detect failed:', err.message));
+      }
+    } else {
+      console.log('[Unity] Local AI backend auto-detect is OFF. Set ENV_KEYS.probeLocalAI=true in env.js or localStorage.unity_probe_local_ai="1" via the setup modal to enable probing ComfyUI / Stable Diffusion / LocalAI / Ollama / etc on boot.');
     }
   } catch (err) {
     console.warn('[Unity] sensory providers page-load init failed:', err.message);
@@ -2040,8 +2058,15 @@ async function bootUnity(apiKey, perms) {
       });
     }
     sensoryStatus.init(providers);
-    if (typeof providers.autoDetect === 'function') providers.autoDetect().catch(err => console.warn('[Unity] image probe failed:', err.message));
-    if (typeof providers.autoDetectVision === 'function') providers.autoDetectVision().catch(err => console.warn('[Unity] vision probe failed:', err.message));
+    // Opt-in probe — see the init() handler above for rationale.
+    // Default OFF; enable via ENV_KEYS.probeLocalAI or
+    // localStorage.unity_probe_local_ai = '1'.
+    const probeEnvBoot = (ENV_KEYS && ENV_KEYS.probeLocalAI === true);
+    const probeLsBoot = (typeof localStorage !== 'undefined' && localStorage.getItem('unity_probe_local_ai') === '1');
+    if (probeEnvBoot || probeLsBoot) {
+      if (typeof providers.autoDetect === 'function') providers.autoDetect().catch(err => console.warn('[Unity] image probe failed:', err.message));
+      if (typeof providers.autoDetectVision === 'function') providers.autoDetectVision().catch(err => console.warn('[Unity] vision probe failed:', err.message));
+    }
   }
 
   voice = new VoiceIO();
