@@ -181,16 +181,18 @@ const LIF_SHADER = /* wgsl */`
 
 const SYNAPSE_PROPAGATE_SHADER = /* wgsl */`
   struct Params {
-    n: u32,        // number of post-synaptic neurons
-    nnz: u32,      // total non-zero entries
+    n: u32,          // number of post-synaptic neurons
+    nnz: u32,        // total non-zero entries
+    srcOffset: u32,  // T17.7 Phase A.4 — read spikes at [srcOffset + colIdx[k]] when cluster-bound
+    dstOffset: u32,  // T17.7 Phase A.4 — write currents at [dstOffset + i] when cluster-bound
   };
 
   @group(0) @binding(0) var<uniform> params: Params;
   @group(0) @binding(1) var<storage, read> values: array<f32>;    // CSR values
   @group(0) @binding(2) var<storage, read> colIdx: array<u32>;    // CSR column indices
   @group(0) @binding(3) var<storage, read> rowPtr: array<u32>;    // CSR row pointers
-  @group(0) @binding(4) var<storage, read> spikes: array<u32>;    // pre-synaptic spikes
-  @group(0) @binding(5) var<storage, read_write> currents: array<f32>; // output currents
+  @group(0) @binding(4) var<storage, read> spikes: array<u32>;    // pre-synaptic spikes (slice of cluster spikes when cluster-bound)
+  @group(0) @binding(5) var<storage, read_write> currents: array<f32>; // output currents (slice of cluster currents when cluster-bound)
 
   @compute @workgroup_size(256)
   fn main(@builtin(global_invocation_id) id: vec3<u32>) {
@@ -203,12 +205,18 @@ const SYNAPSE_PROPAGATE_SHADER = /* wgsl */`
 
     for (var k = start; k < end; k++) {
       let j = colIdx[k];
-      if (spikes[j] != 0u) {
+      if (spikes[params.srcOffset + j] != 0u) {
         sum += values[k];
       }
     }
 
-    currents[i] += sum;
+    // T17.7 Phase A.4 — write to destination offset within the bound
+    // cluster's currents buffer. When the sparse matrix is STANDALONE
+    // (default standalone mode), srcOffset+dstOffset are both 0 and
+    // behavior is identical to pre-A.4 — spikes[] and currents[] point
+    // to the matrix's own preSpikes/postCurrents buffers with indices
+    // starting at 0.
+    currents[params.dstOffset + i] += sum;
   }
 `;
 
@@ -216,10 +224,12 @@ const PLASTICITY_SHADER = /* wgsl */`
   struct Params {
     n: u32,
     nnz: u32,
-    lr: f32,       // learning rate
-    reward: f32,   // reward signal
+    lr: f32,         // learning rate
+    reward: f32,     // reward signal
     wMin: f32,
     wMax: f32,
+    srcOffset: u32,  // T17.7 Phase A.4 — preSpikes[srcOffset + j] when cluster-bound
+    dstOffset: u32,  // T17.7 Phase A.4 — postSpikes[dstOffset + i] when cluster-bound
   };
 
   @group(0) @binding(0) var<uniform> params: Params;
@@ -233,7 +243,7 @@ const PLASTICITY_SHADER = /* wgsl */`
   fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let i = id.x;
     if (i >= params.n) { return; }
-    if (postSpikes[i] == 0u) { return; }
+    if (postSpikes[params.dstOffset + i] == 0u) { return; }
 
     let factor = params.lr * params.reward;
     let start = rowPtr[i];
@@ -241,7 +251,7 @@ const PLASTICITY_SHADER = /* wgsl */`
 
     for (var k = start; k < end; k++) {
       let j = colIdx[k];
-      if (preSpikes[j] != 0u) {
+      if (preSpikes[params.srcOffset + j] != 0u) {
         var w = values[k] + factor;
         w = clamp(w, params.wMin, params.wMax);
         values[k] = w;
@@ -929,8 +939,24 @@ export class GPUCompute {
    * @param {Float32Array|Float64Array} values — CSR non-zero weights, length = nnz
    * @param {Uint32Array} colIdx — CSR column indices, length = nnz
    * @param {Uint32Array} rowPtr — CSR row pointers, length = rows + 1
+   * @param {object} [binding] — T17.7 Phase A.4 — optional cluster-
+   *   binding metadata so the sparse matrix addresses slices of live
+   *   cluster buffers instead of standalone preSpikes/postCurrents.
+   *   Shape: `{srcCluster, srcRegion, dstCluster, dstRegion}`. When
+   *   provided:
+   *     - `propagateSparse` reads pre-spikes from `bufs[srcCluster].spikes`
+   *       at `srcRegion.start` offset and writes post-currents to
+   *       `bufs[dstCluster].currents` at `dstRegion.start` offset
+   *     - `hebbianSparse` reads both pre + post spikes from their
+   *       respective cluster spike buffers at region offsets
+   *     - Standalone `preSpikes` / `postCurrents` / `postSpikes`
+   *       buffers on the matrix entry are NOT allocated (saves
+   *       VRAM; cross-projections that sit inside the main cortex
+   *       don't need their own standalone spike mirrors)
+   *   When `binding` is omitted, behavior is identical to pre-A.4
+   *   (standalone mode, default preSpikes/postCurrents buffers, offsets 0).
    */
-  uploadSparseMatrix(name, rows, cols, values, colIdx, rowPtr) {
+  uploadSparseMatrix(name, rows, cols, values, colIdx, rowPtr, binding) {
     if (!this._available) return false;
     const device = this._device;
     const vals32 = values instanceof Float32Array ? values : new Float32Array(values);
@@ -964,19 +990,54 @@ export class GPUCompute {
       values: valuesBuf,
       colIdx: colIdxBuf,
       rowPtr: rowPtrBuf,
-      preSpikes: device.createBuffer({
+    };
+    // T17.7 Phase A.4 — cluster-bound vs standalone mode.
+    //
+    // Cluster-bound: the matrix reads pre-spikes from a source
+    // cluster's spikes buffer at a slice offset, writes post-currents
+    // to a destination cluster's currents buffer at a slice offset.
+    // No standalone preSpikes/postCurrents/postSpikes buffers
+    // allocated — saves VRAM at biological scale (bandwidth alone at
+    // M+ scale would be substantial for standalone spike mirrors).
+    //
+    // Standalone (default): matrix owns its own pre/post/currents
+    // buffers at sizes `cols × 4` + `rows × 4`. Backward-compatible
+    // with pre-A.4 callers that haven't been migrated to cluster-
+    // bound yet.
+    if (binding && binding.srcCluster && binding.dstCluster) {
+      const srcBufs = this._buffers[binding.srcCluster];
+      const dstBufs = this._buffers[binding.dstCluster];
+      if (!srcBufs?.spikes || !dstBufs?.currents) {
+        console.warn(`[GPUCompute] uploadSparseMatrix ${name}: cluster-bound mode requires src(${binding.srcCluster}) + dst(${binding.dstCluster}) both uploaded first`);
+        return false;
+      }
+      entry.binding = {
+        srcCluster: binding.srcCluster,
+        srcRegion: binding.srcRegion || { start: 0, end: cols },
+        dstCluster: binding.dstCluster,
+        dstRegion: binding.dstRegion || { start: 0, end: rows },
+      };
+      // Validate that slice sizes match matrix dimensions.
+      const srcLen = entry.binding.srcRegion.end - entry.binding.srcRegion.start;
+      const dstLen = entry.binding.dstRegion.end - entry.binding.dstRegion.start;
+      if (srcLen !== cols || dstLen !== rows) {
+        console.warn(`[GPUCompute] uploadSparseMatrix ${name} binding size mismatch: srcRegion len=${srcLen} vs cols=${cols}; dstRegion len=${dstLen} vs rows=${rows}`);
+      }
+    } else {
+      // Standalone mode — allocate own buffers.
+      entry.preSpikes = device.createBuffer({
         size: cols * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-      }),
-      postCurrents: device.createBuffer({
+      });
+      entry.postCurrents = device.createBuffer({
         size: rows * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
-      }),
-      postSpikes: device.createBuffer({
+      });
+      entry.postSpikes = device.createBuffer({
         size: rows * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-      }),
-    };
+      });
+    }
     this._sparseMatrices[name] = entry;
     return true;
   }
@@ -987,7 +1048,7 @@ export class GPUCompute {
   // writeBuffer at offsets, marks the matrix live when the last chunk
   // arrives. Zero 480MB JS-heap buffer; chunk bytes go straight from
   // the receive ArrayBuffer to GPU memory.
-  _beginSparseUpload(name, rows, cols, nnz, rowPtr) {
+  _beginSparseUpload(name, rows, cols, nnz, rowPtr, binding) {
     if (!this._available) return false;
     const device = this._device;
     const rowPtr32 = rowPtr instanceof Uint32Array ? rowPtr : new Uint32Array(rowPtr);
@@ -1000,20 +1061,39 @@ export class GPUCompute {
       values: makeStorage(nnz * 4),
       colIdx: makeStorage(nnz * 4),
       rowPtr: makeStorage(rowPtr32.byteLength),
-      preSpikes: device.createBuffer({
-        size: cols * 4,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-      }),
-      postCurrents: device.createBuffer({
-        size: rows * 4,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
-      }),
-      postSpikes: device.createBuffer({
-        size: rows * 4,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-      }),
       _pending: true,
     };
+    // T17.7 Phase A.4 — chunked upload path gains cluster-binding
+    // parameter. Same cluster-bound vs standalone split as
+    // uploadSparseMatrix: bound mode reads/writes cluster buffers at
+    // region offsets; standalone allocates its own pre/post/currents.
+    if (binding && binding.srcCluster && binding.dstCluster) {
+      const srcBufs = this._buffers[binding.srcCluster];
+      const dstBufs = this._buffers[binding.dstCluster];
+      if (!srcBufs?.spikes || !dstBufs?.currents) {
+        console.warn(`[GPUCompute] _beginSparseUpload ${name}: cluster-bound requires src(${binding.srcCluster}) + dst(${binding.dstCluster}) both uploaded first`);
+        return false;
+      }
+      entry.binding = {
+        srcCluster: binding.srcCluster,
+        srcRegion: binding.srcRegion || { start: 0, end: cols },
+        dstCluster: binding.dstCluster,
+        dstRegion: binding.dstRegion || { start: 0, end: rows },
+      };
+    } else {
+      entry.preSpikes = device.createBuffer({
+        size: cols * 4,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+      });
+      entry.postCurrents = device.createBuffer({
+        size: rows * 4,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
+      });
+      entry.postSpikes = device.createBuffer({
+        size: rows * 4,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+      });
+    }
     device.queue.writeBuffer(entry.rowPtr, 0, rowPtr32.buffer, rowPtr32.byteOffset, rowPtr32.byteLength);
     this._sparseMatrices[name] = entry;
     return true;
@@ -1052,10 +1132,28 @@ export class GPUCompute {
     const entry = this._sparseMatrices[name];
     if (!entry) return null;
     const device = this._device;
-    const pass = device.createCommandEncoder().beginComputePass();
-    // Reuse the synapse propagate pipeline + layout from the main cluster path.
-    // Params layout matches SYNAPSE_PROPAGATE_SHADER (n, nnz).
-    const params = new Uint32Array([entry.rows, entry.nnz]);
+
+    // T17.7 Phase A.4 — cluster-bound vs standalone dispatch.
+    // Cluster-bound: pre-spikes read from bound src cluster's spikes
+    // at srcRegion.start offset; post-currents accumulate into bound
+    // dst cluster's currents at dstRegion.start offset. The shader
+    // reads srcOffset + dstOffset from the params uniform so no
+    // buffer-level rebinding is needed — same pipeline, same layout,
+    // just different offset values.
+    // Standalone: pre-spikes from entry.preSpikes, post-currents
+    // accumulate into entry.postCurrents, offsets are 0.
+    const bound = !!entry.binding;
+    const srcBuf = bound
+      ? this._buffers[entry.binding.srcCluster].spikes
+      : entry.preSpikes;
+    const dstBuf = bound
+      ? this._buffers[entry.binding.dstCluster].currents
+      : entry.postCurrents;
+    const srcOffset = bound ? entry.binding.srcRegion.start : 0;
+    const dstOffset = bound ? entry.binding.dstRegion.start : 0;
+
+    // Params: n (u32), nnz (u32), srcOffset (u32), dstOffset (u32) = 16 bytes
+    const params = new Uint32Array([entry.rows, entry.nnz, srcOffset, dstOffset]);
     const paramsBuf = this._createBuffer(params, GPUBufferUsage.UNIFORM);
     const bindGroup = device.createBindGroup({
       layout: this._pipelines.propagate.getBindGroupLayout(0),
@@ -1064,21 +1162,27 @@ export class GPUCompute {
         { binding: 1, resource: { buffer: entry.values } },
         { binding: 2, resource: { buffer: entry.colIdx } },
         { binding: 3, resource: { buffer: entry.rowPtr } },
-        { binding: 4, resource: { buffer: entry.preSpikes } },
-        { binding: 5, resource: { buffer: entry.postCurrents } },
+        { binding: 4, resource: { buffer: srcBuf } },
+        { binding: 5, resource: { buffer: dstBuf } },
       ],
     });
+    const encoder = device.createCommandEncoder();
+    const pass = encoder.beginComputePass();
     pass.setPipeline(this._pipelines.propagate);
     pass.setBindGroup(0, bindGroup);
     pass.dispatchWorkgroups(Math.ceil(entry.rows / 256));
     pass.end();
-    // Readback via temporary mapped buffer
-    const encoder = device.createCommandEncoder();
+
+    // Readback the rows-range into a temporary mapped buffer. For
+    // cluster-bound mode the currents live inside the cluster buffer
+    // at dstOffset — copy that slice out instead of the whole cluster
+    // currents buffer. For standalone mode copy the entire
+    // postCurrents buffer as before.
     const readback = device.createBuffer({
       size: entry.rows * 4,
       usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
     });
-    encoder.copyBufferToBuffer(entry.postCurrents, 0, readback, 0, entry.rows * 4);
+    encoder.copyBufferToBuffer(dstBuf, dstOffset * 4, readback, 0, entry.rows * 4);
     device.queue.submit([encoder.finish()]);
     await readback.mapAsync(GPUMapMode.READ);
     const out = new Float32Array(readback.getMappedRange().slice(0));
@@ -1102,11 +1206,29 @@ export class GPUCompute {
     const entry = this._sparseMatrices[name];
     if (!entry) return false;
     const device = this._device;
-    const params = new Float32Array([entry.rows, entry.nnz, lr, 1.0, -2.0, 2.0]);
-    // Pack: n (u32), nnz (u32), lr (f32), reward (f32), wMin (f32), wMax (f32)
-    const paramsView = new ArrayBuffer(24);
+
+    // T17.7 Phase A.4 — cluster-bound vs standalone dispatch.
+    // Cluster-bound: pre-spikes read from src cluster's spikes at
+    // srcRegion.start offset; post-spikes read from dst cluster's
+    // spikes at dstRegion.start offset (same spikes buffer as used
+    // by LIF — post-synaptic neurons fire here). Standalone: from
+    // entry.preSpikes / entry.postSpikes at offset 0.
+    const bound = !!entry.binding;
+    const srcBuf = bound
+      ? this._buffers[entry.binding.srcCluster].spikes
+      : entry.preSpikes;
+    const dstBuf = bound
+      ? this._buffers[entry.binding.dstCluster].spikes
+      : entry.postSpikes;
+    const srcOffset = bound ? entry.binding.srcRegion.start : 0;
+    const dstOffset = bound ? entry.binding.dstRegion.start : 0;
+
+    // Pack: n (u32), nnz (u32), lr (f32), reward (f32), wMin (f32),
+    // wMax (f32), srcOffset (u32), dstOffset (u32) = 32 bytes
+    const paramsView = new ArrayBuffer(32);
     new Uint32Array(paramsView, 0, 2).set([entry.rows, entry.nnz]);
     new Float32Array(paramsView, 8, 4).set([lr, 1.0, -2.0, 2.0]);
+    new Uint32Array(paramsView, 24, 2).set([srcOffset, dstOffset]);
     const paramsBuf = this._createBuffer(new Uint8Array(paramsView), GPUBufferUsage.UNIFORM);
     const bindGroup = device.createBindGroup({
       layout: this._pipelines.plasticity.getBindGroupLayout(0),
@@ -1115,8 +1237,8 @@ export class GPUCompute {
         { binding: 1, resource: { buffer: entry.values } },
         { binding: 2, resource: { buffer: entry.colIdx } },
         { binding: 3, resource: { buffer: entry.rowPtr } },
-        { binding: 4, resource: { buffer: entry.preSpikes } },
-        { binding: 5, resource: { buffer: entry.postSpikes } },
+        { binding: 4, resource: { buffer: srcBuf } },
+        { binding: 5, resource: { buffer: dstBuf } },
       ],
     });
     const encoder = device.createCommandEncoder();
@@ -1137,6 +1259,11 @@ export class GPUCompute {
   writeSparsePreSpikes(name, spikes) {
     const entry = this._sparseMatrices[name];
     if (!entry) return false;
+    // T17.7 Phase A.4 — cluster-bound matrices don't have standalone
+    // preSpikes (they read from the bound src cluster's spikes buffer
+    // via the LIF-populated slice). Skip silently — the spikes are
+    // already in the cluster's spike buffer from the last LIF step.
+    if (!entry.preSpikes) return true;
     const data = spikes instanceof Uint32Array ? spikes
       : spikes instanceof Uint8Array ? Uint32Array.from(spikes)
       : new Uint32Array(spikes);
@@ -1150,6 +1277,7 @@ export class GPUCompute {
   writeSparsePostSpikes(name, spikes) {
     const entry = this._sparseMatrices[name];
     if (!entry) return false;
+    if (!entry.postSpikes) return true;  // cluster-bound: post-spikes live in cluster buffer
     const data = spikes instanceof Uint32Array ? spikes
       : spikes instanceof Uint8Array ? Uint32Array.from(spikes)
       : new Uint32Array(spikes);
