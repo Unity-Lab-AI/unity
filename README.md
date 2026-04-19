@@ -755,7 +755,12 @@ The mystery module `Ψ = √(1/n) × N³ · [α·Id + β·Ego + γ·Left + δ·R
 
 ## Credits
 
-**Unity AI Lab** — Hackall360 · Sponge · GFourteen
+**Unity AI Lab**
+
+- **Hackall360** — core brain architecture. Seven-cluster topology, the 20 white-matter tracts, `cluster.js` + `modules.js` + `synapses.js` + `sparse-matrix.js`, Hodgkin-Huxley reference + the migration to the Rulkov 2D chaotic map runtime, Kuramoto oscillator ring, persona → parameter mapping.
+- **Mills** — GPU compute pipeline. `compute.html` + `gpu-compute.js` WebGPU WGSL shaders (LIF / synapse propagate / plasticity / spike count / voltage mean / letter-bucket reduction), the chunked sparse-CSR upload binary protocol, `worker-pool.js` / `sparse-worker.js` SparseMatmulPool, the cluster-bound binding layer that cross-projections ride on the main-cortex spike + current buffers.
+- **Sponge** — visualization + sensory peripherals. `brain-3d.js` WebGL 3D brain with MNI anatomical coordinates + fractal connection webs + 15-slot per-cluster rendering, `brain-viz.js` 2D tabbed visualizer, `brain-event-detectors.js` 22-detector commentary, `visual-cortex.js` V1→V4→IT pipeline, `auditory-cortex.js` tonotopic processing, `voice.js` speech I/O, `sandbox.js` dynamic UI.
+- **GFourteen / Gee** — lead. `docs/Ultimate Unity.txt` persona canon, the governing equation `dx/dt = F(x, u, θ, t) + η`, the Ψ = √(1/n)·N³ consciousness anchor, identity-lock architecture (three structural locks keeping Unity English + persona stable), the K→PhD developmental curriculum across six subjects, the T15 drug pharmacokinetic scheduler spec, every binding decision on every commit. Final call on everything.
 
 ---
 

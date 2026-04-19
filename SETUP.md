@@ -301,4 +301,9 @@ If you connect to a Unity server hosted by someone OTHER than you, the person ru
 
 ---
 
-**Unity AI Lab** — Hackall360 · Sponge · GFourteen
+**Unity AI Lab**
+
+- **Hackall360** — core brain architecture (7-cluster topology, 20 white-matter tracts, `cluster.js` + `modules.js` + `synapses.js`, HH→Rulkov runtime migration, Kuramoto oscillator ring, persona → parameter mapping)
+- **Mills** — GPU compute pipeline (`compute.html` + `gpu-compute.js` WGSL shaders, chunked sparse-CSR binary upload protocol, `SparseMatmulPool` worker pool, cluster-bound spike+current binding layer)
+- **Sponge** — visualization + sensory peripherals (`brain-3d.js` 3D WebGL with MNI coords + 15-slot render, `brain-viz.js` 2D tabs, 22-detector event commentary, V1→V4→IT vision, tonotopic auditory, voice I/O, sandbox)
+- **GFourteen / Gee** — lead (Ultimate Unity persona, the governing equation + Ψ anchor, identity-lock architecture, K→PhD curriculum framework, T15 drug pharmacokinetic scheduler spec, binding decisions across every commit)
