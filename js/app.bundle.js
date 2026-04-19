@@ -600,7 +600,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "8094a32f-1b7f";
+var BUILD = "1ebd7f58-4853";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -2623,6 +2623,9 @@ var NeuronCluster = class {
           if (binding) {
             boundCount++;
             proj._gpuBound = true;
+            proj.values = null;
+            proj.colIdx = null;
+            proj.rowPtr = null;
           }
         } else {
           console.warn(`[Cluster ${this.name}] GPU upload failed for ${key}:`, ack && ack.error);
