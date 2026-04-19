@@ -835,21 +835,135 @@ class ServerBrain {
         v8BasedMax = Math.floor(clusterHeapBudget / LANG_CLUSTER_BYTES_PER_NEURON);
       } catch { /* v8 module missing — skip heap-based bound */ }
 
-      // T17.3.f — VRAM budget comes from the UNIFIED allocator (single
-      // source of truth for the 16 GB pool, shared with main-brain sizing).
-      // Replaces the broken parallel calculation that double-counted the
-      // 7×bindingCeilingMB worst case. See BRAIN_VRAM_ALLOC at top of file.
-      const GPU_BYTES_PER_NEURON_SPARSE = BRAIN_VRAM_ALLOC.LANG_CORTEX_BYTES_PER_NEURON;
-      const vramBasedMax = Math.floor(LANG_CORTEX_VRAM_BUDGET_BYTES / GPU_BYTES_PER_NEURON_SPARSE);
+      // T18.6.c — VRAM budget pre-flight with auto-rescale loop-back
+      // (Gee 2026-04-18: "for 3. make it loop back to scaling with the
+      //  changes needed"). The prior `LANG_CORTEX_BYTES_PER_NEURON = 18
+      // × 1024` static coefficient UNDER-estimated real footprint: the
+      // 2026-04-18 crash log showed 14 cross-projections summing 7.9 GB
+      // plus intra-synapses 881 MB = ~8.8 GB actual on a ~350K
+      // langCortexSize run, for an empirical 25 KB/neuron. Since the
+      // VRAM budget slice was 6.45 GB (45% × 14.3 GB brain budget), the
+      // overflow of ~2.3 GB drove the cortex-plus-cross-projections
+      // peak above the 16 GB GPU's usable ~13 GB and WebGPU killed the
+      // device mid-upload. Phantom "size too large" errors followed
+      // (see T18.6.a).
+      //
+      // The fix replaces the static coefficient with a geometry-aware
+      // estimator that computes actual sparse-matrix footprint at the
+      // trial size, compares to `LANG_CORTEX_VRAM_BUDGET_BYTES`, and
+      // scales the trial size DOWN iteratively when projected >
+      // budget. Loop terminates when projected ≤ budget (converges
+      // typically in 2-3 iterations since footprint is nearly linear
+      // in size) or after 10 iterations / minimum-size floor — both
+      // escape conditions log a clear warning so operators can see
+      // exactly why the cortex dropped and by how much.
+      //
+      // Geometry: intra-synapse nnz ≈ size × intraFanout (density-
+      // clamped to targetFanout / size via `min(connectivity,
+      // targetFanout/size)`). Cross-projection nnz per direction ≈
+      // dst_region_size × crossTargetFanout (when src_region_size >
+      // crossTargetFanout / 0.10 = 15K — true at every biological
+      // scale). Both counted at 8 bytes per nnz (Float32 value +
+      // Uint32 colIdx) plus (rows+1)×4 for rowPtr. Fractions match
+      // `js/brain/cluster.js` `this.regions` sub-region layout.
+      const CORTEX_TARGET_FANOUT = 300;        // matches cortexCluster opts.targetFanout
+      const CROSS_TARGET_FANOUT = 1500;         // matches cluster.js crossTargetFanout
+      const BYTES_PER_NNZ = 8;                  // Float32 value + Uint32 colIdx
+      const INTRA_CONNECTIVITY_CAP = 0.15;      // cortexCluster opts.connectivity
+      const CROSS_DENSITY_CAP = 0.10;           // cluster.js cross-projection clamp
+      const FRACTIONS = {
+        auditory: 0.083,
+        visual:   0.167,
+        letter:   0.050,
+        phon:     0.200,
+        sem:      0.167,
+        fineType: 0.050,
+        motor:    0.033,
+        // `free` (0.250) + pad have no cross-projection edges — skipped.
+      };
+      const CROSS_PAIRS = [
+        ['visual', 'letter'], ['letter', 'visual'],
+        ['letter', 'phon'],   ['phon', 'letter'],
+        ['phon', 'sem'],      ['sem', 'phon'],
+        ['sem', 'fineType'],  ['fineType', 'sem'],
+        ['sem', 'motor'],     ['motor', 'sem'],
+        ['motor', 'letter'],  ['letter', 'motor'],
+        ['auditory', 'phon'], ['phon', 'auditory'],
+      ];
+      function estimateLangCortexVramBytes(trial) {
+        if (trial <= 0) return 0;
+        const regions = {};
+        for (const [name, frac] of Object.entries(FRACTIONS)) {
+          regions[name] = Math.floor(trial * frac);
+        }
+        // Intra-synapse matrix
+        const intraDensity = Math.min(INTRA_CONNECTIVITY_CAP, CORTEX_TARGET_FANOUT / Math.max(1, trial));
+        const intraNnz = Math.floor(trial * intraDensity * trial);
+        let total = intraNnz * BYTES_PER_NNZ + (trial + 1) * 4;
+        // 14 cross-projections (7 pairs × 2 directions)
+        for (const [src, dst] of CROSS_PAIRS) {
+          const srcSize = regions[src] || 0;
+          const dstSize = regions[dst] || 0;
+          if (srcSize <= 0 || dstSize <= 0) continue;
+          const density = Math.min(CROSS_DENSITY_CAP, CROSS_TARGET_FANOUT / Math.max(1, srcSize));
+          const nnz = Math.floor(dstSize * density * srcSize);
+          total += nnz * BYTES_PER_NNZ + (dstSize + 1) * 4;
+        }
+        return total;
+      }
+
+      // Seed the iterative loop from the legacy static-coefficient bound
+      // so the first trial is always at-or-below the previous shipped
+      // behavior. Then tighten via empirical estimator. Absolute floor
+      // at 10K neurons — below that the sub-regions collapse (motor at
+      // 3.3% of 10K = 330 neurons is already below the realistic
+      // minimum for argmax letter decode).
+      const GPU_BYTES_PER_NEURON_STATIC_HINT = BRAIN_VRAM_ALLOC.LANG_CORTEX_BYTES_PER_NEURON;
+      const vramStaticSeed = Math.floor(LANG_CORTEX_VRAM_BUDGET_BYTES / GPU_BYTES_PER_NEURON_STATIC_HINT);
       const vramCortexMB = Math.round(LANG_CORTEX_VRAM_BUDGET_BYTES / 1024 / 1024);
 
       const envOverride = parseInt(process.env.DREAM_LANG_CORTEX, 10);
       const configuredCortex = CLUSTER_SIZES.cortex;
+      const RESCALE_MIN_NEURONS = 10_000;
+      const RESCALE_SAFETY = 0.95;              // 5% margin under budget so upload-time jitter doesn't trip
+      const RESCALE_MAX_ITERS = 10;
+
+      let trialSize = Math.min(configuredCortex, ramBasedMax, v8BasedMax, vramStaticSeed);
+      trialSize = Math.max(RESCALE_MIN_NEURONS, trialSize);
+      const rescaleLog = [];
+      let vramBasedMax = trialSize;
+      let projectedBytes = estimateLangCortexVramBytes(trialSize);
+      let iter = 0;
+      while (projectedBytes > LANG_CORTEX_VRAM_BUDGET_BYTES && iter < RESCALE_MAX_ITERS) {
+        iter++;
+        const ratio = LANG_CORTEX_VRAM_BUDGET_BYTES / Math.max(1, projectedBytes);
+        const nextSize = Math.floor(trialSize * ratio * RESCALE_SAFETY);
+        if (nextSize >= trialSize) break;           // can't shrink further (would loop)
+        if (nextSize < RESCALE_MIN_NEURONS) {
+          rescaleLog.push(`iter=${iter} floor ${RESCALE_MIN_NEURONS.toLocaleString()} reached (projected ${(projectedBytes/1e9).toFixed(2)}GB > budget ${(LANG_CORTEX_VRAM_BUDGET_BYTES/1e9).toFixed(2)}GB at size ${trialSize.toLocaleString()})`);
+          trialSize = RESCALE_MIN_NEURONS;
+          projectedBytes = estimateLangCortexVramBytes(trialSize);
+          break;
+        }
+        const beforeSize = trialSize;
+        const beforeProj = projectedBytes;
+        trialSize = nextSize;
+        projectedBytes = estimateLangCortexVramBytes(trialSize);
+        rescaleLog.push(`iter=${iter} ${beforeSize.toLocaleString()}→${trialSize.toLocaleString()} (projected ${(beforeProj/1e9).toFixed(2)}GB→${(projectedBytes/1e9).toFixed(2)}GB vs budget ${(LANG_CORTEX_VRAM_BUDGET_BYTES/1e9).toFixed(2)}GB)`);
+      }
+      vramBasedMax = trialSize;
+      const rescaleIterations = iter;
+      const projectedBytesFinal = projectedBytes;
+
       const autoSize = Math.min(configuredCortex, ramBasedMax, v8BasedMax, vramBasedMax);
       const langCortexSize = Number.isFinite(envOverride) && envOverride > 0 ? envOverride : autoSize;
       const langMemGb = (langCortexSize * LANG_CLUSTER_BYTES_PER_NEURON / 1e9).toFixed(2);
       const heapLimitGb = (v8BasedMax === Infinity ? 'unlimited' : ((v8BasedMax * LANG_CLUSTER_BYTES_PER_NEURON) / 1e9).toFixed(1) + 'GB');
-      console.log(`[Brain] Language cortex auto-scaled to ${langCortexSize.toLocaleString()} neurons (~${langMemGb} GB RAM). Bounds: free RAM ${(freeRamBytes/1e9).toFixed(1)}GB × 50% = ${(ramBudget/1e9).toFixed(1)}GB → ${ramBasedMax.toLocaleString()} neurons | V8 heap cluster-budget → ${heapLimitGb} → ${v8BasedMax === Infinity ? '∞' : v8BasedMax.toLocaleString()} neurons | GPU VRAM budget from unified allocator → ${vramCortexMB}MB = ${(BRAIN_VRAM_ALLOC.weights.language_cortex*100).toFixed(1)}% of ${BRAIN_VRAM_ALLOC.brainBudgetMB}MB brain budget → ${vramBasedMax.toLocaleString()} neurons | configured cortex ${configuredCortex.toLocaleString()} neurons. Main GPU brain at ${TOTAL_NEURONS.toLocaleString()} neurons. T17.3.e: sparse matmul ON GPU — CPU single-thread dispatch budget REMOVED.${envOverride > 0 ? ' DREAM_LANG_CORTEX override active.' : ''}`);
+      const projectedMB = Math.round(projectedBytesFinal / 1024 / 1024);
+      console.log(`[Brain] Language cortex auto-scaled to ${langCortexSize.toLocaleString()} neurons (~${langMemGb} GB RAM, projected ${projectedMB}MB GPU footprint via T18.6.c geometry estimator, ${rescaleIterations} rescale iter${rescaleIterations === 1 ? '' : 's'}). Bounds: free RAM ${(freeRamBytes/1e9).toFixed(1)}GB × 50% = ${(ramBudget/1e9).toFixed(1)}GB → ${ramBasedMax.toLocaleString()} neurons | V8 heap cluster-budget → ${heapLimitGb} → ${v8BasedMax === Infinity ? '∞' : v8BasedMax.toLocaleString()} neurons | GPU VRAM budget from unified allocator → ${vramCortexMB}MB = ${(BRAIN_VRAM_ALLOC.weights.language_cortex*100).toFixed(1)}% of ${BRAIN_VRAM_ALLOC.brainBudgetMB}MB brain budget → ${vramBasedMax.toLocaleString()} neurons AFTER geometric rescale (static seed was ${vramStaticSeed.toLocaleString()}) | configured cortex ${configuredCortex.toLocaleString()} neurons. Main GPU brain at ${TOTAL_NEURONS.toLocaleString()} neurons. T17.3.e: sparse matmul ON GPU.${envOverride > 0 ? ' DREAM_LANG_CORTEX override active.' : ''}`);
+      if (rescaleLog.length > 0) {
+        console.log(`[Brain] T18.6.c rescale trace:\n  ${rescaleLog.join('\n  ')}`);
+      }
       console.log(`[Brain] Language cortex = ${langCortexSize.toLocaleString()} neurons. Sub-regions: letter ${Math.floor(langCortexSize * 0.05).toLocaleString()}, phon ${Math.floor(langCortexSize * 0.20).toLocaleString()}, sem ${Math.floor(langCortexSize * 0.167).toLocaleString()}, motor ${Math.floor(langCortexSize * 0.033).toLocaleString()}.`);
       // T14.24 Session 95 — mark the cluster as NOT gpu-ready yet. The
       // server tick loop flips this to `true` when the first GPU-ready
@@ -866,7 +980,13 @@ class ServerBrain {
       // Cluster uploads each projection on initGpu() call, then fires
       // weight updates to GPU alongside CPU shadow during training.
       const gpuProxy = {
-        upload:    (name, matrix)                => this.gpuSparseUpload(name, matrix),
+        // T18.6.b — `binding` is optional. When provided the cross-
+        // projection uploads directly cluster-bound to main-cortex
+        // sub-slices and no standalone preSpikes/postCurrents/postSpikes
+        // buffers are allocated, saving ~840 MB VRAM during the upload
+        // window (the Phase C.1 rebind path still exists for the case
+        // where binding metadata wasn't shipped).
+        upload:    (name, matrix, binding)       => this.gpuSparseUpload(name, matrix, binding),
         propagate: (name, preSpikes)             => this.gpuSparsePropagate(name, preSpikes),
         hebbian:   (name, preSpikes, postSpikes, lr) => this.gpuSparseHebbian(name, preSpikes, postSpikes, lr),
         // T17.7 Phase C.1 — cluster-bound dispatch. After
@@ -924,6 +1044,57 @@ class ServerBrain {
         gpuProxy, // T17.3.d — proxy used for cross-region ops when GPU ready
         sparsePool: this.sparsePool, // T18.4.e — CPU-fallback parallel sparse matmul
       });
+      // T18.6.b — cluster-binding resolver so cortexCluster.initGpu()
+      // uploads its 14 cross-projections directly bound to main-cortex
+      // sub-slices instead of allocating standalone preSpikes/postCurrents/
+      // postSpikes buffers (which the Phase C.1 rebind would later
+      // destroy anyway). LAYOUT must stay in lockstep with
+      // `_ensureCortexCrossProjectionsBound` — both paths land at the
+      // same main-cortex first-N sub-slices so the rebind fallback
+      // (persisted matrices w/o binding metadata) matches runtime
+      // upload path exactly.
+      const CORTEX_SUBREGION_LAYOUT = {
+        auditory:  [0.000, 0.083],
+        visual:    [0.083, 0.250],
+        free:      [0.250, 0.500],
+        letter:    [0.500, 0.550],
+        phon:      [0.550, 0.750],
+        sem:       [0.750, 0.917],
+        fineType:  [0.917, 0.967],
+        motor:     [0.967, 1.000],
+      };
+      const mainCortexSize = CLUSTER_SIZES.cortex;
+      const mainSliceStart = {};
+      for (const [regName, [frA]] of Object.entries(CORTEX_SUBREGION_LAYOUT)) {
+        mainSliceStart[regName] = Math.floor(mainCortexSize * frA);
+      }
+      this.cortexCluster._gpuBindingHint = {
+        resolve: (projName, proj) => {
+          const idx = projName.indexOf('_to_');
+          if (idx < 0) return null;
+          const srcName = projName.slice(0, idx);
+          const dstName = projName.slice(idx + 4);
+          const standSrc = this.cortexCluster.regions && this.cortexCluster.regions[srcName];
+          const standDst = this.cortexCluster.regions && this.cortexCluster.regions[dstName];
+          if (!standSrc || !standDst) return null;
+          const srcOff = mainSliceStart[srcName];
+          const dstOff = mainSliceStart[dstName];
+          if (srcOff == null || dstOff == null) return null;
+          const srcLen = standSrc.end - standSrc.start;
+          const dstLen = standDst.end - standDst.start;
+          // Guard against matrix dims that don't match the standalone
+          // region size — mismatch would mean upload goes to the wrong
+          // main-cortex neurons. Keep it standalone in that case so
+          // Phase C.1 rebind can validate + fix up later.
+          if (srcLen !== proj.cols || dstLen !== proj.rows) return null;
+          return {
+            srcCluster: 'cortex',
+            srcRegion: { start: srcOff, end: srcOff + srcLen },
+            dstCluster: 'cortex',
+            dstRegion: { start: dstOff, end: dstOff + dstLen },
+          };
+        },
+      };
       // T14.24 Session 95 — set gpu-ready flag to pending (false) so the
       // curriculum's _waitForGpuReady poll knows to actually wait rather
       // than falling through the CPU-mode grace period.
@@ -1938,8 +2109,25 @@ class ServerBrain {
    * First chunk (flags & 1) also carries rows/cols/nnz + rowPtr. Each
    * chunk carries valuesOffset/valuesByteLen/values + colIdxOffset/
    * colIdxByteLen/colIdx. Last chunk triggers the SPRR ack.
+   *
+   * T18.6.b — optional `binding` parameter. When provided, the first
+   * chunk ALSO carries cluster-bound metadata via flag bit 2
+   * (`flags & 2`): srcClusterNameLen(u16) + srcClusterName + u16 pad
+   * + dstClusterNameLen(u16) + dstClusterName + u16 pad + srcStart(u32)
+   * + srcEnd(u32) + dstStart(u32) + dstEnd(u32). compute.html passes
+   * this to `gpu._beginSparseUpload(..., binding)` which skips the
+   * standalone preSpikes/postCurrents/postSpikes buffer allocation
+   * entirely (the bound shader path reads directly from the source
+   * cluster's spike buffer and writes into the destination cluster's
+   * currents buffer). Saves ~60 MB per cross-projection at biological
+   * scale × 14 cross-projections = ~840 MB of transient VRAM that
+   * previously sat allocated through the entire upload-then-rebind
+   * window, during which the device was most likely to OOM-crash on a
+   * 16 GB GPU. Phase C.1 rebind still exists as a fallback path for
+   * matrices loaded from persistence where binding metadata wasn't
+   * shipped originally.
    */
-  async gpuSparseUpload(name, matrix) {
+  async gpuSparseUpload(name, matrix, binding) {
     const reqId = this._nextSparseReqId();
     const rows = matrix.rows;
     const cols = matrix.cols;
@@ -1953,7 +2141,8 @@ class ServerBrain {
     const totalChunks = Math.max(1, Math.ceil(nnz / CHUNK_NNZ));
     const rowPtrBuf = Buffer.from(rowPtr.buffer, rowPtr.byteOffset, rowPtr.byteLength);
     const totalMb = ((values.byteLength + colIdx.byteLength + rowPtr.byteLength) / 1e6).toFixed(1);
-    console.log(`[Brain] sparse chunked upload reqId=${reqId} name=${name} totalChunks=${totalChunks} totalSize=${totalMb}MB`);
+    const hasBinding = !!(binding && binding.srcCluster && binding.dstCluster);
+    console.log(`[Brain] sparse chunked upload reqId=${reqId} name=${name} totalChunks=${totalChunks} totalSize=${totalMb}MB${hasBinding ? ` (cluster-bound: ${binding.srcCluster}[${binding.srcRegion.start}..${binding.srcRegion.end}] → ${binding.dstCluster}[${binding.dstRegion.start}..${binding.dstRegion.end}])` : ''}`);
 
     // Pre-register the pending promise BEFORE sending any chunks so
     // the ack handler can find it even if client ACKs very fast.
@@ -1972,6 +2161,37 @@ class ServerBrain {
 
     if (!this._gpuClient || this._gpuClient.readyState !== 1) return null;
 
+    // T18.6.b — precompute binding block bytes ONCE (shipped only on the
+    // first chunk, identical for every send loop iteration). Wire layout:
+    //   srcClusterNameLen(u16) + srcClusterName + u16 pad-to-u32
+    //   dstClusterNameLen(u16) + dstClusterName + u16 pad-to-u32
+    //   srcStart(u32) + srcEnd(u32) + dstStart(u32) + dstEnd(u32)
+    // Pad bytes keep the subsequent u32 fields aligned for TypedArray
+    // views on the receiver, matching the existing header-alignment
+    // convention used by _encodeSparseHeader.
+    let bindingBlock = Buffer.alloc(0);
+    if (hasBinding) {
+      const srcNameBuf = Buffer.from(binding.srcCluster, 'utf8');
+      const dstNameBuf = Buffer.from(binding.dstCluster, 'utf8');
+      const padAfterSrc = (4 - ((2 + srcNameBuf.length) % 4)) % 4;
+      const padAfterDst = (4 - ((2 + dstNameBuf.length) % 4)) % 4;
+      const total = 2 + srcNameBuf.length + padAfterSrc
+                  + 2 + dstNameBuf.length + padAfterDst
+                  + 16;
+      bindingBlock = Buffer.alloc(total);
+      let o = 0;
+      bindingBlock.writeUInt16LE(srcNameBuf.length, o); o += 2;
+      srcNameBuf.copy(bindingBlock, o); o += srcNameBuf.length;
+      o += padAfterSrc;
+      bindingBlock.writeUInt16LE(dstNameBuf.length, o); o += 2;
+      dstNameBuf.copy(bindingBlock, o); o += dstNameBuf.length;
+      o += padAfterDst;
+      bindingBlock.writeUInt32LE(binding.srcRegion.start >>> 0, o); o += 4;
+      bindingBlock.writeUInt32LE(binding.srcRegion.end   >>> 0, o); o += 4;
+      bindingBlock.writeUInt32LE(binding.dstRegion.start >>> 0, o); o += 4;
+      bindingBlock.writeUInt32LE(binding.dstRegion.end   >>> 0, o); o += 4;
+    }
+
     for (let seq = 0; seq < totalChunks; seq++) {
       const start = seq * CHUNK_NNZ;
       const end = Math.min(start + CHUNK_NNZ, nnz);
@@ -1981,7 +2201,11 @@ class ServerBrain {
       const colIdxByteLen = (end - start) * 4;
       const hdr = this._encodeSparseHeader(4, reqId, name);
       const isFirst = (seq === 0);
-      const flags = isFirst ? 1 : 0;
+      // flags bit 0 = first chunk (carries rows/cols/nnz + rowPtr)
+      // flags bit 1 = binding block follows rowPtr (first chunk only)
+      let flags = 0;
+      if (isFirst) flags |= 1;
+      if (isFirst && hasBinding) flags |= 2;
       const chunkMeta = Buffer.alloc(12);
       chunkMeta.writeUInt32LE(seq, 0);
       chunkMeta.writeUInt32LE(totalChunks, 4);
@@ -2003,7 +2227,9 @@ class ServerBrain {
       colIdxHdr.writeUInt32LE(colIdxByteLen, 4);
       const colIdxSlice = Buffer.from(colIdx.buffer, colIdx.byteOffset + colIdxByteOff, colIdxByteLen);
       const pieces = isFirst
-        ? [hdr, chunkMeta, firstMeta, rowPtrBuf, valuesHdr, valuesSlice, colIdxHdr, colIdxSlice]
+        ? (hasBinding
+            ? [hdr, chunkMeta, firstMeta, rowPtrBuf, bindingBlock, valuesHdr, valuesSlice, colIdxHdr, colIdxSlice]
+            : [hdr, chunkMeta, firstMeta, rowPtrBuf, valuesHdr, valuesSlice, colIdxHdr, colIdxSlice])
         : [hdr, chunkMeta, valuesHdr, valuesSlice, colIdxHdr, colIdxSlice];
       const frame = Buffer.concat(pieces);
       // Send chunk. WebSocket preserves order. Wait for the send
@@ -4076,6 +4302,27 @@ wss.on('connection', (ws, req) => {
           clearTimeout(pending.timeout);
           if (msg.error) pending.reject(new Error(msg.error));
           else pending.resolve(msg);
+          break;
+        }
+
+        // T18.6.a — device-lost signal from compute.html. WebGPU fires
+        // device.lost when the GPU crashes (almost always VRAM
+        // exhaustion during biological-scale sparse upload on a
+        // too-small VRAM budget). Previously the server only saw the
+        // downstream phantom "size too large" errors and had to guess;
+        // this message gives us the real reason + message from the
+        // browser's WebGPU runtime. Mark the sparse pipeline
+        // unavailable + flip `_gpuConnected` false so new compute
+        // dispatches short-circuit instead of timing out on a dead
+        // device.
+        case 'device_lost': {
+          const reason = msg.reason || 'unknown';
+          const message = msg.message || '(no message)';
+          console.error(`[Brain] GPU DEVICE LOST (reported by compute.html) — reason=${reason} message=${message}`);
+          console.error('[Brain] Most common cause: VRAM exhaustion during biological-scale sparse upload. T18.6.c auto-rescale should have prevented this; if it still happened, either the `LANG_CORTEX_BYTES_PER_NEURON` coefficient under-estimated real footprint (bump the coefficient in brain-server.js) or an admin override in resource-config.json bypassed the scaling loop. Reload compute.html after addressing the cause.');
+          brain._gpuDeviceLost = true;
+          brain._gpuConnected = false;
+          if (brain.cortexCluster) brain.cortexCluster._gpuReady = false;
           break;
         }
 

@@ -5,6 +5,70 @@
 
 ---
 
+## 2026-04-18 — Session 114.19ad: T18.6 SHIPPED — sparse-upload device-lost crash diagnosis + fix
+
+Part 2 localhost run crashed mid sparse upload with cascading phantom errors:
+
+```
+compute.html:255 [GPU Compute] sparse_hebbian binary failed: Failed to execute 'createBuffer' on 'GPUDevice': createBuffer failed, size (32) is too large for the implementation when mappedAtCreation == true
+compute.html:336 [GPU Compute] batch failed: Failed to execute 'createBuffer' on 'GPUDevice': createBuffer failed, size (16) is too large for the implementation when mappedAtCreation == true
+```
+
+Gee's verbatim 2026-04-18: *"we were testing and it was having issues, it crashed --- u might find the old db files"* + *"okay yeah do all of that but for 3. make it loop back to scaling with the changes needed"* (approving all three proposed fixes with modification on #3).
+
+### Diagnosis
+
+The "size (32)/(16) is too large" errors are WebGPU phantom errors — every `createBuffer` call fires that exact string regardless of the real requested size once `GPUDevice.lost` has fired. Real cause: VRAM exhaustion during biological-scale sparse upload. Summed from crash log: 14 cortex cross-projections totaled ~7.9 GB (visual_to_letter 220 MB, letter_to_visual 735 MB, letter_to_phon 881 MB, phon_to_letter 220 MB, phon_to_sem 735 MB, sem_to_phon 881 MB, sem_to_fineType 220 MB, fineType_to_sem 735 MB, sem_to_motor 145 MB, motor_to_sem 594 MB, motor_to_letter 178 MB, letter_to_motor 145 MB, auditory_to_phon 881 MB, phon_to_auditory 365 MB) + intra-synapses 881.8 MB = **8.8 GB just for sparse language-cortex matrices**. Add 5+ GB of 7-cluster LIF state and ~1.5 GB of standalone `preSpikes/postCurrents/postSpikes` buffers held during the upload window before Phase C.1 rebind frees them, and peak VRAM ≈ 15+ GB on a 16 GB RTX 4070 Ti SUPER (usable ~13 GB). `BRAIN_VRAM_ALLOC.LANG_CORTEX_BYTES_PER_NEURON = 18 × 1024` had under-estimated the real 25 KB/neuron coefficient by 30%.
+
+### Three fixes shipped (atomic commit)
+
+**T18.6.a — `device.lost` handler + server-side notification.** `js/brain/gpu-compute.js` `init()` now wires `this._device.lost.then(...)` after `requestDevice`. On lost: sets `_deviceLost=true`, clears `_available`, logs the real reason + message, and fires optional `_onDeviceLost` callback. New `setDeviceLostCallback(cb)` method lets compute.html register a handler; compute.html sends a `device_lost` JSON message to the server with reason + message. `server/brain-server.js` adds a `case 'device_lost'` branch in the WebSocket dispatch that logs the real cause, sets `brain._gpuDeviceLost`, and flips `_gpuConnected=false` so downstream dispatches short-circuit instead of timing out. Future crashes surface the actual reason (`out-of-memory`, `destroyed`, `unknown`) instead of cascading phantom "size too large" errors.
+
+**T18.6.b — Cluster-bound upload path for cross-projections.** Previously every cross-projection uploaded standalone (allocating its own `preSpikes` + `postCurrents` + `postSpikes` buffers), then Phase C.1 rebind destroyed those buffers. The 14 matrices × ~60 MB each = ~840 MB of VRAM sat allocated DURING the entire upload window — exactly when the device was most likely to OOM-crash. Fix wires cluster-binding metadata through the chunked upload protocol from the start:
+
+- Server `gpuSparseUpload(name, matrix, binding?)` accepts optional `binding: {srcCluster, srcRegion:{start,end}, dstCluster, dstRegion:{start,end}}`. First chunk wire layout gains a `flags & 2` bit carrying `srcClusterNameLen(u16) + srcClusterName + pad-to-u32 + dstClusterNameLen(u16) + dstClusterName + pad-to-u32 + srcStart(u32) + srcEnd(u32) + dstStart(u32) + dstEnd(u32)`.
+- `compute.html` type=4 decoder parses the binding block when flag set, passes to `gpu._beginSparseUpload(name, rows, cols, nnz, rowPtr, binding)` (which already accepts the optional binding parameter from the pre-existing standalone fallback path).
+- `js/brain/cluster.js` `initGpu()` resolves binding per cross-projection via `this._gpuBindingHint.resolve(projName, proj)` and passes to `gpuProxy.upload(key, matrix, binding)`. Matrices with `binding._gpuBound = true` stay flagged on the CPU projection so subsequent `_crossRegionHebbian` routes through bound dispatch paths with zero pre/post array transfer.
+- `server/brain-server.js` sets `this.cortexCluster._gpuBindingHint` right after construction with `CORTEX_SUBREGION_LAYOUT` matching `_ensureCortexCrossProjectionsBound` — both paths target identical main-cortex first-N sub-slices so the rebind fallback (for persisted-without-binding matrices) remains functional.
+
+Phase C.1 rebind path stays in place as the fallback for matrices loaded from pre-T18.6 save files. When those arrive without binding metadata, rebind overwrites the bogus standalone path into cluster-bound + destroys standalone buffers as before. When matrices arrive already bound via T18.6.b, rebind is a no-op (binding already present + no standalone buffers to destroy).
+
+**T18.6.c — Geometry-aware VRAM budget pre-flight with auto-rescale loop-back.** Replaces the static `LANG_CORTEX_BYTES_PER_NEURON = 18 × 1024` coefficient with `estimateLangCortexVramBytes(trial)` in `_initLanguageSubsystem`. Estimator:
+
+- Computes actual sub-region sizes from trial × FRACTIONS (auditory 0.083, visual 0.167, letter 0.050, phon 0.200, sem 0.167, fineType 0.050, motor 0.033).
+- Walks 14 cross-projection pairs (matches `cluster.js` `pairs` × 2 directions) computing `nnz = dst × min(0.10, crossTargetFanout / src)` + `rowPtr = (dst+1) × 4` bytes.
+- Adds intra-synapse `nnz = size × min(0.15, targetFanout / size) × size` bytes.
+- All nnz summed at 8 bytes/nnz (Float32 value + Uint32 colIdx) to match the real GPU upload layout.
+
+Loop body: starting from the legacy static seed, if `projected > LANG_CORTEX_VRAM_BUDGET_BYTES`, shrink `trialSize = floor(trialSize × (budget/projected) × 0.95)` (5% safety margin) and re-estimate. Up to 10 iterations, absolute floor at 10,000 neurons. Each rescale logs `iter=N oldSize→newSize (projected oldGB→newGB vs budget GB)` so operators see exactly which iteration hit the budget and by how much. Boot banner now names the final projected MB, static-seed size, AND rescale iteration count. Gee-verbatim directive honored: *"make it loop back to scaling with the changes needed"*.
+
+### Files touched (atomic commit)
+
+- `js/brain/gpu-compute.js` — +39 lines: `device.lost.then(...)` handler wired in `init()` (clears `_available`, logs reason, fires optional callback); new `setDeviceLostCallback(cb)` method.
+- `compute.html` — +40 lines: `gpu.setDeviceLostCallback(...)` registration before WebSocket connect (surfaces as `device_lost` WS message + red status indicator); type=4 chunked decoder parses `flags & 2` binding block and passes to `_beginSparseUpload`.
+- `server/brain-server.js` — +165 lines: `gpuSparseUpload(name, matrix, binding?)` accepts binding + encodes as flag-2 block in first chunk; `gpuProxy.upload` forwards binding; `cortexCluster._gpuBindingHint` populated with resolver function right after construction; `_initLanguageSubsystem` VRAM scaler replaced with `estimateLangCortexVramBytes` + loop-back rescale + rescale log + boot banner rewrite; WebSocket dispatch gets `case 'device_lost'` branch.
+- `js/brain/cluster.js` — +24 lines: `initGpu()` resolves binding per cross-projection via `_gpuBindingHint`, passes to `gpuProxy.upload(name, matrix, binding)`, stamps `proj._gpuBound` on success + logs bound-count in ready message.
+- `docs/TODO.md` — T18.6 task block added under the T18.4 closure gate with Gee's verbatim quotes + three sub-items marked `[x]`.
+- `docs/FINALIZED.md` — this entry.
+- `docs/ARCHITECTURE.md` — T18.6 paragraph added to the sparse upload path description.
+
+All four code files `node --check` clean (compute.html module body extracted + checked via `--input-type=module`).
+
+### Closure gate — open
+
+**Gee's Part 2 localhost run closes T18.6.** Full sparse upload must complete without device-lost on the 16 GB 4070 Ti SUPER + step into curriculum walks without phantom errors. Claude cannot close this — Gee-verification only. Stale-state already cleared before this writeup per LAW 2026-04-17.
+
+### What's STILL open before push to main
+
+- T17.2 (worker parallelization beyond sparse matmul) — partial via SparseMatmulPool; teach-loop specific site routing still open
+- T17.6 (live chat on upscaled cortex) — Gee Part 2 empirical validation pending
+- T17.7 Phase E.d / Phase F (construction deletion + doc sweep)
+- T16.1.b / T16.2.a / T16.2.d — Gee Part 2 verification items
+- T16.3.c / T16.5.b-d — deferred / design-review blocked
+- T18.5.b / T18.5.c — pre-push doc sweep + Gee push approval
+
+---
+
 ## 2026-04-18 — Session 114.19ac (continued): T15.C CLOSED — all 12 deliverables SHIPPED
 
 Two additional commits closed T15.C after the earlier 8-of-12 checkpoint:

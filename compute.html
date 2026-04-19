@@ -78,6 +78,23 @@ let totalComputeMs = 0;
   // even before the first cluster upload / sparse matrix arrives.
   renderHierarchy();
 
+  // T18.6.a — register device-lost callback BEFORE connecting to the
+  // server so a device.lost event fired mid-upload gets surfaced as a
+  // `device_lost` WebSocket message to the server log instead of just
+  // cascading phantom "size too large" errors on the client console.
+  gpu.setDeviceLostCallback((info) => {
+    const reason = info && info.reason ? info.reason : 'unknown';
+    const message = info && info.message ? info.message : '(no message)';
+    statusEl.textContent = `WebGPU DEVICE LOST — reason=${reason}. Reload this tab after fixing cortex N.`;
+    statusEl.style.color = '#ef4444';
+    gpuReady = false;
+    try {
+      if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'device_lost', reason, message }));
+      }
+    } catch { /* non-fatal */ }
+  });
+
   // NOW connect WebSocket — GPU is ready
   connectToServer();
 })();
@@ -169,6 +186,10 @@ function connectToServer() {
           // Wire layout after header:
           //   chunkSeq (u32) + totalChunks (u32) + flags (u32)
           //   if (flags & 1):  meta = rows(u32) + cols(u32) + nnz(u32) + rowPtrLen(u32) + rowPtr
+          //   if (flags & 2):  T18.6.b binding block follows rowPtr
+          //                    srcClusterNameLen(u16) + srcClusterName + pad-to-u32
+          //                    dstClusterNameLen(u16) + dstClusterName + pad-to-u32
+          //                    srcStart(u32) + srcEnd(u32) + dstStart(u32) + dstEnd(u32)
           //   valuesOffset (u32) + valuesByteLen (u32) + values chunk
           //   colIdxOffset (u32) + colIdxByteLen (u32) + colIdx chunk
           const chunkSeq = view.getUint32(off, true); off += 4;
@@ -182,7 +203,37 @@ function connectToServer() {
               const rowPtrLen = view.getUint32(off, true); off += 4;
               const rowPtr = new Uint32Array(buf, off, rowPtrLen);
               off += rowPtrLen * 4;
-              gpu._beginSparseUpload(name, rows, cols, nnz, rowPtr);
+              // T18.6.b — parse optional cluster-binding block so the
+              // matrix comes up cluster-bound on first upload (no
+              // standalone preSpikes/postCurrents/postSpikes buffers
+              // allocated — 60 MB+ VRAM saved per cross-projection at
+              // biological scale). Phase C.1 rebind is the fallback
+              // for matrices that arrive without binding metadata
+              // (e.g., loaded from a pre-T18.6 persistence file).
+              let binding = null;
+              if (flags & 2) {
+                const srcNameLen = view.getUint16(off, true); off += 2;
+                const srcName = new TextDecoder('utf-8').decode(new Uint8Array(buf, off, srcNameLen));
+                off += srcNameLen;
+                const padSrc = (4 - ((2 + srcNameLen) % 4)) % 4;
+                off += padSrc;
+                const dstNameLen = view.getUint16(off, true); off += 2;
+                const dstName = new TextDecoder('utf-8').decode(new Uint8Array(buf, off, dstNameLen));
+                off += dstNameLen;
+                const padDst = (4 - ((2 + dstNameLen) % 4)) % 4;
+                off += padDst;
+                const srcStart = view.getUint32(off, true); off += 4;
+                const srcEnd   = view.getUint32(off, true); off += 4;
+                const dstStart = view.getUint32(off, true); off += 4;
+                const dstEnd   = view.getUint32(off, true); off += 4;
+                binding = {
+                  srcCluster: srcName,
+                  srcRegion: { start: srcStart, end: srcEnd },
+                  dstCluster: dstName,
+                  dstRegion: { start: dstStart, end: dstEnd },
+                };
+              }
+              gpu._beginSparseUpload(name, rows, cols, nnz, rowPtr, binding);
             }
             const valuesOffset = view.getUint32(off, true); off += 4;
             const valuesByteLen = view.getUint32(off, true); off += 4;

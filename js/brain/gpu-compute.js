@@ -371,6 +371,35 @@ export class GPUCompute {
         },
       });
 
+      // T18.6.a — device.lost handler. WebGPU fires this promise when the
+      // device crashes (most common cause: VRAM exhaustion during
+      // biological-scale sparse matrix upload; also driver timeouts,
+      // system sleep, OOM kills). Without this handler every subsequent
+      // `createBuffer` / dispatch returns the phantom error
+      //   "createBuffer failed, size (N) is too large for the
+      //    implementation when mappedAtCreation == true"
+      // regardless of the actual requested size — the misleading error
+      // is WebGPU's undiagnosable failure mode on a dead device. Setting
+      // `_deviceLost` + clearing `_available` lets call sites short-
+      // circuit fast instead of cascading thousands of phantom errors.
+      // The `_onDeviceLost` callback is optional, consumed by compute.html
+      // to surface the event back to the server over WebSocket so the
+      // server log shows the real cause.
+      this._deviceLost = false;
+      this._deviceLostInfo = null;
+      this._device.lost.then((info) => {
+        this._deviceLost = true;
+        this._deviceLostInfo = info;
+        this._available = false;
+        const reason = info && info.reason ? info.reason : 'unknown';
+        const message = info && info.message ? info.message : '(no message)';
+        console.error(`[GPUCompute] DEVICE LOST — reason=${reason} message=${message}`);
+        console.error('[GPUCompute] Every subsequent GPU call will fail with phantom "size too large" errors regardless of the real size. Most common cause: VRAM exhaustion during biological-scale sparse upload. Reload compute.html after fixing the underlying cause (lower cortex N via GPUCONFIGURE.bat or server-side rescale).');
+        if (typeof this._onDeviceLost === 'function') {
+          try { this._onDeviceLost(info); } catch { /* non-fatal */ }
+        }
+      });
+
       // Log GPU info (API changed: requestAdapterInfo → info property in newer Chrome)
       const info = adapter.info || (adapter.requestAdapterInfo ? await adapter.requestAdapterInfo() : {});
       console.log(`[GPUCompute] GPU: ${info.device || info.description || info.vendor || 'detected'}`);
@@ -384,6 +413,20 @@ export class GPUCompute {
       console.warn('[GPUCompute] Init failed:', err.message);
       return false;
     }
+  }
+
+  /**
+   * T18.6.a — register a callback fired when WebGPU emits device.lost.
+   * Used by compute.html to surface the lost state to the brain server
+   * over WebSocket so the server log records the real crash cause
+   * instead of just observing downstream phantom "size too large"
+   * errors. Call AFTER `init()` returns true. No-op when the device
+   * already lost before the callback was registered — in that case the
+   * caller should check `_deviceLost` explicitly and handle the
+   * already-dead case at the call site.
+   */
+  setDeviceLostCallback(cb) {
+    this._onDeviceLost = cb;
   }
 
   _createPipelines() {

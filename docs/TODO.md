@@ -125,6 +125,26 @@ T18.5.b (pre-push doc checklist) and T18.5.c (ASK GEE for push approval) do NOT 
 
 ---
 
+#### T18.6 — Part 2 run crashed on sparse upload (Gee 2026-04-18)
+
+**Gee's verbatim 2026-04-18:**
+
+> *"437compute.html:125 [GPU Compute] binary frame received size=0.0MB, first4=SPRS ... compute.html:255 [GPU Compute] sparse_hebbian binary failed: Failed to execute 'createBuffer' on 'GPUDevice': createBuffer failed, size (32) is too large for the implementation when mappedAtCreation == true ... compute.html:336 [GPU Compute] batch failed: Failed to execute 'createBuffer' on 'GPUDevice': createBuffer failed, size (16) is too large for the implementation when mappedAtCreation == true ... we were testing and it was having issues, it crashed --- u might find the old db files...."*
+
+> *"okay yeah do all of that but for 3. make it loop back to scaling with the changes needed"*
+
+Diagnosis: WebGPU device lost during biological-scale sparse upload. The `size (32)/(16) is too large` error is the phantom error WebGPU fires on every subsequent `createBuffer` after a device-lost event (no real size violation). Root cause: ~8.8 GB of cortex cross-projection sparse matrices (summed from the crash log: intraSynapses 881.8 MB + 14 cross-projections totaling ~7.9 GB) + ~5 GB of 7-cluster LIF state + ~1.5 GB of standalone preSpikes/postCurrents/postSpikes buffers held during the upload window before Phase C.1 rebind frees them → peak ≈ 15+ GB on a 16 GB RTX 4070 Ti SUPER (usable ~13 GB) → VRAM exhaustion → device lost. No `device.lost` handler at `js/brain/gpu-compute.js` `requestDevice` call → cascading phantom errors instead of clear diagnosis. Empirical coefficient `LANG_CORTEX_BYTES_PER_NEURON = 18 × 1024` in `BRAIN_VRAM_ALLOC` undercounts the real 24 KB/neuron observed from the crash log sizes.
+
+Three fixes per Gee approval:
+
+- [x] **T18.6.a — Add `device.lost` handler** at `js/brain/gpu-compute.js` `init()` after `requestDevice`. On lost: set `_deviceLost` flag, set `_available = false`, log clear error with reason + suggestion to lower cortex N. `compute.html` surfaces the lost state to the server via a new `device_lost` WebSocket message so server logs the real cause instead of cascading "size too large" phantoms. **SHIPPED** — `setDeviceLostCallback` wired on compute.html init; server message dispatch case `device_lost` handles the notification + sets `brain._gpuDeviceLost` + flips `_gpuConnected` false.
+- [x] **T18.6.b — Upload cross-projections directly in cluster-bound mode.** Server `gpuSparseUpload(name, matrix, binding)` accepts optional `binding`; first-chunk wire layout extended with `flags & 2` bit carrying `srcClusterNameLen(u16) + srcClusterName + pad-to-u32 + dstClusterNameLen(u16) + dstClusterName + pad-to-u32 + srcStart(u32) + srcEnd(u32) + dstStart(u32) + dstEnd(u32)`. `compute.html` type=4 decoder parses the block when flag set and passes to `gpu._beginSparseUpload(name, rows, cols, nnz, rowPtr, binding)`. `cluster.js` `initGpu` resolves binding per cross-projection via `_gpuBindingHint.resolve(projName, proj)`. Server sets the hint on `cortexCluster` right after construction with the CORTEX_SUBREGION_LAYOUT mirroring `_ensureCortexCrossProjectionsBound`. Kills the ~840 MB–1.5 GB standalone preSpikes/postCurrents/postSpikes overhead during the upload window; Phase C.1 rebind stays as the fallback path for matrices loaded from pre-T18.6 persistence. **SHIPPED**.
+- [x] **T18.6.c — VRAM budget pre-flight with auto-rescale loop-back (Gee verbatim: "for 3. make it loop back to scaling with the changes needed").** Replaced the static 18 KB/neuron coefficient with `estimateLangCortexVramBytes(trial)` — geometry-aware estimator using real fractions (auditory/visual/letter/phon/sem/fineType/motor) and real fanout constants (`CROSS_TARGET_FANOUT=1500`, `CORTEX_TARGET_FANOUT=300`). Loop scales `langCortexSize` down by `(budget/projected) × 0.95` per iteration, converges in ≤10 iterations, absolute floor at 10 000 neurons. Every rescale step logs `iter=N oldSize→newSize (projected oldGB→newGB vs budget GB)` so operators see exactly why the cortex dropped. Also updates the boot-log banner to name the projected MB, static-seed size, and iteration count. **SHIPPED**.
+
+**T18.6 closure gate:** Part 2 localhost run completes full sparse upload without device-lost on Gee's 16 GB 4070 Ti SUPER. Step into curriculum walks without phantom errors. Gee-verification — Claude cannot close.
+
+---
+
 #### T18.5 — push gate for main-branch deploy (BINDING)
 
 Per Gee's verbatim 2026-04-18 instruction: before ANY push to `main` for GitHub static deploy, every T18 item above must be shipped AND all docs must be updated AND Gee must explicitly say "yes, push it". Claude does not initiate the push. Claude asks first after the fixes land.

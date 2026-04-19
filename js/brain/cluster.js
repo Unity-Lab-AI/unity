@@ -1973,15 +1973,37 @@ export class NeuronCluster {
     // the intra-cluster matrix on GPU so it's ready for propagate
     // dispatch once the async cascade is wired through cluster.step.
     if (this.synapses) {
-      targets.push({ key: `${this.name}_intraSynapses`, proj: this.synapses });
+      targets.push({ key: `${this.name}_intraSynapses`, proj: this.synapses, binding: null });
     }
+    // T18.6.b — cross-projections upload with cluster-binding metadata
+    // from the start. The `binding` describes WHERE in the destination
+    // main-brain cluster (when one exists) the cross-projection reads
+    // pre-spikes and writes post-currents. For the standalone cortex
+    // language cluster the binding targets the main cortex's first-N
+    // sub-slice of each named region (layout must stay in sync with
+    // `server/brain-server.js:_ensureCortexCrossProjectionsBound` which
+    // is the fallback rebind path for persisted-but-unbound matrices).
+    // `gpuBindingHint` is populated by the server wrapper when the
+    // cluster lives inside a larger bound cortex; browser-only clients
+    // leave it unset and the uploads stay standalone (smaller scale
+    // where standalone overhead is negligible). Intra-synapses always
+    // ship standalone — it runs on its own pre/post buffers, not
+    // bound into another cluster's spike buffer.
     if (this.crossProjections) {
+      const hint = this._gpuBindingHint || null;
       for (const name of Object.keys(this.crossProjections)) {
-        targets.push({ key: `${this.name}_${name}`, proj: this.crossProjections[name] });
+        const key = `${this.name}_${name}`;
+        let binding = null;
+        if (hint && typeof hint.resolve === 'function') {
+          try { binding = hint.resolve(name, this.crossProjections[name]); }
+          catch { binding = null; }
+        }
+        targets.push({ key, proj: this.crossProjections[name], binding });
       }
     }
     let uploaded = 0;
-    for (const { key, proj } of targets) {
+    let boundCount = 0;
+    for (const { key, proj, binding } of targets) {
       try {
         const matrix = {
           rows: proj.rows,
@@ -1991,15 +2013,27 @@ export class NeuronCluster {
           colIdx: proj.colIdx,
           rowPtr: proj.rowPtr,
         };
-        const ack = await this._gpuProxy.upload(key, matrix);
-        if (ack && ack.ok) uploaded++;
-        else console.warn(`[Cluster ${this.name}] GPU upload failed for ${key}:`, ack && ack.error);
+        const ack = await this._gpuProxy.upload(key, matrix, binding);
+        if (ack && ack.ok) {
+          uploaded++;
+          if (binding) {
+            boundCount++;
+            // Mark the CPU-side projection so cluster._crossRegionHebbian
+            // routes GPU dispatch through the bound path (no per-call
+            // pre/post array transfer) — same semantics as the Phase
+            // C.1 rebind leaves them in.
+            proj._gpuBound = true;
+          }
+        } else {
+          console.warn(`[Cluster ${this.name}] GPU upload failed for ${key}:`, ack && ack.error);
+        }
       } catch (err) {
         console.warn(`[Cluster ${this.name}] GPU upload exception for ${key}:`, err && err.message);
       }
     }
     this._gpuProxyReady = uploaded === targets.length;
-    console.log(`[Cluster ${this.name}] GPU proxy ready: ${uploaded}/${targets.length} matrices uploaded (${this._gpuProxyReady ? 'FULL — intra-synapses + all cross-projections on GPU' : 'PARTIAL — falling back to CPU for failed matrices'})`);
+    const boundTag = boundCount > 0 ? ` (${boundCount} cluster-bound at upload — standalone VRAM overhead skipped)` : '';
+    console.log(`[Cluster ${this.name}] GPU proxy ready: ${uploaded}/${targets.length} matrices uploaded${boundTag} (${this._gpuProxyReady ? 'FULL — intra-synapses + all cross-projections on GPU' : 'PARTIAL — falling back to CPU for failed matrices'})`);
     return this._gpuProxyReady;
   }
 
