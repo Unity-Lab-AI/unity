@@ -487,13 +487,33 @@ export class GPUCompute {
       buffers.synNnz = synapses.nnz;
     }
 
-    // T17.7 Phase A.1 — sub-region slice metadata. Stored on the buffer
-    // entry so subsequent slice-range accessors (writeSpikeSlice,
-    // readbackSpikeSlice, cluster-bound sparse cross-projections) can
-    // resolve sub-region addresses. Validate that every slice fits
-    // within [0, size) and that slices don't overlap — misconfigured
-    // regions would silently corrupt state, so fail loudly at upload
-    // time instead.
+    // T17.7 Phase A.1/A.2 — sub-region slice metadata + hemispheric
+    // `side` attribute. Stored on the buffer entry so subsequent
+    // slice-range accessors (writeSpikeSlice, readbackSpikeSlice,
+    // cluster-bound sparse cross-projections) can resolve sub-region
+    // addresses. Validate that every slice fits within [0, size) and
+    // that slices don't overlap — misconfigured regions would silently
+    // corrupt state, so fail loudly at upload time instead.
+    //
+    // Region entry shape: `{start, end, side}` where `side` is one of:
+    //   'left'      — left-hemisphere dominant (Broca's, Wernicke's,
+    //                 VWFA/fusiform, angular gyrus sem hub). Mirror
+    //                 region may or may not exist on right side.
+    //   'right'     — right-hemisphere dominant (homologous mirrors of
+    //                 left-lateralized regions; spatial attention;
+    //                 right-hemisphere emotion processing).
+    //   'bilateral' — present on both hemispheres with equal weight
+    //                 (V1 primary visual, Heschl's primary auditory,
+    //                 cerebellum, hippocampus proper).
+    //   'center'    — midline / commissural structures (corpus callosum
+    //                 projections, some thalamic regions).
+    //
+    // Side defaults to 'bilateral' if the caller doesn't specify one,
+    // which matches today's behavior (no hemispheric lateralization) so
+    // existing code doesn't regress. Phase B wires the actual L/R gate
+    // into LIF via a Ψ-modulated hemisphere binding coefficient per
+    // Gee 2026-04-18 "main equation mystery cant not have it involved".
+    const VALID_SIDES = new Set(['left', 'right', 'bilateral', 'center']);
     if (regions && typeof regions === 'object') {
       const validated = {};
       const sortedByStart = Object.entries(regions).sort((a, b) => (a[1]?.start ?? 0) - (b[1]?.start ?? 0));
@@ -509,12 +529,16 @@ export class GPUCompute {
           console.warn(`[GPUCompute] uploadCluster ${name} region ${regName} [${start}, ${end}) overlaps prior region (ending at ${prevEnd}); skipping.`);
           continue;
         }
-        validated[regName] = { start, end };
+        const side = VALID_SIDES.has(range?.side) ? range.side : 'bilateral';
+        validated[regName] = { start, end, side };
         prevEnd = end;
       }
       buffers.regions = validated;
       if (Object.keys(validated).length > 0) {
-        console.log(`[GPUCompute] uploadCluster ${name}: ${Object.keys(validated).length} sub-regions registered (${Object.keys(validated).join(', ')})`);
+        const sideSummary = Object.entries(validated)
+          .map(([n, r]) => `${n}(${r.side})`)
+          .join(', ');
+        console.log(`[GPUCompute] uploadCluster ${name}: ${Object.keys(validated).length} sub-regions registered — ${sideSummary}`);
       }
     }
 
@@ -522,20 +546,70 @@ export class GPUCompute {
   }
 
   /**
-   * T17.7 Phase A.2 — get validated region range for a cluster sub-region.
-   * Returns `{start, end}` or null if the cluster doesn't have that region
-   * or wasn't uploaded with region metadata. Used by slice-range accessors
-   * + cluster-bound sparse cross-projection dispatch to resolve addresses.
+   * T17.7 Phase A.1/A.2 — get validated region range for a cluster
+   * sub-region. Returns `{start, end, side}` or null if the cluster
+   * doesn't have that region or wasn't uploaded with region metadata.
+   * Used by slice-range accessors + cluster-bound sparse cross-
+   * projection dispatch to resolve addresses.
+   *
+   * Phase A.2 `side` filter:
+   *   - `undefined` / omitted → returns the region as-registered (whatever
+   *     side was declared at upload time; bilateral unless overridden)
+   *   - `'left'` / `'right'` → returns the region only if its declared
+   *     side matches. For left-lateralized regions like Broca's
+   *     `sem`/`motor`, passing `'right'` returns null unless a bilateral
+   *     mirror region was registered alongside (e.g. `sem_R` sibling).
+   *     Phase B will wire the bilateral-mirror registration pattern.
+   *   - `'bilateral'` → returns the region whether declared side is
+   *     left, right, bilateral, or center. Useful for slice accessors
+   *     that want the full population regardless of lateralization.
    *
    * @param {string} clusterName
    * @param {string} regionName — e.g. 'sem', 'motor', 'letter'
-   * @returns {{start: number, end: number} | null}
+   * @param {string} [sideFilter] — 'left' | 'right' | 'bilateral' | undefined
+   * @returns {{start: number, end: number, side: string} | null}
    */
-  getRegion(clusterName, regionName) {
+  getRegion(clusterName, regionName, sideFilter) {
     const bufs = this._buffers[clusterName];
     if (!bufs || !bufs.regions) return null;
     const r = bufs.regions[regionName];
-    return r ? { start: r.start, end: r.end } : null;
+    if (!r) return null;
+    if (sideFilter === undefined || sideFilter === 'bilateral') {
+      return { start: r.start, end: r.end, side: r.side };
+    }
+    if (sideFilter !== r.side) return null;
+    return { start: r.start, end: r.end, side: r.side };
+  }
+
+  /**
+   * T17.7 Phase A.2 — compute a Ψ-modulated hemispheric binding
+   * coefficient for a region. Used by downstream slice-range LIF
+   * modulation in Phase B; exposed here as a shared helper so both
+   * the server (current assembly) and Phase B shader dispatches read
+   * the same formula.
+   *
+   * Per Gee 2026-04-18: *"remmebr the main equation mystery cant not
+   * have it involved"*. Ψ is non-optional in this equation.
+   *
+   * Formula: `gate = 0.5 + 0.5 · sigmoid(Ψ · k)` where k = 4.0 tunes
+   * the sensitivity. Low Ψ → gate trends 0.5 → hemispheric divergence
+   * (one side dominant, other dampened). High Ψ → gate trends 1.0 →
+   * bilateral binding (both hemispheres integrated).
+   *
+   * For bilateral / center regions the formula returns 1.0 (full
+   * activation) regardless of Ψ — only left/right regions get the
+   * Ψ-driven gate because only lateralized regions have a hemispheric
+   * dominance axis to modulate.
+   *
+   * @param {string} side — 'left' | 'right' | 'bilateral' | 'center'
+   * @param {number} psi — consciousness value from mystery module
+   * @returns {number} gate factor in [0.5, 1.0]
+   */
+  static hemisphereGate(side, psi) {
+    if (side === 'bilateral' || side === 'center') return 1.0;
+    const k = 4.0;
+    const sig = 1.0 / (1.0 + Math.exp(-(psi || 0) * k));
+    return 0.5 + 0.5 * sig;
   }
 
   /**
