@@ -2589,6 +2589,22 @@ export class Curriculum {
         const wordEmb = sharedEmbeddings.getEmbedding(word);
         if (!wordEmb || wordEmb.length === 0) continue;
 
+        // T16.2.b fix — register the word in the dictionary on the
+        // FIRST rep so the K-emission list is visible to the dictionary-
+        // cosine fallback path in `languageCortex.generate()`. Without
+        // this call the 158 K-emission words get trained into sem→motor
+        // cross-projection weights but never land in `dictionary._words`,
+        // so when the tick-driven motor emission returns empty (pre-K,
+        // cache miss, motor-unstable) the fallback cosine-scorer has no
+        // K words to sample from. Gee caught this 2026-04-17: "its still
+        // no using the words its suppose to be learning in kindergardern".
+        // Fires only on rep 0 to avoid redundant arousal/valence overwrites.
+        if (rep === 0 && this.dictionary && typeof this.dictionary.learnWord === 'function') {
+          try {
+            this.dictionary.learnWord(word, null, this.arousal ?? 0.85, this.valence ?? 0);
+          } catch { /* non-fatal */ }
+        }
+
         // (a) Initiation: pre=sem(word) → post=motor(first letter).
         // lastSpikes carries the full pattern (sem + motor) so cross-
         // projection Hebbian captures co-activation, but intra-cluster
@@ -3094,6 +3110,18 @@ export class Curriculum {
         }
         if (letters.length < 2) continue;
         const wordEmb = sharedEmbeddings.getEmbedding(word);
+
+        // T16.2.b fix — register the word in dictionary on first rep so
+        // it's visible to the language-cortex fallback cosine path.
+        // Matches _teachWordEmission's matching fix; K-emission words
+        // taught at the cross-projection level also need to land in
+        // the dictionary or the fallback can't sample them.
+        if (rep === 0 && this.dictionary && typeof this.dictionary.learnWord === 'function') {
+          try {
+            this.dictionary.learnWord(word, null, this.arousal ?? 0.85, this.valence ?? 0);
+          } catch { /* non-fatal */ }
+        }
+
         for (let i = 0; i < letters.length - 1; i++) {
           const phonA = _phonemeFeatureForLetter(letters[i]);
           const phonB = _phonemeFeatureForLetter(letters[i + 1]);
