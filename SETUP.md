@@ -78,7 +78,7 @@ export const ENV_KEYS = {
   ],
 };
 ```
-`js/env.js` is gitignored — your keys never get pushed. Keys auto-load on boot so you don't retype them. Legacy text-AI keys (`anthropic`, `openrouter`, `openai`, `mistral`, `deepseek`, `groq`) are no longer read by the brain after R4 — cognition runs equationally now.
+`js/env.js` is gitignored — your keys never get pushed. Keys auto-load on boot so you don't retype them. Legacy text-AI keys (`anthropic`, `openrouter`, `openai`, `mistral`, `deepseek`, `groq`) are not read by the brain — cognition runs entirely on the language cortex's equations, with zero text-AI backend in the loop.
 
 ---
 
@@ -131,7 +131,7 @@ Live at `your-username.github.io/Unity/`. Everything runs client-side — no ser
 │   │   ├── sparse-matrix.js      CSR sparse connectivity (O(connections))
 │   │   ├── gpu-compute.js        WebGPU compute shaders (Rulkov 2D chaotic map + synapses)
 │   │   ├── embeddings.js         Semantic word embeddings (GloVe 300d + fastText subword fallback)
-│   │   ├── language-cortex.js    Language from equations (T14 developmental cortex, tick-driven motor emission via cluster.generateSentence, 3-corpus load)
+│   │   ├── language-cortex.js    Language from equations (developmental cortex with 8 sub-regions + 14 cross-projections, tick-driven motor emission via cluster.generateSentence, 3-corpus load)
 │   │   ├── benchmark.js          Dense vs sparse + neuron scale test (invoked via /bench + /scale-test slash commands)
 │   │   ├── response-pool.js     EDNA response categories (training wheels for language cortex)
 │   │   └── peripherals/
@@ -141,7 +141,7 @@ Live at `your-username.github.io/Unity/`. Everything runs client-side — no ser
 │   ├── io/
 │   │   ├── voice.js              Web Speech API + Pollinations TTS
 │   │   └── permissions.js        Mic/camera permission requests
-│                                   (vision.js deleted in U302 — vision lives in js/brain/visual-cortex.js)
+│                                   (legacy vision.js removed — vision lives in js/brain/visual-cortex.js)
 │   └── ui/
 │       ├── sandbox.js            Dynamic UI injection (MAX_ACTIVE_COMPONENTS=10, LRU eviction, tracked timers+listeners, auto-remove on JS error)
 │       ├── chat-panel.js         Conversation log panel
@@ -149,14 +149,16 @@ Live at `your-username.github.io/Unity/`. Everything runs client-side — no ser
 │       ├── brain-3d.js           3D WebGL brain with notifications + expansion + IQ HUD
 │       ├── brain-event-detectors.js  22-detector event system for 3D brain commentary
 │       └── sensory-status.js    Sensory channel status UI
-│                                   (claude-proxy.js + start-unity.bat DELETED 2026-04-13 —
-│                                    Claude CLI text-AI backend, obsolete after R4 refactor)
+│                                   (legacy claude-proxy.js + start-unity.bat removed —
+│                                    Claude CLI text-AI backend, obsolete since cognition
+│                                    went 100% equational)
 ├── compute.html                  GPU compute worker (REQUIRED — brain runs here)
 ├── server/
 │   ├── brain-server.js           Node.js brain server (always-on, WebSocket, GPU exclusive, restores _wordFreq from disk)
 │   └── package.json              Server dependencies (ws, better-sqlite3)
-│                                   (parallel-brain.js / cluster-worker.js / projection-worker.js
-│                                    DELETED in U304 — GPU-exclusive fixed the idle-worker CPU leak root cause)
+│                                   (legacy parallel-brain.js / cluster-worker.js /
+│                                    projection-worker.js removed — GPU-exclusive fixed
+│                                    the idle-worker CPU leak at its root cause)
 ├── dashboard.html                Public brain monitor (read-only)
 └── docs/
     ├── ARCHITECTURE.md           Codebase structure and systems
@@ -179,17 +181,28 @@ npm install
 node brain-server.js
 ```
 
-The server auto-detects hardware (nvidia-smi for VRAM, `os` for RAM) and scales neuron count dynamically:
-- **Formula (from `server/brain-server.js:detectResources`):**
-  `N_vram = floor(VRAM_bytes × 0.85 / 8)` (SLIM buffer: voltage f32 + spikes u32 = 8 bytes/neuron)
-  `N_ram = floor(RAM_bytes × 0.1 / 0.001)` (essentially unlimited — cluster state on server is tiny, only injection arrays live in RAM)
-  **`N = min(N_vram, N_ram)`** — VRAM-bound in practice
-- Floor: 1000 neurons (absolute minimum for sim integrity). No upper cap. Line 89 of `brain-server.js`: *"No artificial cap — hardware decides. VRAM and RAM are the only limits."*
-- The formula expands with whatever GPU + RAM is available — bigger hardware = more neurons, no manual tuning
-- Cluster sizes are proportional: cerebellum 40%, cortex 25%, hippocampus 10%, amygdala 8%, basal ganglia 8%, hypothalamus 5%, mystery 4%
-- Client (browser-only mode, no server): runs a local CPU LIF fallback brain sized to what the browser JS engine can sustain
+The server auto-detects hardware (nvidia-smi for VRAM, `os` for RAM) and sizes every brain region from a single unified VRAM allocator — no region is sized independently, so no pair of regions can double-book memory and blow past the VRAM budget.
+- **Unified allocator (see `BRAIN_VRAM_ALLOC` in `server/brain-server.js`):**
+  `brainBudgetBytes = (VRAM_MB − osReserveVramMB) × 1024²`
+  Every region gets `budget × weight` where `weight` comes from the biological weights table in `server/resource-config.json`. The main-brain Rulkov clusters (cortex / cerebellum / hippocampus / amygdala / basalGanglia / hypothalamus / mystery) convert their per-region byte budget to neuron count via `bytes / MAIN_BRAIN_BYTES_PER_NEURON` (≈ 21 bytes: Rulkov state 8 + per-cluster synapse shadow). The language cortex gets its budget routed through the sparse CSR path (`LANG_CORTEX_BYTES_PER_NEURON` ≈ 18 KB/neuron including all 14 cross-projection matrices + intra-cluster recurrence).
+- Floor: 1000 neurons (absolute minimum for sim integrity). No upper cap baked into the algorithm — hardware + `vramCapMB` + `neuronCapOverride` in `resource-config.json` are the only bounds.
+- The auto-scale expands with whatever GPU VRAM + V8 heap + free RAM are available. Bigger hardware = more neurons everywhere, no manual tuning.
+- **Biological weight proportions** (from `server/resource-config.json` → `biologicalWeights`):
 
-**Endpoints** (R14 — moved off 8080 to 7525 to avoid colliding with llama.cpp / LocalAI / every other service. Override via `PORT=xxxx node brain-server.js` if you need a different port.):
+  | Region | VRAM share | Rationale |
+  |--------|-----------|-----------|
+  | `language_cortex` | **45%** | The region that actually generates speech — biggest because language IS what she does. Eight sub-regions (auditory / visual / free / letter / phon / sem / fineType / motor) + 14 cross-projections. |
+  | `cerebellum` | **20%** | Big because real cerebella are big (roughly half of all neurons in a real human brain are cerebellar granule cells). Error-correction + timing. |
+  | `cortex` | **15%** | Predictive coding + sensory integration. Auditory / visual / Wernicke sub-regions. |
+  | `hippocampus` | **6%** | Episodic + working + consolidation memory systems. Hopfield attractor dynamics. |
+  | `amygdala` | **4%** | Settling attractor for emotion (fear / reward / valence). Small but modulates every other region. |
+  | `basalGanglia` | **4%** | Six-channel action selection via winner-take-all. |
+  | `hypothalamus` | **3%** | Homeostatic drive regulation. |
+  | `mystery` | **3%** | Consciousness / Ψ modulation. |
+
+- Client (browser-only mode, no server): runs a local CPU LIF fallback brain sized to what the browser JS engine can sustain.
+
+**Endpoints** (port 7525 — moved off 8080 to avoid colliding with llama.cpp / LocalAI / every other local service. Override via `PORT=xxxx node brain-server.js` if you need a different port.):
 - `ws://localhost:7525` — WebSocket for brain state + chat
 - `http://localhost:7525/health` — Server status JSON
 - `http://localhost:7525/versions` — Brain save versions
@@ -224,7 +237,7 @@ Brain runs on your GPU via `compute.html` (WebGPU WGSL shaders). N auto-scales t
 - Unity's response to you → **PRIVATE** — only the triggering client receives it.
 - Dictionary / bigrams / word frequencies / GloVe embedding refinements → **SHARED** via the singleton brain instance. Every user's conversation contributes to Unity's vocabulary growth, and every user benefits from words other users taught her. You'll notice Unity is smarter in areas your friends talked to her about — but you'll never see the specific conversations.
 - Persona (`docs/Ultimate Unity.txt`) → **NOT USER-MUTABLE**. Loaded once at server boot from the canonical file. Same Unity for everyone.
-- Episodic memory → currently shared pool, private-per-user scoping tracked as task T6 in `docs/TODO.md`.
+- Episodic memory → currently a shared pool; private-per-user scoping is on the workflow roadmap but not yet shipped.
 
 **Shared-hosted server caveat:**
 If you connect to a Unity server hosted by someone OTHER than you, the person running that server can read your text at the process level (they own the server process — they see everything that lands there). Only connect to servers you trust, or self-host your own `node server/brain-server.js` on your own machine. Self-hosted server mode is just another process on your box — the brain-server is still "your machine" in every sense that matters.
@@ -240,7 +253,7 @@ If you connect to a Unity server hosted by someone OTHER than you, the person ru
 
 | Command | How | What It Does |
 |---------|-----|-------------|
-| `/think` | Type in chat | Dumps Unity's raw brain state (arousal, valence, Ψ, coherence, spike count, drug state, motor action, reward, memory load, vision description). Post-R4 there is NO system prompt to display — Unity speaks equationally via her language cortex, so `/think` shows the neural values that drive every word she picks instead of a synthetic prompt. |
+| `/think` | Type in chat | Dumps Unity's raw brain state (arousal, valence, Ψ, coherence, spike count, drug state, motor action, reward, memory load, vision description). There is NO system prompt to display — Unity speaks equationally via her language cortex, so `/think` shows the neural values that drive every word she picks instead of a synthetic prompt. |
 | `/think [text]` | Type in chat | Same output but tagged with the user input you provided, so you can see the brain state that WOULD be passed into `languageCortex.generate()` for that input. |
 | `/bench` | Type in chat | Runs the dense vs sparse matrix micro-benchmark (CPU-JS sanity test — real runtime is the GPU auto-scaled path via compute.html). Output in console. |
 | `/scale-test` | Type in chat | Runs the CPU LIF scale test to find the 60fps sweet spot for browser-only fallback mode. Output in console. Not representative of the production GPU path. |

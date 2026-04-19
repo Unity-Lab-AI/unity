@@ -184,6 +184,82 @@ function detectResources() {
 
 const RESOURCES = detectResources();
 
+// ── T17.3.f — Unified biological VRAM allocator (Gee 2026-04-18) ────
+//
+// ONE budget across ALL 8 brain regions (7 main + language cortex).
+// Replaces the broken split where main-brain scaler picked 671M
+// independently and language-cortex scaler picked 200K independently,
+// resulting in 17.6 GB VRAM on a 16 GB card → driver spillover →
+// compute_batch timeouts.
+//
+// Formula:
+//   total_VRAM      = vramCapMB                 (from resource-config.json)
+//   os_reserve      = osReserveVramMB           (from resource-config.json, default 2 GB)
+//   brain_budget    = total_VRAM - os_reserve
+//   per_region_budget[k] = brain_budget × biologicalWeights[k]
+//
+// Weights sum to 1.0, configurable in resource-config.json. Default:
+//   language_cortex  0.45  — BIGGEST slice because sparse cross-projections
+//                            at fanout 1500 cost ~18 KB/neuron (70× more
+//                            VRAM per neuron than main-brain regions)
+//   cerebellum       0.20
+//   cortex (main)    0.15
+//   hippocampus      0.06
+//   amygdala         0.04
+//   basalGanglia     0.04
+//   hypothalamus     0.03
+//   mystery          0.03
+//
+// Bytes-per-neuron (empirical, from 2026-04-18 boot log):
+//   main brain:      ~21 bytes (Rulkov state + spike buffer + GPU
+//                    synapse overhead at scale-limited fanout)
+//   language cortex: ~18 KB   (14 cross-projections at fanout 1500 +
+//                    intra-synapse matrix at density 0.0015)
+const DEFAULT_BIO_WEIGHTS = {
+  language_cortex: 0.45,
+  cerebellum:      0.20,
+  cortex:          0.15,
+  hippocampus:     0.06,
+  amygdala:        0.04,
+  basalGanglia:    0.04,
+  hypothalamus:    0.03,
+  mystery:         0.03,
+};
+const BRAIN_VRAM_ALLOC = (function () {
+  const cfg = RESOURCES.override || {};
+  const vramMB = typeof cfg.vramCapMB === 'number' ? cfg.vramCapMB
+               : (RESOURCES.gpu && RESOURCES.gpu.vram) ? RESOURCES.gpu.vram
+               : 16384;
+  const osReserveMB = typeof cfg.osReserveVramMB === 'number' ? cfg.osReserveVramMB : 2048;
+  const brainBudgetMB = Math.max(1024, vramMB - osReserveMB);
+
+  // Normalize biological weights — if config weights sum != 1.0, scale them.
+  const rawWeights = { ...DEFAULT_BIO_WEIGHTS, ...(cfg.biologicalWeights || {}) };
+  const weightSum = Object.values(rawWeights).reduce((s, w) => s + (Number(w) || 0), 0);
+  const weights = {};
+  for (const [k, v] of Object.entries(rawWeights)) {
+    weights[k] = (Number(v) || 0) / (weightSum || 1);
+  }
+
+  // Per-region VRAM budget in BYTES
+  const brainBudgetBytes = brainBudgetMB * 1024 * 1024;
+  const perRegionBytes = {};
+  for (const [k, w] of Object.entries(weights)) {
+    perRegionBytes[k] = Math.floor(brainBudgetBytes * w);
+  }
+
+  return {
+    vramMB,
+    osReserveMB,
+    brainBudgetMB,
+    weights,
+    perRegionBytes,
+    MAIN_BRAIN_BYTES_PER_NEURON: 21,
+    LANG_CORTEX_BYTES_PER_NEURON: 18 * 1024,
+  };
+})();
+console.log(`[Brain] Unified VRAM allocator: total=${BRAIN_VRAM_ALLOC.vramMB}MB − OS=${BRAIN_VRAM_ALLOC.osReserveMB}MB = brain=${BRAIN_VRAM_ALLOC.brainBudgetMB}MB. Weights: ${Object.entries(BRAIN_VRAM_ALLOC.weights).map(([k,w]) => `${k}=${(w*100).toFixed(1)}%`).join(' ')}.`);
+
 // ── Configuration ──────────────────────────────────────────────
 
 // R14 — moved off 8080 to avoid colliding with llama.cpp / LocalAI /
@@ -283,16 +359,39 @@ autoClearStaleState();
 // identical shapes in both runtimes. Real brain: cerebellum has 80% of
 // neurons (69B/86B), cortex 19% — we balance cerebellum largest (motor
 // + timing) and cortex second (language + prediction).
-const TOTAL_NEURONS = RESOURCES.maxNeurons;
-const CLUSTER_SIZES = {
-  cortex:       Math.floor(TOTAL_NEURONS * 0.30),  // language + working memory + semantic
-  hippocampus:  Math.floor(TOTAL_NEURONS * 0.10),  // memory consolidation
-  amygdala:     Math.floor(TOTAL_NEURONS * 0.08),  // valence/arousal attractor
-  basalGanglia: Math.floor(TOTAL_NEURONS * 0.08),  // action selection + motor channels
-  cerebellum:   Math.floor(TOTAL_NEURONS * 0.40),  // error correction + motor smoothing (largest)
-  hypothalamus: Math.floor(TOTAL_NEURONS * 0.02),  // homeostatic drives
-  mystery:      Math.floor(TOTAL_NEURONS * 0.02),  // Ψ consciousness modulation
+// T17.3.f — main-brain cluster sizes come from the unified VRAM allocator.
+// Each main-brain cluster's size = its VRAM budget ÷ MAIN_BRAIN_BYTES_PER_NEURON,
+// floored by the binding ceiling (per-buffer hardware limit). Previously
+// sizes were hardcoded as fractions (0.30/0.40/0.10/etc) of a separately-
+// computed TOTAL_NEURONS — that split was VRAM-blind and summed to 14 GB
+// of main brain + 3.6 GB language cortex = 17.6 GB overflow.
+const BP_MAIN = BRAIN_VRAM_ALLOC.MAIN_BRAIN_BYTES_PER_NEURON;
+const _bindingCeilingBytes = (typeof (RESOURCES.override && RESOURCES.override.bindingCeilingMB) === 'number')
+  ? RESOURCES.override.bindingCeilingMB * 1024 * 1024
+  : 2 * 1024 * 1024 * 1024;
+const _mainMaxPerCluster = Math.floor(_bindingCeilingBytes / 8);
+const _sizeFor = (regionKey) => {
+  const budgetBytes = BRAIN_VRAM_ALLOC.perRegionBytes[regionKey] || 0;
+  const fromVram = Math.floor(budgetBytes / BP_MAIN);
+  return Math.max(1000, Math.min(fromVram, _mainMaxPerCluster));
 };
+const CLUSTER_SIZES = {
+  cortex:       _sizeFor('cortex'),
+  hippocampus:  _sizeFor('hippocampus'),
+  amygdala:     _sizeFor('amygdala'),
+  basalGanglia: _sizeFor('basalGanglia'),
+  cerebellum:   _sizeFor('cerebellum'),
+  hypothalamus: _sizeFor('hypothalamus'),
+  mystery:      _sizeFor('mystery'),
+};
+// TOTAL_NEURONS is the SUM of main-brain cluster sizes (language cortex
+// lives in its own scaler and is tracked as `langCortexSize` separately).
+const TOTAL_NEURONS = Object.values(CLUSTER_SIZES).reduce((s, n) => s + n, 0);
+// Expose the language-cortex VRAM budget so the language-cortex auto-scaler
+// can use it as its VRAM bound (single source of truth — no more double-
+// counting the 16 GB VRAM pool).
+const LANG_CORTEX_VRAM_BUDGET_BYTES = BRAIN_VRAM_ALLOC.perRegionBytes.language_cortex || 0;
+console.log(`[Brain] Main-brain cluster sizes (from biological weights): ${Object.entries(CLUSTER_SIZES).map(([k,n]) => `${k}=${n.toLocaleString()}`).join(', ')}. Total main-brain neurons: ${TOTAL_NEURONS.toLocaleString()}. Language cortex VRAM budget: ${(LANG_CORTEX_VRAM_BUDGET_BYTES/1e9).toFixed(2)}GB.`);
 // Display-only scale factor (kept for boot log + state payload).
 const SCALE = Math.floor(TOTAL_NEURONS / 1000);
 
@@ -696,33 +795,16 @@ class ServerBrain {
       // Rounded up to 40,000 as a safety buffer for allocation
       // overhead, rowPtr arrays, scratch buffers, JS object wrappers
       // on typed-array handles, etc.
-      // Third auto-scale bound — CPU single-thread dispatch budget.
-      // The Node event loop has ONE thread. The main GPU brain needs to
-      // dispatch compute_batch messages to compute.html every ~100ms or
-      // the 15-second timeout fires ("compute_batch N timed out after
-      // 15s — GPU may be hung"). If curriculum teach on the CPU
-      // language cortex blocks the thread for longer than that, the
-      // main brain hangs. Gee 2026-04-18 Part 2 log confirmed: at
-      // 1.46M CPU cortex each cluster.step() blocks ~2s, which starves
-      // compute_batch dispatch → timeouts cascade.
-      //
-      // Per-step CPU cost (JS sparse matmul):
-      //   cluster.step time ≈ (N × targetFanout) × ~3 ns/op
-      //   At fanout=300, each step costs ~900 ns × N
-      //
-      // Budget for ~50ms per synchronous chunk to keep main brain alive:
-      //   N ≤ 50e6 ns / 900 ns ≈ 55,000 neurons
-      // Rounded up to 200,000 with the expectation that some
-      // curriculum teach methods yield between steps (our progress
-      // logging adds microtask yields). Still conservative vs the
-      // 1.46M that definitely broke.
-      //
-      // NOT A CAP — this is the hardware-tier dispatch budget for the
-      // CPU single-thread path. Once Worker parallelization lands
-      // (T17.2) this rises. Once GPU cross-region shaders land (T17.3)
-      // the language cortex leaves this single-thread path entirely
-      // and this bound no longer applies.
-      const CPU_SINGLE_THREAD_DISPATCH_BUDGET = 200000;
+      // T17.3.e (Gee 2026-04-18) — CPU_SINGLE_THREAD_DISPATCH_BUDGET
+      // REMOVED from Math.min. The language cortex no longer runs the
+      // sparse matmul on CPU — cluster.step() now consumes cached GPU
+      // propagate results (`_cachedIntraCurrents` + `_cachedCrossCurrents`)
+      // populated by `_dispatchGpuPropagates()` fire-and-forget at the
+      // end of each tick. Sparse matmul happens on GPU, the CPU side
+      // of step() is just LIF integration + spike counting. The old
+      // 200,000-neuron cap on a 500M-neuron brain was, in Gee's words,
+      // "a fucking shit erronous limit that is not biologically correct".
+      // Size is now bounded by VRAM allocator + V8 heap + free RAM only.
       const os = require('os');
       const LANG_CLUSTER_BYTES_PER_NEURON = 40000;
       const freeRamBytes = os.freemem();
@@ -741,13 +823,21 @@ class ServerBrain {
         v8BasedMax = Math.floor(clusterHeapBudget / LANG_CLUSTER_BYTES_PER_NEURON);
       } catch { /* v8 module missing — skip heap-based bound */ }
 
+      // T17.3.f — VRAM budget comes from the UNIFIED allocator (single
+      // source of truth for the 16 GB pool, shared with main-brain sizing).
+      // Replaces the broken parallel calculation that double-counted the
+      // 7×bindingCeilingMB worst case. See BRAIN_VRAM_ALLOC at top of file.
+      const GPU_BYTES_PER_NEURON_SPARSE = BRAIN_VRAM_ALLOC.LANG_CORTEX_BYTES_PER_NEURON;
+      const vramBasedMax = Math.floor(LANG_CORTEX_VRAM_BUDGET_BYTES / GPU_BYTES_PER_NEURON_SPARSE);
+      const vramCortexMB = Math.round(LANG_CORTEX_VRAM_BUDGET_BYTES / 1024 / 1024);
+
       const envOverride = parseInt(process.env.DREAM_LANG_CORTEX, 10);
       const configuredCortex = CLUSTER_SIZES.cortex;
-      const autoSize = Math.min(configuredCortex, ramBasedMax, v8BasedMax, CPU_SINGLE_THREAD_DISPATCH_BUDGET);
+      const autoSize = Math.min(configuredCortex, ramBasedMax, v8BasedMax, vramBasedMax);
       const langCortexSize = Number.isFinite(envOverride) && envOverride > 0 ? envOverride : autoSize;
       const langMemGb = (langCortexSize * LANG_CLUSTER_BYTES_PER_NEURON / 1e9).toFixed(2);
       const heapLimitGb = (v8BasedMax === Infinity ? 'unlimited' : ((v8BasedMax * LANG_CLUSTER_BYTES_PER_NEURON) / 1e9).toFixed(1) + 'GB');
-      console.log(`[Brain] Language cortex auto-scaled to ${langCortexSize.toLocaleString()} neurons (~${langMemGb} GB). Bounds: free RAM ${(freeRamBytes/1e9).toFixed(1)}GB × 50% = ${(ramBudget/1e9).toFixed(1)}GB → ${ramBasedMax.toLocaleString()} neurons | V8 heap cluster-budget → ${heapLimitGb} → ${v8BasedMax === Infinity ? '∞' : v8BasedMax.toLocaleString()} neurons | CPU single-thread dispatch budget → ${CPU_SINGLE_THREAD_DISPATCH_BUDGET.toLocaleString()} neurons (so curriculum teach doesn't starve main-brain GPU compute_batch dispatch) | configured cortex ${configuredCortex.toLocaleString()} neurons. Main GPU brain at ${TOTAL_NEURONS.toLocaleString()} neurons.${envOverride > 0 ? ' DREAM_LANG_CORTEX override active.' : ''}`);
+      console.log(`[Brain] Language cortex auto-scaled to ${langCortexSize.toLocaleString()} neurons (~${langMemGb} GB RAM). Bounds: free RAM ${(freeRamBytes/1e9).toFixed(1)}GB × 50% = ${(ramBudget/1e9).toFixed(1)}GB → ${ramBasedMax.toLocaleString()} neurons | V8 heap cluster-budget → ${heapLimitGb} → ${v8BasedMax === Infinity ? '∞' : v8BasedMax.toLocaleString()} neurons | GPU VRAM budget from unified allocator → ${vramCortexMB}MB = ${(BRAIN_VRAM_ALLOC.weights.language_cortex*100).toFixed(1)}% of ${BRAIN_VRAM_ALLOC.brainBudgetMB}MB brain budget → ${vramBasedMax.toLocaleString()} neurons | configured cortex ${configuredCortex.toLocaleString()} neurons. Main GPU brain at ${TOTAL_NEURONS.toLocaleString()} neurons. T17.3.e: sparse matmul ON GPU — CPU single-thread dispatch budget REMOVED.${envOverride > 0 ? ' DREAM_LANG_CORTEX override active.' : ''}`);
       console.log(`[Brain] Language cortex = ${langCortexSize.toLocaleString()} neurons. Sub-regions: letter ${Math.floor(langCortexSize * 0.05).toLocaleString()}, phon ${Math.floor(langCortexSize * 0.20).toLocaleString()}, sem ${Math.floor(langCortexSize * 0.167).toLocaleString()}, motor ${Math.floor(langCortexSize * 0.033).toLocaleString()}.`);
       // T14.24 Session 95 — mark the cluster as NOT gpu-ready yet. The
       // server tick loop flips this to `true` when the first GPU-ready
@@ -1101,6 +1191,27 @@ class ServerBrain {
         firingRate: cluster.firingRate,
       };
     }
+    // T17.3.f — emit language cortex sub-region activity as pseudo-clusters
+    // (keys: lang_motor, lang_phon, lang_sem, lang_letter, lang_visual,
+    // lang_auditory, lang_fineType, lang_free) so the 3D brain can render
+    // Broca's, Wernicke's, angular gyrus, VWFA, V1, Heschl's, temporal pole,
+    // and PFC as filled-in sub-volumes between the existing 7 regions.
+    // Spike counts derived from cortexCluster.lastSpikes sliced per-region.
+    if (this.cortexCluster && this.cortexCluster.regions && this.cortexCluster.lastSpikes) {
+      const ls = this.cortexCluster.lastSpikes;
+      for (const [regName, region] of Object.entries(this.cortexCluster.regions)) {
+        const size = region.end - region.start;
+        let spikeCount = 0;
+        for (let i = region.start; i < region.end && i < ls.length; i++) {
+          if (ls[i]) spikeCount++;
+        }
+        clusterStates[`lang_${regName}`] = {
+          size,
+          spikeCount,
+          firingRate: spikeCount / Math.max(1, size),
+        };
+      }
+    }
 
     // Derive band power from INSTANT spike rates (not slow EMA)
     const cortexRate = this.clusters.cortex.spikeCount / (CLUSTER_SIZES.cortex || 1);
@@ -1355,33 +1466,35 @@ class ServerBrain {
 
   _encodeSparseHeader(typeByte, reqId, name) {
     const nameBuf = Buffer.from(name, 'utf8');
-    const hdr = Buffer.alloc(11 + nameBuf.length);
+    // Pad header to a 4-byte boundary so subsequent Float32/Uint32
+    // typed-array views created over the incoming ArrayBuffer have
+    // aligned byteOffsets. Chrome throws RangeError on unaligned
+    // TypedArray views — this was silently killing all previous
+    // uploads for matrix names whose length wasn't 1 mod 4.
+    const rawLen = 11 + nameBuf.length;
+    const padLen = (4 - (rawLen % 4)) % 4;
+    const hdr = Buffer.alloc(rawLen + padLen);
     hdr.write('SPRS', 0, 'ascii');
     hdr[4] = typeByte;
     hdr.writeUInt32LE(reqId, 5);
     hdr.writeUInt16LE(nameBuf.length, 9);
     nameBuf.copy(hdr, 11);
+    // pad bytes already zero from Buffer.alloc
     return hdr;
   }
 
   _sparseSendBinary(msgBuffer, reqId, timeoutMs = 120_000) {
     if (!this._gpuClient || this._gpuClient.readyState !== 1) return Promise.resolve(null);
     if (!this._gpuSparsePending) this._gpuSparsePending = new Map();
-    const sizeMb = (msgBuffer.length / 1e6).toFixed(1);
-    const bufferedBefore = this._gpuClient.bufferedAmount;
-    console.log(`[Brain] sparse binary send reqId=${reqId} size=${sizeMb}MB (bufferedAmount=${(bufferedBefore/1e6).toFixed(1)}MB)`);
+    // No per-send log spam — at 100+ ops/sec the logs themselves are a
+    // bottleneck. Only log errors and the final timeout warn.
     this._gpuClient.send(msgBuffer, (err) => {
-      if (err) {
-        console.warn(`[Brain] sparse binary send reqId=${reqId} ERROR: ${err.message}`);
-      } else {
-        console.log(`[Brain] sparse binary send reqId=${reqId} flushed (bufferedAmount=${(this._gpuClient.bufferedAmount/1e6).toFixed(1)}MB)`);
-      }
+      if (err) console.warn(`[Brain] sparse binary reqId=${reqId} ERROR: ${err.message}`);
     });
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         if (this._gpuSparsePending && this._gpuSparsePending.has(reqId)) {
           this._gpuSparsePending.delete(reqId);
-          console.warn(`[Brain] sparse binary reqId=${reqId} timed out after ${timeoutMs}ms (bufferedAmount=${(this._gpuClient.bufferedAmount/1e6).toFixed(1)}MB still pending)`);
           resolve(null);
         }
       }, timeoutMs);
@@ -1389,10 +1502,40 @@ class ServerBrain {
     });
   }
 
+  // Backpressure gate for fire-and-forget GPU shadows. Curriculum fires
+  // thousands of propagate/hebbian shadows per second; without a gate,
+  // bufferedAmount grew to 1.7 GB and every shadow timed out at 30 s,
+  // effectively killing the brain. CPU remains authoritative — skipping
+  // a shadow just means that one Hebbian update doesn't mirror to GPU.
+  //
+  // Two-level gate:
+  //   (1) pending-request cap — compute.html's onmessage is serial, so
+  //       pending.size ≈ how many messages are queued ahead of the next
+  //       main-brain compute_batch. Cap at 4 so main-brain dispatch
+  //       doesn't block behind hundreds of shadow hebbians.
+  //   (2) TCP send-buffer cap — belt-and-suspenders for abnormal queue
+  //       growth (slow network, giant frames).
+  _gpuSparseFlowOk() {
+    const c = this._gpuClient;
+    if (!c || c.readyState !== 1) return false;
+    const pending = this._gpuSparsePending ? this._gpuSparsePending.size : 0;
+    if (pending >= 4) return false;
+    return c.bufferedAmount < 2_000_000;
+  }
+
   /**
-   * Upload a sparse CSR matrix to GPU via binary WebSocket frame.
-   * No size limit — transports Float32/Uint32 typed arrays directly
-   * as binary, bypassing JSON.
+   * Upload a sparse CSR matrix to GPU via CHUNKED binary WebSocket
+   * frames. Chrome's WebSocket frame assembler chokes on single frames
+   * approaching 500MB — observed 480MB frames flush OS-side but never
+   * deliver to ws.onmessage within 180s on localhost loopback. Splitting
+   * into 16MB chunks keeps each frame comfortably inside browser frame
+   * assembler limits and lets the GPU writeBuffer stream directly into
+   * pre-allocated storage buffers at offsets.
+   *
+   * Wire: type=4 chunk frames carry chunkSeq + totalChunks + flags.
+   * First chunk (flags & 1) also carries rows/cols/nnz + rowPtr. Each
+   * chunk carries valuesOffset/valuesByteLen/values + colIdxOffset/
+   * colIdxByteLen/colIdx. Last chunk triggers the SPRR ack.
    */
   async gpuSparseUpload(name, matrix) {
     const reqId = this._nextSparseReqId();
@@ -1403,16 +1546,78 @@ class ServerBrain {
     const rowPtr = matrix.rowPtr instanceof Uint32Array ? matrix.rowPtr : new Uint32Array(matrix.rowPtr || []);
     const nnz = values.length;
 
-    const hdr = this._encodeSparseHeader(1, reqId, name);
-    const meta = Buffer.alloc(12);
-    meta.writeUInt32LE(rows, 0);
-    meta.writeUInt32LE(cols, 4);
-    meta.writeUInt32LE(nnz, 8);
-    const valuesBuf = Buffer.from(values.buffer, values.byteOffset, values.byteLength);
-    const colIdxBuf = Buffer.from(colIdx.buffer, colIdx.byteOffset, colIdx.byteLength);
+    // 16 MB NNZ worth ≈ 2M nnz/chunk × 8 bytes (4 values + 4 colIdx)
+    const CHUNK_NNZ = 2_000_000;
+    const totalChunks = Math.max(1, Math.ceil(nnz / CHUNK_NNZ));
     const rowPtrBuf = Buffer.from(rowPtr.buffer, rowPtr.byteOffset, rowPtr.byteLength);
-    const full = Buffer.concat([hdr, meta, valuesBuf, colIdxBuf, rowPtrBuf]);
-    return this._sparseSendBinary(full, reqId, 180_000);
+    const totalMb = ((values.byteLength + colIdx.byteLength + rowPtr.byteLength) / 1e6).toFixed(1);
+    console.log(`[Brain] sparse chunked upload reqId=${reqId} name=${name} totalChunks=${totalChunks} totalSize=${totalMb}MB`);
+
+    // Pre-register the pending promise BEFORE sending any chunks so
+    // the ack handler can find it even if client ACKs very fast.
+    if (!this._gpuSparsePending) this._gpuSparsePending = new Map();
+    const promise = new Promise((resolve, reject) => {
+      const timeoutMs = 180_000;
+      const timeout = setTimeout(() => {
+        if (this._gpuSparsePending && this._gpuSparsePending.has(reqId)) {
+          this._gpuSparsePending.delete(reqId);
+          console.warn(`[Brain] sparse chunked upload reqId=${reqId} name=${name} timed out after ${timeoutMs}ms`);
+          resolve(null);
+        }
+      }, timeoutMs);
+      this._gpuSparsePending.set(reqId, { resolve, reject, timeout });
+    });
+
+    if (!this._gpuClient || this._gpuClient.readyState !== 1) return null;
+
+    for (let seq = 0; seq < totalChunks; seq++) {
+      const start = seq * CHUNK_NNZ;
+      const end = Math.min(start + CHUNK_NNZ, nnz);
+      const valuesByteOff = start * 4;
+      const valuesByteLen = (end - start) * 4;
+      const colIdxByteOff = start * 4;
+      const colIdxByteLen = (end - start) * 4;
+      const hdr = this._encodeSparseHeader(4, reqId, name);
+      const isFirst = (seq === 0);
+      const flags = isFirst ? 1 : 0;
+      const chunkMeta = Buffer.alloc(12);
+      chunkMeta.writeUInt32LE(seq, 0);
+      chunkMeta.writeUInt32LE(totalChunks, 4);
+      chunkMeta.writeUInt32LE(flags, 8);
+      let firstMeta = Buffer.alloc(0);
+      if (isFirst) {
+        firstMeta = Buffer.alloc(16);
+        firstMeta.writeUInt32LE(rows, 0);
+        firstMeta.writeUInt32LE(cols, 4);
+        firstMeta.writeUInt32LE(nnz, 8);
+        firstMeta.writeUInt32LE(rowPtr.length, 12);
+      }
+      const valuesHdr = Buffer.alloc(8);
+      valuesHdr.writeUInt32LE(valuesByteOff, 0);
+      valuesHdr.writeUInt32LE(valuesByteLen, 4);
+      const valuesSlice = Buffer.from(values.buffer, values.byteOffset + valuesByteOff, valuesByteLen);
+      const colIdxHdr = Buffer.alloc(8);
+      colIdxHdr.writeUInt32LE(colIdxByteOff, 0);
+      colIdxHdr.writeUInt32LE(colIdxByteLen, 4);
+      const colIdxSlice = Buffer.from(colIdx.buffer, colIdx.byteOffset + colIdxByteOff, colIdxByteLen);
+      const pieces = isFirst
+        ? [hdr, chunkMeta, firstMeta, rowPtrBuf, valuesHdr, valuesSlice, colIdxHdr, colIdxSlice]
+        : [hdr, chunkMeta, valuesHdr, valuesSlice, colIdxHdr, colIdxSlice];
+      const frame = Buffer.concat(pieces);
+      // Send chunk. WebSocket preserves order. Wait for the send
+      // callback so we don't flood the send buffer with hundreds of
+      // MB at once — backpressure per chunk.
+      await new Promise((res) => {
+        this._gpuClient.send(frame, (err) => {
+          if (err) {
+            console.warn(`[Brain] sparse chunk reqId=${reqId} seq=${seq}/${totalChunks} ERROR: ${err.message}`);
+          }
+          res();
+        });
+      });
+    }
+    console.log(`[Brain] sparse chunked upload reqId=${reqId} name=${name} all ${totalChunks} chunks dispatched, awaiting ack`);
+    return promise;
   }
 
   /**
@@ -1420,6 +1625,9 @@ class ServerBrain {
    * Returns Float32Array (or null on timeout).
    */
   async gpuSparsePropagate(name, preSpikes) {
+    // Backpressure gate — if the WS send buffer is backed up, skip this
+    // shadow instead of queueing another doomed request.
+    if (!this._gpuSparseFlowOk()) return null;
     const reqId = this._nextSparseReqId();
     const pre = preSpikes instanceof Uint32Array ? preSpikes
       : preSpikes instanceof Uint8Array ? Uint32Array.from(preSpikes)
@@ -1438,6 +1646,8 @@ class ServerBrain {
    * Dispatch sparse Hebbian via binary frame.
    */
   async gpuSparseHebbian(name, preSpikes, postSpikes, lr) {
+    // Backpressure gate — see gpuSparsePropagate.
+    if (!this._gpuSparseFlowOk()) return null;
     const reqId = this._nextSparseReqId();
     const pre = preSpikes instanceof Uint32Array ? preSpikes
       : preSpikes instanceof Uint8Array ? Uint32Array.from(preSpikes)
@@ -1697,14 +1907,25 @@ class ServerBrain {
               this._updateDerivedState();
             } else {
             // T17.3.d — kick off language-cortex GPU init ONCE after
-            // all 7 main-brain clusters finish their acks. Uploads
-            // cross-projection sparse matrices to GPU via the proxy
-            // helpers. Non-blocking (runs async); cluster continues
-            // on CPU path until upload completes, then _gpuProxyReady
-            // flips true and subsequent _crossRegionHebbian calls
-            // fire-and-forget to GPU alongside CPU shadow.
-            if (this.cortexCluster && this.cortexCluster._gpuProxy && !this._cortexGpuInitStarted) {
+            // all 7 main-brain clusters finish their acks AND the main
+            // brain's compute_batch pipeline has warmed up. Uploading
+            // 3.6 GB of sparse matrices via writeBuffer saturates the
+            // GPU command queue for several seconds; the first few
+            // compute_batch dispatches land behind those copies and
+            // time out. Deferring the upload until we've seen N healthy
+            // compute_batch round-trips gives the main brain a stable
+            // tick rate before sparse cortex joins in (Gee 2026-04-18
+            // option 3).
+            const SPARSE_UPLOAD_WARMUP_BATCHES = 20;
+            const warmupBatches = this._gpuBatchesCompleted || 0;
+            if (
+              this.cortexCluster &&
+              this.cortexCluster._gpuProxy &&
+              !this._cortexGpuInitStarted &&
+              warmupBatches >= SPARSE_UPLOAD_WARMUP_BATCHES
+            ) {
               this._cortexGpuInitStarted = true;
+              console.log(`[Brain] Main-brain compute_batch warm (${warmupBatches} round-trips) — starting sparse language-cortex upload`);
               this.cortexCluster.initGpu().catch((err) => {
                 console.warn('[Brain] cortexCluster.initGpu() failed:', err && err.message);
               });
@@ -1896,7 +2117,13 @@ class ServerBrain {
 
     if (!this._languageReady || !this.languageCortex || !this.dictionary) {
       console.warn('[Brain] Language subsystem not ready — cannot generate response');
-      return { text: '', action: 'respond_text' };
+      return {
+        text: '',
+        action: 'respond_text',
+        silent: true,
+        silentReason: 'language_not_ready',
+        silentDetail: 'Language subsystem still booting. Hang on a second and try again.',
+      };
     }
 
     // T14.12 (2026-04-14) — analyzeInput deleted. The learnSentence call
@@ -1955,7 +2182,32 @@ class ServerBrain {
     }
 
     if (!response || response.length < 2) {
-      return { text: '', action: 'respond_text' };
+      // Empty response usually means the motor region couldn't commit
+      // a stable letter sequence — either because curriculum hasn't
+      // trained the letter→motor pathway yet (pre-K Unity physically
+      // can't speak), or because the intent signal was too weak for
+      // the motor attractor to settle. Return an explicit silent flag
+      // so the client can show WHY Unity didn't answer instead of
+      // leaving the user staring at a blank screen.
+      const minGrade = this.cortexCluster && this.cortexCluster.grades
+        ? Object.values(this.cortexCluster.grades).reduce((lo, g) => {
+            const order = ['pre-K','K','grade1','grade2','grade3','grade4','grade5','grade6','grade7','grade8','grade9','grade10','grade11','grade12','college1','college2','college3','college4','grad','phd'];
+            const iLo = order.indexOf(lo);
+            const iG  = order.indexOf(g);
+            return (iG >= 0 && (iLo < 0 || iG < iLo)) ? g : lo;
+          }, 'phd')
+        : 'unknown';
+      const prePhon = (minGrade === 'pre-K' || minGrade === 'K');
+      return {
+        text: '',
+        action: 'respond_text',
+        silent: true,
+        silentReason: prePhon ? 'pre_kindergarten' : 'motor_unstable',
+        silentDetail: prePhon
+          ? `Unity hasn't passed kindergarten yet (lowest subject: ${minGrade}) — her motor region doesn't have enough letter-to-motor Hebbian wiring to emit stable words. Run /curriculum status to check, or keep the Part 2 K run going.`
+          : `Motor region didn't commit a stable letter sequence for this input. The intent signal may have been too weak, or her cross-projections need more reps on this topic. Try rephrasing.`,
+        minGrade,
+      };
     }
 
     // Store the exchange in per-user conversation history + episodic memory
@@ -2695,7 +2947,14 @@ wss.on('connection', (ws, req) => {
           const stableId = (msg.userId && typeof msg.userId === 'string' && msg.userId.length > 0)
             ? msg.userId
             : id;
-          console.log(`[${id}] Text: "${(msg.text || '').slice(0, 50)}" (stable=${stableId.slice(-8)})`);
+          {
+            // Log the full text — never truncate. Earlier this line used
+            // `.slice(0, 50)` on the display which made it look like user
+            // input was getting cut off when it wasn't (the full text
+            // always flowed through to processAndRespond). Gee caught it.
+            const logText = (msg.text || '').replace(/\s+/g, ' ').trim();
+            console.log(`[${id}] Text (${logText.length} chars): "${logText}" (stable=${stableId.slice(-8)})`);
+          }
           // Process through brain and respond — ROUTED TO THIS CLIENT ONLY.
           //
           // 2026-04-13 privacy model: user text is PRIVATE between the
@@ -2718,7 +2977,8 @@ wss.on('connection', (ws, req) => {
           // which is the "one brain of Unity" model. Only the raw text
           // broadcast needed removal.
           brain.processAndRespond(msg.text || '', stableId).then(result => {
-            if (result.text && ws.readyState === ws.OPEN) {
+            if (ws.readyState !== ws.OPEN) return;
+            if (result.text) {
               if (result.action === 'build_ui' && result.component) {
                 ws.send(JSON.stringify({ type: 'build', component: result.component }));
               } else if (result.action === 'generate_image') {
@@ -2726,6 +2986,18 @@ wss.on('connection', (ws, req) => {
               } else {
                 ws.send(JSON.stringify({ type: 'response', text: result.text, action: result.action }));
               }
+            } else if (result.silent) {
+              // Unity went silent on purpose — tell the client why instead
+              // of letting the user stare at nothing. The client can decide
+              // to display this inline as a status note or render it as a
+              // "ghost" response bubble.
+              ws.send(JSON.stringify({
+                type: 'silent',
+                reason: result.silentReason || 'unknown',
+                detail: result.silentDetail || '',
+                minGrade: result.minGrade || null,
+              }));
+              console.log(`[${id}] Silent response: ${result.silentReason} (${result.minGrade || 'n/a'})`);
             }
           }).catch(err => {
             console.warn(`[${id}] Response failed:`, err.message);
@@ -2788,6 +3060,7 @@ wss.on('connection', (ws, req) => {
           }
           const resolver = brain._gpuBatchPending.resolve;
           brain._gpuBatchPending = null;
+          brain._gpuBatchesCompleted = (brain._gpuBatchesCompleted || 0) + 1;
           resolver({ perCluster: msg.perCluster || {} });
           break;
         }

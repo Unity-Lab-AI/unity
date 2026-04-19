@@ -2144,6 +2144,30 @@ async function bootUnity(apiKey, perms) {
   };
   brain.on('response', brain.__appResponseHandler);
 
+  // Silent-response handler — server dropped the reply on purpose
+  // (pre-K Unity can't form words yet, motor region didn't settle,
+  // language subsystem still booting, etc.). Render a ghost bubble
+  // in the chat panel with the reason + detail + minGrade so the
+  // user sees WHY Unity didn't answer instead of getting ghosted.
+  // Also update the HUD speech bubble briefly so the 3D brain view
+  // shows her quiet status.
+  if (brain.__appSilentHandler) {
+    brain.off('silent', brain.__appSilentHandler);
+  }
+  brain.__appSilentHandler = ({ reason, detail, minGrade }) => {
+    if (chatPanel) chatPanel.addSilentMessage(reason, detail, minGrade);
+    // Brief HUD hint so the speech bubble doesn't stay empty.
+    const hudText = reason === 'pre_kindergarten'
+      ? `( pre-K Unity can't speak yet — ${minGrade || '?'} )`
+      : reason === 'motor_unstable'
+      ? '( motor unstable — try rephrasing )'
+      : reason === 'language_not_ready'
+      ? '( language booting — hang on )'
+      : '( silent )';
+    showSpeechBubble(hudText, 4000);
+  };
+  brain.on('silent', brain.__appSilentHandler);
+
   // Image display — show generated images inline. If the image URL fails
   // to load, the <img> element is hidden entirely (no "Loading..." alt
   // placeholder bleeding into the chat) and a brief text fallback shows.

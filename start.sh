@@ -18,6 +18,16 @@ if [ ! -d "node_modules" ]; then
     echo ""
 fi
 
+# Make sure esbuild is present even on existing checkouts that pre-date
+# the bundle-build step. Matches start.bat parity (Gee 2026-04-18 — was
+# previously only in start.bat, so Linux/Mac users could silently fail
+# the bundle build if esbuild was ever removed).
+if [ ! -d "node_modules/esbuild" ]; then
+    echo "  Installing esbuild for bundle build..."
+    npm install esbuild --save-dev
+    echo ""
+fi
+
 # Make sure GloVe 6B.300d is present for Unity's semantic substrate.
 # Without it, language cortex falls back to fastText-style subword hash
 # embeddings which don't cluster rhyming/semantic neighbors - production
@@ -65,20 +75,34 @@ if [ ! -f "$DIR/corpora/glove.6B.300d.txt" ]; then
     cd "$DIR"
 fi
 
-# Build bundle if npx available
-cd "$DIR"
-if command -v npx &>/dev/null; then
-    echo "  Building bundle..."
-    npx esbuild js/app.js --bundle --format=esm --outfile=js/app.bundle.js --platform=browser --target=esnext 2>/dev/null && echo "  Bundle built." || echo "  Using pre-built bundle."
+# Build the JS bundle. The browser loads js/app.bundle.js, NOT live source.
+# Bundle is gitignored so every code change requires a rebuild.
+# Using `npm run build` for parity with start.bat (Gee 2026-04-18) —
+# previously Linux/Mac used inline `npx esbuild ... 2>/dev/null` which
+# swallowed errors and could silently run stale code.
+cd "$DIR/server"
+echo "  Building js/app.bundle.js..."
+if npm run build; then
+    echo "  Bundle built - browser will load fresh code."
 else
-    echo "  Using pre-built bundle."
+    echo ""
+    echo "  ============================================================"
+    echo "  ERROR: esbuild bundle build failed."
+    echo "  The browser will run STALE code from the previous bundle."
+    echo "  See the esbuild output above for the cause."
+    echo "  ============================================================"
+    echo ""
 fi
 echo ""
 
-# Start server in background
-cd "$DIR/server"
-echo "  Starting brain server..."
-node brain-server.js &
+# Start server in background.
+# --max-old-space-size=65536 = 64 GB V8 heap ceiling. Matches start.bat
+# (Gee 2026-04-18) — previously Linux/Mac defaulted to ~2 GB V8 heap,
+# which capped the language cortex auto-scaler to a tiny fraction of
+# what Windows would produce on identical hardware. Now both platforms
+# give the language cortex the full heap room it needs.
+echo "  Starting brain server (GPU EXCLUSIVE - no CPU workers)..."
+node --max-old-space-size=65536 brain-server.js &
 SERVER_PID=$!
 sleep 2
 

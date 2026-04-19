@@ -72,15 +72,15 @@
     .landing-tab.active { border-color:#ff4d9a; color:#ff4d9a; background:rgba(255,77,154,0.08); }
   </style>
 
-  <!-- ═══ Setup Modal — R15 minimal version ═══ -->
+  <!-- ═══ Setup Modal — minimal sensory-only version ═══ -->
   <!-- Opens from: TALK TO UNITY button (landing overlay) OR the Unity
        bubble (bottom-right) via a state-aware click handler in app.js.
-       Pre-R15 this modal was a 100-line text-AI connect flow with 8
-       provider buttons and a model dropdown. R15 ripped all of that
-       because Unity's cognition is 100% equational — see R4 refactor.
-       The modal now just requests mic/camera permissions, shows the
-       auto-detected sensory backends, and lets the user paste an
-       optional Pollinations API key for raised rate limits. -->
+       The modal is sensory-only by design because Unity's cognition is
+       100% equational — there is no text-AI backend to configure. All
+       the modal does is request mic/camera permissions, show the
+       auto-detected sensory backends (image-gen providers, vision
+       describer, TTS), and let the user paste an optional Pollinations
+       API key for raised rate limits. -->
   <div id="setup-modal" style="display:none;">
     <div class="setup-card">
       <h1>🧠 Unity</h1>
@@ -400,7 +400,7 @@
       // stamp-version.mjs updates the hash after each commit
       const s = document.createElement('script');
       s.type = 'module';
-      s.src = 'js/app.js?v=747f437a-f52a';
+      s.src = 'js/app.js?v=2dcc4b58-7522';
       // Override: always load the BUNDLE, use the stamp for cache bust
       s.src = 'js/app.bundle.js?v=' + Date.now();
       document.body.appendChild(s);

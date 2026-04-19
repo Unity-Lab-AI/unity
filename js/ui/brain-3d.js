@@ -46,7 +46,14 @@ const AUTO_ROT_SPEED = 0.0015;
 
 // ORIGINAL ORDER preserved (changing order breaks indexing chain)
 // Sizes biologically proportioned — cerebellum LARGEST
-// Total MUST = 1000: 200+100+80+80+380+50+110 = 1000
+// Original 7: 200+100+80+80+380+50+110 = 1000
+//
+// Language-cortex sub-regions (Gee 2026-04-18) fill the biological gaps
+// BETWEEN the existing 7 so the rendered brain looks filled-in instead
+// of spotty and holey. Each sub-region maps to a real anatomical
+// language area, all LEFT-LATERALIZED to match human left-dominant
+// language organization. Sub-region totals: 30+100+90+30+80+50+30+130 = 540
+// GRAND TOTAL: 1000 + 540 = 1540.
 const CLUSTERS = [
   { key: 'cortex',       label: 'CORTEX',        n: 200, rgb: [1.0, 0.302, 0.604],  hex: '#ff4d9a' },
   { key: 'hippocampus',  label: 'HIPPOCAMPUS',   n: 100, rgb: [0.659, 0.333, 0.969], hex: '#a855f7' },
@@ -55,6 +62,15 @@ const CLUSTERS = [
   { key: 'cerebellum',   label: 'CEREBELLUM',    n: 380, rgb: [0.0, 0.898, 1.0],     hex: '#00e5ff' },
   { key: 'hypothalamus', label: 'HYPOTHALAMUS',  n: 50,  rgb: [0.961, 0.620, 0.043], hex: '#f59e0b' },
   { key: 'mystery',      label: 'MYSTERY Ψ',     n: 110, rgb: [0.753, 0.518, 0.988], hex: '#c084fc' },
+  // Language cortex sub-regions — fill gaps between existing 7
+  { key: 'lang_motor',    label: "BROCA'S (SPEECH)",    n: 30,  rgb: [1.00, 0.45, 0.25], hex: '#ff7340' },
+  { key: 'lang_phon',     label: "WERNICKE'S (PHON)",   n: 100, rgb: [0.98, 0.58, 0.12], hex: '#fa9520' },
+  { key: 'lang_sem',      label: 'ANGULAR (SEMANTIC)',  n: 90,  rgb: [1.00, 0.82, 0.14], hex: '#ffd124' },
+  { key: 'lang_letter',   label: 'VWFA (READING)',      n: 30,  rgb: [0.90, 0.30, 0.38], hex: '#e64d61' },
+  { key: 'lang_visual',   label: 'V1 (VISUAL INPUT)',   n: 80,  rgb: [0.11, 0.45, 0.85], hex: '#1c72d9' },
+  { key: 'lang_auditory', label: "HESCHL'S (AUDITORY)", n: 50,  rgb: [0.94, 0.15, 0.58], hex: '#f02694' },
+  { key: 'lang_fineType', label: 'TEMPORAL POLE',       n: 30,  rgb: [0.58, 0.80, 0.45], hex: '#93cc72' },
+  { key: 'lang_free',     label: 'PFC (INTEGRATION)',   n: 130, rgb: [0.45, 0.20, 0.76], hex: '#7333c2' },
 ];
 
 // ── Inline shaders ──────────────────────────────────────────────────
@@ -511,8 +527,166 @@ function genMystery(n) {
   return pts;
 }
 
+// ── Language cortex sub-region generators ──────────────────────────
+// All LEFT-LATERALIZED (x < 0) to match human left-dominant language
+// organization. Coordinates fill gaps between existing 7 regions so
+// the brain shape reads as continuous instead of spotty/holey.
+
+function genLangMotor(n) {
+  // BROCA'S AREA — speech motor production.
+  // MNI: (-52, 20, 15) approx. Inferior frontal gyrus (pars opercularis
+  // + pars triangularis). Between cortex frontal pole and premotor.
+  // Fills the left anterior-superior gap.
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const r = 0.06 * Math.cbrt(Math.random());
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    pts.push([
+      -0.38 + r * Math.sin(phi) * Math.cos(theta) * 0.8 + gauss() * 0.02,
+       0.38 + r * Math.cos(phi) * 0.6 + gauss() * 0.03,
+       0.33 + r * Math.sin(phi) * Math.sin(theta) * 0.7 + gauss() * 0.02,
+    ]);
+  }
+  return pts;
+}
+
+function genLangPhon(n) {
+  // WERNICKE'S AREA + superior temporal gyrus — phonological comprehension.
+  // MNI: (-55, -45, 15) approx. Posterior temporal, runs along
+  // superior temporal sulcus. Fills the left temporal gap between
+  // hippocampus/amygdala and cortex lateral shell.
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    // Elongated along superior temporal sulcus (a-p axis ≈ z)
+    const t = Math.random();
+    const r = 0.07 * Math.cbrt(Math.random());
+    pts.push([
+      -0.44 + r * Math.cos(t * Math.PI * 2) * 0.6 + gauss() * 0.03,
+       0.0  + r * Math.sin(t * Math.PI * 2) * 0.5 + gauss() * 0.04,
+       0.22 - t * 0.22 + gauss() * 0.03,  // sweeps z from +0.22 to 0.0
+    ]);
+  }
+  return pts;
+}
+
+function genLangSem(n) {
+  // ANGULAR GYRUS + supramarginal — semantic binding hub.
+  // MNI: (-45, -60, 30) approx. Inferior parietal lobule. Fills the
+  // gap between cortex, hippocampus and cerebellum superior.
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const r = 0.08 * Math.cbrt(Math.random());
+    const theta = Math.random() * Math.PI * 2;
+    pts.push([
+      -0.32 + r * Math.cos(theta) * 0.9 + gauss() * 0.03,
+       0.05 + r * Math.sin(theta) * 0.7 + gauss() * 0.04,
+      -0.05 + gauss() * 0.04,  // centered at z≈0, fills center-left gap
+    ]);
+  }
+  return pts;
+}
+
+function genLangLetter(n) {
+  // VWFA (visual word form area) — fusiform gyrus.
+  // MNI: (-45, -55, -15). Ventral temporal, between cortex base and
+  // cerebellum top. Key reading-specific region.
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const r = 0.05 * Math.cbrt(Math.random());
+    const theta = Math.random() * Math.PI * 2;
+    pts.push([
+      -0.32 + r * Math.cos(theta) * 0.8 + gauss() * 0.02,
+      -0.4  + r * Math.sin(theta) * 0.4 + gauss() * 0.03,
+      -0.08 + gauss() * 0.05,
+    ]);
+  }
+  return pts;
+}
+
+function genLangVisual(n) {
+  // PRIMARY VISUAL CORTEX (V1) — calcarine sulcus, occipital pole.
+  // MNI: (±8, -90, 0). Midline-posterior. Bilateral but slightly
+  // left-leaning to match downstream language dominance. Fills the
+  // gap between posterior cortex and cerebellum superior.
+  const pts = [];
+  const half = Math.floor(n * 0.7); // left-leaning bias
+  for (let i = 0; i < n; i++) {
+    const side = i < half ? -1 : 1;
+    const r = 0.1 * Math.cbrt(Math.random());
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    pts.push([
+      side * (0.05 + r * Math.abs(Math.sin(phi) * Math.cos(theta)) * 0.5),
+      -0.2 + r * Math.cos(phi) * 0.5 + gauss() * 0.03,
+      -0.3 + r * Math.sin(phi) * Math.sin(theta) * 0.4 + gauss() * 0.03,
+    ]);
+  }
+  return pts;
+}
+
+function genLangAuditory(n) {
+  // HESCHL'S GYRUS — primary auditory cortex (A1).
+  // MNI: (-50, -20, 10). Superior temporal plane. Left-lateralized
+  // for language. Fills the gap between lateral cortex and hippocampus.
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const t = Math.random();
+    const r = 0.04 * Math.cbrt(Math.random());
+    pts.push([
+      -0.40 + r * Math.cos(t * Math.PI * 2) * 0.6 + gauss() * 0.02,
+       0.10 + r * Math.sin(t * Math.PI * 2) * 0.5 + gauss() * 0.03,
+       0.25 - t * 0.12 + gauss() * 0.02,
+    ]);
+  }
+  return pts;
+}
+
+function genLangFineType(n) {
+  // TEMPORAL POLE — anterior temporal, fine-grained semantic categories.
+  // MNI: (-40, 15, -30). Very anterior temporal. Fills the gap
+  // between amygdala and cortex frontal-temporal boundary.
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const r = 0.06 * Math.cbrt(Math.random());
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    pts.push([
+      -0.36 + r * Math.sin(phi) * Math.cos(theta) * 0.7 + gauss() * 0.02,
+      -0.03 + r * Math.cos(phi) * 0.5 + gauss() * 0.03,
+       0.42 + r * Math.sin(phi) * Math.sin(theta) * 0.5 + gauss() * 0.02,
+    ]);
+  }
+  return pts;
+}
+
+function genLangFree(n) {
+  // DORSOLATERAL PREFRONTAL CORTEX + medial PFC — integration/binding.
+  // MNI: (-40, 40, 30) dlPFC, (0, 50, 0) mPFC. Working memory and
+  // cross-region binding. Fills the gap above mystery (corpus callosum)
+  // and between cortex frontal dome regions.
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const side = Math.random() < 0.7 ? -1 : 1; // left-leaning
+    const r = 0.1 * Math.cbrt(Math.random());
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    pts.push([
+      side * (0.15 + r * Math.abs(Math.sin(phi) * Math.cos(theta)) * 0.7) + gauss() * 0.03,
+       0.45 + r * Math.cos(phi) * 0.4 + gauss() * 0.04,
+       0.10 + r * Math.sin(phi) * Math.sin(theta) * 0.5 + gauss() * 0.04,
+    ]);
+  }
+  return pts;
+}
+
 // Order matches CLUSTERS array
-const POS_GEN = [genCortex, genHippocampus, genAmygdala, genBasalGanglia, genCerebellum, genHypothalamus, genMystery];
+const POS_GEN = [
+  genCortex, genHippocampus, genAmygdala, genBasalGanglia,
+  genCerebellum, genHypothalamus, genMystery,
+  genLangMotor, genLangPhon, genLangSem, genLangLetter,
+  genLangVisual, genLangAuditory, genLangFineType, genLangFree,
+];
 
 // ── Brain3D class ───────────────────────────────────────────────────
 
@@ -713,11 +887,13 @@ export class Brain3D {
         // 1400 > 1000 → negative adjust drove cerebellum to -234 points
         // → no cerebellum rendered → 3D brain looked broken).
         //
-        // New formula: cap each cluster's floor at TOTAL/14 so the
-        // 7-cluster minimum sum stays at TOTAL/2, leaving half the budget
-        // for proportional scaling. 50-point absolute minimum so very-
+        // New formula: cap each cluster's floor at TOTAL/(2×N_clusters) so
+        // the sum of minimums stays at TOTAL/2, leaving half the budget
+        // for proportional scaling. 30-point absolute minimum so very-
         // small renders still have a visible speck per cluster.
-        const minFloor = Math.max(50, Math.floor(TOTAL / 14));
+        // T17.3.f — divisor = CLUSTERS.length*2 (was hardcoded 14 = 7×2
+        // back when only 7 regions existed; now 15 with language sub-regions).
+        const minFloor = Math.max(30, Math.floor(TOTAL / (CLUSTERS.length * 2)));
         for (let i = 0; i < CLUSTERS.length; i++) {
           const cl = CLUSTERS[i];
           const serverCluster = serverClusters[cl.key];

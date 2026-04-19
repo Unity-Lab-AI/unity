@@ -38,20 +38,15 @@ let totalComputeMs = 0;
 
 const clusterState = {}; // persists across reconnects
 
-// T14.22.3 — T14.22.5: compute request serialization queue (REMOVED
-// in T14.22.6). The queue was a workaround for a GPU buffer collision
-// inside GPUCompute.readbackSpikeCount where a per-cluster readback
-// buffer was shared across calls and concurrent fullSteps raced on
-// its mapAsync lifecycle. T14.22.6 fixed the underlying issue by
-// making readbackSpikeCount allocate a per-call 4-byte disposable
-// readback buffer, so concurrent calls now have independent map
-// state and the collision is impossible by construction. With the
-// collision gone, the serialization queue is no longer needed — all
-// 7 cluster compute_request messages process in parallel again,
-// getting ~7x GPU throughput back at biological scale.
+// Concurrent fullStep calls across clusters run in parallel via
+// Promise.all. The readback path uses a per-call 4-byte disposable
+// buffer so mapAsync lifecycles cannot race, and the old compute-
+// request serialization queue is gone — all per-cluster compute
+// requests process in parallel at ~7× GPU throughput.
 
 function connectToServer() {
-  // R14 — brain-server moved from 8080 to 7525
+  // brain-server runs on port 7525 (moved off 8080 to avoid colliding
+  // with llama.cpp / LocalAI / every other local service).
   ws = new WebSocket('ws://localhost:7525');
   // Binary frames arrive as ArrayBuffer (not Blob) — skips the async
   // Blob→ArrayBuffer copy for 100MB+ sparse matrix uploads.
@@ -92,10 +87,13 @@ function connectToServer() {
         const nameBytes = new Uint8Array(buf, off, nameLen);
         const name = new TextDecoder('utf-8').decode(nameBytes);
         off += nameLen;
+        // Skip 4-byte-alignment pad after name so Float32/Uint32 views
+        // created below land on aligned byteOffsets. Matches server-side
+        // _encodeSparseHeader padding.
+        off = (off + 3) & ~3;
         if (typeByte === 1) {
-          // UPLOAD — use typed-array VIEWS into the received buffer
-          // directly (no redundant copy). GPUCompute._createBuffer
-          // copies into GPU memory anyway.
+          // Legacy single-shot upload (kept for small matrices). Reads
+          // rows/cols/nnz + whole values+colIdx+rowPtr in one frame.
           const rows = view.getUint32(off, true); off += 4;
           const cols = view.getUint32(off, true); off += 4;
           const nnz  = view.getUint32(off, true); off += 4;
@@ -104,7 +102,6 @@ function connectToServer() {
           const rowPtr = new Uint32Array(buf, off, rows + 1);
           try {
             gpu.uploadSparseMatrix(name, rows, cols, values, colIdx, rowPtr);
-            // Send tiny binary ack back (SPRR + type=1 + reqId)
             const ack = new ArrayBuffer(9);
             const av = new DataView(ack);
             av.setUint8(0,'S'.charCodeAt(0)); av.setUint8(1,'P'.charCodeAt(0));
@@ -114,6 +111,53 @@ function connectToServer() {
             ws.send(ack);
           } catch (err) {
             console.warn('[GPU Compute] sparse_upload binary failed:', err.message);
+          }
+          return;
+        }
+        if (typeByte === 4) {
+          // CHUNKED UPLOAD — streams values+colIdx to GPU writeBuffer
+          // at offsets as chunks arrive. First chunk carries meta +
+          // rowPtr. Last chunk triggers SPRR ack back to server.
+          //
+          // Wire layout after header:
+          //   chunkSeq (u32) + totalChunks (u32) + flags (u32)
+          //   if (flags & 1):  meta = rows(u32) + cols(u32) + nnz(u32) + rowPtrLen(u32) + rowPtr
+          //   valuesOffset (u32) + valuesByteLen (u32) + values chunk
+          //   colIdxOffset (u32) + colIdxByteLen (u32) + colIdx chunk
+          const chunkSeq = view.getUint32(off, true); off += 4;
+          const totalChunks = view.getUint32(off, true); off += 4;
+          const flags = view.getUint32(off, true); off += 4;
+          try {
+            if (flags & 1) {
+              const rows = view.getUint32(off, true); off += 4;
+              const cols = view.getUint32(off, true); off += 4;
+              const nnz  = view.getUint32(off, true); off += 4;
+              const rowPtrLen = view.getUint32(off, true); off += 4;
+              const rowPtr = new Uint32Array(buf, off, rowPtrLen);
+              off += rowPtrLen * 4;
+              gpu._beginSparseUpload(name, rows, cols, nnz, rowPtr);
+            }
+            const valuesOffset = view.getUint32(off, true); off += 4;
+            const valuesByteLen = view.getUint32(off, true); off += 4;
+            const valuesChunk = valuesByteLen > 0 ? new Float32Array(buf, off, valuesByteLen / 4) : null;
+            off += valuesByteLen;
+            const colIdxOffset = view.getUint32(off, true); off += 4;
+            const colIdxByteLen = view.getUint32(off, true); off += 4;
+            const colIdxChunk = colIdxByteLen > 0 ? new Uint32Array(buf, off, colIdxByteLen / 4) : null;
+            off += colIdxByteLen;
+            gpu._appendSparseUpload(name, valuesOffset, valuesChunk, colIdxOffset, colIdxChunk);
+            if (chunkSeq === totalChunks - 1) {
+              gpu._finishSparseUpload(name);
+              const ack = new ArrayBuffer(9);
+              const av = new DataView(ack);
+              av.setUint8(0,'S'.charCodeAt(0)); av.setUint8(1,'P'.charCodeAt(0));
+              av.setUint8(2,'R'.charCodeAt(0)); av.setUint8(3,'R'.charCodeAt(0));
+              av.setUint8(4, 4);
+              av.setUint32(5, reqId, true);
+              ws.send(ack);
+            }
+          } catch (err) {
+            console.warn('[GPU Compute] sparse_upload_chunk failed:', err.message, 'chunkSeq=', chunkSeq, 'of', totalChunks);
           }
           return;
         }
@@ -183,36 +227,36 @@ function connectToServer() {
       ws.send(JSON.stringify({ type: 'gpu_init_ack', clusterName, size }));
 
       const totalInit = Object.keys(clusterState).length;
-      statusEl.textContent = `GPU initialized: ${totalInit}/7 clusters — ${clusterName} (${size.toLocaleString()} neurons)`;
-      console.log(`[GPU] Initialized ${clusterName}: ${size.toLocaleString()} neurons (${totalInit}/7)`);
+      statusEl.textContent = `GPU initialized: ${totalInit}/8 clusters — ${clusterName} (${size.toLocaleString()} neurons)`;
+      console.log(`[GPU] Initialized ${clusterName}: ${size.toLocaleString()} neurons (${totalInit}/8)`);
       return;
     }
 
     // ── STEP: Server sends only tonic + noise (two numbers) ──
     if (msg.type === 'compute_request' && gpuReady) {
-      // T14.22.6 — parallel dispatch restored. Each onmessage
-      // invocation fires its own async handleComputeRequest which
-      // awaits fullStep; the browser event loop lets multiple
-      // invocations overlap, so all 7 clusters' GPU work runs
-      // concurrently on the device command queue. No shared JS
-      // state to collide on now that readbackSpikeCount uses a
-      // per-call disposable readback buffer.
+      // Parallel dispatch — each onmessage invocation fires its own
+      // async handleComputeRequest which awaits fullStep; the browser
+      // event loop lets multiple invocations overlap, so every
+      // cluster's GPU work runs concurrently on the device command
+      // queue. Readback uses per-call disposable buffers so mapAsync
+      // lifecycles never collide.
       handleComputeRequest(msg).catch(err => {
         console.warn('[GPU Compute] request failed:', err && err.message ? err.message : err);
       });
       return;
     }
 
-    // T14.23 — BATCHED compute. One message per tick carries all
-    // per-cluster params + substep count. compute.html runs the
-    // entire substep × cluster loop internally and sends back one
-    // aggregated result. Cuts WebSocket traffic from ~70 messages
-    // per tick to 2 (request + response), eliminating the protocol
-    // overhead that was dominating tick latency at biological scale.
+    // BATCHED compute — one message per tick carries all per-cluster
+    // params + substep count. compute.html runs the entire substep ×
+    // cluster loop internally and sends back one aggregated result.
+    // This cuts WebSocket traffic by roughly 35× per tick vs the old
+    // one-message-per-cluster-per-substep protocol, eliminating the
+    // per-frame protocol overhead that was dominating tick latency at
+    // biological scale.
     //
-    // T14.23.3 — batch mutex at the call site via try/finally so
-    // exceptions don't leave the mutex stuck in the "in flight"
-    // state and deadlock the brain.
+    // Batch mutex is set at the call site via try/finally so
+    // exceptions never leave the mutex stuck in the "in flight" state
+    // and deadlock the brain.
     if (msg.type === 'compute_batch' && gpuReady) {
       if (_batchInFlight) {
         // Previous batch still running — drop this one. Server tick
@@ -234,12 +278,14 @@ function connectToServer() {
       return;
     }
 
-    // ── T17.3.b SPARSE OPS: GPU language cortex cross-region projections ──
+    // ── SPARSE OPS — GPU language cortex cross-region projections ──
     //
     // Server uploads each cross-projection as a standalone sparse CSR
     // matrix keyed by name (e.g. "sem_to_motor"). Then propagate +
     // Hebbian dispatches run on GPU instead of blocking Node's main
-    // thread with CPU sparse matmul.
+    // thread with CPU sparse matmul. Large matrices ship via the
+    // chunked binary upload path (type=4) above; small ones use the
+    // legacy single-shot JSON path below.
     //
     // All three message types carry a `reqId` for request/response
     // correlation so the server can Promise.resolve on the matching
@@ -311,18 +357,19 @@ function connectToServer() {
   };
 } // end connectToServer
 
-// T14.23 — BATCHED compute handler. Runs the full substep × cluster
-// loop internally. Per substep, all 7 clusters dispatch in parallel
-// via Promise.all. Across substeps, serialized because substep N+1
-// depends on substep N's voltage state (recurrent LIF integration).
-// Accumulates per-cluster spike totals + tracks last-substep count
-// for the server's firingRate EMA.
-// T14.23.3 — batch mutex. Set true while handleComputeBatch runs,
+// BATCHED compute handler. Runs the full substep × cluster loop
+// internally. Per substep, every cluster dispatches in parallel via
+// Promise.all. Across substeps, execution is serialized because
+// substep N+1 depends on substep N's voltage state (recurrent Rulkov
+// iteration). Accumulates per-cluster spike totals + tracks the
+// last-substep count for the server's firingRate EMA.
+//
+// `_batchInFlight` is set true while handleComputeBatch runs and
 // released via try/finally at the onmessage call site so exceptions
-// inside the batch handler don't leave it stuck and deadlock the
+// inside the batch handler never leave it stuck and deadlock the
 // brain. Concurrent compute_batch messages (e.g. server retrying
-// after a timeout) get dropped via an early-return at the call
-// site; server records them as misses and retries next tick.
+// after a timeout) get dropped via an early-return at the call site;
+// the server records them as misses and retries the next tick.
 let _batchInFlight = false;
 
 async function handleComputeBatch(msg) {
@@ -370,10 +417,10 @@ async function handleComputeBatch(msg) {
   }
 
   // Run substeps * clusters. Within a substep, all clusters dispatch
-  // in parallel via Promise.all (no shared state after T14.22.6's
-  // per-call readback buffer fix). Across substeps, serialize so
-  // each substep sees the voltage state the previous one left on
-  // the GPU.
+  // in parallel via Promise.all — the per-call disposable readback
+  // buffer rules out any shared-state collision between them. Across
+  // substeps, execution is serialized so each substep sees the
+  // voltage state the previous one left on the GPU.
   for (let sub = 0; sub < substeps; sub++) {
     const results = await Promise.all(ready.map(async (c) => {
       const r = await gpu.fullStep(c.name, effectiveDrives[c.name], noiseAmps[c.name]);
@@ -402,10 +449,11 @@ async function handleComputeBatch(msg) {
   perfEl.textContent = `Throughput: ${((totalSize * substeps) / (elapsed / 1000) / 1e9).toFixed(2)} Gneurons/sec | Last-substep spikes: ${totalSpikes.toLocaleString()}`;
 }
 
-// T14.22.3 — serialized compute request handler. One fullStep in
-// flight at a time, awaited by the queue so mapAsync / buffer state
-// never overlap. The GPU shader itself is still fast — this just
-// prevents the JS-side buffer lifecycle from racing.
+// Per-cluster compute request handler — single fullStep per call.
+// Parallelism across clusters happens at the onmessage layer via
+// independent async invocations; the per-call disposable readback
+// buffer makes it safe for multiple fullSteps to overlap on the
+// device command queue.
 async function handleComputeRequest(msg) {
   const { clusterName, size } = msg;
   const state = clusterState[clusterName];

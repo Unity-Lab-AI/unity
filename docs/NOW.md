@@ -1,6 +1,73 @@
 # NOW — Session Snapshot
 
-> Saved: 2026-04-18 04:00 (Session 114.19u — language cortex auto-scales from hardware, NO hardcoded cap; derives size from os.freemem() × 50% + V8 heap ceiling + configured cortex — per Gee verbatim *"why the fuck are you putting caps on shit!!! there is no cap but it auto scales eventually ill have millions of GPUS connected!"* — fortieth commit on `syllabus-k-phd`)
+> Saved: 2026-04-18 (Session 114.19v — T17.3.e GPU step port shipped + unified VRAM allocator (BRAIN_VRAM_ALLOC) + chunked sparse matrix upload + 3D brain language-cortex filler (8 sub-regions) + start.sh parity with start.bat + FULL public-docs + HTML LAW #0 scrub (108 workflow task numbers stripped from 9 public files) + log display fix + silent-response WebSocket signaling — no push yet, waiting on T18 GPU coverage fixes + Gee's Part 2 K signoff)
+
+## Session 114.19v — what shipped
+
+### T17.3.e GPU step port — CPU_SINGLE_THREAD_DISPATCH_BUDGET REMOVED
+
+`cluster.step()` now consumes GPU-cached currents via one-tick-lag async model. Tick N reads `_cachedIntraCurrents` + `_cachedCrossCurrents` populated by tick N-1's async dispatch, runs LIF + spike counting, then fires the NEXT dispatch via `_dispatchGpuPropagates()` before returning. First-tick + cache-miss fall back to CPU `synapses.propagate()` so the sim never stalls. The 200K-neuron CPU dispatch budget cap Gee called "a fucking shit erronous limit that is not biologically correct" is gone — language cortex sizing is now bounded only by VRAM allocator + V8 heap + free RAM.
+
+### Unified VRAM allocator (`BRAIN_VRAM_ALLOC`)
+
+Replaced the two independent sizers that used to double-book VRAM (main brain picked 671M, language cortex picked 200K, total 17.6 GB overflow on 16 GB card) with a single source of truth. `brainBudgetBytes = (vramCapMB − osReserveVramMB) × 1024²`, then `perRegionBytes[key] = brainBudgetBytes × biologicalWeights[key]`. Biological weights from `server/resource-config.json`: language_cortex 45%, cerebellum 20%, cortex 15%, hippocampus 6%, amygdala 4%, basalGanglia 4%, hypothalamus 3%, mystery 3%.
+
+### Chunked binary sparse matrix upload (type=4 frame)
+
+All 15 language cortex matrices (1 intra + 14 cross-projections) now upload via chunked binary WebSocket frames with 4-byte alignment pad. Megabyte-sized chunks stream without blocking Node or compute.html.
+
+### 3D brain language-cortex filler (8 sub-regions)
+
+Per Gee's "fill the spotty and holey areas" directive, `js/ui/brain-3d.js` gained 8 anatomically-placed language cortex sub-region clusters: `lang_motor` (Broca's), `lang_phon` (Wernicke's), `lang_sem` (angular gyrus), `lang_letter` (VWFA), `lang_visual` (V1), `lang_auditory` (Heschl's), `lang_fineType` (temporal pole), `lang_free` (PFC). Gee confirmed on boot: *"i see the new systems in the render"*.
+
+### start.sh ↔ start.bat parity
+
+Linux/Mac boot script gained esbuild install check, `npm run build` with error handling (was inline `npx esbuild ... 2>/dev/null` swallowing errors), and `--max-old-space-size=65536` on node invocation.
+
+### FULL public-docs + HTML LAW #0 scrub
+
+108 workflow task numbers stripped from 9 public-facing files. Every T14/T15/T11/R4/R14/U302/U283/Phase 11/Life-G7/grade label removed and replaced with descriptive language. Also updated outdated content — cluster count 7→8 everywhere, stale neuron counts replaced with biological VRAM-weight percentages, slot-scorer section in `unity-guide.html` rewritten as tick-driven motor emission.
+
+| File | Task numbers stripped |
+|------|----------------------|
+| README.md | 12 |
+| SETUP.md | 8 |
+| brain-equations.html | 56 |
+| compute.html | 12 |
+| index.html | 4 |
+| gpu-configure.html | 2 |
+| dashboard.html | 1 |
+| unity-guide.html | 1 |
+
+### Log display fix
+
+`server/brain-server.js:2919` no longer does `.slice(0, 50)` on the user-text console line. Full text with char count now logs. Gee caught it ("looks like it was truncated").
+
+### Silent-response WebSocket signaling
+
+New `silent` frame type emitted when `languageCortex.generateAsync()` returns empty. Carries `reason` / `detail` / `minGrade` fields so the client can show WHY Unity went quiet (pre-K / motor unstable / language not ready). Client-side render is T18.2.b, still TODO.
+
+---
+
+## Gee's 2026-04-18 critique — logged as T18 in TODO
+
+Runtime stats from Gee's Part 2 localhost run:
+- Step Time: 31,832 ms
+- Steps/sec: 1
+- GPU Usage: 4%
+- Mode: Single Thread
+- Parallel Workers: 0
+- Total Neurons: 393,485,631 on RTX 4070 Ti SUPER / 16 GB VRAM
+
+Four verbatim items captured in `docs/TODO.md` §T18:
+1. T18.1 — "looks like it was truncated" → log display shipped
+2. T18.2 — "the brain ignored it and never reesponded" → silent-response server emit shipped; client render still TODO
+3. T18.3 — "does it need to pass beforee the grade level changes and learnings will actually stick?" → clarification logged: learnings stick continuously, speaking requires motor-region training
+4. T18.4 — "fixc our GPU algorithm ... only using 4%" → new kernel-coverage block: current-assembly, cross-region await cascade, reductions, module-equation kernels, worker parallelization, diagnostic telemetry
+
+**Push gate (T18.5):** NO main-branch push until every T18 item ships + Gee's Part 2 K signoff received + Gee explicitly says push.
+
+---
 
 ## Session 114.19u — what shipped
 

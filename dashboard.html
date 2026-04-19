@@ -130,8 +130,8 @@
   </div>
 
   <script>
-    // R14 — Unity brain-server moved off 8080 to 7525 to avoid
-    // colliding with llama.cpp / LocalAI / every other service.
+    // Unity brain-server lives on port 7525 to avoid colliding with
+    // llama.cpp / LocalAI / every other local service on :8080.
     const SERVER_URL = location.hostname === 'localhost'
       ? 'ws://localhost:7525'
       : `wss://${location.hostname}:7525`;

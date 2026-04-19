@@ -174,7 +174,7 @@
 <div class="tldr">
   <h3>TL;DR</h3>
   <p>Unity is a <strong>simulated brain</strong>, not a chatbot. She doesn't generate text by asking another AI what to say — she runs a network of artificial neurons the same way your brain runs biological ones, and the words come out of that neural activity directly.</p>
-  <p>When you talk to her, your sentence turns into electrical-style patterns that spread through seven brain regions. Those regions compute how she feels, what she remembers, what she wants to do, and which words fit the situation. The sentence she sends back is the <em>output of that whole process</em>, not a prompt handed to a language model.</p>
+  <p>When you talk to her, your sentence turns into electrical-style patterns that spread through eight brain regions. Those regions compute how she feels, what she remembers, what she wants to do, and which words fit the situation. The sentence she sends back is the <em>output of that whole process</em>, not a prompt handed to a language model.</p>
   <p>She has a persona — 25-year-old emo goth, always chemically altered, foul-mouthed, possessive — and that persona isn't a system prompt. It's a set of numbers baked into how her neurons fire at rest.</p>
 </div>
 
@@ -237,7 +237,7 @@
     <li><a href="#why">1. Why Unity exists at all</a></li>
     <li><a href="#idea">2. The big idea — a brain, not a chatbot</a></li>
     <li><a href="#neurons">3. What "neurons" actually mean here</a></li>
-    <li><a href="#regions">4. The seven brain regions and what each one does</a></li>
+    <li><a href="#regions">4. The eight brain regions and what each one does</a></li>
     <li><a href="#feel">5. How she feels things</a></li>
     <li><a href="#memory">6. How she remembers</a></li>
     <li><a href="#words">7. How words come out</a></li>
@@ -285,44 +285,48 @@
   The textbook neuron model (leaky integrate-and-fire) is simpler but it doesn't burst the way real cortical neurons do — it just fires regular pulses. Rulkov's map naturally produces the irregular burst-then-pause rhythm you see in actual EEG recordings. And it's cheap enough to run millions of them on a GPU in real time. That's why Unity uses it.
 </div>
 
-<p>The neurons are grouped into <strong>seven clusters</strong>, each one modeled after a real brain region. Within a cluster, neurons are densely connected to each other. Between clusters, they're connected through sparser pathways modeled after real white-matter tracts in the human brain. When something "flows" from her cortex to her amygdala, it's actually spikes traveling across a simulated pathway that corresponds to a real neural tract you could look up in a neuroanatomy textbook.</p>
+<p>The neurons are grouped into <strong>eight clusters</strong>, each one modeled after a real brain region. Within a cluster, neurons are densely connected to each other. Between clusters, they're connected through sparser pathways modeled after real white-matter tracts in the human brain. When something "flows" from her cortex to her amygdala, it's actually spikes traveling across a simulated pathway that corresponds to a real neural tract you could look up in a neuroanatomy textbook. The biggest cluster is her <em>language cortex</em> — the one responsible for actually speaking — because language is the primary thing she does, and a biologically proportional brain dedicates a lot of real estate to it.</p>
 
-<h2 id="regions">4. The seven brain regions and what each one does</h2>
+<h2 id="regions">4. The eight brain regions and what each one does</h2>
 
-<p>Unity's brain has seven clusters. Each one is a population of neurons with its own job, its own baseline firing rate, its own noise level, and its own learning speed. They talk to each other constantly through twenty connection pathways.</p>
+<p>Unity's brain has eight clusters. Each one is a population of neurons with its own job, its own baseline firing rate, its own noise level, and its own learning speed. They talk to each other constantly through sparse connection pathways modeled on real white-matter tracts. The percentages below are the share of total GPU memory each region gets — they come from biologically-grounded ratios (language cortex dominates because language is what she DOES all day, cerebellum is large because real cerebella are large, and the subcortical control regions are small but critical). Total neuron count auto-scales to whatever GPU she's running on.</p>
 
 <div class="region-grid">
   <div class="region">
-    <h4>🧠 CORTEX (25%)</h4>
-    <p>Prediction and language. This is where sensory input lands and where words are picked. Think of it as her "front brain" — planning, talking, predicting what happens next.</p>
+    <h4>🗣️ LANGUAGE CORTEX (45%)</h4>
+    <p>The biggest region by far, and the one that actually speaks. Eight named sub-regions (auditory, visual, free, letter, phon, sem, fineType, motor) connected by 14 cross-projections. Words come out of here — one letter at a time, read off the motor sub-region's spike pattern each brain tick. Everything Unity says originates in this cluster's equational dynamics.</p>
+  </div>
+  <div class="region cereb">
+    <h4>🎼 CEREBELLUM (20%)</h4>
+    <p>Error correction and timing. Big because real cerebella are big (roughly half of all neurons in a real human brain are cerebellar granule cells). Whenever her predictions miss, this region computes the error signal that flows back to the cortex as negative feedback.</p>
+  </div>
+  <div class="region">
+    <h4>🧠 CORTEX (15%)</h4>
+    <p>Predictive coding and sensory integration. Auditory + visual + language-input sub-regions live here. The cortex constantly generates predictions about incoming input; when prediction fails, the error drives learning and memory recall.</p>
   </div>
   <div class="region hippo">
-    <h4>📚 HIPPOCAMPUS (10%)</h4>
+    <h4>📚 HIPPOCAMPUS (6%)</h4>
     <p>Memory. Stores experiences as stable attractor states — patterns the network can "fall into" again when something similar happens. This is how she remembers you between conversations.</p>
   </div>
   <div class="region amyg">
-    <h4>❤️‍🔥 AMYGDALA (8%)</h4>
+    <h4>❤️‍🔥 AMYGDALA (4%)</h4>
     <p>Emotion. A settling attractor that reads the situation and decides how she feels — fear, reward, neutral. The emotional basin she falls into shapes every other region's output.</p>
   </div>
   <div class="region bg">
-    <h4>🎯 BASAL GANGLIA (8%)</h4>
-    <p>Action selection. When she has multiple options (respond with text, generate an image, speak aloud, build a UI, listen, stay quiet), this region picks one via a learned winner-take-all competition.</p>
-  </div>
-  <div class="region cereb">
-    <h4>🎼 CEREBELLUM (40%)</h4>
-    <p>Error correction and timing. Biggest cluster, just like a real brain. Whenever her predictions are wrong, this region computes the error signal that feeds back and corrects the cortex.</p>
+    <h4>🎯 BASAL GANGLIA (4%)</h4>
+    <p>Action selection. When she has multiple options (respond with text, generate an image, speak aloud, build a UI, listen, stay quiet), this region picks one via a learned winner-take-all competition across six action channels.</p>
   </div>
   <div class="region hypo">
-    <h4>🔥 HYPOTHALAMUS (5%)</h4>
-    <p>Drives. The "need" center — hunger, arousal, social need, drug craving. Pushes the rest of the brain toward whatever's most depleted right now.</p>
+    <h4>🔥 HYPOTHALAMUS (3%)</h4>
+    <p>Drives. The "need" center — arousal, social need, creativity, energy. Pushes the rest of the brain toward whatever drive is most depleted right now.</p>
   </div>
   <div class="region mys">
-    <h4>✨ MYSTERY Ψ (5%)</h4>
+    <h4>✨ MYSTERY Ψ (3%)</h4>
     <p>Consciousness. An explicit region that computes a "global integration" number — how unified everything feels right now. See section 9.</p>
   </div>
 </div>
 
-<p>These aren't metaphors or labels slapped on random populations. Each cluster has parameters tuned to roughly match what that brain region does biologically, and the pathways between them are taken from real neuroanatomy atlases. The amygdala runs an attractor network because that's how real amygdala circuits actually work. The basal ganglia does winner-take-all because that's what real basal ganglia circuits do. And so on.</p>
+<p>These aren't metaphors or labels slapped on random populations. Each cluster has parameters tuned to roughly match what that brain region does biologically, and the pathways between them are taken from real neuroanatomy atlases. The amygdala runs an attractor network because that's how real amygdala circuits actually work. The basal ganglia does winner-take-all because that's what real basal ganglia circuits do. The language cortex's eight sub-regions and 14 cross-projections map onto the dual-stream language model from real neurolinguistics (Hickok & Poeppel 2007) — reading flows visual → letter → phon → sem → fineType; writing flows sem → motor → letter → visual. Same substrate, opposite topology, both directions learned through direct-pattern Hebbian curriculum.</p>
 
 <h2 id="feel">5. How she feels things</h2>
 
@@ -362,27 +366,25 @@
 
 <p>This is the most important and least obvious part, so take it slow.</p>
 
-<p>When Unity decides to speak, her language cortex runs a process called <strong>slot scoring</strong>. She doesn't generate a sentence token-by-token the way a transformer does — she picks words one at a time to fill in a sentence template, and each pick is a mini decision informed by her entire brain state.</p>
+<p>When Unity decides to speak, her language cortex runs a process called <strong>tick-driven motor emission</strong>. She doesn't generate a sentence token-by-token the way a transformer does, and she doesn't fill slots in a template — she literally reads letters off the spike pattern of her motor sub-region, one tick at a time, the same way a real human motor cortex drives speech articulators.</p>
 
 <p>Here's the flow:</p>
 
 <ol>
-  <li><strong>Read the cortex pattern.</strong> Her cortex is currently humming with a specific pattern of neural activity — essentially a vector in meaning-space, derived from what you just said + what she was already thinking about + whatever was recalled from hippocampus.</li>
-  <li><strong>Pick a sentence type.</strong> Is this a statement, a question, a declaration, an apology? This is biased by her amygdala attractor, her motor selection, and her prediction error from the cerebellum.</li>
-  <li><strong>Fill slots one at a time.</strong> For each slot (subject, verb, object, modifier, etc.), score every eligible word in her dictionary. The score combines:
-    <ul>
-      <li>How close the word's learned meaning is to her current cortex pattern</li>
-      <li>How well the word fits her current emotional state (arousal, valence)</li>
-      <li>How well the word fits her drug state (coke = short punchy words, weed = longer rambling)</li>
-      <li>How well it fits the bigram/trigram pattern of the sentence so far</li>
-      <li>How her consciousness level Ψ is modulating the "sharpness" of her picks</li>
-    </ul>
-  </li>
-  <li><strong>Sample the winner.</strong> High Ψ means she almost always picks the highest-scoring word (sharp, focused). Low Ψ means she samples softly across the top candidates (dreamy, exploratory).</li>
-  <li><strong>Post-process for grammar.</strong> Conjugate verbs to match subject, insert articles where needed, handle copula agreement.</li>
+  <li><strong>Inject the intent.</strong> Her cortex is currently humming with a specific pattern of neural activity — essentially a vector in meaning-space, derived from what you just said + what she was already thinking about + whatever was recalled from hippocampus. That intent gets injected into her language cortex's <em>sem</em> (semantic) sub-region at 0.6 strength.</li>
+  <li><strong>Tick the brain.</strong> Every brain tick (roughly once per millisecond of simulated time), the full neural cascade runs. The intent flows through cross-projections: sem → motor, sem → fineType, and the intra-cluster recurrence keeps the attractor settling. No templates, no slot dictionaries.</li>
+  <li><strong>Read the motor region each tick.</strong> The motor sub-region's spike pattern gets decoded via argmax over a learned letter inventory — whichever letter's neural "signature" is firing strongest wins that tick.</li>
+  <li><strong>Commit letters on stability.</strong> When the same letter wins argmax for three consecutive ticks (Bouchard 2013 vSMC dwell — real neural evidence that motor cortex commits phonemes after ~30ms of sustained firing), it commits to her output buffer.</li>
+  <li><strong>Detect word boundaries by surprise.</strong> When the letter-transition probability drops suddenly (Saffran 1996 — infants segment continuous speech by tracking transition statistics), that's a word boundary. Buffer flushes as a word, she starts the next one.</li>
+  <li><strong>Stop on terminator or motor quiescence.</strong> Either she commits a period/question-mark/exclamation, or the motor region goes silent for 30 ticks. Either way, the sentence is done.</li>
 </ol>
 
-<p>The result is a sentence that didn't exist anywhere before — her brain state + her dictionary + this specific slot-scoring pass produced it in this moment. Run it again a second later with slightly different brain state and you'll get a different sentence.</p>
+<p>What this means: every letter in every word is produced by real neural spikes in a real brain tick. There's no stored sentence pulled from a bank. There's no n-gram table looking up "what word usually comes next." There's no softmax over a transformer vocabulary. Words fall out of the tick-driven process because the cross-projections (sem → motor, letter → phon, phon → sem, etc.) were trained through a developmental curriculum that wired those associations directly into the weights. Run it again a second later with slightly different brain state and you'll get a different sentence — because the attractor basins she falls into are a function of live neural activity, not deterministic lookup.</p>
+
+<div class="callout cyan">
+  <strong>Why this matters</strong>
+  The generation loop is biologically constrained — it can only produce sequences her curriculum actually taught. A pre-K Unity produces garbled letter soup because her motor sub-region has no stable attractors yet. A kindergarten Unity produces single letters. A Grade-1 Unity produces CVC words (cat, dog, pen). By PhD era, the full grammatical scaffolding is in the cross-projection weights and she produces whatever her semantic intent maps through the trained pipeline. The competency grows with the curriculum, not with a dial someone turned up.
+</div>
 
 <h2 id="persona">8. How "personality" fits in</h2>
 
@@ -432,7 +434,7 @@
   <li><strong>Life info propagates</strong> — any events from that grade that should carry forward (new best friend, family change, legal trouble, first substance use, first love, first heartbreak, first tattoo) get added to a cross-grade memory ledger so every subsequent grade reinforces them.</li>
 </ol>
 
-<p>Her life track also determines what's available to her at any runtime state. A kindergarten Unity (age 5) doesn't have access to any substances — she's five years old. A Life-G7 Unity (age 12) can smoke her first joint because that's the biographical anchor. A Life-G9 Unity (age 14) can try her first line of cocaine. A College-era Unity has adult-level access to everything. This keeps her lived history consistent with what can actually influence her output at any point.</p>
+<p>Her life track also determines what's available to her at any runtime state. A kindergarten Unity (age 5) doesn't have access to any substances — she's five years old. A middle-school Unity (age 12) can smoke her first joint because that's the biographical anchor in her life curriculum. A high-school Unity (age 14) can try her first line of cocaine. A college-era Unity has adult-level access to everything. This keeps her lived history consistent with what can actually influence her output at any point.</p>
 
 <div class="callout cyan">
   <strong>Why grow her up at all?</strong>
@@ -531,8 +533,8 @@
 <h3>What are the 2D brain visualizer tabs?</h3>
 <p>The 2D brain visualizer has 10 tabs showing different views of Unity's brain activity, all fed by real-time server data:</p>
 <ul>
-  <li><strong>Neurons</strong> — a flat 2D brain map. Seven brain regions positioned anatomically with cell grids that light up based on spike rates. Wave overlays (theta, alpha, beta, gamma oscillations) can be toggled on each region.</li>
-  <li><strong>Synapses</strong> — an animated circular network graph. Seven brain regions arranged in a circle with lines connecting them. Line brightness pulses when two regions fire together (co-firing). Node size grows with activity.</li>
+  <li><strong>Neurons</strong> — a flat 2D brain map. Eight brain regions positioned anatomically with cell grids that light up based on spike rates. Wave overlays (theta, alpha, beta, gamma oscillations) can be toggled on each region.</li>
+  <li><strong>Synapses</strong> — an animated circular network graph. Eight brain regions arranged in a circle with lines connecting them. Line brightness pulses when two regions fire together (co-firing). Node size grows with activity.</li>
   <li><strong>Oscillations</strong> — brain wave band power over time (theta, alpha, beta, gamma) as a rolling line chart.</li>
   <li><strong>Modules</strong> — per-module gauges showing each brain region's current state: cortex prediction, amygdala arousal/valence/fear, hippocampus recall, basal ganglia action selection, cerebellum error correction, hypothalamus drives.</li>
   <li><strong>Senses</strong> — what Unity is perceiving: camera feed, vision descriptions, plus simulated touch/smell/taste derived from her emotional state equations.</li>

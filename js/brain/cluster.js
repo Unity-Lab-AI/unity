@@ -121,6 +121,13 @@ export class NeuronCluster {
     // dispatch helpers when the GPU client is connected.
     this._gpuProxy = opts.gpuProxy || null;
     this._gpuProxyReady = false; // flips true once cross-projections uploaded
+    // T17.3.e — One-tick-lag GPU propagate caches. Populated async by
+    // `_dispatchGpuPropagates()` at the end of step(); consumed by the
+    // NEXT step()'s current loop + `_propagateCrossRegions()`. Null
+    // until the first GPU resolve lands, which makes the CPU fallback
+    // fire on tick 0.
+    this._cachedIntraCurrents = null;        // Float32Array | null
+    this._cachedCrossCurrents = new Map();   // name → Float32Array
 
     // Regulation parameters — each cluster has its own
     this.tonicDrive = opts.tonicDrive ?? 15;
@@ -1537,6 +1544,17 @@ export class NeuronCluster {
    */
   _propagateCrossRegions() {
     if (!this.crossProjections) return;
+    // T17.3.e — One-tick-lag GPU propagate (Gee 2026-04-18).
+    // If the GPU proxy is ready AND we have cached currents from the
+    // previous step's async GPU propagate, USE THOSE instead of running
+    // the CPU sparse matmul. Synaptic delays of 1-2ms are biologically
+    // normal — a single-tick lag (~100ms brain sim time) is well within
+    // real synaptic transmission latencies.
+    //
+    // Cache is populated by `_dispatchCrossRegionsGpu()` at the END of
+    // step(). On first tick (or if GPU cache miss for a projection),
+    // we fall back to CPU propagate so the simulation still runs.
+    const useGpu = this._gpuProxyReady && this._cachedCrossCurrents;
     for (const [name, proj] of Object.entries(this.crossProjections)) {
       const idx = name.indexOf('_to_');
       if (idx < 0) continue;
@@ -1545,10 +1563,71 @@ export class NeuronCluster {
       const srcRegion = this.regions[src];
       const dstRegion = this.regions[dst];
       if (!srcRegion || !dstRegion) continue;
-      const srcSpikes = this.regionSpikes(src);
-      const inputs = proj.propagate(srcSpikes);
+
+      let inputs = null;
+      if (useGpu) inputs = this._cachedCrossCurrents.get(name);
+      if (!inputs) {
+        // CPU fallback — GPU cache miss or GPU proxy not ready yet.
+        const srcSpikes = this.regionSpikes(src);
+        inputs = proj.propagate(srcSpikes);
+      }
       for (let i = 0; i < inputs.length; i++) {
         this.externalCurrent[dstRegion.start + i] += inputs[i] * 0.35;
+      }
+    }
+  }
+
+  /**
+   * T17.3.e — Dispatch GPU propagate for every cross-region projection
+   * AND the intra-cluster synapses. Fire-and-forget — the promises
+   * resolve asynchronously and populate the caches (`_cachedCrossCurrents`
+   * and `_cachedIntraCurrents`) for the NEXT step() to consume.
+   *
+   * This is the hot-path wiring that unlocks removing the CPU single-
+   * thread dispatch budget cap. With GPU doing the sparse matmul, the
+   * CPU side of step() is just LIF integration + spike counting —
+   * dramatically faster, so language cortex can scale past the old
+   * 200K neuron CPU ceiling.
+   */
+  _dispatchGpuPropagates() {
+    if (!this._gpuProxyReady || !this._gpuProxy || !this._gpuProxy.propagate) return;
+    // Dispatch intra-cluster propagate (intra synapse sparse matmul).
+    const spikes = this.lastSpikes;
+    if (this.synapses && spikes) {
+      const key = `${this.name}_intraSynapses`;
+      const pSpikes = new Uint32Array(spikes.length);
+      for (let i = 0; i < spikes.length; i++) pSpikes[i] = spikes[i] ? 1 : 0;
+      try {
+        const p = this._gpuProxy.propagate(key, pSpikes);
+        if (p && typeof p.then === 'function') {
+          p.then((currents) => {
+            if (currents && currents.length > 0) this._cachedIntraCurrents = currents;
+          }).catch(() => { /* non-fatal — CPU fallback on cache miss */ });
+        }
+      } catch { /* non-fatal */ }
+    }
+    // Dispatch each cross-region projection.
+    if (this.crossProjections) {
+      if (!this._cachedCrossCurrents) this._cachedCrossCurrents = new Map();
+      for (const [name] of Object.entries(this.crossProjections)) {
+        const idx = name.indexOf('_to_');
+        if (idx < 0) continue;
+        const src = name.slice(0, idx);
+        const srcRegion = this.regions[src];
+        if (!srcRegion) continue;
+        const key = `${this.name}_${name}`;
+        const srcSpikes = this.regionSpikes(src);
+        const pSpikes = new Uint32Array(srcSpikes.length);
+        for (let i = 0; i < srcSpikes.length; i++) pSpikes[i] = srcSpikes[i] > 0 ? 1 : 0;
+        try {
+          const p = this._gpuProxy.propagate(key, pSpikes);
+          if (p && typeof p.then === 'function') {
+            const cache = this._cachedCrossCurrents;
+            p.then((currents) => {
+              if (currents && currents.length > 0) cache.set(name, currents);
+            }).catch(() => { /* non-fatal */ });
+          }
+        } catch { /* non-fatal */ }
       }
     }
   }
@@ -1672,7 +1751,18 @@ export class NeuronCluster {
 
     // Build input currents
     const currents = new Float64Array(size);
-    const synapticCurrents = synapses.propagate(neurons.getSpikes());
+    // T17.3.e — One-tick-lag GPU intra-synapse propagate (Gee 2026-04-18).
+    // If GPU proxy is ready AND we have cached currents from the previous
+    // tick's async dispatch, use them. Otherwise fall back to CPU sparse
+    // matmul so the sim keeps running (first tick, cache miss, or pre-GPU).
+    // This is the hot-path refactor that removes the CPU_SINGLE_THREAD
+    // dispatch budget cap — GPU does the sparse matmul, CPU does LIF.
+    let synapticCurrents;
+    if (this._gpuProxyReady && this._cachedIntraCurrents && this._cachedIntraCurrents.length === size) {
+      synapticCurrents = this._cachedIntraCurrents;
+    } else {
+      synapticCurrents = synapses.propagate(neurons.getSpikes());
+    }
 
     // Effective tonic drive with all modulation applied
     const effectiveDrive = this.tonicDrive
@@ -1726,6 +1816,13 @@ export class NeuronCluster {
       this.externalCurrent[i] *= 0.9;
       this._incomingProjections[i] = 0; // reset for next step
     }
+
+    // T17.3.e — Fire async GPU propagates for NEXT tick's intra +
+    // cross-region currents. Fire-and-forget: promises resolve and
+    // populate `_cachedIntraCurrents` / `_cachedCrossCurrents`, which
+    // the next step() and _propagateCrossRegions() consume. No-op if
+    // `_gpuProxyReady` is false (CPU path continues).
+    this._dispatchGpuPropagates();
 
     return { spikes: this.lastSpikes, spikeCount, voltages };
   }

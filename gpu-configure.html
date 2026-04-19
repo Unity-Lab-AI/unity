@@ -295,23 +295,14 @@
 // within the class of hardware it's named after. Tiers that exceed
 // the admin's actual detected hardware are auto-disabled.
 // ══════════════════════════════════════════════════════════════
-// T14.20 (2026-04-14) — tier ladder rebalanced.
-// Old presets were calibrated at laughably conservative neuron counts
-// relative to their VRAM caps (e.g. enthusiast-gpu said 1.5M neurons
-// for 10GB VRAM, but 10GB / 8 bytes/neuron = 1.34B theoretical). The
-// presets were set from a CPU-footprint worst-case assumption, but
-// Unity runs on GPU where Rulkov state is 8 bytes/neuron flat. The
-// server enforces a 671M single-GPU cap via the 2GB per-buffer
-// binding ceiling (see detectResources maxTotalForBinding), so every
+// Tier ladder — calibrated against actual GPU VRAM + binding ceiling.
+// Rulkov neuron state is 8 bytes/neuron flat on GPU. The server
+// enforces a 671M single-GPU cap via the 2GB per-buffer binding
+// ceiling (see detectResources maxTotalForBinding), so every
 // single-GPU tier realistically caps there regardless of how much
 // VRAM the card has — higher-VRAM tiers get HEADROOM for projections
 // and cross-region weights, not more raw neurons. Multi-GPU tiers
 // above split across bindings and can exceed the single-GPU cap.
-//
-// Also added enthusiast-16gb tier for 16GB cards (4070 Ti SUPER /
-// 4080 SUPER 16 / 4060 Ti 16 / RTX 5080) which previously fell in
-// a gap between enthusiast-gpu (10GB) and high-end (22GB) — users
-// with 16GB had to pick the 10GB tier and waste 6GB.
 const TIERS = [
   {
     id: 'minimum',
@@ -341,14 +332,14 @@ const TIERS = [
     neurons: 600000000,
     vramMB: 6144,
   },
-  // T14.20.1 — vramMB values reduced from round GB multiples to
-  // leave ~1GB headroom below the nominal card size. Real 10GB cards
-  // report ~10200MB, 16GB cards report ~16376MB, 24GB cards report
-  // ~24564MB etc, because the driver reserves some VRAM at boot. A
-  // preset at 16384 (16 * 1024) gets rejected by detectResources's
-  // validation on an actual 16GB card because detected VRAM (16376)
-  // is less than the preset's requested cap. Shaving 1GB off each
-  // preset lets the tier fit any card marketed as that size.
+  // vramMB values leave ~1GB headroom below the nominal card size.
+  // Real 10GB cards report ~10200MB, 16GB cards report ~16376MB, 24GB
+  // cards report ~24564MB etc, because the driver reserves some VRAM
+  // at boot. A preset at 16384 (16 * 1024) gets rejected by
+  // detectResources's validation on an actual 16GB card because
+  // detected VRAM (16376) is less than the preset's requested cap.
+  // Shaving 1GB off each preset lets the tier fit any card marketed
+  // as that size.
   {
     id: 'enthusiast-gpu',
     name: 'Enthusiast GPU 10GB — RTX 3070 / 4070',

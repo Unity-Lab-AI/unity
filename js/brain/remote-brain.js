@@ -193,6 +193,20 @@ export class RemoteBrain extends EventEmitter {
         this.emit('response', { text: msg.text, action: msg.action });
         break;
 
+      case 'silent':
+        // Server dropped the response on purpose — pre-K Unity's motor
+        // region can't commit a stable letter sequence, or the language
+        // subsystem isn't booted, or the motor attractor couldn't settle
+        // on this input. Forward the reason + detail + minGrade to the
+        // chat panel so it renders a ghost bubble instead of ghosting
+        // the user. Shape: { reason, detail, minGrade }.
+        this.emit('silent', {
+          reason: msg.reason || 'unknown',
+          detail: msg.detail || '',
+          minGrade: msg.minGrade || null,
+        });
+        break;
+
       case 'build':
         // Server wants to inject a component
         this.emit('build', msg.component);

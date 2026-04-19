@@ -510,6 +510,64 @@ export class GPUCompute {
     return true;
   }
 
+  // Chunked sparse upload — for matrices too large to ship in a single
+  // WebSocket frame without choking the browser frame assembler. Creates
+  // empty GPU buffers up front, streams values+colIdx chunks via
+  // writeBuffer at offsets, marks the matrix live when the last chunk
+  // arrives. Zero 480MB JS-heap buffer; chunk bytes go straight from
+  // the receive ArrayBuffer to GPU memory.
+  _beginSparseUpload(name, rows, cols, nnz, rowPtr) {
+    if (!this._available) return false;
+    const device = this._device;
+    const rowPtr32 = rowPtr instanceof Uint32Array ? rowPtr : new Uint32Array(rowPtr);
+    const makeStorage = (sizeBytes) => device.createBuffer({
+      size: sizeBytes,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    const entry = {
+      rows, cols, nnz,
+      values: makeStorage(nnz * 4),
+      colIdx: makeStorage(nnz * 4),
+      rowPtr: makeStorage(rowPtr32.byteLength),
+      preSpikes: device.createBuffer({
+        size: cols * 4,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+      }),
+      postCurrents: device.createBuffer({
+        size: rows * 4,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
+      }),
+      postSpikes: device.createBuffer({
+        size: rows * 4,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+      }),
+      _pending: true,
+    };
+    device.queue.writeBuffer(entry.rowPtr, 0, rowPtr32.buffer, rowPtr32.byteOffset, rowPtr32.byteLength);
+    this._sparseMatrices[name] = entry;
+    return true;
+  }
+
+  _appendSparseUpload(name, valuesOffset, valuesChunk, colIdxOffset, colIdxChunk) {
+    const entry = this._sparseMatrices[name];
+    if (!entry) return false;
+    const device = this._device;
+    if (valuesChunk && valuesChunk.byteLength > 0) {
+      device.queue.writeBuffer(entry.values, valuesOffset, valuesChunk.buffer, valuesChunk.byteOffset, valuesChunk.byteLength);
+    }
+    if (colIdxChunk && colIdxChunk.byteLength > 0) {
+      device.queue.writeBuffer(entry.colIdx, colIdxOffset, colIdxChunk.buffer, colIdxChunk.byteOffset, colIdxChunk.byteLength);
+    }
+    return true;
+  }
+
+  _finishSparseUpload(name) {
+    const entry = this._sparseMatrices[name];
+    if (!entry) return false;
+    entry._pending = false;
+    return true;
+  }
+
   /**
    * Dispatch sparse matmul: currents[target region] = matrix @ spikes[source region].
    * Reuses the existing SYNAPSE_PROPAGATE_SHADER. Pre-spikes must be
