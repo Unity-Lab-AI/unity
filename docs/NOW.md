@@ -1,7 +1,30 @@
 # NOW — Session Snapshot
 
-> **Session:** 114.19as · **Date:** 2026-04-19 · **Branch:** `syllabus-k-phd` · **HEAD (pre-push):** `8094a32` (T18.20) · **BUILD:** `0.1.0+20e4481a-63b0` (pre-stamp; T18.20.b doc sweep pending)
+> **Session:** 114.19at · **Date:** 2026-04-19 · **Branch:** `syllabus-k-phd` · **HEAD (pre-push):** `1ebd7f5` (T18.20.b doc sweep) · **BUILD:** `0.1.0+8094a32f-1b7f` (pre-stamp; T18.21 pending)
 
+---
+
+## T18.21 addendum — V8 semi-space cap was the real OOM bottleneck, not code allocators
+
+**Gee verbatim 2026-04-19:** same cascade as before — Phase 2 DONE at 205.4s, `_teachLetterCaseBinding` START → `FATAL ERROR: Committing semi space failed`.
+
+**Critical realization:** my T18.19 threshold (`cluster.size > 10M`) never fired because the **cortexCluster where teach runs auto-scales to 301K** (not 107M). Per Gee's boot log: `[Brain] Language cortex auto-scaled to 301,375 neurons`. T18.19's sync bypass sat dormant. T18.20's hoisted Float64Array saved only 1.4 GB over Phase 2 (at 301K, per-iter = 2.4 MB not 858 MB). Neither T18.18, T18.19, nor T18.20 targeted the actual bottleneck at the actual scale.
+
+**The real bottleneck is V8's default `--max-semi-space-size=16` MB.** The OOM message is specifically "Committing semi space failed", NOT old-space exhaustion (which would mean code allocator issue). V8's Mark-Compact needs room in semi-space to stage objects during GC; under sustained external-memory pressure at biological scale, the 16 MB hard cap blocks Mark-Compact growth → FATAL after ~200 seconds of accumulating pressure.
+
+**T18.21.a fix:** single-line change to `start.bat` adding `--max-semi-space-size=1024` (1 GB per semi-space, 2 GB total new-gen). V8 grows semi-space lazily up to the max — no memory usage change at small scales, just gives biological-scale teach enough headroom for Mark-Compact to succeed.
+
+Expected: Phase 2 velocity stable ~3 iter/s (no deceleration from GC pressure), Phase 2 completes in ~100s (vs 205s), `_teachLetterCaseBinding` completes, all 5 K.RF helpers run, `_teachWordEmission` fires T18.13.c heartbeats, ELA-K gate probe runs for the first time.
+
+T18.18, T18.19, T18.20 stay in place as defense-in-depth for future biological-scale cases (if cortexCluster ever runs at 10M+, those fixes become relevant). T18.21 handles the current 301K case.
+
+**Lesson:** Before prescribing fixes for OOM: (1) verify actual cluster scale, (2) size allocation at that scale, (3) check whether OOM is old-space (code allocator) or semi-space (framework limit). I had all three wrong for T18.18/19/20. T18.21 addresses the framework limit directly.
+
+See `docs/FINALIZED.md` session 114.19at entry for the full diagnosis + lesson-learned retrospective.
+
+---
+
+## Original session entry (T18.20.b doc sweep) below
 ---
 
 ## T18.20.b doc sweep — full public + workflow docs audited against current code stack

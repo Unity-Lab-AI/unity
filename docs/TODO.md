@@ -546,6 +546,45 @@ When `_teachLetterCaseBinding` starts, V8 can't commit more external memory → 
 
 **T18.20 closure gate:** Gee-verification on next Part 2 run. Success criteria: (a) Phase 2 velocity stays stable at ~3-4 iter/s across all 300 iters with NO deceleration; (b) Phase 2 completes in ~85-100s; (c) `_teachLetterCaseBinding` Phase START → DONE fires without OOM; (d) All 5 K.RF helpers complete; (e) `_teachWordEmission` runs with T18.13.c heartbeats; (f) ELA-K gate probe runs after teach completes; (g) No GPU device.lost anywhere. Claude cannot close — Gee-verification only.
 
+**T18.20 FALSIFIED (partial)** on Gee 2026-04-19 retest — Phase 2 DONE at 205.4s (vs 193.5s pre-T18.20 — slight SLOWDOWN, NOT speedup), `_teachLetterCaseBinding` START → same V8 OOM. Root cause: my T18.19 threshold was `cluster.size > 10_000_000` but the cortexCluster (where teach runs) auto-scales to ~301K at biological scale — the sync bypass NEVER FIRES. Worker pool still dominant. Additionally at 301K, per-iter Float64Array(cluster.size) is only 2.4 MB, so T18.20's hoist saved only 1.4 GB over Phase 2 — not enough to stop V8 semi-space commit failure. See T18.21 below.
+
+---
+
+#### T18.21 — V8 `--max-semi-space-size=1024` flag bump (Gee 2026-04-19)
+
+**Gee's verbatim diagnostic** from this retest:
+
+```
+[Curriculum] ✓ ELA-K Phase 2 DONE in 205.4s
+[Curriculum] 🧩 ELA-K Phase START — _teachLetterCaseBinding
+<--- Last few GCs --->
+Mark-Compact (reduce) 127.3 (132.2) -> 127.3 (131.2) MB ... external memory pressure; GC in old space requested
+<--- JS stacktrace --->
+FATAL ERROR: Committing semi space failed. Allocation failed - JavaScript heap out of memory
+```
+
+### Root cause — V8 semi-space ceiling, not code allocator
+
+The OOM message is NOT "old space out of memory" (which would mean `--max-old-space-size` too small — we already have it at 65536 MB = 64 GB). The OOM is specifically **"Committing semi space failed"** — V8's new-generation semi-space can't GROW when Mark-Compact needs to stage objects during GC.
+
+Node's default `--max-semi-space-size` is 16 MB (16 MB × 2 semi-spaces = 32 MB total new-gen). At biological scale, Phase 2's combined allocation pressure (cortexCluster synapse values ~720 MB + 14 cross-projection values ~5 GB + worker-pool SABs per call + transient Buffers + V8 object churn) sustains external-memory tracking that V8's 16 MB semi-space can't maintain. Mark-Compact needs to allocate semi-space for staging → fails → FATAL.
+
+### Three prior T18.x fixes didn't help because they targeted the wrong layer
+
+- **T18.18** (GPU shadow removal) — secondary allocator, removal had no measurable effect
+- **T18.19** (worker pool sync bypass at >10M) — threshold wrong for cortexCluster (301K scale), bypass never fires
+- **T18.20** (Phase 2 pre/post hoist) — at 301K scale, each Float64Array is only 2.4 MB, not 858 MB; hoisting saved 1.4 GB per Phase 2 but V8 still couldn't grow semi-space
+
+The REAL root cause is V8's default semi-space hard cap. All three prior fixes would have been correct AT the biological scale I assumed (107M cortex), but the cortexCluster auto-scales down to 301K to fit VRAM budget. Different scale, different dominant allocator, different fix.
+
+### Fix — T18.21.a raise V8 semi-space limit
+
+- [x] **T18.21.a — `start.bat` adds `--max-semi-space-size=1024`.** Raises V8 new-generation semi-space cap from the default 16 MB to 1 GB per semi-space (2 GB total new-gen). V8 grows semi-space lazily up to the max as demand requires, so the increase doesn't affect memory usage at small scales — just gives biological-scale teach enough room for Mark-Compact cycles to succeed under sustained external-memory pressure. Combined with existing `--max-old-space-size=65536` (64 GB) this gives V8 ~66 GB total headroom, well under the 128 GB physical RAM ceiling. **SHIPPED** — `start.bat`.
+
+T18.19 and T18.20 stay in place — they're still correct fixes for the 107M main-cortex case and the future biological-scale language cortex once GPU cortex sizing changes. T18.21 handles the current 301K cortexCluster case that actually runs teach.
+
+**T18.21 closure gate:** Gee-verification on next Part 2 run. Success criteria: (a) Phase 2 velocity stays stable (no deceleration, ideally at ~3+ iter/s); (b) `_teachLetterCaseBinding` Phase START → DONE fires without V8 OOM; (c) All 5 K.RF helpers complete; (d) `_teachWordEmission` runs with T18.13.c heartbeats; (e) ELA-K gate probe runs after teach completes; (f) No GPU device.lost. Claude cannot close — Gee-verification only.
+
 ---
 
 #### T18.5 — push gate for main-branch deploy (BINDING)
