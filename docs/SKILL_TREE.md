@@ -10,7 +10,7 @@
 ## By Domain
 
 ### Drug Dynamics
-- Real-time pharmacokinetic scheduler (**11 substances** × route-specific onset/peak/duration/tail curves — cannabis, cocaine, MDMA, LSD, psilocybin, alcohol, ketamine, amphetamine, GHB, nicotine [persona-excluded], caffeine)
+- Real-time pharmacokinetic scheduler (**9 SUBSTANCES entries** × route-specific onset/peak/duration/tail curves — cannabis, cocaine, MDMA, LSD, psilocybin, alcohol, ketamine, amphetamine, GHB). Caffeine layers in via the adult-use `morningCoffee` PATTERN (ingested on schedule, not tracked as an intra-brain substance). Nicotine is persona-excluded — not an entry in SUBSTANCES; any offer is short-circuited by `decide()`'s generic `offer.personaExclusions` check.
 - Grade-gated substance availability from Life-track biographical anchors (caffeine grade3 → GHB/ketamine college1)
 - **7 combo synergies** keyed by sorted-pair name (`cannabis+cocaine` coke-and-weed / `cocaine+mdma` cokes-with-mols / `caffeine+cocaine` double-stim / `alcohol+cannabis` cross-faded / `cannabis+mdma` rolling-and-green / `cannabis+ketamine` k-hole-plus / `alcohol+cocaine` speedball-lite with cocaethylene cardiotoxicity model). Synergy contribs + synergy speech + risk flags scaled by `min(level_a, level_b)`.
 - **7 adult-use PATTERNS** engine (morningCoffee / codingMarathon / weekendParty / acidArchitect / whiskeyWinddown / kHoleContemplate / sexSessionMolly) with per-pattern trigger matcher + ingestion schedule + cooldown window

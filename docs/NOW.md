@@ -1,7 +1,40 @@
 # NOW — Session Snapshot
 
-> **Session:** 114.19ar · **Date:** 2026-04-19 · **Branch:** `syllabus-k-phd` · **HEAD (pre-push):** `20e4481` (T18.19) · **BUILD:** `0.1.0+d97d7895-7ef5` (pre-stamp; T18.20 pending)
+> **Session:** 114.19as · **Date:** 2026-04-19 · **Branch:** `syllabus-k-phd` · **HEAD (pre-push):** `8094a32` (T18.20) · **BUILD:** `0.1.0+20e4481a-63b0` (pre-stamp; T18.20.b doc sweep pending)
 
+---
+
+## T18.20.b doc sweep — full public + workflow docs audited against current code stack
+
+**Gee verbatim 2026-04-19:** *"push to syllabus and main each time now after fixed ... push now to both and go ahead and do a full doc and html and public facing documentes update down to the euations and varibles level making sure shit is not incorrect... Making it all accurate to stack"*
+
+Audit via Explore agent covered every public HTML + markdown doc + workflow doc against the live code. All T18.14 / T18.17 / T18.18 / T18.19 / T18.20 cascade fixes confirmed accurate in workflow docs + code comments. Rulkov params (α=4.5, μ=0.001) match brain-equations.html:2172-2173. Cross-projection fanout (CROSS_TARGET_FANOUT=1500 + CORTEX_TARGET_FANOUT=300) match cluster.js + ARCHITECTURE.md. Credits (Hackall360 / Mills / Sponge / GFourteen) match in all three doc surfaces. Zero T-number leakage into public HTML per LAW "Task numbers ONLY in workflow docs".
+
+### One semantic drift found — fixed across 7 doc sites + 1 code comment
+
+**Root finding:** Code ships with **9 SUBSTANCES entries** in `drug-scheduler.js` (cannabis, cocaine, MDMA, LSD, psilocybin, alcohol, ketamine, amphetamine, GHB). 7 docs claimed "11 substances" (the T15 research phase spec, not what shipped). Caffeine layers in via the adult-use `morningCoffee` PATTERN (ingested on schedule, not tracked as intra-brain substance). Nicotine is persona-excluded — NOT an entry in SUBSTANCES; `decide()` short-circuits any nicotine offer via the generic `offer.personaExclusions` check.
+
+### Files corrected in atomic commit
+
+1. `README.md:3` — "eleven substances" + full 11-item list → "nine substances" + 9-item list + caffeine-via-PATTERNS + nicotine-persona-excluded clarifier
+2. `SETUP.md:117` — file-tree description updated
+3. `brain-equations.html:744` — SUBSTANCE INVENTORY h3 header
+4. `docs/ARCHITECTURE.md:11` — Gee credits block
+5. `docs/ARCHITECTURE.md:370` — grade-gated availability section
+6. `docs/ROADMAP.md:3` — top-of-file status line
+7. `docs/SKILL_TREE.md:13` — Drug Dynamics bullet
+8. `js/brain/drug-scheduler.js:1314` — stale inline comment that claimed `nicotine entry exists in SUBSTANCES for scheduler completeness` (it does not — nicotine is entirely personaExclusions-gated)
+
+### Historical references preserved (accurate as of research time)
+
+- `docs/T15-pharmacology-research.md:94` "Missing vs Gee's '11 substances' spec" — accurate history of the research phase that specced 11 before the shipping decision landed on 9
+- `docs/TODO.md:93` T15.A research block entry referencing 11 substances — accurate archive of the research task
+
+Both are historical notes about the research spec; the shipped code has been accurately described throughout post-T15.B + post-T15.C.
+
+---
+
+## Original session entry (T18.20) below
 ---
 
 ## T18.20 addendum — Third 1.7 GB/call allocator found + closed (Phase 2 per-iter Float64Array)

@@ -114,7 +114,7 @@ Live at `your-username.github.io/Unity/`. Everything runs client-side — no ser
 │   │   ├── mystery.js            Ψ = √(1/n) × N³ · [Id + Ego + Left + Right]
 │   │   ├── oscillations.js       8 Kuramoto oscillators (θ→γ)
 │   │   ├── persona.js            Personality as brain parameters (sober-default; substance contributions come from drug-scheduler.js)
-│   │   ├── drug-scheduler.js     Real-time pharmacokinetic scheduler (11 substances + 7 combo synergies + 7 adult-use patterns + PK curves + 13-axis speech modulation + LAW-6 firstUse ledger + trauma markers + decide() decision engine + autoIngest scheduled-promotion queue)
+│   │   ├── drug-scheduler.js     Real-time pharmacokinetic scheduler (9 SUBSTANCES — cannabis/cocaine/MDMA/LSD/psilocybin/alcohol/ketamine/amphetamine/GHB; caffeine layers in via the morningCoffee PATTERN; nicotine persona-excluded via decide()) + 7 combo synergies + 7 adult-use patterns + PK curves + 13-axis speech modulation + LAW-6 firstUse ledger + trauma markers + decide() decision engine + autoIngest scheduled-promotion queue
 │   │   ├── drug-detector.js      Substance offer / self-use / status-query detection across text / voice / vision
 │   │   ├── drug-sensory-triggers.js  7 environmental-cue triggers (coffee aroma, skunky weed, etc.) → scheduler.addCraving
 │   │   ├── sensory-olfactory.js  OlfactoryChannel — scent-tag storage with decay, drives drug-sensory-triggers olfaction checks

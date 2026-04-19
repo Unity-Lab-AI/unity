@@ -1311,8 +1311,12 @@ class DrugScheduler {
       };
     }
     // Hard fail — persona exclusion (Unity rejects tobacco categorically
-    // per persona feedback memory; nicotine entry exists in SUBSTANCES
-    // for scheduler completeness but Unity never accepts it).
+    // per persona feedback memory). Nicotine is NOT a SUBSTANCES entry;
+    // the generic personaExclusions map short-circuits any offer whose
+    // `offer.substance` appears in the map — caller sets
+    // `offer.personaExclusions = { nicotine: true }` (and any other
+    // persona-forbidden substance) and decide() returns persona_excluded
+    // before touching grade / craving / trauma scoring.
     if (offer.personaExclusions && offer.personaExclusions[offer.substance]) {
       return { accept: false, reason: 'persona_excluded', probability: 0 };
     }
