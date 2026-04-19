@@ -2152,10 +2152,55 @@ class ServerBrain {
   _sparseSendBinary(msgBuffer, reqId, timeoutMs = 120_000) {
     if (!this._gpuClient || this._gpuClient.readyState !== 1) return Promise.resolve(null);
     if (!this._gpuSparsePending) this._gpuSparsePending = new Map();
+    // T18.26 — backpressure-aware send. Gee 2026-04-19 post-T18.25
+    // retest got past _teachLetterCaseBinding and into _teachPhonemeBlending
+    // (1029 K words × 10 reps = 10,290 word-emission iterations).
+    // At ~10 words/s × 14 cross-projections = 140 GPU Hebbian
+    // dispatches/sec via T18.17 hebbianBound fire-and-forget. T18.8
+    // batched queue consolidates up to 64/batch but still fires ~3
+    // batches/sec of type=5 SPRS frames. compute.html's onmessage is
+    // serial; if GPU dispatch queue drains slower than batches arrive,
+    // Node's WebSocket send buffer backs up. Once ws.bufferedAmount
+    // exceeds the OS-level socket send buffer (typically 256 KB - 2 MB
+    // on Windows), ws.send() fails with ENOBUFS. Gee's log showed
+    // ~1200 consecutive ENOBUFS errors during _teachPhonemeBlending.
+    //
+    // Fix: check bufferedAmount BEFORE calling send(). If backed up,
+    // drop the send silently and resolve null (same as timeout path —
+    // fire-and-forget caller just loses one Hebbian update on the GPU
+    // side; CPU path is authoritative per T17.2 / T17.7 comment chain).
+    // Threshold 50 MB = plenty of headroom for bursty Hebbian dispatch
+    // without flooding the OS socket.
+    const BUFFERED_AMOUNT_DROP_THRESHOLD = 50 * 1024 * 1024; // 50 MB
+    if (this._gpuClient.bufferedAmount > BUFFERED_AMOUNT_DROP_THRESHOLD) {
+      if (!this._t1826DroppedCount) this._t1826DroppedCount = 0;
+      this._t1826DroppedCount++;
+      // Throttle the drop-log so we don't spam N lines/sec when backpressure sustained
+      if (!this._t1826LastLogMs || (Date.now() - this._t1826LastLogMs) >= 5000) {
+        this._t1826LastLogMs = Date.now();
+        console.warn(`[Brain] T18.26 backpressure — dropped sparse binary send (ws.bufferedAmount=${(this._gpuClient.bufferedAmount/1024/1024).toFixed(1)}MB > 50MB threshold). ${this._t1826DroppedCount} total drops since boot. Fire-and-forget caller continues; CPU-side Hebbian remains authoritative.`);
+      }
+      return Promise.resolve(null);
+    }
     // No per-send log spam — at 100+ ops/sec the logs themselves are a
     // bottleneck. Only log errors and the final timeout warn.
     this._gpuClient.send(msgBuffer, (err) => {
-      if (err) console.warn(`[Brain] sparse binary reqId=${reqId} ERROR: ${err.message}`);
+      if (err) {
+        // T18.26 — throttle ENOBUFS spam. Gee's log had ~1200 consecutive
+        // identical ENOBUFS lines before the drop-threshold fix. With the
+        // threshold above, ENOBUFS should be rare (since we skip sends
+        // before the OS refuses them). Any remaining ENOBUFS means a
+        // transient kernel condition — log first 3 then silence.
+        if (err.code === 'ENOBUFS') {
+          if (!this._t1826EnobufsCount) this._t1826EnobufsCount = 0;
+          this._t1826EnobufsCount++;
+          if (this._t1826EnobufsCount <= 3) {
+            console.warn(`[Brain] sparse binary reqId=${reqId} ENOBUFS (OS socket send buffer full — transient kernel backpressure). Count ${this._t1826EnobufsCount}/3; further ENOBUFS logs silenced.`);
+          }
+          return;
+        }
+        console.warn(`[Brain] sparse binary reqId=${reqId} ERROR: ${err.message}`);
+      }
     });
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
