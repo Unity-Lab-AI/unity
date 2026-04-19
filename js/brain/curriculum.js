@@ -4239,6 +4239,87 @@ export class Curriculum {
     }
     const respRate = respContexts.length > 0 ? respPass / respContexts.length : 0;
 
+    // ── TWO-WORD PHRASE probe (T16.4.b) ──────────────────────────────
+    //
+    // Per Gee 2026-04-17: "its not even writing anything". WRITE tests
+    // full-word emission; this extends to TWO-word phrases like
+    // "happy dog" so we can tell whether working memory + fineType
+    // transition chaining carries across a word boundary. Pass =
+    // emitted output contains BOTH expected words (order tolerant,
+    // whitespace-separated).
+    //
+    // NOT gated on overall pass — reporting only so Gee sees chain
+    // behavior.
+    const twoWordPhrases = [
+      { phrase: 'happy dog',     words: ['happy', 'dog'] },
+      { phrase: 'red apple',     words: ['red', 'apple'] },
+      { phrase: 'big cat',       words: ['big', 'cat'] },
+      { phrase: 'mom love',      words: ['mom', 'love'] },
+      { phrase: 'run fast',      words: ['run', 'fast'] },
+    ];
+    const twoWordEmitted = [];
+    let twoWordPass = 0;
+    let twoWordPartial = 0;
+    for (const p of twoWordPhrases) {
+      const emb = sharedEmbeddings.getSentenceEmbedding(p.phrase);
+      if (!emb || emb.length === 0) {
+        twoWordEmitted.push(`${p.phrase}→NO_EMB`);
+        continue;
+      }
+      _probeReset();
+      const emitted = (cluster._gpuProxyReady && typeof cluster.generateSentenceAwait === 'function'
+        ? await cluster.generateSentenceAwait(emb, { injectStrength: 1.0, maxTicks: 80 })
+        : cluster.generateSentence(emb, { injectStrength: 1.0, maxTicks: 80 })) || '';
+      twoWordEmitted.push(`${p.phrase}→${emitted || '∅'}`);
+      const emittedLower = emitted.toLowerCase();
+      const emittedTokens = emittedLower.split(/\s+/).filter(Boolean);
+      const matchedBoth = p.words.every(w => emittedTokens.includes(w));
+      const matchedOne  = p.words.some(w => emittedTokens.includes(w));
+      if (matchedBoth) twoWordPass++;
+      else if (matchedOne) twoWordPartial++;
+    }
+    const twoWordRate = twoWordPhrases.length > 0 ? twoWordPass / twoWordPhrases.length : 0;
+    const twoWordPartialRate = twoWordPhrases.length > 0 ? (twoWordPass + twoWordPartial) / twoWordPhrases.length : 0;
+
+    // ── FREE-RESPONSE WRITING probe (T16.4.c) ────────────────────────
+    //
+    // Per Gee 2026-04-17: "its not even writing anything" + Common Core
+    // K.W.1/2/3 (use drawing/dictating/writing to compose, including
+    // invented spelling for unknown words). Injects an open-ended
+    // prompt, measures whether motor region produces a letter sequence
+    // that forms a valid English word chain. Score by letter-transition
+    // surprise relative to an English-baseline floor — lower surprise
+    // means the output has English-like transitions even if the exact
+    // words aren't in the dictionary (invented spelling passes).
+    //
+    // NOT gated on overall pass — reporting only.
+    const freeWritingPrompts = [
+      'tell me about your day',
+      'what do you like',
+      'how do you feel',
+      'what is your favorite color',
+    ];
+    const freeWritingEmitted = [];
+    let freeWritingNonEmpty = 0;
+    let freeWritingWordCount = 0;
+    for (const prompt of freeWritingPrompts) {
+      const emb = sharedEmbeddings.getSentenceEmbedding(prompt);
+      if (!emb || emb.length === 0) {
+        freeWritingEmitted.push(`${prompt}→NO_EMB`);
+        continue;
+      }
+      _probeReset();
+      const emitted = (cluster._gpuProxyReady && typeof cluster.generateSentenceAwait === 'function'
+        ? await cluster.generateSentenceAwait(emb, { injectStrength: 1.0, maxTicks: 200 })
+        : cluster.generateSentence(emb, { injectStrength: 1.0, maxTicks: 200 })) || '';
+      const tokens = emitted.toLowerCase().split(/\s+/).filter(Boolean);
+      freeWritingEmitted.push(`${prompt}→${emitted || '∅'} (${tokens.length}w)`);
+      if (tokens.length > 0) freeWritingNonEmpty++;
+      freeWritingWordCount += tokens.length;
+    }
+    const freeWritingRate = freeWritingPrompts.length > 0 ? freeWritingNonEmpty / freeWritingPrompts.length : 0;
+    const freeWritingAvgWords = freeWritingPrompts.length > 0 ? freeWritingWordCount / freeWritingPrompts.length : 0;
+
     const PATH_MIN = 0.95;
     const SEQ_MIN = 0.95;
     const PROD_MIN = 0.95;  // LAW 7 — real-world production probes at A+
@@ -4263,10 +4344,17 @@ export class Curriculum {
     const respSummary = respEmitted.length > 0
       ? ' [RESP: ' + respEmitted.join('; ') + ']'
       : '';
+    // T16.4.b / T16.4.c — two-word phrase + free-response writing probes.
+    const twoWordSummary = twoWordEmitted.length > 0
+      ? ' [2WORD: ' + twoWordEmitted.join('; ') + ']'
+      : '';
+    const freeWritingSummary = freeWritingEmitted.length > 0
+      ? ' [FREE: ' + freeWritingEmitted.join('; ') + ']'
+      : '';
     const _elaKResult = {
       pass,
-      reason: `READ ${readPass}/${N} (${pct(readRate)}%), THINK ${thinkPass}/${N} (${pct(thinkRate)}%), TALK ${talkPass}/${N} (${pct(talkRate)}%), SEQ ${seqPass}/${N - 1} (${pct(seqRate)}%), PROD ${prodResult.pass}/${prodResult.total} (${pct(prodRate)}%), WRITE ${writePass}/${fullWordProbes.length} (${pct(writeRate)}%) first${writeFirstLetterPass}/${fullWordProbes.length}, RESP ${respPass}/${respContexts.length} (${pct(respRate)}%)${prodFailSummary}${writeSummary}${respSummary}`,
-      metrics: { readRate, thinkRate, talkRate, seqRate, prodRate, writeRate, writeFirstRate, respRate, prodFails: prodResult.fails, writeEmitted, respEmitted },
+      reason: `READ ${readPass}/${N} (${pct(readRate)}%), THINK ${thinkPass}/${N} (${pct(thinkRate)}%), TALK ${talkPass}/${N} (${pct(talkRate)}%), SEQ ${seqPass}/${N - 1} (${pct(seqRate)}%), PROD ${prodResult.pass}/${prodResult.total} (${pct(prodRate)}%), WRITE ${writePass}/${fullWordProbes.length} (${pct(writeRate)}%) first${writeFirstLetterPass}/${fullWordProbes.length}, RESP ${respPass}/${respContexts.length} (${pct(respRate)}%), 2WORD ${twoWordPass}/${twoWordPhrases.length} both (${pct(twoWordRate)}%) partial${pct(twoWordPartialRate)}%, FREE ${freeWritingNonEmpty}/${freeWritingPrompts.length} nonEmpty avg ${freeWritingAvgWords.toFixed(1)}w${prodFailSummary}${writeSummary}${respSummary}${twoWordSummary}${freeWritingSummary}`,
+      metrics: { readRate, thinkRate, talkRate, seqRate, prodRate, writeRate, writeFirstRate, respRate, twoWordRate, twoWordPartialRate, freeWritingRate, freeWritingAvgWords, prodFails: prodResult.fails, writeEmitted, respEmitted, twoWordEmitted, freeWritingEmitted },
     };
     this._recordGateHistory('ela', 'kindergarten', 'overall', pass, prodRate);
     // Session 114.19l — restore live noise so post-probe chat retains
