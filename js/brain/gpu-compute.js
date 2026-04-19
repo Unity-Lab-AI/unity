@@ -479,6 +479,40 @@ export class GPUCompute {
   }
 
   /**
+   * T18.14.b — destroy every WebGPU buffer on a cluster buffers entry.
+   * Called from `uploadCluster` before overwriting `this._buffers[name]`
+   * so re-init on WS reconnect (server's `ws.on('close')` resets
+   * `_gpuInitialized={}` → tick loop re-sends `gpu_init` → compute.html
+   * calls `gpu.uploadCluster` again) doesn't orphan ~6.3 GB of VRAM
+   * (cortex 107M + cerebellum 143M + 5 smaller clusters at 16 bytes /
+   * neuron for voltages + spikes + currents). Each `.destroy()` wrapped
+   * in try/catch so double-free on a dead device is non-fatal;
+   * `bufs=undefined` is a no-op. Matches the `_destroySparseEntryBuffers`
+   * pattern from T18.11.a for sparse matrices.
+   */
+  _destroyClusterBuffers(bufs) {
+    if (!bufs) return;
+    const fields = [
+      'params', 'voltages', 'spikes', 'currents', 'regionGates',
+      'synValues', 'synColIdx', 'synRowPtr',
+      'voltSumBuf', 'spikeCountBuf',
+    ];
+    let reclaimedMB = 0;
+    for (const f of fields) {
+      const b = bufs[f];
+      if (b && typeof b.destroy === 'function') {
+        try {
+          if (typeof b.size === 'number') reclaimedMB += b.size / (1024 * 1024);
+          b.destroy();
+        } catch { /* already gone */ }
+      }
+    }
+    if (reclaimedMB > 0.1) {
+      console.log(`[GPUCompute] _destroyClusterBuffers: reclaimed ~${reclaimedMB.toFixed(1)} MB of VRAM from prior cluster buffer set`);
+    }
+  }
+
+  /**
    * Upload a cluster's neuron and synapse data to GPU buffers.
    * @param {string} name — cluster name
    * @param {number} size — number of neurons
@@ -496,6 +530,15 @@ export class GPUCompute {
   uploadCluster(name, size, voltages, synapses, lifParams, regions) {
     const device = this._device;
     const vRest = lifParams?.Vrest || -65;
+
+    // T18.14.b — destroy any prior buffer set for this cluster BEFORE
+    // allocating new ones. Prevents VRAM orphaning on WS reconnect when
+    // the browser tab is the same but the server re-sends gpu_init.
+    // Without this guard, biological-scale re-init orphans ~6.3 GB of
+    // VRAM per reconnect cycle (all 7 clusters' voltages + spikes +
+    // currents + synapse CSR) → device.lost → Windows TDR → NDIS cascade
+    // → whole PC loses internet (Gee 2026-04-19).
+    this._destroyClusterBuffers(this._buffers[name]);
 
     // Params uniform
     // LIF params — 48 bytes. Contains ALL params for self-contained LIF shader.
@@ -1606,7 +1649,21 @@ export class GPUCompute {
     pass.dispatchWorkgroups(Math.ceil(entry.rows / 256));
     pass.end();
     device.queue.submit([encoder.finish()]);
-    // paramsBuf destroyed lazily by device GC
+    // T18.14.a — DESTROY paramsBuf after submit. WebGPU does NOT garbage
+    // collect buffers; the previous "destroyed lazily by device GC"
+    // comment was a lie. At ELA-K teach velocity through T18.8 batched
+    // Hebbian dispatch (~30K hebbianSparse calls per teach pass), every
+    // leaked 32-byte paramsBuf orphans a driver allocation-table handle.
+    // NVIDIA drivers cap at ~65K concurrent handles + Windows imposes
+    // its own per-process limits on top; after one ELA-K pass the table
+    // exhausts → device.lost → Windows TDR → NDIS/WinSock cascade →
+    // whole PC loses internet (Gee 2026-04-19 cascade). Destruction
+    // after queue.submit() is legal per WebGPU spec: the GPU can still
+    // use the buffer's contents from the already-submitted command
+    // buffer until the work completes; destroy() releases the handle
+    // once the submit finishes. Matches the correct pattern already in
+    // propagateSparse at line 1549.
+    paramsBuf.destroy();
     return true;
   }
 

@@ -384,6 +384,29 @@ function connectToServer() {
     if (msg.type === 'gpu_init' && gpuReady) {
       const { clusterName, size, lifParams, regions } = msg;
 
+      // T18.14.c — skip re-upload when this cluster is already
+      // initialized in this compute.html tab AND the requested size
+      // matches. Server's `ws.on('close')` resets `_gpuInitialized={}`
+      // so the tick loop re-sends gpu_init on any WS reconnect — but
+      // when the browser tab is the same (transient WS hiccup, not a
+      // fresh page load), the GPU context + cluster buffers are still
+      // alive. Re-calling `gpu.uploadCluster` would waste ~6.3 GB of
+      // allocation work + delay main brain re-online + widen the
+      // reconnect-storm window during which another hiccup can fire.
+      // Short-circuit with an immediate gpu_init_ack so the server
+      // flips `_gpuInitializedConfirmed[clusterName]=true` and the
+      // tick loop resumes. If the size changed (legitimate re-init
+      // reason — server restart with different config), fall through
+      // to the normal path which now also has T18.14.b's destroy-old
+      // guard inside uploadCluster so no orphaning happens.
+      if (clusterState[clusterName] && clusterState[clusterName].initialized && clusterState[clusterName].size === size) {
+        ws.send(JSON.stringify({ type: 'gpu_init_ack', clusterName, size }));
+        const totalInit = Object.keys(clusterState).length;
+        statusEl.textContent = `GPU already initialized: ${totalInit}/7 clusters — ${clusterName} (${size.toLocaleString()} neurons) [T18.14.c skip-reinit]`;
+        console.log(`[GPU] T18.14.c — skipped re-init for ${clusterName} (already initialized at ${size.toLocaleString()} neurons; same tab, transient WS reconnect)`);
+        return;
+      }
+
       // Initialize at Vrest — NO voltage transfer needed
       // GPU creates buffers and fills with Vrest internally. Zero JS allocation.
       //

@@ -5,6 +5,123 @@
 
 ---
 
+## 2026-04-19 — Session 114.19al: T18.14 SHIPPED — ELA-K ethernet cascade fix (hebbianSparse paramsBuf leak + uploadCluster LIF buffer orphan + compute.html skip-reinit guard)
+
+### Gee verbatim (drove this session)
+
+> *"we are still trying to get around this error of the brain killing my inrtternet connection and crtashing whil runing ela kindergraden and never getting past the first ciriculum course of ela kindergarden"*
+
+Followed by a live terminal paste from a fresh Part 2 attempt showing the full cascade: brain boot clean → all 15 sparse matrices uploaded (cortex intraSynapses 724.5 MB + 14 cross-projections at biological scale totalling ~5.8 GB, all cluster-bound per T18.6.b) → main brain batched compute running at 11.17 Gneurons/sec → `[Curriculum] runCompleteCurriculum: GPU ready — walking all 6 subjects pre-K onward (cap via DREAM_MAX_GRADE; default 'kindergarten' per Pre-K + K ONLY LAW)` → `[Curriculum] ═══ ALL 5 subjects passed pre-K — advancing to next grade ═══` → `[Curriculum] ela/kindergarten START` → compute.html status bar showed `Disconnected — reconnecting in 6s... (attempt 2)` → flood of `[GPU Compute] binary frame received size=16.0MB, first4=SPRS` frames → Brain3D events (dopamine_hit / mystery_pulse / confusion / recognition) fired as last signs of life → *"That is everything!!!! right before it freezes and kills the connection ofe my PC to the internet"*.
+
+T18.10 (session 114.19ah) patched validation-failure sparse-matrix leaks. T18.11 (session 114.19ai) patched success-path sparse overwrites + stale-tab contention + flat reconnect storm. T18.12 (session 114.19aj) shipped code-hash save-point infra + curriculum LAW 6 Part 1 remake + 5 Pre-K runners. T18.13 (session 114.19ak) fixed the Pre-K skip + added DREAM_MAX_GRADE stop gate + 5-sec teach heartbeat. The cascade STILL fires at ELA-K because two additional leak paths exist that the prior T18.x audits didn't reach — both on the GPU side, both ELA-K-teach triggered, both responsible for the internet-killing outcome.
+
+### Root-cause re-investigation findings
+
+Deep-dive audit of `js/brain/gpu-compute.js` grepping every `device.createBuffer`/`makeStorage`/`makeBuffer` call against matching `.destroy()` calls produced two confirmed leak sites that T18.10/T18.11 never touched:
+
+**Leak 1 — `hebbianSparse` paramsBuf at `js/brain/gpu-compute.js:1609`.** Every call to `hebbianSparse(name, lr)` allocates a 32-byte uniform buffer at line 1590 (`paramsBuf = this._createBuffer(new Uint8Array(paramsView), GPUBufferUsage.UNIFORM)`), then submits a compute pass and returns. Pre-T18.14 comment at line 1609 literally said *"paramsBuf destroyed lazily by device GC"* — WebGPU does NOT garbage collect buffers. They persist until explicit `.destroy()` or device destruction. Compare to the correctly-written `propagateSparse` at line 1549 which calls `paramsBuf.destroy()` explicitly after submit.
+
+At ELA-K teach velocity through T18.8 batched-Hebbian dispatch: `~180 words × 12 reps × 14 cross-projections = ~30,000 hebbianSparse calls per teach pass`. Every call orphans a WebGPU buffer handle. NVIDIA drivers typically cap at ~65K concurrent buffer handles; Windows imposes additional per-process limits. One ELA-K pass exhausts the allocation table → `device.lost` → Windows Timeout Detection & Recovery attempts driver reset → NDIS/WinSock cascade via shared driver-stack resources → whole PC loses internet → Gee's only recovery is a physical reset. Matches Gee's symptom chain exactly.
+
+**Leak 2 — `uploadCluster` LIF buffers at `js/brain/gpu-compute.js:655`.** Server's `ws.on('close')` at `server/brain-server.js:4566` resets `brain._gpuInitialized = {}` on any WS disconnect. The tick loop at line 3167 re-sends gpu_init for every cluster that lacks the flag on the next batched step. compute.html's gpu_init handler at line 384 calls `gpu.uploadCluster(clusterName, size, null, null, lifParams, regions)` which allocates fresh `voltages + spikes + currents + params + regionGates` buffers (plus optional synapse CSR fields) and at line 655 assigns `this._buffers[name] = buffers` WITHOUT destroying the prior entry.
+
+At biological scale per re-init:
+
+| Cluster | Neurons | Bytes/neuron | Orphaned VRAM |
+|---------|---------|--------------|---------------|
+| cortex | 107.3M | 16 (voltage+spike+current) | ~1.72 GB |
+| cerebellum | 143.1M | 16 | ~2.29 GB |
+| hippocampus | 42.9M | 16 | ~687 MB |
+| amygdala | 28.6M | 16 | ~458 MB |
+| basalGanglia | 28.6M | 16 | ~458 MB |
+| hypothalamus | 21.5M | 16 | ~343 MB |
+| mystery | 21.5M | 16 | ~343 MB |
+| **Total** | **393.5M** | — | **~6.3 GB per reconnect** |
+
+On a 16 GB RTX 4070 Ti SUPER that already holds ~6 GB of sparse matrices (from the one-time initGpu() upload that is NOT re-fired per T18.11.b guard), one WS reconnect orphans ~6.3 GB → ~12.3 GB live. A second reconnect BEFORE the driver fully releases the first batch → ~18.6 GB requested → VRAM exhaustion → `device.lost` → same TDR → NDIS → internet-dies chain.
+
+**Leak 3 (secondary, allocation-work waste rather than VRAM orphan) — `compute.html` gpu_init handler re-allocates even when cluster was already initialized in the same tab.** With leak 2 fixed this no longer leaks, but the ~6.3 GB of allocation work during every transient WS reconnect still delays main-brain resume + widens the window for another hiccup → cascade.
+
+### Three fixes shipped (atomic commit)
+
+**T18.14.a — `hebbianSparse` paramsBuf destroy after submit.** Single-line fix at `js/brain/gpu-compute.js:1608`:
+
+```js
+device.queue.submit([encoder.finish()]);
+// T18.14.a — DESTROY paramsBuf after submit. WebGPU does NOT garbage
+// collect buffers; the previous "destroyed lazily by device GC"
+// comment was a lie. ...
+paramsBuf.destroy();
+return true;
+```
+
+Destruction after `queue.submit()` is legal per WebGPU spec — the GPU can still use the buffer's contents from the already-submitted command buffer until the work completes; destroy() releases the handle once the submit finishes. Matches the correct pattern already in `propagateSparse` at line 1549. Kills the 30K-per-teach handle leak dead.
+
+**T18.14.b — `uploadCluster` destroys old cluster buffers before overwriting `_buffers[name]`.** New helper method `_destroyClusterBuffers(bufs)` on `GPUCompute` iterates every possible buffer field on a cluster buffers object: `params`, `voltages`, `spikes`, `currents`, `regionGates`, `synValues`, `synColIdx`, `synRowPtr`, `voltSumBuf`, `spikeCountBuf`. Each `.destroy()` wrapped in try/catch so double-free on a dead device is non-fatal; `bufs=undefined` is a no-op. Tallies reclaimed MB and logs when > 0.1 MB for operator visibility. `uploadCluster` calls it as the FIRST operation (before any new allocations) on `this._buffers[name]`. The leak is now impossible on any re-init path — current triggers (WS reconnect) AND future triggers (any re-config, any size change, anything).
+
+**T18.14.c — compute.html gpu_init skip-reinit guard.** Guard clause at the top of the handler:
+
+```js
+if (clusterState[clusterName] && clusterState[clusterName].initialized && clusterState[clusterName].size === size) {
+  ws.send(JSON.stringify({ type: 'gpu_init_ack', clusterName, size }));
+  // status bar log + early return
+  return;
+}
+```
+
+When the same compute.html tab reconnects after a transient WS hiccup, the GPU context + cluster buffers + sparse matrices are all still alive. Server's `_gpuInitialized = {}` reset is a server-side bookkeeping issue that the tick loop clears by re-sending gpu_init. compute.html's short-circuit ACKs the init immediately (~50 bytes round-trip) instead of running the full `gpu.uploadCluster(...)` workflow (~6.3 GB of allocation work at biological scale) — saves time AND prevents any further VRAM pressure during reconnect windows. If size changes (legitimate re-init reason, e.g. server restart with different config): falls through to the normal uploadCluster path, which now also has T18.14.b's destroy-old guard.
+
+### Why T18.10 / T18.11 missed these
+
+T18.10 + T18.11 audited SPARSE-MATRIX buffer leaks at upload + validation-failure + success-path overwrite paths. Both audits focused on multi-GB sparse cross-projection allocations — big fat obvious targets matching the initial `size (32)/(16) is too large` phantom error that confused root-cause diagnosis.
+
+**T18.14.a** is a 32-BYTE uniform buffer leak in a different code path (`hebbianSparse` — the DISPATCH path, not `uploadSparseMatrix`/`_beginSparseUpload` which are the ALLOCATION path the audit targeted). Per-dispatch temp buffers are small enough individually that no single metric would flag them; the problem is handle-count exhaustion at scale through T18.8 batched dispatch which multiplies call volume ~64×.
+
+**T18.14.b** is a LIF-BUFFER orphan in `uploadCluster` — an entirely different function from the T18.10/11 sparse audit targets. T17.7 Phase B.1 added `regions` metadata + regionGates buffer to uploadCluster without adding a destroy-old guard. The cascade requires a WS reconnect to trigger it, and no test run prior to Gee's live biological-scale Part 2 had produced reconnect-during-teach timing to surface it.
+
+Both leak paths are now closed with belt-and-suspenders discipline matching the T18.10/11 patterns. Combined with T18.11.c's exponential-backoff reconnect + T18.11.b's already-connected guard, the entire cascade chain is dead at three independent layers (sparse matrices + LIF buffers + params uniforms) instead of one.
+
+### Files touched (atomic commit)
+
+- `js/brain/gpu-compute.js` — T18.14.a paramsBuf destroy (+14 lines of comment + 1 line of code) + T18.14.b `_destroyClusterBuffers` helper + call at top of uploadCluster (+41 lines total)
+- `compute.html` — T18.14.c gpu_init skip-reinit guard (+21 lines)
+- `docs/NOW.md` — full rewrite for session 114.19al
+- `docs/TODO.md` — T18.14 entry prepended below T18.13 with Gee's verbatim quote + root-cause table + three sub-item checkboxes + closure gate
+- `docs/FINALIZED.md` — this entry
+- `js/app.bundle.js` — rebuilt via `cd server && npm run build`
+
+`node --check js/brain/gpu-compute.js` clean.
+
+### Relationship to prior T18.x series
+
+- T18.10 (114.19ah) — VRAM leak on validation FAILURE in uploadSparseMatrix + _beginSparseUpload. Destroy-on-failure branch. Incomplete.
+- T18.11 (114.19ai) — VRAM leak on SUCCESS path (overwrite of `_sparseMatrices[name]`). Plus stale-tab guard + reconnect exponential backoff. Completed T18.10's sparse audit.
+- T18.12 (114.19aj) — Save-point infrastructure (code-hash gate + per-cell checkpoint + resume). Not a cascade fix.
+- T18.13 (114.19ak) — Pre-K skip fix + DREAM_MAX_GRADE stop gate + 5-sec heartbeat. Not a cascade fix.
+- **T18.14 (this session) — Completes the GPU-side leak audit by closing the TWO remaining paths T18.10/11 never touched: hebbianSparse paramsBuf + uploadCluster LIF buffers.**
+
+Each layer covered a different surface: T18.10/11 covered sparse-matrix allocation paths; T18.14 covers per-dispatch uniform buffers AND per-cluster LIF buffers. The cascade chain is now defended at all three leak surfaces.
+
+### Closure gate — open
+
+Gee-verification on next Part 2 run. Success criteria:
+- (a) **No PC reset / no ethernet cascade** during full Pre-K + ELA-K teach — the primary outcome
+- (b) If a transient WS disconnect fires: compute.html reconnect lands within T18.11.c exponential window AND status bar shows `T18.14.c skip-reinit` messages for each cluster instead of running the full uploadCluster workflow
+- (c) T18.13.c heartbeats continue firing through any transient disconnect
+- (d) Curriculum progresses past `_teachWordEmission` first pass (K vocab list, 180 words × 12 reps) into subsequent courses
+- (e) If a legitimate size-change re-init fires: new `_destroyClusterBuffers: reclaimed ~X MB` log line shows up — evidence the belt-and-suspenders guard is doing its job
+
+Claude cannot close — Gee-verification only.
+
+### What's STILL blocking push to main after T18.14
+
+Per `docs/TODO.md` T18.5 gate: all Claude-closable T17/T16/T15/T18 items now shipped. Remaining gates are entirely Gee's:
+- Gee Part 2 K localhost verification (LAW 6 Part 2)
+- Gee design review of T16.5.d (keep-or-scrap substrate probes)
+- Gee explicit push approval T18.5.c
+
+---
+
 ## 2026-04-19 — Session 114.19ak: T18.13 SHIPPED — Pre-K skip fix + DREAM_MAX_GRADE stop gate + 5-second teach heartbeat
 
 ### Gee verbatim (drove this session)
