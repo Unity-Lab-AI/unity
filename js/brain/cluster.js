@@ -814,6 +814,51 @@ export class NeuronCluster {
   }
 
   /**
+   * T17.7 Phase E.b — async variant of workingMemoryReadout that reads
+   * the main-cortex free sub-slice via GPU bucketed reduction when the
+   * gpuProxy's readbackLetterBuckets is wired. Returns the same
+   * Float64Array shape as the sync variant — callers that use the
+   * result for re-injection (generateSentenceAwait's topic-continuity
+   * re-inject) can swap without further changes.
+   *
+   * Falls through to the sync CPU regionReadout if the proxy is
+   * missing or the readback fails, so non-GPU callers still work.
+   * L2-normalize to match regionReadout's output contract.
+   */
+  async workingMemoryReadoutAwait(dim = 64) {
+    if (!this.regions || !this.regions.free) return new Float64Array(dim);
+    const region = this.regions.free;
+    const regionSize = region.end - region.start;
+    if (regionSize <= 0) return new Float64Array(dim);
+    const haveProxy = !!(this._gpuProxy && typeof this._gpuProxy.readbackLetterBuckets === 'function');
+    if (!haveProxy) return this.regionReadout('free', dim);
+    try {
+      const bucketSize = Math.floor(regionSize / dim);
+      if (bucketSize <= 0) return this.regionReadout('free', dim);
+      const readLen = bucketSize * dim;  // trim any remainder
+      const counts = await this._gpuProxy.readbackLetterBuckets('free', dim, readLen, 0);
+      if (!counts || counts.length !== dim) return this.regionReadout('free', dim);
+      // Normalize to [0, 1] by dividing each bucket count by its
+      // neuron count — mirrors regionReadout's fraction-of-firing
+      // semantics. Then L2-normalize the output vector so downstream
+      // cosine comparisons match the sync variant's contract.
+      const out = new Float64Array(dim);
+      let l2 = 0;
+      for (let b = 0; b < dim; b++) {
+        out[b] = counts[b] / bucketSize;
+        l2 += out[b] * out[b];
+      }
+      if (l2 > 1e-12) {
+        const inv = 1 / Math.sqrt(l2);
+        for (let b = 0; b < dim; b++) out[b] *= inv;
+      }
+      return out;
+    } catch {
+      return this.regionReadout('free', dim);
+    }
+  }
+
+  /**
    * T14.9 — Inject a content vector into the working-memory region.
    * Called by the sensory path on every user turn so the free region's
    * activation pattern represents the current discourse topic. No blend
@@ -1593,8 +1638,14 @@ export class NeuronCluster {
       this.injectEmbeddingToRegion('sem', intentSeed, injectStrength);
     }
 
+    // T17.7 Phase E.b — when the GPU proxy's readbackLetterBuckets is
+    // wired, topic-continuity readout comes from the main-cortex free
+    // sub-slice via bucketed reduction instead of the CPU standalone
+    // region. Main cortex is authoritative for language state post-
+    // Phase C/D; reading from CPU would see stale topic after a few
+    // generation cycles.
     if (this.regions.free && this.regions.sem) {
-      const wm = this.workingMemoryReadout(300);
+      const wm = await this.workingMemoryReadoutAwait(300);
       let wmNorm = 0;
       for (let i = 0; i < wm.length; i++) wmNorm += wm[i] * wm[i];
       if (wmNorm > 0.01) {
