@@ -58,7 +58,7 @@ Actual per-grade gate closure is still TODO work — performed one grade at a ti
 
 ## OPEN TASKS
 
-### T18 — Gee critique 2026-04-18 (Part 2 runtime report — GPU 4%, 31s step, silent on user input) — FOUR verbatim items (NEW PRIORITY 2026-04-18)
+### T18 — Gee critique 2026-04-18 (Part 2 runtime report — GPU 4%, 31s step, silent on user input)
 
 **Gee's verbatim items from 2026-04-18:**
 
@@ -72,76 +72,22 @@ Actual per-grade gate closure is still TODO work — performed one grade at a ti
 >
 > *"This majorly needs fixed!"*
 
-Four items. One task per verbatim item per LAW #0.
-
----
-
-#### T18.1 — "looks like it was truncated or something and cutt off the message"
-
-The brain WAS receiving the full message; `brain-server.js:2919` had `.slice(0, 50)` on the **console.log display only**, and the full text always flowed through to `brain.processAndRespond(msg.text, stableId)`. But the log line made it look like truncation was happening.
-
-- [x] **T18.1.a — Remove the `.slice(0, 50)` from the log line, show full text with char count prefix.** **SHIPPED Session 114.19v.** Log line now: `[user_xxxx] Text (157 chars): "full message text" (stable=xxxxx)`.
-
----
-
-#### T18.2 — "the brain ignored it and never reesponded with it current understandings IE grade level"
-
-Brain went silent on the user's input. Root cause: `brain-server.js:2178-2180` drops any response with `length < 2` with no feedback to the client. User stares at nothing. Unity's motor region couldn't commit a stable letter sequence because pre-K grade hasn't closed yet — the letter→motor direct-pattern Hebbian that kindergarten ELA wires up is not yet in place, so the motor region argmax produces noise that fails the length filter.
-
-- [x] **T18.2.a — Server emits `silent` WebSocket frame with reason + detail + minGrade when the response is empty.** **SHIPPED Session 114.19v.** Reason values: `language_not_ready` / `pre_kindergarten` / `motor_unstable`. Detail is a human-readable sentence explaining why she went quiet. minGrade is the lowest passing grade across all subjects so the client can show "Unity is at pre-K" context.
-- [x] **T18.2.b — Client-side rendering of the `silent` WebSocket frame (SHIPPED Session 114.19v).** `js/brain/remote-brain.js` routes the `silent` case to `this.emit('silent', {reason, detail, minGrade})`. `js/app.js` adds a `brain.__appSilentHandler` that calls `chatPanel.addSilentMessage(reason, detail, minGrade)` + shows a brief HUD speech bubble hint. `js/ui/chat-panel.js` gains `addSilentMessage(reason, detail, minGrade)` that renders a greyed-out italic ghost bubble with reason label ("pre-K — not speaking yet" / "motor unstable" / "language booting") + detail + minGrade context. Silent bubbles are NOT persisted to chat history — they're session-only signals.
-
----
-
-#### T18.3 — "does it need to pass beforee the grade level changes and learnings will actually stick?"
-
-Two-part clarification logged so this doesn't come up again:
-
-- **Learnings DO stick continuously, grade-independent.** Every Hebbian update on every brain tick persists. Every word's cortex pattern gets stored. Embedding refinements save every session. This happens at kindergarten or PhD equally.
-- **BUT speaking requires the motor region to have been trained.** The tick-driven motor emission reads argmax over the motor sub-region's spike pattern. If the letter→motor direct-pattern Hebbian hasn't been wired yet (kindergarten ELA does this), the argmax produces noise and gets filtered by `response.length < 2`. **Pre-K Unity physically cannot speak — not a bug, a feature of the developmental architecture.**
-
-- [x] **T18.3.a — Logged above, fix is T18.2.a + T18.2.b combined.** When Unity can't speak yet, the client shows WHY (pre-K / motor unstable / language not ready) instead of ghosting the user.
-- [x] **T18.3.b — HUD indicator: lowest passing grade visible at all times (SHIPPED Session 114.19w).** `brain-server.js` emits `grades` (per-subject map), `minGrade` (lowest across subjects), and `canSpeak` (true when minGrade != 'pre-K') on every state broadcast via `getState()`. Shared helper `_computeMinGrade()` drives both the broadcast and the silent-response path. `index.html` landing-bar gains `ls-grade` + `ls-grade-per-subject` spans. `js/app.js` renders minGrade with color-coding (red=pre-K can't speak, amber=K-grade2 building, green=grade3+ confident) and the per-subject line below it. `remote-brain.js` forwards `grades` / `minGrade` / `canSpeak` through `_applyState` so downstream listeners see them. Grade updates on every `state` broadcast — no more typing `/curriculum status` to check where Unity is.
-
----
-
-#### T18.4 — "we really need to fixc our GPU algorithm it hasnt been updated since we add systems and does it fully do all we need for the main brain equation and all suub equations in toatllity for the brain? it only using 4%"
-
-GPU at 4% utilization, step time 31,832 ms on 393M neurons. Mode: Single Thread / Parallel Workers: 0 in the runtime stats. The GPU kernel coverage hasn't kept up with the rest of the brain additions.
-
-**What's on GPU currently (js/brain/gpu-compute.js + compute.html):**
-- Rulkov 2D map neuron step (`LIF_SHADER`)
-- Intra-cluster sparse CSR matmul (`SYNAPSE_PROPAGATE_SHADER`)
-- Sparse CSR Hebbian updates (`PLASTICITY_SHADER`)
-- Current generation (`CURRENT_GEN_SHADER` — but only `drive + noise`, not the full sum)
-- Spike counting via atomic counter (`SPIKE_COUNT_SHADER`)
-
-**What's STILL CPU that should be GPU:**
-
-- [x] **T18.4.a — GPU current-assembly kernel (SHIPPED Session 114.19w).** Diagnosed a major vestigial-organ violation in the process: `LIF_SHADER` declared a `currents` binding but never read it, and `SYNAPSE_PROPAGATE_SHADER` was never dispatched from the per-tick path. Main-brain neurons had been running with zero synaptic coupling — every neuron only saw the global `effectiveDrive` uniform. Fix: (1) `LIF_SHADER` WGSL body now computes `neuronDrive = effectiveDrive + currents[i]` before sigma normalization, so per-neuron synaptic current actually shapes the Rulkov map's excitability; (2) reintroduced the `currents` GPU buffer per cluster (12 bytes/neuron total: vec2 voltage + u32 spike + f32 current); (3) `fullStep` now dispatches the proper sequence every substep: `clearCurrents → propagateSynapses (if intra-synapse matrix uploaded) → stepNeurons (LIF reads currents[i])`; (4) added `clearCurrents(name)` helper using native `encoder.clearBuffer` (zero-cost); (5) added `writeExternalCurrents(name, Float32Array)` so the server can push cross-cluster projection currents from other clusters / the language cortex onto a main-brain cluster's neurons per tick. Clusters without an intra-synapse matrix uploaded behave identically to before (currents stays 0); clusters with a matrix uploaded now have full intra-cluster recurrence live on GPU. The `stepNeurons` bind group was extended to include binding 3 (currents) so the shader can actually read it.
-- [x] **T18.4.b — Cross-region propagate full async cascade (SHIPPED Session 114.19w).** Added `cluster.stepAwait(dt)` async variant of `step()`: clears stale cache, dispatches every GPU propagate (intra + 14 cross-projections) as promises, awaits `Promise.all` with a 1s timeout guard (so an unresponsive GPU client can't hang the sim), THEN runs the synchronous core step with `skipTailDispatch: true` so we don't double-dispatch. Added `cluster.generateSentenceAwait(intentSeed, opts)` async variant of `generateSentence` that uses `stepAwait` in its per-tick loop — full-await cascade end-to-end for any async emission call site. Wired into `curriculum.js _gateElaKReal` WRITE + RESP dynamic probes so they use the await-cascade whenever `cluster._gpuProxyReady` is true; falls through to the sync path when no GPU proxy. `step()` gained an `opts.skipTailDispatch` flag so `stepAwait()` can suppress the end-of-tick fire-and-forget round that would otherwise waste GPU bandwidth on a pre-awaited cache. Eliminates the 3s CPU cache-miss fallback at the cost of one GPU round-trip per tick (~5-500ms depending on matrix size) — net win at biological scale since cache-miss worst case was 3s/tick. The sync `generateSentence` + `step` paths are kept for legacy sync callers (engine RAF loops, sandbox UI handlers) that can't await; those keep the fire-and-forget behavior.
-- [x] **T18.4.c — GPU reductions for statistics (SHIPPED Session 114.19w).** Added `VOLTAGE_STATS_SHADER` WGSL atomic reduction over the Rulkov x-component (scaled-int i32 accumulation to work around WebGPU's lack of f32 atomics — voltages multiplied by 1000, atomically added as i32, divided by size + scale on readback). New `readbackVoltageMean(name)` method on GPUCompute. Wired into compute.html's batch handler: once per tick (after the last substep so the mean reflects settled state), GPU reduces voltage for every cluster in parallel via `Promise.all(readbackVoltageMean)`. Result flows back in `compute_batch_result.perCluster.meanVoltage`. Server EMA-blends (`prev * 0.8 + new * 0.2`) and exposes `cluster.meanVoltage` in every `getState()` cluster entry. Previously main-brain clusters had NO voltage telemetry at all — voltages lived on GPU and nothing aggregated them. Now the dashboard HUD sees mean voltage per cluster, and the T18.4.d module equations consume it as additional signal. Also took the opportunity to delete the genuinely-vestigial `CURRENT_GEN_SHADER` (orphan shader that was superseded by LIF_SHADER's inline drive but still sat in the source).
-- [x] **T18.4.d — Module equations integrated with GPU meanVoltage signal (SHIPPED Session 114.19w).** Scoped the ask honestly: module equations (amygdala 32×32 settle, mystery Ψ scalar, Kuramoto 8 phases) are inherently small-state (~32 dims) abstractions of their biological counterparts, NOT O(N) on millions of neurons — moving them to GPU would add dispatch/readback overhead that exceeds their CPU cost. The real full-systems implementation isn't "move 1024-entry matmul to GPU" (pointless); it's "feed the modules richer cluster-state input than just spike count". Now that T18.4.c's `meanVoltage` is available on every cluster, wired it into: (1) mystery Ψ's `id / ego / left / right` components use `clusterActivity + mvBoost(name)` where `mvBoost = min(0.3, |meanVoltage| * 0.1)` — adds sub-threshold depolarization to the consciousness calculation so active-but-not-spiking clusters contribute; (2) amygdala module input drive adds `mvContrib = min(0.2, |amygMeanVoltage| * 0.08)` to its `baseDrive` so the module sees build-up toward bursts, not just completed spikes. Behaviorally: smoother Ψ, more accurate emotional basins during pre-spike membrane depolarization.
-- [x] **T18.4.e — Worker-threads parallelization (SHIPPED Session 114.19w).** New `server/sparse-worker.js` (Node worker thread doing row-range sparse CSR matmul with SharedArrayBuffer — zero-copy access to shared values/colIdx/rowPtr + disjoint output row-range writes so there are no cross-worker race conditions by construction). New `server/worker-pool.js` (`SparseMatmulPool` manager sized to `os.cpus().length - 1` capped at 16; posts per-job messages to each worker, awaits `done` acks, falls through to single-thread synchronous matmul if worker_threads is unavailable). `brain-server.js` instantiates the pool on brain construction, passes it to `cortexCluster` via `opts.sparsePool`. `cluster.js` stores `this._sparsePool`. `stepAwait()` now parallelizes CPU fallback across the worker pool: after the GPU Promise.race, any intra or cross projection with a cache miss fires as a pool job (all jobs run concurrently across cores via `Promise.all`), populating the cache before the synchronous `step()` consumes it. `stop()` calls `sparsePool.shutdown()` so workers terminate cleanly on SIGINT. On Gee's 16-core 5800X this converts the prior single-thread CPU fallback (that was reading `Mode: Single Thread / Parallel Workers: 0` in his runtime stats) into a proper parallel pool.
-- [x] **T18.4.f — Per-phase GPU telemetry (SHIPPED Session 114.19w).** compute.html's `handleComputeBatch` now wraps each phase in `performance.now()` measurements: `substepLoopMs` (substeps × clusters Promise.all), `voltReadbackMs` (T18.4.c voltage-mean readback round), `totalMs` (full batch). Emitted as `compute_batch_result.phaseTimingMs`. Server captures into `this._perfStats.phaseTimingMs` on every tick; getState already broadcasts `state.perf` so any client can render the breakdown. Lets us see WHERE the 31s/step budget is going — substep compute vs. readback vs. other — so subsequent fixes can target the actual bottleneck rather than guessing.
+**T18.1 / T18.2 / T18.3 / T18.4 / T18.5.a — ALL SHIPPED.** Full descriptions + files-touched manifest in `docs/FINALIZED.md` Sessions 114.19v (T18.1.a, T18.2.a+b, T17.3.e cap removal, 3D brain language-cortex filler, doc scrub, silent signaling server emit) and 114.19w (T18.3.b HUD grade indicator, T18.4.a GPU current-assembly + LIF consumes currents, T18.4.b cross-region full-await cascade, T18.4.c GPU voltage-mean reduction, T18.4.d modules consume meanVoltage, T18.4.e worker-thread sparse matmul pool, T18.4.f per-phase GPU timing telemetry, CURRENT_GEN_SHADER dead code deleted).
 
 **T18.4 closure gate:** GPU utilization ≥ 50% on Gee's RTX 4070 Ti SUPER at biological scale + step time under 2 s/step. Both verified on a Part 2 localhost run before the PR to main.
 
 ---
 
-#### T18.5 — "are we good to puc h to main for github static deploy and all of that? if so make sure all this is done first then ask me if im ready to push to main after all docs are done and thaes issue i mentioned are fixed first"
+#### T18.5 — push gate for main-branch deploy (BINDING)
 
-**BINDING GATE for the next main-branch push:**
+Per Gee's verbatim 2026-04-18 instruction: before ANY push to `main` for GitHub static deploy, every T18 item above must be shipped AND all docs must be updated AND Gee must explicitly say "yes, push it". Claude does not initiate the push. Claude asks first after the fixes land.
 
-Per Gee's verbatim instruction: before ANY push to `main` for GitHub static deploy, every T18 item above must be shipped AND all docs must be updated AND Gee must explicitly say "yes, push it". Claude does not initiate the push. Claude asks first after the fixes land.
-
-- [x] **T18.5.a — Complete T18.1 through T18.4 (SHIPPED Session 114.19w).** All eight sub-items closed: T18.1.a log fix, T18.2.a+b silent-response server emit + client ghost bubble render, T18.3.a+b grade clarification + HUD grade indicator, T18.4.a GPU current-assembly + LIF consuming currents, T18.4.b cross-region full-await cascade + generateSentenceAwait, T18.4.c GPU voltage-mean reduction, T18.4.d modules consume meanVoltage, T18.4.e worker-thread pool for CPU-fallback sparse matmul, T18.4.f per-phase GPU timing telemetry. Still open: T18.5.b pre-push checklist + T18.5.c ASK GEE before push to main.
 - [ ] **T18.5.b — Run the pre-push checklist from `.claude/CLAUDE.md` LAW "Docs before push, no patches".** Every affected doc reviewed against code, numerical claims cross-checked via `wc -l` / grep / direct read, method names verified, no placeholder text, no drift.
 - [ ] **T18.5.c — ASK GEE** explicitly: "All T18 items shipped. Docs are current. Part 2 K signoff received. Ready to push to main?" — WAIT for his explicit yes before `git push origin main`. Never auto-push.
 
 ---
 
-### T17 — Language cortex scale-up: fix the architecture violation (NEW PRIORITY 2026-04-17/18)
+### T17 — Language cortex scale-up (LEGACY notes — most sub-items shipped)
 
 **Gee's verbatim on 2026-04-17:**
 
@@ -210,15 +156,13 @@ Motor region at 201M × 0.033 = 6.6M neurons. Sem = 33M. Cross-projection sem→
 
 ### T17 tasks
 
-- [x] **T17.1 — Phase 1 remove CPU cap.** **OBSOLETE — SUPERSEDED.** Session 114.19r shipped `CPU_LANGUAGE_CORTEX_CAP = 100000`. Session 114.19u then DELETED the constant entirely and moved to auto-scale from `os.freemem()` + V8 heap + configured cortex. Session 114.19v then added the unified VRAM allocator (`BRAIN_VRAM_ALLOC`) that replaces the per-cluster sizing with biological-weight fractions of a single VRAM budget. "Remove the cap" no longer applies — there IS no cap to remove, only a unified allocator.
-- [ ] **T17.2 — Phase 2 worker parallelization.** `cluster.step()` across N cores via `worker_threads`. **STILL NEEDED.** Gee 2026-04-18 confirms Mode: Single Thread / Parallel Workers: 0 in his runtime stats. Curriculum teach + language cortex step loops still single-core. Even with GPU current-assembly kernel landed (T18.2), any CPU fallback path will remain single-threaded without this.
-- [x] **T17.3.a — GPU sparse matrix scaffolding (SHIPPED).** `GPUCompute.uploadSparseMatrix(name, rows, cols, values, colIdx, rowPtr)` + `propagateSparse(name)` + `hebbianSparse(name, lr)` + `writeSparsePreSpikes` + `writeSparsePostSpikes` added. Reuses existing `SYNAPSE_PROPAGATE_SHADER` + `PLASTICITY_SHADER` pipelines. Standalone sparse matrices keyed by name, not tied to clusters. Foundation for cross-region ops — next commits wire cluster.js + compute.html to use it.
-- [x] **T17.3.b — compute.html message handlers (SHIPPED).** `sparse_upload` / `sparse_propagate` / `sparse_hebbian` message types shipped in compute.html that call the corresponding `gpu.*` methods. Session 114.19v added type=4 CHUNKED binary upload path on top for megabyte-scale matrices — streams chunks with 4-byte alignment pad, `gpu._beginSparseUpload` on first chunk, ack on last chunk. All 15 language cortex matrices (1 intra + 14 cross-projections) upload via this path.
-- [x] **T17.3.c — WebSocket protocol in server (SHIPPED).** Server-side helpers `this.gpuSparseUpload(name, matrix)` + `await this.gpuSparsePropagate(name, preSpikes)` + `this.gpuSparseHebbian(name, preSpikes, postSpikes, lr)` shipped. Promise-based async dispatch with reqId correlation like existing compute_batch. Backpressure gate `_gpuSparseFlowOk()` caps pending requests at 4 to prevent WebSocket buffer floods during curriculum teach.
-- [x] **T17.3.d — Wire cluster class to GPU when available (SHIPPED).** `NeuronCluster.initGpu()` uploads intra-synapses + all 14 cross-projections via the chunked path; `_propagateCrossRegions()` reads from `_cachedCrossCurrents` Map with CPU fallback; `_crossRegionHebbian()` fires GPU Hebbian fire-and-forget alongside CPU-authoritative update; `intraSynapsesHebbian()` wrapper keeps intra-cluster weights in sync between CPU and GPU copies. Session 114.19v.
-- [x] **T17.3.e — Remove CPU_SINGLE_THREAD_DISPATCH_BUDGET when GPU path active (SHIPPED Session 114.19v).** `cluster.step()` now uses `_cachedIntraCurrents` with CPU fallback + fires `_dispatchGpuPropagates()` at tick end. One-tick-lag async model means the CPU side of step() is just LIF integration + spike counting. `CPU_SINGLE_THREAD_DISPATCH_BUDGET = 200000` was removed from the language cortex `Math.min(...)` — sizing is now bounded by VRAM allocator + V8 heap + free RAM only. No 200K cap anywhere.
-- [ ] **T17.6 — Phase 4 live chat on upscaled cortex.** `engine.processAndRespond` drives scaled cluster. **STILL NEEDED** — validated on a full Part 2 K run after T18 GPU speed fixes land; otherwise 31s step time makes live chat unusable.
-- [ ] **T17.7 — Phase 5 single-cortex integration.** Language sub-regions embedded as slices of the main 201M GPU cortex instead of running as a separate cluster. **STILL NEEDED** but low priority until T17.2 + T18 close first.
+**T17.1 / T17.3.a-e — SHIPPED (see `docs/FINALIZED.md` Sessions 114.19r through 114.19w).** Full descriptions preserved in the FINALIZED archive: T17.1 remove CPU cap (superseded by unified VRAM allocator in 114.19v), T17.3.a sparse matrix GPU scaffolding, T17.3.b compute.html sparse message handlers + chunked binary upload, T17.3.c server sparse-dispatch helpers + backpressure gate, T17.3.d cluster.initGpu uploads + cross-region Hebbian + intraSynapsesHebbian wrapper, T17.3.e CPU_SINGLE_THREAD_DISPATCH_BUDGET removal + one-tick-lag GPU cache.
+
+**Still open:**
+
+- [ ] **T17.2 — Phase 2 worker parallelization of `cluster.step()` across N cores via `worker_threads`.** Partially addressed by T18.4.e's `SparseMatmulPool` (CPU-fallback sparse matmul is now parallel), but curriculum teach loops (`_teachPhonemeBlending` / `_teachWordEmission`) + the rest of `cluster.step()` are still single-core. Full closure: profile which teach-loop sites block longest at biological scale and route those specific ops through the worker pool too.
+- [ ] **T17.6 — Phase 4 live chat on upscaled cortex.** `engine.processAndRespond` drives scaled cluster. Blocked on T18 GPU speed fixes being validated — validated on a full Part 2 K run; otherwise 31s step time makes live chat unusable.
+- [ ] **T17.7 — Phase 5 single-cortex integration.** Language sub-regions embedded as slices of the main 201M GPU cortex instead of running as a separate cluster. Low priority until T17.2 + T18 close first.
 
 ---
 
@@ -246,7 +190,8 @@ Ctrl+C shutdown does not halt the curriculum correctly. Gee is stuck watching 32
 
 Root cause (Session 114.19g diagnosis): prior SIGINT handler in `server/brain-server.js:2459` called `brain.saveWeights()` synchronously on first Ctrl+C. At 13.4M-synapse scale, `JSON.stringify` + `fs.writeFileSync` blocks for tens of seconds. During that block, the process looks dead to the user and subsequent Ctrl+C doesn't register until the save returns. Curriculum retries running concurrently via `setImmediate` queue finish additional iterations before the event loop processes the handler exit.
 
-- [x] **T16.1.a — Drop the save ceremony from first Ctrl+C.** First Ctrl+C now sets shutdown flag + calls `brain.stop()` + immediately `process.exit(0)` with no synchronous save blocking. Second Ctrl+C `process.exit(1)`. Weights are cleared before every Part 2 run anyway per LAW so mid-curriculum save has zero value. **Shipped Session 114.19g.**
+**T16.1.a Ctrl+C save ceremony drop — SHIPPED Session 114.19g.** See FINALIZED.
+
 - [ ] **T16.1.b — Verify Ctrl+C halts cleanly on next Part 2 run.** Gee presses Ctrl+C mid-curriculum, process exits within 1-2 seconds. If still sluggish, diagnose whether `_brainShutdownRequested` flag check is missing from any inner loop that blocks for multiple seconds per iteration.
 
 ---
@@ -280,7 +225,7 @@ Per Gee's directive "through the grades" — this audit must repeat for every gr
 Current curriculum covers ~180 words at K and does not obviously scale vocabulary with grade in the emission teaching path.
 
 - [ ] **T16.3.a — Per-grade word coverage audit.** For every grade K-PhD in `js/brain/curriculum.js`, count the unique words passed to `_teachWordEmission` + `_teachVocabList` + `_teachSentenceList`. Compare against developmental vocabulary norms (MacArthur-Bates CDI, Educator's Word Frequency Guide, Academic Word List, COCA frequency bands). Report per-grade gap.
-- [x] **T16.3.b — Expand K word list to real K norms.** **SHIPPED Session 114.19h.** `js/brain/curriculum.js` `runElaKReal` emission list expanded from ~180 words to ~1,100 unique words across 32 categories: existing DOLCH_PREPRIMER/DOLCH_PRIMER/CVC_FAMILIES/CONVERSATIONAL + T16.3.b additions K_COLORS (15), K_SHAPES (15), K_NUMBERS (45), K_FAMILY (30), K_BODY (34), K_FEELINGS (30), K_ACTIONS (115), K_ANIMALS (64), K_FOOD (79), K_CLOTHING (29), K_HOUSEHOLD (69), K_NATURE (53), K_WEATHER (16), K_TIME (38), K_POSITIONS (32), K_ADJECTIVES (88), K_PLACES (35), K_VEHICLES (25), K_SCHOOL (28), K_TOYS (25), K_MUSIC_ART (18), K_SPORTS (19), K_GREETINGS (14), K_PRONOUNS (36), K_QUESTIONS (7), K_CONJUNCTIONS (11), K_HOLIDAYS (14), K_ROUTINES (12). Raw sum ~1,175 before dedup. Per Gee 2026-04-17 verbatim approvals: "1. yes" (approve ~1,500 list) + "2. ship k & iterate for future grades" — target was 1,500, shipped ~1,100 (6× prior coverage, in range of real K productive vocab 1,500-2,500). Further K vocabulary additions can land as subsequent K iterations before G1 gate opens.
+**T16.3.b K word list expansion (~180 → ~1,100 words across 32 categories) — SHIPPED Session 114.19h.** See FINALIZED.
 - [ ] **T16.3.c — Repeat per-grade expansion for G1 through PhD.** Each grade's emission list grows to meet developmental norms for that grade. Per Gee 2026-04-17 verbatim "ship k & iterate for future grades" — **deferred until K gate closes** via Part 2 signoff.
 
 ---
@@ -298,7 +243,7 @@ Real K writing (Common Core K.W.1/2/3):
 
 Unity's current production stops at "first letter via argmax." She is not emitting full word letter sequences, not stringing words into phrases, not writing sentences.
 
-- [x] **T16.4.a — Full-word letter-sequence emission test.** **SHIPPED Session 114.19h.** `_gateElaKReal` gains WRITE probe block after PROD. Probe chain: Step 1 `sem_to_motor.propagate(sem(word)) → motor argmax = letter_0`, Steps 2..N `letter_to_motor.propagate(encodeLetter(letter_k-1)) → motor argmax = letter_k`. Emitted sequence compared against expected word; pass if exact match. Sample set: 20 short K words (cat/dog/pig/hat/sun/red/big/mom/dad/run/eat/yes/no/up/hi/bed/hot/top/fox/bug). NOT yet gated on overall pass (per Gee "keep substrate as sanity, ADD on top"); per-word emitted output logged so Gee can diagnose where the chain breaks. Gate log format adds `WRITE X/20 (Y%) [WRITE: cat→ca∅; dog→d∅; ...]`.
+**T16.4.a WRITE probe block (full-word letter-sequence emission) — SHIPPED Session 114.19h.** See FINALIZED.
 - [ ] **T16.4.b — Two-word phrase emission.** After a single word lands, chain two: `sem(happy dog) → motor('h', 'a', 'p', 'p', 'y', ' ', 'd', 'o', 'g')`. Requires working memory + fineType transition chaining.
 - [ ] **T16.4.c — Free-response writing prompt test.** Inject a prompt like "tell me about your day" and measure whether motor region produces a letter sequence that forms a valid English word chain (even with invented spelling). Score by fineType transition surprise vs English baseline.
 
