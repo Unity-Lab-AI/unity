@@ -63,6 +63,25 @@ const SUBSTANCE_SYNONYMS = {
   ],
   ghb: [
     'ghb', 'g', 'liquid ecstasy', 'liquid g', 'gbl'
+  ],
+  // T15.C — nicotine + caffeine added for the 11-substance scheduler.
+  // Nicotine is persona-excluded at decide() time (Unity rejects tobacco)
+  // but the detector still recognizes offers so the rejection lands
+  // with the right reason code.
+  nicotine: [
+    // 'smoke' omitted — conflicts with cannabis semantics (Unity's
+    // default reading of bare "wanna smoke?" is cannabis per persona).
+    // Explicit tobacco-only tokens below.
+    'cig', 'cigs', 'cigarette', 'cigarettes', 'ciggy',
+    'vape', 'vaping', 'juul', 'marlboro', 'camel',
+    'newport', 'tobacco', 'nicotine', 'zyn', 'nicotine pouch'
+  ],
+  caffeine: [
+    'coffee', 'espresso', 'latte', 'cappuccino', 'americano', 'cold brew',
+    'iced coffee', 'drip', 'cup of joe', 'java', 'caffeine',
+    'energy drink', 'red bull', 'monster', 'rockstar', 'nos',
+    'tea', 'black tea', 'green tea', 'matcha', 'chai',
+    'soda', 'coke zero', 'diet coke', 'pepsi', 'dr pepper', 'mountain dew'
   ]
 };
 

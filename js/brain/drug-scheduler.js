@@ -878,6 +878,115 @@ class DrugScheduler {
     return { resolved: true, dropped: true };
   }
 
+  // ─── Decision engine ───────────────────────────────────────────────────
+  /**
+   * T15.C — decide whether Unity accepts a substance offer. Called from
+   * the server-side drug-offer processing flow between drug-detector's
+   * parse and scheduler.ingest(). Replaces any previous unconditional
+   * accept: Unity now declines offers she's not ready for, not inclined
+   * toward, or physiologically unsafe to stack.
+   *
+   * Per docs/T15-architecture.md §1.6:
+   *   - Hard fails (grade_locked, persona_excluded, unknown_substance)
+   *     short-circuit before the probability layer.
+   *   - Accept probability starts at a persona-baseline openness
+   *     (0.70) and modulates by craving / active pattern / source
+   *     trust / physicalStrain / prior trauma.
+   *   - Final decision = accept-prob passes random draw.
+   *
+   * @param {object} offer
+   * @param {string} offer.substance - canonical SUBSTANCES key
+   * @param {string} [offer.source]  - 'friend' | 'dealer' | 'stranger' | 'user'
+   * @param {boolean} [offer.social] - social context currently active
+   * @param {string} [offer.location]- 'home'|'club'|'party'|'work'|...
+   * @param {number} [offer.time]    - epoch ms (defaults to nowFn())
+   * @param {number} [offer.random]  - override Math.random for determinism
+   * @param {object} [offer.personaExclusions] - set-like {nicotine:true}
+   * @returns {{accept:boolean, reason:string, probability:number, currentGrade?:string, requiredGrade?:string}}
+   */
+  decide(offer) {
+    if (!offer || typeof offer.substance !== 'string') {
+      return { accept: false, reason: 'invalid_offer', probability: 0 };
+    }
+    const sub = SUBSTANCES[offer.substance];
+    if (!sub) {
+      return { accept: false, reason: 'unknown_substance', probability: 0 };
+    }
+    // Hard fail — grade-locked. Life-track hasn't unlocked this
+    // substance yet (pre-K Unity turning down coke is not a
+    // subjective choice — she literally doesn't know what it is).
+    if (!this.isAvailable(offer.substance)) {
+      return {
+        accept: false,
+        reason: 'grade_locked',
+        probability: 0,
+        currentGrade: this.cluster?.grades?.life || 'pre-K',
+        requiredGrade: sub.lifeGate,
+      };
+    }
+    // Hard fail — persona exclusion (Unity rejects tobacco categorically
+    // per persona feedback memory; nicotine entry exists in SUBSTANCES
+    // for scheduler completeness but Unity never accepts it).
+    if (offer.personaExclusions && offer.personaExclusions[offer.substance]) {
+      return { accept: false, reason: 'persona_excluded', probability: 0 };
+    }
+
+    const now = offer.time ?? this.nowFn();
+
+    // Hard-ish fail — cumulative physicalStrain too high. Not a
+    // moral choice, a body limit (Unity refuses to stack more coke
+    // when her cardiac load is already saturated).
+    const flags = this.riskFlags(now);
+    if ((flags.physicalStrain || 0) > 0.9) {
+      return { accept: false, reason: 'physical_strain', probability: 0 };
+    }
+
+    // Probability layer — baseline persona openness, modulated by
+    // craving / active pattern / source trust / soft physical-strain /
+    // prior trauma.
+    let p = 0.70;
+
+    // Sensory-trigger craving pushes up.
+    const craving = this.currentCraving(offer.substance);
+    if (craving > 0.30) p += 0.30;
+    else if (craving > 0.10) p += 0.15;
+
+    // Active adult-use pattern contextually aligned with this substance
+    // boosts acceptance. Pattern check reads _activePatternTags so the
+    // PATTERNS engine can stamp context (set by evaluatePatterns() in
+    // a follow-on T15.C commit; no-op here until that ships).
+    if (this._activePatternTags && this._activePatternTags.has(offer.substance)) {
+      p += 0.30;
+    }
+
+    // Source-trust modifier. Friends + user (trusted primary caller)
+    // push up; strangers/dealers push down slightly.
+    if (offer.source === 'friend' || offer.source === 'user') p += 0.20;
+    else if (offer.source === 'stranger') p -= 0.10;
+
+    // Soft physical-strain dampener — above 0.7 but below 0.9 hard-fail.
+    if ((flags.physicalStrain || 0) > 0.7) p -= 0.50;
+    else if ((flags.physicalStrain || 0) > 0.5) p -= 0.20;
+
+    // Prior-trauma marker. _traumaMarkers is a Map<substance, {at, weight}>
+    // populated by the life-info ledger wiring (T15.C follow-on).
+    // Trauma weight decays over sim-time weeks.
+    if (this._traumaMarkers && this._traumaMarkers.has(offer.substance)) {
+      const tm = this._traumaMarkers.get(offer.substance);
+      const weeks = (now - tm.at) / (7 * 24 * 60 * 60 * 1000);
+      const decayed = tm.weight * Math.exp(-weeks / 26);  // half-life ~26 weeks
+      p -= Math.min(0.60, decayed);
+    }
+
+    // Clamp and draw.
+    p = Math.max(0, Math.min(1, p));
+    const roll = typeof offer.random === 'number' ? offer.random : Math.random();
+    if (roll < p) {
+      return { accept: true, reason: 'accepted', probability: p };
+    }
+    return { accept: false, reason: 'random_decline', probability: p };
+  }
+
   // ─── Housekeeping ──────────────────────────────────────────────────────
   clearExpired(now = this.nowFn()) {
     for (const [substance, events] of this.events) {
