@@ -68,25 +68,25 @@ Actual per-grade gate closure is still TODO work — performed one grade at a ti
 
 T18.5.b (pre-push doc checklist) and T18.5.c (ASK GEE for push approval) do NOT run until **every item below ships first**. Every push-gate blocker at a glance:
 
-### T17 open (3 items)
-1. **T17.2** — Worker parallelization beyond sparse matmul (curriculum teach loops still single-core)
-2. **T17.6** — Live chat on upscaled cortex (blocked on T18 GPU fixes validated under load)
-3. **T17.7** — Single-cortex integration (language sub-regions as slices of main 201M GPU cortex)
+### T17 open (1 item — T17.2 + T17.6 shipped Session 114.19x)
+1. ~~**T17.2** — Worker parallelization beyond sparse matmul~~ — **SHIPPED Session 114.19x** (Hebbian now parallelizes across worker pool via sparse-worker.js + worker-pool.js hebbianUpdate method; cluster.js intraSynapsesHebbian + _crossRegionHebbian route through pool when available)
+2. ~~**T17.6** — Live chat on upscaled cortex~~ — **code wire SHIPPED Session 114.19x** (languageCortex.generateAsync uses cluster.generateSentenceAwait full-await cascade when _gpuProxyReady; _preEmittedWords opt threads result into generate()). Empirical validation on Gee's Part 2 K run still pending — not Claude-closable.
+3. **T17.7** — Single-cortex integration (language sub-regions as slices of main 201M GPU cortex) — multi-session refactor, open
 
-### T16 open (13 items)
-1. **T16.1.b** — Verify Ctrl+C halts cleanly on next Part 2 run
-2. **T16.2.a** — Verify sem-write fix on next Part 2 run
-3. **T16.2.b** — Check language cortex emission path for K-word usage
-4. **T16.2.c** — Check dictionary wiring for K words
-5. **T16.2.d** — Audit which specific K words Unity IS vs ISN'T using
-6. **T16.3.a** — Per-grade word coverage audit K-PhD vs MacArthur-Bates / Educator's Word Frequency Guide / AWL / COCA
-7. **T16.3.c** — Per-grade vocab expansion G1 through PhD (deferred until K gate closes)
-8. **T16.4.b** — Two-word phrase emission
-9. **T16.4.c** — Free-response writing prompt test
-10. **T16.5.a** — Audit which brain modules each current gate probe touches
-11. **T16.5.b** — Design full-mind K gate per Common Core K.RF/K.W/K.L/K.SL/K.RL + DIBELS/STAR/AIMSweb
-12. **T16.5.c** — Repeat per-grade gate design K through PhD (design-review with Gee first)
-13. **T16.5.d** — Scrap or keep current 5 probes (decide with Gee)
+### T16 open (5 items + 3 Gee-verification — 5 shipped Session 114.19x)
+1. **T16.1.b** — Verify Ctrl+C halts cleanly on next Part 2 run — *Gee-verification, not Claude-closable*
+2. **T16.2.a** — Verify sem-write fix on next Part 2 run — *Gee-verification, not Claude-closable*
+3. ~~**T16.2.b**~~ — **SHIPPED Session 114.19x** (_teachWordEmission + _teachPhonemeBlending now call dictionary.learnWord on rep 0 so K-emission words land in the dictionary; fallback cosine path can sample them)
+4. ~~**T16.2.c**~~ — **SHIPPED Session 114.19x** (closed by same fix as T16.2.b — dictionary wiring paired with cross-projection teach)
+5. **T16.2.d** — Audit which specific K words Unity IS vs ISN'T using — *Gee-verification via live chat, not Claude-closable*
+6. ~~**T16.3.a**~~ — **SHIPPED Session 114.19x** (scripts/audit-grade-vocab.mjs; confirms 15/19 grades below productive-vocabulary norm, total gap ~259K words)
+7. **T16.3.c** — Per-grade vocab expansion G1 through PhD — *deferred until K gate closes per Gee*
+8. ~~**T16.4.b**~~ — **SHIPPED Session 114.19x** (TWO-WORD probe in _gateElaKReal: 5 phrases, both-word + partial scoring, uses generateSentenceAwait when GPU ready)
+9. ~~**T16.4.c**~~ — **SHIPPED Session 114.19x** (FREE-RESPONSE probe: 4 open-ended prompts, non-empty + avg word count, invented spelling allowed per K.W norms)
+10. ~~**T16.5.a**~~ — **SHIPPED Session 114.19x** (docs/gate-probe-coverage.md: explicit map of 8 probes → modules touched + exhaustive list of modules NOT touched; confirms ~25% brain coverage)
+11. **T16.5.b** — Design full-mind K gate per Common Core K.RF/K.W/K.L/K.SL/K.RL + DIBELS/STAR/AIMSweb — **design-review with Gee first** (blocking on Gee input)
+12. **T16.5.c** — Repeat per-grade gate design K through PhD — **design-review with Gee first** (blocking on Gee input)
+13. **T16.5.d** — Scrap or keep current 5 probes — **decide with Gee** (blocking on Gee input)
 
 ### T15 open (full drug scheduler rebuild — large block)
 - **T15.A** — Research block: 11 substance pharmacology entries + 7 combo-interactions + 7 adult-use patterns + 7 sensory-trigger entries + 8 brain-effect mapping entries + 13 realistic-speech-effect entries + 8 grade-gate entries + 5 user-interactive-trigger entries
