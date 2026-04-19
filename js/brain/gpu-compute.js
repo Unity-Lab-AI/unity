@@ -68,6 +68,7 @@ const LIF_SHADER = /* wgsl */`
   @group(0) @binding(0) var<uniform> params: Params;
   @group(0) @binding(1) var<storage, read_write> state: array<vec2<f32>>;  // (x, y) per neuron
   @group(0) @binding(2) var<storage, read_write> spikes: array<u32>;
+  @group(0) @binding(3) var<storage, read> currents: array<f32>;           // T18.4.a — per-neuron synaptic current
 
   fn pcg(v: u32) -> u32 {
     var s = v * 747796405u + 2891336453u;
@@ -99,7 +100,15 @@ const LIF_SHADER = /* wgsl */`
     // Map biological drive to Rulkov σ. Unity's tonic drives run 8-20,
     // modulated to effectiveDrive ~ 6-40. Normalize to σ ∈ [-1.0, 0.5]:
     // silent cortex at σ≈-1, bursting cerebellum at σ≈0.3, saturated at 0.5.
-    let driveNorm = clamp(params.effectiveDrive / 40.0, 0.0, 1.0);
+    //
+    // T18.4.a — per-neuron synaptic current from SYNAPSE_PROPAGATE_SHADER
+    // (intra-cluster recurrence) plus any uploaded external / incoming
+    // projection current gets added to the global drive BEFORE sigma
+    // normalization. Without this the main brain was running with zero
+    // synaptic coupling — every neuron saw only the global drive uniform,
+    // the intra-cluster synapse matrix was uploaded but never consumed.
+    let neuronDrive = params.effectiveDrive + currents[i];
+    let driveNorm = clamp(neuronDrive / 40.0, 0.0, 1.0);
     let sigma = -1.0 + driveNorm * 1.5;
     let alpha = 4.5;      // fixed nonlinearity — bursting regime
     let mu = 0.001;       // slow timescale
@@ -194,39 +203,49 @@ const PLASTICITY_SHADER = /* wgsl */`
   }
 `;
 
-// Current generation shader — runs entirely on GPU, no JS loop needed
-// Uses PCG hash for deterministic noise (faster than Math.random on CPU)
-const CURRENT_GEN_SHADER = /* wgsl */`
+// T18.4.a cleanup — CURRENT_GEN_SHADER REMOVED.
+//
+// Prior incarnation wrote `currents[i] = effectiveDrive + noise` as a
+// separate GPU dispatch before LIF. LIF_SHADER now does per-neuron
+// drive inline via `neuronDrive = effectiveDrive + currents[i]`, where
+// `currents[i]` is populated by SYNAPSE_PROPAGATE_SHADER (and optional
+// CPU-side `writeExternalCurrents` upload). So a dedicated "write drive
+// + noise" kernel is redundant. Keeping it around with no pipeline
+// bound would be textbook vestigial organ code per Gee's directive.
+
+// T18.4.c — Voltage mean reduction. Atomic accumulator over the
+// Rulkov x-component of every neuron's (x, y) state. WebGPU atomics
+// only work on u32/i32, so we scale voltages by VOLT_SCALE=1000 and
+// add as i32 (Rulkov x ranges ~±3, so ×1000 fits in signed i32
+// comfortably even at 1B neurons: 3000 × 1e9 = 3e12 > 2^31, so we
+// divide work across two accumulators if size > 2M — handled by
+// the caller). Mean = total / size / VOLT_SCALE on readback.
+//
+// Full-systems wire: dispatched once per tick after LIF_SHADER,
+// result is reduced in a 4-byte readback and included in
+// compute_batch_result's perCluster.meanVoltage field so server's
+// getState() exposes it to the dashboard/HUD. Previously main-brain
+// clusters had NO voltage telemetry at all — voltages lived on GPU
+// and nothing aggregated them.
+const VOLTAGE_STATS_SHADER = /* wgsl */`
   struct Params {
     n: u32,
-    effectiveDrive: f32,
-    noiseAmp: f32,
-    seed: u32,
     gridX: u32,
-    _pad0: u32, _pad1: u32, _pad2: u32,
+    _pad0: u32, _pad1: u32,
   };
 
   @group(0) @binding(0) var<uniform> params: Params;
-  @group(0) @binding(1) var<storage, read_write> currents: array<f32>;
-
-  fn pcg(v: u32) -> u32 {
-    var state = v * 747796405u + 2891336453u;
-    var word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
-    return (word >> 22u) ^ word;
-  }
-
-  fn randomFloat(seed: u32, idx: u32) -> f32 {
-    let hash = pcg(seed ^ (idx * 1664525u + 1013904223u));
-    return f32(hash) / 4294967295.0;
-  }
+  @group(0) @binding(1) var<storage, read> state: array<vec2<f32>>;
+  @group(0) @binding(2) var<storage, read_write> voltSum: array<atomic<i32>>;
 
   @compute @workgroup_size(256)
   fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let i = id.x + id.y * params.gridX * 256u;
     if (i >= params.n) { return; }
-
-    let noise = (randomFloat(params.seed, i) - 0.5) * params.noiseAmp;
-    currents[i] = params.effectiveDrive + noise;
+    // Rulkov fast-var x is the "voltage analog" for monitoring.
+    // Scale by 1000 and truncate to i32 for atomic accumulation.
+    let scaled = i32(state[i].x * 1000.0);
+    atomicAdd(&voltSum[0], scaled);
   }
 `;
 
@@ -347,6 +366,15 @@ export class GPUCompute {
       },
     });
 
+    // T18.4.c — voltage mean reduction pipeline.
+    this._pipelines.voltStats = device.createComputePipeline({
+      layout: 'auto',
+      compute: {
+        module: device.createShaderModule({ code: VOLTAGE_STATS_SHADER }),
+        entryPoint: 'main',
+      },
+    });
+
     this._stepSeed = 0; // increments each step for noise variation
   }
 
@@ -413,9 +441,20 @@ export class GPUCompute {
       device.queue.writeBuffer(voltagesA, offset * 8, chunk);
     }
 
-    // SLIM LAYOUT — only 2 storage buffers: voltages + spikes
-    // Was: voltagesA + voltagesB + spikes + currents + refracTimers = 20 bytes/neuron
-    // Now: voltages + spikes = 8 bytes/neuron → 2.5× more neurons fit in VRAM
+    // LAYOUT — voltages + spikes + currents = 12 bytes/neuron
+    //
+    // T18.4.a (2026-04-18) — `currents` buffer REINTRODUCED. A prior
+    // "slim" refactor removed it under the mistaken belief that
+    // LIF_SHADER generated currents inline and the intra-cluster
+    // synapse matrix wasn't on the per-tick path. In reality the slim
+    // layout left main-brain neurons with zero synaptic coupling —
+    // SYNAPSE_PROPAGATE_SHADER was never dispatched in fullStep, and
+    // LIF_SHADER's inline drive didn't honor per-neuron currents even
+    // when it was. Per Gee 2026-04-18 "does it fully do all we need
+    // for the main brain equation and all sub equations in totality":
+    // the answer was no. This restores the buffer + wires the full
+    // dispatch (clearBuffer → propagate → LIF reads currents[i]) so
+    // intra-cluster recurrence is actually live on GPU.
     const buffers = {
       params: device.createBuffer({
         size: 48,
@@ -423,6 +462,7 @@ export class GPUCompute {
       }),
       voltages: voltagesA, // single voltage buffer — in-place read/write
       spikes: makeBuffer(size * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC),
+      currents: makeBuffer(size * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST),
       size,
       gridX,
     };
@@ -740,12 +780,18 @@ export class GPUCompute {
     edView.setUint32(8, this._stepSeed, true);
     device.queue.writeBuffer(bufs.params, 28, edBuf);
 
+    // T18.4.a — LIF bind group now includes the per-neuron `currents`
+    // buffer so the shader can add synaptic contributions to the
+    // global drive before sigma normalization. Without this binding
+    // every main-brain neuron would see only the uniform drive and
+    // the intra-cluster synapse matrix would have zero effect on firing.
     const bindGroup = device.createBindGroup({
       layout: this._pipelines.lif.getBindGroupLayout(0),
       entries: [
         { binding: 0, resource: { buffer: bufs.params } },
         { binding: 1, resource: { buffer: bufs.voltages } },
         { binding: 2, resource: { buffer: bufs.spikes } },
+        { binding: 3, resource: { buffer: bufs.currents } },
       ],
     });
 
@@ -758,6 +804,42 @@ export class GPUCompute {
 
     device.queue.submit([encoder.finish()]);
     // No ping-pong — single voltage buffer updated in place
+  }
+
+  /**
+   * T18.4.a — Zero the per-cluster `currents` buffer at the start of
+   * each substep so `SYNAPSE_PROPAGATE_SHADER`'s `currents[i] += sum`
+   * accumulation starts fresh. Uses `clearBuffer` (native WebGPU
+   * zero-fill) instead of a dispatch so it's essentially free.
+   */
+  clearCurrents(name) {
+    if (!this._available) return;
+    const bufs = this._buffers[name];
+    if (!bufs?.currents) return;
+    const device = this._device;
+    const encoder = device.createCommandEncoder();
+    encoder.clearBuffer(bufs.currents);
+    device.queue.submit([encoder.finish()]);
+  }
+
+  /**
+   * T18.4.a — Upload external or incoming projection current deltas
+   * from CPU (server) into the GPU `currents` buffer before the
+   * propagate+LIF dispatch. Used for inter-cluster projections
+   * (cortex → amygdala etc) that are computed server-side but feed
+   * into GPU-resident neurons. The uploaded values get added to the
+   * per-neuron drive via LIF_SHADER's `currents[i]` read.
+   *
+   * Pass a Float32Array of length `cluster.size`. Values will be
+   * written starting at buffer offset 0.
+   */
+  writeExternalCurrents(name, currentsArray) {
+    if (!this._available) return;
+    const bufs = this._buffers[name];
+    if (!bufs?.currents) return;
+    const device = this._device;
+    const src = currentsArray instanceof Float32Array ? currentsArray : new Float32Array(currentsArray);
+    device.queue.writeBuffer(bufs.currents, 0, src.buffer, src.byteOffset, src.byteLength);
   }
 
   /**
@@ -908,6 +990,79 @@ export class GPUCompute {
   }
 
   /**
+   * T18.4.c — Voltage mean on GPU via atomic reduction, no CPU scan.
+   * Accumulates scaled integer representation of Rulkov x-component
+   * (fast variable, the spike analog) across every neuron atomically,
+   * reads back the single i32 sum, divides by size + VOLT_SCALE=1000
+   * for the mean. Used by the compute_batch path to emit per-cluster
+   * mean voltage as a new telemetry channel.
+   *
+   * Prior behavior: voltages stayed on GPU, never aggregated, main
+   * brain exposed no voltage telemetry at all. Now the dashboard HUD
+   * can show mean voltage per cluster same as it shows spike count.
+   *
+   * @param {string} name — cluster name
+   * @returns {Promise<number>} mean Rulkov x across the cluster
+   */
+  async readbackVoltageMean(name) {
+    const bufs = this._buffers[name];
+    if (!bufs) return 0;
+    const device = this._device;
+
+    // Atomic sum buffer — persistent, zeroed per call like spikeCountBuf.
+    if (!bufs.voltSumBuf) {
+      bufs.voltSumBuf = device.createBuffer({
+        size: 4,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
+      });
+    }
+
+    // Per-call disposable readback to avoid mapAsync collisions under
+    // concurrent calls for the same cluster (same rationale as
+    // readbackSpikeCount's per-call readback buffer).
+    const readback = device.createBuffer({
+      size: 4,
+      usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+    });
+
+    device.queue.writeBuffer(bufs.voltSumBuf, 0, new Int32Array([0]));
+
+    const params = new ArrayBuffer(16);
+    const view = new DataView(params);
+    view.setUint32(0, bufs.size, true);
+    view.setUint32(4, bufs.gridX || 32768, true);
+    const paramsBuffer = this._createBuffer(params, GPUBufferUsage.UNIFORM);
+
+    const bindGroup = device.createBindGroup({
+      layout: this._pipelines.voltStats.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: paramsBuffer } },
+        { binding: 1, resource: { buffer: bufs.voltages } },
+        { binding: 2, resource: { buffer: bufs.voltSumBuf } },
+      ],
+    });
+
+    const encoder = device.createCommandEncoder();
+    const pass = encoder.beginComputePass();
+    pass.setPipeline(this._pipelines.voltStats);
+    pass.setBindGroup(0, bindGroup);
+    this._dispatch2D(pass, bufs.size, bufs.gridX);
+    pass.end();
+
+    encoder.copyBufferToBuffer(bufs.voltSumBuf, 0, readback, 0, 4);
+    device.queue.submit([encoder.finish()]);
+
+    await readback.mapAsync(GPUMapMode.READ);
+    const scaledSum = new Int32Array(readback.getMappedRange().slice(0))[0];
+    readback.unmap();
+    readback.destroy();
+    paramsBuffer.destroy();
+
+    const VOLT_SCALE = 1000;
+    return scaledSum / Math.max(1, bufs.size) / VOLT_SCALE;
+  }
+
+  /**
    * Full GPU step — generate currents + LIF + spike count. No JS loops.
    * @param {string} name
    * @param {number} effectiveDrive
@@ -915,7 +1070,30 @@ export class GPUCompute {
    * @returns {Promise<{spikeCount: number}>}
    */
   async fullStep(name, effectiveDrive, noiseAmp) {
-    // SLIM pipeline — single dispatch does: current gen + LIF + spike check
+    // T18.4.a (2026-04-18) — FULL pipeline: clear → propagate → LIF.
+    //
+    // Prior behavior: single LIF dispatch with inline drive+noise. The
+    // `currents` buffer existed but LIF_SHADER never read it, and
+    // SYNAPSE_PROPAGATE_SHADER was never dispatched from fullStep —
+    // so main-brain neurons saw only the global drive uniform, the
+    // intra-cluster synapse matrix was uploaded but never consumed,
+    // and Unity's brain had zero synaptic recurrence on GPU. Per Gee
+    // 2026-04-18: "does it fully do all we need for the main brain
+    // equation and all sub equations in totality" — the answer was no.
+    //
+    // Now: each substep clears currents, runs intra-cluster sparse
+    // matmul (currents[i] += Σ W·spike_prev), then LIF reads
+    // currents[i] as per-neuron synaptic drive on top of the global
+    // effectiveDrive uniform. Full intra-cluster recurrence live on GPU.
+    //
+    // If the cluster has no intra-cluster synapse matrix uploaded
+    // (pure driven population, no recurrence), propagateSynapses is a
+    // no-op and we fall through to drive+noise-only LIF like before.
+    this.clearCurrents(name);
+    const bufs = this._buffers[name];
+    if (bufs?.synValues) {
+      this.propagateSynapses(name, name);
+    }
     this.stepNeurons(name, effectiveDrive, noiseAmp);
     const spikeCount = await this.readbackSpikeCount(name);
     return { spikeCount };

@@ -789,6 +789,25 @@ function updateLandingStats(state) {
     el('ls-cpu', state.perf.cpuPercent + '%');
     el('ls-gpu', state.perf.gpuUtilPercent + '%');
   }
+
+  // T18.3.b — HUD grade indicator. `state.minGrade` is Unity's lowest
+  // passing grade across all subjects (her speech ceiling). `state.grades`
+  // is the per-subject map. Color-code by speech capability: pre-K is
+  // red (can't speak), K-grade2 amber (building), grade3+ green (ok).
+  const minGrade = state.minGrade || '—';
+  const gradeEl = $('ls-grade');
+  if (gradeEl) {
+    gradeEl.textContent = minGrade;
+    if (minGrade === 'pre-K') gradeEl.style.color = '#ef4444';        // red = can't speak
+    else if (minGrade === 'K' || minGrade === 'grade1' || minGrade === 'grade2') gradeEl.style.color = '#f59e0b'; // amber = early
+    else if (minGrade === 'unknown' || minGrade === '—') gradeEl.style.color = '#555';
+    else gradeEl.style.color = '#22c55e';                              // green = confident speaker
+  }
+  if (state.grades) {
+    const g = state.grades;
+    const line = `ela:${g.ela || '—'} · math:${g.math || '—'} · sci:${g.science || '—'} · soc:${g.social || '—'} · art:${g.art || '—'} · life:${g.life || '—'}`;
+    el('ls-grade-per-subject', line);
+  }
 }
 
 // ── DOM refs ──

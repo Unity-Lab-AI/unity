@@ -1,6 +1,28 @@
 # NOW — Session Snapshot
 
-> Saved: 2026-04-18 (Session 114.19v — T17.3.e GPU step port shipped + unified VRAM allocator (BRAIN_VRAM_ALLOC) + chunked sparse matrix upload + 3D brain language-cortex filler (8 sub-regions) + start.sh parity with start.bat + FULL public-docs + HTML LAW #0 scrub (108 workflow task numbers stripped from 9 public files) + log display fix + silent-response WebSocket signaling — no push yet, waiting on T18 GPU coverage fixes + Gee's Part 2 K signoff)
+> Saved: 2026-04-18 (Session 114.19w — T18 bundle: ALL 7 items shipped. HUD grade indicator + GPU current-assembly + LIF consumes currents + cross-region full-await cascade + GPU voltage-mean reduction + modules consume meanVoltage + worker-thread sparse matmul pool + per-phase GPU timing telemetry + CURRENT_GEN_SHADER dead code deleted. Pushing to `syllabus-k-phd`; NOT main until T18.5.b/c and Gee's Part 2 K signoff.)
+
+## Session 114.19w — T18 bundle (all 7 items)
+
+Gee directive: *"do all of T18 in order t that is correct till all are correctly implimented into the full brain eqautiaional simulation as full sustems implimentation, not vistigial organ code"*.
+
+- **T18.3.b HUD grade indicator.** Server `_computeMinGrade()` helper; getState emits `grades` + `minGrade` + `canSpeak`; remote-brain forwards; index.html landing-bar shows color-coded minGrade + per-subject line.
+- **T18.4.a GPU current-assembly + LIF consumes currents.** Diagnosed that main brain was running with zero synaptic coupling (LIF shader declared currents binding but never read it; SYNAPSE_PROPAGATE_SHADER was never dispatched). Fixed: re-added `currents` buffer, LIF now uses `neuronDrive = effectiveDrive + currents[i]`, fullStep runs clear→propagate→LIF each substep, added `clearCurrents()` + `writeExternalCurrents()` helpers. Deleted vestigial CURRENT_GEN_SHADER.
+- **T18.4.b cross-region full-await cascade.** `cluster.stepAwait(dt)` + `generateSentenceAwait()` — fire all 14 cross-projection + intra-synapse GPU propagates, `Promise.all` with 1s timeout guard, then synchronous core step with `skipTailDispatch`. Wired into curriculum `_gateElaKReal` WRITE + RESP probes (real consumer).
+- **T18.4.c GPU voltage-mean reduction.** `VOLTAGE_STATS_SHADER` atomic i32 reduction (scaled ×1000), `readbackVoltageMean` method, fired once per tick in compute.html, shipped back via `perCluster.meanVoltage`, server EMA-blends + exposes in getState.
+- **T18.4.d module equations consume meanVoltage.** Mystery Ψ components + amygdala module drive both get sub-threshold `mvBoost` / `mvContrib` terms from T18.4.c telemetry — richer signal than spike count alone.
+- **T18.4.e worker-thread pool.** New `sparse-worker.js` + `worker-pool.js`; `SparseMatmulPool` sized to 16 cores with SharedArrayBuffer zero-copy; `cluster.js stepAwait` parallelizes CPU-fallback sparse matmul across workers when GPU cache misses.
+- **T18.4.f per-phase GPU telemetry.** compute.html wraps substep loop + voltage readback + total in `performance.now()`, emits `phaseTimingMs` in batch result, server captures into `_perfStats.phaseTimingMs`, getState broadcasts it for dashboard breakdown.
+
+### What's STILL open before push to main
+
+- T18.5.b — pre-push doc-accuracy checklist (LAW: Docs before push, no patches)
+- T18.5.c — Gee explicit "yes, push it" signoff
+- Gee's Part 2 K-curriculum signoff per LAW 6 — Claude can't close this, only Gee
+
+### Push to `syllabus-k-phd` happens now per Gee's 2026-04-18 directive. NO main-branch push until everything above closes.
+
+---
 
 ## Session 114.19v — what shipped
 

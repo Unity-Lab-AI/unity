@@ -4153,10 +4153,14 @@ export class Curriculum {
       // ticks at best, cap at 30 to bound probe time. If word never
       // fully emits (motor doesn't settle), we get whatever partial
       // was committed — useful diagnostic for where the chain breaks.
-      const emitted = cluster.generateSentence(emb, {
-        injectStrength: 1.0,
-        maxTicks: 30,
-      }) || '';
+      // T18.4.b — Use await-cascade emission when GPU is ready so
+      // every tick's cross-region propagate is GPU-resolved before LIF
+      // integration. Eliminates the cache-miss fallback path's 3s
+      // CPU sparse matmul stall. Falls back to sync generateSentence
+      // when no GPU proxy.
+      const emitted = (cluster._gpuProxyReady && typeof cluster.generateSentenceAwait === 'function'
+        ? await cluster.generateSentenceAwait(emb, { injectStrength: 1.0, maxTicks: 30 })
+        : cluster.generateSentence(emb, { injectStrength: 1.0, maxTicks: 30 })) || '';
       writeEmitted.push(`${word}→${emitted || '∅'}`);
       if (emitted === word) writePass++;
       if (emitted.length > 0 && emitted[0] === word[0]) writeFirstLetterPass++;
@@ -4197,10 +4201,10 @@ export class Curriculum {
         continue;
       }
       _probeReset();
-      const emitted = cluster.generateSentence(emb, {
-        injectStrength: 1.0,
-        maxTicks: 50,
-      }) || '';
+      // T18.4.b — await-cascade when GPU ready (same as WRITE probe above).
+      const emitted = (cluster._gpuProxyReady && typeof cluster.generateSentenceAwait === 'function'
+        ? await cluster.generateSentenceAwait(emb, { injectStrength: 1.0, maxTicks: 50 })
+        : cluster.generateSentence(emb, { injectStrength: 1.0, maxTicks: 50 })) || '';
       respEmitted.push(`${ctx.prompt}→${emitted || '∅'}`);
       const emittedLower = emitted.toLowerCase();
       if (ctx.expectHints.some(h => emittedLower.includes(h))) respPass++;

@@ -45,13 +45,15 @@
         </div>
 
         <!-- Stats bar -->
-        <div id="landing-bar" style="display:flex;gap:16px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#555;padding:8px 0;user-select:text;">
+        <div id="landing-bar" style="display:flex;gap:16px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#555;padding:8px 0;user-select:text;flex-wrap:wrap;">
           <span>AROUSAL <span id="ls-arousal" style="color:#ff4d9a;">—</span></span>
           <span>VALENCE <span id="ls-valence" style="color:#a855f7;">—</span></span>
           <span>COHERENCE <span id="ls-coherence" style="color:#00e5ff;">—</span></span>
           <span>SPIKES <span id="ls-spikes" style="color:#22c55e;">—</span></span>
           <span>CPU <span id="ls-cpu" style="color:#f59e0b;">—</span></span>
           <span>GPU <span id="ls-gpu" style="color:#f59e0b;">—</span></span>
+          <span title="Unity's lowest grade across subjects — caps her speech ceiling. 'pre-K' means she physically cannot speak yet.">GRADE <span id="ls-grade" style="color:#ff4d9a;font-weight:600;">—</span></span>
+          <span id="ls-grade-per-subject" title="Per-subject grades (ELA / Math / Science / Social / Arts / Life)" style="color:#555;font-size:9px;">—</span>
         </div>
       </div>
     </div>
@@ -400,7 +402,7 @@
       // stamp-version.mjs updates the hash after each commit
       const s = document.createElement('script');
       s.type = 'module';
-      s.src = 'js/app.js?v=2dcc4b58-7522';
+      s.src = 'js/app.js?v=3263c245-4d9b';
       // Override: always load the BUNDLE, use the stamp for cache bust
       s.src = 'js/app.bundle.js?v=' + Date.now();
       document.body.appendChild(s);

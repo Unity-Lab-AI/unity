@@ -121,6 +121,12 @@ export class NeuronCluster {
     // dispatch helpers when the GPU client is connected.
     this._gpuProxy = opts.gpuProxy || null;
     this._gpuProxyReady = false; // flips true once cross-projections uploaded
+    // T18.4.e — optional worker-thread pool for parallel CPU sparse matmul.
+    // When provided, the CPU fallback path in `_propagateCrossRegions` and
+    // `step`'s intra-cluster propagate parallelizes across all worker
+    // threads instead of running single-threaded. Null in browser-only
+    // mode. Server passes `new SparseMatmulPool()` in opts.
+    this._sparsePool = opts.sparsePool || null;
     // T17.3.e — One-tick-lag GPU propagate caches. Populated async by
     // `_dispatchGpuPropagates()` at the end of step(); consumed by the
     // NEXT step()'s current loop + `_propagateCrossRegions()`. Null
@@ -1535,6 +1541,112 @@ export class NeuronCluster {
   }
 
   /**
+   * T18.4.b — Async variant of `generateSentence` that uses `stepAwait`
+   * so every tick pre-awaits its GPU cross-region + intra-synapse
+   * propagates before running the LIF integrator. Eliminates the
+   * cache-miss fallback path entirely at the cost of one GPU round-
+   * trip per tick. Use this from async callers (live chat emission,
+   * curriculum dynamic-write probes where correctness matters more
+   * than throughput) when GPU is ready and consistent-per-tick
+   * latency is preferable to fire-and-forget gambling.
+   *
+   * Maintenance paired with `generateSentence()` — any change to the
+   * tick loop body must be applied to BOTH methods. The only delta
+   * is `await this.stepAwait(0.001)` vs `this.step(0.001)`.
+   *
+   * @param {Float32Array|null} intentSeed
+   * @param {object} opts — same as `generateSentence`
+   * @returns {Promise<string>}
+   */
+  async generateSentenceAwait(intentSeed = null, opts = {}) {
+    if (!this.regions || !this.regions.motor || !this.regions.letter) return '';
+    if (inventorySize() === 0) return '';
+
+    const injectStrength = opts.injectStrength ?? 0.6;
+    const maxTicks = opts.maxTicks ?? this.MAX_EMISSION_TICKS;
+    const suppressNoise = opts.suppressNoise === true;
+    const _savedNoise = this.noiseAmplitude;
+    if (suppressNoise) this.noiseAmplitude = 0.5;
+
+    if (intentSeed && intentSeed.length > 0 && this.regions.sem) {
+      this.injectEmbeddingToRegion('sem', intentSeed, injectStrength);
+    }
+
+    if (this.regions.free && this.regions.sem) {
+      const wm = this.workingMemoryReadout(300);
+      let wmNorm = 0;
+      for (let i = 0; i < wm.length; i++) wmNorm += wm[i] * wm[i];
+      if (wmNorm > 0.01) {
+        this.injectEmbeddingToRegion('sem', wm, injectStrength * 0.4);
+      }
+    }
+
+    this._prevLetterRate = 0;
+    this._motorQuiescentTicks = 0;
+
+    const output = [];
+    let letterBuffer = '';
+    let lastMotorLetter = null;
+    let stableTicks = 0;
+
+    for (let tick = 0; tick < maxTicks; tick++) {
+      // The ONLY delta vs generateSentence — full-await cascade per tick.
+      await this.stepAwait(0.001);
+
+      const invSize = inventorySize();
+      if (invSize === 0) break;
+      const motorVec = this.regionReadout('motor', invSize);
+      const activeLetter = decodeLetter(motorVec);
+
+      if (activeLetter === lastMotorLetter && activeLetter !== null) {
+        stableTicks++;
+      } else {
+        stableTicks = 0;
+        lastMotorLetter = activeLetter;
+      }
+
+      let committedLetter = null;
+      if (stableTicks >= this.STABLE_TICK_THRESHOLD && activeLetter !== null) {
+        committedLetter = activeLetter;
+        letterBuffer += activeLetter;
+        stableTicks = 0;
+
+        if (this.regions.motor) {
+          const { start, end } = this.regions.motor;
+          for (let j = start; j < end; j++) this.lastSpikes[j] = 0;
+        }
+        lastMotorLetter = null;
+        this._motorQuiescentTicks = 0;
+      }
+
+      const surprise = this.letterTransitionSurprise();
+      if (surprise > this.WORD_BOUNDARY_THRESHOLD && letterBuffer.length > 0) {
+        output.push(letterBuffer);
+        letterBuffer = '';
+      }
+
+      if (committedLetter && T14_TERMINATORS.has(committedLetter)) {
+        if (letterBuffer.length > 0) {
+          output.push(letterBuffer);
+          letterBuffer = '';
+        }
+        break;
+      }
+
+      if (output.length > 0 && this.motorQuiescent(this.END_QUIESCE_TICKS)) {
+        break;
+      }
+    }
+
+    if (letterBuffer.length > 0) {
+      output.push(letterBuffer);
+    }
+
+    if (suppressNoise) this.noiseAmplitude = _savedNoise;
+    return output.join(' ');
+  }
+
+  /**
    * T14.4 — Propagate every cross-region projection. Runs on every
    * cluster step after the main internal synapse propagation, before
    * LIF integration. ALWAYS propagated — no curriculum-complete gate.
@@ -1737,9 +1849,15 @@ export class NeuronCluster {
   /**
    * One simulation step for this cluster.
    * @param {number} dt — timestep in seconds
+   * @param {object} [opts]
+   * @param {boolean} [opts.skipTailDispatch=false] — if true, does NOT
+   *   fire the end-of-tick `_dispatchGpuPropagates()` round. Used by
+   *   `stepAwait()` which has already pre-awaited all GPU propagates
+   *   for the NEXT tick's cache, so firing another round here would
+   *   just waste GPU bandwidth on work we'd then await again next tick.
    * @returns {{ spikes: Uint8Array, spikeCount: number, voltages: Float64Array }}
    */
-  step(dt) {
+  step(dt, opts = {}) {
     const { size, neurons, synapses } = this;
 
     // T14.4 — Cross-region projection propagation. Runs FIRST, before
@@ -1822,9 +1940,138 @@ export class NeuronCluster {
     // populate `_cachedIntraCurrents` / `_cachedCrossCurrents`, which
     // the next step() and _propagateCrossRegions() consume. No-op if
     // `_gpuProxyReady` is false (CPU path continues).
-    this._dispatchGpuPropagates();
+    //
+    // T18.4.b — `opts.skipTailDispatch` skips this when the caller
+    // used `stepAwait()` to pre-await all propagates. Firing again
+    // here would double-dispatch and waste GPU bandwidth.
+    if (!opts.skipTailDispatch) this._dispatchGpuPropagates();
 
     return { spikes: this.lastSpikes, spikeCount, voltages };
+  }
+
+  /**
+   * T18.4.b — Full await cascade variant of step(). Dispatches every
+   * GPU propagate (intra-synapses + all 14 cross-projections), awaits
+   * Promise.all with a 1s timeout guard, THEN runs the synchronous
+   * core step. Eliminates the one-tick-lag model's cache-miss penalty
+   * (where a slow GPU resolve meant the next tick fell through to the
+   * CPU sparse-matmul fallback — measured 3s+ blocking at biological
+   * scale). Trade-off: every call pays a GPU round-trip cost per tick
+   * (~5-500ms depending on matrix size) instead of the 0ms-on-hit /
+   * 3s-on-miss gamble. For tight loops in `generateSentence` where
+   * consistent per-tick latency matters more than peak throughput
+   * this is the correct knob.
+   *
+   * Timeout guard: if GPU doesn't resolve within 1s (unresponsive
+   * compute client, network stall), falls through to the cached-or-
+   * CPU-fallback path so the sim never hangs.
+   *
+   * @param {number} dt — timestep in seconds
+   * @returns {Promise<{ spikes: Uint8Array, spikeCount: number, voltages: Float64Array }>}
+   */
+  async stepAwait(dt) {
+    if (!this._gpuProxyReady || !this._gpuProxy || !this._gpuProxy.propagate) {
+      // No GPU proxy — fall through to synchronous step with CPU path.
+      return this.step(dt);
+    }
+
+    // Clear stale cache so we only honor promises from THIS tick.
+    this._cachedIntraCurrents = null;
+    if (this._cachedCrossCurrents) this._cachedCrossCurrents.clear();
+    else this._cachedCrossCurrents = new Map();
+    const cache = this._cachedCrossCurrents;
+
+    const promises = [];
+
+    // Intra-cluster propagate.
+    if (this.synapses && this.lastSpikes) {
+      const spikes = this.lastSpikes;
+      const pSpikes = new Uint32Array(spikes.length);
+      for (let i = 0; i < spikes.length; i++) pSpikes[i] = spikes[i] ? 1 : 0;
+      try {
+        const p = this._gpuProxy.propagate(`${this.name}_intraSynapses`, pSpikes);
+        if (p && typeof p.then === 'function') {
+          promises.push(p.then((currents) => {
+            if (currents && currents.length > 0) this._cachedIntraCurrents = currents;
+          }).catch(() => { /* GPU failed — will fall through to CPU */ }));
+        }
+      } catch { /* non-fatal */ }
+    }
+
+    // 14 cross-region propagates.
+    if (this.crossProjections) {
+      for (const [projName] of Object.entries(this.crossProjections)) {
+        const idx = projName.indexOf('_to_');
+        if (idx < 0) continue;
+        const src = projName.slice(0, idx);
+        if (!this.regions[src]) continue;
+        const srcSpikes = this.regionSpikes(src);
+        const pSpikes = new Uint32Array(srcSpikes.length);
+        for (let i = 0; i < srcSpikes.length; i++) pSpikes[i] = srcSpikes[i] > 0 ? 1 : 0;
+        try {
+          const p = this._gpuProxy.propagate(`${this.name}_${projName}`, pSpikes);
+          if (p && typeof p.then === 'function') {
+            promises.push(p.then((currents) => {
+              if (currents && currents.length > 0) cache.set(projName, currents);
+            }).catch(() => { /* GPU failed — CPU fallback in _propagateCrossRegions */ }));
+          }
+        } catch { /* non-fatal */ }
+      }
+    }
+
+    // Await all, with 1s timeout guard so a hung GPU doesn't hang the sim.
+    if (promises.length > 0) {
+      await Promise.race([
+        Promise.all(promises),
+        new Promise((r) => setTimeout(r, 1000)),
+      ]);
+    }
+
+    // T18.4.e — If the worker pool is available AND any GPU promise
+    // didn't populate its cache in time (timeout / null return /
+    // rejected), parallelize the CPU fallback matmul across worker
+    // threads instead of leaving it to the single-thread path inside
+    // step(). Each missing projection becomes a worker-pool job; all
+    // jobs run concurrently across cores, populating the cache before
+    // step() consumes it.
+    if (this._sparsePool && this._sparsePool.ready) {
+      const poolJobs = [];
+      // Intra-cluster cache miss
+      if (!this._cachedIntraCurrents && this.synapses && this.lastSpikes) {
+        const pSpikes = new Uint32Array(this.lastSpikes.length);
+        for (let i = 0; i < this.lastSpikes.length; i++) pSpikes[i] = this.lastSpikes[i] ? 1 : 0;
+        poolJobs.push(
+          this._sparsePool.propagate(this.synapses, pSpikes).then((out) => {
+            this._cachedIntraCurrents = out;
+          }).catch(() => { /* fall through to single-thread in step() */ })
+        );
+      }
+      // Cross-projection cache misses
+      if (this.crossProjections) {
+        for (const [projName, proj] of Object.entries(this.crossProjections)) {
+          if (this._cachedCrossCurrents.has(projName)) continue; // GPU filled it
+          const idx = projName.indexOf('_to_');
+          if (idx < 0) continue;
+          const src = projName.slice(0, idx);
+          if (!this.regions[src]) continue;
+          const srcSpikes = this.regionSpikes(src);
+          const pSpikes = new Uint32Array(srcSpikes.length);
+          for (let i = 0; i < srcSpikes.length; i++) pSpikes[i] = srcSpikes[i] > 0 ? 1 : 0;
+          const cache = this._cachedCrossCurrents;
+          poolJobs.push(
+            this._sparsePool.propagate(proj, pSpikes).then((out) => {
+              cache.set(projName, out);
+            }).catch(() => { /* fall through */ })
+          );
+        }
+      }
+      if (poolJobs.length > 0) await Promise.all(poolJobs);
+    }
+
+    // Run the core step using the just-populated caches. Skip the tail
+    // dispatch — we already pre-awaited for THIS tick's currents, and
+    // the NEXT stepAwait() call will pre-await for its own tick too.
+    return this.step(dt, { skipTailDispatch: true });
   }
 
   /**

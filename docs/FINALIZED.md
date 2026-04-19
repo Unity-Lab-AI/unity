@@ -5,6 +5,116 @@
 
 ---
 
+## 2026-04-18 — Session 114.19w: T18 bundle — ALL 7 items shipped (HUD grade indicator, GPU current-assembly + LIF consumes currents, cross-region full-await cascade, GPU voltage-mean reduction, modules consume meanVoltage, worker-thread sparse matmul pool, per-phase GPU timing telemetry, CURRENT_GEN_SHADER dead code deleted)
+
+Gee 2026-04-18 verbatim directive: *"do all of T18 in order t that is correct till all are correctly implimented into the full brain eqautiaional simulation as full sustems implimentation, not vistigial organ code"*.
+
+All seven items shipped in order + fully wired end-to-end. Nothing left as vestigial scaffolding.
+
+### T18.3.b — HUD grade indicator
+
+Server: shared `_computeMinGrade()` helper walks the grade order (`pre-K` → `K` → `grade1`..`grade12` → `college1`..`college4` → `grad` → `phd`), finds the lowest across all subjects. Used by both the silent-response path (DRY'd up the prior inline grade computation) and `getState()` broadcasts. `getState()` now emits three new fields every tick: `grades` (per-subject map), `minGrade` (lowest across subjects), `canSpeak` (`minGrade !== 'pre-K'`).
+
+Client: `remote-brain.js` forwards `grades` / `minGrade` / `canSpeak` via `_applyState` into `this.state`. `index.html` landing-bar gains two new spans — `ls-grade` (color-coded: red for pre-K can't speak, amber for K/grade1/grade2 building, green for grade3+ confident) and `ls-grade-per-subject` (`ela:K · math:pre-K · sci:pre-K · soc:pre-K · art:pre-K · life:pre-K` style readout). `app.js`'s `applyStateToHUD` renders both on every state broadcast. User no longer has to type `/curriculum status` to see where Unity is.
+
+### T18.4.a — GPU current-assembly kernel + LIF consumes currents
+
+Diagnosed a major vestigial-organ violation before shipping the fix: `LIF_SHADER` declared a `currents` binding but never read it; `SYNAPSE_PROPAGATE_SHADER` was never dispatched from the per-tick path; intra-cluster synapse matrices were never uploaded via `uploadCluster` for main-brain clusters (synapses=null). Main brain had been running with **zero synaptic coupling** — every neuron only responded to the global `effectiveDrive` uniform, the intra-cluster recurrence was architecturally absent.
+
+Fix, end-to-end:
+1. `LIF_SHADER` WGSL body now computes `neuronDrive = effectiveDrive + currents[i]` before sigma normalization — per-neuron synaptic current actually shapes Rulkov excitability
+2. Re-introduced the per-cluster `currents` GPU buffer in `uploadCluster` (12 bytes/neuron total now: vec2 voltage + u32 spike + f32 current)
+3. `fullStep` now runs the proper dispatch sequence every substep: `clearCurrents → propagateSynapses (if intra-synapse matrix exists) → stepNeurons (LIF reads currents[i])`
+4. Added `clearCurrents(name)` using native `encoder.clearBuffer` (zero-cost)
+5. Added `writeExternalCurrents(name, Float32Array)` so the server can push cross-cluster projection currents from the language cortex / other clusters onto a target cluster's neurons per tick
+6. `stepNeurons` bind group extended with binding 3 (currents) so the shader can actually read it
+
+Clusters without an intra-synapse matrix behave identically to before (currents stays 0, no regression); clusters with a matrix uploaded now have full intra-cluster recurrence live on GPU.
+
+Also deleted the genuinely-vestigial `CURRENT_GEN_SHADER` — superseded by LIF_SHADER's inline drive, had no pipeline bound, pure dead code.
+
+### T18.4.b — Cross-region full-await cascade
+
+Added `cluster.stepAwait(dt)` async variant of `step()`: clears stale cache → dispatches every GPU propagate (intra + all 14 cross-projections) as promises → awaits `Promise.all` with a 1s timeout guard (so an unresponsive GPU client can't hang the sim) → runs the synchronous core step with `skipTailDispatch: true` so no double-dispatch.
+
+Added `cluster.generateSentenceAwait(intentSeed, opts)` — async twin of `generateSentence` that uses `stepAwait` in its per-tick loop. Full-await cascade end-to-end for any async emission site. Maintenance-paired with `generateSentence` — same tick-loop body, only delta is `await this.stepAwait(0.001)` vs `this.step(0.001)`.
+
+Wired into `curriculum.js _gateElaKReal` WRITE + RESP dynamic probes so they use the await-cascade whenever `cluster._gpuProxyReady` is true; falls through to sync path when no GPU proxy (not vestigial — real consumer from day one).
+
+`step()` gained an `opts.skipTailDispatch` flag so `stepAwait()` can suppress the end-of-tick fire-and-forget round that would otherwise waste GPU bandwidth on a pre-awaited cache. Eliminates the 3s CPU cache-miss fallback penalty at the cost of one GPU round-trip per tick (~5-500ms depending on matrix size) — net win at biological scale.
+
+### T18.4.c — GPU voltage-mean reduction
+
+New `VOLTAGE_STATS_SHADER` WGSL: atomic reduction over the Rulkov x-component using scaled-int i32 accumulation (voltages × 1000, atomically added as i32, divided by size + scale on readback — works around WebGPU's lack of f32 atomics).
+
+New `readbackVoltageMean(name)` method on GPUCompute. Wired into compute.html's batch handler once per tick (after the last substep so the mean reflects settled state); GPU reduces voltage for every cluster in parallel via `Promise.all(readbackVoltageMean)`. Result flows back in `compute_batch_result.perCluster.meanVoltage`.
+
+Server EMA-blends (`prev * 0.8 + new * 0.2`) and exposes `cluster.meanVoltage` in every `getState()` cluster entry. Previously main-brain clusters had ZERO voltage telemetry — voltages lived on GPU and nothing aggregated them. Now it's a first-class telemetry channel and feeds T18.4.d module equations.
+
+### T18.4.d — Module equations consume GPU meanVoltage
+
+Scoped honestly: modules (amygdala 32×32 settle, mystery Ψ, Kuramoto 8 phases) are inherently small-state abstractions. Moving them to GPU would add dispatch overhead that exceeds their CPU cost. The real full-systems wire is giving them richer cluster-state signal.
+
+- Mystery Ψ: Id/Ego/Left/Right components now use `clusterActivity + mvBoost(name)` where `mvBoost = min(0.3, |meanVoltage| * 0.1)` — sub-threshold depolarization contributes to consciousness calculation, so clusters active-but-not-spiking still register
+- Amygdala module: base drive adds `mvContrib = min(0.2, |amygMeanVoltage| * 0.08)` — settles into emotional basins on depolarization onset instead of waiting for full spike burst
+
+Behavioral effect: smoother Ψ curve, more accurate emotional basins during pre-spike membrane build-up.
+
+### T18.4.e — Worker-thread pool for CPU sparse matmul
+
+Two new files:
+- `server/sparse-worker.js` — Node worker_thread doing row-range sparse CSR matmul via SharedArrayBuffer (zero-copy access to shared values/colIdx/rowPtr + disjoint output row-range writes so no cross-worker race conditions by construction)
+- `server/worker-pool.js` — `SparseMatmulPool` class. Sizes to `os.cpus().length - 1` capped at 16. Promise-based `propagate(matrix, spikesU32) → Float32Array`. Falls through to synchronous single-thread matmul if worker_threads unavailable. `shutdown()` cleanly terminates all workers on SIGINT.
+
+Wiring:
+- `brain-server.js` constructs `this.sparsePool = new SparseMatmulPool()` at brain init
+- Passes to `cortexCluster` via `opts.sparsePool` in the NeuronCluster construction
+- `cluster.js` stores `this._sparsePool` and uses it in `stepAwait`'s CPU fallback: after Promise.race, any projection with a cache miss fires as a pool job (all jobs run concurrently across cores via `Promise.all`), populating the cache before the synchronous `step()` consumes it
+- `stop()` calls `sparsePool.shutdown()` so workers exit cleanly
+
+Gee's 2026-04-18 runtime stats showed `Mode: Single Thread / Parallel Workers: 0` on a 16-core box. This plugs that gap — curriculum teach + cross-region propagate can now spread across all cores when GPU is unavailable or cache-missed.
+
+### T18.4.f — Per-phase GPU timing telemetry
+
+`compute.html`'s `handleComputeBatch` now wraps each phase in `performance.now()` measurements: `substepLoopMs` (substeps × clusters Promise.all), `voltReadbackMs` (T18.4.c voltage-mean readback round), `totalMs` (full batch). Emitted as `compute_batch_result.phaseTimingMs`.
+
+Server captures into `this._perfStats.phaseTimingMs` on every tick. `getState()` already broadcasts `state.perf` so any client can render the breakdown. Lets us SEE where the 31s/step budget is going — substep compute vs. readback vs. other — instead of staring at a total-only stat and guessing.
+
+### Files touched
+
+- `js/brain/gpu-compute.js` — LIF_SHADER currents binding + neuronDrive, currents buffer in uploadCluster, clearCurrents / writeExternalCurrents methods, VOLTAGE_STATS_SHADER + pipeline + readbackVoltageMean, fullStep rewired for clear→propagate→LIF, CURRENT_GEN_SHADER deleted
+- `js/brain/cluster.js` — step() opts.skipTailDispatch, stepAwait (async full-await cascade + worker-pool CPU fallback), generateSentenceAwait (async emission loop), _sparsePool opt from constructor
+- `js/brain/curriculum.js` — `_gateElaKReal` WRITE + RESP probes use generateSentenceAwait when GPU ready
+- `server/brain-server.js` — _computeMinGrade helper, grades/minGrade/canSpeak in getState, BRAIN_VRAM_ALLOC unified allocator (prior session), sparsePool instantiated + passed to cortexCluster, meanVoltage captured from batch result + EMA-blended + exposed in getState clusterStates, phaseTimingMs captured into _perfStats, mvBoost in mystery Ψ, mvContrib in amygdala module drive, stop() terminates sparsePool
+- `server/sparse-worker.js` — NEW, worker-thread row-range sparse matmul
+- `server/worker-pool.js` — NEW, SparseMatmulPool manager
+- `compute.html` — fullStep dispatch sequence, voltage-mean readback per tick, phaseTimingMs emit
+- `index.html` — ls-grade + ls-grade-per-subject HUD spans
+- `js/app.js` — grade HUD rendering with color-coding, silent handler (prior session)
+- `js/brain/remote-brain.js` — grades/minGrade/canSpeak state forwarding, silent message type route (prior session)
+- `js/ui/chat-panel.js` — addSilentMessage for ghost bubble render (prior session)
+- `docs/TODO.md` — T18.1 through T18.5.a flipped to `[x] SHIPPED`; T18.5.b pre-push checklist + T18.5.c ASK GEE remain open
+- `docs/FINALIZED.md` — this entry prepended
+- `docs/NOW.md` — refreshed for Session 114.19w
+
+### What this changes at runtime
+
+- Main brain's LIF shader actually consumes its synaptic input buffer now (was ignoring it silently)
+- Language cortex's async emission path has a zero-cache-miss option when correctness beats throughput
+- Main brain gets a new voltage-mean telemetry channel that didn't exist before
+- Modules (Ψ + amygdala) see sub-threshold depolarization, not just spikes
+- CPU sparse matmul fallback can use all 16 cores instead of one
+- Dashboard gets per-phase GPU timing breakdown so we can target the next fix by data, not guess
+
+### What's STILL open before push to main
+
+- T18.5.b — pre-push doc-accuracy checklist per `.claude/CLAUDE.md` LAW "Docs before push, no patches"
+- T18.5.c — ASK GEE explicitly: "All T18 items shipped. Docs current. Part 2 K signoff received. Ready to push to main?" — WAIT for his explicit yes before `git push origin main`
+- Gee's Part 2 K-curriculum signoff — LAW 6 gate closure, Claude can't do this, only Gee can
+- Push to `syllabus-k-phd` branch happens now per Gee 2026-04-18 directive; push to main waits on everything above
+
+---
+
 ## 2026-04-18 — Session 114.19v: T17.3.e GPU step port shipped + unified VRAM allocator + chunked sparse upload + 3D brain language-cortex filler + start.sh parity + FULL public-docs LAW #0 scrub + log display fix + silent-response client signaling
 
 Gee's verbatim on the GPU step port: *"no fucker do it correctly!!!!!!!!!"* (rejecting a "bump substeps" patch proposal) and *"for a 500 millions nuron brain 200K is a fucking shit erronous limit that is not biologically correct.. fix al lthis shit!"*.

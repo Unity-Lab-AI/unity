@@ -421,6 +421,14 @@ async function handleComputeBatch(msg) {
   // buffer rules out any shared-state collision between them. Across
   // substeps, execution is serialized so each substep sees the
   // voltage state the previous one left on the GPU.
+  //
+  // T18.4.f — per-phase timing telemetry. Track wall-clock time spent
+  // in each phase (substep loop vs. voltage-mean readback) so the
+  // server can surface per-phase breakdown in the performance card
+  // instead of only seeing total step time.
+  const phaseT = { substepLoopMs: 0, voltReadbackMs: 0, totalMs: 0 };
+
+  const loopStart = performance.now();
   for (let sub = 0; sub < substeps; sub++) {
     const results = await Promise.all(ready.map(async (c) => {
       const r = await gpu.fullStep(c.name, effectiveDrives[c.name], noiseAmps[c.name]);
@@ -432,11 +440,37 @@ async function handleComputeBatch(msg) {
       acc.lastSpikeCount = r.spikeCount;
     }
   }
+  phaseT.substepLoopMs = +(performance.now() - loopStart).toFixed(2);
+
+  // T18.4.c — Once-per-tick voltage mean readback (GPU atomic reduction).
+  // Fires after the last substep so the mean reflects settled state.
+  // Running this every substep would be wasteful — mean voltage is a
+  // slow telemetry signal, one readback per tick is sufficient.
+  const vrStart = performance.now();
+  const voltMeans = await Promise.all(ready.map(async (c) => {
+    try {
+      const mean = await gpu.readbackVoltageMean(c.name);
+      return { name: c.name, meanVoltage: mean };
+    } catch (err) {
+      return { name: c.name, meanVoltage: null };
+    }
+  }));
+  for (const v of voltMeans) {
+    if (perCluster[v.name] && v.meanVoltage !== null) {
+      perCluster[v.name].meanVoltage = v.meanVoltage;
+    }
+  }
+  phaseT.voltReadbackMs = +(performance.now() - vrStart).toFixed(2);
+  phaseT.totalMs = +(performance.now() - t0).toFixed(2);
 
   ws.send(JSON.stringify({
     type: 'compute_batch_result',
     batchId,
     perCluster,
+    // T18.4.f — per-phase GPU timing (substep loop + voltage readback +
+    // total batch time). Server surfaces these as percentages of total
+    // step time so we can see where the 31s (or whatever) budget goes.
+    phaseTimingMs: phaseT,
   }));
 
   // Telemetry

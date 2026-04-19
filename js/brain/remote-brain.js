@@ -265,6 +265,12 @@ export class RemoteBrain extends EventEmitter {
     if (serverState.sharedMood) this.state.sharedMood = serverState.sharedMood;
     if (serverState.perf) this.state.perf = serverState.perf;
     if (serverState.growth) this.state.growth = serverState.growth;
+    // T18.3.b — forward grade state (per-subject map + minGrade + canSpeak)
+    // so the HUD can render Unity's lowest passing grade as a persistent
+    // visible element instead of forcing the user to type /curriculum status.
+    if (serverState.grades) this.state.grades = serverState.grades;
+    if (serverState.minGrade) this.state.minGrade = serverState.minGrade;
+    if (typeof serverState.canSpeak === 'boolean') this.state.canSpeak = serverState.canSpeak;
 
     // Synthesize spike array for 3D visualization.
     // Server runs millions of neurons — render shows proportional sample.

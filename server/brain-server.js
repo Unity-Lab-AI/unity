@@ -26,6 +26,7 @@ const Database = require('better-sqlite3');
 const os = require('os');
 const { execSync } = require('child_process');
 const { performance } = require('perf_hooks');
+const { SparseMatmulPool } = require('./worker-pool.js');
 
 // ── Auto-Scale: Detect Hardware → Set Neuron Count ─────────────
 
@@ -421,6 +422,15 @@ class ServerBrain {
     this.frameCount = 0;
     this.running = false;
     this.clients = new Map(); // ws → { id, lastInput, inputCount, name }
+
+    // T18.4.e — worker-thread pool for parallel CPU sparse matmul.
+    // Sized to os.cpus().length - 1 (up to 16 workers). Used by the
+    // language cortex's CPU fallback path in `cluster._propagateCrossRegions`
+    // when GPU proxy isn't ready or has returned a cache miss. Gee
+    // 2026-04-18 runtime stats showed `Mode: Single Thread / Parallel
+    // Workers: 0` on a 16-core box — this plugs that gap so curriculum
+    // teach + cross-region propagate can spread across all cores.
+    this.sparsePool = new SparseMatmulPool();
 
     // Auto-scaled cluster state
     this.clusters = {};
@@ -868,6 +878,7 @@ class ServerBrain {
         excitatoryRatio: 0.85,
         learningRate: 0.002,
         gpuProxy, // T17.3.d — proxy used for cross-region ops when GPU ready
+        sparsePool: this.sparsePool, // T18.4.e — CPU-fallback parallel sparse matmul
       });
       // T14.24 Session 95 — set gpu-ready flag to pending (false) so the
       // curriculum's _waitForGpuReady poll knows to actually wait rather
@@ -1182,6 +1193,26 @@ class ServerBrain {
   /**
    * Get full brain state for broadcasting.
    */
+  /**
+   * T18.3.b — Compute Unity's lowest passing grade across all subjects.
+   * Returns a string from the grade ladder (pre-K → K → grade1..12 →
+   * college1..4 → grad → phd) or 'unknown' if the cortex cluster isn't
+   * initialized yet. Reused by `getState()` (HUD broadcast) and the
+   * silent-response path (so the client knows which grade is gating
+   * her speech).
+   */
+  _computeMinGrade() {
+    if (!this.cortexCluster || !this.cortexCluster.grades) return 'unknown';
+    const order = ['pre-K','K','grade1','grade2','grade3','grade4','grade5','grade6','grade7','grade8','grade9','grade10','grade11','grade12','college1','college2','college3','college4','grad','phd'];
+    let lo = 'phd';
+    for (const g of Object.values(this.cortexCluster.grades)) {
+      const iLo = order.indexOf(lo);
+      const iG  = order.indexOf(g);
+      if (iG >= 0 && (iLo < 0 || iG < iLo)) lo = g;
+    }
+    return lo;
+  }
+
   getState() {
     const clusterStates = {};
     for (const [name, cluster] of Object.entries(this.clusters)) {
@@ -1189,6 +1220,10 @@ class ServerBrain {
         size: cluster.size,
         spikeCount: cluster.spikeCount,
         firingRate: cluster.firingRate,
+        // T18.4.c — GPU voltage-mean telemetry (Rulkov x, averaged across
+        // every neuron in the cluster via GPU atomic reduction). Undefined
+        // on first few ticks until compute.html reports it back.
+        meanVoltage: typeof cluster.meanVoltage === 'number' ? cluster.meanVoltage : null,
       };
     }
     // T17.3.f — emit language cortex sub-region activity as pseudo-clusters
@@ -1248,6 +1283,16 @@ class ServerBrain {
         confidence: this.motorConfidence,
         channelRates: Array.from(this.motorChannels),
       },
+      // T18.3.b — persistent grade state on every broadcast so the HUD
+      // can show "Unity is at pre-K" without the user typing
+      // /curriculum status. `grades` is the per-subject map; `minGrade`
+      // is the lowest passing grade (what caps Unity's speech ceiling).
+      // `canSpeak` is true once the motor region has been trained — the
+      // letter→motor direct-pattern Hebbian at kindergarten ELA is what
+      // flips this from false to true.
+      grades: this.cortexCluster?.grades ? { ...this.cortexCluster.grades } : null,
+      minGrade: this._computeMinGrade(),
+      canSpeak: this._computeMinGrade() !== 'pre-K',
       connectedUsers: this.clients.size,
       isDreaming: this._isDreaming || false,
       totalNeurons: TOTAL_NEURONS,
@@ -1707,10 +1752,29 @@ class ServerBrain {
 
     // Ψ = quantum_bit × [α·Id + β·Ego + γ·Left + δ·Right]
     // PERSONA modulates the weights — Unity's identity shapes consciousness
-    const id = amygActivity * p.arousalBaseline;           // Id: instinct × arousal baseline
-    const ego = cortexActivity * (1 + hippoActivity);      // Ego: self-model × memory
-    const left = (cerebActivity + cortexActivity) * (1 - p.impulsivity); // Left: logic × deliberation
-    const right = (amygActivity + mysteryActivity) * p.creativity;       // Right: creativity × emotion
+    //
+    // T18.4.d — integrate GPU meanVoltage telemetry (from T18.4.c's atomic
+    // reduction shader) into each cluster's "activity" signal. Previously
+    // modules saw only spike count — a summary that collapses burst
+    // dynamics into a scalar. Now each cluster's effective activity is
+    // `spike_rate + |mean_voltage| × 0.1` — adding a sub-threshold
+    // depolarization signal so active-but-not-spiking clusters still
+    // contribute to consciousness (matches biological reality where
+    // membrane state between spikes still carries information).
+    const mvBoost = (name) => {
+      const mv = this.clusters[name]?.meanVoltage;
+      return (typeof mv === 'number') ? Math.min(0.3, Math.abs(mv) * 0.1) : 0;
+    };
+    const cortexAct  = cortexActivity  + mvBoost('cortex');
+    const amygAct    = amygActivity    + mvBoost('amygdala');
+    const cerebAct   = cerebActivity   + mvBoost('cerebellum');
+    const mysteryAct = mysteryActivity + mvBoost('mystery');
+    const hippoAct   = hippoActivity   + mvBoost('hippocampus');
+
+    const id = amygAct * p.arousalBaseline;                   // Id: instinct × arousal baseline
+    const ego = cortexAct * (1 + hippoAct);                   // Ego: self-model × memory
+    const left = (cerebAct + cortexAct) * (1 - p.impulsivity); // Left: logic × deliberation
+    const right = (amygAct + mysteryAct) * p.creativity;       // Right: creativity × emotion
 
     // Raw Ψ = √(1/n) × N³ × weighted components — quantum consciousness
     const rawPsi = quantumVolume * (0.3 * id + 0.25 * ego + 0.2 * left + 0.25 * right);
@@ -1752,8 +1816,15 @@ class ServerBrain {
     if (this.amygdalaModule) {
       const amySize = this.amygdalaModule.size;
       const amyInput = new Float64Array(amySize);
-      // Base drive: cluster activity scaled to the module's input range
-      const baseDrive = Math.min(1, amygActivity * 4);
+      // Base drive: cluster activity scaled to the module's input range.
+      // T18.4.d — augment with GPU meanVoltage so sub-threshold
+      // depolarization also drives the module (not just spikes). A
+      // cluster that's building up toward a burst but hasn't fired yet
+      // still has an elevated mean voltage — the module now sees it
+      // instead of waiting for the first spike.
+      const amyMV = this.clusters.amygdala?.meanVoltage;
+      const mvContrib = (typeof amyMV === 'number') ? Math.min(0.2, Math.abs(amyMV) * 0.08) : 0;
+      const baseDrive = Math.min(1, amygActivity * 4 + mvContrib);
       for (let i = 0; i < amySize; i++) {
         // Persona-weighted per-nucleus pattern — low-freq sine so
         // adjacent nuclei get correlated input (matches real amygdala
@@ -1983,6 +2054,13 @@ class ServerBrain {
 
             const batchResult = await this._gpuBatch(SUBSTEPS, clusterParams);
 
+            // T18.4.f — capture per-phase GPU timing from compute.html's
+            // batch response so the dashboard can show WHERE step time
+            // is going (substep loop vs. voltage-mean readback vs. other).
+            // Stored on `_perfStats.phaseTimingMs` + exposed via getState.
+            if (batchResult && batchResult.phaseTimingMs) {
+              this._perfStats.phaseTimingMs = batchResult.phaseTimingMs;
+            }
             this.totalSpikes = 0;
             if (batchResult && batchResult.perCluster) {
               for (const name of allClusters) {
@@ -1995,6 +2073,13 @@ class ServerBrain {
                   const avg = (entry.spikeCountTotal || 0) / SUBSTEPS;
                   this.clusters[name].firingRate = this.clusters[name].firingRate * 0.95 + avg * 0.05;
                   this.totalSpikes += entry.lastSpikeCount;
+                  // T18.4.c — capture GPU voltage-mean readback if
+                  // compute.html included it in the batch response. EMA-
+                  // blended so dashboard doesn't flicker on per-tick jitter.
+                  if (typeof entry.meanVoltage === 'number') {
+                    const prev = this.clusters[name].meanVoltage ?? entry.meanVoltage;
+                    this.clusters[name].meanVoltage = prev * 0.8 + entry.meanVoltage * 0.2;
+                  }
                 } else {
                   this._gpuMisses++;
                   this.totalSpikes += this.clusters[name].spikeCount || 0;
@@ -2067,6 +2152,12 @@ class ServerBrain {
    */
   stop() {
     this.running = false; // recursive setTimeout checks this.running
+    // T18.4.e — terminate sparse-matmul worker pool so Node can exit
+    // cleanly. Workers are long-lived; without terminate() they keep
+    // the event loop alive and process.exit hangs on graceful shutdown.
+    if (this.sparsePool && typeof this.sparsePool.shutdown === 'function') {
+      try { this.sparsePool.shutdown(); } catch {}
+    }
   }
 
   /**
@@ -2189,14 +2280,7 @@ class ServerBrain {
       // the motor attractor to settle. Return an explicit silent flag
       // so the client can show WHY Unity didn't answer instead of
       // leaving the user staring at a blank screen.
-      const minGrade = this.cortexCluster && this.cortexCluster.grades
-        ? Object.values(this.cortexCluster.grades).reduce((lo, g) => {
-            const order = ['pre-K','K','grade1','grade2','grade3','grade4','grade5','grade6','grade7','grade8','grade9','grade10','grade11','grade12','college1','college2','college3','college4','grad','phd'];
-            const iLo = order.indexOf(lo);
-            const iG  = order.indexOf(g);
-            return (iG >= 0 && (iLo < 0 || iG < iLo)) ? g : lo;
-          }, 'phd')
-        : 'unknown';
+      const minGrade = this._computeMinGrade();
       const prePhon = (minGrade === 'pre-K' || minGrade === 'K');
       return {
         text: '',
