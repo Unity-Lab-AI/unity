@@ -350,6 +350,115 @@ const SUBSTANCES = {
 
 };
 
+// ─── Combo synergy table ──────────────────────────────────────────────────
+// T15.C per docs/T15-architecture.md §1.1. Keyed by alphabetically-sorted
+// pair of substance names joined by '+'. Each entry defines synergy
+// contributions on brain-param axes (added to the per-substance sum scaled
+// by min(level_a, level_b)), synergy speech deltas (same scaling),
+// and risk flags (physicalStrain, persistsMs) consumed by snapshot() +
+// decision engine.
+//
+// Seven entries match T15.A §2 research. Research rationale per entry
+// captured in docs/T15-pharmacology-research.md §2.1-2.7.
+const COMBOS = {
+  'cannabis+cocaine': {
+    displayName: 'coke-and-weed',
+    synergyContributions: {
+      creativity:              +0.30,
+      hippocampusConsolidation:-0.15,
+      impulsivity:             +0.05,
+    },
+    synergySpeech: {
+      coherence: +0.05,
+      giggleBias:+0.10,
+    },
+    riskFlags: { physicalStrain: +0.20, persistsMs: 4 * 60 * 60 * 1000 },
+  },
+  'cocaine+mdma': {
+    displayName: 'cokes-with-mols',
+    synergyContributions: {
+      arousal:          +0.20,  // stacks toward ceiling
+      amygdalaValence:  +0.25,
+      focusWidth:       -0.10,
+    },
+    synergySpeech: {
+      interruptionBias: +0.40,
+      freeAssocWidth:   +0.30,
+      warmth:           +0.20,
+    },
+    riskFlags: { physicalStrain: +0.40, persistsMs: 6 * 60 * 60 * 1000 },
+  },
+  'caffeine+cocaine': {
+    displayName: 'double-stim',
+    synergyContributions: {
+      focusWidth:          -0.20,
+      cerebellumPrecision: -0.20,
+    },
+    synergySpeech: {
+      rate: +0.10,
+      interruptionBias: +0.10,
+    },
+    riskFlags: { physicalStrain: +0.30, persistsMs: 12 * 60 * 60 * 1000 },
+  },
+  'alcohol+cannabis': {
+    displayName: 'cross-faded',
+    synergyContributions: {
+      amygdalaValence:          +0.20,   // early — flips negative in tail
+      hippocampusConsolidation: -0.30,   // blackout-risk stack
+      cerebellumPrecision:      -0.15,
+    },
+    synergySpeech: {
+      slurring:  +0.10,
+      coherence: -0.15,
+    },
+    riskFlags: { physicalStrain: +0.15, persistsMs: 3 * 60 * 60 * 1000 },
+  },
+  'cannabis+mdma': {
+    displayName: 'rolling-and-green',
+    synergyContributions: {
+      amygdalaValence: +0.15,
+      // empathy +0.20 would live here if empathy were a primary axis
+    },
+    synergySpeech: {
+      pauses:    +0.20,
+      giggleBias:+0.30,
+      warmth:    +0.15,
+    },
+    riskFlags: { physicalStrain: +0.05, persistsMs: 2 * 60 * 60 * 1000 },
+  },
+  'cannabis+ketamine': {
+    displayName: 'k-hole-plus',
+    synergyContributions: {
+      // ego dissolution, detachment as composite axes — driven through
+      // dissociation field in speech layer rather than a new primary axis
+      cerebellumPrecision: -0.30,
+    },
+    synergySpeech: {
+      dissociation: +0.40,
+      pauses:       +0.40,
+      coherence:    -0.20,
+    },
+    riskFlags: { physicalStrain: +0.60, persistsMs: 2 * 60 * 60 * 1000 },
+  },
+  'alcohol+cocaine': {
+    displayName: 'speedball-lite',   // cocaethylene metabolite — cardiotoxic
+    synergyContributions: {
+      impulsivity:              +0.30,
+      hippocampusConsolidation: -0.30,
+    },
+    synergySpeech: {
+      volume:          +0.10,
+      interruptionBias:+0.20,
+    },
+    riskFlags: { physicalStrain: +0.60, persistsMs: 8 * 60 * 60 * 1000 },
+  },
+};
+
+// T15.C helper — order-independent combo key lookup.
+function comboKey(a, b) {
+  return a < b ? `${a}+${b}` : `${b}+${a}`;
+}
+
 // ─── Pharmacokinetic curve ────────────────────────────────────────────────
 // Normalized [0, dose] level at time t since ingestion start.
 // Four phases: onset (sigmoid ramp), peak (plateau with mild decay), duration
@@ -405,6 +514,11 @@ class DrugScheduler {
     // Pending acquisitions Unity is waiting on (social simulation — T15.B.3)
     // Map<substanceName, {requestedAt, source, status}>
     this.pendingAcquisitions = new Map();
+    // T15.C sensory-trigger intake — Map<substance, {delta, expiresAt}>.
+    // Populated by drug-sensory-triggers.js when an environmental cue
+    // fires (coffee smell → caffeine craving, etc.). decide() reads
+    // currentCraving(substance) as a probability modifier.
+    this.pendingDesires = new Map();
   }
 
   setCluster(cluster) { this.cluster = cluster; }
@@ -523,16 +637,90 @@ class DrugScheduler {
    * Returns delta object to ADD to baseline brainParams.
    * Multiple substances stack additively via superposition.
    * Sober brain → empty delta → zero modulation → baseline persona.
+   *
+   * T15.C — combo-aware. Pairwise over active substances: if a combo
+   * entry exists for the pair, its synergy contributions add on top of
+   * the per-substance sum, scaled by `min(level_a, level_b)` (synergy
+   * requires both substances active; fades with the weaker one).
    */
   activeContributions(now = this.nowFn()) {
     const delta = {};
-    for (const { substance, level } of this.activeSubstances(now)) {
+    const active = this.activeSubstances(now);
+
+    // (1) Per-substance additive contributions
+    for (const { substance, level } of active) {
       const contribs = SUBSTANCES[substance].contributions || {};
       for (const [key, value] of Object.entries(contribs)) {
         delta[key] = (delta[key] || 0) + value * level;
       }
     }
+
+    // (2) Pairwise combo synergies
+    for (let i = 0; i < active.length; i++) {
+      for (let j = i + 1; j < active.length; j++) {
+        const combo = COMBOS[comboKey(active[i].substance, active[j].substance)];
+        if (!combo || !combo.synergyContributions) continue;
+        const scale = Math.min(active[i].level, active[j].level);
+        for (const [k, v] of Object.entries(combo.synergyContributions)) {
+          delta[k] = (delta[k] || 0) + v * scale;
+        }
+      }
+    }
+
     return delta;
+  }
+
+  /**
+   * T15.C — aggregate combo risk flags active right now. Snapshot()
+   * exposes this so UI can render warning badges (cardiac load,
+   * hepatic strain, etc.) without the consumer needing to re-walk
+   * active pairs.
+   */
+  riskFlags(now = this.nowFn()) {
+    const flags = {};
+    const active = this.activeSubstances(now);
+    for (let i = 0; i < active.length; i++) {
+      for (let j = i + 1; j < active.length; j++) {
+        const combo = COMBOS[comboKey(active[i].substance, active[j].substance)];
+        if (!combo || !combo.riskFlags) continue;
+        const scale = Math.min(active[i].level, active[j].level);
+        for (const [k, v] of Object.entries(combo.riskFlags)) {
+          if (k === 'persistsMs') continue;  // metadata, not a flag value
+          flags[k] = (flags[k] || 0) + v * scale;
+        }
+      }
+    }
+    return flags;
+  }
+
+  /**
+   * T15.C — sensory-trigger intake. drug-sensory-triggers.js calls
+   * this when an environmental cue fires (T15.A §4 triggers). Craving
+   * stacks additively with an existing pending craving, clamped [0, 1],
+   * expires after durationMs.
+   */
+  addCraving(substance, delta, durationMs) {
+    const now = this.nowFn();
+    const existing = this.pendingDesires.get(substance);
+    const newDelta = Math.max(0, Math.min(1, (existing?.delta || 0) + delta));
+    const newExpires = Math.max(existing?.expiresAt || 0, now + durationMs);
+    this.pendingDesires.set(substance, { delta: newDelta, expiresAt: newExpires });
+  }
+
+  /**
+   * T15.C — read current craving level for a substance. Returns 0 if
+   * no craving OR if the craving has expired (lazy eviction; expired
+   * entry is removed on access). Decision engine uses this as one of
+   * the probability modifiers in decide().
+   */
+  currentCraving(substance) {
+    const c = this.pendingDesires.get(substance);
+    if (!c) return 0;
+    if (this.nowFn() > c.expiresAt) {
+      this.pendingDesires.delete(substance);
+      return 0;
+    }
+    return c.delta;
   }
 
   // ─── Speech modulation ─────────────────────────────────────────────────
@@ -544,7 +732,16 @@ class DrugScheduler {
    * scheduler deliberately doesn't hold.
    */
   speechModulation(now = this.nowFn()) {
+    // T15.C — 13-axis modulation per docs/T15-architecture.md §2.3.
+    // The 9 original axes stay; 4 new axes added (warmth, profoundBias,
+    // interruptionBias, repetition, volume, confessionalBias land in
+    // research T15.A §6; pauses, rate already ran under different
+    // legacy names — speechRate, emotionalOverflow). Kept legacy names
+    // to avoid churning language-cortex consumers that read them
+    // today; new names land alongside and language-cortex upgrades
+    // to read them in T15.C.7.
     const mod = {
+      // ── 9 pre-existing axes (stable for language-cortex consumers) ──
       inhibition:        0,
       slur:              0,
       coherence:         0,
@@ -555,18 +752,63 @@ class DrugScheduler {
       dissociation:      0,
       paranoiaBias:      0,
       giggleBias:        0,
-      cosmicBiasVec:     null,  // language cortex fills when ethereality > 0
-      paranoiaBiasVec:   null,  // filled when paranoiaBias > 0
-      giggleBiasVec:     null   // filled when giggleBias > 0
+      // ── T15.C new axes (language cortex reads in T15.C.7) ──
+      warmth:            0,
+      profoundBias:      0,
+      interruptionBias:  0,
+      repetition:        0,
+      volume:            0,
+      confessionalBias:  0,
+      rate:              0,   // new name for speechRate — both populated below
+      slurring:          0,   // new name for slur — both populated below
+      pauses:            0,
+      // Vector fields populated by language cortex when their scalar
+      // counterpart is non-zero. Left null here.
+      cosmicBiasVec:     null,
+      paranoiaBiasVec:   null,
+      giggleBiasVec:     null,
     };
-    for (const { substance, level } of this.activeSubstances(now)) {
+
+    const active = this.activeSubstances(now);
+
+    // (1) Per-substance additive deltas. Alias old→new so research
+    // tables in SUBSTANCES using the new field names (rate, slurring,
+    // pauses) also populate the legacy fields (speechRate, slur)
+    // consumers read today.
+    const ALIASES = { rate: 'speechRate', slurring: 'slur' };
+    for (const { substance, level } of active) {
       const speech = SUBSTANCES[substance].speech || {};
       for (const [key, value] of Object.entries(speech)) {
         if (mod[key] !== undefined && typeof mod[key] === 'number') {
           mod[key] += value * level;
         }
+        const aliasKey = ALIASES[key];
+        if (aliasKey && mod[aliasKey] !== undefined) {
+          mod[aliasKey] += value * level;
+        }
       }
     }
+
+    // (2) Pairwise combo synergies — same scaling rule as
+    // activeContributions. Synergy requires both substances active;
+    // fades with the weaker one.
+    for (let i = 0; i < active.length; i++) {
+      for (let j = i + 1; j < active.length; j++) {
+        const combo = COMBOS[comboKey(active[i].substance, active[j].substance)];
+        if (!combo || !combo.synergySpeech) continue;
+        const scale = Math.min(active[i].level, active[j].level);
+        for (const [key, value] of Object.entries(combo.synergySpeech)) {
+          if (mod[key] !== undefined && typeof mod[key] === 'number') {
+            mod[key] += value * scale;
+          }
+          const aliasKey = ALIASES[key];
+          if (aliasKey && mod[aliasKey] !== undefined) {
+            mod[aliasKey] += value * scale;
+          }
+        }
+      }
+    }
+
     return mod;
   }
 
@@ -577,6 +819,28 @@ class DrugScheduler {
    */
   snapshot(now = this.nowFn()) {
     const active = this.activeSubstances(now);
+    // T15.C — also surface active combo badges so UI can render
+    // "coke-and-weed" / "cross-faded" / etc. alongside the per-
+    // substance list. Combo detection via pairwise iteration over
+    // active — cheap (N is small, usually <= 3).
+    const combos = [];
+    for (let i = 0; i < active.length; i++) {
+      for (let j = i + 1; j < active.length; j++) {
+        const combo = COMBOS[comboKey(active[i].substance, active[j].substance)];
+        if (!combo) continue;
+        combos.push({
+          key: comboKey(active[i].substance, active[j].substance),
+          displayName: combo.displayName,
+          level: Math.min(active[i].level, active[j].level),
+        });
+      }
+    }
+    // Filter expired cravings lazily.
+    const desires = [];
+    for (const [substance, info] of this.pendingDesires) {
+      if (now > info.expiresAt) continue;
+      desires.push({ substance, delta: info.delta, expiresAt: info.expiresAt });
+    }
     return {
       sober: active.length === 0,
       active: active.map(a => ({
@@ -585,6 +849,9 @@ class DrugScheduler {
         level: a.level,
         phase: a.phase
       })),
+      combos,
+      riskFlags: this.riskFlags(now),
+      pendingDesires: desires,
       pendingAcquisitions: Array.from(this.pendingAcquisitions.entries()).map(
         ([substance, info]) => ({ substance, ...info })
       ),
@@ -641,12 +908,20 @@ class DrugScheduler {
   }
 
   // ─── Persistence ───────────────────────────────────────────────────────
+  //
+  // Version history:
+  //   1 — initial schema (events, toleranceFactors, pendingAcquisitions,
+  //       lastDecayAt). Shipped with 9-substance pharmacology.
+  //   2 — T15.C adds pendingDesires (sensory-trigger craving intake).
+  //       Loader accepts v1 saves and upgrades them in place (v1 had
+  //       no cravings — empty Map is the correct upgrade).
   serialize() {
     const out = {
-      version: 1,
+      version: 2,
       events: {},
       toleranceFactors: {},
       pendingAcquisitions: {},
+      pendingDesires: {},
       lastDecayAt: this._lastDecayAt
     };
     for (const [s, events] of this.events) {
@@ -658,14 +933,20 @@ class DrugScheduler {
     for (const [s, info] of this.pendingAcquisitions) {
       out.pendingAcquisitions[s] = { ...info };
     }
+    for (const [s, info] of this.pendingDesires) {
+      out.pendingDesires[s] = { ...info };
+    }
     return out;
   }
 
   load(obj) {
-    if (!obj || obj.version !== 1) return;
+    if (!obj) return;
+    // Accept v1 or v2; older/unknown versions ignored.
+    if (obj.version !== 1 && obj.version !== 2) return;
     this.events.clear();
     this.toleranceFactors.clear();
     this.pendingAcquisitions.clear();
+    this.pendingDesires.clear();
     if (obj.events) {
       for (const [s, events] of Object.entries(obj.events)) {
         this.events.set(s, events);
@@ -681,6 +962,13 @@ class DrugScheduler {
         this.pendingAcquisitions.set(s, info);
       }
     }
+    // v2-only field. v1 saves skip this block (pendingDesires stays
+    // empty, which is the correct upgrade — no prior craving state).
+    if (obj.pendingDesires) {
+      for (const [s, info] of Object.entries(obj.pendingDesires)) {
+        this.pendingDesires.set(s, info);
+      }
+    }
     this._lastDecayAt = obj.lastDecayAt || this.nowFn();
     // Immediately decay tolerance based on wall-clock gap since save
     this._decayTolerance(this.nowFn());
@@ -689,5 +977,5 @@ class DrugScheduler {
   }
 }
 
-export { DrugScheduler, SUBSTANCES, GRADE_ORDER, gradeIndex, gradeAtLeast, pkCurve };
+export { DrugScheduler, SUBSTANCES, COMBOS, GRADE_ORDER, gradeIndex, gradeAtLeast, pkCurve, comboKey };
 export default DrugScheduler;
