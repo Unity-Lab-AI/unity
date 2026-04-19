@@ -385,8 +385,15 @@ export class GPUCompute {
    * @param {Float64Array} voltages — initial voltages (converted to f32)
    * @param {SparseMatrix} synapses — CSR synapse matrix
    * @param {object} lifParams — LIF parameters
+   * @param {object} [regions] — T17.7 Phase A — optional sub-region slice
+   *   metadata. Shape: `{auditory: {start, end}, visual: {start, end}, ...}`.
+   *   When supplied, stored on `bufs.regions` for subsequent slice-range
+   *   operations (`writeSpikeSlice`, `readbackSpikeSlice`,
+   *   `writeCurrentSlice`, and cluster-bound cross-projection propagate).
+   *   When absent the cluster is homogeneous — all current call sites
+   *   behave identically to pre-T17.7 code.
    */
-  uploadCluster(name, size, voltages, synapses, lifParams) {
+  uploadCluster(name, size, voltages, synapses, lifParams, regions) {
     const device = this._device;
     const vRest = lifParams?.Vrest || -65;
 
@@ -480,7 +487,55 @@ export class GPUCompute {
       buffers.synNnz = synapses.nnz;
     }
 
+    // T17.7 Phase A.1 — sub-region slice metadata. Stored on the buffer
+    // entry so subsequent slice-range accessors (writeSpikeSlice,
+    // readbackSpikeSlice, cluster-bound sparse cross-projections) can
+    // resolve sub-region addresses. Validate that every slice fits
+    // within [0, size) and that slices don't overlap — misconfigured
+    // regions would silently corrupt state, so fail loudly at upload
+    // time instead.
+    if (regions && typeof regions === 'object') {
+      const validated = {};
+      const sortedByStart = Object.entries(regions).sort((a, b) => (a[1]?.start ?? 0) - (b[1]?.start ?? 0));
+      let prevEnd = 0;
+      for (const [regName, range] of sortedByStart) {
+        const start = Number.isFinite(range?.start) ? Math.floor(range.start) : 0;
+        const end = Number.isFinite(range?.end) ? Math.floor(range.end) : 0;
+        if (start < 0 || end > size || start >= end) {
+          console.warn(`[GPUCompute] uploadCluster ${name} region ${regName}: invalid range [${start}, ${end}) vs cluster size ${size}; skipping this region.`);
+          continue;
+        }
+        if (start < prevEnd) {
+          console.warn(`[GPUCompute] uploadCluster ${name} region ${regName} [${start}, ${end}) overlaps prior region (ending at ${prevEnd}); skipping.`);
+          continue;
+        }
+        validated[regName] = { start, end };
+        prevEnd = end;
+      }
+      buffers.regions = validated;
+      if (Object.keys(validated).length > 0) {
+        console.log(`[GPUCompute] uploadCluster ${name}: ${Object.keys(validated).length} sub-regions registered (${Object.keys(validated).join(', ')})`);
+      }
+    }
+
     this._buffers[name] = buffers;
+  }
+
+  /**
+   * T17.7 Phase A.2 — get validated region range for a cluster sub-region.
+   * Returns `{start, end}` or null if the cluster doesn't have that region
+   * or wasn't uploaded with region metadata. Used by slice-range accessors
+   * + cluster-bound sparse cross-projection dispatch to resolve addresses.
+   *
+   * @param {string} clusterName
+   * @param {string} regionName — e.g. 'sem', 'motor', 'letter'
+   * @returns {{start: number, end: number} | null}
+   */
+  getRegion(clusterName, regionName) {
+    const bufs = this._buffers[clusterName];
+    if (!bufs || !bufs.regions) return null;
+    const r = bufs.regions[regionName];
+    return r ? { start: r.start, end: r.end } : null;
   }
 
   /**
