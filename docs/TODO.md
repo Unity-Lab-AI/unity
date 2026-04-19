@@ -68,10 +68,14 @@ Actual per-grade gate closure is still TODO work — performed one grade at a ti
 
 T18.5.b (pre-push doc checklist) and T18.5.c (ASK GEE for push approval) do NOT run until **every item below ships first**. Every push-gate blocker at a glance:
 
-### T17 open (1 item — T17.2 + T17.6 shipped Session 114.19x)
-1. ~~**T17.2** — Worker parallelization beyond sparse matmul~~ — **SHIPPED Session 114.19x** (Hebbian now parallelizes across worker pool via sparse-worker.js + worker-pool.js hebbianUpdate method; cluster.js intraSynapsesHebbian + _crossRegionHebbian route through pool when available)
-2. ~~**T17.6** — Live chat on upscaled cortex~~ — **code wire SHIPPED Session 114.19x** (languageCortex.generateAsync uses cluster.generateSentenceAwait full-await cascade when _gpuProxyReady; _preEmittedWords opt threads result into generate()). Empirical validation on Gee's Part 2 K run still pending — not Claude-closable.
-3. **T17.7** — Single-cortex integration (language sub-regions as slices of main 201M GPU cortex) — multi-session refactor, open
+### T17 open (T17.7 Phase C-F still open — Phases A + B shipped Sessions 114.19x/y)
+1. ~~**T17.2** — Worker parallelization beyond sparse matmul~~ — **SHIPPED Session 114.19x**
+2. ~~**T17.6** — Live chat on upscaled cortex (code wire)~~ — **SHIPPED Session 114.19x**. Empirical validation on Part 2 K run still pending (Gee-closable only).
+3. **T17.7** — Single-cortex integration — **Phases A + B SHIPPED Session 114.19y** (foundation substrate + dual-cortex bridge with Ψ-modulated hemispheric gating + biological-scale sensory injection + per-tick spike mirror + divergence → cerebellum correction). **Phases C/D/E/F still open:**
+   - **Phase C** — migrate each curriculum teach method from standalone cortexCluster to main-cortex GPU slices (one teach method per atomic commit; ~15-20 teach methods × 1 commit each)
+   - **Phase D** — migrate generation (generateSentence) to read from GPU slices instead of standalone lastSpikes
+   - **Phase E** — delete standalone cortexCluster; persistence VERSION bump 4→5; main-cortex slices become authoritative
+   - **Phase F** — Gee Part 2 K-curriculum verification + doc sweep (README, ARCHITECTURE, EQUATIONS, brain-equations.html, unity-guide.html, SETUP all reference unified cortex)
 
 ### T16 open (5 items + 3 Gee-verification — 5 shipped Session 114.19x)
 1. **T16.1.b** — Verify Ctrl+C halts cleanly on next Part 2 run — *Gee-verification, not Claude-closable*
