@@ -845,13 +845,18 @@ export class Brain3D {
     if (!state || !this._open || this._destroyed) return;
     this._lastState = state;
 
-    // Scale render count from ACTUAL server cluster sizes
-    // Re-scale if server neuron count changes (server restart with new scale)
-    const serverNeurons = state.totalNeurons || 1000;
-    if (serverNeurons > 1000 && this._lastServerNeurons !== serverNeurons) {
-      this._lastServerNeurons = serverNeurons;
+    // Scale render count from ACTUAL brain cluster sizes. Works for
+    // both deployment modes: server-connected (RemoteBrain,
+    // state.totalNeurons reflects the ~393M Node/GPU build) and
+    // GitHub-Pages-static local brain (UnityBrain, totalNeurons
+    // reflects the client-side auto-scaled count from detectResources()).
+    // Re-scale if the actual-neuron count changes (server restart
+    // with new scale, or local brain resized on tab wake).
+    const realNeurons = state.totalNeurons || 1000;
+    if (realNeurons > 1000 && this._lastRealNeurons !== realNeurons) {
+      this._lastRealNeurons = realNeurons;
       this._scaled = true;
-      TOTAL = Math.min(MAX_RENDER_NEURONS, Math.max(1000, Math.round(serverNeurons / 100)));
+      TOTAL = Math.min(MAX_RENDER_NEURONS, Math.max(1000, Math.round(realNeurons / 100)));
 
       // Read ACTUAL cluster sizes from server state — dynamic, not hardcoded
       // VISUAL BOOST: use sqrt to compress proportions — large clusters don't dominate.
@@ -951,9 +956,9 @@ export class Brain3D {
       this._vis = new Float32Array(TOTAL).fill(1);
       this._genPositions();
       if (this._gl) this._uploadStatic();
-      console.log(`[Brain3D] Scaled to ${TOTAL} render neurons (server has ${serverNeurons.toLocaleString()})`);
+      console.log(`[Brain3D] Scaled to ${TOTAL} render neurons (real brain has ${realNeurons.toLocaleString()})`);
       // Update scale displays
-      const ratio = Math.round(serverNeurons / TOTAL);
+      const ratio = Math.round(realNeurons / TOTAL);
       // Short-form number formatter for the concise landing subtitle.
       // 20000 → "20k", 677798880 → "678M", 1200000000 → "1.2B".
       const shortNum = (n) => {
@@ -966,11 +971,11 @@ export class Brain3D {
                        : ratio >= 1e3 ? `1:${(ratio / 1e3).toFixed(0)}k`
                        : `1:${ratio}`;
       const scaleInfo = this._overlay?.querySelector('.b3d-scale-info');
-      if (scaleInfo) scaleInfo.textContent = `${TOTAL.toLocaleString()} rendered · ${serverNeurons.toLocaleString()} actual (${ratio}:1) · 7 clusters`;
+      if (scaleInfo) scaleInfo.textContent = `${TOTAL.toLocaleString()} rendered · ${realNeurons.toLocaleString()} actual (${ratio}:1) · 7 clusters`;
       const actualEl = this._overlay?.querySelector('.b3d-actual-count');
-      if (actualEl) actualEl.textContent = serverNeurons.toLocaleString();
+      if (actualEl) actualEl.textContent = realNeurons.toLocaleString();
       const ratioEl = this._overlay?.querySelector('.b3d-render-ratio');
-      if (ratioEl) ratioEl.textContent = `showing 1:${ratio} (${TOTAL.toLocaleString()} of ${serverNeurons.toLocaleString()})`;
+      if (ratioEl) ratioEl.textContent = `showing 1:${ratio} (${TOTAL.toLocaleString()} of ${realNeurons.toLocaleString()})`;
       // T-landing — propagate counts into the landing-page subtitle so
       // users see the render:real ratio auto-inserted into the headline
       // copy. Rendered count is driven by TOTAL (which itself scales
@@ -980,7 +985,7 @@ export class Brain3D {
       const lsRendered = typeof document !== 'undefined' && document.getElementById('ls-rendered-count');
       if (lsRendered) lsRendered.textContent = shortNum(TOTAL);
       const lsActual = typeof document !== 'undefined' && document.getElementById('ls-actual-count');
-      if (lsActual) lsActual.textContent = shortNum(serverNeurons);
+      if (lsActual) lsActual.textContent = shortNum(realNeurons);
       const lsRatio = typeof document !== 'undefined' && document.getElementById('ls-render-ratio');
       if (lsRatio) lsRatio.textContent = shortRatio;
     }
