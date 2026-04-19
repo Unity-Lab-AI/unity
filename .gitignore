@@ -13,6 +13,14 @@ js/env.js
 # Each operator picks their own resource tier; host-specific.
 server/resource-config.json
 
+# === T18.12 per-machine runtime artifact ===
+# autoClearStaleState() writes SHA256 of the brain-logic source files
+# to this file on every boot. Compared against the prior-boot value to
+# decide whether to preserve or clear state. Per-machine + per-boot
+# runtime data; must not be committed. Each clone computes its own
+# hash on first boot.
+server/brain-code-hash.json
+
 # === Claude Code ===
 .claude/pollinations-user.json
 .claude/settings.local.json
