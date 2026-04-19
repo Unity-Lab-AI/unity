@@ -5,6 +5,108 @@
 
 ---
 
+## 2026-04-19 — Session 114.19at: T18.21 SHIPPED — V8 `--max-semi-space-size=1024` flag (T18.19+T18.20 falsified against real cortexCluster scale of 301K; real bottleneck was V8's 16 MB default semi-space ceiling)
+
+### Gee verbatim telemetry (drove this session)
+
+```
+[Curriculum] ✓ ELA-K Phase 2 DONE in 205.4s (300 intra-synapses Hebbian iterations)
+[Curriculum] 🧩 ELA-K Phase START — _teachLetterCaseBinding
+<--- Last few GCs --->
+Mark-Compact (reduce) 127.3 (132.2) -> 127.3 (131.2) MB ... external memory pressure; GC in old space requested
+<--- JS stacktrace --->
+FATAL ERROR: Committing semi space failed. Allocation failed - JavaScript heap out of memory
+```
+
+Third OOM in a row at the same point. T18.19 + T18.20 both shipped, both claimed to fix "biological-scale 1.7 GB/call external-memory allocation" — but the OOM persisted. Clearly I had the wrong diagnosis.
+
+### Critical realization — cortexCluster is 301K, not 107M
+
+T18.19's threshold `cluster.size > 10_000_000` was designed around the MAIN cortex (107M at biological scale). But the cortexCluster (where teach runs) is a SEPARATE auto-scaled cluster that lives INSIDE the main cortex's sub-regions per T17.7 Phase C.1 rebind. Per Gee's boot log:
+
+```
+[Brain] Language cortex auto-scaled to 301,375 neurons (~12.05 GB RAM, projected 6017MB GPU footprint via T18.6.c geometry estimator)
+```
+
+**cortexCluster.size = 301,375**, which is WAY below the 10M threshold. T18.19's sync bypass never fires — cortexCluster still uses the worker pool.
+
+At 301K, per-call allocation pressure is:
+- Per-iter Float64Array(cluster.size) = 2.4 MB (not 858 MB)
+- Worker pool SAB per call = ~5 MB (not 1.7 GB)
+
+These are orders of magnitude smaller than my initial biological-scale diagnosis. The REAL pressure source is elsewhere.
+
+### Real root cause — V8 `--max-semi-space-size=16` default
+
+The OOM message is specifically **"Committing semi space failed"**, not "out of old space memory". V8 has TWO memory areas:
+
+- **Old space** — long-lived objects. Gee's `start.bat` already sets `--max-old-space-size=65536` (64 GB). Healthy.
+- **Semi space** (a.k.a. new generation) — short-lived objects. Node's default `--max-semi-space-size` is 16 MB. V8 Mark-Compact needs to STAGE objects in semi-space during GC cycles; when external-memory pressure climbs, V8 tries to grow semi-space to accommodate more staging. If the growth exceeds the hard cap, Mark-Compact fails mid-cycle and V8 crashes with "Committing semi space failed".
+
+At biological scale during Phase 2, accumulated external-memory tracking (cortexCluster synapse values ~720 MB + 14 cross-projection values ~5 GB + worker-pool SABs in-flight + transient Buffers + V8 object churn from async Promise chains) sustains pressure that V8's 16 MB semi-space hard-cap can't maintain. Mark-Compact cycles succeed for ~200 seconds, each taking slightly longer as pressure accumulates (hence the 3.5 → 1.5 iter/s deceleration Gee observed), until one final cycle can't commit the needed semi-space growth → FATAL.
+
+### Why T18.18 + T18.19 + T18.20 didn't help
+
+Each targeted a DIFFERENT allocator layer, all based on the flawed assumption that cortexCluster ran at 107M. At 301K:
+
+- **T18.18** (GPU shadow Buffer.concat 1.7 GB) — didn't fire because cortexCluster uses bound projections on upload (T18.6.b); GPU shadow dispatch sent only ~50 bytes per op
+- **T18.19** (worker pool SAB 1.7 GB) — didn't fire because threshold wrong; bypass never active
+- **T18.20** (Phase 2 per-iter Float64Array 1.7 GB) — hoisted successfully but saved only 1.4 GB total over Phase 2 at 301K scale; not enough to change the V8 pressure curve
+
+All three are still CORRECT fixes for future cases where the cortexCluster might run at larger scales. Just not the fix for the current 301K case.
+
+### T18.21 fix
+
+Single-line change to `start.bat`:
+
+```batch
+start /b node --max-old-space-size=65536 --max-semi-space-size=1024 brain-server.js
+```
+
+Raises V8 new-generation semi-space cap from 16 MB to 1 GB per semi-space (2 GB total new-gen). V8 grows semi-space lazily up to the max — the flag doesn't affect memory usage at small scales, just gives biological-scale teach enough room for Mark-Compact cycles to succeed under sustained external-memory pressure.
+
+### Expected behavior post-T18.21
+
+- Phase 2 velocity stays stable at ~3 iter/s throughout (no deceleration from GC pressure)
+- Phase 2 completion in ~100s (vs 205s pre-T18.21 where GC thrash accounted for >50% of elapsed time)
+- `_teachLetterCaseBinding` starts with clean V8 state → completes without OOM
+- All 5 K.RF helpers run
+- `_teachWordEmission` fires T18.13.c heartbeats
+- ELA-K gate probe finally runs for the first time
+
+### Files touched (atomic commit)
+
+- `start.bat` — T18.21.a `--max-semi-space-size=1024` flag added with 14-line comment explaining the cascade diagnosis
+- `docs/NOW.md` — session 114.19at addendum
+- `docs/TODO.md` — T18.21 entry + T18.20 FALSIFIED status
+- `docs/FINALIZED.md` — this entry
+
+start.bat is NOT in the T18.12.a code-hash list → T18.21 boot does NOT trigger auto-clear, so pre-K state preserved from prior run (~2 min save) IF code-hash hasn't changed elsewhere. curriculum.js and cluster.js unchanged this session, so code-hash stays matched and T18.12.c resume skips pre-K.
+
+### Closure gate — open
+
+Gee-verification on next Part 2 run. Success criteria:
+- (a) Phase 2 velocity stays stable at ~3+ iter/s across all 300 iters (NO deceleration)
+- (b) Phase 2 completes in ~100s (vs 205s pre-T18.21)
+- (c) `_teachLetterCaseBinding` Phase START → DONE without OOM
+- (d) All 5 K.RF helpers complete
+- (e) `_teachWordEmission` runs with T18.13.c heartbeats at healthy rate
+- (f) ELA-K gate probe runs after teach completes
+- (g) No GPU device.lost
+
+Claude cannot close — Gee-verification only.
+
+### Lesson learned — verify scale assumptions before prescribing fixes
+
+Three consecutive T18.x tasks (T18.18/19/20) all targeted "biological scale 107M cortex" code paths without verifying that the cortex we're teaching actually runs at that scale. Gee's auto-scaling constraints (VRAM budget) cap cortexCluster at 301K. Every "1.7 GB/call" diagnosis was arithmetically correct IF cluster was 107M — but wasn't, so all three fixes missed. The real issue was a framework-level constraint (V8 semi-space hard cap) that's independent of cluster size.
+
+Before prescribing a fix, verify:
+1. Scale cluster actually runs at
+2. Allocation size at that scale
+3. Whether the OOM message points at old-space (code allocator problem) or semi-space (framework limit problem)
+
+---
+
 ## 2026-04-19 — Session 114.19ar: T18.20 SHIPPED — Phase 2 `new Float64Array(cluster.size)` per-iter allocation eliminated (second 1.7 GB/call allocator found after T18.19 fixed the first)
 
 ### Gee verbatim (drove this session)

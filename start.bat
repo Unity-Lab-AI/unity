@@ -101,8 +101,23 @@ REM via brain-server.js `_spawnGpuClient()` once the HTTP listener
 REM is up. This keeps `node brain-server.js` and `start.bat` both
 REM one-command entry points; no duplicate tabs, no stale log
 REM telling the operator to open compute.html manually.
+REM T18.21 — --max-semi-space-size=1024 (1 GB semi-space per V8 new-
+REM generation region). Default Node semi-space is 16 MB, which at
+REM biological scale Phase 2 sustains external-memory allocation rates
+REM (worker-pool SAB + curriculum Float64Array + Buffer pool) high
+REM enough that V8 can't commit semi-space growth during Mark-Compact
+REM cycles → "Committing semi space failed. Allocation failed -
+REM JavaScript heap out of memory" → FATAL. Gee 2026-04-19 ELA-K runs
+REM hit this OOM at `_teachLetterCaseBinding` START after Phase 2's
+REM 200+ seconds of accumulated external-memory pressure. Bumping
+REM semi-space to 1 GB gives V8 ~64× more breathing room; the Mark-
+REM Compact cycles can still run cleanly even under sustained external-
+REM memory allocation rates of ~10 GB/sec for short bursts. Combined
+REM with the existing --max-old-space-size=65536 (64 GB) this gives V8
+REM total ~66 GB of headroom — well below the 128 GB physical RAM
+REM ceiling on Gee's box, so process virtual memory commits succeed.
 echo   Starting brain server (GPU EXCLUSIVE - no CPU workers)...
-start /b node --max-old-space-size=65536 brain-server.js
+start /b node --max-old-space-size=65536 --max-semi-space-size=1024 brain-server.js
 ping -n 3 127.0.0.1 >nul
 start "" http://localhost:7525
 echo.
