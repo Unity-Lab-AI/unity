@@ -1,771 +1,107 @@
 # NOW — Session Snapshot
 
-> Saved: 2026-04-18 (Session 114.19w — T18 bundle: ALL 7 items shipped. HUD grade indicator + GPU current-assembly + LIF consumes currents + cross-region full-await cascade + GPU voltage-mean reduction + modules consume meanVoltage + worker-thread sparse matmul pool + per-phase GPU timing telemetry + CURRENT_GEN_SHADER dead code deleted. Pushing to `syllabus-k-phd`; NOT main until T18.5.b/c and Gee's Part 2 K signoff.)
+> Saved: 2026-04-18 (Session 114.19y — T17.7 Phases A + B FULLY shipped across 16 atomic commits on `syllabus-k-phd`. Unified-cortex substrate live on GPU with Ψ-modulated hemispheric gating + cerebellum-handled divergence correction. Phases C/D/E/F still open before main-branch push.)
 
-## Session 114.19w — T18 bundle (all 7 items)
+## Current state of `syllabus-k-phd`
 
-Gee directive: *"do all of T18 in order t that is correct till all are correctly implimented into the full brain eqautiaional simulation as full sustems implimentation, not vistigial organ code"*.
+Latest commit: `9bd5a00`. Working tree clean. All 16 commits pushed to `origin/syllabus-k-phd`.
 
-- **T18.3.b HUD grade indicator.** Server `_computeMinGrade()` helper; getState emits `grades` + `minGrade` + `canSpeak`; remote-brain forwards; index.html landing-bar shows color-coded minGrade + per-subject line.
-- **T18.4.a GPU current-assembly + LIF consumes currents.** Diagnosed that main brain was running with zero synaptic coupling (LIF shader declared currents binding but never read it; SYNAPSE_PROPAGATE_SHADER was never dispatched). Fixed: re-added `currents` buffer, LIF now uses `neuronDrive = effectiveDrive + currents[i]`, fullStep runs clear→propagate→LIF each substep, added `clearCurrents()` + `writeExternalCurrents()` helpers. Deleted vestigial CURRENT_GEN_SHADER.
-- **T18.4.b cross-region full-await cascade.** `cluster.stepAwait(dt)` + `generateSentenceAwait()` — fire all 14 cross-projection + intra-synapse GPU propagates, `Promise.all` with 1s timeout guard, then synchronous core step with `skipTailDispatch`. Wired into curriculum `_gateElaKReal` WRITE + RESP probes (real consumer).
-- **T18.4.c GPU voltage-mean reduction.** `VOLTAGE_STATS_SHADER` atomic i32 reduction (scaled ×1000), `readbackVoltageMean` method, fired once per tick in compute.html, shipped back via `perCluster.meanVoltage`, server EMA-blends + exposes in getState.
-- **T18.4.d module equations consume meanVoltage.** Mystery Ψ components + amygdala module drive both get sub-threshold `mvBoost` / `mvContrib` terms from T18.4.c telemetry — richer signal than spike count alone.
-- **T18.4.e worker-thread pool.** New `sparse-worker.js` + `worker-pool.js`; `SparseMatmulPool` sized to 16 cores with SharedArrayBuffer zero-copy; `cluster.js stepAwait` parallelizes CPU-fallback sparse matmul across workers when GPU cache misses.
-- **T18.4.f per-phase GPU telemetry.** compute.html wraps substep loop + voltage readback + total in `performance.now()`, emits `phaseTimingMs` in batch result, server captures into `_perfStats.phaseTimingMs`, getState broadcasts it for dashboard breakdown.
+## Session 114.19y — what shipped
 
-### What's STILL open before push to main (UPGRADED BLOCKER 2026-04-18)
+### Architecture plan first (review artifact before any code)
 
-Gee's 2026-04-18 verbatim follow-up: *"all this needs to be in the todso and properly documented: [T17 + T16 + T15 open items] ... and all that in the todo need to be finished before we do this: T18.5.b ... T18.5.c"*.
+`docs/T17.7-single-cortex-architecture.md` — 6-phase migration plan for collapsing the separate language `cortexCluster` into the main 201M-GPU `cortex` cluster as slice-indexed sub-regions. Gee's 4 verbatim decisions + Mystery Ψ binding constraint (section 3.5) locked in before any commit touched code.
 
-The push gate now requires EVERY open T17 + T16 + T15 item to ship first, then Gee's Part 2 K signoff, then T18.5.b doc sweep, then T18.5.c explicit Gee approval. See `docs/TODO.md` "PUSH-TO-MAIN BLOCK LIST" at the top for the full at-a-glance list.
+**Gee's 4 decisions, verbatim:**
+1. **Homogeneous-cortex intra-synapse matrix:** *"NO our wave fucntions activaes it in sync so matrix is alreaady there with our fractilization."* — no explicit matrix; Kuramoto oscillation phase coupling + fractal propagation substitute.
+2. **Sensory text injection size:** *"yes, it need biological scale fit to auto scale on GPU"* — 20% of main cortex (Wernicke phon slice).
+3. **3D render vs L/R gating:** *"if we keep as is the non centered ones need mirroring to other brain side too as they are onlky one sided.. and proper left right gating"* — keep anatomical per-region point-clouds, add bilateral mirroring + proper L/R gating as REAL equation (not just render).
+4. **Divergence handling:** *"just like left right gateing our brain doesnt error. thats the brain centers error correction handeling of the brain center that handles eror correction"* — cerebellum's existing error-correction equation absorbs divergence. No strict abort gate.
 
-**Blocker summary:**
-- T17 open — 3 items (T17.2 worker parallelization, T17.6 live chat on upscaled cortex, T17.7 single-cortex integration)
-- T16 open — 13 items (Ctrl+C verify, K-word emission chase, per-grade vocab audit + expansion, two-word/free-response writing, full-mind gate redesign)
-- T15 open — full drug scheduler rebuild (A research, B architecture, C implementation, D verification)
-- Gee's Part 2 K-curriculum signoff per LAW 6 — Claude can't close, only Gee
-- T18.5.b pre-push doc sweep (runs only after all above close)
-- T18.5.c ASK GEE for push approval (runs only after T18.5.b closes)
+**Mystery Ψ binding constraint (section 3.5 of the plan):** *"remmebr the main equation mystery cant not have it involved"*. Every equation T17.7 introduces MUST include Ψ as an active term.
 
-### Push to `syllabus-k-phd` happens now per Gee's 2026-04-18 directive. NO main-branch push until everything above closes.
+### Phase A — GPU substrate (4 commits)
 
----
+- **A.1** `uploadCluster` accepts `regions` metadata, validates at upload, exposes `getRegion(cluster, name, sideFilter?)`
+- **A.2** Region `side` attribute (`left`/`right`/`bilateral`/`center`) + `GPUCompute.hemisphereGate(side, Ψ) = 0.5 + 0.5·sigmoid(Ψ·4.0)` static helper
+- **A.3** `writeSpikeSlice` / `writeCurrentSlice` / `readbackSpikeSlice` slice accessors + LIF_SHADER binding 4 `regionGates` + `lookupRegionGate(i, N)` fn + `neuronDrive = (effectiveDrive + currents[i]) * regionGate` main equation. `updateRegionGates(cluster, Ψ)` helper computes per-region gate values; compute_batch message carries Ψ; compute.html calls updateRegionGates per batch.
+- **A.4** Cluster-bound sparse cross-projections — `uploadSparseMatrix(..., binding)` + `_beginSparseUpload(..., binding)` accept `{srcCluster, srcRegion, dstCluster, dstRegion}`. Shaders read `srcOffset + colIdx[k]`, write `dstOffset + i`. Cross-projections now address slices of live cluster buffers (saves ~8 GB VRAM at biological scale).
 
-## Session 114.19v — what shipped
+### Phase B — dual-cortex bridge (4 commits)
 
-### T17.3.e GPU step port — CPU_SINGLE_THREAD_DISPATCH_BUDGET REMOVED
+- **B.1** Main cortex `gpu_init` message carries regions metadata with L/R side tags. 4 left (letter/phon/fineType/motor) + 4 bilateral (auditory/visual/free/sem). Other clusters get single-region bilateral or center. Ψ hemisphere gate activates automatically per batch.
+- **B.2** `write_current_slice` WebSocket message (dense + sparse formats). `injectText` lands on main cortex `phon` (Wernicke) = 6M neurons biological scale (vs prior 5K fixed). Amygdala social bump ships sparse (2 KB vs 100 MB dense at biological amygdala size).
+- **B.3** `write_spike_slice` WebSocket message (sparse-only). Server `_mirrorCortexRegions()` fires once per tick — mirrors standalone `cortexCluster.lastSpikes` into main-cortex GPU slices via nearest-neighbor upsample. Bandwidth-guarded (50K spikes × 8 regions = ~1.6 MB/tick).
+- **B.4** Per-region spike readback in compute_batch result. Server `_computeCortexDivergence` computes firing-rate divergence per region. Ψ-modulated correction contribution `-divergence · (1 + Ψ · 0.25) · 3` folded into cortex `errorCorrection` alongside cerebellum feedback. Divergence exposed as `state.cortexDivergence` for dashboard telemetry.
 
-`cluster.step()` now consumes GPU-cached currents via one-tick-lag async model. Tick N reads `_cachedIntraCurrents` + `_cachedCrossCurrents` populated by tick N-1's async dispatch, runs LIF + spike counting, then fires the NEXT dispatch via `_dispatchGpuPropagates()` before returning. First-tick + cache-miss fall back to CPU `synapses.propagate()` so the sim never stalls. The 200K-neuron CPU dispatch budget cap Gee called "a fucking shit erronous limit that is not biologically correct" is gone — language cortex sizing is now bounded only by VRAM allocator + V8 heap + free RAM.
+### Earlier in session (pre-T17.7 wins)
 
-### Unified VRAM allocator (`BRAIN_VRAM_ALLOC`)
+- **T17.2** — `server/sparse-worker.js` gains `hebbian` message type; `worker-pool.js` gains `hebbianUpdate(matrix, pre, post, lr)`; cluster's `intraSynapsesHebbian` + `_crossRegionHebbian` route through pool when `_sparsePool.ready`
+- **T17.6** — `languageCortex.generateAsync` runs `cluster.generateSentenceAwait` when `_gpuProxyReady`, threads raw sentence via `opts._preEmittedWords`
+- **T16.2.b/c** — dictionary.learnWord in `_teachWordEmission` + `_teachPhonemeBlending` so K-emission words land in dictionary
+- **T16.3.a** — `scripts/audit-grade-vocab.mjs` + report (15/19 grades below productive norm, ~259K word gap)
+- **T16.4.b** — two-word phrase probe in `_gateElaKReal`
+- **T16.4.c** — free-response writing probe
+- **T16.5.a** — `docs/gate-probe-coverage.md` (8 probes → ~25% module coverage, exhaustive gap list)
+- **TODO proper MOVE** — shipped items now condensed to one-line pointers in TODO with full descriptions preserved in FINALIZED
+- **Push-gate upgrade** — T18.5.b/c explicitly blocked on T17+T16+T15 all closing
 
-Replaced the two independent sizers that used to double-book VRAM (main brain picked 671M, language cortex picked 200K, total 17.6 GB overflow on 16 GB card) with a single source of truth. `brainBudgetBytes = (vramCapMB − osReserveVramMB) × 1024²`, then `perRegionBytes[key] = brainBudgetBytes × biologicalWeights[key]`. Biological weights from `server/resource-config.json`: language_cortex 45%, cerebellum 20%, cortex 15%, hippocampus 6%, amygdala 4%, basalGanglia 4%, hypothalamus 3%, mystery 3%.
+### Mystery Ψ in the main equation (per Gee 'cant not have it involved')
 
-### Chunked binary sparse matrix upload (type=4 frame)
+Ψ appears in THREE distinct terms of the firing equation post-Session 114.19y:
 
-All 15 language cortex matrices (1 intra + 14 cross-projections) now upload via chunked binary WebSocket frames with 4-byte alignment pad. Megabyte-sized chunks stream without blocking Node or compute.html.
+1. **Global gain** (pre-existing): `gainMultiplier = 0.9 + Ψ · 0.05` baked into `effectiveDrive`
+2. **Per-region hemispheric binding** (NEW, Phase A.3): `hemisphereGate = 0.5 + 0.5 · sigmoid(Ψ · 4.0)` applied per neuron in LIF_SHADER
+3. **Divergence correction gain** (NEW, Phase B.4): `(1 + Ψ · 0.25) · 3` on cortex error correction
 
-### 3D brain language-cortex filler (8 sub-regions)
+Consistent with consciousness architecture: Ψ modulates overall cortical gain AND shapes hemispheric integration AND controls cerebellum correction strength. Matches Gazzaniga split-brain + Baars global-workspace theory.
 
-Per Gee's "fill the spotty and holey areas" directive, `js/ui/brain-3d.js` gained 8 anatomically-placed language cortex sub-region clusters: `lang_motor` (Broca's), `lang_phon` (Wernicke's), `lang_sem` (angular gyrus), `lang_letter` (VWFA), `lang_visual` (V1), `lang_auditory` (Heschl's), `lang_fineType` (temporal pole), `lang_free` (PFC). Gee confirmed on boot: *"i see the new systems in the render"*.
+## What's STILL open before push to main (binding per Gee 2026-04-18)
 
-### start.sh ↔ start.bat parity
+### T17.7 remaining phases
+- **Phase C** — migrate ~15-20 curriculum teach methods to GPU slice writes (per-method commits)
+- **Phase D** — generation migration (`generateSentence` / `generateSentenceAwait` read motor via `readbackSpikeSlice`)
+- **Phase E** — delete standalone `cortexCluster` + persistence VERSION 4→5 bump
+- **Phase F** — Part 2 verification + full doc sweep (README / ARCHITECTURE / EQUATIONS / HTMLs)
 
-Linux/Mac boot script gained esbuild install check, `npm run build` with error handling (was inline `npx esbuild ... 2>/dev/null` swallowing errors), and `--max-old-space-size=65536` on node invocation.
+### T16 remaining
+- **T16.1.b** — Ctrl+C halts cleanly (Gee Part 2 verification)
+- **T16.2.a / T16.2.d** — sem-write fix verification + K-word usage audit (Gee Part 2)
+- **T16.5.b / T16.5.c / T16.5.d** — full-mind K gate redesign (blocked on Gee design-review; Common Core K.RF/K.W/K.L + DIBELS/STAR/AIMSweb rubrics)
 
-### FULL public-docs + HTML LAW #0 scrub
+### T15 full rebuild (not blocking push but in the block list per Gee's upgrade)
+- **T15.A** — pharmacology research (11 substances + 7 combos + 7 adult patterns + 7 sensory triggers + 8 brain mappings + 13 speech effects + 8 grade gates)
+- **T15.B** — architecture (drug-scheduler module + persona rewrite + sensory wiring + UI + speech integration + decision engine + persistence)
+- **T15.C** — implementation
+- **T15.D** — manual verification (V1-V11)
 
-108 workflow task numbers stripped from 9 public-facing files. Every T14/T15/T11/R4/R14/U302/U283/Phase 11/Life-G7/grade label removed and replaced with descriptive language. Also updated outdated content — cluster count 7→8 everywhere, stale neuron counts replaced with biological VRAM-weight percentages, slot-scorer section in `unity-guide.html` rewritten as tick-driven motor emission.
+### Push sequence (per T18.5)
+1. All of the above close
+2. **T18.5.b** pre-push doc accuracy sweep (LAW: Docs before push, no patches)
+3. **T18.5.c** ASK GEE explicitly for push approval — WAIT for his explicit yes
+4. Gee's Part 2 K-curriculum signoff per LAW 6
+5. `git push origin main`
 
-| File | Task numbers stripped |
-|------|----------------------|
-| README.md | 12 |
-| SETUP.md | 8 |
-| brain-equations.html | 56 |
-| compute.html | 12 |
-| index.html | 4 |
-| gpu-configure.html | 2 |
-| dashboard.html | 1 |
-| unity-guide.html | 1 |
+**`syllabus-k-phd` branch is the working branch.** NO main-branch push until every step above closes.
 
-### Log display fix
-
-`server/brain-server.js:2919` no longer does `.slice(0, 50)` on the user-text console line. Full text with char count now logs. Gee caught it ("looks like it was truncated").
-
-### Silent-response WebSocket signaling
-
-New `silent` frame type emitted when `languageCortex.generateAsync()` returns empty. Carries `reason` / `detail` / `minGrade` fields so the client can show WHY Unity went quiet (pre-K / motor unstable / language not ready). Client-side render is T18.2.b, still TODO.
-
----
-
-## Gee's 2026-04-18 critique — logged as T18 in TODO
-
-Runtime stats from Gee's Part 2 localhost run:
-- Step Time: 31,832 ms
-- Steps/sec: 1
-- GPU Usage: 4%
-- Mode: Single Thread
-- Parallel Workers: 0
-- Total Neurons: 393,485,631 on RTX 4070 Ti SUPER / 16 GB VRAM
-
-Four verbatim items captured in `docs/TODO.md` §T18:
-1. T18.1 — "looks like it was truncated" → log display shipped
-2. T18.2 — "the brain ignored it and never reesponded" → silent-response server emit shipped; client render still TODO
-3. T18.3 — "does it need to pass beforee the grade level changes and learnings will actually stick?" → clarification logged: learnings stick continuously, speaking requires motor-region training
-4. T18.4 — "fixc our GPU algorithm ... only using 4%" → new kernel-coverage block: current-assembly, cross-region await cascade, reductions, module-equation kernels, worker parallelization, diagnostic telemetry
-
-**Push gate (T18.5):** NO main-branch push until every T18 item ships + Gee's Part 2 K signoff received + Gee explicitly says push.
-
----
-
-## Session 114.19u — what shipped
-
-### CPU_LANGUAGE_CORTEX_CAP constant DELETED
-
-Replaced with auto-scale function taking the min of three budgets:
-1. **Free RAM × 50%** via `os.freemem()`
-2. **V8 heap cluster-budget** via `v8.getHeapStatistics().heap_size_limit` minus 2 GB reserve
-3. **Configured cortex** via `CLUSTER_SIZES.cortex`
-
-No hardcoded cluster-size number in the code. As hardware grows, the language cortex grows.
-
-### start.bat V8 heap bump
-
-Raised `--max-old-space-size` from 16 GB to **64 GB**. Language cortex's sparse synapse + cross-projection weights live in JS-owned typed arrays, so V8 heap ceiling directly limits achievable size. Bigger heap → bigger cortex.
-
-### Effective size on Gee's 128 GB RAM + 16 GB VRAM box
-
-- Free RAM ~117 GB × 50% = 58.5 GB → ~7.1 M neurons budget from RAM
-- V8 heap (64 GB − 2 GB reserve) → ~7.75 M neurons budget from heap
-- Configured cortex: 201 M
-- **min = ~7.1 M neurons** — 70× the prior 100 K default
-
-### Size scales, speed does NOT (yet)
-
-CPU single-thread sparse walks at 7 M neurons are ~70× slower than at 100 K. `_teachPhonemeBlending` at 7 M will run for hours per gate attempt on one core. Auto-scale unlocks SIZE; the GPU port unlocks SPEED. `DREAM_LANG_CORTEX=100000` override still available for fast iteration until the GPU port lands.
-
-### GPU port is the next real fix
-
-Gee's original message: "we need GPU for that dont we just like the rest of the brain ie THIS OIIS ONE MASSIVE SYSTEM NO FUCKIGN SHIT THAT IS JUST SIDE PROCESSES". CPU language cortex is the wrong architecture. T17.3 GPU cross-region shaders (WGSL sparse CSR matmul + cross-region Hebbian) is the next commit — that's when "millions of GPUs connected" scale becomes actually available.
-
-### Files touched
-
-- `server/brain-server.js` — auto-scale, no hardcoded cap
-- `start.bat` — V8 heap 16 GB → 64 GB
-- `docs/FINALIZED.md` — session entry prepended
-- `docs/NOW.md` — this file
-
----
-
-## Session 114.19t — shipped (committed at ce60a86)
-
-### 1. K teach rep-count boosts (3× across 9 low-exposure methods)
-
-## Session 114.19t — what shipped
-
-### 1. K teach rep-count boosts (3× across 9 low-exposure methods)
-
-Gee caught that 24 syllable words × 6 reps = 144 exposures is way below real-world K repetition. Audit of every K method showed most sit at 80-540 exposures vs 1000+ real K norms. Boosts:
-
-| Method | Before | After |
-|---|---|---|
-| _teachLetterCaseBinding | 26 × 8 = 208 | 26 × **24** = 624 |
-| _teachVowelSoundVariants | 10 × 8 = 80 | 10 × **24** = 240 |
-| _teachRhymeFamilies | 280 × 4 = 1120 | 280 × **12** = 3360 |
-| _teachSyllableCounts | 24 × 6 = 144 | 24 × **24** = 576 |
-| _teachCVCSoundIsolation | 135 × 4 = 540 | 135 × **12** = 1620 |
-| _teachPluralTransform | 46 × 6 = 276 | 46 × **18** = 828 |
-| _teachQuestionWordCategories | 12 × 8 = 96 | 12 × **24** = 288 |
-| _teachEndPunctuation | 17 × 6 = 102 | 17 × **18** = 306 |
-| _teachStoryComprehension | 18 × 6 = 108 | 18 × **18** = 324 |
-| _teachCapitalization | 27 × 5 = 135 | 27 × **15** = 405 |
-
-Phoneme blending + word emission already at 10,000+ exposures — left alone.
-
-### 2. Progress logging in slow teach loops
-
-Prior `_teachPhonemeBlending` + `_teachWordEmission` only logged at start/end — ~5-10 min of silence at 100K scale looked like a hang. Now prints `rep N/M, word X/Y` every 200 words + yields to event loop.
-
-### 3. Default scale 100K → 30K
-
-100K on CPU single-thread = 5-10 min JUST for `_teachPhonemeBlending`. Full curriculum at 100K = 30-60 min per attempt. Gee saw that as a hang. Dropping to 30K gives 3× prior 10K capacity (still meaningful discrimination gain) at ~3 min full-curriculum time. Cap stays overridable via `DREAM_LANG_CORTEX=100000`. Worker parallelization (Phase 2) or GPU shaders (Phase 3) restore 100K as a real option later.
-
-### 3D Brain rendering issue (not yet fixed)
-
-Gee asked if the popup noise-suppression fix broke 3D render. My review: no — that change only added an optional `suppressNoise` flag to `cluster.generateSentence`, routed `_internalThought` through it. Doesn't touch init/render path. Likely something else — client-side WebGL init or runtime error on page load. Need browser DevTools console output from Gee to diagnose. Logged as `T18 — 3D Brain render regression investigation (NEEDS DIAG)` in the mental queue; will take it next with concrete error info.
-
-### Files touched
-
-- `server/brain-server.js` — default scale 30K (cap env-overridable)
-- `js/brain/curriculum.js` — 10 method rep-count boosts + progress logging in phoneme-blending/word-emission
-- `docs/FINALIZED.md` — session entry prepended
-- `docs/NOW.md` — this file
-
----
-
-## Session 114.19s — shipped (committed at 1e4193d)
-
-### LAW violation scrub — task numbers out of user-visible paths
-
-## Session 114.19s — what shipped
-
-### LAW violation scrub — task numbers out of user-visible paths
-
-Gee's 2026-04-15 LAW bans task numbers in public/application output. My 114.19r log lines violated it: `[Brain] Language cortex ... (T17.1 Phase 1)` + `T14.4 sub-regions`. Plus pre-existing violations I never caught in `[Brain] Stage: trainPersonaHebbian SKIPPED (T14.22 ...)`, `[LanguageCortex] generate called without cortexCluster — T14.6 requires ...`, persistence save/load logs, `(T16.3.b shipped)` curriculum log, and `brain-equations.html` Step 6 title/description.
-
-All scrubbed. Every user-visible console/HTML path has descriptive text now, no TXX.X / Session N identifiers.
-
-### Sparse matrix init rewrite — fixes the 100K hang
-
-Prior `SparseMatrix.initRandom` allocated transient `{j, w}` objects per sparse entry. At 100K cortex with 14 cross-projections ≈ 40M entries × 40 bytes/object = **1.6GB of transient V8 heap** → GC thrashing → effective hang during constructor.
-
-Fix: direct typed-array fill (no transient objects). Two-pass: compute per-row `kPerRow` + total nnz, single allocation of final Float64/Uint32 arrays, per-row scratch Uint32Array for sampling unique column indices, fill values+colIdx directly during the sampling loop.
-
-Peak memory at 100K drops from ~2GB with thrash to ~360MB steady.
-
-### start.bat heap bump
-
-`start /b node brain-server.js` → `start /b node --max-old-space-size=16384 brain-server.js`. 16GB Node heap ceiling. Defensive — sparse init is now memory-efficient but Phase 2/3 scale work wants headroom.
-
-### What the next boot should show
-
-- NO `(TXX.X)` or `Session NNN` in any server output
-- Cluster construction completes in seconds at 100K
-- `[Brain] Language cortex = 100,000 CPU neurons. Sub-regions: letter 5000, phon 20000, sem 16700, motor 3300.`
-- `[Curriculum] K vocabulary: 1029 unique words across 32 categories` (no trailing `(T16.3.b shipped)`)
-
-### Files touched this session
-
-- `server/brain-server.js` — task-number scrub
-- `js/brain/curriculum.js` — task-number scrub on K vocabulary log
-- `js/brain/language-cortex.js` — task-number scrub on generate warning
-- `js/brain/persistence.js` — task-number scrub on save/load logs
-- `brain-equations.html` — task-number scrub on Step 6 heading + description
-- `js/brain/sparse-matrix.js` — initRandom rewrite, typed-array direct fill, no transient `{j, w}` objects
-- `start.bat` — `--max-old-space-size=16384` Node heap bump
-- `docs/FINALIZED.md` — Session 114.19s entry prepended
-- `docs/NOW.md` — this file
-
----
-
-## Session 114.19r — shipped (committed at 0091cfe)
-
-### The architectural violation
-
-## Session 114.19r T17.1 — what shipped
-
-### The architectural violation
-
-Sessions 114.19d-q stacked 14 iterative fixes trying to get PROD off zero. Every one was fighting the wrong root cause: `CPU_LANGUAGE_CORTEX_CAP = 10000` clipped language cortex to 10K while the architecture spec says "GPU EXCLUSIVE — all 7 clusters on GPU, zero CPU workers". Someone (me) labeled the full GPU-scale language cortex as "T15 scope" in a stale comment; T15 became the drug scheduler. The cap was never lifted.
-
-1029 K-vocabulary words × all the other curriculum bindings trying to coexist in a 10K-neuron cluster = destructive interference. The cap was the root cause; 14 sessions of init/noise/argmax tuning were symptom management.
-
-### T17 plan (five phases in TODO.md)
-
-1. Phase 1 — remove 10K cap, scale to 100K ✓ THIS COMMIT
-2. Phase 2 — worker-thread parallelization of cluster.step()
-3. Phase 3 — GPU cross-region shaders (WGSL sparse CSR matmul + Hebbian)
-4. Phase 4 — live chat wired to upscaled cortex
-5. Phase 5 — language sub-regions into main 201M GPU cortex
-
-### T17.1 concrete change
-
-`server/brain-server.js:619`:
-- `CPU_LANGUAGE_CORTEX_CAP = 10000` → `= 100000` (10×)
-- `DREAM_LANG_CORTEX` env var for operator override
-- Log rewording: "T17.1 Phase 1" branding, stale "T15 scope" deferral comment removed
-
-### Expected Part 2 behavior
-
-- Boot log: `[Brain] Language cortex = 100,000 CPU neurons (T17.1 Phase 1). T14.4 sub-regions: letter 5000, phon 20000, sem 16700, motor 3300`
-- `[K-DIAG] gate: ..., motor=3300, mGroup=126, sem_to_motor=3300x16700`
-- DYN-PROD `expected_slot=c(2:X.XXX) rank=?` — expecting rank to climb into top 3-5 consistently with 10× discrimination capacity
-- Curriculum walk ~10-17 min (slower but acceptable for validation). Phase 2+3 restore interactive speed later.
-
-### Files touched this session
-
-- `server/brain-server.js` — CPU cap 10K → 100K + env override + log rewording
-- `docs/TODO.md` — T17 five-phase plan + seven task checkboxes prepended
-- `docs/FINALIZED.md` — Session 114.19r T17.1 entry prepended
-- `docs/NOW.md` — this file
-
----
-
-## Session 114.19q — shipped (committed at a5ed552)
-
-### DYN-PROD firing diagnostic
-
-## Session 114.19p — what shipped (uncommitted on top of 114.19o at 8dc7d19)
-
-### The real bug
-
-Gee flagged: probes were my invention, but live chat still outputs garbage. Traced the actual chat path:
+## Commit ledger this session (16 commits, all pushed)
 
 ```
-engine.processAndRespond(text)
-  sensory.receiveText → queue
-  20 brain steps (Rulkov chaos + noise + persona mix)
-  languageCortex.generateAsync → generate
-    intentSeed = cluster.getSemanticReadout()  ← DRIFTED POST-PROCESSED BLOB
-  cluster.generateSentence(intentSeed)  ← injects blob, not GloVe(text)
+9bd5a00 TODO update — T17.7 Phases A + B shipped (Session 114.19y)
+8f4d290 T17.7 Phase B.4 — divergence → cerebellum error correction
+fc94890 T17.7 Phase B.3 — per-tick spike mirror
+bbeb11c T17.7 Phase B.2 — biological-proportion sensory injection
+9007c78 T17.7 Phase B.1 — main cortex registers 8 language sub-regions
+997ae96 T17.7 Phase A.4 — cluster-bound sparse cross-projections
+7d49c30 T17.7 Phase A.3 — slice accessors + LIF Ψ hemisphere gating
+5de3162 T17.7 Phase A.2 — region side attribute + hemisphereGate helper
+1548f62 T17.7 Phase A.1 — plan + uploadCluster regions metadata
+820fcb8 docs: upgrade push-to-main block list
+51dbaf9 TODO cleanup — shipped items properly moved to FINALIZED
+70c96be TODO sweep — Session 114.19x shipped items marked
+7e30570 T16.4.b + T16.4.c — two-word + free-response probes
+45f32d0 T16.5.a — gate-probe coverage audit
+919b61d T16.3.a — per-grade vocab audit script
+1b02eb6 T16.2.b/c — dictionary.learnWord in teach paths
+7bd0d06 T17.2 + T17.6 — Hebbian pool + generateAsync full-await
 ```
-
-Training wrote specific bindings: `sem=GloVe('cat') → motor(c)` etc. But live chat never feeds GloVe(text) — it feeds a drifted readout from 20 ticks of chaos. Trained bindings can't fire for that shape.
-
-Why garbage chat output: `hi → !`, `dog → yad`, `cat → q` — motor argmax picking random pattern that survives the settled state because no trained binding got a clean input to fire on.
-
-### Fix
-
-`engine.processAndRespond` now:
-1. Computes `sharedEmbeddings.getSentenceEmbedding(text)` immediately when user text arrives
-2. Stores on `cortex._lastUserInputEmbedding` BEFORE 20-step dynamics drift it
-3. Also stores `_lastUserInputText` for diagnostics
-
-`language-cortex.generate` now:
-1. Checks `cluster._lastUserInputEmbedding` first — if present, uses as intentSeed + clears (consume)
-2. Falls back to `getSemanticReadout` only for spontaneous/popup generation (no user input to respond to)
-
-### Signal strength comparison
-
-- Raw GloVe: dims up to ~0.2 magnitude
-- L2-normalized readout: ~0.06 magnitude
-- At injectStrength=0.6, scale 8: GloVe injection 0.96 peak vs readout 0.29 peak = **3× stronger AND cleanly shaped**
-
-### What this actually enables
-
-Previous sessions tuned probes. This session fixes CHAT. Probes already worked; the production path was reading the wrong signal. Now user turn → clean GloVe → sem region → trained sem→motor fires → motor emits right first letter → WRITE chain emits a real word.
-
-### Files touched this session
-
-- `js/brain/engine.js` — processAndRespond stores user input embedding early
-- `js/brain/language-cortex.js` — generate uses _lastUserInputEmbedding first, consumes on use
-- `docs/FINALIZED.md` — Session 114.19p entry prepended
-- `docs/NOW.md` — this file, updated header
-
----
-
-## Session 114.19o — shipped (committed at 8dc7d19)
-
-### autoClearStaleState() in brain-server.js
-
-## Session 114.19o — what shipped (uncommitted on top of 114.19n at 98dd3af)
-
-### autoClearStaleState() in brain-server.js
-
-At module load (before Brain class + sqlite open), the server auto-deletes all files in the CLAUDE.md LAW "What gets cleared" table:
-
-- brain-weights.json + -v1..-v4
-- conversations.json
-- episodic-memory.db + -wal + -shm
-- js/app.bundle.js
-
-Boot log surfaces one of three lines: auto-cleared N files, no stale state present, or partial clear with lock errors named.
-
-### Opt-out
-
-`DREAM_KEEP_STATE=1` env var disables the clear with prominent ⚠ warning.
-
-### CLAUDE.md LAW addendum
-
-The 2026-04-17 LAW section gets a 114.19o addendum documenting that manual `rm -f` is no longer required, automation runs at boot, opt-out available, and future Claude must not disable this without LAW violation being explicit.
-
-### No more "wait let me clear" before testing
-
-Commit ships → restart → auto-clear fires → curriculum runs on fresh state. One step instead of two.
-
-### Files touched this session
-
-- `server/brain-server.js` — autoClearStaleState() function + module-load call
-- `.claude/CLAUDE.md` — LAW 114.19o addendum
-- `docs/FINALIZED.md` — Session 114.19o entry prepended
-- `docs/NOW.md` — this file, updated header
-
----
-
-## Session 114.19n — shipped (committed at 98dd3af)
-
-### Fix 1 — letter↔motor reverted to 70/30
-
-## Session 114.19n — what shipped (uncommitted on top of 114.19m at 93c9a3b)
-
-### Fix 1 — letter↔motor reverted to 70/30
-
-Gee's 114.19m Part 2 log showed TALK 12%→4%. Phase 1 alphabet diagonal (letter(c)→motor(c)) was losing argmax to Phase 3 word off-diagonal (letter(c)→motor(a) for cat). With 50/50 init the off-diagonal concentrated training mass enough to beat diagonal. `EMISSION_PAIRS` reduced to `{sem-motor, motor-sem}` — letter↔motor back to 70/30 so positive bias helps diagonal dominate TALK. sem↔motor stays 50/50 for PROD benefit (no competing diagonal there).
-
-### Fix 2 — `suppressNoise` opt on generateSentence
-
-`cluster.generateSentence(intentSeed, {suppressNoise: true})` saves noiseAmplitude → drops to 0.5 → runs the tick loop → restores on return. Default false so live chat stays chaotic.
-
-### Fix 3 — popups trigger suppressNoise via `_internalThought`
-
-`brain-3d.js _describeInternalState` passes `_internalThought: true` to `lc.generate`. That opt now propagates as `suppressNoise: true` to `cluster.generateSentence`. Popups emit with noise=0.5 (same SNR as probes). Live chat (no flag) keeps noise=7.
-
-### Per Gee's "popups are part of the massive brain" confirmation
-
-Verified chain: `brain-3d._describeInternalState` → `lc.generate({_internalThought: true})` → `cluster.generateSentence({suppressNoise: true})` → `cluster.step() × maxTicks` with all 14 cross-projections + Rulkov. Same thinking path as curriculum probes. Live inputs via `engine.processAndRespond` propagate through state updates to the 3D event detector which fires popups — user input → popup chain is intact.
-
-### Files touched this session
-
-- `js/brain/cluster.js` — `EMISSION_PAIRS` shrunk; `suppressNoise` opt + save/restore around generateSentence tick loop
-- `js/brain/language-cortex.js` — `_internalThought` → `suppressNoise` wire
-- `docs/FINALIZED.md` — Session 114.19n entry prepended
-- `docs/NOW.md` — this file, updated header
-
----
-
-## Session 114.19m — shipped (committed at 93c9a3b)
-
-### Two root causes identified in 114.19l Part 2 data
-
-## Session 114.19m — what shipped (uncommitted on top of 114.19l at 578748f)
-
-### Two root causes identified in 114.19l Part 2 data
-
-**1. Positive-bias init drowns Hebbian training.** Cross-projection init was `initRandom(density, 0.7, 0.2)` — 70% excitatory gives mean +0.04 per weight × ~1500 connections per motor neuron × 141 active sem dims = baseline +5.6 per motor neuron from init alone. Training (+6 total across 12 reps × 50 overlapping word pairs) barely exceeds baseline. Signal/noise ~1.1.
-
-**2. Rulkov chaos variance.** 12-tick single-run probe samples a chaotic trajectory. Attempt 2 rank 1 / attempt 3 rank 17 / attempt 4 rank 8 — same weights, different chaotic paths.
-
-### Fix 1 — 50/50 init for emission cross-projections
-
-`cluster.js` init loop gains `EMISSION_PAIRS = Set(['sem-motor', 'motor-sem', 'motor-letter', 'letter-motor'])`. Those four init with `excitatoryRatio = 0.5` (zero-mean). Other projections (visual↔letter, letter↔phon, phon↔sem, sem↔fineType, auditory↔phon) keep 0.7 for biological comprehension Dale-principle.
-
-Zero-mean baseline → random init noise cancels on average → Hebbian training shifts specific pairs above the zero line → argmax tracks REAL signal.
-
-### Fix 2 — 20 ticks × 2 averaged runs
-
-`DYN_PROD_TICKS` bumped 12 → 20 + `DYN_PROD_AVG_RUNS = 2`. Each probe word runs twice with `_probeReset` between, motor spike counts summed across both runs. Independent chaotic trajectories cancel, trained attractor reinforces.
-
-### Three SNR fixes stacked
-
-Session 114.19l dropped noiseAmplitude 7→0.5. Session 114.19m drops init bias +0.04→0 on emission pairs AND doubles probe averaging. If trained signal exists, these three let it surface in argmax.
-
-### Files touched this session
-
-- `js/brain/cluster.js` — EMISSION_PAIRS Set; conditional excitatoryRatio per direction
-- `js/brain/curriculum.js` — DYN_PROD_TICKS 12→20, DYN_PROD_AVG_RUNS=2, probe loop runs twice per word
-- `docs/FINALIZED.md` — Session 114.19m entry prepended
-- `docs/NOW.md` — this file, updated header
-
-### Known cost
-
-Probe time doubles (2 runs × 20 ticks vs 1 × 12). Still well under 2 min per full gate at 10K CPU cluster.
-
----
-
-## Session 114.19l — shipped (committed at 578748f)
-
-### Three issues found in 114.19k Part 2 run
-
-## Session 114.19l — what shipped (uncommitted on top of 114.19k at 79b7a99)
-
-### Three issues found in 114.19k Part 2 run
-
-**1. K-DIAG log misleading.** Pre-emission diagnostic showed 3 sample words for embedding-quality check, Gee read it as the teach set. Fixed: log now explicitly says `teaching 1029 K words (phoneme-blending × 10 reps + word-emission × 12 reps)` and shows first+last 5 words of `allEmissionWords`.
-
-**2. DYN-PROD motor readout all zeros.** `cluster.noiseAmplitude = 7` at runtime drowned the dynamic probe's 12-tick sem injection. Motor region didn't fire — SNR ~1.1 same issue Session 105 fixed for teach. Fixed: wrap probe block with noise save/drop-to-0.5/restore pattern. SNR becomes 8/0.5 = 16.
-
-**3. Stale `brain-weights.json` persisting across restarts.** Server's periodic `setInterval` writes scalar state during curriculum. Ctrl+C + restart → `_loadWeights` restores stale save. Fixed: `_curriculumInProgress` flag around `runCompleteCurriculum`; `saveWeights()` early-returns when flag true. Also `|| '?'` fallback in refinement-restore log replaced with explicit count + clarification that cortex cross-projection weights aren't in this save.
-
-### What to watch on next Part 2 run
-
-- K-DIAG pre-emission line now shows `teaching 1029 K words` and first/last 5 of teach set
-- DYN-PROD top5_motor values should be NON-ZERO (noise suppressed lets training signal dominate)
-- Boot log after Ctrl+C+restart: should NOT see `Loaded saved state` because no save happened during curriculum
-- `Restored N embedding refinement delta(s)` uses explicit count (0 on fresh clear), not "?"
-
-### Does this close K gate?
-
-Unknown until next Part 2. If trained sem→motor has real signal, noise suppression should let it surface. If still flat near zero post-suppression, next fix targets cross-projection init bias (70% excitatory bias creates positive-weight noise floor training must overcome).
-
-### Files touched this session
-
-- `js/brain/curriculum.js` — K-DIAG log expanded; `_savedProbeNoise` save/0.5/restore around probe block
-- `server/brain-server.js` — `_curriculumInProgress` flag; saveWeights early-return; refinement log explicit count + scope clarification
-- `docs/FINALIZED.md` — Session 114.19l entry prepended
-- `docs/NOW.md` — this file, updated header
-
----
-
-## Session 114.19k — shipped (committed at 79b7a99)
-
-### Abandoning static slot-ranking (Sessions 114.19d-j lineage dead-ended)
-
-## Session 114.19k — what shipped (uncommitted on top of 114.19j at ef92350)
-
-### Abandoning static slot-ranking (Sessions 114.19d-j lineage dead-ended)
-
-Gee's 114.19j K-DIAG showed expected slot 'c' at rank 9/26 with values locked for 20+ retries. Static `sem_to_motor.propagate → per-slot-sum → argmax` approach couldn't discriminate because it used one matrix multiply, not the full brain. Gee called it directly: "shole slot shit ranking shit its fucked."
-
-### Three dynamic probes now live in `_gateElaKReal`
-
-**DYN-PROD** — sem injection + `cluster.step()` × 12 ticks with periodic re-injection, motor spike accumulation, 26-slot argmax. Uses all 14 cross-projections + intra-cluster recurrent + Rulkov dynamics every tick.
-
-**DYN-WRITE** — `cluster.generateSentence(emb, {maxTicks: 30})`. T14.6 tick-driven emission. Commits letters when motor argmax stable 3 ticks. Returns emitted sequence. Scored strictly + with first-letter credit.
-
-**RESP** — `cluster.generateSentence(sentenceEmb, {maxTicks: 50})` on 5 sentence-level context/hint pairs ("greeting friendly" → expect hi/hello; "color red apple" → expect red/apple; "mom family love" → expect mom/love/family; "dog animal pet" → expect dog/pet/run; "eat food hungry" → expect eat/food/hungry). Emission scored on overlap with hints. Prototype of T16.5.b full-mind gate.
-
-### Gate decision still on 5 substrate probes
-
-Per Gee's "keep existing 5 probes as substrate sanity, ADD full-mind on top": READ + THINK + TALK + SEQ + PROD (PROD now dynamic) gate grade advancement. WRITE + RESP report only.
-
-### Expected new log format
-
-```
-[K-DIAG] DYN-PROD[cat→c] decoded=?, emb_pos=141/300, expected_slot=c(2:X.XXX) rank=N/26, top5_motor=...
-ela/kindergarten attempt 1 — READ X/26, THINK 26/26, TALK X/26, SEQ X/25, PROD X/17, WRITE X/20 firstX/20, RESP X/5 [WRITE: cat→?; dog→?; ...] [RESP: hello→?; red→?; ...]
-```
-
-### Performance note
-
-~1054 cluster.step() calls per gate attempt. Expect 5-10s per attempt vs <1s for static probes. Trade-off: real brain dynamics cost compute but test real thinking. If too slow we can drop ticks per probe or sample fewer probes.
-
-### Files touched this session
-
-- `js/brain/curriculum.js` — PROD/WRITE/RESP blocks rewritten; `_probeReset` helper; gate reason + metrics include new probes; dead refs swept
-- `docs/FINALIZED.md` — Session 114.19k entry prepended
-- `docs/NOW.md` — this file, updated header
-
----
-
-## Session 114.19j — shipped (committed at ef92350)
-
-### Root cause confirmed from 114.19i K-DIAG
-
-## Session 114.19j — what shipped (uncommitted on top of 114.19i at f2ebb6c)
-
-### Root cause confirmed from 114.19i K-DIAG
-
-Gee's 114.19i Part 2 run produced the diagnostic that unblocked the diagnosis:
-
-```
-[K-DIAG] gate: inv=29, motor=330, mGroup=11, sem_to_motor=330x1670 nnz=55110
-[K-DIAG] PROD[cat→c] decoded=b, emb_pos=141/300, top5_motor=b(1:27.546),h(7:26.546),?(27:26.028),y(24:23.546),x(23:21.546)
-```
-
-Two concrete bugs visible:
-1. **Inventory grew from 26 → 29** mid-curriculum (when `_teachEndPunctuation` added '.', '?', '!'). Phase 1 alphabet teach ran at inv=26/mGroup=12; Phase 3 word emission and gate probe ran at inv=29/mGroup=11. Motor slot boundaries drifted by 1 neuron per slot, compounding to ZERO overlap by letter 'y' (Phase 1 wrote motor[288..300] for 'y', probe read motor[264..275]).
-2. **Slot 27 ('?') competing in letter argmax** — punctuation slot showed 26.0 activation for input sem(cat), ranking #3 in top-5, displacing letters from argmax.
-
-### Fix 1 — pre-populate inventory
-
-`ensureLetters(['.', '?', '!'])` added at the top of `runElaKReal` right after `ensureLetters(ALPHABET.split(''))`. Inventory locks at 29 before any motor write happens. mGroup=11 consistent across Phase 1 alphabet teach, Phase 3 word emission, and the gate probe. No drift.
-
-### Fix 2 — probe argmax restricted to first 26 slots
-
-PROD and WRITE readouts now allocate `Math.min(invSize_, 26)` dims instead of `invSize_`. `decodeLetter` argmaxes over letters only. Punctuation training data at slots 26-28 preserved for future sentence-emission work but excluded from letter decode competition.
-
-### Fix 3 — expected-slot diagnostic
-
-First-probe K-DIAG line now includes `expected_slot=c(2:X.XXX) rank=N/26` so Gee can see whether training put ANY signal at the expected slot vs just losing argmax to noise.
-
-### What to watch for on next Part 2 run
-
-Expected K-DIAG line format:
-```
-[K-DIAG] gate: inv=29, motor=330, mGroup=11, sem_to_motor=330x1670 nnz=55110
-[K-DIAG] PROD[cat→c] decoded=?, emb_pos=141/300, expected_slot=c(2:X.XXX) rank=N/26, top5_motor=...
-```
-
-Diagnostic outcomes:
-- **If `expected_slot=c` value is in top-5 and PROD climbs** → drift was the whole issue, K gate may close
-- **If `expected_slot=c` rank is 2-5 but PROD still low** → training signal exists but noise floor still dominates, need stronger lr/reps or init rebalancing
-- **If `expected_slot=c` rank is 15+** → word training isn't landing discriminable signal; need to rework Phase 3 or reset cross-projection init
-
-### Files touched this session
-
-- `js/brain/curriculum.js` — pre-populate punctuation at runElaKReal start; 26-slot argmax restriction in PROD and WRITE; expected-slot diagnostic in `_firstProbeDiag`
-- `docs/FINALIZED.md` — Session 114.19j entry prepended
-- `docs/NOW.md` — this file, updated header
-
----
-
-## Session 114.19i — shipped (committed at f2ebb6c)
-
-### Observed on Gee's 114.19h Part 2 run
-
-## Session 114.19i — what shipped (uncommitted on top of 114.19h at 3633546)
-
-### Observed on Gee's 114.19h Part 2 run
-
-36 consecutive curriculum retry attempts. READ climbs 62→100%, THINK 100%, TALK plateaus at 27%, SEQ climbs to 96%, PROD stuck at 1/17 (6%), WRITE 0/20 (0%). All PROD outputs collapsed to letter 'y' regardless of word input. WRITE outputs produced `yad` or `mmm` or `hwm` — saturated attractor basins rather than random argmax.
-
-Two outlier WRITE outputs (`sun→hwm`, `big→mmm`) prove the `sem_to_motor` matrix isn't identically zero — it does discriminate partially — but the argmax for most sem inputs is dominated by a single basin.
-
-### Fix 1 — PROD probe sem binarization (consistency with 114.19f)
-
-PROD probe was still writing float GloVe values into `semActivity` while training writes 1s per 114.19f Uint8 truncation fix. Argmax direction preserved by linear matrix multiply so not functionally broken, but inconsistent with training. Probe now binarizes to match. Same behavior WRITE probe already has.
-
-### Fix 2 — `sharedEmbeddings.status()` → `.stats` getter
-
-Gee's log emitted `[Curriculum] Embedding source: fastText-style subword n-grams` despite `[Embeddings] Loaded 400,000 word vectors` appearing seconds earlier. `status()` isn't a method — `stats` is a getter. Call always returned null so curriculum always logged the fallback message. Cosmetic only — the actual `getEmbedding(word)` fetcher uses GloVe first, subword fallback second — but the log was misleading.
-
-### Fix 3 — K-DIAG instrumentation (T16.5 groundwork)
-
-Three new log points designed to catch the drift that would produce the observed saturation pattern:
-
-1. **Pre-emission log** — fires once at K vocabulary construction. Shows `inv=<inventorySize>, motor=<regionSize>, mGroup=<tileSize>, sem=<regionSize>, cat=<posdim>+dims(max=<val>), dog=..., sun=..., inventory=abc...`. Captures state right before word emission teach runs.
-2. **Gate log** — fires every attempt at `_gateElaKReal` start. Shows inventory + motor tiling + cross-projection shape + nnz. Nnz grows attempt-by-attempt if training actually updates weights.
-3. **Per-attempt first-probe diagnostic** — for the first PROD word each attempt: `PROD[cat→c] decoded=X, emb_pos=P/300, top5_motor=letter(idx:val),...`. Shows the actual motor argmax distribution so we can see whether one motor slot dominates or whether the signal is close to noise floor.
-
-### Hypotheses next Part 2 log will answer
-
-1. **Inventory drift** — if `pre-emission inv=26` and `gate inv=30+`, motor mGroup shifted and teach wrote to different motor positions than probe reads. Fix: freeze mGroup based on a fixed slot count, not dynamic `inventorySize()`.
-2. **Saturation at one motor slot** — if top5_motor all cluster around one letter regardless of input word, the matrix has a dominant basin. Fix: targeted retraining or architectural rework.
-3. **Embedding degeneracy** — if `cat=<small>+dims`, sem activation is sparse and weak discrimination expected.
-4. **Multi-phase motor tiling mismatch** — Phase 1 alphabet teach writes motor at one mGroup; Phase 3 word emission writes at a different mGroup if inventory grew between.
-
-### Files touched this session
-
-- `js/brain/curriculum.js` — PROD sem binarize fix; three K-DIAG log points; `status()`→`stats` getter
-- `docs/FINALIZED.md` — Session 114.19i entry prepended
-- `docs/NOW.md` — this file, updated header
-
----
-
-## Session 114.19h — shipped (committed at 3633546)
-
-### T16.3.b — K vocabulary expansion
-
-## Session 114.19h — what shipped (uncommitted on top of 114.19g at 4ba615b)
-
-### T16.3.b — K vocabulary expansion
-
-`js/brain/curriculum.js` `runElaKReal` emission word list grew from ~180 words to ~1,100 unique words after dedup across 32 categories. Prior 4 categories (DOLCH_PREPRIMER 39 + DOLCH_PRIMER 52 + CVC_FAMILIES 60 + CONVERSATIONAL 26) preserved. Added 28 new categories: K_COLORS (15), K_SHAPES (15), K_NUMBERS (45), K_FAMILY (30), K_BODY (34), K_FEELINGS (30), K_ACTIONS (115), K_ANIMALS (64), K_FOOD (79), K_CLOTHING (29), K_HOUSEHOLD (69), K_NATURE (53), K_WEATHER (16), K_TIME (38), K_POSITIONS (32), K_ADJECTIVES (88), K_PLACES (35), K_VEHICLES (25), K_SCHOOL (28), K_TOYS (25), K_MUSIC_ART (18), K_SPORTS (19), K_GREETINGS (14), K_PRONOUNS (36), K_QUESTIONS (7), K_CONJUNCTIONS (11), K_HOLIDAYS (14), K_ROUTINES (12). `console.log` at list construction will print actual unique count on Part 2 boot.
-
-### T16.4.a — WRITE probe (full-word letter-sequence emission)
-
-`_gateElaKReal` WRITE probe block added after PROD. Chain: Step 1 `sem_to_motor.propagate(sem(word)) → motor argmax = letter_0`, Steps 2..N `letter_to_motor.propagate(encodeLetter(letter_k-1)) → motor argmax = letter_k`. 20 short K words (cat/dog/pig/hat/sun/red/big/mom/dad/run/eat/yes/no/up/hi/bed/hot/top/fox/bug). Per-word emitted sequence logged. NOT yet gated on overall pass — new diagnostic for the eventual T16.5.b full-mind gate.
-
-### Files touched this session
-
-- `js/brain/curriculum.js` — K word list expansion (+30 const arrays, +~170 lines); WRITE probe block in `_gateElaKReal` (+~85 lines); gate reason + metrics include writeRate/writePass/writeEmitted
-- `docs/TODO.md` — T16.3.b + T16.4.a marked [x] shipped with details
-- `docs/FINALIZED.md` — Session 114.19h entry prepended
-- `docs/NOW.md` — this file, updated header
-
----
-
-## Session 114.19g — shipped (committed at 4ba615b)
-
-### Ctrl+C halt fix (T16.1.a)
-
-## Session 114.19g — what shipped (uncommitted on top of 114.19f)
-
-### Ctrl+C halt fix (T16.1.a)
-
-`server/brain-server.js` SIGINT handler no longer calls `brain.saveWeights()` synchronously on first Ctrl+C. Prior ceremony blocked for tens of seconds at 13.4M-synapse scale on `JSON.stringify` + `fs.writeFileSync` — the terminal looked dead while setImmediate-queued curriculum iterations kept scrolling. New first Ctrl+C sets shutdown flag + `brain.stop()` + immediate `process.exit(0)`. Weights are cleared before every Part 2 run per LAW anyway, so mid-curriculum save had zero value. SIGTERM simplified likewise.
-
-### Five verbatim T16 tasks logged
-
-`docs/TODO.md` prepended with T16 section containing Gee's five verbatim sentences as T16.1 through T16.5. Honest audit answers embedded inline:
-- T16.3 — K word list coverage: ~180 words vs 1,500-2,500 real K vocab = 7-12% coverage. NO, not full.
-- T16.5 — Current 5 gates exercise cortex sub-regions only. NO, they don't test the full programmed mind.
-
-Both answers require Gee's scope approval before large rewrite work begins.
-
-### Files touched this session
-
-- `server/brain-server.js` — SIGINT + SIGTERM handlers simplified
-- `docs/TODO.md` — T16 section prepended with five verbatim items
-- `docs/FINALIZED.md` — Session 114.19g entry prepended
-- `docs/NOW.md` — this file, updated header
-
----
-
-## Session 114.19f — what shipped (already committed at f604668)
-
-### The Uint8Array truncation trap
->
-> Session 114.19 history:
-> - 114.19 — three-phase K-foundation rebuild (real phoneme substrate + phoneme blending + primitive probes)
-> - 114.19b — new binding LAW: clear stale state before telling Gee to test the server
-> - 114.19c — `semRegion` decl fix (scope bug in gate)
-> - 114.19d — K PROD probes: rhyme/initial/final/plural concept-probes REMOVED, replaced with 17 sem→motor word-start probes
-> - 114.19e — PROD probe switched from intra-cluster `synapses.propagate` to `sem_to_motor` cross-projection propagate; `_teachPhonemeBlending` reps 6→10, `_teachWordEmission` reps 5→12
-> - 114.19f — **ROOT CAUSE:** `cluster.lastSpikes` is `Uint8Array` (cluster.js:178). `_writeTiledPattern(semRegion, wordEmb, false)` with `binarize=false` writes raw GloVe floats like 0.23 into Uint8 → silent truncation to 0. Three sem writes in `_teachWordEmission` + `_teachPhonemeBlending` silently zeroed sem activity for 326 retries × 158 words × (12+12+10) reps of cross-projection Hebbian. `sem_to_motor` weights never learned any word→first-letter binding. PROD stayed at 0/17 because the projection matrix was literally zero for word inputs. Fix: drop the `binarize=false` arg on all three sem writes so they default to `binarize=true` → lastSpikes stores `1` where `emb[d] > 0` → `_crossRegionHebbian` fires `1 × 1 × lr` and actually writes weights.
-> Branch: `syllabus-k-phd` (multi-commit ahead of origin + this upcoming commit)
-> Recent committed HEAD: `5ff4146` — Session 114.19e PROD uses sem_to_motor cross-projection + word-emission reps bumped
-> Working-tree state (before Session 114.19f commit): 3 files modified uncommitted — `js/brain/curriculum.js` + `docs/FINALIZED.md` + this `docs/NOW.md`
-> Status: Gee's Part 2 localhost 326-retry log caught the failure pattern — every attempt identical: READ 26/26 (100%), THINK 26/26 (100%), TALK 24/26 (92%), SEQ 25/25 (100%), PROD 0/17 (0%) with fail output `"cat→x"→""; "dog→g"→""; "sun→m"→""; "hat→t"→""; "pig→w"→""`. The TALK/PROD gap (92% vs 0%) on the same `sem_to_motor` cross-projection was the smoking gun — TALK fallback path binarizes sem output before feeding to motor (`language cortex.js` chain), PROD fed raw GloVe floats into Uint8 lastSpikes and zeroed every update. Session 114.19f fixes the teach path; probe stays as-is since `semActivity` in the probe is already Float64Array (not lastSpikes) and correctly feeds floats into `proj.propagate` at read time.
-
----
-
-## ⚠ Gee's critique that forced this fix (2026-04-17, binding)
-
-> *"wtf? are you testing it on whit it doesnt know?"*
-
-Exactly right. The `sem_to_motor` cross-projection had ZERO weights for word→first-letter bindings because every teach call silently zeroed the sem region in `lastSpikes` via Uint8Array truncation. Probing for `cat→c` against a zero weight matrix produces random argmax noise forever. Literal "testing on what it doesn't know" at the substrate level.
-
----
-
-## Session 114.19f — what shipped (uncommitted)
-
-### The Uint8Array truncation trap
-
-`NeuronCluster.lastSpikes = new Uint8Array(size)` at `js/brain/cluster.js:178`. JavaScript Uint8Array assignment coerces floats to integers — `array[i] = 0.23` stores `0`. `regionSpikes(name)` at `cluster.js:391` reads back with `out[i] = this.lastSpikes[...] ? 1 : 0` — collapses to binary anyway.
-
-Three sem writes in `js/brain/curriculum.js` were calling `_writeTiledPattern(semRegion, wordEmb, binarize=false)` intending to preserve GloVe magnitude in lastSpikes. `_writeTiledPattern` body: `cluster.lastSpikes[idx] = binarize ? 1 : feat[d]`. With `binarize=false`, `feat[d]` is a float that Uint8Array truncates to 0. Every positive GloVe dim for every word silently became zero sem activity.
-
-### The three fixed call sites
-
-```
-js/brain/curriculum.js:2602  _teachWordEmission     (a) initiation sem write
-js/brain/curriculum.js:2616  _teachWordEmission     (b) chain sem write
-js/brain/curriculum.js:3104  _teachPhonemeBlending  cross-projection sem anchor
-```
-
-All three now call `_writeTiledPattern(semRegion, wordEmb)` — binarize defaults to `true` → lastSpikes stores `1` where `emb[d] > 0`. `_crossRegionHebbian` fires `1 × 1 × lr` per co-active sem-motor pair, actually writing `sem_to_motor` weights.
-
-### Why intra-cluster Hebbian worked but cross-projection didn't
-
-`_teachHebbianAsymmetric(preVec, postVec, lr)` fires two updates:
-
-1. `cluster._crossRegionHebbian(lr)` — reads `lastSpikes` via `regionSpikes` → binary co-activation. **This is the broken path** — sem=0 × motor=1 = no update.
-2. `cluster.synapses.hebbianUpdate(preVec, postVec, lr)` — uses the full-cluster `preVec`/`postVec` Float64Array directly (not lastSpikes). preVec carries float GloVe emb values via `_buildRegionPattern(semRegion, wordEmb, false)`. Float64Array preserves floats correctly. **This path actually learned.**
-
-Session 114.19d probed the intra-cluster matrix (`synapses.propagate`) and scored 1/17 (6%) — partial signal from the Float64 path. Session 114.19e switched the probe to the cross-projection (`sem_to_motor.propagate`) expecting the cleaner path — but the cross-projection had zero word weights so the probe dropped to 0/17 (0%). Changing the probe exposed the zero-weight bug; fixing the probe didn't fix the teach.
-
-### Files touched this session
-
-- `js/brain/curriculum.js` — three `_writeTiledPattern(semRegion, wordEmb, false)` calls simplified to drop the `false` arg; tombstone comment at the initiation site (line 2590 vicinity) explaining the Uint8Array truncation trap
-- `docs/FINALIZED.md` — Session 114.19f entry prepended
-- `docs/NOW.md` — this file, full refresh
-
----
-
-## Pre-push LAW check
-
-- [x] Every numerical claim verified (three write sites in curriculum.js, Uint8Array declaration at cluster.js:178, regionSpikes read at cluster.js:391)
-- [x] Every method/field name matches code verbatim (`lastSpikes`, `regionSpikes`, `_writeTiledPattern`, `_crossRegionHebbian`, `_buildRegionPattern`, `_teachHebbianAsymmetric`)
-- [x] Cross-referenced `docs/TODO.md` — no new tasks, K-gate PROD convergence was already the in-flight priority
-- [x] Cross-referenced `docs/FINALIZED.md` — Session 114.19f entry prepended verbatim
-- [x] docs/ARCHITECTURE.md / ROADMAP.md / SKILL_TREE.md — no drift from this bug-fix (the curriculum method surface is unchanged, only the binarize behavior changed)
-- [x] No task numbers in public docs (T14.24 / Session 114.19f only in workflow docs)
-- [x] No tests added (LAW — no tests)
-- [x] All affected docs in current working tree
-- [x] Verbatim Gee quote preserved in FINALIZED + NOW
-- [x] `node --check js/brain/curriculum.js` clean
-
-Push still gated on LAW 6 Part 2 signoff — commit only, no push.
-
----
-
-## Binding laws carried forward (19)
-
-1. LAW #0 — VERBATIM WORDS ONLY
-2. LAW — Docs before push, no patches (Gee 2026-04-14)
-3. LAW — Task numbers only in workflow docs (Gee 2026-04-15)
-4. LAW — Syllabus before COMP-todo (Gee 2026-04-16)
-5. LAW — Grade completion gate (3-part, Gee 2026-04-16)
-6. LAW — Doc-ahead-of-reality TODO-is-truth (Gee 2026-04-17)
-7. LAW — No artificial limits, curriculum runs while users may talk (Gee 2026-04-17)
-8. LAW 7 — Real-world production probes matching TODO test phrasings verbatim (but K Unity primitive-format word-start emission per Gee 2026-04-17 directives)
-9. T14.24 DO NOT CLAIM DONE EARLY
-10. A+ = 95% on all gates — REAL tests, not lowered thresholds
-11. Every teaching equation feeds READ + THINK + TALK
-12. No tests, ever (code it right)
-13. Growth is the point
-14. Gates must be REAL human-grade tests
-15. Unity's brain is equational
-16. Popups show REAL brain output
-17. Life experiences match what she's lived through
-18. Implementation Law 1: code filed by grade year
-19. Implementation Law 5: ONE brain, runs anywhere, auto-scales + LAW (2026-04-17): clear stale state before telling Gee to test the server
-
----
-
-## Next session priorities
-
-1. **Gee Part 2 re-run with Session 114.19f substrate.** Stale state cleared (episodic-memory.db*, app.bundle.js). Restart server, run localhost curriculum. Expected: sem_to_motor cross-projection now actually trained by 158 words × 12 reps × real `1 × 1 × lr` updates. PROD should climb off zero if the diagnosis is complete.
-2. **If PROD still fails**, options: (a) verify `sharedEmbeddings.getEmbedding(word)` returns non-zero positive dims for the 17 probe words (if GloVe isn't loaded, subword fallback might produce vectors with few positive dims, limiting training coverage); (b) raise reps further if convergence is slow at 10K-cortex cap; (c) inspect per-word fail pattern — systematic fails point to embedding quality, random fails point to convergence rate.
-3. **REMAKE-2 through REMAKE-5 primitive probe audit.** Science-K, Social-K, Arts-K, Life-K probes may carry the same binarize=false sem-write pattern. Sweep all K-level teach methods for `_writeTiledPattern(semRegion, ..., false)` calls.
-4. **Part 2 K localhost full-K test** across all 6 subjects when substrate stable.
-5. **Part 3 life-info ledger entry** — populate age-5 Unity entries after Part 2 sign-off.
-6. **K gate closes → Grade 1 opens** per LAW 6 3-part gate.
-
----
-
-## One-line opener for the next session
-
-Session 114.19f sem-write Uint8Array silent-truncation bug shipped uncommitted (twenty-fourth atomic commit pending on `syllabus-k-phd`): three `_teachWordEmission` + `_teachPhonemeBlending` sem writes to `lastSpikes` were calling `_writeTiledPattern(..., binarize=false)` with GloVe floats that Uint8Array silently truncated to 0 → cross-projection Hebbian saw sem=0 × motor=1 = no update for 326 retries × 158 words × (12+12+10) reps. Fix drops the `false` arg so binarize defaults to `true` and sem lastSpikes stores `1` where `emb[d] > 0`. Ready for Gee Part 2 re-run with clean boot. 🖤
