@@ -1361,6 +1361,12 @@ class ServerBrain {
       // corrects. Sustained divergence = Phase B migration wiring bug
       // worth investigating (not a strict abort, just a signal).
       cortexDivergence: this._cortexDivergence || 0,
+      // T17.7 Phase C follow-up — per-region breakdown so Gee can
+      // inspect WHERE cortex state is diverging during K curriculum
+      // walk. Map<regionName, {standRate, mainRate, divergence}>
+      // with rates in [0, 1] (spike fraction per region). Empty when
+      // GPU regionSpikes readback is absent (e.g. pre-GPU warmup).
+      cortexDivergenceByRegion: this._cortexDivergenceByRegion || {},
       connectedUsers: this.clients.size,
       isDreaming: this._isDreaming || false,
       totalNeurons: TOTAL_NEURONS,
@@ -1432,15 +1438,24 @@ class ServerBrain {
     const cortexEntry = perCluster.cortex;
     if (!cortexEntry || !cortexEntry.regionSpikes) {
       this._cortexDivergence = 0;
+      this._cortexDivergenceByRegion = {};
       return;
     }
     if (!this.cortexCluster || !this.cortexCluster.regions || !this.cortexCluster.lastSpikes) {
       this._cortexDivergence = 0;
+      this._cortexDivergenceByRegion = {};
       return;
     }
     const stand = this.cortexCluster;
     let totalDiff = 0;
     let totalSize = 0;
+    // T17.7 Phase C follow-up — per-region divergence breakdown so
+    // Gee can verify during K curriculum walk which specific region
+    // drifted (letter vs phon vs sem vs motor). Without per-region
+    // visibility, a cluster-wide scalar like 0.03 doesn't tell us
+    // whether sem is dead-on but motor is drifting, or vice versa.
+    // The breakdown surfaces where the equation is slipping.
+    const perRegion = {};
     for (const [regName, mainSpikes] of Object.entries(cortexEntry.regionSpikes)) {
       const standReg = stand.regions[regName];
       if (!standReg) continue;
@@ -1457,7 +1472,13 @@ class ServerBrain {
       const mainLen = Math.floor(CLUSTER_SIZES.cortex * this._regionFraction(regName));
       const standRate = standLen > 0 ? standSpikes / standLen : 0;
       const mainRate = mainLen > 0 ? mainSpikes / mainLen : 0;
-      totalDiff += Math.abs(standRate - mainRate) * mainLen;
+      const diff = Math.abs(standRate - mainRate);
+      perRegion[regName] = {
+        standRate: +standRate.toFixed(5),
+        mainRate: +mainRate.toFixed(5),
+        divergence: +diff.toFixed(5),
+      };
+      totalDiff += diff * mainLen;
       totalSize += mainLen;
     }
     // Divergence = weighted-mean absolute rate difference across regions.
@@ -1466,6 +1487,7 @@ class ServerBrain {
     // real cerebellum would see when cortex prediction diverges from
     // ground truth sensory input.
     this._cortexDivergence = totalSize > 0 ? totalDiff / totalSize : 0;
+    this._cortexDivergenceByRegion = perRegion;
   }
 
   /**
