@@ -4141,7 +4141,17 @@ export class Curriculum {
       return d > 0 ? dot / d : 0;
     }
 
+    // T18.29 — per-letter inline logging so we see EXACTLY where the
+    // probe hangs. Gee 2026-04-19 reported gate probe froze after
+    // K-DIAG log; prior theories (backpressure, drain) were ruled out
+    // by T18.28's successful drain-wait. Must be inside this loop.
+    // Log per letter + per propagate call so the stuck call surfaces.
+    const _gateLetterStart = Date.now();
+    let _gateLetterIdx = 0;
+    console.log(`[Curriculum][K-DIAG] gate probe starting letter loop (${ALPHABET.length} letters × READ+TALK)...`);
     for (const letter of ALPHABET) {
+      _gateLetterIdx++;
+      const _letterStart = Date.now();
       // Build letter activation pattern (same as teach)
       const letterOneHot = encodeLetter(letter);
       const letterPat = new Float64Array(letterSize);
@@ -4156,7 +4166,17 @@ export class Curriculum {
 
       // ─── READ probe: direct letter→phon matrix multiply ───────────
       if (letterToPhon) {
+        // T18.29 — defensive check: if proj arrays are null/undefined,
+        // log and skip instead of throwing (T18.22 regression caught here).
+        if (!letterToPhon.values || !letterToPhon.colIdx || !letterToPhon.rowPtr) {
+          console.warn(`[Curriculum][K-DIAG] letter '${letter}' READ: letterToPhon CSR arrays null (values=${letterToPhon.values?.length||'null'}, colIdx=${letterToPhon.colIdx?.length||'null'}, rowPtr=${letterToPhon.rowPtr?.length||'null'}) — skipping READ probe`);
+        } else {
+        const _readStart = Date.now();
         const phonOutput = letterToPhon.propagate(letterPat);
+        const _readMs = Date.now() - _readStart;
+        if (_letterStart && _gateLetterIdx <= 3) {
+          console.log(`[Curriculum][K-DIAG] letter '${letter}' READ propagate ${_readMs}ms (phonOutput.length=${phonOutput.length})`);
+        }
         // Average per group to get 24-dim readout (same as regionReadout grouping)
         const PHON_DIM = 24;
         const pGSize = Math.max(1, Math.floor(phonSize / PHON_DIM));
@@ -4182,6 +4202,7 @@ export class Curriculum {
         const expectedPhon = _phonemeFeatureForLetter(letter);
         const readCos = cosine(phonReadout, expectedPhon);
         if (readCos > READ_COS_MIN) readPass++;
+        } // close T18.29 else-branch guarding null CSR arrays
       }
 
       // ─── TALK probe: direct letter→motor or sem→motor matrix multiply ──
@@ -4195,7 +4216,16 @@ export class Curriculum {
         if (pname.endsWith('_to_motor')) {
           const srcName = pname.slice(0, pname.indexOf('_to_'));
           if (srcName === 'letter') {
-            motorOutput = proj.propagate(letterPat);
+            // T18.29 — defensive null check
+            if (!proj.values || !proj.colIdx || !proj.rowPtr) {
+              console.warn(`[Curriculum][K-DIAG] letter '${letter}' TALK: ${pname} CSR arrays null — skipping TALK direct`);
+            } else {
+              const _talkStart = Date.now();
+              motorOutput = proj.propagate(letterPat);
+              if (_gateLetterIdx <= 3) {
+                console.log(`[Curriculum][K-DIAG] letter '${letter}' TALK via ${pname} propagate ${Date.now() - _talkStart}ms`);
+              }
+            }
             break;
           }
         }
@@ -4226,7 +4256,16 @@ export class Curriculum {
         const decoded = decodeLetter(motorReadout);
         if (decoded === letter) talkPass++;
       }
+
+      // T18.29 — per-letter progress log. Fires if wall-clock for this
+      // letter > 2s OR if it's a milestone letter. Lets Gee see the
+      // loop advancing instead of appearing frozen.
+      const _letterMs = Date.now() - _letterStart;
+      if (_letterMs > 2000 || _gateLetterIdx === 1 || _gateLetterIdx === 13 || _gateLetterIdx === 26) {
+        console.log(`[Curriculum][K-DIAG] gate letter ${_gateLetterIdx}/26 '${letter}' done in ${_letterMs}ms (readPass=${readPass} talkPass=${talkPass} so far)`);
+      }
     }
+    console.log(`[Curriculum][K-DIAG] gate letter loop DONE in ${Date.now() - _gateLetterStart}ms — readPass=${readPass}/26, talkPass=${talkPass}/26`);
 
     // THINK: always passes (Session 101 mean-center confirmed 100%)
     const thinkPass = ALPHABET.length;
