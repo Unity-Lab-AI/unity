@@ -1,10 +1,19 @@
 # NOW — Session Snapshot
 
-> **Session:** 114.19ad · **Date:** 2026-04-18 · **Branch:** `syllabus-k-phd`
+> **Session:** 114.19ae · **Date:** 2026-04-19 · **Branch:** `syllabus-k-phd`
 
 ---
 
-## This session — T18.6 shipped
+## This session — T18.6 + T18.7 shipped
+
+### T18.7 — 3D brain seize during curriculum (Gee 2026-04-19)
+
+Gee verbatim: *"the 3D brain was kinda seizing but fiorst push to the syllabus branc"* + three-item response on proposed fixes: *"1 fine then nothing to do. 2 we can adjust the display ratio but it should already peg at 20K per brain cluster(regionS) 3. yeah thats fine we dont need to chow every connection that its currently showing to as the firing of neron s and thier connections on the 3D brain should be a percentage of the real"*.
+
+- **T18.7.a — Per-cluster 20K peg (`js/ui/brain-3d.js`).** `MAX_RENDER_NEURONS = 20000` was a GLOBAL cap across all 15 clusters/regions → ~1.3K render neurons per cluster at biological scale, far too sparse. Renamed to `MAX_RENDER_NEURONS_PER_CLUSTER` + every cluster independently renders `min(20000, realClusterSize)` points. Sum becomes live TOTAL (up to 300K at biological scale). Also fixed a latent bug where `_rulkovX`/`_rulkovY` stayed sized to the constructor's initial TOTAL=1000, so render neurons past index 1000 never persisted their Rulkov trajectory — reseed path fired every frame, bursting regime never emerged. Scale-change path now resizes Rulkov state alongside `_glow`/`_vis` buffers.
+- **T18.7.b — State-update downsample to 3D brain (`js/app.js`).** Server state broadcast at 10 Hz → 3D brain redraw every 3rd broadcast (~3.3 Hz). 2D `brainViz` + HUD stay at full rate. Connection + pulse caps (`MAX_CONN=3000`, `MAX_PULSES=500`) already enforce "percentage of real" on connections/firings per Gee's verbatim.
+
+### T18.6 — sparse-upload device-lost crash fix (prior-commit `60dd159`, SHIPPED)
 
 **T18.6 — sparse-upload device-lost crash fix (3-part atomic).** Part 2 localhost run crashed mid sparse upload with the phantom `"size (32)/(16) is too large for the implementation when mappedAtCreation == true"` cascade. Diagnosis: VRAM exhaustion on the 16 GB RTX 4070 Ti SUPER — 14 cortex cross-projections summed to ~7.9 GB + intra-synapses 881 MB + 5+ GB 7-cluster LIF state + ~1.5 GB transient standalone `preSpikes/postCurrents/postSpikes` buffers held through the upload window ≈ 15+ GB peak. Static `LANG_CORTEX_BYTES_PER_NEURON = 18 × 1024` coefficient under-estimated real footprint by 30% (empirical 25 KB/neuron).
 
@@ -18,16 +27,21 @@ Stale state already cleared per LAW 2026-04-17. Server auto-clear fires on next 
 
 ---
 
-## Files touched (atomic, uncommitted)
+## Files touched this session
 
+**T18.7 (uncommitted — new):**
+- `js/ui/brain-3d.js` — per-cluster peg at 20K + `_rulkovX`/`_rulkovY` resize on scale
+- `js/app.js` — 3D brain state-update downsample (every 3rd broadcast)
+- `docs/TODO.md` — T18.7.a/b marked `[x]`
+- `docs/FINALIZED.md` — Session 114.19ae entry
+- `docs/NOW.md` — this file
+
+**T18.6 (committed as `60dd159`):**
 - `js/brain/gpu-compute.js` — `device.lost` handler + `setDeviceLostCallback`
 - `compute.html` — device-lost callback registration + binding-block decoder in type=4 chunked path
 - `server/brain-server.js` — binding-aware `gpuSparseUpload` + auto-rescale loop + `device_lost` dispatch + `_gpuBindingHint` resolver on `cortexCluster`
 - `js/brain/cluster.js` — `initGpu()` binding-resolve + `proj._gpuBound` flag
-- `docs/TODO.md` — T18.6.a/b/c marked `[x]`
-- `docs/FINALIZED.md` — Session 114.19ad entry
 - `docs/ARCHITECTURE.md` — T18.6 paragraph under the T17.7 Phase C section
-- `docs/NOW.md` — this file
 
 All 4 code files `node --check` clean (compute.html module body extracted + checked via `--input-type=module`).
 

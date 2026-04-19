@@ -5,6 +5,34 @@
 
 ---
 
+## 2026-04-19 — Session 114.19ae: T18.7 SHIPPED — 3D brain per-cluster 20K peg + state-update downsample
+
+Gee's verbatim 2026-04-19: *"the 3D brain was kinda seizing but fiorst push to the syllabus branc"*. Follow-up on the three proposed fixes: *"1 fine then nothing to do. 2 we can adjust the display ratio but it should already peg at 20K per brain cluster(regionS) 3. yeah thats fine we dont need to chow every connection that its currently showing to as the firing of neron s and thier connections on the 3D brain should be a percentage of the real"*.
+
+### Two fixes shipped
+
+**T18.7.a — Per-cluster 20K peg (`js/ui/brain-3d.js`).** Prior `MAX_RENDER_NEURONS = 20000` was a GLOBAL cap across ALL 15 clusters/regions (7 main + 8 language sub-regions). At biological scale each cluster's proportional share dropped to ~1.3K render points via `sqrt(realSize)` scaling, so the whole 3D brain rendered at only 20 000 total points — far too sparse and the per-sub-region structure blurred out. Renamed to `MAX_RENDER_NEURONS_PER_CLUSTER` + every cluster independently renders `min(20000, max(30, realClusterSize))` points. Sum of per-cluster `n` becomes the live TOTAL — up to 15 × 20K = 300K render points at biological scale. All the old proportional / sqrt / minFloor / delta-adjustment math deleted (~80 lines).
+
+Also fixed a **latent rendering bug**: `_rulkovX` and `_rulkovY` Float32Arrays were allocated ONCE in the constructor with the initial TOTAL=1000 size and never resized when `updateState` scaled TOTAL up. Render neurons past index 1000 read `undefined` from the Rulkov state → self-heal reseed fired every frame → bursting regime never emerged + assignments back to out-of-bounds indices silently no-op'd (typed-array behavior). Scale-change block now resizes + reseeds both Rulkov arrays alongside the existing `_glow`/`_vis` allocation. At pre-T18.7 TOTAL=20000 this was masked because most clusters rendered their first 1000 points correctly and the shimmer on the rest read as "light noise"; at post-T18.7 TOTAL=300000 the bug would have been catastrophic if left unfixed.
+
+**T18.7.b — State-update downsample to 3D brain (`js/app.js`).** Gee's directive *"the firing of neron s and thier connections on the 3D brain should be a percentage of the real"* — don't render every state broadcast, sample. Both state-update dispatch paths (local-brain at `brain.on('stateUpdate', ...)` and server-remote at `landingBrainSource.on('stateUpdate', ...)`) now increment a shared `_brain3dDownsampleCounter` and only call `brain3d.updateState(...)` every `BRAIN3D_DOWNSAMPLE=3` broadcasts. 10 Hz server broadcast → 3.3 Hz 3D redraw. 2D `brainViz` canvas stays at full rate (cheap). HUD stays at full rate (responsiveness). Connection + pulse caps in `brain-3d.js` (`MAX_CONN=3000`, `MAX_PULSES=500`) already enforce the "percentage of real" constraint on connections/firings per frame.
+
+### Files touched
+
+- `js/ui/brain-3d.js` — renamed constant + 30-line replacement for the proportional scaling + Rulkov resize block
+- `js/app.js` — `_brain3dDownsampleCounter` + gated call at both dispatch sites
+- `docs/TODO.md` — T18.7.a/b marked `[x]` with Gee verbatim
+- `docs/FINALIZED.md` — this entry
+- `docs/NOW.md` — Session 114.19ae snapshot
+
+All `node --check` clean. Commits atomic.
+
+### Closure gate — open
+
+**T18.7 closure gate:** Gee confirms on next Part 2 localhost run that the 3D brain no longer seizes during sparse upload + curriculum walk. Gee-verification only — Claude cannot close. Server restart required so `start.bat`'s `npm run build` rebuilds `js/app.bundle.js` with the new brain-3d.js + app.js code (prior browser log `[Brain3D] Scaled: ... = 20000 (target 20000, minFloor 666)` was the pre-T18.7 proportional path still cached in the bundle).
+
+---
+
 ## 2026-04-18 — Session 114.19ad: T18.6 SHIPPED — sparse-upload device-lost crash diagnosis + fix
 
 Part 2 localhost run crashed mid sparse upload with cascading phantom errors:

@@ -2793,12 +2793,31 @@ Vision: ${state.visionDescription || 'none'}`;
   // ── Wire brain state updates to visualizers ──
   const serverConnected = landingBrainSource && landingBrainSource.isConnected();
 
+  // T18.7.b — 3D brain state-update downsample (Gee 2026-04-18 verbatim:
+  // "we dont need to chow every connection that its currently showing to
+  // as the firing of neron s and thier connections on the 3D brain should
+  // be a percentage of the real"). Server broadcasts state at 10 Hz; 3D
+  // brain redraw doesn't need every tick — dropping to every 3rd broadcast
+  // (~3.3 Hz) keeps the scene visibly alive, frees frame time for the
+  // WebGL renderer to handle 300K render neurons (per-cluster 20K peg
+  // from T18.7.a), and removes the VRAM/PCIe contention spike during
+  // curriculum-heavy activity. 2D brainViz stays full rate because its
+  // canvas pipeline is cheap. HUD stays full rate for responsiveness.
+  let _brain3dDownsampleCounter = 0;
+  const BRAIN3D_DOWNSAMPLE = 3;
+
   brain.on('stateUpdate', (state) => {
     // Only let local brain drive HUD if no server is connected
     if (!serverConnected) updateBrainIndicator(state);
     if (brainViz) brainViz.updateState(state);
     // Don't send local brain state to 3D — server drives that
-    if (!serverConnected && brain3d) brain3d.updateState(state);
+    if (!serverConnected && brain3d) {
+      _brain3dDownsampleCounter++;
+      if (_brain3dDownsampleCounter >= BRAIN3D_DOWNSAMPLE) {
+        _brain3dDownsampleCounter = 0;
+        brain3d.updateState(state);
+      }
+    }
   });
 
   // Server state → HUD + 3D: server is the authority when connected
@@ -2806,7 +2825,13 @@ Vision: ${state.visionDescription || 'none'}`;
     landingBrainSource.on('stateUpdate', (serverState) => {
       _landingState = serverState;
       updateBrainIndicator(serverState);
-      if (brain3d) brain3d.updateState(serverState);
+      if (brain3d) {
+        _brain3dDownsampleCounter++;
+        if (_brain3dDownsampleCounter >= BRAIN3D_DOWNSAMPLE) {
+          _brain3dDownsampleCounter = 0;
+          brain3d.updateState(serverState);
+        }
+      }
       if (brainViz) brainViz.updateState(serverState);
     });
   }

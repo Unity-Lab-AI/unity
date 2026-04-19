@@ -30,10 +30,20 @@ import { detectBrainEvents, CLUSTER_KEYS } from './brain-event-detectors.js';
 
 // ── Constants ───────────────────────────────────────────────────────
 
-// Render neuron count — proportional sample of the full brain
-// N actual neurons (scales to hardware) rendered as 20K visual points
+// Render neuron count — PER-CLUSTER peg at 20K (Gee 2026-04-18).
+//
+// Gee verbatim 2026-04-18: "2 we can adjust the display ratio but it
+// should already peg at 20K per brain cluster(regionS)". Prior MAX_RENDER_NEURONS
+// was a GLOBAL cap across ALL 15 clusters/regions, which at biological scale
+// resulted in ~1.3K render points per cluster — too sparse. Renamed to
+// MAX_RENDER_NEURONS_PER_CLUSTER + raised the meaning so every cluster/region
+// renders up to 20K points independently. With 15 clusters × 20K = 300K
+// render points at peak — still trivial for WebGL (~10 MB vertex buffer).
+// Each cluster's n is clamped to min(20K, realClusterSize) so local-brain
+// clients with tiny clusters don't over-render their real neuron count.
+// TOTAL is the live sum across clusters (no global cap).
 let TOTAL = 1000;
-const MAX_RENDER_NEURONS = 20000;
+const MAX_RENDER_NEURONS_PER_CLUSTER = 20000;
 const AFTERGLOW_DECAY = 0.92;
 const PULSE_LIFE = 80;  // ~1.3s at 60fps — visible long enough to track
 const MAX_PULSES = 500; // 70+ pulses per cluster simultaneously
@@ -856,104 +866,59 @@ export class Brain3D {
     if (realNeurons > 1000 && this._lastRealNeurons !== realNeurons) {
       this._lastRealNeurons = realNeurons;
       this._scaled = true;
-      TOTAL = Math.min(MAX_RENDER_NEURONS, Math.max(1000, Math.round(realNeurons / 100)));
 
-      // Read ACTUAL cluster sizes from server state — dynamic, not hardcoded
-      // VISUAL BOOST: use sqrt to compress proportions — large clusters don't dominate.
-      // This gives small center clusters (hypothalamus, mystery, amygdala, BG) more
-      // visual weight so they're not lost inside the huge cortex/cerebellum shells.
+      // T18.7.a — per-cluster peg at MAX_RENDER_NEURONS_PER_CLUSTER.
+      // Gee verbatim 2026-04-18: "it should already peg at 20K per
+      // brain cluster(regionS)". Every cluster/region independently
+      // renders up to 20K points (clamped to real cluster size so
+      // local-brain clients with tiny clusters don't over-render).
+      // No global TOTAL cap anymore — sum over clusters is the live
+      // TOTAL. At biological scale every cluster pegs at 20K and
+      // TOTAL = 15 clusters × 20K = 300K render neurons.
       if (state.clusters) {
         const serverClusters = state.clusters;
-        // Use sqrt of cluster size for visual proportions — compresses the range
-        const sqrtSizes = CLUSTERS.map(cl => Math.sqrt((serverClusters[cl.key]?.size || 0)));
-        const sqrtTotal = sqrtSizes.reduce((s, v) => s + v, 0) || 1;
-        // T14.22.5 — NaN short-circuit. If sqrtTotal ≤ 0 (every cluster
-        // has zero size in state.clusters, which happens during the
-        // first tick before the tick loop populates cluster sizes),
-        // the proportional math below divides by near-zero and every
-        // cl.n becomes NaN. NaN propagates through the subsequent
-        // Math.max clamp silently (NaN > anything is false, so
-        // Math.max(minFloor, NaN) returns NaN), breaking the entire
-        // 3D render. Bail to an even split so the scene is still
-        // visible until real cluster sizes arrive.
-        if (!Number.isFinite(sqrtTotal) || sqrtTotal <= 0) {
-          const evenShare = Math.floor(TOTAL / CLUSTERS.length);
-          for (let i = 0; i < CLUSTERS.length; i++) CLUSTERS[i].n = evenShare;
-          CLUSTERS[0].n += TOTAL - evenShare * CLUSTERS.length;
-          console.log(`[Brain3D] Scaled (NaN fallback): ${CLUSTERS.map(c => `${c.key}=${c.n}`).join(', ')}`);
-          this._genPositions();
-          if (this._gl) this._uploadStatic();
-          return;
-        }
-        // T14.22.4 — minFloor scales with TOTAL so the sum of per-cluster
-        // minimums never exceeds the render budget. Old code hardcoded
-        // minFloor=200 which overshoots at low TOTAL (browser fallback
-        // path scales TOTAL to ~1000 for a 6.7K local brain, 7 × 200 =
-        // 1400 > 1000 → negative adjust drove cerebellum to -234 points
-        // → no cerebellum rendered → 3D brain looked broken).
-        //
-        // New formula: cap each cluster's floor at TOTAL/(2×N_clusters) so
-        // the sum of minimums stays at TOTAL/2, leaving half the budget
-        // for proportional scaling. 30-point absolute minimum so very-
-        // small renders still have a visible speck per cluster.
-        // T17.3.f — divisor = CLUSTERS.length*2 (was hardcoded 14 = 7×2
-        // back when only 7 regions existed; now 15 with language sub-regions).
-        const minFloor = Math.max(30, Math.floor(TOTAL / (CLUSTERS.length * 2)));
+        const MIN_PER_CLUSTER = 30;
         for (let i = 0; i < CLUSTERS.length; i++) {
           const cl = CLUSTERS[i];
-          const serverCluster = serverClusters[cl.key];
-          if (serverCluster && serverCluster.size) {
-            const proportional = Math.round((sqrtSizes[i] / sqrtTotal) * TOTAL);
-            cl.n = Math.max(minFloor, proportional);
+          const realClusterSize = serverClusters[cl.key]?.size || 0;
+          if (realClusterSize <= 0) {
+            // First tick before the server has populated cluster sizes.
+            // Keep at least MIN_PER_CLUSTER so rendering stays visible
+            // until real sizes land.
+            cl.n = MIN_PER_CLUSTER;
+            continue;
           }
+          cl.n = Math.min(MAX_RENDER_NEURONS_PER_CLUSTER, Math.max(MIN_PER_CLUSTER, realClusterSize));
         }
-        // Adjust to exactly TOTAL — trim biggest cluster to match.
-        // T14.22.4 — clamp the adjustment so no cluster drops below
-        // minFloor. If the overshoot can't be absorbed by the biggest
-        // cluster alone, distribute the trim across all clusters
-        // proportionally.
-        let renderSum = CLUSTERS.reduce((s, c) => s + c.n, 0);
-        if (renderSum !== TOTAL) {
-          const delta = TOTAL - renderSum;
-          // Find biggest cluster
-          let maxIdx = 0;
-          for (let i = 1; i < CLUSTERS.length; i++) {
-            if (CLUSTERS[i].n > CLUSTERS[maxIdx].n) maxIdx = i;
-          }
-          // If adjusting the biggest cluster alone wouldn't drive it
-          // below minFloor, do the single-cluster adjust. Otherwise
-          // scale all clusters proportionally to fit TOTAL.
-          if (CLUSTERS[maxIdx].n + delta >= minFloor) {
-            CLUSTERS[maxIdx].n += delta;
-          } else {
-            // Proportional re-normalization. Compute the ratio, then
-            // re-clamp each cluster to minFloor. Final pass absorbs
-            // any remaining rounding error into the biggest cluster.
-            const ratio = TOTAL / renderSum;
-            for (let i = 0; i < CLUSTERS.length; i++) {
-              CLUSTERS[i].n = Math.max(minFloor, Math.round(CLUSTERS[i].n * ratio));
-            }
-            // Second-pass rounding correction
-            renderSum = CLUSTERS.reduce((s, c) => s + c.n, 0);
-            const delta2 = TOTAL - renderSum;
-            let maxIdx2 = 0;
-            for (let i = 1; i < CLUSTERS.length; i++) {
-              if (CLUSTERS[i].n > CLUSTERS[maxIdx2].n) maxIdx2 = i;
-            }
-            if (CLUSTERS[maxIdx2].n + delta2 >= minFloor) {
-              CLUSTERS[maxIdx2].n += delta2;
-            }
-          }
-        }
-        console.log(`[Brain3D] Scaled: ${CLUSTERS.map(c => `${c.key}=${c.n}`).join(', ')} = ${CLUSTERS.reduce((s, c) => s + c.n, 0)} (target ${TOTAL}, minFloor ${minFloor})`);
+        TOTAL = CLUSTERS.reduce((s, c) => s + c.n, 0);
+        console.log(`[Brain3D] Per-cluster peg @ ${MAX_RENDER_NEURONS_PER_CLUSTER}: ${CLUSTERS.map(c => `${c.key}=${c.n}`).join(', ')} = TOTAL ${TOTAL.toLocaleString()}`);
       } else {
-        // No cluster data — scale from base proportions
-        const clusterScale = TOTAL / 1000;
-        for (const c of CLUSTERS) c.n = Math.round(c.n * clusterScale);
+        // No cluster data — flat peg at MAX_RENDER_NEURONS_PER_CLUSTER.
+        for (const c of CLUSTERS) c.n = MAX_RENDER_NEURONS_PER_CLUSTER;
+        TOTAL = CLUSTERS.reduce((s, c) => s + c.n, 0);
       }
       // Rebuild neuron positions and GL buffers
       this._glow = new Float32Array(TOTAL);
       this._vis = new Float32Array(TOTAL).fill(1);
+      // T18.7.a — resize Rulkov oscillator state on scale change. Prior
+      // code left `_rulkovX`/`_rulkovY` sized to the initial TOTAL=1000
+      // from the constructor, so every render neuron past index 1000
+      // was reading undefined from the Rulkov buffers (triggering the
+      // reseed path in the render loop every frame and never persisting
+      // its trajectory — bursting regime never emerged). With per-cluster
+      // peg at 20K × 15 clusters = up to 300K render neurons, resizing
+      // here becomes load-bearing.
+      this._rulkovX = new Float32Array(TOTAL);
+      this._rulkovY = new Float32Array(TOTAL);
+      {
+        const phi = 0.61803398875;
+        for (let i = 0; i < TOTAL; i++) {
+          const gx = (i * phi) % 1;
+          const gy = (i * phi * 1.7) % 1;
+          this._rulkovX[i] = -1.0 + gx * 0.5;
+          this._rulkovY[i] = -3.2 + gy * 0.4;
+        }
+      }
       this._genPositions();
       if (this._gl) this._uploadStatic();
       console.log(`[Brain3D] Scaled to ${TOTAL} render neurons (real brain has ${realNeurons.toLocaleString()})`);

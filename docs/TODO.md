@@ -145,6 +145,26 @@ Three fixes per Gee approval:
 
 ---
 
+#### T18.7 — 3D brain seize during curriculum (Gee 2026-04-19)
+
+**Gee's verbatim 2026-04-19:**
+
+> *"the 3D brain was kinda seizing but fiorst push to the syllabus branc"*
+
+Followed by verbatim on the three proposed fixes:
+
+> *"1 fine then nothing to do. 2 we can adjust the display ratio but it should already peg at 20K per brain cluster(regionS) 3. yeah thats fine we dont need to chow every connection that its currently showing to as the firing of neron s and thier connections on the 3D brain should be a percentage of the real"*
+
+Three sub-items decoded:
+
+1. ~~osReserveVramMB bump~~ — *"1 fine then nothing to do"*. Skipped.
+- [x] **T18.7.a — Per-cluster peg at 20K render neurons.** Gee verbatim *"it should already peg at 20K per brain cluster(regionS)"*. Prior `MAX_RENDER_NEURONS = 20000` was a GLOBAL cap across all 15 clusters/regions → each cluster got ~1.3K render points at biological scale → too sparse. Renamed to `MAX_RENDER_NEURONS_PER_CLUSTER` + every cluster independently renders `min(20000, realClusterSize)` points, sum becomes the live TOTAL (up to 15 × 20K = 300K at biological scale). Also fixed a latent bug where `_rulkovX`/`_rulkovY` stayed sized to the initial TOTAL=1000 from the constructor, so render neurons past index 1000 never persisted their Rulkov trajectory (reseed path fired every frame, bursting regime never emerged). Scale-change path now resizes Rulkov state alongside glow/vis buffers. **SHIPPED** — `js/ui/brain-3d.js`.
+- [x] **T18.7.b — Sampled state-update downsample for 3D brain.** Gee verbatim *"we dont need to chow every connection that its currently showing to as the firing of neron s and thier connections on the 3D brain should be a percentage of the real"*. Server broadcasts state at 10 Hz; 3D brain redraw now downsamples to every 3rd broadcast (~3.3 Hz). 2D `brainViz` stays at full rate (cheap canvas). HUD stays full rate (responsiveness). `MAX_CONN=3000` + `MAX_PULSES=500` caps in brain-3d.js already enforce the "percentage of real" constraint on connections and pulses. **SHIPPED** — `js/app.js`.
+
+**T18.7 closure gate:** Gee confirms on next Part 2 run that the 3D brain no longer seizes during sparse upload + curriculum walk. Gee-verification only — Claude cannot close.
+
+---
+
 #### T18.5 — push gate for main-branch deploy (BINDING)
 
 Per Gee's verbatim 2026-04-18 instruction: before ANY push to `main` for GitHub static deploy, every T18 item above must be shipped AND all docs must be updated AND Gee must explicitly say "yes, push it". Claude does not initiate the push. Claude asks first after the fixes land.
