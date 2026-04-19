@@ -6,6 +6,20 @@ echo     Unity Brain Server
 echo   ==============================
 echo.
 
+REM T18.12.d — /fresh or /clear flag forces brain state wipe on boot
+REM (overrides the T18.12.a code-hash preserve behavior). Default
+REM `start.bat` boot preserves state if brain-code source files are
+REM unchanged since the last run — curriculum progress, passedCells,
+REM gateHistory, weights all survive restarts. Use /fresh when you
+REM explicitly want a clean-slate retrain (e.g., embedding refinements
+REM went bad, persistence got corrupted, testing fresh boot behavior).
+if /i "%1"=="/fresh" set DREAM_FORCE_CLEAR=1
+if /i "%1"=="/clear" set DREAM_FORCE_CLEAR=1
+if defined DREAM_FORCE_CLEAR (
+    echo   [!] DREAM_FORCE_CLEAR=1 — will clear brain state on boot.
+    echo.
+)
+
 REM Kill anything already on port 7525
 for /f "tokens=5" %%a in ('netstat -ano ^| findstr :7525 ^| findstr LISTENING') do taskkill /f /pid %%a >nul 2>&1
 

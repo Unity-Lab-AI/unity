@@ -265,6 +265,37 @@ Either trigger crosses the success-path leak and stacks multi-GB of orphaned buf
 
 ---
 
+#### T18.12 — Save-point infrastructure + code-hash preserve + curriculum LAW 6 Part 1 remake + 5 Pre-K runners (Gee 2026-04-19)
+
+**Gee's verbatim 2026-04-19:**
+
+> *"now before i startr it up are we sure the learnign ciriculum foir pre-k and k are correct and propelty to the brain equations and theiur own equational natiure?"*
+>
+> *"dont we need it all like stepped progress with save points??? and a start.bat that once can run to keep the brain state from last session with out total restart. to where if no code changes that woulkdl stale out itll retain it learning and save state..."*
+>
+> *"option 2 it is get it done so we can test then push"*
+
+Atomic scope: T18.12 save-point infrastructure (code-hash gate + per-cell checkpoint + resume + start.bat flag) + curriculum LAW 6 Part 1 equational remake (Math-K + Life Pre-K + Life-K banned calls removed) + 5 missing Pre-K runners added (ELA/Math/Science/Social/Arts). ONE atomic commit per Gee's "option 2" directive.
+
+- [x] **T18.12.a — Code-hash auto-clear gate.** `server/brain-server.js` `autoClearStaleState` rewritten to SHA256-hash every brain-logic source file and compare to prior-boot hash. Match → PRESERVE state across restart; mismatch → clear + write new hash. Overrides: `DREAM_KEEP_STATE=1` forces preserve; `DREAM_FORCE_CLEAR=1` forces clear. Loud log lines so operator always knows which branch ran. Hash file: `server/brain-code-hash.json`. **SHIPPED**.
+- [x] **T18.12.b — Per-cell checkpoint save.** `brain.saveWeights({ force: true })` bypasses `_curriculumInProgress` guard. `Curriculum._saveCheckpoint(cellKey)` callback wired by brain-server right after `new Curriculum(...)`. `_cellRunner` calls it after `passedCells.push(cellKey)` so every passed cell persists atomically. **SHIPPED**.
+- [x] **T18.12.c — Resume-from-passedCells.** `_cellRunner` checks `cluster.passedCells.includes(cellKey)` BEFORE firing the runner; hit → skip with synthetic pass `{pass: true, reason: 'already-passed (resumed from persisted passedCells)', resumed: true}`. Paired with T18.12.a preserve, code-unchanged restarts skip every already-passed cell. **SHIPPED**.
+- [x] **T18.12.d — `start.bat /fresh` flag.** Default boot preserves when code-hash matches. `start.bat /fresh` or `start.bat /clear` sets `DREAM_FORCE_CLEAR=1` for explicit wipe. **SHIPPED**.
+- [x] **T18.12.e — VERSION stays hard gate.** No code change; documented: persistence.js `VERSION` rejects shape-incompatible saves on load (hard gate); code-hash is the soft gate (semantic drift). Both run.
+
+#### T18.12 curriculum remake (LAW 6 Part 1 compliance, atomic with T18.12)
+
+- [x] **Math-K equational remake.** 5 banned list calls removed (`_teachVocabList(NUMBER_WORDS_K)`, `_teachSentenceList(MATH_K_SENTENCES)`, `_teachVocabList(SHAPE_WORDS)`, `_teachSentenceList(SHAPE_SENTENCES)`, `_teachSentenceList(MEASUREMENT_SENTENCES)`). All content redundant with existing equational core below (`_teachMagnitudeToMotor` + `_teachAdditionTransformations` + `_teachSubtractionTransformations` + `_teachComparisonTransformations` + `_teachMakeTen` + `_teachDecomposition` + `_teachShapeFeatures` + `_teachShapeCompose` + `_teachAttributeCompare` + `_teachClassifyCount`). Replaced with LAW 6 compliance comment citing each substitute. **SHIPPED**.
+- [x] **Life Pre-K equational remake.** `CORE_SELF` + `FAMILY_MEMORIES` + `SENSORY_MEMORIES` + `WANTS` sentence arrays → `CORE_SELF_FACTS` + `PERSONAL_FACTS` `{question, answer}` pairs routed through equational `_teachBiographicalFacts`. `FIRST_WORDS` vocab array → `FIRST_WORD_CONCEPTS` with 8d emotional-valence features routed through equational `_conceptTeach`. Gate's vocab check updated to use `.map(c => c.name)`. **SHIPPED**.
+- [x] **Life-K equational remake.** 6 banned `_teachSentenceList` calls (SCHOOL_START, DAILY_LIFE, LIKES, FRIENDS, HOLIDAYS, FEELINGS_K) removed. Content redundant with existing equational core (`_conceptTeach(EMOTIONS_K)` + `_teachBiographicalFacts([...])` + `_teachEmotionalInference([...])`). Replaced with LAW 6 compliance comment. **SHIPPED**.
+- [x] **5 missing Pre-K runners added.** `runElaPreK` (phoneme + sound-source), `runMathPreK` (quantity 1-3 + more/less magnitude), `runSciPreK` (object categories + animal sounds + cause-effect), `runSocPreK` (family roles + basic social emotions), `runArtPreK` (primary/secondary colors). Each uses only equational helpers (`_conceptTeach`, `_teachBiographicalFacts`) + `_gateVocabList` pass check. 5 dispatch cases added to `_cellRunner`. **SHIPPED**.
+
+**T18.12 closure gate:** Gee-verification on next Part 2 K run. Success criteria: (a) first boot retrains K from scratch (expected — code-hash new this session); (b) second boot with NO code changes resumes with `[Curriculum] ⤳ T18.12.c resume — skipping ela/kindergarten (already passed per persisted passedCells)` log lines; (c) per-cell `[Curriculum] T18.12.b checkpoint saved after passing <cell>` log lines appear during Part 2; (d) no banned `_teachSentenceList` / `_teachVocabList` calls fire in Math-K / Life Pre-K / Life-K critical paths; (e) all 5 Pre-K runners fire without the `[Curriculum._cellRunner] unknown cell` throw. Claude cannot close — Gee-verification only.
+
+**Closes LAW 6 Part 1 architecturally** for pre-K + K (all 12 subject×grade cells now use equational teaching methods). LAW 6 Part 2 (Gee localhost signoff) + Part 3 (Persistent Life Info ledger update) remain open and gate the K push-to-main approval.
+
+---
+
 #### T18.5 — push gate for main-branch deploy (BINDING)
 
 Per Gee's verbatim 2026-04-18 instruction: before ANY push to `main` for GitHub static deploy, every T18 item above must be shipped AND all docs must be updated AND Gee must explicitly say "yes, push it". Claude does not initiate the push. Claude asks first after the fixes land.

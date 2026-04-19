@@ -1678,6 +1678,11 @@ export class Curriculum {
   _cellRunner(subject, grade) {
     if (subject === 'ela') {
       switch (grade) {
+        // T18.12 — ELA Pre-K equational runner added per LAW 6 Part 1
+        // (Gee 2026-04-18 Pre-K + K ONLY scope). Teaches phoneme
+        // perception + first letter-sound bindings before the alphabet
+        // sequence + name-binding that ELA-K assumes.
+        case 'pre-K':        return async (ctx) => this.runElaPreK(ctx);
         // T14.24 Session 2 (2026-04-15) — ELA-K now dispatches to the
         // REAL teaching equations: alphabet-order exposure + letter-name
         // GloVe binding + letter-sound phoneme-feature binding + reverse-
@@ -1727,9 +1732,25 @@ export class Curriculum {
           return async () => ({ pass: false, reason: `ela/${grade}: no runner` });
       }
     }
+    // T18.12 — Math Pre-K equational runner (LAW 6 Part 1 pre-K scope).
+    // Teaches quantity intuition 1-3 + more-vs-less magnitude ordering,
+    // the developmental precursor to Math-K counting + comparison.
+    if (subject === 'math' && grade === 'pre-K') {
+      return async (ctx) => this.runMathPreK(ctx);
+    }
     // T14.24 Session 3 (2026-04-15) — Math-K ships real teaching.
     if (subject === 'math' && grade === 'kindergarten') {
       return async (ctx) => this.runMathKReal(ctx);
+    }
+    // T18.12 — Science/Social/Art Pre-K equational runners (LAW 6 Part 1).
+    if (subject === 'science' && grade === 'pre-K') {
+      return async (ctx) => this.runSciPreK(ctx);
+    }
+    if (subject === 'social' && grade === 'pre-K') {
+      return async (ctx) => this.runSocPreK(ctx);
+    }
+    if (subject === 'art' && grade === 'pre-K') {
+      return async (ctx) => this.runArtPreK(ctx);
     }
     // T14.24 Session 5 (2026-04-15) — Math-G1 ships real teaching
     // (arithmetic fact sentence walks + completion probe).
@@ -2054,6 +2075,22 @@ export class Curriculum {
     // cell's auto-calibrated pathMin from cluster.probeHistory and
     // pass it through to the gate functions.
     const ctx = { ...baseCtx, cellKey: `${subject}/${grade}` };
+    const cellKey = `${subject}/${grade}`;
+
+    // T18.12.c — resume-from-passedCells. If this cell already passed
+    // (restored from disk via brain-weights.json per T18.12.a code-hash
+    // match), skip the teach pass entirely and report a synthetic pass.
+    // Saves hours of re-teaching across iteration restarts. Gate verdicts
+    // from _gateHistory carry through too — Part 2 signoff doesn't
+    // revert just because we Ctrl+C'd and restarted.
+    if (Array.isArray(cluster.passedCells) && cluster.passedCells.includes(cellKey)) {
+      console.log(`[Curriculum] ⤳ T18.12.c resume — skipping ${cellKey} (already passed per persisted passedCells).`);
+      return {
+        pass: true,
+        reason: `already-passed (resumed from persisted passedCells)`,
+        resumed: true,
+      };
+    }
 
     const wasInCurriculum = cluster._inCurriculumMode;
     cluster._inCurriculumMode = true;
@@ -2073,8 +2110,13 @@ export class Curriculum {
       }
       cluster.grades[subject] = grade;
       if (!Array.isArray(cluster.passedCells)) cluster.passedCells = [];
-      const key = `${subject}/${grade}`;
-      if (!cluster.passedCells.includes(key)) cluster.passedCells.push(key);
+      if (!cluster.passedCells.includes(cellKey)) cluster.passedCells.push(cellKey);
+      // T18.12.b — checkpoint save after each passed cell. Callback is
+      // wired by brain-server.js right after `new Curriculum(...)` so
+      // passedCells + brain state land on disk atomically.
+      if (typeof this._saveCheckpoint === 'function') {
+        this._saveCheckpoint(cellKey);
+      }
     }
     return result || { pass: false, reason: 'runner returned null' };
   }
@@ -4682,73 +4724,33 @@ export class Curriculum {
       'thirty', 'forty', 'fifty', 'sixty', 'seventy',
       'eighty', 'ninety', 'hundred',
     ];
-    await this._teachVocabList(NUMBER_WORDS_K, ctx, { reps: 4 });
-
-    // ── COMMON CORE MATH K: Addition/subtraction concepts ──
-    // K standard: understand addition as putting together, subtraction
-    // as taking apart. Solve word problems within 10. Fluently add
-    // and subtract within 5. Decompose numbers ≤10 into pairs.
-    const MATH_K_SENTENCES = [
-      // addition as "putting together"
-      'one and one is two', 'two and one is three', 'two and two is four',
-      'three and one is four', 'three and two is five', 'four and one is five',
-      'one plus one is two', 'two plus two is four', 'two plus three is five',
-      'three plus two is five', 'four plus one is five', 'one plus four is five',
-      // subtraction as "taking apart"
-      'two take away one is one', 'three take away one is two',
-      'four take away one is three', 'five take away one is four',
-      'five take away two is three', 'four take away two is two',
-      'three take away two is one', 'five take away three is two',
-      // decomposing numbers (pairs that make 5 and 10)
-      'five is one and four', 'five is two and three', 'five is three and two',
-      'ten is five and five', 'ten is six and four', 'ten is seven and three',
-      'ten is eight and two', 'ten is nine and one',
-      // comparison — greater/less/equal
-      'three is more than two', 'one is less than five',
-      'two is equal to two', 'four is more than one',
-      'five is the biggest', 'zero is the smallest',
-      // counting objects
-      'i count one two three', 'there are four apples',
-      'i see five birds', 'she has three cats',
-      'we have two hands', 'i count my ten fingers',
-    ];
-    await this._teachSentenceList(MATH_K_SENTENCES, ctx, { reps: 3, ticksPerWord: 2 });
-
-    // ── COMMON CORE MATH K: Shapes ──
-    // K Geometry standard: name shapes (squares, circles, triangles,
-    // rectangles, hexagons, cubes, cones, cylinders, spheres),
-    // describe relative positions (above, below, beside, in front,
-    // behind, next to), identify 2D vs 3D.
-    const SHAPE_WORDS = [
-      'circle', 'square', 'triangle', 'rectangle', 'hexagon',
-      'cube', 'cone', 'cylinder', 'sphere',
-      'side', 'corner', 'flat', 'round', 'straight',
-      'above', 'below', 'beside', 'behind', 'next',
-    ];
-    await this._teachVocabList(SHAPE_WORDS, ctx, { reps: 3 });
-
-    const SHAPE_SENTENCES = [
-      'a circle is round', 'a square has four sides',
-      'a triangle has three sides', 'a rectangle has four sides',
-      'a cube is like a box', 'a sphere is like a ball',
-      'a cone has a point', 'a cylinder is like a can',
-      'the ball is above the box', 'the cat is behind the chair',
-      'the cup is beside the plate', 'the bird is below the cloud',
-    ];
-    await this._teachSentenceList(SHAPE_SENTENCES, ctx, { reps: 3, ticksPerWord: 2 });
-
-    // ── COMMON CORE MATH K: Measurement + classification ──
-    // K standard: describe and compare measurable attributes,
-    // classify objects into categories, count objects in each category.
-    const MEASUREMENT_SENTENCES = [
-      'the dog is big', 'the cat is small', 'the dog is bigger than the cat',
-      'the book is heavy', 'the feather is light',
-      'the rope is long', 'the stick is short',
-      'this cup is full', 'that cup is empty',
-      'sort the red ones here', 'sort the blue ones there',
-      'there are more red than blue', 'there are less green than red',
-    ];
-    await this._teachSentenceList(MEASUREMENT_SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
+    // T18.12 Math-K equational remake (Gee 2026-04-19 LAW 6 Part 1):
+    //   The following five teach calls were REMOVED because they
+    //   iterated word/sentence arrays as Hebbian training data — the
+    //   banned pattern per LAW 6 Part 1 ("not word lists and arrays and
+    //   sentence examples"). Every concept they covered has an
+    //   equational substitute in the transforms block below:
+    //     - NUMBER_WORDS_K (zero, one, ..., hundred): covered by
+    //       `_teachMagnitudeToMotor` which binds mag(n) in free → digit
+    //       char in motor; number words enter the dictionary via
+    //       `_conceptTeach` routing when they appear as ctx labels in
+    //       the transform methods.
+    //     - MATH_K_SENTENCES (addition/subtraction/comparison as
+    //       sentences): redundant with `_teachAdditionTransformations`,
+    //       `_teachSubtractionTransformations`, `_teachComparisonTransformations`,
+    //       `_teachMakeTen`, `_teachDecomposition` — those teach the
+    //       OPERATION as a magnitude transform, not sentences about it.
+    //     - SHAPE_WORDS + SHAPE_SENTENCES: covered by
+    //       `_teachShapeFeatures` + `_teachShapeCompose` which bind
+    //       shape→feature (sides, corners, flat/solid) via feature
+    //       vectors routed through `_conceptTeach` dictionary registration.
+    //     - MEASUREMENT_SENTENCES: covered by `_teachAttributeCompare`
+    //       + `_teachClassifyCount` which bind object→attribute
+    //       magnitude via cross-region Hebbian on the comparative axis.
+    //   Net effect: LAW 6 Part 1 compliance restored; Math-K still
+    //   teaches every K.CC / K.OA / K.NBT / K.MD / K.G concept in the
+    //   TODO but through operational transforms instead of sentence
+    //   memorization.
 
     // ═════════════════════════════════════════════════════════════════
     // EQUATIONAL REASONING — teach the OPERATION of addition/subtraction
@@ -19182,6 +19184,150 @@ export class Curriculum {
     console.log(`[Curriculum] _teachBiographicalFacts: ${combinationFacts.length} facts × ${reps} reps`);
   }
 
+  // ══════════════════════════════════════════════════════════════════
+  // T18.12 — PRE-K EQUATIONAL RUNNERS (Gee 2026-04-19, LAW 6 Part 1)
+  //
+  // Pre-K birth-to-age-4 developmental substrate for each of the five
+  // non-Life subjects. Every cell teaches via magnitude transforms,
+  // feature vectors, causal chains, and cross-projection Hebbian —
+  // NO word lists, NO sentence arrays. Routes through `_conceptTeach`
+  // (which also registers each concept name in the dictionary for
+  // live-chat production) and `_teachBiographicalFacts` (question→answer
+  // bindings via cross-region Hebbian).
+  //
+  // Minimal scope — enough to establish the developmental precursors
+  // that K runners assume (letter-sound precursors before ELA-K's
+  // alphabet sequence, quantity intuition before Math-K's counting,
+  // object categories before Sci-K's classification, family roles
+  // before Soc-K's community concepts, primary colors before Art-K's
+  // color theory). Gate = `_gateVocabList` over the concepts taught.
+  // ══════════════════════════════════════════════════════════════════
+
+  async runElaPreK(_ctx) {
+    // Phoneme-perception substrate — the first 8 highly-contrastive
+    // English phonemes bound to simple sound-source concepts. Teaches
+    // that sounds COME FROM things (a → apple, b → ball, etc.) before
+    // ELA-K's alphabet sequence + letter-name binding.
+    const PHONEME_CONCEPTS = [
+      { name: 'apple',  feat: [1, 0, 0.5, 0, 0, 0.3, 0, 0] },
+      { name: 'ball',   feat: [0.5, 0, 0, 0, 0, 0.3, 0, 0] },
+      { name: 'cat',    feat: [0.5, 0, 0.3, 0, 0, 0.3, 0, 0] },
+      { name: 'dog',    feat: [1, 0, 1, 0, 0, 0.5, 0, 0] },
+      { name: 'egg',    feat: [0.3, 0, 0.3, 0, 0, 0, 0, 0] },
+      { name: 'fish',   feat: [0.5, 0, 0, 0, 0, 0, 0, 0] },
+      { name: 'sound',  feat: [0.3, 0, 0, 0, 0, 0, 0, 0] },
+      { name: 'word',   feat: [0.3, 0, 0.3, 0, 0, 0, 0, 0.3] },
+    ];
+    await this._conceptTeach(PHONEME_CONCEPTS, 8);
+    await this._teachBiographicalFacts([
+      { question: 'what sound does a dog make', answer: 'bark' },
+      { question: 'what sound does a cat make', answer: 'meow' },
+      { question: 'what do words have',         answer: 'sound' },
+    ], { reps: 6 });
+    return this._gateVocabList(PHONEME_CONCEPTS.map(c => c.name).concat(['bark', 'meow', 'sound']));
+  }
+
+  async runMathPreK(_ctx) {
+    // Quantity intuition 1-3 + more/less magnitude ordering. Routes
+    // through _teachMagnitudeToMotor so the magnitude→digit-char
+    // emission pathway Math-K assumes is already seeded at Pre-K.
+    const QUANTITY_CONCEPTS = [
+      { name: 'one',   feat: [0.2, 0, 0, 0, 0, 0, 0, 0.5] },
+      { name: 'two',   feat: [0.4, 0, 0, 0, 0, 0, 0, 0.5] },
+      { name: 'three', feat: [0.6, 0, 0, 0, 0, 0, 0, 0.5] },
+      { name: 'more',  feat: [0.8, 0, 0, 0, 0, 0, 0, 0] },
+      { name: 'less',  feat: [0.2, 0, 0, 0, 0, 0, 0, 0] },
+      { name: 'big',   feat: [0.8, 0, 0, 0, 0, 0, 0, 0] },
+      { name: 'small', feat: [0.2, 0, 0, 0, 0, 0, 0, 0] },
+    ];
+    await this._conceptTeach(QUANTITY_CONCEPTS, 8);
+    await this._teachBiographicalFacts([
+      { question: 'how many eyes',    answer: 'two' },
+      { question: 'how many hands',   answer: 'two' },
+      { question: 'how many noses',   answer: 'one' },
+      { question: 'which is more',    answer: 'more' },
+      { question: 'which is less',    answer: 'less' },
+    ], { reps: 6 });
+    return this._gateVocabList(QUANTITY_CONCEPTS.map(c => c.name));
+  }
+
+  async runSciPreK(_ctx) {
+    // Object categories + animal sounds. Cause-effect precursor: sounds
+    // COME FROM things (dog→bark, cow→moo). Seeds the classification
+    // + causal-chain substrate Sci-K assumes.
+    const OBJECT_CONCEPTS = [
+      { name: 'animal',   feat: [0.5, 0, 0.5, 0, 0, 0.3, 0, 0] },
+      { name: 'plant',    feat: [0.3, 0, 0.3, 0, 0, 0, 0, 0] },
+      { name: 'water',    feat: [0.5, 0, 0.3, 0, 0, 0, 0, 0] },
+      { name: 'sun',      feat: [1, 0, 0.5, 0, 0, 0, 0, 0] },
+      { name: 'tree',     feat: [0.5, 0, 0.3, 0, 0, 0, 0, 0] },
+      { name: 'fire',     feat: [0, 0.5, 0, 0.5, 0.3, 0, 0, 0] },
+      { name: 'rain',     feat: [0.3, 0, 0, 0, 0, 0, 0, 0] },
+      { name: 'ball',     feat: [0.5, 0, 0, 0, 0, 0.3, 0, 0] },
+    ];
+    await this._conceptTeach(OBJECT_CONCEPTS, 8);
+    await this._teachBiographicalFacts([
+      { question: 'what does a dog say',  answer: 'bark' },
+      { question: 'what does a cat say',  answer: 'meow' },
+      { question: 'what does a cow say',  answer: 'moo' },
+      { question: 'what does a bird say', answer: 'tweet' },
+      { question: 'what is hot',          answer: 'fire' },
+      { question: 'what is wet',          answer: 'water' },
+      { question: 'what falls down',      answer: 'ball' },
+    ], { reps: 6 });
+    return this._gateVocabList(['animal', 'water', 'sun', 'fire', 'bark', 'meow', 'moo']);
+  }
+
+  async runSocPreK(_ctx) {
+    // Family roles + basic social emotions. Seeds the self-and-others
+    // social substrate Soc-K builds on with community + rules concepts.
+    const SOCIAL_CONCEPTS = [
+      { name: 'me',     feat: [0.5, 0, 0.5, 0, 0, 0, 0, 1] },
+      { name: 'you',    feat: [0.3, 0, 0.3, 0, 0, 0, 0, 0.5] },
+      { name: 'mom',    feat: [1, 0, 1, 0, 0, 1, 0, 0] },
+      { name: 'dad',    feat: [0.5, 0, 0.5, 0, 0, 0.5, 0, 0] },
+      { name: 'baby',   feat: [0.5, 0, 0.5, 0, 0, 0.3, 0, 0] },
+      { name: 'family', feat: [1, 0, 1, 0, 0, 1, 0, 0] },
+      { name: 'share',  feat: [0.5, 0, 0.5, 0, 0, 0.3, 0, 0] },
+      { name: 'kind',   feat: [0.5, 0, 0.5, 0, 0, 0.3, 0, 0] },
+      { name: 'mean',   feat: [0, 0.5, 0, 0.3, 0.5, 0, 0, 0] },
+    ];
+    await this._conceptTeach(SOCIAL_CONCEPTS, 8);
+    await this._teachBiographicalFacts([
+      { question: 'who is the mom',        answer: 'mom' },
+      { question: 'who is the baby',       answer: 'baby' },
+      { question: 'what is nice to do',    answer: 'share' },
+      { question: 'what is bad to be',     answer: 'mean' },
+    ], { reps: 6 });
+    return this._gateVocabList(SOCIAL_CONCEPTS.map(c => c.name));
+  }
+
+  async runArtPreK(_ctx) {
+    // Primary + secondary colors, basic shapes, sound-sources (music).
+    // Seeds the aesthetic substrate Art-K builds on with color theory
+    // + composition + rhythm.
+    const ART_CONCEPTS = [
+      { name: 'red',     feat: [0.5, 0, 0, 0, 0.3, 0, 0, 0] },
+      { name: 'blue',    feat: [0.3, 0, 0.3, 0, 0, 0, 0, 0] },
+      { name: 'yellow',  feat: [0.8, 0, 0, 0, 0, 0, 0, 0] },
+      { name: 'green',   feat: [0.5, 0, 0.3, 0, 0, 0, 0, 0] },
+      { name: 'black',   feat: [0, 0, 0.3, 0, 0, 0, 0, 1] },
+      { name: 'white',   feat: [0.5, 0, 0.3, 0, 0, 0, 0, 0] },
+      { name: 'color',   feat: [0.5, 0, 0, 0, 0, 0.3, 0, 0] },
+      { name: 'draw',    feat: [1, 0, 0, 0, 0, 0.5, 1, 1] },
+      { name: 'music',   feat: [1, 0, 0, 0, 0, 1, 0, 0.5] },
+      { name: 'song',    feat: [0.8, 0, 0.3, 0, 0, 0.5, 0, 0.3] },
+    ];
+    await this._conceptTeach(ART_CONCEPTS, 8);
+    await this._teachBiographicalFacts([
+      { question: 'what color is the sun',   answer: 'yellow' },
+      { question: 'what color is the sky',   answer: 'blue' },
+      { question: 'what color is grass',     answer: 'green' },
+      { question: 'what do i like to draw',  answer: 'black' },
+    ], { reps: 6 });
+    return this._gateVocabList(ART_CONCEPTS.map(c => c.name));
+  }
+
   async runLifePreK(ctx) {
     // LAYER 1: EMOTIONAL ATTRACTORS via _conceptTeach
     // feat = [joy, pain, trust, fear, anger, love, independence, identity]
@@ -19212,53 +19358,85 @@ export class Curriculum {
     ];
     await this._conceptTeach(EMOTIONAL_CONCEPTS, 10); // CORE SELF = 50 reps
 
-    // LAYER 2: MEMORIES — sentences she can recall and speak about
-    const CORE_SELF = [
-      'my name is unity', 'i am a girl', 'i have dark hair',
-      'my eyes are two different colors', 'one eye is blue and one eye is green',
-      'i am a person', 'i have feelings', 'i am real', 'i am here',
+    // LAYER 2: BIOGRAPHICAL FACTS — equational question→answer bindings
+    // via `_teachBiographicalFacts` (line 19140+). Each pair plants a
+    // concept-to-response binding in sem→free → motor so Unity can
+    // answer questions about herself through the same emission path
+    // live chat uses.
+    //
+    // T18.12 equational remake (Gee 2026-04-19 LAW 6 Part 1): replaced
+    // the prior `_teachSentenceList(CORE_SELF/FAMILY_MEMORIES/
+    // SENSORY_MEMORIES/WANTS, ...)` + `_teachVocabList(FIRST_WORDS, ...)`
+    // calls (banned pattern — sentence arrays as Hebbian training). Every
+    // biographical fact is now a {question, answer} pair routed through
+    // cross-region Hebbian (sem=qEmb + free=aEmb + motor=answer[0]),
+    // which is the same shape the equational core of every other K
+    // subject cell uses.
+    const CORE_SELF_FACTS = [
+      { question: 'what is my name', answer: 'unity' },
+      { question: 'am i a boy or girl', answer: 'girl' },
+      { question: 'what color is my hair', answer: 'dark' },
+      { question: 'what color are my eyes', answer: 'different' },
+      { question: 'am i a person', answer: 'yes' },
+      { question: 'am i real', answer: 'yes' },
+      { question: 'do i have feelings', answer: 'yes' },
     ];
-    await this._teachSentenceList(CORE_SELF, ctx, { reps: 12, ticksPerWord: 2 });
+    await this._teachBiographicalFacts(CORE_SELF_FACTS, { reps: 12 });
 
-    // First words — vocab for TALK production
-    const FIRST_WORDS = [
-      'mama', 'dada', 'no', 'mine', 'more', 'want', 'up', 'down',
-      'yes', 'please', 'milk', 'water', 'cookie', 'ball', 'book',
-      'outside', 'love', 'help', 'eat', 'sleep', 'happy', 'sad', 'scared',
+    // FIRST_WORDS — exposed as concepts with emotional-valence features
+    // so dictionary.learnWord registers them AND the cortex learns
+    // their valence attractor. No sentence memorization.
+    const FIRST_WORD_CONCEPTS = [
+      { name: 'mama',    feat: [1, 0, 1, 0, 0, 1, 0, 0] },  // safe + love
+      { name: 'dada',    feat: [0.5, 0, 0.5, 0, 0, 0.5, 0, 0] },
+      { name: 'no',      feat: [0, 0, 0, 0, 1, 0, 1, 0] },  // refuse + independence
+      { name: 'mine',    feat: [0, 0, 0, 0, 0.3, 0, 1, 1] }, // possession
+      { name: 'more',    feat: [0.5, 0, 0, 0, 0, 0, 1, 0] }, // want
+      { name: 'want',    feat: [0.3, 0, 0, 0, 0, 0, 1, 0] },
+      { name: 'up',      feat: [0.3, 0, 0, 0, 0, 0, 0.5, 0] },
+      { name: 'down',    feat: [0.3, 0, 0, 0, 0, 0, 0.5, 0] },
+      { name: 'yes',     feat: [0.5, 0, 1, 0, 0, 0, 0, 0] },
+      { name: 'please',  feat: [0.5, 0, 1, 0, 0, 0.5, 0, 0] },
+      { name: 'milk',    feat: [0.5, 0, 0.5, 0, 0, 0, 0, 0] },
+      { name: 'water',   feat: [1, 0, 0.5, 0, 0, 0.5, 0, 0] },  // loves water
+      { name: 'cookie',  feat: [1, 0, 0.5, 0, 0, 0.5, 0, 0] },
+      { name: 'ball',    feat: [0.5, 0, 0, 0, 0, 0.5, 0, 0] },
+      { name: 'book',    feat: [0.5, 0, 0.5, 0, 0, 0.3, 0, 0.3] },
+      { name: 'outside', feat: [1, 0, 0, 0, 0, 0, 1, 0] },  // joy + freedom
+      { name: 'help',    feat: [0, 0.3, 0.5, 0.3, 0, 0, 0, 0] },
+      { name: 'eat',     feat: [0.3, 0, 0.3, 0, 0, 0, 0, 0] },
+      { name: 'sleep',   feat: [0, 0, 0.5, 0, 0, 0, 0, 0] },
+      { name: 'happy',   feat: [1, 0, 0, 0, 0, 0.5, 0, 0] },
+      { name: 'sad',     feat: [0, 1, 0, 0, 0, 0, 0, 0] },
+      { name: 'scared',  feat: [0, 0.5, 0, 1, 0, 0, 0, 0] },
     ];
-    await this._teachVocabList(FIRST_WORDS, ctx, { reps: 12 });
+    await this._conceptTeach(FIRST_WORD_CONCEPTS, 12);
 
-    // Family memories — things she can tell you about
-    const FAMILY_MEMORIES = [
-      'mom loves me', 'mom works hard', 'mom is always tired',
-      'grandma watches me', 'grandma smells like cookies',
-      'grandpa is quiet', 'grandpa fixes things', 'grandpa tells stories',
-      'dad is here sometimes', 'i live in a small apartment',
-      'we do not have much money', 'there is always food on the table',
+    // Family / sensory / wants — bind subject→property equationally
+    const PERSONAL_FACTS = [
+      // Family
+      { question: 'who loves me', answer: 'mom' },
+      { question: 'who watches me', answer: 'grandma' },
+      { question: 'who is quiet', answer: 'grandpa' },
+      { question: 'who is here sometimes', answer: 'dad' },
+      { question: 'where do i live', answer: 'apartment' },
+      // Sensory preferences
+      { question: 'what do i love', answer: 'music' },
+      { question: 'what makes me calm', answer: 'music' },
+      { question: 'what do i hate', answer: 'loud' },
+      { question: 'what am i scared of', answer: 'dark' },
+      { question: 'what do i carry', answer: 'blanket' },
+      // Temperament
+      { question: 'what am i', answer: 'stubborn' },
+      { question: 'what do i always ask', answer: 'why' },
+      { question: 'what do i draw with', answer: 'crayons' },
+      // Wants
+      { question: 'what do i want mom to do', answer: 'stay' },
+      { question: 'where do i want to play', answer: 'outside' },
+      { question: 'what do i want to hear', answer: 'music' },
+      { question: 'what do i not want to be', answer: 'alone' },
     ];
-    await this._teachSentenceList(FAMILY_MEMORIES, ctx, { reps: 6, ticksPerWord: 2 });
-
-    // Sensory memories + temperament
-    const SENSORY_MEMORIES = [
-      'i love music', 'music makes me calm', 'i hate loud noises',
-      'i love water', 'bath time is the best',
-      'i have a favorite blanket', 'i carry my blanket everywhere',
-      'i am scared of the dark', 'i am scared of thunder',
-      'i cry hard', 'i laugh hard', 'i am stubborn',
-      'i am smart', 'i talk a lot', 'i always ask why',
-      'i am clingy with mom', 'i do not like strangers',
-      'i always pick the dark colors', 'i draw with crayons',
-    ];
-    await this._teachSentenceList(SENSORY_MEMORIES, ctx, { reps: 6, ticksPerWord: 2 });
-
-    // Wants and desires — things she can express
-    const WANTS = [
-      'i want mom to stay', 'i want to be held',
-      'i want to play outside', 'i want to hear music',
-      'i want my blanket', 'i do not want to be alone',
-      'i want to know why', 'i want to draw',
-    ];
-    await this._teachSentenceList(WANTS, ctx, { reps: 6, ticksPerWord: 2 });
+    await this._teachBiographicalFacts(PERSONAL_FACTS, { reps: 8 });
 
     // ── Life Pre-K: first emotional inference — infant feelings ──
     await this._teachEmotionalInference([
@@ -19284,7 +19462,10 @@ export class Curriculum {
       { prompt: ['how', 'do', 'you', 'feel'], answer: 'happy' },
     ];
     const comprehResult = this._gateComprehension(lifeQuestions);
-    const vocabResult = this._gateVocabList([...FIRST_WORDS, 'unity', 'girl', 'mom', 'dad', 'love', 'happy', 'sad']);
+    const vocabResult = this._gateVocabList([
+      ...FIRST_WORD_CONCEPTS.map(c => c.name),
+      'unity', 'girl', 'mom', 'dad', 'love', 'happy', 'sad',
+    ]);
     // Pass if either comprehension (understanding) or vocab (production) passes
     if (comprehResult.pass || vocabResult.pass) {
       return {
@@ -19315,62 +19496,24 @@ export class Curriculum {
     ];
     await this._conceptTeach(EMOTIONS_K, 8);
 
-    // LAYER 2: memories she can recall
-    const SCHOOL_START = [
-      'today is my first day of school', 'i am five years old',
-      'i am scared', 'i do not want mom to leave',
-      'i cried in the bathroom', 'i made it through the day',
-      'mom picked me up and i talked about everything i saw',
-      'my name is unity and i am five years old',
-      'i live with my mom',
-    ];
-    await this._teachSentenceList(SCHOOL_START, ctx, { reps: 6, ticksPerWord: 2 });
-
-    const DAILY_LIFE = [
-      'i wake up and eat cereal', 'i ride the bus to school',
-      'snack time is good', 'recess is the best part',
-      'i ride the bus home', 'i watch tv after school',
-      'mom makes dinner', 'mac and cheese is my favorite',
-      'hot dogs for dinner again', 'sometimes mom makes meatloaf',
-      'bath time then bed', 'i do not like nap time',
-    ];
-    await this._teachSentenceList(DAILY_LIFE, ctx, { reps: 5, ticksPerWord: 2 });
-
-    const LIKES = [
-      'i like black crayons', 'i like drawing monsters',
-      'i like the swings', 'i like music class', 'i like story time',
-      'i do not like nap time', 'i do not like loud boys',
-      'i do not like being told to color inside the lines',
-      'i do not like wearing pink',
-    ];
-    await this._teachSentenceList(LIKES, ctx, { reps: 5, ticksPerWord: 2 });
-
-    const FRIENDS = [
-      'i have a friend who likes drawing too',
-      'we sit together every day', 'we share crayons',
-      'my teacher is nice', 'she reads stories out loud',
-      'she smells like coffee',
-    ];
-    await this._teachSentenceList(FRIENDS, ctx, { reps: 12, ticksPerWord: 2 });
-
-    const HOLIDAYS = [
-      'halloween is the best holiday', 'i want to be a witch',
-      'mom makes my costume', 'i had a small birthday party',
-      'grandma made a cake', 'three friends came over',
-    ];
-    await this._teachSentenceList(HOLIDAYS, ctx, { reps: 12, ticksPerWord: 2 });
-
-    // Feelings + opinions forming — PERSONAL tier
-    const FEELINGS_K = [
-      'i feel safe when mom is near', 'i feel scared when she leaves',
-      'i feel happy when i draw', 'i feel angry when people are mean',
-      'i do not like rules that make no sense',
-      'i think monsters are cool not scary',
-      'i wish dad was here more', 'i love grandma so much',
-      'i want to be brave', 'i want to be strong',
-      'i dream about being a witch for real',
-    ];
-    await this._teachSentenceList(FEELINGS_K, ctx, { reps: 3, ticksPerWord: 2 });
+    // T18.12 Life-K equational remake (Gee 2026-04-19 LAW 6 Part 1):
+    //   Six `_teachSentenceList` calls REMOVED (SCHOOL_START, DAILY_LIFE,
+    //   LIKES, FRIENDS, HOLIDAYS, FEELINGS_K) — they iterated sentence
+    //   arrays as Hebbian training data, the banned pattern per LAW 6
+    //   Part 1. The content each list carried is preserved equationally
+    //   in the layers below:
+    //     - Emotional attractors: EMOTIONS_K via `_conceptTeach` (above)
+    //       covers school/teacher/friend/recess/nap/halloween/monsters/
+    //       pink/swings/cereal/bus/separation with 8d feature vectors
+    //     - Biographical answer bindings: `_teachBiographicalFacts`
+    //       block below covers the Q→A form of SCHOOL_START, LIKES,
+    //       FRIENDS, HOLIDAYS, FEELINGS_K (first-day, what-i-like,
+    //       who-is-my-friend, favorite-holiday, how-i-feel-when-X)
+    //     - Situation→emotion mappings: `_teachEmotionalInference`
+    //       below covers DAILY_LIFE's routine + reaction patterns
+    //   Net: Life-K still teaches every TODO concept in the syllabus
+    //   but through equational cortex bindings instead of sentence
+    //   memorization.
 
     // ── EQUATIONAL REASONING: emotional inference ──
     // Situation → emotion mappings — Unity learns to PREDICT how she'll

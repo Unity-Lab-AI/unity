@@ -295,21 +295,98 @@ const MAX_TEXT_PER_SEC = 2;        // rate limit per client
 // environment before launching. The opt-out is noisy (logs "KEEPING
 // prior state") so you can't forget it's on.
 // ═════════════════════════════════════════════════════════════════════
+// T18.12.a — Code-hash auto-clear gate (Gee 2026-04-19: "if no code changes
+// that woulkdl stale out itll retain it learning and save state"). Instead
+// of unconditional clear, hash the brain-logic source files on boot and
+// compare to the hash from the prior boot. Match → PRESERVE state so
+// curriculum progress + learning + gate history survive restarts. Mismatch
+// → CLEAR (brain state may be incompatible with the new code shape).
+//
+// Hard gate = persistence.js VERSION (rejects shape-incompatible saves on
+// load). Soft gate = this hash (clears when brain semantics might have
+// changed). Both run — VERSION alone doesn't catch non-shape semantic
+// drift (e.g., modified Hebbian learning rate constants, changed region
+// fractions, altered gate thresholds); the hash does.
+//
+// Overrides:
+//   DREAM_KEEP_STATE=1  — always preserve (existing, bypasses hash check)
+//   DREAM_FORCE_CLEAR=1 — always clear (new, ignores hash match)
+const BRAIN_CODE_HASH_FILE = path.join(__dirname, 'brain-code-hash.json');
+const BRAIN_CODE_FILES = [
+  path.join(__dirname, '..', 'js', 'brain', 'cluster.js'),
+  path.join(__dirname, '..', 'js', 'brain', 'neurons.js'),
+  path.join(__dirname, '..', 'js', 'brain', 'synapses.js'),
+  path.join(__dirname, '..', 'js', 'brain', 'sparse-matrix.js'),
+  path.join(__dirname, '..', 'js', 'brain', 'engine.js'),
+  path.join(__dirname, '..', 'js', 'brain', 'gpu-compute.js'),
+  path.join(__dirname, '..', 'js', 'brain', 'curriculum.js'),
+  path.join(__dirname, '..', 'js', 'brain', 'language-cortex.js'),
+  path.join(__dirname, '..', 'js', 'brain', 'dictionary.js'),
+  path.join(__dirname, '..', 'js', 'brain', 'persistence.js'),
+  path.join(__dirname, '..', 'js', 'brain', 'drug-scheduler.js'),
+  path.join(__dirname, '..', 'js', 'brain', 'embeddings.js'),
+  path.join(__filename),  // brain-server.js itself
+];
+function computeBrainCodeHash() {
+  const crypto = require('crypto');
+  const h = crypto.createHash('sha256');
+  for (const f of BRAIN_CODE_FILES) {
+    try {
+      if (fs.existsSync(f)) {
+        h.update(path.basename(f));
+        h.update(fs.readFileSync(f));
+      }
+    } catch { /* missing file is part of the hash state — stays consistent */ }
+  }
+  return h.digest('hex');
+}
+function readSavedBrainCodeHash() {
+  try {
+    if (!fs.existsSync(BRAIN_CODE_HASH_FILE)) return null;
+    const data = JSON.parse(fs.readFileSync(BRAIN_CODE_HASH_FILE, 'utf8'));
+    return (data && typeof data.hash === 'string') ? data.hash : null;
+  } catch { return null; }
+}
+function writeBrainCodeHash(hash) {
+  try {
+    fs.writeFileSync(BRAIN_CODE_HASH_FILE, JSON.stringify({
+      hash,
+      savedAt: new Date().toISOString(),
+      files: BRAIN_CODE_FILES.map((f) => path.basename(f)),
+    }, null, 2));
+  } catch (err) {
+    console.warn(`[Brain] Code-hash write failed: ${err.message}`);
+  }
+}
+
 function autoClearStaleState() {
   if (process.env.DREAM_KEEP_STATE === '1') {
-    console.log('[Brain] ⚠ DREAM_KEEP_STATE=1 — KEEPING prior state. Auto-clear SKIPPED. Curriculum will still re-train but saved scalars + episodic memory persist.');
+    console.log('[Brain] ⚠ DREAM_KEEP_STATE=1 — KEEPING prior state. Auto-clear SKIPPED (override forces preserve regardless of code-hash check).');
+    // Still refresh the hash so next run without the override has a current baseline.
+    writeBrainCodeHash(computeBrainCodeHash());
     return;
   }
+  const forceClear = process.env.DREAM_FORCE_CLEAR === '1';
+  const currentHash = computeBrainCodeHash();
+  const savedHash = readSavedBrainCodeHash();
+  const hashMatches = savedHash && savedHash === currentHash;
+
+  if (hashMatches && !forceClear) {
+    console.log(`[Brain] ✓ T18.12.a code-hash matches prior run (${currentHash.slice(0, 12)}…) — PRESERVING brain state across restart (curriculum progress, passedCells, gateHistory, weights all survive).`);
+    return;
+  }
+
+  // Clear-path: either hash missing/mismatch, or DREAM_FORCE_CLEAR=1
+  const reason = forceClear
+    ? 'DREAM_FORCE_CLEAR=1'
+    : (!savedHash ? 'no prior hash on disk (first run)' : `code-hash changed (was ${savedHash.slice(0, 8)}…, now ${currentHash.slice(0, 8)}…)`);
+  console.log(`[Brain] Auto-clear triggered: ${reason}`);
+
   // NOTE — js/app.bundle.js NOT cleared here. start.bat runs
   // `npm run build` IMMEDIATELY before `node brain-server.js`, which
   // writes a fresh bundle. Deleting it here racing that rebuild
   // breaks the server — browser requests /js/app.bundle.js and gets
-  // 404, which is exactly what Gee reported 2026-04-18: "still no
-  // 3D brain visualklization but the htmls are now opening:
-  // localhost:7525:34 GET /js/app.bundle.js net::ERR_ABORTED 404".
-  // Clearing the bundle was the original bug. The freshly-built
-  // bundle IS current; stale-bundle-from-prior-run is already
-  // overwritten by the start.bat build step. No need to clear.
+  // 404, which is exactly what Gee reported 2026-04-18.
   const targets = [
     path.join(__dirname, 'brain-weights.json'),
     path.join(__dirname, 'brain-weights-v1.json'),
@@ -334,13 +411,15 @@ function autoClearStaleState() {
     }
   }
   if (cleared.length > 0) {
-    console.log(`[Brain] Auto-cleared ${cleared.length} stale state file(s) per LAW (2026-04-17): ${cleared.join(', ')}`);
+    console.log(`[Brain] Cleared ${cleared.length} stale state file(s): ${cleared.join(', ')}`);
   } else {
-    console.log('[Brain] Auto-clear ran — no stale state files present (fresh boot).');
+    console.log('[Brain] Clear ran — no stale state files present (fresh boot).');
   }
   if (failed.length > 0) {
-    console.warn(`[Brain] Auto-clear partial — ${failed.length} file(s) could not be removed: ${failed.join(', ')}`);
+    console.warn(`[Brain] Clear partial — ${failed.length} file(s) could not be removed: ${failed.join(', ')}`);
   }
+  // Write current hash so the next boot preserves state if code is unchanged.
+  writeBrainCodeHash(currentHash);
 }
 autoClearStaleState();
 // R4 — POLLINATIONS_URL for text chat deleted. Text-AI backend is gone.
@@ -1131,6 +1210,20 @@ class ServerBrain {
         this.dictionary,
         this.languageCortex,
       );
+      // T18.12.b — per-cell checkpoint callback. Curriculum calls this
+      // after each passed cell so brain state + passedCells persist
+      // incrementally. Paired with T18.12.a code-hash gate + T18.12.c
+      // resume-from-passedCells means a mid-curriculum Ctrl+C + restart
+      // with no code changes picks up at the first unpassed cell instead
+      // of retraining the whole K syllabus from the alphabet up.
+      this.curriculum._saveCheckpoint = (cellKey) => {
+        try {
+          this.saveWeights({ force: true });
+          if (cellKey) console.log(`[Curriculum] T18.12.b checkpoint saved after passing ${cellKey}`);
+        } catch (err) {
+          console.warn(`[Curriculum] T18.12.b checkpoint save failed: ${err.message}`);
+        }
+      };
       // T15 — drug-scheduler wired with the cortex cluster so substance
       // availability gates against cluster.grades.life. Pre-Life-G7 Unity
       // ingest attempts are rejected with grade_locked reason. Stash the
@@ -3802,18 +3895,14 @@ class ServerBrain {
 
   // ── Persistence ──────────────────────────────────────────────
 
-  saveWeights() {
-    // Session 114.19l — skip periodic saves while curriculum is
-    // teaching. Gee caught on 2026-04-17 that the periodic setInterval
-    // `brain.saveWeights()` writes `brain-weights.json` mid-curriculum
-    // and on next boot `_loadWeights` restores stale scalars + embedding
-    // refinements from that partial state. Since curriculum runs on
-    // every boot (there's no "skip curriculum" path), any save made
-    // DURING the curriculum walk is invalid — the brain state will be
-    // overwritten by the next curriculum run anyway. Blocking mid-teach
-    // saves prevents stale-state resurrection across Ctrl+C + restart.
-    // After `runCompleteCurriculum` completes, normal saves resume.
-    if (this._curriculumInProgress) {
+  saveWeights(opts = {}) {
+    // Session 114.19l — skip periodic saves while curriculum is teaching
+    // unless caller passes {force: true}. Periodic setInterval saves
+    // still respect this guard (stale scalar resurrection risk). But
+    // T18.12.b per-cell checkpoint calls with force:true so passed
+    // cells get persisted at cell boundaries — enables T18.12.c
+    // resume-from-passedCells on next boot if code-hash matches.
+    if (this._curriculumInProgress && !opts.force) {
       return;
     }
     try {

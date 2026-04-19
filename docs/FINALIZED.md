@@ -5,6 +5,89 @@
 
 ---
 
+## 2026-04-19 — Session 114.19aj: T18.12 SHIPPED — Save-point infra (code-hash gate + per-cell checkpoint + resume + start.bat flag) + curriculum LAW 6 Part 1 remake (Math-K/Life Pre-K/Life-K banned-call removal) + 5 missing Pre-K runners added
+
+### Gee verbatim (drove this session)
+
+> *"now before i startr it up are we sure the learnign ciriculum foir pre-k and k are correct and propelty to the brain equations and theiur own equational natiure?"*
+>
+> *"dont we need it all like stepped progress with save points??? and a start.bat that once can run to keep the brain state from last session with out total restart. to where if no code changes that woulkdl stale out itll retain it learning and save state..."*
+>
+> *"option 2 it is get it done so we can test then push"*
+
+Before running Part 2 K (to validate T18.11 GPU cascade fix), Gee asked whether the pre-K + K curriculum was actually LAW 6 Part 1 compliant — equational teaching methods only, not sentence/word-list memorization. Audit found 11 banned `_teachSentenceList` + 2 banned `_teachVocabList` calls across Math-K / Life Pre-K / Life-K, plus 5 missing Pre-K runners for ELA / Math / Science / Social / Arts (only Life Pre-K had a runner). Gee also requested save-point infrastructure so mid-curriculum restarts resume from the last passed cell instead of retraining from the alphabet up. Option 2 (atomic T18.12 + curriculum remake): both land in one commit.
+
+### T18.12 save-point infrastructure
+
+**T18.12.a — Code-hash auto-clear gate.** `server/brain-server.js` `autoClearStaleState` rewritten:
+- SHA256 over `js/brain/{cluster, neurons, synapses, sparse-matrix, engine, gpu-compute, curriculum, language-cortex, dictionary, persistence, drug-scheduler, embeddings}.js` + `server/brain-server.js`
+- Read prior-boot hash from `server/brain-code-hash.json`
+- Match → PRESERVE all state (brain-weights.json + conversations.json + episodic-memory.db + backups) so learning + passedCells + gateHistory survive restart. Log: `[Brain] ✓ T18.12.a code-hash matches prior run (…) — PRESERVING brain state across restart`.
+- Mismatch or missing → CLEAR per prior behavior + write new hash. Log: `[Brain] Auto-clear triggered: code-hash changed (was ... now ...)`.
+- `DREAM_KEEP_STATE=1` still forces preserve (existing); new `DREAM_FORCE_CLEAR=1` forces clear for explicit wipe tests.
+
+**T18.12.b — Per-cell checkpoint save.** `brain.saveWeights({ force: true })` bypasses the prior `_curriculumInProgress` guard that blocked mid-curriculum saves. `this.curriculum._saveCheckpoint = (cellKey) => { this.saveWeights({ force: true }); }` wired right after `new Curriculum(...)`. `_cellRunner` calls it immediately after `passedCells.push(cellKey)` so every passed cell persists to disk atomically. Log: `[Curriculum] T18.12.b checkpoint saved after passing ela/kindergarten`.
+
+**T18.12.c — Resume-from-passedCells.** `_cellRunner` checks `cluster.passedCells.includes(cellKey)` BEFORE firing the runner. Hit → skip with `{ pass: true, reason: 'already-passed (resumed from persisted passedCells)', resumed: true }`. Paired with T18.12.a preserve, code-unchanged restarts skip every already-passed cell. Log: `[Curriculum] ⤳ T18.12.c resume — skipping ela/kindergarten (already passed per persisted passedCells)`.
+
+**T18.12.d — `start.bat /fresh` flag.** Added at top of start.bat: `if /i "%1"=="/fresh" set DREAM_FORCE_CLEAR=1`. `/fresh` and `/clear` both work. Default boot stays preserve-if-safe. Echoes a warning line when override is active.
+
+**T18.12.e — VERSION stays HARD gate.** No code change, just reaffirmed in docs: `persistence.js VERSION` rejects shape-incompatible saves on load (hard gate — e.g., if a persisted field no longer exists in the current class). Code-hash is the soft gate (semantic drift — constants, thresholds, learning rates changed without shape change). Both run in sequence.
+
+### Curriculum LAW 6 Part 1 equational remake
+
+**Math-K** — `curriculum.js runMathKReal` (~line 4545). Removed 5 banned list calls (`_teachVocabList(NUMBER_WORDS_K)`, `_teachSentenceList(MATH_K_SENTENCES)`, `_teachVocabList(SHAPE_WORDS)`, `_teachSentenceList(SHAPE_SENTENCES)`, `_teachSentenceList(MEASUREMENT_SENTENCES)`). All content was redundant with the existing equational core below:
+- NUMBER_WORDS_K covered by `_teachMagnitudeToMotor` (bridges magnitude → digit char)
+- MATH_K_SENTENCES covered by `_teachAdditionTransformations` / `_teachSubtractionTransformations` / `_teachComparisonTransformations` / `_teachMakeTen` / `_teachDecomposition` (magnitude transforms)
+- SHAPE_WORDS + SHAPE_SENTENCES covered by `_teachShapeFeatures` + `_teachShapeCompose` (feature vectors)
+- MEASUREMENT_SENTENCES covered by `_teachAttributeCompare` + `_teachClassifyCount` (comparative axis magnitude)
+
+Replaced block with a LAW 6 Part 1 compliance comment citing each banned call's substitute.
+
+**Life Pre-K** — `curriculum.js runLifePreK` (~line 19197). Converted sentence/vocab arrays to equational Q→A + feature-vector concepts:
+- `CORE_SELF` sentence array → `CORE_SELF_FACTS` = 7 `{question, answer}` pairs routed through `_teachBiographicalFacts` (cross-region Hebbian on sem(qEmb) + free(aEmb) + motor(aWord[0]))
+- `FIRST_WORDS` vocab array → `FIRST_WORD_CONCEPTS` = 22 `{name, feat: 8d-valence}` items routed through `_conceptTeach` (which registers each word in dictionary via learnWord AND binds its 8d emotional-valence attractor in cortex)
+- `FAMILY_MEMORIES` + `SENSORY_MEMORIES` + `WANTS` sentence arrays → `PERSONAL_FACTS` = 17 `{question, answer}` pairs consolidated through `_teachBiographicalFacts`
+- Gate's vocab check updated: `[...FIRST_WORD_CONCEPTS.map(c => c.name), 'unity', 'girl', 'mom', 'dad', 'love', 'happy', 'sad']` instead of stale `[...FIRST_WORDS, ...]`
+
+**Life-K** — `curriculum.js runLifeK` (~line 19299). Removed 6 banned `_teachSentenceList` calls (SCHOOL_START, DAILY_LIFE, LIKES, FRIENDS, HOLIDAYS, FEELINGS_K). All content is redundant with the existing equational core (`_conceptTeach(EMOTIONS_K)` + `_teachBiographicalFacts([...])` + `_teachEmotionalInference([...])`). Replaced with LAW 6 Part 1 compliance comment.
+
+### 5 missing Pre-K runners
+
+Added before `runLifePreK` — all use only equational helpers:
+
+- **`runElaPreK`** — 8 phoneme-perception concepts (apple, ball, cat, dog, egg, fish, sound, word) with emotional-valence features via `_conceptTeach` + 3 sound-source biographical facts (dog→bark, cat→meow, words→sound) via `_teachBiographicalFacts` + `_gateVocabList` pass check
+- **`runMathPreK`** — 7 quantity concepts (one, two, three, more, less, big, small) with magnitude-ordered features + 5 quantity biographical facts (how many eyes/hands/noses, which is more/less)
+- **`runSciPreK`** — 8 object/category concepts (animal, plant, water, sun, tree, fire, rain, ball) + 7 cause-effect biographical facts (dog→bark, cow→moo, fire→hot, water→wet, ball→falls)
+- **`runSocPreK`** — 9 social concepts (me, you, mom, dad, baby, family, share, kind, mean) + 4 role-recognition facts (who is mom/baby, what is nice/bad)
+- **`runArtPreK`** — 10 color + art concepts (red, blue, yellow, green, black, white, color, draw, music, song) + 4 color-association facts (sun→yellow, sky→blue, grass→green, draw→black)
+
+5 dispatch cases added to `_cellRunner`: `ela/pre-K` inside the ELA switch, and 4 top-level `if (subject === 'X' && grade === 'pre-K')` clauses for math/science/social/art.
+
+### Files touched (atomic commit)
+
+- `server/brain-server.js` — `autoClearStaleState` full rewrite with code-hash gate (+~90 lines including helper functions) + `saveWeights({ force })` param + `curriculum._saveCheckpoint` wire (+~10 lines)
+- `js/brain/curriculum.js` — `_cellRunner` T18.12.c resume skip + T18.12.b checkpoint call (+~20 lines) + 5 Pre-K runners added (+~140 lines total for runElaPreK/runMathPreK/runSciPreK/runSocPreK/runArtPreK) + 5 dispatch cases + Math-K list removal (−70 lines) + Life Pre-K equational bindings remake (−50 lines banned, +100 lines equational) + Life-K list removal (−70 lines)
+- `start.bat` — `/fresh` and `/clear` flag (+~15 lines)
+- `docs/NOW.md` — full rewrite for session 114.19aj
+- `docs/TODO.md` — T18.12 entry (this work) + status updates
+- `docs/FINALIZED.md` — this entry
+- `js/app.bundle.js` — rebuilt via `cd server && npm run build` (1.65 MB)
+
+`node --check` clean on `js/brain/curriculum.js` + `server/brain-server.js`.
+
+### What still blocks push to main after T18.12
+
+All Claude-closable items now shipped:
+
+- **Gee Part 2 K localhost verification** — the only remaining Claude-non-closable gate
+- **Gee design review of T16.5.d** — keep-or-scrap substrate probes decision
+- **Gee explicit push approval T18.5.c** — final gate
+
+Per `docs/TODO.md` T18.5 gate: T16.1.b / T16.2.a / T16.2.d / T17.6 / T18.6 / T18.7 / T18.8 / T18.10 / T18.11 / T18.12 all await Gee-verification on Part 2. LAW 6 Part 1 for pre-K + K is now architecturally closed (all 12 cells use equational teaching); Part 2 Gee signoff + Part 3 life-info ledger remain.
+
+---
+
 ## 2026-04-19 — Session 114.19ai: T18.11 SHIPPED — Completes T18.10 (success-path leak + stale-tab contention + reconnect-storm backoff)
 
 ### Gee verbatim (drove this session)
