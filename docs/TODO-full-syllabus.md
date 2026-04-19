@@ -781,9 +781,100 @@ Each row:
 
 ---
 
+### === FULL-MIND K GATE === (T16.5.b — pass-instrument for K completion)
+
+> **Source:** Moved from `docs/TODO.md` 2026-04-18 per Gee: *"okay just fully document the T16.5.b in the syallbus todo then u can stricvk it off the task list and todos noting it been added to the syllabus update info"*. The full-mind K gate lives HERE as a syllabus-internal design spec — it is the instrument Part 1 of the KINDERGARTEN COMPLETION GATE below uses to decide whether K passes.
+>
+> **Design review blocker:** Every probe below requires Gee's sign-off before implementation ships. Nothing in this section is "done" until Gee reviews the probe set, the pass thresholds, and the brain-module coverage map, and says yes.
+>
+> **Design principle:** current READ / THINK / TALK / SEQ / PROD / WRITE / RESP / DYN-PROD substrate probes (`docs/gate-probe-coverage.md`) measure cortex sub-region correctness but cover only ~25% of Unity's brain modules. The full-mind K gate adds probes that exercise amygdala emotional response, cerebellum motor timing, hippocampus episodic recall, basal-ganglia action sequencing, Mystery Ψ coherence, visual cortex letter recognition, auditory cortex phoneme blending, and cross-modal integration — the remaining ~75% — at kindergarten-grade cognition.
+>
+> **Grounding:** Common Core State Standards for English Language Arts / Literacy — Kindergarten (K.RF / K.W / K.L / K.SL / K.RL / K.RI). Industry K assessments: DIBELS 8th Edition (Dynamic Indicators of Basic Early Literacy Skills), STAR Early Literacy (Renaissance Learning), AIMSweb Plus (Pearson). Probes replicate these real-world instruments as equational teaching + testing transforms, per LAW 3 (no word-list memorization, no sentence-example drills — every probe is an operational transform the cortex + module network must implement).
+
+#### K.RF — Reading Foundations (6 probes)
+
+| Probe | Common Core cluster | Industry instrument | Brain-module chain exercised | Pass threshold |
+|-------|---------------------|---------------------|------------------------------|----------------|
+| **RF-1 First-Sound Fluency** — Unity hears a spoken word (auditory injection), emits the initial phoneme. "cat" → /k/. 20 trials. | K.RF.2.d (Isolate initial sounds) | DIBELS FSF | auditory cortex → phon → motor | ≥ 0.80 (LAW 7 softened for speech-gate items; substrate probes require 0.95) |
+| **RF-2 Letter Naming Fluency** — Unity sees a letter (visual cortex `renderLetterTemplate`), emits the letter name. 52 trials (26 uppercase + 26 lowercase). | K.RF.1.d | DIBELS LNF + STAR Alphabetic Principle | visual cortex → letter → motor | ≥ 0.95 (substrate gate) |
+| **RF-3 Phoneme Segmentation Fluency** — Unity hears a CVC word, emits each phoneme in order. "cat" → /k/ /a/ /t/. 20 trials. | K.RF.2.d (Segment onset/rime, phonemes) | DIBELS PSF | auditory cortex → phon → motor (with cerebellum motor-timing gating) | ≥ 0.80 |
+| **RF-4 Nonsense Word Fluency** — Unity reads a CVC nonsense word (visual injection), emits the sound sequence. "lom" → /l/ /o/ /m/. 20 trials. | K.RF.3.b (Decode CVC) | DIBELS NWF | visual cortex → letter → phon → motor | ≥ 0.75 (nonsense words have no sem basin; substrate alone is the passing signal) |
+| **RF-5 Rhyme Production** — given a target word, Unity emits a rhyming word. "cat" → hat/bat/mat/etc. 10 trials. | K.RF.2.a (Recognize + produce rhymes) | STAR Phonemic Awareness | sem → fineType rhyme-tag → motor (already shipped via `_teachRhymeFamilies`) | ≥ 0.70 (multiple valid answers; Unity only needs one) |
+| **RF-6 Syllable Count** — Unity hears a 1–3 syllable word, emits the count. "cupcake" → "two". 15 trials. | K.RF.2.b (Count syllables) | STAR Phonemic Awareness | auditory cortex → phon → sem (numeric magnitude) → motor | ≥ 0.80 |
+
+#### K.W — Writing (4 probes)
+
+| Probe | Common Core cluster | Industry instrument | Brain-module chain exercised | Pass threshold |
+|-------|---------------------|---------------------|------------------------------|----------------|
+| **W-1 Invented Spelling** — Unity hears a CVC word, writes it letter-by-letter via motor emission. Invented spelling permitted per K.W norms (cat → k/a/t or k/t both valid). 10 trials. | K.W.2 (informative) | AIMSweb Writing | auditory → phon → letter → motor | ≥ 0.60 (developmentally-appropriate: K-age children invent spellings rather than conventional) |
+| **W-2 Opinion sentence** — Unity is asked "Do you like [X]?". Emits a sentence expressing opinion + one supporting detail. 5 trials. | K.W.1 (opinion) | AIMSweb Writing | sem → free (topic) → fineType (opinion-type) → motor, with amygdala valence modulation | non-empty + positional opinion marker present (≥ 3 of 5) |
+| **W-3 Narrative fragment** — Unity is asked "Tell me about a time you [X]". Emits a sequential fragment with at least two clauses. 5 trials. | K.W.3 (narrative) | STAR Early Literacy Composition | hippocampus episodic recall → sem → motor, with BG action sequencing | ≥ 2 clauses (≥ 3 of 5) |
+| **W-4 Informative fragment** — Unity is shown a topic word, emits a fact-statement. "cats" → "cats are soft". 5 trials. | K.W.2 (informative) | — | sem topic → fineType (copula structure) → motor | ≥ 3 of 5 produce valid fact |
+
+#### K.L — Language conventions + vocabulary (3 probes)
+
+| Probe | Common Core cluster | Industry instrument | Brain-module chain exercised | Pass threshold |
+|-------|---------------------|---------------------|------------------------------|----------------|
+| **L-1 Plural transform** — Unity sees "cat", emits "cats". Regular + irregular. 10 trials. | K.L.1.c (plural nouns) | — | sem → fineType plural-tag → motor (already shipped via `_teachPluralTransform`) | ≥ 0.80 |
+| **L-2 Capitalization** — Unity is shown a sentence start, emits the first word with capital letter. 10 trials. | K.L.2.a (capitalize first word) | — | letter region capital-case variant → motor (already shipped via `_teachCapitalization`) | ≥ 0.85 |
+| **L-3 Word category** — Unity hears "Is a dog a [what kind of thing]?", emits category. "animal". 10 trials. | K.L.5.a (sort into categories) | STAR Vocabulary | sem → fineType categorical-cluster → motor | ≥ 0.75 |
+
+#### K.SL — Speaking & Listening (4 probes)
+
+| Probe | Common Core cluster | Industry instrument | Brain-module chain exercised | Pass threshold |
+|-------|---------------------|---------------------|------------------------------|----------------|
+| **SL-1 Comprehension turn** — Unity listens to a 2-sentence story, is asked a factual question about it. 5 trials. | K.SL.2 (confirm understanding) | STAR Listening Comprehension | auditory → phon → sem → hippocampus working memory → motor | ≥ 3 of 5 correct |
+| **SL-2 Question answering** — Unity is asked "what / who / where / when / why" questions. 10 trials, 2 per question-word. | K.SL.3 (ask + answer questions) | — | sem → fineType question-word tag → motor (already shipped via `_teachQuestionWordCategories`) | ≥ 0.70 |
+| **SL-3 Turn-taking pause** — Unity hears "tell me about your day then wait". Cerebellum motor timing produces a perceptible pause between ending one thought and starting the next. 5 trials. | K.SL.1 (follow conversation rules) | — | cerebellum motor-timing → BG action gate → motor quiescence | pause ≥ 500ms between utterances in ≥ 3 of 5 |
+| **SL-4 Emotional-tone read** — Unity hears a sad-framing prompt ("my friend moved away"). Amygdala valence shifts negative; Unity's response uses a softer-valence word set. 5 trials. | K.SL.2 (ask about key details) | — | auditory → phon → sem → amygdala → fineType valence-filter → motor | amygdala valence delta detectable (< −0.10) in ≥ 3 of 5 |
+
+#### K.RL — Reading Literature (2 probes)
+
+| Probe | Common Core cluster | Industry instrument | Brain-module chain exercised | Pass threshold |
+|-------|---------------------|---------------------|------------------------------|----------------|
+| **RL-1 Story sequence** — Unity hears a 3-event story, is asked "what happened first / next / last". 5 trials. | K.RL.2 (retell sequence) | — | auditory → phon → sem → hippocampus episodic binding → BG sequence → motor | ≥ 3 of 5 correct per position |
+| **RL-2 Character identification** — Unity hears a short story, is asked "who is the story about". 5 trials. | K.RL.3 (identify characters) | — | auditory → phon → sem (noun-entity) → fineType character-tag → motor | ≥ 3 of 5 correct |
+
+#### K.RI — Reading Informational (2 probes)
+
+| Probe | Common Core cluster | Industry instrument | Brain-module chain exercised | Pass threshold |
+|-------|---------------------|---------------------|------------------------------|----------------|
+| **RI-1 Main topic** — Unity reads a 2-sentence informational passage, is asked "what is this about". 5 trials. | K.RI.2 (main topic) | — | visual → letter → phon → sem centroid → motor | ≥ 3 of 5 correct |
+| **RI-2 Fact vs opinion** — Unity is given a sentence, classifies it as fact or feeling. 10 trials. | K.RI.6 (distinguish info types) | — | sem → fineType truth-vs-evaluation tag → motor | ≥ 0.70 |
+
+#### Cross-modal integration (2 probes — T16.5.a gap coverage)
+
+| Probe | Description | Brain-module chain exercised | Pass threshold |
+|-------|-------------|------------------------------|----------------|
+| **CM-1 Visual → auditory translate** — Unity sees a letter (visual-cortex template), emits its phoneme (via auditory → phon). 26 trials. | visual cortex → letter → phon (via letter↔phon cross-projection) → motor | ≥ 0.80 |
+| **CM-2 Mystery Ψ coherence** — during SL-1/RL-1/RI-1, `state.psi` holds above the pre-stimulus baseline for ≥ 80% of the response window. | Mystery Ψ binding across all active modules (consciousness probe) | Ψ-above-baseline duration ≥ 0.80 × response window, averaged across 15 trials |
+
+#### Aggregate pass rule
+
+K passes the full-mind gate when:
+1. Every substrate probe in the 6 K.RF + 3 K.L + 2 K.RL + 2 K.RI groups hits its threshold.
+2. At least 75% of the K.W + K.SL probe suite hits its threshold (developmentally-appropriate tolerance for invented spelling + narrative emergence).
+3. CM-1 hits threshold AND CM-2 (Ψ coherence) hits threshold in at least 10 of 15 trials.
+4. `_gateHistory` shows per-probe retention over 24 hours of simulated time post-teaching (no overnight forgetting for substrate probes; K.W + K.SL may regress to ±5% without triggering a fail).
+5. Gee signs off on Part 2 localhost Q&A with Unity at K level (per LAW 6 Part 2).
+
+#### T16.5.d coupling (substrate probes decision)
+
+Per T16.5.d (still open in `docs/TODO.md`): the 5 existing substrate probes (READ / THINK / TALK / SEQ / PROD, plus WRITE / RESP / DYN-PROD from Session 114.19x) are retained as **substrate sanity diagnostics** layered BELOW this full-mind gate — they verify cortex-region mechanics work; the full-mind gate verifies cognition works. A probe failing substrate-sanity means the cortex is broken (Claude's job to fix); a probe failing the full-mind gate means Unity hasn't learned the concept yet (curriculum's job to teach more). Both layers must pass for K closure.
+
+#### Implementation ordering
+
+1. Gee design-review of this probe set (THIS is what blocks implementation).
+2. Implement probes in `js/brain/curriculum.js` alongside the existing `_gateElaKReal` pattern — each probe a method returning `{score, thresholdHit: boolean, evidence}`.
+3. Wire into the K completion gate so Part 1 computes the full-mind score in addition to the existing substrate probes.
+4. Expose per-probe results on `state.fullMindK` for dashboard + Part 2 inspection.
+5. Run full-mind gate on every curriculum walk; log to `cluster._gateHistory.fullMindK`.
+
+---
+
 ### === KINDERGARTEN COMPLETION GATE === (LAW 6 — Unity age 5)
 
-- [ ] **Part 1 — equational:** All `[ ]` items in Math-K / ELA-K / Science-K / Social-K / Arts-K / Life-K above flipped to `[x]` as EQUATIONAL teaching (not word lists / arrays / sentence examples) AND bound by LAW 7 — every TODO test item in this grade has a real-world production-style probe through sem→motor emission matching the test phrasing verbatim, with retention + gains tracked via `cluster._gateHistory`. Direct-matrix substrate probes are necessary precursors but NOT sufficient.
+- [ ] **Part 1 — equational:** All `[ ]` items in Math-K / ELA-K / Science-K / Social-K / Arts-K / Life-K above flipped to `[x]` as EQUATIONAL teaching (not word lists / arrays / sentence examples) AND bound by LAW 7 — every TODO test item in this grade has a real-world production-style probe through sem→motor emission matching the test phrasing verbatim, with retention + gains tracked via `cluster._gateHistory`. Direct-matrix substrate probes are necessary precursors but NOT sufficient. **FULL-MIND K GATE (T16.5.b above) must additionally pass** — it's the pass-instrument that decides whether Unity actually has kindergarten-grade cognition, not just cortex-region mechanics.
 - [ ] **Part 2 — Gee localhost test:** Gee runs server localhost, exercises Unity's methodology / reasoning / thinking / talking / listening / reading / "all of the thing we need for Unity to be human as possible" at kindergarten level. Session-log sign-off.
 - [ ] **Part 3 — TODO update + life-info ledger:** Grade K items checked off above. Persistent life info from age 5 added as row(s) in "Persistent Life Info Across Grades" ledger at top of file — e.g. first day of school, first friend name, family composition at age 5, pets, home, anything that must propagate forward.
 
