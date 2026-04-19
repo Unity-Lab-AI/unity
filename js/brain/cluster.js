@@ -2083,7 +2083,19 @@ export class NeuronCluster {
             proj.rowPtr = null;
             if (!this._t1822TotalFreedBytes) this._t1822TotalFreedBytes = 0;
             this._t1822TotalFreedBytes += _freedValuesBytes + _freedColIdxBytes + _freedRowPtrBytes;
-            console.log(`[T18.22/23] freed CPU arrays for bound projection ${name}: values=${(_freedValuesBytes/1024/1024).toFixed(1)}MB + colIdx=${(_freedColIdxBytes/1024/1024).toFixed(1)}MB + rowPtr=${(_freedRowPtrBytes/1024/1024).toFixed(1)}MB = ${_freedMB}MB this projection, ${(this._t1822TotalFreedBytes/1024/1024).toFixed(1)}MB cumulative`);
+            // T18.25 — fix T18.23's ReferenceError. The log template
+            // referenced `${name}` which doesn't exist in this scope
+            // (loop variables are `key`, `proj`, `binding`). Every
+            // bound-projection upload's free block threw a "name is not
+            // defined" ReferenceError AFTER the null-assignments fired,
+            // so the nulls succeeded but the log was silently swallowed
+            // by the outer try/catch that logs "GPU upload exception for
+            // ${key}: name is not defined". Counter still accumulated
+            // byte totals before the throw, which is why T18.23's boot-
+            // time gc() diagnostic showed 7989.4MB cumulative freed
+            // despite zero per-projection logs. Use `${key}` here which
+            // IS in scope.
+            console.log(`[T18.22/23] freed CPU arrays for bound projection ${key}: values=${(_freedValuesBytes/1024/1024).toFixed(1)}MB + colIdx=${(_freedColIdxBytes/1024/1024).toFixed(1)}MB + rowPtr=${(_freedRowPtrBytes/1024/1024).toFixed(1)}MB = ${_freedMB}MB this projection, ${(this._t1822TotalFreedBytes/1024/1024).toFixed(1)}MB cumulative`);
           }
         } else {
           console.warn(`[Cluster ${this.name}] GPU upload failed for ${key}:`, ack && ack.error);
@@ -2114,35 +2126,28 @@ export class NeuronCluster {
     // doesn't happen, T18.22's null-assignments aren't reclaiming (some
     // retainer is still referencing the typed arrays), and we need to
     // dig deeper via --heapsnapshot-signal=SIGUSR2.
-    if (typeof global !== 'undefined' && typeof process !== 'undefined' && typeof process.memoryUsage === 'function') {
+    // T18.25 — REMOVED forced global.gc() from T18.23 boot-time
+    // diagnostic. Gee's last run showed V8 already auto-gc'd between
+    // T18.22's null-assignments and this log (external memory was 2.5
+    // GB at log time, ~7 GB less than expected — V8 reclaimed on its
+    // own). The explicit gc() reclaimed 0 MB because there was nothing
+    // left to reclaim. More importantly, forcing gc() when V8 is
+    // already near semi-space commit limits can TRIGGER OOM mid-gc
+    // (Mark-Compact needs to stage objects in semi-space; if semi-space
+    // can't grow, gc crashes with "Committing semi space failed"). The
+    // original intent — let Gee see V8 memory state post-upload — is
+    // preserved via memoryUsage() read WITHOUT gc. If retainer issues
+    // exist, they show up in the external number without triggering
+    // a risky forced gc.
+    if (typeof process !== 'undefined' && typeof process.memoryUsage === 'function') {
       try {
-        const before = process.memoryUsage();
-        const beforeHeapMB = (before.heapUsed / 1024 / 1024).toFixed(1);
-        const beforeExtMB = ((before.external || 0) / 1024 / 1024).toFixed(1);
-        const beforeArrayBufMB = ((before.arrayBuffers || 0) / 1024 / 1024).toFixed(1);
-        console.log(`[T18.23] Pre-gc() heap: heapUsed=${beforeHeapMB}MB external=${beforeExtMB}MB arrayBuffers=${beforeArrayBufMB}MB (T18.22 freed ~${((this._t1822TotalFreedBytes || 0)/1024/1024).toFixed(1)}MB of CPU CSR arrays — V8 should reclaim on gc)`);
-
-        if (typeof global.gc === 'function') {
-          const gcStart = Date.now();
-          global.gc();
-          const gcMs = Date.now() - gcStart;
-          const after = process.memoryUsage();
-          const afterHeapMB = (after.heapUsed / 1024 / 1024).toFixed(1);
-          const afterExtMB = ((after.external || 0) / 1024 / 1024).toFixed(1);
-          const afterArrayBufMB = ((after.arrayBuffers || 0) / 1024 / 1024).toFixed(1);
-          const freedMB = (((before.external || 0) - (after.external || 0)) / 1024 / 1024).toFixed(1);
-          const freedArrayBufMB = (((before.arrayBuffers || 0) - (after.arrayBuffers || 0)) / 1024 / 1024).toFixed(1);
-          console.log(`[T18.23] Post-gc() heap: heapUsed=${afterHeapMB}MB external=${afterExtMB}MB arrayBuffers=${afterArrayBufMB}MB — GC reclaimed ${freedMB}MB external / ${freedArrayBufMB}MB arrayBuffers in ${gcMs}ms`);
-          if (parseFloat(freedArrayBufMB) < 1000) {
-            console.warn(`[T18.23] WARNING: GC reclaimed only ${freedArrayBufMB}MB of arrayBuffers but T18.22 freed ${((this._t1822TotalFreedBytes || 0)/1024/1024).toFixed(1)}MB. Some retainer is still holding references — V8 external memory pressure will persist. Next step: dump heap via --heapsnapshot-signal=SIGUSR2 and analyze retainer chain in Chrome DevTools.`);
-          } else {
-            console.log(`[T18.23] ✓ External memory successfully reclaimed. V8 pressure should now stay manageable through curriculum teach.`);
-          }
-        } else {
-          console.warn(`[T18.23] global.gc unavailable (Node not launched with --expose-gc). T18.22's CPU CSR arrays will be reclaimed on V8's next Mark-Compact cycle; no forced reclaim. If external-memory pressure persists, restart server with --expose-gc flag in start.bat.`);
-        }
+        const mem = process.memoryUsage();
+        const heapMB = (mem.heapUsed / 1024 / 1024).toFixed(1);
+        const extMB = ((mem.external || 0) / 1024 / 1024).toFixed(1);
+        const abMB = ((mem.arrayBuffers || 0) / 1024 / 1024).toFixed(1);
+        console.log(`[T18.25] Post-upload V8 memory: heapUsed=${heapMB}MB external=${extMB}MB arrayBuffers=${abMB}MB (T18.22 nulled ~${((this._t1822TotalFreedBytes || 0)/1024/1024).toFixed(1)}MB of CPU CSR arrays — V8 auto-reclaims on its own schedule; explicit gc() removed because prior attempts triggered OOM mid-gc).`);
       } catch (err) {
-        console.warn(`[T18.23] forced-gc diagnostic failed:`, err && err.message);
+        console.warn(`[T18.25] memory-log diagnostic failed:`, err && err.message);
       }
     }
 
@@ -2202,11 +2207,21 @@ export class NeuronCluster {
     // overhead. Phase 2 300 calls: ~30-90s single-thread vs 214s pool.
     // Net win + OOM elimination.
     //
-    // Threshold 10M picked so browser-scale (~1000-10K neurons) and
-    // mid-scale deployments (<10M) keep the parallel path for its
-    // compute speedup, while biological-scale (107M+) always takes
-    // the sync path to avoid the allocation bomb.
-    const BIOLOGICAL_SCALE_SYNC_THRESHOLD = 10_000_000;
+    // T18.25 — threshold LOWERED from 10M to 100K because cortexCluster
+    // at biological scale auto-scales to ~301K (not 107M as T18.19
+    // originally assumed). At 301K the worker-pool path still allocates
+    // ~7 MB external per call (Float32Array.from(Uint8Array) = 1.2 MB +
+    // new SharedArrayBuffer(1.2MB) + repeat for post = 4.8 MB
+    // transient + steady-state holding via worker thread refs). 300
+    // Phase 2 calls × ~7 MB = 2.1 GB external allocation churn — enough
+    // to keep V8 under pressure through Phase 2's whole run (explains
+    // the 3.39→1.63 iter/s deceleration pattern). Sync path allocates
+    // ZERO external memory (pure CSR iteration over existing arrays).
+    // At 301K with only letter region firing (~15K spikes), sync compute
+    // is ~100-300ms single-thread; worker-pool is ~500ms with alloc
+    // overhead. Sync wins anyway. Browser-scale (<100K) keeps worker
+    // pool since compute cost dominates and external alloc is tiny.
+    const BIOLOGICAL_SCALE_SYNC_THRESHOLD = 100_000;
     const atBioScale = (this.size | 0) > BIOLOGICAL_SCALE_SYNC_THRESHOLD;
 
     if (atBioScale) {

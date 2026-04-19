@@ -335,48 +335,26 @@ export class Curriculum {
   static PRE_K_FALLBACK_CAP = PRE_K_FALLBACK_CAP;
 
   /**
-   * T18.24 — Between-phase memory barrier. Logs process.memoryUsage()
-   * before and after forced global.gc() with a label for which
-   * phase-boundary triggered it. Requires Node launched with
-   * --expose-gc (added to start.bat in T18.23). Lands INLINE during
-   * teach (not just at boot) so Gee can see it in the same terminal
-   * scrollback where Phase 2 heartbeats live.
-   *
-   * If external-memory delta > 1 GB: ✓ log showing reclaim was big.
-   * If delta < 100 MB: WARNING that something is holding refs.
-   * If global.gc unavailable: warn once, no-op.
+   * T18.25 — REMOVED forced gc() from T18.24's between-phase memory
+   * barrier. Gee's last run showed V8 OOM'd shortly after Phase 2 DONE
+   * which likely means my forced gc() calls were TRIGGERING the crash
+   * (Mark-Compact can't grow semi-space when V8 is already near limit;
+   * explicit gc() becomes the "last straw"). V8's own adaptive gc
+   * heuristic handles external memory reclamation correctly when left
+   * alone. This helper now just SNAPSHOTS process.memoryUsage() without
+   * forcing gc — operator still sees memory state at each phase
+   * boundary, but V8 can gc on its own schedule without interference.
    */
   _memorySnapshotAndGc(label) {
     try {
       if (typeof process === 'undefined' || typeof process.memoryUsage !== 'function') return;
-      const before = process.memoryUsage();
-      const hasGc = (typeof global !== 'undefined' && typeof global.gc === 'function');
-      if (!hasGc) {
-        if (!this._gcUnavailableWarned) {
-          this._gcUnavailableWarned = true;
-          const extMB = ((before.external || 0) / 1024 / 1024).toFixed(1);
-          const abMB = ((before.arrayBuffers || 0) / 1024 / 1024).toFixed(1);
-          console.warn(`[T18.24] global.gc unavailable (restart with --expose-gc in start.bat). Currently external=${extMB}MB arrayBuffers=${abMB}MB at ${label}.`);
-        }
-        return;
-      }
-      const gcStart = Date.now();
-      global.gc();
-      const gcMs = Date.now() - gcStart;
-      const after = process.memoryUsage();
-      const beforeExtMB = ((before.external || 0) / 1024 / 1024).toFixed(1);
-      const afterExtMB = ((after.external || 0) / 1024 / 1024).toFixed(1);
-      const beforeAbMB = ((before.arrayBuffers || 0) / 1024 / 1024).toFixed(1);
-      const afterAbMB = ((after.arrayBuffers || 0) / 1024 / 1024).toFixed(1);
-      const deltaExtMB = ((before.external || 0) - (after.external || 0)) / 1024 / 1024;
-      const heapMB = (after.heapUsed / 1024 / 1024).toFixed(1);
-      const tag = deltaExtMB >= 1000 ? '✓' : deltaExtMB >= 100 ? '·' : '⚠';
-      console.log(`[T18.24] ${tag} memory ${label}: external ${beforeExtMB}→${afterExtMB}MB (Δ-${deltaExtMB.toFixed(1)}MB) | arrayBuffers ${beforeAbMB}→${afterAbMB}MB | heapUsed ${heapMB}MB | gc ${gcMs}ms`);
-      if (deltaExtMB < 100 && parseFloat(beforeExtMB) > 5000) {
-        console.warn(`[T18.24] ⚠ external memory is ${beforeExtMB}MB but GC only reclaimed ${deltaExtMB.toFixed(1)}MB — something is holding refs to the typed arrays. Consider heap snapshot via --heapsnapshot-signal=SIGUSR2.`);
-      }
+      const mem = process.memoryUsage();
+      const heapMB = (mem.heapUsed / 1024 / 1024).toFixed(1);
+      const extMB = ((mem.external || 0) / 1024 / 1024).toFixed(1);
+      const abMB = ((mem.arrayBuffers || 0) / 1024 / 1024).toFixed(1);
+      console.log(`[T18.25] memory ${label}: heapUsed=${heapMB}MB external=${extMB}MB arrayBuffers=${abMB}MB (forced gc removed — V8 auto-manages reclaim)`);
     } catch (err) {
-      console.warn(`[T18.24] memory snapshot failed at ${label}:`, err && err.message);
+      console.warn(`[T18.25] memory snapshot failed at ${label}:`, err && err.message);
     }
   }
 
