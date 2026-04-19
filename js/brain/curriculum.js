@@ -6196,24 +6196,70 @@ export class Curriculum {
   // ── internal: tile a feature vector across a region of lastSpikes ──
   // Same tiling math every transform uses. Kept as a class method so
   // callers don't have to re-declare it inside every closure.
+  //
+  // T17.7 Phase C.1 — when the cluster has a GPU proxy wired to the
+  // main cortex (post-rebind, curriculum teach runs against main-
+  // cortex slices directly), mirror each tile into the main cortex's
+  // matching sub-region via write_spike_slice. Indices stay relative
+  // to the standalone region (0..standLen-1) because the cluster-
+  // bound cross-projections read the FIRST N of each main-cortex
+  // region where N == standLen — so local indices map 1:1. The
+  // standalone cluster.lastSpikes write still happens so the CPU-
+  // shadow Hebbian path stays consistent during the C→E transition
+  // for equivalence verification.
   _writeTiledPattern(region, feat, binarize = true) {
     const cluster = this.cluster;
     if (!cluster || !region || !feat || feat.length === 0) return;
     const size = region.end - region.start;
     const gSize = Math.max(1, Math.floor(size / feat.length));
+    const haveProxy = !!(cluster._gpuProxy && cluster._gpuProxy.writeSpikeSlice);
+    const sparseIndices = haveProxy ? [] : null;
     for (let d = 0; d < feat.length; d++) {
       if (feat[d] <= 0) continue;
       for (let n = 0; n < gSize; n++) {
         const idx = region.start + d * gSize + n;
-        if (idx < region.end) cluster.lastSpikes[idx] = binarize ? 1 : feat[d];
+        if (idx >= region.end) continue;
+        cluster.lastSpikes[idx] = binarize ? 1 : feat[d];
+        if (sparseIndices) sparseIndices.push(idx - region.start);
+      }
+    }
+    if (sparseIndices && sparseIndices.length > 0) {
+      const regionName = this._resolveRegionName(cluster, region);
+      if (regionName) {
+        try { cluster._gpuProxy.writeSpikeSlice(regionName, sparseIndices); } catch { /* non-fatal */ }
       }
     }
   }
 
+  // Reverse-lookup a region name from the {start,end} object. Cached
+  // per-cluster so a curriculum run with thousands of _writeTiledPattern
+  // calls doesn't re-scan cluster.regions on every call.
+  _resolveRegionName(cluster, region) {
+    if (!cluster || !cluster.regions || !region) return null;
+    if (!this._regionNameCache || this._regionNameCache._cluster !== cluster) {
+      const map = new Map();
+      map._cluster = cluster;
+      for (const [name, r] of Object.entries(cluster.regions)) map.set(r, name);
+      this._regionNameCache = map;
+    }
+    return this._regionNameCache.get(region) || null;
+  }
+
+  // T17.7 Phase C.1 — clear both standalone cluster.lastSpikes AND
+  // every main-cortex sub-region slice so the next teach-step write
+  // lands on a zeroed region (matching what the standalone clear did
+  // before the migration). Loops across cluster.regions so every
+  // region the bound cross-projections read from gets cleared in
+  // lockstep with the CPU shadow.
   _clearSpikes() {
     const cluster = this.cluster;
     if (!cluster) return;
     for (let j = 0; j < cluster.size; j++) cluster.lastSpikes[j] = 0;
+    if (cluster._gpuProxy && cluster._gpuProxy.clearSpikeSlice && cluster.regions) {
+      for (const regionName of Object.keys(cluster.regions)) {
+        try { cluster._gpuProxy.clearSpikeSlice(regionName); } catch { /* non-fatal */ }
+      }
+    }
   }
 
   // ── internal: fire both cross-projection Hebbian AND intra-cluster

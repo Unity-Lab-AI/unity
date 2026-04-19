@@ -1719,20 +1719,35 @@ export class NeuronCluster {
       } catch { /* non-fatal */ }
     }
     // Dispatch each cross-region projection.
+    //
+    // T17.7 Phase C.1 — when a projection has been rebound to main-
+    // cortex slices (proj._gpuBound), dispatch via propagateBound so
+    // the wire doesn't carry a redundant preSpikes array. GPU reads
+    // pre-spikes directly from main-cortex spikes buffer at the bound
+    // src region offset (populated by curriculum writeSpikeSlice + by
+    // the per-tick _mirrorCortexRegions bridge). Standalone-bound
+    // projections keep shipping pSpikes — backward-compatible while
+    // other non-cortex clusters carry projections through the same
+    // code path.
     if (this.crossProjections) {
       if (!this._cachedCrossCurrents) this._cachedCrossCurrents = new Map();
-      for (const [name] of Object.entries(this.crossProjections)) {
+      for (const [name, proj] of Object.entries(this.crossProjections)) {
         const idx = name.indexOf('_to_');
         if (idx < 0) continue;
         const src = name.slice(0, idx);
         const srcRegion = this.regions[src];
         if (!srcRegion) continue;
         const key = `${this.name}_${name}`;
-        const srcSpikes = this.regionSpikes(src);
-        const pSpikes = new Uint32Array(srcSpikes.length);
-        for (let i = 0; i < srcSpikes.length; i++) pSpikes[i] = srcSpikes[i] > 0 ? 1 : 0;
         try {
-          const p = this._gpuProxy.propagate(key, pSpikes);
+          let p;
+          if (proj._gpuBound && this._gpuProxy.propagateBound) {
+            p = this._gpuProxy.propagateBound(key);
+          } else {
+            const srcSpikes = this.regionSpikes(src);
+            const pSpikes = new Uint32Array(srcSpikes.length);
+            for (let i = 0; i < srcSpikes.length; i++) pSpikes[i] = srcSpikes[i] > 0 ? 1 : 0;
+            p = this._gpuProxy.propagate(key, pSpikes);
+          }
           if (p && typeof p.then === 'function') {
             const cache = this._cachedCrossCurrents;
             p.then((currents) => {
@@ -1774,11 +1789,22 @@ export class NeuronCluster {
       // copy so probes and live-chat reads stay consistent regardless
       // of which path reads them. When T17.3.e completes we remove the
       // CPU shadow and read exclusively from GPU.
-      if (this._gpuProxyReady && this._gpuProxy && this._gpuProxy.hebbian) {
-        // Don't await — dispatch and continue. Ordering preserved by
-        // WebSocket sequential send semantics.
+      //
+      // T17.7 Phase C.1 — when the projection has been rebound to main-
+      // cortex slices (proj._gpuBound=true, set by
+      // brain._ensureCortexCrossProjectionsBound), dispatch via
+      // hebbianBound (no pre/post arrays — shader reads main-cortex
+      // spikes buffer at bound region offsets). Pre/post patterns land
+      // in those slices via curriculum _writeTiledPattern ⇒
+      // gpuProxy.writeSpikeSlice. Bandwidth saved per call ≈ srcSize +
+      // dstSize in u32s — at 7M scale, ~56 MB per Hebbian.
+      if (this._gpuProxyReady && this._gpuProxy) {
         try {
-          this._gpuProxy.hebbian(`${this.name}_${name}`, preF, postF, lr);
+          if (proj._gpuBound && this._gpuProxy.hebbianBound) {
+            this._gpuProxy.hebbianBound(`${this.name}_${name}`, lr);
+          } else if (this._gpuProxy.hebbian) {
+            this._gpuProxy.hebbian(`${this.name}_${name}`, preF, postF, lr);
+          }
         } catch { /* non-fatal — CPU path already updated */ }
       }
     }

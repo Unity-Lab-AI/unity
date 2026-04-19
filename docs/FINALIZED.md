@@ -5,6 +5,74 @@
 
 ---
 
+## 2026-04-18 — Session 114.19z: T17.7 Phase C SHIPPED — shared curriculum migration + cross-projection rebind + cluster-bound dispatch on `syllabus-k-phd`
+
+Gee 2026-04-18 verbatim directives that shaped this session (continuation of 114.19y):
+
+> *"keep working these items off^(and remember drug shit it tied to life and syllabus shit)"*
+>
+> *"we wont be doing D15.D untill way later.. not after Kindergarden  learning only of the brain"*
+
+First directive: continue the push-gate block list, with T15 drug work tied to grade Life Experience + syllabus. Second directive: T15.D (manual V1-V11 verification) deferred past the K-only push gate — NOT blocking the current block list.
+
+### Architectural shape
+
+Per the Session 114.19y architecture plan, Phase C migrates curriculum teach writes + Hebbian from the standalone `cortexCluster` to the main 201M-GPU cortex cluster's sub-slices. Rather than per-method commits with 15-20 separate migrations, this session ships a single atomic commit via **shared infrastructure**: `_writeTiledPattern` is used by every teach method in the curriculum, so migrating that one helper migrates everything simultaneously. No jerry rigging — one clean boundary, every teach path moves together.
+
+### What shipped (Phase C atomic migration)
+
+**GPU rebind scaffolding (`js/brain/gpu-compute.js`)**
+
+`GPUCompute.rebindSparseMatrix(name, binding)` converts an already-uploaded standalone cross-projection to cluster-bound mode without re-transferring matrix data. Values / colIdx / rowPtr buffers stay in place; only the per-dispatch src/dst buffer resolution changes (shader reads pre-spikes from `bufs[srcCluster].spikes` at `binding.srcRegion.start`, writes currents to `bufs[dstCluster].currents` at `binding.dstRegion.start`). Standalone preSpikes / postCurrents / postSpikes buffers are `.destroy()`'d, freeing ~60 MB per matrix × 14 projections ≈ 840 MB VRAM reclaimed.
+
+**Wire protocol (`compute.html`)**
+
+New `rebind_sparse` JSON message: `{name, binding: {srcCluster, srcRegion, dstCluster, dstRegion}}`. Handler calls `gpu.rebindSparseMatrix(name, binding)` and echoes `rebind_sparse_ack`. Server-side ack handler in `brain-server.js` case-switch extended to route `rebind_sparse_ack` through the same `_gpuSparsePending` correlation path as the other sparse acks.
+
+**Server-side boot sequence (`server/brain-server.js`)**
+
+- `_ensureCortexCrossProjectionsBound()` iterates every projection in `cortexCluster.crossProjections`, computes the main-cortex first-N sub-slice (N = standalone region size, starting at the biological fractional offset), sends `rebind_sparse` for each matrix, marks `proj._gpuBound = true` on the CPU-side projection so subsequent Hebbian dispatches route through the bound path. Intra-synapse matrix is NOT rebound per Gee 2026-04-18 decision #1 — main cortex has no explicit intra matrix; wave-function oscillation phase-sync + fractal propagation handle intra-cluster binding.
+- `gpuSparseHebbianBound(name, lr)` — wrapper over `gpuSparseHebbian` with zero-length pre/post arrays. compute.html skips `writeSparsePreSpikes/writeSparsePostSpikes` when length is 0, and the bound matrix's `hebbianSparse` reads pre/post directly from main-cortex spikes buffer at the bound offsets. Wire cost drops from ~56 MB per Hebbian (at 7M/7M) to ~20 bytes.
+- `gpuSparsePropagateBound(name)` — same pattern for propagate; zero-length preSpikes, bound shader reads from cluster buffer.
+- `_gpuWriteCortexSpikeSlice(regionName, sparseIndices)` — sends `write_spike_slice` JSON targeting main cortex. Indices are relative to region start; compute.html zero-fills the full region slice on GPU before setting indices to 1, so the teach pattern lands in the first N of each region (where N == standalone region size) and the rest of the main-cortex region stays silent during the teach step, exactly matching the bound cross-projection's read window.
+- `gpuProxy` extended with `writeSpikeSlice`, `clearSpikeSlice`, `hebbianBound`, `propagateBound` methods.
+- `cortexCluster.initGpu()` `.then(...)` chains `_ensureCortexCrossProjectionsBound()` after standalone upload completes. Rebind fires once per boot; `_cortexCrossProjectionsBound` idempotency flag guards against re-entry.
+
+**Cluster dispatch (`js/brain/cluster.js`)**
+
+- `_crossRegionHebbian`: when `proj._gpuBound` is set, dispatches `gpuProxy.hebbianBound(key, lr)` instead of `gpuProxy.hebbian(key, preF, postF, lr)`. CPU shadow `proj.hebbianUpdate` still fires so standalone CPU weights stay consistent through Phase D/E for equivalence verification. Non-bound projections (e.g., other clusters in the future) fall through to the existing array-carrying path.
+- `_dispatchGpuPropagates`: same bound/standalone switch for propagate. Bound path calls `propagateBound(key)` with no pSpikes array; standalone path builds the Uint32 pre-spikes array from `regionSpikes` as before.
+
+**Curriculum forwarder (`js/brain/curriculum.js`)**
+
+- `_writeTiledPattern(region, feat, binarize)`: after writing to `cluster.lastSpikes` (CPU shadow for equivalence), collects the same indices relative to region start and ships them via `cluster._gpuProxy.writeSpikeSlice(regionName, sparseIndices)` when the proxy is present. Indices map 1:1 into the main-cortex first-N sub-slice because N == standalone region size. Region name resolved via a per-cluster reverse-lookup cache (`_regionNameCache`) so the forward doesn't re-scan `cluster.regions` on every call — at thousand-call-per-rep teach rates, the cache is load-bearing.
+- `_clearSpikes()`: clears `cluster.lastSpikes` (existing) AND fires `gpuProxy.clearSpikeSlice(regionName)` for every `cluster.regions` entry so the next teach iteration writes land on zeroed main-cortex slices matching the CPU shadow clear.
+
+### Mystery Ψ kept in the main equation (per Gee 'cant not have it involved')
+
+Phase C introduces no new Ψ terms — the three existing terms from Session 114.19y remain active:
+1. **Global gain**: `gainMultiplier = 0.9 + Ψ · 0.05` baked into `effectiveDrive`
+2. **Per-region hemispheric binding**: `hemisphereGate = 0.5 + 0.5 · sigmoid(Ψ · 4.0)` in LIF_SHADER
+3. **Divergence correction gain**: `(1 + Ψ · 0.25) · 3` on cortex error correction
+
+The bound dispatch path inherits all three — cross-projection currents get applied during main-cortex LIF dispatch, which is where the Ψ-modulated per-region gate multiplies `(effectiveDrive + currents[i]) * regionGate`. Mystery Ψ stays active per Gee's binding constraint.
+
+### Biological story
+
+The first N of each main-cortex sub-region becomes the "language core" where cross-projection weights concentrate. The remaining (main-size − N) neurons form the homogeneous cortex population around each language core, coupled via wave-function phase-sync rather than explicit synapses. Matches biological gradient — dense Broca's / Wernicke's / VWFA sub-cores with looser peripheral coupling. Aligns with Gee's decision #1 ("our wave fucntions activaes it in sync so matrix is alreaady there with our fractilization") and decision #3 ("proper left right gating").
+
+### What's STILL open before push to main
+
+- **T17.7 Phase C follow-up** — per-region divergence telemetry during K curriculum walk (proves equation equivalence)
+- **T17.7 Phase D** — generation migration: `generateSentence` / `generateSentenceAwait` read main-cortex motor slice via `readbackSpikeSlice`
+- **T17.7 Phase E** — delete standalone `cortexCluster`; persistence VERSION 4→5
+- **T17.7 Phase F** — Gee Part 2 K verification + full doc sweep
+- **T16 remaining** — T16.1.b / T16.2.a / T16.2.d (Gee Part 2 verification only); T16.5.b/c/d (full-mind gate redesign — Gee design-review blocked)
+- **T15.A / T15.B / T15.C** — full drug scheduler rebuild (tied to Life + syllabus per Gee 2026-04-18). T15.D deferred past K-only gate.
+- **T18.5.b** — pre-push doc sweep; **T18.5.c** — Gee push approval
+
+---
+
 ## 2026-04-18 — Session 114.19y: T17.7 Phases A + B FULLY shipped + T17.2 + T17.6 + T16.2.b/c + T16.3.a + T16.4.b/c + T16.5.a + push-gate upgrade — 16 atomic commits on syllabus-k-phd
 
 Gee 2026-04-18 verbatim directives driving this session:

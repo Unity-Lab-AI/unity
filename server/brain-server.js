@@ -867,6 +867,28 @@ class ServerBrain {
         upload:    (name, matrix)                => this.gpuSparseUpload(name, matrix),
         propagate: (name, preSpikes)             => this.gpuSparsePropagate(name, preSpikes),
         hebbian:   (name, preSpikes, postSpikes, lr) => this.gpuSparseHebbian(name, preSpikes, postSpikes, lr),
+        // T17.7 Phase C.1 — cluster-bound dispatch. After
+        // _ensureCortexCrossProjectionsBound rebinds a projection to main
+        // cortex slices, propagate + Hebbian no longer ship pre/post
+        // arrays over the wire; the shader reads directly from main-
+        // cortex spikes buffer at the bound region offsets (populated
+        // by writeSpikeSlice during curriculum teach). Saves 56 MB per
+        // Hebbian call at 7M-per-direction standalone sizes.
+        propagateBound:  (name)                             => this.gpuSparsePropagateBound(name),
+        hebbianBound:    (name, lr)                         => this.gpuSparseHebbianBound(name, lr),
+        // Curriculum writes training patterns through this path so teach
+        // methods update the main cortex sub-slice (first N of each
+        // region, where N = standalone region size). The bound cross-
+        // projection's Hebbian read sees this pattern on its next
+        // dispatch — same cycle, no round-trip needed.
+        writeSpikeSlice: (regionName, sparseIndices)       => this._gpuWriteCortexSpikeSlice(regionName, sparseIndices),
+        // Use the GPU-native clear_spike_region path for pure clears —
+        // avoids the full-region Uint32Array allocation that would
+        // happen if we routed through write_spike_slice with empty
+        // indices (compute.html's original implementation zero-inited
+        // the whole region on every call; 132 MB allocation × 8
+        // regions × 1000s of teach iters = TB-scale GC thrash).
+        clearSpikeSlice: (regionName)                      => this._gpuClearCortexSpikeRegion(regionName),
       };
       this.cortexCluster = new clusterMod.NeuronCluster('cortex', langCortexSize, {
         tonicDrive: 14 + (this.persona.arousalBaseline || 0.9) * 6,
@@ -1964,6 +1986,188 @@ class ServerBrain {
   }
 
   /**
+   * T17.7 Phase C.1 — cluster-bound Hebbian dispatch. Reuses the same
+   * type=3 binary frame as gpuSparseHebbian, but with zero-length
+   * pre/post arrays (so no bulk data crosses the wire). compute.html's
+   * handler skips writeSparsePreSpikes/writeSparsePostSpikes when
+   * length is 0, and the cluster-bound matrix's hebbianSparse reads
+   * pre/post from main-cortex spikes buffer at the bound region
+   * offsets — which is where curriculum teach writes patterns via
+   * write_spike_slice.
+   *
+   * Wire cost at 7M/7M standalone size would be ~56 MB pre+post per
+   * Hebbian without this path. Cortex teaches fire thousands of
+   * Hebbians per curriculum rep — saving 56 MB × N calls makes
+   * biological-scale teaching feasible.
+   */
+  async gpuSparseHebbianBound(name, lr) {
+    return this.gpuSparseHebbian(name, new Uint32Array(0), new Uint32Array(0), lr);
+  }
+
+  /**
+   * T17.7 Phase C.1 — cluster-bound propagate dispatch. Reuses the
+   * type=2 binary frame with zero-length preSpikes; compute.html's
+   * handler skips writeSparsePreSpikes when length is 0, and the
+   * cluster-bound matrix's propagateSparse reads pre-spikes directly
+   * from main-cortex spikes buffer at the bound src region offset,
+   * writes post-currents into main-cortex currents buffer at the
+   * bound dst region offset. Returns post-region currents Float32Array
+   * same as standalone path (shape = dstRegion size).
+   */
+  async gpuSparsePropagateBound(name) {
+    return this.gpuSparsePropagate(name, new Uint32Array(0));
+  }
+
+  /**
+   * T17.7 Phase C.1 — ship a sparse spike pattern to the main cortex
+   * GPU sub-region slice via the existing write_spike_slice message.
+   * sparseIndices are relative to the region's start on the main
+   * cortex. compute.html zero-fills the full region slice and sets
+   * each index to 1 before calling gpu.writeSpikeSlice — so the
+   * curriculum teach pattern lands in the first N of the region
+   * (where N = standalone region size) and the rest of the main-
+   * cortex region stays silent until next LIF step, matching the
+   * cluster-bound cross-projection's read window exactly.
+   */
+  _gpuWriteCortexSpikeSlice(regionName, sparseIndices) {
+    if (!this._gpuClient || this._gpuClient.readyState !== 1) return;
+    const arr = Array.isArray(sparseIndices)
+      ? sparseIndices
+      : (sparseIndices && typeof sparseIndices.length === 'number')
+        ? Array.from(sparseIndices)
+        : [];
+    this._gpuClient.send(JSON.stringify({
+      type: 'write_spike_slice',
+      clusterName: 'cortex',
+      regionName,
+      sparseIndices: arr,
+    }));
+  }
+
+  /**
+   * T17.7 Phase C.1 — pure clear of a main-cortex region slice on the
+   * GPU spikes buffer. Sends clear_spike_region JSON; compute.html
+   * handler calls gpu.clearSpikeRegion which uses encoder.clearBuffer
+   * at byte-range granularity — no CPU allocation. Per teach
+   * iteration the curriculum clears all 8 regions (auditory, visual,
+   * free, letter, phon, sem, fineType, motor) so the next pattern
+   * write lands on zeroed slices.
+   */
+  _gpuClearCortexSpikeRegion(regionName) {
+    if (!this._gpuClient || this._gpuClient.readyState !== 1) return;
+    this._gpuClient.send(JSON.stringify({
+      type: 'clear_spike_region',
+      clusterName: 'cortex',
+      regionName,
+    }));
+  }
+
+  /**
+   * T17.7 Phase C.1 — rebind all 14 cortex cross-projections from
+   * standalone mode to cluster-bound mode after both main-cortex GPU
+   * init AND cortexCluster.initGpu() complete. The rebind is wire-
+   * cheap (one JSON per matrix, binding metadata only — values/colIdx/
+   * rowPtr stay in place on GPU) and frees the standalone preSpikes/
+   * postCurrents/postSpikes buffers (each matrix sheds ~60 MB at
+   * biological scale — 14 matrices × ~60 MB = ~840 MB VRAM freed).
+   *
+   * After this runs:
+   *   - Cross-projection propagate reads pre-spikes from main-cortex
+   *     `bufs.cortex.spikes` at the standalone region's offset inside
+   *     the main cortex's corresponding sub-region (first-N sub-slice),
+   *     writes post-currents into `bufs.cortex.currents` at the
+   *     destination sub-slice — the LIF dispatch that runs next sees
+   *     the accumulated currents and fires the main cortex neurons
+   *     within the language slice.
+   *   - Hebbian dispatch reads pre+post from `bufs.cortex.spikes`
+   *     at the two bound offsets — which is where curriculum teach's
+   *     write_spike_slice call places the training pattern.
+   *   - Main cortex's intra-synapse matrix is NOT rebound; per Gee
+   *     2026-04-18 decision #1, the homogeneous-cortex intra coupling
+   *     is handled by wave-function oscillation phase-sync +
+   *     fractal propagation, not an explicit intra matrix. The
+   *     STANDALONE cortexCluster keeps its intra-synapses for the
+   *     CPU-shadow equivalence check through Phase C/D; Phase E
+   *     deletes it alongside the standalone cluster itself.
+   *
+   * Sub-slice sizes match the standalone cortexCluster's region sizes,
+   * which in turn match the cross-projection matrix dimensions. The
+   * first-N sub-slice of each main-cortex sub-region gets the
+   * training pattern; the remaining (main-size − N) neurons of each
+   * sub-region stay homogeneous cortex coupled via wave-function
+   * activation, consistent with a biological "language core" inside
+   * the larger cortical territory.
+   */
+  async _ensureCortexCrossProjectionsBound() {
+    if (this._cortexCrossProjectionsBound) return;
+    if (!this.cortexCluster || !this.cortexCluster.regions) return;
+    if (!this._gpuClient || this._gpuClient.readyState !== 1) return;
+    const stand = this.cortexCluster;
+    const mainSize = CLUSTER_SIZES.cortex;
+    if (!mainSize) return;
+
+    // Main cortex region layout — same fractions used by _regionsFor
+    // and _mirrorCortexRegions. Kept in sync across all three call
+    // sites; divergence here would silently point cross-projections
+    // at the wrong main-cortex neurons.
+    const LAYOUT = {
+      auditory:  [0.000, 0.083],
+      visual:    [0.083, 0.250],
+      free:      [0.250, 0.500],
+      letter:    [0.500, 0.550],
+      phon:      [0.550, 0.750],
+      sem:       [0.750, 0.917],
+      fineType:  [0.917, 0.967],
+      motor:     [0.967, 1.000],
+    };
+    const mainSliceStart = {};
+    for (const [regName, [frA]] of Object.entries(LAYOUT)) {
+      mainSliceStart[regName] = Math.floor(mainSize * frA);
+    }
+
+    const projNames = Object.keys(stand.crossProjections || {});
+    if (projNames.length === 0) return;
+    console.log(`[Brain] T17.7 Phase C.1 — rebinding ${projNames.length} cortex cross-projections to main-cortex sub-slices`);
+    let bound = 0;
+    for (const projKey of projNames) {
+      const idx = projKey.indexOf('_to_');
+      if (idx < 0) continue;
+      const srcName = projKey.slice(0, idx);
+      const dstName = projKey.slice(idx + 4);
+      const standSrc = stand.regions[srcName];
+      const standDst = stand.regions[dstName];
+      if (!standSrc || !standDst) continue;
+      const srcLen = standSrc.end - standSrc.start;
+      const dstLen = standDst.end - standDst.start;
+      const srcOff = mainSliceStart[srcName];
+      const dstOff = mainSliceStart[dstName];
+      if (srcOff == null || dstOff == null) continue;
+      const matrixKey = `${stand.name}_${projKey}`;  // e.g., "cortex_sem_to_motor"
+      const ack = await this._sparseSend({
+        type: 'rebind_sparse',
+        name: matrixKey,
+        binding: {
+          srcCluster: 'cortex',
+          srcRegion: { start: srcOff, end: srcOff + srcLen },
+          dstCluster: 'cortex',
+          dstRegion: { start: dstOff, end: dstOff + dstLen },
+        },
+      }, 30000);
+      if (ack && ack.ok) {
+        bound++;
+        // Mark the CPU-side projection so cluster._crossRegionHebbian
+        // can route GPU dispatch via hebbianBound (no array transfer).
+        const proj = stand.crossProjections[projKey];
+        if (proj) proj._gpuBound = true;
+      } else {
+        console.warn(`[Brain] rebind ${matrixKey} failed — GPU Hebbian will still use standalone path for this projection`);
+      }
+    }
+    console.log(`[Brain] T17.7 Phase C.1 — ${bound}/${projNames.length} cross-projections now cluster-bound to main cortex slices`);
+    this._cortexCrossProjectionsBound = bound > 0;
+  }
+
+  /**
    * Dispatch sparse Hebbian via binary frame.
    */
   async gpuSparseHebbian(name, preSpikes, postSpikes, lr) {
@@ -2340,7 +2544,24 @@ class ServerBrain {
             ) {
               this._cortexGpuInitStarted = true;
               console.log(`[Brain] Main-brain compute_batch warm (${warmupBatches} round-trips) — starting sparse language-cortex upload`);
-              this.cortexCluster.initGpu().catch((err) => {
+              this.cortexCluster.initGpu().then(async (gpuReady) => {
+                // T17.7 Phase C.1 — once the 14 cross-projections + the
+                // intra-cluster synapse matrix are on GPU in standalone
+                // mode, rebind the 14 cross-projections to main-cortex
+                // sub-slices so curriculum teach writes fire Hebbian
+                // directly against main-cortex spike state. Intra-
+                // synapses stays standalone per Gee 2026-04-18 decision
+                // #1 (wave-function + fractal coupling handles main-
+                // cortex intra-region binding; no explicit main-cortex
+                // intra matrix exists to bind to).
+                if (gpuReady) {
+                  try {
+                    await this._ensureCortexCrossProjectionsBound();
+                  } catch (err) {
+                    console.warn('[Brain] _ensureCortexCrossProjectionsBound failed:', err && err.message);
+                  }
+                }
+              }).catch((err) => {
                 console.warn('[Brain] cortexCluster.initGpu() failed:', err && err.message);
               });
             }
@@ -3553,7 +3774,8 @@ wss.on('connection', (ws, req) => {
         // ── T17.3.c SPARSE OPS: GPU language cortex dispatch acks ──
         case 'sparse_upload_ack':
         case 'sparse_propagate_ack':
-        case 'sparse_hebbian_ack': {
+        case 'sparse_hebbian_ack':
+        case 'rebind_sparse_ack': {
           if (!brain._gpuSparsePending || !msg.reqId) break;
           const pending = brain._gpuSparsePending.get(msg.reqId);
           if (!pending) break;

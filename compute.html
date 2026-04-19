@@ -326,22 +326,29 @@ function connectToServer() {
     if (msg.type === 'write_spike_slice' && gpuReady) {
       const { clusterName, regionName, sparseIndices } = msg;
       try {
-        const region = gpu.getRegion(clusterName, regionName);
-        if (!region) {
-          console.warn(`[GPU Compute] write_spike_slice ${clusterName}/${regionName}: region not found`);
-          return;
-        }
-        const sliceLen = region.end - region.start;
-        const arr = new Uint32Array(sliceLen);  // zero-init
-        if (Array.isArray(sparseIndices)) {
-          for (let i = 0; i < sparseIndices.length; i++) {
-            const idx = sparseIndices[i];
-            if (idx >= 0 && idx < sliceLen) arr[idx] = 1;
-          }
-        }
-        gpu.writeSpikeSlice(clusterName, regionName, arr);
+        // T17.7 Phase C.1 — route through writeSpikeSliceSparse which
+        // zeroes the region via encoder.clearBuffer (GPU-native, no CPU
+        // allocation) then writes 1's at sparse indices via coalesced
+        // writeBuffer calls. At biological scale the dense path would
+        // allocate ~132 MB per sem-region write; K curriculum firing
+        // 10+ writes per iter × 1000s of iters would thrash GC.
+        gpu.writeSpikeSliceSparse(clusterName, regionName, Array.isArray(sparseIndices) ? sparseIndices : []);
       } catch (err) {
         console.warn(`[GPU Compute] write_spike_slice ${clusterName}/${regionName} failed:`, err.message);
+      }
+      return;
+    }
+
+    // T17.7 Phase C.1 — pure clear of a region slice on the spikes
+    // buffer. Curriculum _clearSpikes fires one of these per region
+    // (8 per teach iteration on main cortex) between pattern writes.
+    // GPU-native clearBuffer keeps the per-iter CPU work bounded.
+    if (msg.type === 'clear_spike_region' && gpuReady) {
+      const { clusterName, regionName } = msg;
+      try {
+        gpu.clearSpikeRegion(clusterName, regionName);
+      } catch (err) {
+        console.warn(`[GPU Compute] clear_spike_region ${clusterName}/${regionName} failed:`, err.message);
       }
       return;
     }
@@ -432,6 +439,23 @@ function connectToServer() {
         ws.send(JSON.stringify({ type: 'sparse_hebbian_ack', reqId, name, ok }));
       } catch (err) {
         ws.send(JSON.stringify({ type: 'sparse_hebbian_ack', reqId, name, error: err.message }));
+      }
+      return;
+    }
+
+    // T17.7 Phase C.1 — rebind an already-uploaded cross-projection
+    // matrix from standalone to cluster-bound mode. No matrix data
+    // re-transferred; only the per-dispatch src/dst buffer resolution
+    // changes. Server sends this once per projection after both the
+    // main cortex cluster and the standalone cortexCluster have finished
+    // their initial GPU uploads.
+    if (msg.type === 'rebind_sparse' && gpuReady) {
+      const { reqId, name, binding } = msg;
+      try {
+        const ok = gpu.rebindSparseMatrix(name, binding);
+        ws.send(JSON.stringify({ type: 'rebind_sparse_ack', reqId, name, ok }));
+      } catch (err) {
+        ws.send(JSON.stringify({ type: 'rebind_sparse_ack', reqId, name, ok: false, error: err.message }));
       }
       return;
     }

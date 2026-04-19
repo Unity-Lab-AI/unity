@@ -772,6 +772,130 @@ export class GPUCompute {
   }
 
   /**
+   * T17.7 Phase C.1 — sparse spike-slice write. Avoids allocating a
+   * full-region Uint32Array when the pattern is sparse (a small list
+   * of indices that should fire). Zero-fills the region slice via
+   * `encoder.clearBuffer` (GPU-native — no CPU memory allocation)
+   * then writes 1's at each sparse index via `queue.writeBuffer` at
+   * byte-offset granularity.
+   *
+   * At biological scale (sem region ≈ 33M neurons) the dense path
+   * allocates ~132 MB per write. With K curriculum firing thousands
+   * of teach iterations × ~11 writes per iter, the dense path would
+   * allocate on the order of a terabyte total during a single
+   * curriculum walk — GC thrash measured at minutes per grade.
+   *
+   * Run-detection: consecutive sparse indices are coalesced into a
+   * single `writeBuffer(runStart, runLen)` call. `_writeTiledPattern`
+   * writes gSize consecutive ones per active feature dimension, so
+   * typical runs are 100s-1000s long — 100 active features × 1 call
+   * per run instead of 100 × gSize individual writes. Cuts
+   * WebSocket-side CPU work by ~1000×.
+   *
+   * @param {string} clusterName
+   * @param {string} regionName
+   * @param {number[]|Uint32Array} sparseIndices — indices relative
+   *   to region start that should fire (u32 1). Rest of region is
+   *   cleared to 0.
+   * @returns {boolean}
+   */
+  writeSpikeSliceSparse(clusterName, regionName, sparseIndices) {
+    if (!this._available) return false;
+    const bufs = this._buffers[clusterName];
+    if (!bufs?.spikes) return false;
+    const region = this.getRegion(clusterName, regionName);
+    if (!region) return false;
+    const device = this._device;
+    const sliceLen = region.end - region.start;
+    const byteOffset = region.start * 4;
+    // Zero the region slice GPU-side — no CPU allocation.
+    const encoder = device.createCommandEncoder();
+    encoder.clearBuffer(bufs.spikes, byteOffset, sliceLen * 4);
+    device.queue.submit([encoder.finish()]);
+    // Short-circuit for pure-clear.
+    if (!sparseIndices || sparseIndices.length === 0) return true;
+    // Sort (defensively) so we can detect consecutive runs even if
+    // caller emitted indices out of order. `_writeTiledPattern` emits
+    // them in increasing order already, so sorting a pre-sorted list
+    // is cheap (V8 TimSort → O(N) on sorted input).
+    const idxs = sparseIndices instanceof Uint32Array
+      ? sparseIndices.slice()
+      : Uint32Array.from(sparseIndices);
+    idxs.sort();
+    // Small shared "runValues" buffer of ones — allocated lazily, sized
+    // to the largest run we see in this call. Subsequent writes from
+    // the same process reuse this (the dominant cost is not the buffer
+    // allocation but the per-writeBuffer queue submission).
+    let runStart = idxs[0];
+    let runEnd = idxs[0];
+    // Determine max run length first pass — cheap vs the writeBuffer
+    // submissions that follow.
+    let maxRun = 1;
+    {
+      let curLen = 1;
+      for (let i = 1; i < idxs.length; i++) {
+        if (idxs[i] === idxs[i - 1] + 1) {
+          curLen++;
+          if (curLen > maxRun) maxRun = curLen;
+        } else {
+          curLen = 1;
+        }
+      }
+    }
+    const onesBuf = new Uint32Array(maxRun);
+    for (let i = 0; i < maxRun; i++) onesBuf[i] = 1;
+    const flush = (s, e) => {
+      if (s < 0 || e < s || s >= sliceLen) return;
+      const eClamped = Math.min(e, sliceLen - 1);
+      const len = eClamped - s + 1;
+      device.queue.writeBuffer(
+        bufs.spikes,
+        byteOffset + s * 4,
+        onesBuf.buffer, 0, len * 4,
+      );
+    };
+    for (let i = 1; i < idxs.length; i++) {
+      if (idxs[i] === idxs[i - 1] + 1) {
+        runEnd = idxs[i];
+      } else if (idxs[i] === idxs[i - 1]) {
+        // duplicate — skip
+      } else {
+        flush(runStart, runEnd);
+        runStart = idxs[i];
+        runEnd = idxs[i];
+      }
+    }
+    flush(runStart, runEnd);
+    return true;
+  }
+
+  /**
+   * T17.7 Phase C.1 — pure clear of a region slice on the spikes
+   * buffer. GPU-native (`encoder.clearBuffer`) — no CPU allocation.
+   * Used by curriculum `_clearSpikes` between teach iterations so
+   * the next pattern write lands on zeroed main-cortex slices
+   * without paying the dense-Uint32Array allocation cost.
+   *
+   * @param {string} clusterName
+   * @param {string} regionName
+   * @returns {boolean}
+   */
+  clearSpikeRegion(clusterName, regionName) {
+    if (!this._available) return false;
+    const bufs = this._buffers[clusterName];
+    if (!bufs?.spikes) return false;
+    const region = this.getRegion(clusterName, regionName);
+    if (!region) return false;
+    const device = this._device;
+    const byteOffset = region.start * 4;
+    const byteLen = (region.end - region.start) * 4;
+    const encoder = device.createCommandEncoder();
+    encoder.clearBuffer(bufs.spikes, byteOffset, byteLen);
+    device.queue.submit([encoder.finish()]);
+    return true;
+  }
+
+  /**
    * T17.7 Phase A.3 — write per-neuron current injection to a
    * cluster's `currents` buffer at a sub-region slice. Used by
    * sensory injection (Wernicke's text input) and curriculum teach
@@ -1282,6 +1406,77 @@ export class GPUCompute {
       : spikes instanceof Uint8Array ? Uint32Array.from(spikes)
       : new Uint32Array(spikes);
     this._device.queue.writeBuffer(entry.postSpikes, 0, data.buffer, data.byteOffset, data.byteLength);
+    return true;
+  }
+
+  /**
+   * T17.7 Phase C.1 — rebind an already-uploaded sparse matrix from
+   * standalone mode to cluster-bound mode WITHOUT re-transferring the
+   * matrix data. The values/colIdx/rowPtr buffers stay in place; only
+   * the per-request shader inputs (src/dst spike + current buffers)
+   * change, driven by `entry.binding`.
+   *
+   * Used at boot time after both the main cortex cluster AND the
+   * standalone cortexCluster have uploaded their GPU state. The 14
+   * language cross-projections initially come up standalone (via
+   * cortexCluster.initGpu()) with their own preSpikes/postCurrents/
+   * postSpikes buffers sized for the standalone cluster. After this
+   * rebind, propagateSparse/hebbianSparse read from main-cortex spikes
+   * buffer at the bound src/dst region offsets and accumulate into
+   * main-cortex currents buffer — no more standalone spike mirrors.
+   *
+   * Standalone buffers are `.destroy()`ed so VRAM pressure drops.
+   *
+   * @param {string} name — matrix key (e.g., 'cortex_sem_to_motor')
+   * @param {{srcCluster, srcRegion:{start,end}, dstCluster, dstRegion:{start,end}}} binding
+   * @returns {boolean} — true on success, false if matrix missing or
+   *                     bound src/dst clusters aren't yet uploaded
+   */
+  rebindSparseMatrix(name, binding) {
+    if (!this._available) return false;
+    const entry = this._sparseMatrices[name];
+    if (!entry) {
+      console.warn(`[GPUCompute] rebindSparseMatrix: ${name} not found`);
+      return false;
+    }
+    if (!binding || !binding.srcCluster || !binding.dstCluster) {
+      console.warn(`[GPUCompute] rebindSparseMatrix ${name}: binding must specify srcCluster + dstCluster`);
+      return false;
+    }
+    const srcBufs = this._buffers[binding.srcCluster];
+    const dstBufs = this._buffers[binding.dstCluster];
+    if (!srcBufs?.spikes || !dstBufs?.currents) {
+      console.warn(`[GPUCompute] rebindSparseMatrix ${name}: src(${binding.srcCluster}) + dst(${binding.dstCluster}) must be uploaded first`);
+      return false;
+    }
+    const srcRegion = binding.srcRegion || { start: 0, end: entry.cols };
+    const dstRegion = binding.dstRegion || { start: 0, end: entry.rows };
+    const srcLen = srcRegion.end - srcRegion.start;
+    const dstLen = dstRegion.end - dstRegion.start;
+    if (srcLen !== entry.cols || dstLen !== entry.rows) {
+      console.warn(`[GPUCompute] rebindSparseMatrix ${name} size mismatch: srcRegion len=${srcLen} vs cols=${entry.cols}; dstRegion len=${dstLen} vs rows=${entry.rows}`);
+      return false;
+    }
+    entry.binding = {
+      srcCluster: binding.srcCluster,
+      srcRegion: { start: srcRegion.start, end: srcRegion.end },
+      dstCluster: binding.dstCluster,
+      dstRegion: { start: dstRegion.start, end: dstRegion.end },
+    };
+    // Free standalone pre/post/currents buffers — not needed in bound
+    // mode (shaders read directly from cluster spike/current buffers).
+    if (entry.preSpikes && typeof entry.preSpikes.destroy === 'function') {
+      entry.preSpikes.destroy();
+      delete entry.preSpikes;
+    }
+    if (entry.postCurrents && typeof entry.postCurrents.destroy === 'function') {
+      entry.postCurrents.destroy();
+      delete entry.postCurrents;
+    }
+    if (entry.postSpikes && typeof entry.postSpikes.destroy === 'function') {
+      entry.postSpikes.destroy();
+      delete entry.postSpikes;
+    }
     return true;
   }
 
