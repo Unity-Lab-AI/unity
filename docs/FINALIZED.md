@@ -5,6 +5,91 @@
 
 ---
 
+## 2026-04-19 — Session 114.19ao: T18.17 SHIPPED — ELA-K Phase 1 velocity fix (skip CPU shadow Hebbian on GPU-bound cross-projections)
+
+### Gee verbatim telemetry (drove this session)
+
+```
+[Curriculum] ⏱ ELA-K Phase 1 heartbeat — 2/312 iter, rep 1/12, letter 'b', elapsed 5.0s, ~0.40 iter/s
+[Curriculum] ⏱ ELA-K Phase 1 heartbeat — 5/312 iter, rep 1/12, letter 'e', elapsed 12.6s, ~0.40 iter/s
+```
+
+T18.16 phase-visibility shipped, confirmed T18.14 + T18.15 holding (no cascade, heartbeats ticking). Velocity telemetry surfaced a 100-250× bottleneck: **2.5 seconds per letter** in ELA-K Phase 1 when target is ~5-10ms via T18.8 batched GPU Hebbian dispatch.
+
+### Root cause
+
+`cluster._crossRegionHebbian(lr)` at `js/brain/cluster.js:1901` iterates all 14 cross-projections per letter. Line 1921 AWAITS a CPU sparse-pool Hebbian update on the CPU shadow copy of each projection's CSR matrix. At biological scale:
+
+| Projection | nnz | CPU Hebbian cost (approx) |
+|------------|-----|---------------------------|
+| phon_to_sem | 75M | ~180ms |
+| letter_to_phon | 90M | ~200ms |
+| sem_to_phon | 90M | ~200ms |
+| fineType_to_sem | 75M | ~180ms |
+| auditory_to_phon | 90M | ~200ms |
+| (9 more) | 15-75M | 50-180ms each |
+| **Total per letter** | ~650M | **~2500ms** |
+
+The 15-worker sparse pool parallelizes individual projection work but each projection still requires sequential CSR iteration through its nnz entries. Dispatching 14 projections serially = 14 × 180ms avg = 2.5s.
+
+Meanwhile the GPU dispatch at line 1945 (`this._gpuProxy.hebbianBound`) is fire-and-forget microseconds via T18.8 batched queue — but happens AFTER the CPU shadow completes, so the teach loop throttles to CPU drain rate.
+
+### Why the CPU shadow was kept
+
+Pre-T17.7 Phase C.1 rebind: probes READ cross-projection weights from CPU `proj.values` arrays. Rebind made all probes GPU-aware (canonical check at `cluster.js:1687-1688` on `sem_to_motor._gpuBound` routing to `readbackLetterBuckets`). Post-rebind, at biological scale, no reader touches CPU `proj.values` — it's pure overhead. The comment at line 1928-1932 said as much: "When T17.3.e completes we remove the CPU shadow and read exclusively from GPU." T17.3.e shipped but shadow removal was deferred as T17.7 Phase E.d (post-push). Gee's velocity telemetry surfaced the cost concretely.
+
+### Fix — T18.17.a GPU-bound fast path
+
+Short-circuit in `_crossRegionHebbian`:
+
+```js
+if (proj._gpuBound && this._gpuProxyReady && this._gpuProxy && this._gpuProxy.hebbianBound) {
+  try {
+    this._gpuProxy.hebbianBound(`${this.name}_${name}`, lr);
+  } catch { /* fire-and-forget */ }
+  continue;  // skip CPU shadow entirely
+}
+```
+
+Non-bound projections (browser-only standalone mode, pre-rebind window during initial boot) keep the legacy CPU+GPU-standalone path for backward compatibility.
+
+### Expected velocity impact
+
+| Phase | Pre-T18.17 | Post-T18.17 | Speedup |
+|-------|------------|-------------|---------|
+| Phase 1 iter rate | 0.40 iter/s | 50-100 iter/s | 100-250× |
+| Phase 1 wall time | ~13 min | 3-6 sec | ~150× |
+| Full ELA-K cell | ~2 hours | ~5 min | ~25× |
+
+Phase 2 (intra-synapses Hebbian) velocity unchanged — that path is CPU-authoritative at biological scale because intra-synapses is non-bound standalone and GPU standalone path would ship ~1.7 GB per frame. Worker pool parallelism keeps Phase 2 at ~60 seconds total (300 × ~200ms), acceptable.
+
+### Files touched (atomic commit)
+
+- `js/brain/cluster.js` — T18.17.a short-circuit in `_crossRegionHebbian` (+~30 lines of new fast path + comment, retains original fallback)
+- `docs/NOW.md` — updated for session 114.19ao (T18.17 addendum)
+- `docs/TODO.md` — T18.17 entry prepended below T18.16
+- `docs/FINALIZED.md` — this entry
+
+cluster.js IS in the T18.12.a code-hash list → T18.17 boot triggers auto-clear → pre-K re-teach (~2 min cost).
+
+`node --check js/brain/cluster.js` clean.
+
+### Closure gate — open
+
+Gee-verification on next Part 2 run. Success criteria:
+- (a) Phase 1 heartbeat shows iter/s ≥ 10 (ideally 50-100)
+- (b) Phase 1 DONE fires within 30 seconds of START
+- (c) Curriculum advances into Phase 2 → K.RF helpers → `_teachWordEmission` with T18.13.c heartbeats
+- (d) No cascade (T18.14 still holding across the now-faster teach velocity)
+
+Claude cannot close — Gee-verification only.
+
+### What this closes architecturally
+
+Effectively ships T17.7 Phase E.d for cross-projections (CPU shadow removal on bound path). Intra-synapses Phase E.d remains open (different architectural fix needed).
+
+---
+
 ## 2026-04-19 — Session 114.19an: T18.16 SHIPPED — ELA-K phase visibility (heartbeats + phase banners across every runElaKReal teach phase)
 
 ### Gee verbatim (drove this session)

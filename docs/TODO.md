@@ -370,6 +370,33 @@ Server terminal stuck at `ela/kindergarten START` while browser showed T18.15 wi
 
 ---
 
+#### T18.17 — ELA-K Phase 1 velocity fix (Gee 2026-04-19 "0.40 iter/s" heartbeat)
+
+**Gee's verbatim telemetry 2026-04-19** from first T18.16 run:
+
+```
+[Curriculum] ⏱ ELA-K Phase 1 heartbeat — 2/312 iter, rep 1/12, letter 'b', elapsed 5.0s, ~0.40 iter/s
+[Curriculum] ⏱ ELA-K Phase 1 heartbeat — 5/312 iter, rep 1/12, letter 'e', elapsed 12.6s, ~0.40 iter/s
+```
+
+T18.16 gave visibility. Velocity telemetry showed **~2.5 seconds per letter** — 100-250× slower than expected (target ~5-10ms per letter via T18.8 batched GPU dispatch). At 0.40 iter/s Phase 1 alone = 13 minutes; full ELA-K walk would be 2+ hours per cell.
+
+### Root cause found
+
+`cluster._crossRegionHebbian(lr)` at `js/brain/cluster.js:1901` iterates all 14 cross-projections per letter. For each, line 1921 **awaits** the CPU sparse-pool Hebbian update: `await this._sparsePool.hebbianUpdate(proj, preF, postF, lr)`. At biological scale cross-projections total ~650M nnz (`phon_to_sem` 75M + `letter_to_phon` 90M + etc.). Worker pool dispatches across 15 threads but each projection still requires ~150-200ms of CPU sparse-CSR iteration per Hebbian update. 14 × ~180ms = ~2.5s per letter, matching Gee's heartbeat.
+
+The GPU dispatch at line 1945 (`this._gpuProxy.hebbianBound`) is already fire-and-forget microseconds — but happens AFTER the CPU shadow completes. The CPU shadow was kept pre-T17.7 Phase C.1 for probe compat, but post-rebind every probe at biological scale reads directly from GPU (canonical GPU-aware probe check at `cluster.js:1687-1688` on `sem_to_motor._gpuBound`). CPU shadow serves no reader at scale — pure overhead.
+
+### Fix
+
+- [x] **T18.17.a — GPU-bound fast path in `_crossRegionHebbian`.** Short-circuit: when `proj._gpuBound && this._gpuProxyReady && this._gpuProxy.hebbianBound`, fire GPU `hebbianBound` dispatch (fire-and-forget via T18.8 batched queue) and `continue` — skip the CPU sparse-pool update entirely. Non-bound projections (browser-only standalone mode) keep the legacy CPU+GPU-standalone path. Expected Phase 1 velocity: 0.40 iter/s → 50-100 iter/s (~100-250× speedup). Phase 1 wall-time: 13 minutes → 3-6 seconds. Full ELA-K teach: ~2 hours → ~5 minutes. **SHIPPED** — `js/brain/cluster.js`.
+
+**Note on `intraSynapsesHebbian`:** Intra-cluster synapse matrix is NOT bound (per `initGpu` comment: "Intra-synapses always ship standalone — it runs on its own pre/post buffers, not bound into another cluster's spike buffer"). GPU standalone path would ship pre+post Float32Arrays totaling ~858 MB × 2 per frame at 107M cortex — unworkable. CPU worker-pool path IS the authoritative path there. Phase 2 runs 300 iterations × ~200ms/iter = ~60s through 15-worker pool — acceptable. T18.17 scope is cross-projections only.
+
+**T18.17 closure gate:** Gee-verification on next Part 2 run. Success criteria: (a) ELA-K Phase 1 heartbeat shows iter/s ≥ 10 (20× better than pre-T18.17, ideally 50-100); (b) Phase 1 DONE fires within 30 seconds of START (vs 13 minutes pre-T18.17); (c) Phase 2 velocity unchanged (~200ms/iter via worker pool) — intra-synapses isn't this task's scope; (d) curriculum advances to `_teachWordEmission` + T18.13.c heartbeats fire visibly. Claude cannot close — Gee-verification only.
+
+---
+
 #### T18.5 — push gate for main-branch deploy (BINDING)
 
 Per Gee's verbatim 2026-04-18 instruction: before ANY push to `main` for GitHub static deploy, every T18 item above must be shipped AND all docs must be updated AND Gee must explicitly say "yes, push it". Claude does not initiate the push. Claude asks first after the fixes land.

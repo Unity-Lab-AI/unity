@@ -1906,6 +1906,32 @@ export class NeuronCluster {
       const src = name.slice(0, idx);
       const dst = name.slice(idx + 4);
       if (!this.regions[src] || !this.regions[dst]) continue;
+
+      // T18.17 — GPU-bound fast path. When the projection has been
+      // rebound to main-cortex slices (T17.7 Phase C.1) AND the GPU
+      // proxy is ready, skip the CPU sparse-pool Hebbian entirely.
+      // Probes read directly from GPU via readbackLetterBuckets /
+      // readback_currents (see cluster.js:1687-1688 for the canonical
+      // GPU-aware probe check on sem_to_motor). The CPU shadow was
+      // kept pre-T17.7 Phase C.1 for probe compat but is pure overhead
+      // at biological scale — Gee's 2026-04-19 Part 2 run exposed the
+      // cost with T18.16 heartbeats: Phase 1 ran at 0.40 iter/s =
+      // ~2.5s per letter, entirely bottlenecked by `await
+      // this._sparsePool.hebbianUpdate(proj, preF, postF, lr)` across
+      // 14 projections totaling ~650M nnz of CPU sparse Hebbian work
+      // per letter. GPU dispatch is fire-and-forget microseconds; the
+      // CPU shadow was serializing the teach loop 100-250× slower than
+      // necessary. Skipping when GPU-bound brings iteration velocity
+      // to the GPU-dispatch-only ceiling (~50-100 iter/s at biological
+      // scale through T18.8 batched dispatch). Phase 1 goes from 13
+      // minutes to 3-6 seconds at 312 iters.
+      if (proj._gpuBound && this._gpuProxyReady && this._gpuProxy && this._gpuProxy.hebbianBound) {
+        try {
+          this._gpuProxy.hebbianBound(`${this.name}_${name}`, lr);
+        } catch { /* fire-and-forget — CPU worker dispatch path not reached */ }
+        continue;
+      }
+
       const preF = this.regionSpikes(src);
       const postF = this.regionSpikes(dst);
       // T17.2 + T17.7 Gee 2026-04-18 OOM fix — route CPU Hebbian
@@ -1916,6 +1942,11 @@ export class NeuronCluster {
       // + same fix shape as intraSynapsesHebbian — caller (teach
       // loops) awaits, iteration rate throttles to the worker pool's
       // drain rate, only ~15 jobs live in memory at a time.
+      //
+      // T18.17 — this path now only runs for NON-GPU-bound projections
+      // (standalone browser-only mode, or pre-rebind window during
+      // initial boot). At biological scale all cross-projections are
+      // GPU-bound post T17.7 Phase C.1 rebind so this path is cold.
       if (this._sparsePool && this._sparsePool.ready) {
         try {
           await this._sparsePool.hebbianUpdate(proj, preF, postF, lr);
@@ -1925,27 +1956,11 @@ export class NeuronCluster {
       } else {
         proj.hebbianUpdate(preF, postF, lr);
       }
-      // T17.3.d — fire-and-forget GPU Hebbian when proxy ready.
-      // Weight updates happen on BOTH the CPU shadow copy AND the GPU
-      // copy so probes and live-chat reads stay consistent regardless
-      // of which path reads them. When T17.3.e completes we remove the
-      // CPU shadow and read exclusively from GPU.
-      //
-      // T17.7 Phase C.1 — when the projection has been rebound to main-
-      // cortex slices (proj._gpuBound=true, set by
-      // brain._ensureCortexCrossProjectionsBound), dispatch via
-      // hebbianBound (no pre/post arrays — shader reads main-cortex
-      // spikes buffer at bound region offsets). Pre/post patterns land
-      // in those slices via curriculum _writeTiledPattern ⇒
-      // gpuProxy.writeSpikeSlice. Bandwidth saved per call ≈ srcSize +
-      // dstSize in u32s — at 7M scale, ~56 MB per Hebbian.
-      if (this._gpuProxyReady && this._gpuProxy) {
+      // T17.3.d — fire-and-forget GPU Hebbian fallback for standalone
+      // (non-bound) projections. Bandwidth cost: srcSize + dstSize u32s.
+      if (this._gpuProxyReady && this._gpuProxy && this._gpuProxy.hebbian) {
         try {
-          if (proj._gpuBound && this._gpuProxy.hebbianBound) {
-            this._gpuProxy.hebbianBound(`${this.name}_${name}`, lr);
-          } else if (this._gpuProxy.hebbian) {
-            this._gpuProxy.hebbian(`${this.name}_${name}`, preF, postF, lr);
-          }
+          this._gpuProxy.hebbian(`${this.name}_${name}`, preF, postF, lr);
         } catch { /* non-fatal — CPU path already updated */ }
       }
     }

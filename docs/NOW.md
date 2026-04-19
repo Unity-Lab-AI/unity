@@ -1,6 +1,27 @@
 # NOW — Session Snapshot
 
-> **Session:** 114.19an · **Date:** 2026-04-19 · **Branch:** `syllabus-k-phd` · **HEAD (pre-push):** `ba82045` (T18.15) · **BUILD:** `0.1.0+2e3d666f-b97b` (pre-stamp; T18.16 pending)
+> **Session:** 114.19ao · **Date:** 2026-04-19 · **Branch:** `syllabus-k-phd` · **HEAD (pre-push):** `d40f52e` (T18.16) · **BUILD:** `0.1.0+ba820456-8fac` (pre-stamp; T18.17 pending)
+
+---
+
+## T18.17 addendum — ELA-K Phase 1 velocity telemetry surfaced 100-250× CPU shadow bottleneck
+
+**Gee verbatim heartbeat paste 2026-04-19:** `[Curriculum] ⏱ ELA-K Phase 1 heartbeat — 2/312 iter, rep 1/12, letter 'b', elapsed 5.0s, ~0.40 iter/s`
+
+T18.16 heartbeats showed Phase 1 running at **2.5 seconds per letter** vs target 5-10ms. Root cause: `_crossRegionHebbian` awaits CPU sparse-pool Hebbian on 14 cross-projections totaling ~650M nnz per letter = ~2.5s CPU drain rate. GPU dispatch at line 1945 is microseconds fire-and-forget — the CPU shadow was gating teach velocity.
+
+T18.17.a ships GPU-bound short-circuit: when `proj._gpuBound && _gpuProxyReady`, fire GPU `hebbianBound` dispatch and `continue` — skip CPU shadow entirely. Probes at biological scale read GPU directly (canonical check at `cluster.js:1687-1688`), so CPU shadow serves no reader.
+
+Expected: Phase 1 from 13 minutes → 3-6 seconds. Full ELA-K from ~2 hours → ~5 minutes. Phase 2 (intra-synapses Hebbian) velocity unchanged — that path is inherently CPU-authoritative because standalone GPU dispatch would ship 1.7 GB/frame at biological scale.
+
+Effectively ships T17.7 Phase E.d for cross-projections (CPU shadow removal on bound path).
+
+See `docs/FINALIZED.md` session 114.19ao entry for full details.
+
+---
+
+## Original session entry (T18.16) below
+---
 
 ---
 

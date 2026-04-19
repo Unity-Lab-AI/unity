@@ -600,7 +600,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "2e3d666f-b97b";
+var BUILD = "ba820456-8fac";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -2546,6 +2546,13 @@ var NeuronCluster = class {
       const src = name.slice(0, idx);
       const dst = name.slice(idx + 4);
       if (!this.regions[src] || !this.regions[dst]) continue;
+      if (proj._gpuBound && this._gpuProxyReady && this._gpuProxy && this._gpuProxy.hebbianBound) {
+        try {
+          this._gpuProxy.hebbianBound(`${this.name}_${name}`, lr);
+        } catch {
+        }
+        continue;
+      }
       const preF = this.regionSpikes(src);
       const postF = this.regionSpikes(dst);
       if (this._sparsePool && this._sparsePool.ready) {
@@ -2557,13 +2564,9 @@ var NeuronCluster = class {
       } else {
         proj.hebbianUpdate(preF, postF, lr);
       }
-      if (this._gpuProxyReady && this._gpuProxy) {
+      if (this._gpuProxyReady && this._gpuProxy && this._gpuProxy.hebbian) {
         try {
-          if (proj._gpuBound && this._gpuProxy.hebbianBound) {
-            this._gpuProxy.hebbianBound(`${this.name}_${name}`, lr);
-          } else if (this._gpuProxy.hebbian) {
-            this._gpuProxy.hebbian(`${this.name}_${name}`, preF, postF, lr);
-          }
+          this._gpuProxy.hebbian(`${this.name}_${name}`, preF, postF, lr);
         } catch {
         }
       }
