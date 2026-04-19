@@ -637,6 +637,10 @@ The critical architectural principle: **the brain decides, peripherals execute.*
 cd server && npm install && node brain-server.js
 ```
 
+**One command — that's the whole UX.** The Node server auto-launches a WebGPU-capable browser tab pointing at `compute.html` as soon as it finishes listening on port 7525 (cross-platform: Windows `start`, macOS `open`, Linux `xdg-open`). The tab connects back over WebSocket, handshakes GPU init for all seven clusters, flips `cortexCluster._gpuReady = true`, and the curriculum begins teaching pre-K + K.
+
+Headless / remote deployments set `DREAM_NO_AUTO_GPU=1` to skip the auto-launch; operator then opens `http://<host>:7525/compute.html` manually.
+
 One brain. Always on. Shared by everyone. Auto-scales to your GPU.
 
 ```

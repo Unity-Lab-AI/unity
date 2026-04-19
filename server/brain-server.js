@@ -4099,6 +4099,53 @@ setInterval(() => {
   }
 }, STATE_BROADCAST_MS);
 
+/**
+ * Auto-spawn the GPU compute client.
+ *
+ * Rationale: WebGPU lives in the browser; Node has no native WebGPU
+ * runtime that covers our shader path. The server offloads every
+ * neuron LIF dispatch + sparse propagate + Hebbian + letter-bucket
+ * reduction to `compute.html` running in a browser tab that connects
+ * back over WebSocket. Before this auto-spawn, `node brain-server.js`
+ * stood alone and waited forever for a client to appear — the
+ * curriculum's `_waitForGpuReady` timed out at 120s, aborting the
+ * teach pass. A fresh boot with no browser tab produced the
+ * "Curriculum runCompleteCurriculum: GPU never became ready,
+ * aborting teach pass" log with Unity's cortex untouched.
+ *
+ * The fix: the server opens the default browser to compute.html
+ * itself, so `node brain-server.js` is the single command. No
+ * duplicate tab when `start.bat` launches (start.bat now skips the
+ * compute.html open and lets the server do it).
+ *
+ * Cross-platform via the conventional per-OS open commands:
+ *   - Windows: `cmd /c start "" "<url>"` (cmd builtin)
+ *   - macOS:   `open "<url>"`
+ *   - Linux:   `xdg-open "<url>"`
+ *
+ * Opt-out for headless / CI / remote deployments via env
+ * `DREAM_NO_AUTO_GPU=1`. In that mode the server logs the URL and
+ * expects an operator to connect compute.html manually.
+ */
+function _spawnGpuClient(port) {
+  if (process.env.DREAM_NO_AUTO_GPU === '1') {
+    console.log(`[Server] DREAM_NO_AUTO_GPU=1 — skipping browser auto-launch. Open http://localhost:${port}/compute.html manually to start GPU compute.`);
+    return;
+  }
+  const url = `http://localhost:${port}/compute.html`;
+  const { exec } = require('child_process');
+  const cmd = process.platform === 'win32' ? `start "" "${url}"`
+            : process.platform === 'darwin' ? `open "${url}"`
+            : `xdg-open "${url}"`;
+  exec(cmd, (err) => {
+    if (err) {
+      console.warn(`[Server] Auto-launch failed (${err.message}). Open ${url} manually in a WebGPU-capable browser (Chrome / Edge).`);
+    } else {
+      console.log(`[Server] GPU compute client launched: ${url}`);
+    }
+  });
+}
+
 httpServer.listen(PORT, () => {
   console.log(`
   🧠 Unity Brain Server — Auto-Scaled
@@ -4124,8 +4171,12 @@ httpServer.listen(PORT, () => {
 
   Tick rate:  ${Math.round(1000/BRAIN_TICK_MS)}fps × 10 = ${Math.round(10000/BRAIN_TICK_MS)} brain-steps/sec
 
-  Brain is thinking. Connect a client.
+  Brain is thinking. Launching GPU compute client...
   `);
+  // Delay slightly so the browser tab doesn't race the WebSocket
+  // registration (gives the WSS.on('connection') handler time to
+  // settle before compute.html fires its first init message).
+  setTimeout(() => _spawnGpuClient(PORT), 500);
 });
 
 // Graceful shutdown

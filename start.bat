@@ -71,7 +71,7 @@ if errorlevel 1 goto err_bundle
 echo   Bundle built - browser will load fresh code.
 echo.
 
-REM Start brain server in background, wait, open browser tabs.
+REM Start brain server in background, wait, open the landing page tab.
 REM --max-old-space-size=65536 = 64 GB V8 heap ceiling. Language
 REM cortex is CPU-side for now (GPU port in progress) and its sparse
 REM synapse + cross-projection weights live in JS-owned typed arrays.
@@ -81,14 +81,20 @@ REM a bigger heap ceiling = bigger language cortex size. On a 128 GB
 REM RAM box this lets the language cluster reach ~7-8 M neurons before
 REM hitting the 50%-of-free-RAM constraint. Set even higher (128 GB
 REM box could run 96 GB) if needed. Zero hardcoded cluster-size cap.
+REM
+REM compute.html is NOT opened here — the server auto-launches it
+REM via brain-server.js `_spawnGpuClient()` once the HTTP listener
+REM is up. This keeps `node brain-server.js` and `start.bat` both
+REM one-command entry points; no duplicate tabs, no stale log
+REM telling the operator to open compute.html manually.
 echo   Starting brain server (GPU EXCLUSIVE - no CPU workers)...
 start /b node --max-old-space-size=65536 brain-server.js
 ping -n 3 127.0.0.1 >nul
 start "" http://localhost:7525
-start "" http://localhost:7525/compute.html
 echo.
-echo   Browser:     http://localhost:7525
-echo   GPU compute: http://localhost:7525/compute.html
+echo   Landing:     http://localhost:7525
+echo   GPU compute: http://localhost:7525/compute.html (auto-launched by server)
+echo   Dashboard:   http://localhost:7525/dashboard.html
 echo   NOTE: brain runs ONLY on GPU. compute.html MUST stay open.
 echo   Press Ctrl+C to stop.
 echo.

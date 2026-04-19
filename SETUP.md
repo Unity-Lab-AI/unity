@@ -183,6 +183,12 @@ npm install
 node brain-server.js
 ```
 
+**That's the whole command.** As soon as the Node server finishes listening on port 7525, it auto-launches a browser tab pointing at `http://localhost:7525/compute.html`. That tab is the WebGPU client — it holds the WebGPU device, runs the WGSL compute shaders for LIF / sparse propagate / Hebbian / letter-bucket reduction, and talks to the server over WebSocket. Cross-platform launch (`start` on Windows, `open` on macOS, `xdg-open` on Linux). The curriculum waits for this client to connect before teaching pre-K + K.
+
+**Headless / remote deployments** set `DREAM_NO_AUTO_GPU=1` before launching the server to skip the browser auto-launch; the operator then opens `http://<host>:7525/compute.html` in a WebGPU-capable browser (Chrome / Edge) on any machine that can reach the server. The WebSocket connection does the rest.
+
+**`start.bat` (Windows convenience wrapper)** still works — it additionally handles first-run `npm install` + `esbuild` bundle build + GloVe download + opens the landing page. It does NOT open compute.html itself (the server does).
+
 The server auto-detects hardware (nvidia-smi for VRAM, `os` for RAM) and sizes every brain region from a single unified VRAM allocator — no region is sized independently, so no pair of regions can double-book memory and blow past the VRAM budget.
 - **Unified allocator (see `BRAIN_VRAM_ALLOC` in `server/brain-server.js`):**
   `brainBudgetBytes = (VRAM_MB − osReserveVramMB) × 1024²`
