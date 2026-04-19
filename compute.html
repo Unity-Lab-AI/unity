@@ -301,6 +301,51 @@ function connectToServer() {
     // ack. Spikes are transferred as regular arrays (not typed —
     // JSON through WebSocket doesn't preserve typed arrays).
 
+    // T17.7 Phase B.2 — server pushes a per-neuron current pattern
+    // into a cluster's region slice via GPU's writeCurrentSlice. Used
+    // by injectText (text → Wernicke phon slice) and any future
+    // sensory injection that needs to land on a specific sub-region.
+    // Ψ-modulated via Phase A.3 hemisphereGate when the region is
+    // lateralized — left-lateralized Wernicke phon receives less
+    // current at low Ψ (hemispheric divergence state) and full current
+    // at high Ψ (bilateral integration). Consistent with global-
+    // workspace theory and Gee's main-equation-Ψ binding constraint.
+    if (msg.type === 'write_current_slice' && gpuReady) {
+      const { clusterName, regionName, values, sparseIndices, sparseValues, psi } = msg;
+      try {
+        // Resolve the region size so we can allocate a dense buffer
+        // for sparse-expansion mode.
+        const region = gpu.getRegion(clusterName, regionName);
+        if (!region) {
+          console.warn(`[GPU Compute] write_current_slice ${clusterName}/${regionName}: region not found`);
+          return;
+        }
+        const sliceLen = region.end - region.start;
+        let arr;
+        if (Array.isArray(sparseIndices) && Array.isArray(sparseValues) && sparseIndices.length === sparseValues.length) {
+          // Sparse mode — expand to dense. For a 26M amygdala with
+          // 100 touched indices this is ~100MB zero-fill + 100 writes
+          // instead of a 100MB JSON payload from server (400×
+          // reduction in WebSocket bandwidth for large sparse cases).
+          arr = new Float32Array(sliceLen);
+          for (let i = 0; i < sparseIndices.length; i++) {
+            const idx = sparseIndices[i];
+            if (idx >= 0 && idx < sliceLen) arr[idx] = sparseValues[i];
+          }
+        } else if (values) {
+          // Dense mode — used when the caller has mostly-filled buffer
+          // (text injection into Wernicke phon at 6M).
+          arr = values instanceof Float32Array ? values : new Float32Array(values);
+        } else {
+          return;
+        }
+        gpu.writeCurrentSlice(clusterName, regionName, arr, { psi });
+      } catch (err) {
+        console.warn(`[GPU Compute] write_current_slice ${clusterName}/${regionName} failed:`, err.message);
+      }
+      return;
+    }
+
     if (msg.type === 'sparse_upload' && gpuReady) {
       const { reqId, name, rows, cols, values, colIdx, rowPtr } = msg;
       try {
