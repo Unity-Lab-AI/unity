@@ -116,8 +116,18 @@ REM memory allocation rates of ~10 GB/sec for short bursts. Combined
 REM with the existing --max-old-space-size=65536 (64 GB) this gives V8
 REM total ~66 GB of headroom — well below the 128 GB physical RAM
 REM ceiling on Gee's box, so process virtual memory commits succeed.
+REM T18.23 — --expose-gc flag lets cluster.initGpu() call global.gc()
+REM after T18.22's CPU CSR free block to force V8 to actually reclaim
+REM the ~8 GB of external memory immediately (instead of waiting for
+REM the next scheduled Mark-Compact cycle). Without --expose-gc the
+REM null-assignments in T18.22 unref the typed arrays but V8 can take
+REM seconds to minutes to GC them — long enough for Phase 2 external-
+REM memory pressure to build and OOM before the reclaim lands. Forced
+REM gc() after all 15 uploads guarantees the 8 GB is gone before
+REM curriculum teach starts. Heap-stats logging before + after the
+REM forced gc() lets Gee visually confirm the reclaim actually happens.
 echo   Starting brain server (GPU EXCLUSIVE - no CPU workers)...
-start /b node --max-old-space-size=65536 --max-semi-space-size=1024 brain-server.js
+start /b node --max-old-space-size=65536 --max-semi-space-size=1024 --expose-gc brain-server.js
 ping -n 3 127.0.0.1 >nul
 start "" http://localhost:7525
 echo.
