@@ -2852,15 +2852,20 @@ class ServerBrain {
             }
             // T17.7 Phase B.4 — divergence metric from per-region spike
             // readback vs standalone cortexCluster's per-region spikes.
-            // Feeds into cerebellum error correction via the existing
-            // cerebellum feedback path (no strict abort gate per Gee
-            // 'the brain doesnt error; thats the brain centers error
-            // correction handeling'). Ψ-modulated correction gain so
-            // high Ψ (integrated brain state) dampens divergence harder
-            // than low Ψ (fragmented, tolerant of drift).
-            if (batchResult && batchResult.perCluster) {
-              this._computeCortexDivergence(batchResult.perCluster);
-            }
+            // T17.7 Phase E.c (2026-04-18) — divergence computation
+            // decommissioned. It measured standalone cortexCluster
+            // lastSpikes vs main-cortex GPU slice spike counts, which
+            // mattered while the two substrates were trained in
+            // parallel during Phases B/C/D. Post-E.a/E.b, curriculum
+            // trains ONLY main cortex (not standalone), so divergence
+            // grows naturally without signaling a real problem —
+            // standalone's free-running CPU state will drift from
+            // main-cortex training because they're no longer fed the
+            // same inputs. The cerebellum's error-correction still
+            // runs on its native cortex-prediction-error input per
+            // Gee decision #4; this divergence term is zeroed out.
+            this._cortexDivergence = 0;
+            this._cortexDivergenceByRegion = {};
             this.totalSpikes = 0;
             if (batchResult && batchResult.perCluster) {
               for (const name of allClusters) {
@@ -2897,14 +2902,20 @@ class ServerBrain {
 
             // T17.7 Phase B.3 — mirror standalone cortexCluster
             // sub-region spike state into the main cortex GPU
-            // sub-region slice buffers. Runs once per server tick
-            // (not per compute_batch substep) since the mirror is a
-            // slow coherence signal and per-substep mirroring would
-            // saturate the WebSocket. Fires only when a standalone
-            // cortexCluster exists AND has recent spike activity —
-            // skip silently when cortexCluster.lastSpikes is empty
-            // (pre-boot, pre-curriculum) to avoid spamming zeros.
-            this._mirrorCortexRegions();
+            // T17.7 Phase E.c (2026-04-18) — _mirrorCortexRegions() call
+            // DELETED. Phase C rebind made curriculum write directly to
+            // main cortex GPU sub-slices; Phase D switched generation to
+            // read motor argmax from main cortex; Phase E.a/E.b routed
+            // intent-injection + workingMemoryReadout through the main-
+            // cortex GPU path. Every hot path that formerly depended on
+            // this upsample bridge now reads/writes main cortex directly,
+            // so the per-tick ~1.6 MB spike upsample + 8 JSON sends per
+            // tick were redundant overhead. CPU cortexCluster stays alive
+            // for workingMemoryReadout's CPU fallback + dictionary /
+            // languageCortex consumers, but its lastSpikes no longer
+            // needs to mirror to GPU — curriculum + generation are the
+            // two paths that care about main-cortex spike state, and
+            // both write/read it authoritatively after Phase C-E.b.
             } // end: needsAck.length === 0 (all confirmed)
           } // end: needsSend.length === 0 (all sent)
         } catch (err) {
