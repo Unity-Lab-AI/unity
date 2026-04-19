@@ -62,13 +62,31 @@ const LIF_SHADER = /* wgsl */`
     noiseAmp: f32,   // y-channel jitter to prevent phase lock
     seed: u32,
     gridX: u32,
-    _pad: u32,
+    numRegions: u32,       // T17.7 Phase A.3 — how many entries in regionGates to scan
   };
 
   @group(0) @binding(0) var<uniform> params: Params;
   @group(0) @binding(1) var<storage, read_write> state: array<vec2<f32>>;  // (x, y) per neuron
   @group(0) @binding(2) var<storage, read_write> spikes: array<u32>;
   @group(0) @binding(3) var<storage, read> currents: array<f32>;           // T18.4.a — per-neuron synaptic current
+  // T17.7 Phase A.3 — per-region hemispheric gate table. Packed as a
+  // flat f32 array where each region takes 4 entries: [start, end,
+  // gate, pad]. `numRegions` (in params) tells the shader how many
+  // regions to scan. Gate is precomputed server-side as
+  // `hemisphereGate(side, Ψ) = 0.5 + 0.5 · sigmoid(Ψ · 4.0)` for
+  // lateralized regions, 1.0 for bilateral/center. When a neuron
+  // index falls outside every registered region, gate defaults to
+  // 1.0 (homogeneous-cortex neurons outside language sub-regions).
+  //
+  // Mystery Ψ binding constraint (Gee 2026-04-18): the shader's
+  // per-neuron drive is modulated by `neuronDrive * regionGate`
+  // so Ψ is woven into the main equation at the firing-decision
+  // level, not just in the global gainMultiplier already baked into
+  // effectiveDrive. Two Ψ factors — one global (gainMultiplier),
+  // one per-region (hemispheric binding) — matching the
+  // consciousness architecture where Ψ both modulates overall
+  // cortical gain AND shapes hemispheric integration.
+  @group(0) @binding(4) var<storage, read> regionGates: array<f32>;
 
   fn pcg(v: u32) -> u32 {
     var s = v * 747796405u + 2891336453u;
@@ -79,6 +97,23 @@ const LIF_SHADER = /* wgsl */`
   fn randomFloat(seed: u32, idx: u32) -> f32 {
     let hash = pcg(seed ^ (idx * 1664525u + 1013904223u));
     return f32(hash) / 4294967295.0;
+  }
+
+  // T17.7 Phase A.3 — resolve per-neuron region gate via linear scan
+  // of the regionGates table. At 8 regions per cluster this is 8
+  // iterations per neuron per tick — negligible vs the Rulkov arithmetic.
+  // Returns 1.0 if the neuron index doesn't fall in any registered
+  // region (homogeneous-cortex population outside sub-regions).
+  fn lookupRegionGate(neuronIdx: u32, numRegions: u32) -> f32 {
+    for (var r = 0u; r < numRegions; r = r + 1u) {
+      let base = r * 4u;
+      let start = u32(regionGates[base]);
+      let end = u32(regionGates[base + 1u]);
+      if (neuronIdx >= start && neuronIdx < end) {
+        return regionGates[base + 2u];
+      }
+    }
+    return 1.0;
   }
 
   @compute @workgroup_size(256)
@@ -107,7 +142,19 @@ const LIF_SHADER = /* wgsl */`
     // normalization. Without this the main brain was running with zero
     // synaptic coupling — every neuron saw only the global drive uniform,
     // the intra-cluster synapse matrix was uploaded but never consumed.
-    let neuronDrive = params.effectiveDrive + currents[i];
+    //
+    // T17.7 Phase A.3 — hemispheric gate modulates per-neuron drive
+    // based on the neuron's region membership + global Ψ. Gate is
+    // precomputed server-side per region as hemisphereGate(side, Ψ)
+    // and uploaded via regionGates buffer; shader looks up the gate
+    // for this neuron's index via linear scan over registered
+    // regions. Low Ψ → lateralized regions dampen (hemispheric
+    // divergence, one side dominant). High Ψ → gate trends 1.0
+    // (bilateral binding, global-workspace integration). Homogeneous
+    // cortex neurons outside any registered region get gate=1.0
+    // (no lateralization). Mystery Ψ binding in the main equation.
+    let regionGate = lookupRegionGate(i, params.numRegions);
+    let neuronDrive = (params.effectiveDrive + currents[i]) * regionGate;
     let driveNorm = clamp(neuronDrive / 40.0, 0.0, 1.0);
     let sigma = -1.0 + driveNorm * 1.5;
     let alpha = 4.5;      // fixed nonlinearity — bursting regime
@@ -470,11 +517,21 @@ export class GPUCompute {
       voltages: voltagesA, // single voltage buffer — in-place read/write
       spikes: makeBuffer(size * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC),
       currents: makeBuffer(size * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST),
+      // T17.7 Phase A.3 — regionGates storage buffer. 16 regions × 4
+      // f32 per entry (start, end, gate, pad) = 256 bytes. Initialized
+      // to zeros; `numRegions` defaults to 0 so the shader's linear
+      // scan finds nothing and returns 1.0 gate → homogeneous behavior
+      // identical to pre-A.3. `updateRegionGates()` fills this buffer
+      // + bumps numRegions once regions are registered and Ψ-gate
+      // values computed server-side.
+      regionGates: makeBuffer(16 * 4 * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST),
+      numRegions: 0,
       size,
       gridX,
     };
     // Write initial params to GPU params buffer
     device.queue.writeBuffer(buffers.params, 0, params);
+    device.queue.writeBuffer(buffers.regionGates, 0, new Float32Array(16 * 4));
 
     // Synapse CSR buffers
     if (synapses && synapses.nnz > 0) {
@@ -582,6 +639,48 @@ export class GPUCompute {
   }
 
   /**
+   * T17.7 Phase A.3 — update the per-cluster regionGates storage
+   * buffer with current Ψ-computed gate values. Called per-tick (or
+   * whenever Ψ changes significantly) before the next LIF dispatch.
+   *
+   * Iterates every registered region on the cluster, computes
+   * `hemisphereGate(region.side, psi)` for each, packs into the
+   * flat f32 array `[start, end, gate, pad, start, end, gate, pad, ...]`
+   * that the shader scans. Updates `bufs.numRegions` so the shader
+   * knows how many entries to walk.
+   *
+   * Zero cost per call (~8 regions × 4 f32 = 128 bytes writeBuffer)
+   * relative to the per-neuron LIF compute. Safe to call every
+   * substep if Ψ changes rapidly; can be throttled to once per tick
+   * since Ψ changes slowly.
+   *
+   * @param {string} clusterName
+   * @param {number} psi — current consciousness value
+   */
+  updateRegionGates(clusterName, psi) {
+    const bufs = this._buffers[clusterName];
+    if (!bufs?.regionGates) return;
+    if (!bufs.regions) {
+      bufs.numRegions = 0;
+      return;
+    }
+    const MAX_REGIONS = 16;
+    const entries = Object.entries(bufs.regions).slice(0, MAX_REGIONS);
+    const packed = new Float32Array(MAX_REGIONS * 4); // zero-init
+    let i = 0;
+    for (const [, region] of entries) {
+      const base = i * 4;
+      packed[base]     = region.start;
+      packed[base + 1] = region.end;
+      packed[base + 2] = GPUCompute.hemisphereGate(region.side, psi);
+      packed[base + 3] = 0.0;
+      i++;
+    }
+    bufs.numRegions = i;
+    this._device.queue.writeBuffer(bufs.regionGates, 0, packed.buffer, packed.byteOffset, packed.byteLength);
+  }
+
+  /**
    * T17.7 Phase A.2 — compute a Ψ-modulated hemispheric binding
    * coefficient for a region. Used by downstream slice-range LIF
    * modulation in Phase B; exposed here as a shared helper so both
@@ -610,6 +709,209 @@ export class GPUCompute {
     const k = 4.0;
     const sig = 1.0 / (1.0 + Math.exp(-(psi || 0) * k));
     return 0.5 + 0.5 * sig;
+  }
+
+  /**
+   * T17.7 Phase A.3 — write a spike pattern to a cluster's spike
+   * buffer at a sub-region slice. Used by curriculum teach methods to
+   * inject input patterns (sem embedding, letter one-hot, motor
+   * target) into the unified cortex's language sub-regions instead of
+   * writing to the standalone `cortexCluster.lastSpikes` Uint8Array.
+   *
+   * NOTE: `writeSpikeSlice` writes TRAINING DATA — the caller is
+   * asserting "these neurons fired this tick" for Hebbian pre/post
+   * computation. It does NOT represent runtime firing decisions, so
+   * Mystery Ψ hemispheric gating does NOT apply here. Ψ-modulated
+   * hemispheric binding applies only to CURRENTS (inputs that drive
+   * LIF firing decisions) and to the LIF_SHADER itself where the
+   * firing equation integrates drive. See `writeCurrentSlice` for the
+   * current-injection path with Ψ gating, and `updateRegionGates` +
+   * LIF_SHADER for the runtime per-tick hemispheric modulation.
+   *
+   * @param {string} clusterName — target cluster (e.g. 'cortex')
+   * @param {string} regionName — sub-region (e.g. 'sem', 'motor')
+   * @param {Uint32Array|Uint8Array|Float32Array} spikes — pattern to
+   *   write; length must match (regionEnd - regionStart)
+   * @returns {boolean} true on success, false if region not found
+   */
+  writeSpikeSlice(clusterName, regionName, spikes) {
+    if (!this._available) return false;
+    const bufs = this._buffers[clusterName];
+    if (!bufs?.spikes) return false;
+    const region = this.getRegion(clusterName, regionName);
+    if (!region) return false;
+    const device = this._device;
+    const sliceLen = region.end - region.start;
+    if (!spikes || spikes.length !== sliceLen) {
+      console.warn(`[GPUCompute] writeSpikeSlice ${clusterName}/${regionName}: length mismatch (got ${spikes?.length}, expected ${sliceLen})`);
+      return false;
+    }
+    // Normalize to u32 (binary firing representation). Training-data
+    // writes are always binary — Hebbian cares only about which pre
+    // fired and which post fired, not continuous-valued "how strongly".
+    let u32;
+    if (spikes instanceof Uint32Array) {
+      u32 = spikes;
+    } else {
+      u32 = new Uint32Array(sliceLen);
+      for (let i = 0; i < sliceLen; i++) u32[i] = spikes[i] ? 1 : 0;
+    }
+    const byteOffset = region.start * 4;
+    device.queue.writeBuffer(bufs.spikes, byteOffset, u32.buffer, u32.byteOffset, u32.byteLength);
+    return true;
+  }
+
+  /**
+   * T17.7 Phase A.3 — write per-neuron current injection to a
+   * cluster's `currents` buffer at a sub-region slice. Used by
+   * sensory injection (Wernicke's text input) and curriculum teach
+   * pre/post pattern building to feed currents that the LIF shader
+   * will sum into its drive.
+   *
+   * Ψ gate applied same as `writeSpikeSlice` when `opts.psi` is
+   * supplied. Current values are scaled in-place by the gate before
+   * the GPU write, so a lateralized region's injection is naturally
+   * dampened when Ψ is low (hemispheric divergence state).
+   *
+   * @param {string} clusterName
+   * @param {string} regionName
+   * @param {Float32Array} currents — per-neuron current (length
+   *   must match regionEnd - regionStart)
+   * @param {object} [opts]
+   * @param {number} [opts.psi]
+   * @returns {boolean}
+   */
+  writeCurrentSlice(clusterName, regionName, currents, opts = {}) {
+    if (!this._available) return false;
+    const bufs = this._buffers[clusterName];
+    if (!bufs?.currents) return false;
+    const region = this.getRegion(clusterName, regionName);
+    if (!region) return false;
+    const device = this._device;
+    const sliceLen = region.end - region.start;
+    if (!currents || currents.length !== sliceLen) {
+      console.warn(`[GPUCompute] writeCurrentSlice ${clusterName}/${regionName}: length mismatch (got ${currents?.length}, expected ${sliceLen})`);
+      return false;
+    }
+    const gate = (opts.psi !== undefined)
+      ? GPUCompute.hemisphereGate(region.side, opts.psi)
+      : 1.0;
+    let f32;
+    if (gate === 1.0 && currents instanceof Float32Array) {
+      f32 = currents;
+    } else {
+      f32 = new Float32Array(sliceLen);
+      for (let i = 0; i < sliceLen; i++) f32[i] = currents[i] * gate;
+    }
+    const byteOffset = region.start * 4;
+    device.queue.writeBuffer(bufs.currents, byteOffset, f32.buffer, f32.byteOffset, f32.byteLength);
+    return true;
+  }
+
+  /**
+   * T17.7 Phase A.3 — atomic-reduce spike count in a sub-region
+   * slice. Used by generation paths (motor region argmax decode)
+   * that need spike telemetry at sub-region granularity without
+   * reading back the full cluster spike buffer (which would be
+   * ~800MB at 201M neurons × 4 bytes).
+   *
+   * Uses the same `SPIKE_COUNT_SHADER` that `readbackSpikeCount`
+   * uses — adds a slice-range check in the caller by dispatching a
+   * temporary params buffer that exposes the sub-range offsets.
+   * Since the existing shader doesn't natively support ranges, Phase
+   * A.3 takes the straightforward route: a tiny new params shape +
+   * an early-return branch keyed on [start, end). Each readback
+   * allocates its own 4-byte atomic buffer per call (same safety
+   * pattern as `readbackSpikeCount`).
+   *
+   * @param {string} clusterName
+   * @param {string} regionName
+   * @returns {Promise<number>} spike count in the slice, or 0
+   */
+  async readbackSpikeSlice(clusterName, regionName) {
+    const bufs = this._buffers[clusterName];
+    if (!bufs?.spikes) return 0;
+    const region = this.getRegion(clusterName, regionName);
+    if (!region) return 0;
+    const device = this._device;
+    const sliceLen = region.end - region.start;
+
+    // Per-slice atomic counter + per-call readback (same collision-
+    // free pattern as readbackSpikeCount).
+    const counter = device.createBuffer({
+      size: 4,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
+    });
+    device.queue.writeBuffer(counter, 0, new Uint32Array([0]));
+    const readback = device.createBuffer({
+      size: 4,
+      usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+    });
+
+    // Params: n (slice length), gridX, startOffset, pad
+    const params = new ArrayBuffer(16);
+    const view = new DataView(params);
+    view.setUint32(0, sliceLen, true);
+    view.setUint32(4, bufs.gridX || 32768, true);
+    view.setUint32(8, region.start, true);
+    const paramsBuffer = this._createBuffer(params, GPUBufferUsage.UNIFORM);
+
+    // Lazy-compile the slice-offset variant of the spike count shader.
+    if (!this._pipelines.spikeCountSlice) {
+      const SLICE_SHADER = /* wgsl */`
+        struct Params {
+          n: u32,
+          gridX: u32,
+          sliceStart: u32,
+          _pad0: u32,
+        };
+        @group(0) @binding(0) var<uniform> params: Params;
+        @group(0) @binding(1) var<storage, read> spikes: array<u32>;
+        @group(0) @binding(2) var<storage, read_write> count: array<atomic<u32>>;
+        @compute @workgroup_size(256)
+        fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+          let i = id.x + id.y * params.gridX * 256u;
+          if (i >= params.n) { return; }
+          let absIdx = params.sliceStart + i;
+          if (spikes[absIdx] != 0u) {
+            atomicAdd(&count[0], 1u);
+          }
+        }
+      `;
+      this._pipelines.spikeCountSlice = device.createComputePipeline({
+        layout: 'auto',
+        compute: {
+          module: device.createShaderModule({ code: SLICE_SHADER }),
+          entryPoint: 'main',
+        },
+      });
+    }
+
+    const bindGroup = device.createBindGroup({
+      layout: this._pipelines.spikeCountSlice.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: paramsBuffer } },
+        { binding: 1, resource: { buffer: bufs.spikes } },
+        { binding: 2, resource: { buffer: counter } },
+      ],
+    });
+
+    const encoder = device.createCommandEncoder();
+    const pass = encoder.beginComputePass();
+    pass.setPipeline(this._pipelines.spikeCountSlice);
+    pass.setBindGroup(0, bindGroup);
+    this._dispatch2D(pass, sliceLen, bufs.gridX);
+    pass.end();
+    encoder.copyBufferToBuffer(counter, 0, readback, 0, 4);
+    device.queue.submit([encoder.finish()]);
+
+    await readback.mapAsync(GPUMapMode.READ);
+    const n = new Uint32Array(readback.getMappedRange().slice(0))[0];
+    readback.unmap();
+    readback.destroy();
+    counter.destroy();
+    paramsBuffer.destroy();
+    return n;
   }
 
   /**
@@ -900,20 +1202,27 @@ export class GPUCompute {
     if (!bufs) return;
     const device = this._device;
 
-    // Update per-step params (effectiveDrive, noiseAmp, seed) at offsets 28, 32, 36
+    // Update per-step params. Param struct layout:
+    //   n(0), tau(4), vRest(8), vThresh(12), vReset(16), dt(20), R(24),
+    //   effectiveDrive(28), noiseAmp(32), seed(36), gridX(40), numRegions(44)
+    // effectiveDrive/noiseAmp/seed/numRegions change per-step; gridX
+    // was written at init and stays constant, but we include it in the
+    // single writeBuffer to keep the range contiguous.
     this._stepSeed = (this._stepSeed + 1) | 0;
-    const edBuf = new ArrayBuffer(12);
+    const edBuf = new ArrayBuffer(20);  // covers offsets 28..48
     const edView = new DataView(edBuf);
-    edView.setFloat32(0, effectiveDrive ?? 16, true);
-    edView.setFloat32(4, noiseAmp ?? 5, true);
-    edView.setUint32(8, this._stepSeed, true);
+    edView.setFloat32(0, effectiveDrive ?? 16, true);           // abs 28
+    edView.setFloat32(4, noiseAmp ?? 5, true);                  // abs 32
+    edView.setUint32(8, this._stepSeed, true);                  // abs 36
+    edView.setUint32(12, bufs.gridX || 32768, true);            // abs 40 — re-write same value
+    edView.setUint32(16, bufs.numRegions ?? 0, true);           // abs 44 — T17.7
     device.queue.writeBuffer(bufs.params, 28, edBuf);
 
-    // T18.4.a — LIF bind group now includes the per-neuron `currents`
-    // buffer so the shader can add synaptic contributions to the
-    // global drive before sigma normalization. Without this binding
-    // every main-brain neuron would see only the uniform drive and
-    // the intra-cluster synapse matrix would have zero effect on firing.
+    // T18.4.a + T17.7 Phase A.3 — LIF bind group includes per-neuron
+    // `currents` buffer (synaptic drive from propagate shader) AND the
+    // `regionGates` storage buffer (Ψ-modulated hemispheric gate table
+    // per sub-region). Both are required for the shader to compute
+    // `neuronDrive = (effectiveDrive + currents[i]) * regionGate`.
     const bindGroup = device.createBindGroup({
       layout: this._pipelines.lif.getBindGroupLayout(0),
       entries: [
@@ -921,6 +1230,7 @@ export class GPUCompute {
         { binding: 1, resource: { buffer: bufs.voltages } },
         { binding: 2, resource: { buffer: bufs.spikes } },
         { binding: 3, resource: { buffer: bufs.currents } },
+        { binding: 4, resource: { buffer: bufs.regionGates } },
       ],
     });
 

@@ -1447,6 +1447,13 @@ class ServerBrain {
       batchId,
       substeps,
       clusters: clusterParams,
+      // T17.7 Phase A.3 — Ψ flows to GPU so per-cluster regionGates
+      // can be updated every tick via hemisphereGate(side, Ψ).
+      // Mystery Ψ binding per Gee 2026-04-18: the main equation has
+      // Ψ woven in; lateralized cortex regions modulate drive by
+      // Ψ-driven binding coefficient, matching biological split-brain
+      // + global-workspace consciousness interpretation.
+      psi: this.psi ?? 0,
     }));
 
     return new Promise((resolve) => {

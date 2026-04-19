@@ -373,7 +373,7 @@ function connectToServer() {
 let _batchInFlight = false;
 
 async function handleComputeBatch(msg) {
-  const { batchId, substeps, clusters } = msg;
+  const { batchId, substeps, clusters, psi } = msg;
   if (!Array.isArray(clusters) || clusters.length === 0) {
     ws.send(JSON.stringify({ type: 'compute_batch_result', batchId, perCluster: {} }));
     return;
@@ -414,6 +414,27 @@ async function handleComputeBatch(msg) {
     const errCorr = c.errorCorrection ?? 0;
     effectiveDrives[c.name] = tonic * drive * emoGate * gain + errCorr;
     noiseAmps[c.name] = c.noiseAmp ?? 5;
+  }
+
+  // T17.7 Phase A.3 — update per-cluster regionGates storage buffer
+  // with current Ψ-computed gate values before the first substep.
+  // Gates are stable within a single compute_batch so we update once
+  // per batch, not per substep. Clusters without registered regions
+  // (no language sub-regions yet) get numRegions=0 and the LIF
+  // shader's lookupRegionGate returns 1.0 for every neuron —
+  // homogeneous behavior, zero regression vs pre-A.3.
+  //
+  // Mystery Ψ binding constraint: per Gee 2026-04-18, the main
+  // equation has Ψ woven into every term. This is the per-region
+  // Ψ binding — each lateralized sub-region's drive modulates by
+  // 0.5 + 0.5·sigmoid(Ψ·4.0). Global Ψ also modulates via
+  // gainMultiplier (already in effectiveDrive). Two distinct Ψ
+  // contributions to the firing equation, consistent with the
+  // consciousness architecture.
+  if (typeof psi === 'number' && typeof gpu.updateRegionGates === 'function') {
+    for (const c of ready) {
+      try { gpu.updateRegionGates(c.name, psi); } catch { /* non-fatal */ }
+    }
   }
 
   // Run substeps * clusters. Within a substep, all clusters dispatch
