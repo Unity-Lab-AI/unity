@@ -2071,9 +2071,19 @@ export class NeuronCluster {
             // (browser-only standalone mode) still runs with its own
             // CPU arrays because hint.resolve returns null for those
             // and the freeing branch doesn't execute.
+            // T18.23 — log per-projection free bytes for verification.
+            // Prior T18.22 silently nulled without logging; Gee's retest
+            // still OOM'd so we need concrete evidence the frees fire.
+            const _freedValuesBytes = proj.values ? proj.values.byteLength : 0;
+            const _freedColIdxBytes = proj.colIdx ? proj.colIdx.byteLength : 0;
+            const _freedRowPtrBytes = proj.rowPtr ? proj.rowPtr.byteLength : 0;
+            const _freedMB = ((_freedValuesBytes + _freedColIdxBytes + _freedRowPtrBytes) / (1024 * 1024)).toFixed(1);
             proj.values = null;
             proj.colIdx = null;
             proj.rowPtr = null;
+            if (!this._t1822TotalFreedBytes) this._t1822TotalFreedBytes = 0;
+            this._t1822TotalFreedBytes += _freedValuesBytes + _freedColIdxBytes + _freedRowPtrBytes;
+            console.log(`[T18.22/23] freed CPU arrays for bound projection ${name}: values=${(_freedValuesBytes/1024/1024).toFixed(1)}MB + colIdx=${(_freedColIdxBytes/1024/1024).toFixed(1)}MB + rowPtr=${(_freedRowPtrBytes/1024/1024).toFixed(1)}MB = ${_freedMB}MB this projection, ${(this._t1822TotalFreedBytes/1024/1024).toFixed(1)}MB cumulative`);
           }
         } else {
           console.warn(`[Cluster ${this.name}] GPU upload failed for ${key}:`, ack && ack.error);
@@ -2085,6 +2095,57 @@ export class NeuronCluster {
     this._gpuProxyReady = uploaded === targets.length;
     const boundTag = boundCount > 0 ? ` (${boundCount} cluster-bound at upload — standalone VRAM overhead skipped)` : '';
     console.log(`[Cluster ${this.name}] GPU proxy ready: ${uploaded}/${targets.length} matrices uploaded${boundTag} (${this._gpuProxyReady ? 'FULL — intra-synapses + all cross-projections on GPU' : 'PARTIAL — falling back to CPU for failed matrices'})`);
+
+    // T18.23 — force V8 GC after T18.22 frees to actually reclaim the
+    // external memory. `proj.values = null` unrefs the typed array from
+    // the SparseMatrix instance but V8 can't reclaim until the next
+    // scheduled GC cycle — and the loop's local `matrix = {values: proj.values,...}`
+    // held the refs alive until the iteration ends. Forcing gc() here
+    // after all 15 iterations are done guarantees reclamation before
+    // the curriculum teach loop starts pressuring V8.
+    //
+    // Requires Node launched with `--expose-gc` (added to start.bat in
+    // T18.23). If `global.gc` is unavailable (some browser embedding
+    // or Node launched without the flag), log a warning and continue —
+    // V8 will eventually GC on its own schedule.
+    //
+    // Heap stats logged before + after forced GC so Gee can visually
+    // confirm external memory drops by the expected ~9 GB. If the drop
+    // doesn't happen, T18.22's null-assignments aren't reclaiming (some
+    // retainer is still referencing the typed arrays), and we need to
+    // dig deeper via --heapsnapshot-signal=SIGUSR2.
+    if (typeof global !== 'undefined' && typeof process !== 'undefined' && typeof process.memoryUsage === 'function') {
+      try {
+        const before = process.memoryUsage();
+        const beforeHeapMB = (before.heapUsed / 1024 / 1024).toFixed(1);
+        const beforeExtMB = ((before.external || 0) / 1024 / 1024).toFixed(1);
+        const beforeArrayBufMB = ((before.arrayBuffers || 0) / 1024 / 1024).toFixed(1);
+        console.log(`[T18.23] Pre-gc() heap: heapUsed=${beforeHeapMB}MB external=${beforeExtMB}MB arrayBuffers=${beforeArrayBufMB}MB (T18.22 freed ~${((this._t1822TotalFreedBytes || 0)/1024/1024).toFixed(1)}MB of CPU CSR arrays — V8 should reclaim on gc)`);
+
+        if (typeof global.gc === 'function') {
+          const gcStart = Date.now();
+          global.gc();
+          const gcMs = Date.now() - gcStart;
+          const after = process.memoryUsage();
+          const afterHeapMB = (after.heapUsed / 1024 / 1024).toFixed(1);
+          const afterExtMB = ((after.external || 0) / 1024 / 1024).toFixed(1);
+          const afterArrayBufMB = ((after.arrayBuffers || 0) / 1024 / 1024).toFixed(1);
+          const freedMB = (((before.external || 0) - (after.external || 0)) / 1024 / 1024).toFixed(1);
+          const freedArrayBufMB = (((before.arrayBuffers || 0) - (after.arrayBuffers || 0)) / 1024 / 1024).toFixed(1);
+          console.log(`[T18.23] Post-gc() heap: heapUsed=${afterHeapMB}MB external=${afterExtMB}MB arrayBuffers=${afterArrayBufMB}MB — GC reclaimed ${freedMB}MB external / ${freedArrayBufMB}MB arrayBuffers in ${gcMs}ms`);
+          if (parseFloat(freedArrayBufMB) < 1000) {
+            console.warn(`[T18.23] WARNING: GC reclaimed only ${freedArrayBufMB}MB of arrayBuffers but T18.22 freed ${((this._t1822TotalFreedBytes || 0)/1024/1024).toFixed(1)}MB. Some retainer is still holding references — V8 external memory pressure will persist. Next step: dump heap via --heapsnapshot-signal=SIGUSR2 and analyze retainer chain in Chrome DevTools.`);
+          } else {
+            console.log(`[T18.23] ✓ External memory successfully reclaimed. V8 pressure should now stay manageable through curriculum teach.`);
+          }
+        } else {
+          console.warn(`[T18.23] global.gc unavailable (Node not launched with --expose-gc). T18.22's CPU CSR arrays will be reclaimed on V8's next Mark-Compact cycle; no forced reclaim. If external-memory pressure persists, restart server with --expose-gc flag in start.bat.`);
+        }
+      } catch (err) {
+        console.warn(`[T18.23] forced-gc diagnostic failed:`, err && err.message);
+      }
+    }
+
     return this._gpuProxyReady;
   }
 
