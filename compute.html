@@ -236,8 +236,12 @@ function connectToServer() {
       ws.send(JSON.stringify({ type: 'gpu_init_ack', clusterName, size }));
 
       const totalInit = Object.keys(clusterState).length;
-      statusEl.textContent = `GPU initialized: ${totalInit}/8 clusters — ${clusterName} (${size.toLocaleString()} neurons)`;
-      console.log(`[GPU] Initialized ${clusterName}: ${size.toLocaleString()} neurons (${totalInit}/8)`);
+      // Seven main-brain clusters total (cortex / hippocampus / amygdala /
+      // basalGanglia / cerebellum / hypothalamus / mystery). Language
+      // cortex lives as sub-regions of cortex per T17.7 — not an 8th
+      // cluster. Display was hardcoded to "/8" pre-T17.7; now correct.
+      statusEl.textContent = `GPU initialized: ${totalInit}/7 clusters — ${clusterName} (${size.toLocaleString()} neurons)`;
+      console.log(`[GPU] Initialized ${clusterName}: ${size.toLocaleString()} neurons (${totalInit}/7)`);
       return;
     }
 
