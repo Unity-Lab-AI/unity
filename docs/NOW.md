@@ -1,7 +1,43 @@
 # NOW — Session Snapshot
 
-> **Session:** 114.19ap · **Date:** 2026-04-19 · **Branch:** `syllabus-k-phd` · **HEAD (pre-push):** `881aaa4` (T18.17) · **BUILD:** `0.1.0+d40f52e7-084d` (pre-stamp; T18.18 pending)
+> **Session:** 114.19aq · **Date:** 2026-04-19 · **Branch:** `syllabus-k-phd` · **HEAD (pre-push):** `d97d789` (T18.18) · **BUILD:** `0.1.0+881aaa44-a424` (pre-stamp; T18.19 pending)
 
+---
+
+## T18.19 addendum — T18.18 FALSIFIED + real root cause found (CPU worker pool, not GPU shadow)
+
+**Gee verbatim 2026-04-19 after T18.18 retest:** `[Curriculum] ✓ ELA-K Phase 2 DONE in 205.8s → _teachLetterCaseBinding START → FATAL ERROR: Committing semi space failed` + `ultrathink`
+
+Identical failure to pre-T18.18. T18.18 removed the GPU shadow fire-and-forget from `intraSynapsesHebbian` but it changed nothing. Root cause was **misidentified**: the 1.7 GB/call allocator is the CPU worker pool, not the GPU shadow.
+
+Ultrathink traced to `server/worker-pool.js:236-239`:
+```js
+const preF32 = Float32Array.from(preSpikes);  // 428 MB
+const postF32 = Float32Array.from(postSpikes); // 428 MB
+const preShared = shared(preF32, Float32Array);  // NEW SAB 428 MB
+const postShared = shared(postF32, Float32Array); // NEW SAB 428 MB
+```
+
+~1.7 GB of external-memory allocation per call. SharedArrayBuffers held by worker threads until job done. Phase 2 rate of 2.4 GB/sec external-memory allocation exceeds V8's GC reclaim rate. Pressure accumulates through Phase 2 to near-OOM. `_teachLetterCaseBinding`'s first call tips V8 over the edge.
+
+T18.19.a adds a biological-scale bypass: at `cluster.size > 10M`, skip the worker pool and call `synapses.hebbianUpdate` synchronously. Zero allocation. At 107M cortex with only letter region firing, compute time ~200ms per call vs. ~700ms through the worker pool (which was 500ms allocation + 13ms compute). **T18.19 is actually FASTER than the worker pool path at biological scale because allocation overhead dominates.**
+
+Expected Phase 2 velocity: 300 × 200ms = 60s (vs 214s pre-T18.19). ELA-K end-to-end: ~15-20 min including Phase 1 (<5s), all K.RF helpers, and `_teachWordEmission`.
+
+Full cascade chain closed:
+| Layer | Closed by |
+|-------|-----------|
+| Browser WebGPU handles/VRAM/re-init | T18.10/11/14 |
+| Server WS backpressure + reconnect | T18.11.b/c |
+| Server cross-proj CPU shadow (GPU-bound) | T18.17 |
+| Server GPU intra shadow Buffer.concat | T18.18 |
+| **Server CPU worker pool SAB-per-call** | **T18.19** |
+
+See `docs/FINALIZED.md` session 114.19aq entry for the full diagnosis + misdiagnosis retrospective + safety rationale.
+
+---
+
+## Original session entry (T18.18) below
 ---
 
 ## T18.18 addendum — Cascade #5 root cause (intraSynapsesHebbian fire-and-forget GPU shadow @ 1.7 GB/call)

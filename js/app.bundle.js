@@ -600,7 +600,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "d40f52e7-084d";
+var BUILD = "881aaa44-a424";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -2645,7 +2645,11 @@ var NeuronCluster = class {
    */
   async intraSynapsesHebbian(pre, post, lr) {
     if (!this.synapses) return;
-    if (this._sparsePool && this._sparsePool.ready) {
+    const BIOLOGICAL_SCALE_SYNC_THRESHOLD = 1e7;
+    const atBioScale = (this.size | 0) > BIOLOGICAL_SCALE_SYNC_THRESHOLD;
+    if (atBioScale) {
+      this.synapses.hebbianUpdate(pre, post, lr);
+    } else if (this._sparsePool && this._sparsePool.ready) {
       try {
         await this._sparsePool.hebbianUpdate(this.synapses, pre, post, lr);
       } catch {

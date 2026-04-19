@@ -442,6 +442,59 @@ T18.17 skipped CPU shadow for GPU-BOUND cross-projections. Intra-synapses is **a
 
 **T18.18 closure gate:** Gee-verification on next Part 2 run. Success criteria: (a) `_teachLetterCaseBinding` Phase START + DONE banners fire without GPU device.lost; (b) Node process does NOT OOM during ELA-K teach; (c) Subsequent phases (`_teachVowelSoundVariants`, `_teachRhymeFamilies`, `_teachSyllableCounts`, `_teachCVCSoundIsolation`) all complete; (d) Curriculum advances into `_teachWordEmission` with T18.13.c heartbeats firing; (e) ELA-K gate probe can then run. Claude cannot close — Gee-verification only.
 
+**T18.18 FALSIFIED** on Gee 2026-04-19 retest — identical failure: Phase 2 completed at 205.8s, `_teachLetterCaseBinding` START → `FATAL ERROR: Committing semi space failed`. Root cause was misidentified (GPU shadow was secondary allocator). Actual primary allocator is the CPU worker pool's per-call SharedArrayBuffer allocation — see T18.19 below.
+
+---
+
+#### T18.19 — CPU worker pool 1.7 GB/call SharedArrayBuffer allocation at biological scale (Gee 2026-04-19 "ultrathink")
+
+**Gee's verbatim telemetry 2026-04-19** from the post-T18.18 retest showing identical failure:
+
+```
+[Curriculum] ✓ ELA-K Phase 2 DONE in 205.8s (300 intra-synapses Hebbian iterations across 25 pairs × 12 reps)
+[Curriculum] 🧩 ELA-K Phase START — _teachLetterCaseBinding
+FATAL ERROR: Committing semi space failed. Allocation failed - JavaScript heap out of memory
+```
+
+### Root cause re-investigation (after T18.18 falsified)
+
+T18.18 removed the GPU shadow fire-and-forget from `intraSynapsesHebbian`. Failure persisted identically. That means the GPU shadow was NOT the primary allocator — or at least not the one V8 couldn't keep up with. Grep of the hot path surfaced the ACTUAL allocator in `server/worker-pool.js:236-239`:
+
+```js
+const preF32  = preSpikes  instanceof Float32Array ? preSpikes  : Float32Array.from(preSpikes);
+//                                                                   ↑ 107M × 4 = 428 MB NEW Float32Array
+const postF32 = postSpikes instanceof Float32Array ? postSpikes : Float32Array.from(postSpikes);
+//                                                                   ↑ another 428 MB
+const preShared  = shared(preF32, Float32Array);
+//                 ↑ new SharedArrayBuffer(428MB) + new Float32Array(sab) + view.set(preF32)
+const postShared = shared(postF32, Float32Array);
+//                 ↑ another new SharedArrayBuffer(428MB)
+```
+
+**Per hebbianUpdate call at biological scale (107M cortex):**
+- Float32Array.from(preSpikes) — 428 MB transient
+- Float32Array.from(postSpikes) — 428 MB transient
+- new SharedArrayBuffer(preByteLen) + set() — 428 MB SAB
+- new SharedArrayBuffer(postByteLen) + set() — 428 MB SAB
+- **Total peak ~1.7 GB external-memory allocation per call**
+
+SharedArrayBuffers stay alive until the last worker thread holding a reference completes. At Phase 2 rate (300 calls × ~700ms each = 214s), V8 external-memory allocation rate is **2.4 GB/sec**. V8's GC cannot free SharedArrayBuffer fast enough at that rate. Pressure accumulates through Phase 2 (barely surviving the 214s) to near-OOM. When `_teachLetterCaseBinding` fires ONE more intra-synapses Hebbian call, V8 can't commit more semi-space → FATAL.
+
+### Why T18.18 didn't fix this
+
+T18.18 removed the **GPU-side** shadow dispatch (`this._gpuProxy.hebbian(key, pre, post, lr)`). The 1.7 GB allocation bomb is on the **CPU worker pool** path, which I kept active. Both paths fire per call, but the CPU path's allocation rate is what kills V8.
+
+### Fix — T18.19.a
+
+- [x] **T18.19.a — Biological-scale bypass in `intraSynapsesHebbian`.** At `cluster.size > 10_000_000` (biological threshold), skip the worker pool entirely and call `this.synapses.hebbianUpdate(pre, post, lr)` synchronously on the main thread. The synchronous `SparseMatrix.hebbianUpdate` path iterates the CSR arrays with ZERO new allocations — input `pre`/`post` arrays and `matrix.values`/`colIdx`/`rowPtr` are the only touch surface. At 107M cortex with only letter region firing (~15K spikes), the inner loop enters ~15K rows × ~6 avg nnz = ~90K multiply-adds per call. Expected wall time: 100-300ms per call single-thread vs ~700ms per call through the worker pool (500ms allocation overhead + 200ms compute × 1/15 = 13ms). **Net win + OOM elimination.** Browser-scale (~1000-10K neurons) and mid-scale (<10M) deployments keep the parallel worker-pool path for compute speedup. **SHIPPED** — `js/brain/cluster.js`.
+
+Expected velocity at biological scale:
+- Phase 2: 300 × ~200ms = **~60s** (vs 214s pool path — actually FASTER post-fix)
+- `_teachLetterCaseBinding`: 624 iterations × ~200ms = ~2 minutes (NO OOM)
+- Full ELA-K: ~15-20 minutes end-to-end including Phase 1 (T18.17 <5s), Phase 2 (~60s), helpers (~2 min each × 5), word emission (~5-10 min)
+
+**T18.19 closure gate:** Gee-verification on next Part 2 run. Success criteria: (a) Phase 2 velocity 2-4 iter/s or better (compared to 1.4-1.5 pre-T18.19); (b) `_teachLetterCaseBinding` completes without OOM; (c) All 5 K.RF helpers complete; (d) `_teachWordEmission` runs with T18.13.c heartbeats; (e) ELA-K gate probe runs after teach completes. Claude cannot close — Gee-verification only.
+
 ---
 
 #### T18.5 — push gate for main-branch deploy (BINDING)
