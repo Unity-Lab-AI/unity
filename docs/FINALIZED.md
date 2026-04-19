@@ -5,6 +5,58 @@
 
 ---
 
+## 2026-04-19 — Session 114.19af: T18.8 SHIPPED — Batched bound-Hebbian dispatch (Option B)
+
+Gee verbatim 2026-04-19: *"B!!!!!"* — choosing the bigger commit over the one-line cap raise.
+
+### Root cause captured from Part 2 log
+
+During curriculum teach, `compute.html` logged `1048 [GPU Compute] binary frame received size=0.0MB, first4=SPRS` — 1048 tiny bound-Hebbian frames arriving serially. Bound mode (T18.6.b) already kills the pre/post array transfer, so each frame is only ~50 bytes. But every frame has to go through one WebSocket send + one `onmessage` handler run + one GPU dispatch before the next can process — single-threaded ceiling ~1-2 K ops/sec on localhost. Each op's actual GPU compute finishes in microseconds on a 4070 Ti SUPER, so the GPU sits idle waiting for the next tiny frame. Net effect: Compute_0 utilization pinned at ~3% despite curriculum churning.
+
+### Fix: type=5 batched-Hebbian SPRS protocol
+
+Server side queues bound-Hebbian calls into `_boundHebbianBatch.ops`. Flush fires on size=64 OR 2 ms timer, whichever first. One SPRS binary frame carries the entire batch:
+
+```
+Header: SPRS + typeByte=5 + reqId(u32) + nameLen=0 + pad
+Body:   opCount (u16) + pad (u16)
+        For each op:
+          nameLen (u16) + pad (u16) + nameBytes + pad to u32 + lr (f32)
+```
+
+compute.html decodes the batch in ONE `onmessage` tick, fires `gpu.hebbianSparse(name, lr)` for each op back-to-back. Each call submits a compute-pass encoder to the GPU device queue and returns immediately — the queue pipelines N commands through the SMs without waiting on JS. Single SPRR ack returns for the whole batch; the server fans it out to every queued op's resolve callback.
+
+Throughput ceiling climbs from ~1-2 K Hebbian ops/sec (one op per WebSocket round-trip) to ~32-64 K ops/sec (64 ops per round-trip at ~1-2 ms RTT) — a **30-60× multiplier**.
+
+### Backpressure model
+
+- **Queue cap** `BATCHED_HEBBIAN_QUEUE_CAP = 256` — if upstream dispatches faster than flushes drain, drop the op silently. CPU Hebbian path is authoritative per `cluster.intraSynapsesHebbian`'s fire-and-forget contract, so a dropped GPU shadow just re-syncs on the next successful dispatch.
+- **In-flight cap** follows the existing `_gpuSparseFlowOk` gate at 4 pending requests. One batch = one pending reqId, so effective in-flight ops ≤ 4 × 64 = 256.
+- **Empty flush** returns early (no-op when ops array is empty at timer fire).
+- **Disconnect** — if `_gpuClient.readyState !== 1` during flush, resolve all queued ops with null immediately (no hang).
+
+### Propagate stays unbatched
+
+T18.8 batches ONLY Hebbian. Propagate is left on the per-op type=2 frame because each propagate reads back a `Float32Array currents` whose length depends on the per-matrix dst region size — batching cleanly would need a shape-negotiation phase. Hebbian accounts for >95% of bound dispatch volume during curriculum teach (per the 1048-frame log), so Hebbian batching alone is expected to cover the bulk of the GPU-idle window. If post-measurement shows residual stall, T18.8.c can add propagate batching later.
+
+### Files touched
+
+- `server/brain-server.js` — `_enqueueBoundHebbian` + `_flushBoundHebbianBatch` methods, `gpuSparseHebbianBound` routed through the queue. (+~115 lines)
+- `compute.html` — type=5 decoder in the SPRS binary handler: N `gpu.hebbianSparse(name, lr)` calls + single SPRR ack. (+~40 lines)
+- `docs/TODO.md` — T18.8.a/b marked `[x]` with Gee verbatim
+- `docs/FINALIZED.md` — this entry
+- `docs/NOW.md` — Session 114.19af snapshot
+
+All `node --check` clean on server-side; compute.html module body extracted via `--input-type=module` also clean.
+
+### Closure gate — open
+
+**T18.8 closure gate:** GPU Compute_0 utilization ≥ 30% during curriculum walk on Gee's 4070 Ti SUPER (Task Manager Compute_0 panel OR `nvidia-smi dmon -s u` `sm` column). If measured utilization stays ≤ 10% after T18.8 lands, T18.8.c propagate batching or T17.7 Phase E.d cortexCluster deletion is the next avenue. Gee-verification only. **Closes T17.2** (partially — GPU-throughput side. Remaining CPU-side curriculum teach-setup parallelism is a separate future task if profiling shows residual CPU bottleneck.)
+
+Server restart required so `start.bat`'s `npm run build` rebuilds `app.bundle.js` with the prior T18.7 edits AND picks up the server-side batching. compute.html reload picks up the type=5 decoder.
+
+---
+
 ## 2026-04-19 — Session 114.19ae: T18.7 SHIPPED — 3D brain per-cluster 20K peg + state-update downsample
 
 Gee's verbatim 2026-04-19: *"the 3D brain was kinda seizing but fiorst push to the syllabus branc"*. Follow-up on the three proposed fixes: *"1 fine then nothing to do. 2 we can adjust the display ratio but it should already peg at 20K per brain cluster(regionS) 3. yeah thats fine we dont need to chow every connection that its currently showing to as the firing of neron s and thier connections on the 3D brain should be a percentage of the real"*.

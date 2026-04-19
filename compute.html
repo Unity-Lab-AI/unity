@@ -307,6 +307,52 @@ function connectToServer() {
           }
           return;
         }
+        if (typeByte === 5) {
+          // T18.8 — BATCHED bound HEBBIAN. One SPRS frame carries N
+          // (name, lr) tuples. Bound mode — pre/post spikes read directly
+          // from the bound src/dst cluster spike buffers at the region
+          // offsets stored on the matrix, so no per-op writeSparsePreSpikes/
+          // writeSparsePostSpikes calls. We just fire N `gpu.hebbianSparse`
+          // calls back-to-back; each one submits a compute-pass encoder
+          // to the GPU device queue and returns immediately. The GPU
+          // queues + pipelines them without JS intervention. Single ACK
+          // for the whole batch unblocks the server-side batch promise
+          // which fans out to every caller that awaited.
+          //
+          // Wire layout after the standard header (name is empty here —
+          // the op-specific names are inside each op record):
+          //   opCount (u16) + pad (u16),
+          //   for each op:
+          //     opNameLen (u16) + pad (u16),
+          //     opName bytes,
+          //     pad to u32 boundary,
+          //     lr (f32)
+          const opCount = view.getUint16(off, true); off += 2;
+          off += 2; // pad to u32
+          let fired = 0;
+          try {
+            for (let i = 0; i < opCount; i++) {
+              const opNameLen = view.getUint16(off, true); off += 2;
+              off += 2; // pad
+              const opName = new TextDecoder('utf-8').decode(new Uint8Array(buf, off, opNameLen));
+              off += opNameLen;
+              off = (off + 3) & ~3; // align to u32
+              const opLr = view.getFloat32(off, true); off += 4;
+              gpu.hebbianSparse(opName, opLr);
+              fired++;
+            }
+          } catch (err) {
+            console.warn(`[GPU Compute] batched_hebbian binary failed at op ${fired}/${opCount}:`, err.message);
+          }
+          const ack = new ArrayBuffer(9);
+          const av = new DataView(ack);
+          av.setUint8(0,'S'.charCodeAt(0)); av.setUint8(1,'P'.charCodeAt(0));
+          av.setUint8(2,'R'.charCodeAt(0)); av.setUint8(3,'R'.charCodeAt(0));
+          av.setUint8(4, 5);
+          av.setUint32(5, reqId, true);
+          ws.send(ack);
+          return;
+        }
       }
       return; // binary frame we don't recognize
     }

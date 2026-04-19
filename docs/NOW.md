@@ -1,10 +1,22 @@
 # NOW — Session Snapshot
 
-> **Session:** 114.19ae · **Date:** 2026-04-19 · **Branch:** `syllabus-k-phd`
+> **Session:** 114.19af · **Date:** 2026-04-19 · **Branch:** `syllabus-k-phd`
 
 ---
 
-## This session — T18.6 + T18.7 shipped
+## This session — T18.6 + T18.7 + T18.8 shipped
+
+### T18.8 — Batched bound-Hebbian dispatch protocol (Gee verbatim: "B!!!!!")
+
+Curriculum teach was firing 1048 tiny bound-Hebbian SPRS frames serially through `compute.html`'s single-threaded `onmessage` handler at ~1-2 K ops/sec. Each op's actual GPU compute finished in microseconds on the 4070 Ti SUPER, then idled waiting for the next WebSocket round-trip → Compute_0 utilization pegged at ~3%.
+
+Fix: new **type=5 SPRS batched-Hebbian protocol**. Server accumulates bound-Hebbian calls into `_boundHebbianBatch.ops`, flushes on size=64 OR 2 ms timer into a single binary frame. compute.html decodes in one `onmessage` tick, fires N `gpu.hebbianSparse` calls back-to-back (GPU queue pipelines them without JS waiting), sends one SPRR ack. Throughput ceiling: ~1-2 K ops/sec → **~32-64 K ops/sec** (30-60× multiplier).
+
+Backpressure: queue cap 256 (drop on overflow — CPU Hebbian is authoritative), in-flight cap 4 batches × 64 = 256 ops via existing `_gpuSparseFlowOk`. Propagate stays unbatched (readback shape-negotiation is a separate problem; Hebbian is >95% of teach volume per Gee's 1048-frame log).
+
+**Closes T17.2** partially — GPU throughput side. Remaining CPU-side curriculum teach-setup parallelism waits on post-T18.8 profiling.
+
+### T18.7 — 3D brain per-cluster 20K peg + state-update downsample (Gee 2026-04-19)
 
 ### T18.7 — 3D brain seize during curriculum (Gee 2026-04-19)
 

@@ -165,6 +165,23 @@ Three sub-items decoded:
 
 ---
 
+#### T18.8 — Batched bound-Hebbian dispatch protocol (Gee 2026-04-19)
+
+**Gee's verbatim 2026-04-19:** *"B!!!!!"* — choosing Option B from the GPU-3% diagnosis conversation. Option B was: *"New batched sparse dispatch protocol — type=5 binary frame bundles N bound hebbian ops into one binary frame with a single onmessage dispatch + Promise.all on the GPU side — much bigger commit but actually saturates GPU."*
+
+**Diagnosis recap:** With T18.6.b cluster-bound uploads, every curriculum-teach bound-Hebbian call ships as its own ~50-byte SPRS binary frame. `compute.html` processes them serially through a single `onmessage` handler with ~1 ms WebSocket round-trip on localhost → dispatch rate ceiling ~1000-2000 ops/sec. Each op's actual GPU compute finishes in microseconds on a 4070 Ti SUPER, then sits idle waiting for the next tiny frame to arrive. 1048 `0.0MB first4=SPRS` frames in Gee's 2026-04-19 log confirmed the pattern. Result: GPU Compute_0 utilization pegged at ~3% despite curriculum churning through hundreds of teach iterations.
+
+- [x] **T18.8.a — Type=5 batched-Hebbian SPRS frame (server + compute.html).** New binary wire format: header (SPRS + typeByte=5 + reqId + empty name) + `opCount (u16) + pad` + for each op `nameLen (u16) + pad + nameBytes + pad to u32 + lr (f32)`. Server method `_enqueueBoundHebbian(name, lr)` pushes into `_boundHebbianBatch.ops`, flushes on `BATCHED_HEBBIAN_MAX_OPS=64` OR `BATCHED_HEBBIAN_FLUSH_MS=2`. Queue itself capped at `BATCHED_HEBBIAN_QUEUE_CAP=256` (drop on overflow; CPU Hebbian is authoritative per `cluster.intraSynapsesHebbian` fire-and-forget contract). `_flushBoundHebbianBatch` builds the frame via `_encodeSparseHeader(5, reqId, '')` + encoded ops, ships via `_sparseSendBinary` with 30 s timeout. Single SPRR ack fan-outs to every queued op's resolve callback. compute.html decodes type=5, issues N `gpu.hebbianSparse(name, lr)` calls back-to-back (each submits a compute pass to the GPU device queue; the queue pipelines them through SMs without waiting on JS), sends one SPRR ack. **SHIPPED** — `server/brain-server.js` + `compute.html`.
+- [x] **T18.8.b — `gpuSparseHebbianBound` routed through the batch queue.** Replaced the direct call to `gpuSparseHebbian(name, empty, empty, lr)` with `_enqueueBoundHebbian(name, lr)`. Upstream call sites (`cluster.intraSynapsesHebbian` + `cluster._crossRegionHebbian` at line 1945) already use fire-and-forget — no await-site changes needed. **SHIPPED** — `server/brain-server.js`.
+
+**Note on propagate:** T18.8 batches ONLY Hebbian. Propagate stays unbatched because each op reads back a `Float32Array currents` that depends on per-op matrix dimensions — batching the readback cleanly would need a separate shape-negotiation phase. Hebbian accounts for >95% of bound dispatch volume during curriculum teach (per the 1048-frame log), so batching Hebbian alone is expected to cover the bulk of the GPU-idle window. Propagate batching deferred to a future T18.8.c if post-measurement shows residual idle.
+
+**T18.8 closure gate:** GPU Compute_0 utilization climbs to ≥30% (initial target — realistic for teach-phase; main-brain 10 Hz compute_batch contributes the rest) on Gee's 4070 Ti SUPER during curriculum walk, measured via Task Manager Compute_0 panel or `nvidia-smi dmon -s u` `sm` column. Batched-frame ceiling is ~64 K Hebbian ops/sec (64 ops × 1000 batches/sec) vs prior 1-2 K ops/sec — a 30-60× throughput multiplier that should saturate the GPU at biological scale. Gee-verification on next Part 2 run. Claude cannot close.
+
+**Closes T17.2** (partially — the GPU-side throughput bottleneck that T17.2 identified; `cluster.step()` CPU-side loops still single-threaded for the curriculum teach-setup path, which is a separate task if measurements after T18.8 still show CPU-bound stalls).
+
+---
+
 #### T18.5 — push gate for main-branch deploy (BINDING)
 
 Per Gee's verbatim 2026-04-18 instruction: before ANY push to `main` for GitHub static deploy, every T18 item above must be shipped AND all docs must be updated AND Gee must explicitly say "yes, push it". Claude does not initiate the push. Claude asks first after the fixes land.

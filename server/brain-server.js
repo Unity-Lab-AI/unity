@@ -2286,7 +2286,141 @@ class ServerBrain {
    * biological-scale teaching feasible.
    */
   async gpuSparseHebbianBound(name, lr) {
-    return this.gpuSparseHebbian(name, new Uint32Array(0), new Uint32Array(0), lr);
+    // T18.8 — BATCHED bound Hebbian dispatch. Prior implementation shipped
+    // every call as its own ~50-byte SPRS binary frame, which hit
+    // compute.html's single-threaded onmessage handler serially at roughly
+    // 1 kHz ceiling → GPU pegged at 3% because each dispatch completed in
+    // microseconds then waited for the next WebSocket round-trip. The batched
+    // path accumulates bound-Hebbian ops into a pending queue and flushes
+    // them as a single type=5 SPRS frame carrying N (name, lr) tuples.
+    // compute.html issues N `gpu.hebbianSparse(name, lr)` calls in one
+    // onmessage tick — the GPU command queue fills with N dispatches and
+    // pipelines them through the compute units without waiting on JS.
+    // One WebSocket ACK returns for the whole batch. At N=64 the per-op
+    // round-trip cost drops by 64× and SM utilization climbs proportionally.
+    //
+    // Flow gate: curriculum-teach's flow gate `_gpuSparseFlowOk()` caps
+    // PENDING count at 4. One batch = one pending, so up to 4 batches ×
+    // 64 ops = 256 in-flight ops without changing the cap. If the batch
+    // queue overflows the cap too, the call becomes a no-op (CPU remains
+    // authoritative on Hebbian per cluster.js intraSynapsesHebbian's
+    // fire-and-forget contract, so dropped GPU shadow is safe).
+    return this._enqueueBoundHebbian(name, lr);
+  }
+
+  /**
+   * T18.8 — bound-Hebbian batch queue + flush scheduler.
+   *
+   * Accumulates (name, lr) tuples in `_boundHebbianBatch.ops`. Flushes when:
+   *   (a) queue length reaches BATCHED_HEBBIAN_MAX_OPS (64), OR
+   *   (b) BATCHED_HEBBIAN_FLUSH_MS (2 ms) elapses since first enqueue in
+   *       the current batch.
+   *
+   * Returns a Promise that resolves when the ACK for the batch arrives
+   * (so upstream awaits that might have wanted a "GPU Hebbian applied"
+   * signal still work). Hebbian is fire-and-forget in practice — CPU
+   * path is authoritative per `cluster.intraSynapsesHebbian` — so a
+   * rejected / dropped batch just means the GPU shadow missed that
+   * update and re-syncs on the next successful dispatch.
+   */
+  _enqueueBoundHebbian(name, lr) {
+    if (!this._gpuClient || this._gpuClient.readyState !== 1) {
+      return Promise.resolve(null);
+    }
+    if (!this._boundHebbianBatch) {
+      this._boundHebbianBatch = { ops: [], flushTimer: null };
+    }
+    const batch = this._boundHebbianBatch;
+    const BATCHED_HEBBIAN_MAX_OPS = 64;
+    const BATCHED_HEBBIAN_FLUSH_MS = 2;
+    // Backpressure guards — prevent unbounded queue growth under flow stress.
+    // Max in-flight batches (reqIds in _gpuSparsePending waiting for ACK):
+    //   Existing `_gpuSparseFlowOk()` caps non-batch pending at 4. A batch
+    //   is one reqId; we allow up to BATCHED_HEBBIAN_MAX_INFLIGHT=4 batches
+    //   simultaneously, so effective in-flight cap is 4 × 64 = 256 ops,
+    //   which matches the raw WebSocket/onmessage ceiling at 1-2 ms per
+    //   batch RTT = ~500-1000 batches/sec = ~32-64 K Hebbian ops/sec ceiling.
+    // Queue itself capped at BATCHED_HEBBIAN_QUEUE_CAP=256 ops — curriculum
+    // teach should never exceed a couple hundred ops between batch flushes,
+    // but if it does (e.g. WebSocket stalled) drop the op silently (CPU
+    // Hebbian path is authoritative per cluster.intraSynapsesHebbian's
+    // fire-and-forget contract).
+    const BATCHED_HEBBIAN_QUEUE_CAP = 256;
+    if (batch.ops.length >= BATCHED_HEBBIAN_QUEUE_CAP) {
+      return Promise.resolve(null);
+    }
+    return new Promise((resolve, reject) => {
+      batch.ops.push({ name, lr, resolve, reject });
+      if (batch.ops.length >= BATCHED_HEBBIAN_MAX_OPS) {
+        this._flushBoundHebbianBatch();
+      } else if (!batch.flushTimer) {
+        batch.flushTimer = setTimeout(() => this._flushBoundHebbianBatch(), BATCHED_HEBBIAN_FLUSH_MS);
+      }
+    });
+  }
+
+  /**
+   * T18.8 — flush the bound-Hebbian batch. Encodes all pending ops into a
+   * single type=5 SPRS binary frame and ships it via _sparseSendBinary.
+   * Wire layout after the standard 11+nameLen+pad header (empty name for
+   * batch frames — nameLen=0):
+   *   opCount (u16) + pad (u16) to align,
+   *   for each op:
+   *     opNameLen (u16) + pad (u16),
+   *     opName bytes,
+   *     pad to u32 boundary,
+   *     lr (f32)
+   *
+   * The ACK that returns is SPRR + typeByte=5 + reqId; the existing
+   * binary-ack handler at `ws.on('message', ...)` routes it through
+   * `_gpuSparsePending` which resolves `batchPromise`. We then fan out
+   * to every queued op's resolve callback so individual await sites
+   * (rare — Hebbian is fire-and-forget in practice) still unblock.
+   */
+  _flushBoundHebbianBatch() {
+    const batch = this._boundHebbianBatch;
+    if (!batch) return;
+    if (batch.flushTimer) {
+      clearTimeout(batch.flushTimer);
+      batch.flushTimer = null;
+    }
+    const ops = batch.ops;
+    if (ops.length === 0) return;
+    batch.ops = [];
+
+    if (!this._gpuClient || this._gpuClient.readyState !== 1) {
+      for (const op of ops) op.resolve(null);
+      return;
+    }
+
+    const reqId = this._nextSparseReqId();
+    const headerBuf = this._encodeSparseHeader(5, reqId, ''); // empty name for batch frames
+    const countBuf = Buffer.alloc(4);
+    countBuf.writeUInt16LE(ops.length, 0);
+    // countBuf[2..3] already zero (pad)
+
+    const opBufs = [];
+    for (const op of ops) {
+      const nameBuf = Buffer.from(op.name, 'utf8');
+      const padAfterName = (4 - ((nameBuf.length) % 4)) % 4;
+      const size = 4 /* nameLen+pad */ + nameBuf.length + padAfterName + 4 /* lr */;
+      const opBuf = Buffer.alloc(size);
+      let o = 0;
+      opBuf.writeUInt16LE(nameBuf.length, o); o += 2;
+      // o += 2 pad — already zero
+      o += 2;
+      nameBuf.copy(opBuf, o); o += nameBuf.length + padAfterName;
+      opBuf.writeFloatLE(Number(op.lr) || 0, o);
+      opBufs.push(opBuf);
+    }
+    const frame = Buffer.concat([headerBuf, countBuf, ...opBufs]);
+
+    const batchPromise = this._sparseSendBinary(frame, reqId, 30_000);
+    batchPromise.then((result) => {
+      for (const op of ops) op.resolve(result);
+    }, (err) => {
+      for (const op of ops) op.reject(err);
+    });
   }
 
   /**
