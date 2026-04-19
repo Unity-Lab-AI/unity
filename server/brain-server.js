@@ -1293,6 +1293,15 @@ class ServerBrain {
       grades: this.cortexCluster?.grades ? { ...this.cortexCluster.grades } : null,
       minGrade: this._computeMinGrade(),
       canSpeak: this._computeMinGrade() !== 'pre-K',
+      // T17.7 Phase B.4 — dual-cortex divergence telemetry. Scalar in
+      // [0, 1]: 0 = standalone and main-cortex sub-regions agree
+      // perfectly, 1 = one saturated while other silent. Cerebellum
+      // error correction dampens this via Ψ-gated negative feedback
+      // in the cortex errorCorrection term. Dashboard can render as
+      // a health bar — should trend toward 0 over ticks as cerebellum
+      // corrects. Sustained divergence = Phase B migration wiring bug
+      // worth investigating (not a strict abort, just a signal).
+      cortexDivergence: this._cortexDivergence || 0,
       connectedUsers: this.clients.size,
       isDreaming: this._isDreaming || false,
       totalNeurons: TOTAL_NEURONS,
@@ -1334,6 +1343,85 @@ class ServerBrain {
    *
    * This cuts WebSocket traffic from ~10MB/step to ~100KB/step.
    */
+  /**
+   * T17.7 Phase B.4 — compute divergence between standalone
+   * cortexCluster sub-region spike counts and main-cortex GPU
+   * sub-region readback spike counts. Feeds divergence into the
+   * cortex cluster's errorCorrection term via the cerebellum's
+   * existing negative-feedback path.
+   *
+   * Per Gee 2026-04-18: 'just like left right gateing our brain
+   * doesnt error. thats the brain centers error correction handeling
+   * of the brain center that handles eror correction'. The brain
+   * corrects mismatches biologically; we reuse its existing
+   * cerebellum-driven correction rather than adding a strict
+   * migration-abort gate on top.
+   *
+   * Ψ-modulated correction gain per the T17.7 architecture plan:
+   *   cerebellumCorrectionGain = base · (1 + Ψ · k_Ψ)
+   * Low Ψ → correction stays weak, tolerates divergence (fragmented
+   * processing state). High Ψ → correction scales up, dampens
+   * divergence hard (integrated global-workspace state). Mystery Ψ
+   * woven into the equation per 'main equation mystery cant not have
+   * it involved'.
+   *
+   * Stores divergence scalar on this._cortexDivergence so
+   * getState broadcasts it as telemetry. Cerebellum error signal
+   * augmentation happens in _updateDerivedState via the cached value.
+   */
+  _computeCortexDivergence(perCluster) {
+    const cortexEntry = perCluster.cortex;
+    if (!cortexEntry || !cortexEntry.regionSpikes) {
+      this._cortexDivergence = 0;
+      return;
+    }
+    if (!this.cortexCluster || !this.cortexCluster.regions || !this.cortexCluster.lastSpikes) {
+      this._cortexDivergence = 0;
+      return;
+    }
+    const stand = this.cortexCluster;
+    let totalDiff = 0;
+    let totalSize = 0;
+    for (const [regName, mainSpikes] of Object.entries(cortexEntry.regionSpikes)) {
+      const standReg = stand.regions[regName];
+      if (!standReg) continue;
+      // Count standalone spikes in this region.
+      let standSpikes = 0;
+      for (let i = standReg.start; i < standReg.end && i < stand.lastSpikes.length; i++) {
+        if (stand.lastSpikes[i]) standSpikes++;
+      }
+      // Normalize both to firing rates (spike fraction) so different
+      // slice sizes compare fairly — absolute counts would always show
+      // divergence just from size differences between standalone and
+      // main-cortex regions.
+      const standLen = standReg.end - standReg.start;
+      const mainLen = Math.floor(CLUSTER_SIZES.cortex * this._regionFraction(regName));
+      const standRate = standLen > 0 ? standSpikes / standLen : 0;
+      const mainRate = mainLen > 0 ? mainSpikes / mainLen : 0;
+      totalDiff += Math.abs(standRate - mainRate) * mainLen;
+      totalSize += mainLen;
+    }
+    // Divergence = weighted-mean absolute rate difference across regions.
+    // Ranges [0, 1] — 0 = perfect match, 1 = one is saturated and
+    // other is silent. Biologically-grounded: this IS the signal a
+    // real cerebellum would see when cortex prediction diverges from
+    // ground truth sensory input.
+    this._cortexDivergence = totalSize > 0 ? totalDiff / totalSize : 0;
+  }
+
+  /**
+   * T17.7 Phase B.4 — helper matching the LAYOUT in _regionsFor so
+   * divergence calc can size main-cortex slices without parsing the
+   * regions metadata object.
+   */
+  _regionFraction(regName) {
+    const FRACTIONS = {
+      auditory: 0.083, visual: 0.167, free: 0.250, letter: 0.050,
+      phon: 0.200, sem: 0.167, fineType: 0.050, motor: 0.033,
+    };
+    return FRACTIONS[regName] ?? 0;
+  }
+
   /**
    * T17.7 Phase B.3 — mirror standalone cortexCluster sub-region
    * spike state into the main cortex GPU sub-region slice buffers.
@@ -2291,9 +2379,27 @@ class ServerBrain {
             const psiGain = Math.max(0.8, Math.min(1.5, 0.9 + (this.psi || 0) * 0.004));
             const emotionalGate = 0.7 + (this.arousal || 0.5) * 0.6;
             const driveFactor = 0.8 + ((this.clusters.hypothalamus?.spikeCount || 0) > 100 ? 0.4 : 0.0);
+            // T17.7 Phase B.4 — Ψ-modulated divergence correction
+            // gain. Per the architecture plan: cerebellumCorrectionGain
+            // = base · (1 + Ψ · k_Ψ). Low Ψ → weak correction →
+            // tolerates drift (fragmented processing). High Ψ →
+            // strong correction → dampens divergence hard (integrated
+            // global-workspace state). Mystery Ψ non-optional per Gee
+            // 'main equation mystery cant not have it involved'.
+            const divergence = this._cortexDivergence || 0;
+            const psiCorrectionGain = 1 + (this.psi || 0) * 0.25;
+            const divergenceContrib = -divergence * psiCorrectionGain * 3;  // negative = dampening
             const clusterParams = allClusters.map((name) => {
-              const errorSignal = name === 'cortex' || name === 'basalGanglia'
+              const cerebFeedback = name === 'cortex' || name === 'basalGanglia'
                 ? -(this.clusters.cerebellum?.spikeCount || 0) / (CLUSTER_SIZES.cerebellum || 1) * 2 : 0;
+              // Main cortex gets the divergence contribution on top
+              // of cerebellum feedback. Both are negative corrections,
+              // summed — the cerebellum handles BOTH standard
+              // prediction-error correction AND T17.7 migration
+              // divergence correction through the same equation.
+              const errorSignal = (name === 'cortex')
+                ? cerebFeedback + divergenceContrib
+                : cerebFeedback;
               return {
                 name,
                 size: CLUSTER_SIZES[name],
@@ -2315,6 +2421,17 @@ class ServerBrain {
             // Stored on `_perfStats.phaseTimingMs` + exposed via getState.
             if (batchResult && batchResult.phaseTimingMs) {
               this._perfStats.phaseTimingMs = batchResult.phaseTimingMs;
+            }
+            // T17.7 Phase B.4 — divergence metric from per-region spike
+            // readback vs standalone cortexCluster's per-region spikes.
+            // Feeds into cerebellum error correction via the existing
+            // cerebellum feedback path (no strict abort gate per Gee
+            // 'the brain doesnt error; thats the brain centers error
+            // correction handeling'). Ψ-modulated correction gain so
+            // high Ψ (integrated brain state) dampens divergence harder
+            // than low Ψ (fragmented, tolerant of drift).
+            if (batchResult && batchResult.perCluster) {
+              this._computeCortexDivergence(batchResult.perCluster);
             }
             this.totalSpikes = 0;
             if (batchResult && batchResult.perCluster) {

@@ -572,6 +572,40 @@ async function handleComputeBatch(msg) {
     }
   }
   phaseT.voltReadbackMs = +(performance.now() - vrStart).toFixed(2);
+
+  // T17.7 Phase B.4 — per-region spike count readback for every
+  // cluster that has regions metadata. Feeds the server's divergence
+  // metric (standalone cortexCluster sub-region spikes vs main cortex
+  // sub-region spikes). Server uses divergence to augment the
+  // cerebellum's error correction signal — biological self-correction
+  // per Gee 'the brain doesnt error; thats the brain centers error
+  // correction handeling of the brain center that handles eror correction'.
+  //
+  // 8 readbacks per cortex tick × ~2ms each = ~16ms overhead; tracked
+  // separately in phaseT.regionSpikeMs so telemetry surfaces any
+  // ballooning. Other clusters with only a 'whole' bilateral region
+  // do 1 readback each (basically free vs voltage stat).
+  const rsStart = performance.now();
+  for (const c of ready) {
+    const state = clusterState[c.name];
+    if (!state || !state.regions) continue;
+    const regionNames = Object.keys(state.regions);
+    if (regionNames.length === 0) continue;
+    const counts = await Promise.all(regionNames.map(async (rn) => {
+      try {
+        const n = await gpu.readbackSpikeSlice(c.name, rn);
+        return [rn, n];
+      } catch { return [rn, null]; }
+    }));
+    const regionSpikes = {};
+    for (const [rn, n] of counts) {
+      if (n !== null) regionSpikes[rn] = n;
+    }
+    if (Object.keys(regionSpikes).length > 0) {
+      perCluster[c.name].regionSpikes = regionSpikes;
+    }
+  }
+  phaseT.regionSpikeMs = +(performance.now() - rsStart).toFixed(2);
   phaseT.totalMs = +(performance.now() - t0).toFixed(2);
 
   ws.send(JSON.stringify({
