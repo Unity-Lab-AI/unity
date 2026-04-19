@@ -84,7 +84,7 @@ import { sharedEmbeddings } from './embeddings.js';
 // T14.6 — `decodeLetter` + `inventorySize` power the tick-driven motor
 // emission loop in `cluster.generateSentence` — motor-region spike
 // patterns get decoded to letters via argmax over the inventory.
-import { encodeLetter, decodeLetter, inventorySize } from './letter-input.js';
+import { encodeLetter, decodeLetter, inventorySize, inventorySnapshot } from './letter-input.js';
 
 // T14.6 — sentence terminators recognized as end-of-utterance in the
 // motor emission loop. Letters are letters; terminators are just the
@@ -1589,14 +1589,68 @@ export class NeuronCluster {
     let lastMotorLetter = null;
     let stableTicks = 0;
 
+    // T17.7 Phase D — when the motor cross-projections are bound to
+    // main-cortex slices (Phase C's rebind), read the motor argmax
+    // from GPU via the bucketed reduction path instead of the CPU
+    // regionReadout. Main cortex is authoritative for language
+    // production post-Phase-C; reading CPU cortexCluster.lastSpikes
+    // here would decode whatever the CPU simulation produced, which
+    // diverges from the GPU-trained main-cortex state over long
+    // generations.
+    //
+    // Bucket layout matches `_writeTiledPattern`: invSize buckets of
+    // gSize consecutive neurons each, starting at motor region's
+    // first neuron. Standalone motor region size fits bucketCount ×
+    // bucketSize exactly by construction (encodeLetter produces
+    // one-hot over invSize dimensions; _writeTiledPattern tiles
+    // gSize = floor(regionSize / invSize)). GPU reduction matches
+    // this exact layout so argmax on the counts vector yields the
+    // same letter CPU decodeLetter would yield from the same state.
+    const motorRegionStand = this.regions.motor;
+    const motorSubSliceLen = motorRegionStand ? (motorRegionStand.end - motorRegionStand.start) : 0;
+    const canGpuMotorRead = !!(
+      this._gpuProxy
+      && typeof this._gpuProxy.readbackLetterBuckets === 'function'
+      && this.crossProjections
+      && this.crossProjections.sem_to_motor
+      && this.crossProjections.sem_to_motor._gpuBound
+      && motorSubSliceLen > 0
+    );
+
     for (let tick = 0; tick < maxTicks; tick++) {
       // The ONLY delta vs generateSentence — full-await cascade per tick.
       await this.stepAwait(0.001);
 
       const invSize = inventorySize();
       if (invSize === 0) break;
-      const motorVec = this.regionReadout('motor', invSize);
-      const activeLetter = decodeLetter(motorVec);
+
+      let activeLetter = null;
+      if (canGpuMotorRead) {
+        try {
+          const bucketSize = Math.floor(motorSubSliceLen / invSize);
+          const readLen = bucketSize * invSize;  // trim remainder
+          const counts = await this._gpuProxy.readbackLetterBuckets('motor', invSize, readLen, 0);
+          if (counts && counts.length === invSize) {
+            // Argmax over bucket counts. Mirrors decodeLetter's
+            // argmax-over-activation semantics — highest-firing
+            // letter wins. Ties broken by first-index, matching
+            // decodeLetter behavior on equal magnitudes.
+            let bestIdx = 0;
+            let bestCount = counts[0];
+            for (let b = 1; b < invSize; b++) {
+              if (counts[b] > bestCount) { bestCount = counts[b]; bestIdx = b; }
+            }
+            if (bestCount > 0) {
+              const inv = inventorySnapshot();
+              if (bestIdx >= 0 && bestIdx < inv.length) activeLetter = inv[bestIdx];
+            }
+          }
+        } catch { /* non-fatal — fall through to CPU readout */ }
+      }
+      if (activeLetter === null) {
+        const motorVec = this.regionReadout('motor', invSize);
+        activeLetter = decodeLetter(motorVec);
+      }
 
       if (activeLetter === lastMotorLetter && activeLetter !== null) {
         stableTicks++;
@@ -1614,6 +1668,13 @@ export class NeuronCluster {
         if (this.regions.motor) {
           const { start, end } = this.regions.motor;
           for (let j = start; j < end; j++) this.lastSpikes[j] = 0;
+        }
+        // T17.7 Phase D — clear the main-cortex motor slice too so
+        // the next letter's argmax doesn't inherit the committed
+        // letter's GPU-side spike pattern. Same semantics as the
+        // CPU-side motor clear above, applied to the bound sub-slice.
+        if (canGpuMotorRead && this._gpuProxy.clearSpikeSlice) {
+          try { this._gpuProxy.clearSpikeSlice('motor'); } catch { /* non-fatal */ }
         }
         lastMotorLetter = null;
         this._motorQuiescentTicks = 0;

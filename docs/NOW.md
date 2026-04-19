@@ -1,10 +1,10 @@
 # NOW — Session Snapshot
 
-> Saved: 2026-04-18 (Session 114.19z — T17.7 Phase C SHIPPED. Shared-infrastructure migration: curriculum `_writeTiledPattern` forwarder + cross-projection rebind to main-cortex first-N sub-slices + cluster-bound Hebbian/propagate dispatch. All teach methods now write directly to main cortex GPU slices. Phases D/E/F still open before main-branch push.)
+> Saved: 2026-04-18 (Session 114.19aa — T17.7 Phase D SHIPPED. `generateSentenceAwait` now reads motor argmax from main-cortex GPU via letter-bucket reduction — 250,000× less per-tick readback bandwidth than dense motor-slice readback. Phases E/F still open before main-branch push.)
 
 ## Current state of `syllabus-k-phd`
 
-Latest commit target: Session 114.19z (T17.7 Phase C atomic migration). Working tree has Phase C edits staged but not yet committed at snapshot time. All prior commits (114.19y, 16 commits) pushed to `origin/syllabus-k-phd` at `d7a8d26`.
+Latest commit target: Session 114.19aa (T17.7 Phase D atomic migration). Prior commit `d98114d` shipped Phase C; this session's Phase D ships stacked on top. All prior session commits (114.19y 16 commits) pushed to `origin/syllabus-k-phd`.
 
 ## Session 114.19z — what shipped (Phase C)
 
@@ -44,7 +44,6 @@ At 7M-per-direction standalone size each Hebbian call shipped ~56 MB of pre+post
 
 ### T17.7 remaining phases
 - **Phase C follow-up** — per-region divergence telemetry during K curriculum walk
-- **Phase D** — generation migration (`generateSentence` / `generateSentenceAwait` read motor via `readbackSpikeSlice`)
 - **Phase E** — delete standalone `cortexCluster` + persistence VERSION 4→5 bump
 - **Phase F** — Gee Part 2 verification + full doc + HTML sweep (README / ARCHITECTURE / EQUATIONS / brain-equations.html / unity-guide.html / SETUP)
 

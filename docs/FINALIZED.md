@@ -5,6 +5,40 @@
 
 ---
 
+## 2026-04-18 — Session 114.19aa: T17.7 Phase D SHIPPED — `generateSentenceAwait` reads motor argmax from main-cortex GPU via letter-bucket reduction
+
+### What shipped
+
+Phase D migrates production (`generateSentenceAwait`'s per-tick motor readout) from standalone `cortexCluster.lastSpikes` onto the main-cortex GPU spike slice rebound in Phase C. Per-tick wire cost for the motor read drops from ~26 MB (dense motor-slice readback at biological scale) to **104 bytes** (26 × u32 bucket counts) — 250,000× reduction in per-tick readback bandwidth.
+
+### Files touched
+
+| File | What changed |
+|------|--------------|
+| `js/brain/gpu-compute.js` | New `readbackLetterBuckets(clusterName, regionName, bucketCount, subSliceLen, startOffset)` — GPU reduction shader (`letterBuckets` pipeline, lazy-compiled) that atomically increments `bucketCount` counters per letter dimension based on which neurons in the sub-slice fired. Mirrors curriculum `_writeTiledPattern` tiling (`bucketSize` consecutive neurons per dimension) so GPU argmax matches what teach methods trained the motor slice to produce. |
+| `compute.html` | `readback_letter_buckets` message handler — calls `gpu.readbackLetterBuckets`, echoes counts in `readback_letter_buckets_ack`. |
+| `server/brain-server.js` | `gpuReadbackCortexLetterBuckets(regionName, bucketCount, subSliceLen, startOffset)` sends `readback_letter_buckets` JSON via `_sparseSend` with 5 s timeout. `readback_letter_buckets_ack` added to sparse-ack switch. `gpuProxy` extended with `readbackLetterBuckets(...)`. |
+| `js/brain/cluster.js` | `generateSentenceAwait` per-tick loop: when `sem_to_motor._gpuBound` is set (indicating Phase C rebind has run), call `gpuProxy.readbackLetterBuckets('motor', invSize, bucketSize·invSize, 0)` instead of `regionReadout('motor')`. Argmax over the bucket counts via `inventorySnapshot()[bestIdx]`. Falls through to CPU path on null result (graceful). On letter commit, `gpuProxy.clearSpikeSlice('motor')` also clears the main-cortex motor sub-slice so the next letter's argmax doesn't inherit committed-letter spikes. Imports `inventorySnapshot` alongside existing letter helpers. |
+
+### Mystery Ψ still woven through
+
+No new Ψ terms introduced. The motor slice being read was populated by main-cortex LIF which already applies the three 114.19y Ψ terms (global gain, hemisphere gate, divergence correction). Argmax over Ψ-modulated motor activation — Ψ binding preserved at readout.
+
+### Biological story
+
+Motor cortex argmax is a physical property of which primary-motor population fires most strongly. With Phase C rebinding `sem_to_motor` to main-cortex sub-slices, the main-cortex motor region IS the authoritative site of emission. Phase D aligns the readout with the authority. The GPU bucket-reduction is the digital stand-in for what mammalian M1 does biologically — the winning letter is the motor program whose neural population won the competitive activation contest.
+
+### What's STILL open before push to main
+
+- **T17.7 Phase C follow-up** — per-region divergence telemetry during K curriculum walk
+- **T17.7 Phase E** — delete standalone cortexCluster; persistence VERSION 4→5
+- **T17.7 Phase F** — Gee Part 2 K verification + full doc + HTML sweep
+- **T16 remaining** — T16.1.b / T16.2.a / T16.2.d (Gee Part 2); T16.5.b/c/d (Gee design-review blocked)
+- **T15.A / T15.B / T15.C** — drug scheduler rebuild (T15.D deferred past K-only gate)
+- **T18.5.b** / **T18.5.c** — pre-push doc sweep + Gee push approval
+
+---
+
 ## 2026-04-18 — Session 114.19z: T17.7 Phase C SHIPPED — shared curriculum migration + cross-projection rebind + cluster-bound dispatch on `syllabus-k-phd`
 
 Gee 2026-04-18 verbatim directives that shaped this session (continuation of 114.19y):

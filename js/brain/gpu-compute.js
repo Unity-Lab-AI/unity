@@ -1049,6 +1049,136 @@ export class GPUCompute {
   }
 
   /**
+   * T17.7 Phase D — GPU-side reduction of a region slice into a fixed
+   * number of letter buckets. Returns a Uint32Array of length
+   * `bucketCount` where bucket[b] = spike count in the sub-slice
+   * `[regionStart + startOffset + b·bucketSize, regionStart +
+   * startOffset + (b+1)·bucketSize)`. Used by generateSentenceAwait
+   * to argmax-decode the motor region's activation over the letter
+   * inventory without shipping the full motor-slice spike array back
+   * to the server.
+   *
+   * At biological scale the motor slice has ~6.6M neurons; a dense
+   * readback would ship ~26 MB per tick. The bucketed reduction
+   * ships bucketCount × 4 bytes — 104 bytes for a 26-letter
+   * inventory. 250,000× reduction in per-tick readback bandwidth.
+   *
+   * Implementation: each GPU thread handles one neuron, atomically
+   * increments its bucket index. Ordering mirrors curriculum's
+   * `_writeTiledPattern` tiling (bucketSize consecutive neurons per
+   * letter dimension) so the argmax from this readback matches what
+   * curriculum trained the motor slice to produce.
+   *
+   * @param {string} clusterName
+   * @param {string} regionName
+   * @param {number} bucketCount — number of buckets (e.g. 26 for A..Z)
+   * @param {number} subSliceLen — number of neurons to scan (must
+   *   equal bucketCount × bucketSize; caller enforces). Typically
+   *   the standalone region size so buckets align with curriculum
+   *   teaching layout.
+   * @param {number} [startOffset=0] — where in the region to start
+   *   (relative to region.start). Phase C cluster-bound projections
+   *   always land pattern in first-N of region, so startOffset=0.
+   * @returns {Promise<Uint32Array|null>} length = bucketCount
+   */
+  async readbackLetterBuckets(clusterName, regionName, bucketCount, subSliceLen, startOffset = 0) {
+    if (!this._available) return null;
+    const bufs = this._buffers[clusterName];
+    if (!bufs?.spikes) return null;
+    const region = this.getRegion(clusterName, regionName);
+    if (!region) return null;
+    if (!Number.isFinite(bucketCount) || bucketCount <= 0) return null;
+    if (!Number.isFinite(subSliceLen) || subSliceLen <= 0) return null;
+    const regionLen = region.end - region.start;
+    if (startOffset + subSliceLen > regionLen) return null;
+    const bucketSize = Math.floor(subSliceLen / bucketCount);
+    if (bucketSize <= 0) return null;
+
+    const device = this._device;
+    const absStart = region.start + startOffset;
+    const dispatchLen = bucketCount * bucketSize;  // trim any remainder
+
+    // Per-call atomic bucket counters. bucketCount typically 26 so
+    // allocation is a handful of bytes. Fresh per call — same
+    // collision-free pattern as readbackSpikeSlice.
+    const counters = device.createBuffer({
+      size: bucketCount * 4,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
+    });
+    device.queue.writeBuffer(counters, 0, new Uint32Array(bucketCount));
+    const readback = device.createBuffer({
+      size: bucketCount * 4,
+      usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+    });
+
+    // Params: n (dispatchLen), gridX, absStart, bucketSize
+    const params = new ArrayBuffer(16);
+    const view = new DataView(params);
+    view.setUint32(0, dispatchLen, true);
+    view.setUint32(4, bufs.gridX || 32768, true);
+    view.setUint32(8, absStart, true);
+    view.setUint32(12, bucketSize, true);
+    const paramsBuffer = this._createBuffer(params, GPUBufferUsage.UNIFORM);
+
+    if (!this._pipelines.letterBuckets) {
+      const SHADER = /* wgsl */`
+        struct Params {
+          n: u32,
+          gridX: u32,
+          absStart: u32,
+          bucketSize: u32,
+        };
+        @group(0) @binding(0) var<uniform> params: Params;
+        @group(0) @binding(1) var<storage, read> spikes: array<u32>;
+        @group(0) @binding(2) var<storage, read_write> counts: array<atomic<u32>>;
+        @compute @workgroup_size(256)
+        fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+          let i = id.x + id.y * params.gridX * 256u;
+          if (i >= params.n) { return; }
+          let absIdx = params.absStart + i;
+          if (spikes[absIdx] != 0u) {
+            let b = i / params.bucketSize;
+            atomicAdd(&counts[b], 1u);
+          }
+        }
+      `;
+      this._pipelines.letterBuckets = device.createComputePipeline({
+        layout: 'auto',
+        compute: {
+          module: device.createShaderModule({ code: SHADER }),
+          entryPoint: 'main',
+        },
+      });
+    }
+
+    const bindGroup = device.createBindGroup({
+      layout: this._pipelines.letterBuckets.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: paramsBuffer } },
+        { binding: 1, resource: { buffer: bufs.spikes } },
+        { binding: 2, resource: { buffer: counters } },
+      ],
+    });
+
+    const encoder = device.createCommandEncoder();
+    const pass = encoder.beginComputePass();
+    pass.setPipeline(this._pipelines.letterBuckets);
+    pass.setBindGroup(0, bindGroup);
+    this._dispatch2D(pass, dispatchLen, bufs.gridX);
+    pass.end();
+    encoder.copyBufferToBuffer(counters, 0, readback, 0, bucketCount * 4);
+    device.queue.submit([encoder.finish()]);
+
+    await readback.mapAsync(GPUMapMode.READ);
+    const out = new Uint32Array(readback.getMappedRange().slice(0));
+    readback.unmap();
+    readback.destroy();
+    counters.destroy();
+    paramsBuffer.destroy();
+    return out;
+  }
+
+  /**
    * Upload a standalone sparse CSR matrix to GPU — not bound to any
    * cluster. Used for T14.4 cross-region projections where the matrix
    * connects one region's spikes to another region's currents

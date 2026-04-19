@@ -353,6 +353,34 @@ function connectToServer() {
       return;
     }
 
+    // T17.7 Phase D — GPU-side bucket reduction over a region sub-slice
+    // so generateSentenceAwait can argmax-decode the main-cortex motor
+    // slice per tick without shipping the full ~6.6M-neuron spike
+    // array back. Bucket counts (typically 26 letters) are echoed
+    // in the ack; server consumes them via argmax.
+    if (msg.type === 'readback_letter_buckets' && gpuReady) {
+      const { reqId, clusterName, regionName, bucketCount, subSliceLen, startOffset } = msg;
+      try {
+        const counts = await gpu.readbackLetterBuckets(
+          clusterName, regionName, bucketCount, subSliceLen, startOffset ?? 0,
+        );
+        ws.send(JSON.stringify({
+          type: 'readback_letter_buckets_ack',
+          reqId,
+          clusterName, regionName,
+          counts: counts ? Array.from(counts) : null,
+        }));
+      } catch (err) {
+        ws.send(JSON.stringify({
+          type: 'readback_letter_buckets_ack',
+          reqId,
+          clusterName, regionName,
+          error: err.message,
+        }));
+      }
+      return;
+    }
+
     if (msg.type === 'write_current_slice' && gpuReady) {
       const { clusterName, regionName, values, sparseIndices, sparseValues, psi } = msg;
       try {

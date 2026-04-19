@@ -889,6 +889,15 @@ class ServerBrain {
         // the whole region on every call; 132 MB allocation × 8
         // regions × 1000s of teach iters = TB-scale GC thrash).
         clearSpikeSlice: (regionName)                      => this._gpuClearCortexSpikeRegion(regionName),
+        // T17.7 Phase D — GPU-side bucketed readback for argmax letter
+        // decode during generateSentenceAwait. Replaces the standalone
+        // regionReadout('motor') path which read from cortexCluster.
+        // lastSpikes; after Phase C the main-cortex motor slice is
+        // authoritative for production, so the readback source must
+        // move there too. 26 × u32 = 104 bytes per tick vs ~26 MB
+        // for a dense motor-slice readback at biological scale.
+        readbackLetterBuckets: (regionName, bucketCount, subSliceLen, startOffset) =>
+          this.gpuReadbackCortexLetterBuckets(regionName, bucketCount, subSliceLen, startOffset || 0),
       };
       this.cortexCluster = new clusterMod.NeuronCluster('cortex', langCortexSize, {
         tonicDrive: 14 + (this.persona.arousalBaseline || 0.9) * 6,
@@ -2060,6 +2069,35 @@ class ServerBrain {
       clusterName: 'cortex',
       regionName,
     }));
+  }
+
+  /**
+   * T17.7 Phase D — readback letter-bucket spike counts from a main-
+   * cortex region sub-slice. Used by generateSentenceAwait to argmax-
+   * decode the motor slice per tick without shipping the full
+   * ~6.6M-neuron spike array. GPU-side reduction runs in parallel
+   * with the batch's LIF dispatch on the next substep — reduction
+   * latency adds to round-trip but not to main-brain tick time.
+   *
+   * @param {string} regionName — e.g. 'motor'
+   * @param {number} bucketCount — e.g. 26 for letters A..Z
+   * @param {number} subSliceLen — e.g. standalone motor size =
+   *   langCortexSize × 0.033. Must equal bucketCount × bucketSize.
+   * @param {number} [startOffset=0]
+   * @returns {Promise<Uint32Array|null>}
+   */
+  async gpuReadbackCortexLetterBuckets(regionName, bucketCount, subSliceLen, startOffset = 0) {
+    if (!this._gpuClient || this._gpuClient.readyState !== 1) return null;
+    const ack = await this._sparseSend({
+      type: 'readback_letter_buckets',
+      clusterName: 'cortex',
+      regionName,
+      bucketCount,
+      subSliceLen,
+      startOffset,
+    }, 5000);
+    if (!ack || !ack.counts) return null;
+    return new Uint32Array(ack.counts);
   }
 
   /**
@@ -3775,7 +3813,8 @@ wss.on('connection', (ws, req) => {
         case 'sparse_upload_ack':
         case 'sparse_propagate_ack':
         case 'sparse_hebbian_ack':
-        case 'rebind_sparse_ack': {
+        case 'rebind_sparse_ack':
+        case 'readback_letter_buckets_ack': {
           if (!brain._gpuSparsePending || !msg.reqId) break;
           const pending = brain._gpuSparsePending.get(msg.reqId);
           if (!pending) break;
