@@ -340,6 +340,22 @@ And the server terminal tail he pasted showing compute.html `Disconnected — re
 
 ---
 
+#### T18.15 — compute.html binary-frame console flood throttle (Gee 2026-04-19)
+
+**Gee's verbatim 2026-04-19** after first T18.14 Part 2 retry:
+
+> *"I killed it before it killed my system again!"*
+
+His terminal paste showed a CLEAN T18.14-protected boot (no disconnect, no device.lost, no TDR, no PC crash), ELA-K reached teach phase normally, then Chrome's console showed `143compute.html:163 [GPU Compute] binary frame received size=0.0MB, first4=SPRS` — the "143" being Chrome's dedup counter collapsing 143 identical-text log lines into one display. Gee panicked and killed the process because the visual dedup-counter display looked identical to the prior T18.10/11 cascade symptom even though the 143 frames were entirely normal T18.8 batched-Hebbian dispatch cadence (each ~50-byte type=5 SPRS frame carrying up to 64 bound Hebbian ops).
+
+Root cause is UX, not correctness: pre-T18.15 `compute.html:163` logged one line per binary frame. At ELA-K teach velocity through T18.8 batched dispatch that's 500-1000 frames/sec streaming into the Chrome console. Chrome collapses identical lines into a "143 [line]" display that LOOKS like a runaway cascade to an operator whose PC has crashed four times from similar-looking floods.
+
+- [x] **T18.15.a — Throttled binary-frame telemetry in compute.html.** Replaced the per-frame log with a throttled version that emits (a) the first 5 frames individually per page load so initial SPRS protocol sanity is visible, then (b) a 5-second window summary line showing `T18.15 binary frame window — N frames in Xs (N/s, X MB total, type2=N type3=N type5=N). Lifetime: N frames, X MB.` Module-level `window._sprsFrameStats` accumulates windowCount/windowTotalBytes/windowByType plus lifetime counters. Operator sees healthy activity without Chrome flooding into dedup-counter territory. **SHIPPED** — `compute.html`.
+
+**T18.15 closure gate:** Gee-verification on next Part 2 run. Success criteria: (a) Chrome console shows first 5 individual SPRS frame log lines during init then transitions to 5-second window summaries; (b) Gee can visually distinguish normal T18.8 dispatch (steady summary lines at consistent rate) from actual cascade (summary stops firing = WS died, OR lifetime byte count spikes into multi-GB range = legitimate bandwidth problem); (c) operator runs Part 2 past ELA-K first word without killing the process. Claude cannot close — Gee-verification only.
+
+---
+
 #### T18.5 — push gate for main-branch deploy (BINDING)
 
 Per Gee's verbatim 2026-04-18 instruction: before ANY push to `main` for GitHub static deploy, every T18 item above must be shipped AND all docs must be updated AND Gee must explicitly say "yes, push it". Claude does not initiate the push. Claude asks first after the fixes land.

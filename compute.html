@@ -160,7 +160,58 @@ function connectToServer() {
       // ArrayBuffer directly. Blob path kept as safety fallback.
       const buf = e.data instanceof ArrayBuffer ? e.data : await e.data.arrayBuffer();
       const sizeMb = (buf.byteLength / 1e6).toFixed(1);
-      console.log(`[GPU Compute] binary frame received size=${sizeMb}MB, first4=${String.fromCharCode(new Uint8Array(buf, 0, 4)[0], new Uint8Array(buf, 0, 4)[1], new Uint8Array(buf, 0, 4)[2], new Uint8Array(buf, 0, 4)[3])}`);
+      // T18.15 — throttled binary-frame telemetry. The pre-T18.15 log
+      // was one line per frame; at ELA-K teach velocity through T18.8
+      // batched Hebbian dispatch that's 500-1000 frames/sec streaming
+      // into Chrome's console. Chrome's dedup counter collapses them
+      // into lines like "143 [GPU Compute] binary frame received ..."
+      // which LOOKS identical to the prior T18.10/11 cascade-is-firing
+      // visual even when the system is completely healthy (Gee's
+      // 2026-04-19 "I killed it before it killed my system again!"
+      // moment — he panicked at normal T18.8 cadence because the
+      // dedup-counter display matched the cascade symptom he's seen
+      // before). Throttled log emits one summary line every 5 seconds
+      // showing total frames / per-type breakdown since last emit, so
+      // the operator sees healthy activity without a flood. First 5
+      // frames of every page load still log individually so the initial
+      // SPRS protocol sanity can be visually verified.
+      if (!window._sprsFrameStats) {
+        window._sprsFrameStats = {
+          firstEmitted: 0,
+          windowStart: Date.now(),
+          windowCount: 0,
+          windowTotalBytes: 0,
+          windowByType: {},
+          totalFrames: 0,
+          totalBytes: 0,
+        };
+      }
+      const s = window._sprsFrameStats;
+      const magic4 = String.fromCharCode(new Uint8Array(buf, 0, 4)[0], new Uint8Array(buf, 0, 4)[1], new Uint8Array(buf, 0, 4)[2], new Uint8Array(buf, 0, 4)[3]);
+      const frameType = magic4 === 'SPRS' ? new DataView(buf).getUint8(4) : -1;
+      s.windowCount++;
+      s.windowTotalBytes += buf.byteLength;
+      s.totalFrames++;
+      s.totalBytes += buf.byteLength;
+      const tk = `type${frameType}`;
+      s.windowByType[tk] = (s.windowByType[tk] || 0) + 1;
+      if (s.firstEmitted < 5) {
+        console.log(`[GPU Compute] binary frame #${s.totalFrames} size=${sizeMb}MB, first4=${magic4}, type=${frameType}`);
+        s.firstEmitted++;
+      } else {
+        const now = Date.now();
+        const elapsed = now - s.windowStart;
+        if (elapsed >= 5000) {
+          const windowMB = (s.windowTotalBytes / 1e6).toFixed(1);
+          const fps = (s.windowCount / (elapsed / 1000)).toFixed(0);
+          const typeBreakdown = Object.entries(s.windowByType).map(([k, v]) => `${k}=${v}`).join(' ');
+          console.log(`[GPU Compute] T18.15 binary frame window — ${s.windowCount} frames in ${(elapsed/1000).toFixed(1)}s (${fps}/s, ${windowMB} MB total, ${typeBreakdown}). Lifetime: ${s.totalFrames} frames, ${(s.totalBytes/1e6).toFixed(1)} MB.`);
+          s.windowStart = now;
+          s.windowCount = 0;
+          s.windowTotalBytes = 0;
+          s.windowByType = {};
+        }
+      }
       const view = new DataView(buf);
       const magic = String.fromCharCode(view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3));
       if (magic === 'SPRS') {

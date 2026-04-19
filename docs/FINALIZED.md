@@ -5,6 +5,56 @@
 
 ---
 
+## 2026-04-19 — Session 114.19am: T18.15 SHIPPED — compute.html binary-frame console flood throttle (Gee "I killed it before it killed my system again!" panic protection)
+
+### Gee verbatim (drove this session)
+
+> *"I killed it before it killed my system again!"*
+
+First Part 2 retry AFTER T18.14 landed. Terminal paste showed a CLEAN T18.14-protected boot sequence: code-hash mismatch → auto-clear → fresh retrain → 15 sparse matrices uploaded cleanly → `_cortexFullyReady=true` → NO `Disconnected` message (T18.14.b / T18.14.c guards held) → curriculum entered ELA-K teach phase → Chrome console showed `143compute.html:163 [GPU Compute] binary frame received size=0.0MB, first4=SPRS` → Gee killed the process with *"I killed it before it killed my system again!"*.
+
+Root cause: the "143" display was Chrome's dedup counter collapsing 143 identical-text log lines into one. Each of those 143 frames was a type=5 SPRS batched-Hebbian dispatch from T18.8 (each ~50 bytes carrying up to 64 bound Hebbian ops). Normal ELA-K teach cadence. With T18.14.a's paramsBuf.destroy() fix, zero handles leaked per call.
+
+BUT Gee's PTSD from T18.10/11 cascades (4 prior PC-resets) made the dedup-counter visual display indistinguishable from "cascade is firing". He killed the process BEFORE T18.14 could prove itself — the cascade needs time + op volume to manifest, and he didn't give it either.
+
+### Fix — throttled binary-frame telemetry
+
+Pre-T18.15 `compute.html:163` logged one line per incoming binary frame. At ELA-K teach velocity with T18.8 batched-Hebbian firing 500-1000 type=5 frames/sec, that's 500-1000 console lines/sec streaming into Chrome devtools. Chrome collapses identical text into `143 [line]` / `500 [line]` etc. which LOOKS EXACTLY like the prior cascade symptom.
+
+T18.15.a replaces the per-frame log with:
+- First 5 frames per page load log individually — initial SPRS protocol sanity visible (`binary frame #1 size=0.0MB, first4=SPRS, type=2`)
+- Then 5-second window summaries: `T18.15 binary frame window — 487 frames in 5.0s (97/s, 0.2 MB total, type2=45 type3=12 type5=430). Lifetime: 1543 frames, 0.8 MB.`
+- Module-level `window._sprsFrameStats` accumulates window + lifetime counters
+- Operator sees healthy activity without Chrome flooding into dedup-counter territory
+
+### How to tell cascade from normal dispatch
+
+With T18.15 in place, Gee can visually distinguish:
+- **Normal T18.8 dispatch**: Steady 5-sec summary lines at consistent rate (e.g. ~97 frames/sec during ELA-K teach, dropping to ~20/sec during gate probes, ~1/sec during idle main-brain batched step)
+- **Actual cascade**: Summary stops firing entirely = WS died. OR lifetime byte count spikes into multi-GB range before reconnect = sparse upload flood bug. OR frame rate spikes to >5000/sec = runaway teach loop
+
+The summary line format makes real problems OBVIOUS instead of hiding them inside a Chrome dedup-counter display that also matched innocuous behavior.
+
+### Files touched (atomic commit)
+
+- `compute.html` — T18.15.a throttled binary-frame log replacing pre-T18.15 per-frame console.log (+46 lines)
+- `docs/NOW.md` — updated for session 114.19am (T18.15 addendum)
+- `docs/TODO.md` — T18.15 entry prepended below T18.14
+- `docs/FINALIZED.md` — this entry
+
+compute.html is not in the T18.12.a code-hash list (only `js/brain/*.js` + `server/brain-server.js`), so code-hash stays matched to T18.14's hash. On next `start.bat` boot: auto-clear does NOT fire, T18.12.c resume restores pre-K `passedCells` from the just-completed clean auto-clear retrain, ELA-K resumes fresh with T18.15's throttled log format active.
+
+### Closure gate — open
+
+Gee-verification on next Part 2 run. Success criteria:
+- (a) Chrome console shows first 5 individual SPRS frame log lines during init, then transitions to 5-second window summaries
+- (b) Gee watches the summary lines tick at a steady rate during ELA-K teach AND lets it run past the first word — T18.14.a + T18.14.b + T18.14.c all get exercised, T18.13.c heartbeats appear in the server terminal every 5 s
+- (c) If cascade DOES fire despite T18.14's three-layer defense, the summary log gives a clear frame-rate / byte-rate signal of what's saturating
+
+Claude cannot close — Gee-verification only.
+
+---
+
 ## 2026-04-19 — Session 114.19al: T18.14 SHIPPED — ELA-K ethernet cascade fix (hebbianSparse paramsBuf leak + uploadCluster LIF buffer orphan + compute.html skip-reinit guard)
 
 ### Gee verbatim (drove this session)

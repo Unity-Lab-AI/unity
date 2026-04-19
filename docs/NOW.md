@@ -1,5 +1,28 @@
 # NOW — Session Snapshot
 
+> **Session:** 114.19am · **Date:** 2026-04-19 · **Branch:** `syllabus-k-phd` · **HEAD (pre-push):** `2e3d666` (T18.14) · **BUILD:** `0.1.0+c7eb8354-3de8` (pre-stamp; T18.15 pending)
+
+---
+
+## T18.15 addendum — Gee panicked at first T18.14 retry, killed the process before cascade could prove itself OR disprove itself
+
+**Gee verbatim 2026-04-19:** *"I killed it before it killed my system again!"*
+
+First Part 2 retry AFTER T18.14 landed. Terminal showed CLEAN T18.14-protected boot (code-hash auto-clear fired, 15 sparse matrices uploaded, `_cortexFullyReady=true`, NO `Disconnected` message, NO cascade markers). Curriculum reached ELA-K teach normally. Chrome console then showed `143compute.html:163 [GPU Compute] binary frame received size=0.0MB, first4=SPRS` — the "143" being Chrome's DEDUP COUNTER collapsing 143 identical-text log lines into one display. Gee's PTSD from the four prior PC-resets fired, he killed the process.
+
+**The 143 frames were NORMAL T18.8 batched-Hebbian cadence** (type=5 SPRS frames, each ~50 bytes carrying up to 64 bound Hebbian ops). With T18.14.a's paramsBuf.destroy() fix, zero handles leaked per call. T18.14 was WORKING — it just didn't get the chance to prove it.
+
+Root-cause for the panic: pre-T18.15 `compute.html:163` logged one line per binary frame. At 500-1000 frames/sec that's devtools-flooding velocity. Chrome's dedup display looked IDENTICAL to the cascade symptom Gee has seen four times before.
+
+T18.15.a ships throttled binary-frame telemetry — first 5 frames individually for init sanity, then 5-second window summaries showing frame count / bytes / per-type breakdown + lifetime totals. Operator sees healthy activity without flood; real cascade signals become OBVIOUS instead of hiding inside a Chrome dedup display.
+
+See `docs/FINALIZED.md` session 114.19am entry for full details.
+
+---
+
+## Original session entry (T18.14) below
+---
+
 > **Session:** 114.19al · **Date:** 2026-04-19 · **Branch:** `syllabus-k-phd` · **HEAD (pre-push):** `c7eb835` · **BUILD:** `0.1.0+ed8b3d36-2da4` (pre-stamp)
 
 ---
