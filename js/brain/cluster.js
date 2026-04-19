@@ -2078,24 +2078,32 @@ export class NeuronCluster {
             const _freedColIdxBytes = proj.colIdx ? proj.colIdx.byteLength : 0;
             const _freedRowPtrBytes = proj.rowPtr ? proj.rowPtr.byteLength : 0;
             const _freedMB = ((_freedValuesBytes + _freedColIdxBytes + _freedRowPtrBytes) / (1024 * 1024)).toFixed(1);
-            proj.values = null;
-            proj.colIdx = null;
-            proj.rowPtr = null;
+            // T18.27 — DISABLED: proj.values = null; proj.colIdx = null; proj.rowPtr = null;
+            // Science-K + other post-ELA-K teach paths read these via
+            // helpers that access proj.values[0] etc. Keeping arrays
+            // intact. V8 auto-gc handles memory pressure on its own
+            // schedule per T18.25's evidence.
             if (!this._t1822TotalFreedBytes) this._t1822TotalFreedBytes = 0;
             this._t1822TotalFreedBytes += _freedValuesBytes + _freedColIdxBytes + _freedRowPtrBytes;
-            // T18.25 — fix T18.23's ReferenceError. The log template
-            // referenced `${name}` which doesn't exist in this scope
-            // (loop variables are `key`, `proj`, `binding`). Every
-            // bound-projection upload's free block threw a "name is not
-            // defined" ReferenceError AFTER the null-assignments fired,
-            // so the nulls succeeded but the log was silently swallowed
-            // by the outer try/catch that logs "GPU upload exception for
-            // ${key}: name is not defined". Counter still accumulated
-            // byte totals before the throw, which is why T18.23's boot-
-            // time gc() diagnostic showed 7989.4MB cumulative freed
-            // despite zero per-projection logs. Use `${key}` here which
-            // IS in scope.
-            console.log(`[T18.22/23] freed CPU arrays for bound projection ${key}: values=${(_freedValuesBytes/1024/1024).toFixed(1)}MB + colIdx=${(_freedColIdxBytes/1024/1024).toFixed(1)}MB + rowPtr=${(_freedRowPtrBytes/1024/1024).toFixed(1)}MB = ${_freedMB}MB this projection, ${(this._t1822TotalFreedBytes/1024/1024).toFixed(1)}MB cumulative`);
+            // T18.27 — DISABLED T18.22 CPU-array free (variable now logs
+            // bytes that would have been freed but keeps arrays intact).
+            // Gee 2026-04-19: science/kindergarten threw
+            // "Cannot read properties of null (reading '0')" 1720+ times
+            // in a retry loop after ELA-K completed successfully. Some
+            // teach path in runSciKReal reads proj.values or
+            // proj.colIdx or proj.rowPtr for a bound cross-projection
+            // AFTER T18.22 set them to null at initGpu. Rather than
+            // hunt the specific caller (could be any of ~20 teach
+            // helpers across science/math/social/art/life K cells),
+            // revert to keeping CPU CSR arrays intact. Per T18.25's
+            // findings, V8 auto-gc was already doing the reclaim
+            // between T18.22's nulls and the diagnostic log (external
+            // memory was 2.5 GB, not 9.4 GB) — the null-assignments
+            // weren't helping memory pressure, they were just removing
+            // legitimately-read state. T18.25's sync path + T18.26's
+            // WebSocket backpressure already handle the pressure without
+            // touching the CSR arrays.
+            console.log(`[T18.27] bound projection ${key} uploaded to GPU: would free ${(_freedValuesBytes/1024/1024).toFixed(1)}MB values + ${(_freedColIdxBytes/1024/1024).toFixed(1)}MB colIdx + ${(_freedRowPtrBytes/1024/1024).toFixed(1)}MB rowPtr = ${_freedMB}MB total, but KEEPING arrays intact (T18.22 reverted — science-K regression). Cumulative bytes left resident: ${(this._t1822TotalFreedBytes/1024/1024).toFixed(1)}MB.`);
           }
         } else {
           console.warn(`[Cluster ${this.name}] GPU upload failed for ${key}:`, ack && ack.error);
