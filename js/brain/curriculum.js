@@ -2635,7 +2635,7 @@ export class Curriculum {
         this._writeTiledPattern(motorRegion, encodeLetter(letters[0]));
         const preInit = this._buildRegionPattern(semRegion, wordEmb, false);
         const postInit = this._buildRegionPattern(motorRegion, encodeLetter(letters[0]));
-        this._teachHebbianAsymmetric(preInit, postInit, lr);
+        await this._teachHebbianAsymmetric(preInit, postInit, lr);
 
         // (b) Continuation chain: pre=letter(N), post=motor(N+1).
         // sem(word) stays in lastSpikes for cross-projection anchor but
@@ -2650,7 +2650,7 @@ export class Curriculum {
           this._writeTiledPattern(motorRegion, encodeLetter(letters[i]));
           const preChain = this._buildRegionPattern(letterRegion, encodeLetter(letters[i - 1]));
           const postChain = this._buildRegionPattern(motorRegion, encodeLetter(letters[i]));
-          this._teachHebbianAsymmetric(preChain, postChain, lr);
+          await this._teachHebbianAsymmetric(preChain, postChain, lr);
         }
       }
       await _microtask();
@@ -3141,23 +3141,21 @@ export class Curriculum {
           if (typeof cluster.intraSynapsesHebbian === 'function') {
             cluster.intraSynapsesHebbian(pre, post, lr);
           } else {
-            // T17.2 — route through cluster.intraSynapsesHebbian so the
-        // 110M-nnz sparse Hebbian update dispatches to the worker
-        // pool (fire-and-forget async) instead of blocking the Node
-        // main thread for seconds per call. Direct
-        // cluster.synapses.hebbianUpdate was freezing the event loop
-        // long enough that WebSocket heartbeats timed out and the
-        // landing-tab WebSocket disconnected repeatedly during the
-        // runElaKReal SEQUENCE TEACHING phase (300 calls × ~5s per
-        // call at biological-scale synapses). intraSynapsesHebbian
-        // also fires the GPU shadow Hebbian in parallel.
-        cluster.intraSynapsesHebbian(pre, post, lr);
+            // T17.2 + T17.7 Gee 2026-04-18 OOM fix — route through
+        // cluster.intraSynapsesHebbian (async / awaitable) so the
+        // 110M-nnz sparse Hebbian dispatches via the 15-worker
+        // sparsePool. Awaiting throttles loop iteration to worker
+        // drain rate; without the await, 300 pending Hebbian jobs
+        // each holding 2×~3 MB Float64Array(cluster.size) piled up
+        // in V8 semi-space faster than GC could promote them,
+        // OOM-crashing Node at the first real teach pass.
+        await cluster.intraSynapsesHebbian(pre, post, lr);
           }
           this._clearSpikes();
           this._writeTiledPattern(letterRegion, encodeLetter(letters[i]));
           this._writeTiledPattern(phonRegion, phonA);
           if (wordEmb && wordEmb.length > 0) this._writeTiledPattern(semRegion, wordEmb);
-          cluster._crossRegionHebbian(lr);
+          await cluster._crossRegionHebbian(lr);
         }
       }
       await _microtask();
@@ -3323,7 +3321,7 @@ export class Curriculum {
         }
 
         // Fire cross-region Hebbian on these clean patterns
-        cluster._crossRegionHebbian(lr);
+        await cluster._crossRegionHebbian(lr);
         this.stats.lettersSeen++;
       }
       await _microtask();
@@ -3358,17 +3356,15 @@ export class Curriculum {
             if (idx < letterRegion.end) post[idx] = 1.0;
           }
         }
-        // T17.2 — route through cluster.intraSynapsesHebbian so the
-        // 110M-nnz sparse Hebbian update dispatches to the worker
-        // pool (fire-and-forget async) instead of blocking the Node
-        // main thread for seconds per call. Direct
-        // cluster.synapses.hebbianUpdate was freezing the event loop
-        // long enough that WebSocket heartbeats timed out and the
-        // landing-tab WebSocket disconnected repeatedly during the
-        // runElaKReal SEQUENCE TEACHING phase (300 calls × ~5s per
-        // call at biological-scale synapses). intraSynapsesHebbian
-        // also fires the GPU shadow Hebbian in parallel.
-        cluster.intraSynapsesHebbian(pre, post, lr);
+        // T17.2 + T17.7 Gee 2026-04-18 OOM fix — route through
+        // cluster.intraSynapsesHebbian (async / awaitable) so the
+        // 110M-nnz sparse Hebbian dispatches via the 15-worker
+        // sparsePool. Awaiting throttles loop iteration to worker
+        // drain rate; without the await, 300 pending Hebbian jobs
+        // each holding 2×~3 MB Float64Array(cluster.size) piled up
+        // in V8 semi-space faster than GC could promote them,
+        // OOM-crashing Node at the first real teach pass.
+        await cluster.intraSynapsesHebbian(pre, post, lr);
       }
       await _microtask();
     }
@@ -4633,7 +4629,7 @@ export class Curriculum {
           }
         }
 
-        cluster._crossRegionHebbian(lr);
+        await cluster._crossRegionHebbian(lr);
         this.stats.lettersSeen++;
       }
       await _microtask();
@@ -4661,17 +4657,15 @@ export class Curriculum {
             if (idx < letterRegion.end) post[idx] = 1.0;
           }
         }
-        // T17.2 — route through cluster.intraSynapsesHebbian so the
-        // 110M-nnz sparse Hebbian update dispatches to the worker
-        // pool (fire-and-forget async) instead of blocking the Node
-        // main thread for seconds per call. Direct
-        // cluster.synapses.hebbianUpdate was freezing the event loop
-        // long enough that WebSocket heartbeats timed out and the
-        // landing-tab WebSocket disconnected repeatedly during the
-        // runElaKReal SEQUENCE TEACHING phase (300 calls × ~5s per
-        // call at biological-scale synapses). intraSynapsesHebbian
-        // also fires the GPU shadow Hebbian in parallel.
-        cluster.intraSynapsesHebbian(pre, post, lr);
+        // T17.2 + T17.7 Gee 2026-04-18 OOM fix — route through
+        // cluster.intraSynapsesHebbian (async / awaitable) so the
+        // 110M-nnz sparse Hebbian dispatches via the 15-worker
+        // sparsePool. Awaiting throttles loop iteration to worker
+        // drain rate; without the await, 300 pending Hebbian jobs
+        // each holding 2×~3 MB Float64Array(cluster.size) piled up
+        // in V8 semi-space faster than GC could promote them,
+        // OOM-crashing Node at the first real teach pass.
+        await cluster.intraSynapsesHebbian(pre, post, lr);
       }
       await _microtask();
     }
@@ -6051,7 +6045,7 @@ export class Curriculum {
         }
 
         // Fire cross-region Hebbian — free→sem learns the sum transformation
-        cluster._crossRegionHebbian(lr);
+        await cluster._crossRegionHebbian(lr);
       }
       await _microtask();
     }
@@ -6129,7 +6123,7 @@ export class Curriculum {
           cluster.lastSpikes[semRegion.start + i] = magDiff[i] > 0 ? 1 : 0;
         }
 
-        cluster._crossRegionHebbian(lr);
+        await cluster._crossRegionHebbian(lr);
       }
       await _microtask();
     }
@@ -6216,7 +6210,7 @@ export class Curriculum {
           cluster.lastSpikes[fineTypeRegion.start + i] = compPat[i] > 0 ? 1 : 0;
         }
 
-        cluster._crossRegionHebbian(lr);
+        await cluster._crossRegionHebbian(lr);
       }
       await _microtask();
     }
@@ -6312,14 +6306,16 @@ export class Curriculum {
   // short-circuits at reward=0 (sparse-matrix.js:191) and updates
   // nothing. Calling `synapses.hebbianUpdate` directly bypasses the
   // reward gate and fires symmetric Hebbian across the full cluster.
-  _teachHebbian(lr) {
+  async _teachHebbian(lr) {
     const cluster = this.cluster;
     if (!cluster) return;
-    cluster._crossRegionHebbian(lr);
-    // T17.3.e — route through intraSynapsesHebbian so intra-cluster
-    // weight updates hit GPU shadow alongside CPU.
+    // T17.7 Gee 2026-04-18 OOM fix — await both calls so
+    // teach-loop iteration rate throttles to the worker-pool
+    // drain rate, preventing unbounded pending-job pile-up that
+    // blew V8 semi-space at biological scale.
+    await cluster._crossRegionHebbian(lr);
     if (typeof cluster.intraSynapsesHebbian === 'function') {
-      cluster.intraSynapsesHebbian(cluster.lastSpikes, cluster.lastSpikes, lr);
+      await cluster.intraSynapsesHebbian(cluster.lastSpikes, cluster.lastSpikes, lr);
     } else if (cluster.synapses && typeof cluster.synapses.hebbianUpdate === 'function') {
       cluster.synapses.hebbianUpdate(cluster.lastSpikes, cluster.lastSpikes, lr);
     }
@@ -6356,13 +6352,14 @@ export class Curriculum {
    * full pattern during teaching if cross-projection binding is
    * desired.
    */
-  _teachHebbianAsymmetric(preVec, postVec, lr) {
+  async _teachHebbianAsymmetric(preVec, postVec, lr) {
     const cluster = this.cluster;
     if (!cluster) return;
-    cluster._crossRegionHebbian(lr);
-    // T17.3.e — route through intraSynapsesHebbian for GPU shadow.
+    // T17.7 Gee 2026-04-18 OOM fix — same awaiting pattern as
+    // _teachHebbian above.
+    await cluster._crossRegionHebbian(lr);
     if (typeof cluster.intraSynapsesHebbian === 'function') {
-      cluster.intraSynapsesHebbian(preVec, postVec, lr);
+      await cluster.intraSynapsesHebbian(preVec, postVec, lr);
     } else if (cluster.synapses && typeof cluster.synapses.hebbianUpdate === 'function') {
       cluster.synapses.hebbianUpdate(preVec, postVec, lr);
     }
@@ -6456,7 +6453,7 @@ export class Curriculum {
           if (!w || !w.region || !w.feat) continue;
           this._writeTiledPattern(w.region, w.feat, w.binarize !== false);
         }
-        this._teachHebbian(lr);
+        await this._teachHebbian(lr);
       }
       if (allowMicrotask) await _microtask();
     }
@@ -7159,7 +7156,7 @@ export class Curriculum {
           }
         }
 
-        cluster._crossRegionHebbian(lr);
+        await cluster._crossRegionHebbian(lr);
       }
       await _microtask();
     }
@@ -7231,7 +7228,7 @@ export class Curriculum {
           cluster.lastSpikes[semRegion.start + i] = catPat[i] > 0 ? 1 : 0;
         }
 
-        cluster._crossRegionHebbian(lr);
+        await cluster._crossRegionHebbian(lr);
       }
       await _microtask();
     }
@@ -7315,7 +7312,7 @@ export class Curriculum {
         for (let i = 0; i < fineTypeSize; i++) cluster.lastSpikes[fineTypeRegion.start + i] = subjTag[i] > 0 ? 1 : 0;
         const verbSemPat = buildEmbPattern(semSize, verb);
         for (let i = 0; i < semSize; i++) cluster.lastSpikes[semRegion.start + i] = verbSemPat[i] > 0 ? 1 : 0;
-        cluster._crossRegionHebbian(lr);
+        await cluster._crossRegionHebbian(lr);
 
         // VERB: embedding in sem, "verb" tag in fineType
         for (let i = 0; i < cluster.size; i++) cluster.lastSpikes[i] = 0;
@@ -7325,7 +7322,7 @@ export class Curriculum {
         for (let i = 0; i < fineTypeSize; i++) cluster.lastSpikes[fineTypeRegion.start + i] = verbTag[i] > 0 ? 1 : 0;
         const subjFreePat = buildEmbPattern(freeSize, subj);
         for (let i = 0; i < freeSize; i++) cluster.lastSpikes[freeRegion.start + i] = subjFreePat[i] > 0 ? 1 : 0;
-        cluster._crossRegionHebbian(lr);
+        await cluster._crossRegionHebbian(lr);
 
         // OBJECT: embedding in sem, "object" tag in fineType, subject in free for context
         for (let i = 0; i < cluster.size; i++) cluster.lastSpikes[i] = 0;
@@ -7334,7 +7331,7 @@ export class Curriculum {
         const objTag = roleTag('object');
         for (let i = 0; i < fineTypeSize; i++) cluster.lastSpikes[fineTypeRegion.start + i] = objTag[i] > 0 ? 1 : 0;
         for (let i = 0; i < freeSize; i++) cluster.lastSpikes[freeRegion.start + i] = subjFreePat[i] > 0 ? 1 : 0;
-        cluster._crossRegionHebbian(lr);
+        await cluster._crossRegionHebbian(lr);
       }
       await _microtask();
     }
@@ -7384,7 +7381,7 @@ export class Curriculum {
         for (let i = 0; i < freeSize; i++) cluster.lastSpikes[freeRegion.start + i] = aPat[i] > 0 ? 1 : 0;
         const bPat = buildEmbPattern(semSize, b);
         for (let i = 0; i < semSize; i++) cluster.lastSpikes[semRegion.start + i] = bPat[i] > 0 ? 1 : 0;
-        cluster._crossRegionHebbian(lr);
+        await cluster._crossRegionHebbian(lr);
 
         // Teach B→C: B in free, C in sem
         for (let i = 0; i < cluster.size; i++) cluster.lastSpikes[i] = 0;
@@ -7392,7 +7389,7 @@ export class Curriculum {
         for (let i = 0; i < freeSize; i++) cluster.lastSpikes[freeRegion.start + i] = bFreePat[i] > 0 ? 1 : 0;
         const cPat = buildEmbPattern(semSize, c);
         for (let i = 0; i < semSize; i++) cluster.lastSpikes[semRegion.start + i] = cPat[i] > 0 ? 1 : 0;
-        cluster._crossRegionHebbian(lr);
+        await cluster._crossRegionHebbian(lr);
       }
       await _microtask();
     }
@@ -7469,7 +7466,7 @@ export class Curriculum {
           for (let i = 0; i < semSize; i++) cluster.lastSpikes[semRegion.start + i] = labelPat[i] > 0 ? 1 : 0;
         }
 
-        cluster._crossRegionHebbian(lr);
+        await cluster._crossRegionHebbian(lr);
       }
       await _microtask();
     }
@@ -7521,7 +7518,7 @@ export class Curriculum {
           for (let n = 0; n < gSize; n++) { const idx = d * gSize + n; if (idx < semSize) prodPat[idx] = prodFeat[d]; }
         }
         for (let i = 0; i < semSize; i++) cluster.lastSpikes[semRegion.start + i] = prodPat[i] > 0 ? 1 : 0;
-        cluster._crossRegionHebbian(lr);
+        await cluster._crossRegionHebbian(lr);
       }
       await _microtask();
     }
@@ -7569,7 +7566,7 @@ export class Curriculum {
           // Combined value in sem (use ones digit of the number for magnitude)
           const valPat = buildMag(semSize, (tens * 10 + ones) % 10);
           for (let i = 0; i < semSize; i++) cluster.lastSpikes[semRegion.start + i] = valPat[i] > 0 ? 1 : 0;
-          cluster._crossRegionHebbian(lr);
+          await cluster._crossRegionHebbian(lr);
         }
       }
       await _microtask();
@@ -7624,7 +7621,7 @@ export class Curriculum {
         const ratio = Math.round(num / den * 9); // map 0-1 to 0-9
         const ratioPat = buildMag(semSize, ratio);
         for (let i = 0; i < semSize; i++) cluster.lastSpikes[semRegion.start + i] = ratioPat[i] > 0 ? 1 : 0;
-        cluster._crossRegionHebbian(lr);
+        await cluster._crossRegionHebbian(lr);
       }
       await _microtask();
     }
@@ -7677,7 +7674,7 @@ export class Curriculum {
         // Answer (x) in sem — what we're SOLVING FOR
         const xPat = buildMag(semSize, x);
         for (let i = 0; i < semSize; i++) cluster.lastSpikes[semRegion.start + i] = xPat[i] > 0 ? 1 : 0;
-        cluster._crossRegionHebbian(lr);
+        await cluster._crossRegionHebbian(lr);
       }
       await _microtask();
     }
@@ -7734,13 +7731,13 @@ export class Curriculum {
         const aPat = buildEmb(freeSize, sentA.split(/\s+/)[0]);
         for (let i = 0; i < freeSize; i++) cluster.lastSpikes[freeRegion.start + i] = aPat[i] > 0 ? 1 : 0;
         for (let i = 0; i < semSize; i++) cluster.lastSpikes[semRegion.start + i] = targetPat[i];
-        cluster._crossRegionHebbian(lr);
+        await cluster._crossRegionHebbian(lr);
         // Sentence B → SAME shared meaning
         for (let i = 0; i < cluster.size; i++) cluster.lastSpikes[i] = 0;
         const bPat = buildEmb(freeSize, sentB.split(/\s+/)[0]);
         for (let i = 0; i < freeSize; i++) cluster.lastSpikes[freeRegion.start + i] = bPat[i] > 0 ? 1 : 0;
         for (let i = 0; i < semSize; i++) cluster.lastSpikes[semRegion.start + i] = targetPat[i];
-        cluster._crossRegionHebbian(lr);
+        await cluster._crossRegionHebbian(lr);
       }
       await _microtask();
     }
@@ -7788,7 +7785,7 @@ export class Curriculum {
         // Confirmed or rejected tag
         const start = match ? 0 : half;
         for (let i = start; i < start + half && i < fineTypeSize; i++) cluster.lastSpikes[fineTypeRegion.start + i] = 1;
-        cluster._crossRegionHebbian(lr);
+        await cluster._crossRegionHebbian(lr);
       }
       await _microtask();
     }
@@ -7847,7 +7844,7 @@ export class Curriculum {
           // Perspective features in phon (emotional coloring of the viewpoint)
           const featPat = buildFeat(phonSize, features);
           for (let i = 0; i < phonSize; i++) cluster.lastSpikes[phonRegion.start + i] = featPat[i] > 0 ? 1 : 0;
-          cluster._crossRegionHebbian(lr);
+          await cluster._crossRegionHebbian(lr);
         }
       }
       await _microtask();
@@ -7998,7 +7995,7 @@ export class Curriculum {
           }
         }
 
-        cluster._crossRegionHebbian(lr);
+        await cluster._crossRegionHebbian(lr);
 
         if (this.dictionary && typeof this.dictionary.learnWord === 'function') {
           try { this.dictionary.learnWord(word, null, arousal, valence); } catch {}
@@ -8089,7 +8086,7 @@ export class Curriculum {
               cluster.lastSpikes[semRegion.start + j] = semPat[j] > 0 ? 1 : 0;
             }
           }
-          cluster._crossRegionHebbian(lr);
+          await cluster._crossRegionHebbian(lr);
         }
       }
       await _microtask();
@@ -9655,7 +9652,7 @@ export class Curriculum {
             }
           }
 
-          cluster._crossRegionHebbian(lr);
+          await cluster._crossRegionHebbian(lr);
         }
 
         // Dictionary growth
@@ -11381,7 +11378,7 @@ export class Curriculum {
           }
         }
 
-        cluster._crossRegionHebbian(lr);
+        await cluster._crossRegionHebbian(lr);
 
         // Session 46 growth fix — populate dictionary
         const words = name.split(/\s+/).filter(Boolean);
@@ -13243,7 +13240,7 @@ export class Curriculum {
             }
           }
 
-          cluster._crossRegionHebbian(lr);
+          await cluster._crossRegionHebbian(lr);
 
           // Sequence transition: previous step → current step
           if (prevLetterOneHot) {
@@ -13264,17 +13261,15 @@ export class Curriculum {
                 if (idx < letterRegion.end) post[idx] = 1.0;
               }
             }
-            // T17.2 — route through cluster.intraSynapsesHebbian so the
-        // 110M-nnz sparse Hebbian update dispatches to the worker
-        // pool (fire-and-forget async) instead of blocking the Node
-        // main thread for seconds per call. Direct
-        // cluster.synapses.hebbianUpdate was freezing the event loop
-        // long enough that WebSocket heartbeats timed out and the
-        // landing-tab WebSocket disconnected repeatedly during the
-        // runElaKReal SEQUENCE TEACHING phase (300 calls × ~5s per
-        // call at biological-scale synapses). intraSynapsesHebbian
-        // also fires the GPU shadow Hebbian in parallel.
-        cluster.intraSynapsesHebbian(pre, post, lr);
+            // T17.2 + T17.7 Gee 2026-04-18 OOM fix — route through
+        // cluster.intraSynapsesHebbian (async / awaitable) so the
+        // 110M-nnz sparse Hebbian dispatches via the 15-worker
+        // sparsePool. Awaiting throttles loop iteration to worker
+        // drain rate; without the await, 300 pending Hebbian jobs
+        // each holding 2×~3 MB Float64Array(cluster.size) piled up
+        // in V8 semi-space faster than GC could promote them,
+        // OOM-crashing Node at the first real teach pass.
+        await cluster.intraSynapsesHebbian(pre, post, lr);
           }
           prevLetterOneHot = letterOneHot;
         }

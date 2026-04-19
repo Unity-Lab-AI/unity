@@ -1898,7 +1898,7 @@ export class NeuronCluster {
    * the projection where they co-fire. Runs from cluster.learn() and
    * also from cluster.learnSentenceHebbian after each word's tick.
    */
-  _crossRegionHebbian(lr) {
+  async _crossRegionHebbian(lr) {
     if (!this.crossProjections) return;
     for (const [name, proj] of Object.entries(this.crossProjections)) {
       const idx = name.indexOf('_to_');
@@ -1908,12 +1908,20 @@ export class NeuronCluster {
       if (!this.regions[src] || !this.regions[dst]) continue;
       const preF = this.regionSpikes(src);
       const postF = this.regionSpikes(dst);
-      // T17.2 — route CPU Hebbian through worker pool when available.
-      // Same disjoint-row-range parallelization as intraSynapsesHebbian.
+      // T17.2 + T17.7 Gee 2026-04-18 OOM fix — route CPU Hebbian
+      // through worker pool when available. AWAIT the pool job so
+      // pending cross-projection Hebbians don't pile up in semi-space
+      // (14 projections × ~3 MB pre/postF buffers × hundreds of teach
+      // iterations = GB-scale semi-space exhaustion). Same root cause
+      // + same fix shape as intraSynapsesHebbian — caller (teach
+      // loops) awaits, iteration rate throttles to the worker pool's
+      // drain rate, only ~15 jobs live in memory at a time.
       if (this._sparsePool && this._sparsePool.ready) {
-        this._sparsePool.hebbianUpdate(proj, preF, postF, lr).catch(() => {
+        try {
+          await this._sparsePool.hebbianUpdate(proj, preF, postF, lr);
+        } catch {
           proj.hebbianUpdate(preF, postF, lr);
-        });
+        }
       } else {
         proj.hebbianUpdate(preF, postF, lr);
       }
@@ -2002,31 +2010,45 @@ export class NeuronCluster {
    * `cluster.synapses.hebbianUpdate` directly so intra-cluster
    * weights stay in sync between CPU and GPU.
    */
-  intraSynapsesHebbian(pre, post, lr) {
+  async intraSynapsesHebbian(pre, post, lr) {
     if (!this.synapses) return;
     // T17.2 — parallelize CPU Hebbian across worker pool when available.
     // Same row-range partitioning pattern as sparse matmul (disjoint
     // row-ranges, no write collisions on values buffer). Falls through
     // to synchronous single-thread update if pool unavailable.
     //
-    // Note: worker path is async (returns Promise), but Hebbian update
-    // is fire-and-forget — callers don't await, so we kick off the pool
-    // job and return immediately. Curriculum teach can't be racing the
-    // same matrix back-to-back within a single JS tick because the
-    // worker's shared-buffer writes happen on the main thread's event
-    // loop return.
+    // T17.7 Gee 2026-04-18 fix — method is NOW async/awaitable. Caller
+    // (curriculum teach loops) must `await` it. Reason: curriculum
+    // phases that iterate hundreds of intra-cluster Hebbian updates
+    // back-to-back (runElaKReal SEQUENCE TEACHING: 12 reps × 25 pairs
+    // = 300 calls) each allocate a ~3 MB Float64Array(cluster.size)
+    // pre/post pair. If we fire-and-forget into the worker pool,
+    // pending jobs hold their Float64Array references until a worker
+    // drains them. At biological scale 300 pending × 2 × 3 MB = 1.8 GB
+    // of short-lived objects piling up in semi-space faster than V8
+    // can GC → OOM crash. Awaiting throttles the loop to the pool's
+    // drain rate so only ~15 jobs (one per worker) live in memory at
+    // a time. GPU shadow dispatch stays fire-and-forget because it's
+    // flow-gated by _gpuSparseFlowOk(); it drops silently under
+    // backpressure instead of queuing forever.
     if (this._sparsePool && this._sparsePool.ready) {
-      this._sparsePool.hebbianUpdate(this.synapses, pre, post, lr).catch(() => {
+      try {
+        await this._sparsePool.hebbianUpdate(this.synapses, pre, post, lr);
+      } catch {
         // Pool failed — fall back to synchronous path so the update
         // still happens. Next call will retry via the pool.
         this.synapses.hebbianUpdate(pre, post, lr);
-      });
+      }
     } else {
       this.synapses.hebbianUpdate(pre, post, lr);
     }
     if (this._gpuProxyReady && this._gpuProxy && this._gpuProxy.hebbian) {
       const key = `${this.name}_intraSynapses`;
       try {
+        // Still fire-and-forget — gpuSparseFlowOk gates drop under
+        // backpressure, so no queue explosion. Do NOT await here or
+        // the teach loop throttles to WebSocket round-trip latency
+        // which is 100× slower than the worker pool's compute.
         this._gpuProxy.hebbian(key, pre, post, lr);
       } catch { /* non-fatal — CPU update authoritative */ }
     }
