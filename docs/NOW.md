@@ -1,7 +1,70 @@
 # NOW — Session Snapshot
 
-> **Session:** 114.19ap · **Date:** 2026-04-19 · **Branch:** `syllabus-k-phd` · **HEAD (pre-push):** `881aaa4` (T18.17) · **BUILD:** `0.1.0+d40f52e7-084d` (pre-stamp; T18.18 pending)
+> **Session:** 114.19ar · **Date:** 2026-04-19 · **Branch:** `syllabus-k-phd` · **HEAD (pre-push):** `20e4481` (T18.19) · **BUILD:** `0.1.0+d97d7895-7ef5` (pre-stamp; T18.20 pending)
 
+---
+
+## T18.20 addendum — Third 1.7 GB/call allocator found + closed (Phase 2 per-iter Float64Array)
+
+**Gee verbatim 2026-04-19 post-T18.19 retest:** deceleration pattern 3.51 → 1.55 iter/s over 193s + still OOM at `_teachLetterCaseBinding`.
+
+T18.19 killed the worker pool's 1.7 GB/call SAB allocation — confirmed by Phase 2 starting at 3.51 iter/s (vs 1.4 pre-T18.19). BUT velocity decelerated monotonically + V8 OOM still fired. That meant ANOTHER 1.7 GB/iter allocator still ran.
+
+Grep found it on the CURRICULUM side at `js/brain/curriculum.js:3497-3498`:
+```js
+const pre = new Float64Array(cluster.size);   // 858 MB @ 107M cortex
+const post = new Float64Array(cluster.size);  // 858 MB
+```
+
+Per iter: 2 × 858 MB = 1.7 GB. 300 iters × 1.7 GB = 510 GB / 193s = 2.6 GB/sec sustained V8 external-memory allocation. V8 GC couldn't reclaim fast enough → pressure accumulated → Mark-Compact took longer per cycle → velocity decelerated.
+
+T18.20.a hoists the Float64Array allocations OUTSIDE the rep loop. Per-iter work drops from 1.7 GB allocation to ~15K letter-region zero-writes + 15K one-hot writes. V8 external-memory pressure stays flat. Expected velocity: stable 3-4 iter/s with NO deceleration, Phase 2 completion ~85-100s (vs 193s).
+
+Three separate 1.7 GB/call allocators closed in sequence by T18.18, T18.19, T18.20. Each independently lethal at biological scale. Each hidden behind the previous. Ultrathink × 3.
+
+See `docs/FINALIZED.md` session 114.19ar entry for the full three-allocator retrospective.
+
+---
+
+## Original session entry (T18.19) below
+---
+
+
+
+## T18.19 addendum — T18.18 FALSIFIED + real root cause found (CPU worker pool, not GPU shadow)
+
+**Gee verbatim 2026-04-19 after T18.18 retest:** `[Curriculum] ✓ ELA-K Phase 2 DONE in 205.8s → _teachLetterCaseBinding START → FATAL ERROR: Committing semi space failed` + `ultrathink`
+
+Identical failure to pre-T18.18. T18.18 removed the GPU shadow fire-and-forget from `intraSynapsesHebbian` but it changed nothing. Root cause was **misidentified**: the 1.7 GB/call allocator is the CPU worker pool, not the GPU shadow.
+
+Ultrathink traced to `server/worker-pool.js:236-239`:
+```js
+const preF32 = Float32Array.from(preSpikes);  // 428 MB
+const postF32 = Float32Array.from(postSpikes); // 428 MB
+const preShared = shared(preF32, Float32Array);  // NEW SAB 428 MB
+const postShared = shared(postF32, Float32Array); // NEW SAB 428 MB
+```
+
+~1.7 GB of external-memory allocation per call. SharedArrayBuffers held by worker threads until job done. Phase 2 rate of 2.4 GB/sec external-memory allocation exceeds V8's GC reclaim rate. Pressure accumulates through Phase 2 to near-OOM. `_teachLetterCaseBinding`'s first call tips V8 over the edge.
+
+T18.19.a adds a biological-scale bypass: at `cluster.size > 10M`, skip the worker pool and call `synapses.hebbianUpdate` synchronously. Zero allocation. At 107M cortex with only letter region firing, compute time ~200ms per call vs. ~700ms through the worker pool (which was 500ms allocation + 13ms compute). **T18.19 is actually FASTER than the worker pool path at biological scale because allocation overhead dominates.**
+
+Expected Phase 2 velocity: 300 × 200ms = 60s (vs 214s pre-T18.19). ELA-K end-to-end: ~15-20 min including Phase 1 (<5s), all K.RF helpers, and `_teachWordEmission`.
+
+Full cascade chain closed:
+| Layer | Closed by |
+|-------|-----------|
+| Browser WebGPU handles/VRAM/re-init | T18.10/11/14 |
+| Server WS backpressure + reconnect | T18.11.b/c |
+| Server cross-proj CPU shadow (GPU-bound) | T18.17 |
+| Server GPU intra shadow Buffer.concat | T18.18 |
+| **Server CPU worker pool SAB-per-call** | **T18.19** |
+
+See `docs/FINALIZED.md` session 114.19aq entry for the full diagnosis + misdiagnosis retrospective + safety rationale.
+
+---
+
+## Original session entry (T18.18) below
 ---
 
 ## T18.18 addendum — Cascade #5 root cause (intraSynapsesHebbian fire-and-forget GPU shadow @ 1.7 GB/call)

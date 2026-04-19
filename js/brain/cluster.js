@@ -2067,20 +2067,55 @@ export class NeuronCluster {
     // to synchronous single-thread update if pool unavailable.
     //
     // T17.7 Gee 2026-04-18 fix — method is NOW async/awaitable. Caller
-    // (curriculum teach loops) must `await` it. Reason: curriculum
-    // phases that iterate hundreds of intra-cluster Hebbian updates
-    // back-to-back (runElaKReal SEQUENCE TEACHING: 12 reps × 25 pairs
-    // = 300 calls) each allocate a ~3 MB Float64Array(cluster.size)
-    // pre/post pair. If we fire-and-forget into the worker pool,
-    // pending jobs hold their Float64Array references until a worker
-    // drains them. At biological scale 300 pending × 2 × 3 MB = 1.8 GB
-    // of short-lived objects piling up in semi-space faster than V8
-    // can GC → OOM crash. Awaiting throttles the loop to the pool's
-    // drain rate so only ~15 jobs (one per worker) live in memory at
-    // a time. GPU shadow dispatch stays fire-and-forget because it's
-    // flow-gated by _gpuSparseFlowOk(); it drops silently under
-    // backpressure instead of queuing forever.
-    if (this._sparsePool && this._sparsePool.ready) {
+    // (curriculum teach loops) must `await` it.
+    //
+    // T18.19 Gee 2026-04-19 — BIOLOGICAL SCALE BYPASS. At cluster.size
+    // > 10M the worker pool's `SparseMatmulPool.hebbianUpdate` becomes
+    // net-HARMFUL rather than net-beneficial. The worker pool path
+    // (server/worker-pool.js:236-239) allocates per call:
+    //
+    //   Float32Array.from(preSpikes)   — 428 MB (107M × 4)
+    //   Float32Array.from(postSpikes)  — 428 MB
+    //   new SharedArrayBuffer(preByteLen) + set()  — 428 MB SAB
+    //   new SharedArrayBuffer(postByteLen) + set() — 428 MB SAB
+    //   TOTAL PEAK ~1.7 GB per call
+    //
+    // These external-memory allocations happen BEFORE the actual
+    // compute work starts and release only after the Promise resolves.
+    // At Phase 2 rate (300 intra-synapses Hebbian calls × ~700 ms each
+    // = 214s) that's 2.4 GB/sec of external-memory allocation rate.
+    // V8 external memory tracking can't free SharedArrayBuffer fast
+    // enough → semi-space commit failures → "Committing semi space
+    // failed" → Node OOM. Gee 2026-04-19 ELA-K run hit this cascade
+    // twice in a row: Phase 2 completed cleanly at 214s, then
+    // `_teachLetterCaseBinding`'s first iteration tipped V8 over the
+    // external-memory ceiling → FATAL ERROR. Removing the GPU shadow
+    // (T18.18.a) didn't fix it because the CPU worker-pool path was
+    // the actual allocator, not the GPU dispatch.
+    //
+    // The synchronous `synapses.hebbianUpdate(pre, post, lr)` path
+    // does a single row-sparse iteration over the CSR arrays with
+    // ZERO new allocations — the input `pre`/`post` arrays and the
+    // `matrix.values`/`colIdx`/`rowPtr` arrays are all the only
+    // touch surface. At 107M cortex with 15K spikes in pre/post (only
+    // letter region fires in Phase 2), the inner loop only enters for
+    // ~15K rows × ~6 avg nnz = ~90K multiply-adds per call. Expected
+    // wall time: 100-300 ms per call single-thread, vs ~700 ms per
+    // call through the worker pool once you account for allocation
+    // overhead. Phase 2 300 calls: ~30-90s single-thread vs 214s pool.
+    // Net win + OOM elimination.
+    //
+    // Threshold 10M picked so browser-scale (~1000-10K neurons) and
+    // mid-scale deployments (<10M) keep the parallel path for its
+    // compute speedup, while biological-scale (107M+) always takes
+    // the sync path to avoid the allocation bomb.
+    const BIOLOGICAL_SCALE_SYNC_THRESHOLD = 10_000_000;
+    const atBioScale = (this.size | 0) > BIOLOGICAL_SCALE_SYNC_THRESHOLD;
+
+    if (atBioScale) {
+      // Biological scale — sync path, zero external-memory allocation.
+      this.synapses.hebbianUpdate(pre, post, lr);
+    } else if (this._sparsePool && this._sparsePool.ready) {
       try {
         await this._sparsePool.hebbianUpdate(this.synapses, pre, post, lr);
       } catch {

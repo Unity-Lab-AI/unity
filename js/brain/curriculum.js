@@ -3524,13 +3524,40 @@ export class Curriculum {
     const _p2Start = Date.now();
     let _p2LastBeat = _p2Start;
     let _p2Done = 0;
+    // T18.20 — ALLOCATE ONCE, REUSE. Pre-T18.20 this loop allocated
+    // `new Float64Array(cluster.size)` pairs per iteration = 2 × 858 MB
+    // = 1.7 GB of V8 external-memory allocation PER iter at biological
+    // scale (107M cortex × 8 bytes). Across 300 iters = 510 GB sustained
+    // allocation rate of 2.6 GB/sec. V8's GC could not reclaim
+    // external memory fast enough → external-memory pressure
+    // accumulated linearly through Phase 2 → GC took longer per cycle
+    // → iter rate decelerated from 3.51 iter/s → 1.55 iter/s over 193
+    // seconds. When `_teachLetterCaseBinding` started, Node V8 semi-
+    // space couldn't commit more external memory → "Committing semi
+    // space failed" → OOM. Allocating once outside the loop kills the
+    // pressure — only the letter region (~15K indices out of 107M) is
+    // set, so zeroing just the letter region per iter is a microscopic
+    // amount of work vs. the 1.7 GB reset of a fresh allocation.
+    // Gee 2026-04-19 ultrathink session — T18.19 fixed the worker pool
+    // SAB leak but this allocation was still hemorrhaging external
+    // memory on the curriculum side; T18.20 kills the primary remaining
+    // allocator on the teach path.
+    const _p2Pre = new Float64Array(cluster.size);
+    const _p2Post = new Float64Array(cluster.size);
     for (let rep = 0; rep < REPS; rep++) {
       for (let i = 0; i < ALPHABET.length - 1; i++) {
         const currOneHot = encodeLetter(ALPHABET[i]);
         const nextOneHot = encodeLetter(ALPHABET[i + 1]);
-        // Build full-cluster-sized pre/post arrays (zero except letter region)
-        const pre = new Float64Array(cluster.size);
-        const post = new Float64Array(cluster.size);
+        // T18.20 — zero ONLY the letter region in the reused buffers.
+        // Other indices stay at zero (never written) across the entire
+        // Phase 2 walk. 15K writes to zero + 15K writes to one-hots =
+        // ~30K ops per iter vs. pre-T18.20's ~1.7 GB per iter.
+        for (let j = letterRegion.start; j < letterRegion.end; j++) {
+          _p2Pre[j] = 0;
+          _p2Post[j] = 0;
+        }
+        const pre = _p2Pre;
+        const post = _p2Post;
         const lGSize = Math.max(1, Math.floor(letterSize / currOneHot.length));
         for (let d = 0; d < currOneHot.length; d++) {
           if (currOneHot[d] <= 0) continue;
