@@ -2091,16 +2091,47 @@ export class NeuronCluster {
     } else {
       this.synapses.hebbianUpdate(pre, post, lr);
     }
-    if (this._gpuProxyReady && this._gpuProxy && this._gpuProxy.hebbian) {
-      const key = `${this.name}_intraSynapses`;
-      try {
-        // Still fire-and-forget — gpuSparseFlowOk gates drop under
-        // backpressure, so no queue explosion. Do NOT await here or
-        // the teach loop throttles to WebSocket round-trip latency
-        // which is 100× slower than the worker pool's compute.
-        this._gpuProxy.hebbian(key, pre, post, lr);
-      } catch { /* non-fatal — CPU update authoritative */ }
-    }
+    // T18.18 — GPU SHADOW DISPATCH REMOVED. Pre-T18.18 this block fired
+    // `this._gpuProxy.hebbian(key, pre, post, lr)` fire-and-forget as a
+    // GPU shadow update. At biological scale intra-synapses is STANDALONE
+    // (per initGpu: "Intra-synapses always ship standalone — it runs on
+    // its own pre/post buffers, not bound into another cluster's spike
+    // buffer"). The server's `gpuSparseHebbian` does:
+    //
+    //   const pre  = Uint32Array.from(preSpikes);   // 107M × 4 = 428 MB
+    //   const post = Uint32Array.from(postSpikes);  // 428 MB
+    //   Buffer.concat([hdr, lenPre, preBuf, lenPost, postBuf]);  // 856 MB
+    //
+    // ~1.7 GB transient allocation PER CALL, held until _sparseSendBinary
+    // finishes WebSocket transmission. Fire-and-forget means no await
+    // gates the caller; Buffer references stack in V8 semi-space. At
+    // Phase 2 rate (300 calls × 1.7 GB = 510 GB attempted transfer over
+    // 214s) the localhost WebSocket ceiling (~1.2 GB/sec) drains only
+    // ~256 GB → queue stays half-full. When _teachLetterCaseBinding
+    // fires 624 more iterations, V8 semi-space exhausts → "Committing
+    // semi space failed" → Node OOM. Meanwhile compute.html's WebSocket
+    // back-pressure chokes the GPU device → device.lost fires. Gee
+    // 2026-04-19 cascade #5 (after T18.10/11/14 closed the prior four).
+    //
+    // Removing the GPU shadow is SAFE because:
+    //  (a) CPU worker-pool path above is already authoritative (T17.2
+    //      / T17.7 comment block). All teach-phase reads of intra-
+    //      synapses weights go through `cluster.synapses.propagate`
+    //      (CPU CSR), never the GPU shadow.
+    //  (b) Probes at biological scale use direct-pattern probe pattern
+    //      (Session 106) reading CPU synapses. No probe reads GPU intra-
+    //      synapses weights.
+    //  (c) Tick-loop GPU propagate on intra-synapses uses the GPU
+    //      weights from initGpu upload and will miss weight updates
+    //      during teach. Acceptable — direct-pattern Hebbian writes
+    //      `cluster.lastSpikes` directly (bypassing Rulkov dynamics), so
+    //      teach doesn't depend on tick-loop accuracy. If live-chat
+    //      quality later suffers, a periodic batched CPU→GPU sync can
+    //      be added as T18.19 (deferred until measured).
+    //
+    // Cross-projection Hebbian (T18.17 GPU-bound fast path) is NOT
+    // affected — those run through T18.8 batched dispatch in bound mode
+    // shipping ~50 bytes per op (no pre/post bulk data).
   }
 
   /**

@@ -1,7 +1,35 @@
 # NOW — Session Snapshot
 
-> **Session:** 114.19ao · **Date:** 2026-04-19 · **Branch:** `syllabus-k-phd` · **HEAD (pre-push):** `d40f52e` (T18.16) · **BUILD:** `0.1.0+ba820456-8fac` (pre-stamp; T18.17 pending)
+> **Session:** 114.19ap · **Date:** 2026-04-19 · **Branch:** `syllabus-k-phd` · **HEAD (pre-push):** `881aaa4` (T18.17) · **BUILD:** `0.1.0+d40f52e7-084d` (pre-stamp; T18.18 pending)
 
+---
+
+## T18.18 addendum — Cascade #5 root cause (intraSynapsesHebbian fire-and-forget GPU shadow @ 1.7 GB/call)
+
+**Gee verbatim terminal 2026-04-19 after T18.17 restart cleared Phase 1 + 2 cleanly:**
+
+```
+[Curriculum] ✓ ELA-K Phase 2 DONE in 214.4s
+[Curriculum] 🧩 ELA-K Phase START — _teachLetterCaseBinding
+[Brain] GPU DEVICE LOST (reported by compute.html)
+FATAL ERROR: Committing semi space failed. Allocation failed - JavaScript heap out of memory
+```
+
+**T18.17 PROVEN WORKING** — Phase 1 finished in <5s (heartbeat threshold never tripped = fastest possible outcome). Phase 2 ran at 1.4-2.1 iter/s for 214s (CPU worker-pool path, unchanged).
+
+Then immediate failure entering `_teachLetterCaseBinding`. Root cause: `intraSynapsesHebbian`'s fire-and-forget GPU shadow dispatched ~1.7 GB of Buffer allocation PER CALL (Uint32Array.from on 107M Uint8Array + Buffer.concat). Phase 2's 300 × 1.7 GB = 510 GB attempted WebSocket transfer in 214s vs. localhost WS ceiling ~1.2 GB/sec = 256 GB drain → queue half-full at Phase 2 end. `_teachLetterCaseBinding`'s 624 additional iterations pushed V8 external memory past GC's ability to reclaim → OOM. Meanwhile compute.html's choked WS chokes GPU → device.lost.
+
+T18.18.a removes the GPU shadow block from `intraSynapsesHebbian` entirely. CPU worker-pool path is already authoritative. Probes at biological scale don't read GPU intra-synapses weights — they route through `cluster.synapses.propagate` (CPU) via Session 106 direct-pattern pattern. Tick-loop GPU propagate runs with stale weights during teach — acceptable because direct-pattern Hebbian writes lastSpikes directly, bypassing Rulkov dynamics.
+
+This is cascade #5. Prior four closed by T18.10 (validation-fail VRAM leak), T18.11 (success-path VRAM leak + stale-tab + reconnect storm), T18.14 (paramsBuf handle count + LIF buffer orphan + skip-reinit). Every one closed a DIFFERENT mechanism with the same downstream symptom. T18.18 closes the Buffer-volume accumulation layer.
+
+Cross-projection Hebbian (T18.17 bound fast path) is UNAFFECTED — runs through T18.8 batched dispatch at ~50 bytes/op.
+
+See `docs/FINALIZED.md` session 114.19ap entry for full diagnosis + safety rationale.
+
+---
+
+## Original session entry (T18.17) below
 ---
 
 ## T18.17 addendum — ELA-K Phase 1 velocity telemetry surfaced 100-250× CPU shadow bottleneck

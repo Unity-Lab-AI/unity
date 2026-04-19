@@ -5,6 +5,110 @@
 
 ---
 
+## 2026-04-19 — Session 114.19ap: T18.18 SHIPPED — Cascade #5 root cause (intraSynapsesHebbian fire-and-forget GPU shadow at biological scale = 1.7 GB/call Buffer accumulation → V8 OOM + GPU device.lost)
+
+### Gee verbatim terminal paste (drove this session)
+
+```
+[Curriculum] ✓ ELA-K Phase 2 DONE in 214.4s (300 intra-synapses Hebbian iterations across 25 pairs × 12 reps)
+[Curriculum] 🧩 ELA-K Phase START — _teachLetterCaseBinding
+[Brain] GPU DEVICE LOST (reported by compute.html) — reason=unknown message=A valid external Instance reference no longer exists.
+[Brain] compute_batch 209 timed out after 15s — GPU may be hung
+
+<--- Last few GCs --->
+Mark-Compact (reduce) 127.5 (131.7) -> 127.5 (131.7) MB ... external memory pressure
+<--- JS stacktrace --->
+FATAL ERROR: Committing semi space failed. Allocation failed - JavaScript heap out of memory
+```
+
+### Context — T18.17 worked, but exposed T18.18
+
+Gee's T18.17 retest: killed + restarted. Code-hash auto-clear fired (cluster.js changed). Pre-K re-taught in ~2 min. **ELA-K Phase 1 finished in <5 seconds** (the T18.13.c heartbeat window never tripped because Phase 1 completed faster than 5s — T18.17 GPU-bound fast path ran at ~100+ iter/s, 13-minute → 5-second speedup). Phase 2 ran at 1.4-2.1 iter/s = 214 seconds (CPU worker-pool path, unchanged by T18.17, expected).
+
+Then `_teachLetterCaseBinding` start → immediate GPU device.lost + Node V8 OOM.
+
+### Root cause — `intraSynapsesHebbian`'s fire-and-forget GPU shadow at 1.7 GB per call
+
+`cluster.intraSynapsesHebbian` at `js/brain/cluster.js:2094-2103` fired a CPU worker-pool Hebbian (authoritative) AND a fire-and-forget GPU shadow dispatch. The GPU path routed to `server/brain-server.js:gpuSparseHebbian` which for standalone (non-bound) matrices allocated:
+
+| Allocation | Size at 107M cortex |
+|------------|---------------------|
+| `Uint32Array.from(preSpikes)` | 428 MB |
+| `Uint32Array.from(postSpikes)` | 428 MB |
+| `Buffer.concat([hdr, lenPre, preBuf, lenPost, postBuf])` | ~856 MB |
+| **Total transient per call** | **~1.7 GB** |
+
+Held in V8 external memory until `_sparseSendBinary` finishes WebSocket transmission. Fire-and-forget means no await gates the caller; Buffer references stack in V8 external.
+
+Phase 2 dispatched 300 × 1.7 GB = **510 GB of attempted WebSocket transfer in 214 seconds**. localhost WS ceiling ~1.2 GB/sec drains only ~256 GB → queue stays half-full throughout Phase 2. When `_teachLetterCaseBinding` adds another 624 iterations, V8 external memory exhausts → `"Committing semi space failed"` → Node OOM. Meanwhile compute.html's choked WebSocket chokes the GPU device (can't drain fast enough to keep up with browser-side compute) → `device.lost` fires browser-side.
+
+Cascade #5 after T18.10/11/14 closed the prior four. Same downstream symptom (device.lost + system pressure), completely different mechanism:
+
+| Cascade | Mechanism |
+|---------|-----------|
+| T18.10 | VRAM leak on upload validation FAILURE |
+| T18.11 | VRAM leak on upload SUCCESS overwrite + stale-tab contention + flat reconnect |
+| T18.14 | 32-byte paramsBuf handle leak (hebbianSparse) + LIF buffer orphan (uploadCluster) |
+| **T18.18** | **1.7 GB/call Buffer volume accumulation in fire-and-forget GPU shadow** |
+
+### Why T18.17 didn't catch this
+
+T18.17 skipped CPU shadow for GPU-BOUND cross-projections. Intra-synapses is **always standalone** per `initGpu` comment (*"Intra-synapses always ship standalone — it runs on its own pre/post buffers, not bound into another cluster's spike buffer"*). T18.17 never touched the standalone path. The standalone GPU shadow is what the Buffer-volume bomb detonates through.
+
+### Why T18.14 didn't catch this
+
+T18.14.a fixed the 32-byte paramsBuf HANDLE-COUNT leak in hebbianSparse (a per-dispatch WebGPU buffer handle leak on the browser side). T18.18 is a 1.7 GB BUFFER-VOLUME accumulation in Node's V8 external memory on the server side. Same downstream symptom (device.lost cascade), different layer (server-side Node heap vs. browser-side WebGPU driver table), different size class (32 bytes × 30K handles = ~1 MB/teach vs. 1.7 GB × 300 calls = 510 GB/teach).
+
+### Fix — T18.18.a
+
+Removed the GPU shadow fire-and-forget block from `intraSynapsesHebbian`:
+
+```js
+// PRE-T18.18 — fired 1.7 GB of Buffer allocation per call, accumulated:
+if (this._gpuProxyReady && this._gpuProxy && this._gpuProxy.hebbian) {
+  this._gpuProxy.hebbian(key, pre, post, lr);  // fire-and-forget
+}
+
+// POST-T18.18 — block deleted. CPU worker pool stays authoritative.
+```
+
+Safe to remove because:
+- **(a)** CPU worker-pool path above is already authoritative per T17.2 / T17.7 comment.
+- **(b)** No probe at biological scale reads GPU intra-synapses weights — probes use `cluster.synapses.propagate` (CPU) via Session 106 direct-pattern probe pattern.
+- **(c)** Tick-loop GPU propagate on intra-synapses will use the GPU weights from initGpu upload and MISS Hebbian weight updates during teach. Acceptable because direct-pattern Hebbian writes `cluster.lastSpikes` directly (bypassing Rulkov dynamics), so teach doesn't depend on tick-loop accuracy. If live-chat quality later suffers, a periodic batched CPU→GPU sync can be added as T18.19 (deferred until measured).
+
+Cross-projection Hebbian (T18.17 bound fast path) is NOT affected — those run through T18.8 batched dispatch in bound mode shipping ~50 bytes per op, no pre/post bulk data.
+
+### Files touched (atomic commit)
+
+- `js/brain/cluster.js` — T18.18.a GPU shadow block removed from `intraSynapsesHebbian`, replaced with long explanatory comment block documenting the cascade diagnosis and safety rationale (~40 lines net, mostly comment)
+- `docs/NOW.md` — updated for session 114.19ap (T18.18 addendum)
+- `docs/TODO.md` — T18.18 entry prepended below T18.17 + T18.17 status update marking it proven working
+- `docs/FINALIZED.md` — this entry
+
+cluster.js is in the T18.12.a code-hash list → T18.18 boot triggers auto-clear → pre-K re-teach (~2 min cost).
+
+`node --check js/brain/cluster.js` clean.
+
+### Closure gate — open
+
+Gee-verification on next Part 2 run. Success criteria:
+- (a) `_teachLetterCaseBinding` Phase START + DONE banners fire without GPU device.lost
+- (b) Node process does NOT OOM during ELA-K teach
+- (c) Subsequent K.RF helpers (`_teachVowelSoundVariants` / `_teachRhymeFamilies` / `_teachSyllableCounts` / `_teachCVCSoundIsolation`) all complete with phase banners
+- (d) Curriculum advances into `_teachWordEmission` with T18.13.c heartbeats firing at healthy rate
+- (e) ELA-K gate probe runs after teach completes
+
+Claude cannot close — Gee-verification only.
+
+### What this closes architecturally
+
+Effectively deprecates the fire-and-forget GPU shadow pattern for any standalone sparse matrix at biological scale. Only sparse matrices that are GPU-BOUND (cross-projections post T17.7 Phase C.1 rebind) remain safe to dispatch per-teach because bound-mode ships ~50 bytes per op instead of 1.7 GB.
+
+If tick-loop GPU propagate accuracy on intra-synapses becomes a live-chat quality issue post-teach, T18.19 can ship a periodic sync: after every N teach iterations OR at end of cell, copy the current CPU sparse matrix values to GPU in a single bulk upload (chunked like initGpu did) instead of per-Hebbian-call shipping.
+
+---
+
 ## 2026-04-19 — Session 114.19ao: T18.17 SHIPPED — ELA-K Phase 1 velocity fix (skip CPU shadow Hebbian on GPU-bound cross-projections)
 
 ### Gee verbatim telemetry (drove this session)
