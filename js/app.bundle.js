@@ -600,7 +600,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "ba820456-8fac";
+var BUILD = "d40f52e7-084d";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -2653,13 +2653,6 @@ var NeuronCluster = class {
       }
     } else {
       this.synapses.hebbianUpdate(pre, post, lr);
-    }
-    if (this._gpuProxyReady && this._gpuProxy && this._gpuProxy.hebbian) {
-      const key = `${this.name}_intraSynapses`;
-      try {
-        this._gpuProxy.hebbian(key, pre, post, lr);
-      } catch {
-      }
     }
   }
   /**

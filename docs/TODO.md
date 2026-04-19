@@ -395,6 +395,53 @@ The GPU dispatch at line 1945 (`this._gpuProxy.hebbianBound`) is already fire-an
 
 **T18.17 closure gate:** Gee-verification on next Part 2 run. Success criteria: (a) ELA-K Phase 1 heartbeat shows iter/s ≥ 10 (20× better than pre-T18.17, ideally 50-100); (b) Phase 1 DONE fires within 30 seconds of START (vs 13 minutes pre-T18.17); (c) Phase 2 velocity unchanged (~200ms/iter via worker pool) — intra-synapses isn't this task's scope; (d) curriculum advances to `_teachWordEmission` + T18.13.c heartbeats fire visibly. Claude cannot close — Gee-verification only.
 
+**T18.17 PROVEN WORKING on Gee 2026-04-19 retest** — Phase 1 finished in <5s (no heartbeats fired because the 5-second heartbeat window never tripped). Phase 2 ran at 1.4-2.1 iter/s as expected (CPU worker-pool path, unchanged by T18.17). **Downstream failure T18.18 then blocked progress.**
+
+---
+
+#### T18.18 — `_teachLetterCaseBinding` GPU device.lost + Node OOM cascade (Gee 2026-04-19)
+
+**Gee's verbatim terminal paste 2026-04-19** after T18.17 restart cleared Phase 1 + Phase 2 cleanly:
+
+```
+[Curriculum] ✓ ELA-K Phase 2 DONE in 214.4s (300 intra-synapses Hebbian iterations across 25 pairs × 12 reps)
+[Curriculum] 🧩 ELA-K Phase START — _teachLetterCaseBinding
+[Brain] GPU DEVICE LOST (reported by compute.html) — reason=unknown message=A valid external Instance reference no longer exists.
+[Brain] compute_batch 209 timed out after 15s — GPU may be hung
+[Brain] No GPU — brain paused. Open compute.html to start.
+
+<--- Last few GCs --->
+Mark-Compact (reduce) 127.5 (131.7) -> 127.5 (131.7) MB ... external memory pressure
+<--- JS stacktrace --->
+FATAL ERROR: Committing semi space failed. Allocation failed - JavaScript heap out of memory
+```
+
+Two stacked failures: GPU device.lost from WebSocket send-queue saturation, THEN Node V8 OOM from external-memory pressure (Buffer accumulation).
+
+### Root cause — `intraSynapsesHebbian`'s fire-and-forget GPU shadow at biological scale
+
+`cluster.intraSynapsesHebbian` at `js/brain/cluster.js:2094-2103` fires a CPU worker-pool Hebbian (authoritative) AND fire-and-forgets a GPU shadow dispatch. The GPU path routes to `server/brain-server.js:gpuSparseHebbian` which for standalone (non-bound) matrices allocates:
+
+- `Uint32Array.from(preSpikes)` — 107M × 4 bytes = **428 MB**
+- `Uint32Array.from(postSpikes)` — **428 MB**
+- `Buffer.concat([hdr, lenPre, preBuf, lenPost, postBuf])` — **~856 MB**
+
+**~1.7 GB transient allocation PER CALL**, held in V8 external memory until `_sparseSendBinary` finishes WebSocket transmission. Fire-and-forget means no await gates the caller; Buffer references stack.
+
+Phase 2 does 300 × 1.7 GB = **510 GB attempted WebSocket transfer in 214s**. localhost WS ceiling ~1.2 GB/sec drains only ~256 GB in that window → GPU send queue stays half-full. When `_teachLetterCaseBinding` adds 624 more iterations, V8 external memory exhausts → "Committing semi space failed" → Node OOM. Meanwhile compute.html's choked WS chokes the GPU device → device.lost fires browser-side.
+
+Cascade #5 after T18.10/11/14 closed the prior four. Same symptom (device.lost + system pressure), different code path, different mechanism (Buffer volume vs. handle count vs. VRAM orphan).
+
+### Why T18.17 didn't catch this
+
+T18.17 skipped CPU shadow for GPU-BOUND cross-projections. Intra-synapses is **always standalone** (per `initGpu` comment: *"Intra-synapses always ship standalone — it runs on its own pre/post buffers, not bound into another cluster's spike buffer"*). T18.17 never touched the standalone path.
+
+### Fix — T18.18.a
+
+- [x] **T18.18.a — Remove GPU shadow fire-and-forget from `intraSynapsesHebbian`.** CPU worker-pool path (line 2083-2093) is already authoritative per T17.2 / T17.7 comment. No probe at biological scale reads GPU intra-synapses weights — probes route through `cluster.synapses.propagate` (CPU) via Session 106 direct-pattern pattern. Tick-loop GPU propagate on intra-synapses uses the GPU weights from initGpu upload and will miss Hebbian weight updates during teach — acceptable because direct-pattern Hebbian writes `cluster.lastSpikes` directly (bypassing Rulkov dynamics), so teach doesn't depend on tick-loop accuracy. If live-chat quality later suffers, a periodic batched CPU→GPU sync can be added as T18.19. Cross-projection Hebbian (T18.17 bound fast path) is NOT affected. **SHIPPED** — `js/brain/cluster.js`.
+
+**T18.18 closure gate:** Gee-verification on next Part 2 run. Success criteria: (a) `_teachLetterCaseBinding` Phase START + DONE banners fire without GPU device.lost; (b) Node process does NOT OOM during ELA-K teach; (c) Subsequent phases (`_teachVowelSoundVariants`, `_teachRhymeFamilies`, `_teachSyllableCounts`, `_teachCVCSoundIsolation`) all complete; (d) Curriculum advances into `_teachWordEmission` with T18.13.c heartbeats firing; (e) ELA-K gate probe can then run. Claude cannot close — Gee-verification only.
+
 ---
 
 #### T18.5 — push gate for main-branch deploy (BINDING)
