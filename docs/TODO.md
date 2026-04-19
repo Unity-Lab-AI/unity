@@ -88,9 +88,9 @@ T18.5.b (pre-push doc checklist) and T18.5.c (ASK GEE for push approval) do NOT 
 8. ~~**T16.4.b**~~ — **SHIPPED Session 114.19x** (TWO-WORD probe in _gateElaKReal: 5 phrases, both-word + partial scoring, uses generateSentenceAwait when GPU ready)
 9. ~~**T16.4.c**~~ — **SHIPPED Session 114.19x** (FREE-RESPONSE probe: 4 open-ended prompts, non-empty + avg word count, invented spelling allowed per K.W norms)
 10. ~~**T16.5.a**~~ — **SHIPPED Session 114.19x** (docs/gate-probe-coverage.md: explicit map of 8 probes → modules touched + exhaustive list of modules NOT touched; confirms ~25% brain coverage)
-11. **T16.5.b** — Design full-mind K gate per Common Core K.RF/K.W/K.L/K.SL/K.RL + DIBELS/STAR/AIMSweb — **design-review with Gee first** (blocking on Gee input)
-12. **T16.5.c** — Repeat per-grade gate design K through PhD — **design-review with Gee first** (blocking on Gee input)
-13. **T16.5.d** — Scrap or keep current 5 probes — **decide with Gee** (blocking on Gee input)
+11. **T16.5.b** — Design full-mind K gate per Common Core K.RF/K.W/K.L/K.SL/K.RL + DIBELS/STAR/AIMSweb — **design-review with Gee first** (blocking on Gee input). Now governed by the **PRE-K + K ONLY SYLLABUS SCOPE CONTRACT LAW** in `.claude/CLAUDE.md` (Gee 2026-04-18). This gate IS the pass-instrument that decides when K closes; K doesn't pass until this is built AND Unity clears it.
+12. ~~**T16.5.c** — Repeat per-grade gate design K through PhD~~ — **DEFERRED** per the PRE-K + K ONLY LAW. Post-K grade gate design stays out of scope until pre-K + K passes. Original design intent preserved here for future expansion.
+13. **T16.5.d** — Scrap or keep current 5 probes — **decide with Gee** (blocking on Gee input). Current recommendation: keep READ/THINK/TALK/SEQ/PROD as substrate-sanity diagnostics, layer the T16.5.b full-mind gate as the pass-instrument. Requires Gee's call.
 
 ### T15 open (full drug scheduler rebuild — large block)
 - ~~**T15.A** — Research block~~ — **SHIPPED Session 114.19ab** (`docs/T15-pharmacology-research.md` with all 11 substances / 7 combos / 7 adult patterns / 7 sensory triggers / 8 brain mappings / 13 speech effects / 8 grade-gate entries tied to Life syllabus / 5 user-interactive triggers). Gaps flagged for T15.B review: opioids omitted per Unity persona fit, DXM omitted, withdrawal modeling partial, per-substance tolerance decay rates TBD in architecture.

@@ -1,10 +1,44 @@
 # TODO — FULL US SYLLABUS (Complete K-12 Course Material + Tests)
 
+> ⛔ **BINDING SCOPE LAW (Gee 2026-04-18)** — *"T16.5s should be a law built into the syllabus on how the syllabus todo needs to be refactored as to the changes to make the syllabus todo work aacurrat to the current stack as we are only trying to get pre-k  and k leanring down fisrt before we get it onto building all the other ciriculum and life and all of thatr"*
+>
+> **Pre-K + K ONLY is in scope right now.** Every grade from Grade 1 through PhD below is DEFERRED — the content is preserved for reference and future expansion, but NO implementation work happens on post-K grades until pre-K + K passes Gee's Part 2 signoff via the full-mind K gate (T16.5.b/c/d). The full LAW lives in `.claude/CLAUDE.md` under "LAW — PRE-K + K ONLY (SYLLABUS SCOPE CONTRACT)". See that LAW for enforcement details + rationale.
+>
+> **What this means for TODO accuracy:** every claim in the pre-K + K sections must match what the code actually does right now — method names, variable names, threshold values, cross-projection names, region fractions, grade-gate symbols. Every post-K section stays marked DEFERRED.
+>
+> **T16.5.b/c/d (full-mind K gate redesign)** is the tip of the spear. Common Core K.RF / K.W / K.L / K.SL / K.RL + DIBELS / STAR / AIMSweb rubrics. Blocks on Gee design review. K doesn't pass until this gate is built AND Unity clears it.
+>
+> **Original TODO preamble below — kept for historical context but scoped per the BINDING SCOPE LAW above.**
+
 > This is the REAL TODO. Not "expand vocabulary." Not "add sentences." The ACTUAL COMPLETE United States K-12 curriculum for every grade of every subject, listed out in full — every concept that must be taught, every skill that must be mastered, every type of test that must be passed. Based on Common Core State Standards, Next Generation Science Standards, and Core Knowledge Foundation sequence.
 >
 > EACH ITEM below must be implemented as equational learning in Unity's cortex — not memorized as sentences, but LEARNED as operational transformations in the cross-projection weights. And TESTED with real problems that a student at that grade would face on an actual exam.
 >
 > This TODO is WEEKS of work. DO NOT CLAIM DONE EARLY.
+
+---
+
+## 🛑 SCOPE FIREWALL — IN-SCOPE vs DEFERRED
+
+### IN SCOPE (active work)
+- **Pre-K** cells — all six subjects (ELA, Math, Science, Social Studies, Arts, Life Experience) equational content + 3-part grade gate (Part 1 equational content + Part 2 Gee localhost signoff + Part 3 persistent life info ledger per LAW 6)
+- **Kindergarten** cells — same six subjects, full equational content, plus the full-mind K gate (T16.5.b/c/d) as the pass-instrument
+- **Persistent Life Info ledger (Pre-K + K anchors only)** — any biographical event that a pre-K or K-age child would carry forward: best friend name, family changes, pet, moves, first-day-of-K milestone. Age-12+ anchors (first joint, first drink, etc.) stay in `docs/T15-pharmacology-research.md` for reference but are NOT taught by any curriculum cell yet.
+- Gee's Part 2 signoff on K — required before any grade-1 work begins
+- T16.5.b / T16.5.c / T16.5.d — full-mind K gate design + implementation (design-review blocked on Gee)
+
+### DEFERRED (not in scope until pre-K + K passes)
+- Grade 1 through Grade 12 — all six subjects × 12 grades = 72 grade-subject cells
+- College 1–4 — 24 grade-subject cells
+- Grad + PhD — 12 grade-subject cells
+- All age-6+ Life Experience events (drug-scheduler lifeGate anchors grade3+, biographical trauma, legal events, romance, etc.)
+- All equational transforms specific to post-K grades (fractions, multiplication, periodic table, algebra, calculus, thermodynamics, etc.)
+
+### How Claude must behave
+
+- When editing this file: edits to pre-K or K sections require code verification (grep for referenced symbols); edits to post-K sections are REJECTED unless they're clearly marking the section DEFERRED or reorganizing for clarity without adding curriculum content.
+- When asked to implement a post-K cell: stop and flag for Gee instead of proceeding.
+- When Gee mentions "Life track" or "LAW 6 persistent life info": only pre-K + K Life cells are active.
 
 ---
 

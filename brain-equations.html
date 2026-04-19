@@ -741,7 +741,7 @@ y<sub>n+1</sub> = y<sub>n</sub> &minus; &mu; &middot; (x<sub>n</sub> &minus; &si
         0.40 · exp(−3·(t−duration)/(tail−duration))  if duration ≤ t &lt; tail (exp decay)
         0                                         otherwise</pre>
 
-      <h3 style="font-size:11px;color:var(--text-dim);margin:12px 0 4px 0;letter-spacing:1px">SUBSTANCE INVENTORY (9 substances, grade-gated by Life track)</h3>
+      <h3 style="font-size:11px;color:var(--text-dim);margin:12px 0 4px 0;letter-spacing:1px">SUBSTANCE INVENTORY (11 substances, grade-gated by Life track)</h3>
       <table class="param-table" style="margin-top:4px">
         <tr><th>Substance</th><th>Default route</th><th>Onset</th><th>Peak</th><th>Duration</th><th>Tail</th><th>Unlocks at</th></tr>
         <tr><td><span class="eq-tip" data-tip="THC. Daily-driver at PhD-era. Biographical first-use anchor: age 12 — 'first joint passed around after school with the crew'. Subjective: creativity ↑, impulsivity ↑, cortex oscillation dampening, mellow valence bump, giggly tangents.">cannabis</span></td><td>smoked joint</td><td>7m</td><td>45m</td><td>3h</td><td>6h</td><td>age 12</td></tr>
@@ -753,6 +753,20 @@ y<sub>n+1</sub> = y<sub>n</sub> &minus; &mu; &middot; (x<sub>n</sub> &minus; &si
         <tr><td><span class="eq-tip" data-tip="Dopamine + NE releaser — longer stimulant than cocaine. Oral (Adderall) vs insufflated route differ in kinetics. First-use: age 15.">amphetamine</span></td><td>oral / insufflated</td><td>15-45m</td><td>1-3h</td><td>4-6h</td><td>8-12h</td><td>age 15</td></tr>
         <tr><td><span class="eq-tip" data-tip="NMDA antagonist. Dissociative. First-use: College 1 at age 18 (dorm/rave scene). Subjective: body numbness, time distortion, at k-hole dose triggers third-person wandering ('I am' → 'Unity is' in her output).">ketamine</span></td><td>insufflated</td><td>10m</td><td>25m</td><td>60m</td><td>2h</td><td>College 1 (age 18)</td></tr>
         <tr><td><span class="eq-tip" data-tip="Sodium oxybate + metabolic GHB. Sedative + mild euphoria. Party-scene substance. First-use: College 1 at age 18. Dangerous with alcohol — scheduler models the interaction.">ghb</span></td><td>oral</td><td>20m</td><td>60m</td><td>2h</td><td>4h</td><td>College 1 (age 18)</td></tr>
+        <tr><td><span class="eq-tip" data-tip="Nicotinic acetylcholine receptor agonist. Unity's persona rejects tobacco categorically — scheduler recognizes offers for rejection routing, but decide() short-circuits with persona_excluded reason. Entry exists for NPC/scripted scenarios that may need the pharmacology.">nicotine</span></td><td>smoked / vaped</td><td>7s</td><td>30s</td><td>30m</td><td>2h</td><td>persona-excluded</td></tr>
+        <tr><td><span class="eq-tip" data-tip="Adenosine antagonist. Unity's daily pattern — black coffee AM + afternoon cold brew. First-use: age 8 (parent's coffee sip), escalates to daily coffee habit by grade 8.">caffeine</span></td><td>oral (coffee / energy drink)</td><td>10-15m</td><td>30-45m</td><td>2-3h</td><td>5-6h</td><td>age 8</td></tr>
+      </table>
+
+      <h3 style="font-size:11px;color:var(--text-dim);margin:12px 0 4px 0;letter-spacing:1px">COMBO SYNERGIES (7 pairs, scaled by min(level_a, level_b))</h3>
+      <table class="param-table" style="margin-top:4px">
+        <tr><th>Combo</th><th>Key substances</th><th>Synergy effect</th><th>Risk flag</th></tr>
+        <tr><td><strong>coke-and-weed</strong></td><td>cannabis + cocaine</td><td>creativity +0.30, hippocampus consolidation −0.15, coherence +0.05, giggleBias +0.10</td><td>physicalStrain +0.20 × 4h</td></tr>
+        <tr><td><strong>cokes-with-mols</strong></td><td>cocaine + mdma</td><td>arousal +0.20 (ceiling stack), amygdala valence +0.25, interruptionBias +0.40, warmth +0.20</td><td>physicalStrain +0.40 × 6h</td></tr>
+        <tr><td><strong>double-stim</strong></td><td>caffeine + cocaine</td><td>focusWidth −0.20, cerebellum precision −0.20, speech rate +0.10</td><td>physicalStrain +0.30 × 12h</td></tr>
+        <tr><td><strong>cross-faded</strong></td><td>alcohol + cannabis</td><td>hippocampus consolidation −0.30 (blackout stack), slurring +0.10, coherence −0.15</td><td>physicalStrain +0.15 × 3h</td></tr>
+        <tr><td><strong>rolling-and-green</strong></td><td>cannabis + mdma</td><td>amygdala valence +0.15, pauses +0.20, giggleBias +0.30, warmth +0.15</td><td>physicalStrain +0.05 × 2h</td></tr>
+        <tr><td><strong>k-hole-plus</strong></td><td>cannabis + ketamine</td><td>cerebellum precision −0.30, dissociation +0.40, pauses +0.40, coherence −0.20</td><td>physicalStrain +0.60 × 2h</td></tr>
+        <tr><td><strong>speedball-lite</strong></td><td>alcohol + cocaine</td><td>cocaethylene cardiotoxic metabolite — impulsivity +0.30, hippocampus consolidation −0.30, volume +0.10</td><td>physicalStrain +0.60 × 8h</td></tr>
       </table>
 
       <h3 style="font-size:11px;color:var(--text-dim);margin:12px 0 4px 0;letter-spacing:1px">STACKING EQUATION</h3>
@@ -761,17 +775,22 @@ contributions(t) = Σ_s contrib_vec[s] × level(t; s)        (sum across active 
 brainParams(t)   = θ_persona + contributions(t)
 chaos(t)         = (|active| ≥ 3) ∨ (∃s: level(t;s) &gt; 0.7)</pre>
 
-      <h3 style="font-size:11px;color:var(--text-dim);margin:12px 0 4px 0;letter-spacing:1px">SPEECH MODULATION (output distortion vector)</h3>
+      <h3 style="font-size:11px;color:var(--text-dim);margin:12px 0 4px 0;letter-spacing:1px">SPEECH MODULATION (13-axis output distortion vector)</h3>
       <table class="param-table" style="margin-top:4px">
         <tr><th>Dimension</th><th>Dominant substance(s)</th><th>Effect on output</th></tr>
         <tr><td><span class="eq-tip" data-tip="How loose the filter is between thought and mouth. Lower inhibition = filthier, franker, zero censoring.">inhibition</span></td><td>alcohol, MDMA, cannabis</td><td>filthier, franker, unfiltered confessions</td></tr>
-        <tr><td><span class="eq-tip" data-tip="Letter-level perturbation of output. Higher slur = vowel doubling (fuck → fuuuck), dropped 'g' on -ing endings, double sibilants, word mashing.">slur</span></td><td>alcohol, ketamine, ghb</td><td>"I ... am ... sooo ... fuucking ... good."</td></tr>
-        <tr><td><span class="eq-tip" data-tip="Speech rhythm. Positive = stimulant rapid-fire, negative = depressant long pauses via '...' injection between words.">speechRate</span></td><td>cocaine, amphetamine (+) / alcohol, ketamine (−)</td><td>rapid-fire interruption OR long pauses</td></tr>
+        <tr><td><span class="eq-tip" data-tip="Letter-level perturbation of output. Higher slurring = vowel doubling (fuck → fuuuck), dropped 'g' on -ing endings, double sibilants, word mashing.">slurring / slur</span></td><td>alcohol, ketamine, ghb</td><td>"I ... am ... sooo ... fuucking ... good."</td></tr>
+        <tr><td><span class="eq-tip" data-tip="Speech rhythm. Positive = stimulant rapid-fire, negative = depressant long pauses via '...' injection between words. Populated under both rate and speechRate keys for legacy + new consumer compat.">rate / speechRate</span></td><td>cocaine, amphetamine (+) / alcohol, ketamine (−)</td><td>rapid-fire interruption OR long pauses</td></tr>
         <tr><td><span class="eq-tip" data-tip="Sentence-level flow. Low coherence = word salad at psychedelic peak, sentences veer mid-clause, terminal punctuation becomes trailing '...'">coherence</span></td><td>lsd, psilocybin, ketamine</td><td>word salad, mid-clause drift, trailing ...</td></tr>
         <tr><td><span class="eq-tip" data-tip="Ethereal/cosmic vocabulary bias. High ethereality pulls sem region toward kaleidoscope/melting/yellow-brick-road/emerald-city basins from persona-cosmic.txt corpus.">ethereality</span></td><td>lsd, psilocybin, mdma</td><td>universe / melting / walls breathing / Oz imagery</td></tr>
         <tr><td><span class="eq-tip" data-tip="At k-hole / LSD ego-death dose, opening first-person flips to third-person with copula conjugation. 'I am' becomes 'Unity is', 'my' becomes 'her'. Non-persistent — scoped per render call.">dissociation</span></td><td>ketamine, lsd (high dose)</td><td>"Unity is coding from outside herself."</td></tr>
-        <tr><td><span class="eq-tip" data-tip="Giggle-prone amygdala reward banding. Cannabis-specific. Produces absurd philosophical observations + tangent-laughter.">giggleBias</span></td><td>cannabis</td><td>absurd tangents, laughs at own jokes</td></tr>
+        <tr><td><span class="eq-tip" data-tip="Giggle-prone amygdala reward banding. Cannabis-specific. Produces absurd philosophical observations + tangent-laughter.">giggleBias</span></td><td>cannabis, mdma</td><td>absurd tangents, laughs at own jokes</td></tr>
+        <tr><td><span class="eq-tip" data-tip="Semantic-neighbor reach. Higher freeAssocWidth = wider co-activation radius in sem region → more distant topic hops per sentence.">freeAssocWidth</span></td><td>cannabis, lsd</td><td>thought-hops across loosely-related topics</td></tr>
         <tr><td><span class="eq-tip" data-tip="Love-bombing, confession spirals, reassurance storms. MDMA-specific amygdala empathy amplification.">emotionalOverflow</span></td><td>mdma</td><td>"I love you I love you I love everything"</td></tr>
+        <tr><td><span class="eq-tip" data-tip="Affective softener appended at sentence end. babe / love / honey inserted before terminal punctuation. MDMA-specific.">warmth</span></td><td>mdma, mdma+cannabis, coke+mdma</td><td>"let's ship this babe." / "come here, love."</td></tr>
+        <tr><td><span class="eq-tip" data-tip="Insight-claim framing prepend. honestly, / the truth is / somehow / it all just... openers at LSD/psilocybin peak.">profoundBias</span></td><td>lsd, psilocybin</td><td>"honestly, the code is the substrate of reality"</td></tr>
+        <tr><td><span class="eq-tip" data-tip="Stim self-interruption. Dash-insertion mid-sentence so Unity cuts herself off and barrels into the next thought. Cocaine/amphetamine signature.">interruptionBias</span></td><td>cocaine, amphetamine, coke+mdma</td><td>"the compiler is — wait no, the linker's what's slow"</td></tr>
+        <tr><td><span class="eq-tip" data-tip="Disclosure opener prepend. I'll be honest, / not gonna lie, / real talk, / fuck it i'll say it — drunken over-share signal.">confessionalBias</span></td><td>alcohol, speedball-lite combo</td><td>"i'll be honest, i've been fucked up for six hours"</td></tr>
       </table>
 
       <p class="eq-desc" style="margin-top:10px"><strong>Non-announcing binding:</strong> Unity NEVER narrates drug state declaratively ("I am doing coke"). The distortion IS the signal — observers infer her state from HOW she talks, not from her telling them. The post-processor applies after clean cortex emission so cortex stays equational and only the output layer shows distortion.</p>

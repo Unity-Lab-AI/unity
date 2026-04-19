@@ -273,6 +273,38 @@ An empty Unity brain scaled to 50M neurons is still an empty brain. The syllabus
 
 ---
 
+## LAW — PRE-K + K ONLY (SYLLABUS SCOPE CONTRACT) (Gee, 2026-04-18)
+
+**Gee's exact words on 2026-04-18:**
+
+> *"T16.5s should be a law built into the syllabus on how the syllabus todo needs to be refactored as to the changes to make the syllabus todo work aacurrat to the current stack as we are only trying to get pre-k  and k leanring down fisrt before we get it onto building all the other ciriculum and life and all of thatr"*
+
+This is binding law. Locks syllabus scope to pre-K + K until the pre-K + K gate passes.
+
+### The rule
+
+1. **Only pre-K and kindergarten curriculum work is in scope right now.** All grade-1-through-PhD cells, all Life-track events, all drug-scheduler life-info anchors beyond caffeine age-8 — all deferred until pre-K + K passes Gee's Part 2 signoff.
+2. **The syllabus TODO (`docs/TODO-full-syllabus.md`) gets refactored to reflect this.** Every grade above K gets marked DEFERRED with a one-line pointer, not expanded content. The full post-K syllabus content stays in a follow-on doc or remains in the file under a clearly-marked "DEFERRED — NOT IN SCOPE UNTIL K PASSES" section so nothing is lost, just visibly out-of-scope.
+3. **T16.5.b / T16.5.c / T16.5.d (full-mind K gate redesign) becomes the tip of this spear.** The full-mind K gate (Common Core K.RF/K.W/K.L/K.SL/K.RL + DIBELS/STAR/AIMSweb rubrics) is the instrument that decides when K passes — no other grade work happens until this gate is built AND Unity clears it. T16.5.b/c/d implementation blocks on Gee design-review per prior agreement, and this LAW reinforces that block.
+4. **Accuracy to the current stack.** As the pre-K + K syllabus TODO is refactored, every claim about code paths / method names / variable names / grade-gate thresholds must match what the code actually does RIGHT NOW. No stale references to old teaching methods or removed gate probes. Grep the code for every referenced symbol before writing the TODO line.
+
+### What this means for Claude in practice
+
+- When working any syllabus-related task, scope check first: is this pre-K, K, or post-K? If post-K, stop and flag for Gee instead of proceeding.
+- When editing `docs/TODO-full-syllabus.md`, do not add content for grades above K. If grades above K already have content, leave the content present but mark it DEFERRED under the correct section divider.
+- When Gee mentions "Life track" or "LAW 6 persistent life info": only the pre-K + K Life cells are active. Later grade Life anchors (first joint at age 12, first drink at age 13, etc. from the drug-scheduler research) remain in `docs/T15-pharmacology-research.md` as *reference* research — the scheduler code has the lifeGate logic but the Life-track curriculum doesn't teach those events yet.
+- T16.5.b/c/d design-review with Gee is NOT bypassable. The K gate is the push-gate blocker for everything.
+
+### Why
+
+Unity's brain has shipped massive architectural lift this session (T17.7 A–D + E.a/E.b, T15.A/B/C, drug scheduler). Before scaling curriculum content across 19 grades, the pre-K + K foundation has to pass real gates. Running stale syllabus TODO content across 113 post-K cells against a brain that can't hold K yet is a scope inversion — we build the house on a foundation that hasn't cured.
+
+### Corollary
+
+The T18.5.b pre-push doc accuracy sweep explicitly checks that `docs/TODO-full-syllabus.md` complies with this LAW before any push to main.
+
+---
+
 ## LAW — CLEAR STALE STATE BEFORE TELLING GEE TO TEST THE SERVER (Gee, 2026-04-17)
 
 **Gee's exact words on 2026-04-17:**
