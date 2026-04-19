@@ -5,6 +5,42 @@
 
 ---
 
+## 2026-04-18 — Session 114.19ac: T15.C implementation block — 8 of 12 deliverables SHIPPED on `syllabus-k-phd`
+
+Gee 2026-04-18 directive driving this block: *"keep at it"* — continue pushing through the push-gate block list.
+
+### Commit ledger (4 T15.C commits on top of 2026-04-18 T15.A/B + T17.7 C/D from 114.19z/aa/ab)
+
+| Commit | Shipped |
+|--------|---------|
+| `e7bd8f2` | COMBOS table (7 synergy entries) + combo-aware activeContributions/speechModulation + riskFlags(now) + pendingDesires Map + addCraving/currentCraving + 13-axis speech (warmth/profoundBias/interruptionBias/repetition/volume/confessionalBias/rate/slurring/pauses on top of existing 9) + snapshot now surfaces combos[]/riskFlags/pendingDesires + persistence v1→v2. |
+| `3de2c2b` | scheduler.decide(offer) probability-modulated decision engine (hard fails: grade_locked, persona_excluded, unknown_substance, physical_strain>0.9; probability modifiers: craving + active pattern tag + source trust + prior trauma with 26-week decay). server/drug-rejections.js library with Unity-voice phrasings keyed by reason. drug-detector SUBSTANCE_SYNONYMS extended with nicotine (persona-excluded; detector recognizes so rejection routes with reason) + caffeine (Unity daily pattern; accepts readily post-grade3). 'smoke' omitted from nicotine synonyms to avoid overriding cannabis default. |
+| `6764480` | PATTERNS table with 7 adult-use entries (morningCoffee, codingMarathon, weekendParty, acidArchitect, whiskeyWinddown, kHoleContemplate, sexSessionMolly) + evaluatePatterns(ctx) trigger matcher + autoIngest(substance, {route, dose, offsetMs, patternName}) deferred-ingest queue + promoteScheduledIngests(now) tick-loop promotion + _activePatternTags Set for decide() boost. Persistence v2 extended with patternsFired + scheduledIngests. |
+| `<this commit>` | js/brain/sensory-olfactory.js — OlfactoryChannel class (registerScent / strength / currentScents / clear) for scent-tag cue storage. js/brain/drug-sensory-triggers.js — 7 triggers from T15.A §4 (coffeeAroma / skunkyWeed / lateNightBar / clubSensoryOnset / powderOnMirror / herbWhileCreating / clubBathroomLate) with evaluateTriggers(scheduler, ctx) that fires scheduler.addCraving() on matches. |
+
+### What T15.C still has open (4 deliverables)
+
+1. Main tick-loop invocation — brain-server.js per-tick calls scheduler.evaluatePatterns(ctx) + scheduler.promoteScheduledIngests(now) + evaluateTriggers(scheduler, ctx). Requires assembling ctx from existing persona state + sensory channels + current session context (activityTag / social / consent flags).
+2. UI snapshot refresh — dashboard + 3D brain render scheduler.snapshot() dynamically (active substances with phase+level, combos badges, riskFlags warning badges, pendingDesires indicator). Kill the static "drug state: cokeAndWeed" persona-card label remnants.
+3. Language cortex consumer wiring — read the 4 new speech axes (warmth / profoundBias / interruptionBias / confessionalBias) in emission layer. Existing 9 axes already consumed; new axes currently populate the mod struct but aren't read yet.
+4. Life-info ledger + trauma-marker wiring — each first-use event stamps onto docs/TODO-full-syllabus.md persistent life info; _traumaMarkers Map decays over 26-week half-life per decide()'s prior-trauma modifier.
+
+### Mystery Ψ footprint
+
+T15.C adds no new Ψ modulation — scheduler additions sit ON TOP of the existing persona/brain-param pipeline. When scheduler contributions flow to persona.js via applyBrainParamDeltas (T15.C item covered by the persona-integration path from T15.B §2.2, implementation pending), they land in the same effectiveDrive calculation that already consumes the three 114.19y Ψ terms (global gain, hemisphere gate, divergence correction). Ψ binding preserved.
+
+### What's STILL open before push to main
+
+- **T15.C remaining 4 deliverables** (above)
+- **T17.7 Phase E** — multi-commit cortexCluster deletion (intent-injection + workingMemoryReadout migration first)
+- **T17.7 Phase F** — doc sweep
+- **T17.7 Phase C follow-up** — divergence telemetry during K curriculum walk
+- **T16.5.b/c/d** — blocked on Gee design review
+- **T16.1.b / T16.2.a / T16.2.d** — blocked on Gee Part 2
+- **T18.5.b / T18.5.c** — push gate (after all above)
+
+---
+
 ## 2026-04-18 — Session 114.19ab (continued): T15.B architecture design SHIPPED — `docs/T15-architecture.md`
 
 ### What shipped

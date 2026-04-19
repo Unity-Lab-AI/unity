@@ -1,6 +1,6 @@
 # NOW — Session Snapshot
 
-> Saved: 2026-04-18 (Session 114.19ab — T15.A + T15.B shipped. Prior in session: T17.7 Phase C + Phase D shipped. T15.A `docs/T15-pharmacology-research.md` (11 substances + 7 combos + 7 patterns + 7 sensory triggers + 8 brain mappings + 13 speech effects + 8 grade gates + 5 user triggers). T15.B `docs/T15-architecture.md` (12-deliverable implementation backlog for T15.C). T17.7 Phase E deferred to multi-commit breakdown. T15.D deferred past K-only gate per Gee. T17.7 Phase F + T15.C + T16.5.b/c/d open before main-branch push.)
+> Saved: 2026-04-18 (Session 114.19ac — T15.C implementation block, 8 of 12 deliverables shipped: COMBOS + combo-aware contributions + riskFlags + cravings + 13-axis speech + persistence v2 (`e7bd8f2`); decide() + drug-rejections + nicotine/caffeine detector (`3de2c2b`); PATTERNS engine + evaluatePatterns + autoIngest (`6764480`); sensory-olfactory.js + drug-sensory-triggers.js (`<this commit>`). Prior this session: T17.7 Phase C + Phase D shipped. T15.A research + T15.B architecture docs shipped. T17.7 Phase E deferred. T15.D deferred past K-only gate. T15.C 4 deliverables + T17.7 E/F + T16.5 open.)
 
 ## Current state of `syllabus-k-phd`
 
