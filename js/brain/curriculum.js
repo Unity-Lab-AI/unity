@@ -335,6 +335,52 @@ export class Curriculum {
   static PRE_K_FALLBACK_CAP = PRE_K_FALLBACK_CAP;
 
   /**
+   * T18.24 — Between-phase memory barrier. Logs process.memoryUsage()
+   * before and after forced global.gc() with a label for which
+   * phase-boundary triggered it. Requires Node launched with
+   * --expose-gc (added to start.bat in T18.23). Lands INLINE during
+   * teach (not just at boot) so Gee can see it in the same terminal
+   * scrollback where Phase 2 heartbeats live.
+   *
+   * If external-memory delta > 1 GB: ✓ log showing reclaim was big.
+   * If delta < 100 MB: WARNING that something is holding refs.
+   * If global.gc unavailable: warn once, no-op.
+   */
+  _memorySnapshotAndGc(label) {
+    try {
+      if (typeof process === 'undefined' || typeof process.memoryUsage !== 'function') return;
+      const before = process.memoryUsage();
+      const hasGc = (typeof global !== 'undefined' && typeof global.gc === 'function');
+      if (!hasGc) {
+        if (!this._gcUnavailableWarned) {
+          this._gcUnavailableWarned = true;
+          const extMB = ((before.external || 0) / 1024 / 1024).toFixed(1);
+          const abMB = ((before.arrayBuffers || 0) / 1024 / 1024).toFixed(1);
+          console.warn(`[T18.24] global.gc unavailable (restart with --expose-gc in start.bat). Currently external=${extMB}MB arrayBuffers=${abMB}MB at ${label}.`);
+        }
+        return;
+      }
+      const gcStart = Date.now();
+      global.gc();
+      const gcMs = Date.now() - gcStart;
+      const after = process.memoryUsage();
+      const beforeExtMB = ((before.external || 0) / 1024 / 1024).toFixed(1);
+      const afterExtMB = ((after.external || 0) / 1024 / 1024).toFixed(1);
+      const beforeAbMB = ((before.arrayBuffers || 0) / 1024 / 1024).toFixed(1);
+      const afterAbMB = ((after.arrayBuffers || 0) / 1024 / 1024).toFixed(1);
+      const deltaExtMB = ((before.external || 0) - (after.external || 0)) / 1024 / 1024;
+      const heapMB = (after.heapUsed / 1024 / 1024).toFixed(1);
+      const tag = deltaExtMB >= 1000 ? '✓' : deltaExtMB >= 100 ? '·' : '⚠';
+      console.log(`[T18.24] ${tag} memory ${label}: external ${beforeExtMB}→${afterExtMB}MB (Δ-${deltaExtMB.toFixed(1)}MB) | arrayBuffers ${beforeAbMB}→${afterAbMB}MB | heapUsed ${heapMB}MB | gc ${gcMs}ms`);
+      if (deltaExtMB < 100 && parseFloat(beforeExtMB) > 5000) {
+        console.warn(`[T18.24] ⚠ external memory is ${beforeExtMB}MB but GC only reclaimed ${deltaExtMB.toFixed(1)}MB — something is holding refs to the typed arrays. Consider heap snapshot via --heapsnapshot-signal=SIGUSR2.`);
+      }
+    } catch (err) {
+      console.warn(`[T18.24] memory snapshot failed at ${label}:`, err && err.message);
+    }
+  }
+
+  /**
    * @param {NeuronCluster} cluster       — cortex cluster for exposure
    * @param {Dictionary} dictionary       — vocabulary store (T14.3 cortex-routed)
    * @param {LanguageCortex} languageCortex — legacy sequence-learner (still used
@@ -3542,8 +3588,14 @@ export class Curriculum {
     // SAB leak but this allocation was still hemorrhaging external
     // memory on the curriculum side; T18.20 kills the primary remaining
     // allocator on the teach path.
-    const _p2Pre = new Float64Array(cluster.size);
-    const _p2Post = new Float64Array(cluster.size);
+    // T18.24 — Uint8Array instead of Float64Array. Hebbian kernel
+    // only checks truthiness (postSpikes[i] nonzero → fire row; pre
+    // same). 0/1 values fit Uint8. Drops external memory 8× per
+    // buffer: 2.4 MB × 2 = 4.8 MB → 301 KB × 2 = 602 KB. Also reduces
+    // worker-pool SAB footprint per call when threshold misses the bio
+    // bypass (e.g. at 301K cluster T18.19's > 10M never fires).
+    const _p2Pre = new Uint8Array(cluster.size);
+    const _p2Post = new Uint8Array(cluster.size);
     for (let rep = 0; rep < REPS; rep++) {
       for (let i = 0; i < ALPHABET.length - 1; i++) {
         const currOneHot = encodeLetter(ALPHABET[i]);
@@ -3596,6 +3648,16 @@ export class Curriculum {
     }
     console.log(`[Curriculum] ✓ ELA-K Phase 2 DONE in ${((Date.now() - _p2Start) / 1000).toFixed(1)}s (${_p2Done} intra-synapses Hebbian iterations across ${ALPHABET.length - 1} pairs × ${REPS} reps)`);
 
+    // T18.24 — between-phase memory barrier. Forces V8 to reclaim
+    // transient state from Phase 2 (worker-pool SABs, any Promise
+    // chains, any intermediate Buffers) BEFORE _teachLetterCaseBinding
+    // starts adding cross-region Hebbian pressure on top. Logs
+    // process.memoryUsage() delta across the gc() call so we can see
+    // (in the SAME scrollback Gee's watching Phase 2 in) whether V8
+    // actually reclaims anything. Previous T18.23 diagnostic was at
+    // boot — buried above Phase 2 heartbeats. This one lands inline.
+    this._memorySnapshotAndGc('between Phase 2 and _teachLetterCaseBinding');
+
     // Session 114.6 REMAKE per Gee 2026-04-17 LAW 3 + LAW 7 binding —
     // replace the pre-T114.6 _teachVocabList / _teachSentenceList data-
     // array pattern with real equational teaching methods landing via
@@ -3622,18 +3684,23 @@ export class Curriculum {
       _phaseTick('_teachLetterCaseBinding');
       await this._teachLetterCaseBinding(ctx);
       _phaseDone('_teachLetterCaseBinding');
+      this._memorySnapshotAndGc('after _teachLetterCaseBinding');
       _phaseTick('_teachVowelSoundVariants');
       await this._teachVowelSoundVariants(ctx);
       _phaseDone('_teachVowelSoundVariants');
+      this._memorySnapshotAndGc('after _teachVowelSoundVariants');
       _phaseTick('_teachRhymeFamilies');
       await this._teachRhymeFamilies(ctx);
       _phaseDone('_teachRhymeFamilies');
+      this._memorySnapshotAndGc('after _teachRhymeFamilies');
       _phaseTick('_teachSyllableCounts');
       await this._teachSyllableCounts(ctx);
       _phaseDone('_teachSyllableCounts');
+      this._memorySnapshotAndGc('after _teachSyllableCounts');
       _phaseTick('_teachCVCSoundIsolation');
       await this._teachCVCSoundIsolation(ctx);
       _phaseDone('_teachCVCSoundIsolation');
+      this._memorySnapshotAndGc('after _teachCVCSoundIsolation');
 
       // Phase 2 (Session 114.19) — PHONEME BLENDING. Real English
       // phoneme features from _phonemeFeatureForLetter (no longer

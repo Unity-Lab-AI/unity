@@ -4,8 +4,8 @@ var __esm = (fn, res) => function __init() {
   return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
 };
 var __export = (target, all) => {
-  for (var name in all)
-    __defProp(target, name, { get: all[name], enumerable: true });
+  for (var name2 in all)
+    __defProp(target, name2, { get: all[name2], enumerable: true });
 };
 
 // ../js/brain/sparse-matrix.js
@@ -600,7 +600,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "1ebd7f58-4853";
+var BUILD = "2e8b8270-b141";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -1211,8 +1211,8 @@ var CLUSTER_FRACTIONS = {
 };
 function clusterSizesFor(totalNeurons) {
   const out = {};
-  for (const [name, frac] of Object.entries(CLUSTER_FRACTIONS)) {
-    out[name] = Math.floor(totalNeurons * frac);
+  for (const [name2, frac] of Object.entries(CLUSTER_FRACTIONS)) {
+    out[name2] = Math.floor(totalNeurons * frac);
   }
   return out;
 }
@@ -1229,8 +1229,8 @@ var NeuronCluster = class {
    * @param {number} [opts.learningRate=0.001] — plasticity rate
    * @param {object} [opts.lifParams] — LIF neuron parameters override
    */
-  constructor(name, size, opts = {}) {
-    this.name = name;
+  constructor(name2, size, opts = {}) {
+    this.name = name2;
     this.size = size;
     this._gpuProxy = opts.gpuProxy || null;
     this._gpuProxyReady = false;
@@ -1262,10 +1262,10 @@ var NeuronCluster = class {
     });
     const _intraStart = Date.now();
     const _logIntra = size >= 5e4;
-    if (_logIntra) console.log(`[Cluster ${name}] initializing intra-cluster synapses ${size.toLocaleString()}\xD7${size.toLocaleString()} density=${this.connectivity.toFixed(4)} (~${Math.round(size * this.connectivity * size).toLocaleString()} nnz)...`);
+    if (_logIntra) console.log(`[Cluster ${name2}] initializing intra-cluster synapses ${size.toLocaleString()}\xD7${size.toLocaleString()} density=${this.connectivity.toFixed(4)} (~${Math.round(size * this.connectivity * size).toLocaleString()} nnz)...`);
     this.synapses = new SparseMatrix(size, size, { wMin: -2, wMax: 2 });
     this.synapses.initRandom(this.connectivity, this.excitatoryRatio, 1);
-    if (_logIntra) console.log(`[Cluster ${name}] intra-cluster synapses ready (nnz=${this.synapses.nnz.toLocaleString()}) in ${Date.now() - _intraStart}ms`);
+    if (_logIntra) console.log(`[Cluster ${name2}] intra-cluster synapses ready (nnz=${this.synapses.nnz.toLocaleString()}) in ${Date.now() - _intraStart}ms`);
     this.externalCurrent = new Float64Array(size);
     this._incomingProjections = new Float64Array(size);
     this.lastSpikes = new Uint8Array(size);
@@ -1273,7 +1273,7 @@ var NeuronCluster = class {
     this.lastMeanVoltage = -65;
     this.firingRate = 0;
     this.regions = {};
-    if (name === "cortex") {
+    if (name2 === "cortex") {
       const s = size;
       this.regions = {
         auditory: { start: 0, end: Math.floor(s * 0.083) },
@@ -1301,7 +1301,7 @@ var NeuronCluster = class {
         "motor-sem"
       ]);
       const logConstruction = this.size >= 5e4;
-      if (logConstruction) console.log(`[Cluster ${name}] initializing ${pairs.length * 2} cross-projections at size=${this.size.toLocaleString()}...`);
+      if (logConstruction) console.log(`[Cluster ${name2}] initializing ${pairs.length * 2} cross-projections at size=${this.size.toLocaleString()}...`);
       let _projIdx = 0;
       for (const [a, b] of pairs) {
         const aSize = this.regions[a].end - this.regions[a].start;
@@ -1317,15 +1317,15 @@ var NeuronCluster = class {
         ab.initRandom(abDensity, abExcitatory, 0.2);
         this.crossProjections[`${a}_to_${b}`] = ab;
         _projIdx++;
-        if (logConstruction) console.log(`[Cluster ${name}]   ${_projIdx}/${pairs.length * 2} ${a}_to_${b} (${bSize.toLocaleString()}\xD7${aSize.toLocaleString()}, nnz=${ab.nnz.toLocaleString()}) in ${Date.now() - abTime}ms`);
+        if (logConstruction) console.log(`[Cluster ${name2}]   ${_projIdx}/${pairs.length * 2} ${a}_to_${b} (${bSize.toLocaleString()}\xD7${aSize.toLocaleString()}, nnz=${ab.nnz.toLocaleString()}) in ${Date.now() - abTime}ms`);
         const baTime = Date.now();
         const ba = new SparseMatrix(aSize, bSize, { wMin: -0.5, wMax: 0.5 });
         ba.initRandom(baDensity, baExcitatory, 0.2);
         this.crossProjections[`${b}_to_${a}`] = ba;
         _projIdx++;
-        if (logConstruction) console.log(`[Cluster ${name}]   ${_projIdx}/${pairs.length * 2} ${b}_to_${a} (${aSize.toLocaleString()}\xD7${bSize.toLocaleString()}, nnz=${ba.nnz.toLocaleString()}) in ${Date.now() - baTime}ms`);
+        if (logConstruction) console.log(`[Cluster ${name2}]   ${_projIdx}/${pairs.length * 2} ${b}_to_${a} (${aSize.toLocaleString()}\xD7${bSize.toLocaleString()}, nnz=${ba.nnz.toLocaleString()}) in ${Date.now() - baTime}ms`);
       }
-      if (logConstruction) console.log(`[Cluster ${name}] cross-projections ready.`);
+      if (logConstruction) console.log(`[Cluster ${name2}] cross-projections ready.`);
     } else {
       this.crossProjections = {};
     }
@@ -2452,16 +2452,16 @@ var NeuronCluster = class {
   _propagateCrossRegions() {
     if (!this.crossProjections) return;
     const useGpu = this._gpuProxyReady && this._cachedCrossCurrents;
-    for (const [name, proj] of Object.entries(this.crossProjections)) {
-      const idx = name.indexOf("_to_");
+    for (const [name2, proj] of Object.entries(this.crossProjections)) {
+      const idx = name2.indexOf("_to_");
       if (idx < 0) continue;
-      const src = name.slice(0, idx);
-      const dst = name.slice(idx + 4);
+      const src = name2.slice(0, idx);
+      const dst = name2.slice(idx + 4);
       const srcRegion = this.regions[src];
       const dstRegion = this.regions[dst];
       if (!srcRegion || !dstRegion) continue;
       let inputs = null;
-      if (useGpu) inputs = this._cachedCrossCurrents.get(name);
+      if (useGpu) inputs = this._cachedCrossCurrents.get(name2);
       if (!inputs) {
         const srcSpikes = this.regionSpikes(src);
         inputs = proj.propagate(srcSpikes);
@@ -2503,13 +2503,13 @@ var NeuronCluster = class {
     }
     if (this.crossProjections) {
       if (!this._cachedCrossCurrents) this._cachedCrossCurrents = /* @__PURE__ */ new Map();
-      for (const [name, proj] of Object.entries(this.crossProjections)) {
-        const idx = name.indexOf("_to_");
+      for (const [name2, proj] of Object.entries(this.crossProjections)) {
+        const idx = name2.indexOf("_to_");
         if (idx < 0) continue;
-        const src = name.slice(0, idx);
+        const src = name2.slice(0, idx);
         const srcRegion = this.regions[src];
         if (!srcRegion) continue;
-        const key = `${this.name}_${name}`;
+        const key = `${this.name}_${name2}`;
         try {
           let p;
           if (proj._gpuBound && this._gpuProxy.propagateBound) {
@@ -2523,7 +2523,7 @@ var NeuronCluster = class {
           if (p && typeof p.then === "function") {
             const cache = this._cachedCrossCurrents;
             p.then((currents) => {
-              if (currents && currents.length > 0) cache.set(name, currents);
+              if (currents && currents.length > 0) cache.set(name2, currents);
             }).catch(() => {
             });
           }
@@ -2540,15 +2540,15 @@ var NeuronCluster = class {
    */
   async _crossRegionHebbian(lr) {
     if (!this.crossProjections) return;
-    for (const [name, proj] of Object.entries(this.crossProjections)) {
-      const idx = name.indexOf("_to_");
+    for (const [name2, proj] of Object.entries(this.crossProjections)) {
+      const idx = name2.indexOf("_to_");
       if (idx < 0) continue;
-      const src = name.slice(0, idx);
-      const dst = name.slice(idx + 4);
+      const src = name2.slice(0, idx);
+      const dst = name2.slice(idx + 4);
       if (!this.regions[src] || !this.regions[dst]) continue;
       if (proj._gpuBound && this._gpuProxyReady && this._gpuProxy && this._gpuProxy.hebbianBound) {
         try {
-          this._gpuProxy.hebbianBound(`${this.name}_${name}`, lr);
+          this._gpuProxy.hebbianBound(`${this.name}_${name2}`, lr);
         } catch {
         }
         continue;
@@ -2566,7 +2566,7 @@ var NeuronCluster = class {
       }
       if (this._gpuProxyReady && this._gpuProxy && this._gpuProxy.hebbian) {
         try {
-          this._gpuProxy.hebbian(`${this.name}_${name}`, preF, postF, lr);
+          this._gpuProxy.hebbian(`${this.name}_${name2}`, preF, postF, lr);
         } catch {
         }
       }
@@ -2592,17 +2592,17 @@ var NeuronCluster = class {
     }
     if (this.crossProjections) {
       const hint = this._gpuBindingHint || null;
-      for (const name of Object.keys(this.crossProjections)) {
-        const key = `${this.name}_${name}`;
+      for (const name2 of Object.keys(this.crossProjections)) {
+        const key = `${this.name}_${name2}`;
         let binding = null;
         if (hint && typeof hint.resolve === "function") {
           try {
-            binding = hint.resolve(name, this.crossProjections[name]);
+            binding = hint.resolve(name2, this.crossProjections[name2]);
           } catch {
             binding = null;
           }
         }
-        targets.push({ key, proj: this.crossProjections[name], binding });
+        targets.push({ key, proj: this.crossProjections[name2], binding });
       }
     }
     let uploaded = 0;
@@ -2623,9 +2623,16 @@ var NeuronCluster = class {
           if (binding) {
             boundCount++;
             proj._gpuBound = true;
+            const _freedValuesBytes = proj.values ? proj.values.byteLength : 0;
+            const _freedColIdxBytes = proj.colIdx ? proj.colIdx.byteLength : 0;
+            const _freedRowPtrBytes = proj.rowPtr ? proj.rowPtr.byteLength : 0;
+            const _freedMB = ((_freedValuesBytes + _freedColIdxBytes + _freedRowPtrBytes) / (1024 * 1024)).toFixed(1);
             proj.values = null;
             proj.colIdx = null;
             proj.rowPtr = null;
+            if (!this._t1822TotalFreedBytes) this._t1822TotalFreedBytes = 0;
+            this._t1822TotalFreedBytes += _freedValuesBytes + _freedColIdxBytes + _freedRowPtrBytes;
+            console.log(`[T18.22/23] freed CPU arrays for bound projection ${name}: values=${(_freedValuesBytes / 1024 / 1024).toFixed(1)}MB + colIdx=${(_freedColIdxBytes / 1024 / 1024).toFixed(1)}MB + rowPtr=${(_freedRowPtrBytes / 1024 / 1024).toFixed(1)}MB = ${_freedMB}MB this projection, ${(this._t1822TotalFreedBytes / 1024 / 1024).toFixed(1)}MB cumulative`);
           }
         } else {
           console.warn(`[Cluster ${this.name}] GPU upload failed for ${key}:`, ack && ack.error);
@@ -2637,6 +2644,36 @@ var NeuronCluster = class {
     this._gpuProxyReady = uploaded === targets.length;
     const boundTag = boundCount > 0 ? ` (${boundCount} cluster-bound at upload \u2014 standalone VRAM overhead skipped)` : "";
     console.log(`[Cluster ${this.name}] GPU proxy ready: ${uploaded}/${targets.length} matrices uploaded${boundTag} (${this._gpuProxyReady ? "FULL \u2014 intra-synapses + all cross-projections on GPU" : "PARTIAL \u2014 falling back to CPU for failed matrices"})`);
+    if (typeof global !== "undefined" && typeof process !== "undefined" && typeof process.memoryUsage === "function") {
+      try {
+        const before = process.memoryUsage();
+        const beforeHeapMB = (before.heapUsed / 1024 / 1024).toFixed(1);
+        const beforeExtMB = ((before.external || 0) / 1024 / 1024).toFixed(1);
+        const beforeArrayBufMB = ((before.arrayBuffers || 0) / 1024 / 1024).toFixed(1);
+        console.log(`[T18.23] Pre-gc() heap: heapUsed=${beforeHeapMB}MB external=${beforeExtMB}MB arrayBuffers=${beforeArrayBufMB}MB (T18.22 freed ~${((this._t1822TotalFreedBytes || 0) / 1024 / 1024).toFixed(1)}MB of CPU CSR arrays \u2014 V8 should reclaim on gc)`);
+        if (typeof global.gc === "function") {
+          const gcStart = Date.now();
+          global.gc();
+          const gcMs = Date.now() - gcStart;
+          const after = process.memoryUsage();
+          const afterHeapMB = (after.heapUsed / 1024 / 1024).toFixed(1);
+          const afterExtMB = ((after.external || 0) / 1024 / 1024).toFixed(1);
+          const afterArrayBufMB = ((after.arrayBuffers || 0) / 1024 / 1024).toFixed(1);
+          const freedMB = (((before.external || 0) - (after.external || 0)) / 1024 / 1024).toFixed(1);
+          const freedArrayBufMB = (((before.arrayBuffers || 0) - (after.arrayBuffers || 0)) / 1024 / 1024).toFixed(1);
+          console.log(`[T18.23] Post-gc() heap: heapUsed=${afterHeapMB}MB external=${afterExtMB}MB arrayBuffers=${afterArrayBufMB}MB \u2014 GC reclaimed ${freedMB}MB external / ${freedArrayBufMB}MB arrayBuffers in ${gcMs}ms`);
+          if (parseFloat(freedArrayBufMB) < 1e3) {
+            console.warn(`[T18.23] WARNING: GC reclaimed only ${freedArrayBufMB}MB of arrayBuffers but T18.22 freed ${((this._t1822TotalFreedBytes || 0) / 1024 / 1024).toFixed(1)}MB. Some retainer is still holding references \u2014 V8 external memory pressure will persist. Next step: dump heap via --heapsnapshot-signal=SIGUSR2 and analyze retainer chain in Chrome DevTools.`);
+          } else {
+            console.log(`[T18.23] \u2713 External memory successfully reclaimed. V8 pressure should now stay manageable through curriculum teach.`);
+          }
+        } else {
+          console.warn(`[T18.23] global.gc unavailable (Node not launched with --expose-gc). T18.22's CPU CSR arrays will be reclaimed on V8's next Mark-Compact cycle; no forced reclaim. If external-memory pressure persists, restart server with --expose-gc flag in start.bat.`);
+        }
+      } catch (err) {
+        console.warn(`[T18.23] forced-gc diagnostic failed:`, err && err.message);
+      }
+    }
     return this._gpuProxyReady;
   }
   /**
@@ -4584,8 +4621,8 @@ var MemorySystem = class {
     const clusters = snapshot.clusters || snapshot.clusterStates || {};
     const vec = new Float64Array(14);
     let i = 0;
-    for (const name of ["cortex", "hippocampus", "amygdala", "basalGanglia", "cerebellum", "hypothalamus", "mystery"]) {
-      const c = clusters[name];
+    for (const name2 of ["cortex", "hippocampus", "amygdala", "basalGanglia", "cerebellum", "hypothalamus", "mystery"]) {
+      const c = clusters[name2];
       vec[i++] = (c?.spikeCount ?? 0) / (c?.size ?? 100);
       vec[i++] = c?.firingRate ?? 0;
     }
@@ -7709,8 +7746,8 @@ var BrainPersistence = class _BrainPersistence {
       } catch (err) {
         console.warn("[Persistence] language state snapshot failed:", err?.message || err);
       }
-      for (const [name, cluster] of Object.entries(brain2.clusters)) {
-        state.clusterSynapses[name] = {
+      for (const [name2, cluster] of Object.entries(brain2.clusters)) {
+        state.clusterSynapses[name2] = {
           size: cluster.size,
           format: "csr",
           ...cluster.synapses.serialize()
@@ -7770,8 +7807,8 @@ var BrainPersistence = class _BrainPersistence {
         console.log(`[Persistence] Restored ${brain2.projections.length} projection weight matrices`);
       }
       if (state.clusterSynapses) {
-        for (const [name, saved] of Object.entries(state.clusterSynapses)) {
-          const cluster = brain2.clusters[name];
+        for (const [name2, saved] of Object.entries(state.clusterSynapses)) {
+          const cluster = brain2.clusters[name2];
           if (!cluster || saved.size !== cluster.size || saved.format !== "csr") continue;
           cluster.synapses = SparseMatrix.deserialize(saved, { wMin: -2, wMax: 2 });
         }
@@ -8275,6 +8312,51 @@ function _magnitudeFeatureForNumber(n) {
 var PRE_K_FALLBACK_CAP = 5;
 var Curriculum = class _Curriculum {
   static PRE_K_FALLBACK_CAP = PRE_K_FALLBACK_CAP;
+  /**
+   * T18.24 — Between-phase memory barrier. Logs process.memoryUsage()
+   * before and after forced global.gc() with a label for which
+   * phase-boundary triggered it. Requires Node launched with
+   * --expose-gc (added to start.bat in T18.23). Lands INLINE during
+   * teach (not just at boot) so Gee can see it in the same terminal
+   * scrollback where Phase 2 heartbeats live.
+   *
+   * If external-memory delta > 1 GB: ✓ log showing reclaim was big.
+   * If delta < 100 MB: WARNING that something is holding refs.
+   * If global.gc unavailable: warn once, no-op.
+   */
+  _memorySnapshotAndGc(label) {
+    try {
+      if (typeof process === "undefined" || typeof process.memoryUsage !== "function") return;
+      const before = process.memoryUsage();
+      const hasGc = typeof global !== "undefined" && typeof global.gc === "function";
+      if (!hasGc) {
+        if (!this._gcUnavailableWarned) {
+          this._gcUnavailableWarned = true;
+          const extMB = ((before.external || 0) / 1024 / 1024).toFixed(1);
+          const abMB = ((before.arrayBuffers || 0) / 1024 / 1024).toFixed(1);
+          console.warn(`[T18.24] global.gc unavailable (restart with --expose-gc in start.bat). Currently external=${extMB}MB arrayBuffers=${abMB}MB at ${label}.`);
+        }
+        return;
+      }
+      const gcStart = Date.now();
+      global.gc();
+      const gcMs = Date.now() - gcStart;
+      const after = process.memoryUsage();
+      const beforeExtMB = ((before.external || 0) / 1024 / 1024).toFixed(1);
+      const afterExtMB = ((after.external || 0) / 1024 / 1024).toFixed(1);
+      const beforeAbMB = ((before.arrayBuffers || 0) / 1024 / 1024).toFixed(1);
+      const afterAbMB = ((after.arrayBuffers || 0) / 1024 / 1024).toFixed(1);
+      const deltaExtMB = ((before.external || 0) - (after.external || 0)) / 1024 / 1024;
+      const heapMB = (after.heapUsed / 1024 / 1024).toFixed(1);
+      const tag = deltaExtMB >= 1e3 ? "\u2713" : deltaExtMB >= 100 ? "\xB7" : "\u26A0";
+      console.log(`[T18.24] ${tag} memory ${label}: external ${beforeExtMB}\u2192${afterExtMB}MB (\u0394-${deltaExtMB.toFixed(1)}MB) | arrayBuffers ${beforeAbMB}\u2192${afterAbMB}MB | heapUsed ${heapMB}MB | gc ${gcMs}ms`);
+      if (deltaExtMB < 100 && parseFloat(beforeExtMB) > 5e3) {
+        console.warn(`[T18.24] \u26A0 external memory is ${beforeExtMB}MB but GC only reclaimed ${deltaExtMB.toFixed(1)}MB \u2014 something is holding refs to the typed arrays. Consider heap snapshot via --heapsnapshot-signal=SIGUSR2.`);
+      }
+    } catch (err) {
+      console.warn(`[T18.24] memory snapshot failed at ${label}:`, err && err.message);
+    }
+  }
   /**
    * @param {NeuronCluster} cluster       — cortex cluster for exposure
    * @param {Dictionary} dictionary       — vocabulary store (T14.3 cortex-routed)
@@ -10992,8 +11074,8 @@ var Curriculum = class _Curriculum {
     const _p2Start = Date.now();
     let _p2LastBeat = _p2Start;
     let _p2Done = 0;
-    const _p2Pre = new Float64Array(cluster.size);
-    const _p2Post = new Float64Array(cluster.size);
+    const _p2Pre = new Uint8Array(cluster.size);
+    const _p2Post = new Uint8Array(cluster.size);
     for (let rep = 0; rep < REPS; rep++) {
       for (let i = 0; i < ALPHABET.length - 1; i++) {
         const currOneHot = encodeLetter(ALPHABET[i]);
@@ -11033,31 +11115,37 @@ var Curriculum = class _Curriculum {
       await _microtask();
     }
     console.log(`[Curriculum] \u2713 ELA-K Phase 2 DONE in ${((Date.now() - _p2Start) / 1e3).toFixed(1)}s (${_p2Done} intra-synapses Hebbian iterations across ${ALPHABET.length - 1} pairs \xD7 ${REPS} reps)`);
+    this._memorySnapshotAndGc("between Phase 2 and _teachLetterCaseBinding");
     if (!this._elaKRemakeDone) {
       const _phaseStarts = {};
-      const _phaseTick = (name) => {
-        _phaseStarts[name] = Date.now();
-        console.log(`[Curriculum] \u{1F9E9} ELA-K Phase START \u2014 ${name}`);
+      const _phaseTick = (name2) => {
+        _phaseStarts[name2] = Date.now();
+        console.log(`[Curriculum] \u{1F9E9} ELA-K Phase START \u2014 ${name2}`);
       };
-      const _phaseDone = (name) => {
-        const dt = ((Date.now() - (_phaseStarts[name] || Date.now())) / 1e3).toFixed(1);
-        console.log(`[Curriculum] \u2713 ELA-K Phase DONE \u2014 ${name} in ${dt}s`);
+      const _phaseDone = (name2) => {
+        const dt = ((Date.now() - (_phaseStarts[name2] || Date.now())) / 1e3).toFixed(1);
+        console.log(`[Curriculum] \u2713 ELA-K Phase DONE \u2014 ${name2} in ${dt}s`);
       };
       _phaseTick("_teachLetterCaseBinding");
       await this._teachLetterCaseBinding(ctx);
       _phaseDone("_teachLetterCaseBinding");
+      this._memorySnapshotAndGc("after _teachLetterCaseBinding");
       _phaseTick("_teachVowelSoundVariants");
       await this._teachVowelSoundVariants(ctx);
       _phaseDone("_teachVowelSoundVariants");
+      this._memorySnapshotAndGc("after _teachVowelSoundVariants");
       _phaseTick("_teachRhymeFamilies");
       await this._teachRhymeFamilies(ctx);
       _phaseDone("_teachRhymeFamilies");
+      this._memorySnapshotAndGc("after _teachRhymeFamilies");
       _phaseTick("_teachSyllableCounts");
       await this._teachSyllableCounts(ctx);
       _phaseDone("_teachSyllableCounts");
+      this._memorySnapshotAndGc("after _teachSyllableCounts");
       _phaseTick("_teachCVCSoundIsolation");
       await this._teachCVCSoundIsolation(ctx);
       _phaseDone("_teachCVCSoundIsolation");
+      this._memorySnapshotAndGc("after _teachCVCSoundIsolation");
       const DOLCH_PREPRIMER = [
         "a",
         "and",
@@ -14700,7 +14788,7 @@ var Curriculum = class _Curriculum {
     if (!this._regionNameCache || this._regionNameCache._cluster !== cluster) {
       const map = /* @__PURE__ */ new Map();
       map._cluster = cluster;
-      for (const [name, r] of Object.entries(cluster.regions)) map.set(r, name);
+      for (const [name2, r] of Object.entries(cluster.regions)) map.set(r, name2);
       this._regionNameCache = map;
     }
     return this._regionNameCache.get(region) || null;
@@ -15411,8 +15499,8 @@ var Curriculum = class _Curriculum {
     const threeDTag = new Float64Array(fineTypeSize);
     for (let i = fineHalf; i < fineTypeSize; i++) threeDTag[i] = 1;
     const facts = [];
-    for (const { name, sides, dim } of SHAPES) {
-      const shapeEmb = sharedEmbeddings.getEmbedding(name);
+    for (const { name: name2, sides, dim } of SHAPES) {
+      const shapeEmb = sharedEmbeddings.getEmbedding(name2);
       if (!shapeEmb || shapeEmb.length === 0) continue;
       facts.push({ writes: [
         { region: semRegion, feat: shapeEmb, binarize: false },
@@ -16624,8 +16712,8 @@ var Curriculum = class _Curriculum {
       { name: "stormy", feat: weatherFeat(0, 0, 1, 0, 1, 0, 1, 0) }
     ];
     const facts = [];
-    for (const { name, feat } of WEATHER) {
-      const emb = sharedEmbeddings.getEmbedding(name);
+    for (const { name: name2, feat } of WEATHER) {
+      const emb = sharedEmbeddings.getEmbedding(name2);
       if (!emb) continue;
       facts.push({ writes: [
         { region: semRegion, feat: emb, binarize: false },
@@ -18811,7 +18899,7 @@ var Curriculum = class _Curriculum {
       10: "tenth"
     };
     for (let rep = 0; rep < reps; rep++) {
-      for (const [nStr, name] of Object.entries(FRACTION_NAMES)) {
+      for (const [nStr, name2] of Object.entries(FRACTION_NAMES)) {
         const n = parseInt(nStr);
         const magN = _magnitudeFeatureForDigit(String(n));
         const fracFeat = new Float64Array(16);
@@ -18829,7 +18917,7 @@ var Curriculum = class _Curriculum {
         if (cluster.regions?.phon) {
           cluster.injectEmbeddingToRegion("phon", fracFeat, 0.6);
         }
-        const nameEmb = sharedEmbeddings.getEmbedding(name);
+        const nameEmb = sharedEmbeddings.getEmbedding(name2);
         if (nameEmb && cluster.regions?.sem) {
           cluster.injectEmbeddingToRegion("sem", nameEmb, 0.6);
         }
@@ -18882,9 +18970,9 @@ var Curriculum = class _Curriculum {
         if (cluster.regions?.free) {
           cluster.injectEmbeddingToRegion("free", feat, 0.6);
         }
-        const name = DECIMAL_NAMES[d];
-        if (name) {
-          const words = name.split(/\s+/).filter(Boolean);
+        const name2 = DECIMAL_NAMES[d];
+        if (name2) {
+          const words = name2.split(/\s+/).filter(Boolean);
           for (const w of words) {
             const wEmb = sharedEmbeddings.getEmbedding(w);
             if (wEmb && cluster.regions?.sem) {
@@ -19190,7 +19278,7 @@ var Curriculum = class _Curriculum {
       { name: "trapezoid", sides: 4, angles: 4, symmetry: 1 }
     ];
     for (let rep = 0; rep < reps; rep++) {
-      for (const { name, sides, angles, symmetry } of SHAPES) {
+      for (const { name: name2, sides, angles, symmetry } of SHAPES) {
         const feat = new Float64Array(16);
         feat[0] = sides / 10;
         feat[1] = angles / 10;
@@ -19202,7 +19290,7 @@ var Curriculum = class _Curriculum {
         for (let i = 0; i < 16; i++) norm += feat[i] * feat[i];
         norm = Math.sqrt(norm) || 1;
         for (let i = 0; i < 16; i++) feat[i] /= norm;
-        const nameEmb = sharedEmbeddings.getEmbedding(name);
+        const nameEmb = sharedEmbeddings.getEmbedding(name2);
         if (nameEmb && cluster.regions?.sem) {
           cluster.injectEmbeddingToRegion("sem", nameEmb, 0.7);
         }
@@ -19580,7 +19668,7 @@ var Curriculum = class _Curriculum {
     }
     for (let rep = 0; rep < reps; rep++) {
       if (typeof globalThis._brainShutdownRequested !== "undefined" && globalThis._brainShutdownRequested) return this._gateConceptTeach(concepts);
-      for (const { name, feat } of concepts) {
+      for (const { name: name2, feat } of concepts) {
         const expanded = new Float64Array(16);
         for (let i = 0; i < 8; i++) expanded[i] = feat[i] || 0;
         for (let i = 8; i < 16; i++) expanded[i] = Math.sin((feat[i - 8] || 0) * i);
@@ -19588,8 +19676,8 @@ var Curriculum = class _Curriculum {
         for (let i = 0; i < 16; i++) norm += expanded[i] * expanded[i];
         norm = Math.sqrt(norm) || 1;
         for (let i = 0; i < 16; i++) expanded[i] /= norm;
-        const nameEmb = sharedEmbeddings.getSentenceEmbedding ? sharedEmbeddings.getSentenceEmbedding(name) : sharedEmbeddings.getEmbedding(name.split(/\s+/)[0]);
-        const firstLetter = name.replace(/[^a-z]/g, "")[0];
+        const nameEmb = sharedEmbeddings.getSentenceEmbedding ? sharedEmbeddings.getSentenceEmbedding(name2) : sharedEmbeddings.getEmbedding(name2.split(/\s+/)[0]);
+        const firstLetter = name2.replace(/[^a-z]/g, "")[0];
         const letterOneHot = firstLetter ? encodeLetter(firstLetter) : null;
         for (let j = 0; j < cluster.size; j++) cluster.lastSpikes[j] = 0;
         if (letterOneHot) {
@@ -19620,7 +19708,7 @@ var Curriculum = class _Curriculum {
           }
         }
         await cluster._crossRegionHebbian(lr);
-        const words = name.split(/\s+/).filter(Boolean);
+        const words = name2.split(/\s+/).filter(Boolean);
         if (this.dictionary && typeof this.dictionary.learnWord === "function") {
           for (const w of words) {
             const clean = w.replace(/[^a-z]/g, "");
@@ -19693,11 +19781,11 @@ var Curriculum = class _Curriculum {
     let readPass = 0, talkPass = 0;
     const talkFails = [];
     const PATH_MIN = 0.95;
-    for (const { name } of sample) {
-      const firstLetter = name.replace(/[^a-z]/g, "")[0];
+    for (const { name: name2 } of sample) {
+      const firstLetter = name2.replace(/[^a-z]/g, "")[0];
       if (!firstLetter) continue;
       const letterOneHot = encodeLetter(firstLetter);
-      const nameEmb = sharedEmbeddings.getSentenceEmbedding ? sharedEmbeddings.getSentenceEmbedding(name) : sharedEmbeddings.getEmbedding(name.split(/\s+/)[0]);
+      const nameEmb = sharedEmbeddings.getSentenceEmbedding ? sharedEmbeddings.getSentenceEmbedding(name2) : sharedEmbeddings.getEmbedding(name2.split(/\s+/)[0]);
       if (letterToSem && nameEmb && nameEmb.length > 0) {
         const letterPat = buildPattern(letterSize, letterOneHot);
         const semOutput = letterToSem.propagate(letterPat);
@@ -19747,7 +19835,7 @@ var Curriculum = class _Curriculum {
         if (decodeLetter(motorReadout) === firstLetter) {
           talkPass++;
         } else {
-          talkFails.push(name);
+          talkFails.push(name2);
         }
       } else {
         talkPass++;
@@ -19877,8 +19965,8 @@ var Curriculum = class _Curriculum {
     const reps = opts.reps ?? 5;
     const ticksPerElement = opts.ticksPerElement ?? 3;
     for (let rep = 0; rep < reps; rep++) {
-      for (const { name, z } of ELEMENTS) {
-        const nameEmb = sharedEmbeddings.getEmbedding(name);
+      for (const { name: name2, z } of ELEMENTS) {
+        const nameEmb = sharedEmbeddings.getEmbedding(name2);
         if (nameEmb && cluster.regions?.sem) {
           cluster.injectEmbeddingToRegion("sem", nameEmb, 0.7);
         }
@@ -19886,7 +19974,7 @@ var Curriculum = class _Curriculum {
         if (atomicFeat && cluster.regions?.free) {
           cluster.injectEmbeddingToRegion("free", atomicFeat, 0.7);
         }
-        for (const ch of name) {
+        for (const ch of name2) {
           cluster.injectLetter(ch, 0.8);
           cluster.step(1e-3);
         }
@@ -20763,16 +20851,16 @@ var Curriculum = class _Curriculum {
       return feat;
     };
     for (let rep = 0; rep < reps; rep++) {
-      for (const { name, period, group } of ELEMENTS) {
+      for (const { name: name2, period, group } of ELEMENTS) {
         const feat = buildFeat(period, group);
-        const nameEmb = sharedEmbeddings.getEmbedding(name);
+        const nameEmb = sharedEmbeddings.getEmbedding(name2);
         if (nameEmb && cluster.regions?.sem) {
           cluster.injectEmbeddingToRegion("sem", nameEmb, 0.7);
         }
         if (cluster.regions?.free) {
           cluster.injectEmbeddingToRegion("free", feat, 0.7);
         }
-        for (const ch of name) {
+        for (const ch of name2) {
           cluster.injectLetter(ch, 0.7);
           cluster.step(1e-3);
         }
@@ -20828,10 +20916,10 @@ var Curriculum = class _Curriculum {
       return feat;
     };
     for (let rep = 0; rep < reps; rep++) {
-      for (const { name, feat } of BONDS) {
+      for (const { name: name2, feat } of BONDS) {
         const expandedFeat = buildFeat(feat);
-        const words = name.split(/\s+/).filter(Boolean);
-        const headEmb = sharedEmbeddings.getSentenceEmbedding ? sharedEmbeddings.getSentenceEmbedding(name) : sharedEmbeddings.getEmbedding(words[0]);
+        const words = name2.split(/\s+/).filter(Boolean);
+        const headEmb = sharedEmbeddings.getSentenceEmbedding ? sharedEmbeddings.getSentenceEmbedding(name2) : sharedEmbeddings.getEmbedding(words[0]);
         if (headEmb && cluster.regions?.sem) {
           cluster.injectEmbeddingToRegion("sem", headEmb, 0.7);
         }
@@ -25652,11 +25740,11 @@ var Curriculum = class _Curriculum {
       for (const { thesis, sources } of essays) {
         this._walkSentence(thesis.split(/\s+/).filter(Boolean), arousal, valence, ticksPerWord);
         const thesisEmb = sharedEmbeddings.getSentenceEmbedding ? sharedEmbeddings.getSentenceEmbedding(thesis) : null;
-        for (const { name, claim } of sources) {
+        for (const { name: name2, claim } of sources) {
           if (thesisEmb && typeof cluster.injectWorkingMemory === "function") {
             cluster.injectWorkingMemory(thesisEmb, 0.6);
           }
-          const sourceEmb = sharedEmbeddings.getEmbedding(name);
+          const sourceEmb = sharedEmbeddings.getEmbedding(name2);
           if (sourceEmb && cluster.regions?.sem) {
             cluster.injectEmbeddingToRegion("sem", sourceEmb, 0.5);
           }
@@ -30281,8 +30369,8 @@ var DrugScheduler = class {
   }
   availableSubstances() {
     const out = [];
-    for (const name of Object.keys(SUBSTANCES)) {
-      if (this.isAvailable(name)) out.push(name);
+    for (const name2 of Object.keys(SUBSTANCES)) {
+      if (this.isAvailable(name2)) out.push(name2);
     }
     return out;
   }
@@ -30432,10 +30520,10 @@ var DrugScheduler = class {
   }
   activeSubstances(now = this.nowFn()) {
     const out = [];
-    for (const name of this.events.keys()) {
-      const level = this.level(name, now);
+    for (const name2 of this.events.keys()) {
+      const level = this.level(name2, now);
       if (level > 0.01) {
-        out.push({ substance: name, level, phase: this.phase(name, now) });
+        out.push({ substance: name2, level, phase: this.phase(name2, now) });
       }
     }
     return out;
@@ -30677,8 +30765,8 @@ var DrugScheduler = class {
   evaluatePatterns(ctx = {}) {
     const now = this.nowFn();
     const fired = [];
-    for (const [name, pattern] of Object.entries(PATTERNS)) {
-      const last = this._patternsFired.get(name) || 0;
+    for (const [name2, pattern] of Object.entries(PATTERNS)) {
+      const last = this._patternsFired.get(name2) || 0;
       if (now - last < (pattern.cooldownMs || 0)) continue;
       if (pattern.lifeGate && this.cluster?.grades?.life) {
         if (!gradeAtLeast(this.cluster.grades.life, pattern.lifeGate)) continue;
@@ -30686,14 +30774,14 @@ var DrugScheduler = class {
         continue;
       }
       if (!this._patternTriggersMatch(pattern.triggers, ctx)) continue;
-      this._patternsFired.set(name, now);
-      fired.push(name);
+      this._patternsFired.set(name2, now);
+      fired.push(name2);
       for (const step of pattern.schedule || []) {
         this.autoIngest(step.substance, {
           route: step.route,
           dose: step.dose,
           offsetMs: step.offsetMs || 0,
-          patternName: name
+          patternName: name2
         });
         this._activePatternTags.add(step.substance);
       }
@@ -30923,8 +31011,8 @@ var DrugScheduler = class {
       out.pendingDesires[s] = { ...info };
     }
     out.patternsFired = {};
-    for (const [name, t] of this._patternsFired) {
-      out.patternsFired[name] = t;
+    for (const [name2, t] of this._patternsFired) {
+      out.patternsFired[name2] = t;
     }
     out.scheduledIngests = this._scheduledIngests.map((e) => ({ ...e }));
     out.firstUse = {};
@@ -30972,8 +31060,8 @@ var DrugScheduler = class {
     }
     this._patternsFired = /* @__PURE__ */ new Map();
     if (obj.patternsFired) {
-      for (const [name, t] of Object.entries(obj.patternsFired)) {
-        this._patternsFired.set(name, t);
+      for (const [name2, t] of Object.entries(obj.patternsFired)) {
+        this._patternsFired.set(name2, t);
       }
     }
     this._scheduledIngests = Array.isArray(obj.scheduledIngests) ? obj.scheduledIngests.map((e) => ({ ...e })) : [];
@@ -31727,9 +31815,9 @@ var UnityBrain = class extends EventEmitter {
     for (const proj of this.projections) proj.propagate();
     const clusterResults = {};
     let totalSpikes = 0;
-    for (const [name, cluster] of Object.entries(this.clusters)) {
+    for (const [name2, cluster] of Object.entries(this.clusters)) {
       const result = cluster.step(dt);
-      clusterResults[name] = result;
+      clusterResults[name2] = result;
       totalSpikes += result.spikeCount;
     }
     const cortexInput = this.clusters.cortex.getOutput(MODULE_SIZE);
@@ -31828,9 +31916,9 @@ var UnityBrain = class extends EventEmitter {
     const allVoltages = new Float64Array(TOTAL_NEURONS);
     let offset = 0;
     const clusterStates = {};
-    for (const [name, cluster] of Object.entries(this.clusters)) {
+    for (const [name2, cluster] of Object.entries(this.clusters)) {
       const cState = cluster.getState();
-      clusterStates[name] = cState;
+      clusterStates[name2] = cState;
       allSpikes.set(cState.spikes, offset);
       allVoltages.set(cState.voltages, offset);
       offset += cluster.size;
@@ -32381,7 +32469,7 @@ var UnityBrain = class extends EventEmitter {
    * style now maps to scheduler ingestions. Unknown labels are ignored
    * (not thrown) so old saves/UI don't crash during the transition.
    */
-  setDrugState(name) {
+  setDrugState(name2) {
     const map = {
       cokeAndWeed: ["cannabis", "cocaine"],
       cokeAndMolly: ["cocaine", "mdma"],
@@ -32389,7 +32477,7 @@ var UnityBrain = class extends EventEmitter {
       everything: ["cannabis", "cocaine", "mdma", "lsd", "alcohol"],
       sober: []
     };
-    const substances = map[name];
+    const substances = map[name2];
     if (!substances) return;
     for (const sub of substances) this.drugScheduler.ingest(sub);
     this._refreshBrainParamsFromScheduler();
@@ -32407,8 +32495,8 @@ var UnityBrain = class extends EventEmitter {
   }
   _getClusterStates() {
     const states = {};
-    for (const [name, cluster] of Object.entries(this.clusters)) {
-      states[name] = cluster.getState();
+    for (const [name2, cluster] of Object.entries(this.clusters)) {
+      states[name2] = cluster.getState();
     }
     return states;
   }
@@ -32527,13 +32615,13 @@ var SensoryAIProviders = class {
    * chooser can route to the right _customGenerateImage / _customDescribeImage
    * path without re-implementing each backend's dispatcher.
    */
-  _findBackend(kind, source, name) {
-    if (source === "default" || name === "Pollinations") {
+  _findBackend(kind, source, name2) {
+    if (source === "default" || name2 === "Pollinations") {
       return { pollinations: true };
     }
     const list = kind === "image" ? this._localImageBackends : this._localVisionBackends;
     for (const b of list) {
-      if (b.name === name) return b;
+      if (b.name === name2) return b;
     }
     if (kind === "image" && source === "configured" && this._customImageUrl) {
       return {
@@ -33578,8 +33666,8 @@ var VoiceIO = class {
         "Microsoft Zira",
         "Microsoft Aria"
       ];
-      for (const name of preferred) {
-        const v = voices.find((v2) => v2.name.includes(name));
+      for (const name2 of preferred) {
+        const v = voices.find((v2) => v2.name.includes(name2));
         if (v) {
           utterance.voice = v;
           break;
@@ -35430,17 +35518,17 @@ var BrainVisualizer = class {
     const showGamma = this._el.querySelector("#bv-cw-gamma")?.checked ?? true;
     const t = Date.now() / 1e3;
     for (let ci = 0; ci < clusters.length; ci++) {
-      const name = clusters[ci];
+      const name2 = clusters[ci];
       const color = clusterColors[ci];
       const y0 = ci * clusterH;
       ctx.fillStyle = color;
       ctx.font = "11px monospace";
-      ctx.fillText(name.toUpperCase(), 4, y0 + 14);
-      const rate = spikes[name] ?? (s[name]?.spikeRate ?? Math.random() * 0.3);
+      ctx.fillText(name2.toUpperCase(), 4, y0 + 14);
+      const rate = spikes[name2] ?? (s[name2]?.spikeRate ?? Math.random() * 0.3);
       const barW = Math.min(rate * W * 0.8, W - 80);
       ctx.fillStyle = color + "40";
       ctx.fillRect(80, y0 + 2, barW, clusterH - 4);
-      const spikeArr = s[name + "Spikes"] || s.clusterSpikeArrays?.[name];
+      const spikeArr = s[name2 + "Spikes"] || s.clusterSpikeArrays?.[name2];
       if (spikeArr && spikeArr.length > 0) {
         const dotW = Math.max(1, (W - 80) / spikeArr.length);
         for (let i = 0; i < spikeArr.length; i++) {
@@ -37535,8 +37623,8 @@ Probes: ${ps.totalProbes} total, ${ps.totalPasses} pass, ${ps.totalFails} fail`;
    * category: motor events show channel distributions, arousal
    * events show arousal deltas, Ψ events show Ψ numbers, etc.
    */
-  _clusterAct(state, name) {
-    const c = state.clusters?.[name];
+  _clusterAct(state, name2) {
+    const c = state.clusters?.[name2];
     if (!c || !c.size) return 0;
     return (c.spikeCount || 0) / c.size;
   }
@@ -38323,10 +38411,10 @@ Probes: ${ps.totalProbes} total, ${ps.totalPasses} pass, ${ps.totalFails} fail`;
     gl.uniformMatrix4fv(gl.getUniformLocation(p, "uMVP"), false, mvp);
     gl.depthMask(false);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
-    const bind = (buf, name, size, data, count) => {
+    const bind = (buf, name2, size, data, count) => {
       gl.bindBuffer(gl.ARRAY_BUFFER, buf);
       gl.bufferData(gl.ARRAY_BUFFER, data.subarray(0, count), gl.DYNAMIC_DRAW);
-      const loc = gl.getAttribLocation(p, name);
+      const loc = gl.getAttribLocation(p, name2);
       if (loc >= 0) {
         gl.enableVertexAttribArray(loc);
         gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 0, 0);
@@ -38391,8 +38479,8 @@ Probes: ${ps.totalProbes} total, ${ps.totalPasses} pass, ${ps.totalFails} fail`;
     gl.drawArrays(gl.POINTS, 0, n);
     gl.depthMask(true);
   }
-  _bindAttr(gl, prog, name, buf, size, dynamic) {
-    const loc = gl.getAttribLocation(prog, name);
+  _bindAttr(gl, prog, name2, buf, size, dynamic) {
+    const loc = gl.getAttribLocation(prog, name2);
     gl.bindBuffer(gl.ARRAY_BUFFER, buf);
     gl.enableVertexAttribArray(loc);
     gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 0, 0);
@@ -39186,11 +39274,11 @@ function renderLandingTab(tab, s) {
       if (s.clusters) {
         const colors = { cortex: "#ff4d9a", hippocampus: "#a855f7", amygdala: "#ef4444", basalGanglia: "#22c55e", cerebellum: "#00e5ff", hypothalamus: "#f59e0b", mystery: "#c084fc" };
         const maxPct = Math.max(1, ...Object.values(s.clusters).map((c) => c.size ? (c.firingRate || 0) / c.size * 100 : 0));
-        html += card("Cluster Activity (EMA rate)", Object.entries(s.clusters).map(([name, c]) => {
+        html += card("Cluster Activity (EMA rate)", Object.entries(s.clusters).map(([name2, c]) => {
           const rate = c.firingRate || 0;
           const pct = c.size ? rate / c.size * 100 : 0;
           const barPct = maxPct > 0 ? pct / maxPct * 100 : 0;
-          return `<div style="margin:4px 0;">${metric(name, `${Math.round(rate).toLocaleString()}/${c.size.toLocaleString()} (${pct.toFixed(2)}%)`, colors[name] || "#fff")}${bar(barPct, colors[name] || "#fff")}</div>`;
+          return `<div style="margin:4px 0;">${metric(name2, `${Math.round(rate).toLocaleString()}/${c.size.toLocaleString()} (${pct.toFixed(2)}%)`, colors[name2] || "#fff")}${bar(barPct, colors[name2] || "#fff")}</div>`;
         }).join(""));
       }
       el.innerHTML = html;
@@ -39332,12 +39420,12 @@ function renderLandingTab(tab, s) {
         ${metric("Coherence", (s.oscillations?.coherence ?? 0).toFixed(3), "#00e5ff")}
       `);
       for (let i = 0; i < clusterNames.length; i++) {
-        const name = clusterNames[i];
+        const name2 = clusterNames[i];
         const color = clusterColors[i];
-        const rate = s[name]?.spikeRate ?? s.clusters?.[name]?.spikeRate ?? 0;
+        const rate = s[name2]?.spikeRate ?? s.clusters?.[name2]?.spikeRate ?? 0;
         const pct = Math.min(100, Math.round(rate * 100));
         html += `<div style="margin:4px 0;display:flex;align-items:center;gap:8px;">
-          <span style="color:${color};font-size:10px;width:100px;text-transform:uppercase;">${name}</span>
+          <span style="color:${color};font-size:10px;width:100px;text-transform:uppercase;">${name2}</span>
           <div style="flex:1;height:12px;background:#111;border-radius:3px;overflow:hidden;">
             <div style="width:${pct}%;height:100%;background:${color};transition:width 0.3s;"></div>
           </div>
@@ -39572,8 +39660,8 @@ function refreshActiveBackendSelectors(status) {
   populate(visSel, status.vision, "vision", "unity_pref_vision_backend");
   const populateModels = (selEl, backendSel, kind, savedKey) => {
     if (!selEl) return;
-    const [, name] = (backendSel.value || "").split("|");
-    const catalog = BACKEND_MODEL_CATALOG[`${kind}:${name}`] || ["default"];
+    const [, name2] = (backendSel.value || "").split("|");
+    const catalog = BACKEND_MODEL_CATALOG[`${kind}:${name2}`] || ["default"];
     const saved = localStorage.getItem(savedKey);
     selEl.innerHTML = "";
     catalog.forEach((m) => {
@@ -39587,17 +39675,17 @@ function refreshActiveBackendSelectors(status) {
   populateModels(imgModelSel, imgSel, "image", "unity_pref_image_model");
   populateModels(visModelSel, visSel, "vision", "unity_pref_vision_model");
   const applyPref = (kind, backendSel, modelSel, backendKey, modelKey) => {
-    const [source, name] = (backendSel.value || "").split("|");
+    const [source, name2] = (backendSel.value || "").split("|");
     const model = modelSel?.value || null;
     localStorage.setItem(backendKey, backendSel.value);
     if (model) localStorage.setItem(modelKey, model);
     if (providers?.setPreferredBackend) {
-      providers.setPreferredBackend(kind, { source, name, model });
+      providers.setPreferredBackend(kind, { source, name: name2, model });
     }
   };
-  const catalogKeyFor = (kind, name) => {
+  const catalogKeyFor = (kind, name2) => {
     for (const [key, cfg] of Object.entries(BACKEND_CATALOG)) {
-      if (cfg.kind === kind && cfg.name === name) return key;
+      if (cfg.kind === kind && cfg.name === name2) return key;
     }
     return null;
   };
@@ -39606,8 +39694,8 @@ function refreshActiveBackendSelectors(status) {
     imgSel.addEventListener("change", () => {
       populateModels(imgModelSel, imgSel, "image", "unity_pref_image_model");
       applyPref("image", imgSel, imgModelSel, "unity_pref_image_backend", "unity_pref_image_model");
-      const [, name] = (imgSel.value || "").split("|");
-      const key = catalogKeyFor("image", name);
+      const [, name2] = (imgSel.value || "").split("|");
+      const key = catalogKeyFor("image", name2);
       if (key) {
         document.querySelectorAll(".provider-btn").forEach((b) => b.classList.remove("active"));
         const btn = document.querySelector(`.provider-btn[data-backend="${key}"]`);
@@ -39624,8 +39712,8 @@ function refreshActiveBackendSelectors(status) {
     visSel.addEventListener("change", () => {
       populateModels(visModelSel, visSel, "vision", "unity_pref_vision_model");
       applyPref("vision", visSel, visModelSel, "unity_pref_vision_backend", "unity_pref_vision_model");
-      const [, name] = (visSel.value || "").split("|");
-      const key = catalogKeyFor("vision", name);
+      const [, name2] = (visSel.value || "").split("|");
+      const key = catalogKeyFor("vision", name2);
       if (key) {
         document.querySelectorAll(".provider-btn").forEach((b) => b.classList.remove("active"));
         const btn = document.querySelector(`.provider-btn[data-backend="${key}"]`);
