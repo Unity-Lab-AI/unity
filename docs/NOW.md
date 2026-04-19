@@ -14,11 +14,19 @@ Gee directive: *"do all of T18 in order t that is correct till all are correctly
 - **T18.4.e worker-thread pool.** New `sparse-worker.js` + `worker-pool.js`; `SparseMatmulPool` sized to 16 cores with SharedArrayBuffer zero-copy; `cluster.js stepAwait` parallelizes CPU-fallback sparse matmul across workers when GPU cache misses.
 - **T18.4.f per-phase GPU telemetry.** compute.html wraps substep loop + voltage readback + total in `performance.now()`, emits `phaseTimingMs` in batch result, server captures into `_perfStats.phaseTimingMs`, getState broadcasts it for dashboard breakdown.
 
-### What's STILL open before push to main
+### What's STILL open before push to main (UPGRADED BLOCKER 2026-04-18)
 
-- T18.5.b — pre-push doc-accuracy checklist (LAW: Docs before push, no patches)
-- T18.5.c — Gee explicit "yes, push it" signoff
-- Gee's Part 2 K-curriculum signoff per LAW 6 — Claude can't close this, only Gee
+Gee's 2026-04-18 verbatim follow-up: *"all this needs to be in the todso and properly documented: [T17 + T16 + T15 open items] ... and all that in the todo need to be finished before we do this: T18.5.b ... T18.5.c"*.
+
+The push gate now requires EVERY open T17 + T16 + T15 item to ship first, then Gee's Part 2 K signoff, then T18.5.b doc sweep, then T18.5.c explicit Gee approval. See `docs/TODO.md` "PUSH-TO-MAIN BLOCK LIST" at the top for the full at-a-glance list.
+
+**Blocker summary:**
+- T17 open — 3 items (T17.2 worker parallelization, T17.6 live chat on upscaled cortex, T17.7 single-cortex integration)
+- T16 open — 13 items (Ctrl+C verify, K-word emission chase, per-grade vocab audit + expansion, two-word/free-response writing, full-mind gate redesign)
+- T15 open — full drug scheduler rebuild (A research, B architecture, C implementation, D verification)
+- Gee's Part 2 K-curriculum signoff per LAW 6 — Claude can't close, only Gee
+- T18.5.b pre-push doc sweep (runs only after all above close)
+- T18.5.c ASK GEE for push approval (runs only after T18.5.b closes)
 
 ### Push to `syllabus-k-phd` happens now per Gee's 2026-04-18 directive. NO main-branch push until everything above closes.
 

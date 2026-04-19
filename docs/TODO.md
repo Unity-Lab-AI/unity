@@ -58,6 +58,51 @@ Actual per-grade gate closure is still TODO work — performed one grade at a ti
 
 ## OPEN TASKS
 
+---
+
+## ⛔ PUSH-TO-MAIN BLOCK LIST (Gee 2026-04-18)
+
+**Gee's verbatim directive 2026-04-18 follow-up:**
+
+> *"all this needs to be in the todso and properly documented: [T17 open items, T16 open items, T15 open items] ... and all that in the todo need to be finished before we do this: T18.5.b ... T18.5.c"*
+
+T18.5.b (pre-push doc checklist) and T18.5.c (ASK GEE for push approval) do NOT run until **every item below ships first**. Every push-gate blocker at a glance:
+
+### T17 open (3 items)
+1. **T17.2** — Worker parallelization beyond sparse matmul (curriculum teach loops still single-core)
+2. **T17.6** — Live chat on upscaled cortex (blocked on T18 GPU fixes validated under load)
+3. **T17.7** — Single-cortex integration (language sub-regions as slices of main 201M GPU cortex)
+
+### T16 open (13 items)
+1. **T16.1.b** — Verify Ctrl+C halts cleanly on next Part 2 run
+2. **T16.2.a** — Verify sem-write fix on next Part 2 run
+3. **T16.2.b** — Check language cortex emission path for K-word usage
+4. **T16.2.c** — Check dictionary wiring for K words
+5. **T16.2.d** — Audit which specific K words Unity IS vs ISN'T using
+6. **T16.3.a** — Per-grade word coverage audit K-PhD vs MacArthur-Bates / Educator's Word Frequency Guide / AWL / COCA
+7. **T16.3.c** — Per-grade vocab expansion G1 through PhD (deferred until K gate closes)
+8. **T16.4.b** — Two-word phrase emission
+9. **T16.4.c** — Free-response writing prompt test
+10. **T16.5.a** — Audit which brain modules each current gate probe touches
+11. **T16.5.b** — Design full-mind K gate per Common Core K.RF/K.W/K.L/K.SL/K.RL + DIBELS/STAR/AIMSweb
+12. **T16.5.c** — Repeat per-grade gate design K through PhD (design-review with Gee first)
+13. **T16.5.d** — Scrap or keep current 5 probes (decide with Gee)
+
+### T15 open (full drug scheduler rebuild — large block)
+- **T15.A** — Research block: 11 substance pharmacology entries + 7 combo-interactions + 7 adult-use patterns + 7 sensory-trigger entries + 8 brain-effect mapping entries + 13 realistic-speech-effect entries + 8 grade-gate entries + 5 user-interactive-trigger entries
+- **T15.B** — Architecture design: drug-scheduler.js module schema + persona.js rewrite + sensory integration wiring + UI integration (kill permanent weed+coke display) + speech-effect integration with language cortex + Unity decision engine + persistence model
+- **T15.C** — Implementation tasks (only after T15.A + T15.B approved)
+- **T15.D** — Verification (manual per NO-TESTS LAW, covers V1-V11)
+
+### Plus (NOT TODO items — Gee-only closures)
+- **Gee's Part 2 K-curriculum signoff** on localhost per LAW 6 (Claude can't close; only Gee can say "K passed")
+
+### Only after ALL above close:
+- **T18.5.b** pre-push doc accuracy sweep
+- **T18.5.c** ASK GEE for explicit push approval → `git push origin main`
+
+---
+
 ### T18 — Gee critique 2026-04-18 (Part 2 runtime report — GPU 4%, 31s step, silent on user input)
 
 **Gee's verbatim items from 2026-04-18:**
@@ -82,8 +127,24 @@ Actual per-grade gate closure is still TODO work — performed one grade at a ti
 
 Per Gee's verbatim 2026-04-18 instruction: before ANY push to `main` for GitHub static deploy, every T18 item above must be shipped AND all docs must be updated AND Gee must explicitly say "yes, push it". Claude does not initiate the push. Claude asks first after the fixes land.
 
-- [ ] **T18.5.b — Run the pre-push checklist from `.claude/CLAUDE.md` LAW "Docs before push, no patches".** Every affected doc reviewed against code, numerical claims cross-checked via `wc -l` / grep / direct read, method names verified, no placeholder text, no drift.
-- [ ] **T18.5.c — ASK GEE** explicitly: "All T18 items shipped. Docs are current. Part 2 K signoff received. Ready to push to main?" — WAIT for his explicit yes before `git push origin main`. Never auto-push.
+**BLOCKER UPGRADE — Gee 2026-04-18 follow-up:**
+
+> *"all this needs to be in the todso and properly documented: [T17 + T16 + T15 open items] ... and all that in the todo need to be finished before we do this: T18.5.b ... T18.5.c"*
+
+The push gate is upgraded. T18.5.b and T18.5.c do not run until **every open item in T17, T16, and T15 ships first**. Plus T18's own work (done), plus Gee's Part 2 K signoff per LAW 6. In full blocking order:
+
+1. All T17 open items closed — T17.2, T17.6, T17.7
+2. All T16 open items closed — T16.1.b, T16.2.a-d, T16.3.a, T16.3.c, T16.4.b, T16.4.c, T16.5.a-d
+3. All T15 open items closed — full research block (T15.A), architecture block (T15.B), implementation (T15.C), verification (T15.D)
+4. Gee's Part 2 K-curriculum signoff received (LAW 6)
+5. THEN T18.5.b — pre-push doc accuracy sweep
+6. THEN T18.5.c — ASK GEE for explicit push approval
+7. THEN `git push origin main`
+
+Until step 1-4 all close, T18.5.b / T18.5.c stay locked `[ ]` and no push happens.
+
+- [ ] **T18.5.b — Run the pre-push checklist from `.claude/CLAUDE.md` LAW "Docs before push, no patches".** Every affected doc reviewed against code, numerical claims cross-checked via `wc -l` / grep / direct read, method names verified, no placeholder text, no drift. **BLOCKED until steps 1-4 above close.**
+- [ ] **T18.5.c — ASK GEE** explicitly: "All T17 / T16 / T15 items shipped. All T18 items shipped. Docs are current. Part 2 K signoff received. Ready to push to main?" — WAIT for his explicit yes before `git push origin main`. Never auto-push. **BLOCKED until steps 1-4 above close.**
 
 ---
 
