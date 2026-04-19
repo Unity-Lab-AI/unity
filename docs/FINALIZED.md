@@ -5,6 +5,125 @@
 
 ---
 
+## 2026-04-19 — Session 114.19ak: T18.13 SHIPPED — Pre-K skip fix + DREAM_MAX_GRADE stop gate + 5-second teach heartbeat
+
+### Gee verbatim (drove this session)
+
+> *"its just running away: 183compute.html:163 [GPU Compute] binary frame received size=0.0MB, first4=SPRS"*
+>
+> *"i closed it before it killed my ethernet card"* — server log tail: `[Curriculum] ela/kindergarten START` with NO `ela/pre-K START` before it
+>
+> *"push to syllabus if all is ficxed now and its actually going to show ela progress and not get hung on the shit"*
+
+Gee's first Part 2 run of T18.12 exposed three bugs simultaneously. GPU infrastructure held (T18.11 leak fixes + T18.12 code-hash gate all worked — init clean, rebind clean, `_cortexFullyReady = true`, no PC reset), but curriculum-layer code had cruft that T18.12's audit missed.
+
+### Bug 1 — Pre-K skipped entirely
+
+`runAllSubjects` at line ~2186 hardcoded:
+```javascript
+for (let i = 1; i < GRADE_ORDER.length; i++) { // skip pre-K at 0
+```
+
+The `i=1` start meant EVERY subject skipped GRADE_ORDER[0]='pre-K'. My 5 new T18.12 Pre-K runners (runElaPreK / runMathPreK / runSciPreK / runSocPreK / runArtPreK) were dispatch-ready + equationally compliant but never called. Server log went straight from init → `ela/kindergarten START`.
+
+`runFullSubjectCurriculum` had a parallel bug:
+```javascript
+const current = cluster.grades[subject] || 'pre-K';
+const startIdx = Math.max(0, GRADE_ORDER.indexOf(current) + 1);
+...
+if (grade === 'pre-K') continue;
+```
+
+Default `current = 'pre-K'` (fresh brain) + `+1` → startIdx=1, plus explicit `continue` on pre-K as belt-and-suspenders. Both removed.
+
+Fix: new helper `_computeResumeStartIdx(subject)` consults `cluster.passedCells` as authoritative source:
+```javascript
+const passedForSubject = cluster.passedCells.filter(k => k.startsWith(`${subject}/`)).map(k => k.slice(subject.length + 1));
+if (passedForSubject.length === 0) return 0;  // fresh brain → pre-K
+let highestIdx = -1;
+for (const g of passedForSubject) highestIdx = Math.max(highestIdx, GRADE_ORDER.indexOf(g));
+return highestIdx + 1;
+```
+
+Both runAllSubjects (`for (let i = 0; ...)`) and runFullSubjectCurriculum now start at pre-K on fresh brains. T18.12.c resume-skip in `_cellRunner` handles already-passed cells downstream so there's no double-teach regression.
+
+### Bug 2 — Curriculum walks toward PhD
+
+Log line `[Curriculum] runCompleteCurriculum: GPU ready, walking all 6 subjects K→PhD` wasn't just stale prose — the code genuinely didn't cap at any grade. If ELA K passed, curriculum immediately rolled to ELA G1 at biological scale. Per Pre-K + K ONLY LAW (Gee 2026-04-18), curriculum must STOP at K until Gee's Part 2 signoff.
+
+Fix: new helper `_resolveMaxGradeIdx()`:
+```javascript
+const envMax = process.env.DREAM_MAX_GRADE || null;
+const cap = envMax || 'kindergarten';  // default per Pre-K + K ONLY LAW
+const idx = GRADE_ORDER.indexOf(cap);
+if (idx < 0) return -1;  // unknown grade → uncapped
+if (idx >= GRADE_ORDER.length - 1) return -1;  // last grade = uncapped
+return idx;
+```
+
+Both `runAllSubjects` and `runFullSubjectCurriculum` respect the cap — when loop index exceeds `maxIdx`, emit `⏹ T18.13 stop — reached grade cap 'kindergarten'` and break. Override via env: `DREAM_MAX_GRADE=phd` unsets the cap; `DREAM_MAX_GRADE=grade3` stops at G3; etc. Updated the `runCompleteCurriculum` top-line log from `"walking all 6 subjects K→PhD"` to `"walking all 6 subjects pre-K onward (cap via DREAM_MAX_GRADE; default 'kindergarten' per Pre-K + K ONLY LAW)"`.
+
+### Bug 3 — Teach had no visible heartbeat
+
+Gee watched his terminal during Part 2 for minutes. Only the `_teachWordEmission START: 180 words × 12 reps` line appeared, then silence. He couldn't tell if teach was advancing slowly (biological-scale Hebbian is expensive) or hung.
+
+Root cause: both `_teachWordEmission` + `_teachPhonemeBlending` had:
+```javascript
+if (_wordIdx % 200 === 0) {
+  console.log(`...rep ${rep + 1}/${reps}, word ${_wordIdx}/${wordList.length}`);
+  ...
+}
+```
+
+On a 180-word K emission list, `_wordIdx % 200` equals zero only at indices 0 and 200 — 0 is excluded by the modulo itself (wait, actually 0 % 200 === 0 but the loop starts wordIdx=1 post-increment so the first value is 1, ... never hits 200 inside 180 words). Net result: log never fires inside a single K teach pass. Gee watched in silence.
+
+Fix: time-based heartbeat INSIDE the word loop. Every 5 seconds of wall-clock:
+```
+[Curriculum] ⏱ _teachWordEmission heartbeat — rep 3/12, word 47/180, elapsed 42s, ~1.2 words/s
+```
+
+Shows: method name, current rep, current word, total elapsed seconds, running words/sec. Gee can watch and tell at a glance whether teach is advancing at a reasonable rate, slowing down, or hung. Heartbeat emits in both `_teachWordEmission` + `_teachPhonemeBlending` since those are the two methods with biological-scale word loops that dominate K teach time.
+
+### Files touched (atomic commit)
+
+- `js/brain/curriculum.js` — `runAllSubjects` loop start changed from `i=1` to `i=0`; `runFullSubjectCurriculum` rebuilt using new `_computeResumeStartIdx` helper; new `_resolveMaxGradeIdx` helper; max-grade break inside both loops; 5-sec heartbeat block inside `_teachWordEmission` + `_teachPhonemeBlending`; updated `runCompleteCurriculum` top-line log. (~+90 / −20 lines)
+- `docs/NOW.md` — full rewrite for session 114.19ak
+- `docs/TODO.md` — T18.13 entry
+- `docs/FINALIZED.md` — this entry
+- `js/app.bundle.js` — rebuilt via `cd server && npm run build`
+
+`node --check js/brain/curriculum.js` clean.
+
+### Relationship to prior T-series
+
+- T18.10 — VRAM leak fix on validation failure (incomplete)
+- T18.11 — VRAM leak completion (success path destroy) + stale-tab guard + reconnect backoff
+- T18.12 — save-point infrastructure (code-hash gate + per-cell checkpoint + resume) + curriculum LAW 6 Part 1 equational remake + 5 Pre-K runners added
+- **T18.13 — makes T18.12 actually run the Pre-K runners it added, and gives Gee real-time visibility + a safe stop gate**
+
+Each layer depends on the previous: T18.11's cascade fix made localhost runs survivable; T18.12's save points made them resumable + equationally compliant; T18.13 makes them visible + bounded.
+
+### Closure gate — open
+
+Gee-verification on next Part 2 run. Success criteria:
+- (a) Log shows `ela/pre-K START` (and math/sci/social/art/life pre-K) BEFORE any `kindergarten START`
+- (b) Heartbeat lines fire every 5 s during `_teachWordEmission` + `_teachPhonemeBlending`
+- (c) Curriculum STOPS at kindergarten with `⏹ T18.13 stop — reached grade cap 'kindergarten'` log line
+- (d) No PC reset / ethernet cascade (T18.11 protection path untouched)
+
+Claude cannot close — Gee-verification only.
+
+### What's STILL blocking push to main after T18.13
+
+All Claude-closable items now shipped. Remaining gates are entirely Gee's:
+- Gee Part 2 K localhost verification (LAW 6 Part 2)
+- Gee design review of T16.5.d (keep-or-scrap substrate probes)
+- Gee explicit push approval (T18.5.c)
+
+Per `docs/TODO.md` T18.5 gate: all T16/T17/T18 code items shipped; all curriculum LAW 6 Part 1 code items shipped; remaining gates are signoff-type only.
+
+---
+
 ## 2026-04-19 — Session 114.19aj: T18.12 SHIPPED — Save-point infra (code-hash gate + per-cell checkpoint + resume + start.bat flag) + curriculum LAW 6 Part 1 remake (Math-K/Life Pre-K/Life-K banned-call removal) + 5 missing Pre-K runners added
 
 ### Gee verbatim (drove this session)

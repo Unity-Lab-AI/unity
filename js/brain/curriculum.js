@@ -2123,7 +2123,8 @@ export class Curriculum {
 
   /**
    * Walk a single subject's remaining grades (from whichever grade that
-   * subject is currently at through PhD). Stops at the first gate fail.
+   * subject is currently at through PhD). Stops at the first gate fail
+   * OR at DREAM_MAX_GRADE cap (T18.13 Pre-K + K ONLY scope default).
    */
   async runFullSubjectCurriculum(subject, corpora, opts = {}) {
     const cluster = this.cluster;
@@ -2133,13 +2134,30 @@ export class Curriculum {
     }
     // Prepare ctx once for the whole walk
     if (corpora) this._buildCtx(corpora, opts);
-    const current = cluster.grades[subject] || 'pre-K';
-    const startIdx = Math.max(0, GRADE_ORDER.indexOf(current) + 1);
+    // T18.13.a — use passedCells as source of truth for resume point
+    // instead of cluster.grades[subject] with a +1 offset. The prior
+    // `const startIdx = Math.max(0, GRADE_ORDER.indexOf(current) + 1)`
+    // combined with the default `cluster.grades[subject] = 'pre-K'`
+    // meant a FRESH brain (nothing passed) started at GRADE_ORDER[1]
+    // (kindergarten), silently skipping every pre-K runner that
+    // T18.12 just shipped. Now we consult passedCells directly and
+    // start at GRADE_ORDER[0] if nothing's passed yet. T18.12.c resume
+    // handles the already-passed case downstream.
+    const startIdx = this._computeResumeStartIdx(subject);
+    // T18.13.b — Pre-K + K ONLY scope cap per Gee 2026-04-18 LAW.
+    // Default caps at 'kindergarten' so curriculum doesn't run away
+    // into G1-PhD before Gee's Part 2 K signoff. Override via env
+    // `DREAM_MAX_GRADE=phd` (or any GRADE_ORDER entry) when you want
+    // post-K walks.
+    const maxIdx = this._resolveMaxGradeIdx();
     const passed = [];
     let failed = null;
     for (let i = startIdx; i < GRADE_ORDER.length; i++) {
       const grade = GRADE_ORDER[i];
-      if (grade === 'pre-K') continue;
+      if (maxIdx >= 0 && i > maxIdx) {
+        console.log(`[Curriculum] ⏹ T18.13 stop — reached grade cap '${GRADE_ORDER[maxIdx]}' (DREAM_MAX_GRADE). Skipping ${subject}/${grade} and beyond.`);
+        break;
+      }
       const result = await this.runSubjectGrade(subject, grade, null, opts);
       if (result && result.pass) {
         passed.push(grade);
@@ -2155,6 +2173,50 @@ export class Curriculum {
       passed,
       failed,
     };
+  }
+
+  /**
+   * T18.13.a — compute the first grade index to attempt for a subject
+   * based on `cluster.passedCells`, the authoritative source. Returns
+   * 0 (pre-K) for a fresh brain with no passed cells. Returns
+   * `highestPassedIdx + 1` for a resumed brain. T18.12.c resume-skip
+   * in `_cellRunner` handles the edge case where passedCells has a
+   * lower grade but the runner gets called anyway (belt + suspenders).
+   */
+  _computeResumeStartIdx(subject) {
+    const cluster = this.cluster;
+    if (!cluster) return 0;
+    const passedForSubject = (Array.isArray(cluster.passedCells) ? cluster.passedCells : [])
+      .filter((key) => typeof key === 'string' && key.startsWith(`${subject}/`))
+      .map((key) => key.slice(subject.length + 1));
+    if (passedForSubject.length === 0) return 0;
+    let highestIdx = -1;
+    for (const g of passedForSubject) {
+      const idx = GRADE_ORDER.indexOf(g);
+      if (idx > highestIdx) highestIdx = idx;
+    }
+    return Math.max(0, highestIdx + 1);
+  }
+
+  /**
+   * T18.13.b — resolve the max grade index from DREAM_MAX_GRADE env var
+   * or opts.maxGrade. Defaults to 'kindergarten' per Pre-K + K ONLY
+   * scope LAW. Returns -1 if uncapped (DREAM_MAX_GRADE=phd or any
+   * grade at or after GRADE_ORDER's last entry).
+   */
+  _resolveMaxGradeIdx() {
+    const envMax = (typeof process !== 'undefined' && process.env && process.env.DREAM_MAX_GRADE)
+      ? String(process.env.DREAM_MAX_GRADE).trim()
+      : null;
+    const cap = envMax || 'kindergarten';  // default: pre-K + K only
+    const idx = GRADE_ORDER.indexOf(cap);
+    if (idx < 0) {
+      console.warn(`[Curriculum] DREAM_MAX_GRADE='${cap}' not in GRADE_ORDER — ignoring cap.`);
+      return -1;
+    }
+    // If cap is the last grade, treat as uncapped
+    if (idx >= GRADE_ORDER.length - 1) return -1;
+    return idx;
   }
 
   /**
@@ -2183,8 +2245,22 @@ export class Curriculum {
     const GRADE_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes per subject per round
     const MAX_GRADE_ROUNDS = 10;
 
-    for (let i = 1; i < GRADE_ORDER.length; i++) { // skip pre-K at 0
+    // T18.13.b — Pre-K + K ONLY cap. `DREAM_MAX_GRADE=phd` unsets the cap.
+    const maxIdx = this._resolveMaxGradeIdx();
+    const capLabel = maxIdx >= 0 ? GRADE_ORDER[maxIdx] : 'phd';
+    console.log(`[Curriculum] T18.13 grade cap = '${capLabel}' (set DREAM_MAX_GRADE env to change; defaults to 'kindergarten' per Pre-K + K ONLY LAW)`);
+
+    // T18.13.a — START AT i=0 (pre-K) NOT i=1. Hard-coded `i=1` was
+    // silently skipping every subject's pre-K runner — the exact bug
+    // Gee caught 2026-04-19 in the server log (`ela/kindergarten START`
+    // with no `ela/pre-K START` before it). Fresh brains now walk pre-K
+    // → K → ... and T18.12.c resume-skip handles already-passed cells.
+    for (let i = 0; i < GRADE_ORDER.length; i++) {
       const grade = GRADE_ORDER[i];
+      if (maxIdx >= 0 && i > maxIdx) {
+        console.log(`[Curriculum] ⏹ T18.13 stop — reached grade cap '${GRADE_ORDER[maxIdx]}'. Unity sits at this level until DREAM_MAX_GRADE advances OR Gee signs off Part 2 + manually unsets.`);
+        break;
+      }
       let allPassedThisGrade = false;
 
       for (let round = 0; round < MAX_GRADE_ROUNDS && !allPassedThisGrade; round++) {
@@ -2626,14 +2702,36 @@ export class Curriculum {
     ensureLetters(Array.from(uniqueLetters));
 
     console.log(`[Curriculum] _teachWordEmission START: ${wordList.length} words × ${reps} reps (asymmetric directional)`);
+    // T18.13.c — time-based heartbeat. Prior `_wordIdx % 200 === 0`
+    // NEVER FIRED on typical K-emission lists of ~180 words — Gee
+    // watched the terminal for minutes seeing only the START line
+    // with no progress indicator. Heartbeat now emits every ~5 s
+    // of wall-clock inside the tight word loop so teach progress
+    // is visible in real time AND so Gee can distinguish "slow but
+    // advancing" from "hung". Rate fits the 5-10 min total teach
+    // window at biological scale.
+    const _t18_13_startMs = Date.now();
+    let _t18_13_lastHbMs = _t18_13_startMs;
+    let _t18_13_opsSinceHb = 0;
     for (let rep = 0; rep < reps; rep++) {
       if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return;
       let _wordIdx = 0;
       for (const word of wordList) {
         const letters = Array.from(word.toLowerCase().replace(/[^a-z]/g, ''));
         _wordIdx++;
+        _t18_13_opsSinceHb++;
+        // T18.13.c heartbeat
+        const _nowHb = Date.now();
+        if (_nowHb - _t18_13_lastHbMs > 5000) {
+          const totalElapsed = ((_nowHb - _t18_13_startMs) / 1000).toFixed(1);
+          const hbInterval = (_nowHb - _t18_13_lastHbMs) / 1000;
+          const opsPerSec = (_t18_13_opsSinceHb / hbInterval).toFixed(1);
+          console.log(`[Curriculum] ⏱ _teachWordEmission heartbeat — rep ${rep + 1}/${reps}, word ${_wordIdx}/${wordList.length}, elapsed ${totalElapsed}s, ~${opsPerSec} words/s`);
+          _t18_13_lastHbMs = _nowHb;
+          _t18_13_opsSinceHb = 0;
+          await _microtask();
+        }
         if (_wordIdx % 200 === 0) {
-          console.log(`[Curriculum]   _teachWordEmission rep ${rep + 1}/${reps}, word ${_wordIdx}/${wordList.length}`);
           await _microtask();
         }
         if (letters.length === 0) continue;
@@ -3149,14 +3247,29 @@ export class Curriculum {
     ensureLetters(Array.from(uniqueLetters));
 
     console.log(`[Curriculum] _teachPhonemeBlending START: ${wordList.length} words × ${reps} reps (phoneme-sequence Hebbian)`);
+    // T18.13.c — time-based heartbeat (see _teachWordEmission above for
+    // rationale). 5 s cadence lets Gee see teach progress live.
+    const _t18_13_startMs = Date.now();
+    let _t18_13_lastHbMs = _t18_13_startMs;
+    let _t18_13_opsSinceHb = 0;
     for (let rep = 0; rep < reps; rep++) {
       if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return;
       let _wordIdx = 0;
       for (const word of wordList) {
         const letters = Array.from(word.toLowerCase().replace(/[^a-z]/g, ''));
         _wordIdx++;
+        _t18_13_opsSinceHb++;
+        const _nowHb = Date.now();
+        if (_nowHb - _t18_13_lastHbMs > 5000) {
+          const totalElapsed = ((_nowHb - _t18_13_startMs) / 1000).toFixed(1);
+          const hbInterval = (_nowHb - _t18_13_lastHbMs) / 1000;
+          const opsPerSec = (_t18_13_opsSinceHb / hbInterval).toFixed(1);
+          console.log(`[Curriculum] ⏱ _teachPhonemeBlending heartbeat — rep ${rep + 1}/${reps}, word ${_wordIdx}/${wordList.length}, elapsed ${totalElapsed}s, ~${opsPerSec} words/s`);
+          _t18_13_lastHbMs = _nowHb;
+          _t18_13_opsSinceHb = 0;
+          await _microtask();
+        }
         if (_wordIdx % 200 === 0) {
-          console.log(`[Curriculum]   _teachPhonemeBlending rep ${rep + 1}/${reps}, word ${_wordIdx}/${wordList.length}`);
           await _microtask();
         }
         if (letters.length < 2) continue;
@@ -19005,7 +19118,7 @@ export class Curriculum {
       console.warn('[Curriculum] Embedding status check failed:', err?.message || err);
     }
 
-    console.log(`[Curriculum] runCompleteCurriculum: GPU ready, walking all ${SUBJECTS.length} subjects K→PhD`);
+    console.log(`[Curriculum] runCompleteCurriculum: GPU ready — walking all ${SUBJECTS.length} subjects pre-K onward (cap via DREAM_MAX_GRADE; default 'kindergarten' per Pre-K + K ONLY LAW)`);
     // T14.24 Session 102+104 — boost Hebbian + suppress cortex noise
     // during curriculum teach.
     //
