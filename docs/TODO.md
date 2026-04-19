@@ -182,6 +182,25 @@ Three sub-items decoded:
 
 ---
 
+#### T18.9 — GitHub Pages deployment readiness + public-doc task-number sweep (Gee 2026-04-19)
+
+**Gee's verbatim 2026-04-19:**
+
+> *"okay yes get the PAges fixes in."*
+> *"once htmls are updated go ahead and do a finalizations run CORRECTLY!"*
+
+Pages readiness had three hard blockers + a stale-string bug:
+
+- [x] **T18.9.a — Bundle committed to repo.** `js/app.bundle.js` was gitignored at `.gitignore:117`. GitHub Pages does NOT run `npm run build` — it serves raw repo contents. Public visitors would have gotten **404 on the bundle → blank landing page**. Removed from `.gitignore` with a replacement comment explaining why the bundle MUST stay tracked. Freshly rebuilt bundle (`cd server && npm run build`) added to the commit. Gee's commits must include a rebuilt `js/app.bundle.js` whenever source files under `js/` change. **SHIPPED**.
+- [x] **T18.9.b — `.nojekyll` marker.** Empty file at repo root so GitHub Pages skips Jekyll processing. Without it, Jekyll eats underscore-prefixed files (none currently shipped, but future-proofs against e.g. `_assets/`) and can mangle the `corpora/` load path. **SHIPPED**.
+- [x] **T18.9.c — `brain-3d.js` hardcoded "7 clusters" cleanup.** Two stale strings at `js/ui/brain-3d.js:939` (overlay scaleInfo update) and `:1314` (initial DOM template). Post-T18.7 the 3D brain has 15 render slots (7 main clusters + 8 language sub-regions visualized as separate rings). Both strings now read `${CLUSTERS.length}` dynamically. Visitors see `"300,000 rendered · 393,485,631 actual (1310:1) · 15 clusters"` instead of the stale "7 clusters" lie. **SHIPPED**.
+- [x] **T18.9.d — Public-doc task-number sweep.** Per LAW "Task numbers ONLY in workflow docs" (Gee 2026-04-15), all T-numbers and session markers scrubbed from public-facing files. README.md had three violations (lines 3, 27, 336) referencing T17.7, T18.4.a, T17.7 Phase A.3, T17.7 Phase C rebind, T17.7 Phase E.b, T16.5.b — every reference rewritten to describe WHAT THE CODE DOES rather than WHICH TASK BUILT IT. `compute.html:52` rendered hierarchy panel title had `T17.7 single-cortex` → now `unified single-cortex`. SETUP.md, unity-guide.html, brain-equations.html, index.html, dashboard.html verified clean (no public task-number leakage). Code comments inside `<script>` blocks retain task numbers since those are workflow documentation for developers, never rendered to users. **SHIPPED**.
+- [x] **T18.9.e — `js/env.js` externalized in esbuild bundle (near-miss secret catch).** First push attempt was REJECTED by GitHub push protection — esbuild was inlining `js/env.js` at bundle build time, which meant the Anthropic API key from Gee's local `env.js` ended up at `js/app.bundle.js:384` as a literal string. Push protection blocked the commit before it reached origin. Fix: added `--external:./env.js` to the esbuild command in `server/package.json` so the dynamic `await import('./env.js')` at `js/app.js:49` stays a runtime import instead of being inlined. Bundle rebuilt — zero `sk-ant` strings in the 1.6 MB output, runtime import path preserved (lines 38754-38759 of the rebuilt bundle keep the original dynamic `import("./env.js")` expression). `catch {}` fallback at `app.js:52` handles the public-Pages case where env.js isn't deployed (gitignored). **SHIPPED + PUSH PROTECTION CONFIRMED GREEN**. Recommend Gee rotate the exposed Anthropic key as a defensive measure even though it never reached GitHub — push was blocked but the key sat in the local bundle for a few minutes before rebuild.
+
+**T18.9 closure gate:** N/A — this is a push-prep task with no runtime validation needed. GitHub Pages deploy itself will confirm correctness once the merge to main lands (visible landing page, working 3D brain, 15-cluster header readout).
+
+---
+
 #### T18.5 — push gate for main-branch deploy (BINDING)
 
 Per Gee's verbatim 2026-04-18 instruction: before ANY push to `main` for GitHub static deploy, every T18 item above must be shipped AND all docs must be updated AND Gee must explicitly say "yes, push it". Claude does not initiate the push. Claude asks first after the fixes land.

@@ -936,7 +936,7 @@ export class Brain3D {
                        : ratio >= 1e3 ? `1:${(ratio / 1e3).toFixed(0)}k`
                        : `1:${ratio}`;
       const scaleInfo = this._overlay?.querySelector('.b3d-scale-info');
-      if (scaleInfo) scaleInfo.textContent = `${TOTAL.toLocaleString()} rendered · ${realNeurons.toLocaleString()} actual (${ratio}:1) · 7 clusters`;
+      if (scaleInfo) scaleInfo.textContent = `${TOTAL.toLocaleString()} rendered · ${realNeurons.toLocaleString()} actual (${ratio}:1) · ${CLUSTERS.length} clusters`;
       const actualEl = this._overlay?.querySelector('.b3d-actual-count');
       if (actualEl) actualEl.textContent = realNeurons.toLocaleString();
       const ratioEl = this._overlay?.querySelector('.b3d-render-ratio');
@@ -1311,7 +1311,7 @@ export class Brain3D {
   </div>
   <div class="b3d-foot">
     <span>DRAG rotate · SCROLL zoom</span>
-    <span class="b3d-scale-info">1000 neurons · 7 clusters</span>
+    <span class="b3d-scale-info">initializing · ${CLUSTERS.length} clusters</span>
   </div>
 </div>`;
 

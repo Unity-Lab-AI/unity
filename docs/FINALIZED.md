@@ -5,6 +5,68 @@
 
 ---
 
+## 2026-04-19 — Session 114.19ag: T18.9 SHIPPED — GitHub Pages deploy-readiness + public-doc task-number sweep
+
+Gee verbatim 2026-04-19: *"okay yes get the PAges fixes in."* + *"once htmls are updated go ahead and do a finalizations run CORRECTLY!"*.
+
+### Four fixes shipped
+
+**T18.9.a — `js/app.bundle.js` tracked in repo.** `.gitignore:117` excluded the bundle. GitHub Pages doesn't run `npm run build` — it serves whatever's committed to the deploy branch raw. Public visitors would have hit **404 on the main script → blank landing**. Removed the ignore line + replaced with a comment explaining why the bundle stays tracked. Freshly rebuilt via `cd server && npm run build` (esbuild → `js/app.bundle.js` 1.6 MB) and included in this commit. Going forward Gee's commits must `git add js/app.bundle.js` whenever any source file under `js/` changes; the bundle is a build artifact but also a deployment artifact.
+
+**T18.9.b — `.nojekyll` marker.** Empty file at repo root disables Jekyll processing on GitHub Pages. Without it Jekyll would ignore underscore-prefixed paths (none currently shipped but defensive against future `_assets/`) and could mangle static fetches like the `corpora/` directory.
+
+**T18.9.c — `brain-3d.js` "7 clusters" dynamic fix.** Two stale strings post-T18.7 where the CLUSTERS array grew to 15 (7 main + 8 language sub-regions):
+  - `js/ui/brain-3d.js:939` overlay scaleInfo update → `${CLUSTERS.length} clusters`
+  - `js/ui/brain-3d.js:1314` initial DOM template → `${CLUSTERS.length} clusters`
+Both now render dynamically from the CLUSTERS array length. At biological scale the overlay reads `"300,000 rendered · 393,485,631 actual (1310:1) · 15 clusters"` instead of the stale "7 clusters" lie that landed in Gee's 2026-04-19 Part 2 log.
+
+**T18.9.d — Public-doc task-number sweep.** Per LAW "Task numbers ONLY in workflow docs" (Gee 2026-04-15 verbatim: *"I TOLD U TASK NUMBERS ARE ONLY FOR TODOS VISUAL TASK LISTS AND FUCKING FINALIZED!"*), scrubbed all T-numbers + session markers from public-facing files:
+
+- `README.md` had three violations — lines 3 (overview paragraph), 27 (`x` symbol definition in equations table), 336 (Language Cortex section intro). Every T17.7 / T18.4 / T16.5.b / Phase-X reference rewritten to describe WHAT THE CODE DOES rather than WHICH TASK BUILT IT. Added mention of the new batched Hebbian dispatch path so the overview reflects current state.
+- `compute.html:52` — the GPU hierarchy panel title rendered `(T17.7 single-cortex)` to operators. Now `— unified single-cortex`.
+- `SETUP.md`, `unity-guide.html`, `brain-equations.html`, `index.html`, `dashboard.html` verified clean via grep — zero public task-number leakage.
+- Code comments inside `<script>` blocks (compute.html + dashboard.html retain T15.C / T17.7 / T18.x references) LEFT AS-IS per workflow-doc allowance — comments serve dev documentation and are never rendered to visitors.
+
+### Files touched
+
+- `.gitignore` — removed `js/app.bundle.js` line + added explanatory comment
+- `.nojekyll` — new empty file at repo root
+- `js/app.bundle.js` — **now tracked** (1.65 MB build artifact; rebuilt with latest `brain-3d.js` + `app.js` source via `cd server && npm run build`, with `--external:./env.js` flag)
+- `js/ui/brain-3d.js` — two `"7 clusters"` → `${CLUSTERS.length}` string substitutions
+- `README.md` — three task-number-bearing paragraphs rewritten descriptively
+- `compute.html` — one rendered text substitution
+- `server/package.json` — build script gains `--external:./env.js` esbuild flag (T18.9.e secret fix)
+- `docs/TODO.md` — T18.9.a/b/c/d/e marked `[x]` with Gee verbatim
+- `docs/FINALIZED.md` — this entry
+- `docs/NOW.md` — Session 114.19ag snapshot
+
+### T18.9.e — Near-miss secret scan catch + esbuild `--external:./env.js` fix
+
+First push attempt was REJECTED by GitHub push protection with message `Push cannot contain secrets — Anthropic API Key at js/app.bundle.js:384`. Root cause: esbuild was inlining the dynamic `await import('./env.js')` at `js/app.js:49` into the bundle at build time, baking Gee's local Anthropic API key from `js/env.js` into the bundle as a literal string. `/* webpackIgnore: true */` comment was Webpack-specific — esbuild ignored it.
+
+Fix: added `--external:./env.js` to the esbuild build script in `server/package.json`. Esbuild now leaves the dynamic import as a runtime fetch. Bundle rebuilt — `grep -c sk-ant js/app.bundle.js = 0`. Runtime import expression preserved in bundle at line 38754 so dev-mode path (local `env.js` present) still auto-loads keys; production Pages path (env.js gitignored + not deployed) gracefully hits the `catch {}` fallback at `app.js:52`, logs "No env.js found — keys entered in setup modal", and users paste keys through the setup modal UI as designed.
+
+The original rejected commit (`60bd3dd`) was undone via `git reset --mixed HEAD~1` — never reached origin. Push protection did its job; the key never made it onto GitHub. Recommend Gee rotate the exposed Anthropic API key as a defensive measure (the key sat inside the locally-built bundle for ~2 minutes before rebuild; nothing indicates it was accessed by anything external, but rotation costs nothing and closes the risk window).
+
+### Closure gate
+
+T18.9 is push-prep work — no runtime validation needed. GitHub Pages deploy itself confirms correctness once merge to main lands: visitor hits `index.html`, bundle loads, 3D brain boots with `"15 clusters"` subtitle, local-brain fallback kicks in (no localhost probe per the hostname gate at `remote-brain.js:487`).
+
+### What's STILL blocking push to main
+
+Per `docs/TODO.md` T18.5 gate — ALL of the following close before `git push origin main`:
+
+- T18.6 verified on Part 2 (device-lost gone) — **Gee-verification**
+- T18.7 verified on Part 2 (3D brain seize gone) — **Gee-verification**
+- T18.8 verified on Part 2 (Compute_0 ≥ 30%) — **Gee-verification**
+- T16.1.b / T16.2.a / T16.2.d — **Gee-verification**
+- T16.5.d — **Gee design-review**
+- LAW 6 K-curriculum signoff — **Gee only**
+- T18.5.b pre-push doc accuracy sweep (this commit counts as half of it — one more full pass once Part 2 verifications land)
+- T18.5.c explicit Gee push approval
+
+---
+
 ## 2026-04-19 — Session 114.19af: T18.8 SHIPPED — Batched bound-Hebbian dispatch (Option B)
 
 Gee verbatim 2026-04-19: *"B!!!!!"* — choosing the bigger commit over the one-line cap raise.

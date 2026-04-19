@@ -1,10 +1,19 @@
 # NOW — Session Snapshot
 
-> **Session:** 114.19af · **Date:** 2026-04-19 · **Branch:** `syllabus-k-phd`
+> **Session:** 114.19ag · **Date:** 2026-04-19 · **Branch:** `syllabus-k-phd`
 
 ---
 
-## This session — T18.6 + T18.7 + T18.8 shipped
+## This session — T18.6 + T18.7 + T18.8 + T18.9 shipped
+
+### T18.9 — GitHub Pages deploy-readiness + public-doc task-number sweep
+
+Four fixes per Gee verbatim *"okay yes get the PAges fixes in"* + *"once htmls are updated go ahead and do a finalizations run CORRECTLY!"*:
+
+- **T18.9.a** — `js/app.bundle.js` tracked in repo (`.gitignore:117` line removed + explanatory comment added). GitHub Pages doesn't run `npm run build` — previously visitors would have 404'd on the bundle. Freshly rebuilt + committed.
+- **T18.9.b** — `.nojekyll` marker at repo root disables Jekyll processing.
+- **T18.9.c** — `js/ui/brain-3d.js` "7 clusters" hardcoded strings (lines 939, 1314) replaced with `${CLUSTERS.length}` so the overlay reads the accurate 15-cluster total post-T18.7.
+- **T18.9.d** — Public-doc task-number sweep per LAW "Task numbers ONLY in workflow docs". `README.md` three violations rewritten descriptively; `compute.html:52` rendered hierarchy title cleaned. SETUP.md / unity-guide.html / brain-equations.html / index.html / dashboard.html verified clean.
 
 ### T18.8 — Batched bound-Hebbian dispatch protocol (Gee verbatim: "B!!!!!")
 

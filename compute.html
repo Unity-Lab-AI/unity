@@ -49,7 +49,7 @@ function renderHierarchy() {
   }
 
   hierarchyEl.innerHTML = `
-    <div style="color:#888;font-weight:bold;margin-bottom:4px;">GPU system hierarchy (T17.7 single-cortex):</div>
+    <div style="color:#888;font-weight:bold;margin-bottom:4px;">GPU system hierarchy — unified single-cortex:</div>
     <div><b>${clusterNames.length}</b>/7 top-level clusters initialized (LIF neuron buffers):</div>
     ${clusterLines}
     <div style="margin-top:4px;"><b>${matrixNames.length}</b> sparse matrices uploaded — <b>${crossCount}</b> cross-projections, <b>${intraCount}</b> intra-cluster synapse matri${intraCount === 1 ? 'x' : 'ces'}${otherCount > 0 ? `, ${otherCount} other` : ''}${boundCount > 0 ? ` (<span style="color:#a855f7">${boundCount} cluster-bound to main-cortex slices</span>)` : ''}.</div>

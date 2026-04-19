@@ -114,4 +114,9 @@ out/
 .next/
 .nuxt/
 .output/
-js/app.bundle.js
+# js/app.bundle.js intentionally NOT ignored — GitHub Pages does not run
+# `npm run build`, so the bundle must be checked in so visitors get a
+# working landing page instead of a 404 on the main script. `start.bat`
+# rebuilds the bundle via `cd server && npm run build` before launching
+# the server; Gee's commits should include the fresh bundle whenever
+# source files under `js/` change.
