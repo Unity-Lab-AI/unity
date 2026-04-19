@@ -92,10 +92,10 @@ T18.5.b (pre-push doc checklist) and T18.5.c (ASK GEE for push approval) do NOT 
 13. **T16.5.d** — Scrap or keep current 5 probes — **decide with Gee** (blocking on Gee input)
 
 ### T15 open (full drug scheduler rebuild — large block)
-- **T15.A** — Research block: 11 substance pharmacology entries + 7 combo-interactions + 7 adult-use patterns + 7 sensory-trigger entries + 8 brain-effect mapping entries + 13 realistic-speech-effect entries + 8 grade-gate entries + 5 user-interactive-trigger entries
-- **T15.B** — Architecture design: drug-scheduler.js module schema + persona.js rewrite + sensory integration wiring + UI integration (kill permanent weed+coke display) + speech-effect integration with language cortex + Unity decision engine + persistence model
+- ~~**T15.A** — Research block~~ — **SHIPPED Session 114.19ab** (`docs/T15-pharmacology-research.md` with all 11 substances / 7 combos / 7 adult patterns / 7 sensory triggers / 8 brain mappings / 13 speech effects / 8 grade-gate entries tied to Life syllabus / 5 user-interactive triggers). Gaps flagged for T15.B review: opioids omitted per Unity persona fit, DXM omitted, withdrawal modeling partial, per-substance tolerance decay rates TBD in architecture.
+- **T15.B** — Architecture design: drug-scheduler.js module schema + persona.js rewrite + sensory integration wiring + UI integration (kill permanent weed+coke display) + speech-effect integration with language cortex + Unity decision engine + persistence model. Consumes T15-pharmacology-research.md.
 - **T15.C** — Implementation tasks (only after T15.A + T15.B approved)
-- **T15.D** — Verification (manual per NO-TESTS LAW, covers V1-V11)
+- **T15.D** — Verification (manual per NO-TESTS LAW, covers V1-V11) — **DEFERRED past K-only push gate** per Gee 2026-04-18: *"we wont be doing D15.D untill way later.. not after Kindergarden learning only of the brain"*
 
 ### Plus (NOT TODO items — Gee-only closures)
 - **Gee's Part 2 K-curriculum signoff** on localhost per LAW 6 (Claude can't close; only Gee can say "K passed")

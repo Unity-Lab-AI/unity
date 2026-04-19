@@ -5,6 +5,51 @@
 
 ---
 
+## 2026-04-18 — Session 114.19ab: T15.A pharmacology research block SHIPPED — `docs/T15-pharmacology-research.md`
+
+Gee 2026-04-18 verbatim directives that drove this:
+
+> *"drug shit it tied to life and syllabus shit"*
+>
+> *"we wont be doing D15.D untill way later.. not after Kindergarden learning only of the brain"*
+
+### What shipped
+
+`docs/T15-pharmacology-research.md` — the full T15.A deliverable per Gee's 2026-04-18 spec. Research content only (no code); T15.B consumes it for architecture, T15.C implements, T15.D verifies (**deferred past K-only gate per Gee**).
+
+### Content (full scope covered)
+
+1. **11 substance pharmacology entries** — Cannabis, Cocaine, MDMA, LSD, Psilocybin, Alcohol, Ketamine, Amphetamine, GHB (all 9 already shipped in `js/brain/drug-scheduler.js`) PLUS 2 new: Nicotine (persona-excluded but scheduler-complete) + Caffeine (Unity daily coffee pattern).
+2. **7 combo-interactions** (Sections 2.1–2.7) — coke+weed, coke+MDMA, coke+caffeine, alcohol+weed, MDMA+weed, ketamine+weed, alcohol+cocaine (speedball-lite). Each with synergy deltas + risk flags.
+3. **7 adult-use patterns** (Sections 3.1–3.7) — morning coffee ritual, coding marathon, weekend party night, architecture-session acid-day, post-marathon whiskey, k-hole contemplation, sex-session molly (Nympho Coke Whore default).
+4. **7 sensory-trigger entries** (Sections 4.1–4.7) — coffee aroma, skunky weed smell, late-night bar music, bright flashing + 120bpm+ beat, powder-on-mirror visual cue, fresh-ground herb during creative work, club bathroom fluorescent + 3am-context.
+5. **8 brain-region effect mapping entries** (Section 5) — arousal/cortexSpeed/amygdalaValence/cerebellumPrecision/oscillationCoherence/impulsivity/hippocampusConsolidation/focusWidth as the 8 primary axes. Composite axes (creativity, empathy, etc.) derived from these.
+6. **13 realistic-speech-effect entries** (Section 6) — rate/slurring/volume/coherence/repetition/pauses/inhibition/giggleBias/warmth/ethereality/profoundBias/freeAssocWidth/interruptionBias.
+7. **8 grade-gate entries tied to Life syllabus** (Section 7) — grade3 caffeine, grade7 cannabis+nicotine-blocked, grade8 alcohol, grade9 cocaine, grade10 amphetamine, grade11 MDMA+LSD, grade12 psilocybin, college1 ketamine+GHB. Each with biographical Life event anchor (who introduced, where, how it felt — persistent life info per LAW 6).
+8. **5 user-interactive trigger entries** (Sections 8.1–8.5) — direct offer (bump), joint pass (hit), drink offer (shot), pill offer (molly), tab offer.
+
+### Gaps flagged for T15.B review
+
+- **Opioids (heroin, fentanyl) omitted** — don't fit Unity's persona, not in Life track. Flag if Gee wants "substances offered but Unity declines."
+- **DXM / dissociatives beyond ketamine omitted.**
+- **Withdrawal modeling partial** — nicotine stressDampening captures tobacco withdrawal reversal; caffeine/alcohol withdrawal not modeled.
+- **Tolerance decay rates per-substance not researched** — current flat decay may need per-substance rates (cocaine fast-reset, MDMA slow-reset via serotonin depletion).
+- **Dose-escalation modeling TBD** — redose behavior differs by substance.
+
+### Research grounding
+
+Julien 2016 A Primer of Drug Action, NIDA monographs, peer-reviewed clinical PK studies, Anglin 1993 developmental vocabulary norms, Lindell 2006 hemispheric lateralization (tangentially for T17.7 overlap), Gazzaniga split-brain (Ψ-proxy modeling), Tiihonen/Curran/Nutt polysubstance literature, docs/TODO-full-syllabus.md Life track internal consistency.
+
+### What's STILL open before push to main
+
+- **T17.7 Phase E** — delete standalone cortexCluster (multi-commit breakdown per previous session task note)
+- **T17.7 Phase F** — doc sweep
+- **T15.B / T15.C** — drug scheduler architecture + implementation (T15.D deferred)
+- **T16 remaining** — Gee Part 2 verification (T16.1.b / T16.2.a / T16.2.d) + T16.5.b/c/d (Gee design-review blocked)
+- **T18.5.b** / **T18.5.c** — pre-push doc sweep + Gee push approval
+
+---
+
 ## 2026-04-18 — Session 114.19aa: T17.7 Phase D SHIPPED — `generateSentenceAwait` reads motor argmax from main-cortex GPU via letter-bucket reduction
 
 ### What shipped

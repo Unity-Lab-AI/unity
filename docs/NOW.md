@@ -1,6 +1,6 @@
 # NOW — Session Snapshot
 
-> Saved: 2026-04-18 (Session 114.19aa — T17.7 Phase D SHIPPED. `generateSentenceAwait` now reads motor argmax from main-cortex GPU via letter-bucket reduction — 250,000× less per-tick readback bandwidth than dense motor-slice readback. Phases E/F still open before main-branch push.)
+> Saved: 2026-04-18 (Session 114.19ab — T15.A pharmacology research block SHIPPED via `docs/T15-pharmacology-research.md`. Prior in session: T17.7 Phase C + Phase D shipped. T17.7 Phase E deferred to multi-commit breakdown (intent-injection + workingMemory-readout migrations required first). T15.D deferred past K-only gate per Gee. Phases E/F + T15.B/C still open before main-branch push.)
 
 ## Current state of `syllabus-k-phd`
 
