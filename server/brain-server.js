@@ -669,7 +669,7 @@ class ServerBrain {
     console.log('[Brain] R3 — loading language subsystem (dictionary + language cortex + embeddings + component synth)...');
     const startMs = Date.now();
     try {
-      const [dictMod, lcMod, embedMod, csMod, modulesMod, clusterMod, curriculumMod, drugSchedulerMod, drugDetectorMod] = await Promise.all([
+      const [dictMod, lcMod, embedMod, csMod, modulesMod, clusterMod, curriculumMod, drugSchedulerMod, drugDetectorMod, olfactoryMod, sensoryTriggersMod] = await Promise.all([
         import('../js/brain/dictionary.js'),
         import('../js/brain/language-cortex.js'),
         import('../js/brain/embeddings.js'),
@@ -679,6 +679,8 @@ class ServerBrain {
         import('../js/brain/curriculum.js'),
         import('../js/brain/drug-scheduler.js'),
         import('../js/brain/drug-detector.js'),
+        import('../js/brain/sensory-olfactory.js'),
+        import('../js/brain/drug-sensory-triggers.js'),
       ]);
 
       this.sharedEmbeddings = embedMod.sharedEmbeddings;
@@ -953,7 +955,22 @@ class ServerBrain {
       // detector module for use in processText below.
       this.drugScheduler = new drugSchedulerMod.DrugScheduler({ cluster: this.cortexCluster });
       this.drugSubstances = drugSchedulerMod.SUBSTANCES;
+      this.drugCombos = drugSchedulerMod.COMBOS;
+      this.drugPatterns = drugSchedulerMod.PATTERNS;
       this._drugDetector = drugDetectorMod.detectOffer;
+      // T15.C — olfactory sensory channel + sensory-trigger evaluator.
+      // Chat messages carrying `sensory: {smell: '<tag>'}` metadata
+      // register scent cues; sensory triggers (7 entries from T15.A
+      // §4) fire cravings into scheduler.addCraving() per tick. Both
+      // are dormant until the curriculum reaches the respective
+      // lifeGate for each substance.
+      this.olfactory = new olfactoryMod.OlfactoryChannel();
+      this._sensoryTriggers = sensoryTriggersMod.evaluateTriggers;
+      // Timestamps for activity-tag sustain tracking (coding-marathon
+      // pattern requires demandDurationMs — brain tracks when cortex
+      // demand last crossed the threshold).
+      this._cortexHighLoadSince = 0;
+      this._lastPatternTickMs = 0;
       // R6.2 — component synth for equational build_ui on the server.
       // Templates get loaded from docs/component-templates.txt below.
       this.componentSynth = new csMod.ComponentSynth();
@@ -2231,6 +2248,87 @@ class ServerBrain {
     return this._sparseSendBinary(full, reqId, 30_000);
   }
 
+  /**
+   * T15.C — drive per-tick scheduler: promote deferred ingestions,
+   * evaluate sensory triggers, evaluate adult-use patterns, clear
+   * expired pharma events, refresh active-pattern tag set for the
+   * decision engine.
+   *
+   * Called from _updateDerivedState() so it participates in the same
+   * per-tick broadcast cycle that rebuilds arousal/valence/Ψ/etc.
+   *
+   * Context assembly:
+   *   - localHour: fractional hour of current wall-clock time
+   *   - dayOfWeek: 0=Sun..6=Sat
+   *   - arousal: pre-computed arousal this tick (passed in)
+   *   - cortexDemand: cortex firing rate fraction [0, 1] as proxy
+   *   - demandDurationMs: how long cortex demand has held >= 0.7
+   *   - social/consent/activityTag/locationTag: from session state
+   *     when available (sessionCtx), else defaults (solo, no activity)
+   */
+  _driveDrugScheduler(arousal) {
+    if (!this.drugScheduler) return;
+    const now = Date.now();
+    const throttleMs = 1000;  // one scheduler tick per second of wall time
+    if ((now - (this._lastPatternTickMs || 0)) < throttleMs) return;
+    this._lastPatternTickMs = now;
+
+    // Always promote + clear-expired — cheap, independent of context.
+    this.drugScheduler.promoteScheduledIngests(now);
+    this.drugScheduler.clearExpired(now);
+
+    // Rebuild _activePatternTags from currently-active substances so
+    // decide() sees the correct tag set. Tags stamped by
+    // evaluatePatterns; substances that are currently active (still
+    // under tail) keep their tag.
+    const active = this.drugScheduler.activeSubstances(now);
+    this.drugScheduler._activePatternTags.clear();
+    for (const a of active) this.drugScheduler._activePatternTags.add(a.substance);
+
+    // Cortex demand proxy — cortex firing rate fraction. Tracks
+    // sustained high-load window for codingMarathon trigger.
+    const cortexRate = (this.clusters?.cortex?.firingRate || 0) / (CLUSTER_SIZES.cortex || 1);
+    if (cortexRate >= 0.70) {
+      if (!this._cortexHighLoadSince) this._cortexHighLoadSince = now;
+    } else {
+      this._cortexHighLoadSince = 0;
+    }
+    const demandDurationMs = this._cortexHighLoadSince > 0 ? (now - this._cortexHighLoadSince) : 0;
+
+    // Assemble context. sessionCtx is carried by whatever chat/ide
+    // surface set it via state broadcast; no surface sets it today
+    // so fields fall back to null/defaults and triggers/patterns
+    // requiring them quietly skip.
+    const date = new Date(now);
+    const ctx = {
+      localHour: date.getHours() + date.getMinutes() / 60,
+      dayOfWeek: date.getDay(),
+      arousal: arousal ?? this.arousal ?? 0,
+      cortexDemand: cortexRate,
+      demandDurationMs,
+      activityTag: this._sessionActivityTag || null,
+      locationTag: this._sessionLocationTag || null,
+      social: this._sessionSocial === true,
+      consent: this._sessionConsent === true,
+      olfactory: this.olfactory,
+      visualTags: this._sessionVisualTags || null,
+      audioTags: this._sessionAudioTags || null,
+    };
+
+    // Sensory triggers first — they add cravings that pattern matcher
+    // doesn't read but decide() later will if an offer arrives.
+    try {
+      if (typeof this._sensoryTriggers === 'function') {
+        this._sensoryTriggers(this.drugScheduler, ctx);
+      }
+    } catch { /* non-fatal */ }
+
+    // Adult-use patterns — fire whatever matches its triggers + cooldown.
+    try {
+      this.drugScheduler.evaluatePatterns(ctx);
+    } catch { /* non-fatal */ }
+  }
+
   _updateDerivedState() {
     // Amygdala → arousal — PERSONA baseline drives the floor.
     // T13.7.7 — pre-fix this was `arousalBaseline + rate*0.15` clamped
@@ -2396,6 +2494,13 @@ class ServerBrain {
     }
     this.motorAction = ['respond_text', 'generate_image', 'speak', 'build_ui', 'listen', 'idle'][maxCh];
     this.motorConfidence = maxRate;
+
+    // T15.C — drive the scheduler's per-tick work once motorAction
+    // and derived state are settled this tick. Promotes deferred
+    // ingests, evaluates sensory triggers, fires adult-use patterns.
+    // Throttled to 1 Hz internally so main tick rate (~10 Hz) doesn't
+    // over-trigger pattern evaluation.
+    try { this._driveDrugScheduler(this.arousal); } catch { /* non-fatal */ }
   }
 
   injectText(text) {
@@ -2814,6 +2919,62 @@ class ServerBrain {
     // Inject text into brain
     this.injectText(text);
     this._lastInputTime = Date.now();
+
+    // T15.C — drug-offer detection + decide(). Runs BEFORE language
+    // cortex generation so if Unity declines (grade-locked / persona-
+    // excluded / physical-strain / random-decline), she emits the
+    // Unity-voice rejection line from drug-rejections.js instead of
+    // a normal generated response. If Unity accepts, ingest registers
+    // the pharma event and language cortex generates the in-character
+    // acknowledgement as usual.
+    try {
+      const offer = typeof this._drugDetector === 'function' ? this._drugDetector(text) : null;
+      if (offer && offer.substance && offer.kind === 'offer') {
+        const personaExclusions = { nicotine: true };  // Unity rejects tobacco per persona
+        const decision = this.drugScheduler.decide({
+          substance: offer.substance,
+          source: 'user',
+          social: this._sessionSocial === true,
+          location: this._sessionLocationTag || null,
+          time: Date.now(),
+          personaExclusions,
+        });
+        if (!decision.accept) {
+          // Route rejection through the Unity-voice library. Non-
+          // announcing (no scheduler-internal reason codes in the
+          // text Unity speaks).
+          let rejectionLine = '';
+          try {
+            // Lazy cache — first call loads the library, subsequent
+            // calls reuse the cached module. Keeps the hot path fast.
+            if (!this._drugRejections) this._drugRejections = require('./drug-rejections.js');
+            rejectionLine = this._drugRejections.pickRejection(decision.reason);
+          } catch { rejectionLine = 'nah, not right now.'; }
+          return {
+            text: rejectionLine,
+            action: 'respond_text',
+          };
+        }
+        // Accepted — fire the ingest event (no dose override; default
+        // to 1.0 via scheduler.ingest).
+        this.drugScheduler.ingest(offer.substance);
+        // Fall through to language cortex for the in-character
+        // acknowledgement so Unity's response sounds like her.
+      }
+    } catch (err) {
+      console.warn('[Brain] drug-offer processing failed:', err && err.message);
+    }
+
+    // T15.C — olfactory cue intake if client sent sensory metadata.
+    // Chat clients can ship `{type:'text', text, sensory:{smell:'coffee'}}`
+    // to surface environmental cues. Registers with OlfactoryChannel
+    // so _driveDrugScheduler's next tick sees the scent.
+    if (this.olfactory && arguments.length > 2 && arguments[2] && typeof arguments[2] === 'object') {
+      const meta = arguments[2];
+      if (meta.sensory && typeof meta.sensory.smell === 'string') {
+        this.olfactory.registerScent(meta.sensory.smell, { strength: meta.sensory.strength ?? 0.8 });
+      }
+    }
 
     // Store in conversation history
     if (!this._conversations) this._conversations = {};
